@@ -6,6 +6,9 @@
 //   - no event fires on prompt acceptance: any working-ish event clears
 //     needs-* states
 //   - unknown events: log, don't transition (§5.26 posture)
+// 'idle' is currently only reachable via future idle-detection (E4 wiring —
+// Notification "waiting" classifies to needs-input today); kept in the union
+// because the spec names it and the UI ships a badge for it.
 export type SessionStatus =
   | 'starting'
   | 'working'
@@ -44,10 +47,9 @@ export function transition(current: SessionStatus, ev: SessionEvent): Transition
   });
   const stay = (note?: string): TransitionResult => ({ status: current, changed: false, note });
 
-  // terminal-ish: crashed only leaves via restart (manager re-creates)
-  if (current === 'crashed' && ev.kind !== 'hook') {
-    if (ev.kind === 'exit') return stay();
-  }
+  // crashed is terminal: ONLY restart leaves it (the manager creates a fresh
+  // record). Late hook POSTs racing in after a crash must not resurrect it.
+  if (current === 'crashed') return stay('ignored-after-crash');
 
   switch (ev.kind) {
     case 'exit':

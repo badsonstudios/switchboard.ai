@@ -10,6 +10,21 @@ import http from 'http';
 import { randomBytes } from 'crypto';
 import fs from 'fs';
 import path from 'path';
+
+function findNodeOnPath(): string | null {
+  const names = process.platform === 'win32' ? ['node.exe'] : ['node'];
+  for (const dir of (process.env.PATH ?? '').split(path.delimiter).filter(Boolean)) {
+    for (const name of names) {
+      const full = path.join(dir, name);
+      try {
+        if (fs.statSync(full).isFile()) return full;
+      } catch {
+        /* keep scanning */
+      }
+    }
+  }
+  return null;
+}
 import { Logger } from '../log/logger';
 import { SessionManager } from '../sessions/session-manager';
 
@@ -37,8 +52,21 @@ export class HookListener {
 
   constructor(private readonly opts: HookListenerOptions) {}
 
+  private nodeCommand: string | null = null;
+
   async start(): Promise<number> {
     this.forwarderPath = writeForwarder(this.opts.stateDir);
+    // The forwarder needs a Node runtime. `node` on PATH is NOT guaranteed
+    // (claude.exe native installs bundle their own); fall back to our own
+    // Electron binary in run-as-node mode. Hooks run under a POSIX shell on
+    // Windows (S-02 finding), so an env-prefix works.
+    const nodeOnPath = findNodeOnPath();
+    this.nodeCommand = nodeOnPath
+      ? `"${nodeOnPath}"`
+      : `ELECTRON_RUN_AS_NODE=1 "${process.execPath}"`;
+    if (!nodeOnPath) {
+      this.opts.log.warn('node not on PATH — hook forwarder will use the app binary in run-as-node mode');
+    }
     this.server = http.createServer((req, res) => this.handle(req, res));
     await new Promise<void>((resolve, reject) => {
       this.server!.once('error', reject);
@@ -52,10 +80,16 @@ export class HookListener {
 
   stop(): void {
     this.server?.close();
+    this.server?.closeAllConnections?.();
     this.server = null;
+    this.tokens.clear();
   }
 
-  /** Issue a per-session token (stored in an ACL'd file, not argv — S-03). */
+  /**
+   * Issue a per-session token, stored in a file referenced by path — never on
+   * argv (S-03). mode 0600 is a no-op on Windows; the real protection there
+   * is stateDir living under the user profile (same-user ACL).
+   */
   registerSession(sessionId: string): { tokenPath: string } {
     const token = randomBytes(16).toString('hex');
     this.tokens.set(token, sessionId);
@@ -78,11 +112,11 @@ export class HookListener {
    * guaranteed present (the CLI itself runs on it), paths are absolute.
    */
   buildHookSettings(sessionId: string): Record<string, unknown> {
-    if (!this.forwarderPath || this.port === 0) {
+    if (!this.forwarderPath || this.port === 0 || !this.nodeCommand) {
       throw new Error('hook listener not started');
     }
     const { tokenPath } = this.registerSession(sessionId);
-    const command = `node "${this.forwarderPath}" ${this.port} "${tokenPath}"`;
+    const command = `${this.nodeCommand} "${this.forwarderPath}" ${this.port} "${tokenPath}"`;
     const entry = { hooks: [{ type: 'command', timeout: 10, command }] };
     const hooks: Record<string, unknown> = {};
     for (const ev of STATUS_EVENTS) hooks[ev] = [entry];
@@ -90,6 +124,10 @@ export class HookListener {
   }
 
   private handle(req: http.IncomingMessage, res: http.ServerResponse): void {
+    if (req.method !== 'POST') {
+      res.writeHead(405);
+      return void res.end();
+    }
     const host = (req.headers.host ?? '').split(':')[0];
     if (host !== '127.0.0.1' && host !== 'localhost') {
       this.opts.log.warn('hook request rejected: bad host', { host: req.headers.host });

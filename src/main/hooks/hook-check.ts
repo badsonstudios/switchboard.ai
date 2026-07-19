@@ -1,96 +1,121 @@
 // P1-E2-05 done-when check (local only — needs a logged-in claude CLI):
-// session status flips from hook events ALONE through a real CLI run, and
-// invalid requests are rejected. Run: npm run check:hooks
-import { execFileSync } from 'child_process';
+// the INTEGRATED product path — SessionManager.create() with hook settings
+// injected via settingsFor, spawning a real interactive claude through the
+// real PtyService — flips status from hook events alone; invalid listener
+// requests are rejected; and a user kill() lands as done, not crashed.
+// Run: npm run check:hooks
 import fs from 'fs';
 import http from 'http';
 import os from 'os';
 import path from 'path';
 import { HookListener } from './hook-listener';
-import { SessionManager, PtyLike } from '../sessions/session-manager';
+import { SessionManager } from '../sessions/session-manager';
 import { ContributionRegistry } from '../extensibility/registry';
-import { claudeAdapter, resolveCliPath } from '../providers/claude';
+import { claudeAdapter } from '../providers/claude';
+import { PtyService } from '../pty/pty-service';
 import { LogSink, createLogger } from '../log/logger';
 
 const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-hook-check-'));
 const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-hook-check-work-'));
 
-// fake PTY: the real CLI runs via child_process below; the manager just needs
-// a session record to route hook events into
-const fakePty: PtyLike = {
-  spawn: () => ({ pid: 0, onExit: () => () => {}, kill: () => {} }),
-  remove: () => {},
-};
+// stripping ANSI control sequences requires control chars in the regexes
+/* eslint-disable no-control-regex */
+const strip = (s: string) =>
+  s
+    .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, '')
+    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+    .replace(/[\x00-\x08\x0b-\x1f]/g, '');
+/* eslint-enable no-control-regex */
 
 async function main(): Promise<number> {
   const sink = new LogSink({ dir: stateDir });
   const registry = new ContributionRegistry();
   registry.register('provider-adapter', claudeAdapter);
-  const manager = new SessionManager(registry, fakePty, createLogger(sink, 'sessions'), stateDir);
-  const listener = new HookListener({
-    stateDir,
-    manager,
-    log: createLogger(sink, 'hooks'),
-  });
+  const ptys = new PtyService();
+  const manager = new SessionManager(registry, ptys, createLogger(sink, 'sessions'), stateDir);
+  const listener = new HookListener({ stateDir, manager, log: createLogger(sink, 'hooks') });
   const port = await listener.start();
 
-  // negative tests first (§5.29 floor)
+  // §5.29 negative tests
   const noToken = await rawPost(port, '{}', {});
   const badHost = await rawPost(port, '{}', { host: 'evil.example' });
   console.log(`[hook-check] no-token=${noToken} bad-host=${badHost}`);
 
-  // create the session record and its injected hook settings
+  // THE integrated path: create() wires hook settings itself
   const record = manager.create(
     { title: 'hook-check', folder: workDir, providerId: 'claude-code' },
-    {}
+    { settingsFor: (id) => listener.buildHookSettings(id) }
   );
-  const settings = listener.buildHookSettings(record.id);
-  const settingsPath = path.join(stateDir, 'inject-settings.json');
-  fs.writeFileSync(settingsPath, JSON.stringify(settings));
+  console.log(`[hook-check] session ${record.id} spawned interactively (pid ${record.pid})`);
 
-  // real CLI run with ONLY hook wiring — no transcript polling anywhere
-  const cli = resolveCliPath()!;
-  const isCmd = process.platform === 'win32' && cli.toLowerCase().endsWith('.cmd');
-  const env = { ...process.env };
-  delete env.ELECTRON_RUN_AS_NODE;
-  delete env.ELECTRON_NO_ATTACH_CONSOLE;
-  console.log('[hook-check] running claude -p with injected hooks...');
-  execFileSync(
-    isCmd ? 'cmd.exe' : cli,
-    [...(isCmd ? ['/c', cli] : []), '--settings', settingsPath, '-p', 'Reply with exactly: OK'],
-    { cwd: workDir, encoding: 'utf8', timeout: 180000, env }
+  const pty = ptys.get(record.id)!;
+  let screen = '';
+  pty.onData((d) => (screen += strip(d)));
+
+  // trust dialog (fresh temp folder) then composer-ready; text and Enter must
+  // be separate writes (paste detection — S-03 driver lesson)
+  await waitFor(() => /(Do\s*you\s*trust|trust\s*this\s*folder|Accessing\s*workspace|\?\s*for\s*shortcuts)/i.test(screen), 60000, 'startup');
+  if (/(trust|Accessing)/i.test(screen) && !/\?\s*for\s*shortcuts/i.test(screen)) {
+    pty.write('\r');
+    await waitFor(() => /\?\s*for\s*shortcuts/i.test(screen), 30000, 'ready-after-trust');
+  }
+  await sleep(1500);
+  pty.write('Reply with exactly: OK');
+  await sleep(900);
+  pty.write('\r');
+
+  // hook-driven flips: working (UserPromptSubmit) then done (Stop)
+  await waitFor(() => manager.get(record.id)!.status === 'working', 30000, 'status=working');
+  console.log('[hook-check] status=working (hook-driven)');
+  await waitFor(() => manager.get(record.id)!.status === 'done', 120000, 'status=done');
+  console.log('[hook-check] status=done (hook-driven)');
+
+  // user kill of a live session must not read as crashed
+  const record2 = manager.create(
+    { title: 'kill-check', folder: workDir, providerId: 'claude-code' },
+    { settingsFor: (id) => listener.buildHookSettings(id) }
   );
+  await sleep(5000); // let it reach the TUI
+  manager.kill(record2.id);
+  await waitFor(() => manager.get(record2.id)!.exitCode !== null, 20000, 'kill-exit');
+  const killStatus = manager.get(record2.id)!.status;
+  console.log(`[hook-check] killed session status=${killStatus} (exit ${manager.get(record2.id)!.exitCode})`);
 
-  await sleep(1000); // let trailing hook posts land
   const t = manager.transitions(record.id);
   console.log(`[hook-check] transitions: ${t.map((x) => `${x.from}->${x.to} (${x.cause})`).join(', ')}`);
-  const seq = t.map((x) => x.to);
+  const causes = t.map((x) => x.cause);
   const ok =
     noToken === 401 &&
     badHost === 403 &&
-    seq.includes('working') &&
-    seq[seq.length - 1] === 'done' &&
-    manager.get(record.id)!.nativeSessionId !== undefined;
-  console.log(
-    `[hook-check] final=${manager.get(record.id)!.status} nativeId=${manager.get(record.id)!.nativeSessionId}`
-  );
+    causes.includes('hook:UserPromptSubmit') &&
+    causes.includes('hook:Stop') &&
+    manager.get(record.id)!.nativeSessionId !== undefined &&
+    killStatus === 'done';
   console.log(ok ? '[hook-check] PASS' : '[hook-check] FAIL');
+  manager.kill(record.id);
+  ptys.killAll();
   listener.stop();
   return ok ? 0 : 1;
 }
 
 function rawPost(port: number, body: string, headers: Record<string, string>): Promise<number> {
   return new Promise((resolve) => {
-    const req = http.request(
-      { host: '127.0.0.1', port, path: '/hook', method: 'POST', headers },
-      (res) => {
-        res.resume();
-        res.on('end', () => resolve(res.statusCode ?? 0));
-      }
-    );
+    const req = http.request({ host: '127.0.0.1', port, path: '/hook', method: 'POST', headers }, (res) => {
+      res.resume();
+      res.on('end', () => resolve(res.statusCode ?? 0));
+    });
     req.on('error', () => resolve(-1));
     req.end(body);
   });
+}
+
+async function waitFor(cond: () => boolean, timeoutMs: number, label: string): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (cond()) return;
+    await sleep(150);
+  }
+  throw new Error(`timeout waiting for ${label}`);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -98,7 +123,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 main().then(
-  (c) => process.exit(c),
+  (c) => setTimeout(() => process.exit(c), 500),
   (err) => {
     console.error('[hook-check] ERROR', err);
     process.exit(1);

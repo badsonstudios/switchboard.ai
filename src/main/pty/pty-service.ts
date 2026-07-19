@@ -61,13 +61,27 @@ export class PtySession {
       env: buildEnv(process.env, opts.env) as { [k: string]: string },
       useConpty: process.platform === 'win32',
     });
+    // listener exceptions are swallowed: a broken subscriber must never take
+    // the PTY pump down (fail-open); callers own their error handling
     this.proc.onData((d) => {
       this.scrollback.push(Buffer.from(d, 'utf8'));
-      for (const l of this.dataListeners) l(d);
+      for (const l of this.dataListeners) {
+        try {
+          l(d);
+        } catch {
+          /* subscriber's problem, not the pump's */
+        }
+      }
     });
     this.proc.onExit(({ exitCode }) => {
       this.exitCode = exitCode;
-      for (const l of this.exitListeners) l(exitCode);
+      for (const l of this.exitListeners) {
+        try {
+          l(exitCode);
+        } catch {
+          /* subscriber's problem, not the pump's */
+        }
+      }
     });
   }
 

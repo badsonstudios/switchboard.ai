@@ -14,6 +14,7 @@ export default defineConfig({
           'pty-check': 'src/main/pty/lifecycle-check.ts',
           'adapter-check': 'src/main/providers/adapter-check.ts',
           'hook-check': 'src/main/hooks/hook-check.ts',
+          'transcript-check': 'src/main/transcripts/transcript-check.ts',
         },
       },
     },

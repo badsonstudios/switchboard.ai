@@ -24,6 +24,8 @@ export interface SessionRecord {
   nativeSessionId?: string;
   pid?: number;
   exitCode: number | null;
+  /** set by kill()/restart(): the coming exit is intentional, not a crash */
+  killRequested?: boolean;
 }
 
 /** The slice of PtyService the manager needs — injectable for tests. */
@@ -62,16 +64,29 @@ export class SessionManager {
     private readonly stateDir: string
   ) {}
 
-  create(identity: SessionIdentity, opts?: { resumeSessionId?: string; settings?: Record<string, unknown> }): SessionRecord {
+  create(
+    identity: SessionIdentity,
+    opts?: {
+      resumeSessionId?: string;
+      settings?: Record<string, unknown>;
+      /**
+       * Settings that need the session id before spawn (hook wiring: the
+       * HookListener registers a token for the id and returns the injectable
+       * config). Merged over `settings`.
+       */
+      settingsFor?: (sessionId: string) => Record<string, unknown>;
+    }
+  ): SessionRecord {
     const adapter = this.registry.resolve('provider-adapter', identity.providerId);
     if (!adapter) throw new Error(`no provider adapter "${identity.providerId}"`);
     const id = randomUUID();
+    const settings = { ...opts?.settings, ...opts?.settingsFor?.(id) };
     const recipe: SpawnRecipe = adapter.buildSpawn({
       cwd: identity.folder,
       sessionId: id,
       stateDir: this.stateDir,
       resumeSessionId: opts?.resumeSessionId,
-      settings: opts?.settings,
+      settings: Object.keys(settings).length > 0 ? settings : undefined,
     });
     const record: SessionRecord = {
       id,
@@ -80,12 +95,20 @@ export class SessionManager {
       createdAt: new Date().toISOString(),
       exitCode: null,
     };
+    let proc;
+    try {
+      proc = this.ptys.spawn({ id, command: recipe.command, args: recipe.args, cwd: identity.folder, env: recipe.env });
+    } catch (err) {
+      this.log.error('session spawn failed', { sessionId: id, folder: identity.folder, error: String(err) });
+      throw err; // no orphan record: it was never added
+    }
     this.sessions.set(id, record);
-    const proc = this.ptys.spawn({ id, command: recipe.command, args: recipe.args, cwd: identity.folder, env: recipe.env });
     record.pid = proc.pid;
     proc.onExit((code) => {
       record.exitCode = code;
-      this.apply(id, { kind: 'exit', code });
+      // intentional kills are wind-downs, not crashes (ConPTY termination
+      // reports nonzero codes)
+      this.apply(id, { kind: 'exit', code: record.killRequested ? 0 : code });
     });
     this.log.info('session created', { sessionId: id, folder: identity.folder, pid: proc.pid, provider: identity.providerId });
     return { ...record };
@@ -93,14 +116,14 @@ export class SessionManager {
 
   kill(id: string): void {
     const r = this.mustGet(id);
+    r.killRequested = true;
     this.ptys.remove(id);
     this.log.info('session killed', { sessionId: id });
-    // exit handler flips status via the 'exit' event; nothing else to do
-    void r;
   }
 
   restart(id: string): SessionRecord {
     const r = this.mustGet(id);
+    r.killRequested = true;
     this.ptys.remove(id);
     this.sessions.delete(id);
     this.log.info('session restarting', { sessionId: id });
@@ -123,8 +146,16 @@ export class SessionManager {
     };
     r.status = result.status;
     this.history.push(change);
+    if (this.history.length > 1000) this.history.splice(0, this.history.length - 1000);
     this.log.info('session status', { sessionId: id, from: change.from, to: change.to, cause: change.cause });
-    for (const l of this.listeners) l(change);
+    for (const l of this.listeners) {
+      try {
+        l(change);
+      } catch (err) {
+        // a broken subscriber must never take the session core down (P6)
+        this.log.error('status listener threw', { sessionId: id, error: String(err) });
+      }
+    }
   }
 
   setNativeSessionId(id: string, nativeId: string): void {

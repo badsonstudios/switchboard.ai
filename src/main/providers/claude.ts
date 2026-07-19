@@ -14,9 +14,13 @@ const CLI_NAMES = process.platform === 'win32' ? ['claude.cmd', 'claude.exe'] : 
 
 let cachedCliPath: string | null | undefined;
 
-/** Resolve the claude CLI to an absolute path by scanning PATH once. */
+/**
+ * Resolve the claude CLI to an absolute path by scanning PATH. Positive
+ * results are cached; a miss is re-scanned each call so installing the CLI
+ * mid-run doesn't require an app restart.
+ */
 export function resolveCliPath(envPath = process.env.PATH ?? ''): string | null {
-  if (cachedCliPath !== undefined) return cachedCliPath;
+  if (cachedCliPath != null) return cachedCliPath;
   cachedCliPath = scanPath(envPath);
   return cachedCliPath;
 }

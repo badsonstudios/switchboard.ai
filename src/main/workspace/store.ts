@@ -2,7 +2,8 @@
 // workspace — session records (identity, layout slot, provider-native id for
 // resume) and window geometry with a display fingerprint. Restore-on-launch
 // yields SUSPENDED session records; actual relaunch is resume-on-focus
-// (§5.25) — the UI (E3) calls resumeSuspended when a card is touched.
+// (§5.25) — the UI layer (E3) turns a touched suspended card into
+// SessionManager.create({...identity}, {resumeSessionId: nativeSessionId}).
 //
 // Persistence rules: tolerant load (corrupt file -> backed aside, fresh
 // start — never crash on our own state), atomic save (tmp + rename),
@@ -75,9 +76,10 @@ export class WorkspaceStore {
   }
 
   upsertSession(s: PersistedSession): void {
+    const copy = JSON.parse(JSON.stringify(s)) as PersistedSession; // no shared refs with callers
     const i = this.state.sessions.findIndex((x) => x.id === s.id);
-    if (i >= 0) this.state.sessions[i] = s;
-    else this.state.sessions.push(s);
+    if (i >= 0) this.state.sessions[i] = copy;
+    else this.state.sessions.push(copy);
     this.saveSoon();
   }
 
@@ -123,6 +125,7 @@ export class WorkspaceStore {
   saveSoon(): void {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => this.save(), 500);
+    this.saveTimer.unref?.();
   }
 }
 

@@ -37,18 +37,33 @@ interface WatchedSession {
   cwd: string;
   nativeSessionId?: string;
   boundFile: string | null;
+  watchedSince: number;
   tails: Map<string, { offset: number; buf: string }>;
   snap: TranscriptSnapshot;
 }
+
+/** After this long unbound, widen discovery beyond the slug prefilter. */
+const WIDEN_AFTER_MS = 10_000;
 
 export interface TranscriptWatcherOptions {
   projectsRoot: string;
   log: Logger;
   pollMs?: number;
+  /** how long to trust the slug prefilter before widening discovery */
+  widenAfterMs?: number;
 }
 
 export function slugForCwd(cwd: string): string {
   return cwd.replace(/[\\/:. ]/g, '-');
+}
+
+/** Path equality that tolerates case + separator differences on win32. */
+export function sameFolder(a: string, b: string): boolean {
+  const norm = (p: string) => {
+    const r = path.resolve(p);
+    return process.platform === 'win32' ? r.toLowerCase() : r;
+  };
+  return norm(a) === norm(b);
 }
 
 export class TranscriptWatcher {
@@ -67,6 +82,7 @@ export class TranscriptWatcher {
       cwd: session.cwd,
       nativeSessionId: session.nativeSessionId,
       boundFile: null,
+      watchedSince: Date.now(),
       tails: new Map(),
       snap: {
         sessionId,
@@ -143,38 +159,76 @@ export class TranscriptWatcher {
   }
 
   private poll(): void {
-    const files = this.scan();
     for (const w of this.sessions.values()) {
-      for (const full of files) {
-        if (this.known.has(full) || w.tails.has(full)) continue;
-        if (this.claim(w, full)) w.tails.set(full, { offset: 0, buf: '' });
+      // discovery: scan narrowly (this session's slug dirs, case-insensitive)
+      // until bound; widen to the full root if binding hasn't happened after a
+      // grace period (slug math is a PREFILTER, never the authority — the
+      // spike's own rule; Claude lowercases drive letters, and future slug
+      // rule changes must degrade to a slower scan, not silent unbound)
+      if (!w.boundFile) {
+        const widen = Date.now() - w.watchedSince > (this.opts.widenAfterMs ?? WIDEN_AFTER_MS);
+        for (const full of this.discoveryCandidates(w, widen)) {
+          if (this.known.has(full) || w.tails.has(full)) continue;
+          if (this.claim(w, full)) w.tails.set(full, { offset: 0, buf: '' });
+        }
+      } else {
+        // bound: only look for new subagent files under our session dir
+        for (const full of this.subagentFiles(w)) {
+          if (!w.tails.has(full)) w.tails.set(full, { offset: 0, buf: '' });
+        }
       }
       for (const [full, tail] of w.tails) this.drain(w, full, tail);
     }
   }
 
+  private discoveryCandidates(w: WatchedSession, widen: boolean): string[] {
+    if (widen) return this.scan();
+    const want = slugForCwd(w.cwd).toLowerCase();
+    const acc: string[] = [];
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(this.opts.projectsRoot, { withFileTypes: true });
+    } catch {
+      return acc;
+    }
+    for (const e of entries) {
+      if (e.isDirectory() && e.name.toLowerCase() === want) {
+        this.scan(path.join(this.opts.projectsRoot, e.name), 1, acc);
+      }
+    }
+    return acc;
+  }
+
+  private subagentFiles(w: WatchedSession): string[] {
+    if (!w.boundFile) return [];
+    const dir = path.join(path.dirname(w.boundFile), path.basename(w.boundFile, '.jsonl'), 'subagents');
+    const acc: string[] = [];
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return acc;
+    }
+    for (const e of entries) {
+      if (e.isFile() && e.name.endsWith('.jsonl')) acc.push(path.join(dir, e.name));
+    }
+    return acc;
+  }
+
   /** Bind only files that verifiably belong to this session (the race fix). */
   private claim(w: WatchedSession, full: string): boolean {
-    const rel = path.relative(this.opts.projectsRoot, full);
-    const inSlug = rel.split(path.sep)[0] === slugForCwd(w.cwd);
-    if (!inSlug) return false;
-    const isSubagent = rel.includes('subagents');
-    if (isSubagent) {
-      // subagent files belong to us if nested under our bound session uuid
-      return !!w.boundFile && rel.includes(path.basename(w.boundFile, '.jsonl'));
-    }
+    if (full.includes(`${path.sep}subagents${path.sep}`)) return false; // handled post-bind
     if (w.boundFile) return false; // one main transcript per session
-    // peek the first parseable line: cwd must match; sessionId must match the
-    // native id when we know it
+    // AUTHORITY: the first parseable line's cwd must match (case-insensitive
+    // on win32); sessionId must match the native id when we know it
     const head = this.readHead(full);
     if (!head) return false;
-    if (typeof head.cwd === 'string' && path.resolve(head.cwd) !== path.resolve(w.cwd)) return false;
+    if (typeof head.cwd === 'string' && !sameFolder(head.cwd, w.cwd)) return false;
     if (w.nativeSessionId && head.sessionId !== w.nativeSessionId) return false;
     w.boundFile = full;
     w.snap.bound = true;
     w.snap.nativeSessionId = typeof head.sessionId === 'string' ? head.sessionId : undefined;
     this.opts.log.info('transcript bound', { sessionId: w.sessionId, file: path.basename(full) });
-    // pick up the meta sidecar if this session later spawns agents (S-05)
     return true;
   }
 
@@ -229,7 +283,13 @@ export class TranscriptWatcher {
     }
     if (touched) {
       w.snap.lastActivityAt = new Date().toISOString();
-      for (const l of this.listeners) l(this.snapshot(w.sessionId)!);
+      for (const l of this.listeners) {
+        try {
+          l(this.snapshot(w.sessionId)!);
+        } catch (err) {
+          this.opts.log.error('transcript listener threw', { sessionId: w.sessionId, error: String(err) });
+        }
+      }
     }
   }
 
