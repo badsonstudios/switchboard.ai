@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 const versionArg = process.argv.find((a) => a.startsWith('--switchboard-version='));
 const seedArg = process.argv.find((a) => a.startsWith('--switchboard-seed-panels='));
@@ -32,8 +32,11 @@ const api = {
     getLayout: (): Promise<unknown> => ipcRenderer.invoke('workspace:getLayout'),
     setLayout: (layout: unknown): void => ipcRenderer.send('workspace:setLayout', layout),
   },
+  /** sandbox-safe path for a dropped File (drag-folder-onto-window, E3-04) */
+  pathForFile: (file: File): string => webUtils.getPathForFile(file),
   sessions: {
     pickFolder: (): Promise<string | null> => ipcRenderer.invoke('sessions:pickFolder'),
+    isDirectory: (p: string): Promise<boolean> => ipcRenderer.invoke('sessions:isDirectory', p),
     create: (opts: { folder: string; title: string }): Promise<SessionRecordDto> =>
       ipcRenderer.invoke('sessions:create', opts),
     list: (): Promise<SessionRecordDto[]> => ipcRenderer.invoke('sessions:list'),

@@ -76,25 +76,28 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
 
 const components = { sessionCard: SessionCardPanel };
 
+export interface GridController {
+  /** create a session in `folder` and add its card (drag-drop, rail actions) */
+  addSessionCard: (folder: string) => Promise<void>;
+  /** focus an existing session's card */
+  focusSession: (sessionId: string) => void;
+}
+
 export function SessionGrid(props: {
   theme: 'nordic' | 'daylight';
   seedPanels: number;
   onCardsChanged: (ids: string[]) => void;
+  controller?: React.MutableRefObject<GridController | null>;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const apiRef = useRef<DockviewApi | null>(null);
   const counter = useRef(0);
 
-  const addCard = useCallback(async () => {
+  const addSessionCard = useCallback(async (folder: string) => {
     const api = apiRef.current;
     if (!api) return;
-    // real session: pick a folder, spawn, bind the card to it (E3-02).
-    // Cancel -> no card. Full new-session dialog polish is E3-04.
-    const folder = await window.switchboard.sessions.pickFolder();
-    if (!folder) return;
     const title = folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? folder;
     const record = await window.switchboard.sessions.create({ folder, title });
-    counter.current += 1;
     api.addPanel({
       id: `session-${record.id}`,
       component: 'sessionCard',
@@ -106,6 +109,24 @@ export function SessionGrid(props: {
       } satisfies CardParams,
     });
   }, []);
+
+  React.useEffect(() => {
+    if (!props.controller) return;
+    props.controller.current = {
+      addSessionCard,
+      focusSession: (sessionId) => {
+        apiRef.current?.getPanel(`session-${sessionId}`)?.focus();
+      },
+    };
+    // eslint's exhaustive-deps plugin isn't installed; deps kept accurate by hand
+  }, [props.controller, addSessionCard]);
+
+  const addCard = useCallback(async () => {
+    // ⊕ flow: pick a folder, spawn, bind the card (E3-02/E3-04)
+    const folder = await window.switchboard.sessions.pickFolder();
+    if (!folder) return;
+    await addSessionCard(folder);
+  }, [addSessionCard]);
 
   const onReady = useCallback(
     async (event: DockviewReadyEvent) => {

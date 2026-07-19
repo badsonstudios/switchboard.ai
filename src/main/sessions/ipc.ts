@@ -3,6 +3,7 @@
 // the main-process ring buffer; the renderer gets a live feed ONLY while a
 // pane is attached, and a scrollback snapshot replay on attach.
 import { BrowserWindow, dialog, ipcMain } from 'electron';
+import fs from 'fs';
 import { SessionManager } from './session-manager';
 import { PtyService } from '../pty/pty-service';
 import { HookListener } from '../hooks/hook-listener';
@@ -31,6 +32,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   manager.onStatusChange((change) => send('sessions:status', change));
   transcripts.onUpdate((snap) => send('sessions:usage', snap));
+
+  ipcMain.handle('sessions:isDirectory', (_e, p: string) => {
+    try {
+      return fs.statSync(p).isDirectory();
+    } catch {
+      return false;
+    }
+  });
 
   ipcMain.handle('sessions:pickFolder', async () => {
     const win = deps.getWindow();
