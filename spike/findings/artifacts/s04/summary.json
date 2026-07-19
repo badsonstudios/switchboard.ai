@@ -1,0 +1,36 @@
+{
+  "discoveryMs": 3912,
+  "lines": 16,
+  "parsed": 16,
+  "malformed": 0,
+  "types": {
+    "queue-operation": 2,
+    "user": 3,
+    "attachment": 3,
+    "file-history-snapshot": 1,
+    "ai-title": 1,
+    "file-history-delta": 1,
+    "assistant": 4,
+    "last-prompt": 1
+  },
+  "status": "working",
+  "tokens": {
+    "input": 8,
+    "output": 356,
+    "cacheRead": 119236,
+    "cacheCreate": 23132
+  },
+  "tools": [
+    "Write",
+    "Bash"
+  ],
+  "files": [
+    "C:\\tmp\\s04-project\\s04-note.txt"
+  ],
+  "firstLineMs": 4020,
+  "sessionId": "d5521388-9c8f-47a3-be06-a2ec26a7bc7a",
+  "lagMinMs": 24,
+  "lagMedianMs": 268,
+  "lagMaxMs": 815,
+  "lagSamples": 13
+}
