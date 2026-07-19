@@ -30,9 +30,11 @@ export interface WorkspaceState {
   version: 1;
   sessions: PersistedSession[];
   window: PersistedWindow | null;
+  /** opaque grid-layout JSON owned by the renderer (Dockview serialization) */
+  layout: unknown;
 }
 
-const EMPTY: WorkspaceState = { version: 1, sessions: [], window: null };
+const EMPTY: WorkspaceState = { version: 1, sessions: [], window: null, layout: null };
 
 /** Stable identity for a display arrangement (§7). */
 export function displayFingerprint(workAreas: Rectangle[]): string {
@@ -55,6 +57,7 @@ export class WorkspaceStore {
         version: 1,
         sessions: Array.isArray(raw.sessions) ? raw.sessions.filter(isSaneSession) : [],
         window: sanitizeWindow(raw.window),
+        layout: raw.layout ?? null,
       };
     } catch (err) {
       // corrupt/missing: back the corpse aside (post-mortem material), start fresh
@@ -91,6 +94,15 @@ export class WorkspaceStore {
   setWindow(w: PersistedWindow): void {
     this.state.window = w;
     this.saveSoon();
+  }
+
+  setLayout(layout: unknown): void {
+    this.state.layout = layout;
+    this.saveSoon();
+  }
+
+  getLayout(): unknown {
+    return this.state.layout;
   }
 
   /**

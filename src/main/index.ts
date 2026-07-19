@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, screen, shell } from 'electron';
 import path from 'path';
 import { windowOptionsFrom, WindowState } from './window-state';
 import { WorkspaceStore, displayFingerprint } from './workspace/store';
@@ -80,7 +80,10 @@ function createWindow(): BrowserWindow {
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
-      additionalArguments: [`--switchboard-version=${app.getVersion()}`],
+      additionalArguments: [
+        `--switchboard-version=${app.getVersion()}`,
+        `--switchboard-seed-panels=${process.env.SWITCHBOARD_SEED_PANELS ?? 0}`,
+      ],
     },
   });
 
@@ -116,6 +119,9 @@ app
     log.app.info('app ready', { version: app.getVersion(), platform: process.platform });
     workspace = new WorkspaceStore(path.join(app.getPath('userData'), 'workspace.json'));
     workspace.load();
+    // renderer <-> workspace layout persistence (E3-01)
+    ipcMain.handle('workspace:getLayout', () => workspace.getLayout());
+    ipcMain.on('workspace:setLayout', (_e, layout: unknown) => workspace.setLayout(layout));
     registerBuiltinContributions();
     log.app.info('contributions registered', { manifests: registry.manifests() });
     createWindow();

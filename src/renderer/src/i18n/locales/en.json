@@ -5,6 +5,23 @@
   "shell": {
     "scaffoldStatus": "scaffold OK — {platform} · v{version} · theme: {theme} ({pref})"
   },
+  "titlebar": {
+    "version": "v{version}"
+  },
+  "rail": {
+    "eyebrow": "Sessions",
+    "empty": "No sessions yet"
+  },
+  "grid": {
+    "addCard": "+ session",
+    "empty": "Add a session card to begin",
+    "cardBody": "{title} — session card; terminal arrives with E3-02",
+    "cardTitle": "Session {n}"
+  },
+  "statusbar": {
+    "sessions": "{count, plural, =0 {no sessions} one {# session} other {# sessions}}",
+    "theme": "theme: {theme}"
+  },
   "theme": {
     "system": "system",
     "nordic": "nordic",

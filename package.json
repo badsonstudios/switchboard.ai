@@ -22,9 +22,10 @@
     "check:transcripts": "node scripts/run-electron-node.js out/main/transcript-check.js"
   },
   "dependencies": {
-    "node-pty": "^1.1.0",
+    "dockview-react": "^7.0.2",
     "i18next": "^26.3.6",
     "i18next-icu": "^2.4.4",
+    "node-pty": "^1.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-i18next": "^17.0.10"
