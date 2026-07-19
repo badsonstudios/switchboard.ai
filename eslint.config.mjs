@@ -1,10 +1,22 @@
 import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
+import react from 'eslint-plugin-react';
 
 export default tseslint.config(
   { ignores: ['out/**', 'dist/**', 'node_modules/**', 'spike/**', '.claude/**'] },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
+  {
+    // §5.21: user-visible strings go through i18n — no JSX text literals.
+    files: ['src/renderer/**/*.tsx'],
+    plugins: { react },
+    rules: {
+      'react/jsx-no-literals': [
+        'error',
+        { noStrings: true, ignoreProps: true, noAttributeStrings: false },
+      ],
+    },
+  },
   {
     // §5.20: color values live ONLY in theme/tokens.css. Any raw color
     // literal in renderer code is a lint failure.

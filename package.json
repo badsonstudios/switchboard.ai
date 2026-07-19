@@ -17,8 +17,11 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "i18next": "^26.3.6",
+    "i18next-icu": "^2.4.4",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "react-i18next": "^17.0.10"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.0",
@@ -29,6 +32,7 @@
     "electron": "^43.1.1",
     "electron-vite": "^4.0.0",
     "eslint": "^9.30.0",
+    "eslint-plugin-react": "^7.37.5",
     "jsdom": "^29.1.1",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.35.0",

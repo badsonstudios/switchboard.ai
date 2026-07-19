@@ -1,0 +1,17 @@
+{
+  "app": {
+    "title": "switchboard"
+  },
+  "shell": {
+    "scaffoldStatus": "scaffold OK — {platform} · v{version} · theme: {theme} ({pref})"
+  },
+  "theme": {
+    "system": "system",
+    "nordic": "nordic",
+    "daylight": "daylight"
+  },
+  "language": {
+    "en": "en",
+    "pseudo": "pseudo"
+  }
+}

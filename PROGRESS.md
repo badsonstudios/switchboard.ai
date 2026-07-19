@@ -7,8 +7,8 @@
 **Milestone:** Phase 1 - MVP (issues #12–#35, filed 2026-07-19)
 **AUTOPILOT RUN 2 ACTIVE** — started 2026-07-19 after Spike 01 merged (PR #11,
 all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
-**In progress:** P1-E1-04 — i18n foundation (#15)
-**Next up:** P1-E1-05 — Logging pipeline (#16)
+**In progress:** P1-E1-05 — Logging pipeline (#16)
+**Next up:** P1-E1-06 — Extensibility seams v0 (#17)
 **Branch:** auto/phase-1-mvp
 
 ## Blockers / open questions for Dan
@@ -20,6 +20,12 @@ all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
 
 ## Log
 
+- 2026-07-19 — **P1-E1-04 done** (autopilot run 2): i18next + ICU, en.json,
+  generated pseudo-locale (⟦mangled⟧, ICU args preserved — tested against
+  every en.json leaf), language toggle in shell, react/jsx-no-literals bans
+  hardcoded JSX strings (canary-verified). 15 tests green. Logical-CSS
+  convention adopted (marginBlockStart in shell); CSS-side lint deferred to
+  first real stylesheet work (E3).
 - 2026-07-19 — **P1-E1-03 done** (autopilot run 2): three-layer token system
   (Nordic/Daylight maps + theme-independent semantics + component tokens)
   from the design handoff; OS-sync with persisted override; theme toggle in
