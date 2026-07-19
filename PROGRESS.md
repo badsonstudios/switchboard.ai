@@ -7,13 +7,26 @@
 **Milestone:** Phase 1 - MVP (issues #12–#35, filed 2026-07-19)
 **AUTOPILOT RUN 2 ACTIVE** — started 2026-07-19 after Spike 01 merged (PR #11,
 all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
-**In progress:** P1-E4-01 — Event feed v1 (#29)
-**Next up:** P1-E4-02 — Notifications v1 (#30)
-**E3 epic: COMPLETE** (#24–#28)
+**AUTOPILOT RUN 2 COMPLETE (2026-07-19)** — Phase 1 - MVP milestone finished,
+all 24 items (#12–#35, E1–E6) ✅ on branch `auto/phase-1-mvp`, draft PR #36
+awaiting Dan's review + merge. Both epic-review passes (E2, E3–E6) applied.
+**In progress:** nothing — milestone boundary reached (autopilot stop point)
+**Next up:** Dan reviews/merges PR #36; then eyeball checks (see below) +
+`/pm plan phase-2`
+**Branch:** auto/phase-1-mvp
 **E1+E2 epics: COMPLETE** (#12–#23; E2 epic-review fixes landed, all live
 checks PASS: check:pty / check:adapter / check:hooks / check:transcripts)
 **E1 epic: COMPLETE** (#12–#17 all done, CI green)
 **Branch:** auto/phase-1-mvp
+
+## [Dan] eyeball checks before Phase 1 sign-off (autopilot couldn't verify)
+
+- Typing latency feel with 8 live sessions (S-07 numbers say fine) — E3-02
+- Rail status dots flipping through a real work cycle — E3-05
+- Hear/see a needs-permission notification from another app — E4-02
+- Review a session's diff end-to-end in the Monaco pane — E5-02
+- Quit with 3 working agents → two-step confirm — E6-02
+- Drop-a-folder-to-session feel — E3-04
 
 ## Blockers / open questions for Dan
 
@@ -24,6 +37,17 @@ checks PASS: check:pty / check:adapter / check:hooks / check:transcripts)
 
 ## Log
 
+- 2026-07-19 — **E6 epic + E3–E6 review done; Phase 1 milestone COMPLETE**
+  (autopilot run 2). E6-01 autonomy profiles → --permission-mode (tested);
+  E6-02 quit protection (window-close guard); E6-03 preflight banner + status
+  version. Epic review found 2 blockers (quit-on-Windows-close strands PTYs;
+  ghost cards on relaunch) + IPC security gaps — all fixed and re-verified
+  (two-run relaunch smoke: 1 card → pruned to 0). All 24 items done, 3-OS CI
+  green. PR #36 for Dan.
+- 2026-07-19 — **P1-E5-02 / E5-01 done**: GitService (porcelain-v2, real-repo
+  tested) + Monaco diff pane per session. **P1-E4-01/02 done**: event feed
+  (attention-only projection, interleave-tested) + notifications (toast/flash/
+  beep, quiet hours, gating tested).
 - 2026-07-19 — **P1-E3-05 done** (autopilot run 2; E3 epic complete): rail
   rows show live status dots (state-machine statuses → status tokens),
   click-to-focus via GridController. **[Dan eyeball]: rail-reflects-live-state
