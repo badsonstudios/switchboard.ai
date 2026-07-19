@@ -1,0 +1,21 @@
+{
+  "name": "switchboard-spike-01",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Spike 01 harness — PTY-host the real claude CLI (throwaway; findings are the deliverable)",
+  "main": "main.js",
+  "scripts": {
+    "start": "node launch.js",
+    "smoke": "node launch.js --smoke",
+    "rebuild": "node rebuild.js"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.0.1",
+    "electron": "^43.1.1"
+  }
+}
