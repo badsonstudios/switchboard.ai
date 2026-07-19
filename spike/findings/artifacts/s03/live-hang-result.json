@@ -1,0 +1,49 @@
+{
+  "scenario": "hang",
+  "steps": [
+    {
+      "name": "startup",
+      "atMs": 1160,
+      "matched": "? for shortcuts"
+    },
+    {
+      "name": "ready",
+      "timedOut": true
+    },
+    {
+      "name": "send-prompt",
+      "atMs": 21436,
+      "sinceStepStartMs": 155
+    },
+    {
+      "name": "submit",
+      "atMs": 22799,
+      "sinceStepStartMs": 155
+    },
+    {
+      "name": "permission-prompt",
+      "atMs": 626744,
+      "sinceStepStartMs": 603032
+    },
+    {
+      "name": "write-done",
+      "atMs": 629411,
+      "sinceStepStartMs": 156
+    },
+    {
+      "name": "exit",
+      "atMs": 629567,
+      "sinceStepStartMs": 155
+    },
+    {
+      "name": "gone",
+      "atMs": 631229,
+      "sinceStepStartMs": 158
+    }
+  ],
+  "promptCapture": "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ 1 hello-hang\n╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌Doyouwanttocreatelive-hang.txt?\n ❯ 1. Yes\n   2. Yes, allow all edits during this session (shift+tab)3. No\n                                                                                                                         Esc to cancel · Tab to amend\n                                                                                                                        ",
+  "promptLatencyMs": 604102,
+  "fileWritten": true,
+  "fileContent": "hello-hang",
+  "failed": false
+}

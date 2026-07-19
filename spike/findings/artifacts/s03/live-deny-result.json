@@ -1,0 +1,43 @@
+{
+  "scenario": "deny",
+  "steps": [
+    {
+      "name": "startup",
+      "atMs": 975,
+      "matched": "? for shortcuts"
+    },
+    {
+      "name": "ready",
+      "timedOut": true
+    },
+    {
+      "name": "send-prompt",
+      "atMs": 21263,
+      "sinceStepStartMs": 151
+    },
+    {
+      "name": "submit",
+      "atMs": 22625,
+      "sinceStepStartMs": 156
+    },
+    {
+      "name": "deny-reason-visible",
+      "atMs": 27868,
+      "sinceStepStartMs": 4331
+    },
+    {
+      "name": "write-done",
+      "atMs": 31892,
+      "sinceStepStartMs": 4024
+    },
+    {
+      "name": "exit",
+      "atMs": 32047,
+      "sinceStepStartMs": 156
+    }
+  ],
+  "promptCapture": null,
+  "promptLatencyMs": null,
+  "fileWritten": false,
+  "failed": false
+}

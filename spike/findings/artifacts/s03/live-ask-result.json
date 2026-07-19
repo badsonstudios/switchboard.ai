@@ -1,0 +1,44 @@
+{
+  "scenario": "ask",
+  "steps": [
+    {
+      "name": "startup",
+      "atMs": 1281,
+      "matched": "? for shortcuts"
+    },
+    {
+      "name": "ready",
+      "timedOut": true
+    },
+    {
+      "name": "send-prompt",
+      "atMs": 21544,
+      "sinceStepStartMs": 154
+    },
+    {
+      "name": "submit",
+      "atMs": 22906,
+      "sinceStepStartMs": 156
+    },
+    {
+      "name": "permission-prompt",
+      "atMs": 28144,
+      "sinceStepStartMs": 4324
+    },
+    {
+      "name": "write-done",
+      "atMs": 30810,
+      "sinceStepStartMs": 153
+    },
+    {
+      "name": "exit",
+      "atMs": 30964,
+      "sinceStepStartMs": 155
+    }
+  ],
+  "promptCapture": "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ 1 hello-ask\n╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌Doyouwanttocreatelive-ask.txt?❯1. Yes\n  2. Yes, allow all edits during thissession(shift+tab)3. No\n                                                                                                                         Esc to cancel · Tab to amend\n                                                                                                                        ",
+  "promptLatencyMs": 5394,
+  "fileWritten": true,
+  "fileContent": "hello-ask",
+  "failed": false
+}
