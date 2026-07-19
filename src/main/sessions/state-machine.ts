@@ -16,14 +16,14 @@ export type SessionStatus =
   | 'crashed';
 
 export type SessionEvent =
-  | { kind: 'hook'; event: 'SessionStart' }
-  | { kind: 'hook'; event: 'UserPromptSubmit' }
-  | { kind: 'hook'; event: 'PreToolUse'; tool?: string }
-  | { kind: 'hook'; event: 'PostToolUse'; tool?: string }
-  | { kind: 'hook'; event: 'Notification'; notificationType?: string; message?: string }
-  | { kind: 'hook'; event: 'Stop' }
-  | { kind: 'hook'; event: 'SubagentStop' }
-  | { kind: 'hook'; event: string } // forward-compat: unknown hook events
+  | {
+      kind: 'hook';
+      /** hook_event_name — unknown values are tolerated, never transition */
+      event: string;
+      notificationType?: string;
+      message?: string;
+      tool?: string;
+    }
   | { kind: 'permission-held' } // our PreToolUse round-trip is pending (E2-05+)
   | { kind: 'permission-resolved' }
   | { kind: 'user-input' } // user typed into the terminal
@@ -72,11 +72,10 @@ export function transition(current: SessionStatus, ev: SessionEvent): Transition
         case 'PostToolUse':
           return to('working');
         case 'Notification': {
-          const n = ev as { notificationType?: string; message?: string };
-          const blob = `${n.notificationType ?? ''} ${n.message ?? ''}`;
+          const blob = `${ev.notificationType ?? ''} ${ev.message ?? ''}`;
           if (/permission/i.test(blob)) return to('needs-permission');
           if (/waiting|input|idle/i.test(blob)) return to('needs-input');
-          return stay(`notification:${n.notificationType ?? 'unknown'}`);
+          return stay(`notification:${ev.notificationType ?? 'unknown'}`);
         }
         case 'Stop':
           return to('done');

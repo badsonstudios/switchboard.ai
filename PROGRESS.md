@@ -7,8 +7,8 @@
 **Milestone:** Phase 1 - MVP (issues #12–#35, filed 2026-07-19)
 **AUTOPILOT RUN 2 ACTIVE** — started 2026-07-19 after Spike 01 merged (PR #11,
 all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
-**In progress:** P1-E2-05 — HookListener (#22)
-**Next up:** P1-E2-06 — TranscriptWatcher (#23)
+**In progress:** P1-E2-06 — TranscriptWatcher (#23)
+**Next up:** P1-E3-01 — Main window layout (#24)
 **E1 epic: COMPLETE** (#12–#17 all done, CI green)
 **Branch:** auto/phase-1-mvp
 
@@ -21,6 +21,14 @@ all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
 
 ## Log
 
+- 2026-07-19 — **P1-E2-05 done** (autopilot run 2): HookListener — §5.29
+  floor (loopback + Host allowlist + per-session token; token delivered by
+  ACL'd file path, never argv per S-03), instant-ack status hooks with
+  timeout:10, generated fail-open forwarder, buildHookSettings for adapter
+  injection, native-session-id capture. Done-when verified LIVE:
+  `npm run check:hooks` ran real claude -p with injected hooks →
+  starting→working→done from hook events alone; 401/403 negative tests in
+  the same run. 61 unit tests green.
 - 2026-07-19 — **P1-E2-04 done** (autopilot run 2): WorkspaceStore — persisted
   sessions (identity, layout slot, native id for resume-on-focus) + window
   geometry with display fingerprint (§7); tolerant load (corrupt→.corrupt
