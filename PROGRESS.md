@@ -13,7 +13,12 @@ approved S-07's concurrent sessions. Run stops at milestone boundary.
 
 ## Blockers / open questions for Dan
 
-- none
+- **Concurrent DESIGN.md edit detected during autopilot run** (12:29 local,
+  new "Cross-provider handoff" subsection after §5's context-transfer part) —
+  not written by the autopilot session. Left uncommitted and untouched;
+  autopilot commits exclude it. S-08's DESIGN.md open-question updates will
+  stage only autopilot hunks. Dan: commit your edit whenever — no conflict
+  expected (different sections).
 
 ## Log
 

@@ -31,6 +31,13 @@ hang/longhold) + §5.29 security negative tests. `bash spike/s03/run-interactive
 ask|hang` — scripted real-TUI scenarios via node-pty (run under electron.exe
 with ELECTRON_RUN_AS_NODE=1). Findings: `findings/s-03-hook-roundtrip.md`.
 
+## S-06 status-hook probes
+
+`bash spike/s06/run-status.sh` — hook-only status cycle (SessionStart/
+UserPromptSubmit/Notification/SubagentStop/Stop → status line);
+`S06_ANSWER_DELAY_MS=90000` variant probes the Notification debounce.
+Findings: `findings/s-06-status-hooks.md`.
+
 ## S-04 / S-05 transcript probes
 
 `bash spike/s04/run-tail.sh` — transcript discovery + live tail (status line,

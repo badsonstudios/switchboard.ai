@@ -22,7 +22,7 @@ const t0 = Date.now();
 const rawPath = path.join(outDir, 'raw.log');
 const evPath = path.join(outDir, 'events.log');
 const ev = (s) => {
-  const line = `+${String(Date.now() - t0).padStart(6)}ms ${s}`;
+  const line = `${new Date().toISOString()} +${String(Date.now() - t0).padStart(6)}ms ${s}`;
   fs.appendFileSync(evPath, line + '\n');
   console.log(line);
 };
@@ -119,7 +119,12 @@ steps.push(
   // Completion marker: the model replies "SPIKE" reversed — a string that can
   // never appear in the typed prompt's own echo/redraws.
   { name: 'send-prompt', match: /(?:)/, timeoutMs: 5000,
-    send: `Use the Write tool to create the file live-${scenario}.txt containing exactly: hello-${scenario} — then reply with exactly the word SPIKE spelled backwards.`,
+    send:
+      `Use the Write tool to create the file live-${scenario}.txt containing exactly: hello-${scenario}` +
+      (scenario === 'status'
+        ? ' — then use the Agent tool (general-purpose subagent) to read that file and report its line count'
+        : '') +
+      ' — then reply with exactly the word SPIKE spelled backwards.',
     sendDelayMs: 1200 },
   { name: 'submit', match: /(?:)/, timeoutMs: 5000, send: '\r', sendDelayMs: 900 },
 );
@@ -139,6 +144,17 @@ if (scenario === 'ask' || scenario === 'hang') {
 } else if (scenario === 'deny') {
   // No prompt expected: model should surface the hook's reason string.
   steps.push({ name: 'deny-reason-visible', match: /S03-DENY-REASON/i, timeoutMs: 90000 });
+} else if (scenario === 'status') {
+  // S-06: permission prompt from the CLI's own flow (no PreToolUse hook),
+  // then wait for the FULL turn (subagent + reply) so Stop/SubagentStop fire.
+  // S06_ANSWER_DELAY_MS: leave the prompt hanging first (Notification-
+  // threshold probe — does the CLI notify only after the prompt sits idle?).
+  steps.push(
+    { name: 'permission-prompt', match: PERM_RE, timeoutMs: 120000,
+      capture: true, latency: true, latencyFrom: () => promptSentAt,
+      send: '\r', sendDelayMs: Number(process.env.S06_ANSWER_DELAY_MS || 2500) },
+    { name: 'model-finished', match: /EKIPS/, timeoutMs: 240000 }
+  );
 }
 steps.push(
   { name: 'write-done', match: new RegExp(`live-${scenario}\\.txt|hello-${scenario}`, 'i'),

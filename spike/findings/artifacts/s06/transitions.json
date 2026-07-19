@@ -1,0 +1,26 @@
+[
+  {
+    "at": "2026-07-19T16:37:32.013Z",
+    "from": "unknown",
+    "to": "starting",
+    "cause": "SessionStart"
+  },
+  {
+    "at": "2026-07-19T16:37:54.736Z",
+    "from": "starting",
+    "to": "working",
+    "cause": "UserPromptSubmit"
+  },
+  {
+    "at": "2026-07-19T16:38:04.486Z",
+    "from": "working",
+    "to": "needs-permission",
+    "cause": "Notification: Claude needs your permission"
+  },
+  {
+    "at": "2026-07-19T16:39:37.896Z",
+    "from": "needs-permission",
+    "to": "done",
+    "cause": "Stop"
+  }
+]
