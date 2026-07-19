@@ -20,6 +20,16 @@
     "cardBody": "{title} — session card; terminal arrives with E3-02",
     "cardTitle": "Session {n}"
   },
+  "autonomy": {
+    "plan": "🛡 plan",
+    "ask": "🛡 ask",
+    "auto-edit": "🛡 auto-edit",
+    "full-auto": "🛡 full-auto"
+  },
+  "preflight": {
+    "missingCli": "claude CLI not found — install it and log in: npm install -g @anthropic-ai/claude-code, then run `claude` once. New sessions are disabled until then.",
+    "version": "claude {version}"
+  },
   "diff": {
     "tabTitle": "{title} · diff",
     "open": "diff",

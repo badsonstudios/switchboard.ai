@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   applyPreference,
   followSystemTheme,
@@ -30,12 +31,28 @@ export function App(): React.JSX.Element {
   const [cards, setCards] = useState<string[]>([]);
   const [sessions, setSessions] = useState<RailSession[]>([]);
   const [notifEnabled, setNotifEnabled] = useState(true);
+  const [autonomy, setAutonomy] = useState<string>(
+    () => localStorage.getItem('switchboard.autonomy') ?? 'ask'
+  );
+  const [preflightOk, setPreflightOk] = useState(true);
+  const [cliVersion, setCliVersion] = useState<string | null>(null);
   const grid = React.useRef<GridController | null>(null);
 
   useEffect(() => {
     void bridge.notifications?.getPrefs?.().then((p) => setNotifEnabled(p.enabled));
+    void bridge.preflight?.check?.().then((r) => {
+      setPreflightOk(r.ok);
+      setCliVersion(r.version);
+    });
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, []);
+
+  const cycleAutonomy = (): void => {
+    const order = ['ask', 'plan', 'auto-edit', 'full-auto'];
+    const next = order[(order.indexOf(autonomy) + 1) % order.length];
+    localStorage.setItem('switchboard.autonomy', next);
+    setAutonomy(next);
+  };
 
   useEffect(() => followSystemTheme(setTheme), []);
 
@@ -101,7 +118,10 @@ export function App(): React.JSX.Element {
           setNotifEnabled(next);
           void bridge.notifications?.setPrefs?.({ enabled: next });
         }}
+        autonomy={autonomy}
+        onCycleAutonomy={cycleAutonomy}
       />
+      {!preflightOk && <PreflightBanner />}
       <div style={{ flex: 1, display: 'flex', minBlockSize: 0 }}>
         <SessionsRail
           sessions={sessions}
@@ -121,7 +141,23 @@ export function App(): React.JSX.Element {
         />
         <FeedPanel sessions={sessions} onFocus={(id) => grid.current?.focusSession(id)} />
       </div>
-      <StatusBar count={cards.length} theme={theme} />
+      <StatusBar count={cards.length} theme={theme} cliVersion={cliVersion} />
+    </div>
+  );
+}
+
+function PreflightBanner(): React.JSX.Element {
+  const { t } = useTranslation();
+  return (
+    <div
+      style={{
+        background: 'var(--status-needs-permission)',
+        color: 'var(--bar)',
+        fontSize: 11,
+        padding: '4px 12px',
+      }}
+    >
+      {t('preflight.missingCli')}
     </div>
   );
 }

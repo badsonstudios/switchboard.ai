@@ -14,6 +14,8 @@ import { registerSessionIpc } from './sessions/ipc';
 import { EventFeed } from './events/feed';
 import { Notifier } from './events/notifier';
 import { GitService } from './git/git-service';
+import { runPreflight } from './preflight';
+import { dialog } from 'electron';
 
 // Safe-by-default for every window this app will ever open (§5.29 posture).
 app.enableSandbox();
@@ -157,6 +159,33 @@ app
       bodyFor: (e) => e.kind.replace(/-/g, ' '),
     });
     feed.onEvent((e) => notifier.handle(e));
+    ipcMain.handle('preflight:check', () => runPreflight());
+
+    // quit protection (P1-E6-02, §5.25): quitting with working sessions is a
+    // two-step act
+    let quitConfirmed = false;
+    app.on('before-quit', (e) => {
+      if (quitConfirmed) return;
+      const busy = manager
+        .list()
+        .filter((s) => ['working', 'needs-input', 'needs-permission'].includes(s.status));
+      if (busy.length === 0) return;
+      e.preventDefault();
+      const names = busy.map((s) => `• ${s.identity.title} (${s.status})`).join('\n');
+      const choice = dialog.showMessageBoxSync({
+        type: 'warning',
+        buttons: ['Quit anyway', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        title: 'Sessions are mid-task',
+        message: `${busy.length} session(s) are mid-task:\n\n${names}\n\nQuit anyway?`,
+      });
+      if (choice === 0) {
+        quitConfirmed = true;
+        app.quit();
+      }
+    });
+
     const gitService = new GitService();
     ipcMain.handle('git:status', (_e, folder: string) => gitService.status(folder));
     ipcMain.handle('git:fileVersions', (_e, folder: string, file: string) =>

@@ -34,6 +34,8 @@ export interface SpawnOptions {
   stateDir: string;
   /** provider-native session id to resume */
   resumeSessionId?: string;
+  /** autonomy profile (§5.9): how much the session may do unprompted */
+  autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
   /** extra settings to inject at spawn (S-02 mechanism); hooks land in E2-05 */
   settings?: Record<string, unknown>;
 }

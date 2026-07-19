@@ -109,7 +109,10 @@ export function SessionGrid(props: {
     const api = apiRef.current;
     if (!api) return;
     const title = folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? folder;
-    const record = await window.switchboard.sessions.create({ folder, title });
+    const stored = localStorage.getItem('switchboard.autonomy');
+    const autonomy =
+      stored === 'plan' || stored === 'auto-edit' || stored === 'full-auto' ? stored : 'ask';
+    const record = await window.switchboard.sessions.create({ folder, title, autonomy });
     api.addPanel({
       id: `session-${record.id}`,
       component: 'sessionCard',

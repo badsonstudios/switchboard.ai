@@ -70,6 +70,7 @@ export class SessionManager {
     identity: SessionIdentity,
     opts?: {
       resumeSessionId?: string;
+      autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
       settings?: Record<string, unknown>;
       /**
        * Settings that need the session id before spawn (hook wiring: the
@@ -88,6 +89,7 @@ export class SessionManager {
       sessionId: id,
       stateDir: this.stateDir,
       resumeSessionId: opts?.resumeSessionId,
+      autonomy: opts?.autonomy,
       settings: Object.keys(settings).length > 0 ? settings : undefined,
     });
     const record: SessionRecord = {

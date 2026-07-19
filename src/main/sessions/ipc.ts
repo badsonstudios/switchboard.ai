@@ -56,7 +56,9 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0];
   });
 
-  ipcMain.handle('sessions:create', (_e, opts: { folder: string; title: string }) => {
+  ipcMain.handle(
+    'sessions:create',
+    (_e, opts: { folder: string; title: string; autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto' }) => {
     const record = manager.create(
       {
         title: opts.title,
@@ -67,7 +69,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         ),
         langBadge: detectProjectType(opts.folder),
       },
-      { settingsFor: (id) => hooks.buildHookSettings(id) }
+      { settingsFor: (id) => hooks.buildHookSettings(id), autonomy: opts.autonomy }
     );
     transcripts.watch(record.id, { cwd: opts.folder });
     log.info('session created via ui', { sessionId: record.id, folder: opts.folder });

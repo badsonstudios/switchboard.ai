@@ -81,6 +81,17 @@ describe('claudeAdapter.buildSpawn', () => {
     expect(recipe.env.ELECTRON_RUN_AS_NODE).toBeUndefined();
   });
 
+  it('maps autonomy profiles to permission modes (E6-01)', () => {
+    withCliOnPath();
+    const argsFor = (autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto') =>
+      claudeAdapter.buildSpawn({ cwd: tmp, sessionId: 's', stateDir: path.join(tmp, 'st'), autonomy }).args;
+    expect(argsFor('plan')).toEqual(['--permission-mode', 'plan']);
+    expect(argsFor('auto-edit')).toEqual(['--permission-mode', 'acceptEdits']);
+    expect(argsFor('full-auto')).toEqual(['--permission-mode', 'bypassPermissions']);
+    expect(argsFor('ask')).toEqual([]);
+    expect(argsFor(undefined)).toEqual([]);
+  });
+
   it('omits --settings when none provided', () => {
     withCliOnPath();
     const recipe = claudeAdapter.buildSpawn({

@@ -37,8 +37,11 @@ const api = {
   sessions: {
     pickFolder: (): Promise<string | null> => ipcRenderer.invoke('sessions:pickFolder'),
     isDirectory: (p: string): Promise<boolean> => ipcRenderer.invoke('sessions:isDirectory', p),
-    create: (opts: { folder: string; title: string }): Promise<SessionRecordDto> =>
-      ipcRenderer.invoke('sessions:create', opts),
+    create: (opts: {
+      folder: string;
+      title: string;
+      autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
+    }): Promise<SessionRecordDto> => ipcRenderer.invoke('sessions:create', opts),
     list: (): Promise<SessionRecordDto[]> => ipcRenderer.invoke('sessions:list'),
     kill: (id: string): Promise<void> => ipcRenderer.invoke('sessions:kill', id),
     rename: (id: string, title: string): Promise<SessionRecordDto | undefined> =>
@@ -53,6 +56,14 @@ const api = {
       ipcRenderer.on('sessions:usage', h);
       return () => ipcRenderer.removeListener('sessions:usage', h);
     },
+  },
+  preflight: {
+    check: (): Promise<{
+      cliPath: string | null;
+      version: string | null;
+      configPresent: boolean;
+      ok: boolean;
+    }> => ipcRenderer.invoke('preflight:check'),
   },
   git: {
     status: (folder: string): Promise<unknown> => ipcRenderer.invoke('git:status', folder),

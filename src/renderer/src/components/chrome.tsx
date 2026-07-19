@@ -26,6 +26,8 @@ export function TitleBar(props: {
   onLang: (l: LanguageChoice) => void;
   notifEnabled: boolean;
   onToggleNotif: () => void;
+  autonomy: string;
+  onCycleAutonomy: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   return (
@@ -35,6 +37,9 @@ export function TitleBar(props: {
         {t('titlebar.version', { version: props.version })}
       </span>
       <span style={{ flex: 1 }} />
+      <Chip selected={false} onClick={props.onCycleAutonomy}>
+        {t(`autonomy.${props.autonomy}`)}
+      </Chip>
       <Chip selected={props.notifEnabled} onClick={props.onToggleNotif}>
         {props.notifEnabled ? t('titlebar.notifOn') : t('titlebar.notifOff')}
       </Chip>
@@ -198,12 +203,21 @@ export function SessionsRail(props: {
   );
 }
 
-export function StatusBar(props: { count: number; theme: string }): React.JSX.Element {
+export function StatusBar(props: {
+  count: number;
+  theme: string;
+  cliVersion?: string | null;
+}): React.JSX.Element {
   const { t } = useTranslation();
   return (
     <footer style={{ ...barStyle, borderBlockEnd: 'none', borderBlockStart: '1px solid var(--border)', fontSize: 11, color: 'var(--muted)' }}>
       <span>{t('statusbar.sessions', { count: props.count })}</span>
       <span style={{ flex: 1 }} />
+      {props.cliVersion && (
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}>
+          {t('preflight.version', { version: props.cliVersion })}
+        </span>
+      )}
       <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}>
         {t('statusbar.theme', { theme: props.theme })}
       </span>

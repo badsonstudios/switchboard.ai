@@ -114,6 +114,14 @@ export const claudeAdapter: ProviderAdapter = {
       args.push('--settings', settingsPath);
     }
     if (options.resumeSessionId) args.push('--resume', options.resumeSessionId);
+    // §5.9 autonomy profiles -> CLI permission modes ('ask' = CLI default)
+    const mode = {
+      plan: 'plan',
+      ask: null,
+      'auto-edit': 'acceptEdits',
+      'full-auto': 'bypassPermissions',
+    }[options.autonomy ?? 'ask'];
+    if (mode) args.push('--permission-mode', mode);
     return {
       command: cli,
       args,
