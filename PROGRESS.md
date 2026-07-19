@@ -4,9 +4,10 @@
 > A fresh session reads this file and knows exactly where things stand.
 
 **Milestone:** Spike 01 - Foundations (issues #1–#8)
-**In progress:** nothing mid-flight
-**Next up:** S-02 — Settings injection at spawn (#2)
-**Branch:** main
+**In progress:** S-02 — Settings injection at spawn (#2) — started 2026-07-19;
+probes PASS, review done + fixes applied, awaiting Gate 2 (commit approval)
+**Next up:** S-03 — Hook round-trip & decision semantics (#3)
+**Branch:** feature/s-02-settings-injection
 
 ## Blockers / open questions for Dan
 
