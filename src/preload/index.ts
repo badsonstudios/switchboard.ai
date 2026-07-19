@@ -54,6 +54,11 @@ const api = {
       return () => ipcRenderer.removeListener('sessions:usage', h);
     },
   },
+  git: {
+    status: (folder: string): Promise<unknown> => ipcRenderer.invoke('git:status', folder),
+    fileVersions: (folder: string, file: string): Promise<{ original: string; modified: string }> =>
+      ipcRenderer.invoke('git:fileVersions', folder, file),
+  },
   notifications: {
     getPrefs: (): Promise<{ enabled: boolean; quietStart?: string; quietEnd?: string }> =>
       ipcRenderer.invoke('notifications:getPrefs'),

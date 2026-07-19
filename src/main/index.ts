@@ -13,6 +13,7 @@ import { TranscriptWatcher } from './transcripts/watcher';
 import { registerSessionIpc } from './sessions/ipc';
 import { EventFeed } from './events/feed';
 import { Notifier } from './events/notifier';
+import { GitService } from './git/git-service';
 
 // Safe-by-default for every window this app will ever open (§5.29 posture).
 app.enableSandbox();
@@ -156,6 +157,11 @@ app
       bodyFor: (e) => e.kind.replace(/-/g, ' '),
     });
     feed.onEvent((e) => notifier.handle(e));
+    const gitService = new GitService();
+    ipcMain.handle('git:status', (_e, folder: string) => gitService.status(folder));
+    ipcMain.handle('git:fileVersions', (_e, folder: string, file: string) =>
+      gitService.fileVersions(folder, file)
+    );
     ipcMain.handle('notifications:getPrefs', () => workspace.getNotificationPrefs());
     ipcMain.handle('notifications:setPrefs', (_e, p) => {
       workspace.setNotificationPrefs(p);
