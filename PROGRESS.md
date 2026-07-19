@@ -7,8 +7,9 @@
 **Milestone:** Phase 1 - MVP (issues #12–#35, filed 2026-07-19)
 **AUTOPILOT RUN 2 ACTIVE** — started 2026-07-19 after Spike 01 merged (PR #11,
 all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
-**In progress:** P1-E3-03 — Session identity v1 (#26)
-**Next up:** P1-E3-04 — New-session flows (#27)
+**In progress:** P1-E4-01 — Event feed v1 (#29)
+**Next up:** P1-E4-02 — Notifications v1 (#30)
+**E3 epic: COMPLETE** (#24–#28)
 **E1+E2 epics: COMPLETE** (#12–#23; E2 epic-review fixes landed, all live
 checks PASS: check:pty / check:adapter / check:hooks / check:transcripts)
 **E1 epic: COMPLETE** (#12–#17 all done, CI green)
@@ -23,6 +24,16 @@ checks PASS: check:pty / check:adapter / check:hooks / check:transcripts)
 
 ## Log
 
+- 2026-07-19 — **P1-E3-05 done** (autopilot run 2; E3 epic complete): rail
+  rows show live status dots (state-machine statuses → status tokens),
+  click-to-focus via GridController. **[Dan eyeball]: rail-reflects-live-state
+  through a real work cycle.**
+- 2026-07-19 — **P1-E3-04 done** (autopilot run 2): drag-folder-onto-window →
+  validated → running session card (webUtils path resolution); picker + drop
+  share one create path.
+- 2026-07-19 — **P1-E3-03 done** (autopilot run 2): identity kit — accent
+  auto-assign (8 distinct, tested), lang badges, shared IdentityChip in rail +
+  card tabs, double-click rename.
 - 2026-07-19 — **P1-E3-02 done** (autopilot run 2): terminal panes — session
   core bootstrapped in main (PtyService+SessionManager+HookListener+
   TranscriptWatcher wired at app start), full session/PTY IPC surface,

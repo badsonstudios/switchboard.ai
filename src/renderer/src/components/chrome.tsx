@@ -52,11 +52,23 @@ export interface RailSession {
   title: string;
   accent?: string;
   badge?: string;
+  status?: string;
 }
+
+const STATUS_TOKEN: Record<string, string> = {
+  starting: 'var(--status-idle)',
+  working: 'var(--status-working)',
+  'needs-input': 'var(--status-needs-input)',
+  'needs-permission': 'var(--status-needs-permission)',
+  idle: 'var(--status-idle)',
+  done: 'var(--status-done)',
+  crashed: 'var(--status-crashed)',
+};
 
 export function SessionsRail(props: {
   sessions: RailSession[];
   onRename: (id: string, title: string) => void;
+  onFocus: (id: string) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [editing, setEditing] = React.useState<string | null>(null);
@@ -90,6 +102,7 @@ export function SessionsRail(props: {
       {props.sessions.map((s) => (
         <div
           key={s.id}
+          onClick={() => props.onFocus(s.id)}
           onDoubleClick={() => {
             setEditing(s.id);
             setDraft(s.title);
@@ -99,6 +112,10 @@ export function SessionsRail(props: {
             padding: '6px 8px 6px 12px',
             borderRadius: 'var(--radius-chip)',
             marginBlockEnd: 2,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
           }}
         >
           <span
@@ -136,7 +153,22 @@ export function SessionsRail(props: {
               }}
             />
           ) : (
-            <IdentityChip title={s.title} accent={s.accent} badge={s.badge} />
+            <>
+              <span style={{ flex: 1, minInlineSize: 0 }}>
+                <IdentityChip title={s.title} accent={s.accent} badge={s.badge} />
+              </span>
+              <span
+                aria-label={s.status}
+                title={s.status}
+                style={{
+                  inlineSize: 7,
+                  blockSize: 7,
+                  borderRadius: '50%',
+                  background: STATUS_TOKEN[s.status ?? ''] ?? 'var(--faint)',
+                  flexShrink: 0,
+                }}
+              />
+            </>
           )}
         </div>
       ))}

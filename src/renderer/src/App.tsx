@@ -62,6 +62,7 @@ export function App(): React.JSX.Element {
         title: s.identity.title,
         accent: s.identity.accentColor,
         badge: s.identity.langBadge,
+        status: s.status,
       }))
     );
   }, []); // bridge is stable for the window's lifetime
@@ -93,6 +94,7 @@ export function App(): React.JSX.Element {
           onRename={(id, title) => {
             void bridge.sessions?.rename?.(id, title).then(() => refreshSessions());
           }}
+          onFocus={(id) => grid.current?.focusSession(id)}
         />
         <SessionGrid
           theme={theme}
