@@ -4,12 +4,12 @@
 > A fresh session reads this file and knows exactly where things stand.
 
 **Milestone:** Spike 01 - Foundations (issues #1–#8)
-**AUTOPILOT RUN COMPLETE (2026-07-19)** — Spike 01 finished, S-03→S-08 all ✅
-on branch `auto/spike-01-foundations`, draft PR #11 awaiting Dan's review +
-merge. **Every mechanism verdict: GO; approval path: HOOK PATH.**
-**In progress:** nothing — milestone boundary reached (autopilot stop point)
-**Next up:** Dan reviews/merges PR #11 → `/pm file-issues Phase 1`
-**Branch:** auto/spike-01-foundations (do not build on it after merge)
+**Milestone:** Phase 1 - MVP (issues #12–#35, filed 2026-07-19)
+**AUTOPILOT RUN 2 ACTIVE** — started 2026-07-19 after Spike 01 merged (PR #11,
+all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
+**In progress:** P1-E1-01 — Electron scaffold (#12)
+**Next up:** P1-E1-02 — CI pipeline (#13)
+**Branch:** auto/phase-1-mvp
 
 ## Blockers / open questions for Dan
 

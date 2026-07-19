@@ -1,5 +1,7 @@
 # Phase 1 — Kill the Five Windows (MVP)
 
+> **Milestone:** `Phase 1 - MVP` (issues #12–#35, filed 2026-07-19).
+
 **Goal:** one window replaces the owner's five VS Code windows for daily work.
 Sessions in arbitrary folders, real terminals, status at a glance, notified when
 needed, basic diffs. Daily-driver usable at the end of this phase — by the
