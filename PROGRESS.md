@@ -7,9 +7,10 @@
 **Milestone:** Phase 1 - MVP (issues #12–#35, filed 2026-07-19)
 **AUTOPILOT RUN 2 ACTIVE** — started 2026-07-19 after Spike 01 merged (PR #11,
 all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
-**In progress:** E2 epic review pass, then P1-E3-01 — Main window layout (#24)
-**Next up:** E3 UI shell (#24–#28)
-**E2 epic: COMPLETE** (#18–#23 all done)
+**In progress:** P1-E3-01 — Main window layout (#24)
+**Next up:** P1-E3-02 — Terminal pane (#25)
+**E1+E2 epics: COMPLETE** (#12–#23; E2 epic-review fixes landed, all live
+checks PASS: check:pty / check:adapter / check:hooks / check:transcripts)
 **E1 epic: COMPLETE** (#12–#17 all done, CI green)
 **Branch:** auto/phase-1-mvp
 
@@ -22,6 +23,14 @@ all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
 
 ## Log
 
+- 2026-07-19 — **E2 epic review fixes** (autopilot run 2): 2 blockers fixed —
+  transcript binding (case-sensitive slug hard gate would silently never bind
+  on real paths; now case-insensitive prefilter + widen fallback, head-cwd
+  authority, NEW check:transcripts proves it live) and create(settingsFor)
+  (integrated spawn-with-hooks path now exists and check:hooks runs it:
+  create→real PTY→TUI→hook-driven working→done). Kill maps to done not
+  crashed (proven live); crashed terminal; subscriber isolation; node
+  resolution for claude.exe installs; misc hardening.
 - 2026-07-19 — **P1-E2-06 done** (autopilot run 2; E2 epic complete):
   TranscriptWatcher — recursive scan incl. nested subagents/ + meta.json,
   binding validated against cwd/sessionId (race fix; pre-existing files never
