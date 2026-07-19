@@ -37,6 +37,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     const fe = deps.feed.ingest(change);
     if (fe) send('feed:event', fe);
   });
+  manager.onSessionExit((e) => send('sessions:exited', e));
   transcripts.onUpdate((snap) => send('sessions:usage', snap));
 
   ipcMain.handle('feed:list', () => deps.feed.list());
@@ -99,7 +100,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     feeds.delete(id);
     hooks.unregisterSession(id);
     transcripts.unwatch(id);
-    manager.kill(id);
+    // kill the live PTY (if any), then drop the record. Both are idempotent
+    // and must never reject — closing a card is fail-open.
+    try {
+      ptys.remove(id);
+    } catch {
+      /* already gone */
+    }
+    manager.remove(id);
   });
 
   // attach: replay scrollback, then stream. Returns the snapshot (utf8).
@@ -118,10 +126,9 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   });
 
   ipcMain.on('pty:input', (_e, id: string, data: string) => {
-    const s = ptys.get(id);
-    if (!s) return;
-    s.write(data);
-    manager.apply(id, { kind: 'user-input' });
+    // Keystrokes are forwarded to the PTY but do NOT drive status — only the
+    // CLI's own hooks do (a keystroke is not a submitted prompt).
+    ptys.get(id)?.write(data);
   });
 
   ipcMain.on('pty:resize', (_e, id: string, cols: number, rows: number) => {

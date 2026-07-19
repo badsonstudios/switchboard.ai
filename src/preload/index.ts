@@ -56,6 +56,11 @@ const api = {
       ipcRenderer.on('sessions:usage', h);
       return () => ipcRenderer.removeListener('sessions:usage', h);
     },
+    onExited: (cb: (e: { sessionId: string; code: number; crashed: boolean }) => void): (() => void) => {
+      const h = (_e: unknown, x: { sessionId: string; code: number; crashed: boolean }) => cb(x);
+      ipcRenderer.on('sessions:exited', h);
+      return () => ipcRenderer.removeListener('sessions:exited', h);
+    },
   },
   preflight: {
     check: (): Promise<{

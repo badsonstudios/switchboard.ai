@@ -51,19 +51,36 @@ export function transition(current: SessionStatus, ev: SessionEvent): Transition
   // record). Late hook POSTs racing in after a crash must not resurrect it.
   if (current === 'crashed') return stay('ignored-after-crash');
 
+  // exit is always meaningful, even from a terminal state.
+  if (ev.kind === 'exit') {
+    // done -> exit(0) is a normal wind-down, not a crash
+    return ev.code === 0 || current === 'done' ? to('done') : to('crashed');
+  }
+
+  // A completed turn is TURN-TERMINAL: only a genuinely new turn leaves it.
+  // Real observed bug (ClaudeMon): after Stop->done, an idle Notification and
+  // then a stray keystroke walked done -> needs-input -> working, so a session
+  // that had finished showed "working" forever. A new turn always opens with
+  // UserPromptSubmit (or a tool starting); idle notifications, subagent stops,
+  // and keystrokes are not new turns.
+  if (current === 'done') {
+    if (ev.kind === 'hook' && (ev.event === 'UserPromptSubmit' || ev.event === 'PreToolUse')) {
+      return to('working');
+    }
+    if (ev.kind === 'permission-held') return to('needs-permission');
+    return stay('idle-after-done');
+  }
+
   switch (ev.kind) {
-    case 'exit':
-      // done -> exit(0) is a normal wind-down, not a crash
-      return ev.code === 0 || current === 'done' ? to('done') : to('crashed');
     case 'permission-held':
       return to('needs-permission');
     case 'permission-resolved':
       return to('working');
     case 'user-input':
-      // typing answers whatever was being waited on
-      return current === 'needs-input' || current === 'needs-permission' || current === 'idle'
-        ? to('working')
-        : stay();
+      // A keystroke is NOT a submitted prompt — it must not change status.
+      // The UserPromptSubmit hook marks 'working' on actual submit; answering
+      // a permission/input prompt is reflected by the subsequent tool hooks.
+      return stay('keystroke');
     case 'hook':
       switch (ev.event) {
         case 'SessionStart':

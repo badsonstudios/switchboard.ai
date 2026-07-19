@@ -93,6 +93,23 @@ describe('state machine vs the recorded real cycle (S-06 artifact)', () => {
     expect(transition('working', { kind: 'permission-held' }).status).toBe('needs-permission');
     expect(transition('needs-permission', { kind: 'permission-resolved' }).status).toBe('working');
   });
+
+  it('done is turn-terminal: idle notifications and keystrokes never revive it', () => {
+    // the real ClaudeMon bug: done -> needs-input -> working via a stray key
+    expect(
+      transition('done', { kind: 'hook', event: 'Notification', message: 'Claude is waiting' })
+    ).toMatchObject({ status: 'done', changed: false });
+    expect(transition('done', { kind: 'user-input' })).toMatchObject({ status: 'done', changed: false });
+    expect(transition('done', { kind: 'hook', event: 'SubagentStop' })).toMatchObject({ status: 'done' });
+    expect(transition('done', { kind: 'hook', event: 'PostToolUse' })).toMatchObject({ status: 'done' });
+    // ...but a genuinely new turn (UserPromptSubmit) does leave done
+    expect(transition('done', { kind: 'hook', event: 'UserPromptSubmit' }).status).toBe('working');
+  });
+
+  it('a keystroke never forces working (it is not a submitted prompt)', () => {
+    expect(transition('needs-input', { kind: 'user-input' })).toMatchObject({ status: 'needs-input', changed: false });
+    expect(transition('working', { kind: 'user-input' })).toMatchObject({ status: 'working', changed: false });
+  });
 });
 
 describe('SessionManager (done-when: observable transitions through the cycle)', () => {
@@ -140,5 +157,26 @@ describe('SessionManager (done-when: observable transitions through the cycle)',
 
   it('late events for removed sessions are dropped silently', () => {
     expect(() => mgr.apply('ghost', { kind: 'hook', event: 'Stop' })).not.toThrow();
+  });
+
+  it('onSessionExit fires: kill = not crashed, nonzero-without-kill = crashed', () => {
+    const exits: Array<{ crashed: boolean; code: number }> = [];
+    mgr.onSessionExit((e) => exits.push({ crashed: e.crashed, code: e.code }));
+
+    const a = mgr.create(identity);
+    mgr.kill(a.id); // FakePtys.kill -> exit(0)
+    expect(exits.at(-1)).toEqual({ crashed: false, code: 0 });
+
+    const b = mgr.create(identity);
+    ptys.exitHandlers.get(b.id)!(1); // spontaneous nonzero exit = a crash
+    expect(exits.at(-1)).toEqual({ crashed: true, code: 1 });
+  });
+
+  it('remove drops the record so it leaves the list (card closed)', () => {
+    const a = mgr.create(identity);
+    expect(mgr.get(a.id)).toBeDefined();
+    mgr.remove(a.id);
+    expect(mgr.get(a.id)).toBeUndefined();
+    expect(mgr.list().find((s) => s.id === a.id)).toBeUndefined();
   });
 });

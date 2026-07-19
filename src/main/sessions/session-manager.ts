@@ -54,9 +54,16 @@ export interface StatusChange {
   at: string;
 }
 
+export interface SessionExit {
+  sessionId: string;
+  code: number;
+  crashed: boolean;
+}
+
 export class SessionManager {
   private readonly sessions = new Map<string, SessionRecord>();
   private readonly listeners = new Set<(c: StatusChange) => void>();
+  private readonly exitListeners = new Set<(e: SessionExit) => void>();
   private readonly history: StatusChange[] = [];
 
   constructor(
@@ -112,7 +119,15 @@ export class SessionManager {
       record.exitCode = code;
       // intentional kills are wind-downs, not crashes (ConPTY termination
       // reports nonzero codes)
+      const crashed = !record.killRequested && code !== 0;
       this.apply(id, { kind: 'exit', code: record.killRequested ? 0 : code });
+      for (const l of this.exitListeners) {
+        try {
+          l({ sessionId: id, code, crashed });
+        } catch (err) {
+          this.log.error('exit listener threw', { sessionId: id, error: String(err) });
+        }
+      }
     });
     this.log.info('session created', { sessionId: id, folder: identity.folder, pid: proc.pid, provider: identity.providerId });
     return { ...record };
@@ -123,6 +138,15 @@ export class SessionManager {
     r.killRequested = true;
     this.ptys.remove(id);
     this.log.info('session killed', { sessionId: id });
+  }
+
+  /** Drop a session record entirely (card closed) — kills the PTY if alive. */
+  remove(id: string): void {
+    const r = this.sessions.get(id);
+    if (!r) return;
+    r.killRequested = true;
+    this.sessions.delete(id);
+    this.log.info('session removed', { sessionId: id });
   }
 
   restart(id: string): SessionRecord {
@@ -192,6 +216,11 @@ export class SessionManager {
   onStatusChange(l: (c: StatusChange) => void): () => void {
     this.listeners.add(l);
     return () => this.listeners.delete(l);
+  }
+
+  onSessionExit(l: (e: SessionExit) => void): () => void {
+    this.exitListeners.add(l);
+    return () => this.exitListeners.delete(l);
   }
 
   private mustGet(id: string): SessionRecord {

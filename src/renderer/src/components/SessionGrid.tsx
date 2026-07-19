@@ -18,6 +18,7 @@ export interface CardParams {
   sessionId?: string;
   accent?: string;
   badge?: string;
+  folder?: string;
 }
 
 function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element {
@@ -36,12 +37,39 @@ function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element 
 function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Element {
   const { t } = useTranslation();
   const [visible, setVisible] = React.useState<boolean>(props.api.isVisible);
+  const [exited, setExited] = React.useState<{ code: number; crashed: boolean } | null>(null);
   React.useEffect(() => {
     const d = props.api.onDidVisibilityChange((e) => setVisible(e.isVisible));
     return () => d.dispose();
   }, [props.api]);
 
   const sessionId = props.params?.sessionId;
+  const folder = props.params?.folder;
+
+  // a dead session's card must be dismissable, not a stuck blank terminal
+  React.useEffect(() => {
+    if (!sessionId) return;
+    return window.switchboard.sessions.onExited((e) => {
+      if (e.sessionId === sessionId) setExited({ code: e.code, crashed: e.crashed });
+    });
+  }, [sessionId]);
+
+  const closeSelf = (): void => {
+    const panel = props.containerApi.getPanel(props.api.id);
+    if (panel) props.containerApi.removePanel(panel); // onDidRemovePanel -> kill
+  };
+  const restartSelf = (): void => {
+    if (!folder) return closeSelf();
+    void window.switchboard.sessions.create({ folder, title: props.api.title ?? folder }).then((record) => {
+      props.containerApi.addPanel({
+        id: `session-${record.id}`,
+        component: 'sessionCard',
+        title: props.api.title ?? folder,
+        params: { sessionId: record.id, accent: record.identity.accentColor, badge: record.identity.langBadge, folder },
+      });
+      closeSelf();
+    });
+  };
   return (
     <div
       style={{
@@ -65,14 +93,59 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         }}
       />
       {sessionId ? (
-        <div style={{ flex: 1, paddingInlineStart: 3, minInlineSize: 0 }}>
+        <div style={{ flex: 1, paddingInlineStart: 3, minInlineSize: 0, position: 'relative' }}>
           <TerminalPane sessionId={sessionId} visible={visible} />
+          {exited && (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background: 'color-mix(in srgb, var(--bg) 82%, transparent)',
+                display: 'grid',
+                placeItems: 'center',
+                gap: 10,
+                textAlign: 'center',
+              }}
+            >
+              <div>
+                <div style={{ color: 'var(--text)', fontSize: 13, marginBlockEnd: 4 }}>
+                  {t('grid.sessionEnded')}
+                </div>
+                <div style={{ color: 'var(--muted)', fontSize: 11, marginBlockEnd: 12 }}>
+                  {exited.crashed
+                    ? t('grid.exitCrashed', { code: exited.code })
+                    : t('grid.exitClean')}
+                </div>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                  <button onClick={restartSelf} style={overlayBtn(true)}>
+                    {t('grid.restart')}
+                  </button>
+                  <button onClick={closeSelf} style={overlayBtn(false)}>
+                    {t('grid.close')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <span style={{ margin: 'auto' }}>{t('grid.cardBody', { title: props.api.title })}</span>
       )}
     </div>
   );
+}
+
+function overlayBtn(primary: boolean): React.CSSProperties {
+  return {
+    background: primary ? 'var(--btn-primary-bg)' : 'var(--panel)',
+    color: primary ? 'var(--btn-primary-text)' : 'var(--text)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-chip)',
+    padding: '4px 14px',
+    cursor: 'pointer',
+    fontFamily: 'var(--font-ui)',
+    fontSize: 12,
+  };
 }
 
 function DiffPanel(props: IDockviewPanelProps<{ folder?: string; theme?: string }>): React.JSX.Element {
@@ -121,6 +194,7 @@ export function SessionGrid(props: {
         sessionId: record.id,
         accent: record.identity.accentColor,
         badge: record.identity.langBadge,
+        folder,
       } satisfies CardParams,
     });
   }, []);
@@ -171,6 +245,11 @@ export function SessionGrid(props: {
         report();
         window.switchboard.workspace.setLayout(api.toJSON());
       });
+      // closing a card (tab X or the overlay) ends its session — no orphans
+      api.onDidRemovePanel((panel) => {
+        const m = /^session-(.+)$/.exec(panel.id);
+        if (m) void window.switchboard.sessions.kill(m[1]);
+      });
 
       const saved = await window.switchboard.workspace.getLayout();
       if (saved) {
@@ -209,6 +288,7 @@ export function SessionGrid(props: {
             sessionId: record.id,
             accent: record.identity.accentColor,
             badge: record.identity.langBadge,
+            folder: seedFolder,
           } satisfies CardParams,
         });
       }
