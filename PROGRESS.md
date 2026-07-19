@@ -4,9 +4,9 @@
 > A fresh session reads this file and knows exactly where things stand.
 
 **Milestone:** Spike 01 - Foundations (issues #1–#8)
-**In progress:** nothing mid-flight (S-01 PR open, awaiting Dan's review/merge)
+**In progress:** nothing mid-flight
 **Next up:** S-02 — Settings injection at spawn (#2)
-**Branch:** feature/s-01-pty-host (PR → main)
+**Branch:** main
 
 ## Blockers / open questions for Dan
 
