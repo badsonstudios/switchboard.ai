@@ -8,6 +8,7 @@ import { PtyService } from '../pty/pty-service';
 import { HookListener } from '../hooks/hook-listener';
 import { TranscriptWatcher } from '../transcripts/watcher';
 import { Logger } from '../log/logger';
+import { assignAccent, detectProjectType } from './identity';
 
 export interface SessionIpcDeps {
   manager: SessionManager;
@@ -40,7 +41,15 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   ipcMain.handle('sessions:create', (_e, opts: { folder: string; title: string }) => {
     const record = manager.create(
-      { title: opts.title, folder: opts.folder, providerId: 'claude-code' },
+      {
+        title: opts.title,
+        folder: opts.folder,
+        providerId: 'claude-code',
+        accentColor: assignAccent(
+          manager.list().map((s) => s.identity.accentColor ?? '')
+        ),
+        langBadge: detectProjectType(opts.folder),
+      },
       { settingsFor: (id) => hooks.buildHookSettings(id) }
     );
     transcripts.watch(record.id, { cwd: opts.folder });
@@ -49,6 +58,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   });
 
   ipcMain.handle('sessions:list', () => manager.list());
+
+  ipcMain.handle('sessions:rename', (_e, id: string, title: string) => {
+    manager.rename(id, title);
+    return manager.get(id);
+  });
 
   ipcMain.handle('sessions:kill', (_e, id: string) => {
     feeds.get(id)?.();

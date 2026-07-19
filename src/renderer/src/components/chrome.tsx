@@ -5,6 +5,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { ThemePreference } from '../theme/theme';
 import { LanguageChoice } from '../i18n';
+import { IdentityChip } from './IdentityChip';
 
 const barStyle: React.CSSProperties = {
   background: 'var(--titlebar-bg)',
@@ -46,8 +47,20 @@ export function TitleBar(props: {
   );
 }
 
-export function SessionsRail(props: { cards: string[] }): React.JSX.Element {
+export interface RailSession {
+  id: string;
+  title: string;
+  accent?: string;
+  badge?: string;
+}
+
+export function SessionsRail(props: {
+  sessions: RailSession[];
+  onRename: (id: string, title: string) => void;
+}): React.JSX.Element {
   const { t } = useTranslation();
+  const [editing, setEditing] = React.useState<string | null>(null);
+  const [draft, setDraft] = React.useState('');
   return (
     <nav
       style={{
@@ -71,18 +84,20 @@ export function SessionsRail(props: { cards: string[] }): React.JSX.Element {
       >
         {t('rail.eyebrow')}
       </div>
-      {props.cards.length === 0 && (
+      {props.sessions.length === 0 && (
         <div style={{ color: 'var(--muted)', fontSize: 11 }}>{t('rail.empty')}</div>
       )}
-      {props.cards.map((id, i) => (
+      {props.sessions.map((s) => (
         <div
-          key={id}
+          key={s.id}
+          onDoubleClick={() => {
+            setEditing(s.id);
+            setDraft(s.title);
+          }}
           style={{
             position: 'relative',
             padding: '6px 8px 6px 12px',
             borderRadius: 'var(--radius-chip)',
-            fontSize: 12,
-            color: 'var(--text)',
             marginBlockEnd: 2,
           }}
         >
@@ -93,11 +108,36 @@ export function SessionsRail(props: { cards: string[] }): React.JSX.Element {
               insetBlockStart: 0,
               insetBlockEnd: 0,
               inlineSize: 3,
-              background: 'var(--accent-blue)',
+              background: s.accent ?? 'var(--faint)',
               borderRadius: 2,
             }}
           />
-          {t('grid.cardTitle', { n: i + 1 })}
+          {editing === s.id ? (
+            <input
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={() => setEditing(null)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  props.onRename(s.id, draft);
+                  setEditing(null);
+                }
+                if (e.key === 'Escape') setEditing(null);
+              }}
+              style={{
+                inlineSize: '100%',
+                background: 'var(--panel2)',
+                color: 'var(--text)',
+                border: '1px solid var(--border)',
+                borderRadius: 4,
+                fontSize: 12,
+                fontFamily: 'var(--font-ui)',
+              }}
+            />
+          ) : (
+            <IdentityChip title={s.title} accent={s.accent} badge={s.badge} />
+          )}
         </div>
       ))}
     </nav>

@@ -7,25 +7,48 @@ import {
   ThemePreference,
 } from './theme/theme';
 import { LanguageChoice, loadLanguage, setLanguage } from './i18n';
-import { TitleBar, SessionsRail, StatusBar } from './components/chrome';
+import { TitleBar, SessionsRail, StatusBar, RailSession } from './components/chrome';
 import { SessionGrid } from './components/SessionGrid';
 
 // Control-room shell (P1-E3-01): titlebar / rail / grid / statusbar.
 // Terminals (E3-02), identity kit (E3-03), and live badges (E3-05) land next.
 export function App(): React.JSX.Element {
   // fail-open: a broken preload bridge must degrade, not blank the window
-  const bridge = window.switchboard ?? {
-    platform: 'bridge unavailable',
-    appVersion: '?',
-    seedPanels: 0,
-    workspace: { getLayout: async () => null, setLayout: () => {} },
-  };
+  const bridge =
+    window.switchboard ??
+    ({
+      platform: 'bridge unavailable',
+      appVersion: '?',
+      seedPanels: 0,
+      seedSessionFolder: '',
+      workspace: { getLayout: async () => null, setLayout: () => {} },
+    } as unknown as typeof window.switchboard);
   const [pref, setPref] = useState<ThemePreference>(() => loadPreference());
   const [theme, setTheme] = useState<ThemeName>(() => applyPreference(loadPreference()));
   const [lang, setLang] = useState<LanguageChoice>(() => loadLanguage());
   const [cards, setCards] = useState<string[]>([]);
+  const [sessions, setSessions] = useState<RailSession[]>([]);
 
   useEffect(() => followSystemTheme(setTheme), []);
+
+  const refreshSessions = React.useCallback(async () => {
+    const list = await bridge.sessions?.list?.();
+    if (!list) return;
+    setSessions(
+      list.map((s) => ({
+        id: s.id,
+        title: s.identity.title,
+        accent: s.identity.accentColor,
+        badge: s.identity.langBadge,
+      }))
+    );
+  }, []); // bridge is stable for the window's lifetime
+
+  useEffect(() => {
+    void refreshSessions();
+    const off = bridge.sessions?.onStatus?.(() => void refreshSessions());
+    return off;
+  }, [cards, refreshSessions]); // re-sync when the grid's cards change
 
   return (
     <div style={{ blockSize: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -43,7 +66,12 @@ export function App(): React.JSX.Element {
         }}
       />
       <div style={{ flex: 1, display: 'flex', minBlockSize: 0 }}>
-        <SessionsRail cards={cards} />
+        <SessionsRail
+          sessions={sessions}
+          onRename={(id, title) => {
+            void bridge.sessions?.rename?.(id, title).then(() => refreshSessions());
+          }}
+        />
         <SessionGrid theme={theme} seedPanels={bridge.seedPanels ?? 0} onCardsChanged={setCards} />
       </div>
       <StatusBar count={cards.length} theme={theme} />

@@ -13,6 +13,8 @@ export interface SessionIdentity {
   title: string;
   folder: string;
   accentColor?: string;
+  /** project-type lang badge (§5.11), e.g. "TS", "Rs" */
+  langBadge?: string;
   providerId: string;
 }
 
@@ -161,6 +163,14 @@ export class SessionManager {
   setNativeSessionId(id: string, nativeId: string): void {
     const r = this.sessions.get(id);
     if (r) r.nativeSessionId = nativeId;
+  }
+
+  rename(id: string, title: string): void {
+    const r = this.mustGet(id);
+    const clean = title.trim();
+    if (!clean) return;
+    r.identity = { ...r.identity, title: clean };
+    this.log.info('session renamed', { sessionId: id, title: clean });
   }
 
   get(id: string): SessionRecord | undefined {

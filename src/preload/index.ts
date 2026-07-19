@@ -6,7 +6,13 @@ const seedSessionArg = process.argv.find((a) => a.startsWith('--switchboard-seed
 
 export interface SessionRecordDto {
   id: string;
-  identity: { title: string; folder: string; accentColor?: string; providerId: string };
+  identity: {
+    title: string;
+    folder: string;
+    accentColor?: string;
+    langBadge?: string;
+    providerId: string;
+  };
   status: string;
   createdAt: string;
   nativeSessionId?: string;
@@ -32,6 +38,8 @@ const api = {
       ipcRenderer.invoke('sessions:create', opts),
     list: (): Promise<SessionRecordDto[]> => ipcRenderer.invoke('sessions:list'),
     kill: (id: string): Promise<void> => ipcRenderer.invoke('sessions:kill', id),
+    rename: (id: string, title: string): Promise<SessionRecordDto | undefined> =>
+      ipcRenderer.invoke('sessions:rename', id, title),
     onStatus: (cb: (change: unknown) => void): (() => void) => {
       const h = (_e: unknown, c: unknown) => cb(c);
       ipcRenderer.on('sessions:status', h);

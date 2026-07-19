@@ -11,8 +11,28 @@ import {
 } from 'dockview-react';
 import 'dockview-react/dist/styles/dockview.css';
 import { TerminalPane } from './TerminalPane';
+import { IdentityChip } from './IdentityChip';
 
-function SessionCardPanel(props: IDockviewPanelProps<{ sessionId?: string }>): React.JSX.Element {
+export interface CardParams {
+  sessionId?: string;
+  accent?: string;
+  badge?: string;
+}
+
+function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element {
+  return (
+    <div style={{ paddingInline: 8, display: 'flex', alignItems: 'center', blockSize: '100%' }}>
+      <IdentityChip
+        title={props.api.title ?? ''}
+        accent={props.params?.accent}
+        badge={props.params?.badge}
+        compact
+      />
+    </div>
+  );
+}
+
+function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Element {
   const { t } = useTranslation();
   const [visible, setVisible] = React.useState<boolean>(props.api.isVisible);
   React.useEffect(() => {
@@ -39,7 +59,7 @@ function SessionCardPanel(props: IDockviewPanelProps<{ sessionId?: string }>): R
           insetBlockStart: 0,
           insetBlockEnd: 0,
           inlineSize: 3,
-          background: 'var(--accent-blue)',
+          background: props.params?.accent ?? 'var(--faint)',
           zIndex: 1,
         }}
       />
@@ -79,7 +99,11 @@ export function SessionGrid(props: {
       id: `session-${record.id}`,
       component: 'sessionCard',
       title,
-      params: { sessionId: record.id },
+      params: {
+        sessionId: record.id,
+        accent: record.identity.accentColor,
+        badge: record.identity.langBadge,
+      } satisfies CardParams,
     });
   }, []);
 
@@ -119,7 +143,11 @@ export function SessionGrid(props: {
           id: `session-${record.id}`,
           component: 'sessionCard',
           title,
-          params: { sessionId: record.id },
+          params: {
+            sessionId: record.id,
+            accent: record.identity.accentColor,
+            badge: record.identity.langBadge,
+          } satisfies CardParams,
         });
       }
       report();
@@ -156,6 +184,7 @@ export function SessionGrid(props: {
       <div style={{ flex: 1, padding: 'var(--grid-pad)' }}>
         <DockviewReact
           components={components}
+          defaultTabComponent={IdentityTab}
           onReady={(e: DockviewReadyEvent) => void onReady(e)}
           className={props.theme === 'daylight' ? 'dockview-theme-light' : 'dockview-theme-dark'}
         />
