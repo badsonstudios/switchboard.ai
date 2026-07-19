@@ -7,8 +7,9 @@
 **Milestone:** Phase 1 - MVP (issues #12–#35, filed 2026-07-19)
 **AUTOPILOT RUN 2 ACTIVE** — started 2026-07-19 after Spike 01 merged (PR #11,
 all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
-**In progress:** P1-E2-06 — TranscriptWatcher (#23)
-**Next up:** P1-E3-01 — Main window layout (#24)
+**In progress:** E2 epic review pass, then P1-E3-01 — Main window layout (#24)
+**Next up:** E3 UI shell (#24–#28)
+**E2 epic: COMPLETE** (#18–#23 all done)
 **E1 epic: COMPLETE** (#12–#17 all done, CI green)
 **Branch:** auto/phase-1-mvp
 
@@ -21,6 +22,13 @@ all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
 
 ## Log
 
+- 2026-07-19 — **P1-E2-06 done** (autopilot run 2; E2 epic complete):
+  TranscriptWatcher — recursive scan incl. nested subagents/ + meta.json,
+  binding validated against cwd/sessionId (race fix; pre-existing files never
+  adopted; transcript-absent-until-first-prompt tolerated), tolerant reader,
+  live usage totals/tools/files/lastActivity, subagent identity pickup.
+  Done-when tested: live-append token updates + malformed lines survive.
+  67 unit tests green.
 - 2026-07-19 — **P1-E2-05 done** (autopilot run 2): HookListener — §5.29
   floor (loopback + Host allowlist + per-session token; token delivered by
   ACL'd file path, never argv per S-03), instant-ack status hooks with
