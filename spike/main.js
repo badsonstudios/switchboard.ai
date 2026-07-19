@@ -20,6 +20,12 @@ function resolveSessionCwd() {
   return dir;
 }
 
+// S-02: extra CLI args (e.g. --settings <file>) via SPIKE_CLAUDE_ARGS.
+// Whitespace-split — fine for the spike, no spaces in our paths.
+function extraArgs() {
+  return (process.env.SPIKE_CLAUDE_ARGS || '').split(/\s+/).filter(Boolean);
+}
+
 // Spawn strategy probe (a finding in itself): try the npm .cmd shim directly,
 // fall back to cmd.exe /c. CLAUDE_CMD env overrides everything.
 function spawnClaude(cols, rows, cwd) {
@@ -31,11 +37,12 @@ function spawnClaude(cols, rows, cwd) {
     env: process.env,
     useConpty: true,
   };
+  const extra = extraArgs();
   const attempts = process.env.CLAUDE_CMD
-    ? [{ label: 'CLAUDE_CMD override', file: process.env.CLAUDE_CMD, args: [] }]
+    ? [{ label: 'CLAUDE_CMD override', file: process.env.CLAUDE_CMD, args: [...extra] }]
     : [
-        { label: 'direct claude.cmd', file: 'claude.cmd', args: [] },
-        { label: 'cmd.exe /c claude', file: 'cmd.exe', args: ['/c', 'claude'] },
+        { label: 'direct claude.cmd', file: 'claude.cmd', args: [...extra] },
+        { label: 'cmd.exe /c claude', file: 'cmd.exe', args: ['/c', 'claude', ...extra] },
       ];
   for (const a of attempts) {
     try {

@@ -15,7 +15,14 @@ npm run smoke     # headless-ish spawn check: PASS/FAIL + first-byte latency
 
 Session cwd defaults to `.claude/work_files/test-project/` (created on first
 run). Override with `SPIKE_CWD=<path>`. Override the spawn command with
-`CLAUDE_CMD=<path-to-exe>`.
+`CLAUDE_CMD=<path-to-exe>`. Pass extra CLI args (e.g. `--settings <file>`,
+see S-02) with `SPIKE_CLAUDE_ARGS="..."`.
+
+## S-02 settings-injection probes
+
+`bash spike/s02/run-probes.sh` — self-contained PASS/FAIL check that
+`--settings` injection fires hooks without touching the target project's
+`.claude/`. Findings: `findings/s-02-settings-injection.md`.
 
 ## S-01 interactive verification checklist
 
