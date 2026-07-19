@@ -38,6 +38,13 @@ UserPromptSubmit/Notification/SubagentStop/Stop → status line);
 `S06_ANSWER_DELAY_MS=90000` variant probes the Notification debounce.
 Findings: `findings/s-06-status-hooks.md`.
 
+## S-07 concurrency probe
+
+`cd spike && env -u ELECTRON_RUN_AS_NODE SPIKE_N=12 ./node_modules/electron/dist/electron.exe s07/multi-main.js`
+— N concurrent sessions + tailers, CPU/memory/jank report to
+`.claude/work_files/s07/`. Keep the window visible for a valid jank number.
+Findings: `findings/s-07-concurrency-perf.md`.
+
 ## S-04 / S-05 transcript probes
 
 `bash spike/s04/run-tail.sh` — transcript discovery + live tail (status line,

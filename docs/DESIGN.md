@@ -1154,9 +1154,12 @@ context transfer, and the attention queue work across monitors.
    @-references and drag-drop targets, but duplicates the CLI's own input line.
    Proposal: composer is optional per session; it forwards to the PTY stdin. Validate
    this feels right early in Phase 2.
-2. **Hook injection etiquette.** Writing into a project's `.claude/settings.local.json`
-   touches user files. Prefer `--settings` flag injection at spawn if it composes with
-   the user's existing settings; verify behavior.
+2. ~~Hook injection etiquette~~ — **RESOLVED** (Spike 01 / S-02, CLI 2.1.215):
+   `claude --settings <abs-file-path>` at spawn. Hooks fire, merge with
+   user/project settings is additive (both sources' hooks run for the same
+   events), target project's `.claude/` untouched (hash-verified). Caveats:
+   invalid settings files are silently ignored (validate before spawn); hook
+   commands run under Git Bash on Windows. `spike/findings/s-02-settings-injection.md`.
 3. **Transcript format stability.** JSONL transcript schema is not a public contract;
    parser must be defensive (owner's monitor app has experience here). Applies double
    to context-transfer Level 3, which also depends on transcript *storage layout*
@@ -1164,11 +1167,22 @@ context transfer, and the attention queue work across monitors.
    v2)*: defensive patterns now specified in §5.26 (tolerant reader + round-trip
    drift detector); drift is a named accepted risk with a monthly maintenance
    budget. Still open: whether Anthropic ever versions the schema
-   (anthropics/claude-code#53516).
+   (anthropics/claude-code#53516). *Spike 01 / S-04 verdict (2.1.215):
+   mechanism **GO** — discovery ~4s post-spawn (transcript created on first
+   prompt, not spawn), tail lag median 268ms, tolerant reader survives garbage
+   + six undocumented entry types; drift is real (Task→Agent tool rename
+   observed same version), so the §5.26 posture stands. Transcript has no
+   terminal done-marker — status authority is hooks (S-06).
+   `spike/findings/s-04-transcript-tailing.md`.*
 4. **Auto-accept sibling messages** default: off. What granularity of trust
    (per-pair? per-workspace?) once pipelines get real use?
-5. **Watcher fidelity.** Subagent sidechain data may lag or interleave; how much
-   live detail is reliably renderable? Prototype early.
+5. ~~Watcher fidelity~~ — **RESOLVED** (Spike 01 / S-05, CLI 2.1.215): full
+   live subagent visibility. Subagent transcripts are separate nested files
+   (`<session>/subagents/agent-<id>.jsonl` + `meta.json` sidecar with
+   agentType/description/toolUseId/spawnDepth); ~160ms tail lag; no
+   interleaving problem (separate files); completion via parent tool_result.
+   Layout is undocumented internals — same drift posture as OQ #3.
+   `spike/findings/s-05-sidechain-visibility.md`.
 6. **Name check.** "switchboard.ai" collision scan before any public release
    (fine for a private project regardless).
 7. ~~Resume across app restarts~~ — **RESOLVED** (§5.25): resume-on-focus
@@ -1184,10 +1198,16 @@ context transfer, and the attention queue work across monitors.
    — including merge-queue/merge-train/stacked-diff tooling as applied to a local
    single-dev fleet. Reclassified: requires an EMPIRICAL SPIKE (run 7-8 real agent
    branches against one main; design from what breaks), not more literature search.
-10. **PreToolUse decision semantics.** Can the hook response express everything the
-    TUI prompt offers (esp. "don't ask again" variants)? Early spike; determines
-    whether Approval surfaces (§5.16) use the clean hook path or PTY-keystroke
-    fallback. Also verify hook timeout behavior under a human-in-the-loop delay.
+10. ~~PreToolUse decision semantics~~ — **RESOLVED** (Spike 01 / S-03, CLI
+    2.1.215): **Approval surfaces use the HOOK PATH.** allow/deny/ask all work
+    end-to-end (headless + interactive TUI, observed); deny carries a feedback
+    message the model sees verbatim; "don't ask again" is NOT expressible in
+    hook output — switchboard implements it in its own layer (strictly more
+    flexible than the TUI's session-scoped option, which stays reachable via
+    keystroke fallback). Timeout budget: ~600s default (undocumented — set the
+    hook `timeout` field explicitly); 90s human hold verified; hook hang →
+    the normal TUI prompt engages cleanly at budget expiry; dead listener
+    fails open instantly. `spike/findings/s-03-hook-roundtrip.md`.
 11. **Tray-mode platform behavior.** Windows tray vs macOS dock/menu-bar vs Linux
     appindicator differ meaningfully; also decide default close-button behavior
     (quit vs minimize-to-tray) per platform convention.
@@ -1200,7 +1220,10 @@ context transfer, and the attention queue work across monitors.
 13. **Plan-chip extraction stability.** Can TodoWrite/plan state be reliably
     extracted from the JSONL transcript across CLI versions to power the §5.11
     plan-as-progress chip? Same defensive posture as OQ #3; degrade to the
-    static task label when extraction fails.
+    static task label when extraction fails. *Spike 01 / S-05 evidence
+    (2.1.215): viable — TodoWrite tool_use entries carry the full todo array;
+    live status transitions observed (in_progress→completed). Cross-version
+    stability remains the open half; degrade path unchanged.*
 14. **Fleet-restore confirm semantics.** One fleet-level "relaunch N agents?"
     confirm vs per-session gates (Zellij is per-pane): per-session is safer,
     batch keeps the two-gesture rule at 12 sessions. Where is the line?

@@ -45,10 +45,13 @@ E4 Events, status & notifications · E5 Git pane · E6 Lifecycle & autonomy
 ## E2 — Session core
 
 - **P1-E2-01 · PtyService — M.** node-pty wrapper (ConPTY/forkpty), spawn with
-  cwd/env, resize, kill, exit codes, scrollback cap from spike verdict.
+  cwd/env (scrub `ELECTRON_RUN_AS_NODE`, resolve CLI to absolute path — S-01),
+  resize, kill, exit codes, scrollback cap **5000** (S-07 verdict).
   *Done when:* spawn→resize→kill lifecycle is clean across 12 concurrent PTYs.
 - **P1-E2-02 · Claude Code adapter v1 — M.** Spawn via provider interface;
-  settings injection per S-02 verdict; env prep; resume args support.
+  settings injection per S-02 verdict (generated per-session file, absolute
+  path, validate JSON before spawn — invalid files are silently ignored; hook
+  commands in POSIX sh); env prep; resume args support.
   *Done when:* a session spawns in any chosen folder and `--resume` restores it.
 - **P1-E2-03 · SessionManager — M.** Create/kill/restart sessions; session
   registry with identity fields; state machine (working/needs-input/idle/done/
@@ -61,13 +64,19 @@ E4 Events, status & notifications · E5 Git pane · E6 Lifecycle & autonomy
   *Done when:* quit → relaunch reproduces the workspace exactly; a saved
   position on a missing display rescues into the main window.
 - **P1-E2-05 · HookListener — M (§5.29 floor).** Loopback bind, per-session
-  tokens, Host allowlist; Notification/Stop/SubagentStop → session state
-  machine; PreToolUse pass-through (approval UI is Phase 2 — Phase 1 leaves the
-  TUI prompt in charge).
+  tokens (NOT on argv — env or ACL'd file, S-03 note), Host allowlist;
+  Notification/Stop/SubagentStop → session state machine (S-06: Stop ~30ms;
+  Notification is a ~6s-debounced backup that never fires on fast answers —
+  needs-permission clears on the next hook event, none fires on acceptance);
+  short `timeout` on status hooks; PreToolUse pass-through (approval UI is
+  Phase 2 — Phase 1 leaves the TUI prompt in charge).
   *Done when:* status badges flip from hook events alone; a request without a
   valid token is rejected and logged.
-- **P1-E2-06 · TranscriptWatcher — M.** Tolerant tailer per S-04 patterns:
-  usage totals + last-activity per session.
+- **P1-E2-06 · TranscriptWatcher — M.** Tolerant tailer per S-04/S-05
+  patterns: recursive scan (nested `subagents/` files + meta.json), session
+  binding via new-file detection validated against `cwd`/`sessionId` (race is
+  real), transcript may not exist until first prompt; usage totals +
+  last-activity per session.
   *Done when:* per-session token counts update live and malformed lines never
   crash the watcher.
 
@@ -77,7 +86,8 @@ E4 Events, status & notifications · E5 Git pane · E6 Lifecycle & autonomy
   bar (per design handoff); Dockview integration for the grid.
   *Done when:* 1–8 session cards lay out in the grid, resizable, layout persists.
 - **P1-E3-02 · Terminal pane — M.** xterm.js in each card wired to PtyService;
-  focus management; hidden-pane render throttling per S-07 verdict.
+  focus management; hidden panes per S-07 verdict: don't render at all —
+  ring-buffer PTY bytes, attach xterm on focus.
   *Done when:* typing latency feels native with 8 sessions open (S7).
 - **P1-E3-03 · Session identity v1 — S (§5.11).** Title (folder-name default,
   editable), auto accent color, project-type icon; rendered identically in rail

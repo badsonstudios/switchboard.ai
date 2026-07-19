@@ -4,12 +4,12 @@
 > A fresh session reads this file and knows exactly where things stand.
 
 **Milestone:** Spike 01 - Foundations (issues #1–#8)
-**AUTOPILOT RUN ACTIVE** — started 2026-07-19, milestone Spike 01 (S-03→S-08),
-branch `auto/spike-01-foundations`, draft PR opens after first commit. Dan
-approved S-07's concurrent sessions. Run stops at milestone boundary.
-**In progress:** S-06 — Notification/Stop hooks → status events (#6)
-**Next up:** S-07 — Concurrency & perf probe (#7)
-**Branch:** auto/spike-01-foundations
+**AUTOPILOT RUN COMPLETE (2026-07-19)** — Spike 01 finished, S-03→S-08 all ✅
+on branch `auto/spike-01-foundations`, draft PR #11 awaiting Dan's review +
+merge. **Every mechanism verdict: GO; approval path: HOOK PATH.**
+**In progress:** nothing — milestone boundary reached (autopilot stop point)
+**Next up:** Dan reviews/merges PR #11 → `/pm file-issues Phase 1`
+**Branch:** auto/spike-01-foundations (do not build on it after merge)
 
 ## Blockers / open questions for Dan
 
@@ -22,6 +22,19 @@ approved S-07's concurrent sessions. Run stops at milestone boundary.
 
 ## Log
 
+- 2026-07-19 — **S-08 done** (autopilot; milestone complete):
+  `docs/plans/spike-01-findings.md` written; DESIGN.md OQ #2/#5/#10 resolved,
+  #3 verdict added, #13 evidence added; Phase 1 plan corrected (scrollback
+  5000, settings validation, Notification-as-backup, recursive tailer +
+  binding validation, hidden-panes-don't-render). Spike exit criteria all met.
+- 2026-07-19 — **S-07 done** (✅ GO, autopilot): 8/12 concurrent sessions —
+  idle 7.6%/27.8% of one core, ~420MB/session (CLI-owned), streaming peak 68%,
+  UI stall 15ms max (N=12's 939ms = occluded-window timer throttling
+  artifact). Findings: `spike/findings/s-07-concurrency-perf.md`
+- 2026-07-19 — **S-06 done** (✅ GO, autopilot): hook-only status cycle works;
+  Stop ~30ms after turn end; permission Notification debounced ~6s & skippable
+  → PreToolUse hold is needs-permission authority. Findings:
+  `spike/findings/s-06-status-hooks.md`
 - 2026-07-19 — **S-05 done** (✅ GO, autopilot): subagent transcripts are
   nested per-agent files (`<session>/subagents/agent-<id>.jsonl` + meta.json
   with agentType/description/toolUseId); live tail lag ~160ms; TodoWrite
