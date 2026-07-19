@@ -55,6 +55,7 @@ export function TitleBar(props: {
 export interface RailSession {
   id: string;
   title: string;
+  folder?: string;
   accent?: string;
   badge?: string;
   status?: string;
@@ -74,6 +75,7 @@ export function SessionsRail(props: {
   sessions: RailSession[];
   onRename: (id: string, title: string) => void;
   onFocus: (id: string) => void;
+  onDiff: (s: RailSession) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [editing, setEditing] = React.useState<string | null>(null);
@@ -161,6 +163,21 @@ export function SessionsRail(props: {
             <>
               <span style={{ flex: 1, minInlineSize: 0 }}>
                 <IdentityChip title={s.title} accent={s.accent} badge={s.badge} />
+              </span>
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  props.onDiff(s);
+                }}
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9,
+                  color: 'var(--muted)',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                {t('diff.open')}
               </span>
               <span
                 aria-label={s.status}

@@ -12,6 +12,7 @@ import {
 import 'dockview-react/dist/styles/dockview.css';
 import { TerminalPane } from './TerminalPane';
 import { IdentityChip } from './IdentityChip';
+import { DiffPane } from './DiffPane';
 
 export interface CardParams {
   sessionId?: string;
@@ -74,13 +75,24 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   );
 }
 
-const components = { sessionCard: SessionCardPanel };
+function DiffPanel(props: IDockviewPanelProps<{ folder?: string; theme?: string }>): React.JSX.Element {
+  return (
+    <DiffPane
+      folder={props.params?.folder ?? ''}
+      theme={props.params?.theme === 'daylight' ? 'daylight' : 'nordic'}
+    />
+  );
+}
+
+const components = { sessionCard: SessionCardPanel, diffPane: DiffPanel };
 
 export interface GridController {
   /** create a session in `folder` and add its card (drag-drop, rail actions) */
   addSessionCard: (folder: string) => Promise<void>;
   /** focus an existing session's card */
   focusSession: (sessionId: string) => void;
+  /** open (or focus) the per-session diff tab (E5-02) */
+  openDiff: (sessionId: string, folder: string, title: string) => void;
 }
 
 export function SessionGrid(props: {
@@ -117,9 +129,21 @@ export function SessionGrid(props: {
       focusSession: (sessionId) => {
         apiRef.current?.getPanel(`session-${sessionId}`)?.focus();
       },
+      openDiff: (sessionId, folder, title) => {
+        const api = apiRef.current;
+        if (!api) return;
+        const existing = api.getPanel(`diff-${sessionId}`);
+        if (existing) return existing.focus();
+        api.addPanel({
+          id: `diff-${sessionId}`,
+          component: 'diffPane',
+          title: t('diff.tabTitle', { title }),
+          params: { folder, theme: props.theme },
+        });
+      },
     };
     // eslint's exhaustive-deps plugin isn't installed; deps kept accurate by hand
-  }, [props.controller, addSessionCard]);
+  }, [props.controller, addSessionCard, props.theme, t]);
 
   const addCard = useCallback(async () => {
     // ⊕ flow: pick a folder, spawn, bind the card (E3-02/E3-04)

@@ -67,6 +67,7 @@ export function App(): React.JSX.Element {
       list.map((s) => ({
         id: s.id,
         title: s.identity.title,
+        folder: s.identity.folder,
         accent: s.identity.accentColor,
         badge: s.identity.langBadge,
         status: s.status,
@@ -108,6 +109,9 @@ export function App(): React.JSX.Element {
             void bridge.sessions?.rename?.(id, title).then(() => refreshSessions());
           }}
           onFocus={(id) => grid.current?.focusSession(id)}
+          onDiff={(s) => {
+            if (s.folder) grid.current?.openDiff(s.id, s.folder, s.title);
+          }}
         />
         <SessionGrid
           theme={theme}

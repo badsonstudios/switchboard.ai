@@ -20,6 +20,18 @@
     "cardBody": "{title} — session card; terminal arrives with E3-02",
     "cardTitle": "Session {n}"
   },
+  "diff": {
+    "tabTitle": "{title} · diff",
+    "open": "diff",
+    "notRepo": "Not a git repository",
+    "clean": "Working tree clean",
+    "badge": {
+      "new": "A",
+      "modified": "M",
+      "staged": "S",
+      "both": "SM"
+    }
+  },
   "feed": {
     "eyebrow": "Feed",
     "empty": "Attention events appear here",
