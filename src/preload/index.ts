@@ -54,6 +54,16 @@ const api = {
       return () => ipcRenderer.removeListener('sessions:usage', h);
     },
   },
+  notifications: {
+    getPrefs: (): Promise<{ enabled: boolean; quietStart?: string; quietEnd?: string }> =>
+      ipcRenderer.invoke('notifications:getPrefs'),
+    setPrefs: (p: {
+      enabled: boolean;
+      quietStart?: string;
+      quietEnd?: string;
+    }): Promise<{ enabled: boolean; quietStart?: string; quietEnd?: string }> =>
+      ipcRenderer.invoke('notifications:setPrefs', p),
+  },
   feed: {
     list: (): Promise<unknown[]> => ipcRenderer.invoke('feed:list'),
     onEvent: (cb: (e: unknown) => void): (() => void) => {

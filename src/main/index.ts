@@ -12,6 +12,7 @@ import { HookListener } from './hooks/hook-listener';
 import { TranscriptWatcher } from './transcripts/watcher';
 import { registerSessionIpc } from './sessions/ipc';
 import { EventFeed } from './events/feed';
+import { Notifier } from './events/notifier';
 
 // Safe-by-default for every window this app will ever open (§5.29 posture).
 app.enableSandbox();
@@ -147,12 +148,25 @@ app
       log.app.error('hook listener failed to start', { error: String(err) });
     });
     const win = createWindow();
+    const feed = new EventFeed();
+    const notifier = new Notifier({
+      getWindow: () => win,
+      getPrefs: () => workspace.getNotificationPrefs(),
+      titleFor: (sessionId) => manager.get(sessionId)?.identity.title ?? 'switchboard',
+      bodyFor: (e) => e.kind.replace(/-/g, ' '),
+    });
+    feed.onEvent((e) => notifier.handle(e));
+    ipcMain.handle('notifications:getPrefs', () => workspace.getNotificationPrefs());
+    ipcMain.handle('notifications:setPrefs', (_e, p) => {
+      workspace.setNotificationPrefs(p);
+      return workspace.getNotificationPrefs();
+    });
     registerSessionIpc({
       manager,
       ptys,
       hooks,
       transcripts,
-      feed: new EventFeed(),
+      feed,
       log: createLogger(sink, 'ipc'),
       getWindow: () => win,
     });

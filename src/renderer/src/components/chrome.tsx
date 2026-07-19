@@ -24,6 +24,8 @@ export function TitleBar(props: {
   onTheme: (p: ThemePreference) => void;
   lang: LanguageChoice;
   onLang: (l: LanguageChoice) => void;
+  notifEnabled: boolean;
+  onToggleNotif: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   return (
@@ -33,6 +35,9 @@ export function TitleBar(props: {
         {t('titlebar.version', { version: props.version })}
       </span>
       <span style={{ flex: 1 }} />
+      <Chip selected={props.notifEnabled} onClick={props.onToggleNotif}>
+        {props.notifEnabled ? t('titlebar.notifOn') : t('titlebar.notifOff')}
+      </Chip>
       {(['system', 'nordic', 'daylight'] as const).map((p) => (
         <Chip key={p} selected={p === props.pref} onClick={() => props.onTheme(p)}>
           {t(`theme.${p}`)}

@@ -6,7 +6,9 @@
     "scaffoldStatus": "scaffold OK — {platform} · v{version} · theme: {theme} ({pref})"
   },
   "titlebar": {
-    "version": "v{version}"
+    "version": "v{version}",
+    "notifOn": "🔔 on",
+    "notifOff": "🔕 off"
   },
   "rail": {
     "eyebrow": "Sessions",

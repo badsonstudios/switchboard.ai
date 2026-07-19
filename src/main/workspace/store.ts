@@ -26,15 +26,28 @@ export interface PersistedWindow extends WindowState {
   displayFingerprint: string;
 }
 
+export interface NotificationPrefsState {
+  enabled: boolean;
+  quietStart?: string;
+  quietEnd?: string;
+}
+
 export interface WorkspaceState {
   version: 1;
   sessions: PersistedSession[];
   window: PersistedWindow | null;
   /** opaque grid-layout JSON owned by the renderer (Dockview serialization) */
   layout: unknown;
+  notifications: NotificationPrefsState;
 }
 
-const EMPTY: WorkspaceState = { version: 1, sessions: [], window: null, layout: null };
+const EMPTY: WorkspaceState = {
+  version: 1,
+  sessions: [],
+  window: null,
+  layout: null,
+  notifications: { enabled: true },
+};
 
 /** Stable identity for a display arrangement (§7). */
 export function displayFingerprint(workAreas: Rectangle[]): string {
@@ -58,6 +71,7 @@ export class WorkspaceStore {
         sessions: Array.isArray(raw.sessions) ? raw.sessions.filter(isSaneSession) : [],
         window: sanitizeWindow(raw.window),
         layout: raw.layout ?? null,
+        notifications: sanitizeNotifications(raw.notifications),
       };
     } catch (err) {
       // corrupt/missing: back the corpse aside (post-mortem material), start fresh
@@ -105,6 +119,15 @@ export class WorkspaceStore {
     return this.state.layout;
   }
 
+  getNotificationPrefs(): NotificationPrefsState {
+    return { ...this.state.notifications };
+  }
+
+  setNotificationPrefs(p: NotificationPrefsState): void {
+    this.state.notifications = sanitizeNotifications(p);
+    this.saveSoon();
+  }
+
   /**
    * Geometry to restore for the current display arrangement. A saved position
    * on a missing display rescues to centered-on-primary (bounds: null).
@@ -149,6 +172,16 @@ function isSaneSession(s: unknown): s is PersistedSession {
     typeof x?.identity?.providerId === 'string' &&
     typeof x?.layoutSlot === 'number'
   );
+}
+
+function sanitizeNotifications(n: unknown): NotificationPrefsState {
+  if (typeof n !== 'object' || n === null) return { enabled: true };
+  const x = n as Partial<NotificationPrefsState>;
+  return {
+    enabled: x.enabled !== false,
+    ...(typeof x.quietStart === 'string' ? { quietStart: x.quietStart } : {}),
+    ...(typeof x.quietEnd === 'string' ? { quietEnd: x.quietEnd } : {}),
+  };
 }
 
 function sanitizeWindow(w: unknown): PersistedWindow | null {

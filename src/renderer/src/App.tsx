@@ -29,7 +29,13 @@ export function App(): React.JSX.Element {
   const [lang, setLang] = useState<LanguageChoice>(() => loadLanguage());
   const [cards, setCards] = useState<string[]>([]);
   const [sessions, setSessions] = useState<RailSession[]>([]);
+  const [notifEnabled, setNotifEnabled] = useState(true);
   const grid = React.useRef<GridController | null>(null);
+
+  useEffect(() => {
+    void bridge.notifications?.getPrefs?.().then((p) => setNotifEnabled(p.enabled));
+    // eslint's exhaustive-deps plugin isn't installed; bridge is stable
+  }, []);
 
   useEffect(() => followSystemTheme(setTheme), []);
 
@@ -87,6 +93,12 @@ export function App(): React.JSX.Element {
         onLang={(l) => {
           setLang(l);
           void setLanguage(l);
+        }}
+        notifEnabled={notifEnabled}
+        onToggleNotif={() => {
+          const next = !notifEnabled;
+          setNotifEnabled(next);
+          void bridge.notifications?.setPrefs?.({ enabled: next });
         }}
       />
       <div style={{ flex: 1, display: 'flex', minBlockSize: 0 }}>
