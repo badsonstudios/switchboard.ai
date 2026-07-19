@@ -4,15 +4,56 @@
 > A fresh session reads this file and knows exactly where things stand.
 
 **Milestone:** Spike 01 - Foundations (issues #1–#8)
-**In progress:** nothing mid-flight
-**Next up:** S-03 — Hook round-trip & decision semantics (#3)
-**Branch:** main
+**AUTOPILOT RUN COMPLETE (2026-07-19)** — Spike 01 finished, S-03→S-08 all ✅
+on branch `auto/spike-01-foundations`, draft PR #11 awaiting Dan's review +
+merge. **Every mechanism verdict: GO; approval path: HOOK PATH.**
+**In progress:** nothing — milestone boundary reached (autopilot stop point)
+**Next up:** Dan reviews/merges PR #11 → `/pm file-issues Phase 1`
+**Branch:** auto/spike-01-foundations (do not build on it after merge)
 
 ## Blockers / open questions for Dan
 
-- none
+- **Concurrent DESIGN.md edit detected during autopilot run** (12:29 local,
+  new "Cross-provider handoff" subsection after §5's context-transfer part) —
+  not written by the autopilot session. Left uncommitted and untouched;
+  autopilot commits exclude it. S-08's DESIGN.md open-question updates will
+  stage only autopilot hunks. Dan: commit your edit whenever — no conflict
+  expected (different sections).
 
 ## Log
+
+- 2026-07-19 — **S-08 done** (autopilot; milestone complete):
+  `docs/plans/spike-01-findings.md` written; DESIGN.md OQ #2/#5/#10 resolved,
+  #3 verdict added, #13 evidence added; Phase 1 plan corrected (scrollback
+  5000, settings validation, Notification-as-backup, recursive tailer +
+  binding validation, hidden-panes-don't-render). Spike exit criteria all met.
+- 2026-07-19 — **S-07 done** (✅ GO, autopilot): 8/12 concurrent sessions —
+  idle 7.6%/27.8% of one core, ~420MB/session (CLI-owned), streaming peak 68%,
+  UI stall 15ms max (N=12's 939ms = occluded-window timer throttling
+  artifact). Findings: `spike/findings/s-07-concurrency-perf.md`
+- 2026-07-19 — **S-06 done** (✅ GO, autopilot): hook-only status cycle works;
+  Stop ~30ms after turn end; permission Notification debounced ~6s & skippable
+  → PreToolUse hold is needs-permission authority. Findings:
+  `spike/findings/s-06-status-hooks.md`
+- 2026-07-19 — **S-05 done** (✅ GO, autopilot): subagent transcripts are
+  nested per-agent files (`<session>/subagents/agent-<id>.jsonl` + meta.json
+  with agentType/description/toolUseId); live tail lag ~160ms; TodoWrite
+  plan-state extraction viable (OQ #13). Findings:
+  `spike/findings/s-05-sidechain-visibility.md`
+- 2026-07-19 — **S-04 done** (✅ GO, autopilot): transcript discovered 3.9s
+  after spawn (slug mapping confirmed for :/ chars; new-file detection is the
+  real binding), tail lag 24–815ms (median 268ms), tolerant reader survives
+  garbage/unknown types, tokens/tools/files extractable. No terminal "done"
+  marker in transcript → hooks are status authority. Findings:
+  `spike/findings/s-04-transcript-tailing.md`
+- 2026-07-19 — **S-03 done** (✅ HOOK PATH, autopilot): full decision matrix
+  observed headless + interactive TUI. allow overrides default-deny; deny
+  carries reason verbatim to model; ask surfaces real TUI prompt; hook hang →
+  clean TUI fallback after ~600s default budget (config via timeout field —
+  90s hold verified); dead listener fails open instantly. §5.29 floor
+  verified (401/403). Findings: `spike/findings/s-03-hook-roundtrip.md`
+- 2026-07-19 — Autopilot run started: milestone Spike 01 (S-03→S-08), branch
+  `auto/spike-01-foundations`.
 
 - 2026-07-19 — **S-02 done** (✅ GO): `claude --settings <abs-file-path>` at
   spawn is the Phase 1 hook-injection mechanism — hooks fire, user settings

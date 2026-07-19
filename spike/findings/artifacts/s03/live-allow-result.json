@@ -1,0 +1,43 @@
+{
+  "scenario": "allow",
+  "steps": [
+    {
+      "name": "startup",
+      "atMs": 1132,
+      "matched": "? for shortcuts"
+    },
+    {
+      "name": "ready",
+      "timedOut": true
+    },
+    {
+      "name": "send-prompt",
+      "atMs": 21290,
+      "sinceStepStartMs": 154
+    },
+    {
+      "name": "submit",
+      "atMs": 22647,
+      "sinceStepStartMs": 156
+    },
+    {
+      "name": "model-finished",
+      "atMs": 32548,
+      "sinceStepStartMs": 8987
+    },
+    {
+      "name": "write-done",
+      "timedOut": true
+    },
+    {
+      "name": "exit",
+      "atMs": 122807,
+      "sinceStepStartMs": 155
+    }
+  ],
+  "promptCapture": null,
+  "promptLatencyMs": null,
+  "fileWritten": true,
+  "fileContent": "hello-allow",
+  "failed": false
+}
