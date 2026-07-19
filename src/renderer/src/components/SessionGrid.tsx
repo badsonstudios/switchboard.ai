@@ -10,19 +10,26 @@ import {
   IDockviewPanelProps,
 } from 'dockview-react';
 import 'dockview-react/dist/styles/dockview.css';
+import { TerminalPane } from './TerminalPane';
 
-function SessionCardPanel(props: IDockviewPanelProps): React.JSX.Element {
+function SessionCardPanel(props: IDockviewPanelProps<{ sessionId?: string }>): React.JSX.Element {
   const { t } = useTranslation();
+  const [visible, setVisible] = React.useState<boolean>(props.api.isVisible);
+  React.useEffect(() => {
+    const d = props.api.onDidVisibilityChange((e) => setVisible(e.isVisible));
+    return () => d.dispose();
+  }, [props.api]);
+
+  const sessionId = props.params?.sessionId;
   return (
     <div
       style={{
         blockSize: '100%',
-        display: 'grid',
-        placeItems: 'center',
         background: 'var(--card-bg)',
         color: 'var(--muted)',
         fontSize: 11,
         position: 'relative',
+        display: 'flex',
       }}
     >
       <span
@@ -33,9 +40,16 @@ function SessionCardPanel(props: IDockviewPanelProps): React.JSX.Element {
           insetBlockEnd: 0,
           inlineSize: 3,
           background: 'var(--accent-blue)',
+          zIndex: 1,
         }}
       />
-      <span>{t('grid.cardBody', { title: props.api.title })}</span>
+      {sessionId ? (
+        <div style={{ flex: 1, paddingInlineStart: 3, minInlineSize: 0 }}>
+          <TerminalPane sessionId={sessionId} visible={visible} />
+        </div>
+      ) : (
+        <span style={{ margin: 'auto' }}>{t('grid.cardBody', { title: props.api.title })}</span>
+      )}
     </div>
   );
 }
@@ -51,17 +65,23 @@ export function SessionGrid(props: {
   const apiRef = useRef<DockviewApi | null>(null);
   const counter = useRef(0);
 
-  const addCard = useCallback(() => {
+  const addCard = useCallback(async () => {
     const api = apiRef.current;
     if (!api) return;
+    // real session: pick a folder, spawn, bind the card to it (E3-02).
+    // Cancel -> no card. Full new-session dialog polish is E3-04.
+    const folder = await window.switchboard.sessions.pickFolder();
+    if (!folder) return;
+    const title = folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? folder;
+    const record = await window.switchboard.sessions.create({ folder, title });
     counter.current += 1;
-    const id = `card-${Date.now()}-${counter.current}`;
     api.addPanel({
-      id,
+      id: `session-${record.id}`,
       component: 'sessionCard',
-      title: t('grid.cardTitle', { n: api.panels.length + 1 }),
+      title,
+      params: { sessionId: record.id },
     });
-  }, [t]);
+  }, []);
 
   const onReady = useCallback(
     async (event: DockviewReadyEvent) => {
@@ -90,6 +110,18 @@ export function SessionGrid(props: {
           title: t('grid.cardTitle', { n: i + 1 }),
         });
       }
+      // scripted-check seam: one REAL session without the folder dialog
+      const seedFolder = window.switchboard.seedSessionFolder;
+      if (seedFolder) {
+        const title = seedFolder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? seedFolder;
+        const record = await window.switchboard.sessions.create({ folder: seedFolder, title });
+        api.addPanel({
+          id: `session-${record.id}`,
+          component: 'sessionCard',
+          title,
+          params: { sessionId: record.id },
+        });
+      }
       report();
     },
     [] // onReady fires exactly once; props.seedPanels is read at that moment
@@ -106,7 +138,7 @@ export function SessionGrid(props: {
         }}
       >
         <button
-          onClick={addCard}
+          onClick={() => void addCard()}
           style={{
             background: 'var(--chip)',
             color: 'var(--text)',

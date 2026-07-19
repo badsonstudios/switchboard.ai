@@ -2,17 +2,59 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 const versionArg = process.argv.find((a) => a.startsWith('--switchboard-version='));
 const seedArg = process.argv.find((a) => a.startsWith('--switchboard-seed-panels='));
+const seedSessionArg = process.argv.find((a) => a.startsWith('--switchboard-seed-session='));
 
-// The bridge grows with each subsystem (sessions, hooks, git...). Every
-// surface is promise/event based — no sync IPC.
+export interface SessionRecordDto {
+  id: string;
+  identity: { title: string; folder: string; accentColor?: string; providerId: string };
+  status: string;
+  createdAt: string;
+  nativeSessionId?: string;
+  pid?: number;
+  exitCode: number | null;
+}
+
+// The bridge grows with each subsystem. Every surface is promise/event based.
 const api = {
   appVersion: versionArg ? versionArg.split('=')[1] : 'unknown',
   platform: process.platform,
   /** scripted-check seam: pre-populate N placeholder cards at boot */
   seedPanels: seedArg ? Number(seedArg.split('=')[1]) || 0 : 0,
+  /** scripted-check seam: auto-create one real session in this folder */
+  seedSessionFolder: seedSessionArg ? seedSessionArg.split('=').slice(1).join('=') : '',
   workspace: {
     getLayout: (): Promise<unknown> => ipcRenderer.invoke('workspace:getLayout'),
     setLayout: (layout: unknown): void => ipcRenderer.send('workspace:setLayout', layout),
+  },
+  sessions: {
+    pickFolder: (): Promise<string | null> => ipcRenderer.invoke('sessions:pickFolder'),
+    create: (opts: { folder: string; title: string }): Promise<SessionRecordDto> =>
+      ipcRenderer.invoke('sessions:create', opts),
+    list: (): Promise<SessionRecordDto[]> => ipcRenderer.invoke('sessions:list'),
+    kill: (id: string): Promise<void> => ipcRenderer.invoke('sessions:kill', id),
+    onStatus: (cb: (change: unknown) => void): (() => void) => {
+      const h = (_e: unknown, c: unknown) => cb(c);
+      ipcRenderer.on('sessions:status', h);
+      return () => ipcRenderer.removeListener('sessions:status', h);
+    },
+    onUsage: (cb: (snap: unknown) => void): (() => void) => {
+      const h = (_e: unknown, s: unknown) => cb(s);
+      ipcRenderer.on('sessions:usage', h);
+      return () => ipcRenderer.removeListener('sessions:usage', h);
+    },
+  },
+  pty: {
+    attach: (id: string): Promise<string | null> => ipcRenderer.invoke('pty:attach', id),
+    detach: (id: string): void => ipcRenderer.send('pty:detach', id),
+    input: (id: string, data: string): void => ipcRenderer.send('pty:input', id, data),
+    resize: (id: string, cols: number, rows: number): void =>
+      ipcRenderer.send('pty:resize', id, cols, rows),
+    onData: (id: string, cb: (d: string) => void): (() => void) => {
+      const channel = `pty:data:${id}`;
+      const h = (_e: unknown, d: string) => cb(d);
+      ipcRenderer.on(channel, h);
+      return () => ipcRenderer.removeListener(channel, h);
+    },
   },
 };
 

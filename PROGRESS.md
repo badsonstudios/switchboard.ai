@@ -7,8 +7,8 @@
 **Milestone:** Phase 1 - MVP (issues #12–#35, filed 2026-07-19)
 **AUTOPILOT RUN 2 ACTIVE** — started 2026-07-19 after Spike 01 merged (PR #11,
 all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
-**In progress:** P1-E3-02 — Terminal pane (#25)
-**Next up:** P1-E3-03 — Session identity v1 (#26)
+**In progress:** P1-E3-03 — Session identity v1 (#26)
+**Next up:** P1-E3-04 — New-session flows (#27)
 **E1+E2 epics: COMPLETE** (#12–#23; E2 epic-review fixes landed, all live
 checks PASS: check:pty / check:adapter / check:hooks / check:transcripts)
 **E1 epic: COMPLETE** (#12–#17 all done, CI green)
@@ -23,6 +23,14 @@ checks PASS: check:pty / check:adapter / check:hooks / check:transcripts)
 
 ## Log
 
+- 2026-07-19 — **P1-E3-02 done** (autopilot run 2): terminal panes — session
+  core bootstrapped in main (PtyService+SessionManager+HookListener+
+  TranscriptWatcher wired at app start), full session/PTY IPC surface,
+  xterm-in-card with attach-on-visible + ring-buffer replay (S-07: hidden
+  panes ingest-only), + session button = folder picker → real spawn.
+  Scripted smoke: app boots, hook listener up, real claude session spawned
+  into a card, clean quit. **[Dan eyeball]: typing-latency feel with 8 live
+  sessions is manual verification** (S-07 numbers say it's fine).
 - 2026-07-19 — **P1-E3-01 done** (autopilot run 2): control-room shell —
   titlebar (theme/lang chips), sessions rail with accent stripes, Dockview
   card grid (dockview-react; v7 split core/react packages), status bar; all

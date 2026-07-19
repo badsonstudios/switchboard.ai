@@ -2,9 +2,15 @@ import { app, BrowserWindow, ipcMain, screen, shell } from 'electron';
 import path from 'path';
 import { windowOptionsFrom, WindowState } from './window-state';
 import { WorkspaceStore, displayFingerprint } from './workspace/store';
+import os from 'os';
 import { LogSink, createLogger } from './log/logger';
 import { registerBuiltinContributions } from './bootstrap';
 import { registry } from './extensibility/registry';
+import { PtyService } from './pty/pty-service';
+import { SessionManager } from './sessions/session-manager';
+import { HookListener } from './hooks/hook-listener';
+import { TranscriptWatcher } from './transcripts/watcher';
+import { registerSessionIpc } from './sessions/ipc';
 
 // Safe-by-default for every window this app will ever open (§5.29 posture).
 app.enableSandbox();
@@ -83,6 +89,7 @@ function createWindow(): BrowserWindow {
       additionalArguments: [
         `--switchboard-version=${app.getVersion()}`,
         `--switchboard-seed-panels=${process.env.SWITCHBOARD_SEED_PANELS ?? 0}`,
+        `--switchboard-seed-session=${process.env.SWITCHBOARD_SEED_SESSION ?? ''}`,
       ],
     },
   });
@@ -124,7 +131,34 @@ app
     ipcMain.on('workspace:setLayout', (_e, layout: unknown) => workspace.setLayout(layout));
     registerBuiltinContributions();
     log.app.info('contributions registered', { manifests: registry.manifests() });
-    createWindow();
+
+    // session core (E2) bootstrap
+    const stateDir = path.join(app.getPath('userData'), 'sessions');
+    const ptys = new PtyService();
+    const manager = new SessionManager(registry, ptys, createLogger(sink, 'sessions'), stateDir);
+    const hooks = new HookListener({ stateDir, manager, log: createLogger(sink, 'hooks') });
+    const transcripts = new TranscriptWatcher({
+      projectsRoot: path.join(os.homedir(), '.claude', 'projects'),
+      log: createLogger(sink, 'transcripts'),
+    });
+    void hooks.start().catch((err) => {
+      // hooks are an accelerator, not the authority — start-failure degrades
+      log.app.error('hook listener failed to start', { error: String(err) });
+    });
+    const win = createWindow();
+    registerSessionIpc({
+      manager,
+      ptys,
+      hooks,
+      transcripts,
+      log: createLogger(sink, 'ipc'),
+      getWindow: () => win,
+    });
+    app.on('quit', () => {
+      ptys.killAll();
+      hooks.stop();
+      transcripts.stop();
+    });
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
