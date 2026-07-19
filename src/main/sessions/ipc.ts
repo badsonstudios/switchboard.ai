@@ -11,6 +11,7 @@ import { TranscriptWatcher } from '../transcripts/watcher';
 import { Logger } from '../log/logger';
 import { assignAccent, detectProjectType } from './identity';
 import { EventFeed } from '../events/feed';
+import { ensureFolderTrusted } from './trust';
 
 export interface SessionIpcDeps {
   manager: SessionManager;
@@ -20,6 +21,8 @@ export interface SessionIpcDeps {
   feed: EventFeed;
   log: Logger;
   getWindow: () => BrowserWindow | null;
+  /** auto-trust the folder before spawning (default on; user picks folder) */
+  autoTrust: () => boolean;
 }
 
 export function registerSessionIpc(deps: SessionIpcDeps): void {
@@ -71,6 +74,8 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     }
     if (!isDir) throw new Error('folder is not a directory');
     const title = (typeof opts.title === 'string' ? opts.title : opts.folder).slice(0, 120);
+    // opting the folder into trust BEFORE spawn skips Claude's trust dialog
+    if (deps.autoTrust()) ensureFolderTrusted(opts.folder, log);
     const record = manager.create(
       {
         title,

@@ -28,6 +28,8 @@ export function TitleBar(props: {
   onToggleNotif: () => void;
   autonomy: string;
   onCycleAutonomy: () => void;
+  autoTrust: boolean;
+  onToggleTrust: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   return (
@@ -37,6 +39,9 @@ export function TitleBar(props: {
         {t('titlebar.version', { version: props.version })}
       </span>
       <span style={{ flex: 1 }} />
+      <Chip selected={props.autoTrust} onClick={props.onToggleTrust}>
+        {props.autoTrust ? t('titlebar.trustOn') : t('titlebar.trustOff')}
+      </Chip>
       <Chip selected={false} onClick={props.onCycleAutonomy}>
         {t(`autonomy.${props.autonomy}`)}
       </Chip>

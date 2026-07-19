@@ -8,7 +8,9 @@
   "titlebar": {
     "version": "v{version}",
     "notifOn": "🔔 on",
-    "notifOff": "🔕 off"
+    "notifOff": "🔕 off",
+    "trustOn": "🔓 auto-trust",
+    "trustOff": "🔒 ask trust"
   },
   "rail": {
     "eyebrow": "Sessions",

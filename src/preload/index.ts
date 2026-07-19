@@ -62,6 +62,10 @@ const api = {
       return () => ipcRenderer.removeListener('sessions:exited', h);
     },
   },
+  settings: {
+    getAutoTrust: (): Promise<boolean> => ipcRenderer.invoke('settings:getAutoTrust'),
+    setAutoTrust: (on: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setAutoTrust', on),
+  },
   preflight: {
     check: (): Promise<{
       cliPath: string | null;

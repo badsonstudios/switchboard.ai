@@ -39,6 +39,8 @@ export interface WorkspaceState {
   /** opaque grid-layout JSON owned by the renderer (Dockview serialization) */
   layout: unknown;
   notifications: NotificationPrefsState;
+  /** auto-trust a folder on session open (picking a folder = trusting it) */
+  autoTrust: boolean;
 }
 
 const EMPTY: WorkspaceState = {
@@ -47,6 +49,7 @@ const EMPTY: WorkspaceState = {
   window: null,
   layout: null,
   notifications: { enabled: true },
+  autoTrust: true,
 };
 
 /** Stable identity for a display arrangement (§7). */
@@ -72,6 +75,7 @@ export class WorkspaceStore {
         window: sanitizeWindow(raw.window),
         layout: raw.layout ?? null,
         notifications: sanitizeNotifications(raw.notifications),
+        autoTrust: raw.autoTrust !== false, // default on
       };
     } catch (err) {
       // corrupt/missing: back the corpse aside (post-mortem material), start fresh
@@ -125,6 +129,15 @@ export class WorkspaceStore {
 
   setNotificationPrefs(p: NotificationPrefsState): void {
     this.state.notifications = sanitizeNotifications(p);
+    this.saveSoon();
+  }
+
+  getAutoTrust(): boolean {
+    return this.state.autoTrust;
+  }
+
+  setAutoTrust(on: boolean): void {
+    this.state.autoTrust = on;
     this.saveSoon();
   }
 

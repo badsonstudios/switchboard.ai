@@ -36,10 +36,12 @@ export function App(): React.JSX.Element {
   );
   const [preflightOk, setPreflightOk] = useState(true);
   const [cliVersion, setCliVersion] = useState<string | null>(null);
+  const [autoTrust, setAutoTrust] = useState(true);
   const grid = React.useRef<GridController | null>(null);
 
   useEffect(() => {
     void bridge.notifications?.getPrefs?.().then((p) => setNotifEnabled(p.enabled));
+    void bridge.settings?.getAutoTrust?.().then(setAutoTrust);
     void bridge.preflight?.check?.().then((r) => {
       setPreflightOk(r.ok);
       setCliVersion(r.version);
@@ -120,6 +122,12 @@ export function App(): React.JSX.Element {
         }}
         autonomy={autonomy}
         onCycleAutonomy={cycleAutonomy}
+        autoTrust={autoTrust}
+        onToggleTrust={() => {
+          const next = !autoTrust;
+          setAutoTrust(next);
+          void bridge.settings?.setAutoTrust?.(next);
+        }}
       />
       {!preflightOk && <PreflightBanner />}
       <div style={{ flex: 1, display: 'flex', minBlockSize: 0 }}>

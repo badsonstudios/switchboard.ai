@@ -218,6 +218,11 @@ app
       workspace.setNotificationPrefs(p);
       return workspace.getNotificationPrefs();
     });
+    ipcMain.handle('settings:getAutoTrust', () => workspace.getAutoTrust());
+    ipcMain.handle('settings:setAutoTrust', (_e, on: boolean) => {
+      workspace.setAutoTrust(on === true);
+      return workspace.getAutoTrust();
+    });
     registerSessionIpc({
       manager,
       ptys,
@@ -226,6 +231,7 @@ app
       feed,
       log: createLogger(sink, 'ipc'),
       getWindow: () => currentWindow, // reassigned on macOS re-activate
+      autoTrust: () => workspace.getAutoTrust(),
     });
     app.on('quit', () => {
       ptys.killAll();
