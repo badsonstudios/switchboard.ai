@@ -10,8 +10,9 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: 'src/main/index.ts',
-          // standalone done-when check, run via `electron --run-as-node`
+          // standalone done-when checks, run via `electron --run-as-node`
           'pty-check': 'src/main/pty/lifecycle-check.ts',
+          'adapter-check': 'src/main/providers/adapter-check.ts',
         },
       },
     },

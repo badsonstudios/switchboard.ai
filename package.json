@@ -16,7 +16,8 @@
     "test": "vitest run",
     "lint": "eslint .",
     "postinstall": "node scripts/rebuild-native.js",
-    "check:pty": "node scripts/run-electron-node.js out/main/pty-check.js"
+    "check:pty": "node scripts/run-electron-node.js out/main/pty-check.js",
+    "check:adapter": "node scripts/run-electron-node.js out/main/adapter-check.js"
   },
   "dependencies": {
     "node-pty": "^1.1.0",

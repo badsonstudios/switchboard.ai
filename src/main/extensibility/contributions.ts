@@ -28,7 +28,14 @@ export interface ProviderAdapter {
 
 export interface SpawnOptions {
   cwd: string;
+  /** switchboard's own session id — used to key per-session state on disk */
+  sessionId: string;
+  /** directory for per-session generated state (settings files etc.) */
+  stateDir: string;
+  /** provider-native session id to resume */
   resumeSessionId?: string;
+  /** extra settings to inject at spawn (S-02 mechanism); hooks land in E2-05 */
+  settings?: Record<string, unknown>;
 }
 
 export interface SpawnRecipe {

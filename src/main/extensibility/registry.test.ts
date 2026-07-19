@@ -42,15 +42,12 @@ describe('ContributionRegistry', () => {
 });
 
 describe('claude adapter through the registry (the done-when)', () => {
-  it('is resolvable via the registry and builds a spawn recipe', () => {
+  it('is resolvable via the registry, never direct import by consumers', () => {
     const r = new ContributionRegistry();
     r.register('provider-adapter', claudeAdapter);
     const adapter = r.resolve('provider-adapter', 'claude-code');
     expect(adapter).toBeDefined();
-    const recipe = adapter!.buildSpawn({ cwd: 'C:/tmp/x', resumeSessionId: 'abc' });
-    expect(recipe.args).toEqual(['--resume', 'abc']);
-    // S-01 env landmines scrubbed in the recipe
-    expect('ELECTRON_RUN_AS_NODE' in recipe.env).toBe(true);
-    expect(recipe.env.ELECTRON_RUN_AS_NODE).toBeUndefined();
+    expect(adapter!.manifest.capabilities).toContain('sessions.spawn');
+    // spawn-recipe behavior is covered in providers/claude.test.ts
   });
 });

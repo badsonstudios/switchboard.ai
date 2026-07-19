@@ -7,8 +7,8 @@
 **Milestone:** Phase 1 - MVP (issues #12–#35, filed 2026-07-19)
 **AUTOPILOT RUN 2 ACTIVE** — started 2026-07-19 after Spike 01 merged (PR #11,
 all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
-**In progress:** P1-E2-02 — Claude Code adapter v1 (#19)
-**Next up:** P1-E2-03 — SessionManager (#20)
+**In progress:** P1-E2-03 — SessionManager (#20)
+**Next up:** P1-E2-04 — Workspace store (#21)
 **E1 epic: COMPLETE** (#12–#17 all done, CI green)
 **Branch:** auto/phase-1-mvp
 
@@ -21,6 +21,13 @@ all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
 
 ## Log
 
+- 2026-07-19 — **P1-E2-02 done** (autopilot run 2): Claude adapter v1 —
+  absolute CLI resolution (PATH scan, cached), per-session settings file
+  generation with validate-before-spawn (S-02 silent-ignore trap), resume
+  args, env scrubs. Done-when verified live: `npm run check:adapter` spawned
+  a session in a fresh temp folder, planted a marker, and --resume recalled
+  it (PASS). Local-only check (needs logged-in CLI); 39 unit tests green;
+  CI green 3 OSes incl. node-pty rebuild + check:pty.
 - 2026-07-19 — **P1-E2-01 done** (autopilot run 2): PtyService — generic
   spawn/resize/write/kill with per-session ring-buffer scrollback (2MB cap,
   S-07 ingest-only verdict), always-on S-01 env scrub, dead-PTY write guards.
