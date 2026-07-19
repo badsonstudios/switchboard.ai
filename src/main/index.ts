@@ -1,9 +1,27 @@
 import { app, BrowserWindow, shell } from 'electron';
 import path from 'path';
 import { loadWindowState, trackWindowState, windowOptionsFrom } from './window-state';
+import { LogSink, createLogger } from './log/logger';
 
 // Safe-by-default for every window this app will ever open (§5.29 posture).
 app.enableSandbox();
+
+function logsDir(): string {
+  try {
+    return app.getPath('logs');
+  } catch {
+    return path.join(app.getPath('userData'), 'logs');
+  }
+}
+let sink: LogSink;
+const log = {
+  get app() {
+    return createLogger(sink, 'app');
+  },
+  get ui() {
+    return createLogger(sink, 'ui');
+  },
+};
 
 const DEV_URL = process.env.ELECTRON_RENDERER_URL;
 
@@ -35,7 +53,10 @@ function createWindow(): BrowserWindow {
 
   if (state.isMaximized) win.maximize();
   trackWindowState(win);
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => {
+    win.show();
+    log.ui.info('window shown', { restored: !!state.bounds, maximized: state.isMaximized });
+  });
 
   // external links open in the OS browser (http/https only), never in-app
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -58,6 +79,8 @@ function createWindow(): BrowserWindow {
 app
   .whenReady()
   .then(() => {
+    sink = new LogSink({ dir: logsDir() });
+    log.app.info('app ready', { version: app.getVersion(), platform: process.platform });
     createWindow();
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -76,4 +99,7 @@ app
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+app.on('quit', () => {
+  if (sink) log.app.info('app quit');
 });
