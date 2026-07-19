@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#0a0c10;display:flex;justify-content:center;align-items:flex-start;padding:26px;font-family:'IBM Plex Sans',system-ui,sans-serif}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(88,166,255,.5)}70%{box-shadow:0 0 0 6px rgba(88,166,255,0)}100%{box-shadow:0 0 0 0 rgba(88,166,255,0)}}
+  @keyframes caret{0%,49%{opacity:1}50%,100%{opacity:0}}
+  .swrow{transition:filter .1s,background .12s;cursor:pointer}
+  .swrow:hover{filter:brightness(1.12)}
+  .swbtn{cursor:pointer;transition:filter .1s}
+  .swbtn:hover{filter:brightness(1.13)}
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:5px}
+  ::-webkit-scrollbar-track{background:transparent}
+</style>
+</helmet>
+<div style="{{ winStyle }}">
+  <!-- titlebar -->
+  <div style="height:40px;display:flex;align-items:center;justify-content:space-between;background:var(--bar);border-bottom:1px solid var(--border);flex:none">
+    <div style="display:flex;align-items:center;gap:13px;padding-left:14px">
+      <span style="color:#58a6ff;font-size:14px">◈</span>
+      <span style="font-weight:600;font-size:12.5px;letter-spacing:.2px">switchboard.ai</span>
+      <span style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);background:var(--chip);border:1px solid var(--border);padding:3px 9px;border-radius:6px">workspace <b style="color:var(--text);font-weight:600">side-projects</b> <span style="opacity:.6">▾</span></span>
+      <span class="swbtn" style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text);padding:4px 9px;border-radius:6px;border:1px solid var(--border)"><span style="color:#3fb950;font-weight:700">＋</span> New session</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;padding-right:2px">
+      <span class="swbtn" onClick="{{ toggleTheme }}" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text);border:1px solid var(--border);border-radius:7px;padding:4px 11px">{{ themeIcon }} {{ themeName }}</span>
+      <div style="display:flex;color:var(--muted)">
+        <span class="swbtn" style="width:42px;height:40px;display:flex;align-items:center;justify-content:center">﹘</span>
+        <span class="swbtn" style="width:42px;height:40px;display:flex;align-items:center;justify-content:center">▢</span>
+        <span class="swbtn" style="width:42px;height:40px;display:flex;align-items:center;justify-content:center">✕</span>
+      </div>
+    </div>
+  </div>
+  <!-- urgency strip -->
+  <div style="height:38px;display:flex;align-items:center;gap:8px;padding:0 12px;background:var(--panel);border-bottom:1px solid var(--border);flex:none;overflow:hidden">
+    <span style="font:600 9px 'IBM Plex Mono',monospace;letter-spacing:1.4px;color:var(--faint)">URGENCY</span>
+    <sc-for list="{{ lamps }}" as="s" hint-placeholder-count="8">
+      <span class="swbtn" onClick="{{ s.onMax }}" style="{{ s.lampStyle }}"><span style="{{ s.accentDot }}"></span><span style="font-weight:600;font-size:10.5px;color:var(--text)">{{ s.name }}</span><span style="{{ s.lampTag }}">{{ s.sl }}</span></span>
+    </sc-for>
+    <span style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:11px;color:#e3b341;font-weight:600"><span style="width:6px;height:6px;border-radius:50%;background:#e3b341"></span>{{ needCount }} need you</span>
+  </div>
+  <!-- body -->
+  <div style="flex:1;display:flex;min-height:0">
+    <!-- sessions rail -->
+    <div style="width:240px;flex:none;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 13px 8px"><span style="font:600 9px 'IBM Plex Mono',monospace;letter-spacing:1.4px;color:var(--faint)">SESSIONS · 8</span><span style="font:10px 'IBM Plex Mono',monospace;color:var(--faint)">sort: usage ▾</span></div>
+      <div style="flex:1;overflow:auto;padding:0 7px">
+        <sc-for list="{{ rail }}" as="s" hint-placeholder-count="8">
+          <div class="swrow" onClick="{{ s.onMax }}" style="{{ s.rowStyle }}">
+            <span style="{{ s.stripe }}"></span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="{{ s.dotStyle }}"></span>
+              <span style="font-weight:600;font-size:12px;color:var(--text)">{{ s.name }}</span>
+              <span style="font:9px 'IBM Plex Mono',monospace;color:var(--faint);border:1px solid var(--border);border-radius:3px;padding:0 4px">{{ s.lang }}</span>
+              <span style="margin-left:auto;font-size:10px;color:{{ s.sc }};font-weight:600">{{ s.sl }}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:7px;font:10px 'IBM Plex Mono',monospace;color:var(--faint);margin-top:5px"><span style="color:var(--muted)">⌥ {{ s.branch }}</span><span>·</span><span>+{{ s.dirty }}</span></div>
+            <div style="display:flex;align-items:center;gap:7px;margin-top:5px">
+              <div style="flex:1;height:5px;background:var(--chip);border-radius:3px;overflow:hidden"><div style="{{ s.barFill }}"></div></div>
+              <span style="font:9.5px 'IBM Plex Mono',monospace;color:var(--faint);min-width:34px;text-align:right">{{ s.tok }}</span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="border-top:1px solid var(--border);padding:9px 13px;display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;justify-content:space-between;font:10px 'IBM Plex Mono',monospace;color:var(--muted)"><span>5-hr window</span><span style="color:#e3b341">68%</span></div>
+        <div style="height:5px;background:var(--chip);border-radius:3px;overflow:hidden"><div style="width:68%;height:100%;background:linear-gradient(90deg,#3fb950,#e3b341)"></div></div>
+      </div>
+    </div>
+    <!-- center -->
+    <div style="flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg)">
+      <!-- GRID MODE -->
+      <sc-if value="{{ gridMode }}" hint-placeholder-val="{{ true }}">
+        <div style="flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:11px;padding:12px;min-height:0">
+          <!-- PropaneMon -->
+          <div class="swrow" onClick="{{ onPropane }}" style="background:var(--panel);border:1px solid var(--border);border-radius:8px;display:flex;flex-direction:column;overflow:hidden;position:relative">
+            <span style="position:absolute;left:0;top:0;bottom:0;width:3px;background:#39c5bb"></span>
+            <div style="display:flex;align-items:center;gap:8px;padding:8px 11px 8px 13px;border-bottom:1px solid var(--border)">
+              <span style="width:16px;height:16px;border-radius:4px;background:rgba(57,197,187,.15);color:#39c5bb;display:flex;align-items:center;justify-content:center;font:700 9px 'IBM Plex Mono',monospace">Rs</span>
+              <span style="font-weight:600;font-size:12px">PropaneMon</span>
+              <span style="width:7px;height:7px;border-radius:50%;background:#58a6ff;animation:pulse 1.8s infinite"></span>
+              <span style="font-size:10.5px;color:#58a6ff;font-weight:600">working</span>
+              <span style="margin-left:auto;font:9.5px 'IBM Plex Mono',monospace;color:var(--muted);background:var(--chip);border:1px solid var(--border);border-radius:4px;padding:1px 6px">31.7k tok</span>
+            </div>
+            <div style="flex:1;padding:9px 12px;overflow:hidden;font-family:'IBM Plex Mono',monospace;font-size:11px;line-height:1.62;color:var(--term)">
+              <div><span style="color:#39c5bb">●</span> Refactoring sensor polling loop…</div>
+              <div><span style="color:var(--muted)">● Read</span> <span style="color:#58a6ff">src/sensors/poll.rs</span> <span style="color:var(--faint)">(142)</span></div>
+              <div><span style="color:var(--muted)">● Edit</span> <span style="color:#58a6ff">src/sensors/poll.rs</span> <span style="color:#3fb950">+18</span> <span style="color:#f85149">−6</span></div>
+              <div><span style="color:var(--muted)">● Bash</span> cargo check <span style="color:var(--faint)">· 0 warnings</span></div>
+              <div>▌<span style="animation:caret 1s infinite">_</span> streaming…</div>
+            </div>
+            <div style="display:flex;gap:2px;padding:5px 8px;border-top:1px solid var(--border);font:10px 'IBM Plex Mono',monospace;color:var(--faint)"><span style="padding:2px 8px;border-radius:4px;background:var(--chip);color:var(--text)">Terminal</span><span style="padding:2px 8px">Feed</span><span style="padding:2px 8px">Files</span><span style="padding:2px 8px">Diff <span style="color:#3fb950">5</span></span></div>
+          </div>
+          <!-- TradingApp needs input -->
+          <div class="swrow" onClick="{{ onTrading }}" style="background:var(--panel);border:1px solid rgba(227,179,65,.5);border-radius:8px;display:flex;flex-direction:column;overflow:hidden;position:relative;box-shadow:0 0 0 1px rgba(227,179,65,.12)">
+            <span style="position:absolute;left:0;top:0;bottom:0;width:3px;background:#e3b341"></span>
+            <div style="display:flex;align-items:center;gap:8px;padding:8px 11px 8px 13px;border-bottom:1px solid var(--border)">
+              <span style="width:16px;height:16px;border-radius:4px;background:rgba(227,179,65,.16);color:#e3b341;display:flex;align-items:center;justify-content:center;font:700 9px 'IBM Plex Mono',monospace">TS</span>
+              <span style="font-weight:600;font-size:12px">TradingApp</span>
+              <span style="width:7px;height:7px;border-radius:50%;background:#e3b341"></span>
+              <span style="font-size:10.5px;color:#e3b341;font-weight:600">needs input</span>
+              <span style="margin-left:auto;font:9.5px 'IBM Plex Mono',monospace;color:#e3b341;background:rgba(227,179,65,.12);border:1px solid rgba(227,179,65,.3);border-radius:4px;padding:1px 6px">92k tok/hr</span>
+            </div>
+            <div style="flex:1;padding:9px 12px;overflow:hidden;font-family:'IBM Plex Mono',monospace;font-size:11px;line-height:1.62;color:var(--term)">
+              <div><span style="color:#e3b341">●</span> Bump ws to v8 (changes handshake API),</div>
+              <div>&nbsp;&nbsp;or patch the backoff in place?</div>
+              <div style="margin-top:5px;color:var(--term)">&nbsp;&nbsp;❯ 1. Upgrade to ws@8 <span style="color:#3fb950">(recommended)</span></div>
+              <div style="color:var(--muted)">&nbsp;&nbsp;&nbsp;&nbsp;2. Patch backoff only</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-top:1px solid rgba(227,179,65,.25);background:rgba(227,179,65,.07);font-size:10.5px;color:#e3b341"><span>⌨</span>waiting in Terminal<span style="margin-left:auto;color:var(--muted);font-family:'IBM Plex Mono',monospace">jump →</span></div>
+          </div>
+          <!-- ledger-core + watcher -->
+          <div class="swrow" onClick="{{ onLedger }}" style="background:var(--panel);border:1px solid var(--border);border-radius:8px;display:flex;flex-direction:column;overflow:hidden;position:relative">
+            <span style="position:absolute;left:0;top:0;bottom:0;width:3px;background:#3fb950"></span>
+            <div style="display:flex;align-items:center;gap:8px;padding:8px 11px 8px 13px;border-bottom:1px solid var(--border)">
+              <span style="width:16px;height:16px;border-radius:4px;background:rgba(63,185,80,.15);color:#3fb950;display:flex;align-items:center;justify-content:center;font:700 9px 'IBM Plex Mono',monospace">Go</span>
+              <span style="font-weight:600;font-size:12px">ledger-core</span>
+              <span style="width:7px;height:7px;border-radius:50%;background:#58a6ff;animation:pulse 1.8s infinite"></span>
+              <span style="font-size:10.5px;color:#58a6ff;font-weight:600">working</span>
+              <span style="margin-left:auto;font:9.5px 'IBM Plex Mono',monospace;color:var(--muted);background:var(--chip);border:1px solid var(--border);border-radius:4px;padding:1px 6px">26.4k tok</span>
+            </div>
+            <div style="flex:1;padding:9px 12px;overflow:hidden;font-family:'IBM Plex Mono',monospace;font-size:11px;line-height:1.62;color:var(--term)">
+              <div><span style="color:#3fb950">●</span> Adding idempotency keys to payouts…</div>
+              <div><span style="color:#a78bfa">● Task</span>(test-runner) <span style="color:var(--faint)">↳ subagent</span></div>
+              <div style="color:var(--muted)">&nbsp;&nbsp;⎿ go test ./payments/… <span style="color:#3fb950">22 passed</span></div>
+              <div><span style="color:var(--muted)">● Edit</span> <span style="color:#58a6ff">payments/payouts.go</span> <span style="color:#3fb950">+31</span> <span style="color:#f85149">−9</span></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 11px;border-top:1px solid var(--border);background:var(--panel2);font:10px 'IBM Plex Mono',monospace;color:var(--muted)"><span style="color:#a78bfa">🗔 watcher</span> test-runner<span style="color:var(--faint)">·</span>12.4k<span style="margin-left:auto;display:flex;gap:8px;color:var(--faint)"><span>auto-close ▾</span><span>📌</span><span>✕</span></span></div>
+          </div>
+          <!-- BrainSite needs permission -->
+          <div class="swrow" onClick="{{ onBrain }}" style="background:var(--panel);border:1px solid rgba(240,136,62,.5);border-radius:8px;display:flex;flex-direction:column;overflow:hidden;position:relative;box-shadow:0 0 0 1px rgba(240,136,62,.14)">
+            <span style="position:absolute;left:0;top:0;bottom:0;width:3px;background:#a78bfa"></span>
+            <div style="display:flex;align-items:center;gap:8px;padding:8px 11px 8px 13px;border-bottom:1px solid var(--border)">
+              <span style="width:16px;height:16px;border-radius:4px;background:rgba(167,139,250,.15);color:#a78bfa;display:flex;align-items:center;justify-content:center;font:700 9px 'IBM Plex Mono',monospace">JS</span>
+              <span style="font-weight:600;font-size:12px">BrainSite</span>
+              <span style="width:7px;height:7px;border-radius:50%;background:#f0883e"></span>
+              <span style="font-size:10.5px;color:#f0883e;font-weight:600">needs permission</span>
+            </div>
+            <div style="flex:1;padding:9px 12px 4px;overflow:hidden;font-family:'IBM Plex Mono',monospace;font-size:11px;line-height:1.62;color:var(--term)">
+              <div><span style="color:#a78bfa">●</span> Ready to deploy preview to staging.</div>
+              <div style="margin-top:6px;color:#f0883e">▌ Permission required</div>
+              <div>&nbsp;&nbsp;Bash(vercel deploy --prod --yes)</div>
+              <div style="color:var(--faint)">&nbsp;&nbsp;cwd ~/dev/brainsite</div>
+            </div>
+            <div style="display:flex;gap:7px;padding:8px 12px;border-top:1px solid var(--border)">
+              <span class="swbtn" style="flex:1;text-align:center;padding:5px;border-radius:5px;background:#238636;color:#fff;font-weight:600;font-size:11px">Allow</span>
+              <span class="swbtn" style="flex:1;text-align:center;padding:5px;border-radius:5px;border:1px solid var(--border);color:var(--text);font-size:11px">Allow once</span>
+              <span class="swbtn" style="flex:1;text-align:center;padding:5px;border-radius:5px;border:1px solid var(--border);color:#f85149;font-size:11px">Deny</span>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+      <!-- MAXIMIZED MODE -->
+      <sc-if value="{{ maximized }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:1;display:flex;flex-direction:column;margin:12px;border-radius:9px;border:1px solid var(--border);background:var(--panel);overflow:hidden;min-height:0;box-shadow:0 12px 40px rgba(0,0,0,.25)">
+          <div style="display:flex;align-items:center;gap:9px;padding:11px 14px;border-bottom:1px solid var(--border)">
+            <span style="{{ sel.stripeBadge }}"></span>
+            <span style="{{ sel.iconStyle }}">{{ sel.lang }}</span>
+            <span style="font-weight:600;font-size:13.5px">{{ sel.name }}</span>
+            <span style="font-size:10.5px;font-weight:600;color:{{ sel.sc }};background:{{ sel.statusSoft }};border-radius:5px;padding:2px 9px">{{ sel.sl }}</span>
+            <span style="font:10px 'IBM Plex Mono',monospace;color:var(--muted)">⌥ {{ sel.branch }} · +{{ sel.dirty }} · {{ sel.tok }} tok · {{ sel.prov }}</span>
+            <span style="margin-left:auto;display:flex;gap:7px">
+              <span style="display:flex;align-items:center;gap:5px;font:9.5px 'IBM Plex Mono',monospace;color:var(--faint)"><span style="width:6px;height:6px;border-radius:50%;background:#58a6ff"></span>focus mode</span>
+              <span class="swbtn" onClick="{{ restore }}" style="font-size:10.5px;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 11px">⤡ Restore to grid</span>
+              <span class="swbtn" onClick="{{ restore }}" style="font-size:10.5px;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:4px 11px">Hide ▾</span>
+            </span>
+          </div>
+          <div style="flex:1;display:flex;min-height:0">
+            <div style="flex:1.6;padding:14px 17px;font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.75;color:var(--term);overflow:auto;min-width:0">
+              <sc-for list="{{ sel.termLines }}" as="l" hint-placeholder-count="5"><div style="{{ l.style }}">{{ l.text }}</div></sc-for>
+              <div style="margin-top:6px">▌<span style="animation:caret 1s infinite">_</span></div>
+            </div>
+            <div style="flex:1;border-left:1px solid var(--border);display:flex;flex-direction:column;min-width:0">
+              <div style="display:flex;gap:2px;padding:7px 10px;border-bottom:1px solid var(--border);font:10.5px 'IBM Plex Mono',monospace;color:var(--muted)"><span style="padding:2px 9px;border-radius:4px;background:var(--chip);color:var(--text)">Diff</span><span style="padding:2px 9px">Files</span><span style="padding:2px 9px">Feed</span><span style="margin-left:auto;color:#3fb950">+31</span><span style="color:#f85149">−9</span></div>
+              <div style="flex:1;padding:9px 0;font-family:'IBM Plex Mono',monospace;font-size:11px;line-height:1.7;overflow:auto">
+                <div style="padding:1px 13px;color:var(--faint)">payments/payouts.go</div>
+                <div style="padding:1px 13px;color:var(--muted)"><span style="opacity:.5">218</span>  func (h *Handler) Payout(w, r) {</div>
+                <div style="padding:1px 13px;color:var(--muted)"><span style="opacity:.5">219</span>    amt := parseAmount(r)</div>
+                <div style="padding:1px 13px;background:rgba(248,81,73,.15);color:#e5837f"><span style="opacity:.6">−</span> id := newID()</div>
+                <div style="padding:1px 13px;background:rgba(63,185,80,.16);color:#63b56f"><span style="opacity:.6">+</span> key := r.Header.Get("Idempotency-Key")</div>
+                <div style="padding:1px 13px;background:rgba(63,185,80,.16);color:#63b56f"><span style="opacity:.6">+</span> if p, ok := store.ByKey(key); ok {</div>
+                <div style="padding:1px 13px;background:rgba(63,185,80,.16);color:#63b56f"><span style="opacity:.6">+</span>   return replay(w, p)</div>
+                <div style="padding:1px 13px;background:rgba(63,185,80,.16);color:#63b56f"><span style="opacity:.6">+</span> }</div>
+                <div style="padding:1px 13px;color:var(--muted)"><span style="opacity:.5">225</span>    return ok(w)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+      <!-- composer -->
+      <div style="flex:none;border-top:1px solid var(--border);padding:9px 12px;background:var(--panel);position:relative">
+        <div style="position:absolute;bottom:52px;left:12px;width:250px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;box-shadow:0 12px 34px rgba(0,0,0,.35);overflow:hidden;font-size:11px">
+          <div style="padding:5px 10px;font:9px 'IBM Plex Mono',monospace;letter-spacing:1px;color:var(--faint);border-bottom:1px solid var(--border)">@ SESSIONS</div>
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--chip)"><span style="width:8px;height:8px;border-radius:2px;background:#e3b341"></span>TradingApp<span style="margin-left:auto;color:var(--muted);font-size:10px">needs input</span></div>
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 10px"><span style="width:8px;height:8px;border-radius:2px;background:#39c5bb"></span>PropaneMon<span style="margin-left:auto;color:var(--muted);font-size:10px">working</span></div>
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 10px"><span style="width:8px;height:8px;border-radius:2px;background:#3fb950"></span>ledger-core<span style="margin-left:auto;color:var(--muted);font-size:10px">working</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font:10px 'IBM Plex Mono',monospace;color:var(--faint);white-space:nowrap">⊕ drag files · text · diffs across sessions</span>
+          <div style="flex:1;display:flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:7px 10px">
+            <span style="font:11px 'IBM Plex Mono',monospace;color:var(--faint)">▸</span>
+            <span style="font-size:12px;color:var(--muted)">Take </span><span style="font-size:12px;background:rgba(227,179,65,.16);color:#c99117;border-radius:4px;padding:1px 5px;font-weight:600">@TradingApp</span><span style="font-size:12px;color:var(--muted)">'s last output and apply the same fix here</span><span style="width:1px;height:14px;background:var(--muted);animation:caret 1s infinite;margin-left:1px"></span>
+          </div>
+          <span class="swbtn" style="display:flex;align-items:center;gap:6px;background:#238636;color:#fff;font-weight:600;font-size:11px;padding:7px 13px;border-radius:8px">Send ⏎</span>
+        </div>
+      </div>
+    </div>
+    <!-- event feed -->
+    <div style="width:308px;flex:none;background:var(--panel);border-left:1px solid var(--border);display:flex;flex-direction:column">
+      <div style="padding:11px 13px 8px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><span style="font:600 9px 'IBM Plex Mono',monospace;letter-spacing:1.4px;color:var(--faint)">EVENT FEED</span><span style="font:10px 'IBM Plex Mono',monospace;color:var(--faint)">group by session ▾</span></div>
+        <div style="display:flex;gap:6px">
+          <span class="swbtn" onClick="{{ setAll }}" style="{{ chips.all }}">All</span>
+          <span class="swbtn" onClick="{{ setAttention }}" style="{{ chips.attention }}">Attention</span>
+          <span class="swbtn" onClick="{{ setWarning }}" style="{{ chips.warning }}">Warning</span>
+        </div>
+      </div>
+      <div style="flex:1;overflow:auto;padding:8px 9px">
+        <sc-for list="{{ feed }}" as="e" hint-placeholder-count="8">
+          <div style="display:flex;flex-direction:column;gap:5px;padding:9px 10px;border-radius:7px;margin-bottom:3px;border-left:2px solid {{ e.color }};background:var(--panel2)">
+            <div style="display:flex;align-items:center;gap:7px">
+              <span style="font-weight:600;font-size:11.5px;color:var(--text)">{{ e.sess }}</span>
+              <span style="font-size:10px;color:{{ e.color }};font-weight:600">{{ e.tag }}</span>
+              <span style="margin-left:auto;font:9px 'IBM Plex Mono',monospace;color:var(--faint)">{{ e.time }}</span>
+            </div>
+            <div style="font-size:11px;color:var(--muted);line-height:1.4">{{ e.body }}</div>
+            <div style="font:9.5px 'IBM Plex Mono',monospace;color:var(--faint)">{{ e.stat }}</div>
+            <sc-if value="{{ e.hasActions }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex;gap:6px;margin-top:1px">
+                <sc-for list="{{ e.actions }}" as="a" hint-placeholder-count="2"><span class="swbtn" style="{{ a.style }}">{{ a.label }}</span></sc-for>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+  <!-- status bar -->
+  <div style="height:26px;flex:none;display:flex;align-items:center;gap:14px;padding:0 13px;background:var(--bar);border-top:1px solid var(--border);font:10.5px 'IBM Plex Mono',monospace;color:var(--muted)">
+    <span style="display:flex;align-items:center;gap:6px"><span style="width:7px;height:7px;border-radius:50%;background:#3fb950"></span>All systems operational</span>
+    <span style="color:var(--faint)">·</span>
+    <span>5-hr window <span style="color:#e3b341">68%</span> — mostly TradingApp</span>
+    <span style="margin-left:auto;display:flex;align-items:center;gap:14px">
+      <span>8 sessions · 3 working · 1 idle</span>
+      <span style="color:var(--faint)">·</span>
+      <span style="color:#e3b341">⚠ 4 need you</span>
+      <span style="color:var(--faint)">·</span>
+      <span style="display:flex;gap:5px"><span style="color:var(--text)">claude 6</span><span style="color:#f0883e">codex 1</span><span style="color:#a78bfa">gemini 1</span></span>
+    </span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;1360px&quot;,&quot;height&quot;:&quot;848px&quot;}}">
+class Component extends DCLogic {
+  state = { theme:'nordic', max:'', filter:'all' };
+  hexA(hex,a){ const n=parseInt(hex.slice(1),16); return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`; }
+  themes(){
+    return {
+      nordic:{label:'Nordic · dark',icon:'☾',bg:'#242933',panel:'#2b313d',panel2:'#333a48',border:'#3b4252',chip:'#39414f',bar:'#20252e',text:'#e5e9f0',muted:'#9aa4b8',faint:'#6d7689',term:'#cdd4e2',shadow:'0 24px 70px rgba(0,0,0,.5)'},
+      daylight:{label:'Daylight · light',icon:'☀',bg:'#eef1f5',panel:'#ffffff',panel2:'#f4f6f9',border:'#dde1e7',chip:'#e9edf2',bar:'#ffffff',text:'#1b2230',muted:'#5b6470',faint:'#9098a6',term:'#2c3444',shadow:'0 24px 70px rgba(20,30,50,.16)'},
+    };
+  }
+  statusMeta(st){ return ({
+    working:{c:'#58a6ff',l:'working',pulse:true},'needs-input':{c:'#e3b341',l:'needs input'},
+    'needs-permission':{c:'#f0883e',l:'needs permission'},idle:{c:'#8a92a0',l:'idle'},
+    done:{c:'#3fb950',l:'done'},crashed:{c:'#f85149',l:'crashed'} })[st]; }
+  raw(){ return [
+    {id:'trading',name:'TradingApp',accent:'#e3b341',lang:'TS',prov:'claude',status:'needs-input',task:'Fix WebSocket reconnect backoff',branch:'fix/ws-reconnect',dirty:3,pct:34,tok:'48.2k'},
+    {id:'propane',name:'PropaneMon',accent:'#39c5bb',lang:'Rs',prov:'claude',status:'working',task:'Refactor sensor polling loop',branch:'feat/poll-refactor',dirty:5,pct:22,tok:'31.7k'},
+    {id:'brain',name:'BrainSite',accent:'#a78bfa',lang:'JS',prov:'claude',status:'needs-permission',task:'Deploy preview to staging',branch:'main',dirty:0,pct:6,tok:'9.1k'},
+    {id:'ledger',name:'ledger-core',accent:'#3fb950',lang:'Go',prov:'claude',status:'working',task:'Add idempotency keys to payouts',branch:'feat/idempotency',dirty:8,pct:18,tok:'26.4k'},
+    {id:'docs',name:'docs-site',accent:'#58a6ff',lang:'JS',prov:'claude',status:'done',task:'Rewrite auth guide',branch:'docs/auth',dirty:2,pct:4,tok:'6.8k'},
+    {id:'pixel',name:'pixel-forge',accent:'#f0776b',lang:'Py',prov:'codex',status:'idle',task:'Optimize sprite atlas packer',branch:'main',dirty:0,pct:1,tok:'1.2k'},
+    {id:'api',name:'api-gateway',accent:'#db61a2',lang:'Go',prov:'claude',status:'crashed',task:'Migrate to gRPC health checks',branch:'feat/grpc-health',dirty:4,pct:9,tok:'14.0k'},
+    {id:'mobile',name:'mobile-sync',accent:'#f0883e',lang:'TS',prov:'gemini',status:'working',task:'Conflict resolution for offline edits',branch:'feat/offline-sync',dirty:6,pct:6,tok:'8.9k'},
+  ]; }
+  termLines(s){
+    const A=s.accent,M='var(--muted)',F='var(--faint)';
+    const mk=(text,color)=>({text,style:color?{color}:{}});
+    if(s.status==='working') return [mk('● '+s.task+'…',A),mk('● Read  '+s.branch.split('/')[0]+'/… (142 lines)',M),mk('● Task(test-runner) ↳ subagent  22 passed','#a78bfa'),mk('● Edit  payments/payouts.go  +31 −9',M),mk('● Bash  go build ./…  ✓',M)];
+    if(s.status==='needs-input') return [mk('● '+s.task+' — I need a call:',A),mk('  Bump ws to v8 (changes the handshake API),',null),mk('  or patch the backoff in place?',null),mk('  ❯ 1. Upgrade to ws@8  (recommended)',null),mk('    2. Patch backoff only',M),mk('  [ answer here or in Terminal ]','#e3b341')];
+    if(s.status==='needs-permission') return [mk('● Ready to '+s.task.toLowerCase()+'.',A),mk('▌ Permission required — Bash','#f0883e'),mk('  vercel deploy --prod --yes',null),mk('  cwd ~/dev/'+s.name.toLowerCase(),F)];
+    if(s.status==='done') return [mk('● Finished: '+s.task,'#3fb950'),mk('  +128 −64 across 5 files',M),mk('  ready to review / merge',F)];
+    if(s.status==='crashed') return [mk('● process exited (code 1)','#f85149'),mk('  panic: nil map in health.go:88',null),mk('  [ Restart & resume ]','#58a6ff')];
+    return [mk('● idle — no activity for 14m',F),mk('  last: '+s.task,M)];
+  }
+  actionBtn(label,kind){
+    const base={fontSize:'10px',fontWeight:600,padding:'3px 10px',borderRadius:'5px',fontFamily:"'IBM Plex Sans',sans-serif"};
+    if(kind==='primary') return {label,style:{...base,background:'#238636',color:'#fff'}};
+    if(kind==='danger') return {label,style:{...base,border:'1px solid rgba(248,81,73,.45)',color:'#f85149'}};
+    return {label,style:{...base,border:'1px solid var(--border)',color:'var(--muted)'}};
+  }
+  chip(f){
+    const active=this.state.filter===f;
+    return {fontSize:'10px',fontWeight:600,padding:'3px 10px',borderRadius:'6px',fontFamily:"'IBM Plex Sans',sans-serif",
+      background:active?'var(--chip)':'transparent',color:active?'var(--text)':'var(--faint)',
+      border:'1px solid '+(active?'var(--border)':'transparent')};
+  }
+  focus(id){ this.setState(st=>({max: st.max===id?'':id})); }
+  renderVals(){
+    const th=this.themes()[this.state.theme];
+    const dec=this.raw().map(s=>{
+      const m=this.statusMeta(s.status);
+      const needsYou=['needs-input','needs-permission','crashed','done'].includes(s.status);
+      const isSel=this.state.max===s.id;
+      const dot={width:'8px',height:'8px',borderRadius:'50%',background:m.c,flex:'none'};
+      if(m.pulse) dot.animation='pulse 1.8s infinite';
+      return {...s, sc:m.c, sl:m.l, needsYou,
+        onMax:()=>this.focus(s.id),
+        dotStyle:dot,
+        accentDot:{width:'8px',height:'8px',borderRadius:'2px',background:s.accent,flex:'none'},
+        barFill:{height:'100%',width:s.pct+'%',background:s.accent,borderRadius:'3px'},
+        stripe:{position:'absolute',left:0,top:0,bottom:0,width:'3px',background:s.accent},
+        stripeBadge:{width:'3px',height:'24px',borderRadius:'2px',background:s.accent,flex:'none'},
+        iconStyle:{width:'20px',height:'20px',borderRadius:'6px',background:this.hexA(s.accent,0.16),color:s.accent,display:'flex',alignItems:'center',justifyContent:'center',font:"700 9px 'IBM Plex Mono',monospace"},
+        statusSoft:this.hexA(m.c,0.14),
+        rowStyle:{position:'relative',display:'flex',flexDirection:'column',padding:'8px 9px 9px 12px',borderRadius:'7px',marginBottom:'2px',background:isSel?'var(--panel2)':'transparent',boxShadow:isSel?('inset 0 0 0 1px '+this.hexA(s.accent,0.5)):'none'},
+        lampStyle:{display:'flex',alignItems:'center',gap:'6px',padding:'3px 9px',borderRadius:'6px',flex:'none',border:'1px solid '+(needsYou?this.hexA(m.c,0.42):'var(--border)'),background:needsYou?this.hexA(m.c,0.12):'var(--chip)'},
+        lampTag:{fontSize:'9.5px',color:m.c,fontWeight:600,fontFamily:"'IBM Plex Mono',monospace"},
+        termLines:this.termLines(s),
+      };
+    });
+    const byId=(id)=>dec.find(s=>s.id===id);
+    const sel=byId(this.state.max)||dec[0];
+    const feedAll=[
+      {sev:'attention',color:'#58a6ff',sess:'docs-site',tag:'done',time:'now',body:'Rewrite auth guide — 4m 12s',stat:'+128 −64 · 5 files',actions:[this.actionBtn('View diff','ghost'),this.actionBtn('Merge','ghost')]},
+      {sev:'attention',color:'#a78bfa',sess:'BrainSite',tag:'needs permission',time:'12s',body:'Bash(vercel deploy --prod --yes)',stat:'cwd ~/dev/brainsite',actions:[this.actionBtn('Allow','primary'),this.actionBtn('Deny','danger')]},
+      {sev:'attention',color:'#e3b341',sess:'TradingApp',tag:'needs input',time:'34s',body:'Upgrade ws to v8, or patch backoff in place?',stat:'',actions:[this.actionBtn('Jump to terminal','ghost')]},
+      {sev:'info',color:'#3fb950',sess:'ledger-core',tag:'subagent',time:'1m',body:'↳ test-runner finished · 22 tests passed',stat:'',actions:[]},
+      {sev:'warning',color:'#f85149',sess:'api-gateway',tag:'crashed',time:'2m',body:'process exited (code 1) — panic in health.go',stat:'',actions:[this.actionBtn('Restart & resume','ghost')]},
+      {sev:'warning',color:'#e3b341',sess:'TradingApp',tag:'high usage',time:'3m',body:'burn rate crossed 90k tok/hr',stat:'threshold 80k',actions:[]},
+      {sev:'warning',color:'#3fb950',sess:'ledger-core',tag:'git',time:'4m',body:'payouts.go also edited by api-gateway',stat:'same-repo conflict risk',actions:[]},
+      {sev:'info',color:'#8b949e',sess:'workspace',tag:'rate-limit',time:'6m',body:'5-hr window 68% used — mostly TradingApp',stat:'',actions:[]},
+    ].map(e=>({...e,hasActions:e.actions.length>0}));
+    const f=this.state.filter;
+    const feed=f==='all'?feedAll:feedAll.filter(e=>e.sev===f);
+    return {
+      winStyle:{width:'1360px',height:'848px','--bg':th.bg,'--panel':th.panel,'--panel2':th.panel2,'--border':th.border,'--chip':th.chip,'--bar':th.bar,'--text':th.text,'--muted':th.muted,'--faint':th.faint,'--term':th.term,background:'var(--bg)',color:'var(--text)',fontFamily:"'IBM Plex Sans',system-ui,sans-serif",borderRadius:'10px',overflow:'hidden',border:'1px solid '+th.border,boxShadow:th.shadow,display:'flex',flexDirection:'column',fontSize:'12px'},
+      themeName:th.label, themeIcon:th.icon,
+      toggleTheme:()=>this.setState(st=>({theme: st.theme==='nordic'?'daylight':'nordic'})),
+      lamps:dec, rail:dec,
+      needCount:dec.filter(s=>s.needsYou).length,
+      feed,
+      chips:{all:this.chip('all'),attention:this.chip('attention'),warning:this.chip('warning')},
+      setAll:()=>this.setState({filter:'all'}),
+      setAttention:()=>this.setState({filter:'attention'}),
+      setWarning:()=>this.setState({filter:'warning'}),
+      maximized:!!this.state.max, gridMode:!this.state.max, sel,
+      restore:()=>this.setState({max:''}),
+      onPropane:()=>this.focus('propane'),
+      onTrading:()=>this.focus('trading'),
+      onLedger:()=>this.focus('ledger'),
+      onBrain:()=>this.focus('brain'),
+    };
+  }
+}
+</script>
+</body>
+</html>
