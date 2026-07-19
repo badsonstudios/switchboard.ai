@@ -18,7 +18,8 @@
   Electron + node-pty + xterm.js on Windows; full interactive checklist passed
   with no corruption. Findings: `spike/findings/s-01-pty-host.md` — three
   env/build landmines documented (NoDefaultCurrentDirectoryInExePath, Spectre
-  libs, ELECTRON_RUN_AS_NODE). PR on feature/s-01-pty-host (Closes #1).
+  libs, ELECTRON_RUN_AS_NODE). PR #9 (Closes #1):
+  https://github.com/badsonstudios/switchboard.ai/pull/9
 
 - 2026-07-18 — Design phase complete: DESIGN.md (29 sections), PHILOSOPHY.md,
   control-room design handoff. Repo created and pushed
