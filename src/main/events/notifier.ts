@@ -40,6 +40,8 @@ export function shouldNotify(prefs: NotificationPrefs, e: FeedEvent, now: Date):
 }
 
 export class Notifier {
+  private flashPending = false;
+
   constructor(
     private readonly opts: {
       getWindow: () => BrowserWindow | null;
@@ -60,9 +62,13 @@ export class Notifier {
         }).show();
       }
       const win = this.opts.getWindow();
-      if (win && !win.isDestroyed() && !win.isFocused()) {
+      if (win && !win.isDestroyed() && !win.isFocused() && !this.flashPending) {
+        this.flashPending = true;
         win.flashFrame(true);
-        win.once('focus', () => win.flashFrame(false));
+        win.once('focus', () => {
+          this.flashPending = false;
+          if (!win.isDestroyed()) win.flashFrame(false);
+        });
       }
       shell.beep();
     } catch {

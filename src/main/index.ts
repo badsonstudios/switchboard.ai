@@ -49,9 +49,31 @@ function isSafeExternalUrl(url: string): boolean {
 }
 
 let workspace: WorkspaceStore;
+let currentWindow: BrowserWindow | null = null;
+let busySessions: () => string[] = () => [];
+let quitConfirmed = false;
 
 function workAreas() {
   return screen.getAllDisplays().map((d) => d.workArea);
+}
+
+// Quit protection (P1-E6-02): intercept the WINDOW close — on Windows the X
+// destroys the sole window before before-quit, so guarding there strands
+// headless PTYs. Prompt here, then destroy + quit only on confirm.
+function confirmCloseWithBusySessions(win: BrowserWindow): boolean {
+  if (quitConfirmed) return true;
+  if (process.env.SWITCHBOARD_AUTOCLOSE) return true; // scripted smoke: never block
+  const busy = busySessions();
+  if (busy.length === 0) return true;
+  const choice = dialog.showMessageBoxSync(win, {
+    type: 'warning',
+    buttons: ['Quit anyway', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Sessions are mid-task',
+    message: `${busy.length} session(s) are mid-task:\n\n${busy.join('\n')}\n\nQuit anyway?`,
+  });
+  return choice === 0;
 }
 
 function trackWindowGeometry(win: BrowserWindow): void {
@@ -100,7 +122,15 @@ function createWindow(): BrowserWindow {
   });
 
   if (state.isMaximized) win.maximize();
+  currentWindow = win;
   trackWindowGeometry(win);
+  win.on('close', (e) => {
+    if (!confirmCloseWithBusySessions(win)) {
+      e.preventDefault();
+      return;
+    }
+    quitConfirmed = true;
+  });
   win.once('ready-to-show', () => {
     win.show();
     log.ui.info('window shown', { restored: !!state.bounds, maximized: state.isMaximized });
@@ -150,47 +180,39 @@ app
       // hooks are an accelerator, not the authority — start-failure degrades
       log.app.error('hook listener failed to start', { error: String(err) });
     });
-    const win = createWindow();
+    createWindow(); // sets currentWindow; IPC/notifier read it via closure
     const feed = new EventFeed();
     const notifier = new Notifier({
-      getWindow: () => win,
+      getWindow: () => currentWindow,
       getPrefs: () => workspace.getNotificationPrefs(),
       titleFor: (sessionId) => manager.get(sessionId)?.identity.title ?? 'switchboard',
       bodyFor: (e) => e.kind.replace(/-/g, ' '),
     });
     feed.onEvent((e) => notifier.handle(e));
     ipcMain.handle('preflight:check', () => runPreflight());
-
-    // quit protection (P1-E6-02, §5.25): quitting with working sessions is a
-    // two-step act
-    let quitConfirmed = false;
-    app.on('before-quit', (e) => {
-      if (quitConfirmed) return;
-      const busy = manager
+    busySessions = () =>
+      manager
         .list()
-        .filter((s) => ['working', 'needs-input', 'needs-permission'].includes(s.status));
-      if (busy.length === 0) return;
-      e.preventDefault();
-      const names = busy.map((s) => `• ${s.identity.title} (${s.status})`).join('\n');
-      const choice = dialog.showMessageBoxSync({
-        type: 'warning',
-        buttons: ['Quit anyway', 'Cancel'],
-        defaultId: 1,
-        cancelId: 1,
-        title: 'Sessions are mid-task',
-        message: `${busy.length} session(s) are mid-task:\n\n${names}\n\nQuit anyway?`,
-      });
-      if (choice === 0) {
-        quitConfirmed = true;
-        app.quit();
-      }
-    });
+        .filter((s) => ['working', 'needs-input', 'needs-permission'].includes(s.status))
+        .map((s) => `• ${s.identity.title} (${s.status})`);
 
+    // git handlers are scoped to KNOWN session folders (§5.29): a compromised
+    // renderer must not turn these into an arbitrary-file-read primitive
+    const knownFolder = (folder: string): boolean =>
+      manager.list().some((s) => path.resolve(s.identity.folder) === path.resolve(folder));
     const gitService = new GitService();
-    ipcMain.handle('git:status', (_e, folder: string) => gitService.status(folder));
-    ipcMain.handle('git:fileVersions', (_e, folder: string, file: string) =>
-      gitService.fileVersions(folder, file)
+    ipcMain.handle('git:status', (_e, folder: string) =>
+      knownFolder(folder) ? gitService.status(folder) : { isRepo: false, files: [] }
     );
+    ipcMain.handle('git:fileVersions', (_e, folder: string, file: string) => {
+      // scope to a known folder AND forbid escaping it (path traversal)
+      if (!knownFolder(folder)) return { original: '', modified: '' };
+      const resolved = path.resolve(folder, file);
+      if (resolved !== path.resolve(folder) && !resolved.startsWith(path.resolve(folder) + path.sep)) {
+        return { original: '', modified: '' };
+      }
+      return gitService.fileVersions(folder, file);
+    });
     ipcMain.handle('notifications:getPrefs', () => workspace.getNotificationPrefs());
     ipcMain.handle('notifications:setPrefs', (_e, p) => {
       workspace.setNotificationPrefs(p);
@@ -203,7 +225,7 @@ app
       transcripts,
       feed,
       log: createLogger(sink, 'ipc'),
-      getWindow: () => win,
+      getWindow: () => currentWindow, // reassigned on macOS re-activate
     });
     app.on('quit', () => {
       ptys.killAll();

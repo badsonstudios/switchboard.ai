@@ -148,11 +148,17 @@ export function SessionGrid(props: {
     // eslint's exhaustive-deps plugin isn't installed; deps kept accurate by hand
   }, [props.controller, addSessionCard, props.theme, t]);
 
+  const [error, setError] = React.useState<string | null>(null);
   const addCard = useCallback(async () => {
     // ⊕ flow: pick a folder, spawn, bind the card (E3-02/E3-04)
     const folder = await window.switchboard.sessions.pickFolder();
     if (!folder) return;
-    await addSessionCard(folder);
+    try {
+      await addSessionCard(folder);
+    } catch (e) {
+      // our breakage must be visible, not mute (fail-open)
+      setError(String(e));
+    }
   }, [addSessionCard]);
 
   const onReady = useCallback(
@@ -170,6 +176,14 @@ export function SessionGrid(props: {
       if (saved) {
         try {
           api.fromJSON(saved as Parameters<DockviewApi['fromJSON']>[0]);
+          // prune ghost cards: sessions don't survive restart yet (that item
+          // is later), so drop restored panels whose session is not live —
+          // otherwise every relaunch shows dead terminals that eat keystrokes
+          const live = new Set((await window.switchboard.sessions.list()).map((s) => s.id));
+          for (const p of [...api.panels]) {
+            const m = /^(?:session|diff)-(.+)$/.exec(p.id);
+            if (m && !live.has(m[1])) api.removePanel(p);
+          }
         } catch {
           // fail-open: unusable layout JSON -> fresh grid, never a crash
         }
@@ -213,6 +227,11 @@ export function SessionGrid(props: {
           paddingBlockEnd: 0,
         }}
       >
+        {error && (
+          <span style={{ color: 'var(--status-crashed)', fontSize: 11, alignSelf: 'center' }}>
+            {error}
+          </span>
+        )}
         <button
           onClick={() => void addCard()}
           style={{

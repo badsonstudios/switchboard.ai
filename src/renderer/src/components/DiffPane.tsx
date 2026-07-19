@@ -60,15 +60,21 @@ export function DiffPane(props: { folder: string; theme: 'nordic' | 'daylight' }
 
   useEffect(() => {
     if (!selected || !editorRef.current) return;
+    let cancelled = false; // stale selections / editor disposed mid-load
     void window.switchboard.git.fileVersions(props.folder, selected).then((v) => {
-      const old = editorRef.current!.getModel();
-      editorRef.current!.setModel({
+      const ed = editorRef.current;
+      if (cancelled || !ed) return;
+      const old = ed.getModel();
+      ed.setModel({
         original: monaco.editor.createModel(v.original),
         modified: monaco.editor.createModel(v.modified),
       });
       old?.original.dispose();
       old?.modified.dispose();
     });
+    return () => {
+      cancelled = true;
+    };
   }, [selected, props.folder]);
 
   const badge = (f: GitFileDto): string =>

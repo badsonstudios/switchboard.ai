@@ -11,6 +11,8 @@ export function TerminalPane(props: { sessionId: string; visible: boolean }): Re
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const visibleRef = useRef(props.visible);
+  visibleRef.current = props.visible;
 
   // terminal lifecycle: created once per mounted pane
   useEffect(() => {
@@ -29,9 +31,14 @@ export function TerminalPane(props: { sessionId: string; visible: boolean }): Re
     term.onData((d) => window.switchboard.pty.input(props.sessionId, d));
 
     const ro = new ResizeObserver(() => {
-      if (!termRef.current) return;
+      // hidden panes collapse to a 2x1 min; resizing the PTY there makes the
+      // real CLI reflow its TUI into the ring buffer as garbage (S-07). Only
+      // resize while visible and above the fit-addon minimum.
+      if (!termRef.current || !visibleRef.current) return;
       fit.fit();
-      window.switchboard.pty.resize(props.sessionId, term.cols, term.rows);
+      if (term.cols > 2 && term.rows > 1) {
+        window.switchboard.pty.resize(props.sessionId, term.cols, term.rows);
+      }
     });
     ro.observe(hostRef.current!);
 

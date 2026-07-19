@@ -45,7 +45,15 @@ export class GitService {
     const probe = await git(folder, ['rev-parse', '--is-inside-work-tree']);
     if (!probe.ok || !probe.out.trim().startsWith('true')) return { isRepo: false, files: [] };
 
-    const r = await git(folder, ['status', '--porcelain=v2', '--branch', '--untracked-files=all']);
+    // quotePath=off: non-ASCII paths arrive literal, so fileVersions can find them
+    const r = await git(folder, [
+      '-c',
+      'core.quotePath=off',
+      'status',
+      '--porcelain=v2',
+      '--branch',
+      '--untracked-files=all',
+    ]);
     if (!r.ok) return { isRepo: false, files: [] };
 
     const status: GitStatus = { isRepo: true, files: [] };

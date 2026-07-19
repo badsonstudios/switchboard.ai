@@ -59,9 +59,20 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   ipcMain.handle(
     'sessions:create',
     (_e, opts: { folder: string; title: string; autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto' }) => {
+    // validate untrusted renderer input (§5.29): folder must be a real dir,
+    // title bounded; unknown autonomy falls through to the CLI 'ask' default
+    if (!opts || typeof opts.folder !== 'string') throw new Error('folder required');
+    let isDir = false;
+    try {
+      isDir = fs.statSync(opts.folder).isDirectory();
+    } catch {
+      isDir = false;
+    }
+    if (!isDir) throw new Error('folder is not a directory');
+    const title = (typeof opts.title === 'string' ? opts.title : opts.folder).slice(0, 120);
     const record = manager.create(
       {
-        title: opts.title,
+        title,
         folder: opts.folder,
         providerId: 'claude-code',
         accentColor: assignAccent(
