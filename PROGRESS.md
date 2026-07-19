@@ -7,8 +7,8 @@
 **Milestone:** Phase 1 - MVP (issues #12–#35, filed 2026-07-19)
 **AUTOPILOT RUN 2 ACTIVE** — started 2026-07-19 after Spike 01 merged (PR #11,
 all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
-**In progress:** P1-E1-01 — Electron scaffold (#12)
-**Next up:** P1-E1-02 — CI pipeline (#13)
+**In progress:** P1-E1-02 — CI pipeline (#13)
+**Next up:** P1-E1-03 — Theme token system (#14)
 **Branch:** auto/phase-1-mvp
 
 ## Blockers / open questions for Dan
@@ -22,6 +22,12 @@ all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
 
 ## Log
 
+- 2026-07-19 — **P1-E1-01 done** (autopilot run 2): electron-vite + TS + React
+  scaffold at repo root; sandboxed/isolated windows, CSP, external-link +
+  navigation guards, window-state persistence with missing-display rescue
+  (tested, 8 unit tests); S-01 env landmines mitigated day-one (scripts/ev.js).
+  Reviewed (code-reviewer): 0 blockers, 8 should-fixes applied. Smoke: open/
+  close clean x2, state restores. CI (mac/linux compile) lands with #13.
 - 2026-07-19 — **S-08 done** (autopilot; milestone complete):
   `docs/plans/spike-01-findings.md` written; DESIGN.md OQ #2/#5/#10 resolved,
   #3 verdict added, #13 evidence added; Phase 1 plan corrected (scrollback
