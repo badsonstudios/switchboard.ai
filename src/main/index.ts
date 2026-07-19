@@ -11,6 +11,7 @@ import { SessionManager } from './sessions/session-manager';
 import { HookListener } from './hooks/hook-listener';
 import { TranscriptWatcher } from './transcripts/watcher';
 import { registerSessionIpc } from './sessions/ipc';
+import { EventFeed } from './events/feed';
 
 // Safe-by-default for every window this app will ever open (§5.29 posture).
 app.enableSandbox();
@@ -151,6 +152,7 @@ app
       ptys,
       hooks,
       transcripts,
+      feed: new EventFeed(),
       log: createLogger(sink, 'ipc'),
       getWindow: () => win,
     });

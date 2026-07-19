@@ -10,12 +10,14 @@ import { HookListener } from '../hooks/hook-listener';
 import { TranscriptWatcher } from '../transcripts/watcher';
 import { Logger } from '../log/logger';
 import { assignAccent, detectProjectType } from './identity';
+import { EventFeed } from '../events/feed';
 
 export interface SessionIpcDeps {
   manager: SessionManager;
   ptys: PtyService;
   hooks: HookListener;
   transcripts: TranscriptWatcher;
+  feed: EventFeed;
   log: Logger;
   getWindow: () => BrowserWindow | null;
 }
@@ -30,8 +32,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
   };
 
-  manager.onStatusChange((change) => send('sessions:status', change));
+  manager.onStatusChange((change) => {
+    send('sessions:status', change);
+    const fe = deps.feed.ingest(change);
+    if (fe) send('feed:event', fe);
+  });
   transcripts.onUpdate((snap) => send('sessions:usage', snap));
+
+  ipcMain.handle('feed:list', () => deps.feed.list());
 
   ipcMain.handle('sessions:isDirectory', (_e, p: string) => {
     try {

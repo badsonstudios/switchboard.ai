@@ -9,6 +9,7 @@ import {
 import { LanguageChoice, loadLanguage, setLanguage } from './i18n';
 import { TitleBar, SessionsRail, StatusBar, RailSession } from './components/chrome';
 import { SessionGrid, GridController } from './components/SessionGrid';
+import { FeedPanel } from './components/FeedPanel';
 
 // Control-room shell (P1-E3-01): titlebar / rail / grid / statusbar.
 // Terminals (E3-02), identity kit (E3-03), and live badges (E3-05) land next.
@@ -102,6 +103,7 @@ export function App(): React.JSX.Element {
           onCardsChanged={setCards}
           controller={grid}
         />
+        <FeedPanel sessions={sessions} onFocus={(id) => grid.current?.focusSession(id)} />
       </div>
       <StatusBar count={cards.length} theme={theme} />
     </div>

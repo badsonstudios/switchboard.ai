@@ -54,6 +54,14 @@ const api = {
       return () => ipcRenderer.removeListener('sessions:usage', h);
     },
   },
+  feed: {
+    list: (): Promise<unknown[]> => ipcRenderer.invoke('feed:list'),
+    onEvent: (cb: (e: unknown) => void): (() => void) => {
+      const h = (_e: unknown, ev: unknown) => cb(ev);
+      ipcRenderer.on('feed:event', h);
+      return () => ipcRenderer.removeListener('feed:event', h);
+    },
+  },
   pty: {
     attach: (id: string): Promise<string | null> => ipcRenderer.invoke('pty:attach', id),
     detach: (id: string): void => ipcRenderer.send('pty:detach', id),
