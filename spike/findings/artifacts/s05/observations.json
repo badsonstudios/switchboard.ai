@@ -1,0 +1,439 @@
+{
+  "files": {
+    "C:\\Users\\dheinz\\.claude\\projects\\C--tmp-s05-project\\c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl": {
+      "rel": "C--tmp-s05-project\\c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "isSubagentFile": false,
+      "meta": null,
+      "firstSeenMs": 3868,
+      "lines": 21,
+      "types": {
+        "queue-operation": 2,
+        "user": 5,
+        "attachment": 3,
+        "file-history-snapshot": 1,
+        "ai-title": 2,
+        "assistant": 6,
+        "last-prompt": 2
+      },
+      "sidechainLines": 0,
+      "agents": [],
+      "tools": [
+        {
+          "atMs": 8652,
+          "name": "ToolSearch",
+          "sidechain": false
+        },
+        {
+          "atMs": 11134,
+          "name": "TodoWrite",
+          "sidechain": false
+        },
+        {
+          "atMs": 14094,
+          "name": "Agent",
+          "sidechain": false
+        },
+        {
+          "atMs": 19857,
+          "name": "TodoWrite",
+          "sidechain": false
+        }
+      ]
+    },
+    "C:\\Users\\dheinz\\.claude\\projects\\C--tmp-s05-project\\c7ec8e50-8af5-446f-af84-ab6013717b52\\subagents\\agent-adcd9ed8bb3bcc514.jsonl": {
+      "rel": "C--tmp-s05-project\\c7ec8e50-8af5-446f-af84-ab6013717b52\\subagents\\agent-adcd9ed8bb3bcc514.jsonl",
+      "inProjectSlug": true,
+      "isSubagentFile": true,
+      "meta": {
+        "agentType": "general-purpose",
+        "description": "Count lines in data.txt",
+        "toolUseId": "toolu_015Bi5E1ArqjU7CTSuLSmYKn",
+        "spawnDepth": 1
+      },
+      "firstSeenMs": 14093,
+      "lines": 7,
+      "types": {
+        "user": 2,
+        "attachment": 2,
+        "assistant": 3
+      },
+      "sidechainLines": 7,
+      "agents": [
+        "agentId=adcd9ed8bb3bcc514"
+      ],
+      "tools": [
+        {
+          "atMs": 15829,
+          "name": "Read",
+          "sidechain": true
+        }
+      ]
+    }
+  },
+  "record": [
+    {
+      "kind": "line",
+      "atMs": 3869,
+      "file": "c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "type": "queue-operation",
+      "isSidechain": false,
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 186
+    },
+    {
+      "kind": "line",
+      "atMs": 3869,
+      "file": "c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "type": "queue-operation",
+      "isSidechain": false,
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 184
+    },
+    {
+      "kind": "line",
+      "atMs": 3869,
+      "file": "c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "type": "user",
+      "isSidechain": false,
+      "uuid": "f5c3afb6-45d0-4421-80a4-274b6788577d",
+      "parentUuid": null,
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 157
+    },
+    {
+      "kind": "line",
+      "atMs": 3869,
+      "file": "c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "type": "attachment",
+      "isSidechain": false,
+      "uuid": "e06a1f76-9e0f-47fd-a122-927bd9cff2d3",
+      "parentUuid": "f5c3afb6-45d0-4421-80a4-274b6788577d",
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 158
+    },
+    {
+      "kind": "line",
+      "atMs": 3869,
+      "file": "c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "type": "attachment",
+      "isSidechain": false,
+      "uuid": "a30249f6-657b-4224-aa80-f6e34082a927",
+      "parentUuid": "e06a1f76-9e0f-47fd-a122-927bd9cff2d3",
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 158
+    },
+    {
+      "kind": "line",
+      "atMs": 3869,
+      "file": "c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "type": "attachment",
+      "isSidechain": false,
+      "uuid": "c53f1821-5b48-4aa0-be93-c9c63220a573",
+      "parentUuid": "a30249f6-657b-4224-aa80-f6e34082a927",
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 158
+    },
+    {
+      "kind": "line",
+      "atMs": 3869,
+      "file": "c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "type": "file-history-snapshot",
+      "isSidechain": false,
+      "lagMs": null
+    },
+    {
+      "kind": "line",
+      "atMs": 5172,
+      "file": "c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "type": "ai-title",
+      "isSidechain": false,
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": null
+    },
+    {
+      "kind": "line",
+      "atMs": 8652,
+      "file": "c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "type": "assistant",
+      "isSidechain": false,
+      "uuid": "86f41b7e-8429-411f-92df-1d65e26bf134",
+      "parentUuid": "c53f1821-5b48-4aa0-be93-c9c63220a573",
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 388
+    },
+    {
+      "kind": "line",
+      "atMs": 8652,
+      "file": "c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "type": "assistant",
+      "isSidechain": false,
+      "uuid": "078abc41-d10d-484b-93c7-61ca0fe0e4c2",
+      "parentUuid": "86f41b7e-8429-411f-92df-1d65e26bf134",
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 155
+    },
+    {
+      "kind": "line",
+      "atMs": 8652,
+      "file": "c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "type": "user",
+      "isSidechain": false,
+      "uuid": "2270a8c6-ae0b-47c0-a88b-4998ae5a79a4",
+      "parentUuid": "078abc41-d10d-484b-93c7-61ca0fe0e4c2",
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 130
+    },
+    {
+      "kind": "todowrite",
+      "atMs": 11134,
+      "todos": [
+        {
+          "content": "inspect data",
+          "status": "in_progress",
+          "activeForm": "Inspecting data"
+        },
+        {
+          "content": "summarize data",
+          "status": "pending",
+          "activeForm": "Summarizing data"
+        },
+        {
+          "content": "report",
+          "status": "pending",
+          "activeForm": "Reporting"
+        }
+      ]
+    },
+    {
+      "kind": "line",
+      "atMs": 11135,
+      "file": "c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "type": "assistant",
+      "isSidechain": false,
+      "uuid": "ccb7250a-84a4-44c4-9b61-45c1eecef0e3",
+      "parentUuid": "2270a8c6-ae0b-47c0-a88b-4998ae5a79a4",
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 181
+    },
+    {
+      "kind": "line",
+      "atMs": 11135,
+      "file": "c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "type": "user",
+      "isSidechain": false,
+      "uuid": "534e1043-0655-4aca-ab91-230d4448d775",
+      "parentUuid": "ccb7250a-84a4-44c4-9b61-45c1eecef0e3",
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 178
+    },
+    {
+      "kind": "line",
+      "atMs": 14094,
+      "file": "agent-adcd9ed8bb3bcc514.jsonl",
+      "inProjectSlug": true,
+      "type": "user",
+      "isSidechain": true,
+      "uuid": "ac42f27c-186b-4c59-a96f-91e578899621",
+      "parentUuid": null,
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 163
+    },
+    {
+      "kind": "line",
+      "atMs": 14094,
+      "file": "agent-adcd9ed8bb3bcc514.jsonl",
+      "inProjectSlug": true,
+      "type": "attachment",
+      "isSidechain": true,
+      "uuid": "b45ac1ac-af61-447e-9666-6b200f619c8c",
+      "parentUuid": "ac42f27c-186b-4c59-a96f-91e578899621",
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 153
+    },
+    {
+      "kind": "line",
+      "atMs": 14094,
+      "file": "agent-adcd9ed8bb3bcc514.jsonl",
+      "inProjectSlug": true,
+      "type": "attachment",
+      "isSidechain": true,
+      "uuid": "9f88eb92-dde7-4780-a42c-937a03047f57",
+      "parentUuid": "b45ac1ac-af61-447e-9666-6b200f619c8c",
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 153
+    },
+    {
+      "kind": "line",
+      "atMs": 14094,
+      "file": "c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "type": "assistant",
+      "isSidechain": false,
+      "uuid": "25286b16-fee9-4ff2-95a6-e53956ec751f",
+      "parentUuid": "534e1043-0655-4aca-ab91-230d4448d775",
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 170
+    },
+    {
+      "kind": "line",
+      "atMs": 15829,
+      "file": "agent-adcd9ed8bb3bcc514.jsonl",
+      "inProjectSlug": true,
+      "type": "assistant",
+      "isSidechain": true,
+      "uuid": "61207e56-e5f2-46bb-8fae-abbcf8afb61c",
+      "parentUuid": "9f88eb92-dde7-4780-a42c-937a03047f57",
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 186
+    },
+    {
+      "kind": "line",
+      "atMs": 15829,
+      "file": "agent-adcd9ed8bb3bcc514.jsonl",
+      "inProjectSlug": true,
+      "type": "assistant",
+      "isSidechain": true,
+      "uuid": "48eeeb1c-fcf9-454d-ad79-e3e2c477273b",
+      "parentUuid": "61207e56-e5f2-46bb-8fae-abbcf8afb61c",
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 170
+    },
+    {
+      "kind": "line",
+      "atMs": 15829,
+      "file": "agent-adcd9ed8bb3bcc514.jsonl",
+      "inProjectSlug": true,
+      "type": "user",
+      "isSidechain": true,
+      "uuid": "c45f286a-9f48-4421-ac39-f194bc352d77",
+      "parentUuid": "48eeeb1c-fcf9-454d-ad79-e3e2c477273b",
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 140
+    },
+    {
+      "kind": "line",
+      "atMs": 17789,
+      "file": "agent-adcd9ed8bb3bcc514.jsonl",
+      "inProjectSlug": true,
+      "type": "assistant",
+      "isSidechain": true,
+      "uuid": "1e65ceb9-6352-470a-8c16-aa62e91230db",
+      "parentUuid": "c45f286a-9f48-4421-ac39-f194bc352d77",
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 158
+    },
+    {
+      "kind": "line",
+      "atMs": 17789,
+      "file": "c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "type": "user",
+      "isSidechain": false,
+      "uuid": "2d893022-3206-4532-b305-8ff3800581c7",
+      "parentUuid": "25286b16-fee9-4ff2-95a6-e53956ec751f",
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 140
+    },
+    {
+      "kind": "line",
+      "atMs": 17789,
+      "file": "c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "type": "last-prompt",
+      "isSidechain": false,
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": null
+    },
+    {
+      "kind": "line",
+      "atMs": 17789,
+      "file": "c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "type": "ai-title",
+      "isSidechain": false,
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": null
+    },
+    {
+      "kind": "todowrite",
+      "atMs": 19857,
+      "todos": [
+        {
+          "content": "inspect data",
+          "status": "completed",
+          "activeForm": "Inspecting data"
+        },
+        {
+          "content": "summarize data",
+          "status": "completed",
+          "activeForm": "Summarizing data"
+        },
+        {
+          "content": "report",
+          "status": "completed",
+          "activeForm": "Reporting"
+        }
+      ]
+    },
+    {
+      "kind": "line",
+      "atMs": 19857,
+      "file": "c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "type": "assistant",
+      "isSidechain": false,
+      "uuid": "b4fa6f1e-6bb4-4cbd-9267-5a144f511a5c",
+      "parentUuid": "2d893022-3206-4532-b305-8ff3800581c7",
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 160
+    },
+    {
+      "kind": "line",
+      "atMs": 19857,
+      "file": "c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "type": "user",
+      "isSidechain": false,
+      "uuid": "054ad53d-6cfe-40a8-a396-18a5096169d9",
+      "parentUuid": "b4fa6f1e-6bb4-4cbd-9267-5a144f511a5c",
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 154
+    },
+    {
+      "kind": "line",
+      "atMs": 21152,
+      "file": "c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "type": "assistant",
+      "isSidechain": false,
+      "uuid": "7135004c-4331-414d-8e77-f807bce84c62",
+      "parentUuid": "054ad53d-6cfe-40a8-a396-18a5096169d9",
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": 127
+    },
+    {
+      "kind": "line",
+      "atMs": 21152,
+      "file": "c7ec8e50-8af5-446f-af84-ab6013717b52.jsonl",
+      "inProjectSlug": true,
+      "type": "last-prompt",
+      "isSidechain": false,
+      "sessionId": "c7ec8e50-8af5-446f-af84-ab6013717b52",
+      "lagMs": null
+    }
+  ]
+}

@@ -4,15 +4,38 @@
 > A fresh session reads this file and knows exactly where things stand.
 
 **Milestone:** Spike 01 - Foundations (issues #1–#8)
-**In progress:** nothing mid-flight
-**Next up:** S-03 — Hook round-trip & decision semantics (#3)
-**Branch:** main
+**AUTOPILOT RUN ACTIVE** — started 2026-07-19, milestone Spike 01 (S-03→S-08),
+branch `auto/spike-01-foundations`, draft PR opens after first commit. Dan
+approved S-07's concurrent sessions. Run stops at milestone boundary.
+**In progress:** S-06 — Notification/Stop hooks → status events (#6)
+**Next up:** S-07 — Concurrency & perf probe (#7)
+**Branch:** auto/spike-01-foundations
 
 ## Blockers / open questions for Dan
 
 - none
 
 ## Log
+
+- 2026-07-19 — **S-05 done** (✅ GO, autopilot): subagent transcripts are
+  nested per-agent files (`<session>/subagents/agent-<id>.jsonl` + meta.json
+  with agentType/description/toolUseId); live tail lag ~160ms; TodoWrite
+  plan-state extraction viable (OQ #13). Findings:
+  `spike/findings/s-05-sidechain-visibility.md`
+- 2026-07-19 — **S-04 done** (✅ GO, autopilot): transcript discovered 3.9s
+  after spawn (slug mapping confirmed for :/ chars; new-file detection is the
+  real binding), tail lag 24–815ms (median 268ms), tolerant reader survives
+  garbage/unknown types, tokens/tools/files extractable. No terminal "done"
+  marker in transcript → hooks are status authority. Findings:
+  `spike/findings/s-04-transcript-tailing.md`
+- 2026-07-19 — **S-03 done** (✅ HOOK PATH, autopilot): full decision matrix
+  observed headless + interactive TUI. allow overrides default-deny; deny
+  carries reason verbatim to model; ask surfaces real TUI prompt; hook hang →
+  clean TUI fallback after ~600s default budget (config via timeout field —
+  90s hold verified); dead listener fails open instantly. §5.29 floor
+  verified (401/403). Findings: `spike/findings/s-03-hook-roundtrip.md`
+- 2026-07-19 — Autopilot run started: milestone Spike 01 (S-03→S-08), branch
+  `auto/spike-01-foundations`.
 
 - 2026-07-19 — **S-02 done** (✅ GO): `claude --settings <abs-file-path>` at
   spawn is the Phase 1 hook-injection mechanism — hooks fire, user settings
