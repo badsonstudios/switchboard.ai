@@ -7,8 +7,9 @@
 **Milestone:** Phase 1 - MVP (issues #12–#35, filed 2026-07-19)
 **AUTOPILOT RUN 2 ACTIVE** — started 2026-07-19 after Spike 01 merged (PR #11,
 all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
-**In progress:** P1-E1-05 — Logging pipeline (#16)
-**Next up:** P1-E1-06 — Extensibility seams v0 (#17)
+**In progress:** P1-E2-01 — PtyService (#18)
+**Next up:** P1-E2-02 — Claude Code adapter v1 (#19)
+**E1 epic: COMPLETE** (#12–#17 all done, CI green)
 **Branch:** auto/phase-1-mvp
 
 ## Blockers / open questions for Dan
@@ -20,6 +21,14 @@ all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
 
 ## Log
 
+- 2026-07-19 — **P1-E1-06 done** (autopilot run 2; E1 epic complete):
+  contribution registry + capability manifests (§5.23); ProviderAdapter and
+  EventSource contracts v0; Claude adapter registered via bootstrap and
+  resolved through the registry (done-when tested); spawn recipe carries the
+  S-01 env scrubs. 26 tests green.
+- 2026-07-19 — **P1-E1-05 done** (autopilot run 2): zero-dep JSON-lines
+  logger with rotation, deep redaction (token-through-args test), sessionId
+  lifecycle-grep test, per-subsystem debug toggles. Wired into app lifecycle.
 - 2026-07-19 — **P1-E1-04 done** (autopilot run 2): i18next + ICU, en.json,
   generated pseudo-locale (⟦mangled⟧, ICU args preserved — tested against
   every en.json leaf), language toggle in shell, react/jsx-no-literals bans

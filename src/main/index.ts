@@ -2,6 +2,8 @@ import { app, BrowserWindow, shell } from 'electron';
 import path from 'path';
 import { loadWindowState, trackWindowState, windowOptionsFrom } from './window-state';
 import { LogSink, createLogger } from './log/logger';
+import { registerBuiltinContributions } from './bootstrap';
+import { registry } from './extensibility/registry';
 
 // Safe-by-default for every window this app will ever open (§5.29 posture).
 app.enableSandbox();
@@ -81,6 +83,8 @@ app
   .then(() => {
     sink = new LogSink({ dir: logsDir() });
     log.app.info('app ready', { version: app.getVersion(), platform: process.platform });
+    registerBuiltinContributions();
+    log.app.info('contributions registered', { manifests: registry.manifests() });
     createWindow();
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
