@@ -1,0 +1,170 @@
+// SessionManager (P1-E2-03): create/kill/restart sessions, identity registry,
+// status state machine fed by hook events (ingestion point here; the live
+// HookListener wires into it in P1-E2-05). Every transition is logged with
+// sessionId (queryable per the E1-05 logging contract) and observable via
+// subscription.
+import { randomUUID } from 'crypto';
+import { ContributionRegistry } from '../extensibility/registry';
+import { SpawnRecipe } from '../extensibility/contributions';
+import { Logger } from '../log/logger';
+import { SessionEvent, SessionStatus, transition } from './state-machine';
+
+export interface SessionIdentity {
+  title: string;
+  folder: string;
+  accentColor?: string;
+  providerId: string;
+}
+
+export interface SessionRecord {
+  id: string;
+  identity: SessionIdentity;
+  status: SessionStatus;
+  createdAt: string;
+  nativeSessionId?: string;
+  pid?: number;
+  exitCode: number | null;
+}
+
+/** The slice of PtyService the manager needs — injectable for tests. */
+export interface PtyLike {
+  spawn(opts: {
+    id: string;
+    command: string;
+    args: string[];
+    cwd: string;
+    env?: Record<string, string | undefined>;
+  }): {
+    pid: number;
+    onExit(l: (code: number) => void): () => void;
+    kill(): void;
+  };
+  remove(id: string): void;
+}
+
+export interface StatusChange {
+  sessionId: string;
+  from: SessionStatus;
+  to: SessionStatus;
+  cause: string;
+  at: string;
+}
+
+export class SessionManager {
+  private readonly sessions = new Map<string, SessionRecord>();
+  private readonly listeners = new Set<(c: StatusChange) => void>();
+  private readonly history: StatusChange[] = [];
+
+  constructor(
+    private readonly registry: ContributionRegistry,
+    private readonly ptys: PtyLike,
+    private readonly log: Logger,
+    private readonly stateDir: string
+  ) {}
+
+  create(identity: SessionIdentity, opts?: { resumeSessionId?: string; settings?: Record<string, unknown> }): SessionRecord {
+    const adapter = this.registry.resolve('provider-adapter', identity.providerId);
+    if (!adapter) throw new Error(`no provider adapter "${identity.providerId}"`);
+    const id = randomUUID();
+    const recipe: SpawnRecipe = adapter.buildSpawn({
+      cwd: identity.folder,
+      sessionId: id,
+      stateDir: this.stateDir,
+      resumeSessionId: opts?.resumeSessionId,
+      settings: opts?.settings,
+    });
+    const record: SessionRecord = {
+      id,
+      identity,
+      status: 'starting',
+      createdAt: new Date().toISOString(),
+      exitCode: null,
+    };
+    this.sessions.set(id, record);
+    const proc = this.ptys.spawn({ id, command: recipe.command, args: recipe.args, cwd: identity.folder, env: recipe.env });
+    record.pid = proc.pid;
+    proc.onExit((code) => {
+      record.exitCode = code;
+      this.apply(id, { kind: 'exit', code });
+    });
+    this.log.info('session created', { sessionId: id, folder: identity.folder, pid: proc.pid, provider: identity.providerId });
+    return { ...record };
+  }
+
+  kill(id: string): void {
+    const r = this.mustGet(id);
+    this.ptys.remove(id);
+    this.log.info('session killed', { sessionId: id });
+    // exit handler flips status via the 'exit' event; nothing else to do
+    void r;
+  }
+
+  restart(id: string): SessionRecord {
+    const r = this.mustGet(id);
+    this.ptys.remove(id);
+    this.sessions.delete(id);
+    this.log.info('session restarting', { sessionId: id });
+    return this.create(r.identity, { resumeSessionId: r.nativeSessionId });
+  }
+
+  /** Hook/permission/user events feed the state machine here. */
+  apply(id: string, ev: SessionEvent): void {
+    const r = this.sessions.get(id);
+    if (!r) return; // late events for removed sessions are dropped, not fatal
+    const result = transition(r.status, ev);
+    if (result.note) this.log.debug('session event note', { sessionId: id, note: result.note });
+    if (!result.changed) return;
+    const change: StatusChange = {
+      sessionId: id,
+      from: r.status,
+      to: result.status,
+      cause: describeCause(ev),
+      at: new Date().toISOString(),
+    };
+    r.status = result.status;
+    this.history.push(change);
+    this.log.info('session status', { sessionId: id, from: change.from, to: change.to, cause: change.cause });
+    for (const l of this.listeners) l(change);
+  }
+
+  setNativeSessionId(id: string, nativeId: string): void {
+    const r = this.sessions.get(id);
+    if (r) r.nativeSessionId = nativeId;
+  }
+
+  get(id: string): SessionRecord | undefined {
+    const r = this.sessions.get(id);
+    return r ? { ...r } : undefined;
+  }
+
+  list(): SessionRecord[] {
+    return [...this.sessions.values()].map((r) => ({ ...r }));
+  }
+
+  /** Queryable transition history (the done-when observability). */
+  transitions(sessionId?: string): StatusChange[] {
+    return sessionId ? this.history.filter((h) => h.sessionId === sessionId) : [...this.history];
+  }
+
+  onStatusChange(l: (c: StatusChange) => void): () => void {
+    this.listeners.add(l);
+    return () => this.listeners.delete(l);
+  }
+
+  private mustGet(id: string): SessionRecord {
+    const r = this.sessions.get(id);
+    if (!r) throw new Error(`unknown session "${id}"`);
+    return r;
+  }
+}
+
+function describeCause(ev: SessionEvent): string {
+  switch (ev.kind) {
+    case 'hook':
+      return `hook:${ev.event}`;
+    case 'exit':
+      return `exit:${ev.code}`;
+    default:
+      return ev.kind;
+  }
+}

@@ -7,8 +7,8 @@
 **Milestone:** Phase 1 - MVP (issues #12–#35, filed 2026-07-19)
 **AUTOPILOT RUN 2 ACTIVE** — started 2026-07-19 after Spike 01 merged (PR #11,
 all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
-**In progress:** P1-E2-03 — SessionManager (#20)
-**Next up:** P1-E2-04 — Workspace store (#21)
+**In progress:** P1-E2-04 — Workspace store (#21)
+**Next up:** P1-E2-05 — HookListener (#22)
 **E1 epic: COMPLETE** (#12–#17 all done, CI green)
 **Branch:** auto/phase-1-mvp
 
@@ -21,6 +21,14 @@ all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
 
 ## Log
 
+- 2026-07-19 — **P1-E2-03 done** (autopilot run 2): SessionManager —
+  create/kill/restart via registry-resolved adapters + injected PtyService;
+  identity registry; S-06-semantics state machine (unknown events never
+  transition; exit 0→done, nonzero→crashed; permission hold/resolve path).
+  Done-when: transitions observable (subscription + queryable history +
+  sessionId-filterable log lines), verified by replaying the REAL recorded
+  S-06 cycle (artifacts/s06/transitions.json) through the machine. Live
+  hook wiring lands in E2-05. 47 tests green.
 - 2026-07-19 — **P1-E2-02 done** (autopilot run 2): Claude adapter v1 —
   absolute CLI resolution (PATH scan, cached), per-session settings file
   generation with validate-before-spawn (S-02 silent-ignore trap), resume
