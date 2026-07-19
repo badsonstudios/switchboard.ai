@@ -1,0 +1,612 @@
+{
+  "n": 8,
+  "cwd": "C:/tmp/s03-project",
+  "machine": {
+    "cpus": 32,
+    "totalMemMB": 65294
+  },
+  "idle": {
+    "avgCpuPct": 7.6,
+    "avgWorkingSetMB": 3466.4,
+    "samples": 16
+  },
+  "stream": {
+    "avgCpuPct": 33,
+    "maxCpuPct": 63.4,
+    "avgWorkingSetMB": 3481.3,
+    "samples": 22
+  },
+  "perSessionIdleMB": 433.3,
+  "rendererJank": {
+    "maxDelayMs": 15,
+    "samples": 980
+  },
+  "tailers": {
+    "files": 1,
+    "lines": 32,
+    "malformed": 0
+  },
+  "sessions": [
+    {
+      "i": 0,
+      "bytes": 11346,
+      "exited": null
+    },
+    {
+      "i": 1,
+      "bytes": 3393,
+      "exited": null
+    },
+    {
+      "i": 2,
+      "bytes": 3393,
+      "exited": null
+    },
+    {
+      "i": 3,
+      "bytes": 3389,
+      "exited": null
+    },
+    {
+      "i": 4,
+      "bytes": 3393,
+      "exited": null
+    },
+    {
+      "i": 5,
+      "bytes": 3394,
+      "exited": null
+    },
+    {
+      "i": 6,
+      "bytes": 3406,
+      "exited": null
+    },
+    {
+      "i": 7,
+      "bytes": 3393,
+      "exited": null
+    }
+  ],
+  "samples": [
+    {
+      "at": "2026-07-19T16:45:32.256Z",
+      "tag": "tick",
+      "phase": "settle",
+      "nProcs": 33,
+      "totalCpuSeconds": 19.125,
+      "totalWorkingSetMB": 3444,
+      "claudeCount": 8,
+      "cpuPctSinceLast": null,
+      "bytesTotal": 26891
+    },
+    {
+      "at": "2026-07-19T16:45:33.377Z",
+      "tag": "tick",
+      "phase": "settle",
+      "nProcs": 30,
+      "totalCpuSeconds": 19.5625,
+      "totalWorkingSetMB": 3452,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 39,
+      "bytesTotal": 26891
+    },
+    {
+      "at": "2026-07-19T16:45:35.086Z",
+      "tag": "tick",
+      "phase": "settle",
+      "nProcs": 30,
+      "totalCpuSeconds": 19.984375,
+      "totalWorkingSetMB": 3442,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 24.7,
+      "bytesTotal": 26891
+    },
+    {
+      "at": "2026-07-19T16:45:37.121Z",
+      "tag": "tick",
+      "phase": "settle",
+      "nProcs": 30,
+      "totalCpuSeconds": 20.734375,
+      "totalWorkingSetMB": 3438,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 36.9,
+      "bytesTotal": 26891
+    },
+    {
+      "at": "2026-07-19T16:45:39.115Z",
+      "tag": "tick",
+      "phase": "settle",
+      "nProcs": 30,
+      "totalCpuSeconds": 21.5625,
+      "totalWorkingSetMB": 3444,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 41.5,
+      "bytesTotal": 26925
+    },
+    {
+      "at": "2026-07-19T16:45:41.143Z",
+      "tag": "tick",
+      "phase": "settle",
+      "nProcs": 30,
+      "totalCpuSeconds": 22.390625,
+      "totalWorkingSetMB": 3463,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 40.8,
+      "bytesTotal": 27055
+    },
+    {
+      "at": "2026-07-19T16:45:43.144Z",
+      "tag": "tick",
+      "phase": "settle",
+      "nProcs": 30,
+      "totalCpuSeconds": 23.25,
+      "totalWorkingSetMB": 3466,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 42.9,
+      "bytesTotal": 27154
+    },
+    {
+      "at": "2026-07-19T16:45:45.183Z",
+      "tag": "tick",
+      "phase": "settle",
+      "nProcs": 30,
+      "totalCpuSeconds": 24.484375,
+      "totalWorkingSetMB": 3467,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 60.5,
+      "bytesTotal": 27154
+    },
+    {
+      "at": "2026-07-19T16:45:47.309Z",
+      "tag": "tick",
+      "phase": "settle",
+      "nProcs": 30,
+      "totalCpuSeconds": 25.5,
+      "totalWorkingSetMB": 3461,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 47.8,
+      "bytesTotal": 27154
+    },
+    {
+      "at": "2026-07-19T16:45:49.144Z",
+      "tag": "tick",
+      "phase": "settle",
+      "nProcs": 30,
+      "totalCpuSeconds": 26.515625,
+      "totalWorkingSetMB": 3461,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 55.3,
+      "bytesTotal": 27154
+    },
+    {
+      "at": "2026-07-19T16:45:51.151Z",
+      "tag": "tick",
+      "phase": "settle",
+      "nProcs": 30,
+      "totalCpuSeconds": 27.078125,
+      "totalWorkingSetMB": 3463,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 28,
+      "bytesTotal": 27154
+    },
+    {
+      "at": "2026-07-19T16:45:53.211Z",
+      "tag": "tick",
+      "phase": "idle",
+      "nProcs": 32,
+      "totalCpuSeconds": 28.34375,
+      "totalWorkingSetMB": 3568,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 61.4,
+      "bytesTotal": 27154
+    },
+    {
+      "at": "2026-07-19T16:45:53.353Z",
+      "tag": "idle-start",
+      "phase": "idle",
+      "nProcs": 30,
+      "totalCpuSeconds": 27.75,
+      "totalWorkingSetMB": 3464,
+      "claudeCount": 8,
+      "cpuPctSinceLast": -418.1,
+      "bytesTotal": 27154
+    },
+    {
+      "at": "2026-07-19T16:45:55.195Z",
+      "tag": "tick",
+      "phase": "idle",
+      "nProcs": 30,
+      "totalCpuSeconds": 28.875,
+      "totalWorkingSetMB": 3463,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 61.1,
+      "bytesTotal": 27154
+    },
+    {
+      "at": "2026-07-19T16:45:57.201Z",
+      "tag": "tick",
+      "phase": "idle",
+      "nProcs": 30,
+      "totalCpuSeconds": 29.515625,
+      "totalWorkingSetMB": 3474,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 31.9,
+      "bytesTotal": 27186
+    },
+    {
+      "at": "2026-07-19T16:45:59.204Z",
+      "tag": "tick",
+      "phase": "idle",
+      "nProcs": 30,
+      "totalCpuSeconds": 30.78125,
+      "totalWorkingSetMB": 3471,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 63.2,
+      "bytesTotal": 27186
+    },
+    {
+      "at": "2026-07-19T16:46:01.240Z",
+      "tag": "tick",
+      "phase": "idle",
+      "nProcs": 30,
+      "totalCpuSeconds": 31.96875,
+      "totalWorkingSetMB": 3464,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 58.3,
+      "bytesTotal": 27186
+    },
+    {
+      "at": "2026-07-19T16:46:03.310Z",
+      "tag": "tick",
+      "phase": "idle",
+      "nProcs": 30,
+      "totalCpuSeconds": 32.46875,
+      "totalWorkingSetMB": 3463,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 24.2,
+      "bytesTotal": 27186
+    },
+    {
+      "at": "2026-07-19T16:46:05.256Z",
+      "tag": "tick",
+      "phase": "idle",
+      "nProcs": 30,
+      "totalCpuSeconds": 32.9375,
+      "totalWorkingSetMB": 3454,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 24.1,
+      "bytesTotal": 27186
+    },
+    {
+      "at": "2026-07-19T16:46:07.207Z",
+      "tag": "tick",
+      "phase": "idle",
+      "nProcs": 30,
+      "totalCpuSeconds": 33.375,
+      "totalWorkingSetMB": 3454,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 22.4,
+      "bytesTotal": 27186
+    },
+    {
+      "at": "2026-07-19T16:46:09.240Z",
+      "tag": "tick",
+      "phase": "idle",
+      "nProcs": 30,
+      "totalCpuSeconds": 34.171875,
+      "totalWorkingSetMB": 3454,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 39.2,
+      "bytesTotal": 27186
+    },
+    {
+      "at": "2026-07-19T16:46:11.518Z",
+      "tag": "tick",
+      "phase": "idle",
+      "nProcs": 30,
+      "totalCpuSeconds": 35.09375,
+      "totalWorkingSetMB": 3463,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 40.5,
+      "bytesTotal": 27218
+    },
+    {
+      "at": "2026-07-19T16:46:13.268Z",
+      "tag": "tick",
+      "phase": "idle",
+      "nProcs": 30,
+      "totalCpuSeconds": 35.375,
+      "totalWorkingSetMB": 3458,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 16.1,
+      "bytesTotal": 27218
+    },
+    {
+      "at": "2026-07-19T16:46:15.276Z",
+      "tag": "tick",
+      "phase": "idle",
+      "nProcs": 30,
+      "totalCpuSeconds": 35.765625,
+      "totalWorkingSetMB": 3459,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 19.5,
+      "bytesTotal": 27218
+    },
+    {
+      "at": "2026-07-19T16:46:17.267Z",
+      "tag": "tick",
+      "phase": "idle",
+      "nProcs": 30,
+      "totalCpuSeconds": 36.5,
+      "totalWorkingSetMB": 3451,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 36.9,
+      "bytesTotal": 27218
+    },
+    {
+      "at": "2026-07-19T16:46:19.225Z",
+      "tag": "tick",
+      "phase": "idle",
+      "nProcs": 30,
+      "totalCpuSeconds": 36.765625,
+      "totalWorkingSetMB": 3451,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 13.6,
+      "bytesTotal": 27218
+    },
+    {
+      "at": "2026-07-19T16:46:21.250Z",
+      "tag": "tick",
+      "phase": "idle",
+      "nProcs": 30,
+      "totalCpuSeconds": 37.328125,
+      "totalWorkingSetMB": 3452,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 27.8,
+      "bytesTotal": 27218
+    },
+    {
+      "at": "2026-07-19T16:46:23.310Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 38.0625,
+      "totalWorkingSetMB": 3462,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 35.6,
+      "bytesTotal": 27733
+    },
+    {
+      "at": "2026-07-19T16:46:25.361Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 39.015625,
+      "totalWorkingSetMB": 3478,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 46.5,
+      "bytesTotal": 28540
+    },
+    {
+      "at": "2026-07-19T16:46:27.333Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 40.265625,
+      "totalWorkingSetMB": 3483,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 63.4,
+      "bytesTotal": 30412
+    },
+    {
+      "at": "2026-07-19T16:46:29.326Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 41.09375,
+      "totalWorkingSetMB": 3476,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 41.6,
+      "bytesTotal": 31867
+    },
+    {
+      "at": "2026-07-19T16:46:31.366Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 42.265625,
+      "totalWorkingSetMB": 3481,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 57.4,
+      "bytesTotal": 33303
+    },
+    {
+      "at": "2026-07-19T16:46:33.375Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 43.359375,
+      "totalWorkingSetMB": 3489,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 54.4,
+      "bytesTotal": 35107
+    },
+    {
+      "at": "2026-07-19T16:46:35.334Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 43.765625,
+      "totalWorkingSetMB": 3488,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 20.7,
+      "bytesTotal": 35107
+    },
+    {
+      "at": "2026-07-19T16:46:37.377Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 44.390625,
+      "totalWorkingSetMB": 3488,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 30.6,
+      "bytesTotal": 35107
+    },
+    {
+      "at": "2026-07-19T16:46:39.343Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 45.296875,
+      "totalWorkingSetMB": 3488,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 46.1,
+      "bytesTotal": 35107
+    },
+    {
+      "at": "2026-07-19T16:46:41.379Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 45.609375,
+      "totalWorkingSetMB": 3488,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 15.3,
+      "bytesTotal": 35107
+    },
+    {
+      "at": "2026-07-19T16:46:43.410Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 46.09375,
+      "totalWorkingSetMB": 3486,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 23.8,
+      "bytesTotal": 35107
+    },
+    {
+      "at": "2026-07-19T16:46:45.389Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 46.953125,
+      "totalWorkingSetMB": 3488,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 43.4,
+      "bytesTotal": 35107
+    },
+    {
+      "at": "2026-07-19T16:46:47.398Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 47.21875,
+      "totalWorkingSetMB": 3487,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 13.2,
+      "bytesTotal": 35107
+    },
+    {
+      "at": "2026-07-19T16:46:49.383Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 47.671875,
+      "totalWorkingSetMB": 3483,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 22.8,
+      "bytesTotal": 35107
+    },
+    {
+      "at": "2026-07-19T16:46:51.445Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 48.125,
+      "totalWorkingSetMB": 3482,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 22,
+      "bytesTotal": 35107
+    },
+    {
+      "at": "2026-07-19T16:46:53.406Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 48.578125,
+      "totalWorkingSetMB": 3482,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 23.1,
+      "bytesTotal": 35107
+    },
+    {
+      "at": "2026-07-19T16:46:55.418Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 49.09375,
+      "totalWorkingSetMB": 3482,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 25.6,
+      "bytesTotal": 35107
+    },
+    {
+      "at": "2026-07-19T16:46:57.548Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 49.765625,
+      "totalWorkingSetMB": 3481,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 31.5,
+      "bytesTotal": 35107
+    },
+    {
+      "at": "2026-07-19T16:46:59.498Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 50.296875,
+      "totalWorkingSetMB": 3474,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 27.2,
+      "bytesTotal": 35107
+    },
+    {
+      "at": "2026-07-19T16:47:01.488Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 50.8125,
+      "totalWorkingSetMB": 3475,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 25.9,
+      "bytesTotal": 35107
+    },
+    {
+      "at": "2026-07-19T16:47:03.548Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 51.40625,
+      "totalWorkingSetMB": 3474,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 28.8,
+      "bytesTotal": 35107
+    },
+    {
+      "at": "2026-07-19T16:47:05.449Z",
+      "tag": "tick",
+      "phase": "stream",
+      "nProcs": 30,
+      "totalCpuSeconds": 51.90625,
+      "totalWorkingSetMB": 3474,
+      "claudeCount": 8,
+      "cpuPctSinceLast": 26.3,
+      "bytesTotal": 35107
+    }
+  ]
+}
