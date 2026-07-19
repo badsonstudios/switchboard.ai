@@ -23,7 +23,7 @@ function createWindow(): BrowserWindow {
     minWidth: 800,
     minHeight: 600,
     show: false,
-    backgroundColor: '#1e1e1e',
+    backgroundColor: '#242933', // pre-paint only: --bg (nordic) from tokens.css
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: true,

@@ -7,21 +7,28 @@
 **Milestone:** Phase 1 - MVP (issues #12–#35, filed 2026-07-19)
 **AUTOPILOT RUN 2 ACTIVE** — started 2026-07-19 after Spike 01 merged (PR #11,
 all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
-**In progress:** P1-E1-02 — CI pipeline (#13)
-**Next up:** P1-E1-03 — Theme token system (#14)
+**In progress:** P1-E1-04 — i18n foundation (#15)
+**Next up:** P1-E1-05 — Logging pipeline (#16)
 **Branch:** auto/phase-1-mvp
 
 ## Blockers / open questions for Dan
 
-- **Concurrent DESIGN.md edit detected during autopilot run** (12:29 local,
-  new "Cross-provider handoff" subsection after §5's context-transfer part) —
-  not written by the autopilot session. Left uncommitted and untouched;
-  autopilot commits exclude it. S-08's DESIGN.md open-question updates will
-  stage only autopilot hunks. Dan: commit your edit whenever — no conflict
-  expected (different sections).
+- **[user] "Red build blocks merge" (#13) can't be enforced server-side**:
+  branch protection and rulesets are both plan-gated on free private repos.
+  Options: GitHub Pro / make repo public / accept procedural gate (merge only
+  when PR checks green). CI itself is live and green on all 3 OSes.
 
 ## Log
 
+- 2026-07-19 — **P1-E1-03 done** (autopilot run 2): three-layer token system
+  (Nordic/Daylight maps + theme-independent semantics + component tokens)
+  from the design handoff; OS-sync with persisted override; theme toggle in
+  shell; ESLint bans raw colors in renderer (canary-verified fail + pass).
+  12 unit tests green.
+- 2026-07-19 — **P1-E1-02 done** (autopilot run 2): CI matrix
+  (win/ubuntu/macos, Node 22) — lint/typecheck/test/build, green on all 3 OSes
+  (also completes E1-01's cross-platform done-when). [user] note: server-side
+  merge blocking is plan-gated (see Blockers).
 - 2026-07-19 — **P1-E1-01 done** (autopilot run 2): electron-vite + TS + React
   scaffold at repo root; sandboxed/isolated windows, CSP, external-link +
   navigation guards, window-state persistence with missing-display rescue

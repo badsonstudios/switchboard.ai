@@ -1,0 +1,102 @@
+/* Theme token system (§5.20, design_handoff_control_room).
+ *
+ * THE ONLY FILE WHERE RAW COLOR VALUES ARE ALLOWED.
+ * Components consume var(--...) exclusively — an ESLint rule fails any
+ * hex/rgb literal in renderer TS/TSX.
+ *
+ * Layer 1: theme maps (swap wholesale on theme change; default = Nordic).
+ * Layer 2: semantic tokens — theme-INDEPENDENT (status machine, diff, session
+ *          accents §5.11) — these survive theme switches by design.
+ * Layer 3: component tokens built on layers 1–2.
+ */
+
+/* ---- Layer 1: theme maps -------------------------------------------------- */
+:root,
+:root[data-theme='nordic'] {
+  --bg: #242933;
+  --panel: #2b313d;
+  --panel2: #333a48;
+  --border: #3b4252;
+  --chip: #39414f;
+  --bar: #20252e;
+  --text: #e5e9f0;
+  --muted: #9aa4b8;
+  --faint: #6d7689;
+  --term: #cdd4e2;
+  --window-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+}
+
+:root[data-theme='daylight'] {
+  --bg: #eef1f5;
+  --panel: #ffffff;
+  --panel2: #f4f6f9;
+  --border: #dde1e7;
+  --chip: #e9edf2;
+  --bar: #ffffff;
+  --text: #1b2230;
+  --muted: #5b6470;
+  --faint: #9098a6;
+  --term: #2c3444;
+  --window-shadow: 0 24px 70px rgba(20, 30, 50, 0.16);
+}
+
+/* ---- Layer 2: semantic, theme-independent --------------------------------- */
+:root {
+  /* status machine: working | needs-input | needs-permission | idle | done | crashed */
+  --status-working: #58a6ff;
+  --status-needs-input: #e3b341;
+  --status-needs-permission: #f0883e;
+  --status-idle: #8a92a0;
+  --status-done: #3fb950;
+  --status-crashed: #f85149;
+
+  /* diff / syntax semantics */
+  --diff-added: #3fb950;
+  --diff-added-bg: rgba(63, 185, 80, 0.16);
+  --diff-removed: #f85149;
+  --diff-removed-bg: rgba(248, 81, 73, 0.15);
+  --link: #58a6ff;
+  --subagent: #a78bfa;
+  --btn-primary-bg: #238636;
+  --btn-primary-text: #ffffff;
+
+  /* session identity accent palette (§5.11) — auto-assigned, user-overridable */
+  --accent-amber: #e3b341;
+  --accent-teal: #39c5bb;
+  --accent-violet: #a78bfa;
+  --accent-green: #3fb950;
+  --accent-blue: #58a6ff;
+  --accent-coral: #f0776b;
+  --accent-pink: #db61a2;
+  --accent-orange: #f0883e;
+
+  /* typography */
+  --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+
+  /* spacing / radius */
+  --radius-card: 8px;
+  --radius-window: 10px;
+  --radius-chip: 5px;
+  --grid-gap: 11px;
+  --grid-pad: 12px;
+}
+
+/* ---- Layer 3: component tokens -------------------------------------------- */
+:root {
+  --card-bg: var(--panel);
+  --card-border: var(--border);
+  --rail-row-selected: var(--panel2);
+  --usage-track: var(--chip);
+  --statusbar-bg: var(--bar);
+  --titlebar-bg: var(--bar);
+}
+
+/* base document styling */
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+}
