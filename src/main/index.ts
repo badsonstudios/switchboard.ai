@@ -1,6 +1,7 @@
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, screen, shell } from 'electron';
 import path from 'path';
-import { loadWindowState, trackWindowState, windowOptionsFrom } from './window-state';
+import { windowOptionsFrom, WindowState } from './window-state';
+import { WorkspaceStore, displayFingerprint } from './workspace/store';
 import { LogSink, createLogger } from './log/logger';
 import { registerBuiltinContributions } from './bootstrap';
 import { registry } from './extensibility/registry';
@@ -36,8 +37,38 @@ function isSafeExternalUrl(url: string): boolean {
   }
 }
 
+let workspace: WorkspaceStore;
+
+function workAreas() {
+  return screen.getAllDisplays().map((d) => d.workArea);
+}
+
+function trackWindowGeometry(win: BrowserWindow): void {
+  let lastNormalBounds = win.getNormalBounds();
+  const save = () => {
+    if (win.isDestroyed()) return;
+    workspace.setWindow({
+      bounds: win.isMaximized() ? lastNormalBounds : win.getNormalBounds(),
+      isMaximized: win.isMaximized(),
+      displayFingerprint: displayFingerprint(workAreas()),
+    });
+  };
+  const onChange = () => {
+    if (!win.isMaximized()) lastNormalBounds = win.getNormalBounds();
+    save();
+  };
+  win.on('resize', onChange);
+  win.on('move', onChange);
+  win.on('maximize', save);
+  win.on('unmaximize', save);
+  win.on('close', () => {
+    save();
+    workspace.save(); // flush the debounce before the process dies
+  });
+}
+
 function createWindow(): BrowserWindow {
-  const state = loadWindowState();
+  const state: WindowState = workspace.restoreWindow(workAreas());
   const win = new BrowserWindow({
     ...windowOptionsFrom(state),
     minWidth: 800,
@@ -54,7 +85,7 @@ function createWindow(): BrowserWindow {
   });
 
   if (state.isMaximized) win.maximize();
-  trackWindowState(win);
+  trackWindowGeometry(win);
   win.once('ready-to-show', () => {
     win.show();
     log.ui.info('window shown', { restored: !!state.bounds, maximized: state.isMaximized });
@@ -83,6 +114,8 @@ app
   .then(() => {
     sink = new LogSink({ dir: logsDir() });
     log.app.info('app ready', { version: app.getVersion(), platform: process.platform });
+    workspace = new WorkspaceStore(path.join(app.getPath('userData'), 'workspace.json'));
+    workspace.load();
     registerBuiltinContributions();
     log.app.info('contributions registered', { manifests: registry.manifests() });
     createWindow();

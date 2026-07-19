@@ -7,8 +7,8 @@
 **Milestone:** Phase 1 - MVP (issues #12–#35, filed 2026-07-19)
 **AUTOPILOT RUN 2 ACTIVE** — started 2026-07-19 after Spike 01 merged (PR #11,
 all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
-**In progress:** P1-E2-04 — Workspace store (#21)
-**Next up:** P1-E2-05 — HookListener (#22)
+**In progress:** P1-E2-05 — HookListener (#22)
+**Next up:** P1-E2-06 — TranscriptWatcher (#23)
 **E1 epic: COMPLETE** (#12–#17 all done, CI green)
 **Branch:** auto/phase-1-mvp
 
@@ -21,6 +21,14 @@ all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
 
 ## Log
 
+- 2026-07-19 — **P1-E2-04 done** (autopilot run 2): WorkspaceStore — persisted
+  sessions (identity, layout slot, native id for resume-on-focus) + window
+  geometry with display fingerprint (§7); tolerant load (corrupt→.corrupt
+  backup + fresh start), atomic saves; missing-display rescue to centered
+  (keeps maximized). Shell geometry migrated from window-state.json to
+  workspace.json (window-state.ts is pure helpers now). Round-trip +
+  rescue tested (55 total); smoke x2 shows real 3-display fingerprint
+  persisting. UI consumption (suspended cards) lands with E3.
 - 2026-07-19 — **P1-E2-03 done** (autopilot run 2): SessionManager —
   create/kill/restart via registry-resolved adapters + injected PtyService;
   identity registry; S-06-semantics state machine (unknown events never
