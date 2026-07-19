@@ -7,8 +7,8 @@
 **Milestone:** Phase 1 - MVP (issues #12–#35, filed 2026-07-19)
 **AUTOPILOT RUN 2 ACTIVE** — started 2026-07-19 after Spike 01 merged (PR #11,
 all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
-**In progress:** P1-E2-01 — PtyService (#18)
-**Next up:** P1-E2-02 — Claude Code adapter v1 (#19)
+**In progress:** P1-E2-02 — Claude Code adapter v1 (#19)
+**Next up:** P1-E2-03 — SessionManager (#20)
 **E1 epic: COMPLETE** (#12–#17 all done, CI green)
 **Branch:** auto/phase-1-mvp
 
@@ -21,6 +21,15 @@ all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
 
 ## Log
 
+- 2026-07-19 — **P1-E2-01 done** (autopilot run 2): PtyService — generic
+  spawn/resize/write/kill with per-session ring-buffer scrollback (2MB cap,
+  S-07 ingest-only verdict), always-on S-01 env scrub, dead-PTY write guards.
+  node-pty + @electron/rebuild postinstall (Spectre fallback fired on this
+  machine as spike predicted — sanctioned fix still: VS component).
+  Done-when verified: `npm run check:pty` = 12 concurrent PTYs
+  spawn→resize→write→kill clean (12/12/12, 0 orphans); wired into CI.
+  Note: node-pty's console-list helper prints AttachConsole noise under
+  run-as-node teardown — cosmetic, exit code governs.
 - 2026-07-19 — **P1-E1-06 done** (autopilot run 2; E1 epic complete):
   contribution registry + capability manifests (§5.23); ProviderAdapter and
   EventSource contracts v0; Claude adapter registered via bootstrap and
