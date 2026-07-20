@@ -232,6 +232,12 @@ app
       log: createLogger(sink, 'ipc'),
       getWindow: () => currentWindow, // reassigned on macOS re-activate
       autoTrust: () => workspace.getAutoTrust(),
+      persist: {
+        list: () => workspace.listSessions(),
+        upsert: (s) => workspace.upsertSession(s),
+        remove: (cardId) => workspace.removeSession(cardId),
+      },
+      projectsRoot: path.join(os.homedir(), '.claude', 'projects'),
     });
     app.on('quit', () => {
       ptys.killAll();

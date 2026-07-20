@@ -20,6 +20,7 @@
     "addCard": "+ session",
     "empty": "Add a session card to begin",
     "cardBody": "{title} — session card; terminal arrives with E3-02",
+    "resuming": "Resuming {title}…",
     "sessionEnded": "Session ended",
     "exitCrashed": "Exited unexpectedly (code {code})",
     "exitClean": "The session closed.",

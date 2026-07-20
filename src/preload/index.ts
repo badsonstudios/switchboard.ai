@@ -38,12 +38,16 @@ const api = {
     pickFolder: (): Promise<string | null> => ipcRenderer.invoke('sessions:pickFolder'),
     isDirectory: (p: string): Promise<boolean> => ipcRenderer.invoke('sessions:isDirectory', p),
     create: (opts: {
+      cardId: string;
       folder: string;
       title: string;
       autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
-    }): Promise<SessionRecordDto> => ipcRenderer.invoke('sessions:create', opts),
+    }): Promise<SessionRecordDto & { cardId: string }> => ipcRenderer.invoke('sessions:create', opts),
     list: (): Promise<SessionRecordDto[]> => ipcRenderer.invoke('sessions:list'),
-    kill: (id: string): Promise<void> => ipcRenderer.invoke('sessions:kill', id),
+    knownCards: (): Promise<Array<{ cardId: string; identity: SessionRecordDto['identity'] }>> =>
+      ipcRenderer.invoke('sessions:knownCards'),
+    closeCard: (cardId: string): Promise<void> => ipcRenderer.invoke('sessions:closeCard', cardId),
+    dropLive: (cardId: string): Promise<void> => ipcRenderer.invoke('sessions:dropLive', cardId),
     rename: (id: string, title: string): Promise<SessionRecordDto | undefined> =>
       ipcRenderer.invoke('sessions:rename', id, title),
     onStatus: (cb: (change: unknown) => void): (() => void) => {

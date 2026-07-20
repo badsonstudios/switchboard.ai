@@ -12,6 +12,8 @@ import { Logger } from '../log/logger';
 import { assignAccent, detectProjectType } from './identity';
 import { EventFeed } from '../events/feed';
 import { ensureFolderTrusted } from './trust';
+import { conversationExists } from '../transcripts/watcher';
+import { PersistedSession } from '../workspace/store';
 
 export interface SessionIpcDeps {
   manager: SessionManager;
@@ -23,12 +25,31 @@ export interface SessionIpcDeps {
   getWindow: () => BrowserWindow | null;
   /** auto-trust the folder before spawning (default on; user picks folder) */
   autoTrust: () => boolean;
+  /** persisted session cards (resume-on-focus across app restarts, §5.25) */
+  persist: {
+    list: () => PersistedSession[];
+    upsert: (s: PersistedSession) => void;
+    remove: (cardId: string) => void;
+  };
+  /** ~/.claude/projects root, for checking a resumable conversation exists */
+  projectsRoot: string;
 }
 
 export function registerSessionIpc(deps: SessionIpcDeps): void {
   const { manager, ptys, hooks, transcripts, log } = deps;
   // per-session live-feed unsubscribers (attached panes only)
   const feeds = new Map<string, () => void>();
+  // a card is the durable unit; the live session under it is ephemeral
+  const cardOfLive = new Map<string, string>(); // liveSessionId -> cardId
+
+  // when a session's native id is learned, persist it so the card can
+  // --resume that conversation after an app restart
+  manager.onNativeSessionId((liveId, nativeId) => {
+    const cardId = cardOfLive.get(liveId);
+    if (!cardId) return;
+    const existing = deps.persist.list().find((s) => s.id === cardId);
+    if (existing) deps.persist.upsert({ ...existing, nativeSessionId: nativeId });
+  });
 
   const send = (channel: string, payload: unknown): void => {
     const win = deps.getWindow();
@@ -60,59 +81,119 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0];
   });
 
+  // Spawn (or --resume) the live session for a card. cardId is the durable
+  // key; identity (accent/title/badge) and the resumable conversation are
+  // reused from the persisted record so they survive restarts.
   ipcMain.handle(
     'sessions:create',
-    (_e, opts: { folder: string; title: string; autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto' }) => {
-    // validate untrusted renderer input (§5.29): folder must be a real dir,
-    // title bounded; unknown autonomy falls through to the CLI 'ask' default
-    if (!opts || typeof opts.folder !== 'string') throw new Error('folder required');
-    let isDir = false;
-    try {
-      isDir = fs.statSync(opts.folder).isDirectory();
-    } catch {
-      isDir = false;
-    }
-    if (!isDir) throw new Error('folder is not a directory');
-    const title = (typeof opts.title === 'string' ? opts.title : opts.folder).slice(0, 120);
-    // opting the folder into trust BEFORE spawn skips Claude's trust dialog
-    if (deps.autoTrust()) ensureFolderTrusted(opts.folder, log);
-    const record = manager.create(
-      {
+    (
+      _e,
+      opts: {
+        cardId: string;
+        folder: string;
+        title: string;
+        autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
+      }
+    ) => {
+      // validate untrusted renderer input (§5.29)
+      if (!opts || typeof opts.cardId !== 'string' || typeof opts.folder !== 'string') {
+        throw new Error('cardId and folder required');
+      }
+      let isDir = false;
+      try {
+        isDir = fs.statSync(opts.folder).isDirectory();
+      } catch {
+        isDir = false;
+      }
+      if (!isDir) throw new Error('folder is not a directory');
+
+      const prior = deps.persist.list().find((s) => s.id === opts.cardId);
+      const title = (prior?.identity.title ?? (typeof opts.title === 'string' ? opts.title : opts.folder)).slice(0, 120);
+      const identity = {
         title,
         folder: opts.folder,
         providerId: 'claude-code',
-        accentColor: assignAccent(
-          manager.list().map((s) => s.identity.accentColor ?? '')
-        ),
-        langBadge: detectProjectType(opts.folder),
-      },
-      { settingsFor: (id) => hooks.buildHookSettings(id), autonomy: opts.autonomy }
-    );
-    transcripts.watch(record.id, { cwd: opts.folder });
-    log.info('session created via ui', { sessionId: record.id, folder: opts.folder });
-    return record;
-  });
+        // stable across resumes: reuse the card's assigned accent/badge
+        accentColor: prior?.identity.accentColor ?? assignAccent(manager.list().map((s) => s.identity.accentColor ?? '')),
+        langBadge: prior?.identity.langBadge ?? detectProjectType(opts.folder),
+      };
+
+      if (deps.autoTrust()) ensureFolderTrusted(opts.folder, log);
+      // only --resume when a real conversation exists for that id; otherwise a
+      // stale/empty id would make claude exit ("No conversation found") and
+      // crash the card, so fall back to a fresh session
+      const canResume =
+        !!prior?.nativeSessionId &&
+        conversationExists(deps.projectsRoot, opts.folder, prior.nativeSessionId);
+      const record = manager.create(identity, {
+        settingsFor: (id) => hooks.buildHookSettings(id),
+        autonomy: opts.autonomy,
+        resumeSessionId: canResume ? prior?.nativeSessionId : undefined,
+      });
+      cardOfLive.set(record.id, opts.cardId);
+      transcripts.watch(record.id, { cwd: opts.folder });
+      deps.persist.upsert({
+        id: opts.cardId,
+        identity,
+        layoutSlot: prior?.layoutSlot ?? 0,
+        // don't keep a stale id we just declined to resume — the fresh
+        // session's onNativeSessionId will fill in the new one
+        nativeSessionId: canResume ? prior?.nativeSessionId : undefined,
+        suspendedAt: prior?.suspendedAt ?? '',
+      });
+      log.info('session started for card', {
+        sessionId: record.id,
+        cardId: opts.cardId,
+        folder: opts.folder,
+        resumed: canResume,
+      });
+      return { ...record, cardId: opts.cardId };
+    }
+  );
 
   ipcMain.handle('sessions:list', () => manager.list());
 
-  ipcMain.handle('sessions:rename', (_e, id: string, title: string) => {
-    manager.rename(id, title);
-    return manager.get(id);
+  // cards with a persisted record — the renderer keeps these on boot, prunes
+  // any restored panel that has no record (truly gone)
+  ipcMain.handle('sessions:knownCards', () => deps.persist.list().map((s) => ({ cardId: s.id, identity: s.identity })));
+
+  // kill the live session(s) under a card, keeping the persisted record
+  const dropLiveForCard = (cardId: string): void => {
+    for (const [liveId, cid] of cardOfLive) {
+      if (cid !== cardId) continue;
+      feeds.get(liveId)?.();
+      feeds.delete(liveId);
+      hooks.unregisterSession(liveId);
+      transcripts.unwatch(liveId);
+      try {
+        ptys.remove(liveId);
+      } catch {
+        /* already gone */
+      }
+      manager.remove(liveId);
+      cardOfLive.delete(liveId);
+    }
+  };
+
+  // close a card: kill its live session AND forget it (won't come back)
+  ipcMain.handle('sessions:closeCard', (_e, cardId: string) => {
+    dropLiveForCard(cardId);
+    deps.persist.remove(cardId);
   });
 
-  ipcMain.handle('sessions:kill', (_e, id: string) => {
-    feeds.get(id)?.();
-    feeds.delete(id);
-    hooks.unregisterSession(id);
-    transcripts.unwatch(id);
-    // kill the live PTY (if any), then drop the record. Both are idempotent
-    // and must never reject — closing a card is fail-open.
-    try {
-      ptys.remove(id);
-    } catch {
-      /* already gone */
+  // drop only the live session (restart): keep the record so it can respawn
+  ipcMain.handle('sessions:dropLive', (_e, cardId: string) => dropLiveForCard(cardId));
+
+  ipcMain.handle('sessions:rename', (_e, liveId: string, title: string) => {
+    manager.rename(liveId, title);
+    const r = manager.get(liveId);
+    // persist the rename so it survives a restart
+    const cardId = cardOfLive.get(liveId);
+    if (cardId && r) {
+      const prior = deps.persist.list().find((s) => s.id === cardId);
+      if (prior) deps.persist.upsert({ ...prior, identity: { ...prior.identity, title: r.identity.title } });
     }
-    manager.remove(id);
+    return r;
   });
 
   // attach: replay scrollback, then stream. Returns the snapshot (utf8).

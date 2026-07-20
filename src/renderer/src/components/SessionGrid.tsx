@@ -14,22 +14,26 @@ import { TerminalPane } from './TerminalPane';
 import { IdentityChip } from './IdentityChip';
 import { DiffPane } from './DiffPane';
 
+// The DURABLE unit is the card (cardId + folder). The live claude session
+// under it is ephemeral: spawned — or --resumed — lazily the first time the
+// card is visible (resume-on-focus, §5.25). Params carry only stable data so
+// they survive Dockview layout serialization across restarts.
 export interface CardParams {
-  sessionId?: string;
+  cardId: string;
+  folder: string;
+  title?: string;
+}
+
+interface Live {
+  id: string;
   accent?: string;
   badge?: string;
-  folder?: string;
 }
 
 function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element {
   return (
     <div style={{ paddingInline: 8, display: 'flex', alignItems: 'center', blockSize: '100%' }}>
-      <IdentityChip
-        title={props.api.title ?? ''}
-        accent={props.params?.accent}
-        badge={props.params?.badge}
-        compact
-      />
+      <IdentityChip title={props.api.title ?? props.params?.title ?? ''} compact />
     </div>
   );
 }
@@ -37,39 +41,75 @@ function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element 
 function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Element {
   const { t } = useTranslation();
   const [visible, setVisible] = React.useState<boolean>(props.api.isVisible);
+  const [live, setLive] = React.useState<Live | null>(null);
   const [exited, setExited] = React.useState<{ code: number; crashed: boolean } | null>(null);
+  const spawning = React.useRef(false);
+  const cardId = props.params?.cardId;
+  const folder = props.params?.folder;
+
   React.useEffect(() => {
     const d = props.api.onDidVisibilityChange((e) => setVisible(e.isVisible));
     return () => d.dispose();
   }, [props.api]);
 
-  const sessionId = props.params?.sessionId;
-  const folder = props.params?.folder;
+  // resume-on-focus: spawn (or --resume) the session when the card first
+  // becomes visible. Background restored cards stay suspended until touched.
+  React.useEffect(() => {
+    if (!visible || live || exited || spawning.current || !cardId || !folder) return;
+    spawning.current = true;
+    void window.switchboard.sessions
+      .create({ cardId, folder, title: props.api.title ?? folder })
+      .then((record) => {
+        if (cardId) liveToCard.set(record.id, cardId);
+        setLive({ id: record.id, accent: record.identity.accentColor, badge: record.identity.langBadge });
+      })
+      .catch(() => {
+        setExited({ code: -1, crashed: true }); // spawn failed — show the overlay
+      })
+      .finally(() => {
+        spawning.current = false;
+      });
+  }, [visible, live, exited, cardId, folder, props.api.title]);
 
   // a dead session's card must be dismissable, not a stuck blank terminal
   React.useEffect(() => {
-    if (!sessionId) return;
+    if (!live) return;
     return window.switchboard.sessions.onExited((e) => {
-      if (e.sessionId === sessionId) setExited({ code: e.code, crashed: e.crashed });
+      if (e.sessionId === live.id) setExited({ code: e.code, crashed: e.crashed });
     });
-  }, [sessionId]);
+  }, [live]);
 
   const closeSelf = (): void => {
     const panel = props.containerApi.getPanel(props.api.id);
-    if (panel) props.containerApi.removePanel(panel); // onDidRemovePanel -> kill
+    if (panel) props.containerApi.removePanel(panel); // onDidRemovePanel -> closeCard
   };
   const restartSelf = (): void => {
-    if (!folder) return closeSelf();
-    void window.switchboard.sessions.create({ folder, title: props.api.title ?? folder }).then((record) => {
-      props.containerApi.addPanel({
-        id: `session-${record.id}`,
-        component: 'sessionCard',
-        title: props.api.title ?? folder,
-        params: { sessionId: record.id, accent: record.identity.accentColor, badge: record.identity.langBadge, folder },
-      });
-      closeSelf();
-    });
+    // drop the dead live session (keep the card record), then re-arm the lazy
+    // spawn so the card respawns/resumes
+    if (cardId) void window.switchboard.sessions.dropLive(cardId);
+    if (live) forgetCardLiveIds(cardId ?? '');
+    setExited(null);
+    setLive(null);
+    spawning.current = false;
   };
+  const overlay = exited ? (
+    <div>
+      <div style={{ color: 'var(--text)', fontSize: 13, marginBlockEnd: 4 }}>
+        {t('grid.sessionEnded')}
+      </div>
+      <div style={{ color: 'var(--muted)', fontSize: 11, marginBlockEnd: 12 }}>
+        {exited.crashed ? t('grid.exitCrashed', { code: exited.code }) : t('grid.exitClean')}
+      </div>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+        <button onClick={restartSelf} style={overlayBtn(true)}>
+          {t('grid.restart')}
+        </button>
+        <button onClick={closeSelf} style={overlayBtn(false)}>
+          {t('grid.close')}
+        </button>
+      </div>
+    </div>
+  ) : null;
   return (
     <div
       style={{
@@ -88,52 +128,35 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
           insetBlockStart: 0,
           insetBlockEnd: 0,
           inlineSize: 3,
-          background: props.params?.accent ?? 'var(--faint)',
+          background: live?.accent ?? 'var(--faint)',
           zIndex: 1,
         }}
       />
-      {sessionId ? (
+      {live ? (
         <div style={{ flex: 1, paddingInlineStart: 3, minInlineSize: 0, position: 'relative' }}>
-          <TerminalPane sessionId={sessionId} visible={visible} />
-          {exited && (
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                background: 'color-mix(in srgb, var(--bg) 82%, transparent)',
-                display: 'grid',
-                placeItems: 'center',
-                gap: 10,
-                textAlign: 'center',
-              }}
-            >
-              <div>
-                <div style={{ color: 'var(--text)', fontSize: 13, marginBlockEnd: 4 }}>
-                  {t('grid.sessionEnded')}
-                </div>
-                <div style={{ color: 'var(--muted)', fontSize: 11, marginBlockEnd: 12 }}>
-                  {exited.crashed
-                    ? t('grid.exitCrashed', { code: exited.code })
-                    : t('grid.exitClean')}
-                </div>
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-                  <button onClick={restartSelf} style={overlayBtn(true)}>
-                    {t('grid.restart')}
-                  </button>
-                  <button onClick={closeSelf} style={overlayBtn(false)}>
-                    {t('grid.close')}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          <TerminalPane sessionId={live.id} visible={visible} />
+          {overlay && <div style={overlayBackdrop}>{overlay}</div>}
         </div>
+      ) : exited ? (
+        // spawn/resume failed before a terminal existed — still recoverable
+        <div style={{ ...overlayBackdrop, position: 'relative', flex: 1 }}>{overlay}</div>
       ) : (
-        <span style={{ margin: 'auto' }}>{t('grid.cardBody', { title: props.api.title })}</span>
+        <span style={{ margin: 'auto' }}>
+          {t('grid.resuming', { title: props.api.title ?? folder ?? '' })}
+        </span>
       )}
     </div>
   );
 }
+
+const overlayBackdrop: React.CSSProperties = {
+  position: 'absolute',
+  inset: 0,
+  background: 'color-mix(in srgb, var(--bg) 82%, transparent)',
+  display: 'grid',
+  placeItems: 'center',
+  textAlign: 'center',
+};
 
 function overlayBtn(primary: boolean): React.CSSProperties {
   return {
@@ -159,6 +182,19 @@ function DiffPanel(props: IDockviewPanelProps<{ folder?: string; theme?: string 
 
 const components = { sessionCard: SessionCardPanel, diffPane: DiffPanel };
 
+// live session id -> stable card id (single-window app). Lets the rail, which
+// tracks live sessions, focus/diff a card by its ephemeral session id.
+const liveToCard = new Map<string, string>();
+function cardIdForLive(liveId: string): string {
+  return liveToCard.get(liveId) ?? liveId;
+}
+function forgetCardLiveIds(cardId: string): void {
+  for (const [liveId, cid] of liveToCard) if (cid === cardId) liveToCard.delete(liveId);
+}
+// set while the window is tearing down: Dockview disposal must NOT be mistaken
+// for the user closing cards (which would wipe persisted records)
+let tearingDown = false;
+
 export interface GridController {
   /** create a session in `folder` and add its card (drag-drop, rail actions) */
   addSessionCard: (folder: string) => Promise<void>;
@@ -178,24 +214,18 @@ export function SessionGrid(props: {
   const apiRef = useRef<DockviewApi | null>(null);
   const counter = useRef(0);
 
+  // Add a NEW card. It gets a stable id and spawns its session lazily when it
+  // becomes visible (which, as the newly-active tab, is immediately).
   const addSessionCard = useCallback(async (folder: string) => {
     const api = apiRef.current;
     if (!api) return;
     const title = folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? folder;
-    const stored = localStorage.getItem('switchboard.autonomy');
-    const autonomy =
-      stored === 'plan' || stored === 'auto-edit' || stored === 'full-auto' ? stored : 'ask';
-    const record = await window.switchboard.sessions.create({ folder, title, autonomy });
+    const cardId = crypto.randomUUID();
     api.addPanel({
-      id: `session-${record.id}`,
+      id: `session-${cardId}`,
       component: 'sessionCard',
       title,
-      params: {
-        sessionId: record.id,
-        accent: record.identity.accentColor,
-        badge: record.identity.langBadge,
-        folder,
-      } satisfies CardParams,
+      params: { cardId, folder, title } satisfies CardParams,
     });
   }, []);
 
@@ -203,16 +233,17 @@ export function SessionGrid(props: {
     if (!props.controller) return;
     props.controller.current = {
       addSessionCard,
-      focusSession: (sessionId) => {
-        apiRef.current?.getPanel(`session-${sessionId}`)?.focus();
+      focusSession: (liveId) => {
+        apiRef.current?.getPanel(`session-${cardIdForLive(liveId)}`)?.focus();
       },
-      openDiff: (sessionId, folder, title) => {
+      openDiff: (liveId, folder, title) => {
         const api = apiRef.current;
         if (!api) return;
-        const existing = api.getPanel(`diff-${sessionId}`);
+        const cardId = cardIdForLive(liveId);
+        const existing = api.getPanel(`diff-${cardId}`);
         if (existing) return existing.focus();
         api.addPanel({
-          id: `diff-${sessionId}`,
+          id: `diff-${cardId}`,
           component: 'diffPane',
           title: t('diff.tabTitle', { title }),
           params: { folder, theme: props.theme },
@@ -245,23 +276,36 @@ export function SessionGrid(props: {
         report();
         window.switchboard.workspace.setLayout(api.toJSON());
       });
-      // closing a card (tab X or the overlay) ends its session — no orphans
+      // window teardown must not be mistaken for the user closing cards
+      window.addEventListener('beforeunload', () => {
+        tearingDown = true;
+      });
+      // closing a card (tab X or the overlay) forgets it — it will NOT come
+      // back next launch. Quitting keeps the record so sessions DO come back,
+      // so we skip this during teardown (belt-and-suspenders vs Dockview
+      // disposal ever firing removes).
       api.onDidRemovePanel((panel) => {
+        if (tearingDown) return;
         const m = /^session-(.+)$/.exec(panel.id);
-        if (m) void window.switchboard.sessions.kill(m[1]);
+        if (!m) return;
+        forgetCardLiveIds(m[1]);
+        void window.switchboard.sessions.closeCard(m[1]);
       });
 
       const saved = await window.switchboard.workspace.getLayout();
       if (saved) {
         try {
           api.fromJSON(saved as Parameters<DockviewApi['fromJSON']>[0]);
-          // prune ghost cards: sessions don't survive restart yet (that item
-          // is later), so drop restored panels whose session is not live —
-          // otherwise every relaunch shows dead terminals that eat keystrokes
-          const live = new Set((await window.switchboard.sessions.list()).map((s) => s.id));
+          // keep restored session cards that still have a persisted record
+          // (they resume-on-focus); drop any panel with no record behind it.
+          // Diff panes are derived — always drop and let the user reopen.
+          const known = new Set(
+            (await window.switchboard.sessions.knownCards()).map((c) => c.cardId)
+          );
           for (const p of [...api.panels]) {
-            const m = /^(?:session|diff)-(.+)$/.exec(p.id);
-            if (m && !live.has(m[1])) api.removePanel(p);
+            const s = /^session-(.+)$/.exec(p.id);
+            const d = /^diff-/.exec(p.id);
+            if (d || (s && !known.has(s[1]))) api.removePanel(p);
           }
         } catch {
           // fail-open: unusable layout JSON -> fresh grid, never a crash
@@ -278,19 +322,7 @@ export function SessionGrid(props: {
       // scripted-check seam: one REAL session without the folder dialog
       const seedFolder = window.switchboard.seedSessionFolder;
       if (seedFolder) {
-        const title = seedFolder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? seedFolder;
-        const record = await window.switchboard.sessions.create({ folder: seedFolder, title });
-        api.addPanel({
-          id: `session-${record.id}`,
-          component: 'sessionCard',
-          title,
-          params: {
-            sessionId: record.id,
-            accent: record.identity.accentColor,
-            badge: record.identity.langBadge,
-            folder: seedFolder,
-          } satisfies CardParams,
-        });
+        await addSessionCard(seedFolder);
       }
       report();
     },

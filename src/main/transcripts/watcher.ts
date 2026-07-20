@@ -57,6 +57,33 @@ export function slugForCwd(cwd: string): string {
   return cwd.replace(/[\\/:. ]/g, '-');
 }
 
+/**
+ * Does a resumable conversation actually exist for this session id? Claude
+ * only writes the transcript once a real turn happens, so `--resume <id>` on
+ * a session that never got a prompt errors with "No conversation found" and
+ * exits — checking the file first lets us fall back to a fresh session.
+ * Slug matched case-insensitively (real paths lowercase the drive letter).
+ */
+export function conversationExists(projectsRoot: string, folder: string, nativeId: string): boolean {
+  const wantSlug = slugForCwd(folder).toLowerCase();
+  let dirs: fs.Dirent[];
+  try {
+    dirs = fs.readdirSync(projectsRoot, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+  for (const d of dirs) {
+    if (d.isDirectory() && d.name.toLowerCase() === wantSlug) {
+      try {
+        if (fs.statSync(path.join(projectsRoot, d.name, `${nativeId}.jsonl`)).isFile()) return true;
+      } catch {
+        /* keep looking */
+      }
+    }
+  }
+  return false;
+}
+
 /** Path equality that tolerates case + separator differences on win32. */
 export function sameFolder(a: string, b: string): boolean {
   const norm = (p: string) => {

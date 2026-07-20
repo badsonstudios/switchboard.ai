@@ -64,6 +64,7 @@ export class SessionManager {
   private readonly sessions = new Map<string, SessionRecord>();
   private readonly listeners = new Set<(c: StatusChange) => void>();
   private readonly exitListeners = new Set<(e: SessionExit) => void>();
+  private readonly nativeIdListeners = new Set<(sessionId: string, nativeId: string) => void>();
   private readonly history: StatusChange[] = [];
 
   constructor(
@@ -188,7 +189,21 @@ export class SessionManager {
 
   setNativeSessionId(id: string, nativeId: string): void {
     const r = this.sessions.get(id);
-    if (r) r.nativeSessionId = nativeId;
+    if (!r || r.nativeSessionId === nativeId) return;
+    r.nativeSessionId = nativeId;
+    for (const l of this.nativeIdListeners) {
+      try {
+        l(id, nativeId);
+      } catch (err) {
+        this.log.error('native-id listener threw', { sessionId: id, error: String(err) });
+      }
+    }
+  }
+
+  /** Fires when a session's provider-native id (for --resume) is first learned. */
+  onNativeSessionId(l: (sessionId: string, nativeId: string) => void): () => void {
+    this.nativeIdListeners.add(l);
+    return () => this.nativeIdListeners.delete(l);
   }
 
   rename(id: string, title: string): void {

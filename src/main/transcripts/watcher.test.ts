@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { TranscriptWatcher, slugForCwd } from './watcher';
+import { TranscriptWatcher, slugForCwd, conversationExists } from './watcher';
 import { LogSink, createLogger } from '../log/logger';
 
 let root: string;
@@ -37,6 +37,18 @@ const entry = (over: Record<string, unknown> = {}) =>
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
+
+describe('conversationExists (gate for --resume, avoids crash on empty id)', () => {
+  it('true only when the transcript file exists under the (case-insensitive) slug', () => {
+    const cwd = 'C:/tmp/tw-project';
+    const dir = path.join(root, slugForCwd(cwd).toLowerCase());
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'native-abc.jsonl'), '{}');
+    expect(conversationExists(root, cwd, 'native-abc')).toBe(true);
+    expect(conversationExists(root, cwd, 'never-existed')).toBe(false);
+    expect(conversationExists(root, 'C:/other/folder', 'native-abc')).toBe(false);
+  });
+});
 
 describe('binding validation (the S-04 race fix)', () => {
   it('binds a transcript whose head matches cwd, tolerating late creation', async () => {

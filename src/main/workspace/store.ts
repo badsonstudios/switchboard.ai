@@ -96,6 +96,10 @@ export class WorkspaceStore {
     return JSON.parse(JSON.stringify(this.state)) as WorkspaceState;
   }
 
+  listSessions(): PersistedSession[] {
+    return this.state.sessions.map((s) => JSON.parse(JSON.stringify(s)) as PersistedSession);
+  }
+
   upsertSession(s: PersistedSession): void {
     const copy = JSON.parse(JSON.stringify(s)) as PersistedSession; // no shared refs with callers
     const i = this.state.sessions.findIndex((x) => x.id === s.id);
