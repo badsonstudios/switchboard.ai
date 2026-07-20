@@ -13,6 +13,8 @@ import 'dockview-react/dist/styles/dockview.css';
 import { TerminalPane } from './TerminalPane';
 import { IdentityChip } from './IdentityChip';
 import { DiffPane } from './DiffPane';
+import { UsageStrip } from './UsageStrip';
+import { Usage } from '../lib/usage';
 
 // The DURABLE unit is the card (cardId + folder). The live claude session
 // under it is ephemeral: spawned — or --resumed — lazily the first time the
@@ -43,6 +45,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const [visible, setVisible] = React.useState<boolean>(props.api.isVisible);
   const [live, setLive] = React.useState<Live | null>(null);
   const [exited, setExited] = React.useState<{ code: number; crashed: boolean } | null>(null);
+  const [usage, setUsage] = React.useState<{ usage: Usage; model?: string } | null>(null);
   const spawning = React.useRef(false);
   const cardId = props.params?.cardId;
   const folder = props.params?.folder;
@@ -62,6 +65,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       .then((record) => {
         if (cardId) liveToCard.set(record.id, cardId);
         setLive({ id: record.id, accent: record.identity.accentColor, badge: record.identity.langBadge });
+        // seed usage from the persisted total so it doesn't read zero on resume
+        if (record.priorUsage) setUsage({ usage: record.priorUsage, model: record.priorModel });
       })
       .catch(() => {
         setExited({ code: -1, crashed: true }); // spawn failed — show the overlay
@@ -76,6 +81,15 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     if (!live) return;
     return window.switchboard.sessions.onExited((e) => {
       if (e.sessionId === live.id) setExited({ code: e.code, crashed: e.crashed });
+    });
+  }, [live]);
+
+  // live token usage for this session (P2-E7-01)
+  React.useEffect(() => {
+    if (!live) return;
+    return window.switchboard.sessions.onUsage((snap) => {
+      const s = snap as { sessionId: string; usage: Usage; model?: string };
+      if (s.sessionId === live.id) setUsage({ usage: s.usage, model: s.model });
     });
   }, [live]);
 
@@ -133,9 +147,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         }}
       />
       {live ? (
-        <div style={{ flex: 1, paddingInlineStart: 3, minInlineSize: 0, position: 'relative' }}>
-          <TerminalPane sessionId={live.id} visible={visible} />
-          {overlay && <div style={overlayBackdrop}>{overlay}</div>}
+        <div style={{ flex: 1, paddingInlineStart: 3, minInlineSize: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+          {usage && <UsageStrip usage={usage.usage} model={usage.model} />}
+          <div style={{ flex: 1, minBlockSize: 0, position: 'relative' }}>
+            <TerminalPane sessionId={live.id} visible={visible} />
+            {overlay && <div style={overlayBackdrop}>{overlay}</div>}
+          </div>
         </div>
       ) : exited ? (
         // spawn/resume failed before a terminal existed — still recoverable

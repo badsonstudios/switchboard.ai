@@ -20,6 +20,9 @@ export interface PersistedSession {
   layoutSlot: number;
   nativeSessionId?: string;
   suspendedAt: string;
+  /** last-known token totals + model, so usage survives a resume/restart */
+  usage?: { input: number; output: number; cacheRead: number; cacheCreate: number };
+  model?: string;
 }
 
 export interface PersistedWindow extends WindowState {

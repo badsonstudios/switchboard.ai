@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { ThemePreference } from '../theme/theme';
 import { LanguageChoice } from '../i18n';
 import { IdentityChip } from './IdentityChip';
+import { formatTokens, formatUsd } from '../lib/usage';
 
 const barStyle: React.CSSProperties = {
   background: 'var(--titlebar-bg)',
@@ -212,11 +213,21 @@ export function StatusBar(props: {
   count: number;
   theme: string;
   cliVersion?: string | null;
+  totalOutputTokens?: number;
+  totalCostUsd?: number;
 }): React.JSX.Element {
   const { t } = useTranslation();
   return (
     <footer style={{ ...barStyle, borderBlockEnd: 'none', borderBlockStart: '1px solid var(--border)', fontSize: 11, color: 'var(--muted)' }}>
       <span>{t('statusbar.sessions', { count: props.count })}</span>
+      {!!props.totalOutputTokens && (
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}>
+          {t('statusbar.usage', {
+            tokens: formatTokens(props.totalOutputTokens),
+            cost: formatUsd(props.totalCostUsd ?? 0),
+          })}
+        </span>
+      )}
       <span style={{ flex: 1 }} />
       {props.cliVersion && (
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}>

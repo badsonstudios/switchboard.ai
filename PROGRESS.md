@@ -4,9 +4,9 @@
 > A fresh session reads this file and knows exactly where things stand.
 
 **Milestone:** Phase 2 - The Switchboard (issues #37–#41 filed; E7 first)
-**In progress:** P2-E7-01 — Live usage & cost on the card (#37)
+**In progress:** P2-E7-01 done (awaiting Dan eyeball on live numbers); next P2-E7-02
 **Next up:** P2-E7-02 — Git context line (#38)
-**Branch:** auto/phase-2-switchboard (to be created)
+**Branch:** auto/phase-2-switchboard (draft PR open)
 
 ## Phase status
 
@@ -29,6 +29,14 @@
 
 ## Log
 
+- 2026-07-20 — **P2-E7-01 done**: live usage & cost on the card. Transcript
+  watcher now captures model; a usage strip on each card shows tokens
+  (↑in ↓out ⛁cache) + an est. cost (labeled — subscription-first, public
+  per-model rates, sonnet default); status bar shows the workspace total.
+  Usage persists per card and seeds on create so it survives resume/restart.
+  Data pipeline verified (check:transcripts still emits usage after the model
+  change; 100 unit tests incl. usage math). **[Dan eyeball]: watch the numbers
+  tick up on a live session.**
 - 2026-07-20 — **Phase 1 MERGED to main** (PR #36, CI green 3 OSes; milestone
   closed). Post-MVP dogfooding fixes landed in the same PR: quit-on-close,
   ghost-card pruning, IPC hardening, stuck-"working" status (keystroke-revives-

@@ -24,6 +24,8 @@ export interface TranscriptSnapshot {
   bound: boolean;
   nativeSessionId?: string;
   usage: UsageTotals;
+  /** last-seen model id from the transcript, for cost estimation */
+  model?: string;
   lines: number;
   malformed: number;
   toolsSeen: string[];
@@ -324,7 +326,10 @@ export class TranscriptWatcher {
     if (full === w.boundFile && typeof e.sessionId === 'string' && !w.snap.nativeSessionId) {
       w.snap.nativeSessionId = e.sessionId;
     }
-    const message = e.message as { usage?: Record<string, number>; content?: unknown } | undefined;
+    const message = e.message as
+      | { usage?: Record<string, number>; content?: unknown; model?: string }
+      | undefined;
+    if (typeof message?.model === 'string') w.snap.model = message.model;
     const usage = message?.usage;
     if (usage) {
       w.snap.usage.input += usage.input_tokens ?? 0;

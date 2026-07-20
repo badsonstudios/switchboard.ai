@@ -42,7 +42,13 @@ const api = {
       folder: string;
       title: string;
       autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
-    }): Promise<SessionRecordDto & { cardId: string }> => ipcRenderer.invoke('sessions:create', opts),
+    }): Promise<
+      SessionRecordDto & {
+        cardId: string;
+        priorUsage?: { input: number; output: number; cacheRead: number; cacheCreate: number };
+        priorModel?: string;
+      }
+    > => ipcRenderer.invoke('sessions:create', opts),
     list: (): Promise<SessionRecordDto[]> => ipcRenderer.invoke('sessions:list'),
     knownCards: (): Promise<Array<{ cardId: string; identity: SessionRecordDto['identity'] }>> =>
       ipcRenderer.invoke('sessions:knownCards'),

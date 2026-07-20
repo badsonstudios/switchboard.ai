@@ -62,7 +62,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     if (fe) send('feed:event', fe);
   });
   manager.onSessionExit((e) => send('sessions:exited', e));
-  transcripts.onUpdate((snap) => send('sessions:usage', snap));
+  transcripts.onUpdate((snap) => {
+    send('sessions:usage', snap);
+    // persist usage per card so the number survives a resume/restart
+    const cardId = cardOfLive.get(snap.sessionId);
+    if (!cardId) return;
+    const prior = deps.persist.list().find((s) => s.id === cardId);
+    if (prior) deps.persist.upsert({ ...prior, usage: snap.usage, model: snap.model });
+  });
 
   ipcMain.handle('feed:list', () => deps.feed.list());
 
@@ -147,7 +154,9 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         folder: opts.folder,
         resumed: canResume,
       });
-      return { ...record, cardId: opts.cardId };
+      // seed the card's usage display from the persisted total so it doesn't
+      // read zero while resuming
+      return { ...record, cardId: opts.cardId, priorUsage: prior?.usage, priorModel: prior?.model };
     }
   );
 
