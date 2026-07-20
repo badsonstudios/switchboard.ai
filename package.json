@@ -1,0 +1,53 @@
+{
+  "name": "switchboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "switchboard.ai — an IDE for AI sessions: one window, many agents",
+  "main": "./out/main/index.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node scripts/ev.js dev",
+    "start": "node scripts/ev.js preview",
+    "build": "node scripts/ev.js build",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "postinstall": "node scripts/rebuild-native.js",
+    "check:pty": "node scripts/run-electron-node.js out/main/pty-check.js",
+    "check:adapter": "node scripts/run-electron-node.js out/main/adapter-check.js",
+    "check:hooks": "node scripts/run-electron-node.js out/main/hook-check.js",
+    "check:transcripts": "node scripts/run-electron-node.js out/main/transcript-check.js"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "dockview-react": "^7.0.2",
+    "i18next": "^26.3.6",
+    "i18next-icu": "^2.4.4",
+    "monaco-editor": "^0.55.1",
+    "node-pty": "^1.1.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-i18next": "^17.0.10"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.0.1",
+    "@eslint/js": "^9.30.0",
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "electron": "^43.1.1",
+    "electron-vite": "^4.0.0",
+    "eslint": "^9.30.0",
+    "eslint-plugin-react": "^7.37.5",
+    "jsdom": "^29.1.1",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.35.0",
+    "vite": "^7.0.0",
+    "vitest": "^3.2.4"
+  }
+}

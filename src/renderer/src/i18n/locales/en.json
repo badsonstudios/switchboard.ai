@@ -1,0 +1,76 @@
+{
+  "app": {
+    "title": "switchboard"
+  },
+  "shell": {
+    "scaffoldStatus": "scaffold OK — {platform} · v{version} · theme: {theme} ({pref})"
+  },
+  "titlebar": {
+    "version": "v{version}",
+    "notifOn": "🔔 on",
+    "notifOff": "🔕 off",
+    "trustOn": "🔓 auto-trust",
+    "trustOff": "🔒 ask trust"
+  },
+  "rail": {
+    "eyebrow": "Sessions",
+    "empty": "No sessions yet"
+  },
+  "grid": {
+    "addCard": "+ session",
+    "empty": "Add a session card to begin",
+    "cardBody": "{title} — session card; terminal arrives with E3-02",
+    "resuming": "Resuming {title}…",
+    "sessionEnded": "Session ended",
+    "exitCrashed": "Exited unexpectedly (code {code})",
+    "exitClean": "The session closed.",
+    "restart": "Restart",
+    "close": "Close",
+    "cardTitle": "Session {n}"
+  },
+  "autonomy": {
+    "plan": "🛡 plan",
+    "ask": "🛡 ask",
+    "auto-edit": "🛡 auto-edit",
+    "full-auto": "🛡 full-auto"
+  },
+  "preflight": {
+    "missingCli": "claude CLI not found — install it and log in: npm install -g @anthropic-ai/claude-code, then run `claude` once. New sessions are disabled until then.",
+    "version": "claude {version}"
+  },
+  "diff": {
+    "tabTitle": "{title} · diff",
+    "open": "diff",
+    "notRepo": "Not a git repository",
+    "clean": "Working tree clean",
+    "badge": {
+      "new": "A",
+      "modified": "M",
+      "staged": "S",
+      "both": "SM"
+    }
+  },
+  "feed": {
+    "eyebrow": "Feed",
+    "empty": "Attention events appear here",
+    "kind": {
+      "done": "done",
+      "needs-input": "needs input",
+      "needs-permission": "needs permission",
+      "crashed": "crashed"
+    }
+  },
+  "statusbar": {
+    "sessions": "{count, plural, =0 {no sessions} one {# session} other {# sessions}}",
+    "theme": "theme: {theme}"
+  },
+  "theme": {
+    "system": "system",
+    "nordic": "nordic",
+    "daylight": "daylight"
+  },
+  "language": {
+    "en": "en",
+    "pseudo": "pseudo"
+  }
+}
