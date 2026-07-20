@@ -19,9 +19,15 @@ function claudeConfigPath(): string {
   return path.join(os.homedir(), '.claude.json');
 }
 
-/** The key Claude Code uses for a project: absolute path, forward slashes. */
+/**
+ * The key Claude Code uses for a project: absolute path with forward slashes,
+ * no trailing slash. The folder always arrives absolute (folder picker /
+ * drag-drop), so we normalize deterministically rather than via path.resolve —
+ * which on POSIX would treat a Windows `C:\…` path as relative and prepend cwd
+ * (this runs on the user's Windows machine, but the tests run cross-platform).
+ */
 export function projectKey(folder: string): string {
-  return path.resolve(folder).replace(/\\/g, '/');
+  return folder.replace(/\\/g, '/').replace(/\/+$/, '');
 }
 
 /**

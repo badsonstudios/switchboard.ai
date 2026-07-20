@@ -409,6 +409,33 @@ Guardrail (restated from Non-Goals): the Feed never accepts input beyond
 expand/collapse/copy. If the CLI is waiting on a prompt, the Feed shows a "waiting in
 Terminal" chip that jumps you there.
 
+**Per-session view tabs (the session window's chrome).** Every session surface —
+grid card, maximized, popped-out OS window — carries one compact VS Code-style
+tab strip along its top. The tabs are *views over the same session*, not
+separate features:
+
+- **Feed** — the rendered read-only view above (first tab and **the default
+  view** for every session; the "waiting in Terminal" chip covers the moments
+  the CLI needs real input).
+- **Terminal** — the real CLI (the only interactive surface).
+- **Changes** — source control for the session's folder: file tree with VCS
+  decorations, Monaco diff, editable-diff + commit (§5.7 mechanics as a tab).
+- **History** — the checkout's recent commits/branch state (read-only GitService
+  log view; §5.7).
+- **Inspector** — the §5.19 capability pane (Skills / Agents / MCP / Commands),
+  present when opened.
+
+Rules: active tab is per-session and remembered across restarts (§5.25). Any
+tab can be **split** beside the Terminal instead of stacked behind it (Dockview
+panes — e.g. terminal left + diff right, as in the maximized mockup); tabs and
+splits are the same views in two presentations. On small grid cards the strip
+degrades to an icon row; the two-gesture rule holds — any view of any session
+is ≤ 2 gestures away. Litmus: pure chrome — every tab renders data the CLI or
+git already owns (host check), and Terminal-only remains a valid presentation
+(escape hatch). *Mockup note:* the Control Room export predates this spec (it
+shows only a `Diff | Files | Feed` side-panel mini-strip on the maximized
+card); the next mockup pass should show the full strip.
+
 ### 5.11 Session identity kit
 
 With 7–8 sessions open, "which one is this?" must be answerable in half a second.
@@ -1012,10 +1039,14 @@ a feature, not a platform.
 
 ## 7. UI Sketch
 
-**Visual mockup v1** (2026-07-18): [mockups/main-window-v1.html](mockups/main-window-v1.html)
-— static rendering of the main window (7-session scenario, approval flip, event
-feed, urgency lamps, watcher, status bar), annotations keyed to sections of this
-doc. Published copy: https://claude.ai/code/artifact/02a6af9e-0d2f-44e8-b6a4-efb1172d437d
+**Visual mockup v1** (2026-07-18): local export at
+[design_handoff_control_room/Control Room.dc.html](../design_handoff_control_room/Control%20Room.dc.html)
+(+ theme screenshots in `design_handoff_control_room/screenshots/`) — static
+rendering of the main window (7-session scenario, approval flip, event feed,
+urgency lamps, watcher, status bar), annotations keyed to sections of this doc.
+Published copy: https://claude.ai/code/artifact/02a6af9e-0d2f-44e8-b6a4-efb1172d437d
+*Known drift:* predates the per-session view-tab spec (§5.10) — maximized card
+shows a side-panel `Diff | Files | Feed` strip instead of the full tab strip.
 Owner feedback pending on: 3-column density · event feed default state · approval
 card loudness. The ASCII sketch below predates the mockup; kept for quick reference.
 
