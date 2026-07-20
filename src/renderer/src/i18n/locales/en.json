@@ -38,6 +38,11 @@
     "missingCli": "claude CLI not found — install it and log in: npm install -g @anthropic-ai/claude-code, then run `claude` once. New sessions are disabled until then.",
     "version": "claude {version}"
   },
+  "git": {
+    "branch": "⎇ {branch}",
+    "changed": "·{n} changed",
+    "ahead": "↑{n}"
+  },
   "diff": {
     "tabTitle": "{title} · diff",
     "open": "diff",

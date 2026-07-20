@@ -14,6 +14,7 @@ import { TerminalPane } from './TerminalPane';
 import { IdentityChip } from './IdentityChip';
 import { DiffPane } from './DiffPane';
 import { UsageStrip } from './UsageStrip';
+import { GitContext, GitStatusDto } from './GitContext';
 import { Usage } from '../lib/usage';
 
 // The DURABLE unit is the card (cardId + folder). The live claude session
@@ -93,6 +94,28 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     });
   }, [live]);
 
+  // git context (P2-E7-02): refresh when the card is shown and after each
+  // turn ends (Stop -> done), since that's when files have changed
+  const [git, setGit] = React.useState<GitStatusDto | null>(null);
+  React.useEffect(() => {
+    if (!live || !visible || !folder) return;
+    let cancelled = false;
+    const refresh = () => {
+      void window.switchboard.git.status(folder).then((s) => {
+        if (!cancelled) setGit(s as GitStatusDto);
+      });
+    };
+    refresh();
+    const off = window.switchboard.sessions.onStatus((c) => {
+      const change = c as { sessionId: string; to: string };
+      if (change.sessionId === live.id && change.to === 'done') refresh();
+    });
+    return () => {
+      cancelled = true;
+      off();
+    };
+  }, [live, visible, folder]);
+
   const closeSelf = (): void => {
     const panel = props.containerApi.getPanel(props.api.id);
     if (panel) props.containerApi.removePanel(panel); // onDidRemovePanel -> closeCard
@@ -148,7 +171,26 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       />
       {live ? (
         <div style={{ flex: 1, paddingInlineStart: 3, minInlineSize: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
-          {usage && <UsageStrip usage={usage.usage} model={usage.model} />}
+          {(usage || git?.isRepo) && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                paddingInline: 8,
+                paddingBlock: 2,
+                fontSize: 10,
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--muted)',
+                background: 'var(--panel2)',
+                borderBlockEnd: '1px solid var(--border)',
+              }}
+            >
+              <GitContext status={git} />
+              <span style={{ flex: 1 }} />
+              {usage && <UsageStrip usage={usage.usage} model={usage.model} inline />}
+            </div>
+          )}
           <div style={{ flex: 1, minBlockSize: 0, position: 'relative' }}>
             <TerminalPane sessionId={live.id} visible={visible} />
             {overlay && <div style={overlayBackdrop}>{overlay}</div>}
