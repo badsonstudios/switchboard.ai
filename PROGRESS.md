@@ -3,209 +3,44 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-**Milestone:** Spike 01 - Foundations (issues #1–#8)
-**Milestone:** Phase 1 - MVP (issues #12–#35, filed 2026-07-19)
-**AUTOPILOT RUN 2 ACTIVE** — started 2026-07-19 after Spike 01 merged (PR #11,
-all GO). Branch `auto/phase-1-mvp`, draft PR opens after first commit.
-**AUTOPILOT RUN 2 COMPLETE (2026-07-19)** — Phase 1 - MVP milestone finished,
-all 24 items (#12–#35, E1–E6) ✅ on branch `auto/phase-1-mvp`, draft PR #36
-awaiting Dan's review + merge. Both epic-review passes (E2, E3–E6) applied.
-**In progress:** nothing — milestone boundary reached (autopilot stop point)
-**Next up:** Dan reviews/merges PR #36; then eyeball checks (see below) +
-`/pm plan phase-2`
-**Branch:** auto/phase-1-mvp
-**E1+E2 epics: COMPLETE** (#12–#23; E2 epic-review fixes landed, all live
-checks PASS: check:pty / check:adapter / check:hooks / check:transcripts)
-**E1 epic: COMPLETE** (#12–#17 all done, CI green)
-**Branch:** auto/phase-1-mvp
+**Milestone:** Phase 2 - The Switchboard (issues #37–#41 filed; E7 first)
+**In progress:** P2-E7-01 — Live usage & cost on the card (#37)
+**Next up:** P2-E7-02 — Git context line (#38)
+**Branch:** auto/phase-2-switchboard (to be created)
 
-## [Dan] eyeball checks before Phase 1 sign-off (autopilot couldn't verify)
+## Phase status
 
-- Typing latency feel with 8 live sessions (S-07 numbers say fine) — E3-02
-- Rail status dots flipping through a real work cycle — E3-05
-- Hear/see a needs-permission notification from another app — E4-02
-- Review a session's diff end-to-end in the Monaco pane — E5-02
-- Quit with 3 working agents → two-step confirm — E6-02
-- Drop-a-folder-to-session feel — E3-04
+- **Spike 01 — DONE** (all mechanisms GO; merged).
+- **Phase 1 — MVP — DONE & MERGED** (PR #36 → main, 2026-07-20): full app —
+  session core, hooks, transcripts, git, notifications, persistence +
+  resume-on-focus, auto-trust. CI green 3 OSes. Milestone closed.
+- **Phase 2 — The Switchboard — STARTING.** Plan:
+  `docs/plans/04-phase-2-switchboard.md`. Leading with E7 (richer cards) —
+  owner's expressed interest + fast win on data we already collect.
 
 ## Blockers / open questions for Dan
 
-- **[user] "Red build blocks merge" (#13) can't be enforced server-side**:
-  branch protection and rulesets are both plan-gated on free private repos.
-  Options: GitHub Pro / make repo public / accept procedural gate (merge only
-  when PR checks green). CI itself is live and green on all 3 OSes.
+- **[user] "Red build blocks merge" (#13) still procedural** — branch
+  protection/rulesets are plan-gated on free private repos. CI is live + green;
+  the merge gate is manual (I verify CI before merging). Upgrade to Pro / make
+  public to enforce server-side.
+- **Loose ends deferred** (not blocking): full-auto → bypass footgun (offer:
+  remap to a safer mode), 9MB Monaco renderer bundle (slim it). Say the word.
 
 ## Log
 
-- 2026-07-19 — **E6 epic + E3–E6 review done; Phase 1 milestone COMPLETE**
-  (autopilot run 2). E6-01 autonomy profiles → --permission-mode (tested);
-  E6-02 quit protection (window-close guard); E6-03 preflight banner + status
-  version. Epic review found 2 blockers (quit-on-Windows-close strands PTYs;
-  ghost cards on relaunch) + IPC security gaps — all fixed and re-verified
-  (two-run relaunch smoke: 1 card → pruned to 0). All 24 items done, 3-OS CI
-  green. PR #36 for Dan.
-- 2026-07-19 — **P1-E5-02 / E5-01 done**: GitService (porcelain-v2, real-repo
-  tested) + Monaco diff pane per session. **P1-E4-01/02 done**: event feed
-  (attention-only projection, interleave-tested) + notifications (toast/flash/
-  beep, quiet hours, gating tested).
-- 2026-07-19 — **P1-E3-05 done** (autopilot run 2; E3 epic complete): rail
-  rows show live status dots (state-machine statuses → status tokens),
-  click-to-focus via GridController. **[Dan eyeball]: rail-reflects-live-state
-  through a real work cycle.**
-- 2026-07-19 — **P1-E3-04 done** (autopilot run 2): drag-folder-onto-window →
-  validated → running session card (webUtils path resolution); picker + drop
-  share one create path.
-- 2026-07-19 — **P1-E3-03 done** (autopilot run 2): identity kit — accent
-  auto-assign (8 distinct, tested), lang badges, shared IdentityChip in rail +
-  card tabs, double-click rename.
-- 2026-07-19 — **P1-E3-02 done** (autopilot run 2): terminal panes — session
-  core bootstrapped in main (PtyService+SessionManager+HookListener+
-  TranscriptWatcher wired at app start), full session/PTY IPC surface,
-  xterm-in-card with attach-on-visible + ring-buffer replay (S-07: hidden
-  panes ingest-only), + session button = folder picker → real spawn.
-  Scripted smoke: app boots, hook listener up, real claude session spawned
-  into a card, clean quit. **[Dan eyeball]: typing-latency feel with 8 live
-  sessions is manual verification** (S-07 numbers say it's fine).
-- 2026-07-19 — **P1-E3-01 done** (autopilot run 2): control-room shell —
-  titlebar (theme/lang chips), sessions rail with accent stripes, Dockview
-  card grid (dockview-react; v7 split core/react packages), status bar; all
-  strings i18n'd, all colors tokens. Layout serializes to workspace store via
-  IPC and restores on boot. Done-when scripted: seeded 8 cards → persisted →
-  relaunch restored 8/8. First visible window with card layout.
-- 2026-07-19 — **E2 epic review fixes** (autopilot run 2): 2 blockers fixed —
-  transcript binding (case-sensitive slug hard gate would silently never bind
-  on real paths; now case-insensitive prefilter + widen fallback, head-cwd
-  authority, NEW check:transcripts proves it live) and create(settingsFor)
-  (integrated spawn-with-hooks path now exists and check:hooks runs it:
-  create→real PTY→TUI→hook-driven working→done). Kill maps to done not
-  crashed (proven live); crashed terminal; subscriber isolation; node
-  resolution for claude.exe installs; misc hardening.
-- 2026-07-19 — **P1-E2-06 done** (autopilot run 2; E2 epic complete):
-  TranscriptWatcher — recursive scan incl. nested subagents/ + meta.json,
-  binding validated against cwd/sessionId (race fix; pre-existing files never
-  adopted; transcript-absent-until-first-prompt tolerated), tolerant reader,
-  live usage totals/tools/files/lastActivity, subagent identity pickup.
-  Done-when tested: live-append token updates + malformed lines survive.
-  67 unit tests green.
-- 2026-07-19 — **P1-E2-05 done** (autopilot run 2): HookListener — §5.29
-  floor (loopback + Host allowlist + per-session token; token delivered by
-  ACL'd file path, never argv per S-03), instant-ack status hooks with
-  timeout:10, generated fail-open forwarder, buildHookSettings for adapter
-  injection, native-session-id capture. Done-when verified LIVE:
-  `npm run check:hooks` ran real claude -p with injected hooks →
-  starting→working→done from hook events alone; 401/403 negative tests in
-  the same run. 61 unit tests green.
-- 2026-07-19 — **P1-E2-04 done** (autopilot run 2): WorkspaceStore — persisted
-  sessions (identity, layout slot, native id for resume-on-focus) + window
-  geometry with display fingerprint (§7); tolerant load (corrupt→.corrupt
-  backup + fresh start), atomic saves; missing-display rescue to centered
-  (keeps maximized). Shell geometry migrated from window-state.json to
-  workspace.json (window-state.ts is pure helpers now). Round-trip +
-  rescue tested (55 total); smoke x2 shows real 3-display fingerprint
-  persisting. UI consumption (suspended cards) lands with E3.
-- 2026-07-19 — **P1-E2-03 done** (autopilot run 2): SessionManager —
-  create/kill/restart via registry-resolved adapters + injected PtyService;
-  identity registry; S-06-semantics state machine (unknown events never
-  transition; exit 0→done, nonzero→crashed; permission hold/resolve path).
-  Done-when: transitions observable (subscription + queryable history +
-  sessionId-filterable log lines), verified by replaying the REAL recorded
-  S-06 cycle (artifacts/s06/transitions.json) through the machine. Live
-  hook wiring lands in E2-05. 47 tests green.
-- 2026-07-19 — **P1-E2-02 done** (autopilot run 2): Claude adapter v1 —
-  absolute CLI resolution (PATH scan, cached), per-session settings file
-  generation with validate-before-spawn (S-02 silent-ignore trap), resume
-  args, env scrubs. Done-when verified live: `npm run check:adapter` spawned
-  a session in a fresh temp folder, planted a marker, and --resume recalled
-  it (PASS). Local-only check (needs logged-in CLI); 39 unit tests green;
-  CI green 3 OSes incl. node-pty rebuild + check:pty.
-- 2026-07-19 — **P1-E2-01 done** (autopilot run 2): PtyService — generic
-  spawn/resize/write/kill with per-session ring-buffer scrollback (2MB cap,
-  S-07 ingest-only verdict), always-on S-01 env scrub, dead-PTY write guards.
-  node-pty + @electron/rebuild postinstall (Spectre fallback fired on this
-  machine as spike predicted — sanctioned fix still: VS component).
-  Done-when verified: `npm run check:pty` = 12 concurrent PTYs
-  spawn→resize→write→kill clean (12/12/12, 0 orphans); wired into CI.
-  Note: node-pty's console-list helper prints AttachConsole noise under
-  run-as-node teardown — cosmetic, exit code governs.
-- 2026-07-19 — **P1-E1-06 done** (autopilot run 2; E1 epic complete):
-  contribution registry + capability manifests (§5.23); ProviderAdapter and
-  EventSource contracts v0; Claude adapter registered via bootstrap and
-  resolved through the registry (done-when tested); spawn recipe carries the
-  S-01 env scrubs. 26 tests green.
-- 2026-07-19 — **P1-E1-05 done** (autopilot run 2): zero-dep JSON-lines
-  logger with rotation, deep redaction (token-through-args test), sessionId
-  lifecycle-grep test, per-subsystem debug toggles. Wired into app lifecycle.
-- 2026-07-19 — **P1-E1-04 done** (autopilot run 2): i18next + ICU, en.json,
-  generated pseudo-locale (⟦mangled⟧, ICU args preserved — tested against
-  every en.json leaf), language toggle in shell, react/jsx-no-literals bans
-  hardcoded JSX strings (canary-verified). 15 tests green. Logical-CSS
-  convention adopted (marginBlockStart in shell); CSS-side lint deferred to
-  first real stylesheet work (E3).
-- 2026-07-19 — **P1-E1-03 done** (autopilot run 2): three-layer token system
-  (Nordic/Daylight maps + theme-independent semantics + component tokens)
-  from the design handoff; OS-sync with persisted override; theme toggle in
-  shell; ESLint bans raw colors in renderer (canary-verified fail + pass).
-  12 unit tests green.
-- 2026-07-19 — **P1-E1-02 done** (autopilot run 2): CI matrix
-  (win/ubuntu/macos, Node 22) — lint/typecheck/test/build, green on all 3 OSes
-  (also completes E1-01's cross-platform done-when). [user] note: server-side
-  merge blocking is plan-gated (see Blockers).
-- 2026-07-19 — **P1-E1-01 done** (autopilot run 2): electron-vite + TS + React
-  scaffold at repo root; sandboxed/isolated windows, CSP, external-link +
-  navigation guards, window-state persistence with missing-display rescue
-  (tested, 8 unit tests); S-01 env landmines mitigated day-one (scripts/ev.js).
-  Reviewed (code-reviewer): 0 blockers, 8 should-fixes applied. Smoke: open/
-  close clean x2, state restores. CI (mac/linux compile) lands with #13.
-- 2026-07-19 — **S-08 done** (autopilot; milestone complete):
-  `docs/plans/spike-01-findings.md` written; DESIGN.md OQ #2/#5/#10 resolved,
-  #3 verdict added, #13 evidence added; Phase 1 plan corrected (scrollback
-  5000, settings validation, Notification-as-backup, recursive tailer +
-  binding validation, hidden-panes-don't-render). Spike exit criteria all met.
-- 2026-07-19 — **S-07 done** (✅ GO, autopilot): 8/12 concurrent sessions —
-  idle 7.6%/27.8% of one core, ~420MB/session (CLI-owned), streaming peak 68%,
-  UI stall 15ms max (N=12's 939ms = occluded-window timer throttling
-  artifact). Findings: `spike/findings/s-07-concurrency-perf.md`
-- 2026-07-19 — **S-06 done** (✅ GO, autopilot): hook-only status cycle works;
-  Stop ~30ms after turn end; permission Notification debounced ~6s & skippable
-  → PreToolUse hold is needs-permission authority. Findings:
-  `spike/findings/s-06-status-hooks.md`
-- 2026-07-19 — **S-05 done** (✅ GO, autopilot): subagent transcripts are
-  nested per-agent files (`<session>/subagents/agent-<id>.jsonl` + meta.json
-  with agentType/description/toolUseId); live tail lag ~160ms; TodoWrite
-  plan-state extraction viable (OQ #13). Findings:
-  `spike/findings/s-05-sidechain-visibility.md`
-- 2026-07-19 — **S-04 done** (✅ GO, autopilot): transcript discovered 3.9s
-  after spawn (slug mapping confirmed for :/ chars; new-file detection is the
-  real binding), tail lag 24–815ms (median 268ms), tolerant reader survives
-  garbage/unknown types, tokens/tools/files extractable. No terminal "done"
-  marker in transcript → hooks are status authority. Findings:
-  `spike/findings/s-04-transcript-tailing.md`
-- 2026-07-19 — **S-03 done** (✅ HOOK PATH, autopilot): full decision matrix
-  observed headless + interactive TUI. allow overrides default-deny; deny
-  carries reason verbatim to model; ask surfaces real TUI prompt; hook hang →
-  clean TUI fallback after ~600s default budget (config via timeout field —
-  90s hold verified); dead listener fails open instantly. §5.29 floor
-  verified (401/403). Findings: `spike/findings/s-03-hook-roundtrip.md`
-- 2026-07-19 — Autopilot run started: milestone Spike 01 (S-03→S-08), branch
-  `auto/spike-01-foundations`.
-
-- 2026-07-19 — **S-02 done** (✅ GO): `claude --settings <abs-file-path>` at
-  spawn is the Phase 1 hook-injection mechanism — hooks fire, user settings
-  compose additively, project `.claude/` untouched (sha1-verified); hook
-  commands run under Git Bash on Windows. Findings:
-  `spike/findings/s-02-settings-injection.md`. PR #10 (Closes #2, merged):
-  https://github.com/badsonstudios/switchboard.ai/pull/10
-
-- 2026-07-19 — **S-01 done** (✅ GO): claude CLI PTY-hosts cleanly in
-  Electron + node-pty + xterm.js on Windows; full interactive checklist passed
-  with no corruption. Findings: `spike/findings/s-01-pty-host.md` — three
-  env/build landmines documented (NoDefaultCurrentDirectoryInExePath, Spectre
-  libs, ELECTRON_RUN_AS_NODE). PR #9 (Closes #1):
-  https://github.com/badsonstudios/switchboard.ai/pull/9
-
-- 2026-07-18 — Design phase complete: DESIGN.md (29 sections), PHILOSOPHY.md,
-  control-room design handoff. Repo created and pushed
-  (badsonstudios/switchboard.ai). Plans written (docs/plans/); Spike 01
-  milestone + issues S-01..S-08 filed.
-- 2026-07-18 — Claude workflow migrated from BrainHarbor and adapted to
-  issue-driven flow (skills/agents/hooks/scripts under .claude/).
+- 2026-07-20 — **Phase 1 MERGED to main** (PR #36, CI green 3 OSes; milestone
+  closed). Post-MVP dogfooding fixes landed in the same PR: quit-on-close,
+  ghost-card pruning, IPC hardening, stuck-"working" status (keystroke-revives-
+  done bug, root-caused from the app log), dead-card dismiss/restart,
+  auto-trust folders, and session persistence + resume-on-focus. **Phase 2
+  planned** (`04-phase-2-switchboard.md`); milestone + E7 issues (#37–41) filed.
+- 2026-07-19 — Phase 1 built end-to-end on autopilot (E1–E6, #12–#35): scaffold/
+  CI/theme/i18n/logging/registry; PtyService, Claude adapter, SessionManager,
+  workspace store, HookListener, TranscriptWatcher; Dockview shell, terminals,
+  identity, new-session flows, rail; event feed + notifications; GitService +
+  Monaco diff; autonomy/quit-protection/preflight. Two epic-review passes.
+- 2026-07-19 — **Spike 01 DONE** (all GO; PR #10, merged). PTY hosting,
+  settings injection, hook round-trips (HOOK PATH), transcript tailing,
+  sidechain visibility, hook-driven status, 12-session concurrency all proven;
+  verdicts written into DESIGN.md; findings in `spike/findings/`.

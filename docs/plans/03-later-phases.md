@@ -8,6 +8,10 @@ Bulk-filing issues from this file is explicitly against process.
 ## Phase 2 — The Switchboard
 *Theme: sessions become aware of each other; attention system matures.*
 
+**Broken out → `docs/plans/04-phase-2-switchboard.md`** (epics E7–E11;
+milestone "Phase 2 - The Switchboard", opened 2026-07-20). Original planning
+notes retained below.
+
 Planning notes for when this gets broken out:
 - **Approval surfaces v1 is the crown jewel** of the phase (owner's #1 pain) —
   sequence it early, not last; it depends only on the S-03 verdict + Monaco.
