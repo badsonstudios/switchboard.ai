@@ -20,6 +20,7 @@ import { Usage, ZERO_USAGE } from '../lib/usage';
 import { RescuedPopout, sanitizePopoutLayout } from '../lib/layout';
 import { pickAdoptedGroupId } from '../lib/groups';
 import { uiGet, uiSet } from '../lib/ui-state';
+import { setDraggedCard } from '../lib/drag-context';
 
 // The DURABLE unit is the card (cardId + folder). The live claude session
 // under it is ephemeral: spawned — or --resumed — lazily the first time the
@@ -41,9 +42,33 @@ interface Live {
 }
 
 function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element {
+  const { t } = useTranslation();
   return (
-    <div style={{ paddingInline: 8, display: 'flex', alignItems: 'center', blockSize: '100%' }}>
+    <div style={{ paddingInline: 8, display: 'flex', alignItems: 'center', gap: 4, blockSize: '100%' }}>
       <IdentityChip title={props.api.title ?? props.params?.title ?? ''} compact />
+      <button
+        onClick={(e) => {
+          // close the tab: for a session card this ends the session AND
+          // forgets the record (onDidRemovePanel -> closeCard); derived tabs
+          // (diff) just close
+          e.stopPropagation();
+          props.api.close();
+        }}
+        onMouseDown={(e) => e.stopPropagation()} // don't start a tab drag
+        title={t('grid.closeTab')}
+        style={{
+          background: 'transparent',
+          border: 'none',
+          color: 'var(--faint)',
+          cursor: 'pointer',
+          fontSize: 11,
+          lineHeight: 1,
+          padding: '1px 3px',
+          borderRadius: 3,
+        }}
+      >
+        {t('grid.closeTabIcon')}
+      </button>
     </div>
   );
 }
@@ -773,6 +798,13 @@ export function SessionGrid(props: {
       // spot on relaunch (E8-04 multi-monitor).
       api.onDidPopoutGroupPositionChange?.(saveLayout);
       api.onDidPopoutGroupSizeChange?.(saveLayout);
+      // dockview tab drags don't carry our dataTransfer type — publish the
+      // in-flight card so the rail's group headers can accept the drop
+      api.onWillDragPanel?.((e) => {
+        const m = /^session-(.+)$/.exec(e.panel?.id ?? '');
+        setDraggedCard(m ? m[1] : null);
+      });
+      window.addEventListener('dragend', () => setDraggedCard(null));
       // remember which card has focus (E12-08); restored below after fromJSON
       api.onDidActivePanelChange((e) => {
         const m = e.panel ? /^session-(.+)$/.exec(e.panel.id) : null;

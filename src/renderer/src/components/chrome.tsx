@@ -9,6 +9,7 @@ import { IdentityChip } from './IdentityChip';
 import { formatTokens, formatUsd } from '../lib/usage';
 import { computeAutoGroups } from '../lib/groups';
 import { uiGet, uiSet } from '../lib/ui-state';
+import { getDraggedCard, setDraggedCard } from '../lib/drag-context';
 
 const barStyle: React.CSSProperties = {
   background: 'var(--titlebar-bg)',
@@ -243,11 +244,13 @@ export function SessionsRail(props: {
   return (
     <nav
       onDragOver={(e) => {
-        if (e.dataTransfer.types.includes(DND_TYPE)) e.preventDefault();
+        if (e.dataTransfer.types.includes(DND_TYPE) || getDraggedCard()) e.preventDefault();
       }}
       onDrop={(e) => {
         // a drop on the rail background (not a group header) ungroups
-        const cardId = e.dataTransfer.getData(DND_TYPE);
+        e.preventDefault();
+        const cardId = e.dataTransfer.getData(DND_TYPE) || getDraggedCard();
+        setDraggedCard(null);
         if (cardId) props.onMoveToGroup(cardId, null);
       }}
       style={{
@@ -288,11 +291,15 @@ export function SessionsRail(props: {
             <div
               onClick={() => toggleCollapsed(g.id)}
               onDragOver={(e) => {
-                if (e.dataTransfer.types.includes(DND_TYPE)) e.preventDefault();
+                // accept rail-row drags (our type) AND dockview tab drags
+                // (published via drag-context — Dan's E12-04 eyeball find)
+                if (e.dataTransfer.types.includes(DND_TYPE) || getDraggedCard()) e.preventDefault();
               }}
               onDrop={(e) => {
                 e.stopPropagation(); // don't bubble to the nav's ungroup drop
-                const cardId = e.dataTransfer.getData(DND_TYPE);
+                e.preventDefault(); // claim it from dockview's own drop targets
+                const cardId = e.dataTransfer.getData(DND_TYPE) || getDraggedCard();
+                setDraggedCard(null);
                 if (cardId) props.onMoveToGroup(cardId, g.id);
               }}
               title={isCollapsed ? t('rail.expand') : t('rail.collapse')}

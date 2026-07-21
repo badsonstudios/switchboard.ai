@@ -44,6 +44,8 @@
     "dockInIcon": "⤡",
     "menu": "Session menu",
     "menuIcon": "⋯",
+    "closeTab": "Close (ends the session)",
+    "closeTabIcon": "✕",
     "viewTerminal": "Terminal",
     "viewDiff": "Changes",
     "viewFeed": "Feed",

@@ -50,6 +50,20 @@ test.describe('a session card', () => {
     await expect.poll(() => app.windows().length, { timeout: 15_000 }).toBe(2);
   });
 
+  test('the tab ✕ closes the card and ends the session (eyeball fix)', async () => {
+    const folder = tempProjectFolder();
+    const name = path.basename(folder);
+    a = await launchApp({ seedFolder: folder });
+    const { window } = a;
+    await expect(window.getByText(name).first()).toBeVisible({ timeout: 25_000 });
+    await window.getByTitle('Close (ends the session)').click();
+    // card gone from the grid AND the record forgotten (rail empties);
+    // (a "closed" toast may briefly mention the name — that's fine)
+    await expect(window.getByTitle('Close (ends the session)')).toHaveCount(0, { timeout: 15_000 });
+    await expect(window.locator('nav').getByText(name)).toHaveCount(0);
+    await expect(window.locator('nav').getByText('No sessions yet')).toBeVisible();
+  });
+
   test('appears in the rail with a status dot', async () => {
     const folder = tempProjectFolder();
     const name = path.basename(folder);

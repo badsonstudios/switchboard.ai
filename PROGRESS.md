@@ -49,6 +49,16 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **Dan's eyeball fixes (PR #58)**: (1) every dockview tab now
+  has a ✕ — closes the tab; for a session card that ends the session and
+  forgets the record (e2e added); diff tabs close too. (2) Grid tab → rail
+  group-header drags now work: dockview drags don't carry our dataTransfer
+  type, so onWillDragPanel publishes the in-flight card via lib/drag-context
+  and the rail headers read it (**[Dan eyeball]** re-check the drag). Items
+  4–5 of his feedback (Feed → primary interactive tab with composer +
+  in-app approvals) are a DESIGN-level change — proposal drafted, awaiting
+  his call before amending DESIGN.md/plan.
+
 - 2026-07-21 — **CI red on the run's tip → fixed.** Two roots: (1) local gate
   had skipped `npm run typecheck` (electron-vite build ≠ tsc) — 6 TS errors
   (uiGet literal-type inference ×5, onDidActivePanelChange event shape);
