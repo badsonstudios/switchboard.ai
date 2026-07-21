@@ -423,7 +423,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               {changed > 0 && <span style={{ color: 'var(--status-needs-input)', marginInlineStart: 4 }}>{changed}</span>}
             </button>
             <span style={vtabStyle(false, true, live.accent)} title={t('grid.viewSoon')}>
-              {t('grid.viewFiles')}
+              {t('grid.viewHistory')}
             </span>
             <span style={{ flex: 1, minInlineSize: 8 }} />
             {plan && (

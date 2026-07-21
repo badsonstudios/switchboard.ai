@@ -46,6 +46,9 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **P2-E12-09 done (#57)**: view-tab strip aligned to the §5.10
+  canonical set — Diff renamed **Changes**, the Files "soon" placeholder is
+  now **History** (soon). Strip reads Feed · Terminal · Changes · History.
 - 2026-07-21 — **P2-E12-07 done (#55)**: Feed verbosity presets
   (quiet/normal/firehose; pure blockVisible rule, per-card persisted,
   live-switchable), "waiting in Terminal ↗" chip on needs-input/permission

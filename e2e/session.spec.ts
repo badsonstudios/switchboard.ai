@@ -150,11 +150,12 @@ test.describe('a session card', () => {
     a = await launchApp({ seedFolder: folder });
     const { window } = a;
     await expect(window.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-    // the mockup's view-tab strip: Terminal + Diff are real tabs
+    // the §5.10 canonical strip (E12-09): Feed · Terminal · Changes (+ History soon)
     await expect(window.getByRole('button', { name: 'Terminal' })).toBeVisible();
-    await expect(window.getByRole('button', { name: 'Diff' })).toBeVisible();
-    // switching to Diff and back leaves the terminal usable (no NaN wipeout)
-    await window.getByRole('button', { name: 'Diff' }).click();
+    await expect(window.getByRole('button', { name: 'Changes' })).toBeVisible();
+    await expect(window.getByText('History', { exact: true })).toBeVisible(); // "soon" tab
+    // switching to Changes and back leaves the terminal usable (no NaN wipeout)
+    await window.getByRole('button', { name: 'Changes' }).click();
     await window.getByRole('button', { name: 'Terminal' }).click();
     await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 10_000 });
   });
