@@ -220,6 +220,8 @@ app
     // renderer <-> workspace layout persistence (E3-01)
     ipcMain.handle('workspace:getLayout', () => workspace.getLayout());
     ipcMain.on('workspace:setLayout', (_e, layout: unknown) => workspace.setLayout(layout));
+    // display work areas — for popout-position rescue on restore (E8-02)
+    ipcMain.handle('app:workAreas', () => screen.getAllDisplays().map((d) => d.workArea));
     registerBuiltinContributions();
     log.app.info('contributions registered', { manifests: registry.manifests() });
 

@@ -32,6 +32,9 @@ const api = {
     getLayout: (): Promise<unknown> => ipcRenderer.invoke('workspace:getLayout'),
     setLayout: (layout: unknown): void => ipcRenderer.send('workspace:setLayout', layout),
   },
+  /** display work areas, for popout-position rescue on restore (E8-02) */
+  workAreas: (): Promise<Array<{ x: number; y: number; width: number; height: number }>> =>
+    ipcRenderer.invoke('app:workAreas'),
   /** sandbox-safe path for a dropped File (drag-folder-onto-window, E3-04) */
   pathForFile: (file: File): string => webUtils.getPathForFile(file),
   sessions: {

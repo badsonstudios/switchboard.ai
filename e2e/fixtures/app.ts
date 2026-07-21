@@ -16,18 +16,23 @@ export interface LaunchedApp {
   app: ElectronApplication;
   window: Page;
   home: string;
+  /** close the app but KEEP the home (for relaunch/persistence tests) */
+  close: () => Promise<void>;
+  /** close the app AND delete the home */
   cleanup: () => Promise<void>;
 }
 
 export interface LaunchOptions {
   /** auto-create one fake session in this folder at boot */
   seedFolder?: string;
+  /** reuse an existing home dir (to relaunch and test persistence) */
+  home?: string;
   /** extra env for the main process */
   env?: Record<string, string>;
 }
 
 export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-'));
+  const home = opts.home ?? fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-'));
   const appData = path.join(home, 'AppData', 'Roaming');
   const localAppData = path.join(home, 'AppData', 'Local');
   fs.mkdirSync(appData, { recursive: true });
@@ -50,25 +55,30 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   const window = await app.firstWindow();
   await window.waitForLoadState('domcontentloaded');
 
+  const close = async () => {
+    // app.close() can hang if the process is slow to exit; force-kill as a
+    // backstop so a single slow teardown never fails the whole worker
+    try {
+      await Promise.race([
+        app.close(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('close timeout')), 12_000)),
+      ]);
+    } catch {
+      try {
+        app.process()?.kill();
+      } catch {
+        /* already gone */
+      }
+    }
+  };
+
   return {
     app,
     window,
     home,
+    close,
     cleanup: async () => {
-      // app.close() can hang if the process is slow to exit; force-kill as a
-      // backstop so a single slow teardown never fails the whole worker
-      try {
-        await Promise.race([
-          app.close(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('close timeout')), 12_000)),
-        ]);
-      } catch {
-        try {
-          app.process()?.kill();
-        } catch {
-          /* already gone */
-        }
-      }
+      await close();
       try {
         fs.rmSync(home, { recursive: true, force: true });
       } catch {

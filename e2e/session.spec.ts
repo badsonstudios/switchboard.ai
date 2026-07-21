@@ -47,4 +47,20 @@ test.describe('a session card', () => {
     const rail = window.locator('nav');
     await expect(rail.getByText(name).first()).toBeVisible({ timeout: 25_000 });
   });
+
+  test('a popped-out window is restored after relaunch (E8-02)', async () => {
+    const folder = tempProjectFolder();
+    // launch 1: pop out, then close (keep the home so state persists)
+    const first = await launchApp({ seedFolder: folder });
+    await expect(first.window.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+    await first.window.getByTitle('Pop out into its own window').click();
+    await expect.poll(() => first.app.windows().length, { timeout: 15_000 }).toBe(2);
+    // let the layout (with the popout) persist, then close keeping the home
+    await first.window.waitForTimeout(1000);
+    await first.close();
+
+    // launch 2: same home, no seed — the popout should reopen from the layout
+    a = await launchApp({ home: first.home });
+    await expect.poll(() => a.app.windows().length, { timeout: 25_000 }).toBe(2);
+  });
 });

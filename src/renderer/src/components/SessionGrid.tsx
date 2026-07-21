@@ -16,6 +16,7 @@ import { DiffPane } from './DiffPane';
 import { UsageStrip } from './UsageStrip';
 import { GitContext, GitStatusDto } from './GitContext';
 import { Usage, ZERO_USAGE } from '../lib/usage';
+import { sanitizePopoutLayout } from '../lib/layout';
 
 // The DURABLE unit is the card (cardId + folder). The live claude session
 // under it is ephemeral: spawned — or --resumed — lazily the first time the
@@ -467,7 +468,12 @@ export function SessionGrid(props: {
       const saved = await window.switchboard.workspace.getLayout();
       if (saved) {
         try {
-          api.fromJSON(saved as Parameters<DockviewApi['fromJSON']>[0]);
+          // popouts persist in the layout, but their stored url has last
+          // launch's (random) loopback port and their position may be on a
+          // now-missing monitor — fix both before restoring (E8-02)
+          const workAreas = await window.switchboard.workAreas();
+          const sane = sanitizePopoutLayout(saved, window.location.origin, workAreas);
+          api.fromJSON(sane as Parameters<DockviewApi['fromJSON']>[0]);
           // keep restored session cards that still have a persisted record
           // (they resume-on-focus); drop any panel with no record behind it.
           // Diff panes are derived — always drop and let the user reopen.
