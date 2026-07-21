@@ -8,7 +8,8 @@
 view-tabs, #47) — implemented + tested from Dan's 3-monitor bug report; running
 code review before committing to PR #42.
 **Next up (needs Dan):** review/merge draft PR #42; more of Dan's hands-on
-pop-out testing; then decide on expanding E9/E10/E11 outlines (`/pm plan`).
+pop-out testing; then decide on expanding the E9–E14 outlines (`/pm plan`,
+from the 2026-07-21 reconciled plan).
 **Branch:** auto/phase-2-switchboard (draft PR #42)
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
@@ -24,10 +25,11 @@ a "[Dan eyeball]" note.**
   session core, hooks, transcripts, git, notifications, persistence +
   resume-on-focus, auto-trust. CI green 3 OSes. Milestone closed.
 - **Phase 2 — The Switchboard — E7 + E8 DONE (on branch, PR #42).** Plan:
-  `docs/plans/04-phase-2-switchboard.md`. E7 (richer cards) + E8 (pop-out:
-  foundation, geometry persistence, rejoin/lifecycle) complete + e2e-tested.
-  E9 (attention-driven layout), E10, E11 remain as OUTLINES — not yet expanded
-  into work items or filed as issues (just-in-time; needs `/pm plan`).
+  `docs/plans/04-phase-2-switchboard.md` (reconciled vs DESIGN.md §8
+  2026-07-21 — see log). E7 (richer cards) + E8 (pop-out: foundation, geometry
+  persistence, rejoin/lifecycle) complete + e2e-tested; P2-E8-06 (reconnect
+  offer) added later, not yet filed. E9–E14 remain as OUTLINES — not yet
+  expanded into work items or filed as issues (just-in-time; needs `/pm plan`).
 
 ## Blockers / open questions for Dan
 
@@ -37,9 +39,30 @@ a "[Dan eyeball]" note.**
   public to enforce server-side.
 - **Loose ends deferred** (not blocking): full-auto → bypass footgun (offer:
   remap to a safer mode), 9MB Monaco renderer bundle (slim it). Say the word.
+- **[user] ClaudeMon architecture read (OQ #8) is due.** `03-later-phases.md`
+  says it must happen before Phase 3 planning, "ideally far earlier" — and the
+  2026-07-21 reconciliation just moved MORE into Phase 3. Schedule a session
+  to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
 
+- 2026-07-21 — **Plan ↔ DESIGN.md reconciliation** (Dan asked for a full
+  cross-check; docs-only, no code). The E7–E11 break-out of Phase 2 had
+  silently dropped ~half of DESIGN §8's Phase 2 list. Fixed across four docs:
+  (a) `04-phase-2-switchboard.md` — new epics **E13 Dispatch v1** and **E14
+  Notifications v2 + event feed v2 + service status**; restored into existing
+  epics: command palette + keyboard vocabulary (E9), `get_session_context` +
+  context-transfer L3 (E11), repo auto-grouping + focus-state persistence
+  (E12), **P2-E8-06 display reconnect offer** (new item, not yet filed); OQ #9
+  merge-endgame spike note + OQ #1 composer-sequencing note; exit criteria +
+  order updated; E8-03's stale "never kills it" wording corrected to
+  suspend-on-close. (b) `DESIGN.md §8` — demoted to Phase 3 (Phase 2 was
+  overfull): watchers + undercard tray, tray mode + session archive v1, fleet
+  snapshots + layout DSL + restore confirm gate; Phase 2 list now names
+  persistent groups explicitly. (c) `03-later-phases.md` — E7–E14 reference +
+  Phase 3 inherited-items note. (d) This file — E9–E14 outlines, ClaudeMon
+  (OQ #8) nudge under blockers. Next `/pm plan` should expand from the
+  reconciled plan.
 - 2026-07-21 — **Owner design direction captured + tab polish** (Dan): (a)
   DESIGN.md "Persistent groups as containers" — explicitly-created named groups
   that persist when empty, open-into-group, move-sessions-between-groups; filed

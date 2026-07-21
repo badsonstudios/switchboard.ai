@@ -1180,8 +1180,6 @@ context transfer, and the attention queue work across monitors.
 - Drag-and-drop: text + files between sessions
 - Context transfer: context chips + summary handoff (Level 2); `get_session_context` bus tool
 - Pop-out session subwindows (orchestrator-owned)
-- Watcher windows for subagents, undercard tray + attention bubbling (§5.24)
-- Tray mode + session archive v1 (§5.25)
 - Context transfer Level 3 (fork-session adoption) behind experimental flag
 - Attention-driven layout: auto-minimize on submit, attention queue + hotkey, layout
   modes, idle collapse, urgency strip, presentation ladder w/ auto-hide + policy
@@ -1189,8 +1187,8 @@ context transfer, and the attention queue work across monitors.
   composed focus mode (§5.8 research-v2 additions)
 - Multi-monitor: pop-out to any display, geometry persistence w/ display
   fingerprints, startup + runtime rescue policy, reconnect offer
-- Fleet snapshots + repo auto-grouping (§7): save/restore named fleets, layout
-  DSL v1, restore confirm gate + focus-state persistence (§5.25)
+- Persistent groups as containers + repo auto-grouping (§7); focus-state
+  persistence (§5.25)
 - Command palette + complete keyboard vocabulary for session lifecycle
   (spawn / focus / archive / review / merge — Claude Squad proves table-stakes)
 - Feed view v1: themed rendering, verbosity presets, collapsible tool calls/diffs
@@ -1205,7 +1203,16 @@ context transfer, and the attention queue work across monitors.
 - Approval surfaces v1: PreToolUse interception spike, approval cards w/ Monaco
   diffs, session-flip mode, review queue pane, deny-with-feedback
 
+*(Moved to Phase 3, 2026-07-21 plan reconciliation — Phase 2 was overfull and
+these three lean on Phase 3 surfaces: watcher windows + undercard tray; tray
+mode + session archive v1; fleet snapshots + layout DSL.)*
+
 **Phase 3 — the IDE**
+- Watcher windows for subagents, undercard tray + attention bubbling
+  (§5.6, §5.24) — moved from Phase 2 (2026-07-21)
+- Tray mode + session archive v1 (§5.25) — moved from Phase 2 (2026-07-21)
+- Fleet snapshots + layout DSL v1 (§7): save/restore named fleets, restore
+  confirm gate (§5.25, OQ #14) — moved from Phase 2 (2026-07-21)
 - Worktree create/merge-back flows with review step
 - Cross-session same-repo conflict warnings
 - ClaudeMon integration: shared parsing/usage library, per-session usage chips,
