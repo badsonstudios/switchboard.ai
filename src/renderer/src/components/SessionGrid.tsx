@@ -379,29 +379,33 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               {t('grid.menuIcon')}
             </span>
           </div>
-          {/* view tabs (.vtabs) — Terminal + Diff are live; Feed/Files are soon */}
+          {/* view tabs (.vtabs). Order/default per DESIGN §5.10: Feed is the
+              first tab and the eventual default view — it's a "soon" placeholder
+              until the Feed renderer lands (E12), so Terminal is the interim
+              default. Terminal + Diff are live today. */}
           <div
             style={{
               display: 'flex',
-              alignItems: 'center',
-              gap: 2,
+              alignItems: 'flex-end',
+              gap: 3,
               paddingInline: 8,
-              paddingBlock: 4,
+              paddingBlock: 0,
+              paddingBlockStart: 5,
               borderBlockEnd: '1px solid var(--border)',
               background: 'var(--panel2)',
             }}
           >
-            <button style={vtabStyle(view === 'terminal', false)} onClick={() => setView('terminal')}>
+            <span style={vtabStyle(false, true, live.accent)} title={t('grid.viewSoon')}>
+              {t('grid.viewFeed')}
+            </span>
+            <button style={vtabStyle(view === 'terminal', false, live.accent)} onClick={() => setView('terminal')}>
               {t('grid.viewTerminal')}
             </button>
-            <button style={vtabStyle(view === 'diff', false)} onClick={() => setView('diff')}>
+            <button style={vtabStyle(view === 'diff', false, live.accent)} onClick={() => setView('diff')}>
               {t('grid.viewDiff')}
               {changed > 0 && <span style={{ color: 'var(--status-needs-input)', marginInlineStart: 4 }}>{changed}</span>}
             </button>
-            <span style={vtabStyle(false, true)} title={t('grid.viewSoon')}>
-              {t('grid.viewFeed')}
-            </span>
-            <span style={vtabStyle(false, true)} title={t('grid.viewSoon')}>
+            <span style={vtabStyle(false, true, live.accent)} title={t('grid.viewSoon')}>
               {t('grid.viewFiles')}
             </span>
             <span style={{ flex: 1, minInlineSize: 8 }} />
@@ -478,18 +482,27 @@ function statusPillStyle(status: string): React.CSSProperties {
     whiteSpace: 'nowrap',
   };
 }
-function vtabStyle(active: boolean, disabled: boolean): React.CSSProperties {
+function vtabStyle(active: boolean, disabled: boolean, accent?: string): React.CSSProperties {
+  const edge = accent ?? 'var(--status-working)';
+  // The active tab has to read clearly at a glance across 7–8 cards: an accent
+  // top stripe, an elevated (card-colored) fill that seams into the view below,
+  // bolder text, and a lift shadow — inactive/soon tabs stay flat and muted.
   return {
-    padding: '4px 10px 5px',
-    borderRadius: '6px 6px 0 0',
+    padding: active ? '5px 12px 7px' : '4px 11px 6px',
+    borderStartStartRadius: 6,
+    borderStartEndRadius: 6,
     fontSize: 11,
     fontFamily: 'var(--font-ui)',
+    fontWeight: active ? 650 : 500,
     cursor: disabled ? 'default' : 'pointer',
     color: disabled ? 'var(--faint)' : active ? 'var(--text)' : 'var(--muted)',
-    background: active ? 'var(--panel3, var(--chip))' : 'transparent',
-    border: active ? '1px solid var(--border)' : '1px solid transparent',
-    borderBlockEnd: active ? 'none' : '1px solid transparent',
-    opacity: disabled ? 0.55 : 1,
+    background: active ? 'var(--card-bg)' : 'transparent',
+    borderInline: active ? '1px solid var(--border)' : '1px solid transparent',
+    borderBlockStart: active ? `2px solid ${edge}` : '2px solid transparent',
+    borderBlockEnd: active ? '1px solid var(--card-bg)' : '1px solid transparent',
+    marginBlockEnd: active ? -1 : 0, // overlap the strip's bottom border to "connect"
+    boxShadow: active ? 'var(--tab-lift)' : 'none',
+    opacity: disabled ? 0.5 : 1,
   };
 }
 

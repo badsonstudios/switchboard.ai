@@ -1096,6 +1096,25 @@ hierarchy materializes only when the user drags something. Notification rules
 scope per group. Implementation: integrate a proven docking library (e.g. Dockview),
 not hand-rolled; the library must support tab tear-off and drag between OS windows.
 
+**Persistent groups as containers** (owner request 2026-07-21). Beyond emergent
+auto-grouping, a user can **explicitly create a named group that persists even
+when empty** — e.g. an "IT" or "Dev" group in the sidebar that stays put with no
+sessions in it. A persistent group is a durable, first-class container (its own
+record: name, color, notification scope), not just a visual byproduct of having
+sessions. Three interactions:
+- **Open-into-group:** clicking a group's ⊕ / "new session" opens the new
+  session *inside that group* (it inherits the group's scope/identity defaults),
+  instead of landing in the ungrouped grid.
+- **Move-between:** any session can be dragged from the ungrouped area or one
+  group's header into another (e.g. drop a session under "Dev") — from the rail
+  or the grid; the session's group membership is part of its persisted state.
+- **Empty ≠ gone:** removing the last session from a persistent group leaves the
+  group; only an explicit "delete group" removes it (its sessions, if any, fall
+  back to ungrouped). Auto-groups (repo/folder) remain emergent and disappear
+  when empty — the two coexist; a user-made group always wins (S4).
+This makes groups the durable organizing unit the sidebar is built around, and
+is the foundation the Fleet snapshots below serialize.
+
 **Fleet snapshots & layout DSL** (promoted from backlog; research v2: Tabstronaut
 named tab-group archives; Zellij KDL layouts). "Save this fleet as \<name\>":
 capture the current session set (folders, providers, autonomy profiles,

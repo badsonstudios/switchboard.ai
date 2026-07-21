@@ -214,12 +214,15 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       feeds.delete(liveId);
       hooks.unregisterSession(liveId);
       transcripts.unwatch(liveId);
+      // mark the kill intentional BEFORE tearing the PTY down, mirroring
+      // kill()/restart(): otherwise onExit could see killRequested=false and
+      // report a spurious `crashed` for an ordinary suspend/restart (review nit).
+      manager.remove(liveId);
       try {
         ptys.remove(liveId);
       } catch {
         /* already gone */
       }
-      manager.remove(liveId);
       cardOfLive.delete(liveId);
     }
   };

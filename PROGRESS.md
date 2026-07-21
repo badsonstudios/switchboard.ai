@@ -40,6 +40,15 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **Owner design direction captured + tab polish** (Dan): (a)
+  DESIGN.md "Persistent groups as containers" — explicitly-created named groups
+  that persist when empty, open-into-group, move-sessions-between-groups; filed
+  as plan **E12 — Session groups & Feed view** (outline, to sequence after E8).
+  (b) Feed is confirmed first tab + default view (already §5.10) — reordered the
+  shipped strip to Feed-first; Feed stays a "soon" placeholder and Terminal is
+  the interim default until the Feed renderer is built (E12). (c) Made the
+  selected view-tab clearly readable (accent top stripe + elevated fill + bold +
+  --tab-lift shadow). 111 unit + 13 e2e green.
 - 2026-07-21 — **CI GREEN on the branch tip** (all jobs: unit ×3 OS + e2e
   Windows/Linux). Two e2e-only flakes fixed while landing E8: (1) Linux/xvfb
   intermittently won't open the 2nd popout window → popout window-count tests
