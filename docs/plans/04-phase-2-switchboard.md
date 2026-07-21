@@ -169,11 +169,56 @@ keyboard vocabulary** for session lifecycle — spawn / focus / archive /
 review / merge (§8; every mouse flow has a key path — restored 2026-07-21,
 dropped in the original break-out). Filed just-in-time.
 
-## E10 — Approval surfaces v1 (outline — DESIGN's crown jewel)
+## E10 — Session tab & Approval surfaces v1 (milestone: Phase 2; issues #59–#63 filed 2026-07-21)
 
-The in-app approve/deny UI over the S-03 HOOK PATH: PreToolUse hold → card
-flips to a review bar (diff + allow/deny/allow-all) → decision returned to the
-CLI. Depends only on the S-03 verdict + Monaco (both in hand). §5.16.
+*Goal: the renamed **Session** tab becomes the primary working surface — the
+VS Code-extension shape: rendered conversation + prompt composer + inline
+approvals. Owner decision 2026-07-21 (hands-on E12 feedback) — DESIGN.md §5.10
+amended (composer + approvals are input ROUTES to the real CLI; Terminal stays
+the escape hatch). Pulls forward OQ #1's composer and the §5.16 crown jewel.
+Jumped ahead of E9 per the plan's own "if TUI approvals become the daily
+pain" clause.*
+
+Work items:
+- **P2-E10-01 · Tab rename: Feed → Session — S (§5.10).** Rename the view tab
+  (i18n, tests, canonical set: Session · Terminal · Changes · History);
+  "waiting in Terminal" chip re-labeled "continue in Terminal" and scoped to
+  raw-TUI states (needs-input), no longer permission prompts (E10-04 takes
+  those).
+  *Done when:* the strip reads Session · Terminal · Changes · History-soon;
+  e2e updated.
+- **P2-E10-02 · Prompt composer v1 — M (§5.10, OQ #1).** Input box docked at
+  the bottom of the Session tab; Enter submits (writes prompt + CR to the
+  live PTY), Shift+Enter for newline; disabled state when the session is
+  suspended (submit resumes first). Research pass on the VS Code extension's
+  composer UX before building.
+  *Done when:* a prompt typed in the Session tab drives the real CLI (blocks
+  appear; Terminal shows the same turn); works on a resumed session; e2e
+  proves composer → PTY → rendered response with the fake provider.
+- **P2-E10-03 · PreToolUse hold + decision round-trip — M (§5.16, S-03).**
+  HookListener gains a hold mode: a PreToolUse call for a gated tool parks
+  the HTTP response until the UI answers (allow / deny), then returns the
+  hook verdict to the CLI. Timeout (config, ~60s) fails OPEN to the CLI's own
+  TUI prompt — our breakage never blocks a session.
+  *Done when:* with hold enabled, a gated tool call pauses; app-side allow
+  runs it, deny blocks it, timeout falls back to the TUI (all three
+  unit/e2e-proven via the hook listener).
+- **P2-E10-04 · Inline approval bar — M (§5.16).** On a held PreToolUse the
+  Session tab flips up a review bar: tool + input summary, diff preview for
+  file edits (Monaco in hand), Allow / Deny / Allow-all-this-session.
+  Answers route through E10-03; the OS notification stays but becomes
+  secondary (quiet when the window is focused).
+  *Done when:* a real permission prompt is answered entirely in the Session
+  tab — no Terminal switch, no OS alert needed; deny sends the refusal.
+- **P2-E10-05 · Composer options row — S (§5.10).** The strip under the
+  composer: autonomy badge (click to change for THIS session's next spawn),
+  model indicator, working-status spinner — the extension-style affordances.
+  *Done when:* the row renders live data; autonomy change round-trips to the
+  next resume.
+
+**E10 exit:** a user can run a whole coding turn — prompt, watch, approve —
+without ever opening the Terminal tab; Terminal remains one click away and
+raw TUI states route there explicitly. Litmus checked per surface.
 
 ## E11 — Session Bus & context transfer (outline)
 
@@ -314,8 +359,8 @@ multi-session work routine; findings feed Phase 3's review-dashboard planning.
 
 ## Order
 E7 first (fast win, owner's ask) → E8 (groundwork exists) → E12 (owner-
-requested, builds on E8's card/tab surfaces) → E9/E10/E11 sequenced by
-feedback → E13 after E11 (needs its context packages) → E14 interleaves
-anywhere after E9 (actionable-toast slice pairs with E10). Approvals (E10) can
-jump ahead if the manual TUI approval flow becomes the daily pain the design
-predicts.
+requested, builds on E8's card/tab surfaces) → **E10 (jumped ahead
+2026-07-21: owner's hands-on feedback confirmed exactly the "TUI approvals
+are the daily pain" clause — plus the Session-tab pivot)** → E9/E11 sequenced
+by feedback → E13 after E11 (needs its context packages) → E14 interleaves
+anywhere after E9 (actionable-toast slice pairs with E10's approval bar).

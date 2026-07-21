@@ -8,11 +8,13 @@
 **In progress:** nothing mid-flight — AUTOPILOT RUN COMPLETE 2026-07-21:
 all 10 items (#48–#57, E12 full + E8-06) shipped to `auto/phase-2-e12`,
 draft PR #58. 130 unit + 22 e2e green; **CI GREEN on the tip (all 5 jobs)**.
-**Next up (needs Dan):** review/merge draft PR #58 (eyeball list in the PR:
-real grid drag, waiting-chip on a live permission prompt, popout restore on
-the 3-monitor desk). Then `/pm plan` for the next epic (E9 or E10 — plan
-Order says E9/E10/E11 sequenced by feedback; E10 jumps ahead if TUI
-approvals are the daily pain).
+**Next up (needs Dan):** (1) re-check the grid-tab → rail-group drag (fixed
+after his eyeball pass, native DnD needs a hand check); (2) review/merge
+draft PR #58. Then the next build is **E10 — Session tab & approvals**
+(#59–#63): Dan's 2026-07-21 pivot decision — the Feed tab becomes the
+interactive "Session" tab (composer + inline approvals, VS Code-extension
+shape); DESIGN.md §5.10 amended, plan expanded, issues filed. Kick off with
+`/autopilot` or `/next-item` after #58 merges.
 **Branch:** auto/phase-2-e12 (draft PR #58)
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
@@ -49,6 +51,15 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **Session-tab pivot decided (Dan) + E10 expanded & filed.**
+  From hands-on testing: the rendered view must be the primary WORKING
+  surface (VS Code-extension shape — conversation + prompt composer + inline
+  approvals), not a read-only feed; tab renamed **Session**. DESIGN.md §5.10
+  amended (composer/approvals = input routes to the real CLI; Terminal =
+  escape hatch; host-don't-reimplement intact). E10 retitled "Session tab &
+  Approval surfaces v1", jumped ahead of E9 (the plan's own TUI-pain
+  clause), expanded to P2-E10-01…05, issues #59–#63 filed. Builds after
+  PR #58 merges.
 - 2026-07-21 — **Dan's eyeball fixes (PR #58)**: (1) every dockview tab now
   has a ✕ — closes the tab; for a session card that ends the session and
   forgets the record (e2e added); diff tabs close too. (2) Grid tab → rail

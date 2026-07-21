@@ -385,13 +385,26 @@ mechanisms where it supports live switching, else flagged "takes effect on
 restart" (never faked, P7) — and the active mode renders on the session identity
 badge (§5.11) so a glance answers "will this one interrupt me?"
 
-### 5.10 The Feed — rich, themeable output rendering
+### 5.10 The Session view — the primary working surface
+
+> **Revised 2026-07-21 (owner decision, after hands-on E12 use):** the rendered
+> view — previously "the Feed", read-only — is now the **Session view**: the
+> tab users actually work in, shaped like the VS Code extension panel. It
+> renders the conversation AND accepts prompts via a composer that writes to
+> the real CLI's PTY. Host-don't-reimplement holds: the composer is an input
+> route to the real CLI, never a reimplementation of it. (The right-panel
+> *event* feed of §5.12 is unrelated and keeps its name.)
 
 Each session offers two synchronized views of the same underlying session:
 
-- **Terminal** (xterm.js + PTY): the real CLI. All interaction happens here.
-- **Feed** (read-only): rendered from structured transcript/stream events —
-  assistant text, tool calls, diffs, subagent sidechains — as styled blocks.
+- **Session** (primary, interactive): rendered from structured transcript/
+  stream events — assistant text, tool calls, diffs, subagent sidechains — as
+  styled blocks, with a **prompt composer** docked at the bottom (Enter
+  submits to the CLI's PTY; options row for autonomy/model context). In-app
+  approvals (§5.16) render inline here as a review bar.
+- **Terminal** (xterm.js + PTY): the real CLI, one click away — the escape
+  hatch for raw TUI states the rendered view can't answer (CLI menus,
+  /login, trust prompts).
 
 Feed customization (the "pleasing to the eye" surface):
 - Themes: font family/size, color palette, spacing/density. Themes are CSS;
@@ -405,19 +418,21 @@ Feed customization (the "pleasing to the eye" surface):
 - Clicking any collapsed block expands the full content; file paths link to the
   file tree / diff pane.
 
-Guardrail (restated from Non-Goals): the Feed never accepts input beyond
-expand/collapse/copy. If the CLI is waiting on a prompt, the Feed shows a "waiting in
-Terminal" chip that jumps you there.
+Guardrail (revised 2026-07-21): the Session view's composer and approval bar
+are INPUT ROUTES to the real CLI (PTY write / hook verdict) — the view never
+fakes CLI behavior it can't route. When the CLI is in a raw TUI state the
+rendered view can't answer (menus, /login, trust prompts), the Session view
+shows a "continue in Terminal" chip that jumps there; permission prompts are
+answered inline via the §5.16 hook path, not the chip.
 
 **Per-session view tabs (the session window's chrome).** Every session surface —
 grid card, maximized, popped-out OS window — carries one compact VS Code-style
 tab strip along its top. The tabs are *views over the same session*, not
 separate features:
 
-- **Feed** — the rendered read-only view above (first tab and **the default
-  view** for every session; the "waiting in Terminal" chip covers the moments
-  the CLI needs real input).
-- **Terminal** — the real CLI (the only interactive surface).
+- **Session** — the rendered + composer view above (first tab and **the
+  default view** for every session; renamed from "Feed" 2026-07-21).
+- **Terminal** — the real CLI (escape hatch for raw TUI states).
 - **Changes** — source control for the session's folder: file tree with VCS
   decorations, Monaco diff, editable-diff + commit (§5.7 mechanics as a tab).
 - **History** — the checkout's recent commits/branch state (read-only GitService
@@ -928,7 +943,7 @@ over the network: **the phone is another view.**
   - Home = the attention queue: swipe through approval cards (read-only diff,
     Allow / Deny / deny-with-feedback) like an inbox.
   - Sessions rail (status, lamps, usage bars) + event feed with inline actions.
-  - Session detail = read-only Feed view + prompt composer.
+  - Session detail = the rendered Session view (read-only on phone) + prompt composer.
   - NOT on phone: terminal emulation, layout management, git operations,
     settings, drag-and-drop.
 - **Form: PWA served by the orchestrator itself** on the LAN — no app store, no
