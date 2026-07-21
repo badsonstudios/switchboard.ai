@@ -21,6 +21,8 @@
     "groupEmpty": "empty",
     "deleteGroup": "Delete group (its sessions become ungrouped)",
     "openInGroup": "New session in this group",
+    "openInGroupIcon": "⊕",
+    "deleteGroupIcon": "✕",
     "renameGroup": "Double-click to rename",
     "recolorGroup": "Click to change color",
     "collapse": "Collapse",
@@ -104,6 +106,11 @@
       "needs-permission": "needs permission",
       "crashed": "crashed"
     }
+  },
+  "feedView": {
+    "empty": "No activity yet — the Feed renders the conversation once it starts.",
+    "thinking": "thinking…",
+    "you": "you"
   },
   "statusbar": {
     "sessions": "{count, plural, =0 {no sessions} one {# session} other {# sessions}}",

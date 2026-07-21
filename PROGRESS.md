@@ -46,6 +46,16 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **P2-E12-06 done (#54)**: Feed view v1. TranscriptWatcher
+  derives FeedBlocks (user/assistant/thinking/tool; sidechain-flagged; capped
+  backlog) from the lines it already parses; new `transcripts:blocks` +
+  `sessions:feedBlock` IPC; FeedView renders markdown (marked+DOMPurify,
+  sanitized), collapsed tool rows, folded thinking, indented sidechains,
+  tail-pinned scroll, strictly read-only. Feed tab is now live (Terminal
+  still default until E12-07). Also fixed 10 lint errors from E12-02/03
+  (palette hexes moved to main as groups:palette data; ⊕/✕ via i18n) —
+  two pushed commits were lint-red on CI; branch tip is green again.
+  126 unit + 19 e2e.
 - 2026-07-21 — **P2-E12-05 done (#53)**: repo/folder auto-grouping. Main
   computes a per-card autoKey (git toplevel, else normalized folder; cached);
   rail clusters ungrouped sessions sharing a key into an italic dashed-dot

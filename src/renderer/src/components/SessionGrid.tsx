@@ -13,6 +13,7 @@ import 'dockview-react/dist/styles/dockview.css';
 import { TerminalPane } from './TerminalPane';
 import { IdentityChip } from './IdentityChip';
 import { DiffPane } from './DiffPane';
+import { FeedView } from './FeedView';
 import { UsageStrip } from './UsageStrip';
 import { GitContext, GitStatusDto } from './GitContext';
 import { Usage, ZERO_USAGE } from '../lib/usage';
@@ -56,7 +57,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const [taskLabel, setTaskLabel] = React.useState<string>('');
   const [editingLabel, setEditingLabel] = React.useState(false);
   const [status, setStatus] = React.useState<string>('starting');
-  const [view, setView] = React.useState<'terminal' | 'diff'>('terminal');
+  const [view, setView] = React.useState<'feed' | 'terminal' | 'diff'>('terminal');
   const [poppedOut, setPoppedOut] = React.useState<boolean>(props.api.location.type === 'popout');
   const [suspended, setSuspended] = React.useState(false);
   const spawning = React.useRef(false);
@@ -409,9 +410,9 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               background: 'var(--panel2)',
             }}
           >
-            <span style={vtabStyle(false, true, live.accent)} title={t('grid.viewSoon')}>
+            <button style={vtabStyle(view === 'feed', false, live.accent)} onClick={() => setView('feed')}>
               {t('grid.viewFeed')}
-            </span>
+            </button>
             <button style={vtabStyle(view === 'terminal', false, live.accent)} onClick={() => setView('terminal')}>
               {t('grid.viewTerminal')}
             </button>
@@ -436,6 +437,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             <div style={{ blockSize: '100%', display: view === 'terminal' ? 'block' : 'none' }}>
               <TerminalPane sessionId={live.id} visible={visible && view === 'terminal'} />
             </div>
+            {view === 'feed' && <FeedView sessionId={live.id} visible={visible && view === 'feed'} />}
             {view === 'diff' && folder && <DiffPane folder={folder} theme={docTheme()} />}
             {exitedOverlay && <div style={overlayBackdrop}>{exitedOverlay}</div>}
           </div>

@@ -32,6 +32,7 @@ export function App(): React.JSX.Element {
   const [cards, setCards] = useState<string[]>([]);
   const [sessions, setSessions] = useState<RailSession[]>([]);
   const [groups, setGroups] = useState<RailGroup[]>([]);
+  const [palette, setPalette] = useState<string[]>([]);
   const [notifEnabled, setNotifEnabled] = useState(true);
   const [autonomy, setAutonomy] = useState<string>(
     () => localStorage.getItem('switchboard.autonomy') ?? 'ask'
@@ -141,6 +142,7 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     void refreshGroups();
+    void bridge.groups?.palette?.().then(setPalette);
   }, [refreshGroups]);
 
   // grid drags change membership in the main process (E12-04) — re-read
@@ -197,6 +199,7 @@ export function App(): React.JSX.Element {
         <SessionsRail
           sessions={sessions}
           groups={groups}
+          palette={palette}
           onRename={(cardId, title) => {
             void bridge.sessions?.renameCard?.(cardId, title).then(() => refreshSessions());
           }}
@@ -204,8 +207,8 @@ export function App(): React.JSX.Element {
           onDiff={(s) => {
             if (s.folder) grid.current?.openDiff(s.id, s.folder, s.title);
           }}
-          onCreateGroup={(name, color) => {
-            void bridge.groups?.create?.({ name, color }).then(() => refreshGroups());
+          onCreateGroup={(name) => {
+            void bridge.groups?.create?.({ name }).then(() => refreshGroups());
           }}
           onRenameGroup={(id, name) => {
             void bridge.groups?.update?.(id, { name }).then(() => refreshGroups());

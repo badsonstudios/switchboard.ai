@@ -98,7 +98,8 @@ const api = {
   groups: {
     list: (): Promise<Array<{ id: string; name: string; color: string; notifyScope?: string }>> =>
       ipcRenderer.invoke('groups:list'),
-    create: (opts: { name: string; color: string }): Promise<{ id: string; name: string; color: string }> =>
+    palette: (): Promise<string[]> => ipcRenderer.invoke('groups:palette'),
+    create: (opts: { name: string; color?: string }): Promise<{ id: string; name: string; color: string }> =>
       ipcRenderer.invoke('groups:create', opts),
     update: (
       id: string,
@@ -142,6 +143,14 @@ const api = {
       const h = (_e: unknown, ev: unknown) => cb(ev);
       ipcRenderer.on('feed:event', h);
       return () => ipcRenderer.removeListener('feed:event', h);
+    },
+  },
+  transcripts: {
+    blocks: (liveId: string): Promise<unknown[]> => ipcRenderer.invoke('transcripts:blocks', liveId),
+    onBlock: (cb: (payload: { sessionId: string; block: unknown }) => void): (() => void) => {
+      const h = (_e: unknown, p: { sessionId: string; block: unknown }) => cb(p);
+      ipcRenderer.on('sessions:feedBlock', h);
+      return () => ipcRenderer.removeListener('sessions:feedBlock', h);
     },
   },
   pty: {

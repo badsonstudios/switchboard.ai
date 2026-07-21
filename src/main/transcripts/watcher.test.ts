@@ -172,6 +172,52 @@ describe('subagent visibility (S-05 layout)', () => {
   });
 });
 
+describe('Feed block derivation (P2-E12-06 §5.10)', () => {
+  it('derives user/assistant/thinking/tool blocks; tool_result plumbing is skipped', async () => {
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    const seen: Array<{ sessionId: string; kind: string }> = [];
+    const off = watcher.onBlock((sid, b) => seen.push({ sessionId: sid, kind: b.kind }));
+    writeLines(file, [
+      entry({ type: 'user', message: { role: 'user', content: 'do the thing' } }),
+      entry({
+        message: {
+          content: [
+            { type: 'thinking', thinking: 'hmm let me think' },
+            { type: 'text', text: '**Done** — here is `code`.' },
+            { type: 'tool_use', name: 'Edit', input: { file_path: 'C:/x.ts', old_string: 'a', new_string: 'b' } },
+          ],
+        },
+      }),
+      entry({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'noise' }] } }),
+    ]);
+    await sleep(150);
+    off();
+    const blocks = watcher.blocks('s1');
+    expect(blocks.map((b) => b.kind)).toEqual(['user', 'thinking', 'assistant', 'tool']);
+    expect(blocks[0].text).toBe('do the thing');
+    expect(blocks[3].tool).toMatchObject({ name: 'Edit', summary: 'C:/x.ts' });
+    expect(blocks[3].tool!.detail).toContain('old_string');
+    expect(blocks.every((b) => !b.sidechain)).toBe(true);
+    expect(seen.length).toBe(4);
+  });
+
+  it('marks subagent-file lines as sidechain and caps the backlog', async () => {
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [entry()]);
+    await sleep(100);
+    const subDir = path.join(projectDir(), 'native-1', 'subagents');
+    fs.mkdirSync(subDir, { recursive: true });
+    writeLines(path.join(subDir, 'agent-x.jsonl'), [
+      entry({ isSidechain: true, message: { content: [{ type: 'text', text: 'sub says hi' }] } }),
+    ]);
+    await sleep(150);
+    const blocks = watcher.blocks('s1');
+    expect(blocks.some((b) => b.sidechain && b.text === 'sub says hi')).toBe(true);
+  });
+});
+
 describe('pre-existing transcripts are never adopted', () => {
   it('ignores files that existed before the watcher started', async () => {
     const file = path.join(projectDir(), 'old.jsonl');

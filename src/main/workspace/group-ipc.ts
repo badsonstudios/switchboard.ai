@@ -9,6 +9,19 @@ import { PersistedGroup, WorkspaceStore } from './store';
 const NAME_MAX = 60;
 const SCOPES: ReadonlyArray<PersistedGroup['notifyScope']> = ['all', 'important', 'muted'];
 
+/** Group color palette — owned here (persisted DATA, not renderer styling;
+ *  the renderer's token rule bans raw colors in TSX). Legible on both themes. */
+export const GROUP_PALETTE = [
+  '#4a90d9',
+  '#8f6fd8',
+  '#3aa675',
+  '#d98f3d',
+  '#d95f6a',
+  '#3fb6c4',
+  '#c96fb0',
+  '#a3a83e',
+];
+
 /** #rrggbb only — the renderer picks from the theme palette. */
 function isColor(c: unknown): c is string {
   return typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c);
@@ -22,11 +35,14 @@ function cleanName(n: unknown): string | null {
 
 export function registerGroupIpc(store: WorkspaceStore): void {
   ipcMain.handle('groups:list', () => store.listGroups());
+  ipcMain.handle('groups:palette', () => [...GROUP_PALETTE]);
 
-  ipcMain.handle('groups:create', (_e, opts: { name: string; color: string }) => {
+  ipcMain.handle('groups:create', (_e, opts: { name: string; color?: string }) => {
     const name = cleanName(opts?.name);
-    if (!name || !isColor(opts?.color)) throw new Error('group needs a name and a #rrggbb color');
-    const group: PersistedGroup = { id: randomUUID(), name, color: opts.color };
+    if (!name) throw new Error('group needs a name');
+    if (opts?.color !== undefined && !isColor(opts.color)) throw new Error('color must be #rrggbb');
+    const color = opts?.color ?? GROUP_PALETTE[store.listGroups().length % GROUP_PALETTE.length];
+    const group: PersistedGroup = { id: randomUUID(), name, color };
     store.upsertGroup(group);
     return group;
   });

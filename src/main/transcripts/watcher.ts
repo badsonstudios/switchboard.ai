@@ -36,6 +36,27 @@ export interface TranscriptSnapshot {
   lastActivityAt: string | null;
 }
 
+/**
+ * One rendered unit of the Feed (P2-E12-06, §5.10): derived from transcript
+ * lines, read-only by construction. `detail` is capped — the Feed is a view,
+ * not an archive; the transcript stays the source of truth.
+ */
+export interface FeedBlock {
+  seq: number;
+  kind: 'user' | 'assistant' | 'thinking' | 'tool';
+  /** user/assistant/thinking prose */
+  text?: string;
+  tool?: { name: string; summary: string; detail?: string };
+  /** true when the line came from a subagent transcript */
+  sidechain: boolean;
+  ts?: string;
+}
+
+/** Feed blocks kept per session (view buffer, not an archive). */
+const BLOCK_CAP = 1000;
+const DETAIL_CAP = 4000;
+const TEXT_CAP = 20_000;
+
 interface WatchedSession {
   sessionId: string;
   cwd: string;
@@ -44,6 +65,8 @@ interface WatchedSession {
   watchedSince: number;
   tails: Map<string, { offset: number; buf: string }>;
   snap: TranscriptSnapshot;
+  blocks: FeedBlock[];
+  blockSeq: number;
 }
 
 /** After this long unbound, widen discovery beyond the slug prefilter. */
@@ -101,6 +124,7 @@ export class TranscriptWatcher {
   private readonly sessions = new Map<string, WatchedSession>();
   private readonly known = new Set<string>(); // files existing before any watch
   private readonly listeners = new Set<(s: TranscriptSnapshot) => void>();
+  private readonly blockListeners = new Set<(sessionId: string, b: FeedBlock) => void>();
   private timer: NodeJS.Timeout | null = null;
 
   constructor(private readonly opts: TranscriptWatcherOptions) {
@@ -126,6 +150,8 @@ export class TranscriptWatcher {
         subagents: [],
         lastActivityAt: null,
       },
+      blocks: [],
+      blockSeq: 0,
     });
     this.ensurePolling();
   }
@@ -152,6 +178,17 @@ export class TranscriptWatcher {
   onUpdate(l: (s: TranscriptSnapshot) => void): () => void {
     this.listeners.add(l);
     return () => this.listeners.delete(l);
+  }
+
+  /** Live Feed blocks as they are derived (P2-E12-06). */
+  onBlock(l: (sessionId: string, b: FeedBlock) => void): () => void {
+    this.blockListeners.add(l);
+    return () => this.blockListeners.delete(l);
+  }
+
+  /** Backlog of derived blocks for a session (attach/replay). */
+  blocks(sessionId: string): FeedBlock[] {
+    return [...(this.sessions.get(sessionId)?.blocks ?? [])];
   }
 
   stop(): void {
@@ -324,10 +361,72 @@ export class TranscriptWatcher {
     }
   }
 
+  private emitBlock(w: WatchedSession, b: Omit<FeedBlock, 'seq' | 'sidechain'>, sidechain: boolean): void {
+    const block: FeedBlock = { ...b, seq: ++w.blockSeq, sidechain };
+    w.blocks.push(block);
+    if (w.blocks.length > BLOCK_CAP) w.blocks.splice(0, w.blocks.length - BLOCK_CAP);
+    for (const l of this.blockListeners) {
+      try {
+        l(w.sessionId, block);
+      } catch (err) {
+        this.opts.log.error('block listener threw', { sessionId: w.sessionId, error: String(err) });
+      }
+    }
+  }
+
+  /** Derive Feed blocks (E12-06) from one transcript line. Tolerant: unknown
+   *  shapes produce nothing, never a throw. */
+  private deriveBlocks(w: WatchedSession, full: string, e: Record<string, unknown>): void {
+    const sidechain = full !== w.boundFile || e.isSidechain === true;
+    const ts = typeof e.timestamp === 'string' ? e.timestamp : undefined;
+    const message = e.message as { content?: unknown; role?: string } | undefined;
+    if (!message) return;
+    if (e.type === 'user') {
+      // a real prompt is a string (or text items); tool_result plumbing is not prose
+      if (typeof message.content === 'string' && message.content.trim()) {
+        this.emitBlock(w, { kind: 'user', text: message.content.slice(0, TEXT_CAP), ts }, sidechain);
+      } else if (Array.isArray(message.content)) {
+        for (const c of message.content as Array<{ type?: string; text?: string }>) {
+          if (c?.type === 'text' && c.text?.trim()) {
+            this.emitBlock(w, { kind: 'user', text: c.text.slice(0, TEXT_CAP), ts }, sidechain);
+          }
+        }
+      }
+      return;
+    }
+    if (e.type !== 'assistant' || !Array.isArray(message.content)) return;
+    for (const c of message.content as Array<{
+      type?: string;
+      text?: string;
+      thinking?: string;
+      name?: string;
+      input?: Record<string, unknown>;
+    }>) {
+      if (c?.type === 'text' && c.text?.trim()) {
+        this.emitBlock(w, { kind: 'assistant', text: c.text.slice(0, TEXT_CAP), ts }, sidechain);
+      } else if (c?.type === 'thinking' && c.thinking?.trim()) {
+        this.emitBlock(w, { kind: 'thinking', text: c.thinking.slice(0, TEXT_CAP), ts }, sidechain);
+      } else if (c?.type === 'tool_use' && typeof c.name === 'string') {
+        const input = c.input ?? {};
+        const primary =
+          input.file_path ?? input.path ?? input.notebook_path ?? input.command ?? input.description ?? input.pattern;
+        const summary = typeof primary === 'string' ? primary.slice(0, 120) : '';
+        let detail: string | undefined;
+        try {
+          detail = JSON.stringify(input, null, 2)?.slice(0, DETAIL_CAP);
+        } catch {
+          detail = undefined;
+        }
+        this.emitBlock(w, { kind: 'tool', tool: { name: c.name, summary, detail }, ts }, sidechain);
+      }
+    }
+  }
+
   private absorb(w: WatchedSession, full: string, e: Record<string, unknown>): void {
     if (full === w.boundFile && typeof e.sessionId === 'string' && !w.snap.nativeSessionId) {
       w.snap.nativeSessionId = e.sessionId;
     }
+    this.deriveBlocks(w, full, e);
     const message = e.message as
       | { usage?: Record<string, number>; content?: unknown; model?: string }
       | undefined;

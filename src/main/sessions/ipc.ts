@@ -76,6 +76,12 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   ipcMain.handle('feed:list', () => deps.feed.list());
 
+  // Feed view blocks (P2-E12-06): live stream + backlog for attach
+  transcripts.onBlock((sessionId, block) => send('sessions:feedBlock', { sessionId, block }));
+  ipcMain.handle('transcripts:blocks', (_e, liveId: string) =>
+    typeof liveId === 'string' ? transcripts.blocks(liveId) : []
+  );
+
   ipcMain.handle('sessions:isDirectory', (_e, p: string) => {
     try {
       return fs.statSync(p).isDirectory();

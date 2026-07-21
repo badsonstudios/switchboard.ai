@@ -83,18 +83,6 @@ export interface RailGroup {
   color: string;
 }
 
-/** #rrggbb palette for group dots — legible on both themes; click cycles. */
-export const GROUP_COLORS = [
-  '#4a90d9',
-  '#8f6fd8',
-  '#3aa675',
-  '#d98f3d',
-  '#d95f6a',
-  '#3fb6c4',
-  '#c96fb0',
-  '#a3a83e',
-];
-
 const STATUS_TOKEN: Record<string, string> = {
   starting: 'var(--status-idle)',
   working: 'var(--status-working)',
@@ -112,7 +100,9 @@ export function SessionsRail(props: {
   onRename: (id: string, title: string) => void;
   onFocus: (id: string) => void;
   onDiff: (s: RailSession) => void;
-  onCreateGroup: (name: string, color: string) => void;
+  /** palette for the recolor cycle — persisted data owned by the main process */
+  palette: string[];
+  onCreateGroup: (name: string) => void;
   onRenameGroup: (id: string, name: string) => void;
   onRecolorGroup: (id: string, color: string) => void;
   onDeleteGroup: (id: string) => void;
@@ -285,12 +275,7 @@ export function SessionsRail(props: {
           {t('rail.eyebrow')}
         </span>
         <button
-          onClick={() =>
-            props.onCreateGroup(
-              t('rail.newGroup'),
-              GROUP_COLORS[props.groups.length % GROUP_COLORS.length]
-            )
-          }
+          onClick={() => props.onCreateGroup(t('rail.newGroup'))}
           title={t('rail.addGroupHint')}
           style={railBtn}
         >
@@ -328,8 +313,9 @@ export function SessionsRail(props: {
               <span
                 onClick={(e) => {
                   e.stopPropagation();
-                  const i = GROUP_COLORS.indexOf(g.color);
-                  props.onRecolorGroup(g.id, GROUP_COLORS[(i + 1) % GROUP_COLORS.length]);
+                  if (props.palette.length === 0) return;
+                  const i = props.palette.indexOf(g.color);
+                  props.onRecolorGroup(g.id, props.palette[(i + 1) % props.palette.length]);
                 }}
                 title={t('rail.recolorGroup')}
                 style={{
@@ -400,7 +386,7 @@ export function SessionsRail(props: {
                 title={t('rail.openInGroup')}
                 style={{ ...railBtn, paddingInline: 3 }}
               >
-                ⊕
+                {t('rail.openInGroupIcon')}
               </button>
               <button
                 onClick={(e) => {
@@ -410,7 +396,7 @@ export function SessionsRail(props: {
                 title={t('rail.deleteGroup')}
                 style={{ ...railBtn, paddingInline: 3 }}
               >
-                ✕
+                {t('rail.deleteGroupIcon')}
               </button>
             </div>
             {!isCollapsed && (
