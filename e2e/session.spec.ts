@@ -63,4 +63,36 @@ test.describe('a session card', () => {
     a = await launchApp({ home: first.home });
     await expect.poll(() => a.app.windows().length, { timeout: 25_000 }).toBe(2);
   });
+
+  test('closing a popout window rejoins the card without killing the session (E8-03)', async () => {
+    const folder = tempProjectFolder();
+    const name = path.basename(folder);
+    a = await launchApp({ seedFolder: folder });
+    const { app, window } = a;
+    await expect(window.getByText(name).first()).toBeVisible({ timeout: 25_000 });
+
+    await window.getByTitle('Pop out into its own window').click();
+    await expect.poll(() => app.windows().length, { timeout: 15_000 }).toBe(2);
+    const popout = app.windows().find((w) => w !== window)!;
+    // the live terminal rode along into the popped-out window
+    await expect(popout.locator('.xterm-screen').first()).toBeVisible({ timeout: 15_000 });
+    // the rail in the main window still lists the (popped-out) card — navigable
+    await expect(window.locator('nav').getByText(name).first()).toBeVisible();
+
+    // close the popout the way a user does — the window's own close, which
+    // fires the unload dockview listens for (Playwright's page.close() would
+    // hard-kill the window and skip that teardown). DESIGN.md: closing a
+    // popped-out window docks the session back — it never kills the session.
+    await popout.evaluate(() => window.close());
+    await expect.poll(() => app.windows().length, { timeout: 15_000 }).toBe(1);
+
+    // the card docked back into the main window and the session is STILL ALIVE:
+    // the pty kept running in main, so the rejoined terminal re-attaches and
+    // typing still produces output (proves session survived the round-trip)
+    await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 15_000 });
+    await window.locator('.xterm-screen').first().click();
+    await window.keyboard.type('echo REJOIN_OK_456');
+    await window.keyboard.press('Enter');
+    await expect(window.getByText(/REJOIN_OK_456/).first()).toBeVisible({ timeout: 15_000 });
+  });
 });

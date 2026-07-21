@@ -93,10 +93,13 @@ Work items:
   *Done when:* a popped-out card returns to the same monitor/position after
   relaunch, and rescues into the grid when that monitor is absent.
 - **P2-E8-03 · Rejoin & lifecycle — S.** A popped-out card can rejoin the grid;
-  closing its window closes/suspends the session per the close-vs-quit rules;
-  the rail/feed reflect a popped-out card's state.
-  *Done when:* pop-out → rejoin round-trips cleanly and a popped-out card is
-  still navigable from the rail.
+  closing its OS window **docks the session back and never kills it**
+  (DESIGN.md §"Orchestrator / subwindow model"); the rail keeps tracking a
+  popped-out card. (The session survives because the PTY lives in the main
+  process and the renderer re-attaches to its ring buffer on dock-back — the
+  S-07 re-attach model, no new lifecycle code needed.)
+  *Done when:* pop-out → rejoin round-trips cleanly (terminal alive after
+  dock-back) and a popped-out card is still navigable from the rail.
 
 ---
 
