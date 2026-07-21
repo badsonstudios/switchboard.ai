@@ -46,6 +46,11 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **P2-E12-03 done (#51)**: group ⊕ opens the folder picker and
+  lands the new session inside that group (dock-group clustering + persisted
+  membership via the E12-02 plumbing); plain "+ session" still lands
+  ungrouped. e2e stubs the native dialog, asserts nesting + relaunch
+  persistence.
 - 2026-07-21 — **P2-E12-02 done (#50)**: rail renders persistent groups as
   named/colored collapsible sections (create via "+ group", double-click
   rename, dot-click recolor cycle, ✕ delete → members ungrouped, collapse in

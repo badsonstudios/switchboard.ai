@@ -202,6 +202,11 @@ export function App(): React.JSX.Element {
           onRecolorGroup={(id, color) => {
             void bridge.groups?.update?.(id, { color }).then(() => refreshGroups());
           }}
+          onOpenInGroup={(gid) => {
+            void bridge.sessions?.pickFolder?.().then((folder) => {
+              if (folder) void grid.current?.addSessionCard(folder, gid);
+            });
+          }}
           onDeleteGroup={(id) => {
             // members fall back to ungrouped, so the session list changes too
             void bridge.groups?.remove?.(id).then(() => {

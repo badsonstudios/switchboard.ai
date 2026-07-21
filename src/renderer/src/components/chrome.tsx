@@ -113,6 +113,8 @@ export function SessionsRail(props: {
   onRenameGroup: (id: string, name: string) => void;
   onRecolorGroup: (id: string, color: string) => void;
   onDeleteGroup: (id: string) => void;
+  /** open a NEW session inside this group (E12-03) */
+  onOpenInGroup: (id: string) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [editing, setEditing] = React.useState<string | null>(null);
@@ -358,6 +360,16 @@ export function SessionsRail(props: {
                   {members.length}
                 </span>
               )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  props.onOpenInGroup(g.id);
+                }}
+                title={t('rail.openInGroup')}
+                style={{ ...railBtn, paddingInline: 3 }}
+              >
+                ⊕
+              </button>
               <button
                 onClick={(e) => {
                   e.stopPropagation();

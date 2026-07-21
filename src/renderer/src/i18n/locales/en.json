@@ -20,6 +20,7 @@
     "newGroup": "New group",
     "groupEmpty": "empty",
     "deleteGroup": "Delete group (its sessions become ungrouped)",
+    "openInGroup": "New session in this group",
     "renameGroup": "Double-click to rename",
     "recolorGroup": "Click to change color",
     "collapse": "Collapse",
