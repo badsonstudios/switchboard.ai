@@ -41,6 +41,13 @@ function git(folder: string, args: string[]): Promise<{ ok: boolean; out: string
 }
 
 export class GitService {
+  /** repo toplevel for a folder, or null when not a repo / no git */
+  async root(folder: string): Promise<string | null> {
+    const r = await git(folder, ['rev-parse', '--show-toplevel']);
+    const top = r.out.trim();
+    return r.ok && top ? top : null;
+  }
+
   async status(folder: string): Promise<GitStatus> {
     const probe = await git(folder, ['rev-parse', '--is-inside-work-tree']);
     if (!probe.ok || !probe.out.trim().startsWith('true')) return { isRepo: false, files: [] };

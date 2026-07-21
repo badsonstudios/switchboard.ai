@@ -306,6 +306,7 @@ app
         remove: (cardId) => workspace.removeSession(cardId),
       },
       projectsRoot: path.join(os.homedir(), '.claude', 'projects'),
+      repoRoot: (folder) => gitService.root(folder),
     });
     app.on('quit', () => {
       ptys.killAll();

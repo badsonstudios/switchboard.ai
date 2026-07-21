@@ -7,6 +7,7 @@ import { ThemePreference } from '../theme/theme';
 import { LanguageChoice } from '../i18n';
 import { IdentityChip } from './IdentityChip';
 import { formatTokens, formatUsd } from '../lib/usage';
+import { computeAutoGroups } from '../lib/groups';
 
 const barStyle: React.CSSProperties = {
   background: 'var(--titlebar-bg)',
@@ -72,6 +73,8 @@ export interface RailSession {
   status?: string;
   /** persistent-group membership (E12); undefined = ungrouped */
   groupId?: string;
+  /** repo/folder auto-group key (E12-05); same key = same emergent group */
+  autoKey?: string;
 }
 
 export interface RailGroup {
@@ -243,6 +246,11 @@ export function SessionsRail(props: {
     if (s.groupId && grouped.has(s.groupId)) grouped.get(s.groupId)!.push(s);
     else ungrouped.push(s);
   }
+  // emergent repo/folder auto-groups among the ungrouped (E12-05)
+  const autoGroups = computeAutoGroups(ungrouped);
+  const autoMemberIds = new Set(autoGroups.flatMap((g) => g.memberIds));
+  const byId = new Map(ungrouped.map((s) => [s.id, s]));
+  const loose = ungrouped.filter((s) => !autoMemberIds.has(s.id));
 
   return (
     <nav
@@ -419,10 +427,67 @@ export function SessionsRail(props: {
           </div>
         );
       })}
+      {autoGroups.map((ag) => {
+        const key = `auto:${ag.key}`;
+        const isCollapsed = collapsed.has(key);
+        const name = ag.key.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? ag.key;
+        return (
+          <div key={key}>
+            <div
+              onClick={() => toggleCollapsed(key)}
+              title={t('rail.autoGroupHint')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '5px 4px',
+                cursor: 'pointer',
+                borderRadius: 'var(--radius-chip)',
+              }}
+            >
+              <span style={{ fontSize: 8, color: 'var(--faint)', inlineSize: 8 }}>
+                {isCollapsed ? '▸' : '▾'}
+              </span>
+              <span
+                style={{
+                  inlineSize: 8,
+                  blockSize: 8,
+                  borderRadius: '50%',
+                  border: '1px dashed var(--faint)',
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                style={{
+                  flex: 1,
+                  minInlineSize: 0,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: 'var(--muted)',
+                  fontStyle: 'italic',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {name}
+              </span>
+              <span style={{ fontSize: 9, color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+                {ag.memberIds.length}
+              </span>
+            </div>
+            {!isCollapsed && (
+              <div style={{ paddingInlineStart: 10 }}>
+                {ag.memberIds.map((id) => byId.get(id)).filter(Boolean).map((s) => sessionRow(s!))}
+              </div>
+            )}
+          </div>
+        );
+      })}
       {props.groups.length === 0 && props.sessions.length === 0 && (
         <div style={{ color: 'var(--muted)', fontSize: 11 }}>{t('rail.empty')}</div>
       )}
-      {ungrouped.map(sessionRow)}
+      {loose.map(sessionRow)}
     </nav>
   );
 }

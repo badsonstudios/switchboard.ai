@@ -24,7 +24,8 @@
     "renameGroup": "Double-click to rename",
     "recolorGroup": "Click to change color",
     "collapse": "Collapse",
-    "expand": "Expand"
+    "expand": "Expand",
+    "autoGroupHint": "Auto-grouped (same repo/folder)"
   },
   "grid": {
     "addCard": "+ session",

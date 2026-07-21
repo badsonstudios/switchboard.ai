@@ -46,6 +46,12 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **P2-E12-05 done (#53)**: repo/folder auto-grouping. Main
+  computes a per-card autoKey (git toplevel, else normalized folder; cached);
+  rail clusters ungrouped sessions sharing a key into an italic dashed-dot
+  emergent section (computeAutoGroups, unit-tested: singletons never group,
+  S4 explicit-wins, vanish-when-emptied). e2e: 2 same-folder sessions
+  auto-group; dragging one into a real group dissolves it.
 - 2026-07-21 — **P2-E12-04 done (#52)**: move-between-groups. Rail rows are
   draggable — drop on a group header joins it (panel moves next to its
   siblings), drop on the rail background ungroups; grid drags adopt the new

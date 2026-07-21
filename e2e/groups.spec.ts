@@ -93,6 +93,32 @@ test.describe('persistent groups (E12)', () => {
     await expect(a.window.getByText(title).first()).toBeVisible();
   });
 
+  test('two sessions in one folder auto-group; explicit grouping dissolves it (E12-05)', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    const title = folder.split(/[\\/]/).pop()!;
+    await expect(w.getByText(title).first()).toBeVisible();
+    // one session: no auto-group section
+    await expect(w.getByTitle('Auto-grouped (same repo/folder)')).toHaveCount(0);
+
+    // second session in the SAME folder via the stubbed picker
+    await a.app.evaluate(({ dialog }, dir) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [dir] });
+    }, folder);
+    await w.getByRole('button', { name: '+ session' }).click();
+    await expect(w.getByTitle('Auto-grouped (same repo/folder)')).toBeVisible();
+
+    // an explicit group claims one member -> the auto-group dissolves (S4)
+    await w.getByTitle('Create a persistent group').click();
+    const row = w.locator('nav [draggable="true"]', { hasText: title }).first();
+    const header = w.getByText('New group', { exact: true });
+    const dt = await w.evaluateHandle(() => new DataTransfer());
+    await row.dispatchEvent('dragstart', { dataTransfer: dt });
+    await header.dispatchEvent('drop', { dataTransfer: dt });
+    await expect(w.getByTitle('Auto-grouped (same repo/folder)')).toHaveCount(0);
+  });
+
   test('delete removes the group', async () => {
     a = await launchApp();
     const w = a.window;

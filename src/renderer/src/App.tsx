@@ -129,6 +129,7 @@ export function App(): React.JSX.Element {
         badge: c.badge,
         status: c.status,
         groupId: c.groupId,
+        autoKey: c.autoKey,
       }))
     );
   }, []); // bridge is stable for the window's lifetime
