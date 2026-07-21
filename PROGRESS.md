@@ -3,10 +3,12 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-**Milestone:** Phase 2 - The Switchboard (issues #37–#41 filed; E7 first)
-**In progress:** Playwright-Electron e2e harness added — I can now UI-test
-without Dan (incl. pop-out, verified by an automated test)
-**Next up:** P2-E8-02 popout geometry persistence (#44)
+**Milestone:** Phase 2 - The Switchboard (issues #37–#45 filed; E7 + E8 DONE)
+**In progress:** nothing — all filed Phase 2 issues (E7 richer cards, E8
+pop-out) are implemented + tested on the branch, awaiting Dan's review/merge.
+**Next up (needs Dan):** review/merge draft PR #42, then decide whether to
+expand the E9/E10/E11 outlines into full work items (a `/pm plan` + `/pm
+file-issues` step — expanding a phase plan is not done unattended).
 **Branch:** auto/phase-2-switchboard (draft PR #42)
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
@@ -21,9 +23,11 @@ a "[Dan eyeball]" note.**
 - **Phase 1 — MVP — DONE & MERGED** (PR #36 → main, 2026-07-20): full app —
   session core, hooks, transcripts, git, notifications, persistence +
   resume-on-focus, auto-trust. CI green 3 OSes. Milestone closed.
-- **Phase 2 — The Switchboard — STARTING.** Plan:
-  `docs/plans/04-phase-2-switchboard.md`. Leading with E7 (richer cards) —
-  owner's expressed interest + fast win on data we already collect.
+- **Phase 2 — The Switchboard — E7 + E8 DONE (on branch, PR #42).** Plan:
+  `docs/plans/04-phase-2-switchboard.md`. E7 (richer cards) + E8 (pop-out:
+  foundation, geometry persistence, rejoin/lifecycle) complete + e2e-tested.
+  E9 (attention-driven layout), E10, E11 remain as OUTLINES — not yet expanded
+  into work items or filed as issues (just-in-time; needs `/pm plan`).
 
 ## Blockers / open questions for Dan
 
@@ -36,6 +40,16 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **E8 epic COMPLETE (#43–#45)**: pop-out foundation (E8-01,
+  loopback-http fix), geometry persistence (E8-02: `sanitizePopoutLayout`
+  rewrites the stored popout url to the current loopback port + rescues
+  off-display positions; app:workAreas IPC; e2e relaunch test), and
+  rejoin/lifecycle (E8-03: closing a popped-out window docks the session back
+  and never kills it — DESIGN.md subwindow model — verified to already hold via
+  the S-07 re-attach model, no new lifecycle code; e2e types into the
+  docked-back terminal to prove survival). Corrected the plan's E8-03 wording
+  that had contradicted DESIGN.md. 106 unit + 10 e2e green. **Phase 2's filed
+  scope (E7+E8) is now complete on the branch.**
 - 2026-07-21 — **Playwright-Electron e2e testing added** (Dan's ask: "fully
   test the UI without me"). Harness `e2e/fixtures/app.ts` launches the built
   app fully isolated (temp HOME, never touches real ~/.claude.json/workspace)
