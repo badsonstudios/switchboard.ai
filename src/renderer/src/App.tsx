@@ -8,7 +8,7 @@ import {
   ThemePreference,
 } from './theme/theme';
 import { LanguageChoice, loadLanguage, setLanguage } from './i18n';
-import { TitleBar, SessionsRail, StatusBar, RailSession } from './components/chrome';
+import { TitleBar, SessionsRail, StatusBar, RailSession, RailGroup } from './components/chrome';
 import { SessionGrid, GridController } from './components/SessionGrid';
 import { FeedPanel } from './components/FeedPanel';
 import { Usage, addUsage, estimateCostUsd, ZERO_USAGE } from './lib/usage';
@@ -31,6 +31,7 @@ export function App(): React.JSX.Element {
   const [lang, setLang] = useState<LanguageChoice>(() => loadLanguage());
   const [cards, setCards] = useState<string[]>([]);
   const [sessions, setSessions] = useState<RailSession[]>([]);
+  const [groups, setGroups] = useState<RailGroup[]>([]);
   const [notifEnabled, setNotifEnabled] = useState(true);
   const [autonomy, setAutonomy] = useState<string>(
     () => localStorage.getItem('switchboard.autonomy') ?? 'ask'
@@ -127,9 +128,19 @@ export function App(): React.JSX.Element {
         accent: c.accent,
         badge: c.badge,
         status: c.status,
+        groupId: c.groupId,
       }))
     );
   }, []); // bridge is stable for the window's lifetime
+
+  const refreshGroups = React.useCallback(async () => {
+    const list = await bridge.groups?.list?.();
+    if (list) setGroups(list as RailGroup[]);
+  }, []); // bridge is stable
+
+  useEffect(() => {
+    void refreshGroups();
+  }, [refreshGroups]);
 
   useEffect(() => {
     void refreshSessions();
@@ -174,12 +185,29 @@ export function App(): React.JSX.Element {
       <div style={{ flex: 1, display: 'flex', minBlockSize: 0 }}>
         <SessionsRail
           sessions={sessions}
+          groups={groups}
           onRename={(cardId, title) => {
             void bridge.sessions?.renameCard?.(cardId, title).then(() => refreshSessions());
           }}
           onFocus={(cardId) => grid.current?.focusSession(cardId)}
           onDiff={(s) => {
             if (s.folder) grid.current?.openDiff(s.id, s.folder, s.title);
+          }}
+          onCreateGroup={(name, color) => {
+            void bridge.groups?.create?.({ name, color }).then(() => refreshGroups());
+          }}
+          onRenameGroup={(id, name) => {
+            void bridge.groups?.update?.(id, { name }).then(() => refreshGroups());
+          }}
+          onRecolorGroup={(id, color) => {
+            void bridge.groups?.update?.(id, { color }).then(() => refreshGroups());
+          }}
+          onDeleteGroup={(id) => {
+            // members fall back to ungrouped, so the session list changes too
+            void bridge.groups?.remove?.(id).then(() => {
+              void refreshGroups();
+              void refreshSessions();
+            });
           }}
         />
         <SessionGrid

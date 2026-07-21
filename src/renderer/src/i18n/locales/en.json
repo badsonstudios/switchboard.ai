@@ -14,7 +14,16 @@
   },
   "rail": {
     "eyebrow": "Sessions",
-    "empty": "No sessions yet"
+    "empty": "No sessions yet",
+    "addGroup": "+ group",
+    "addGroupHint": "Create a persistent group",
+    "newGroup": "New group",
+    "groupEmpty": "empty",
+    "deleteGroup": "Delete group (its sessions become ungrouped)",
+    "renameGroup": "Double-click to rename",
+    "recolorGroup": "Click to change color",
+    "collapse": "Collapse",
+    "expand": "Expand"
   },
   "grid": {
     "addCard": "+ session",

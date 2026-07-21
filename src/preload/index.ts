@@ -45,6 +45,7 @@ const api = {
       folder: string;
       title: string;
       autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
+      groupId?: string;
     }): Promise<
       SessionRecordDto & {
         cardId: string;
@@ -64,6 +65,7 @@ const api = {
         badge?: string;
         status: string;
         liveId?: string;
+        groupId?: string;
       }>
     > => ipcRenderer.invoke('sessions:cards'),
     knownCards: (): Promise<Array<{ cardId: string; identity: SessionRecordDto['identity'] }>> =>

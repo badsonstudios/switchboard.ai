@@ -26,6 +26,8 @@ export interface CardParams {
   cardId: string;
   folder: string;
   title?: string;
+  /** persistent-group membership at creation (E12); undefined = ungrouped */
+  groupId?: string;
 }
 
 interface Live {
@@ -76,7 +78,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     const autonomy =
       stored === 'plan' || stored === 'auto-edit' || stored === 'full-auto' ? stored : 'ask';
     void window.switchboard.sessions
-      .create({ cardId, folder, title: props.api.title ?? folder, autonomy })
+      .create({ cardId, folder, title: props.api.title ?? folder, autonomy, groupId: props.params?.groupId })
       .then((record) => {
         if (cardId) liveToCard.set(record.id, cardId);
         setLive({
@@ -557,8 +559,9 @@ function forgetCardLiveIds(cardId: string): void {
 let tearingDown = false;
 
 export interface GridController {
-  /** create a session in `folder` and add its card (drag-drop, rail actions) */
-  addSessionCard: (folder: string) => Promise<void>;
+  /** create a session in `folder` and add its card (drag-drop, rail actions);
+   *  groupId places it clustered with its persistent group (E12) */
+  addSessionCard: (folder: string, groupId?: string) => Promise<void>;
   /** focus an existing session's card */
   focusSession: (sessionId: string) => void;
   /** open (or focus) the per-session diff tab (E5-02) */
@@ -577,7 +580,7 @@ export function SessionGrid(props: {
 
   // Add a NEW card. It gets a stable id and spawns its session lazily when it
   // becomes visible (which, as the newly-active tab, is immediately).
-  const addSessionCard = useCallback(async (folder: string) => {
+  const addSessionCard = useCallback(async (folder: string, groupId?: string) => {
     const api = apiRef.current;
     if (!api) return;
     const title = folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? folder;
@@ -588,14 +591,25 @@ export function SessionGrid(props: {
     // main-grid group explicitly (E8-04). If every card is popped out there is
     // no grid group left, so make one in the main grid rather than falling back
     // to the (popout) active group.
-    const mainGroup =
-      api.groups.find((g) => g.api.location.type === 'grid') ?? api.addGroup();
+    // A persistent-group member clusters with its siblings (E12-02): reuse the
+    // dockview group already holding another member, when one is in the grid.
+    let refGroup = api.groups.find((g) => g.api.location.type === 'grid') ?? api.addGroup();
+    if (groupId) {
+      const cards = await window.switchboard.sessions.cards();
+      const siblings = new Set(
+        cards.filter((c) => c.groupId === groupId).map((c) => `session-${c.cardId}`)
+      );
+      const sibling = api.panels.find(
+        (p) => siblings.has(p.id) && p.group.api.location.type === 'grid'
+      );
+      if (sibling) refGroup = sibling.group;
+    }
     api.addPanel({
       id: `session-${cardId}`,
       component: 'sessionCard',
       title,
-      params: { cardId, folder, title } satisfies CardParams,
-      position: { referenceGroup: mainGroup },
+      params: { cardId, folder, title, groupId } satisfies CardParams,
+      position: { referenceGroup: refGroup },
     });
   }, []);
 

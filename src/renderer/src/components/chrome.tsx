@@ -70,7 +70,27 @@ export interface RailSession {
   accent?: string;
   badge?: string;
   status?: string;
+  /** persistent-group membership (E12); undefined = ungrouped */
+  groupId?: string;
 }
+
+export interface RailGroup {
+  id: string;
+  name: string;
+  color: string;
+}
+
+/** #rrggbb palette for group dots — legible on both themes; click cycles. */
+export const GROUP_COLORS = [
+  '#4a90d9',
+  '#8f6fd8',
+  '#3aa675',
+  '#d98f3d',
+  '#d95f6a',
+  '#3fb6c4',
+  '#c96fb0',
+  '#a3a83e',
+];
 
 const STATUS_TOKEN: Record<string, string> = {
   starting: 'var(--status-idle)',
@@ -85,47 +105,46 @@ const STATUS_TOKEN: Record<string, string> = {
 
 export function SessionsRail(props: {
   sessions: RailSession[];
+  groups: RailGroup[];
   onRename: (id: string, title: string) => void;
   onFocus: (id: string) => void;
   onDiff: (s: RailSession) => void;
+  onCreateGroup: (name: string, color: string) => void;
+  onRenameGroup: (id: string, name: string) => void;
+  onRecolorGroup: (id: string, color: string) => void;
+  onDeleteGroup: (id: string) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [editing, setEditing] = React.useState<string | null>(null);
   const [draft, setDraft] = React.useState('');
-  return (
-    <nav
-      style={{
-        inlineSize: 200,
-        background: 'var(--panel)',
-        borderInlineEnd: '1px solid var(--border)',
-        paddingInline: 7,
-        paddingBlock: 8,
-        overflowY: 'auto',
+  const [editingGroup, setEditingGroup] = React.useState<string | null>(null);
+  const [groupDraft, setGroupDraft] = React.useState('');
+  // collapsed group ids — a rail nicety, persisted locally (not workspace state)
+  const [collapsed, setCollapsed] = React.useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('switchboard.rail.collapsed') ?? '[]'));
+    } catch {
+      return new Set();
+    }
+  });
+  const toggleCollapsed = (id: string): void => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      localStorage.setItem('switchboard.rail.collapsed', JSON.stringify([...next]));
+      return next;
+    });
+  };
+
+  const sessionRow = (s: RailSession): React.JSX.Element => (
+    <div
+      key={s.id}
+      onClick={() => props.onFocus(s.id)}
+      onDoubleClick={() => {
+        setEditing(s.id);
+        setDraft(s.title);
       }}
-    >
-      <div
-        style={{
-          fontSize: 9,
-          letterSpacing: 1.3,
-          fontWeight: 600,
-          color: 'var(--faint)',
-          textTransform: 'uppercase',
-          marginBlockEnd: 8,
-        }}
-      >
-        {t('rail.eyebrow')}
-      </div>
-      {props.sessions.length === 0 && (
-        <div style={{ color: 'var(--muted)', fontSize: 11 }}>{t('rail.empty')}</div>
-      )}
-      {props.sessions.map((s) => (
-        <div
-          key={s.id}
-          onClick={() => props.onFocus(s.id)}
-          onDoubleClick={() => {
-            setEditing(s.id);
-            setDraft(s.title);
-          }}
           style={{
             position: 'relative',
             padding: '6px 8px 6px 12px',
@@ -205,10 +224,183 @@ export function SessionsRail(props: {
             </>
           )}
         </div>
-      ))}
+  );
+
+  const grouped = new Map<string, RailSession[]>();
+  for (const g of props.groups) grouped.set(g.id, []);
+  const ungrouped: RailSession[] = [];
+  for (const s of props.sessions) {
+    if (s.groupId && grouped.has(s.groupId)) grouped.get(s.groupId)!.push(s);
+    else ungrouped.push(s);
+  }
+
+  return (
+    <nav
+      style={{
+        inlineSize: 200,
+        background: 'var(--panel)',
+        borderInlineEnd: '1px solid var(--border)',
+        paddingInline: 7,
+        paddingBlock: 8,
+        overflowY: 'auto',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', marginBlockEnd: 8 }}>
+        <span
+          style={{
+            fontSize: 9,
+            letterSpacing: 1.3,
+            fontWeight: 600,
+            color: 'var(--faint)',
+            textTransform: 'uppercase',
+            flex: 1,
+          }}
+        >
+          {t('rail.eyebrow')}
+        </span>
+        <button
+          onClick={() =>
+            props.onCreateGroup(
+              t('rail.newGroup'),
+              GROUP_COLORS[props.groups.length % GROUP_COLORS.length]
+            )
+          }
+          title={t('rail.addGroupHint')}
+          style={railBtn}
+        >
+          {t('rail.addGroup')}
+        </button>
+      </div>
+      {props.groups.map((g) => {
+        const members = grouped.get(g.id) ?? [];
+        const isCollapsed = collapsed.has(g.id);
+        return (
+          <div key={g.id}>
+            <div
+              onClick={() => toggleCollapsed(g.id)}
+              title={isCollapsed ? t('rail.expand') : t('rail.collapse')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '5px 4px',
+                cursor: 'pointer',
+                borderRadius: 'var(--radius-chip)',
+              }}
+            >
+              <span style={{ fontSize: 8, color: 'var(--faint)', inlineSize: 8 }}>
+                {isCollapsed ? '▸' : '▾'}
+              </span>
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const i = GROUP_COLORS.indexOf(g.color);
+                  props.onRecolorGroup(g.id, GROUP_COLORS[(i + 1) % GROUP_COLORS.length]);
+                }}
+                title={t('rail.recolorGroup')}
+                style={{
+                  inlineSize: 8,
+                  blockSize: 8,
+                  borderRadius: '50%',
+                  background: g.color,
+                  flexShrink: 0,
+                  cursor: 'pointer',
+                }}
+              />
+              {editingGroup === g.id ? (
+                <input
+                  autoFocus
+                  value={groupDraft}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => setGroupDraft(e.target.value)}
+                  onBlur={() => setEditingGroup(null)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      props.onRenameGroup(g.id, groupDraft);
+                      setEditingGroup(null);
+                    }
+                    if (e.key === 'Escape') setEditingGroup(null);
+                  }}
+                  style={{
+                    inlineSize: '100%',
+                    background: 'var(--panel2)',
+                    color: 'var(--text)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 4,
+                    fontSize: 11,
+                    fontFamily: 'var(--font-ui)',
+                  }}
+                />
+              ) : (
+                <span
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    setEditingGroup(g.id);
+                    setGroupDraft(g.name);
+                  }}
+                  title={t('rail.renameGroup')}
+                  style={{
+                    flex: 1,
+                    minInlineSize: 0,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {g.name}
+                </span>
+              )}
+              {members.length > 0 && (
+                <span style={{ fontSize: 9, color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
+                  {members.length}
+                </span>
+              )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  props.onDeleteGroup(g.id);
+                }}
+                title={t('rail.deleteGroup')}
+                style={{ ...railBtn, paddingInline: 3 }}
+              >
+                ✕
+              </button>
+            </div>
+            {!isCollapsed && (
+              <div style={{ paddingInlineStart: 10 }}>
+                {members.length === 0 ? (
+                  <div style={{ color: 'var(--faint)', fontSize: 10, padding: '2px 4px 6px' }}>
+                    {t('rail.groupEmpty')}
+                  </div>
+                ) : (
+                  members.map(sessionRow)
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {props.groups.length === 0 && props.sessions.length === 0 && (
+        <div style={{ color: 'var(--muted)', fontSize: 11 }}>{t('rail.empty')}</div>
+      )}
+      {ungrouped.map(sessionRow)}
     </nav>
   );
 }
+
+const railBtn: React.CSSProperties = {
+  background: 'transparent',
+  border: 'none',
+  color: 'var(--faint)',
+  cursor: 'pointer',
+  fontSize: 10,
+  fontFamily: 'var(--font-ui)',
+  padding: '1px 4px',
+  borderRadius: 4,
+};
 
 export function StatusBar(props: {
   count: number;

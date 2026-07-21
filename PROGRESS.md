@@ -46,6 +46,13 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **P2-E12-02 done (#50)**: rail renders persistent groups as
+  named/colored collapsible sections (create via "+ group", double-click
+  rename, dot-click recolor cycle, ✕ delete → members ungrouped, collapse in
+  localStorage); grid clusters a group member's panel with its siblings'
+  dockview group; sessions:create carries groupId so membership persists from
+  birth. e2e: empty group survives relaunch; delete removes. 116 unit + 15
+  e2e green.
 - 2026-07-21 — **P2-E12-01 done (#49)**: persistent-group model in the
   workspace store (PersistedGroup: id/name/color/notifyScope; sessions gain
   groupId), CRUD + membership IPC (`groups:*`, main-minted ids, validated

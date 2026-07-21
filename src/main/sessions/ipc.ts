@@ -101,6 +101,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         folder: string;
         title: string;
         autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
+        groupId?: string;
       }
     ) => {
       // validate untrusted renderer input (§5.29)
@@ -157,6 +158,8 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         model: prior?.model,
         autonomy,
         taskLabel: prior?.taskLabel,
+        // an existing card keeps its membership; a new card takes the caller's
+        groupId: prior?.groupId ?? (typeof opts.groupId === 'string' ? opts.groupId : undefined),
       });
       log.info('session started for card', {
         sessionId: record.id,
