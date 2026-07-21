@@ -11,6 +11,7 @@ import { SessionManager } from './sessions/session-manager';
 import { HookListener } from './hooks/hook-listener';
 import { TranscriptWatcher } from './transcripts/watcher';
 import { registerSessionIpc } from './sessions/ipc';
+import { registerGroupIpc } from './workspace/group-ipc';
 import { EventFeed } from './events/feed';
 import { Notifier } from './events/notifier';
 import { GitService } from './git/git-service';
@@ -229,6 +230,8 @@ app
     ipcMain.on('workspace:setLayout', (_e, layout: unknown) => workspace.setLayout(layout));
     // display work areas — for popout-position rescue on restore (E8-02)
     ipcMain.handle('app:workAreas', () => screen.getAllDisplays().map((d) => d.workArea));
+    // persistent groups (E12-01)
+    registerGroupIpc(workspace);
     registerBuiltinContributions();
     log.app.info('contributions registered', { manifests: registry.manifests() });
 

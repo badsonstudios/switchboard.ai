@@ -198,6 +198,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         badge: card.identity.langBadge,
         status: rec?.status ?? 'suspended',
         liveId,
+        groupId: card.groupId,
       };
     });
   });

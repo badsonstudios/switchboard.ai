@@ -92,6 +92,20 @@ const api = {
       return () => ipcRenderer.removeListener('sessions:exited', h);
     },
   },
+  groups: {
+    list: (): Promise<Array<{ id: string; name: string; color: string; notifyScope?: string }>> =>
+      ipcRenderer.invoke('groups:list'),
+    create: (opts: { name: string; color: string }): Promise<{ id: string; name: string; color: string }> =>
+      ipcRenderer.invoke('groups:create', opts),
+    update: (
+      id: string,
+      patch: { name?: string; color?: string; notifyScope?: string }
+    ): Promise<{ id: string; name: string; color: string; notifyScope?: string } | null> =>
+      ipcRenderer.invoke('groups:update', id, patch),
+    remove: (id: string): Promise<void> => ipcRenderer.invoke('groups:delete', id),
+    setSessionGroup: (cardId: string, groupId: string | null): Promise<void> =>
+      ipcRenderer.invoke('groups:setSessionGroup', cardId, groupId),
+  },
   settings: {
     getAutoTrust: (): Promise<boolean> => ipcRenderer.invoke('settings:getAutoTrust'),
     setAutoTrust: (on: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setAutoTrust', on),

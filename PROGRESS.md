@@ -5,10 +5,12 @@
 
 **Milestone:** Phase 2 - The Switchboard (E7+E8 merged; E12 expanded + filed
 #49–#57, E8-06 filed #48; E9/E10/E11/E13/E14 still outlines)
-**In progress:** nothing mid-flight.
-**Next up:** `/next-item` → P2-E12-01 (group model + store, #49). Dan's
-hands-on pop-out testing on real multi-monitor hardware is still valuable.
-**Branch:** main
+**In progress:** AUTOPILOT RUN started 2026-07-21 — branch `auto/phase-2-e12`,
+scope #48–#57 (E12-01…09 dependency-first, E8-06 last). Draft PR opens after
+the first commit.
+**Next up:** Dan reviews the autopilot PR when it lands; hands-on pop-out
+testing on real multi-monitor hardware is still valuable.
+**Branch:** auto/phase-2-e12
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
 `npm test` (unit) · `npm run check:*` (local real-claude proofs) · `npm run e2e`
@@ -43,6 +45,12 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-21 — **P2-E12-01 done (#49)**: persistent-group model in the
+  workspace store (PersistedGroup: id/name/color/notifyScope; sessions gain
+  groupId), CRUD + membership IPC (`groups:*`, main-minted ids, validated
+  input), preload bridge, dangling-groupId cleanup on load, delete-group →
+  members ungrouped. 116 unit tests green.
 
 - 2026-07-21 — **E12 expanded + issues filed** (`/pm plan`, Dan approved).
   E12 (Session groups & Feed view) broken into 9 work items (P2-E12-01…09) in
