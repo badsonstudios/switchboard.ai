@@ -48,6 +48,15 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **P2-E10-06 done (#64)**: rich tool blocks v2 (the extension
+  reference). Watcher: Edit/Write blocks carry structured filePath/old/new,
+  Bash carries its description + tool_result OUT attaches by tool_use_id
+  (block re-emitted, renderer upserts by seq), thinking gets durationMs when
+  the next block lands, TodoWrite emits a checklist block. Renderer: timeline
+  dot gutter; EditBlock (+N/-M subtitle, red/green panes, click-collapse);
+  BashBlock (description header, independent IN/OUT expanders); TodosBlock;
+  "Thought for Ns". e2e: synthetic transcript drives all block types.
+  137 unit + 27 e2e green. **E10 epic complete on the branch.**
 - 2026-07-21 — **P2-E10-05 done (#63)**: composer options row — autonomy
   chip (click cycles; persists via new sessions:setAutonomy to the card
   record, applies on next spawn/resume since the CLI can't switch live),

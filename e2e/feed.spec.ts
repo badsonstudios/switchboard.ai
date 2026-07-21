@@ -51,6 +51,33 @@ test.describe('Feed view (E12-06)', () => {
     await w.getByText('Read', { exact: true }).click();
     await expect(w.getByText(/file_path/)).toBeVisible();
 
+    // rich blocks v2 (E10-06): Edit diff panes + Bash IN/OUT + todos checklist
+    fs.appendFileSync(
+      path.join(dir, 'native-e2e.jsonl'),
+      line({
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'tool_use', id: 'u1', name: 'Bash', input: { command: 'echo RICH_OUT', description: 'Check output' } },
+            { type: 'tool_use', name: 'Edit', input: { file_path: 'C:/tmp/y.ts', old_string: 'OLD_LINE', new_string: 'NEW_LINE' } },
+            { type: 'tool_use', name: 'TodoWrite', input: { todos: [{ content: 'first step', status: 'completed' }] } },
+          ],
+        },
+      }) +
+        line({
+          type: 'user',
+          message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'u1', content: 'RICH_OUT' }] },
+        })
+    );
+    await expect(w.getByText('Check output')).toBeVisible(); // Bash header description
+    await expect(w.getByText('NEW_LINE')).toBeVisible(); // Edit new pane (open by default)
+    await expect(w.getByText('+1 / -1 lines')).toBeVisible(); // edit stats subtitle
+    await expect(w.getByText('Update Todos')).toBeVisible();
+    await expect(w.getByText('first step')).toBeVisible();
+    // OUT section expands to the tool result
+    await w.getByText('▸ OUT').click();
+    await expect(w.getByText('RICH_OUT', { exact: true }).last()).toBeVisible();
+
     // verbosity presets switch live (E12-07): quiet hides tool rows
     await w.getByRole('button', { name: 'quiet' }).click();
     await expect(w.getByText('Read', { exact: true })).toHaveCount(0);

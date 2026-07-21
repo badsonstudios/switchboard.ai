@@ -7,7 +7,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import { blockVisible, FeedBlockDto, Verbosity } from '../lib/feed';
+import { blockVisible, FeedBlockDto, upsertBlock, Verbosity } from '../lib/feed';
 import { uiGet, uiSet } from '../lib/ui-state';
 
 export type { FeedBlockDto } from '../lib/feed';
@@ -18,6 +18,119 @@ function Markdown({ text }: { text: string }): React.JSX.Element {
     [text]
   );
   return <div className="feed-md" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+/** Edit/Write block (E10-06): header + added/removed subtitle + shaded panes. */
+function EditBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
+  const { t } = useTranslation();
+  const [open, setOpen] = React.useState(true);
+  const added = (b.tool?.newString ?? '').split('\n').filter((l) => l.length > 0).length;
+  const removed = (b.tool?.oldString ?? '').split('\n').filter((l) => l.length > 0).length;
+  return (
+    <div style={{ fontSize: 11 }}>
+      <div onClick={() => setOpen(!open)} style={{ cursor: 'pointer', display: 'flex', gap: 6, alignItems: 'baseline' }}>
+        <span style={{ fontWeight: 700, color: 'var(--text)' }}>{b.tool?.name}</span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minInlineSize: 0 }}>
+          {b.tool?.filePath ?? b.tool?.summary}
+        </span>
+      </div>
+      <div style={{ fontSize: 9.5, color: 'var(--faint)', marginBlock: 2 }}>
+        {t('feedView.editStats', { added, removed })}
+      </div>
+      {open && (
+        <div style={{ display: 'flex', gap: 4, maxBlockSize: 180, overflow: 'auto' }}>
+          {b.tool?.oldString && <pre style={editPane('var(--diff-removed-bg)')}>{b.tool.oldString}</pre>}
+          {b.tool?.newString && <pre style={editPane('var(--diff-added-bg)')}>{b.tool.newString}</pre>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function editPane(background: string): React.CSSProperties {
+  return {
+    flex: 1,
+    margin: 0,
+    padding: 6,
+    background,
+    border: '1px solid var(--border)',
+    borderRadius: 4,
+    fontSize: 10,
+    fontFamily: 'var(--font-mono)',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-all',
+    minInlineSize: 0,
+  };
+}
+
+/** Bash block (E10-06): description header + independent IN/OUT sections. */
+function BashBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
+  const { t } = useTranslation();
+  const [inOpen, setInOpen] = React.useState(false);
+  const [outOpen, setOutOpen] = React.useState(false);
+  const section = (
+    label: string,
+    text: string,
+    open: boolean,
+    toggle: () => void
+  ): React.JSX.Element => (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', minInlineSize: 0 }}>
+      <span
+        onClick={toggle}
+        style={{ fontSize: 8.5, fontWeight: 700, color: 'var(--faint)', cursor: 'pointer', flexShrink: 0, inlineSize: 26 }}
+      >
+        {open ? '▾' : '▸'} {label}
+      </span>
+      <pre
+        onClick={toggle}
+        style={{
+          margin: 0,
+          flex: 1,
+          minInlineSize: 0,
+          fontSize: 10,
+          fontFamily: 'var(--font-mono)',
+          color: 'var(--muted)',
+          cursor: 'pointer',
+          ...(open
+            ? { whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxBlockSize: 200, overflow: 'auto', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 4, padding: 6 }
+            : { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }),
+        }}
+      >
+        {open ? text : text.split(String.fromCharCode(10))[0]}
+      </pre>
+    </div>
+  );
+  return (
+    <div style={{ fontSize: 11 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', marginBlockEnd: 2 }}>
+        <span style={{ fontWeight: 700, color: 'var(--text)' }}>{b.tool?.name}</span>
+        <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>{b.tool?.description ?? ''}</span>
+      </div>
+      {section(t('feedView.in'), b.tool?.summary ?? '', inOpen, () => setInOpen(!inOpen))}
+      {b.tool?.out !== undefined &&
+        section(t('feedView.out'), b.tool.out, outOpen, () => setOutOpen(!outOpen))}
+    </div>
+  );
+}
+
+/** TodoWrite checklist block (E10-06). */
+function TodosBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
+  const { t } = useTranslation();
+  return (
+    <div style={{ fontSize: 11 }}>
+      <div style={{ fontWeight: 700, color: 'var(--text)', marginBlockEnd: 2 }}>{t('feedView.updateTodos')}</div>
+      {(b.todos ?? []).map((td, i) => (
+        <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'baseline', color: 'var(--muted)' }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, flexShrink: 0, color: td.status === 'completed' ? 'var(--status-done)' : td.status === 'in_progress' ? 'var(--status-working)' : 'var(--faint)' }}>
+            {td.status === 'completed' ? t('feedView.todoDone') : td.status === 'in_progress' ? t('feedView.todoActive') : t('feedView.todoPending')}
+          </span>
+          <span style={{ minInlineSize: 0, textDecoration: td.status === 'completed' ? 'line-through' : 'none' }}>
+            {td.content}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function ToolRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
@@ -73,10 +186,13 @@ function ToolRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
 function ThinkingRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
+  const label = b.durationMs
+    ? t('feedView.thoughtFor', { s: Math.max(1, Math.round(b.durationMs / 1000)) })
+    : t('feedView.thinking');
   return (
     <div style={{ fontSize: 10.5, color: 'var(--faint)', fontStyle: 'italic' }}>
       <span onClick={() => setOpen(!open)} style={{ cursor: 'pointer' }}>
-        {open ? '▾' : '▸'} {t('feedView.thinking')}
+        {open ? '▾' : '▸'} {label}
       </span>
       {open && (
         <div style={{ whiteSpace: 'pre-wrap', margin: '2px 0 4px 14px', maxBlockSize: 240, overflow: 'auto' }}>
@@ -90,7 +206,13 @@ function ThinkingRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
 function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const { t } = useTranslation();
   const inner =
-    b.kind === 'tool' ? (
+    b.kind === 'todos' ? (
+      <TodosBlock b={b} />
+    ) : b.kind === 'tool' && b.tool?.name === 'Bash' ? (
+      <BashBlock b={b} />
+    ) : b.kind === 'tool' && (b.tool?.oldString !== undefined || b.tool?.newString !== undefined) ? (
+      <EditBlock b={b} />
+    ) : b.kind === 'tool' ? (
       <ToolRow b={b} />
     ) : b.kind === 'thinking' ? (
       <ThinkingRow b={b} />
@@ -116,6 +238,8 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
   return (
     <div
       style={{
+        display: 'flex',
+        gap: 8,
         padding: '4px 8px',
         ...(b.sidechain
           ? {
@@ -126,7 +250,18 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
           : {}),
       }}
     >
-      {inner}
+      {/* timeline dot gutter (E10-06, extension reference) */}
+      <span
+        style={{
+          inlineSize: 6,
+          blockSize: 6,
+          borderRadius: '50%',
+          background: b.kind === 'user' ? 'var(--status-needs-input)' : 'var(--faint)',
+          flexShrink: 0,
+          marginBlockStart: 5,
+        }}
+      />
+      <div style={{ flex: 1, minInlineSize: 0 }}>{inner}</div>
     </div>
   );
 }
@@ -167,10 +302,8 @@ export function FeedView(props: {
     });
     const off = window.switchboard.transcripts.onBlock((p) => {
       if (p.sessionId !== props.sessionId) return;
-      setBlocks((prev) => {
-        const next = [...prev, p.block as FeedBlockDto];
-        return next.length > 1000 ? next.slice(-1000) : next;
-      });
+      // upsert: the watcher re-emits a block when its OUT / duration lands
+      setBlocks((prev) => upsertBlock(prev, p.block as FeedBlockDto));
     });
     return () => {
       cancelled = true;

@@ -202,6 +202,66 @@ describe('Feed block derivation (P2-E12-06 §5.10)', () => {
     expect(seen.length).toBe(4);
   });
 
+  it('rich blocks v2 (E10-06): Edit fields, Bash OUT attach, todos, thought duration', async () => {
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    const t0 = new Date('2026-07-21T10:00:00.000Z').toISOString();
+    const t3 = new Date('2026-07-21T10:00:03.000Z').toISOString();
+    writeLines(file, [
+      entry({
+        timestamp: t0,
+        message: {
+          content: [
+            { type: 'thinking', thinking: 'pondering' },
+          ],
+        },
+      }),
+      entry({
+        timestamp: t3,
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'use-1',
+              name: 'Bash',
+              input: { command: 'echo hi', description: 'Say hi' },
+            },
+            {
+              type: 'tool_use',
+              id: 'use-2',
+              name: 'Edit',
+              input: { file_path: 'C:/a.ts', old_string: 'one\ntwo', new_string: 'three' },
+            },
+            {
+              type: 'tool_use',
+              name: 'TodoWrite',
+              input: { todos: [{ content: 'step A', status: 'completed' }, { content: 'step B', status: 'pending' }] },
+            },
+          ],
+        },
+      }),
+      entry({
+        type: 'user',
+        message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'use-1', content: 'hi' }] },
+      }),
+    ]);
+    await sleep(150);
+    const blocks = watcher.blocks('s1');
+    const thinking = blocks.find((b) => b.kind === 'thinking')!;
+    expect(thinking.durationMs).toBe(3000); // set when the next block landed
+    const bash = blocks.find((b) => b.tool?.name === 'Bash')!;
+    expect(bash.tool).toMatchObject({ summary: 'echo hi', description: 'Say hi', out: 'hi' });
+    const edit = blocks.find((b) => b.tool?.name === 'Edit')!;
+    expect(edit.tool).toMatchObject({ filePath: 'C:/a.ts', oldString: 'one\ntwo', newString: 'three' });
+    const todos = blocks.find((b) => b.kind === 'todos')!;
+    expect(todos.todos).toEqual([
+      { content: 'step A', status: 'completed' },
+      { content: 'step B', status: 'pending' },
+    ]);
+    // the tool_result line produced NO user block of its own
+    expect(blocks.filter((b) => b.kind === 'user')).toHaveLength(0);
+  });
+
   it('marks subagent-file lines as sidechain and caps the backlog', async () => {
     watcher.watch('s1', { cwd });
     const file = path.join(projectDir(), 'native-1.jsonl');

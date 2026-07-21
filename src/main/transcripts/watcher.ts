@@ -43,10 +43,26 @@ export interface TranscriptSnapshot {
  */
 export interface FeedBlock {
   seq: number;
-  kind: 'user' | 'assistant' | 'thinking' | 'tool';
+  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos';
   /** user/assistant/thinking prose */
   text?: string;
-  tool?: { name: string; summary: string; detail?: string };
+  tool?: {
+    name: string;
+    summary: string;
+    detail?: string;
+    /** Bash: the tool call's own description field (block header, E10-06) */
+    description?: string;
+    /** Edit/Write: structured fields for the inline diff preview (E10-06) */
+    filePath?: string;
+    oldString?: string;
+    newString?: string;
+    /** tool_result output, attached when it arrives (block re-emitted) */
+    out?: string;
+  };
+  /** TodoWrite checklist (E10-06) */
+  todos?: Array<{ content: string; status: string }>;
+  /** thinking: how long it lasted (set when the next block lands) */
+  durationMs?: number;
   /** true when the line came from a subagent transcript */
   sidechain: boolean;
   ts?: string;
@@ -67,6 +83,8 @@ interface WatchedSession {
   snap: TranscriptSnapshot;
   blocks: FeedBlock[];
   blockSeq: number;
+  /** tool_use id -> its block, so a later tool_result can attach its OUT */
+  toolBlocks: Map<string, FeedBlock>;
 }
 
 /** After this long unbound, widen discovery beyond the slug prefilter. */
@@ -82,6 +100,18 @@ export interface TranscriptWatcherOptions {
 
 export function slugForCwd(cwd: string): string {
   return cwd.replace(/[\\/:. ]/g, '-');
+}
+
+/** Flatten a tool_result content field (string or text-item array) to text. */
+function toolResultText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return (content as Array<{ type?: string; text?: string }>)
+      .filter((x) => x?.type === 'text' && typeof x.text === 'string')
+      .map((x) => x.text)
+      .join('\n');
+  }
+  return '';
 }
 
 /**
@@ -152,6 +182,7 @@ export class TranscriptWatcher {
       },
       blocks: [],
       blockSeq: 0,
+      toolBlocks: new Map(),
     });
     this.ensurePolling();
   }
@@ -361,10 +392,25 @@ export class TranscriptWatcher {
     }
   }
 
-  private emitBlock(w: WatchedSession, b: Omit<FeedBlock, 'seq' | 'sidechain'>, sidechain: boolean): void {
+  private emitBlock(w: WatchedSession, b: Omit<FeedBlock, 'seq' | 'sidechain'>, sidechain: boolean): FeedBlock {
+    // a thinking block's duration becomes known when the NEXT block lands
+    const prev = w.blocks[w.blocks.length - 1];
+    if (prev?.kind === 'thinking' && !prev.durationMs && prev.ts && b.ts) {
+      const ms = Date.parse(b.ts) - Date.parse(prev.ts);
+      if (Number.isFinite(ms) && ms > 0) {
+        prev.durationMs = ms;
+        this.reemit(w, prev);
+      }
+    }
     const block: FeedBlock = { ...b, seq: ++w.blockSeq, sidechain };
     w.blocks.push(block);
     if (w.blocks.length > BLOCK_CAP) w.blocks.splice(0, w.blocks.length - BLOCK_CAP);
+    this.reemit(w, block);
+    return block;
+  }
+
+  /** Send a block (new OR updated — same seq) to the listeners. */
+  private reemit(w: WatchedSession, block: FeedBlock): void {
     for (const l of this.blockListeners) {
       try {
         l(w.sessionId, block);
@@ -382,13 +428,26 @@ export class TranscriptWatcher {
     const message = e.message as { content?: unknown; role?: string } | undefined;
     if (!message) return;
     if (e.type === 'user') {
-      // a real prompt is a string (or text items); tool_result plumbing is not prose
+      // a real prompt is a string (or text items); tool_result items attach
+      // their output to the originating tool block (E10-06 OUT sections)
       if (typeof message.content === 'string' && message.content.trim()) {
         this.emitBlock(w, { kind: 'user', text: message.content.slice(0, TEXT_CAP), ts }, sidechain);
       } else if (Array.isArray(message.content)) {
-        for (const c of message.content as Array<{ type?: string; text?: string }>) {
+        for (const c of message.content as Array<{
+          type?: string;
+          text?: string;
+          tool_use_id?: string;
+          content?: unknown;
+        }>) {
           if (c?.type === 'text' && c.text?.trim()) {
             this.emitBlock(w, { kind: 'user', text: c.text.slice(0, TEXT_CAP), ts }, sidechain);
+          } else if (c?.type === 'tool_result' && typeof c.tool_use_id === 'string') {
+            const target = w.toolBlocks.get(c.tool_use_id);
+            if (target?.tool && !target.tool.out) {
+              target.tool.out = toolResultText(c.content).slice(0, DETAIL_CAP);
+              w.toolBlocks.delete(c.tool_use_id);
+              this.reemit(w, target);
+            }
           }
         }
       }
@@ -408,6 +467,14 @@ export class TranscriptWatcher {
         this.emitBlock(w, { kind: 'thinking', text: c.thinking.slice(0, TEXT_CAP), ts }, sidechain);
       } else if (c?.type === 'tool_use' && typeof c.name === 'string') {
         const input = c.input ?? {};
+        // TodoWrite renders as a checklist block, not a raw tool row (E10-06)
+        if (c.name === 'TodoWrite' && Array.isArray(input.todos)) {
+          const todos = (input.todos as Array<{ content?: unknown; status?: unknown }>)
+            .slice(0, 30)
+            .map((td) => ({ content: String(td?.content ?? ''), status: String(td?.status ?? '') }));
+          this.emitBlock(w, { kind: 'todos', todos, ts }, sidechain);
+          continue;
+        }
         const primary =
           input.file_path ?? input.path ?? input.notebook_path ?? input.command ?? input.description ?? input.pattern;
         const summary = typeof primary === 'string' ? primary.slice(0, 120) : '';
@@ -417,7 +484,25 @@ export class TranscriptWatcher {
         } catch {
           detail = undefined;
         }
-        this.emitBlock(w, { kind: 'tool', tool: { name: c.name, summary, detail }, ts }, sidechain);
+        const tool: NonNullable<FeedBlock['tool']> = { name: c.name, summary, detail };
+        // structured fields for the rich blocks (E10-06)
+        if (typeof input.description === 'string') tool.description = input.description.slice(0, 120);
+        if (typeof input.file_path === 'string') tool.filePath = input.file_path;
+        if (typeof input.old_string === 'string') tool.oldString = input.old_string.slice(0, 1500);
+        if (typeof input.new_string === 'string') tool.newString = input.new_string.slice(0, 1500);
+        if (c.name === 'Write' && typeof input.content === 'string') {
+          tool.newString = input.content.slice(0, 1500);
+        }
+        const block = this.emitBlock(w, { kind: 'tool', tool, ts }, sidechain);
+        const useId = (c as { id?: unknown }).id;
+        if (typeof useId === 'string') {
+          w.toolBlocks.set(useId, block);
+          // bounded: forget the oldest mappings past 200 in-flight calls
+          if (w.toolBlocks.size > 200) {
+            const first = w.toolBlocks.keys().next().value;
+            if (first !== undefined) w.toolBlocks.delete(first);
+          }
+        }
       }
     }
   }
