@@ -48,6 +48,19 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **P2-E10-03 done (#61)**: PreToolUse hold + decision
+  round-trip. HookListener parks a gated PreToolUse response until
+  decide(allow/deny) returns the hook verdict JSON (permissionDecision via
+  hookSpecificOutput); timeout (60s) and every teardown path fail OPEN to
+  '{}' → the CLI's own TUI prompt. Hold policy = shouldHoldPermission
+  (autonomy-aware: ask/plan gate Bash/Write/Edit/NotebookEdit/WebFetch,
+  auto-edit gates Bash/WebFetch, full-auto never, unknown never). Forwarder
+  now relays the response body to stdout (verdict channel) with a per-event
+  wait budget; PreToolUse hook entry gets its own long timeout. State
+  machine's pre-built permission-held/resolved events now fire for real.
+  IPC: sessions:permissionRequest stream + sessions:decidePermission.
+  6 new unit tests (hold/deny/timeout/ungated/unregister/policy).
+  136 unit + 24 e2e green.
 - 2026-07-21 — **P2-E10-02 done (#60)**: prompt composer v1 in the Session
   view — bottom-docked textarea (Enter sends, Shift+Enter newline, auto-grow,
   ↑ send button), writes the prompt to the live PTY (multiline as one

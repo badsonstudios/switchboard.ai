@@ -76,6 +76,19 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   ipcMain.handle('feed:list', () => deps.feed.list());
 
+  // held PreToolUse permissions (E10-03): stream requests to the renderer,
+  // take decisions back. Card id rides along so the UI can find its panel.
+  hooks.onPermissionRequest((r) =>
+    send('sessions:permissionRequest', { ...r, cardId: cardOfLive.get(r.sessionId) })
+  );
+  ipcMain.handle(
+    'sessions:decidePermission',
+    (_e, requestId: string, decision: string, reason?: string) => {
+      if (typeof requestId !== 'string' || (decision !== 'allow' && decision !== 'deny')) return false;
+      return hooks.decide(requestId, decision, typeof reason === 'string' ? reason.slice(0, 500) : undefined);
+    }
+  );
+
   // Feed view blocks (P2-E12-06): live stream + backlog for attach
   transcripts.onBlock((sessionId, block) => send('sessions:feedBlock', { sessionId, block }));
   ipcMain.handle('transcripts:blocks', (_e, liveId: string) =>

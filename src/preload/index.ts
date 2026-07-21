@@ -105,6 +105,30 @@ const api = {
       ipcRenderer.on('sessions:usage', h);
       return () => ipcRenderer.removeListener('sessions:usage', h);
     },
+    onPermissionRequest: (
+      cb: (r: {
+        requestId: string;
+        sessionId: string;
+        cardId?: string;
+        tool: string;
+        input: Record<string, unknown>;
+      }) => void
+    ): (() => void) => {
+      const h = (
+        _e: unknown,
+        r: {
+          requestId: string;
+          sessionId: string;
+          cardId?: string;
+          tool: string;
+          input: Record<string, unknown>;
+        }
+      ) => cb(r);
+      ipcRenderer.on('sessions:permissionRequest', h);
+      return () => ipcRenderer.removeListener('sessions:permissionRequest', h);
+    },
+    decidePermission: (requestId: string, decision: 'allow' | 'deny', reason?: string): Promise<boolean> =>
+      ipcRenderer.invoke('sessions:decidePermission', requestId, decision, reason),
     onExited: (cb: (e: { sessionId: string; code: number; crashed: boolean }) => void): (() => void) => {
       const h = (_e: unknown, x: { sessionId: string; code: number; crashed: boolean }) => cb(x);
       ipcRenderer.on('sessions:exited', h);

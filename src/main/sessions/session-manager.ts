@@ -26,6 +26,8 @@ export interface SessionRecord {
   nativeSessionId?: string;
   pid?: number;
   exitCode: number | null;
+  /** autonomy mode this session was spawned at (drives the E10-03 hold policy) */
+  autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
   /** set by kill()/restart(): the coming exit is intentional, not a crash */
   killRequested?: boolean;
 }
@@ -106,6 +108,7 @@ export class SessionManager {
       status: 'starting',
       createdAt: new Date().toISOString(),
       exitCode: null,
+      autonomy: opts?.autonomy,
     };
     let proc;
     try {
