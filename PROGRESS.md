@@ -7,7 +7,7 @@
 #49–#57, E8-06 filed #48; E9/E10/E11/E13/E14 still outlines)
 **In progress:** nothing mid-flight — AUTOPILOT RUN COMPLETE 2026-07-21:
 all 10 items (#48–#57, E12 full + E8-06) shipped to `auto/phase-2-e12`,
-draft PR #58. 130 unit + 22 e2e green locally; CI on the tip pending.
+draft PR #58. 130 unit + 22 e2e green; **CI GREEN on the tip (all 5 jobs)**.
 **Next up (needs Dan):** review/merge draft PR #58 (eyeball list in the PR:
 real grid drag, waiting-chip on a live permission prompt, popout restore on
 the 3-monitor desk). Then `/pm plan` for the next epic (E9 or E10 — plan
@@ -56,7 +56,8 @@ a "[Dan eyeball]" note.**
   profile across ALL tests: Electron resolves userData via XDG on Linux and
   the fixture only overrode HOME — XDG_CONFIG/CACHE/DATA_HOME now isolated
   (pre-existing hole; E12's fresh-profile assertions exposed it). Full gate
-  green locally incl. typecheck; CI re-running.
+  green locally incl. typecheck; **CI GREEN on 76ffdb8** (unit ×3 OS + e2e
+  Windows/Linux).
 
 - 2026-07-21 — **P2-E8-06 done (#48)**: display reconnect offer. Rescued
   popouts (position nulled by the E8-02 sanitize) are stashed in the ui blob
