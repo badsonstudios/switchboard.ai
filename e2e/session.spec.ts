@@ -26,6 +26,8 @@ test.describe('a session card', () => {
     // usage strip is present from the start (zeros until real activity)
     await expect(window.getByText('↑ 0').first()).toBeVisible({ timeout: 15_000 });
 
+    // Feed is the default view (E12-07) — switch to the Terminal tab first
+    await window.getByRole('button', { name: 'Terminal' }).click();
     // the terminal is a REAL pty (fake provider spawns the OS shell): typing a
     // command produces output — proves input -> pty -> render end to end
     await window.locator('.xterm-screen').first().click();
@@ -97,6 +99,7 @@ test.describe('a session card', () => {
     await popout.getByTitle('Pop back into the main window').click();
     await expect.poll(() => app.windows().length, { timeout: 15_000 }).toBe(1);
     // docked back ALIVE (button toggle, not a window-close): the terminal types
+    await window.getByRole('button', { name: 'Terminal' }).click(); // Feed is default (E12-07)
     await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 15_000 });
     await window.locator('.xterm-screen').first().click();
     await window.keyboard.type('echo TOGGLE_OK_789');
@@ -120,6 +123,7 @@ test.describe('a session card', () => {
     // the suspended affordance shows; Resume brings the session/terminal back
     await expect(window.getByText('Session suspended')).toBeVisible({ timeout: 15_000 });
     await window.getByRole('button', { name: 'Resume' }).click();
+    await window.getByRole('button', { name: 'Terminal' }).click(); // Feed is default (E12-07)
     await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 15_000 });
   });
 

@@ -46,6 +46,14 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **P2-E12-07 done (#55)**: Feed verbosity presets
+  (quiet/normal/firehose; pure blockVisible rule, per-card persisted,
+  live-switchable), "waiting in Terminal ↗" chip on needs-input/permission
+  that jumps to the Terminal tab, and **Feed is now the default view**
+  (§5.10). e2e updated for the flip + preset switching; the waiting chip is
+  a status-driven conditional (fake provider can't emit hook statuses —
+  covered by the status pill's existing path; **[Dan eyeball]** chip on a
+  real permission prompt). 129 unit + 19 e2e.
 - 2026-07-21 — **P2-E12-06 done (#54)**: Feed view v1. TranscriptWatcher
   derives FeedBlocks (user/assistant/thinking/tool; sidechain-flagged; capped
   backlog) from the lines it already parses; new `transcripts:blocks` +

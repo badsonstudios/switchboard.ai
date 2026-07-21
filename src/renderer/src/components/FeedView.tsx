@@ -7,15 +7,9 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import { blockVisible, FeedBlockDto, Verbosity } from '../lib/feed';
 
-export interface FeedBlockDto {
-  seq: number;
-  kind: 'user' | 'assistant' | 'thinking' | 'tool';
-  text?: string;
-  tool?: { name: string; summary: string; detail?: string };
-  sidechain: boolean;
-  ts?: string;
-}
+export type { FeedBlockDto } from '../lib/feed';
 
 function Markdown({ text }: { text: string }): React.JSX.Element {
   const html = React.useMemo(
@@ -136,12 +130,30 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
   );
 }
 
-export function FeedView(props: { sessionId: string; visible: boolean }): React.JSX.Element {
+export function FeedView(props: {
+  sessionId: string;
+  /** durable key for per-card preferences (the live id churns on resume) */
+  cardId?: string;
+  visible: boolean;
+  /** current session status — needs-input/needs-permission shows the chip */
+  status?: string;
+  /** the Feed never accepts input; this jumps to the Terminal tab (§5.10) */
+  onJumpToTerminal?: () => void;
+}): React.JSX.Element {
   const { t } = useTranslation();
   const [blocks, setBlocks] = React.useState<FeedBlockDto[]>([]);
+  const [verbosity, setVerbosity] = React.useState<Verbosity>(() => {
+    const v = localStorage.getItem(`switchboard.feedVerbosity.${props.cardId ?? ''}`);
+    return v === 'quiet' || v === 'firehose' ? v : 'normal';
+  });
+  const pickVerbosity = (v: Verbosity): void => {
+    setVerbosity(v);
+    if (props.cardId) localStorage.setItem(`switchboard.feedVerbosity.${props.cardId}`, v);
+  };
   const bottom = React.useRef<HTMLDivElement | null>(null);
   const pinned = React.useRef(true); // stick to the tail unless the user scrolls up
   const scroller = React.useRef<HTMLDivElement | null>(null);
+  const waiting = props.status === 'needs-input' || props.status === 'needs-permission';
 
   React.useEffect(() => {
     let cancelled = false;
@@ -165,31 +177,74 @@ export function FeedView(props: { sessionId: string; visible: boolean }): React.
     if (props.visible && pinned.current) bottom.current?.scrollIntoView({ block: 'end' });
   }, [blocks, props.visible]);
 
+  const visibleBlocks = blocks.filter((b) => blockVisible(b, verbosity));
   return (
-    <div
-      ref={scroller}
-      onScroll={() => {
-        const el = scroller.current;
-        if (el) pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-      }}
-      style={{
-        blockSize: '100%',
-        overflowY: 'auto',
-        background: 'var(--card-bg)',
-        fontSize: 12,
-        lineHeight: 1.5,
-        paddingBlock: 6,
-      }}
-    >
-      {blocks.length === 0 && (
-        <div style={{ color: 'var(--faint)', fontSize: 11, textAlign: 'center', marginBlockStart: 24 }}>
-          {t('feedView.empty')}
-        </div>
-      )}
-      {blocks.map((b) => (
-        <Block key={b.seq} b={b} />
-      ))}
-      <div ref={bottom} />
+    <div style={{ blockSize: '100%', display: 'flex', flexDirection: 'column', background: 'var(--card-bg)' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          paddingInline: 8,
+          paddingBlock: 3,
+          borderBlockEnd: '1px solid var(--border)',
+        }}
+      >
+        {waiting && (
+          <button
+            onClick={props.onJumpToTerminal}
+            style={{
+              background: 'color-mix(in srgb, var(--status-needs-input) 16%, transparent)',
+              border: '1px solid var(--status-needs-input)',
+              color: 'var(--text)',
+              borderRadius: 'var(--radius-chip)',
+              fontSize: 10,
+              padding: '1px 8px',
+              cursor: 'pointer',
+              fontFamily: 'var(--font-ui)',
+            }}
+          >
+            {t('feedView.waiting')}
+          </button>
+        )}
+        <span style={{ flex: 1 }} />
+        {(['quiet', 'normal', 'firehose'] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => pickVerbosity(v)}
+            style={{
+              background: verbosity === v ? 'var(--chip)' : 'transparent',
+              border: '1px solid var(--border)',
+              color: verbosity === v ? 'var(--text)' : 'var(--faint)',
+              borderRadius: 'var(--radius-chip)',
+              fontSize: 9.5,
+              padding: '0 6px',
+              cursor: 'pointer',
+              fontFamily: 'var(--font-ui)',
+            }}
+          >
+            {t(`feedView.${v}`)}
+          </button>
+        ))}
+      </div>
+      <div
+        ref={scroller}
+        onScroll={() => {
+          const el = scroller.current;
+          if (el) pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+        }}
+        style={{ flex: 1, minBlockSize: 0, overflowY: 'auto', fontSize: 12, lineHeight: 1.5, paddingBlock: 6 }}
+      >
+        {visibleBlocks.length === 0 && (
+          <div style={{ color: 'var(--faint)', fontSize: 11, textAlign: 'center', marginBlockStart: 24 }}>
+            {t('feedView.empty')}
+          </div>
+        )}
+        {visibleBlocks.map((b) => (
+          <Block key={b.seq} b={b} />
+        ))}
+        <div ref={bottom} />
+      </div>
     </div>
   );
 }

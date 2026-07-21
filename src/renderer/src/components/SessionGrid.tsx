@@ -57,7 +57,9 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const [taskLabel, setTaskLabel] = React.useState<string>('');
   const [editingLabel, setEditingLabel] = React.useState(false);
   const [status, setStatus] = React.useState<string>('starting');
-  const [view, setView] = React.useState<'feed' | 'terminal' | 'diff'>('terminal');
+  // Feed is the default view (§5.10, flipped in E12-07); Terminal is one click
+  // away and the waiting-chip jumps there when the CLI needs real input.
+  const [view, setView] = React.useState<'feed' | 'terminal' | 'diff'>('feed');
   const [poppedOut, setPoppedOut] = React.useState<boolean>(props.api.location.type === 'popout');
   const [suspended, setSuspended] = React.useState(false);
   const spawning = React.useRef(false);
@@ -437,7 +439,15 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             <div style={{ blockSize: '100%', display: view === 'terminal' ? 'block' : 'none' }}>
               <TerminalPane sessionId={live.id} visible={visible && view === 'terminal'} />
             </div>
-            {view === 'feed' && <FeedView sessionId={live.id} visible={visible && view === 'feed'} />}
+            {view === 'feed' && (
+              <FeedView
+                sessionId={live.id}
+                cardId={cardId}
+                visible={visible && view === 'feed'}
+                status={status}
+                onJumpToTerminal={() => setView('terminal')}
+              />
+            )}
             {view === 'diff' && folder && <DiffPane folder={folder} theme={docTheme()} />}
             {exitedOverlay && <div style={overlayBackdrop}>{exitedOverlay}</div>}
           </div>

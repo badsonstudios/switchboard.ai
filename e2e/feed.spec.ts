@@ -21,8 +21,7 @@ test.describe('Feed view (E12-06)', () => {
     const title = folder.split(/[\\/]/).pop()!;
     await expect(w.getByText(title).first()).toBeVisible();
 
-    // Feed tab is clickable now (E12-06); empty until a transcript exists
-    await w.getByRole('button', { name: 'Feed' }).click();
+    // Feed is the DEFAULT view (E12-07) — the empty state shows with no click
     await expect(w.getByText('No activity yet — the Feed renders the conversation once it starts.')).toBeVisible();
 
     // simulate the CLI writing its transcript in the isolated HOME
@@ -51,5 +50,12 @@ test.describe('Feed view (E12-06)', () => {
     // expanding the tool row reveals the input detail
     await w.getByText('Read', { exact: true }).click();
     await expect(w.getByText(/file_path/)).toBeVisible();
+
+    // verbosity presets switch live (E12-07): quiet hides tool rows
+    await w.getByRole('button', { name: 'quiet' }).click();
+    await expect(w.getByText('Read', { exact: true })).toHaveCount(0);
+    await expect(w.getByText('Hello from the')).toBeVisible(); // prose stays
+    await w.getByRole('button', { name: 'normal' }).click();
+    await expect(w.getByText('Read', { exact: true })).toBeVisible();
   });
 });
