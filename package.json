@@ -14,6 +14,10 @@
     "build": "node scripts/ev.js build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
+    "e2e": "npm run build && playwright test",
+    "e2e:only": "playwright test",
+    "e2e:headed": "npm run build && playwright test --headed",
+    "e2e:ui": "playwright test --ui",
     "lint": "eslint .",
     "postinstall": "node scripts/rebuild-native.js",
     "check:pty": "node scripts/run-electron-node.js out/main/pty-check.js",
@@ -36,6 +40,7 @@
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",
     "@eslint/js": "^9.30.0",
+    "@playwright/test": "^1.61.1",
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",

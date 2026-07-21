@@ -11,6 +11,7 @@ import { LanguageChoice, loadLanguage, setLanguage } from './i18n';
 import { TitleBar, SessionsRail, StatusBar, RailSession } from './components/chrome';
 import { SessionGrid, GridController } from './components/SessionGrid';
 import { FeedPanel } from './components/FeedPanel';
+import { Usage, addUsage, estimateCostUsd, ZERO_USAGE } from './lib/usage';
 
 // Control-room shell (P1-E3-01): titlebar / rail / grid / statusbar.
 // Terminals (E3-02), identity kit (E3-03), and live badges (E3-05) land next.
@@ -37,7 +38,42 @@ export function App(): React.JSX.Element {
   const [preflightOk, setPreflightOk] = useState(true);
   const [cliVersion, setCliVersion] = useState<string | null>(null);
   const [autoTrust, setAutoTrust] = useState(true);
+  const [usageByLive, setUsageByLive] = useState<Map<string, { usage: Usage; model?: string }>>(
+    new Map()
+  );
   const grid = React.useRef<GridController | null>(null);
+
+  useEffect(() => {
+    const offUsage = bridge.sessions?.onUsage?.((snap) => {
+      const s = snap as { sessionId: string; usage: Usage; model?: string };
+      setUsageByLive((prev) => new Map(prev).set(s.sessionId, { usage: s.usage, model: s.model }));
+    });
+    // prune a dead live id so the workspace total doesn't double-count after a
+    // resume (the resumed session re-reads the full conversation) or a close
+    const offExit = bridge.sessions?.onExited?.((e) => {
+      const x = e as { sessionId: string };
+      setUsageByLive((prev) => {
+        if (!prev.has(x.sessionId)) return prev;
+        const next = new Map(prev);
+        next.delete(x.sessionId);
+        return next;
+      });
+    });
+    return () => {
+      offUsage?.();
+      offExit?.();
+    };
+    // eslint's exhaustive-deps plugin isn't installed; bridge is stable
+  }, []);
+
+  const workspaceUsage = [...usageByLive.values()].reduce(
+    (acc, v) => addUsage(acc, v.usage),
+    ZERO_USAGE
+  );
+  const workspaceCost = [...usageByLive.values()].reduce(
+    (acc, v) => acc + estimateCostUsd(v.usage, v.model),
+    0
+  );
 
   useEffect(() => {
     void bridge.notifications?.getPrefs?.().then((p) => setNotifEnabled(p.enabled));
@@ -80,24 +116,29 @@ export function App(): React.JSX.Element {
   }, []);
 
   const refreshSessions = React.useCallback(async () => {
-    const list = await bridge.sessions?.list?.();
+    // card-keyed view: includes SUSPENDED cards (restored, not yet resumed)
+    const list = await bridge.sessions?.cards?.();
     if (!list) return;
     setSessions(
-      list.map((s) => ({
-        id: s.id,
-        title: s.identity.title,
-        folder: s.identity.folder,
-        accent: s.identity.accentColor,
-        badge: s.identity.langBadge,
-        status: s.status,
+      list.map((c) => ({
+        id: c.cardId,
+        title: c.title,
+        folder: c.folder,
+        accent: c.accent,
+        badge: c.badge,
+        status: c.status,
       }))
     );
   }, []); // bridge is stable for the window's lifetime
 
   useEffect(() => {
     void refreshSessions();
-    const off = bridge.sessions?.onStatus?.(() => void refreshSessions());
-    return off;
+    const offStatus = bridge.sessions?.onStatus?.(() => void refreshSessions());
+    const offExit = bridge.sessions?.onExited?.(() => void refreshSessions());
+    return () => {
+      offStatus?.();
+      offExit?.();
+    };
   }, [cards, refreshSessions]); // re-sync when the grid's cards change
 
   return (
@@ -133,10 +174,10 @@ export function App(): React.JSX.Element {
       <div style={{ flex: 1, display: 'flex', minBlockSize: 0 }}>
         <SessionsRail
           sessions={sessions}
-          onRename={(id, title) => {
-            void bridge.sessions?.rename?.(id, title).then(() => refreshSessions());
+          onRename={(cardId, title) => {
+            void bridge.sessions?.renameCard?.(cardId, title).then(() => refreshSessions());
           }}
-          onFocus={(id) => grid.current?.focusSession(id)}
+          onFocus={(cardId) => grid.current?.focusSession(cardId)}
           onDiff={(s) => {
             if (s.folder) grid.current?.openDiff(s.id, s.folder, s.title);
           }}
@@ -149,7 +190,13 @@ export function App(): React.JSX.Element {
         />
         <FeedPanel sessions={sessions} onFocus={(id) => grid.current?.focusSession(id)} />
       </div>
-      <StatusBar count={cards.length} theme={theme} cliVersion={cliVersion} />
+      <StatusBar
+        count={cards.length}
+        theme={theme}
+        cliVersion={cliVersion}
+        totalOutputTokens={workspaceUsage.output}
+        totalCostUsd={workspaceCost}
+      />
     </div>
   );
 }

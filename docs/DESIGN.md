@@ -1077,8 +1077,12 @@ always shows all sessions with live status; watchers float or dock at bottom.
 main process owns all sessions, PTYs, the Session Bus, and GitService. Any session
 card can pop out into its own OS-level subwindow (Electron multi-window over shared
 main-process state). Popped-out windows remain owned by the orchestrator: drag-and-drop
-and context transfer work across OS windows, sidebar still tracks them, and closing a
-popped-out window docks the session back — it never kills the session.
+and context transfer work across OS windows, sidebar still tracks them. Two ways back
+(revised 2026-07-21, E8-04): the card's **pop-out control is a toggle** — click it in
+the popped-out window to dock the card back into the grid with the session still live;
+**closing the OS window suspends** the session instead — the live process ends but the
+card and its record stay and resume on reopen (resume-on-focus, §5.25). Neither path
+kills the session outright; a card is only truly closed via its explicit close action.
 
 **Layout hierarchy** (full model in PHILOSOPHY.md §3): session → tab stack → group →
 workspace. Sessions can be tiled, tabbed into stacks, collected into named/colored
@@ -1091,6 +1095,25 @@ Projects). User-made arrangements always beat auto-grouping (S4); the deeper
 hierarchy materializes only when the user drags something. Notification rules
 scope per group. Implementation: integrate a proven docking library (e.g. Dockview),
 not hand-rolled; the library must support tab tear-off and drag between OS windows.
+
+**Persistent groups as containers** (owner request 2026-07-21). Beyond emergent
+auto-grouping, a user can **explicitly create a named group that persists even
+when empty** — e.g. an "IT" or "Dev" group in the sidebar that stays put with no
+sessions in it. A persistent group is a durable, first-class container (its own
+record: name, color, notification scope), not just a visual byproduct of having
+sessions. Three interactions:
+- **Open-into-group:** clicking a group's ⊕ / "new session" opens the new
+  session *inside that group* (it inherits the group's scope/identity defaults),
+  instead of landing in the ungrouped grid.
+- **Move-between:** any session can be dragged from the ungrouped area or one
+  group's header into another (e.g. drop a session under "Dev") — from the rail
+  or the grid; the session's group membership is part of its persisted state.
+- **Empty ≠ gone:** removing the last session from a persistent group leaves the
+  group; only an explicit "delete group" removes it (its sessions, if any, fall
+  back to ungrouped). Auto-groups (repo/folder) remain emergent and disappear
+  when empty — the two coexist; a user-made group always wins (S4).
+This makes groups the durable organizing unit the sidebar is built around, and
+is the foundation the Fleet snapshots below serialize.
 
 **Fleet snapshots & layout DSL** (promoted from backlog; research v2: Tabstronaut
 named tab-group archives; Zellij KDL layouts). "Save this fleet as \<name\>":
@@ -1157,8 +1180,6 @@ context transfer, and the attention queue work across monitors.
 - Drag-and-drop: text + files between sessions
 - Context transfer: context chips + summary handoff (Level 2); `get_session_context` bus tool
 - Pop-out session subwindows (orchestrator-owned)
-- Watcher windows for subagents, undercard tray + attention bubbling (§5.24)
-- Tray mode + session archive v1 (§5.25)
 - Context transfer Level 3 (fork-session adoption) behind experimental flag
 - Attention-driven layout: auto-minimize on submit, attention queue + hotkey, layout
   modes, idle collapse, urgency strip, presentation ladder w/ auto-hide + policy
@@ -1166,8 +1187,8 @@ context transfer, and the attention queue work across monitors.
   composed focus mode (§5.8 research-v2 additions)
 - Multi-monitor: pop-out to any display, geometry persistence w/ display
   fingerprints, startup + runtime rescue policy, reconnect offer
-- Fleet snapshots + repo auto-grouping (§7): save/restore named fleets, layout
-  DSL v1, restore confirm gate + focus-state persistence (§5.25)
+- Persistent groups as containers + repo auto-grouping (§7); focus-state
+  persistence (§5.25)
 - Command palette + complete keyboard vocabulary for session lifecycle
   (spawn / focus / archive / review / merge — Claude Squad proves table-stakes)
 - Feed view v1: themed rendering, verbosity presets, collapsible tool calls/diffs
@@ -1182,7 +1203,16 @@ context transfer, and the attention queue work across monitors.
 - Approval surfaces v1: PreToolUse interception spike, approval cards w/ Monaco
   diffs, session-flip mode, review queue pane, deny-with-feedback
 
+*(Moved to Phase 3, 2026-07-21 plan reconciliation — Phase 2 was overfull and
+these three lean on Phase 3 surfaces: watcher windows + undercard tray; tray
+mode + session archive v1; fleet snapshots + layout DSL.)*
+
 **Phase 3 — the IDE**
+- Watcher windows for subagents, undercard tray + attention bubbling
+  (§5.6, §5.24) — moved from Phase 2 (2026-07-21)
+- Tray mode + session archive v1 (§5.25) — moved from Phase 2 (2026-07-21)
+- Fleet snapshots + layout DSL v1 (§7): save/restore named fleets, restore
+  confirm gate (§5.25, OQ #14) — moved from Phase 2 (2026-07-21)
 - Worktree create/merge-back flows with review step
 - Cross-session same-repo conflict warnings
 - ClaudeMon integration: shared parsing/usage library, per-session usage chips,

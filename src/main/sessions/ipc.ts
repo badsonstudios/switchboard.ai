@@ -62,7 +62,15 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     if (fe) send('feed:event', fe);
   });
   manager.onSessionExit((e) => send('sessions:exited', e));
-  transcripts.onUpdate((snap) => send('sessions:usage', snap));
+  transcripts.onUpdate((snap) => {
+    send('sessions:usage', snap);
+    // persist usage per card so the number survives a resume/restart
+    const cardId = cardOfLive.get(snap.sessionId);
+    if (!cardId) return;
+    const prior = deps.persist.list().find((s) => s.id === cardId);
+    // keep the last real model if this snapshot hasn't seen a model line yet
+    if (prior) deps.persist.upsert({ ...prior, usage: snap.usage, model: snap.model ?? prior.model });
+  });
 
   ipcMain.handle('feed:list', () => deps.feed.list());
 
@@ -118,6 +126,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         langBadge: prior?.identity.langBadge ?? detectProjectType(opts.folder),
       };
 
+      // an existing card keeps its autonomy across resumes; a brand-new card
+      // uses whatever the titlebar chip sent (so the chip only affects NEW
+      // sessions, never silently changes a running one)
+      const autonomy = prior?.autonomy ?? opts.autonomy;
+
       if (deps.autoTrust()) ensureFolderTrusted(opts.folder, log);
       // only --resume when a real conversation exists for that id; otherwise a
       // stale/empty id would make claude exit ("No conversation found") and
@@ -127,7 +140,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         conversationExists(deps.projectsRoot, opts.folder, prior.nativeSessionId);
       const record = manager.create(identity, {
         settingsFor: (id) => hooks.buildHookSettings(id),
-        autonomy: opts.autonomy,
+        autonomy,
         resumeSessionId: canResume ? prior?.nativeSessionId : undefined,
       });
       cardOfLive.set(record.id, opts.cardId);
@@ -140,6 +153,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         // session's onNativeSessionId will fill in the new one
         nativeSessionId: canResume ? prior?.nativeSessionId : undefined,
         suspendedAt: prior?.suspendedAt ?? '',
+        usage: prior?.usage,
+        model: prior?.model,
+        autonomy,
+        taskLabel: prior?.taskLabel,
       });
       log.info('session started for card', {
         sessionId: record.id,
@@ -147,11 +164,43 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         folder: opts.folder,
         resumed: canResume,
       });
-      return { ...record, cardId: opts.cardId };
+      // seed the card's display from the persisted record so nothing reads
+      // empty while resuming
+      return {
+        ...record,
+        cardId: opts.cardId,
+        priorUsage: prior?.usage,
+        priorModel: prior?.model,
+        autonomy,
+        taskLabel: prior?.taskLabel,
+      };
     }
   );
 
   ipcMain.handle('sessions:list', () => manager.list());
+
+  // joined view for the rail: every persisted card, with its live status if
+  // running or 'suspended' if restored-but-not-yet-resumed (E7-05)
+  ipcMain.handle('sessions:cards', () => {
+    const live = manager.list();
+    const liveByCard = new Map<string, string>(); // cardId -> liveId
+    for (const [liveId, cardId] of cardOfLive) liveByCard.set(cardId, liveId);
+    return deps.persist.list().map((card) => {
+      const liveId = liveByCard.get(card.id);
+      const rec = liveId ? live.find((r) => r.id === liveId) : undefined;
+      return {
+        cardId: card.id,
+        // the rail shows (and renames) the session title; the task label is a
+        // separate card-only detail, so they don't shadow each other
+        title: card.identity.title,
+        folder: card.identity.folder,
+        accent: card.identity.accentColor,
+        badge: card.identity.langBadge,
+        status: rec?.status ?? 'suspended',
+        liveId,
+      };
+    });
+  });
 
   // cards with a persisted record — the renderer keeps these on boot, prunes
   // any restored panel that has no record (truly gone)
@@ -165,12 +214,15 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       feeds.delete(liveId);
       hooks.unregisterSession(liveId);
       transcripts.unwatch(liveId);
+      // mark the kill intentional BEFORE tearing the PTY down, mirroring
+      // kill()/restart(): otherwise onExit could see killRequested=false and
+      // report a spurious `crashed` for an ordinary suspend/restart (review nit).
+      manager.remove(liveId);
       try {
         ptys.remove(liveId);
       } catch {
         /* already gone */
       }
-      manager.remove(liveId);
       cardOfLive.delete(liveId);
     }
   };
@@ -183,6 +235,23 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   // drop only the live session (restart): keep the record so it can respawn
   ipcMain.handle('sessions:dropLive', (_e, cardId: string) => dropLiveForCard(cardId));
+
+  // freeform task label for a card (E7-03), persisted across restarts
+  ipcMain.handle('sessions:setTaskLabel', (_e, cardId: string, label: string) => {
+    if (typeof cardId !== 'string' || typeof label !== 'string') return;
+    const prior = deps.persist.list().find((s) => s.id === cardId);
+    if (prior) deps.persist.upsert({ ...prior, taskLabel: label.slice(0, 120) });
+  });
+
+  // rename a card by cardId (works for suspended cards too) — updates the
+  // persisted title and the live session if one is running
+  ipcMain.handle('sessions:renameCard', (_e, cardId: string, title: string) => {
+    if (typeof cardId !== 'string' || typeof title !== 'string') return;
+    const clean = title.slice(0, 120);
+    const prior = deps.persist.list().find((s) => s.id === cardId);
+    if (prior) deps.persist.upsert({ ...prior, identity: { ...prior.identity, title: clean } });
+    for (const [liveId, cid] of cardOfLive) if (cid === cardId) manager.rename(liveId, clean);
+  });
 
   ipcMain.handle('sessions:rename', (_e, liveId: string, title: string) => {
     manager.rename(liveId, title);

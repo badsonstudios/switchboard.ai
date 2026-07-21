@@ -32,6 +32,9 @@ const api = {
     getLayout: (): Promise<unknown> => ipcRenderer.invoke('workspace:getLayout'),
     setLayout: (layout: unknown): void => ipcRenderer.send('workspace:setLayout', layout),
   },
+  /** display work areas, for popout-position rescue on restore (E8-02) */
+  workAreas: (): Promise<Array<{ x: number; y: number; width: number; height: number }>> =>
+    ipcRenderer.invoke('app:workAreas'),
   /** sandbox-safe path for a dropped File (drag-folder-onto-window, E3-04) */
   pathForFile: (file: File): string => webUtils.getPathForFile(file),
   sessions: {
@@ -42,12 +45,35 @@ const api = {
       folder: string;
       title: string;
       autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
-    }): Promise<SessionRecordDto & { cardId: string }> => ipcRenderer.invoke('sessions:create', opts),
+    }): Promise<
+      SessionRecordDto & {
+        cardId: string;
+        priorUsage?: { input: number; output: number; cacheRead: number; cacheCreate: number };
+        priorModel?: string;
+        autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
+        taskLabel?: string;
+      }
+    > => ipcRenderer.invoke('sessions:create', opts),
     list: (): Promise<SessionRecordDto[]> => ipcRenderer.invoke('sessions:list'),
+    cards: (): Promise<
+      Array<{
+        cardId: string;
+        title: string;
+        folder: string;
+        accent?: string;
+        badge?: string;
+        status: string;
+        liveId?: string;
+      }>
+    > => ipcRenderer.invoke('sessions:cards'),
     knownCards: (): Promise<Array<{ cardId: string; identity: SessionRecordDto['identity'] }>> =>
       ipcRenderer.invoke('sessions:knownCards'),
+    renameCard: (cardId: string, title: string): Promise<void> =>
+      ipcRenderer.invoke('sessions:renameCard', cardId, title),
     closeCard: (cardId: string): Promise<void> => ipcRenderer.invoke('sessions:closeCard', cardId),
     dropLive: (cardId: string): Promise<void> => ipcRenderer.invoke('sessions:dropLive', cardId),
+    setTaskLabel: (cardId: string, label: string): Promise<void> =>
+      ipcRenderer.invoke('sessions:setTaskLabel', cardId, label),
     rename: (id: string, title: string): Promise<SessionRecordDto | undefined> =>
       ipcRenderer.invoke('sessions:rename', id, title),
     onStatus: (cb: (change: unknown) => void): (() => void) => {

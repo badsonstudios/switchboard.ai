@@ -5,6 +5,11 @@ out/
 .DS_Store
 Thumbs.db
 
+# Playwright e2e artifacts
+test-results/
+playwright-report/
+.last-run.json
+
 # Secrets & scratch — never committed (.env.example IS committed)
 .env
 .env.*

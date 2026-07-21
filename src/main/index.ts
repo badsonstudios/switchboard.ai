@@ -15,6 +15,8 @@ import { EventFeed } from './events/feed';
 import { Notifier } from './events/notifier';
 import { GitService } from './git/git-service';
 import { runPreflight } from './preflight';
+import { startStaticServer, StaticServer } from './static-server';
+import { parsePopoutFeatures } from './popout-bounds';
 import { dialog } from 'electron';
 
 // Safe-by-default for every window this app will ever open (§5.29 posture).
@@ -38,11 +40,33 @@ const log = {
 };
 
 const DEV_URL = process.env.ELECTRON_RENDERER_URL;
+// In production the renderer is served over loopback http (not file://) so
+// dockview's same-origin-http pop-out works (E8). Set at startup.
+let RENDERER_ORIGIN: string | null = null;
+let staticServer: StaticServer | null = null;
+
+/** The origin the renderer is served from (dev server or our loopback http). */
+function rendererOrigin(): string | null {
+  if (DEV_URL) return new URL(DEV_URL).origin;
+  return RENDERER_ORIGIN;
+}
 
 function isSafeExternalUrl(url: string): boolean {
   try {
     const u = new URL(url);
     return u.protocol === 'https:' || u.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+/** dockview's popout window: our own same-origin popout.html. */
+function isPopoutUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    if (!u.pathname.endsWith('popout.html')) return false;
+    const origin = rendererOrigin();
+    return !!origin && u.origin === origin;
   } catch {
     return false;
   }
@@ -136,34 +160,75 @@ function createWindow(): BrowserWindow {
     log.ui.info('window shown', { restored: !!state.bounds, maximized: state.isMaximized });
   });
 
-  // external links open in the OS browser (http/https only), never in-app
-  win.webContents.setWindowOpenHandler(({ url }) => {
+  // external links open in the OS browser (http/https only), never in-app.
+  // The ONE in-app window we allow is dockview's same-origin popout window
+  // (tearing a session card into its own OS window, E8) — scoped narrowly to
+  // our own popout.html so this stays a controlled allowance, not an open door.
+  win.webContents.setWindowOpenHandler(({ url, features }) => {
+    const popout = isPopoutUrl(url);
+    // Electron ignores the position/size in window.open's `features` string
+    // unless we copy them onto the created window. dockview passes screen-
+    // absolute left/top/width/height there, so without this a popout cascades
+    // to a default spot and ignores its saved position (E8-04 multi-monitor).
+    const bounds = popout ? parsePopoutFeatures(features) : {};
+    log.ui.info('window-open requested', { url, popout, bounds }); // E8 diagnostic
+    if (popout) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          backgroundColor: '#242933',
+          ...bounds,
+          webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
+        },
+      };
+    }
     if (isSafeExternalUrl(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
+  // surface renderer console into the main log (E8 diagnostic + general debug)
+  win.webContents.on('console-message', (...args: unknown[]) => {
+    const d = args[0] as { message?: string; level?: unknown } | undefined;
+    const message = typeof d === 'object' && d?.message !== undefined ? d.message : args[1];
+    log.ui.info('renderer console', { message: String(message).slice(0, 500) });
+  });
   // no top-frame navigation away from our own content
   win.webContents.on('will-navigate', (event, url) => {
-    if (!DEV_URL || !url.startsWith(DEV_URL)) event.preventDefault();
+    const origin = rendererOrigin();
+    if (!origin || !url.startsWith(origin)) event.preventDefault();
   });
 
   if (DEV_URL) {
     void win.loadURL(DEV_URL);
+  } else if (RENDERER_ORIGIN) {
+    void win.loadURL(`${RENDERER_ORIGIN}/index.html`);
   } else {
-    void win.loadFile(path.join(__dirname, '../renderer/index.html'));
+    void win.loadFile(path.join(__dirname, '../renderer/index.html')); // fallback
   }
   return win;
 }
 
 app
   .whenReady()
-  .then(() => {
+  .then(async () => {
     sink = new LogSink({ dir: logsDir() });
     log.app.info('app ready', { version: app.getVersion(), platform: process.platform });
+    // serve the packaged renderer over loopback http so dockview pop-out works
+    if (!DEV_URL) {
+      try {
+        staticServer = await startStaticServer(path.join(__dirname, '../renderer'));
+        RENDERER_ORIGIN = staticServer.origin;
+        log.app.info('renderer served over loopback', { origin: RENDERER_ORIGIN });
+      } catch (err) {
+        log.app.error('static server failed; falling back to file://', { error: String(err) });
+      }
+    }
     workspace = new WorkspaceStore(path.join(app.getPath('userData'), 'workspace.json'));
     workspace.load();
     // renderer <-> workspace layout persistence (E3-01)
     ipcMain.handle('workspace:getLayout', () => workspace.getLayout());
     ipcMain.on('workspace:setLayout', (_e, layout: unknown) => workspace.setLayout(layout));
+    // display work areas — for popout-position rescue on restore (E8-02)
+    ipcMain.handle('app:workAreas', () => screen.getAllDisplays().map((d) => d.workArea));
     registerBuiltinContributions();
     log.app.info('contributions registered', { manifests: registry.manifests() });
 
@@ -243,6 +308,7 @@ app
       ptys.killAll();
       hooks.stop();
       transcripts.stop();
+      staticServer?.close();
     });
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

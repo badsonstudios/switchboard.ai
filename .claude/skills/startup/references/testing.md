@@ -6,16 +6,35 @@ Verify by actually driving the harness (spawn a real `claude` session, trigger
 a real hook, watch a real transcript) and record what happened, including
 numbers (latency, CPU, memory) where the item asks for them.
 
-**Phase 1 onward (set up in P1-E1):**
-- **vitest** for unit tests (services: SessionManager state machine,
-  TranscriptWatcher tolerant parsing, GitService output parsing, token/theme
-  utilities).
-- Integration tests around the CLI boundary use recorded fixtures (captured
-  transcripts, hook payloads) so CI never needs a live `claude` login.
-- E2E (Playwright-for-Electron) considered at Phase 2 — decide when the UI
-  stabilizes.
-- CI (GitHub Actions) runs lint + typecheck + build on Windows/macOS/Linux for
-  every PR; red CI blocks merge.
+**The three test layers (run all before calling an item done):**
+
+1. **Unit — `npm test` (vitest).** Services and pure logic: SessionManager
+   state machine, TranscriptWatcher tolerant parsing + plan/usage extraction,
+   GitService output parsing, token/theme/usage utilities. No Electron, no CLI.
+2. **Local live checks — `npm run check:*`.** Real-`claude` integration proofs
+   that need a logged-in CLI, so they run locally (not CI): `check:pty` (12
+   concurrent PTYs — this ONE is in CI, no login needed), `check:adapter`
+   (spawn + `--resume`), `check:hooks` (hook-driven status), `check:transcripts`
+   (usage extraction). Run the relevant one when you touch that subsystem.
+3. **E2E — `npm run e2e` (Playwright + Electron).** Drives the REAL app window
+   headlessly — this is how we verify UI without a human ("Dan eyeball"):
+   - Harness: `e2e/fixtures/app.ts` launches the built app fully isolated (temp
+     HOME, so it never touches the real `~/.claude.json` or workspace) with the
+     **fake provider** (`SWITCHBOARD_FAKE_PROVIDER=1`) — a shell-in-a-PTY, so
+     tests need no `claude` login and run in CI.
+   - Seed a session with `launchApp({ seedFolder })`; assert on chrome (theme,
+     pseudo-locale, autonomy), the card header (usage strip, git, plan chip),
+     the live terminal (type a command → see output), pop-out (a second OS
+     window opens), and the rail.
+   - `npm run e2e` builds first; `npm run e2e:only` skips the build;
+     `npm run e2e:headed` / `e2e:ui` for debugging.
+   - **Add an e2e test for every new user-facing surface.** If a feature can
+     only be checked by looking at the window, it needs an e2e test — not a
+     PROGRESS "[Dan eyeball]" note.
+
+**CI (GitHub Actions), every PR:** `build` job = lint + typecheck + unit +
+build + check:pty on Windows/macOS/Linux; `e2e` job = Playwright on
+Windows + Linux (xvfb). Red CI blocks merge.
 
 **Rules:**
 - Never report half-working code as done — record blockers in PROGRESS.md with

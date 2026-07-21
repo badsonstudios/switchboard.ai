@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>switchboard — popout</title>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    />
+    <style>
+      html,
+      body {
+        margin: 0;
+        block-size: 100vh;
+        background: #242933;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- dockview adopts a group's DOM into this same-origin window and copies
+         the opener's stylesheets over, so no script or CSS link of our own is
+         needed here. -->
+  </body>
+</html>

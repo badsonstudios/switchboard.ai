@@ -21,22 +21,56 @@
     "empty": "Add a session card to begin",
     "cardBody": "{title} — session card; terminal arrives with E3-02",
     "resuming": "Resuming {title}…",
+    "taskLabelEmpty": "+ task label",
+    "taskLabelHint": "Click to set a task label for this session",
+    "plan": "✓ {done}/{total}",
+    "planTitle": "Plan progress (TodoWrite steps completed)",
+    "popOut": "Pop out into its own window",
+    "popOutIcon": "⤢",
+    "dockIn": "Pop back into the main window",
+    "dockInIcon": "⤡",
+    "menu": "Session menu",
+    "menuIcon": "⋯",
+    "viewTerminal": "Terminal",
+    "viewDiff": "Diff",
+    "viewFeed": "Feed",
+    "viewFiles": "Files",
+    "viewSoon": "Coming soon",
     "sessionEnded": "Session ended",
     "exitCrashed": "Exited unexpectedly (code {code})",
     "exitClean": "The session closed.",
+    "suspended": "Session suspended",
+    "suspendedHint": "The window was closed. The session is kept and resumes when you reopen it.",
+    "resume": "Resume",
     "restart": "Restart",
     "close": "Close",
     "cardTitle": "Session {n}"
+  },
+  "status": {
+    "starting": "starting",
+    "working": "working",
+    "needs-input": "needs input",
+    "needs-permission": "needs you",
+    "idle": "idle",
+    "done": "done",
+    "crashed": "crashed",
+    "suspended": "suspended"
   },
   "autonomy": {
     "plan": "🛡 plan",
     "ask": "🛡 ask",
     "auto-edit": "🛡 auto-edit",
-    "full-auto": "🛡 full-auto"
+    "full-auto": "🛡 full-auto",
+    "title": "Autonomy mode this session runs at"
   },
   "preflight": {
     "missingCli": "claude CLI not found — install it and log in: npm install -g @anthropic-ai/claude-code, then run `claude` once. New sessions are disabled until then.",
     "version": "claude {version}"
+  },
+  "git": {
+    "branch": "⎇ {branch}",
+    "changed": "·{n} changed",
+    "ahead": "↑{n}"
   },
   "diff": {
     "tabTitle": "{title} · diff",
@@ -62,7 +96,18 @@
   },
   "statusbar": {
     "sessions": "{count, plural, =0 {no sessions} one {# session} other {# sessions}}",
+    "usage": "↓{tokens} · ~{cost} est",
     "theme": "theme: {theme}"
+  },
+  "usage": {
+    "input": "↑ {n}",
+    "output": "↓ {n}",
+    "cache": "⛁ {n}",
+    "cost": "~{cost}",
+    "inputTitle": "Input tokens",
+    "outputTitle": "Output tokens",
+    "cacheTitle": "Cache-read tokens",
+    "costTitle": "Estimated cost (public per-model rates; you are billed by your subscription)"
   },
   "theme": {
     "system": "system",
