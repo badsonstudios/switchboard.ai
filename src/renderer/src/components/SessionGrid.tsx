@@ -15,7 +15,7 @@ import { IdentityChip } from './IdentityChip';
 import { DiffPane } from './DiffPane';
 import { UsageStrip } from './UsageStrip';
 import { GitContext, GitStatusDto } from './GitContext';
-import { Usage } from '../lib/usage';
+import { Usage, ZERO_USAGE } from '../lib/usage';
 
 // The DURABLE unit is the card (cardId + folder). The live claude session
 // under it is ephemeral: spawned — or --resumed — lazily the first time the
@@ -80,7 +80,9 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
           badge: record.identity.langBadge,
           autonomy: record.autonomy,
         });
-        if (record.priorUsage) setUsage({ usage: record.priorUsage, model: record.priorModel });
+        // show the usage strip from the start (zeros until the first prompt),
+        // so it's visibly present rather than appearing only after activity
+        setUsage({ usage: record.priorUsage ?? ZERO_USAGE, model: record.priorModel });
         if (record.taskLabel) setTaskLabel(record.taskLabel);
       })
       .catch(() => {
