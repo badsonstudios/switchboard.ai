@@ -3,11 +3,11 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-**Milestone:** Phase 2 - The Switchboard (E7+E8 MERGED via PR #42; E9–E14 outlined)
+**Milestone:** Phase 2 - The Switchboard (E7+E8 merged; E12 expanded + filed
+#49–#57, E8-06 filed #48; E9/E10/E11/E13/E14 still outlines)
 **In progress:** nothing mid-flight.
-**Next up:** `/pm plan` to expand the E9–E14 outlines into work items + issues
-(from the 2026-07-21 reconciled plan); Dan's hands-on pop-out testing on real
-multi-monitor hardware is still valuable feedback.
+**Next up:** `/next-item` → P2-E12-01 (group model + store, #49). Dan's
+hands-on pop-out testing on real multi-monitor hardware is still valuable.
 **Branch:** main
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
@@ -44,6 +44,11 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **E12 expanded + issues filed** (`/pm plan`, Dan approved).
+  E12 (Session groups & Feed view) broken into 9 work items (P2-E12-01…09) in
+  `04-phase-2-switchboard.md`; issues #49–#57 filed, plus the previously
+  unfiled P2-E8-06 as #48. E9/E10/E11/E13/E14 remain outlines (just-in-time).
+  Next: `/next-item` → P2-E12-01.
 - 2026-07-21 — **PR #42 MERGED to main** (Dan's call; squash, branch deleted).
   E7 richer cards + E8 pop-out complete: 2,876 insertions across 40 files,
   incl. the Playwright e2e harness (13 tests) and the reconciliation docs.

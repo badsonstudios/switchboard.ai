@@ -150,7 +150,7 @@ Work items:
   *Done when:* a session card matches the mockup's header + tab visual; the
   `⤢` control pops out/in; Terminal and Diff switch in-card; no dead-looking
   controls (Feed/Files clearly "soon").
-- **P2-E8-06 · Display reconnect offer — S (§7). [not yet filed]** The third
+- **P2-E8-06 · Display reconnect offer — S (§7). [filed: #48]** The third
   leg of the §8 multi-monitor list (E8-02 shipped persistence + rescue; this
   was dropped in the original break-out). When a known display fingerprint
   reappears (docking back at the desk), the Feed offers a one-click "restore
@@ -189,39 +189,75 @@ Phase 2, but E11 runs late in this plan — a knowing deviation. If the wait
 starts to hurt (or E9's keyboard work wants a composer anyway), pull a minimal
 composer spike forward ahead of the rest of E11.
 
-## E12 — Session groups & Feed view (outline — owner-requested 2026-07-21)
+## E12 — Session groups & Feed view (milestone: Phase 2; issues #49–#57 filed 2026-07-21)
 
-Two owner requests captured from hands-on use; sequence after E8 (the card +
-pop-out surfaces they build on are done). Governing spec: DESIGN.md "Layout
-hierarchy → Persistent groups as containers" and §5.10.
+*Goal: groups become the durable organizing unit of the sidebar/grid, and the
+Feed becomes the default, pleasant-to-read view of a session. Owner-requested
+2026-07-21; sequenced after E8 (builds on its card + tab surfaces). Governing
+spec: DESIGN.md "Layout hierarchy → Persistent groups as containers", §5.10,
+§5.25, §7.*
 
-- **Persistent groups as containers.** Explicitly-created named groups that
-  persist even when empty (durable record: name, color, notification scope), in
-  the sidebar/grid. Create / rename / recolor / delete; deleting a group drops
-  its sessions back to ungrouped. Coexists with emergent repo/folder
-  auto-groups (which still vanish when empty); user-made groups win (S4).
-- **Open-into-group.** A group's ⊕ opens the new session *inside* that group
-  (inherits the group's scope/identity defaults) — the E8-04 main-grid
-  targeting generalizes to "target this group's dockview group".
-- **Move-between-groups.** Drag a session from ungrouped or one group into
-  another, from the rail or the grid; membership is persisted per session.
-  (Dockview supports the grid drag; the rail needs its own DnD.)
-- **Feed view v1 (§5.10).** The rendered read-only session view (assistant
-  text, tool calls, diffs, sidechains as themed blocks; verbosity presets;
-  "waiting in Terminal" chip). Per DESIGN §5.10 it is the **first tab and the
-  default view** — E8-05 shipped the tab strip with Feed as a disabled "soon"
-  placeholder and Terminal as the interim default; this item builds the
-  renderer and flips the default to Feed.
-- **View-tab set alignment.** Reconcile the shipped strip (Feed · Terminal ·
-  Diff · Files) with the §5.10 canonical set (Feed · Terminal · Changes ·
-  History · Inspector) once those views exist.
-- **Repo/folder auto-grouping (§7).** The emergent zero-config groups: sessions
-  sharing a repo/folder auto-group; auto-groups vanish when empty; user-made
-  persistent groups always win (S4). (Restored 2026-07-21 — was bundled with
-  fleet snapshots in §8; the grouping half belongs here with the machinery.)
-- **Focus-state persistence (§5.25).** Save which session had focus and which
-  pane was active as part of the workspace; restore lands the user exactly
-  where they were, not at a default card. (Restored 2026-07-21.)
+Work items:
+- **P2-E12-01 · Group model + store — M.** Durable persistent-group records
+  (id, name, color, notification scope) in the workspace store; session records
+  gain a `groupId`; CRUD over IPC; deleting a group drops members to ungrouped.
+  No UI yet.
+  *Done when:* groups round-trip a restart; an empty group persists; delete-
+  group moves its sessions to ungrouped (unit-tested store + IPC guards).
+- **P2-E12-02 · Groups in the rail + grid — M.** *(depends: 01)* Sidebar
+  renders groups as named/colored collapsible sections with create/rename/
+  recolor/delete; the grid clusters a group's sessions into their own dockview
+  group.
+  *Done when:* an empty "IT" group created in the rail survives restart;
+  rename/recolor/delete work; grouped sessions cluster in the grid. e2e covers
+  create-empty-group → restart.
+- **P2-E12-03 · Open-into-group — S.** *(depends: 02)* A group's ⊕ spawns the
+  new session inside that group (inherits group scope defaults) — generalizes
+  E8-04's "force main-window group" targeting.
+  *Done when:* ⊕ on a group lands the session in that group's dock group with
+  membership persisted; the plain New Session still lands ungrouped in the
+  main grid.
+- **P2-E12-04 · Move-between-groups — M.** *(depends: 02)* Drag a session
+  between groups/ungrouped in the grid (dockview drag) and in the rail (custom
+  DnD); membership persists.
+  *Done when:* both drag paths update membership and survive restart; dropping
+  into a group visually joins it.
+- **P2-E12-05 · Repo/folder auto-grouping — M (§7).** *(depends: 02)* Emergent
+  groups for sessions sharing a repo/folder; vanish when empty; explicit user
+  groups always win (S4).
+  *Done when:* two sessions in one repo auto-group; an explicit group
+  assignment overrides; the auto-group disappears when emptied; no auto-group
+  for singletons.
+- **P2-E12-06 · Feed view v1: transcript→blocks renderer — M (§5.10).** The
+  read-only rendered view behind the existing "soon" Feed tab: assistant text
+  (markdown + highlighting), tool calls as one-line collapsed blocks (click to
+  expand), diffs, sidechains folded. Rendered from TranscriptWatcher events;
+  strictly no input (Non-Goals guardrail).
+  *Done when:* a live session's Feed shows blocks appearing in near-real-time;
+  expand/collapse works; a transcript-less session shows an empty state, not
+  an error.
+- **P2-E12-07 · Feed v1: verbosity + waiting-chip + default flip — M.**
+  *(depends: 06)* `quiet | normal | firehose` presets per session, switchable
+  live; "waiting in Terminal" chip when the CLI needs input (jumps to the
+  Terminal tab); flip the default tab from Terminal to Feed.
+  *Done when:* presets change density without reload; the chip appears on a
+  permission prompt and jumps correctly; new and restored sessions open on
+  Feed.
+- **P2-E12-08 · Focus-state persistence — S (§5.25).** Persist the focused
+  session and each session's active view-tab; restore lands exactly where the
+  user was.
+  *Done when:* relaunch restores the focused card and per-session active tabs
+  (e2e: switch tab + focus, relaunch, assert).
+- **P2-E12-09 · View-tab set alignment — S (§5.10).** *(depends: 06)* Rename
+  Diff→**Changes** per the canonical set (Feed · Terminal · Changes · History ·
+  Inspector); swap the "Files (soon)" placeholder for "History (soon)".
+  *Done when:* the strip reads Feed · Terminal · Changes · History-soon; no
+  dead controls.
+
+**E12 exit:** groups are the durable organizing unit (create empty, open-into,
+move-between, auto-group coexists), the Feed is the default view and pleasant
+to read, and a relaunch puts you exactly where you left off. Litmus
+(PHILOSOPHY §4) checked on each surface.
 
 ---
 
