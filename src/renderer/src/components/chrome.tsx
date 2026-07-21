@@ -8,6 +8,7 @@ import { LanguageChoice } from '../i18n';
 import { IdentityChip } from './IdentityChip';
 import { formatTokens, formatUsd } from '../lib/usage';
 import { computeAutoGroups } from '../lib/groups';
+import { uiGet, uiSet } from '../lib/ui-state';
 
 const barStyle: React.CSSProperties = {
   background: 'var(--titlebar-bg)',
@@ -116,20 +117,17 @@ export function SessionsRail(props: {
   const [draft, setDraft] = React.useState('');
   const [editingGroup, setEditingGroup] = React.useState<string | null>(null);
   const [groupDraft, setGroupDraft] = React.useState('');
-  // collapsed group ids — a rail nicety, persisted locally (not workspace state)
-  const [collapsed, setCollapsed] = React.useState<Set<string>>(() => {
-    try {
-      return new Set(JSON.parse(localStorage.getItem('switchboard.rail.collapsed') ?? '[]'));
-    } catch {
-      return new Set();
-    }
-  });
+  // collapsed group ids — persisted UI state (E12-08; localStorage resets
+  // per launch in packaged builds because the loopback origin's port churns)
+  const [collapsed, setCollapsed] = React.useState<Set<string>>(
+    () => new Set(uiGet<string[]>('railCollapsed', []))
+  );
   const toggleCollapsed = (id: string): void => {
     setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
-      localStorage.setItem('switchboard.rail.collapsed', JSON.stringify([...next]));
+      uiSet('railCollapsed', [...next]);
       return next;
     });
   };

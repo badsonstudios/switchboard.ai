@@ -228,6 +228,9 @@ app
     // renderer <-> workspace layout persistence (E3-01)
     ipcMain.handle('workspace:getLayout', () => workspace.getLayout());
     ipcMain.on('workspace:setLayout', (_e, layout: unknown) => workspace.setLayout(layout));
+    // renderer-owned UI state (E12-08): focus, view tabs, prefs
+    ipcMain.handle('workspace:getUi', () => workspace.getUi());
+    ipcMain.on('workspace:setUi', (_e, ui: unknown) => workspace.setUi(ui));
     // display work areas — for popout-position rescue on restore (E8-02)
     ipcMain.handle('app:workAreas', () => screen.getAllDisplays().map((d) => d.workArea));
     // persistent groups (E12-01)

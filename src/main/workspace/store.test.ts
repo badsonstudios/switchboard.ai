@@ -181,6 +181,18 @@ describe('persistent groups (P2-E12-01: durable containers, empty ≠ gone)', ()
   });
 });
 
+describe('ui blob (P2-E12-08 focus/view-tab state)', () => {
+  it('round-trips opaque ui state', () => {
+    const a = new WorkspaceStore(file);
+    a.load();
+    a.setUi({ focusedCardId: 'c1', 'viewTab.c1': 'terminal', autonomy: 'plan' });
+    a.save();
+    const b = new WorkspaceStore(file);
+    b.load();
+    expect(b.getUi()).toEqual({ focusedCardId: 'c1', 'viewTab.c1': 'terminal', autonomy: 'plan' });
+  });
+});
+
 describe('fingerprint stability', () => {
   it('is order-independent', () => {
     expect(displayFingerprint([primary, left])).toBe(displayFingerprint([left, primary]));

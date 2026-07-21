@@ -12,6 +12,7 @@ import { TitleBar, SessionsRail, StatusBar, RailSession, RailGroup } from './com
 import { SessionGrid, GridController } from './components/SessionGrid';
 import { FeedPanel } from './components/FeedPanel';
 import { Usage, addUsage, estimateCostUsd, ZERO_USAGE } from './lib/usage';
+import { loadUiState, uiGet, uiSet } from './lib/ui-state';
 
 // Control-room shell (P1-E3-01): titlebar / rail / grid / statusbar.
 // Terminals (E3-02), identity kit (E3-03), and live badges (E3-05) land next.
@@ -34,9 +35,15 @@ export function App(): React.JSX.Element {
   const [groups, setGroups] = useState<RailGroup[]>([]);
   const [palette, setPalette] = useState<string[]>([]);
   const [notifEnabled, setNotifEnabled] = useState(true);
-  const [autonomy, setAutonomy] = useState<string>(
-    () => localStorage.getItem('switchboard.autonomy') ?? 'ask'
-  );
+  // gate the shell on the persisted UI state (E12-08): reads are sync after
+  const [uiReady, setUiReady] = useState(false);
+  const [autonomy, setAutonomy] = useState<string>('ask');
+  useEffect(() => {
+    void loadUiState().then(() => {
+      setAutonomy(uiGet('autonomy', 'ask'));
+      setUiReady(true);
+    });
+  }, []);
   const [preflightOk, setPreflightOk] = useState(true);
   const [cliVersion, setCliVersion] = useState<string | null>(null);
   const [autoTrust, setAutoTrust] = useState(true);
@@ -90,7 +97,7 @@ export function App(): React.JSX.Element {
   const cycleAutonomy = (): void => {
     const order = ['ask', 'plan', 'auto-edit', 'full-auto'];
     const next = order[(order.indexOf(autonomy) + 1) % order.length];
-    localStorage.setItem('switchboard.autonomy', next);
+    uiSet('autonomy', next);
     setAutonomy(next);
   };
 
@@ -164,6 +171,8 @@ export function App(): React.JSX.Element {
       offExit?.();
     };
   }, [cards, refreshSessions]); // re-sync when the grid's cards change
+
+  if (!uiReady) return <div style={{ blockSize: '100vh' }} />; // one-frame gate while UI state loads
 
   return (
     <div style={{ blockSize: '100vh', display: 'flex', flexDirection: 'column' }}>

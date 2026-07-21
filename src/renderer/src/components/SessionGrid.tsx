@@ -19,6 +19,7 @@ import { GitContext, GitStatusDto } from './GitContext';
 import { Usage, ZERO_USAGE } from '../lib/usage';
 import { sanitizePopoutLayout } from '../lib/layout';
 import { pickAdoptedGroupId } from '../lib/groups';
+import { uiGet, uiSet } from '../lib/ui-state';
 
 // The DURABLE unit is the card (cardId + folder). The live claude session
 // under it is ephemeral: spawned — or --resumed — lazily the first time the
@@ -59,7 +60,14 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const [status, setStatus] = React.useState<string>('starting');
   // Feed is the default view (§5.10, flipped in E12-07); Terminal is one click
   // away and the waiting-chip jumps there when the CLI needs real input.
-  const [view, setView] = React.useState<'feed' | 'terminal' | 'diff'>('feed');
+  // The active tab is remembered per card across restarts (§5.25, E12-08).
+  const [view, setViewRaw] = React.useState<'feed' | 'terminal' | 'diff'>(() =>
+    props.params?.cardId ? uiGet(`viewTab.${props.params.cardId}`, 'feed') : 'feed'
+  );
+  const setView = (v: 'feed' | 'terminal' | 'diff'): void => {
+    setViewRaw(v);
+    if (cardId) uiSet(`viewTab.${cardId}`, v);
+  };
   const [poppedOut, setPoppedOut] = React.useState<boolean>(props.api.location.type === 'popout');
   const [suspended, setSuspended] = React.useState(false);
   const spawning = React.useRef(false);
@@ -78,7 +86,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     spawning.current = true;
     // titlebar autonomy chip applies to NEW cards; main keeps a card's own
     // autonomy across resumes
-    const stored = localStorage.getItem('switchboard.autonomy');
+    const stored = uiGet('autonomy', 'ask');
     const autonomy =
       stored === 'plan' || stored === 'auto-edit' || stored === 'full-auto' ? stored : 'ask';
     void window.switchboard.sessions
@@ -736,6 +744,11 @@ export function SessionGrid(props: {
       // spot on relaunch (E8-04 multi-monitor).
       api.onDidPopoutGroupPositionChange?.(saveLayout);
       api.onDidPopoutGroupSizeChange?.(saveLayout);
+      // remember which card has focus (E12-08); restored below after fromJSON
+      api.onDidActivePanelChange((p) => {
+        const m = p ? /^session-(.+)$/.exec(p.id) : null;
+        if (m && !restoringLayout && !tearingDown) uiSet('focusedCardId', m[1]);
+      });
       // E8 diagnostics: surface popout success/failure
       api.onDidOpenPopoutWindowFail?.(() => console.error('[popout] onDidOpenPopoutWindowFail'));
       api.onDidAddPopoutGroup?.(() => console.log('[popout] onDidAddPopoutGroup (opened OK)'));
@@ -780,6 +793,10 @@ export function SessionGrid(props: {
             const d = /^diff-/.exec(p.id);
             if (d || (s && !known.has(s[1]))) api.removePanel(p);
           }
+          // land the user exactly where they were (§5.25): refocus the saved
+          // card — resume-on-focus then brings that session back first
+          const focused = uiGet<string | null>('focusedCardId', null);
+          if (focused) api.getPanel(`session-${focused}`)?.focus();
         } catch {
           // fail-open: unusable layout JSON -> fresh grid, never a crash
         }

@@ -46,6 +46,15 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **P2-E12-08 done (#56)**: focus-state persistence via a new
+  renderer-owned `ui` blob in the workspace store (workspace:getUi/setUi).
+  Persists focused card + per-card active view-tab; restore refocuses the
+  card (resume-on-focus then revives it first) and reopens its tab. **Found
+  & fixed en route:** localStorage resets EVERY packaged launch (loopback
+  origin gets a random port), so the Phase-1 autonomy chip never actually
+  persisted in production — autonomy, feed verbosity, and rail collapse all
+  migrated to the ui blob (one-time localStorage migration kept for dev).
+  e2e: view-tab + autonomy survive relaunch. 130 unit + 21 e2e.
 - 2026-07-21 — **P2-E12-09 done (#57)**: view-tab strip aligned to the §5.10
   canonical set — Diff renamed **Changes**, the Files "soon" placeholder is
   now **History** (soon). Strip reads Feed · Terminal · Changes · History.

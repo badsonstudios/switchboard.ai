@@ -62,6 +62,10 @@ export interface WorkspaceState {
   window: PersistedWindow | null;
   /** opaque grid-layout JSON owned by the renderer (Dockview serialization) */
   layout: unknown;
+  /** opaque renderer-owned UI state (focus, per-card view tabs, prefs —
+   *  §5.25). Lives here, not localStorage: the packaged renderer's loopback
+   *  origin changes port per launch, so localStorage resets every run. */
+  ui: unknown;
   notifications: NotificationPrefsState;
   /** auto-trust a folder on session open (picking a folder = trusting it) */
   autoTrust: boolean;
@@ -73,6 +77,7 @@ const EMPTY: WorkspaceState = {
   groups: [],
   window: null,
   layout: null,
+  ui: null,
   notifications: { enabled: true },
   autoTrust: true,
 };
@@ -105,6 +110,7 @@ export class WorkspaceStore {
         groups,
         window: sanitizeWindow(raw.window),
         layout: raw.layout ?? null,
+        ui: raw.ui ?? null,
         notifications: sanitizeNotifications(raw.notifications),
         autoTrust: raw.autoTrust !== false, // default on
       };
@@ -184,6 +190,15 @@ export class WorkspaceStore {
 
   getLayout(): unknown {
     return this.state.layout;
+  }
+
+  setUi(ui: unknown): void {
+    this.state.ui = ui;
+    this.saveSoon();
+  }
+
+  getUi(): unknown {
+    return this.state.ui;
   }
 
   getNotificationPrefs(): NotificationPrefsState {

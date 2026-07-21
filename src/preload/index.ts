@@ -31,6 +31,8 @@ const api = {
   workspace: {
     getLayout: (): Promise<unknown> => ipcRenderer.invoke('workspace:getLayout'),
     setLayout: (layout: unknown): void => ipcRenderer.send('workspace:setLayout', layout),
+    getUi: (): Promise<unknown> => ipcRenderer.invoke('workspace:getUi'),
+    setUi: (ui: unknown): void => ipcRenderer.send('workspace:setUi', ui),
   },
   /** display work areas, for popout-position rescue on restore (E8-02) */
   workAreas: (): Promise<Array<{ x: number; y: number; width: number; height: number }>> =>

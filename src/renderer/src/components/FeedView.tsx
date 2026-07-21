@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { blockVisible, FeedBlockDto, Verbosity } from '../lib/feed';
+import { uiGet, uiSet } from '../lib/ui-state';
 
 export type { FeedBlockDto } from '../lib/feed';
 
@@ -143,12 +144,12 @@ export function FeedView(props: {
   const { t } = useTranslation();
   const [blocks, setBlocks] = React.useState<FeedBlockDto[]>([]);
   const [verbosity, setVerbosity] = React.useState<Verbosity>(() => {
-    const v = localStorage.getItem(`switchboard.feedVerbosity.${props.cardId ?? ''}`);
+    const v = uiGet(`feedVerbosity.${props.cardId ?? ''}`, 'normal');
     return v === 'quiet' || v === 'firehose' ? v : 'normal';
   });
   const pickVerbosity = (v: Verbosity): void => {
     setVerbosity(v);
-    if (props.cardId) localStorage.setItem(`switchboard.feedVerbosity.${props.cardId}`, v);
+    if (props.cardId) uiSet(`feedVerbosity.${props.cardId}`, v);
   };
   const bottom = React.useRef<HTMLDivElement | null>(null);
   const pinned = React.useRef(true); // stick to the tail unless the user scrolls up
