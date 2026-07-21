@@ -31,6 +31,8 @@ export interface TranscriptSnapshot {
   toolsSeen: string[];
   filesTouched: string[];
   subagents: Array<{ agentId: string; agentType?: string; description?: string }>;
+  /** latest TodoWrite plan progress (OQ #13), if the session uses one */
+  plan?: { total: number; completed: number; inProgress: number };
   lastActivityAt: string | null;
 }
 
@@ -347,6 +349,14 @@ export class TranscriptWatcher {
         }
         if ((c.name === 'Agent' || c.name === 'Task') && full === w.boundFile) {
           this.pickupSubagentMeta(w);
+        }
+        if (c.name === 'TodoWrite' && Array.isArray(c.input?.todos)) {
+          const todos = c.input.todos as Array<{ status?: string }>;
+          w.snap.plan = {
+            total: todos.length,
+            completed: todos.filter((td) => td.status === 'completed').length,
+            inProgress: todos.filter((td) => td.status === 'in_progress').length,
+          };
         }
       }
     }

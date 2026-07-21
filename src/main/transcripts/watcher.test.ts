@@ -113,6 +113,36 @@ describe('live usage totals + tolerant reader (the done-when)', () => {
   });
 });
 
+describe('plan-as-progress extraction (OQ #13 / E7-04)', () => {
+  it('captures TodoWrite step counts from the transcript', async () => {
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [entry()]);
+    await sleep(100);
+    writeLines(file, [
+      entry({
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              name: 'TodoWrite',
+              input: {
+                todos: [
+                  { content: 'a', status: 'completed' },
+                  { content: 'b', status: 'in_progress' },
+                  { content: 'c', status: 'pending' },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+    ]);
+    await sleep(120);
+    expect(watcher.snapshot('s1')!.plan).toEqual({ total: 3, completed: 1, inProgress: 1 });
+  });
+});
+
 describe('subagent visibility (S-05 layout)', () => {
   it('tails nested agent files and reads meta sidecars', async () => {
     watcher.watch('s1', { cwd });

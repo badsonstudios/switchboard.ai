@@ -23,6 +23,8 @@
     "resuming": "Resuming {title}…",
     "taskLabelEmpty": "+ task label",
     "taskLabelHint": "Click to set a task label for this session",
+    "plan": "✓ {done}/{total}",
+    "planTitle": "Plan progress (TodoWrite steps completed)",
     "sessionEnded": "Session ended",
     "exitCrashed": "Exited unexpectedly (code {code})",
     "exitClean": "The session closed.",

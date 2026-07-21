@@ -48,6 +48,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const [live, setLive] = React.useState<Live | null>(null);
   const [exited, setExited] = React.useState<{ code: number; crashed: boolean } | null>(null);
   const [usage, setUsage] = React.useState<{ usage: Usage; model?: string } | null>(null);
+  const [plan, setPlan] = React.useState<{ total: number; completed: number; inProgress: number } | null>(null);
   const [taskLabel, setTaskLabel] = React.useState<string>('');
   const [editingLabel, setEditingLabel] = React.useState(false);
   const spawning = React.useRef(false);
@@ -102,8 +103,15 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   React.useEffect(() => {
     if (!live) return;
     return window.switchboard.sessions.onUsage((snap) => {
-      const s = snap as { sessionId: string; usage: Usage; model?: string };
-      if (s.sessionId === live.id) setUsage({ usage: s.usage, model: s.model });
+      const s = snap as {
+        sessionId: string;
+        usage: Usage;
+        model?: string;
+        plan?: { total: number; completed: number; inProgress: number };
+      };
+      if (s.sessionId !== live.id) return;
+      setUsage({ usage: s.usage, model: s.model });
+      if (s.plan && s.plan.total > 0) setPlan(s.plan);
     });
   }, [live]);
 
@@ -249,6 +257,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 }}
               >
                 {taskLabel || t('grid.taskLabelEmpty')}
+              </span>
+            )}
+            {plan && (
+              <span title={t('grid.planTitle')} style={{ color: 'var(--status-working)' }}>
+                {t('grid.plan', { done: plan.completed, total: plan.total })}
               </span>
             )}
             <GitContext status={git} />
