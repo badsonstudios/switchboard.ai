@@ -112,6 +112,13 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   };
 }
 
+/** Surface the hidden-by-default Terminal tab (E10-01) and switch to it. */
+export async function showTerminal(window: Page): Promise<void> {
+  await window.getByTitle('Session menu').click();
+  await window.getByRole('button', { name: 'Show Terminal' }).click();
+  await window.getByRole('button', { name: 'Terminal' }).click();
+}
+
 /** A throwaway folder to point a session at (git-repo optional). */
 export function tempProjectFolder(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-proj-'));

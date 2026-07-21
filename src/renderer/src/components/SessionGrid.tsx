@@ -83,16 +83,30 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const [taskLabel, setTaskLabel] = React.useState<string>('');
   const [editingLabel, setEditingLabel] = React.useState(false);
   const [status, setStatus] = React.useState<string>('starting');
-  // Feed is the default view (§5.10, flipped in E12-07); Terminal is one click
-  // away and the waiting-chip jumps there when the CLI needs real input.
+  // The Session view is the default (§5.10; internal view id stays 'feed' so
+  // stored ui-blob tab state needs no migration). The Terminal is HIDDEN by
+  // default (E10-01, owner decision 2026-07-21): shown via the ⋯ menu or the
+  // continue-in-Terminal chip; shown/hidden persists per card.
   // The active tab is remembered per card across restarts (§5.25, E12-08).
-  const [view, setViewRaw] = React.useState<'feed' | 'terminal' | 'diff'>(() =>
-    props.params?.cardId ? uiGet(`viewTab.${props.params.cardId}`, 'feed') : 'feed'
+  const [terminalShown, setTerminalShownRaw] = React.useState<boolean>(() =>
+    props.params?.cardId ? uiGet(`terminalShown.${props.params.cardId}`, false) : false
   );
+  const [view, setViewRaw] = React.useState<'feed' | 'terminal' | 'diff'>(() => {
+    const id = props.params?.cardId;
+    const stored = id ? uiGet<'feed' | 'terminal' | 'diff'>(`viewTab.${id}`, 'feed') : 'feed';
+    // a stored Terminal tab only restores if the Terminal is shown for this card
+    return stored === 'terminal' && !(id && uiGet(`terminalShown.${id}`, false)) ? 'feed' : stored;
+  });
   const setView = (v: 'feed' | 'terminal' | 'diff'): void => {
     setViewRaw(v);
     if (cardId) uiSet(`viewTab.${cardId}`, v);
   };
+  const setTerminalShown = (v: boolean): void => {
+    setTerminalShownRaw(v);
+    if (cardId) uiSet(`terminalShown.${cardId}`, v);
+    if (!v && view === 'terminal') setView('feed'); // never strand the active tab
+  };
+  const [menuOpen, setMenuOpen] = React.useState(false);
   const [poppedOut, setPoppedOut] = React.useState<boolean>(props.api.location.type === 'popout');
   const [suspended, setSuspended] = React.useState(false);
   const spawning = React.useRef(false);
@@ -425,8 +439,48 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             <button onClick={popOutToggle} title={poppedOut ? t('grid.dockIn') : t('grid.popOut')} style={cheadBtn}>
               {poppedOut ? t('grid.dockInIcon') : t('grid.popOutIcon')}
             </button>
-            <span title={t('grid.menu')} style={{ ...cheadBtn, cursor: 'default', color: 'var(--faint)' }}>
-              {t('grid.menuIcon')}
+            <span style={{ position: 'relative' }}>
+              <button onClick={() => setMenuOpen(!menuOpen)} title={t('grid.menu')} style={cheadBtn}>
+                {t('grid.menuIcon')}
+              </button>
+              {menuOpen && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    insetInlineEnd: 0,
+                    insetBlockStart: '100%',
+                    zIndex: 30,
+                    background: 'var(--panel)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 6,
+                    padding: 4,
+                    minInlineSize: 140,
+                    boxShadow: 'var(--window-shadow)',
+                  }}
+                >
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setTerminalShown(!terminalShown);
+                    }}
+                    style={{
+                      display: 'block',
+                      inlineSize: '100%',
+                      textAlign: 'start',
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text)',
+                      fontSize: 11,
+                      fontFamily: 'var(--font-ui)',
+                      padding: '5px 8px',
+                      cursor: 'pointer',
+                      borderRadius: 4,
+                    }}
+                  >
+                    {terminalShown ? t('grid.hideTerminal') : t('grid.showTerminal')}
+                  </button>
+                </div>
+              )}
             </span>
           </div>
           {/* view tabs (.vtabs). Order/default per DESIGN §5.10: Feed is the
@@ -446,11 +500,13 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             }}
           >
             <button style={vtabStyle(view === 'feed', false, live.accent)} onClick={() => setView('feed')}>
-              {t('grid.viewFeed')}
+              {t('grid.viewSession')}
             </button>
-            <button style={vtabStyle(view === 'terminal', false, live.accent)} onClick={() => setView('terminal')}>
-              {t('grid.viewTerminal')}
-            </button>
+            {terminalShown && (
+              <button style={vtabStyle(view === 'terminal', false, live.accent)} onClick={() => setView('terminal')}>
+                {t('grid.viewTerminal')}
+              </button>
+            )}
             <button style={vtabStyle(view === 'diff', false, live.accent)} onClick={() => setView('diff')}>
               {t('grid.viewDiff')}
               {changed > 0 && <span style={{ color: 'var(--status-needs-input)', marginInlineStart: 4 }}>{changed}</span>}
@@ -469,16 +525,23 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
           </div>
           {/* active view */}
           <div style={{ flex: 1, minBlockSize: 0, position: 'relative' }}>
-            <div style={{ blockSize: '100%', display: view === 'terminal' ? 'block' : 'none' }}>
-              <TerminalPane sessionId={live.id} visible={visible && view === 'terminal'} />
-            </div>
+            {terminalShown && (
+              // mount only when shown: the PTY ring buffer lives main-side
+              // (S-07), so a late-mounted terminal replays scrollback intact
+              <div style={{ blockSize: '100%', display: view === 'terminal' ? 'block' : 'none' }}>
+                <TerminalPane sessionId={live.id} visible={visible && view === 'terminal'} />
+              </div>
+            )}
             {view === 'feed' && (
               <FeedView
                 sessionId={live.id}
                 cardId={cardId}
                 visible={visible && view === 'feed'}
                 status={status}
-                onJumpToTerminal={() => setView('terminal')}
+                onJumpToTerminal={() => {
+                  setTerminalShown(true); // chip surfaces the hidden Terminal on demand
+                  setView('terminal');
+                }}
               />
             )}
             {view === 'diff' && folder && <DiffPane folder={folder} theme={docTheme()} />}

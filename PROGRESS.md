@@ -5,17 +5,14 @@
 
 **Milestone:** Phase 2 - The Switchboard (E7+E8 merged; E12 expanded + filed
 #49–#57, E8-06 filed #48; E9/E10/E11/E13/E14 still outlines)
-**In progress:** nothing mid-flight — AUTOPILOT RUN COMPLETE 2026-07-21:
-all 10 items (#48–#57, E12 full + E8-06) shipped to `auto/phase-2-e12`,
-draft PR #58. 130 unit + 22 e2e green; **CI GREEN on the tip (all 5 jobs)**.
-**Next up (needs Dan):** (1) re-check the grid-tab → rail-group drag (fixed
-after his eyeball pass, native DnD needs a hand check); (2) review/merge
-draft PR #58. Then the next build is **E10 — Session tab & approvals**
-(#59–#63): Dan's 2026-07-21 pivot decision — the Feed tab becomes the
-interactive "Session" tab (composer + inline approvals, VS Code-extension
-shape); DESIGN.md §5.10 amended, plan expanded, issues filed. Kick off with
-`/autopilot` or `/next-item` after #58 merges.
-**Branch:** auto/phase-2-e12 (draft PR #58)
+**In progress:** AUTOPILOT RUN (E10) started 2026-07-21 — branch
+`auto/phase-2-e10`, scope #59–#64 (Session tab & approvals: rename+hide
+Terminal → composer → hook hold → approval bar → options row → rich
+blocks). PR #58 (E12+E8-06) MERGED to main 2026-07-21 (Dan's call,
+issues #48–#57 closed); Dan skipped the optional grid-drag re-check —
+verify during E10 dogfooding.
+**Next up (needs Dan):** review the E10 draft PR when the run completes.
+**Branch:** auto/phase-2-e10
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
 `npm test` (unit) · `npm run check:*` (local real-claude proofs) · `npm run e2e`
@@ -50,6 +47,14 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-21 — **P2-E10-01 done (#59)**: view tab renamed Feed → **Session**;
+  **Terminal out of the default strip** — ⋯ menu (now a real menu) shows/
+  hides it per session (persisted in the ui blob; stored Terminal tab only
+  restores when shown), chip surfaces it on demand and is re-labeled
+  "continue in Terminal ↗"; TerminalPane mounts only when shown (S-07 ring
+  buffer replays scrollback on late mount). e2e: default strip has no
+  Terminal, menu round-trip, shown-state survives relaunch.
 
 - 2026-07-21 — **Session-view visual spec pinned (Dan's VS Code-extension
   screenshot).** DESIGN.md §5.10 gains "Block presentation (v2)": timeline
