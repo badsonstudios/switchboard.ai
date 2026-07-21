@@ -16,6 +16,7 @@ import { Notifier } from './events/notifier';
 import { GitService } from './git/git-service';
 import { runPreflight } from './preflight';
 import { startStaticServer, StaticServer } from './static-server';
+import { parsePopoutFeatures } from './popout-bounds';
 import { dialog } from 'electron';
 
 // Safe-by-default for every window this app will ever open (§5.29 posture).
@@ -163,14 +164,20 @@ function createWindow(): BrowserWindow {
   // The ONE in-app window we allow is dockview's same-origin popout window
   // (tearing a session card into its own OS window, E8) — scoped narrowly to
   // our own popout.html so this stays a controlled allowance, not an open door.
-  win.webContents.setWindowOpenHandler(({ url }) => {
+  win.webContents.setWindowOpenHandler(({ url, features }) => {
     const popout = isPopoutUrl(url);
-    log.ui.info('window-open requested', { url, popout }); // E8 diagnostic
+    // Electron ignores the position/size in window.open's `features` string
+    // unless we copy them onto the created window. dockview passes screen-
+    // absolute left/top/width/height there, so without this a popout cascades
+    // to a default spot and ignores its saved position (E8-04 multi-monitor).
+    const bounds = popout ? parsePopoutFeatures(features) : {};
+    log.ui.info('window-open requested', { url, popout, bounds }); // E8 diagnostic
     if (popout) {
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
           backgroundColor: '#242933',
+          ...bounds,
           webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
         },
       };
