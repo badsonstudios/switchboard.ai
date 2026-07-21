@@ -4,9 +4,9 @@
 > A fresh session reads this file and knows exactly where things stand.
 
 **Milestone:** Phase 2 - The Switchboard (issues #37–#41 filed; E7 first)
-**In progress:** P2-E7-01 done (awaiting Dan eyeball on live numbers); next P2-E7-02
-**Next up:** P2-E7-02 — Git context line (#38)
-**Branch:** auto/phase-2-switchboard (draft PR open)
+**In progress:** E7 epic COMPLETE (#37–41 built + reviewed); awaiting Dan eyeball
+**Next up:** E8 — Pop-out & multi-monitor (file work items, then build)
+**Branch:** auto/phase-2-switchboard (draft PR #42)
 
 ## Phase status
 
@@ -29,6 +29,14 @@
 
 ## Log
 
+- 2026-07-20 — **E7 epic COMPLETE** (richer cards): E7-01 live usage/cost,
+  E7-02 git context line, E7-03 autonomy badge + editable task label (fixed a
+  chip regression), E7-04 plan-as-progress chip (TodoWrite extraction), E7-05
+  suspended cards in the rail (card-keyed sessions:cards view). Epic review:
+  0 blockers; fixed usage-aggregate double-count on resume, rail-rename/task-
+  label shadowing, model-clobber-on-resume, IPC input guards, plan-chip clear.
+  101 unit tests green. **[Dan eyeball]: the card header (usage/git/plan/badge/
+  task label) and suspended rail rows on a real multi-session workspace.**
 - 2026-07-20 — **P2-E7-01 done**: live usage & cost on the card. Transcript
   watcher now captures model; a usage strip on each card shows tokens
   (↑in ↓out ⛁cache) + an est. cost (labeled — subscription-first, public

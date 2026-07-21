@@ -44,10 +44,25 @@ export function App(): React.JSX.Element {
   const grid = React.useRef<GridController | null>(null);
 
   useEffect(() => {
-    return bridge.sessions?.onUsage?.((snap) => {
+    const offUsage = bridge.sessions?.onUsage?.((snap) => {
       const s = snap as { sessionId: string; usage: Usage; model?: string };
       setUsageByLive((prev) => new Map(prev).set(s.sessionId, { usage: s.usage, model: s.model }));
     });
+    // prune a dead live id so the workspace total doesn't double-count after a
+    // resume (the resumed session re-reads the full conversation) or a close
+    const offExit = bridge.sessions?.onExited?.((e) => {
+      const x = e as { sessionId: string };
+      setUsageByLive((prev) => {
+        if (!prev.has(x.sessionId)) return prev;
+        const next = new Map(prev);
+        next.delete(x.sessionId);
+        return next;
+      });
+    });
+    return () => {
+      offUsage?.();
+      offExit?.();
+    };
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, []);
 

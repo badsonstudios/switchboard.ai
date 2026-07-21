@@ -111,7 +111,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       };
       if (s.sessionId !== live.id) return;
       setUsage({ usage: s.usage, model: s.model });
-      if (s.plan && s.plan.total > 0) setPlan(s.plan);
+      setPlan(s.plan && s.plan.total > 0 ? s.plan : null);
     });
   }, [live]);
 

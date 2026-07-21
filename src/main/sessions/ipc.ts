@@ -68,7 +68,8 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     const cardId = cardOfLive.get(snap.sessionId);
     if (!cardId) return;
     const prior = deps.persist.list().find((s) => s.id === cardId);
-    if (prior) deps.persist.upsert({ ...prior, usage: snap.usage, model: snap.model });
+    // keep the last real model if this snapshot hasn't seen a model line yet
+    if (prior) deps.persist.upsert({ ...prior, usage: snap.usage, model: snap.model ?? prior.model });
   });
 
   ipcMain.handle('feed:list', () => deps.feed.list());
@@ -189,7 +190,9 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       const rec = liveId ? live.find((r) => r.id === liveId) : undefined;
       return {
         cardId: card.id,
-        title: card.taskLabel?.trim() || card.identity.title,
+        // the rail shows (and renames) the session title; the task label is a
+        // separate card-only detail, so they don't shadow each other
+        title: card.identity.title,
         folder: card.identity.folder,
         accent: card.identity.accentColor,
         badge: card.identity.langBadge,
@@ -232,14 +235,16 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   // freeform task label for a card (E7-03), persisted across restarts
   ipcMain.handle('sessions:setTaskLabel', (_e, cardId: string, label: string) => {
+    if (typeof cardId !== 'string' || typeof label !== 'string') return;
     const prior = deps.persist.list().find((s) => s.id === cardId);
-    if (prior) deps.persist.upsert({ ...prior, taskLabel: String(label).slice(0, 120) });
+    if (prior) deps.persist.upsert({ ...prior, taskLabel: label.slice(0, 120) });
   });
 
   // rename a card by cardId (works for suspended cards too) — updates the
   // persisted title and the live session if one is running
   ipcMain.handle('sessions:renameCard', (_e, cardId: string, title: string) => {
-    const clean = String(title).slice(0, 120);
+    if (typeof cardId !== 'string' || typeof title !== 'string') return;
+    const clean = title.slice(0, 120);
     const prior = deps.persist.list().find((s) => s.id === cardId);
     if (prior) deps.persist.upsert({ ...prior, identity: { ...prior.identity, title: clean } });
     for (const [liveId, cid] of cardOfLive) if (cid === cardId) manager.rename(liveId, clean);
