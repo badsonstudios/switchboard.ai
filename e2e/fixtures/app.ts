@@ -66,6 +66,12 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   env.USERPROFILE = home;
   env.APPDATA = appData;
   env.LOCALAPPDATA = localAppData;
+  // Linux: Electron resolves userData via XDG, NOT $HOME — without these the
+  // whole CI worker shares one real profile and state leaks across tests
+  // (caught by E12's fresh-profile assertions)
+  env.XDG_CONFIG_HOME = path.join(home, '.config');
+  env.XDG_CACHE_HOME = path.join(home, '.cache');
+  env.XDG_DATA_HOME = path.join(home, '.local', 'share');
   if (opts.seedFolder) env.SWITCHBOARD_SEED_SESSION = opts.seedFolder;
   Object.assign(env, opts.env);
 

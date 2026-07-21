@@ -118,6 +118,81 @@ describe('missing-display rescue (done-when part 2)', () => {
   });
 });
 
+describe('persistent groups (P2-E12-01: durable containers, empty ≠ gone)', () => {
+  const grp = (id: string, name = id) => ({ id, name, color: '#4a90d9' });
+
+  it('groups round-trip a save/load; an EMPTY group persists', () => {
+    const a = new WorkspaceStore(file);
+    a.load();
+    a.upsertGroup(grp('g1', 'IT'));
+    a.save();
+    const b = new WorkspaceStore(file);
+    expect(b.load().groups).toEqual([grp('g1', 'IT')]);
+  });
+
+  it('membership round-trips; delete-group drops members to ungrouped', () => {
+    const st = new WorkspaceStore(file);
+    st.load();
+    st.upsertGroup(grp('g1'));
+    st.upsertSession({ ...sess('a'), groupId: 'g1' });
+    st.upsertSession(sess('b'));
+    expect(st.snapshot().sessions[0].groupId).toBe('g1');
+    st.removeGroup('g1');
+    const s = st.snapshot();
+    expect(s.groups).toEqual([]);
+    expect(s.sessions.every((x) => x.groupId === undefined)).toBe(true);
+  });
+
+  it('setSessionGroup validates: unknown group is a no-op, null clears', () => {
+    const st = new WorkspaceStore(file);
+    st.load();
+    st.upsertGroup(grp('g1'));
+    st.upsertSession(sess('a'));
+    st.setSessionGroup('a', 'nope');
+    expect(st.snapshot().sessions[0].groupId).toBeUndefined();
+    st.setSessionGroup('a', 'g1');
+    expect(st.snapshot().sessions[0].groupId).toBe('g1');
+    st.setSessionGroup('a', null);
+    expect(st.snapshot().sessions[0].groupId).toBeUndefined();
+  });
+
+  it('load filters garbage groups and clears dangling groupIds', () => {
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        sessions: [{ ...sess('a'), groupId: 'ghost' }],
+        groups: [grp('g1'), { id: 1 }, 'x', { id: 'g2' }],
+        window: null,
+      })
+    );
+    const st = new WorkspaceStore(file);
+    const s = st.load();
+    expect(s.groups.map((g) => g.id)).toEqual(['g1']);
+    expect(s.sessions[0].groupId).toBeUndefined(); // 'ghost' didn't survive
+  });
+
+  it('update-in-place: rename/recolor via upsert keeps one record', () => {
+    const st = new WorkspaceStore(file);
+    st.load();
+    st.upsertGroup(grp('g1', 'Dev'));
+    st.upsertGroup({ id: 'g1', name: 'DevOps', color: '#aa3366' });
+    expect(st.snapshot().groups).toEqual([{ id: 'g1', name: 'DevOps', color: '#aa3366' }]);
+  });
+});
+
+describe('ui blob (P2-E12-08 focus/view-tab state)', () => {
+  it('round-trips opaque ui state', () => {
+    const a = new WorkspaceStore(file);
+    a.load();
+    a.setUi({ focusedCardId: 'c1', 'viewTab.c1': 'terminal', autonomy: 'plan' });
+    a.save();
+    const b = new WorkspaceStore(file);
+    b.load();
+    expect(b.getUi()).toEqual({ focusedCardId: 'c1', 'viewTab.c1': 'terminal', autonomy: 'plan' });
+  });
+});
+
 describe('fingerprint stability', () => {
   it('is order-independent', () => {
     expect(displayFingerprint([primary, left])).toBe(displayFingerprint([left, primary]));

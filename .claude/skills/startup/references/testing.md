@@ -36,6 +36,11 @@ numbers (latency, CPU, memory) where the item asks for them.
 build + check:pty on Windows/macOS/Linux; `e2e` job = Playwright on
 Windows + Linux (xvfb). Red CI blocks merge.
 
+**The local pre-commit gate MUST mirror the CI matrix:** `npm run lint &&
+npm run typecheck && npm test && npm run build && npm run e2e`. Skipping
+`typecheck` locally shipped 6 TS errors to CI on 2026-07-21 — electron-vite's
+build does not run tsc strict checks; only `npm run typecheck` does.
+
 **Rules:**
 - Never report half-working code as done — record blockers in PROGRESS.md with
   failing output.

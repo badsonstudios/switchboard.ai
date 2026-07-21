@@ -26,6 +26,8 @@ test.describe('a session card', () => {
     // usage strip is present from the start (zeros until real activity)
     await expect(window.getByText('↑ 0').first()).toBeVisible({ timeout: 15_000 });
 
+    // Feed is the default view (E12-07) — switch to the Terminal tab first
+    await window.getByRole('button', { name: 'Terminal' }).click();
     // the terminal is a REAL pty (fake provider spawns the OS shell): typing a
     // command produces output — proves input -> pty -> render end to end
     await window.locator('.xterm-screen').first().click();
@@ -46,6 +48,20 @@ test.describe('a session card', () => {
     await window.getByTitle('Pop out into its own window').click();
     // dockview opens a real second OS window (the file:// blocker fix)
     await expect.poll(() => app.windows().length, { timeout: 15_000 }).toBe(2);
+  });
+
+  test('the tab ✕ closes the card and ends the session (eyeball fix)', async () => {
+    const folder = tempProjectFolder();
+    const name = path.basename(folder);
+    a = await launchApp({ seedFolder: folder });
+    const { window } = a;
+    await expect(window.getByText(name).first()).toBeVisible({ timeout: 25_000 });
+    await window.getByTitle('Close (ends the session)').click();
+    // card gone from the grid AND the record forgotten (rail empties);
+    // (a "closed" toast may briefly mention the name — that's fine)
+    await expect(window.getByTitle('Close (ends the session)')).toHaveCount(0, { timeout: 15_000 });
+    await expect(window.locator('nav').getByText(name)).toHaveCount(0);
+    await expect(window.locator('nav').getByText('No sessions yet')).toBeVisible();
   });
 
   test('appears in the rail with a status dot', async () => {
@@ -97,6 +113,7 @@ test.describe('a session card', () => {
     await popout.getByTitle('Pop back into the main window').click();
     await expect.poll(() => app.windows().length, { timeout: 15_000 }).toBe(1);
     // docked back ALIVE (button toggle, not a window-close): the terminal types
+    await window.getByRole('button', { name: 'Terminal' }).click(); // Feed is default (E12-07)
     await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 15_000 });
     await window.locator('.xterm-screen').first().click();
     await window.keyboard.type('echo TOGGLE_OK_789');
@@ -120,6 +137,7 @@ test.describe('a session card', () => {
     // the suspended affordance shows; Resume brings the session/terminal back
     await expect(window.getByText('Session suspended')).toBeVisible({ timeout: 15_000 });
     await window.getByRole('button', { name: 'Resume' }).click();
+    await window.getByRole('button', { name: 'Terminal' }).click(); // Feed is default (E12-07)
     await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 15_000 });
   });
 
@@ -146,11 +164,12 @@ test.describe('a session card', () => {
     a = await launchApp({ seedFolder: folder });
     const { window } = a;
     await expect(window.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-    // the mockup's view-tab strip: Terminal + Diff are real tabs
+    // the §5.10 canonical strip (E12-09): Feed · Terminal · Changes (+ History soon)
     await expect(window.getByRole('button', { name: 'Terminal' })).toBeVisible();
-    await expect(window.getByRole('button', { name: 'Diff' })).toBeVisible();
-    // switching to Diff and back leaves the terminal usable (no NaN wipeout)
-    await window.getByRole('button', { name: 'Diff' }).click();
+    await expect(window.getByRole('button', { name: 'Changes' })).toBeVisible();
+    await expect(window.getByText('History', { exact: true })).toBeVisible(); // "soon" tab
+    // switching to Changes and back leaves the terminal usable (no NaN wipeout)
+    await window.getByRole('button', { name: 'Changes' }).click();
     await window.getByRole('button', { name: 'Terminal' }).click();
     await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 10_000 });
   });

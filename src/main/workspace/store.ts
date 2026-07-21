@@ -27,6 +27,22 @@ export interface PersistedSession {
   autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
   /** freeform "what is this doing" label, distinct from the folder title */
   taskLabel?: string;
+  /** persistent-group membership (E12); absent/null = ungrouped */
+  groupId?: string;
+}
+
+/**
+ * A persistent group (E12, DESIGN "Persistent groups as containers"): a
+ * durable first-class container — it exists independently of its members and
+ * survives being empty. Distinct from emergent repo/folder auto-groups,
+ * which are computed and never persisted.
+ */
+export interface PersistedGroup {
+  id: string;
+  name: string;
+  color: string;
+  /** notification scoping consumed by the E14 rules engine; stored now so the record is complete */
+  notifyScope?: 'all' | 'important' | 'muted';
 }
 
 export interface PersistedWindow extends WindowState {
@@ -42,9 +58,14 @@ export interface NotificationPrefsState {
 export interface WorkspaceState {
   version: 1;
   sessions: PersistedSession[];
+  groups: PersistedGroup[];
   window: PersistedWindow | null;
   /** opaque grid-layout JSON owned by the renderer (Dockview serialization) */
   layout: unknown;
+  /** opaque renderer-owned UI state (focus, per-card view tabs, prefs —
+   *  §5.25). Lives here, not localStorage: the packaged renderer's loopback
+   *  origin changes port per launch, so localStorage resets every run. */
+  ui: unknown;
   notifications: NotificationPrefsState;
   /** auto-trust a folder on session open (picking a folder = trusting it) */
   autoTrust: boolean;
@@ -53,8 +74,10 @@ export interface WorkspaceState {
 const EMPTY: WorkspaceState = {
   version: 1,
   sessions: [],
+  groups: [],
   window: null,
   layout: null,
+  ui: null,
   notifications: { enabled: true },
   autoTrust: true,
 };
@@ -76,11 +99,18 @@ export class WorkspaceStore {
   load(): WorkspaceState {
     try {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8')) as Partial<WorkspaceState>;
+      const groups = Array.isArray(raw.groups) ? raw.groups.filter(isSaneGroup) : [];
+      const groupIds = new Set(groups.map((g) => g.id));
       this.state = {
         version: 1,
-        sessions: Array.isArray(raw.sessions) ? raw.sessions.filter(isSaneSession) : [],
+        sessions: (Array.isArray(raw.sessions) ? raw.sessions.filter(isSaneSession) : []).map(
+          // a dangling groupId (group gone, e.g. hand-edited file) degrades to ungrouped
+          (s) => (s.groupId && !groupIds.has(s.groupId) ? { ...s, groupId: undefined } : s)
+        ),
+        groups,
         window: sanitizeWindow(raw.window),
         layout: raw.layout ?? null,
+        ui: raw.ui ?? null,
         notifications: sanitizeNotifications(raw.notifications),
         autoTrust: raw.autoTrust !== false, // default on
       };
@@ -120,6 +150,34 @@ export class WorkspaceStore {
     this.saveSoon();
   }
 
+  listGroups(): PersistedGroup[] {
+    return this.state.groups.map((g) => ({ ...g }));
+  }
+
+  upsertGroup(g: PersistedGroup): void {
+    const copy = { ...g };
+    const i = this.state.groups.findIndex((x) => x.id === g.id);
+    if (i >= 0) this.state.groups[i] = copy;
+    else this.state.groups.push(copy);
+    this.saveSoon();
+  }
+
+  /** Delete a group; its members fall back to ungrouped (empty ≠ gone, delete = gone). */
+  removeGroup(id: string): void {
+    this.state.groups = this.state.groups.filter((g) => g.id !== id);
+    for (const s of this.state.sessions) if (s.groupId === id) s.groupId = undefined;
+    this.saveSoon();
+  }
+
+  /** Set (or clear, with null) a session card's group membership. */
+  setSessionGroup(cardId: string, groupId: string | null): void {
+    const s = this.state.sessions.find((x) => x.id === cardId);
+    if (!s) return;
+    if (groupId !== null && !this.state.groups.some((g) => g.id === groupId)) return; // unknown group: no-op
+    s.groupId = groupId ?? undefined;
+    this.saveSoon();
+  }
+
   setWindow(w: PersistedWindow): void {
     this.state.window = w;
     this.saveSoon();
@@ -132,6 +190,15 @@ export class WorkspaceStore {
 
   getLayout(): unknown {
     return this.state.layout;
+  }
+
+  setUi(ui: unknown): void {
+    this.state.ui = ui;
+    this.saveSoon();
+  }
+
+  getUi(): unknown {
+    return this.state.ui;
   }
 
   getNotificationPrefs(): NotificationPrefsState {
@@ -196,6 +263,11 @@ function isSaneSession(s: unknown): s is PersistedSession {
     typeof x?.identity?.providerId === 'string' &&
     typeof x?.layoutSlot === 'number'
   );
+}
+
+function isSaneGroup(g: unknown): g is PersistedGroup {
+  const x = g as Partial<PersistedGroup>;
+  return typeof x?.id === 'string' && typeof x?.name === 'string' && typeof x?.color === 'string';
 }
 
 function sanitizeNotifications(n: unknown): NotificationPrefsState {

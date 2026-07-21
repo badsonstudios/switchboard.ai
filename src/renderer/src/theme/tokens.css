@@ -102,3 +102,62 @@ body {
   color: var(--text);
   font-family: var(--font-ui);
 }
+
+/* Feed view markdown blocks (P2-E12-06, §5.10) — vars only, theme-safe */
+.feed-md {
+  color: var(--text);
+  overflow-wrap: break-word;
+  padding-inline: 2px;
+}
+.feed-md p {
+  margin: 0 0 6px;
+}
+.feed-md pre {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  overflow-x: auto;
+  font-size: 10.5px;
+}
+.feed-md code {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  background: var(--panel);
+  border-radius: 3px;
+  padding: 0 3px;
+}
+.feed-md pre code {
+  background: transparent;
+  padding: 0;
+}
+.feed-md ul,
+.feed-md ol {
+  margin: 0 0 6px;
+  padding-inline-start: 18px;
+}
+.feed-md h1,
+.feed-md h2,
+.feed-md h3,
+.feed-md h4 {
+  font-size: 12.5px;
+  margin: 8px 0 4px;
+}
+.feed-md a {
+  color: var(--status-working);
+}
+.feed-md blockquote {
+  border-inline-start: 2px solid var(--border);
+  margin: 0 0 6px;
+  padding-inline-start: 8px;
+  color: var(--muted);
+}
+.feed-md table {
+  border-collapse: collapse;
+  font-size: 10.5px;
+}
+.feed-md th,
+.feed-md td {
+  border: 1px solid var(--border);
+  padding: 2px 6px;
+}

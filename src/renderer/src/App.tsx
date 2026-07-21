@@ -8,10 +8,12 @@ import {
   ThemePreference,
 } from './theme/theme';
 import { LanguageChoice, loadLanguage, setLanguage } from './i18n';
-import { TitleBar, SessionsRail, StatusBar, RailSession } from './components/chrome';
+import { TitleBar, SessionsRail, StatusBar, RailSession, RailGroup } from './components/chrome';
 import { SessionGrid, GridController } from './components/SessionGrid';
 import { FeedPanel } from './components/FeedPanel';
 import { Usage, addUsage, estimateCostUsd, ZERO_USAGE } from './lib/usage';
+import { loadUiState, uiGet, uiSet } from './lib/ui-state';
+import { boxOnAnyDisplay, RescuedPopout } from './lib/layout';
 
 // Control-room shell (P1-E3-01): titlebar / rail / grid / statusbar.
 // Terminals (E3-02), identity kit (E3-03), and live badges (E3-05) land next.
@@ -31,10 +33,18 @@ export function App(): React.JSX.Element {
   const [lang, setLang] = useState<LanguageChoice>(() => loadLanguage());
   const [cards, setCards] = useState<string[]>([]);
   const [sessions, setSessions] = useState<RailSession[]>([]);
+  const [groups, setGroups] = useState<RailGroup[]>([]);
+  const [palette, setPalette] = useState<string[]>([]);
   const [notifEnabled, setNotifEnabled] = useState(true);
-  const [autonomy, setAutonomy] = useState<string>(
-    () => localStorage.getItem('switchboard.autonomy') ?? 'ask'
-  );
+  // gate the shell on the persisted UI state (E12-08): reads are sync after
+  const [uiReady, setUiReady] = useState(false);
+  const [autonomy, setAutonomy] = useState<string>('ask');
+  useEffect(() => {
+    void loadUiState().then(() => {
+      setAutonomy(uiGet('autonomy', 'ask'));
+      setUiReady(true);
+    });
+  }, []);
   const [preflightOk, setPreflightOk] = useState(true);
   const [cliVersion, setCliVersion] = useState<string | null>(null);
   const [autoTrust, setAutoTrust] = useState(true);
@@ -88,7 +98,7 @@ export function App(): React.JSX.Element {
   const cycleAutonomy = (): void => {
     const order = ['ask', 'plan', 'auto-edit', 'full-auto'];
     const next = order[(order.indexOf(autonomy) + 1) % order.length];
-    localStorage.setItem('switchboard.autonomy', next);
+    uiSet('autonomy', next);
     setAutonomy(next);
   };
 
@@ -127,9 +137,42 @@ export function App(): React.JSX.Element {
         accent: c.accent,
         badge: c.badge,
         status: c.status,
+        groupId: c.groupId,
+        autoKey: c.autoKey,
       }))
     );
   }, []); // bridge is stable for the window's lifetime
+
+  const refreshGroups = React.useCallback(async () => {
+    const list = await bridge.groups?.list?.();
+    if (list) setGroups(list as RailGroup[]);
+  }, []); // bridge is stable
+
+  useEffect(() => {
+    void refreshGroups();
+    void bridge.groups?.palette?.().then(setPalette);
+  }, [refreshGroups]);
+
+  // display reconnected: OFFER to restore rescued popouts — never automatic
+  // (the new display might be a projector, E8-06/§7)
+  const [reconnectOffer, setReconnectOffer] = useState(false);
+  useEffect(() => {
+    const off = bridge.onDisplaysChanged?.((areas) => {
+      const stash = uiGet<RescuedPopout[]>('rescuedPopouts', []);
+      if (stash.some((r) => boxOnAnyDisplay(r.box, areas))) setReconnectOffer(true);
+    });
+    return () => off?.();
+  }, []);
+
+  // grid drags change membership in the main process (E12-04) — re-read
+  useEffect(() => {
+    const h = (): void => {
+      void refreshSessions();
+      void refreshGroups();
+    };
+    window.addEventListener('switchboard:groups-changed', h);
+    return () => window.removeEventListener('switchboard:groups-changed', h);
+  }, [refreshSessions, refreshGroups]);
 
   useEffect(() => {
     void refreshSessions();
@@ -140,6 +183,8 @@ export function App(): React.JSX.Element {
       offExit?.();
     };
   }, [cards, refreshSessions]); // re-sync when the grid's cards change
+
+  if (!uiReady) return <div style={{ blockSize: '100vh' }} />; // one-frame gate while UI state loads
 
   return (
     <div style={{ blockSize: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -174,12 +219,41 @@ export function App(): React.JSX.Element {
       <div style={{ flex: 1, display: 'flex', minBlockSize: 0 }}>
         <SessionsRail
           sessions={sessions}
+          groups={groups}
+          palette={palette}
           onRename={(cardId, title) => {
             void bridge.sessions?.renameCard?.(cardId, title).then(() => refreshSessions());
           }}
           onFocus={(cardId) => grid.current?.focusSession(cardId)}
           onDiff={(s) => {
             if (s.folder) grid.current?.openDiff(s.id, s.folder, s.title);
+          }}
+          onCreateGroup={(name) => {
+            void bridge.groups?.create?.({ name }).then(() => refreshGroups());
+          }}
+          onRenameGroup={(id, name) => {
+            void bridge.groups?.update?.(id, { name }).then(() => refreshGroups());
+          }}
+          onRecolorGroup={(id, color) => {
+            void bridge.groups?.update?.(id, { color }).then(() => refreshGroups());
+          }}
+          onMoveToGroup={(cardId, gid) => {
+            void bridge.groups?.setSessionGroup?.(cardId, gid).then(() => {
+              grid.current?.moveCardToGroup(cardId, gid);
+              void refreshSessions();
+            });
+          }}
+          onOpenInGroup={(gid) => {
+            void bridge.sessions?.pickFolder?.().then((folder) => {
+              if (folder) void grid.current?.addSessionCard(folder, gid);
+            });
+          }}
+          onDeleteGroup={(id) => {
+            // members fall back to ungrouped, so the session list changes too
+            void bridge.groups?.remove?.(id).then(() => {
+              void refreshGroups();
+              void refreshSessions();
+            });
           }}
         />
         <SessionGrid
@@ -188,7 +262,16 @@ export function App(): React.JSX.Element {
           onCardsChanged={setCards}
           controller={grid}
         />
-        <FeedPanel sessions={sessions} onFocus={(id) => grid.current?.focusSession(id)} />
+        <FeedPanel
+          sessions={sessions}
+          onFocus={(id) => grid.current?.focusSession(id)}
+          reconnectOffer={reconnectOffer}
+          onRestoreLayout={() => {
+            grid.current?.restoreRescuedPopouts();
+            setReconnectOffer(false);
+          }}
+          onDismissOffer={() => setReconnectOffer(false)}
+        />
       </div>
       <StatusBar
         count={cards.length}

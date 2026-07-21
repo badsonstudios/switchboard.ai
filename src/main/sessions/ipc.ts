@@ -33,6 +33,8 @@ export interface SessionIpcDeps {
   };
   /** ~/.claude/projects root, for checking a resumable conversation exists */
   projectsRoot: string;
+  /** git toplevel for a folder (null if not a repo) — auto-group key (E12-05) */
+  repoRoot: (folder: string) => Promise<string | null>;
 }
 
 export function registerSessionIpc(deps: SessionIpcDeps): void {
@@ -74,6 +76,12 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   ipcMain.handle('feed:list', () => deps.feed.list());
 
+  // Feed view blocks (P2-E12-06): live stream + backlog for attach
+  transcripts.onBlock((sessionId, block) => send('sessions:feedBlock', { sessionId, block }));
+  ipcMain.handle('transcripts:blocks', (_e, liveId: string) =>
+    typeof liveId === 'string' ? transcripts.blocks(liveId) : []
+  );
+
   ipcMain.handle('sessions:isDirectory', (_e, p: string) => {
     try {
       return fs.statSync(p).isDirectory();
@@ -101,6 +109,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         folder: string;
         title: string;
         autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
+        groupId?: string;
       }
     ) => {
       // validate untrusted renderer input (§5.29)
@@ -157,6 +166,8 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         model: prior?.model,
         autonomy,
         taskLabel: prior?.taskLabel,
+        // an existing card keeps its membership; a new card takes the caller's
+        groupId: prior?.groupId ?? (typeof opts.groupId === 'string' ? opts.groupId : undefined),
       });
       log.info('session started for card', {
         sessionId: record.id,
@@ -179,27 +190,50 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   ipcMain.handle('sessions:list', () => manager.list());
 
+  // repo/folder auto-group keys (E12-05): same key -> same emergent group.
+  // Cached per folder; a repo root beats the folder path so sibling checkouts
+  // of one repo (subdirs) share a key.
+  const autoKeyCache = new Map<string, string>();
+  const autoKeyFor = async (folder: string): Promise<string> => {
+    const norm = folder.replace(/[\\/]+$/, '').toLowerCase();
+    const hit = autoKeyCache.get(norm);
+    if (hit) return hit;
+    let key = norm;
+    try {
+      const root = await deps.repoRoot(folder);
+      if (root) key = root.replace(/[\\/]+$/, '').toLowerCase();
+    } catch {
+      /* not a repo / no git — folder path is the key */
+    }
+    autoKeyCache.set(norm, key);
+    return key;
+  };
+
   // joined view for the rail: every persisted card, with its live status if
   // running or 'suspended' if restored-but-not-yet-resumed (E7-05)
-  ipcMain.handle('sessions:cards', () => {
+  ipcMain.handle('sessions:cards', async () => {
     const live = manager.list();
     const liveByCard = new Map<string, string>(); // cardId -> liveId
     for (const [liveId, cardId] of cardOfLive) liveByCard.set(cardId, liveId);
-    return deps.persist.list().map((card) => {
-      const liveId = liveByCard.get(card.id);
-      const rec = liveId ? live.find((r) => r.id === liveId) : undefined;
-      return {
-        cardId: card.id,
-        // the rail shows (and renames) the session title; the task label is a
-        // separate card-only detail, so they don't shadow each other
-        title: card.identity.title,
-        folder: card.identity.folder,
-        accent: card.identity.accentColor,
-        badge: card.identity.langBadge,
-        status: rec?.status ?? 'suspended',
-        liveId,
-      };
-    });
+    return Promise.all(
+      deps.persist.list().map(async (card) => {
+        const liveId = liveByCard.get(card.id);
+        const rec = liveId ? live.find((r) => r.id === liveId) : undefined;
+        return {
+          cardId: card.id,
+          // the rail shows (and renames) the session title; the task label is a
+          // separate card-only detail, so they don't shadow each other
+          title: card.identity.title,
+          folder: card.identity.folder,
+          accent: card.identity.accentColor,
+          badge: card.identity.langBadge,
+          status: rec?.status ?? 'suspended',
+          liveId,
+          groupId: card.groupId,
+          autoKey: await autoKeyFor(card.identity.folder),
+        };
+      })
+    );
   });
 
   // cards with a persisted record — the renderer keeps these on boot, prunes

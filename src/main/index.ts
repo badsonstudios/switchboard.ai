@@ -11,6 +11,7 @@ import { SessionManager } from './sessions/session-manager';
 import { HookListener } from './hooks/hook-listener';
 import { TranscriptWatcher } from './transcripts/watcher';
 import { registerSessionIpc } from './sessions/ipc';
+import { registerGroupIpc } from './workspace/group-ipc';
 import { EventFeed } from './events/feed';
 import { Notifier } from './events/notifier';
 import { GitService } from './git/git-service';
@@ -227,8 +228,52 @@ app
     // renderer <-> workspace layout persistence (E3-01)
     ipcMain.handle('workspace:getLayout', () => workspace.getLayout());
     ipcMain.on('workspace:setLayout', (_e, layout: unknown) => workspace.setLayout(layout));
+    // renderer-owned UI state (E12-08): focus, view tabs, prefs
+    ipcMain.handle('workspace:getUi', () => workspace.getUi());
+    ipcMain.on('workspace:setUi', (_e, ui: unknown) => workspace.setUi(ui));
     // display work areas — for popout-position rescue on restore (E8-02)
     ipcMain.handle('app:workAreas', () => screen.getAllDisplays().map((d) => d.workArea));
+    // display reconnected (docking back at the desk) — the renderer may offer
+    // to restore rescued popouts; NEVER restores automatically (E8-06, §7)
+    screen.on('display-added', () => {
+      const win = currentWindow;
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('app:displaysChanged', screen.getAllDisplays().map((d) => d.workArea));
+      }
+    });
+    // move a popout window to a restored display (E8-06 accept). Done here:
+    // the DOM's window.moveTo clamps to currently-known screens mid-hotplug,
+    // BrowserWindow.setBounds does not. The popout is identified by its
+    // current position, which the renderer reads off the DOM window it owns.
+    ipcMain.handle(
+      'app:movePopout',
+      (_e, from: { x: number; y: number }, to: { left: number; top: number; width: number; height: number }) => {
+        if (
+          typeof from?.x !== 'number' ||
+          typeof from?.y !== 'number' ||
+          typeof to?.left !== 'number' ||
+          typeof to?.top !== 'number' ||
+          !Number.isFinite(to.width) ||
+          !Number.isFinite(to.height)
+        )
+          return false;
+        const candidates = BrowserWindow.getAllWindows().filter((w) => w !== currentWindow && !w.isDestroyed());
+        const hit = candidates.find((w) => {
+          const b = w.getBounds();
+          return Math.abs(b.x - from.x) <= 40 && Math.abs(b.y - from.y) <= 40;
+        });
+        if (!hit) return false;
+        hit.setBounds({
+          x: Math.round(to.left),
+          y: Math.round(to.top),
+          width: Math.round(to.width),
+          height: Math.round(to.height),
+        });
+        return true;
+      }
+    );
+    // persistent groups (E12-01)
+    registerGroupIpc(workspace);
     registerBuiltinContributions();
     log.app.info('contributions registered', { manifests: registry.manifests() });
 
@@ -303,6 +348,7 @@ app
         remove: (cardId) => workspace.removeSession(cardId),
       },
       projectsRoot: path.join(os.homedir(), '.claude', 'projects'),
+      repoRoot: (folder) => gitService.root(folder),
     });
     app.on('quit', () => {
       ptys.killAll();

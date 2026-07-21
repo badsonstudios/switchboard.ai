@@ -385,13 +385,50 @@ mechanisms where it supports live switching, else flagged "takes effect on
 restart" (never faked, P7) — and the active mode renders on the session identity
 badge (§5.11) so a glance answers "will this one interrupt me?"
 
-### 5.10 The Feed — rich, themeable output rendering
+### 5.10 The Session view — the primary working surface
+
+> **Revised 2026-07-21 (owner decision, after hands-on E12 use):** the rendered
+> view — previously "the Feed", read-only — is now the **Session view**: the
+> tab users actually work in, shaped like the VS Code extension panel. It
+> renders the conversation AND accepts prompts via a composer that writes to
+> the real CLI's PTY. Host-don't-reimplement holds: the composer is an input
+> route to the real CLI, never a reimplementation of it. (The right-panel
+> *event* feed of §5.12 is unrelated and keeps its name.)
 
 Each session offers two synchronized views of the same underlying session:
 
-- **Terminal** (xterm.js + PTY): the real CLI. All interaction happens here.
-- **Feed** (read-only): rendered from structured transcript/stream events —
-  assistant text, tool calls, diffs, subagent sidechains — as styled blocks.
+- **Session** (primary, interactive): rendered from structured transcript/
+  stream events — assistant text, tool calls, diffs, subagent sidechains — as
+  styled blocks, with a **prompt composer** docked at the bottom (Enter
+  submits to the CLI's PTY; options row for autonomy/model context). In-app
+  approvals (§5.16) render inline here as a review bar.
+- **Terminal** (xterm.js + PTY): the real CLI — **hidden by default**
+  (owner decision 2026-07-21: when the Session view works, the Terminal is
+  rarely touched). Reachable via the card's ⋯ menu / a per-session toggle,
+  and the Session view's "continue in Terminal" chip surfaces it on demand
+  when the CLI is in a raw TUI state (menus, /login, trust prompts). It
+  still exists for every session — hidden, never gone.
+
+**Block presentation (v2 — modeled on the Claude Code VS Code extension;
+owner screenshot 2026-07-21).** The reference look: a clean timeline with a
+dot gutter, one block per event, everything collapsible. Block taxonomy:
+
+- **Assistant prose** — markdown, rendered clean (no chrome), timeline dot.
+- **Thinking** — collapsed to a single "Thought for Ns" line (duration from
+  timestamps); click expands.
+- **Edit/Write blocks** — header `Edit <file path>` + a "Added N lines /
+  Removed M" subtitle, then an inline **syntax-highlighted diff preview**
+  (added regions green-shaded, removed red-shaded) — the screenshot's
+  side-by-side panel; click-to-expand for long diffs. File path links to the
+  Changes tab.
+- **Bash blocks** — header `Bash <description>` (the tool call's own
+  description field), then labeled **IN** (command, monospace) and **OUT**
+  (output) sections, each independently expandable, long output truncated
+  with click-to-expand.
+- **Read/Search/other tools** — one-line collapsed rows (name + primary
+  argument), expand for the full input/result.
+- **TodoWrite** — renders as an "Update Todos" checklist block, not raw JSON.
+- **Subagent sidechains** — folded behind an agent header, indented.
 
 Feed customization (the "pleasing to the eye" surface):
 - Themes: font family/size, color palette, spacing/density. Themes are CSS;
@@ -405,28 +442,33 @@ Feed customization (the "pleasing to the eye" surface):
 - Clicking any collapsed block expands the full content; file paths link to the
   file tree / diff pane.
 
-Guardrail (restated from Non-Goals): the Feed never accepts input beyond
-expand/collapse/copy. If the CLI is waiting on a prompt, the Feed shows a "waiting in
-Terminal" chip that jumps you there.
+Guardrail (revised 2026-07-21): the Session view's composer and approval bar
+are INPUT ROUTES to the real CLI (PTY write / hook verdict) — the view never
+fakes CLI behavior it can't route. When the CLI is in a raw TUI state the
+rendered view can't answer (menus, /login, trust prompts), the Session view
+shows a "continue in Terminal" chip that jumps there; permission prompts are
+answered inline via the §5.16 hook path, not the chip.
 
 **Per-session view tabs (the session window's chrome).** Every session surface —
 grid card, maximized, popped-out OS window — carries one compact VS Code-style
 tab strip along its top. The tabs are *views over the same session*, not
 separate features:
 
-- **Feed** — the rendered read-only view above (first tab and **the default
-  view** for every session; the "waiting in Terminal" chip covers the moments
-  the CLI needs real input).
-- **Terminal** — the real CLI (the only interactive surface).
+- **Session** — the rendered + composer view above (first tab and **the
+  default view** for every session; renamed from "Feed" 2026-07-21).
 - **Changes** — source control for the session's folder: file tree with VCS
   decorations, Monaco diff, editable-diff + commit (§5.7 mechanics as a tab).
 - **History** — the checkout's recent commits/branch state (read-only GitService
   log view; §5.7).
 - **Inspector** — the §5.19 capability pane (Skills / Agents / MCP / Commands),
   present when opened.
+- **Terminal** — the real CLI; **not in the default strip** (2026-07-21) —
+  shown via the ⋯ menu / per-session toggle or the "continue in Terminal"
+  chip, and once shown it stays in the strip for that session until hidden.
 
-Rules: active tab is per-session and remembered across restarts (§5.25). Any
-tab can be **split** beside the Terminal instead of stacked behind it (Dockview
+Rules: active tab is per-session and remembered across restarts (§5.25) — the
+Terminal's shown/hidden state included. Any
+tab can be **split** beside the Session view instead of stacked behind it (Dockview
 panes — e.g. terminal left + diff right, as in the maximized mockup); tabs and
 splits are the same views in two presentations. On small grid cards the strip
 degrades to an icon row; the two-gesture rule holds — any view of any session
@@ -928,7 +970,7 @@ over the network: **the phone is another view.**
   - Home = the attention queue: swipe through approval cards (read-only diff,
     Allow / Deny / deny-with-feedback) like an inbox.
   - Sessions rail (status, lamps, usage bars) + event feed with inline actions.
-  - Session detail = read-only Feed view + prompt composer.
+  - Session detail = the rendered Session view (read-only on phone) + prompt composer.
   - NOT on phone: terminal emulation, layout management, git operations,
     settings, drag-and-drop.
 - **Form: PWA served by the orchestrator itself** on the LAN — no app store, no

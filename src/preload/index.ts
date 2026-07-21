@@ -31,10 +31,26 @@ const api = {
   workspace: {
     getLayout: (): Promise<unknown> => ipcRenderer.invoke('workspace:getLayout'),
     setLayout: (layout: unknown): void => ipcRenderer.send('workspace:setLayout', layout),
+    getUi: (): Promise<unknown> => ipcRenderer.invoke('workspace:getUi'),
+    setUi: (ui: unknown): void => ipcRenderer.send('workspace:setUi', ui),
   },
   /** display work areas, for popout-position rescue on restore (E8-02) */
   workAreas: (): Promise<Array<{ x: number; y: number; width: number; height: number }>> =>
     ipcRenderer.invoke('app:workAreas'),
+  /** move the popout window currently at `from` to `to` (E8-06 restore) */
+  movePopout: (
+    from: { x: number; y: number },
+    to: { left: number; top: number; width: number; height: number }
+  ): Promise<boolean> => ipcRenderer.invoke('app:movePopout', from, to),
+  /** a display was (re)connected — new work areas (E8-06 reconnect offer) */
+  onDisplaysChanged: (
+    cb: (areas: Array<{ x: number; y: number; width: number; height: number }>) => void
+  ): (() => void) => {
+    const h = (_e: unknown, areas: Array<{ x: number; y: number; width: number; height: number }>) =>
+      cb(areas);
+    ipcRenderer.on('app:displaysChanged', h);
+    return () => ipcRenderer.removeListener('app:displaysChanged', h);
+  },
   /** sandbox-safe path for a dropped File (drag-folder-onto-window, E3-04) */
   pathForFile: (file: File): string => webUtils.getPathForFile(file),
   sessions: {
@@ -45,6 +61,7 @@ const api = {
       folder: string;
       title: string;
       autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
+      groupId?: string;
     }): Promise<
       SessionRecordDto & {
         cardId: string;
@@ -64,6 +81,8 @@ const api = {
         badge?: string;
         status: string;
         liveId?: string;
+        groupId?: string;
+        autoKey?: string;
       }>
     > => ipcRenderer.invoke('sessions:cards'),
     knownCards: (): Promise<Array<{ cardId: string; identity: SessionRecordDto['identity'] }>> =>
@@ -91,6 +110,21 @@ const api = {
       ipcRenderer.on('sessions:exited', h);
       return () => ipcRenderer.removeListener('sessions:exited', h);
     },
+  },
+  groups: {
+    list: (): Promise<Array<{ id: string; name: string; color: string; notifyScope?: string }>> =>
+      ipcRenderer.invoke('groups:list'),
+    palette: (): Promise<string[]> => ipcRenderer.invoke('groups:palette'),
+    create: (opts: { name: string; color?: string }): Promise<{ id: string; name: string; color: string }> =>
+      ipcRenderer.invoke('groups:create', opts),
+    update: (
+      id: string,
+      patch: { name?: string; color?: string; notifyScope?: string }
+    ): Promise<{ id: string; name: string; color: string; notifyScope?: string } | null> =>
+      ipcRenderer.invoke('groups:update', id, patch),
+    remove: (id: string): Promise<void> => ipcRenderer.invoke('groups:delete', id),
+    setSessionGroup: (cardId: string, groupId: string | null): Promise<void> =>
+      ipcRenderer.invoke('groups:setSessionGroup', cardId, groupId),
   },
   settings: {
     getAutoTrust: (): Promise<boolean> => ipcRenderer.invoke('settings:getAutoTrust'),
@@ -125,6 +159,14 @@ const api = {
       const h = (_e: unknown, ev: unknown) => cb(ev);
       ipcRenderer.on('feed:event', h);
       return () => ipcRenderer.removeListener('feed:event', h);
+    },
+  },
+  transcripts: {
+    blocks: (liveId: string): Promise<unknown[]> => ipcRenderer.invoke('transcripts:blocks', liveId),
+    onBlock: (cb: (payload: { sessionId: string; block: unknown }) => void): (() => void) => {
+      const h = (_e: unknown, p: { sessionId: string; block: unknown }) => cb(p);
+      ipcRenderer.on('sessions:feedBlock', h);
+      return () => ipcRenderer.removeListener('sessions:feedBlock', h);
     },
   },
   pty: {

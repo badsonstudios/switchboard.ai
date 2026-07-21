@@ -13,10 +13,14 @@ import 'dockview-react/dist/styles/dockview.css';
 import { TerminalPane } from './TerminalPane';
 import { IdentityChip } from './IdentityChip';
 import { DiffPane } from './DiffPane';
+import { FeedView } from './FeedView';
 import { UsageStrip } from './UsageStrip';
 import { GitContext, GitStatusDto } from './GitContext';
 import { Usage, ZERO_USAGE } from '../lib/usage';
-import { sanitizePopoutLayout } from '../lib/layout';
+import { RescuedPopout, sanitizePopoutLayout } from '../lib/layout';
+import { pickAdoptedGroupId } from '../lib/groups';
+import { uiGet, uiSet } from '../lib/ui-state';
+import { setDraggedCard } from '../lib/drag-context';
 
 // The DURABLE unit is the card (cardId + folder). The live claude session
 // under it is ephemeral: spawned — or --resumed — lazily the first time the
@@ -26,6 +30,8 @@ export interface CardParams {
   cardId: string;
   folder: string;
   title?: string;
+  /** persistent-group membership at creation (E12); undefined = ungrouped */
+  groupId?: string;
 }
 
 interface Live {
@@ -36,9 +42,33 @@ interface Live {
 }
 
 function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element {
+  const { t } = useTranslation();
   return (
-    <div style={{ paddingInline: 8, display: 'flex', alignItems: 'center', blockSize: '100%' }}>
+    <div style={{ paddingInline: 8, display: 'flex', alignItems: 'center', gap: 4, blockSize: '100%' }}>
       <IdentityChip title={props.api.title ?? props.params?.title ?? ''} compact />
+      <button
+        onClick={(e) => {
+          // close the tab: for a session card this ends the session AND
+          // forgets the record (onDidRemovePanel -> closeCard); derived tabs
+          // (diff) just close
+          e.stopPropagation();
+          props.api.close();
+        }}
+        onMouseDown={(e) => e.stopPropagation()} // don't start a tab drag
+        title={t('grid.closeTab')}
+        style={{
+          background: 'transparent',
+          border: 'none',
+          color: 'var(--faint)',
+          cursor: 'pointer',
+          fontSize: 11,
+          lineHeight: 1,
+          padding: '1px 3px',
+          borderRadius: 3,
+        }}
+      >
+        {t('grid.closeTabIcon')}
+      </button>
     </div>
   );
 }
@@ -53,7 +83,16 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const [taskLabel, setTaskLabel] = React.useState<string>('');
   const [editingLabel, setEditingLabel] = React.useState(false);
   const [status, setStatus] = React.useState<string>('starting');
-  const [view, setView] = React.useState<'terminal' | 'diff'>('terminal');
+  // Feed is the default view (§5.10, flipped in E12-07); Terminal is one click
+  // away and the waiting-chip jumps there when the CLI needs real input.
+  // The active tab is remembered per card across restarts (§5.25, E12-08).
+  const [view, setViewRaw] = React.useState<'feed' | 'terminal' | 'diff'>(() =>
+    props.params?.cardId ? uiGet(`viewTab.${props.params.cardId}`, 'feed') : 'feed'
+  );
+  const setView = (v: 'feed' | 'terminal' | 'diff'): void => {
+    setViewRaw(v);
+    if (cardId) uiSet(`viewTab.${cardId}`, v);
+  };
   const [poppedOut, setPoppedOut] = React.useState<boolean>(props.api.location.type === 'popout');
   const [suspended, setSuspended] = React.useState(false);
   const spawning = React.useRef(false);
@@ -72,11 +111,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     spawning.current = true;
     // titlebar autonomy chip applies to NEW cards; main keeps a card's own
     // autonomy across resumes
-    const stored = localStorage.getItem('switchboard.autonomy');
+    const stored = uiGet<string>('autonomy', 'ask');
     const autonomy =
       stored === 'plan' || stored === 'auto-edit' || stored === 'full-auto' ? stored : 'ask';
     void window.switchboard.sessions
-      .create({ cardId, folder, title: props.api.title ?? folder, autonomy })
+      .create({ cardId, folder, title: props.api.title ?? folder, autonomy, groupId: props.params?.groupId })
       .then((record) => {
         if (cardId) liveToCard.set(record.id, cardId);
         setLive({
@@ -153,6 +192,17 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       if (s.sessionId === live.id && s.to) setStatus(s.to);
     });
   }, [live]);
+
+  // membership follows the panel when the user drags it between dockview
+  // groups in the grid (E12-04)
+  React.useEffect(() => {
+    const d = props.api.onDidGroupChange(() => {
+      if (tearingDown || restoringLayout) return;
+      void adoptMembershipFromDockGroup(props);
+    });
+    return () => d.dispose();
+    // props.api is stable for the panel's lifetime
+  }, [props.api]);
 
   // Track popout location + implement the two dock-back semantics (E8-04):
   // the pop-out BUTTON toggling in keeps the session alive; the user closing
@@ -395,9 +445,9 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               background: 'var(--panel2)',
             }}
           >
-            <span style={vtabStyle(false, true, live.accent)} title={t('grid.viewSoon')}>
+            <button style={vtabStyle(view === 'feed', false, live.accent)} onClick={() => setView('feed')}>
               {t('grid.viewFeed')}
-            </span>
+            </button>
             <button style={vtabStyle(view === 'terminal', false, live.accent)} onClick={() => setView('terminal')}>
               {t('grid.viewTerminal')}
             </button>
@@ -406,7 +456,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               {changed > 0 && <span style={{ color: 'var(--status-needs-input)', marginInlineStart: 4 }}>{changed}</span>}
             </button>
             <span style={vtabStyle(false, true, live.accent)} title={t('grid.viewSoon')}>
-              {t('grid.viewFiles')}
+              {t('grid.viewHistory')}
             </span>
             <span style={{ flex: 1, minInlineSize: 8 }} />
             {plan && (
@@ -422,6 +472,15 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             <div style={{ blockSize: '100%', display: view === 'terminal' ? 'block' : 'none' }}>
               <TerminalPane sessionId={live.id} visible={visible && view === 'terminal'} />
             </div>
+            {view === 'feed' && (
+              <FeedView
+                sessionId={live.id}
+                cardId={cardId}
+                visible={visible && view === 'feed'}
+                status={status}
+                onJumpToTerminal={() => setView('terminal')}
+              />
+            )}
             {view === 'diff' && folder && <DiffPane folder={folder} theme={docTheme()} />}
             {exitedOverlay && <div style={overlayBackdrop}>{exitedOverlay}</div>}
           </div>
@@ -555,12 +614,44 @@ function forgetCardLiveIds(cardId: string): void {
 // set while the window is tearing down: Dockview disposal must NOT be mistaken
 // for the user closing cards (which would wipe persisted records)
 let tearingDown = false;
+// set while fromJSON replays a saved layout: those group-change events are
+// restore mechanics, not user drags — never adopt membership from them
+let restoringLayout = false;
+
+// Grid-drag membership sync (E12-04): after a user drag drops a session panel
+// into a dockview group, it adopts its new siblings' persistent group.
+async function adoptMembershipFromDockGroup(
+  props: IDockviewPanelProps<CardParams>
+): Promise<void> {
+  const cardId = props.params?.cardId;
+  if (!cardId) return;
+  const panel = props.containerApi.getPanel(props.api.id);
+  if (!panel || panel.group.api.location.type !== 'grid') return; // popouts don't regroup
+  const siblingIds = panel.group.panels
+    .map((p) => /^session-(.+)$/.exec(p.id)?.[1])
+    .filter((x): x is string => !!x);
+  const cards = await window.switchboard.sessions.cards();
+  const mine = cards.find((c) => c.cardId === cardId);
+  if (!mine) return; // brand-new card, no record yet — create() carries its groupId
+  const target = pickAdoptedGroupId(cardId, siblingIds, cards);
+  if ((mine.groupId ?? null) !== target) {
+    await window.switchboard.groups.setSessionGroup(cardId, target);
+    // the rail lives in App state — poke it to re-read memberships
+    window.dispatchEvent(new Event('switchboard:groups-changed'));
+  }
+}
 
 export interface GridController {
-  /** create a session in `folder` and add its card (drag-drop, rail actions) */
-  addSessionCard: (folder: string) => Promise<void>;
+  /** create a session in `folder` and add its card (drag-drop, rail actions);
+   *  groupId places it clustered with its persistent group (E12) */
+  addSessionCard: (folder: string, groupId?: string) => Promise<void>;
+  /** move an existing card's PANEL next to its persistent-group siblings
+   *  after a rail drop set its membership (E12-04) */
+  moveCardToGroup: (cardId: string, groupId: string | null) => void;
   /** focus an existing session's card */
   focusSession: (sessionId: string) => void;
+  /** re-pop rescued popouts at their stashed positions (E8-06 accept) */
+  restoreRescuedPopouts: () => void;
   /** open (or focus) the per-session diff tab (E5-02) */
   openDiff: (sessionId: string, folder: string, title: string) => void;
 }
@@ -577,7 +668,7 @@ export function SessionGrid(props: {
 
   // Add a NEW card. It gets a stable id and spawns its session lazily when it
   // becomes visible (which, as the newly-active tab, is immediately).
-  const addSessionCard = useCallback(async (folder: string) => {
+  const addSessionCard = useCallback(async (folder: string, groupId?: string) => {
     const api = apiRef.current;
     if (!api) return;
     const title = folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? folder;
@@ -588,14 +679,25 @@ export function SessionGrid(props: {
     // main-grid group explicitly (E8-04). If every card is popped out there is
     // no grid group left, so make one in the main grid rather than falling back
     // to the (popout) active group.
-    const mainGroup =
-      api.groups.find((g) => g.api.location.type === 'grid') ?? api.addGroup();
+    // A persistent-group member clusters with its siblings (E12-02): reuse the
+    // dockview group already holding another member, when one is in the grid.
+    let refGroup = api.groups.find((g) => g.api.location.type === 'grid') ?? api.addGroup();
+    if (groupId) {
+      const cards = await window.switchboard.sessions.cards();
+      const siblings = new Set(
+        cards.filter((c) => c.groupId === groupId).map((c) => `session-${c.cardId}`)
+      );
+      const sibling = api.panels.find(
+        (p) => siblings.has(p.id) && p.group.api.location.type === 'grid'
+      );
+      if (sibling) refGroup = sibling.group;
+    }
     api.addPanel({
       id: `session-${cardId}`,
       component: 'sessionCard',
       title,
-      params: { cardId, folder, title } satisfies CardParams,
-      position: { referenceGroup: mainGroup },
+      params: { cardId, folder, title, groupId } satisfies CardParams,
+      position: { referenceGroup: refGroup },
     });
   }, []);
 
@@ -603,8 +705,52 @@ export function SessionGrid(props: {
     if (!props.controller) return;
     props.controller.current = {
       addSessionCard,
+      moveCardToGroup: (cardId, groupId) => {
+        const api = apiRef.current;
+        if (!api || !groupId) return; // ungrouping keeps the panel where it sits
+        const panel = api.getPanel(`session-${cardId}`);
+        if (!panel) return;
+        void window.switchboard.sessions.cards().then((cards) => {
+          const siblings = new Set(
+            cards
+              .filter((c) => c.groupId === groupId && c.cardId !== cardId)
+              .map((c) => `session-${c.cardId}`)
+          );
+          const sibling = api.panels.find(
+            (p) => siblings.has(p.id) && p.group.api.location.type === 'grid'
+          );
+          if (sibling && sibling.group !== panel.group) panel.api.moveTo({ group: sibling.group });
+        });
+      },
       focusSession: (liveId) => {
         apiRef.current?.getPanel(`session-${cardIdForLive(liveId)}`)?.focus();
+      },
+      restoreRescuedPopouts: () => {
+        const api = apiRef.current;
+        if (!api) return;
+        const stash = uiGet<RescuedPopout[]>('rescuedPopouts', []);
+        const popoutUrl = new URL('popout.html', window.location.href).toString();
+        for (const r of stash) {
+          for (const pid of r.panelIds) {
+            const panel = api.getPanel(pid);
+            if (!panel) continue; // card closed since the rescue — leave it be
+            const loc = panel.group.api.location;
+            if (loc.type === 'popout') {
+              // the rescue reopened it near the main window (E8-02): move that
+              // window back to its stashed spot on the returned display. The
+              // move happens in the main process — DOM moveTo clamps to the
+              // screens Chromium knew at open time.
+              const win = loc.getWindow();
+              if (win) {
+                void window.switchboard.movePopout({ x: win.screenX, y: win.screenY }, r.box);
+              }
+            } else if (loc.type === 'grid') {
+              // docked back since (suspend/dock-in): pop it out fresh, in place
+              void api.addPopoutGroup(panel, { popoutUrl, position: r.box });
+            }
+          }
+        }
+        uiSet('rescuedPopouts', []);
       },
       openDiff: (liveId, folder, title) => {
         const api = apiRef.current;
@@ -652,6 +798,18 @@ export function SessionGrid(props: {
       // spot on relaunch (E8-04 multi-monitor).
       api.onDidPopoutGroupPositionChange?.(saveLayout);
       api.onDidPopoutGroupSizeChange?.(saveLayout);
+      // dockview tab drags don't carry our dataTransfer type — publish the
+      // in-flight card so the rail's group headers can accept the drop
+      api.onWillDragPanel?.((e) => {
+        const m = /^session-(.+)$/.exec(e.panel?.id ?? '');
+        setDraggedCard(m ? m[1] : null);
+      });
+      window.addEventListener('dragend', () => setDraggedCard(null));
+      // remember which card has focus (E12-08); restored below after fromJSON
+      api.onDidActivePanelChange((e) => {
+        const m = e.panel ? /^session-(.+)$/.exec(e.panel.id) : null;
+        if (m && !restoringLayout && !tearingDown) uiSet('focusedCardId', m[1]);
+      });
       // E8 diagnostics: surface popout success/failure
       api.onDidOpenPopoutWindowFail?.(() => console.error('[popout] onDidOpenPopoutWindowFail'));
       api.onDidAddPopoutGroup?.(() => console.log('[popout] onDidAddPopoutGroup (opened OK)'));
@@ -678,8 +836,19 @@ export function SessionGrid(props: {
           // launch's (random) loopback port and their position may be on a
           // now-missing monitor — fix both before restoring (E8-02)
           const workAreas = await window.switchboard.workAreas();
-          const sane = sanitizePopoutLayout(saved, window.location.origin, workAreas);
-          api.fromJSON(sane as Parameters<DockviewApi['fromJSON']>[0]);
+          const rescuedNow: RescuedPopout[] = [];
+          const sane = sanitizePopoutLayout(saved, window.location.origin, workAreas, rescuedNow);
+          restoringLayout = true;
+          try {
+            api.fromJSON(sane as Parameters<DockviewApi['fromJSON']>[0]);
+          } finally {
+            restoringLayout = false;
+          }
+          // stash what was rescued so the display-reconnect offer (E8-06) can
+          // put it back — appended, cleared only by an accepted restore
+          if (rescuedNow.length > 0) {
+            uiSet('rescuedPopouts', [...uiGet<RescuedPopout[]>('rescuedPopouts', []), ...rescuedNow]);
+          }
           // keep restored session cards that still have a persisted record
           // (they resume-on-focus); drop any panel with no record behind it.
           // Diff panes are derived — always drop and let the user reopen.
@@ -691,6 +860,10 @@ export function SessionGrid(props: {
             const d = /^diff-/.exec(p.id);
             if (d || (s && !known.has(s[1]))) api.removePanel(p);
           }
+          // land the user exactly where they were (§5.25): refocus the saved
+          // card — resume-on-focus then brings that session back first
+          const focused = uiGet<string | null>('focusedCardId', null);
+          if (focused) api.getPanel(`session-${focused}`)?.focus();
         } catch {
           // fail-open: unusable layout JSON -> fresh grid, never a crash
         }

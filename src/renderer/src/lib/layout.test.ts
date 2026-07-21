@@ -23,13 +23,23 @@ describe('sanitizePopoutLayout', () => {
     expect(out.popoutGroups[0].url).toBe('http://127.0.0.1:55555/popout.html');
   });
 
-  it('rescues an off-display popout position to null', () => {
+  it('rescues an off-display popout position to null and reports it (E8-06)', () => {
     const layout = {
-      popoutGroups: [{ url: 'x', position: { left: 3000, top: 100, width: 800, height: 600 } }],
+      popoutGroups: [
+        {
+          url: 'x',
+          position: { left: 3000, top: 100, width: 800, height: 600 },
+          data: { views: ['session-abc'], activeView: 'session-abc' },
+        },
+      ],
     };
-    // second monitor gone -> position rescued
-    const out = sanitizePopoutLayout(layout, origin, [primary]) as typeof layout;
+    // second monitor gone -> position rescued + stash entry captured
+    const rescued: import('./layout').RescuedPopout[] = [];
+    const out = sanitizePopoutLayout(layout, origin, [primary], rescued) as typeof layout;
     expect(out.popoutGroups[0].position).toBeNull();
+    expect(rescued).toEqual([
+      { panelIds: ['session-abc'], box: { left: 3000, top: 100, width: 800, height: 600 } },
+    ]);
   });
 
   it('keeps an on-display popout position', () => {

@@ -14,7 +14,20 @@
   },
   "rail": {
     "eyebrow": "Sessions",
-    "empty": "No sessions yet"
+    "empty": "No sessions yet",
+    "addGroup": "+ group",
+    "addGroupHint": "Create a persistent group",
+    "newGroup": "New group",
+    "groupEmpty": "empty",
+    "deleteGroup": "Delete group (its sessions become ungrouped)",
+    "openInGroup": "New session in this group",
+    "openInGroupIcon": "⊕",
+    "deleteGroupIcon": "✕",
+    "renameGroup": "Double-click to rename",
+    "recolorGroup": "Click to change color",
+    "collapse": "Collapse",
+    "expand": "Expand",
+    "autoGroupHint": "Auto-grouped (same repo/folder)"
   },
   "grid": {
     "addCard": "+ session",
@@ -31,10 +44,12 @@
     "dockInIcon": "⤡",
     "menu": "Session menu",
     "menuIcon": "⋯",
+    "closeTab": "Close (ends the session)",
+    "closeTabIcon": "✕",
     "viewTerminal": "Terminal",
-    "viewDiff": "Diff",
+    "viewDiff": "Changes",
     "viewFeed": "Feed",
-    "viewFiles": "Files",
+    "viewHistory": "History",
     "viewSoon": "Coming soon",
     "sessionEnded": "Session ended",
     "exitCrashed": "Exited unexpectedly (code {code})",
@@ -87,12 +102,24 @@
   "feed": {
     "eyebrow": "Feed",
     "empty": "Attention events appear here",
+    "reconnectOffer": "A saved monitor is back — restore its pop-out layout?",
+    "restore": "Restore",
+    "notNow": "Not now",
     "kind": {
       "done": "done",
       "needs-input": "needs input",
       "needs-permission": "needs permission",
       "crashed": "crashed"
     }
+  },
+  "feedView": {
+    "empty": "No activity yet — the Feed renders the conversation once it starts.",
+    "thinking": "thinking…",
+    "you": "you",
+    "waiting": "waiting in Terminal ↗",
+    "quiet": "quiet",
+    "normal": "normal",
+    "firehose": "firehose"
   },
   "statusbar": {
     "sessions": "{count, plural, =0 {no sessions} one {# session} other {# sessions}}",
