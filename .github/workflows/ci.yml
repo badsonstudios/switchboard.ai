@@ -29,3 +29,39 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run check:pty
+
+  e2e:
+    name: e2e ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Electron needs these system libs + a virtual display on headless Linux
+      - name: Linux Electron deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 \
+            libcups2 libgtk-3-0 libgbm1 libasound2t64 libxshmfence1
+      - name: e2e (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run e2e
+      - name: e2e (Windows)
+        if: runner.os == 'Windows'
+        run: npm run e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-${{ matrix.os }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

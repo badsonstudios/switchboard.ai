@@ -4,10 +4,16 @@
 > A fresh session reads this file and knows exactly where things stand.
 
 **Milestone:** Phase 2 - The Switchboard (issues #37–#41 filed; E7 first)
-**In progress:** E8-01 popout WORKS (#43) — root-caused the file:// blocker, now
-serves renderer over loopback http; popout opens (verified via logs)
-**Next up:** Dan confirms terminal renders in the popout, then P2-E8-02 (#44)
+**In progress:** Playwright-Electron e2e harness added — I can now UI-test
+without Dan (incl. pop-out, verified by an automated test)
+**Next up:** P2-E8-02 popout geometry persistence (#44)
 **Branch:** auto/phase-2-switchboard (draft PR #42)
+
+## Testing (3 layers — see skills/startup/references/testing.md)
+`npm test` (unit) · `npm run check:*` (local real-claude proofs) · `npm run e2e`
+(Playwright drives the real window headlessly; fake provider = shell-in-a-PTY,
+temp-home isolated, CI-safe). **New user-facing surface ⇒ add an e2e test, not
+a "[Dan eyeball]" note.**
 
 ## Phase status
 
@@ -30,6 +36,15 @@ serves renderer over loopback http; popout opens (verified via logs)
 
 ## Log
 
+- 2026-07-21 — **Playwright-Electron e2e testing added** (Dan's ask: "fully
+  test the UI without me"). Harness `e2e/fixtures/app.ts` launches the built
+  app fully isolated (temp HOME, never touches real ~/.claude.json/workspace)
+  with a FAKE PROVIDER (shell-in-a-PTY, no claude login → CI-safe). 8 e2e tests:
+  boot + loopback-http, theme toggle, pseudo-locale, autonomy cycle, session
+  spawns a live terminal (type a command → see output), **pop-out opens a 2nd
+  OS window (E8-01 now verified by test, not eyeball)**, rail lists the session.
+  npm scripts (e2e / e2e:only / e2e:headed / e2e:ui), CI e2e job (Windows +
+  Linux/xvfb), testing.md rewritten (3 layers). 101 unit + 8 e2e green.
 - 2026-07-21 — **E8-01 popout WORKS (#43)**: Dan reported ⬏ did nothing.
   Instrumented (renderer-console→log, window-open logging, auto-popout seam)
   and root-caused from the app's own log: `dockview: popout URL must be
