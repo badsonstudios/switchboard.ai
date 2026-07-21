@@ -125,6 +125,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         langBadge: prior?.identity.langBadge ?? detectProjectType(opts.folder),
       };
 
+      // an existing card keeps its autonomy across resumes; a brand-new card
+      // uses whatever the titlebar chip sent (so the chip only affects NEW
+      // sessions, never silently changes a running one)
+      const autonomy = prior?.autonomy ?? opts.autonomy;
+
       if (deps.autoTrust()) ensureFolderTrusted(opts.folder, log);
       // only --resume when a real conversation exists for that id; otherwise a
       // stale/empty id would make claude exit ("No conversation found") and
@@ -134,7 +139,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         conversationExists(deps.projectsRoot, opts.folder, prior.nativeSessionId);
       const record = manager.create(identity, {
         settingsFor: (id) => hooks.buildHookSettings(id),
-        autonomy: opts.autonomy,
+        autonomy,
         resumeSessionId: canResume ? prior?.nativeSessionId : undefined,
       });
       cardOfLive.set(record.id, opts.cardId);
@@ -147,6 +152,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         // session's onNativeSessionId will fill in the new one
         nativeSessionId: canResume ? prior?.nativeSessionId : undefined,
         suspendedAt: prior?.suspendedAt ?? '',
+        usage: prior?.usage,
+        model: prior?.model,
+        autonomy,
+        taskLabel: prior?.taskLabel,
       });
       log.info('session started for card', {
         sessionId: record.id,
@@ -154,9 +163,16 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         folder: opts.folder,
         resumed: canResume,
       });
-      // seed the card's usage display from the persisted total so it doesn't
-      // read zero while resuming
-      return { ...record, cardId: opts.cardId, priorUsage: prior?.usage, priorModel: prior?.model };
+      // seed the card's display from the persisted record so nothing reads
+      // empty while resuming
+      return {
+        ...record,
+        cardId: opts.cardId,
+        priorUsage: prior?.usage,
+        priorModel: prior?.model,
+        autonomy,
+        taskLabel: prior?.taskLabel,
+      };
     }
   );
 
@@ -192,6 +208,12 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   // drop only the live session (restart): keep the record so it can respawn
   ipcMain.handle('sessions:dropLive', (_e, cardId: string) => dropLiveForCard(cardId));
+
+  // freeform task label for a card (E7-03), persisted across restarts
+  ipcMain.handle('sessions:setTaskLabel', (_e, cardId: string, label: string) => {
+    const prior = deps.persist.list().find((s) => s.id === cardId);
+    if (prior) deps.persist.upsert({ ...prior, taskLabel: String(label).slice(0, 120) });
+  });
 
   ipcMain.handle('sessions:rename', (_e, liveId: string, title: string) => {
     manager.rename(liveId, title);

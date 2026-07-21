@@ -21,6 +21,8 @@
     "empty": "Add a session card to begin",
     "cardBody": "{title} — session card; terminal arrives with E3-02",
     "resuming": "Resuming {title}…",
+    "taskLabelEmpty": "+ task label",
+    "taskLabelHint": "Click to set a task label for this session",
     "sessionEnded": "Session ended",
     "exitCrashed": "Exited unexpectedly (code {code})",
     "exitClean": "The session closed.",
@@ -32,7 +34,8 @@
     "plan": "🛡 plan",
     "ask": "🛡 ask",
     "auto-edit": "🛡 auto-edit",
-    "full-auto": "🛡 full-auto"
+    "full-auto": "🛡 full-auto",
+    "title": "Autonomy mode this session runs at"
   },
   "preflight": {
     "missingCli": "claude CLI not found — install it and log in: npm install -g @anthropic-ai/claude-code, then run `claude` once. New sessions are disabled until then.",

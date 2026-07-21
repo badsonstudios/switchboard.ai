@@ -31,6 +31,7 @@ interface Live {
   id: string;
   accent?: string;
   badge?: string;
+  autonomy?: string;
 }
 
 function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element {
@@ -47,6 +48,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const [live, setLive] = React.useState<Live | null>(null);
   const [exited, setExited] = React.useState<{ code: number; crashed: boolean } | null>(null);
   const [usage, setUsage] = React.useState<{ usage: Usage; model?: string } | null>(null);
+  const [taskLabel, setTaskLabel] = React.useState<string>('');
+  const [editingLabel, setEditingLabel] = React.useState(false);
   const spawning = React.useRef(false);
   const cardId = props.params?.cardId;
   const folder = props.params?.folder;
@@ -61,13 +64,23 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   React.useEffect(() => {
     if (!visible || live || exited || spawning.current || !cardId || !folder) return;
     spawning.current = true;
+    // titlebar autonomy chip applies to NEW cards; main keeps a card's own
+    // autonomy across resumes
+    const stored = localStorage.getItem('switchboard.autonomy');
+    const autonomy =
+      stored === 'plan' || stored === 'auto-edit' || stored === 'full-auto' ? stored : 'ask';
     void window.switchboard.sessions
-      .create({ cardId, folder, title: props.api.title ?? folder })
+      .create({ cardId, folder, title: props.api.title ?? folder, autonomy })
       .then((record) => {
         if (cardId) liveToCard.set(record.id, cardId);
-        setLive({ id: record.id, accent: record.identity.accentColor, badge: record.identity.langBadge });
-        // seed usage from the persisted total so it doesn't read zero on resume
+        setLive({
+          id: record.id,
+          accent: record.identity.accentColor,
+          badge: record.identity.langBadge,
+          autonomy: record.autonomy,
+        });
         if (record.priorUsage) setUsage({ usage: record.priorUsage, model: record.priorModel });
+        if (record.taskLabel) setTaskLabel(record.taskLabel);
       })
       .catch(() => {
         setExited({ code: -1, crashed: true }); // spawn failed — show the overlay
@@ -171,26 +184,77 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       />
       {live ? (
         <div style={{ flex: 1, paddingInlineStart: 3, minInlineSize: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
-          {(usage || git?.isRepo) && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                paddingInline: 8,
-                paddingBlock: 2,
-                fontSize: 10,
-                fontFamily: 'var(--font-mono)',
-                color: 'var(--muted)',
-                background: 'var(--panel2)',
-                borderBlockEnd: '1px solid var(--border)',
-              }}
-            >
-              <GitContext status={git} />
-              <span style={{ flex: 1 }} />
-              {usage && <UsageStrip usage={usage.usage} model={usage.model} inline />}
-            </div>
-          )}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              paddingInline: 8,
+              paddingBlock: 2,
+              fontSize: 10,
+              fontFamily: 'var(--font-mono)',
+              color: 'var(--muted)',
+              background: 'var(--panel2)',
+              borderBlockEnd: '1px solid var(--border)',
+            }}
+          >
+            {live.autonomy && live.autonomy !== 'ask' && (
+              <span
+                title={t('autonomy.title')}
+                style={{
+                  color: live.autonomy === 'full-auto' ? 'var(--status-crashed)' : 'var(--muted)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 4,
+                  paddingInline: 4,
+                }}
+              >
+                {t(`autonomy.${live.autonomy}`)}
+              </span>
+            )}
+            {editingLabel ? (
+              <input
+                autoFocus
+                defaultValue={taskLabel}
+                onBlur={(e) => {
+                  const v = e.target.value.trim();
+                  setTaskLabel(v);
+                  if (cardId) void window.switchboard.sessions.setTaskLabel(cardId, v);
+                  setEditingLabel(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                  if (e.key === 'Escape') setEditingLabel(false);
+                }}
+                style={{
+                  background: 'var(--panel)',
+                  color: 'var(--text)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 4,
+                  fontSize: 10,
+                  fontFamily: 'var(--font-ui)',
+                  minInlineSize: 120,
+                }}
+              />
+            ) : (
+              <span
+                onClick={() => setEditingLabel(true)}
+                title={t('grid.taskLabelHint')}
+                style={{
+                  cursor: 'text',
+                  color: taskLabel ? 'var(--text)' : 'var(--faint)',
+                  fontFamily: 'var(--font-ui)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {taskLabel || t('grid.taskLabelEmpty')}
+              </span>
+            )}
+            <GitContext status={git} />
+            <span style={{ flex: 1 }} />
+            {usage && <UsageStrip usage={usage.usage} model={usage.model} inline />}
+          </div>
           <div style={{ flex: 1, minBlockSize: 0, position: 'relative' }}>
             <TerminalPane sessionId={live.id} visible={visible} />
             {overlay && <div style={overlayBackdrop}>{overlay}</div>}

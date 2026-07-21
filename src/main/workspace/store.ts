@@ -23,6 +23,10 @@ export interface PersistedSession {
   /** last-known token totals + model, so usage survives a resume/restart */
   usage?: { input: number; output: number; cacheRead: number; cacheCreate: number };
   model?: string;
+  /** autonomy mode this card runs at (stable across resumes) */
+  autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
+  /** freeform "what is this doing" label, distinct from the folder title */
+  taskLabel?: string;
 }
 
 export interface PersistedWindow extends WindowState {

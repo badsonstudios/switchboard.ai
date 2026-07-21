@@ -47,6 +47,8 @@ const api = {
         cardId: string;
         priorUsage?: { input: number; output: number; cacheRead: number; cacheCreate: number };
         priorModel?: string;
+        autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
+        taskLabel?: string;
       }
     > => ipcRenderer.invoke('sessions:create', opts),
     list: (): Promise<SessionRecordDto[]> => ipcRenderer.invoke('sessions:list'),
@@ -54,6 +56,8 @@ const api = {
       ipcRenderer.invoke('sessions:knownCards'),
     closeCard: (cardId: string): Promise<void> => ipcRenderer.invoke('sessions:closeCard', cardId),
     dropLive: (cardId: string): Promise<void> => ipcRenderer.invoke('sessions:dropLive', cardId),
+    setTaskLabel: (cardId: string, label: string): Promise<void> =>
+      ipcRenderer.invoke('sessions:setTaskLabel', cardId, label),
     rename: (id: string, title: string): Promise<SessionRecordDto | undefined> =>
       ipcRenderer.invoke('sessions:rename', id, title),
     onStatus: (cb: (change: unknown) => void): (() => void) => {
