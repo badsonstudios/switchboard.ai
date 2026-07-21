@@ -145,12 +145,19 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   };
   const popOut = (): void => {
     const panel = props.containerApi.getPanel(props.api.id);
-    if (!panel) return;
+    if (!panel) {
+      console.error('[popout] no panel for', props.api.id);
+      return;
+    }
     // explicit same-origin popout.html (resolves in dev + packaged); the
     // terminal keeps running because its JS stays in this window while its DOM
     // is adopted into the new OS window (E8)
     const popoutUrl = new URL('popout.html', window.location.href).toString();
-    void props.containerApi.addPopoutGroup(panel, { popoutUrl });
+    console.log('[popout] addPopoutGroup ->', popoutUrl);
+    props.containerApi.addPopoutGroup(panel, { popoutUrl }).then(
+      (ok) => console.log('[popout] addPopoutGroup result:', ok),
+      (err) => console.error('[popout] addPopoutGroup threw:', String(err))
+    );
   };
   const restartSelf = (): void => {
     // drop the dead live session (keep the card record), then re-arm the lazy
@@ -438,6 +445,9 @@ export function SessionGrid(props: {
         report();
         window.switchboard.workspace.setLayout(api.toJSON());
       });
+      // E8 diagnostics: surface popout success/failure
+      api.onDidOpenPopoutWindowFail?.(() => console.error('[popout] onDidOpenPopoutWindowFail'));
+      api.onDidAddPopoutGroup?.(() => console.log('[popout] onDidAddPopoutGroup (opened OK)'));
       // window teardown must not be mistaken for the user closing cards
       window.addEventListener('beforeunload', () => {
         tearingDown = true;

@@ -4,9 +4,9 @@
 > A fresh session reads this file and knows exactly where things stand.
 
 **Milestone:** Phase 2 - The Switchboard (issues #37–#41 filed; E7 first)
-**In progress:** E8 popout foundation built (#43) — BLOCKED on Dan verifying the
-popout actually opens before I build E8-02/03 on top of it
-**Next up:** Dan tests ⬏ pop-out; then P2-E8-02 geometry persistence (#44)
+**In progress:** E8-01 popout WORKS (#43) — root-caused the file:// blocker, now
+serves renderer over loopback http; popout opens (verified via logs)
+**Next up:** Dan confirms terminal renders in the popout, then P2-E8-02 (#44)
 **Branch:** auto/phase-2-switchboard (draft PR #42)
 
 ## Phase status
@@ -30,15 +30,20 @@ popout actually opens before I build E8-02/03 on top of it
 
 ## Log
 
+- 2026-07-21 — **E8-01 popout WORKS (#43)**: Dan reported ⬏ did nothing.
+  Instrumented (renderer-console→log, window-open logging, auto-popout seam)
+  and root-caused from the app's own log: `dockview: popout URL must be
+  same-origin http(s); got file://…`. dockview flatly refuses file://.
+  Fix: a loopback static server serves the packaged renderer over
+  http://127.0.0.1:<port> (was loadFile/file://); popout URL + will-navigate +
+  window-open allowance now key off that origin. Verified via log:
+  window-open(popout:true) → onDidAddPopoutGroup → result:true. Diagnostic
+  seam removed; renderer-console-forwarding kept. 101 tests, clean boot over
+  http. **[Dan eyeball]: click ⬏ — a window should tear off with the terminal
+  live.** E8-02/03 build once confirmed.
 - 2026-07-20 — **E8 spike + foundation (#43)**: dockview 7 has a first-class
-  popout API. Wired the Electron integration — built popout.html entry, a
-  NARROW window-open allowance scoped to our own same-origin popout.html
-  (everything else still denied, §5.29 intact), and a ⬏ control on each card
-  calling addPopoutGroup. Builds + boots clean; 101 tests. E8-02/03 issues
-  filed (#44/#45). **BLOCKING [Dan eyeball]: click ⬏ on a card — does it open
-  in its own OS window with the terminal still working under sandbox+CSP?**
-  Not building E8-02/03 until this is confirmed (it's the design's flagged
-  risk).
+  popout API; wired popout.html entry + narrow window-open allowance + ⬏
+  control. (file:// blocker found next session.)
 - 2026-07-20 — **E7 epic COMPLETE** (richer cards): E7-01 live usage/cost,
   E7-02 git context line, E7-03 autonomy badge + editable task label (fixed a
   chip regression), E7-04 plan-as-progress chip (TodoWrite extraction), E7-05
