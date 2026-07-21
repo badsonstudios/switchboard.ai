@@ -1,7 +1,7 @@
 // P2-E12-02: persistent groups in the rail — durable containers that survive
 // a relaunch even when EMPTY (the "empty ≠ gone" contract).
 import { test, expect } from '@playwright/test';
-import { launchApp, LaunchedApp } from './fixtures/app';
+import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
 
 test.describe('persistent groups (E12)', () => {
   let a: LaunchedApp;
@@ -29,8 +29,41 @@ test.describe('persistent groups (E12)', () => {
     await expect(a.window.getByText('empty', { exact: true })).toBeVisible();
   });
 
+  test('drag a session into a group and back out; membership survives relaunch (E12-04)', async () => {
+    const folder = tempProjectFolder();
+    const title = folder.split(/[\\/]/).pop()!;
+    const first = await launchApp({ seedFolder: folder });
+    const w = first.window;
+    await expect(w.getByText(title).first()).toBeVisible();
+
+    await w.getByTitle('Create a persistent group').click();
+    await expect(w.getByText('New group')).toBeVisible();
+
+    // HTML5 DnD, synthesized: rail row -> group header
+    const row = w.locator('nav [draggable="true"]', { hasText: title }).first();
+    const header = w.getByText('New group', { exact: true });
+    const dt = await w.evaluateHandle(() => new DataTransfer());
+    await row.dispatchEvent('dragstart', { dataTransfer: dt });
+    await header.dispatchEvent('drop', { dataTransfer: dt });
+    // joined: the group's empty placeholder is gone, member count shows
+    await expect(w.getByText('empty', { exact: true })).toHaveCount(0);
+
+    // survives a relaunch
+    await w.waitForTimeout(800);
+    await first.close();
+    a = await launchApp({ home: first.home });
+    await expect(a.window.getByText('New group')).toBeVisible();
+    await expect(a.window.getByText('empty', { exact: true })).toHaveCount(0);
+
+    // drag back out to the rail background -> ungrouped again
+    const row2 = a.window.locator('nav [draggable="true"]', { hasText: title }).first();
+    const dt2 = await a.window.evaluateHandle(() => new DataTransfer());
+    await row2.dispatchEvent('dragstart', { dataTransfer: dt2 });
+    await a.window.locator('nav').dispatchEvent('drop', { dataTransfer: dt2 });
+    await expect(a.window.getByText('empty', { exact: true })).toBeVisible();
+  });
+
   test("a group's ⊕ opens the new session inside that group (E12-03)", async () => {
-    const { tempProjectFolder } = await import('./fixtures/app');
     const folder = tempProjectFolder();
     a = await launchApp();
     const w = a.window;

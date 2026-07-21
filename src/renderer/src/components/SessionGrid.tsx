@@ -17,6 +17,7 @@ import { UsageStrip } from './UsageStrip';
 import { GitContext, GitStatusDto } from './GitContext';
 import { Usage, ZERO_USAGE } from '../lib/usage';
 import { sanitizePopoutLayout } from '../lib/layout';
+import { pickAdoptedGroupId } from '../lib/groups';
 
 // The DURABLE unit is the card (cardId + folder). The live claude session
 // under it is ephemeral: spawned — or --resumed — lazily the first time the
@@ -155,6 +156,17 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       if (s.sessionId === live.id && s.to) setStatus(s.to);
     });
   }, [live]);
+
+  // membership follows the panel when the user drags it between dockview
+  // groups in the grid (E12-04)
+  React.useEffect(() => {
+    const d = props.api.onDidGroupChange(() => {
+      if (tearingDown || restoringLayout) return;
+      void adoptMembershipFromDockGroup(props);
+    });
+    return () => d.dispose();
+    // props.api is stable for the panel's lifetime
+  }, [props.api]);
 
   // Track popout location + implement the two dock-back semantics (E8-04):
   // the pop-out BUTTON toggling in keeps the session alive; the user closing
@@ -557,11 +569,40 @@ function forgetCardLiveIds(cardId: string): void {
 // set while the window is tearing down: Dockview disposal must NOT be mistaken
 // for the user closing cards (which would wipe persisted records)
 let tearingDown = false;
+// set while fromJSON replays a saved layout: those group-change events are
+// restore mechanics, not user drags — never adopt membership from them
+let restoringLayout = false;
+
+// Grid-drag membership sync (E12-04): after a user drag drops a session panel
+// into a dockview group, it adopts its new siblings' persistent group.
+async function adoptMembershipFromDockGroup(
+  props: IDockviewPanelProps<CardParams>
+): Promise<void> {
+  const cardId = props.params?.cardId;
+  if (!cardId) return;
+  const panel = props.containerApi.getPanel(props.api.id);
+  if (!panel || panel.group.api.location.type !== 'grid') return; // popouts don't regroup
+  const siblingIds = panel.group.panels
+    .map((p) => /^session-(.+)$/.exec(p.id)?.[1])
+    .filter((x): x is string => !!x);
+  const cards = await window.switchboard.sessions.cards();
+  const mine = cards.find((c) => c.cardId === cardId);
+  if (!mine) return; // brand-new card, no record yet — create() carries its groupId
+  const target = pickAdoptedGroupId(cardId, siblingIds, cards);
+  if ((mine.groupId ?? null) !== target) {
+    await window.switchboard.groups.setSessionGroup(cardId, target);
+    // the rail lives in App state — poke it to re-read memberships
+    window.dispatchEvent(new Event('switchboard:groups-changed'));
+  }
+}
 
 export interface GridController {
   /** create a session in `folder` and add its card (drag-drop, rail actions);
    *  groupId places it clustered with its persistent group (E12) */
   addSessionCard: (folder: string, groupId?: string) => Promise<void>;
+  /** move an existing card's PANEL next to its persistent-group siblings
+   *  after a rail drop set its membership (E12-04) */
+  moveCardToGroup: (cardId: string, groupId: string | null) => void;
   /** focus an existing session's card */
   focusSession: (sessionId: string) => void;
   /** open (or focus) the per-session diff tab (E5-02) */
@@ -617,6 +658,23 @@ export function SessionGrid(props: {
     if (!props.controller) return;
     props.controller.current = {
       addSessionCard,
+      moveCardToGroup: (cardId, groupId) => {
+        const api = apiRef.current;
+        if (!api || !groupId) return; // ungrouping keeps the panel where it sits
+        const panel = api.getPanel(`session-${cardId}`);
+        if (!panel) return;
+        void window.switchboard.sessions.cards().then((cards) => {
+          const siblings = new Set(
+            cards
+              .filter((c) => c.groupId === groupId && c.cardId !== cardId)
+              .map((c) => `session-${c.cardId}`)
+          );
+          const sibling = api.panels.find(
+            (p) => siblings.has(p.id) && p.group.api.location.type === 'grid'
+          );
+          if (sibling && sibling.group !== panel.group) panel.api.moveTo({ group: sibling.group });
+        });
+      },
       focusSession: (liveId) => {
         apiRef.current?.getPanel(`session-${cardIdForLive(liveId)}`)?.focus();
       },
@@ -693,7 +751,12 @@ export function SessionGrid(props: {
           // now-missing monitor — fix both before restoring (E8-02)
           const workAreas = await window.switchboard.workAreas();
           const sane = sanitizePopoutLayout(saved, window.location.origin, workAreas);
-          api.fromJSON(sane as Parameters<DockviewApi['fromJSON']>[0]);
+          restoringLayout = true;
+          try {
+            api.fromJSON(sane as Parameters<DockviewApi['fromJSON']>[0]);
+          } finally {
+            restoringLayout = false;
+          }
           // keep restored session cards that still have a persisted record
           // (they resume-on-focus); drop any panel with no record behind it.
           // Diff panes are derived — always drop and let the user reopen.

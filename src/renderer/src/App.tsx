@@ -142,6 +142,16 @@ export function App(): React.JSX.Element {
     void refreshGroups();
   }, [refreshGroups]);
 
+  // grid drags change membership in the main process (E12-04) — re-read
+  useEffect(() => {
+    const h = (): void => {
+      void refreshSessions();
+      void refreshGroups();
+    };
+    window.addEventListener('switchboard:groups-changed', h);
+    return () => window.removeEventListener('switchboard:groups-changed', h);
+  }, [refreshSessions, refreshGroups]);
+
   useEffect(() => {
     void refreshSessions();
     const offStatus = bridge.sessions?.onStatus?.(() => void refreshSessions());
@@ -201,6 +211,12 @@ export function App(): React.JSX.Element {
           }}
           onRecolorGroup={(id, color) => {
             void bridge.groups?.update?.(id, { color }).then(() => refreshGroups());
+          }}
+          onMoveToGroup={(cardId, gid) => {
+            void bridge.groups?.setSessionGroup?.(cardId, gid).then(() => {
+              grid.current?.moveCardToGroup(cardId, gid);
+              void refreshSessions();
+            });
           }}
           onOpenInGroup={(gid) => {
             void bridge.sessions?.pickFolder?.().then((folder) => {

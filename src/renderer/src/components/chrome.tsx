@@ -115,6 +115,8 @@ export function SessionsRail(props: {
   onDeleteGroup: (id: string) => void;
   /** open a NEW session inside this group (E12-03) */
   onOpenInGroup: (id: string) => void;
+  /** move a session between groups / to ungrouped (E12-04, rail DnD) */
+  onMoveToGroup: (cardId: string, groupId: string | null) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [editing, setEditing] = React.useState<string | null>(null);
@@ -139,9 +141,15 @@ export function SessionsRail(props: {
     });
   };
 
+  const DND_TYPE = 'application/x-switchboard-card';
   const sessionRow = (s: RailSession): React.JSX.Element => (
     <div
       key={s.id}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData(DND_TYPE, s.id);
+        e.dataTransfer.effectAllowed = 'move';
+      }}
       onClick={() => props.onFocus(s.id)}
       onDoubleClick={() => {
         setEditing(s.id);
@@ -238,6 +246,14 @@ export function SessionsRail(props: {
 
   return (
     <nav
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes(DND_TYPE)) e.preventDefault();
+      }}
+      onDrop={(e) => {
+        // a drop on the rail background (not a group header) ungroups
+        const cardId = e.dataTransfer.getData(DND_TYPE);
+        if (cardId) props.onMoveToGroup(cardId, null);
+      }}
       style={{
         inlineSize: 200,
         background: 'var(--panel)',
@@ -280,6 +296,14 @@ export function SessionsRail(props: {
           <div key={g.id}>
             <div
               onClick={() => toggleCollapsed(g.id)}
+              onDragOver={(e) => {
+                if (e.dataTransfer.types.includes(DND_TYPE)) e.preventDefault();
+              }}
+              onDrop={(e) => {
+                e.stopPropagation(); // don't bubble to the nav's ungroup drop
+                const cardId = e.dataTransfer.getData(DND_TYPE);
+                if (cardId) props.onMoveToGroup(cardId, g.id);
+              }}
               title={isCollapsed ? t('rail.expand') : t('rail.collapse')}
               style={{
                 display: 'flex',

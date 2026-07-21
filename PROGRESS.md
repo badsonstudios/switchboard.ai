@@ -46,6 +46,14 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **P2-E12-04 done (#52)**: move-between-groups. Rail rows are
+  draggable — drop on a group header joins it (panel moves next to its
+  siblings), drop on the rail background ungroups; grid drags adopt the new
+  dockview-group's persistent group (pickAdoptedGroupId, unit-tested;
+  restore-replay guarded). e2e drags in+out via synthesized DataTransfer and
+  relaunches. Note: the dockview-native grid drag itself isn't e2e-drivable
+  headlessly — covered by the unit rule + wiring; **[Dan eyeball]** one real
+  grid drag.
 - 2026-07-21 — **P2-E12-03 done (#51)**: group ⊕ opens the folder picker and
   lands the new session inside that group (dock-group clustering + persisted
   membership via the E12-02 plumbing); plain "+ session" still lands
