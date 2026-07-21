@@ -119,6 +119,9 @@
     "thinking": "thinking…",
     "you": "you",
     "waiting": "continue in Terminal ↗",
+    "composerPlaceholder": "Prompt this session — Enter to send, Shift+Enter for a new line",
+    "send": "Send to the session",
+    "sendIcon": "↑",
     "quiet": "quiet",
     "normal": "normal",
     "firehose": "firehose"

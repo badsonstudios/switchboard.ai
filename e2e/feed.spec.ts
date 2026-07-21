@@ -4,7 +4,7 @@
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
-import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
+import { launchApp, LaunchedApp, showTerminal, tempProjectFolder } from './fixtures/app';
 
 function slugForCwd(cwd: string): string {
   return cwd.replace(/[\\/:. ]/g, '-');
@@ -57,5 +57,23 @@ test.describe('Feed view (E12-06)', () => {
     await expect(w.getByText('Hello from the')).toBeVisible(); // prose stays
     await w.getByRole('button', { name: 'normal' }).click();
     await expect(w.getByText('Read', { exact: true })).toBeVisible();
+  });
+
+  test('the composer drives the real CLI over the PTY (E10-02)', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
+
+    // type a prompt in the Session tab's composer and hit Enter — the fake
+    // provider is a real shell, so the command actually executes
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.fill('echo COMPOSER_OK_42');
+    await box.press('Enter');
+    await expect(box).toHaveValue(''); // cleared on submit
+
+    // proof it reached the CLI: the (hidden) Terminal shows the output
+    await showTerminal(w);
+    await expect(w.getByText(/COMPOSER_OK_42/).first()).toBeVisible({ timeout: 15_000 });
   });
 });

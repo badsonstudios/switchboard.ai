@@ -48,6 +48,11 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **P2-E10-02 done (#60)**: prompt composer v1 in the Session
+  view — bottom-docked textarea (Enter sends, Shift+Enter newline, auto-grow,
+  ↑ send button), writes the prompt to the live PTY (multiline as one
+  bracketed paste; escape bytes built from charCodes). e2e: composer →
+  PTY → real shell output. The composer is an input ROUTE (§5.10 guardrail).
 - 2026-07-21 — **P2-E10-01 done (#59)**: view tab renamed Feed → **Session**;
   **Terminal out of the default strip** — ⋯ menu (now a real menu) shows/
   hides it per session (persisted in the ui blob; stored Terminal tab only
