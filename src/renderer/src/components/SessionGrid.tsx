@@ -17,7 +17,7 @@ import { FeedView } from './FeedView';
 import { UsageStrip } from './UsageStrip';
 import { GitContext, GitStatusDto } from './GitContext';
 import { Usage, ZERO_USAGE } from '../lib/usage';
-import { sanitizePopoutLayout } from '../lib/layout';
+import { RescuedPopout, sanitizePopoutLayout } from '../lib/layout';
 import { pickAdoptedGroupId } from '../lib/groups';
 import { uiGet, uiSet } from '../lib/ui-state';
 
@@ -625,6 +625,8 @@ export interface GridController {
   moveCardToGroup: (cardId: string, groupId: string | null) => void;
   /** focus an existing session's card */
   focusSession: (sessionId: string) => void;
+  /** re-pop rescued popouts at their stashed positions (E8-06 accept) */
+  restoreRescuedPopouts: () => void;
   /** open (or focus) the per-session diff tab (E5-02) */
   openDiff: (sessionId: string, folder: string, title: string) => void;
 }
@@ -697,6 +699,33 @@ export function SessionGrid(props: {
       },
       focusSession: (liveId) => {
         apiRef.current?.getPanel(`session-${cardIdForLive(liveId)}`)?.focus();
+      },
+      restoreRescuedPopouts: () => {
+        const api = apiRef.current;
+        if (!api) return;
+        const stash = uiGet<RescuedPopout[]>('rescuedPopouts', []);
+        const popoutUrl = new URL('popout.html', window.location.href).toString();
+        for (const r of stash) {
+          for (const pid of r.panelIds) {
+            const panel = api.getPanel(pid);
+            if (!panel) continue; // card closed since the rescue — leave it be
+            const loc = panel.group.api.location;
+            if (loc.type === 'popout') {
+              // the rescue reopened it near the main window (E8-02): move that
+              // window back to its stashed spot on the returned display. The
+              // move happens in the main process — DOM moveTo clamps to the
+              // screens Chromium knew at open time.
+              const win = loc.getWindow();
+              if (win) {
+                void window.switchboard.movePopout({ x: win.screenX, y: win.screenY }, r.box);
+              }
+            } else if (loc.type === 'grid') {
+              // docked back since (suspend/dock-in): pop it out fresh, in place
+              void api.addPopoutGroup(panel, { popoutUrl, position: r.box });
+            }
+          }
+        }
+        uiSet('rescuedPopouts', []);
       },
       openDiff: (liveId, folder, title) => {
         const api = apiRef.current;
@@ -775,12 +804,18 @@ export function SessionGrid(props: {
           // launch's (random) loopback port and their position may be on a
           // now-missing monitor — fix both before restoring (E8-02)
           const workAreas = await window.switchboard.workAreas();
-          const sane = sanitizePopoutLayout(saved, window.location.origin, workAreas);
+          const rescuedNow: RescuedPopout[] = [];
+          const sane = sanitizePopoutLayout(saved, window.location.origin, workAreas, rescuedNow);
           restoringLayout = true;
           try {
             api.fromJSON(sane as Parameters<DockviewApi['fromJSON']>[0]);
           } finally {
             restoringLayout = false;
+          }
+          // stash what was rescued so the display-reconnect offer (E8-06) can
+          // put it back — appended, cleared only by an accepted restore
+          if (rescuedNow.length > 0) {
+            uiSet('rescuedPopouts', [...uiGet<RescuedPopout[]>('rescuedPopouts', []), ...rescuedNow]);
           }
           // keep restored session cards that still have a persisted record
           // (they resume-on-focus); drop any panel with no record behind it.

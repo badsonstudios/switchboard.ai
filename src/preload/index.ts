@@ -37,6 +37,20 @@ const api = {
   /** display work areas, for popout-position rescue on restore (E8-02) */
   workAreas: (): Promise<Array<{ x: number; y: number; width: number; height: number }>> =>
     ipcRenderer.invoke('app:workAreas'),
+  /** move the popout window currently at `from` to `to` (E8-06 restore) */
+  movePopout: (
+    from: { x: number; y: number },
+    to: { left: number; top: number; width: number; height: number }
+  ): Promise<boolean> => ipcRenderer.invoke('app:movePopout', from, to),
+  /** a display was (re)connected — new work areas (E8-06 reconnect offer) */
+  onDisplaysChanged: (
+    cb: (areas: Array<{ x: number; y: number; width: number; height: number }>) => void
+  ): (() => void) => {
+    const h = (_e: unknown, areas: Array<{ x: number; y: number; width: number; height: number }>) =>
+      cb(areas);
+    ipcRenderer.on('app:displaysChanged', h);
+    return () => ipcRenderer.removeListener('app:displaysChanged', h);
+  },
   /** sandbox-safe path for a dropped File (drag-folder-onto-window, E3-04) */
   pathForFile: (file: File): string => webUtils.getPathForFile(file),
   sessions: {

@@ -21,6 +21,10 @@ const KIND_TOKEN: Record<FeedEventDto['kind'], string> = {
 export function FeedPanel(props: {
   sessions: RailSession[];
   onFocus: (sessionId: string) => void;
+  /** a saved display is back — offer a one-click layout restore (E8-06) */
+  reconnectOffer?: boolean;
+  onRestoreLayout?: () => void;
+  onDismissOffer?: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [events, setEvents] = useState<FeedEventDto[]>([]);
@@ -58,6 +62,52 @@ export function FeedPanel(props: {
       >
         {t('feed.eyebrow')}
       </div>
+      {props.reconnectOffer && (
+        <div
+          style={{
+            background: 'var(--panel2)',
+            border: '1px solid var(--status-working)',
+            borderRadius: 'var(--radius-chip)',
+            padding: '7px 9px',
+            marginBlockEnd: 6,
+            fontSize: 11,
+          }}
+        >
+          <div style={{ color: 'var(--text)', marginBlockEnd: 6 }}>{t('feed.reconnectOffer')}</div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              onClick={props.onRestoreLayout}
+              style={{
+                background: 'var(--btn-primary-bg)',
+                color: 'var(--btn-primary-text)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-chip)',
+                padding: '2px 10px',
+                cursor: 'pointer',
+                fontSize: 11,
+                fontFamily: 'var(--font-ui)',
+              }}
+            >
+              {t('feed.restore')}
+            </button>
+            <button
+              onClick={props.onDismissOffer}
+              style={{
+                background: 'transparent',
+                color: 'var(--muted)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-chip)',
+                padding: '2px 10px',
+                cursor: 'pointer',
+                fontSize: 11,
+                fontFamily: 'var(--font-ui)',
+              }}
+            >
+              {t('feed.notNow')}
+            </button>
+          </div>
+        </div>
+      )}
       {events.length === 0 && (
         <div style={{ color: 'var(--muted)', fontSize: 11 }}>{t('feed.empty')}</div>
       )}

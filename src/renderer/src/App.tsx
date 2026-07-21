@@ -13,6 +13,7 @@ import { SessionGrid, GridController } from './components/SessionGrid';
 import { FeedPanel } from './components/FeedPanel';
 import { Usage, addUsage, estimateCostUsd, ZERO_USAGE } from './lib/usage';
 import { loadUiState, uiGet, uiSet } from './lib/ui-state';
+import { boxOnAnyDisplay, RescuedPopout } from './lib/layout';
 
 // Control-room shell (P1-E3-01): titlebar / rail / grid / statusbar.
 // Terminals (E3-02), identity kit (E3-03), and live badges (E3-05) land next.
@@ -152,6 +153,17 @@ export function App(): React.JSX.Element {
     void bridge.groups?.palette?.().then(setPalette);
   }, [refreshGroups]);
 
+  // display reconnected: OFFER to restore rescued popouts — never automatic
+  // (the new display might be a projector, E8-06/§7)
+  const [reconnectOffer, setReconnectOffer] = useState(false);
+  useEffect(() => {
+    const off = bridge.onDisplaysChanged?.((areas) => {
+      const stash = uiGet<RescuedPopout[]>('rescuedPopouts', []);
+      if (stash.some((r) => boxOnAnyDisplay(r.box, areas))) setReconnectOffer(true);
+    });
+    return () => off?.();
+  }, []);
+
   // grid drags change membership in the main process (E12-04) — re-read
   useEffect(() => {
     const h = (): void => {
@@ -250,7 +262,16 @@ export function App(): React.JSX.Element {
           onCardsChanged={setCards}
           controller={grid}
         />
-        <FeedPanel sessions={sessions} onFocus={(id) => grid.current?.focusSession(id)} />
+        <FeedPanel
+          sessions={sessions}
+          onFocus={(id) => grid.current?.focusSession(id)}
+          reconnectOffer={reconnectOffer}
+          onRestoreLayout={() => {
+            grid.current?.restoreRescuedPopouts();
+            setReconnectOffer(false);
+          }}
+          onDismissOffer={() => setReconnectOffer(false)}
+        />
       </div>
       <StatusBar
         count={cards.length}

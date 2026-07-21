@@ -46,6 +46,17 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **P2-E8-06 done (#48)**: display reconnect offer. Rescued
+  popouts (position nulled by the E8-02 sanitize) are stashed in the ui blob
+  with their original box + panel ids; `display-added` → renderer checks the
+  stash → the event feed shows a one-click "restore layout?" offer — never
+  automatic. Accept moves the still-open popout back via a main-process
+  `app:movePopout` (DOM moveTo clamps to known screens) or re-pops a docked
+  card at the stashed position; "Not now" changes nothing, stash kept.
+  e2e drives rescue → offer → decline → accept (CI can't hotplug a real
+  monitor, so the final placement asserts the move + stash-consumed;
+  **[Dan eyeball]** exact placement when re-docking at the desk).
+  130 unit + 22 e2e green. **All filed E12 + E8-06 scope complete.**
 - 2026-07-21 — **P2-E12-08 done (#56)**: focus-state persistence via a new
   renderer-owned `ui` blob in the workspace store (workspace:getUi/setUi).
   Persists focused card + per-card active view-tab; restore refocuses the
