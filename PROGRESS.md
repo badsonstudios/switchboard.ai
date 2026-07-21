@@ -3,14 +3,12 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-**Milestone:** Phase 2 - The Switchboard (issues #37–#47; E7 + E8 + E8-04/05)
-**In progress:** E8-04 (pop-out UX & multi-monitor, #46) + E8-05 (card header +
-view-tabs, #47) — implemented + tested from Dan's 3-monitor bug report; running
-code review before committing to PR #42.
-**Next up (needs Dan):** review/merge draft PR #42; more of Dan's hands-on
-pop-out testing; then decide on expanding the E9–E14 outlines (`/pm plan`,
-from the 2026-07-21 reconciled plan).
-**Branch:** auto/phase-2-switchboard (draft PR #42)
+**Milestone:** Phase 2 - The Switchboard (E7+E8 MERGED via PR #42; E9–E14 outlined)
+**In progress:** nothing mid-flight.
+**Next up:** `/pm plan` to expand the E9–E14 outlines into work items + issues
+(from the 2026-07-21 reconciled plan); Dan's hands-on pop-out testing on real
+multi-monitor hardware is still valuable feedback.
+**Branch:** main
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
 `npm test` (unit) · `npm run check:*` (local real-claude proofs) · `npm run e2e`
@@ -24,12 +22,12 @@ a "[Dan eyeball]" note.**
 - **Phase 1 — MVP — DONE & MERGED** (PR #36 → main, 2026-07-20): full app —
   session core, hooks, transcripts, git, notifications, persistence +
   resume-on-focus, auto-trust. CI green 3 OSes. Milestone closed.
-- **Phase 2 — The Switchboard — E7 + E8 DONE (on branch, PR #42).** Plan:
+- **Phase 2 — The Switchboard — E7 + E8 MERGED to main** (PR #42 squash-merged
+  2026-07-21, CI green 5 jobs; issues #37–#47 closed). Plan:
   `docs/plans/04-phase-2-switchboard.md` (reconciled vs DESIGN.md §8
-  2026-07-21 — see log). E7 (richer cards) + E8 (pop-out: foundation, geometry
-  persistence, rejoin/lifecycle) complete + e2e-tested; P2-E8-06 (reconnect
-  offer) added later, not yet filed. E9–E14 remain as OUTLINES — not yet
-  expanded into work items or filed as issues (just-in-time; needs `/pm plan`).
+  2026-07-21 — see log). P2-E8-06 (reconnect offer) added later, not yet
+  filed. E9–E14 remain as OUTLINES — not yet expanded into work items or
+  filed as issues (just-in-time; needs `/pm plan`).
 
 ## Blockers / open questions for Dan
 
@@ -46,6 +44,11 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **PR #42 MERGED to main** (Dan's call; squash, branch deleted).
+  E7 richer cards + E8 pop-out complete: 2,876 insertions across 40 files,
+  incl. the Playwright e2e harness (13 tests) and the reconciliation docs.
+  CI green on the tip (unit ×3 OS + e2e Win/Linux). Issues #37–#47 closed.
+  Phase 2 continues from main: next is `/pm plan` to expand E9–E14.
 - 2026-07-21 — **Plan ↔ DESIGN.md reconciliation** (Dan asked for a full
   cross-check; docs-only, no code). The E7–E11 break-out of Phase 2 had
   silently dropped ~half of DESIGN §8's Phase 2 list. Fixed across four docs:
