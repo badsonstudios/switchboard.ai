@@ -57,11 +57,17 @@ export function startStaticServer(root: string): Promise<StaticServer> {
   return new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(0, '127.0.0.1', () => {
+      // don't let the server keep the process alive after the window closes
+      // (otherwise the app can linger as a zombie on quit)
+      server.unref();
       const addr = server.address();
       const port = typeof addr === 'object' && addr ? addr.port : 0;
       resolve({
         origin: `http://127.0.0.1:${port}`,
-        close: () => server.close(),
+        close: () => {
+          server.closeAllConnections?.(); // drop keep-alive sockets holding it open
+          server.close();
+        },
       });
     });
   });

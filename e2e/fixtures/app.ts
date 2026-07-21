@@ -55,7 +55,20 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
     window,
     home,
     cleanup: async () => {
-      await app.close().catch(() => {});
+      // app.close() can hang if the process is slow to exit; force-kill as a
+      // backstop so a single slow teardown never fails the whole worker
+      try {
+        await Promise.race([
+          app.close(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('close timeout')), 12_000)),
+        ]);
+      } catch {
+        try {
+          app.process()?.kill();
+        } catch {
+          /* already gone */
+        }
+      }
       try {
         fs.rmSync(home, { recursive: true, force: true });
       } catch {
