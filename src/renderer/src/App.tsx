@@ -101,24 +101,29 @@ export function App(): React.JSX.Element {
   }, []);
 
   const refreshSessions = React.useCallback(async () => {
-    const list = await bridge.sessions?.list?.();
+    // card-keyed view: includes SUSPENDED cards (restored, not yet resumed)
+    const list = await bridge.sessions?.cards?.();
     if (!list) return;
     setSessions(
-      list.map((s) => ({
-        id: s.id,
-        title: s.identity.title,
-        folder: s.identity.folder,
-        accent: s.identity.accentColor,
-        badge: s.identity.langBadge,
-        status: s.status,
+      list.map((c) => ({
+        id: c.cardId,
+        title: c.title,
+        folder: c.folder,
+        accent: c.accent,
+        badge: c.badge,
+        status: c.status,
       }))
     );
   }, []); // bridge is stable for the window's lifetime
 
   useEffect(() => {
     void refreshSessions();
-    const off = bridge.sessions?.onStatus?.(() => void refreshSessions());
-    return off;
+    const offStatus = bridge.sessions?.onStatus?.(() => void refreshSessions());
+    const offExit = bridge.sessions?.onExited?.(() => void refreshSessions());
+    return () => {
+      offStatus?.();
+      offExit?.();
+    };
   }, [cards, refreshSessions]); // re-sync when the grid's cards change
 
   return (
@@ -154,10 +159,10 @@ export function App(): React.JSX.Element {
       <div style={{ flex: 1, display: 'flex', minBlockSize: 0 }}>
         <SessionsRail
           sessions={sessions}
-          onRename={(id, title) => {
-            void bridge.sessions?.rename?.(id, title).then(() => refreshSessions());
+          onRename={(cardId, title) => {
+            void bridge.sessions?.renameCard?.(cardId, title).then(() => refreshSessions());
           }}
-          onFocus={(id) => grid.current?.focusSession(id)}
+          onFocus={(cardId) => grid.current?.focusSession(cardId)}
           onDiff={(s) => {
             if (s.folder) grid.current?.openDiff(s.id, s.folder, s.title);
           }}

@@ -52,8 +52,21 @@ const api = {
       }
     > => ipcRenderer.invoke('sessions:create', opts),
     list: (): Promise<SessionRecordDto[]> => ipcRenderer.invoke('sessions:list'),
+    cards: (): Promise<
+      Array<{
+        cardId: string;
+        title: string;
+        folder: string;
+        accent?: string;
+        badge?: string;
+        status: string;
+        liveId?: string;
+      }>
+    > => ipcRenderer.invoke('sessions:cards'),
     knownCards: (): Promise<Array<{ cardId: string; identity: SessionRecordDto['identity'] }>> =>
       ipcRenderer.invoke('sessions:knownCards'),
+    renameCard: (cardId: string, title: string): Promise<void> =>
+      ipcRenderer.invoke('sessions:renameCard', cardId, title),
     closeCard: (cardId: string): Promise<void> => ipcRenderer.invoke('sessions:closeCard', cardId),
     dropLive: (cardId: string): Promise<void> => ipcRenderer.invoke('sessions:dropLive', cardId),
     setTaskLabel: (cardId: string, label: string): Promise<void> =>

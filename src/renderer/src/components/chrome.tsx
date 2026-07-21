@@ -80,6 +80,7 @@ const STATUS_TOKEN: Record<string, string> = {
   idle: 'var(--status-idle)',
   done: 'var(--status-done)',
   crashed: 'var(--status-crashed)',
+  suspended: 'var(--faint)',
 };
 
 export function SessionsRail(props: {

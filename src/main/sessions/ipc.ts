@@ -178,6 +178,27 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   ipcMain.handle('sessions:list', () => manager.list());
 
+  // joined view for the rail: every persisted card, with its live status if
+  // running or 'suspended' if restored-but-not-yet-resumed (E7-05)
+  ipcMain.handle('sessions:cards', () => {
+    const live = manager.list();
+    const liveByCard = new Map<string, string>(); // cardId -> liveId
+    for (const [liveId, cardId] of cardOfLive) liveByCard.set(cardId, liveId);
+    return deps.persist.list().map((card) => {
+      const liveId = liveByCard.get(card.id);
+      const rec = liveId ? live.find((r) => r.id === liveId) : undefined;
+      return {
+        cardId: card.id,
+        title: card.taskLabel?.trim() || card.identity.title,
+        folder: card.identity.folder,
+        accent: card.identity.accentColor,
+        badge: card.identity.langBadge,
+        status: rec?.status ?? 'suspended',
+        liveId,
+      };
+    });
+  });
+
   // cards with a persisted record — the renderer keeps these on boot, prunes
   // any restored panel that has no record (truly gone)
   ipcMain.handle('sessions:knownCards', () => deps.persist.list().map((s) => ({ cardId: s.id, identity: s.identity })));
@@ -213,6 +234,15 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   ipcMain.handle('sessions:setTaskLabel', (_e, cardId: string, label: string) => {
     const prior = deps.persist.list().find((s) => s.id === cardId);
     if (prior) deps.persist.upsert({ ...prior, taskLabel: String(label).slice(0, 120) });
+  });
+
+  // rename a card by cardId (works for suspended cards too) — updates the
+  // persisted title and the live session if one is running
+  ipcMain.handle('sessions:renameCard', (_e, cardId: string, title: string) => {
+    const clean = String(title).slice(0, 120);
+    const prior = deps.persist.list().find((s) => s.id === cardId);
+    if (prior) deps.persist.upsert({ ...prior, identity: { ...prior.identity, title: clean } });
+    for (const [liveId, cid] of cardOfLive) if (cid === cardId) manager.rename(liveId, clean);
   });
 
   ipcMain.handle('sessions:rename', (_e, liveId: string, title: string) => {
