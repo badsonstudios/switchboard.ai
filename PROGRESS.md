@@ -40,6 +40,15 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **CI GREEN on the branch tip** (all jobs: unit ×3 OS + e2e
+  Windows/Linux). Two e2e-only flakes fixed while landing E8: (1) Linux/xvfb
+  intermittently won't open the 2nd popout window → popout window-count tests
+  `test.skip` on Linux (covered on Windows+macOS, logged); (2) Windows "Worker
+  teardown timeout" despite all tests passing — a popped-out child window +
+  node-pty grandchildren outlived `app.close()`; harness now force-kills the
+  whole process tree (taskkill /T /F). Also: close popouts via their own
+  `window.close()` in tests (matches the OS X-button; Playwright `page.close()`
+  hard-kills and skips dockview's dock-back).
 - 2026-07-21 — **E8 epic COMPLETE (#43–#45)**: pop-out foundation (E8-01,
   loopback-http fix), geometry persistence (E8-02: `sanitizePopoutLayout`
   rewrites the stored popout url to the current loopback port + rescues
