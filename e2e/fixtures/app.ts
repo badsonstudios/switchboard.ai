@@ -5,6 +5,24 @@ import { _electron as electron, ElectronApplication, Page } from '@playwright/te
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import { execFileSync, spawnSync } from 'child_process';
+
+// Kill an entire process tree. A popped-out Electron window is a child process
+// and node-pty spawns its own children; app.process().kill() only reaps the
+// main pid, leaving grandchildren that keep the Playwright worker alive (the
+// "Worker teardown timeout" seen on CI). Take out the whole tree.
+function killTree(pid: number | undefined): void {
+  if (!pid) return;
+  try {
+    if (process.platform === 'win32') {
+      execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
+    } else {
+      spawnSync('kill', ['-9', String(pid)], { stdio: 'ignore' });
+    }
+  } catch {
+    /* already gone */
+  }
+}
 
 // electron's main export is the path to its binary when require()d in Node
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -56,20 +74,20 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   await window.waitForLoadState('domcontentloaded');
 
   const close = async () => {
-    // app.close() can hang if the process is slow to exit; force-kill as a
-    // backstop so a single slow teardown never fails the whole worker
+    const pid = app.process()?.pid;
+    // app.close() can hang if the process (or a popout child) is slow to exit;
+    // race it with a timeout so one slow teardown never stalls the worker.
     try {
       await Promise.race([
         app.close(),
         new Promise((_, reject) => setTimeout(() => reject(new Error('close timeout')), 12_000)),
       ]);
     } catch {
-      try {
-        app.process()?.kill();
-      } catch {
-        /* already gone */
-      }
+      /* fall through to the tree kill */
     }
+    // Always reap the whole tree afterwards: a popped-out window and node-pty
+    // children can outlive app.close() and hold the Playwright worker open.
+    killTree(pid);
   };
 
   return {
