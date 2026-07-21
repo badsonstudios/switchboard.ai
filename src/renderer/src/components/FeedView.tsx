@@ -144,7 +144,7 @@ export function FeedView(props: {
   const { t } = useTranslation();
   const [blocks, setBlocks] = React.useState<FeedBlockDto[]>([]);
   const [verbosity, setVerbosity] = React.useState<Verbosity>(() => {
-    const v = uiGet(`feedVerbosity.${props.cardId ?? ''}`, 'normal');
+    const v = uiGet<string>(`feedVerbosity.${props.cardId ?? ''}`, 'normal');
     return v === 'quiet' || v === 'firehose' ? v : 'normal';
   });
   const pickVerbosity = (v: Verbosity): void => {

@@ -86,7 +86,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     spawning.current = true;
     // titlebar autonomy chip applies to NEW cards; main keeps a card's own
     // autonomy across resumes
-    const stored = uiGet('autonomy', 'ask');
+    const stored = uiGet<string>('autonomy', 'ask');
     const autonomy =
       stored === 'plan' || stored === 'auto-edit' || stored === 'full-auto' ? stored : 'ask';
     void window.switchboard.sessions
@@ -774,8 +774,8 @@ export function SessionGrid(props: {
       api.onDidPopoutGroupPositionChange?.(saveLayout);
       api.onDidPopoutGroupSizeChange?.(saveLayout);
       // remember which card has focus (E12-08); restored below after fromJSON
-      api.onDidActivePanelChange((p) => {
-        const m = p ? /^session-(.+)$/.exec(p.id) : null;
+      api.onDidActivePanelChange((e) => {
+        const m = e.panel ? /^session-(.+)$/.exec(e.panel.id) : null;
         if (m && !restoringLayout && !tearingDown) uiSet('focusedCardId', m[1]);
       });
       // E8 diagnostics: surface popout success/failure

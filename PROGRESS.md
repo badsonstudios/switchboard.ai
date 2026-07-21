@@ -49,6 +49,15 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **CI red on the run's tip → fixed.** Two roots: (1) local gate
+  had skipped `npm run typecheck` (electron-vite build ≠ tsc) — 6 TS errors
+  (uiGet literal-type inference ×5, onDidActivePanelChange event shape);
+  testing.md now pins the full local gate. (2) Linux e2e leaked one shared
+  profile across ALL tests: Electron resolves userData via XDG on Linux and
+  the fixture only overrode HOME — XDG_CONFIG/CACHE/DATA_HOME now isolated
+  (pre-existing hole; E12's fresh-profile assertions exposed it). Full gate
+  green locally incl. typecheck; CI re-running.
+
 - 2026-07-21 — **P2-E8-06 done (#48)**: display reconnect offer. Rescued
   popouts (position nulled by the E8-02 sanitize) are stashed in the ui blob
   with their original box + panel ids; `display-added` → renderer checks the
