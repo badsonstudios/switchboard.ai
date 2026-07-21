@@ -63,21 +63,40 @@ cost, git, and plan progress — and the rail mirrors every card. Litmus
 
 ---
 
-## E8 — Pop-out & multi-monitor (outline; work items filed at E7 exit)
+## E8 — Pop-out & multi-monitor (milestone: Phase 2; issues filed 2026-07-20)
 
 *Goal: tear a session card out into its own OS window and place it on any
 monitor; geometry persists and rescues like the main window does.*
 
-Planning notes:
-- dockview-react supports floating/pop-out groups + tab tear-off natively —
-  validate that path first (spike-sized) before committing the work items.
-- Reuse the Phase-1 display-fingerprint + missing-display rescue (workspace
-  store already has it) for popped-out window geometry.
-- Pop-out windows are orchestrator-owned Electron subwindows over the shared
-  session core (DESIGN §7): the PTY/hooks/transcript stay in main; only the
-  render surface moves.
-- Open question to resolve early: how a popped-out card rejoins the grid, and
-  what happens to its layout slot while out.
+**Spike outcome (2026-07-20):** dockview 7 has a first-class popout API
+(`addPopoutGroup` + `onDidAddPopoutGroup`/`onDidRemovePopoutGroup`/
+`onDidOpenPopoutWindowFail`/`getPopouts`). It opens a **same-origin** window via
+`window.open(popoutUrl)` and adopts the group's DOM into it while the JS stays
+in the opener — so the terminal keeps running without a preload in the popout
+window. The Electron integration (P2-E8-01, done as the spike foundation):
+a built `popout.html` renderer entry, and a **narrow** `setWindowOpenHandler`
+allowance scoped to our own same-origin `popout.html` (everything else still
+denied — §5.29 posture preserved). A ⬏ control on each card calls
+`addPopoutGroup`. **Blocking risk to verify before building the rest of E8:**
+whether the popout actually opens and the adopted xterm renders correctly under
+sandbox + contextIsolation + CSP — a human-with-a-second-monitor test.
+
+Work items:
+- **P2-E8-01 · Popout foundation — M. [DONE as spike]** popout.html entry,
+  scoped window-open allowance, ⬏ control, `addPopoutGroup` wiring.
+  *Done when:* clicking ⬏ opens the card in its own OS window and its terminal
+  keeps working. **(Awaiting Dan's live verification.)**
+- **P2-E8-02 · Popout geometry persistence — M (§7).** Persist each popout's
+  bounds + display fingerprint in the workspace store; restore on relaunch;
+  rescue to the main window when its display is gone (reuse the Phase-1
+  missing-display rescue).
+  *Done when:* a popped-out card returns to the same monitor/position after
+  relaunch, and rescues into the grid when that monitor is absent.
+- **P2-E8-03 · Rejoin & lifecycle — S.** A popped-out card can rejoin the grid;
+  closing its window closes/suspends the session per the close-vs-quit rules;
+  the rail/feed reflect a popped-out card's state.
+  *Done when:* pop-out → rejoin round-trips cleanly and a popped-out card is
+  still navigable from the rail.
 
 ---
 

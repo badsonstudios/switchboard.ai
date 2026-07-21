@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>switchboard — popout</title>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    />
+    <link rel="stylesheet" href="/src/renderer/src/theme/tokens.css" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        block-size: 100vh;
+        background: var(--bg);
+        color: var(--text);
+      }
+    </style>
+  </head>
+  <body>
+    <!-- dockview adopts a group's DOM into this same-origin window; no script
+         of our own is needed here. Theme tokens are loaded so the popped-out
+         card matches the main window. -->
+  </body>
+</html>

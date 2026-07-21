@@ -141,6 +141,15 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     const panel = props.containerApi.getPanel(props.api.id);
     if (panel) props.containerApi.removePanel(panel); // onDidRemovePanel -> closeCard
   };
+  const popOut = (): void => {
+    const panel = props.containerApi.getPanel(props.api.id);
+    if (!panel) return;
+    // explicit same-origin popout.html (resolves in dev + packaged); the
+    // terminal keeps running because its JS stays in this window while its DOM
+    // is adopted into the new OS window (E8)
+    const popoutUrl = new URL('popout.html', window.location.href).toString();
+    void props.containerApi.addPopoutGroup(panel, { popoutUrl });
+  };
   const restartSelf = (): void => {
     // drop the dead live session (keep the card record), then re-arm the lazy
     // spawn so the card respawns/resumes
@@ -267,6 +276,21 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             <GitContext status={git} />
             <span style={{ flex: 1 }} />
             {usage && <UsageStrip usage={usage.usage} model={usage.model} inline />}
+            <button
+              onClick={popOut}
+              title={t('grid.popOut')}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--faint)',
+                cursor: 'pointer',
+                fontSize: 11,
+                padding: 0,
+                lineHeight: 1,
+              }}
+            >
+              {t('grid.popOutIcon')}
+            </button>
           </div>
           <div style={{ flex: 1, minBlockSize: 0, position: 'relative' }}>
             <TerminalPane sessionId={live.id} visible={visible} />

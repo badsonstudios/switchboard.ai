@@ -24,5 +24,14 @@ export default defineConfig({
   },
   renderer: {
     plugins: [react()],
+    build: {
+      rollupOptions: {
+        input: {
+          // main app window + the same-origin popout window dockview opens
+          index: 'src/renderer/index.html',
+          popout: 'src/renderer/popout.html',
+        },
+      },
+    },
   },
 });

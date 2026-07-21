@@ -48,6 +48,18 @@ function isSafeExternalUrl(url: string): boolean {
   }
 }
 
+/** dockview's popout window: our own same-origin popout.html (dev or file). */
+function isPopoutUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    if (!u.pathname.endsWith('/popout.html') && !u.pathname.endsWith('popout.html')) return false;
+    if (DEV_URL) return url.startsWith(new URL(DEV_URL).origin);
+    return u.protocol === 'file:';
+  } catch {
+    return false;
+  }
+}
+
 let workspace: WorkspaceStore;
 let currentWindow: BrowserWindow | null = null;
 let busySessions: () => string[] = () => [];
@@ -136,8 +148,20 @@ function createWindow(): BrowserWindow {
     log.ui.info('window shown', { restored: !!state.bounds, maximized: state.isMaximized });
   });
 
-  // external links open in the OS browser (http/https only), never in-app
+  // external links open in the OS browser (http/https only), never in-app.
+  // The ONE in-app window we allow is dockview's same-origin popout window
+  // (tearing a session card into its own OS window, E8) — scoped narrowly to
+  // our own popout.html so this stays a controlled allowance, not an open door.
   win.webContents.setWindowOpenHandler(({ url }) => {
+    if (isPopoutUrl(url)) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          backgroundColor: '#242933',
+          webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
+        },
+      };
+    }
     if (isSafeExternalUrl(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
