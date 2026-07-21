@@ -100,6 +100,46 @@ Work items:
   S-07 re-attach model, no new lifecycle code needed.)
   *Done when:* pop-out → rejoin round-trips cleanly (terminal alive after
   dock-back) and a popped-out card is still navigable from the rail.
+- **P2-E8-04 · Pop-out UX & multi-monitor correctness — M.** Real-use fixes
+  found on a 3-monitor extended desktop (Dan, 2026-07-21):
+  1. **New sessions land in the main grid**, not as tabs in whatever popout is
+     active (dockview `addPanel` targets the active group — force a
+     main-window group).
+  2. **Popout window honors its saved bounds on the right monitor.** Root
+     cause: `setWindowOpenHandler` returned `overrideBrowserWindowOptions`
+     without `x/y/width/height`, so Electron ignored the `window.open`
+     `features` (left/top/width/height dockview passes) and cascaded the window.
+     Parse `features` → set screen-absolute bounds. Fixes both initial
+     placement and E8-02 restore-across-relaunch (the E8-02 test only asserted
+     window *count*, not position — coverage gap).
+  3. **No `NaN`-garbled terminals after a layout change.** FitAddon computes
+     cols/rows from a transiently zero-size container and caches NaN; guard
+     `fit()` against non-finite/zero dims and force a re-fit + `term.refresh()`
+     when a panel becomes visible/active.
+  4. **Pop-out button becomes a toggle** (dock out ⇄ dock back in, session
+     stays alive) — see E8-05 for its new home on the card header.
+  5. **Closing the popout OS window suspends the session** (ends the live
+     process, keeps the card + record, resumes on focus) — Dan's decision
+     2026-07-21, which **revises E8-03/DESIGN.md** ("docks back, never kills")
+     to "docks back **suspended**". Distinguish a real window-close from a
+     button-driven dock-back via a flag so the toggle stays alive. **Update
+     DESIGN.md §"Orchestrator / subwindow model".**
+  *Done when:* on a multi-monitor setup a popout reopens at its exact saved
+  position; new sessions never land in a popout; terminals never render NaN
+  garbage after move/resize; the header pop-out button toggles in/out; closing
+  the window suspends (card returns, resumes on focus). e2e asserts popout
+  *position* (not just count), new-session-to-main, toggle, and suspend-on-close.
+- **P2-E8-05 · Session card header + view-tabs (mockup v1) — M.** Adopt the
+  `mockups/main-window-v1.html` look Dan called out. Card header (`.chead`):
+  accent left-border, icon, name, live task label, status pill, and window
+  controls (prominent `⤢` pop-out toggle + `⋯`) top-right. A view-tab strip
+  (`.vtabs`) under it: **Terminal** (live CLI) and **Diff** (git diff, moved
+  in-card from the separate panel) as real tabs; **Feed** and **Files** shown
+  as disabled "soon" tabs (their views are §5.10/future). E7 telemetry
+  (usage/git/plan/autonomy) stays, reorganized into a clean secondary line.
+  *Done when:* a session card matches the mockup's header + tab visual; the
+  `⤢` control pops out/in; Terminal and Diff switch in-card; no dead-looking
+  controls (Feed/Files clearly "soon").
 
 ---
 

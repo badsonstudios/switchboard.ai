@@ -52,6 +52,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const [plan, setPlan] = React.useState<{ total: number; completed: number; inProgress: number } | null>(null);
   const [taskLabel, setTaskLabel] = React.useState<string>('');
   const [editingLabel, setEditingLabel] = React.useState(false);
+  const [status, setStatus] = React.useState<string>('starting');
+  const [view, setView] = React.useState<'terminal' | 'diff'>('terminal');
+  const [poppedOut, setPoppedOut] = React.useState<boolean>(props.api.location.type === 'popout');
+  const [suspended, setSuspended] = React.useState(false);
   const spawning = React.useRef(false);
   const cardId = props.params?.cardId;
   const folder = props.params?.folder;
@@ -64,7 +68,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // resume-on-focus: spawn (or --resume) the session when the card first
   // becomes visible. Background restored cards stay suspended until touched.
   React.useEffect(() => {
-    if (!visible || live || exited || spawning.current || !cardId || !folder) return;
+    if (!visible || live || exited || suspended || spawning.current || !cardId || !folder) return;
     spawning.current = true;
     // titlebar autonomy chip applies to NEW cards; main keeps a card's own
     // autonomy across resumes
@@ -92,7 +96,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       .finally(() => {
         spawning.current = false;
       });
-  }, [visible, live, exited, cardId, folder, props.api.title]);
+  }, [visible, live, exited, suspended, cardId, folder, props.api.title]);
 
   // a dead session's card must be dismissable, not a stuck blank terminal
   React.useEffect(() => {
@@ -140,25 +144,75 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     };
   }, [live, visible, folder]);
 
+  // live status for the header pill (E8-05). Backend emits { sessionId, to }.
+  React.useEffect(() => {
+    if (!live) return;
+    setStatus('working');
+    return window.switchboard.sessions.onStatus((c) => {
+      const s = c as { sessionId: string; to?: string };
+      if (s.sessionId === live.id && s.to) setStatus(s.to);
+    });
+  }, [live]);
+
+  // Track popout location + implement the two dock-back semantics (E8-04):
+  // the pop-out BUTTON toggling in keeps the session alive; the user closing
+  // the OS window suspends it (keep the card + record, resume on reopen).
+  React.useEffect(() => {
+    const prev = { type: props.api.location.type as string };
+    const d = props.api.onDidLocationChange(() => {
+      const now = props.api.location.type as string;
+      const wasPopout = prev.type === 'popout';
+      prev.type = now;
+      setPoppedOut(now === 'popout');
+      // App quit tears popouts down — not a user close. If this ever loses the
+      // race with beforeunload the only effect is the session ending a few ms
+      // early: dropLive keeps the persisted record, so the card still resumes
+      // next launch. Harmless either way (E8-04 review).
+      if (tearingDown) return;
+      if (wasPopout && now !== 'popout' && cardId) {
+        if (dockingBackByButton.has(cardId)) {
+          dockingBackByButton.delete(cardId); // button toggle: stay alive
+        } else {
+          void window.switchboard.sessions.dropLive(cardId); // window closed: suspend
+          forgetCardLiveIds(cardId);
+          setLive(null);
+          setSuspended(true);
+        }
+      }
+    });
+    return () => d.dispose();
+  }, [props.api, cardId]);
+
   const closeSelf = (): void => {
     const panel = props.containerApi.getPanel(props.api.id);
     if (panel) props.containerApi.removePanel(panel); // onDidRemovePanel -> closeCard
   };
-  const popOut = (): void => {
-    const panel = props.containerApi.getPanel(props.api.id);
-    if (!panel) {
-      console.error('[popout] no panel for', props.api.id);
+  // Pop-out TOGGLE: docked -> tear into its own OS window; popped -> dock back
+  // in (close its window, flagged so it stays alive rather than suspending).
+  const popOutToggle = (): void => {
+    const loc = props.api.location;
+    if (loc.type === 'popout') {
+      const w = loc.getWindow();
+      // only arm the "stay alive" flag when a window actually exists to close —
+      // else a stale flag would later mis-classify a genuine user close as a
+      // toggle and skip the suspend (E8-04 review).
+      if (w && cardId) dockingBackByButton.add(cardId);
+      w?.close();
       return;
     }
-    // explicit same-origin popout.html (resolves in dev + packaged); the
-    // terminal keeps running because its JS stays in this window while its DOM
-    // is adopted into the new OS window (E8)
+    const panel = props.containerApi.getPanel(props.api.id);
+    if (!panel) return;
+    if (cardId) dockingBackByButton.delete(cardId); // drop any stale toggle flag
+    // same-origin popout.html; the terminal keeps running because its JS stays
+    // in this window while its DOM is adopted into the new OS window (E8)
     const popoutUrl = new URL('popout.html', window.location.href).toString();
-    console.log('[popout] addPopoutGroup ->', popoutUrl);
-    props.containerApi.addPopoutGroup(panel, { popoutUrl }).then(
-      (ok) => console.log('[popout] addPopoutGroup result:', ok),
-      (err) => console.error('[popout] addPopoutGroup threw:', String(err))
-    );
+    void props.containerApi.addPopoutGroup(panel, { popoutUrl });
+  };
+  const resumeSelf = (): void => {
+    // clear the suspended gate; the lazy-spawn effect re-fires while visible
+    setSuspended(false);
+    setExited(null);
+    spawning.current = false;
   };
   const restartSelf = (): void => {
     // drop the dead live session (keep the card record), then re-arm the lazy
@@ -169,7 +223,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     setLive(null);
     spawning.current = false;
   };
-  const overlay = exited ? (
+  const exitedOverlay = exited ? (
     <div>
       <div style={{ color: 'var(--text)', fontSize: 13, marginBlockEnd: 4 }}>
         {t('grid.sessionEnded')}
@@ -187,6 +241,25 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       </div>
     </div>
   ) : null;
+  const suspendedOverlay = suspended ? (
+    <div>
+      <div style={{ color: 'var(--text)', fontSize: 13, marginBlockEnd: 4 }}>
+        {t('grid.suspended')}
+      </div>
+      <div style={{ color: 'var(--muted)', fontSize: 11, marginBlockEnd: 12, maxInlineSize: 260 }}>
+        {t('grid.suspendedHint')}
+      </div>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+        <button onClick={resumeSelf} style={overlayBtn(true)}>
+          {t('grid.resume')}
+        </button>
+        <button onClick={closeSelf} style={overlayBtn(false)}>
+          {t('grid.close')}
+        </button>
+      </div>
+    </div>
+  ) : null;
+  const changed = git?.files.length ?? 0;
   return (
     <div
       style={{
@@ -198,46 +271,48 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         display: 'flex',
       }}
     >
-      <span
-        style={{
-          position: 'absolute',
-          insetInlineStart: 0,
-          insetBlockStart: 0,
-          insetBlockEnd: 0,
-          inlineSize: 3,
-          background: live?.accent ?? 'var(--faint)',
-          zIndex: 1,
-        }}
-      />
       {live ? (
-        <div style={{ flex: 1, paddingInlineStart: 3, minInlineSize: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+        <div style={{ flex: 1, minInlineSize: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+          {/* card header (.chead) — accent border, identity, status, window controls */}
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 10,
-              paddingInline: 8,
-              paddingBlock: 2,
-              fontSize: 10,
-              fontFamily: 'var(--font-mono)',
-              color: 'var(--muted)',
-              background: 'var(--panel2)',
+              gap: 9,
+              paddingInline: 10,
+              paddingBlock: 7,
               borderBlockEnd: '1px solid var(--border)',
+              borderInlineStart: `3px solid ${live.accent ?? 'var(--faint)'}`,
+              background: 'var(--panel2)',
             }}
           >
-            {live.autonomy && live.autonomy !== 'ask' && (
+            {live.badge && (
               <span
-                title={t('autonomy.title')}
                 style={{
-                  color: live.autonomy === 'full-auto' ? 'var(--status-crashed)' : 'var(--muted)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9,
+                  fontWeight: 700,
+                  color: live.accent ?? 'var(--muted)',
                   border: '1px solid var(--border)',
                   borderRadius: 4,
                   paddingInline: 4,
+                  paddingBlock: 1,
                 }}
               >
-                {t(`autonomy.${live.autonomy}`)}
+                {live.badge}
               </span>
             )}
+            <span
+              style={{
+                fontWeight: 650,
+                fontSize: 13,
+                color: 'var(--text)',
+                fontFamily: 'var(--font-ui)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {props.api.title ?? folder}
+            </span>
             {editingLabel ? (
               <input
                 autoFocus
@@ -257,9 +332,9 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                   color: 'var(--text)',
                   border: '1px solid var(--border)',
                   borderRadius: 4,
-                  fontSize: 10,
+                  fontSize: 11,
                   fontFamily: 'var(--font-ui)',
-                  minInlineSize: 120,
+                  minInlineSize: 140,
                 }}
               />
             ) : (
@@ -268,7 +343,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 title={t('grid.taskLabelHint')}
                 style={{
                   cursor: 'text',
-                  color: taskLabel ? 'var(--text)' : 'var(--faint)',
+                  fontSize: 11,
+                  color: taskLabel ? 'var(--muted)' : 'var(--faint)',
                   fontFamily: 'var(--font-ui)',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -278,38 +354,79 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 {taskLabel || t('grid.taskLabelEmpty')}
               </span>
             )}
+            <span style={{ flex: 1, minInlineSize: 8 }} />
+            {live.autonomy && live.autonomy !== 'ask' && (
+              <span
+                title={t('autonomy.title')}
+                style={{
+                  fontSize: 9.5,
+                  fontFamily: 'var(--font-mono)',
+                  color: live.autonomy === 'full-auto' ? 'var(--status-crashed)' : 'var(--muted)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 4,
+                  paddingInline: 5,
+                  paddingBlock: 1,
+                }}
+              >
+                {t(`autonomy.${live.autonomy}`)}
+              </span>
+            )}
+            <span style={statusPillStyle(status)}>{t(`status.${status}`)}</span>
+            <button onClick={popOutToggle} title={poppedOut ? t('grid.dockIn') : t('grid.popOut')} style={cheadBtn}>
+              {poppedOut ? t('grid.dockInIcon') : t('grid.popOutIcon')}
+            </button>
+            <span title={t('grid.menu')} style={{ ...cheadBtn, cursor: 'default', color: 'var(--faint)' }}>
+              {t('grid.menuIcon')}
+            </span>
+          </div>
+          {/* view tabs (.vtabs) — Terminal + Diff are live; Feed/Files are soon */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+              paddingInline: 8,
+              paddingBlock: 4,
+              borderBlockEnd: '1px solid var(--border)',
+              background: 'var(--panel2)',
+            }}
+          >
+            <button style={vtabStyle(view === 'terminal', false)} onClick={() => setView('terminal')}>
+              {t('grid.viewTerminal')}
+            </button>
+            <button style={vtabStyle(view === 'diff', false)} onClick={() => setView('diff')}>
+              {t('grid.viewDiff')}
+              {changed > 0 && <span style={{ color: 'var(--status-needs-input)', marginInlineStart: 4 }}>{changed}</span>}
+            </button>
+            <span style={vtabStyle(false, true)} title={t('grid.viewSoon')}>
+              {t('grid.viewFeed')}
+            </span>
+            <span style={vtabStyle(false, true)} title={t('grid.viewSoon')}>
+              {t('grid.viewFiles')}
+            </span>
+            <span style={{ flex: 1, minInlineSize: 8 }} />
             {plan && (
-              <span title={t('grid.planTitle')} style={{ color: 'var(--status-working)' }}>
+              <span title={t('grid.planTitle')} style={{ color: 'var(--status-working)', fontSize: 10, fontFamily: 'var(--font-mono)' }}>
                 {t('grid.plan', { done: plan.completed, total: plan.total })}
               </span>
             )}
             <GitContext status={git} />
-            <span style={{ flex: 1 }} />
             {usage && <UsageStrip usage={usage.usage} model={usage.model} inline />}
-            <button
-              onClick={popOut}
-              title={t('grid.popOut')}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--faint)',
-                cursor: 'pointer',
-                fontSize: 11,
-                padding: 0,
-                lineHeight: 1,
-              }}
-            >
-              {t('grid.popOutIcon')}
-            </button>
           </div>
+          {/* active view */}
           <div style={{ flex: 1, minBlockSize: 0, position: 'relative' }}>
-            <TerminalPane sessionId={live.id} visible={visible} />
-            {overlay && <div style={overlayBackdrop}>{overlay}</div>}
+            <div style={{ blockSize: '100%', display: view === 'terminal' ? 'block' : 'none' }}>
+              <TerminalPane sessionId={live.id} visible={visible && view === 'terminal'} />
+            </div>
+            {view === 'diff' && folder && <DiffPane folder={folder} theme={docTheme()} />}
+            {exitedOverlay && <div style={overlayBackdrop}>{exitedOverlay}</div>}
           </div>
         </div>
+      ) : suspended ? (
+        <div style={{ ...overlayBackdrop, position: 'relative', flex: 1 }}>{suspendedOverlay}</div>
       ) : exited ? (
         // spawn/resume failed before a terminal existed — still recoverable
-        <div style={{ ...overlayBackdrop, position: 'relative', flex: 1 }}>{overlay}</div>
+        <div style={{ ...overlayBackdrop, position: 'relative', flex: 1 }}>{exitedOverlay}</div>
       ) : (
         <span style={{ margin: 'auto' }}>
           {t('grid.resuming', { title: props.api.title ?? folder ?? '' })}
@@ -317,6 +434,63 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       )}
     </div>
   );
+}
+
+// current app theme, for the in-card Diff view (theme lives on <html>)
+function docTheme(): 'nordic' | 'daylight' {
+  return document.documentElement.dataset.theme === 'daylight' ? 'daylight' : 'nordic';
+}
+
+const cheadBtn: React.CSSProperties = {
+  background: 'transparent',
+  border: 'none',
+  color: 'var(--muted)',
+  cursor: 'pointer',
+  fontSize: 15,
+  lineHeight: 1,
+  padding: '2px 4px',
+};
+
+// status pill colors mirror the rail's STATUS_TOKEN (chrome.tsx)
+const STATUS_COLOR: Record<string, string> = {
+  starting: 'var(--status-idle)',
+  working: 'var(--status-working)',
+  'needs-input': 'var(--status-needs-input)',
+  'needs-permission': 'var(--status-needs-permission)',
+  idle: 'var(--status-idle)',
+  done: 'var(--status-done)',
+  crashed: 'var(--status-crashed)',
+  suspended: 'var(--faint)',
+};
+function statusPillStyle(status: string): React.CSSProperties {
+  const c = STATUS_COLOR[status] ?? 'var(--faint)';
+  return {
+    fontSize: 9.5,
+    fontWeight: 600,
+    letterSpacing: 0.3,
+    color: c,
+    background: `color-mix(in srgb, ${c} 14%, transparent)`,
+    border: `1px solid color-mix(in srgb, ${c} 40%, transparent)`,
+    borderRadius: 4,
+    paddingInline: 6,
+    paddingBlock: 2,
+    fontFamily: 'var(--font-ui)',
+    whiteSpace: 'nowrap',
+  };
+}
+function vtabStyle(active: boolean, disabled: boolean): React.CSSProperties {
+  return {
+    padding: '4px 10px 5px',
+    borderRadius: '6px 6px 0 0',
+    fontSize: 11,
+    fontFamily: 'var(--font-ui)',
+    cursor: disabled ? 'default' : 'pointer',
+    color: disabled ? 'var(--faint)' : active ? 'var(--text)' : 'var(--muted)',
+    background: active ? 'var(--panel3, var(--chip))' : 'transparent',
+    border: active ? '1px solid var(--border)' : '1px solid transparent',
+    borderBlockEnd: active ? 'none' : '1px solid transparent',
+    opacity: disabled ? 0.55 : 1,
+  };
 }
 
 const overlayBackdrop: React.CSSProperties = {
@@ -355,6 +529,10 @@ const components = { sessionCard: SessionCardPanel, diffPane: DiffPanel };
 // live session id -> stable card id (single-window app). Lets the rail, which
 // tracks live sessions, focus/diff a card by its ephemeral session id.
 const liveToCard = new Map<string, string>();
+// card ids currently docking back via the pop-out BUTTON (toggle). The panel's
+// location-change handler reads this to keep a button dock-back alive while a
+// bare window-close suspends the session (E8-04).
+const dockingBackByButton = new Set<string>();
 function cardIdForLive(liveId: string): string {
   return liveToCard.get(liveId) ?? liveId;
 }
@@ -391,11 +569,20 @@ export function SessionGrid(props: {
     if (!api) return;
     const title = folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? folder;
     const cardId = crypto.randomUUID();
+    // A new session must land in the MAIN window, never as a tab inside whatever
+    // popout happens to be active. dockview's addPanel defaults to the active
+    // group — which becomes the popout once a card is torn off — so pin it to a
+    // main-grid group explicitly (E8-04). If every card is popped out there is
+    // no grid group left, so make one in the main grid rather than falling back
+    // to the (popout) active group.
+    const mainGroup =
+      api.groups.find((g) => g.api.location.type === 'grid') ?? api.addGroup();
     api.addPanel({
       id: `session-${cardId}`,
       component: 'sessionCard',
       title,
       params: { cardId, folder, title } satisfies CardParams,
+      position: { referenceGroup: mainGroup },
     });
   }, []);
 
@@ -442,10 +629,16 @@ export function SessionGrid(props: {
       apiRef.current = api;
 
       const report = () => props.onCardsChanged(api.panels.map((p) => p.id));
+      const saveLayout = () => window.switchboard.workspace.setLayout(api.toJSON());
       api.onDidLayoutChange(() => {
         report();
-        window.switchboard.workspace.setLayout(api.toJSON());
+        saveLayout();
       });
+      // moving/resizing a popped-out window isn't a layout mutation, so persist
+      // its geometry on those events too — else a dragged popout forgets its
+      // spot on relaunch (E8-04 multi-monitor).
+      api.onDidPopoutGroupPositionChange?.(saveLayout);
+      api.onDidPopoutGroupSizeChange?.(saveLayout);
       // E8 diagnostics: surface popout success/failure
       api.onDidOpenPopoutWindowFail?.(() => console.error('[popout] onDidOpenPopoutWindowFail'));
       api.onDidAddPopoutGroup?.(() => console.log('[popout] onDidAddPopoutGroup (opened OK)'));

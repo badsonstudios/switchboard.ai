@@ -1077,8 +1077,12 @@ always shows all sessions with live status; watchers float or dock at bottom.
 main process owns all sessions, PTYs, the Session Bus, and GitService. Any session
 card can pop out into its own OS-level subwindow (Electron multi-window over shared
 main-process state). Popped-out windows remain owned by the orchestrator: drag-and-drop
-and context transfer work across OS windows, sidebar still tracks them, and closing a
-popped-out window docks the session back — it never kills the session.
+and context transfer work across OS windows, sidebar still tracks them. Two ways back
+(revised 2026-07-21, E8-04): the card's **pop-out control is a toggle** — click it in
+the popped-out window to dock the card back into the grid with the session still live;
+**closing the OS window suspends** the session instead — the live process ends but the
+card and its record stay and resume on reopen (resume-on-focus, §5.25). Neither path
+kills the session outright; a card is only truly closed via its explicit close action.
 
 **Layout hierarchy** (full model in PHILOSOPHY.md §3): session → tab stack → group →
 workspace. Sessions can be tiled, tabbed into stacks, collected into named/colored

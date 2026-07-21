@@ -3,12 +3,12 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-**Milestone:** Phase 2 - The Switchboard (issues #37–#45 filed; E7 + E8 DONE)
-**In progress:** nothing — all filed Phase 2 issues (E7 richer cards, E8
-pop-out) are implemented + tested on the branch, awaiting Dan's review/merge.
-**Next up (needs Dan):** review/merge draft PR #42, then decide whether to
-expand the E9/E10/E11 outlines into full work items (a `/pm plan` + `/pm
-file-issues` step — expanding a phase plan is not done unattended).
+**Milestone:** Phase 2 - The Switchboard (issues #37–#47; E7 + E8 + E8-04/05)
+**In progress:** E8-04 (pop-out UX & multi-monitor, #46) + E8-05 (card header +
+view-tabs, #47) — implemented + tested from Dan's 3-monitor bug report; running
+code review before committing to PR #42.
+**Next up (needs Dan):** review/merge draft PR #42; more of Dan's hands-on
+pop-out testing; then decide on expanding E9/E10/E11 outlines (`/pm plan`).
 **Branch:** auto/phase-2-switchboard (draft PR #42)
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
