@@ -5,12 +5,15 @@
 
 **Milestone:** Phase 2 - The Switchboard (E7+E8 merged; E12 expanded + filed
 #49–#57, E8-06 filed #48; E9/E10/E11/E13/E14 still outlines)
-**In progress:** AUTOPILOT RUN started 2026-07-21 — branch `auto/phase-2-e12`,
-scope #48–#57 (E12-01…09 dependency-first, E8-06 last). Draft PR opens after
-the first commit.
-**Next up:** Dan reviews the autopilot PR when it lands; hands-on pop-out
-testing on real multi-monitor hardware is still valuable.
-**Branch:** auto/phase-2-e12
+**In progress:** nothing mid-flight — AUTOPILOT RUN COMPLETE 2026-07-21:
+all 10 items (#48–#57, E12 full + E8-06) shipped to `auto/phase-2-e12`,
+draft PR #58. 130 unit + 22 e2e green locally; CI on the tip pending.
+**Next up (needs Dan):** review/merge draft PR #58 (eyeball list in the PR:
+real grid drag, waiting-chip on a live permission prompt, popout restore on
+the 3-monitor desk). Then `/pm plan` for the next epic (E9 or E10 — plan
+Order says E9/E10/E11 sequenced by feedback; E10 jumps ahead if TUI
+approvals are the daily pain).
+**Branch:** auto/phase-2-e12 (draft PR #58)
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
 `npm test` (unit) · `npm run check:*` (local real-claude proofs) · `npm run e2e`
