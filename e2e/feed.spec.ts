@@ -59,6 +59,27 @@ test.describe('Feed view (E12-06)', () => {
     await expect(w.getByText('Read', { exact: true })).toBeVisible();
   });
 
+  test('composer autonomy chip cycles and survives a relaunch (E10-05)', async () => {
+    const folder = tempProjectFolder();
+    const title = folder.split(/[\\/]/).pop()!;
+    const first = await launchApp({ seedFolder: folder });
+    const w = first.window;
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+
+    const chip = w.getByTitle('Autonomy for this session (applies on next resume)');
+    await expect(chip).toContainText('ask');
+    await chip.click(); // -> plan
+    await expect(chip).toContainText('plan');
+
+    await w.waitForTimeout(900); // debounced store save
+    await first.close();
+    a = await launchApp({ home: first.home });
+    await expect(a.window.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+    await expect(
+      a.window.getByTitle('Autonomy for this session (applies on next resume)')
+    ).toContainText('plan', { timeout: 20_000 });
+  });
+
   test('the composer drives the real CLI over the PTY (E10-02)', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });

@@ -107,6 +107,16 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     if (!v && view === 'terminal') setView('feed'); // never strand the active tab
   };
   const [menuOpen, setMenuOpen] = React.useState(false);
+  // per-card autonomy for the composer options row (E10-05): persists to the
+  // record and applies on the NEXT spawn/resume (the CLI can't switch live)
+  const [cardAutonomy, setCardAutonomy] = React.useState<string | undefined>(undefined);
+  const cycleCardAutonomy = (): void => {
+    if (!cardId) return;
+    const order = ['ask', 'plan', 'auto-edit', 'full-auto'];
+    const next = order[(order.indexOf(cardAutonomy ?? 'ask') + 1) % order.length];
+    setCardAutonomy(next);
+    void window.switchboard.sessions.setAutonomy(cardId, next);
+  };
   // held permission awaiting a decision (E10-04); allow-all short-circuits
   const [perm, setPerm] = React.useState<{
     requestId: string;
@@ -148,6 +158,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         // so it's visibly present rather than appearing only after activity
         setUsage({ usage: record.priorUsage ?? ZERO_USAGE, model: record.priorModel });
         if (record.taskLabel) setTaskLabel(record.taskLabel);
+        setCardAutonomy(record.autonomy ?? 'ask');
       })
       .catch(() => {
         setExited({ code: -1, crashed: true }); // spawn failed — show the overlay
@@ -637,6 +648,9 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                     cardId={cardId}
                     visible={visible && view === 'feed'}
                     status={status}
+                    autonomy={cardAutonomy}
+                    model={usage?.model}
+                    onCycleAutonomy={cycleCardAutonomy}
                     onJumpToTerminal={() => {
                       setTerminalShown(true); // chip surfaces the hidden Terminal on demand
                       setView('terminal');

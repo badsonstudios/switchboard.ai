@@ -93,6 +93,8 @@ const api = {
     dropLive: (cardId: string): Promise<void> => ipcRenderer.invoke('sessions:dropLive', cardId),
     setTaskLabel: (cardId: string, label: string): Promise<void> =>
       ipcRenderer.invoke('sessions:setTaskLabel', cardId, label),
+    setAutonomy: (cardId: string, autonomy: string): Promise<void> =>
+      ipcRenderer.invoke('sessions:setAutonomy', cardId, autonomy),
     rename: (id: string, title: string): Promise<SessionRecordDto | undefined> =>
       ipcRenderer.invoke('sessions:rename', id, title),
     onStatus: (cb: (change: unknown) => void): (() => void) => {

@@ -48,6 +48,11 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **P2-E10-05 done (#63)**: composer options row — autonomy
+  chip (click cycles; persists via new sessions:setAutonomy to the card
+  record, applies on next spawn/resume since the CLI can't switch live),
+  model indicator (last transcript-seen model), working pulse dot. e2e:
+  chip cycles + survives relaunch.
 - 2026-07-21 — **P2-E10-04 done (#62)**: inline approval bar. A held
   PreToolUse flips a review bar up in the Session tab: "Allow <tool>?",
   primary-arg line, old/new edit preview (diff-token shading) or command

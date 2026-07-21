@@ -284,6 +284,15 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   // drop only the live session (restart): keep the record so it can respawn
   ipcMain.handle('sessions:dropLive', (_e, cardId: string) => dropLiveForCard(cardId));
 
+  // per-card autonomy (E10-05): persists to the record; the CLI can't change
+  // mode mid-flight, so it applies on the NEXT spawn/resume of this card
+  ipcMain.handle('sessions:setAutonomy', (_e, cardId: string, autonomy: string) => {
+    if (typeof cardId !== 'string') return;
+    if (!['plan', 'ask', 'auto-edit', 'full-auto'].includes(autonomy)) return;
+    const prior = deps.persist.list().find((s) => s.id === cardId);
+    if (prior) deps.persist.upsert({ ...prior, autonomy: autonomy as PersistedSession['autonomy'] });
+  });
+
   // freeform task label for a card (E7-03), persisted across restarts
   ipcMain.handle('sessions:setTaskLabel', (_e, cardId: string, label: string) => {
     if (typeof cardId !== 'string' || typeof label !== 'string') return;

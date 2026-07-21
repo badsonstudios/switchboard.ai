@@ -161,3 +161,9 @@ body {
   border: 1px solid var(--border);
   padding: 2px 6px;
 }
+
+/* composer working pulse (P2-E10-05) */
+@keyframes sb-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
