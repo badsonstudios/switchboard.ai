@@ -51,6 +51,14 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **Session-view visual spec pinned (Dan's VS Code-extension
+  screenshot).** DESIGN.md §5.10 gains "Block presentation (v2)": timeline
+  dot gutter, Edit blocks w/ header + added/removed subtitle + inline
+  highlighted diff, Bash blocks w/ description header + expandable IN/OUT,
+  "Thought for Ns" thinking, TodoWrite as checklist. **Terminal demoted
+  again: hidden by default** — out of the strip, shown via ⋯ menu/toggle or
+  the continue-in-Terminal chip, state persisted. E10-01 rescoped (#59
+  updated), new **P2-E10-06 Rich tool blocks v2** filed (#64).
 - 2026-07-21 — **Session-tab pivot decided (Dan) + E10 expanded & filed.**
   From hands-on testing: the rendered view must be the primary WORKING
   surface (VS Code-extension shape — conversation + prompt composer + inline

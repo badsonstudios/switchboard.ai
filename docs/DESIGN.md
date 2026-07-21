@@ -402,9 +402,33 @@ Each session offers two synchronized views of the same underlying session:
   styled blocks, with a **prompt composer** docked at the bottom (Enter
   submits to the CLI's PTY; options row for autonomy/model context). In-app
   approvals (§5.16) render inline here as a review bar.
-- **Terminal** (xterm.js + PTY): the real CLI, one click away — the escape
-  hatch for raw TUI states the rendered view can't answer (CLI menus,
-  /login, trust prompts).
+- **Terminal** (xterm.js + PTY): the real CLI — **hidden by default**
+  (owner decision 2026-07-21: when the Session view works, the Terminal is
+  rarely touched). Reachable via the card's ⋯ menu / a per-session toggle,
+  and the Session view's "continue in Terminal" chip surfaces it on demand
+  when the CLI is in a raw TUI state (menus, /login, trust prompts). It
+  still exists for every session — hidden, never gone.
+
+**Block presentation (v2 — modeled on the Claude Code VS Code extension;
+owner screenshot 2026-07-21).** The reference look: a clean timeline with a
+dot gutter, one block per event, everything collapsible. Block taxonomy:
+
+- **Assistant prose** — markdown, rendered clean (no chrome), timeline dot.
+- **Thinking** — collapsed to a single "Thought for Ns" line (duration from
+  timestamps); click expands.
+- **Edit/Write blocks** — header `Edit <file path>` + a "Added N lines /
+  Removed M" subtitle, then an inline **syntax-highlighted diff preview**
+  (added regions green-shaded, removed red-shaded) — the screenshot's
+  side-by-side panel; click-to-expand for long diffs. File path links to the
+  Changes tab.
+- **Bash blocks** — header `Bash <description>` (the tool call's own
+  description field), then labeled **IN** (command, monospace) and **OUT**
+  (output) sections, each independently expandable, long output truncated
+  with click-to-expand.
+- **Read/Search/other tools** — one-line collapsed rows (name + primary
+  argument), expand for the full input/result.
+- **TodoWrite** — renders as an "Update Todos" checklist block, not raw JSON.
+- **Subagent sidechains** — folded behind an agent header, indented.
 
 Feed customization (the "pleasing to the eye" surface):
 - Themes: font family/size, color palette, spacing/density. Themes are CSS;
@@ -432,16 +456,19 @@ separate features:
 
 - **Session** — the rendered + composer view above (first tab and **the
   default view** for every session; renamed from "Feed" 2026-07-21).
-- **Terminal** — the real CLI (escape hatch for raw TUI states).
 - **Changes** — source control for the session's folder: file tree with VCS
   decorations, Monaco diff, editable-diff + commit (§5.7 mechanics as a tab).
 - **History** — the checkout's recent commits/branch state (read-only GitService
   log view; §5.7).
 - **Inspector** — the §5.19 capability pane (Skills / Agents / MCP / Commands),
   present when opened.
+- **Terminal** — the real CLI; **not in the default strip** (2026-07-21) —
+  shown via the ⋯ menu / per-session toggle or the "continue in Terminal"
+  chip, and once shown it stays in the strip for that session until hidden.
 
-Rules: active tab is per-session and remembered across restarts (§5.25). Any
-tab can be **split** beside the Terminal instead of stacked behind it (Dockview
+Rules: active tab is per-session and remembered across restarts (§5.25) — the
+Terminal's shown/hidden state included. Any
+tab can be **split** beside the Session view instead of stacked behind it (Dockview
 panes — e.g. terminal left + diff right, as in the maximized mockup); tabs and
 splits are the same views in two presentations. On small grid cards the strip
 degrades to an icon row; the two-gesture rule holds — any view of any session

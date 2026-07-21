@@ -169,7 +169,7 @@ keyboard vocabulary** for session lifecycle — spawn / focus / archive /
 review / merge (§8; every mouse flow has a key path — restored 2026-07-21,
 dropped in the original break-out). Filed just-in-time.
 
-## E10 — Session tab & Approval surfaces v1 (milestone: Phase 2; issues #59–#63 filed 2026-07-21)
+## E10 — Session tab & Approval surfaces v1 (milestone: Phase 2; issues #59–#64 filed 2026-07-21)
 
 *Goal: the renamed **Session** tab becomes the primary working surface — the
 VS Code-extension shape: rendered conversation + prompt composer + inline
@@ -180,13 +180,15 @@ Jumped ahead of E9 per the plan's own "if TUI approvals become the daily
 pain" clause.*
 
 Work items:
-- **P2-E10-01 · Tab rename: Feed → Session — S (§5.10).** Rename the view tab
-  (i18n, tests, canonical set: Session · Terminal · Changes · History);
-  "waiting in Terminal" chip re-labeled "continue in Terminal" and scoped to
-  raw-TUI states (needs-input), no longer permission prompts (E10-04 takes
-  those).
-  *Done when:* the strip reads Session · Terminal · Changes · History-soon;
-  e2e updated.
+- **P2-E10-01 · Tab rename + Terminal hidden by default — M (§5.10, revised
+  2026-07-21 from owner screenshot).** Rename Feed → Session (i18n, tests);
+  **Terminal leaves the default strip** — shown via the card ⋯ menu /
+  per-session toggle or the "continue in Terminal" chip (re-labeled from
+  "waiting in", scoped to raw-TUI needs-input states; E10-04 takes
+  permission prompts). Shown/hidden persists per session (ui blob).
+  *Done when:* default strip reads Session · Changes · History-soon; the ⋯
+  menu shows/hides Terminal and the choice survives relaunch; the chip
+  surfaces it on demand; e2e updated.
 - **P2-E10-02 · Prompt composer v1 — M (§5.10, OQ #1).** Input box docked at
   the bottom of the Session tab; Enter submits (writes prompt + CR to the
   live PTY), Shift+Enter for newline; disabled state when the session is
@@ -211,14 +213,28 @@ Work items:
   *Done when:* a real permission prompt is answered entirely in the Session
   tab — no Terminal switch, no OS alert needed; deny sends the refusal.
 - **P2-E10-05 · Composer options row — S (§5.10).** The strip under the
-  composer: autonomy badge (click to change for THIS session's next spawn),
-  model indicator, working-status spinner — the extension-style affordances.
+  composer: autonomy badge (click to change for THIS session's next spawn —
+  the extension's "Edit automatically" dropdown analog), model indicator,
+  working-status spinner.
   *Done when:* the row renders live data; autonomy change round-trips to the
   next resume.
+- **P2-E10-06 · Rich tool blocks v2 — M (§5.10 block presentation, owner
+  screenshot).** Upgrade the E12-06 renderer to the extension look: timeline
+  dot gutter; Edit/Write blocks get a header (`Edit <path>`, "Added N lines")
+  + inline syntax-highlighted diff preview (green/red shading, click-expand);
+  Bash blocks get `Bash <description>` headers with independently expandable
+  IN/OUT sections; thinking collapses to "Thought for Ns" (duration from
+  timestamps); TodoWrite renders as an Update-Todos checklist block.
+  *Done when:* a real session's turn reads like the reference screenshot —
+  prose, thought-line, Edit-with-diff, Bash IN/OUT — each block type
+  expand/collapses; e2e covers Edit-diff and Bash IN/OUT via a synthetic
+  transcript.
 
 **E10 exit:** a user can run a whole coding turn — prompt, watch, approve —
-without ever opening the Terminal tab; Terminal remains one click away and
-raw TUI states route there explicitly. Litmus checked per surface.
+without the Terminal tab even being VISIBLE; the turn reads like the VS Code
+extension reference (clean blocks, expandable detail); Terminal stays one
+toggle away and raw TUI states surface it explicitly. Litmus checked per
+surface.
 
 ## E11 — Session Bus & context transfer (outline)
 
