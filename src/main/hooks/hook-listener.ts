@@ -85,6 +85,7 @@ export class HookListener {
     { res: http.ServerResponse; timer: NodeJS.Timeout; sessionId: string }
   >();
   private readonly permListeners = new Set<(r: PermissionRequest) => void>();
+  private readonly resolvedListeners = new Set<(requestId: string) => void>();
   private reqCounter = 0;
 
   constructor(private readonly opts: HookListenerOptions) {}
@@ -129,6 +130,22 @@ export class HookListener {
     return () => this.permListeners.delete(cb);
   }
 
+  /** A held request ended (decision OR timeout/teardown) — dismiss UI. */
+  onPermissionResolved(cb: (requestId: string) => void): () => void {
+    this.resolvedListeners.add(cb);
+    return () => this.resolvedListeners.delete(cb);
+  }
+
+  private notifyResolved(requestId: string): void {
+    for (const l of this.resolvedListeners) {
+      try {
+        l(requestId);
+      } catch {
+        /* listener's problem */
+      }
+    }
+  }
+
   /** Answer a held request. Returns false if it already resolved/timed out. */
   decide(requestId: string, decision: 'allow' | 'deny', reason?: string): boolean {
     const p = this.pending.get(requestId);
@@ -150,6 +167,7 @@ export class HookListener {
     }
     this.opts.manager.apply(p.sessionId, { kind: 'permission-resolved' });
     this.opts.log.info('permission decided', { requestId, decision, sessionId: p.sessionId });
+    this.notifyResolved(requestId);
     return true;
   }
 
@@ -164,6 +182,7 @@ export class HookListener {
     } catch {
       /* already gone */
     }
+    this.notifyResolved(requestId);
   }
 
   /**

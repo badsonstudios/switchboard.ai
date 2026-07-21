@@ -63,6 +63,12 @@
     "close": "Close",
     "cardTitle": "Session {n}"
   },
+  "approval": {
+    "title": "Allow {tool}?",
+    "allow": "Allow",
+    "allowAll": "Allow all (this session)",
+    "deny": "Deny"
+  },
   "status": {
     "starting": "starting",
     "working": "working",

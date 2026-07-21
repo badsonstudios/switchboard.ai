@@ -129,6 +129,11 @@ const api = {
     },
     decidePermission: (requestId: string, decision: 'allow' | 'deny', reason?: string): Promise<boolean> =>
       ipcRenderer.invoke('sessions:decidePermission', requestId, decision, reason),
+    onPermissionResolved: (cb: (r: { requestId: string }) => void): (() => void) => {
+      const h = (_e: unknown, r: { requestId: string }) => cb(r);
+      ipcRenderer.on('sessions:permissionResolved', h);
+      return () => ipcRenderer.removeListener('sessions:permissionResolved', h);
+    },
     onExited: (cb: (e: { sessionId: string; code: number; crashed: boolean }) => void): (() => void) => {
       const h = (_e: unknown, x: { sessionId: string; code: number; crashed: boolean }) => cb(x);
       ipcRenderer.on('sessions:exited', h);

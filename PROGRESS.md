@@ -48,6 +48,17 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **P2-E10-04 done (#62)**: inline approval bar. A held
+  PreToolUse flips a review bar up in the Session tab: "Allow <tool>?",
+  primary-arg line, old/new edit preview (diff-token shading) or command
+  preview, Allow / Allow-all-this-session / Deny. Allow-all auto-answers
+  later requests for that card (renderer memory — resets on restart, the
+  safe default). Bar auto-dismisses on main-side timeout via
+  sessions:permissionResolved. OS toast for needs-permission is now quiet
+  when the window is focused (other kinds still toast). e2e drives the REAL
+  listener: log-scraped port + real session token → PreToolUse POST → bar →
+  verdict JSON asserted (allow, allow-all auto-allow, deny). 136 unit + 26
+  e2e green.
 - 2026-07-21 — **P2-E10-03 done (#61)**: PreToolUse hold + decision
   round-trip. HookListener parks a gated PreToolUse response until
   decide(allow/deny) returns the hook verdict JSON (permissionDecision via

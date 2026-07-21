@@ -81,6 +81,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   hooks.onPermissionRequest((r) =>
     send('sessions:permissionRequest', { ...r, cardId: cardOfLive.get(r.sessionId) })
   );
+  hooks.onPermissionResolved((requestId) => send('sessions:permissionResolved', { requestId }));
   ipcMain.handle(
     'sessions:decidePermission',
     (_e, requestId: string, decision: string, reason?: string) => {
