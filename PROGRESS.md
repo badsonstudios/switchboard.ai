@@ -5,14 +5,14 @@
 
 **Milestone:** Phase 2 - The Switchboard (E7+E8 merged; E12 expanded + filed
 #49–#57, E8-06 filed #48; E9/E10/E11/E13/E14 still outlines)
-**In progress:** AUTOPILOT RUN (E10) started 2026-07-21 — branch
-`auto/phase-2-e10`, scope #59–#64 (Session tab & approvals: rename+hide
-Terminal → composer → hook hold → approval bar → options row → rich
-blocks). PR #58 (E12+E8-06) MERGED to main 2026-07-21 (Dan's call,
-issues #48–#57 closed); Dan skipped the optional grid-drag re-check —
-verify during E10 dogfooding.
-**Next up (needs Dan):** review the E10 draft PR when the run completes.
-**Branch:** auto/phase-2-e10
+**In progress:** nothing mid-flight — AUTOPILOT RUN (E10) COMPLETE
+2026-07-21: all 6 items (#59–#64) shipped to `auto/phase-2-e10`, draft
+PR #65. 137 unit + 27 e2e green; CI pending on the tip.
+**Next up (needs Dan):** review/merge draft PR #65. Eyeball: one real
+claude turn fully in the Session tab (composer → rich blocks → inline
+approval), plus the E12 grid-drag re-check he skipped. Then `/pm plan`
+for the next epic (E9 attention-layout or E11 session bus).
+**Branch:** auto/phase-2-e10 (draft PR #65)
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
 `npm test` (unit) · `npm run check:*` (local real-claude proofs) · `npm run e2e`
