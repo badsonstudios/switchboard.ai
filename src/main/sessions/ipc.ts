@@ -169,7 +169,12 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         resumeSessionId: canResume ? prior?.nativeSessionId : undefined,
       });
       cardOfLive.set(record.id, opts.cardId);
-      transcripts.watch(record.id, { cwd: opts.folder });
+      // pass the resumed conversation id: the watcher may adopt ITS OWN
+      // pre-existing transcript (and replay history into the Session view)
+      transcripts.watch(record.id, {
+        cwd: opts.folder,
+        nativeSessionId: canResume ? prior?.nativeSessionId : undefined,
+      });
       deps.persist.upsert({
         id: opts.cardId,
         identity,

@@ -228,6 +228,11 @@ export class TranscriptWatcher {
     };
   }
 
+  /** This pre-existing file is the session's OWN resumed conversation. */
+  private isOwnResumedFile(w: WatchedSession, full: string): boolean {
+    return !!w.nativeSessionId && path.basename(full) === `${w.nativeSessionId}.jsonl`;
+  }
+
   /** Another watched session shares this cwd — binding is ambiguous. */
   private hasCwdSibling(w: WatchedSession): boolean {
     for (const other of this.sessions.values()) {
@@ -310,7 +315,13 @@ export class TranscriptWatcher {
       if (!w.boundFile) {
         const widen = Date.now() - w.watchedSince > (this.opts.widenAfterMs ?? WIDEN_AFTER_MS);
         for (const full of this.discoveryCandidates(w, widen)) {
-          if (this.known.has(full) || w.tails.has(full)) continue;
+          if (w.tails.has(full)) continue;
+          // pre-existing files are never adopted — EXCEPT our own resumed
+          // conversation (<nativeId>.jsonl existed before this launch by
+          // definition; Dan's 2026-07-22 find: resumed cards had an empty
+          // Session view forever). Replaying it from 0 also gives the Feed
+          // the conversation history back.
+          if (this.known.has(full) && !this.isOwnResumedFile(w, full)) continue;
           if (this.claim(w, full)) w.tails.set(full, { offset: 0, buf: '' });
         }
       } else {

@@ -342,4 +342,29 @@ describe('pre-existing transcripts are never adopted', () => {
     expect(w2.snapshot('s1')!.usage.output).toBe(0);
     w2.stop();
   });
+
+  it("EXCEPT the session's own resumed conversation, replayed with history (E10 fix)", async () => {
+    const file = path.join(projectDir(), 'native-res.jsonl');
+    writeLines(file, [
+      entry({ sessionId: 'native-res', message: { content: [{ type: 'text', text: 'history line' }] } }),
+    ]);
+    const w2 = new TranscriptWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: root }), 'transcripts'),
+      pollMs: 25,
+    });
+    w2.watch('s1', { cwd, nativeSessionId: 'native-res' }); // a --resume spawn
+    await sleep(150);
+    const snap = w2.snapshot('s1')!;
+    expect(snap.bound).toBe(true);
+    // the Feed gets the conversation history back on resume
+    expect(w2.blocks('s1').some((b) => b.text === 'history line')).toBe(true);
+    // and new lines keep flowing
+    writeLines(file, [
+      entry({ sessionId: 'native-res', message: { content: [{ type: 'text', text: 'fresh line' }] } }),
+    ]);
+    await sleep(120);
+    expect(w2.blocks('s1').some((b) => b.text === 'fresh line')).toBe(true);
+    w2.stop();
+  });
 });

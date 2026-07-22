@@ -54,6 +54,17 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-22 — **Empty-Session-tab root cause (Dan's retest): RESUMED
+  sessions never bound their transcript.** The watcher's "never adopt
+  pre-existing files" rule (correct for strangers) also blocked a session's
+  OWN `<nativeId>.jsonl`, which by definition predates the launch — so a
+  resumed card's Feed stayed empty forever while the Terminal worked. Fix:
+  ipc passes the resumed native id into transcripts.watch; discovery may
+  adopt exactly that file, replaying it from 0 — the Session view now shows
+  the conversation HISTORY on resume as a bonus. Unit-tested both ways.
+  140 unit + 27 e2e green. Also confirmed: ALL the failed PR runs are the
+  same GitHub billing error ([user] blocker, still unresolved).
+
 - 2026-07-21 — **Dan's live-test bug fixes (PR #65)**, all four:
   (1+3) **Same-folder sessions cross-wired their Feeds** — the S-04 adoption
   race for real: cwd-only claims are ambiguous with cwd-siblings, and
