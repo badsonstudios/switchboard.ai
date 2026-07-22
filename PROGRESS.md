@@ -54,6 +54,25 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-22 — **Dan's manual-pass findings (14 items) — 12 fixed on PR #65,
+  2 planned.** Fixed: (#1) approval bar moved above the composer; (#2) hold
+  timeout 60s→300s; (#3-interim) NO OS toasts while the window is focused
+  (crashes excepted); (#4) verbosity tooltips; (#5) cross-folder transcript
+  steal — claims now require POSITIVE evidence (summary-first resumed files
+  have no cwd on line 1; readHead scans 25 lines; +2 tests); (#6) prominent
+  "Claude is working…" strip above the composer; (#7) skill/long user
+  payloads collapse like tool rows; (#8) rail group dividers; (#9) Events
+  items show session name + task label (was raw live-id — map by liveId);
+  (#10-core) EventFeed = ONE item per session, latest wins, resolved clears
+  (rewritten + 7 tests); (#11) horizontal rule before each new prompt;
+  (#13) Feed→**Events** everywhere (panel, i18n, channels events:list/
+  events:changed, EventsPanel.tsx). Planned (DESIGN §5.9/§5.12 + E14):
+  per-session "notify when done" checkbox, Events filters (All·Needed·
+  By-session), questions-queue placeholder. (#12 spurious needs-permission:
+  likely the pre-fix cross-wiring + old event-log semantics; if it recurs
+  post-fix, grab the app log — hook events are per-session there.)
+  147 unit + 28 e2e green.
+
 - 2026-07-22 — **Approval miss #2 root-caused by a live probe: on Windows
   the CLI shells out via a `PowerShell` TOOL**, not Bash — our gate/matcher
   said Bash-only, so Dan's "list my Downloads" TUI-prompted again. Probe:

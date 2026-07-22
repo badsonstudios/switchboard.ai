@@ -344,9 +344,16 @@ break-out; they interleave anywhere after E9:
   visibility-aware rule conditions, quiet hours + missed-events digest.
   Actionable toasts pair naturally with E10 — consider landing that slice with
   approvals.
-- **Event feed v2 (§5.12).** Inline actions on events, filters
-  (session / severity / type), severity tiers with visual weight, group-by-
-  session toggle, the full §5.12 event catalog.
+- **Events v2 (§5.12, revised 2026-07-22).** The one-item-per-session /
+  resolved-means-gone core shipped with the E10 fix round; v2 adds the
+  mockup's filters (All · Needed · By-session), inline actions on events,
+  the full §5.12 event catalog, and the **questions-queue placeholder**
+  (a session's clarification questions render as an expandable list the
+  operator returns to later — owner request 2026-07-22).
+- **Per-session "notify when done" checkbox (§5.9, owner request
+  2026-07-22).** Done-toasts opt-in per session; rides the rules engine.
+  (Interim shipped: no OS toasts while the window is focused, crashes
+  excepted.)
 - **Status bar service health (§5.14).** Anthropic Statuspage polling
   (status + unresolved incidents), status-bar dot + tooltip, incident Feed
   events, local corroboration banner (multiple sessions erroring → "possible

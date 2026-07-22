@@ -373,6 +373,11 @@ or sits idle awaiting input, and `Stop` when it finishes. On top:
   channel only when the session/app is backgrounded — no toast for a session
   already on screen. This is the calm default for S3.
 - Quiet hours / do-not-disturb; missed-events digest per session.
+- **Per-session "notify when done" (owner request 2026-07-22):** a checkbox on
+  the session card — done-toasts only for sessions the user opted into (long
+  tasks), because a toast for every short turn is noise. Interim behavior
+  until the rules engine lands: OS toasts are suppressed entirely while the
+  app window is focused (crashes always toast).
 
 **Reducing prompts at the source (autonomy profiles):** per-session spawn profile =
 `--permission-mode` + allowed tools + extra dirs, presented as a slider:
@@ -504,12 +509,30 @@ Every session carries an identity that renders IDENTICALLY everywhere it appears
   me?" answered at a glance.
 - Optional: per-session notification sound doubles as an audio identity.
 
-### 5.12 Event feed — the operator's log
+### 5.12 Events — what needs the operator NOW
 
-A dockable panel (left, default) receiving typed events from every session; one
-unified, filterable inbox. Clicking an event restores/focuses its session (and
-scrolls to the relevant spot where applicable). Inline actions on the event itself
-where possible.
+> **Revised 2026-07-22 (owner decision, hands-on E10 use).** Renamed
+> **"Events"** (UI + code). The panel is NOT a log — it answers "what needs
+> me / what just finished". Core semantics:
+>
+> - **One item per session**: the session's LATEST attention state. A new
+>   event from a session replaces its previous one.
+> - **Resolved means gone**: a granted permission / answered input removes
+>   the item (the status change to `working` clears it). A `done` stays
+>   until that session produces something newer.
+> - Each item shows the **session name** with the **task label** beneath it
+>   (never raw session ids).
+> - **Filters** (per the main-window-v1 mockup): All · Needed · By-session.
+> - **Questions queue (placeholder)**: when a session needs clarification
+>   ("answer these 3 questions"), the item should expand into a small list
+>   the operator can come back to — spec'd when E14 lands.
+>
+> A full history/audit view (the original "operator's log") may return later
+> as a separate surface; the Events panel itself stays a to-do list.
+
+A dockable panel receiving typed events from every session. Clicking an event
+restores/focuses its session (and scrolls to the relevant spot where
+applicable). Inline actions on the event itself where possible.
 
 | Event | Payload / inline actions |
 |---|---|

@@ -10,7 +10,7 @@ import {
 import { LanguageChoice, loadLanguage, setLanguage } from './i18n';
 import { TitleBar, SessionsRail, StatusBar, RailSession, RailGroup } from './components/chrome';
 import { SessionGrid, GridController } from './components/SessionGrid';
-import { FeedPanel } from './components/FeedPanel';
+import { EventsPanel } from './components/EventsPanel';
 import { Usage, addUsage, estimateCostUsd, ZERO_USAGE } from './lib/usage';
 import { loadUiState, uiGet, uiSet } from './lib/ui-state';
 import { boxOnAnyDisplay, RescuedPopout } from './lib/layout';
@@ -139,6 +139,8 @@ export function App(): React.JSX.Element {
         status: c.status,
         groupId: c.groupId,
         autoKey: c.autoKey,
+        liveId: c.liveId,
+        taskLabel: c.taskLabel,
       }))
     );
   }, []); // bridge is stable for the window's lifetime
@@ -262,7 +264,7 @@ export function App(): React.JSX.Element {
           onCardsChanged={setCards}
           controller={grid}
         />
-        <FeedPanel
+        <EventsPanel
           sessions={sessions}
           onFocus={(id) => grid.current?.focusSession(id)}
           reconnectOffer={reconnectOffer}

@@ -305,7 +305,9 @@ app
       titleFor: (sessionId) => manager.get(sessionId)?.identity.title ?? 'switchboard',
       bodyFor: (e) => e.kind.replace(/-/g, ' '),
     });
-    feed.onEvent((e) => notifier.handle(e));
+    feed.onEvent((e) => {
+      if (e) notifier.handle(e); // null = pure removal, nothing to announce
+    });
     ipcMain.handle('preflight:check', () => runPreflight());
     busySessions = () =>
       manager

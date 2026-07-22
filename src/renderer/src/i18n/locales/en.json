@@ -107,9 +107,10 @@
       "both": "SM"
     }
   },
-  "feed": {
-    "eyebrow": "Feed",
-    "empty": "Attention events appear here",
+  "events": {
+    "eyebrow": "Events",
+    "empty": "Nothing needs you right now",
+    "unknownSession": "(closed session)",
     "reconnectOffer": "A saved monitor is back — restore its pop-out layout?",
     "restore": "Restore",
     "notNow": "Not now",
@@ -140,7 +141,13 @@
     "sendIcon": "↑",
     "quiet": "quiet",
     "normal": "normal",
-    "firehose": "firehose"
+    "firehose": "firehose",
+    "quietHint": "Prose only — your prompts and Claude's replies",
+    "normalHint": "Prose + tool activity",
+    "firehoseHint": "Everything, including thinking and subagent chatter",
+    "workingStrip": "Claude is working…",
+    "expandHint": "click to expand",
+    "collapsedIcon": "▸"
   },
   "statusbar": {
     "sessions": "{count, plural, =0 {no sessions} one {# session} other {# sessions}}",

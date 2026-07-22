@@ -216,21 +216,7 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
     ) : b.kind === 'thinking' ? (
       <ThinkingRow b={b} />
     ) : b.kind === 'user' ? (
-      // the user's prompt sits in a tinted pill so it reads at a glance
-      // (Dan's 2026-07-21 feedback — no "you" label, color does the work)
-      <div
-        style={{
-          background: 'color-mix(in srgb, var(--status-needs-input) 10%, var(--panel2))',
-          border: '1px solid color-mix(in srgb, var(--status-needs-input) 28%, transparent)',
-          borderRadius: 10,
-          padding: '6px 10px',
-          whiteSpace: 'pre-wrap',
-          color: 'var(--text)',
-          overflowWrap: 'break-word',
-        }}
-      >
-        {b.text}
-      </div>
+      <UserPill text={b.text ?? ''} />
     ) : (
       <Markdown text={b.text ?? ''} />
     );
@@ -278,8 +264,9 @@ export function FeedView(props: {
   autonomy?: string;
   model?: string;
   onCycleAutonomy?: () => void;
-  /** the inline approval bar owns the permission (E10-04) — chip stands down */
-  hasApproval?: boolean;
+  /** held permission (E10-04) — the bar renders just above the composer */
+  approval?: { requestId: string; tool: string; input: Record<string, unknown> } | null;
+  onDecide?: (decision: 'allow' | 'deny', allowAll?: boolean) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [blocks, setBlocks] = React.useState<FeedBlockDto[]>([]);
@@ -297,7 +284,7 @@ export function FeedView(props: {
   // chip = raw TUI states only: needs-input, or a permission the inline bar
   // is NOT handling (fail-open path where the CLI shows its own prompt)
   const waiting =
-    props.status === 'needs-input' || (props.status === 'needs-permission' && !props.hasApproval);
+    props.status === 'needs-input' || (props.status === 'needs-permission' && !props.approval);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -353,6 +340,7 @@ export function FeedView(props: {
         {(['quiet', 'normal', 'firehose'] as const).map((v) => (
           <button
             key={v}
+            title={t(`feedView.${v}Hint`)}
             onClick={() => pickVerbosity(v)}
             style={{
               background: verbosity === v ? 'var(--chip)' : 'transparent',
@@ -382,11 +370,48 @@ export function FeedView(props: {
             {t('feedView.empty')}
           </div>
         )}
-        {visibleBlocks.map((b) => (
-          <Block key={b.seq} b={b} />
+        {visibleBlocks.map((b, i) => (
+          <React.Fragment key={b.seq}>
+            {/* a new prompt starts a new turn — rule it off (Dan #11) */}
+            {b.kind === 'user' && i > 0 && (
+              <div style={{ borderBlockStart: '1px solid var(--border)', marginBlock: 8, marginInline: 8 }} />
+            )}
+            <Block b={b} />
+          </React.Fragment>
         ))}
         <div ref={bottom} />
       </div>
+      {/* prominent working indicator above the composer (Dan #6) */}
+      {!props.approval && props.status === 'working' && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            paddingInline: 10,
+            paddingBlock: 5,
+            borderBlockStart: '1px solid var(--border)',
+            background: 'color-mix(in srgb, var(--status-working) 7%, var(--panel2))',
+            fontSize: 11.5,
+            color: 'var(--status-working)',
+            fontWeight: 600,
+          }}
+        >
+          <span
+            style={{
+              inlineSize: 9,
+              blockSize: 9,
+              borderRadius: '50%',
+              background: 'var(--status-working)',
+              animation: 'sb-pulse 1.2s ease-in-out infinite',
+            }}
+          />
+          {t('feedView.workingStrip')}
+        </div>
+      )}
+      {props.approval && props.onDecide && (
+        <ApprovalBar approval={props.approval} onDecide={props.onDecide} />
+      )}
       <Composer
         sessionId={props.sessionId}
         autonomy={props.autonomy}
@@ -394,6 +419,149 @@ export function FeedView(props: {
         status={props.status}
         onCycleAutonomy={props.onCycleAutonomy}
       />
+    </div>
+  );
+}
+
+/**
+ * The user's prompt in a tinted pill (Dan #2). Long payloads — skill
+ * invocations dump the whole skill body as a user message — collapse to a
+ * header line with click-to-expand, like tool blocks (Dan #7).
+ */
+function UserPill({ text }: { text: string }): React.JSX.Element {
+  const { t } = useTranslation();
+  const [open, setOpen] = React.useState(false);
+  // a skill / slash-command invocation carries a command-name tag
+  const cmd = /<command-name>([^<]+)<\/command-name>/.exec(text)?.[1];
+  const long = text.length > 500;
+  const collapsed = (cmd || long) && !open;
+  const label = cmd ?? `${text.slice(0, 160).split(String.fromCharCode(10))[0]}…`;
+  return (
+    <div
+      onClick={collapsed || open ? () => setOpen(!open) : undefined}
+      style={{
+        background: 'color-mix(in srgb, var(--status-needs-input) 10%, var(--panel2))',
+        border: '1px solid color-mix(in srgb, var(--status-needs-input) 28%, transparent)',
+        borderRadius: 10,
+        padding: '6px 10px',
+        whiteSpace: 'pre-wrap',
+        color: 'var(--text)',
+        overflowWrap: 'break-word',
+        cursor: cmd || long ? 'pointer' : 'default',
+      }}
+    >
+      {collapsed ? (
+        <span style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+          <span style={{ fontSize: 8, color: 'var(--faint)' }}>{t('feedView.collapsedIcon')}</span>
+          <span style={{ fontFamily: cmd ? 'var(--font-mono)' : 'var(--font-ui)', fontWeight: cmd ? 700 : 400 }}>
+            {label}
+          </span>
+          <span style={{ fontSize: 9.5, color: 'var(--faint)' }}>{t('feedView.expandHint')}</span>
+        </span>
+      ) : (
+        text
+      )}
+    </div>
+  );
+}
+
+/**
+ * Inline approval bar (E10-04) — docked just above the composer (Dan's
+ * 2026-07-22 feedback: it lives where the eyes already are, not at the top).
+ */
+function ApprovalBar({
+  approval,
+  onDecide,
+}: {
+  approval: { requestId: string; tool: string; input: Record<string, unknown> };
+  onDecide: (decision: 'allow' | 'deny', allowAll?: boolean) => void;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  const btn = (primary: boolean): React.CSSProperties => ({
+    background: primary ? 'var(--btn-primary-bg)' : 'var(--panel)',
+    color: primary ? 'var(--btn-primary-text)' : 'var(--text)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-chip)',
+    padding: '4px 14px',
+    cursor: 'pointer',
+    fontFamily: 'var(--font-ui)',
+    fontSize: 12,
+  });
+  const pane = (background: string): React.CSSProperties => ({
+    flex: 1,
+    margin: 0,
+    padding: 6,
+    background,
+    border: '1px solid var(--border)',
+    borderRadius: 4,
+    fontSize: 10,
+    fontFamily: 'var(--font-mono)',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-all',
+    minInlineSize: 0,
+  });
+  return (
+    <div
+      style={{
+        borderBlockStart: '2px solid var(--status-needs-permission)',
+        background: 'color-mix(in srgb, var(--status-needs-permission) 8%, var(--panel2))',
+        padding: '8px 10px',
+        fontSize: 11,
+      }}
+    >
+      <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBlockEnd: 6 }}>
+        <span style={{ fontWeight: 700, color: 'var(--status-needs-permission)' }}>
+          {t('approval.title', { tool: approval.tool })}
+        </span>
+        <span
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10,
+            color: 'var(--muted)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            minInlineSize: 0,
+            flex: 1,
+          }}
+        >
+          {String(approval.input.file_path ?? approval.input.command ?? approval.input.url ?? '')}
+        </span>
+      </div>
+      {typeof approval.input.old_string === 'string' && typeof approval.input.new_string === 'string' && (
+        <div style={{ display: 'flex', gap: 6, marginBlockEnd: 6, maxBlockSize: 120, overflow: 'auto' }}>
+          <pre style={pane('var(--diff-removed-bg)')}>{approval.input.old_string.slice(0, 1500)}</pre>
+          <pre style={pane('var(--diff-added-bg)')}>{approval.input.new_string.slice(0, 1500)}</pre>
+        </div>
+      )}
+      {typeof approval.input.command === 'string' && (
+        <pre
+          style={{
+            margin: '0 0 6px',
+            padding: 6,
+            background: 'var(--panel)',
+            border: '1px solid var(--border)',
+            borderRadius: 4,
+            fontSize: 10.5,
+            maxBlockSize: 90,
+            overflow: 'auto',
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          {approval.input.command.slice(0, 1500)}
+        </pre>
+      )}
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button onClick={() => onDecide('allow')} style={btn(true)}>
+          {t('approval.allow')}
+        </button>
+        <button onClick={() => onDecide('allow', true)} style={btn(false)}>
+          {t('approval.allowAll')}
+        </button>
+        <button onClick={() => onDecide('deny')} style={btn(false)}>
+          {t('approval.deny')}
+        </button>
+      </div>
     </div>
   );
 }

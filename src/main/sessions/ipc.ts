@@ -62,9 +62,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   manager.onStatusChange((change) => {
     send('sessions:status', change);
-    const fe = deps.feed.ingest(change);
-    if (fe) send('feed:event', fe);
+    deps.feed.ingest(change);
   });
+  // one event per session, latest state wins (Dan 2026-07-22) — push the
+  // whole list on ANY change (adds, replacements, and pure removals)
+  deps.feed.onEvent(() => send('events:changed', deps.feed.list()));
   manager.onSessionExit((e) => send('sessions:exited', e));
   transcripts.onUpdate((snap) => {
     send('sessions:usage', snap);
@@ -76,7 +78,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     if (prior) deps.persist.upsert({ ...prior, usage: snap.usage, model: snap.model ?? prior.model });
   });
 
-  ipcMain.handle('feed:list', () => deps.feed.list());
+  ipcMain.handle('events:list', () => deps.feed.list());
 
   // held PreToolUse permissions (E10-03): stream requests to the renderer,
   // take decisions back. Card id rides along so the UI can find its panel.
@@ -252,6 +254,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
           liveId,
           groupId: card.groupId,
           autoKey: await autoKeyFor(card.identity.folder),
+          taskLabel: card.taskLabel,
         };
       })
     );
@@ -265,6 +268,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   const dropLiveForCard = (cardId: string): void => {
     for (const [liveId, cid] of cardOfLive) {
       if (cid !== cardId) continue;
+      deps.feed.forget(liveId); // its event leaves the Events panel with it
       feeds.get(liveId)?.();
       feeds.delete(liveId);
       hooks.unregisterSession(liveId);

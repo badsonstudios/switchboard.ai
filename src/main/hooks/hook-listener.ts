@@ -47,7 +47,8 @@ export interface HookListenerOptions {
   /** session folder lookup — out-of-cwd reads are gated (E10 fix) */
   cwdFor?: (sessionId: string) => string | undefined;
   /** how long a held PreToolUse waits for a UI decision before failing OPEN
-   *  to the CLI's own TUI prompt (default 60s) */
+   *  to the CLI's own TUI prompt. Default 300s — human-scale (Dan hit the
+   *  old 60s mid-testing); the CLI's own hook budget is ~600s (S-03). */
   holdTimeoutMs?: number;
 }
 
@@ -269,7 +270,7 @@ export class HookListener {
     // PreToolUse gets its own entry: the forwarder waits (4th arg) for a held
     // decision and prints the hook JSON verdict to stdout; the CLI-side
     // timeout is a beat above ours so OUR timeout (fail-open '{}') wins.
-    const holdMs = this.opts.holdTimeoutMs ?? 60_000;
+    const holdMs = this.opts.holdTimeoutMs ?? 300_000;
     hooks['PreToolUse'] = [
       {
         matcher: PRETOOL_MATCHER,
@@ -349,7 +350,7 @@ export class HookListener {
         sessionId,
       });
       this.release(requestId);
-    }, this.opts.holdTimeoutMs ?? 60_000);
+    }, this.opts.holdTimeoutMs ?? 300_000);
     timer.unref?.();
     this.pending.set(requestId, { res, timer, sessionId });
     const request: PermissionRequest = {

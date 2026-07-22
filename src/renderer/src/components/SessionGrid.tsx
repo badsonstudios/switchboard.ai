@@ -577,88 +577,21 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               </div>
             )}
             {view === 'feed' && (
-              <div style={{ blockSize: '100%', display: 'flex', flexDirection: 'column' }}>
-                {perm && (
-                  <div
-                    style={{
-                      borderBlockEnd: '1px solid var(--status-needs-permission)',
-                      background: 'color-mix(in srgb, var(--status-needs-permission) 8%, var(--panel2))',
-                      padding: '8px 10px',
-                      fontSize: 11,
-                    }}
-                  >
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBlockEnd: 6 }}>
-                      <span style={{ fontWeight: 700, color: 'var(--status-needs-permission)' }}>
-                        {t('approval.title', { tool: perm.tool })}
-                      </span>
-                      <span
-                        style={{
-                          fontFamily: 'var(--font-mono)',
-                          fontSize: 10,
-                          color: 'var(--muted)',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          minInlineSize: 0,
-                          flex: 1,
-                        }}
-                      >
-                        {String(perm.input.file_path ?? perm.input.command ?? perm.input.url ?? '')}
-                      </span>
-                    </div>
-                    {typeof perm.input.old_string === 'string' && typeof perm.input.new_string === 'string' && (
-                      <div style={{ display: 'flex', gap: 6, marginBlockEnd: 6, maxBlockSize: 120, overflow: 'auto' }}>
-                        <pre style={approvalDiffPane('var(--diff-removed-bg)')}>{perm.input.old_string.slice(0, 1500)}</pre>
-                        <pre style={approvalDiffPane('var(--diff-added-bg)')}>{perm.input.new_string.slice(0, 1500)}</pre>
-                      </div>
-                    )}
-                    {typeof perm.input.command === 'string' && (
-                      <pre
-                        style={{
-                          margin: '0 0 6px',
-                          padding: 6,
-                          background: 'var(--panel)',
-                          border: '1px solid var(--border)',
-                          borderRadius: 4,
-                          fontSize: 10.5,
-                          maxBlockSize: 90,
-                          overflow: 'auto',
-                          whiteSpace: 'pre-wrap',
-                        }}
-                      >
-                        {perm.input.command.slice(0, 1500)}
-                      </pre>
-                    )}
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={() => decide('allow')} style={overlayBtn(true)}>
-                        {t('approval.allow')}
-                      </button>
-                      <button onClick={() => decide('allow', true)} style={overlayBtn(false)}>
-                        {t('approval.allowAll')}
-                      </button>
-                      <button onClick={() => decide('deny')} style={overlayBtn(false)}>
-                        {t('approval.deny')}
-                      </button>
-                    </div>
-                  </div>
-                )}
-                <div style={{ flex: 1, minBlockSize: 0 }}>
-                  <FeedView
-                    sessionId={live.id}
-                    cardId={cardId}
-                    visible={visible && view === 'feed'}
-                    status={status}
-                    autonomy={cardAutonomy}
-                    model={usage?.model}
-                    hasApproval={!!perm}
-                    onCycleAutonomy={cycleCardAutonomy}
-                    onJumpToTerminal={() => {
-                      setTerminalShown(true); // chip surfaces the hidden Terminal on demand
-                      setView('terminal');
-                    }}
-                  />
-                </div>
-              </div>
+              <FeedView
+                sessionId={live.id}
+                cardId={cardId}
+                visible={visible && view === 'feed'}
+                status={status}
+                autonomy={cardAutonomy}
+                model={usage?.model}
+                approval={perm}
+                onDecide={decide}
+                onCycleAutonomy={cycleCardAutonomy}
+                onJumpToTerminal={() => {
+                  setTerminalShown(true); // chip surfaces the hidden Terminal on demand
+                  setView('terminal');
+                }}
+              />
             )}
             {view === 'diff' && folder && <DiffPane folder={folder} theme={docTheme()} />}
             {exitedOverlay && <div style={overlayBackdrop}>{exitedOverlay}</div>}
@@ -741,21 +674,6 @@ function vtabStyle(active: boolean, disabled: boolean, accent?: string): React.C
     marginBlockEnd: active ? -1 : 0, // overlap the strip's bottom border to "connect"
     boxShadow: active ? 'var(--tab-lift)' : 'none',
     opacity: disabled ? 0.5 : 1,
-  };
-}
-
-function approvalDiffPane(background: string): React.CSSProperties {
-  return {
-    flex: 1,
-    margin: 0,
-    padding: 6,
-    background,
-    border: '1px solid var(--border)',
-    borderRadius: 4,
-    fontSize: 10,
-    whiteSpace: 'pre-wrap',
-    wordBreak: 'break-all',
-    minInlineSize: 0,
   };
 }
 

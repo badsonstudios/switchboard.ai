@@ -368,20 +368,28 @@ export class TranscriptWatcher {
     return acc;
   }
 
-  /** Bind only files that verifiably belong to this session (the race fix). */
+  /** Bind only files that VERIFIABLY belong to this session (the race fix).
+   *  Positive evidence is required — Dan's 2026-07-22 find: resumed/compacted
+   *  transcripts open with a summary record that has NO cwd, and the old
+   *  "check cwd if present" rule let a widened scan claim a foreign file. */
   private claim(w: WatchedSession, full: string): boolean {
     if (full.includes(`${path.sep}subagents${path.sep}`)) return false; // handled post-bind
     if (w.boundFile) return false; // one main transcript per session
-    // AUTHORITY: the first parseable line's cwd must match (case-insensitive
-    // on win32); sessionId must match the native id when we know it
     const head = this.readHead(full);
     if (!head) return false;
+    // a known-wrong id or wrong cwd is always disqualifying
+    if (w.nativeSessionId && head.sessionId && head.sessionId !== w.nativeSessionId) return false;
     if (typeof head.cwd === 'string' && !sameFolder(head.cwd, w.cwd)) return false;
-    if (w.nativeSessionId && head.sessionId !== w.nativeSessionId) return false;
-    // Same-cwd sessions make cwd-only claims AMBIGUOUS (two sessions in one
-    // folder must not steal each other's transcript): wait for the hooks to
-    // deliver our native id, then bind on the id match above.
-    if (!w.nativeSessionId && this.hasCwdSibling(w)) return false;
+    const idMatch = !!w.nativeSessionId && head.sessionId === w.nativeSessionId;
+    if (!idMatch) {
+      // without an id match we need a positive cwd match — absence of
+      // evidence is NOT evidence the file is ours
+      if (typeof head.cwd !== 'string' || !sameFolder(head.cwd, w.cwd)) return false;
+      // Same-cwd sessions make cwd-only claims AMBIGUOUS (two sessions in
+      // one folder must not steal each other's transcript): wait for the
+      // hooks to deliver our native id, then bind on the id match.
+      if (this.hasCwdSibling(w)) return false;
+    }
     w.boundFile = full;
     w.snap.bound = true;
     w.snap.nativeSessionId = typeof head.sessionId === 'string' ? head.sessionId : undefined;
@@ -389,17 +397,34 @@ export class TranscriptWatcher {
     return true;
   }
 
-  private readHead(full: string): { cwd?: unknown; sessionId?: unknown } | null {
+  /** First cwd + sessionId found in the head of the file — summary/meta
+   *  records on line 1 carry neither, so scan a handful of lines. */
+  private readHead(full: string): { cwd?: string; sessionId?: string } | null {
+    let text: string;
     try {
       const fd = fs.openSync(full, 'r');
-      const buf = Buffer.alloc(4096);
+      const buf = Buffer.alloc(16_384);
       const n = fs.readSync(fd, buf, 0, buf.length, 0);
       fs.closeSync(fd);
-      const firstLine = buf.toString('utf8', 0, n).split('\n')[0];
-      return JSON.parse(firstLine) as { cwd?: unknown; sessionId?: unknown };
+      text = buf.toString('utf8', 0, n);
     } catch {
       return null;
     }
+    const out: { cwd?: string; sessionId?: string } = {};
+    let sawParseable = false;
+    for (const line of text.split('\n').slice(0, 25)) {
+      if (!line.trim()) continue;
+      try {
+        const e = JSON.parse(line) as { cwd?: unknown; sessionId?: unknown };
+        sawParseable = true;
+        if (out.cwd === undefined && typeof e.cwd === 'string') out.cwd = e.cwd;
+        if (out.sessionId === undefined && typeof e.sessionId === 'string') out.sessionId = e.sessionId;
+        if (out.cwd !== undefined && out.sessionId !== undefined) break;
+      } catch {
+        /* partial trailing line or junk — keep scanning */
+      }
+    }
+    return sawParseable ? out : null;
   }
 
   private drain(w: WatchedSession, full: string, tail: { offset: number; buf: string }): void {

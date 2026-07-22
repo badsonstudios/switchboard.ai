@@ -1,24 +1,26 @@
-// Event feed panel (P1-E4-01, §5.12): attention events with session color
-// stripes, newest first, click-to-focus.
+// Events panel (P1-E4-01 → renamed from "Feed" per Dan 2026-07-22, §5.12):
+// what needs attention right now — ONE item per session, its latest state.
+// Items are pushed wholesale from the main process (adds, replacements, and
+// removals when a permission is answered or a session closes).
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailSession } from './chrome';
 
-export interface FeedEventDto {
+export interface EventDto {
   id: number;
   sessionId: string;
   kind: 'done' | 'needs-input' | 'needs-permission' | 'crashed';
   at: string;
 }
 
-const KIND_TOKEN: Record<FeedEventDto['kind'], string> = {
+const KIND_TOKEN: Record<EventDto['kind'], string> = {
   done: 'var(--status-done)',
   'needs-input': 'var(--status-needs-input)',
   'needs-permission': 'var(--status-needs-permission)',
   crashed: 'var(--status-crashed)',
 };
 
-export function FeedPanel(props: {
+export function EventsPanel(props: {
   sessions: RailSession[];
   onFocus: (sessionId: string) => void;
   /** a saved display is back — offer a one-click layout restore (E8-06) */
@@ -27,16 +29,21 @@ export function FeedPanel(props: {
   onDismissOffer?: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
-  const [events, setEvents] = useState<FeedEventDto[]>([]);
+  const [events, setEvents] = useState<EventDto[]>([]);
 
   useEffect(() => {
-    void window.switchboard.feed.list().then((l) => setEvents(l as FeedEventDto[]));
-    return window.switchboard.feed.onEvent((e) =>
-      setEvents((prev) => [...prev.slice(-199), e as FeedEventDto])
-    );
+    void window.switchboard.events.list().then((l) => setEvents(l as EventDto[]));
+    return window.switchboard.events.onChanged((l) => setEvents(l as EventDto[]));
   }, []);
 
-  const byId = new Map(props.sessions.map((s) => [s.id, s]));
+  // events carry the LIVE session id; the rail rows know both ids (Dan #9 —
+  // the panel was showing raw live-id fragments instead of session names)
+  const byId = new Map<string, RailSession>();
+  for (const s of props.sessions) {
+    byId.set(s.id, s);
+    if (s.liveId) byId.set(s.liveId, s);
+  }
+
   return (
     <aside
       style={{
@@ -60,7 +67,7 @@ export function FeedPanel(props: {
           marginBlockEnd: 8,
         }}
       >
-        {t('feed.eyebrow')}
+        {t('events.eyebrow')}
       </div>
       {props.reconnectOffer && (
         <div
@@ -73,7 +80,7 @@ export function FeedPanel(props: {
             fontSize: 11,
           }}
         >
-          <div style={{ color: 'var(--text)', marginBlockEnd: 6 }}>{t('feed.reconnectOffer')}</div>
+          <div style={{ color: 'var(--text)', marginBlockEnd: 6 }}>{t('events.reconnectOffer')}</div>
           <div style={{ display: 'flex', gap: 6 }}>
             <button
               onClick={props.onRestoreLayout}
@@ -88,7 +95,7 @@ export function FeedPanel(props: {
                 fontFamily: 'var(--font-ui)',
               }}
             >
-              {t('feed.restore')}
+              {t('events.restore')}
             </button>
             <button
               onClick={props.onDismissOffer}
@@ -103,20 +110,20 @@ export function FeedPanel(props: {
                 fontFamily: 'var(--font-ui)',
               }}
             >
-              {t('feed.notNow')}
+              {t('events.notNow')}
             </button>
           </div>
         </div>
       )}
-      {events.length === 0 && (
-        <div style={{ color: 'var(--muted)', fontSize: 11 }}>{t('feed.empty')}</div>
+      {events.length === 0 && !props.reconnectOffer && (
+        <div style={{ color: 'var(--muted)', fontSize: 11 }}>{t('events.empty')}</div>
       )}
       {[...events].reverse().map((e) => {
         const s = byId.get(e.sessionId);
         return (
           <div
             key={e.id}
-            onClick={() => props.onFocus(e.sessionId)}
+            onClick={() => props.onFocus(s?.id ?? e.sessionId)}
             style={{
               position: 'relative',
               background: 'var(--panel2)',
@@ -139,14 +146,36 @@ export function FeedPanel(props: {
               }}
             />
             <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
-              <span style={{ fontWeight: 600, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {s?.title ?? e.sessionId.slice(0, 8)}
+              <span
+                style={{
+                  fontWeight: 600,
+                  color: 'var(--text)',
+                  flex: 1,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {s?.title ?? t('events.unknownSession')}
               </span>
               <span style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)', fontSize: 9 }}>
                 {new Date(e.at).toLocaleTimeString()}
               </span>
             </div>
-            <span style={{ color: KIND_TOKEN[e.kind] }}>{t(`feed.kind.${e.kind}`)}</span>
+            {s?.taskLabel && (
+              <div
+                style={{
+                  color: 'var(--muted)',
+                  fontSize: 10,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {s.taskLabel}
+              </div>
+            )}
+            <span style={{ color: KIND_TOKEN[e.kind] }}>{t(`events.kind.${e.kind}`)}</span>
           </div>
         );
       })}

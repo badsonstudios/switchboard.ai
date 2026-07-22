@@ -54,15 +54,14 @@ export class Notifier {
   handle(e: FeedEvent): void {
     if (!shouldNotify(this.opts.getPrefs(), e, new Date())) return;
     try {
-      // E10-04: needs-permission is answered by the INLINE approval bar when
-      // the user is already looking at the app — the OS toast is for when
-      // they're elsewhere. Other kinds keep toasting (a focused user may
-      // still want the "done" cue from a background session).
+      // OS toasts are for when the user is ELSEWHERE (Dan 2026-07-22: done-
+      // toasts while actively using the app are noise — the Events panel and
+      // status pills cover a focused user). Crashes always toast.
       const focused = (() => {
         const w = this.opts.getWindow();
         return !!w && !w.isDestroyed() && w.isFocused();
       })();
-      if (e.kind === 'needs-permission' && focused) return;
+      if (focused && e.kind !== 'crashed') return;
       if (Notification.isSupported()) {
         new Notification({
           title: this.opts.titleFor(e.sessionId),

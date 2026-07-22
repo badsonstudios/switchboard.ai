@@ -83,6 +83,7 @@ const api = {
         liveId?: string;
         groupId?: string;
         autoKey?: string;
+        taskLabel?: string;
       }>
     > => ipcRenderer.invoke('sessions:cards'),
     knownCards: (): Promise<Array<{ cardId: string; identity: SessionRecordDto['identity'] }>> =>
@@ -184,12 +185,13 @@ const api = {
     }): Promise<{ enabled: boolean; quietStart?: string; quietEnd?: string }> =>
       ipcRenderer.invoke('notifications:setPrefs', p),
   },
-  feed: {
-    list: (): Promise<unknown[]> => ipcRenderer.invoke('feed:list'),
-    onEvent: (cb: (e: unknown) => void): (() => void) => {
-      const h = (_e: unknown, ev: unknown) => cb(ev);
-      ipcRenderer.on('feed:event', h);
-      return () => ipcRenderer.removeListener('feed:event', h);
+  events: {
+    list: (): Promise<unknown[]> => ipcRenderer.invoke('events:list'),
+    /** the FULL current list on every change (adds, replacements, removals) */
+    onChanged: (cb: (list: unknown[]) => void): (() => void) => {
+      const h = (_e: unknown, l: unknown[]) => cb(l);
+      ipcRenderer.on('events:changed', h);
+      return () => ipcRenderer.removeListener('events:changed', h);
     },
   },
   transcripts: {

@@ -278,6 +278,42 @@ describe('Feed block derivation (P2-E12-06 §5.10)', () => {
   });
 });
 
+describe('positive evidence required to claim (Dan 2026-07-22: summary-first files)', () => {
+  it('a summary-first file (no cwd on line 1) is NOT claimed by a foreign-folder session', async () => {
+    // widen quickly so the full-root scan definitely sees the foreign file
+    const w2 = new TranscriptWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: root }), 'transcripts'),
+      pollMs: 25,
+      widenAfterMs: 50,
+    });
+    const otherDir = path.join(root, slugForCwd('C:/tmp/other-project'));
+    fs.mkdirSync(otherDir, { recursive: true });
+    const file = path.join(otherDir, 'native-foreign.jsonl');
+    w2.watch('s1', { cwd }); // our session, DIFFERENT folder
+    writeLines(file, [
+      JSON.stringify({ type: 'summary', summary: 'compacted history' }), // no cwd, no sessionId
+      entry({ sessionId: 'native-foreign', cwd: 'C:/tmp/other-project' }),
+    ]);
+    await sleep(300); // well past widen
+    expect(w2.snapshot('s1')!.bound).toBe(false);
+    w2.stop();
+  });
+
+  it('a summary-first file IS claimed when deeper lines prove the cwd', async () => {
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-sum.jsonl');
+    writeLines(file, [
+      JSON.stringify({ type: 'summary', summary: 'compacted history' }),
+      entry({ sessionId: 'native-sum' }), // carries cwd (ours) on line 2
+    ]);
+    await sleep(150);
+    const snap = watcher.snapshot('s1')!;
+    expect(snap.bound).toBe(true);
+    expect(snap.nativeSessionId).toBe('native-sum');
+  });
+});
+
 describe('same-cwd sessions never steal each other\'s transcript (E10 fix)', () => {
   it('two sessions in one folder: neither binds until hooks deliver ids, then each gets its own', async () => {
     watcher.watch('s1', { cwd });
