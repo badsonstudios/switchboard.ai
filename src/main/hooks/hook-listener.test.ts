@@ -226,6 +226,21 @@ describe('shouldHoldPermission policy', () => {
     expect(shouldHoldPermission('full-auto', 'Bash')).toBe(false);
     expect(shouldHoldPermission(undefined, 'Bash')).toBe(false); // unknown: fail open
   });
+
+  it('gates the Windows PowerShell tool like Bash (2026-07-22 probe)', () => {
+    expect(shouldHoldPermission('ask', 'PowerShell')).toBe(true);
+    expect(shouldHoldPermission('auto-edit', 'PowerShell')).toBe(true);
+    expect(shouldHoldPermission('full-auto', 'PowerShell')).toBe(false);
+  });
+
+  it('read tools hold ONLY when they leave the session folder', () => {
+    const cwd = 'C:/proj/app';
+    expect(shouldHoldPermission('ask', 'Read', { file_path: 'C:/proj/app/src/x.ts' }, cwd)).toBe(false);
+    expect(shouldHoldPermission('ask', 'Read', { file_path: 'C:/Users/dan/Downloads/w2.pdf' }, cwd)).toBe(true);
+    expect(shouldHoldPermission('auto-edit', 'Glob', { path: 'C:/elsewhere' }, cwd)).toBe(true);
+    expect(shouldHoldPermission('ask', 'Grep', {}, cwd)).toBe(false); // no target = stays in cwd
+    expect(shouldHoldPermission('full-auto', 'Read', { file_path: 'C:/elsewhere/x' }, cwd)).toBe(false);
+  });
 });
 
 describe('buildHookSettings', () => {
@@ -241,10 +256,17 @@ describe('buildHookSettings', () => {
       expect(h.command).toContain('hook-token'); // path, not the token itself
       expect(h.command).not.toMatch(/[0-9a-f]{32}/); // no raw token on argv
     }
-    // PreToolUse: its own entry — long-wait forwarder, CLI timeout above ours
-    const pre = settings.hooks['PreToolUse'][0].hooks[0];
+    // PreToolUse: its own entry — long-wait forwarder, CLI timeout above ours,
+    // and a MATCHER (required for tool hooks; its absence silently disabled
+    // approvals in production — Dan 2026-07-21). Must cover the Windows shell
+    // tool and the read tools the out-of-cwd rule gates.
+    const preEntry = settings.hooks['PreToolUse'][0] as { matcher?: string; hooks: Array<{ command: string; timeout: number }> };
+    const pre = preEntry.hooks[0];
     expect(pre.timeout).toBeGreaterThan(60);
     expect(pre.command).toMatch(/hook-forwarder\.cjs.*\d{4,}$/); // waitMs argv
+    for (const tool of ['Bash', 'PowerShell', 'Write', 'Edit', 'Read', 'Glob']) {
+      expect(preEntry.matcher).toContain(tool);
+    }
     expect(fs.existsSync(path.join(dir, 'hook-forwarder.cjs'))).toBe(true);
     expect(fs.existsSync(path.join(dir, 's9', 'hook-token'))).toBe(true);
   });

@@ -88,6 +88,36 @@ test.describe('inline approval bar (E10-04)', () => {
     await expect(w.getByText('Allow Edit?')).toHaveCount(0);
   });
 
+  test("Dan's case: a PowerShell dir-listing holds and the bar appears in the Session tab", async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
+    const logFile = await poll(() => {
+      const f = findFile(a.home, 'switchboard.log');
+      return f && fs.readFileSync(f, 'utf8').includes('hook listener up') ? f : null;
+    });
+    const port = Number(/"msg":"hook listener up".*?"port":(\d+)/.exec(fs.readFileSync(logFile, 'utf8'))![1]);
+    const tokenFile = await poll(() => findFile(a.home, 'hook-token'));
+    const token = fs.readFileSync(tokenFile, 'utf8').trim();
+
+    // the Windows shell tool (2026-07-22 probe) — the exact case that slipped
+    const pending = fetch(`http://127.0.0.1:${port}/hook`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-switchboard-token': token },
+      body: JSON.stringify({
+        hook_event_name: 'PreToolUse',
+        tool_name: 'PowerShell',
+        tool_input: { command: 'Get-ChildItem C:/Users/dan/Downloads', description: 'List Downloads' },
+      }),
+    }).then((r) => r.text());
+    // the bar shows IN THE SESSION TAB — no chip-to-terminal dance
+    await expect(w.getByText('Allow PowerShell?')).toBeVisible({ timeout: 10_000 });
+    await expect(w.getByText('continue in Terminal ↗')).toHaveCount(0);
+    await w.getByRole('button', { name: 'Allow', exact: true }).click();
+    expect(JSON.parse(await pending).hookSpecificOutput.permissionDecision).toBe('allow');
+  });
+
   test('Deny returns a deny verdict', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });

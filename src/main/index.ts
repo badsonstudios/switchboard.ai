@@ -285,8 +285,9 @@ app
       stateDir,
       manager,
       log: createLogger(sink, 'hooks'),
-      // hold policy (E10-03): gate by the session's own autonomy
+      // hold policy (E10-03): gate by the session's own autonomy + folder
       autonomyFor: (id) => manager.get(id)?.autonomy,
+      cwdFor: (id) => manager.get(id)?.identity.folder,
     });
     const transcripts = new TranscriptWatcher({
       projectsRoot: path.join(os.homedir(), '.claude', 'projects'),

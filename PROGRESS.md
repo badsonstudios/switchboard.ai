@@ -54,6 +54,19 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-22 — **Approval miss #2 root-caused by a live probe: on Windows
+  the CLI shells out via a `PowerShell` TOOL**, not Bash — our gate/matcher
+  said Bash-only, so Dan's "list my Downloads" TUI-prompted again. Probe:
+  `claude -p` + matcher-`*` logging hook → `tool_name:"PowerShell"`. Fixes:
+  PowerShell gated wherever Bash is; matcher widened; NEW rule — read tools
+  (Read/Glob/Grep/LS) hold when their target is OUTSIDE the session folder
+  (mirrors the CLI's out-of-workspace prompting; needs cwdFor dep). Policy +
+  settings-shape unit tests extended; new Playwright case replays Dan's
+  exact scenario (PowerShell hold → bar in Session tab, NO chip). Note for
+  the future: tool-name coverage is version/platform-volatile — the probe
+  script lives in scratchpad, worth productizing if this recurs.
+  check:hooks re-PASS vs real claude; 142 unit + 28 e2e green.
+
 - 2026-07-22 — **Empty-Session-tab root cause (Dan's retest): RESUMED
   sessions never bound their transcript.** The watcher's "never adopt
   pre-existing files" rule (correct for strangers) also blocked a session's

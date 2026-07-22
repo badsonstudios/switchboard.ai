@@ -44,6 +44,8 @@ export interface HookListenerOptions {
   log: Logger;
   /** session autonomy lookup for the hold policy (E10-03); absent = no holds */
   autonomyFor?: (sessionId: string) => string | undefined;
+  /** session folder lookup — out-of-cwd reads are gated (E10 fix) */
+  cwdFor?: (sessionId: string) => string | undefined;
   /** how long a held PreToolUse waits for a UI decision before failing OPEN
    *  to the CLI's own TUI prompt (default 60s) */
   holdTimeoutMs?: number;
@@ -62,22 +64,58 @@ export interface PermissionRequest {
  * for at this autonomy — otherwise we'd nag full-auto sessions the CLI would
  * have let through. Unknown autonomy fails open (no hold).
  */
+// Shell tools are platform-dependent: the CLI uses a PowerShell tool on
+// Windows (probe 2026-07-22 — "list my Downloads" ran tool_name:"PowerShell",
+// which our Bash-only gate missed and the TUI prompted instead).
+const SHELLISH = ['Bash', 'PowerShell'];
+const MUTATING = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'WebFetch'];
+const READ_TOOLS = ['Read', 'Glob', 'Grep', 'LS'];
+
 const GATED: Record<string, string[]> = {
-  ask: ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'WebFetch'],
-  plan: ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'WebFetch'],
-  'auto-edit': ['Bash', 'WebFetch'],
+  ask: [...SHELLISH, ...MUTATING],
+  plan: [...SHELLISH, ...MUTATING],
+  'auto-edit': [...SHELLISH, 'WebFetch'],
   'full-auto': [],
 };
 
 /** PreToolUse matcher — REQUIRED for tool hooks (S-03's proven shape used
  *  one; without it the entry never fires and the CLI's own TUI prompt runs
- *  instead — Dan's 2026-07-21 find). Union of every gated set; the hold
- *  policy narrows per-session server-side. */
-const PRETOOL_MATCHER = 'Bash|Write|Edit|MultiEdit|NotebookEdit|WebFetch';
+ *  instead — Dan's 2026-07-21 find). Union of everything the policy might
+ *  hold; the hold policy narrows per-session server-side. */
+const PRETOOL_MATCHER = [...SHELLISH, ...MUTATING, ...READ_TOOLS].join('|');
 
-export function shouldHoldPermission(autonomy: string | undefined, tool: string | undefined): boolean {
+/** The primary filesystem target of a read-tool call, if any. */
+function readToolPath(input: Record<string, unknown> | undefined): string | undefined {
+  const p = input?.file_path ?? input?.path ?? input?.notebook_path;
+  return typeof p === 'string' ? p : undefined;
+}
+
+/** Is `p` outside the session's folder? (The CLI prompts for outside reads.) */
+export function isOutsideCwd(p: string, cwd: string): boolean {
+  const norm = (x: string) => {
+    const r = path.resolve(x);
+    return process.platform === 'win32' ? r.toLowerCase() : r;
+  };
+  const target = norm(p);
+  const base = norm(cwd);
+  return target !== base && !target.startsWith(base + path.sep);
+}
+
+export function shouldHoldPermission(
+  autonomy: string | undefined,
+  tool: string | undefined,
+  input?: Record<string, unknown>,
+  cwd?: string
+): boolean {
   if (!autonomy || !tool) return false;
-  return (GATED[autonomy] ?? []).includes(tool);
+  if ((GATED[autonomy] ?? []).includes(tool)) return true;
+  // read tools only prompt when they leave the workspace — mirror that:
+  // hold an out-of-cwd read (full-auto never holds anything)
+  if (autonomy !== 'full-auto' && READ_TOOLS.includes(tool) && cwd) {
+    const target = readToolPath(input);
+    if (target && isOutsideCwd(target, cwd)) return true;
+  }
+  return false;
 }
 
 export class HookListener {
@@ -289,7 +327,19 @@ export class HookListener {
     if (e.hook_event_name !== 'PreToolUse') return false;
     if (this.permListeners.size === 0) return false; // nobody to ask — fail open
     const tool = typeof e.tool_name === 'string' ? e.tool_name : undefined;
-    if (!shouldHoldPermission(this.opts.autonomyFor?.(sessionId), tool)) return false;
+    const input =
+      e.tool_input && typeof e.tool_input === 'object'
+        ? (e.tool_input as Record<string, unknown>)
+        : undefined;
+    if (
+      !shouldHoldPermission(
+        this.opts.autonomyFor?.(sessionId),
+        tool,
+        input,
+        this.opts.cwdFor?.(sessionId)
+      )
+    )
+      return false;
 
     const requestId = `perm-${++this.reqCounter}`;
     const timer = setTimeout(() => {
