@@ -187,10 +187,53 @@ export class TranscriptWatcher {
     this.ensurePolling();
   }
 
-  /** Late-arriving native id (from hooks) tightens binding validation. */
+  /**
+   * Late-arriving native id (from hooks) tightens binding validation — and
+   * CORRECTS a same-cwd mis-bind (Dan's 2026-07-21 find: two sessions in one
+   * folder cross-wired their Feeds): if we already bound a transcript whose
+   * sessionId doesn't match the id the hooks just delivered, unbind and let
+   * discovery re-run with the id as the authority.
+   */
   setNativeSessionId(sessionId: string, nativeId: string): void {
     const w = this.sessions.get(sessionId);
-    if (w) w.nativeSessionId = nativeId;
+    if (!w) return;
+    w.nativeSessionId = nativeId;
+    if (w.boundFile && w.snap.nativeSessionId && w.snap.nativeSessionId !== nativeId) {
+      this.opts.log.warn('transcript mis-bind corrected (same-cwd race)', {
+        sessionId,
+        boundTo: w.snap.nativeSessionId,
+        actual: nativeId,
+      });
+      this.resetBinding(w);
+    }
+  }
+
+  /** Drop a wrong binding and start discovery over, clean. */
+  private resetBinding(w: WatchedSession): void {
+    w.boundFile = null;
+    w.tails.clear();
+    w.blocks = [];
+    w.blockSeq = 0;
+    w.toolBlocks.clear();
+    w.snap = {
+      sessionId: w.sessionId,
+      bound: false,
+      usage: { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 },
+      lines: 0,
+      malformed: 0,
+      toolsSeen: [],
+      filesTouched: [],
+      subagents: [],
+      lastActivityAt: null,
+    };
+  }
+
+  /** Another watched session shares this cwd — binding is ambiguous. */
+  private hasCwdSibling(w: WatchedSession): boolean {
+    for (const other of this.sessions.values()) {
+      if (other !== w && sameFolder(other.cwd, w.cwd)) return true;
+    }
+    return false;
   }
 
   unwatch(sessionId: string): void {
@@ -324,6 +367,10 @@ export class TranscriptWatcher {
     if (!head) return false;
     if (typeof head.cwd === 'string' && !sameFolder(head.cwd, w.cwd)) return false;
     if (w.nativeSessionId && head.sessionId !== w.nativeSessionId) return false;
+    // Same-cwd sessions make cwd-only claims AMBIGUOUS (two sessions in one
+    // folder must not steal each other's transcript): wait for the hooks to
+    // deliver our native id, then bind on the id match above.
+    if (!w.nativeSessionId && this.hasCwdSibling(w)) return false;
     w.boundFile = full;
     w.snap.bound = true;
     w.snap.nativeSessionId = typeof head.sessionId === 'string' ? head.sessionId : undefined;

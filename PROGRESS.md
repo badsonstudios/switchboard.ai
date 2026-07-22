@@ -54,6 +54,21 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-21 — **Dan's live-test bug fixes (PR #65)**, all four:
+  (1+3) **Same-folder sessions cross-wired their Feeds** — the S-04 adoption
+  race for real: cwd-only claims are ambiguous with cwd-siblings, and
+  transcripts.setNativeSessionId was never wired. Now: ambiguous claims wait
+  for the hooks-delivered native id; a mis-bind self-corrects (unbind+reset+
+  rebind); ipc wires the id through. 2 new unit tests.
+  (2) Prompts render as tinted pill boxes (no "you" label).
+  (4) **Approvals never held in production: the PreToolUse hook entry lacked
+  a `matcher`** — S-03's proven shape always had one; without it the hook
+  never fires and the CLI TUI-prompts (exactly what Dan saw). Added the
+  matcher; chip now stands down while the approval bar owns a permission.
+  **Proven against real claude**: check:hooks extended with a hold scenario —
+  Write under ask HELD → app allow → file written, transitions
+  permission-held→resolved. PASS. 139 unit + 27 e2e green.
+
 - 2026-07-21 — **P2-E10-06 done (#64)**: rich tool blocks v2 (the extension
   reference). Watcher: Edit/Write blocks carry structured filePath/old/new,
   Bash carries its description + tool_result OUT attaches by tool_use_id

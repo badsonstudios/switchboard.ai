@@ -278,6 +278,54 @@ describe('Feed block derivation (P2-E12-06 §5.10)', () => {
   });
 });
 
+describe('same-cwd sessions never steal each other\'s transcript (E10 fix)', () => {
+  it('two sessions in one folder: neither binds until hooks deliver ids, then each gets its own', async () => {
+    watcher.watch('s1', { cwd });
+    watcher.watch('s2', { cwd });
+    const fileA = path.join(projectDir(), 'native-A.jsonl');
+    writeLines(fileA, [entry({ sessionId: 'native-A' })]);
+    await sleep(120);
+    // ambiguous — nobody claims on cwd alone
+    expect(watcher.snapshot('s1')!.bound).toBe(false);
+    expect(watcher.snapshot('s2')!.bound).toBe(false);
+
+    watcher.setNativeSessionId('s2', 'native-A'); // hooks: the file is s2's
+    await sleep(120);
+    expect(watcher.snapshot('s2')!.bound).toBe(true);
+    expect(watcher.snapshot('s2')!.nativeSessionId).toBe('native-A');
+    expect(watcher.snapshot('s1')!.bound).toBe(false);
+
+    const fileB = path.join(projectDir(), 'native-B.jsonl');
+    writeLines(fileB, [entry({ sessionId: 'native-B' })]);
+    watcher.setNativeSessionId('s1', 'native-B');
+    await sleep(120);
+    expect(watcher.snapshot('s1')!.bound).toBe(true);
+    expect(watcher.snapshot('s1')!.nativeSessionId).toBe('native-B');
+  });
+
+  it('a cwd-only mis-bind is corrected when the hooks deliver a different id', async () => {
+    watcher.watch('s1', { cwd }); // alone in the folder: cwd-only binds allowed
+    const fileA = path.join(projectDir(), 'native-A.jsonl');
+    writeLines(fileA, [
+      entry({ sessionId: 'native-A', message: { content: [{ type: 'text', text: 'stolen words' }] } }),
+    ]);
+    await sleep(120);
+    expect(watcher.snapshot('s1')!.bound).toBe(true); // bound to the WRONG file
+
+    watcher.setNativeSessionId('s1', 'native-B'); // hooks: actually a different conversation
+    expect(watcher.snapshot('s1')!.bound).toBe(false); // unbound + reset
+    expect(watcher.blocks('s1')).toHaveLength(0); // stolen blocks dropped
+
+    const fileB = path.join(projectDir(), 'native-B.jsonl');
+    writeLines(fileB, [
+      entry({ sessionId: 'native-B', message: { content: [{ type: 'text', text: 'my words' }] } }),
+    ]);
+    await sleep(150);
+    expect(watcher.snapshot('s1')!.bound).toBe(true);
+    expect(watcher.blocks('s1').some((b) => b.text === 'my words')).toBe(true);
+  });
+});
+
 describe('pre-existing transcripts are never adopted', () => {
   it('ignores files that existed before the watcher started', async () => {
     const file = path.join(projectDir(), 'old.jsonl');

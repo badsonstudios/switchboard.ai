@@ -47,6 +47,8 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   // when a session's native id is learned, persist it so the card can
   // --resume that conversation after an app restart
   manager.onNativeSessionId((liveId, nativeId) => {
+    // tighten transcript binding — corrects same-cwd mis-binds (E10 fix)
+    transcripts.setNativeSessionId(liveId, nativeId);
     const cardId = cardOfLive.get(liveId);
     if (!cardId) return;
     const existing = deps.persist.list().find((s) => s.id === cardId);

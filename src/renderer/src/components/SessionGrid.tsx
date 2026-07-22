@@ -650,6 +650,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                     status={status}
                     autonomy={cardAutonomy}
                     model={usage?.model}
+                    hasApproval={!!perm}
                     onCycleAutonomy={cycleCardAutonomy}
                     onJumpToTerminal={() => {
                       setTerminalShown(true); // chip surfaces the hidden Terminal on demand

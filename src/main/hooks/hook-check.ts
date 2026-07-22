@@ -33,8 +33,20 @@ async function main(): Promise<number> {
   registry.register('provider-adapter', claudeAdapter);
   const ptys = new PtyService();
   const manager = new SessionManager(registry, ptys, createLogger(sink, 'sessions'), stateDir);
-  const listener = new HookListener({ stateDir, manager, log: createLogger(sink, 'hooks') });
+  const listener = new HookListener({
+    stateDir,
+    manager,
+    log: createLogger(sink, 'hooks'),
+    autonomyFor: (id) => manager.get(id)?.autonomy,
+  });
   const port = await listener.start();
+  // E10-03/04 hold path: auto-approve like the UI would, 1.5s later
+  let heldTool = '';
+  listener.onPermissionRequest((r) => {
+    heldTool = r.tool;
+    console.log(`[hook-check] permission HELD: ${r.tool} ${JSON.stringify(r.input).slice(0, 120)}`);
+    setTimeout(() => listener.decide(r.requestId, 'allow'), 1500);
+  });
 
   // §5.29 negative tests
   const noToken = await rawPost(port, '{}', {});
@@ -44,7 +56,7 @@ async function main(): Promise<number> {
   // THE integrated path: create() wires hook settings itself
   const record = manager.create(
     { title: 'hook-check', folder: workDir, providerId: 'claude-code' },
-    { settingsFor: (id) => listener.buildHookSettings(id) }
+    { settingsFor: (id) => listener.buildHookSettings(id), autonomy: 'ask' }
   );
   console.log(`[hook-check] session ${record.id} spawned interactively (pid ${record.pid})`);
 
@@ -70,6 +82,20 @@ async function main(): Promise<number> {
   await waitFor(() => manager.get(record.id)!.status === 'done', 120000, 'status=done');
   console.log('[hook-check] status=done (hook-driven)');
 
+  // E10-03/04: a Write under ask-autonomy must HOLD (our PreToolUse matcher
+  // fires), the app-side allow releases it, and the file lands — with the
+  // CLI never showing its own permission prompt (the hold precedes it).
+  await sleep(1000);
+  pty.write('Use the Write tool to create a file named held-proof.txt containing exactly HELD_OK. Do nothing else.');
+  await sleep(900);
+  pty.write('\r');
+  await waitFor(() => heldTool !== '', 90000, 'permission-held');
+  console.log(`[hook-check] hold fired for ${heldTool}; auto-allow released it`);
+  await waitFor(() => fs.existsSync(path.join(workDir, 'held-proof.txt')), 90000, 'held file written');
+  const heldContent = fs.readFileSync(path.join(workDir, 'held-proof.txt'), 'utf8').trim();
+  console.log(`[hook-check] held-proof.txt written: "${heldContent}"`);
+  await waitFor(() => manager.get(record.id)!.status === 'done', 120000, 'status=done after hold');
+
   // user kill of a live session must not read as crashed
   const record2 = manager.create(
     { title: 'kill-check', folder: workDir, providerId: 'claude-code' },
@@ -90,7 +116,9 @@ async function main(): Promise<number> {
     causes.includes('hook:UserPromptSubmit') &&
     causes.includes('hook:Stop') &&
     manager.get(record.id)!.nativeSessionId !== undefined &&
-    killStatus === 'done';
+    killStatus === 'done' &&
+    heldTool === 'Write' &&
+    heldContent === 'HELD_OK';
   console.log(ok ? '[hook-check] PASS' : '[hook-check] FAIL');
   manager.kill(record.id);
   ptys.killAll();

@@ -204,7 +204,6 @@ function ThinkingRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
 }
 
 function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
-  const { t } = useTranslation();
   const inner =
     b.kind === 'todos' ? (
       <TodosBlock b={b} />
@@ -217,20 +216,20 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
     ) : b.kind === 'thinking' ? (
       <ThinkingRow b={b} />
     ) : b.kind === 'user' ? (
-      <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
-        <span
-          style={{
-            fontSize: 8.5,
-            fontWeight: 700,
-            letterSpacing: 0.5,
-            color: 'var(--status-needs-input)',
-            textTransform: 'uppercase',
-            flexShrink: 0,
-          }}
-        >
-          {t('feedView.you')}
-        </span>
-        <div style={{ whiteSpace: 'pre-wrap', minInlineSize: 0, color: 'var(--text)' }}>{b.text}</div>
+      // the user's prompt sits in a tinted pill so it reads at a glance
+      // (Dan's 2026-07-21 feedback — no "you" label, color does the work)
+      <div
+        style={{
+          background: 'color-mix(in srgb, var(--status-needs-input) 10%, var(--panel2))',
+          border: '1px solid color-mix(in srgb, var(--status-needs-input) 28%, transparent)',
+          borderRadius: 10,
+          padding: '6px 10px',
+          whiteSpace: 'pre-wrap',
+          color: 'var(--text)',
+          overflowWrap: 'break-word',
+        }}
+      >
+        {b.text}
       </div>
     ) : (
       <Markdown text={b.text ?? ''} />
@@ -279,6 +278,8 @@ export function FeedView(props: {
   autonomy?: string;
   model?: string;
   onCycleAutonomy?: () => void;
+  /** the inline approval bar owns the permission (E10-04) — chip stands down */
+  hasApproval?: boolean;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [blocks, setBlocks] = React.useState<FeedBlockDto[]>([]);
@@ -293,7 +294,10 @@ export function FeedView(props: {
   const bottom = React.useRef<HTMLDivElement | null>(null);
   const pinned = React.useRef(true); // stick to the tail unless the user scrolls up
   const scroller = React.useRef<HTMLDivElement | null>(null);
-  const waiting = props.status === 'needs-input' || props.status === 'needs-permission';
+  // chip = raw TUI states only: needs-input, or a permission the inline bar
+  // is NOT handling (fail-open path where the CLI shows its own prompt)
+  const waiting =
+    props.status === 'needs-input' || (props.status === 'needs-permission' && !props.hasApproval);
 
   React.useEffect(() => {
     let cancelled = false;

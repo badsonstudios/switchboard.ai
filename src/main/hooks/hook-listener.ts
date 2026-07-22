@@ -63,11 +63,17 @@ export interface PermissionRequest {
  * have let through. Unknown autonomy fails open (no hold).
  */
 const GATED: Record<string, string[]> = {
-  ask: ['Bash', 'Write', 'Edit', 'NotebookEdit', 'WebFetch'],
-  plan: ['Bash', 'Write', 'Edit', 'NotebookEdit', 'WebFetch'],
+  ask: ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'WebFetch'],
+  plan: ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'WebFetch'],
   'auto-edit': ['Bash', 'WebFetch'],
   'full-auto': [],
 };
+
+/** PreToolUse matcher — REQUIRED for tool hooks (S-03's proven shape used
+ *  one; without it the entry never fires and the CLI's own TUI prompt runs
+ *  instead — Dan's 2026-07-21 find). Union of every gated set; the hold
+ *  policy narrows per-session server-side. */
+const PRETOOL_MATCHER = 'Bash|Write|Edit|MultiEdit|NotebookEdit|WebFetch';
 
 export function shouldHoldPermission(autonomy: string | undefined, tool: string | undefined): boolean {
   if (!autonomy || !tool) return false;
@@ -228,6 +234,7 @@ export class HookListener {
     const holdMs = this.opts.holdTimeoutMs ?? 60_000;
     hooks['PreToolUse'] = [
       {
+        matcher: PRETOOL_MATCHER,
         hooks: [
           {
             type: 'command',
