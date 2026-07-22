@@ -35,6 +35,12 @@ a "[Dan eyeball]" note.**
 
 ## Blockers / open questions for Dan
 
+- **[user] GitHub Actions billing is broken** (found 2026-07-21 on PR #65's
+  CI run): every job dies in 3s with "recent account payments have failed or
+  your spending limit needs to be increased" — fix in GitHub Settings →
+  Billing & plans, then re-run the PR #65 checks. Local gate was fully green
+  (lint + typecheck + 137 unit + 27 e2e, Windows).
+
 - **[user] "Red build blocks merge" (#13) still procedural** — branch
   protection/rulesets are plan-gated on free private repos. CI is live + green;
   the merge gate is manual (I verify CI before merging). Upgrade to Pro / make
