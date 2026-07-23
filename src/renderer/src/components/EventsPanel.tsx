@@ -9,12 +9,13 @@ import { RailSession } from './chrome';
 export interface EventDto {
   id: number;
   sessionId: string;
-  kind: 'done' | 'needs-input' | 'needs-permission' | 'crashed';
+  kind: 'done' | 'ready' | 'needs-input' | 'needs-permission' | 'crashed';
   at: string;
 }
 
 const KIND_TOKEN: Record<EventDto['kind'], string> = {
   done: 'var(--status-done)',
+  ready: 'var(--faint)',
   'needs-input': 'var(--status-needs-input)',
   'needs-permission': 'var(--status-needs-permission)',
   crashed: 'var(--status-crashed)',
@@ -123,7 +124,10 @@ export function EventsPanel(props: {
         return (
           <div
             key={e.id}
-            onClick={() => props.onFocus(s?.id ?? e.sessionId)}
+            onClick={() => {
+              props.onFocus(s?.id ?? e.sessionId);
+              void window.switchboard.events.ack(e.sessionId); // Done. -> Ready
+            }}
             style={{
               position: 'relative',
               background: 'var(--panel2)',

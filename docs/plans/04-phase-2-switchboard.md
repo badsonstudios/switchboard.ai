@@ -230,6 +230,14 @@ Work items:
   expand/collapses; e2e covers Edit-diff and Bash IN/OUT via a synthetic
   transcript.
 
+- **P2-E10-07 · Composer slash-command autocomplete — M (§5.10). [not yet
+  filed — owner request 2026-07-22, "pipeline, not immediately"].** Typing
+  `/` in the composer pops a command list (the VS Code extension pattern):
+  the CLI's built-ins + the project's skills/commands (registry §5.19 knows
+  them). Selecting inserts; submission stays a plain PTY write.
+  *Done when:* `/` pops the list, arrow/enter selects, the composed command
+  runs in the session; no popup when `/` is mid-sentence.
+
 **E10 exit:** a user can run a whole coding turn — prompt, watch, approve —
 without the Terminal tab even being VISIBLE; the turn reads like the VS Code
 extension reference (clean blocks, expandable detail); Terminal stays one

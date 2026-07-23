@@ -3,7 +3,7 @@
 // the feed answers "what needs me / what finished", not "what happened".
 import { StatusChange } from '../sessions/session-manager';
 
-export type FeedKind = 'done' | 'needs-input' | 'needs-permission' | 'crashed';
+export type FeedKind = 'done' | 'ready' | 'needs-input' | 'needs-permission' | 'crashed';
 
 export interface FeedEvent {
   id: number;
@@ -60,6 +60,20 @@ export class EventFeed {
   /** A session was closed/removed — its event goes with it. */
   forget(sessionId: string): void {
     if (this.dropFor(sessionId)) this.notify(null);
+  }
+
+  /**
+   * The user looked at a finished session (clicked its event / focused it):
+   * "Done." relaxes to "Ready" — still listed, no longer calling for eyes
+   * (Dan 2026-07-22). Other kinds are unaffected; answering/fixing them
+   * clears the item through normal status flow.
+   */
+  acknowledge(sessionId: string): void {
+    const e = this.events.find((x) => x.sessionId === sessionId);
+    if (!e || e.kind !== 'done') return;
+    const ready: FeedEvent = { id: this.nextId++, sessionId, kind: 'ready', at: e.at };
+    this.events[this.events.indexOf(e)] = ready;
+    this.notify(ready);
   }
 
   private dropFor(sessionId: string): boolean {

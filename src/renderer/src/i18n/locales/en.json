@@ -115,7 +115,8 @@
     "restore": "Restore",
     "notNow": "Not now",
     "kind": {
-      "done": "done",
+      "done": "Done.",
+      "ready": "Ready",
       "needs-input": "needs input",
       "needs-permission": "needs permission",
       "crashed": "crashed"

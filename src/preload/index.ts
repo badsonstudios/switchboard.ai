@@ -187,6 +187,7 @@ const api = {
   },
   events: {
     list: (): Promise<unknown[]> => ipcRenderer.invoke('events:list'),
+    ack: (sessionId: string): Promise<void> => ipcRenderer.invoke('events:ack', sessionId),
     /** the FULL current list on every change (adds, replacements, removals) */
     onChanged: (cb: (list: unknown[]) => void): (() => void) => {
       const h = (_e: unknown, l: unknown[]) => cb(l);

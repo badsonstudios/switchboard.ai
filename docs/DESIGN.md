@@ -405,7 +405,9 @@ Each session offers two synchronized views of the same underlying session:
 - **Session** (primary, interactive): rendered from structured transcript/
   stream events — assistant text, tool calls, diffs, subagent sidechains — as
   styled blocks, with a **prompt composer** docked at the bottom (Enter
-  submits to the CLI's PTY; options row for autonomy/model context). In-app
+  submits to the CLI's PTY; options row for autonomy/model context; typing
+  `/` pops a slash-command autocomplete — CLI built-ins + the §5.19
+  registry's skills/commands — owner request 2026-07-22). In-app
   approvals (§5.16) render inline here as a review bar.
 - **Terminal** (xterm.js + PTY): the real CLI — **hidden by default**
   (owner decision 2026-07-21: when the Session view works, the Terminal is

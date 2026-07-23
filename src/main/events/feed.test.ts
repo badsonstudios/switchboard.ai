@@ -63,6 +63,20 @@ describe('EventFeed (one item per session — Dan 2026-07-22 semantics)', () => 
     expect(changes[1]).toBeNull();
   });
 
+  it('acknowledge relaxes Done. to Ready; other kinds unaffected (Dan #4)', () => {
+    const f = new EventFeed();
+    f.ingest(change('a', 'done'));
+    f.acknowledge('a');
+    expect(f.list().map((e) => e.kind)).toEqual(['ready']);
+    // a needs-permission is NOT ack-able — it clears by being answered
+    f.ingest(change('b', 'needs-permission'));
+    f.acknowledge('b');
+    expect(f.list().map((e) => `${e.sessionId}:${e.kind}`)).toEqual(['a:ready', 'b:needs-permission']);
+    // newer activity replaces ready like anything else
+    f.ingest(change('a', 'needs-input'));
+    expect(f.list().find((e) => e.sessionId === 'a')!.kind).toBe('needs-input');
+  });
+
   it('notifies subscribers per change, isolated', () => {
     const f = new EventFeed();
     const seen: Array<string | null> = [];

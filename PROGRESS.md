@@ -54,6 +54,21 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-22 — **Dan's round 2 (5 items).** (#1) `<local-command-*>`
+  wrappers + isMeta transcript lines no longer render as prompt pills (the
+  /compact stdout with raw ANSI etc.); the startup /compact itself is CLI
+  behavior — resume-on-focus revives the focused card and claude
+  auto-compacts a near-full conversation. (#2) working banner is now LOUD:
+  full-width tinted bar, 2px top border, bold, three staggered pulse dots.
+  (#3) phantom needs-input root-caused: the CLI's 60s "Claude is waiting
+  for your input" idle nag classified as needs-input — now classifies as
+  **idle** (calm: no event, no toast); real approvals ride the hold path,
+  which is why the next one "worked perfectly". (#4) events say **Done.**
+  and relax to **Ready** when the user clicks/looks (EventFeed.acknowledge
+  + events:ack; new kind 'ready'). (#5) composer slash-command autocomplete
+  → P2-E10-07 [not yet filed] + DESIGN §5.10 composer bullet.
+  148 unit + 28 e2e green.
+
 - 2026-07-22 — **Dan's manual-pass findings (14 items) — 12 fixed on PR #65,
   2 planned.** Fixed: (#1) approval bar moved above the composer; (#2) hold
   timeout 60s→300s; (#3-interim) NO OS toasts while the window is focused

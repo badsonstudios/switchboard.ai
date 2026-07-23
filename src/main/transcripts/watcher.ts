@@ -102,6 +102,11 @@ export function slugForCwd(cwd: string): string {
   return cwd.replace(/[\\/:. ]/g, '-');
 }
 
+/** CLI plumbing disguised as user text — never conversation. */
+function isPlumbing(text: string): boolean {
+  return text.trimStart().startsWith('<local-command-');
+}
+
 /** Flatten a tool_result content field (string or text-item array) to text. */
 function toolResultText(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -510,10 +515,14 @@ export class TranscriptWatcher {
     const ts = typeof e.timestamp === 'string' ? e.timestamp : undefined;
     const message = e.message as { content?: unknown; role?: string } | undefined;
     if (!message) return;
+    if (e.isMeta === true) return; // CLI-internal lines are not conversation
     if (e.type === 'user') {
       // a real prompt is a string (or text items); tool_result items attach
-      // their output to the originating tool block (E10-06 OUT sections)
+      // their output to the originating tool block (E10-06 OUT sections).
+      // <local-command-*> wrappers (slash-command stdout/caveats, often with
+      // raw ANSI inside) are CLI plumbing, not conversation (Dan 2026-07-22).
       if (typeof message.content === 'string' && message.content.trim()) {
+        if (isPlumbing(message.content)) return;
         this.emitBlock(w, { kind: 'user', text: message.content.slice(0, TEXT_CAP), ts }, sidechain);
       } else if (Array.isArray(message.content)) {
         for (const c of message.content as Array<{
@@ -522,7 +531,7 @@ export class TranscriptWatcher {
           tool_use_id?: string;
           content?: unknown;
         }>) {
-          if (c?.type === 'text' && c.text?.trim()) {
+          if (c?.type === 'text' && c.text?.trim() && !isPlumbing(c.text)) {
             this.emitBlock(w, { kind: 'user', text: c.text.slice(0, TEXT_CAP), ts }, sidechain);
           } else if (c?.type === 'tool_result' && typeof c.tool_use_id === 'string') {
             const target = w.toolBlocks.get(c.tool_use_id);

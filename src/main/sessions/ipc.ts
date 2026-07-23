@@ -79,6 +79,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   });
 
   ipcMain.handle('events:list', () => deps.feed.list());
+  // "Done." relaxes to "Ready" once the user looks at the session (Dan #4)
+  ipcMain.handle('events:ack', (_e, sessionId: string) => {
+    if (typeof sessionId === 'string') deps.feed.acknowledge(sessionId);
+  });
 
   // held PreToolUse permissions (E10-03): stream requests to the renderer,
   // take decisions back. Card id rides along so the UI can find its panel.

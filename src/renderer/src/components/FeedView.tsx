@@ -381,31 +381,37 @@ export function FeedView(props: {
         ))}
         <div ref={bottom} />
       </div>
-      {/* prominent working indicator above the composer (Dan #6) */}
+      {/* the working banner — LOUD by request (Dan, twice): full-width tinted
+          bar, bold label, staggered pulse dots */}
       {!props.approval && props.status === 'working' && (
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
-            paddingInline: 10,
-            paddingBlock: 5,
-            borderBlockStart: '1px solid var(--border)',
-            background: 'color-mix(in srgb, var(--status-working) 7%, var(--panel2))',
-            fontSize: 11.5,
-            color: 'var(--status-working)',
-            fontWeight: 600,
+            justifyContent: 'center',
+            gap: 10,
+            paddingInline: 12,
+            paddingBlock: 8,
+            borderBlockStart: '2px solid var(--status-working)',
+            background: 'color-mix(in srgb, var(--status-working) 16%, var(--panel2))',
+            fontSize: 13,
+            color: 'var(--text)',
+            fontWeight: 700,
+            letterSpacing: 0.2,
           }}
         >
-          <span
-            style={{
-              inlineSize: 9,
-              blockSize: 9,
-              borderRadius: '50%',
-              background: 'var(--status-working)',
-              animation: 'sb-pulse 1.2s ease-in-out infinite',
-            }}
-          />
+          {[0, 0.25, 0.5].map((delay) => (
+            <span
+              key={delay}
+              style={{
+                inlineSize: 8,
+                blockSize: 8,
+                borderRadius: '50%',
+                background: 'var(--status-working)',
+                animation: `sb-pulse 1.1s ease-in-out ${delay}s infinite`,
+              }}
+            />
+          ))}
           {t('feedView.workingStrip')}
         </div>
       )}
