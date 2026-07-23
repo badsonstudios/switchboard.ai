@@ -38,8 +38,10 @@ a "[Dan eyeball]" note.**
 - ~~"Red build blocks merge" (#13)~~ **RESOLVED 2026-07-23**: repo is public
   → ruleset "main: green CI required to merge" (id 19646817) is ACTIVE on
   the default branch — all 5 CI checks required, force-pushes and branch
-  deletion blocked. No bypass actors (Dan can edit the ruleset in Settings →
-  Rules if an escape hatch is ever needed).
+  deletion blocked. Repository-admin bypass is ON (required: direct
+  PROGRESS.md/docs pushes to main can never have pre-push checks — GitHub
+  rejected exactly that within minutes of the first version). The normal
+  merge path still refuses a red PR; bypassing is an explicit act.
 - **Loose ends deferred** (not blocking): full-auto → bypass footgun (offer:
   remap to a safer mode), 9MB Monaco renderer bundle (slim it). Say the word.
 - **[user] ClaudeMon architecture read (OQ #8) is due.** `03-later-phases.md`
