@@ -5,13 +5,16 @@
 
 **Milestone:** Phase 2 - The Switchboard (E7+E8 merged; E12 expanded + filed
 #49–#57, E8-06 filed #48; E9/E10/E11/E13/E14 still outlines)
-**In progress:** nothing mid-flight — AUTOPILOT RUN (E10) COMPLETE
-2026-07-21: all 6 items (#59–#64) shipped to `auto/phase-2-e10`, draft
-PR #65. 137 unit + 27 e2e green; CI pending on the tip.
-**Next up (needs Dan):** review/merge draft PR #65. Eyeball: one real
-claude turn fully in the Session tab (composer → rich blocks → inline
-approval), plus the E12 grid-drag re-check he skipped. Then `/pm plan`
-for the next epic (E9 attention-layout or E11 session bus).
+**In progress:** code review processing HANDED TO A SEPARATE SESSION
+(2026-07-23): work `docs/code-review-2026-07-23-phase-2-e10.md` in order —
+P0 #1–#5 are DONE (commit 7c55c78, annotated in the doc); start at
+**P1 #6–#8 (watcher trio)**. Branch `auto/phase-2-e10`, draft PR #65.
+E10 items #59–#64 all shipped + three rounds of Dan's live-test fixes.
+151 unit + 30 e2e green; opt-in real-claude lane green.
+**Next up (needs Dan):** [user] fix GitHub Actions billing, then re-run
+PR #65 checks · merge #65 once the review session finishes P1 · retest
+list: grid-drag between groups (still unverified), phantom
+needs-permission recurrence check on current build.
 **Branch:** auto/phase-2-e10 (draft PR #65)
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
