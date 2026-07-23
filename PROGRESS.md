@@ -5,17 +5,17 @@
 
 **Milestone:** Phase 2 - The Switchboard (E7+E8 merged; E12 expanded + filed
 #49–#57, E8-06 filed #48; E9/E10/E11/E13/E14 still outlines)
-**In progress:** nothing mid-flight — AUTOPILOT RUN COMPLETE 2026-07-21:
-all 10 items (#48–#57, E12 full + E8-06) shipped to `auto/phase-2-e12`,
-draft PR #58. 130 unit + 22 e2e green; **CI GREEN on the tip (all 5 jobs)**.
-**Next up (needs Dan):** (1) re-check the grid-tab → rail-group drag (fixed
-after his eyeball pass, native DnD needs a hand check); (2) review/merge
-draft PR #58. Then the next build is **E10 — Session tab & approvals**
-(#59–#63): Dan's 2026-07-21 pivot decision — the Feed tab becomes the
-interactive "Session" tab (composer + inline approvals, VS Code-extension
-shape); DESIGN.md §5.10 amended, plan expanded, issues filed. Kick off with
-`/autopilot` or `/next-item` after #58 merges.
-**Branch:** auto/phase-2-e12 (draft PR #58)
+**In progress:** code review processing HANDED TO A SEPARATE SESSION
+(2026-07-23): work `docs/code-review-2026-07-23-phase-2-e10.md` in order —
+P0 #1–#5 are DONE (commit 7c55c78, annotated in the doc); start at
+**P1 #6–#8 (watcher trio)**. Branch `auto/phase-2-e10`, draft PR #65.
+E10 items #59–#64 all shipped + three rounds of Dan's live-test fixes.
+151 unit + 30 e2e green; opt-in real-claude lane green.
+**Next up (needs Dan):** [user] fix GitHub Actions billing, then re-run
+PR #65 checks · merge #65 once the review session finishes P1 · retest
+list: grid-drag between groups (still unverified), phantom
+needs-permission recurrence check on current build.
+**Branch:** auto/phase-2-e10 (draft PR #65)
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
 `npm test` (unit) · `npm run check:*` (local real-claude proofs) · `npm run e2e`
@@ -38,6 +38,12 @@ a "[Dan eyeball]" note.**
 
 ## Blockers / open questions for Dan
 
+- **[user] GitHub Actions billing is broken** (found 2026-07-21 on PR #65's
+  CI run): every job dies in 3s with "recent account payments have failed or
+  your spending limit needs to be increased" — fix in GitHub Settings →
+  Billing & plans, then re-run the PR #65 checks. Local gate was fully green
+  (lint + typecheck + 137 unit + 27 e2e, Windows).
+
 - **[user] "Red build blocks merge" (#13) still procedural** — branch
   protection/rulesets are plan-gated on free private repos. CI is live + green;
   the merge gate is manual (I verify CI before merging). Upgrade to Pro / make
@@ -50,6 +56,196 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-23 — **Upstream bug FILED** (Dan's go-ahead):
+  anthropics/claude-code#80683 — interactive mode never writes the
+  conversation .jsonl under a redirected HOME/USERPROFILE (full isolation
+  matrix in the report). **Review P0 cluster FIXED** (docs/code-review-
+  2026-07-23-phase-2-e10.md, all 5): (#1, owner picked Option A) plan
+  sessions NEVER hold — an in-app allow would bypass the CLI's plan
+  write-block; DESIGN §5.16 records the rule; (#2) allow-all keyed by LIVE
+  session id — respawns prompt again; (#3) pending holds replay to a
+  (re)mounting renderer via sessions:pendingPermissions — a missed push
+  can't park the CLI; (#4) held requests QUEUE per card ("+N more
+  waiting", advance on decide); (#5) a hold auto-surfaces the Session tab
+  from any tab. e2e: Terminal-tab hold → auto-surface → two-deep queue →
+  allow+deny verdicts. 151 unit + 30 e2e green; real-claude lane green.
+  P1 (#6–#15) next.
+
+- 2026-07-23 — **Transcript-in-sandbox anomaly SOLVED (root cause
+  characterized; upstream CLI bug).** Dan asked for online research +
+  systematic isolation. Web findings suggested test-env detection /
+  kill-timing / config — all DISPROVEN empirically. Isolation matrix:
+  `-p` + temp home writes; `-p` + full Playwright-worker env + temp home
+  writes; app + minimal .claude.json + temp home doesn't;
+  TEST_ENABLE_SESSION_PERSISTENCE / PLAYWRIGHT_TEST scrubs don't help;
+  **interactive TUI via node-pty + temp home OUTSIDE the app doesn't
+  write either** (scratchpad tui-probe.cjs) — and the file is NOT in the
+  real profile. Verdict: **claude 2.1.218 interactive mode simply never
+  persists the conversation .jsonl when HOME/USERPROFILE is redirected**
+  (print mode does; real home does). Zero switchboard code involved. The
+  real-claude e2e lane keeps asserting via Terminal; repro recipe is
+  solid bug-report material for anthropics/claude-code (needs Dan's
+  go-ahead to file publicly). Fixture keeps the env scrubs (hygiene) +
+  pre-seeded-home-wins copy rule.
+
+- 2026-07-23 — **Session view opens at the BOTTOM of a restored history**
+  (Dan's find: restored cards landed at the top). Tail-pinning now sets
+  scrollTop directly after a layout frame instead of scrollIntoView, on
+  backlog load / each streamed block / visibility flips. e2e: 60-block
+  history → last block in viewport, first block not. 149 unit + 29 e2e.
+
+- 2026-07-23 — **Dan's round 3 (9 items) + a REAL bug the new test lane
+  caught.** (a) Stuck "Claude is working" at boot: the card hardcoded
+  status 'working' on spawn AND SessionStart mapped to 'starting' —
+  now spawn starts at 'starting' and SessionStart → **idle** (resumed
+  sessions read idle). (b) Tab ✕ now CONFIRMS before closing and sits
+  up/right, away from the click path (e2e: dismiss keeps, accept closes).
+  (c) Signal model per Dan: **beep always** on attention events + Events
+  item + taskbar flash when backgrounded; **OS toasts OFF by default**
+  behind new `osToasts` pref (DESIGN §5.9 settings note; E14 ships the UI).
+  (d) Events already clear on close (feed.forget, landed yesterday).
+  (e) **Terminal reversal**: always present, LAST tab (hide-by-default
+  lasted one day; DESIGN §5.10 updated, menu toggle removed). (f) Empty
+  PLUSNative session root-caused via the new lane: **the composer sent
+  text+CR as ONE PTY write → the TUI treats it as a paste and never
+  submits** (S-03 finding, refound live); Enter is now a separate delayed
+  write. Also: 256KB head window + filename id-match for snapshot-first
+  transcripts. (g) **Opt-in real-claude Playwright lane**
+  (SWITCHBOARD_REAL_E2E=1, e2e/real-claude.spec.ts; fixture copies creds
+  into the temp home) — it caught (f) on its first run. KNOWN ANOMALY:
+  claude 2.1.218 writes session-env/memory but NO conversation .jsonl
+  under an isolated temp home (repro'd; -p works; real-home interactive
+  works) — lane asserts via Terminal until understood. (h) Phantom
+  needs-permission spam: almost certainly the old 60s hold-timeout loop
+  (each gated call → unseen bar → timeout → CLI TUI prompt → permission
+  Notification → event) + append-only events; 300s + inline bar + one-
+  event-per-session should end it — if it recurs, the app log pins it.
+  149 unit + 28 e2e green.
+
+- 2026-07-22 — **Dan's round 2 (5 items).** (#1) `<local-command-*>`
+  wrappers + isMeta transcript lines no longer render as prompt pills (the
+  /compact stdout with raw ANSI etc.); the startup /compact itself is CLI
+  behavior — resume-on-focus revives the focused card and claude
+  auto-compacts a near-full conversation. (#2) working banner is now LOUD:
+  full-width tinted bar, 2px top border, bold, three staggered pulse dots.
+  (#3) phantom needs-input root-caused: the CLI's 60s "Claude is waiting
+  for your input" idle nag classified as needs-input — now classifies as
+  **idle** (calm: no event, no toast); real approvals ride the hold path,
+  which is why the next one "worked perfectly". (#4) events say **Done.**
+  and relax to **Ready** when the user clicks/looks (EventFeed.acknowledge
+  + events:ack; new kind 'ready'). (#5) composer slash-command autocomplete
+  → P2-E10-07 [not yet filed] + DESIGN §5.10 composer bullet.
+  148 unit + 28 e2e green.
+
+- 2026-07-22 — **Dan's manual-pass findings (14 items) — 12 fixed on PR #65,
+  2 planned.** Fixed: (#1) approval bar moved above the composer; (#2) hold
+  timeout 60s→300s; (#3-interim) NO OS toasts while the window is focused
+  (crashes excepted); (#4) verbosity tooltips; (#5) cross-folder transcript
+  steal — claims now require POSITIVE evidence (summary-first resumed files
+  have no cwd on line 1; readHead scans 25 lines; +2 tests); (#6) prominent
+  "Claude is working…" strip above the composer; (#7) skill/long user
+  payloads collapse like tool rows; (#8) rail group dividers; (#9) Events
+  items show session name + task label (was raw live-id — map by liveId);
+  (#10-core) EventFeed = ONE item per session, latest wins, resolved clears
+  (rewritten + 7 tests); (#11) horizontal rule before each new prompt;
+  (#13) Feed→**Events** everywhere (panel, i18n, channels events:list/
+  events:changed, EventsPanel.tsx). Planned (DESIGN §5.9/§5.12 + E14):
+  per-session "notify when done" checkbox, Events filters (All·Needed·
+  By-session), questions-queue placeholder. (#12 spurious needs-permission:
+  likely the pre-fix cross-wiring + old event-log semantics; if it recurs
+  post-fix, grab the app log — hook events are per-session there.)
+  147 unit + 28 e2e green.
+
+- 2026-07-22 — **Approval miss #2 root-caused by a live probe: on Windows
+  the CLI shells out via a `PowerShell` TOOL**, not Bash — our gate/matcher
+  said Bash-only, so Dan's "list my Downloads" TUI-prompted again. Probe:
+  `claude -p` + matcher-`*` logging hook → `tool_name:"PowerShell"`. Fixes:
+  PowerShell gated wherever Bash is; matcher widened; NEW rule — read tools
+  (Read/Glob/Grep/LS) hold when their target is OUTSIDE the session folder
+  (mirrors the CLI's out-of-workspace prompting; needs cwdFor dep). Policy +
+  settings-shape unit tests extended; new Playwright case replays Dan's
+  exact scenario (PowerShell hold → bar in Session tab, NO chip). Note for
+  the future: tool-name coverage is version/platform-volatile — the probe
+  script lives in scratchpad, worth productizing if this recurs.
+  check:hooks re-PASS vs real claude; 142 unit + 28 e2e green.
+
+- 2026-07-22 — **Empty-Session-tab root cause (Dan's retest): RESUMED
+  sessions never bound their transcript.** The watcher's "never adopt
+  pre-existing files" rule (correct for strangers) also blocked a session's
+  OWN `<nativeId>.jsonl`, which by definition predates the launch — so a
+  resumed card's Feed stayed empty forever while the Terminal worked. Fix:
+  ipc passes the resumed native id into transcripts.watch; discovery may
+  adopt exactly that file, replaying it from 0 — the Session view now shows
+  the conversation HISTORY on resume as a bonus. Unit-tested both ways.
+  140 unit + 27 e2e green. Also confirmed: ALL the failed PR runs are the
+  same GitHub billing error ([user] blocker, still unresolved).
+
+- 2026-07-21 — **Dan's live-test bug fixes (PR #65)**, all four:
+  (1+3) **Same-folder sessions cross-wired their Feeds** — the S-04 adoption
+  race for real: cwd-only claims are ambiguous with cwd-siblings, and
+  transcripts.setNativeSessionId was never wired. Now: ambiguous claims wait
+  for the hooks-delivered native id; a mis-bind self-corrects (unbind+reset+
+  rebind); ipc wires the id through. 2 new unit tests.
+  (2) Prompts render as tinted pill boxes (no "you" label).
+  (4) **Approvals never held in production: the PreToolUse hook entry lacked
+  a `matcher`** — S-03's proven shape always had one; without it the hook
+  never fires and the CLI TUI-prompts (exactly what Dan saw). Added the
+  matcher; chip now stands down while the approval bar owns a permission.
+  **Proven against real claude**: check:hooks extended with a hold scenario —
+  Write under ask HELD → app allow → file written, transitions
+  permission-held→resolved. PASS. 139 unit + 27 e2e green.
+
+- 2026-07-21 — **P2-E10-06 done (#64)**: rich tool blocks v2 (the extension
+  reference). Watcher: Edit/Write blocks carry structured filePath/old/new,
+  Bash carries its description + tool_result OUT attaches by tool_use_id
+  (block re-emitted, renderer upserts by seq), thinking gets durationMs when
+  the next block lands, TodoWrite emits a checklist block. Renderer: timeline
+  dot gutter; EditBlock (+N/-M subtitle, red/green panes, click-collapse);
+  BashBlock (description header, independent IN/OUT expanders); TodosBlock;
+  "Thought for Ns". e2e: synthetic transcript drives all block types.
+  137 unit + 27 e2e green. **E10 epic complete on the branch.**
+- 2026-07-21 — **P2-E10-05 done (#63)**: composer options row — autonomy
+  chip (click cycles; persists via new sessions:setAutonomy to the card
+  record, applies on next spawn/resume since the CLI can't switch live),
+  model indicator (last transcript-seen model), working pulse dot. e2e:
+  chip cycles + survives relaunch.
+- 2026-07-21 — **P2-E10-04 done (#62)**: inline approval bar. A held
+  PreToolUse flips a review bar up in the Session tab: "Allow <tool>?",
+  primary-arg line, old/new edit preview (diff-token shading) or command
+  preview, Allow / Allow-all-this-session / Deny. Allow-all auto-answers
+  later requests for that card (renderer memory — resets on restart, the
+  safe default). Bar auto-dismisses on main-side timeout via
+  sessions:permissionResolved. OS toast for needs-permission is now quiet
+  when the window is focused (other kinds still toast). e2e drives the REAL
+  listener: log-scraped port + real session token → PreToolUse POST → bar →
+  verdict JSON asserted (allow, allow-all auto-allow, deny). 136 unit + 26
+  e2e green.
+- 2026-07-21 — **P2-E10-03 done (#61)**: PreToolUse hold + decision
+  round-trip. HookListener parks a gated PreToolUse response until
+  decide(allow/deny) returns the hook verdict JSON (permissionDecision via
+  hookSpecificOutput); timeout (60s) and every teardown path fail OPEN to
+  '{}' → the CLI's own TUI prompt. Hold policy = shouldHoldPermission
+  (autonomy-aware: ask/plan gate Bash/Write/Edit/NotebookEdit/WebFetch,
+  auto-edit gates Bash/WebFetch, full-auto never, unknown never). Forwarder
+  now relays the response body to stdout (verdict channel) with a per-event
+  wait budget; PreToolUse hook entry gets its own long timeout. State
+  machine's pre-built permission-held/resolved events now fire for real.
+  IPC: sessions:permissionRequest stream + sessions:decidePermission.
+  6 new unit tests (hold/deny/timeout/ungated/unregister/policy).
+  136 unit + 24 e2e green.
+- 2026-07-21 — **P2-E10-02 done (#60)**: prompt composer v1 in the Session
+  view — bottom-docked textarea (Enter sends, Shift+Enter newline, auto-grow,
+  ↑ send button), writes the prompt to the live PTY (multiline as one
+  bracketed paste; escape bytes built from charCodes). e2e: composer →
+  PTY → real shell output. The composer is an input ROUTE (§5.10 guardrail).
+- 2026-07-21 — **P2-E10-01 done (#59)**: view tab renamed Feed → **Session**;
+  **Terminal out of the default strip** — ⋯ menu (now a real menu) shows/
+  hides it per session (persisted in the ui blob; stored Terminal tab only
+  restores when shown), chip surfaces it on demand and is re-labeled
+  "continue in Terminal ↗"; TerminalPane mounts only when shown (S-07 ring
+  buffer replays scrollback on late mount). e2e: default strip has no
+  Terminal, menu round-trip, shown-state survives relaunch.
 
 - 2026-07-21 — **Session-view visual spec pinned (Dan's VS Code-extension
   screenshot).** DESIGN.md §5.10 gains "Block presentation (v2)": timeline

@@ -14,7 +14,7 @@ test.describe('app boots', () => {
     await expect(window.getByRole('button', { name: '+ session' })).toBeVisible();
     // empty-state messages (distinctive, unambiguous)
     await expect(window.getByText('No sessions yet')).toBeVisible();
-    await expect(window.getByText('Attention events appear here')).toBeVisible();
+    await expect(window.getByText('Nothing needs you right now')).toBeVisible();
     // status bar shows the zero-session count
     await expect(window.getByText('no sessions', { exact: true })).toBeVisible();
   });

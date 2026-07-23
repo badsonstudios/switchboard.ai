@@ -46,10 +46,13 @@
     "menuIcon": "⋯",
     "closeTab": "Close (ends the session)",
     "closeTabIcon": "✕",
+    "closeConfirm": "Close \"{title}\"? This ends the session and removes the card.",
     "viewTerminal": "Terminal",
     "viewDiff": "Changes",
-    "viewFeed": "Feed",
+    "viewSession": "Session",
     "viewHistory": "History",
+    "showTerminal": "Show Terminal",
+    "hideTerminal": "Hide Terminal",
     "viewSoon": "Coming soon",
     "sessionEnded": "Session ended",
     "exitCrashed": "Exited unexpectedly (code {code})",
@@ -60,6 +63,13 @@
     "restart": "Restart",
     "close": "Close",
     "cardTitle": "Session {n}"
+  },
+  "approval": {
+    "title": "Allow {tool}?",
+    "allow": "Allow",
+    "allowAll": "Allow all (this session)",
+    "deny": "Deny",
+    "more": "+{n} more waiting"
   },
   "status": {
     "starting": "starting",
@@ -99,14 +109,16 @@
       "both": "SM"
     }
   },
-  "feed": {
-    "eyebrow": "Feed",
-    "empty": "Attention events appear here",
+  "events": {
+    "eyebrow": "Events",
+    "empty": "Nothing needs you right now",
+    "unknownSession": "(closed session)",
     "reconnectOffer": "A saved monitor is back — restore its pop-out layout?",
     "restore": "Restore",
     "notNow": "Not now",
     "kind": {
-      "done": "done",
+      "done": "Done.",
+      "ready": "Ready",
       "needs-input": "needs input",
       "needs-permission": "needs permission",
       "crashed": "crashed"
@@ -115,11 +127,30 @@
   "feedView": {
     "empty": "No activity yet — the Feed renders the conversation once it starts.",
     "thinking": "thinking…",
+    "thoughtFor": "Thought for {s}s",
+    "editStats": "+{added} / -{removed} lines",
+    "in": "IN",
+    "out": "OUT",
+    "updateTodos": "Update Todos",
+    "todoDone": "[x]",
+    "todoActive": "[~]",
+    "todoPending": "[ ]",
     "you": "you",
-    "waiting": "waiting in Terminal ↗",
+    "waiting": "continue in Terminal ↗",
+    "composerPlaceholder": "Prompt this session — Enter to send, Shift+Enter for a new line",
+    "autonomyHint": "Autonomy for this session (applies on next resume)",
+    "modelHint": "Model last seen in this session's transcript",
+    "send": "Send to the session",
+    "sendIcon": "↑",
     "quiet": "quiet",
     "normal": "normal",
-    "firehose": "firehose"
+    "firehose": "firehose",
+    "quietHint": "Prose only — your prompts and Claude's replies",
+    "normalHint": "Prose + tool activity",
+    "firehoseHint": "Everything, including thinking and subagent chatter",
+    "workingStrip": "Claude is working…",
+    "expandHint": "click to expand",
+    "collapsedIcon": "▸"
   },
   "statusbar": {
     "sessions": "{count, plural, =0 {no sessions} one {# session} other {# sessions}}",

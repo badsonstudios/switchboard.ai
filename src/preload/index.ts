@@ -83,6 +83,7 @@ const api = {
         liveId?: string;
         groupId?: string;
         autoKey?: string;
+        taskLabel?: string;
       }>
     > => ipcRenderer.invoke('sessions:cards'),
     knownCards: (): Promise<Array<{ cardId: string; identity: SessionRecordDto['identity'] }>> =>
@@ -93,6 +94,8 @@ const api = {
     dropLive: (cardId: string): Promise<void> => ipcRenderer.invoke('sessions:dropLive', cardId),
     setTaskLabel: (cardId: string, label: string): Promise<void> =>
       ipcRenderer.invoke('sessions:setTaskLabel', cardId, label),
+    setAutonomy: (cardId: string, autonomy: string): Promise<void> =>
+      ipcRenderer.invoke('sessions:setAutonomy', cardId, autonomy),
     rename: (id: string, title: string): Promise<SessionRecordDto | undefined> =>
       ipcRenderer.invoke('sessions:rename', id, title),
     onStatus: (cb: (change: unknown) => void): (() => void) => {
@@ -104,6 +107,44 @@ const api = {
       const h = (_e: unknown, s: unknown) => cb(s);
       ipcRenderer.on('sessions:usage', h);
       return () => ipcRenderer.removeListener('sessions:usage', h);
+    },
+    onPermissionRequest: (
+      cb: (r: {
+        requestId: string;
+        sessionId: string;
+        cardId?: string;
+        tool: string;
+        input: Record<string, unknown>;
+      }) => void
+    ): (() => void) => {
+      const h = (
+        _e: unknown,
+        r: {
+          requestId: string;
+          sessionId: string;
+          cardId?: string;
+          tool: string;
+          input: Record<string, unknown>;
+        }
+      ) => cb(r);
+      ipcRenderer.on('sessions:permissionRequest', h);
+      return () => ipcRenderer.removeListener('sessions:permissionRequest', h);
+    },
+    decidePermission: (requestId: string, decision: 'allow' | 'deny', reason?: string): Promise<boolean> =>
+      ipcRenderer.invoke('sessions:decidePermission', requestId, decision, reason),
+    pendingPermissions: (): Promise<
+      Array<{
+        requestId: string;
+        sessionId: string;
+        cardId?: string;
+        tool: string;
+        input: Record<string, unknown>;
+      }>
+    > => ipcRenderer.invoke('sessions:pendingPermissions'),
+    onPermissionResolved: (cb: (r: { requestId: string }) => void): (() => void) => {
+      const h = (_e: unknown, r: { requestId: string }) => cb(r);
+      ipcRenderer.on('sessions:permissionResolved', h);
+      return () => ipcRenderer.removeListener('sessions:permissionResolved', h);
     },
     onExited: (cb: (e: { sessionId: string; code: number; crashed: boolean }) => void): (() => void) => {
       const h = (_e: unknown, x: { sessionId: string; code: number; crashed: boolean }) => cb(x);
@@ -153,12 +194,14 @@ const api = {
     }): Promise<{ enabled: boolean; quietStart?: string; quietEnd?: string }> =>
       ipcRenderer.invoke('notifications:setPrefs', p),
   },
-  feed: {
-    list: (): Promise<unknown[]> => ipcRenderer.invoke('feed:list'),
-    onEvent: (cb: (e: unknown) => void): (() => void) => {
-      const h = (_e: unknown, ev: unknown) => cb(ev);
-      ipcRenderer.on('feed:event', h);
-      return () => ipcRenderer.removeListener('feed:event', h);
+  events: {
+    list: (): Promise<unknown[]> => ipcRenderer.invoke('events:list'),
+    ack: (sessionId: string): Promise<void> => ipcRenderer.invoke('events:ack', sessionId),
+    /** the FULL current list on every change (adds, replacements, removals) */
+    onChanged: (cb: (list: unknown[]) => void): (() => void) => {
+      const h = (_e: unknown, l: unknown[]) => cb(l);
+      ipcRenderer.on('events:changed', h);
+      return () => ipcRenderer.removeListener('events:changed', h);
     },
   },
   transcripts: {

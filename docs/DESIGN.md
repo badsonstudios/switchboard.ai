@@ -373,6 +373,14 @@ or sits idle awaiting input, and `Stop` when it finishes. On top:
   channel only when the session/app is backgrounded — no toast for a session
   already on screen. This is the calm default for S3.
 - Quiet hours / do-not-disturb; missed-events digest per session.
+- **Per-session "notify when done" (owner request 2026-07-22):** a checkbox on
+  the session card — done-toasts only for sessions the user opted into (long
+  tasks), because a toast for every short turn is noise.
+- **The default signal model (owner decision 2026-07-22):** attention events
+  produce a **sound + an Events-panel item + a taskbar flash** (when
+  backgrounded). **OS toast popups are OFF by default** — an opt-in
+  Settings/Options switch (`osToasts`; stored in notification prefs today,
+  settings UI ships with E14's rules engine).
 
 **Reducing prompts at the source (autonomy profiles):** per-session spawn profile =
 `--permission-mode` + allowed tools + extra dirs, presented as a slider:
@@ -400,14 +408,15 @@ Each session offers two synchronized views of the same underlying session:
 - **Session** (primary, interactive): rendered from structured transcript/
   stream events — assistant text, tool calls, diffs, subagent sidechains — as
   styled blocks, with a **prompt composer** docked at the bottom (Enter
-  submits to the CLI's PTY; options row for autonomy/model context). In-app
+  submits to the CLI's PTY; options row for autonomy/model context; typing
+  `/` pops a slash-command autocomplete — CLI built-ins + the §5.19
+  registry's skills/commands — owner request 2026-07-22). In-app
   approvals (§5.16) render inline here as a review bar.
-- **Terminal** (xterm.js + PTY): the real CLI — **hidden by default**
-  (owner decision 2026-07-21: when the Session view works, the Terminal is
-  rarely touched). Reachable via the card's ⋯ menu / a per-session toggle,
-  and the Session view's "continue in Terminal" chip surfaces it on demand
-  when the CLI is in a raw TUI state (menus, /login, trust prompts). It
-  still exists for every session — hidden, never gone.
+- **Terminal** (xterm.js + PTY): the real CLI — always present as the
+  **LAST tab** (owner reversal 2026-07-22: one day of dogfooding showed
+  hide-by-default was friction, not calm — "I like having a terminal").
+  The Session view's "continue in Terminal" chip jumps there when the CLI
+  is in a raw TUI state (menus, /login, trust prompts).
 
 **Block presentation (v2 — modeled on the Claude Code VS Code extension;
 owner screenshot 2026-07-21).** The reference look: a clean timeline with a
@@ -462,9 +471,8 @@ separate features:
   log view; §5.7).
 - **Inspector** — the §5.19 capability pane (Skills / Agents / MCP / Commands),
   present when opened.
-- **Terminal** — the real CLI; **not in the default strip** (2026-07-21) —
-  shown via the ⋯ menu / per-session toggle or the "continue in Terminal"
-  chip, and once shown it stays in the strip for that session until hidden.
+- **Terminal** — the real CLI, always present, **last in the strip**
+  (2026-07-22 reversal of the one-day hide-by-default experiment).
 
 Rules: active tab is per-session and remembered across restarts (§5.25) — the
 Terminal's shown/hidden state included. Any
@@ -504,12 +512,30 @@ Every session carries an identity that renders IDENTICALLY everywhere it appears
   me?" answered at a glance.
 - Optional: per-session notification sound doubles as an audio identity.
 
-### 5.12 Event feed — the operator's log
+### 5.12 Events — what needs the operator NOW
 
-A dockable panel (left, default) receiving typed events from every session; one
-unified, filterable inbox. Clicking an event restores/focuses its session (and
-scrolls to the relevant spot where applicable). Inline actions on the event itself
-where possible.
+> **Revised 2026-07-22 (owner decision, hands-on E10 use).** Renamed
+> **"Events"** (UI + code). The panel is NOT a log — it answers "what needs
+> me / what just finished". Core semantics:
+>
+> - **One item per session**: the session's LATEST attention state. A new
+>   event from a session replaces its previous one.
+> - **Resolved means gone**: a granted permission / answered input removes
+>   the item (the status change to `working` clears it). A `done` stays
+>   until that session produces something newer.
+> - Each item shows the **session name** with the **task label** beneath it
+>   (never raw session ids).
+> - **Filters** (per the main-window-v1 mockup): All · Needed · By-session.
+> - **Questions queue (placeholder)**: when a session needs clarification
+>   ("answer these 3 questions"), the item should expand into a small list
+>   the operator can come back to — spec'd when E14 lands.
+>
+> A full history/audit view (the original "operator's log") may return later
+> as a separate surface; the Events panel itself stays a to-do list.
+
+A dockable panel receiving typed events from every session. Clicking an event
+restores/focuses its session (and scrolls to the relevant spot where
+applicable). Inline actions on the event itself where possible.
 
 | Event | Payload / inline actions |
 |---|---|
@@ -627,6 +653,16 @@ transfer + role templates, all already in the design.
 Pain point (owner, VS Code extension): edit approvals are a tiny checkbox on an
 opened file tab, or a jump back to the session tab. switchboard.ai replaces the
 approval UI entirely rather than decorating it.
+
+> **Plan-mode rule (owner decision 2026-07-23):** plan sessions are NEVER
+> held in-app. A hook `permissionDecision:'allow'` bypasses the CLI's whole
+> permission system — including plan mode's write-block — so an in-app Allow
+> would let a "read-only planning" session write files. The CLI's own plan
+> enforcement is authoritative; in-app approvals apply to ask/auto-edit.
+> Also settled: "Allow all (this session)" is scoped to the LIVE session
+> (a respawn/resume prompts again), held requests QUEUE per card, a hold
+> auto-surfaces the Session tab, and pending holds replay to a reloading
+> renderer so a missed push can never park the CLI.
 
 **Mechanism.** `PreToolUse` hook on `Edit|Write|MultiEdit` fires BEFORE execution
 with the full proposed change (file path, old/new content) and can RETURN the

@@ -202,6 +202,66 @@ describe('Feed block derivation (P2-E12-06 §5.10)', () => {
     expect(seen.length).toBe(4);
   });
 
+  it('rich blocks v2 (E10-06): Edit fields, Bash OUT attach, todos, thought duration', async () => {
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    const t0 = new Date('2026-07-21T10:00:00.000Z').toISOString();
+    const t3 = new Date('2026-07-21T10:00:03.000Z').toISOString();
+    writeLines(file, [
+      entry({
+        timestamp: t0,
+        message: {
+          content: [
+            { type: 'thinking', thinking: 'pondering' },
+          ],
+        },
+      }),
+      entry({
+        timestamp: t3,
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'use-1',
+              name: 'Bash',
+              input: { command: 'echo hi', description: 'Say hi' },
+            },
+            {
+              type: 'tool_use',
+              id: 'use-2',
+              name: 'Edit',
+              input: { file_path: 'C:/a.ts', old_string: 'one\ntwo', new_string: 'three' },
+            },
+            {
+              type: 'tool_use',
+              name: 'TodoWrite',
+              input: { todos: [{ content: 'step A', status: 'completed' }, { content: 'step B', status: 'pending' }] },
+            },
+          ],
+        },
+      }),
+      entry({
+        type: 'user',
+        message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'use-1', content: 'hi' }] },
+      }),
+    ]);
+    await sleep(150);
+    const blocks = watcher.blocks('s1');
+    const thinking = blocks.find((b) => b.kind === 'thinking')!;
+    expect(thinking.durationMs).toBe(3000); // set when the next block landed
+    const bash = blocks.find((b) => b.tool?.name === 'Bash')!;
+    expect(bash.tool).toMatchObject({ summary: 'echo hi', description: 'Say hi', out: 'hi' });
+    const edit = blocks.find((b) => b.tool?.name === 'Edit')!;
+    expect(edit.tool).toMatchObject({ filePath: 'C:/a.ts', oldString: 'one\ntwo', newString: 'three' });
+    const todos = blocks.find((b) => b.kind === 'todos')!;
+    expect(todos.todos).toEqual([
+      { content: 'step A', status: 'completed' },
+      { content: 'step B', status: 'pending' },
+    ]);
+    // the tool_result line produced NO user block of its own
+    expect(blocks.filter((b) => b.kind === 'user')).toHaveLength(0);
+  });
+
   it('marks subagent-file lines as sidechain and caps the backlog', async () => {
     watcher.watch('s1', { cwd });
     const file = path.join(projectDir(), 'native-1.jsonl');
@@ -215,6 +275,108 @@ describe('Feed block derivation (P2-E12-06 §5.10)', () => {
     await sleep(150);
     const blocks = watcher.blocks('s1');
     expect(blocks.some((b) => b.sidechain && b.text === 'sub says hi')).toBe(true);
+  });
+});
+
+describe('positive evidence required to claim (Dan 2026-07-22: summary-first files)', () => {
+  it('a summary-first file (no cwd on line 1) is NOT claimed by a foreign-folder session', async () => {
+    // widen quickly so the full-root scan definitely sees the foreign file
+    const w2 = new TranscriptWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: root }), 'transcripts'),
+      pollMs: 25,
+      widenAfterMs: 50,
+    });
+    const otherDir = path.join(root, slugForCwd('C:/tmp/other-project'));
+    fs.mkdirSync(otherDir, { recursive: true });
+    const file = path.join(otherDir, 'native-foreign.jsonl');
+    w2.watch('s1', { cwd }); // our session, DIFFERENT folder
+    writeLines(file, [
+      JSON.stringify({ type: 'summary', summary: 'compacted history' }), // no cwd, no sessionId
+      entry({ sessionId: 'native-foreign', cwd: 'C:/tmp/other-project' }),
+    ]);
+    await sleep(300); // well past widen
+    expect(w2.snapshot('s1')!.bound).toBe(false);
+    w2.stop();
+  });
+
+  it('a summary-first file IS claimed when deeper lines prove the cwd', async () => {
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-sum.jsonl');
+    writeLines(file, [
+      JSON.stringify({ type: 'summary', summary: 'compacted history' }),
+      entry({ sessionId: 'native-sum' }), // carries cwd (ours) on line 2
+    ]);
+    await sleep(150);
+    const snap = watcher.snapshot('s1')!;
+    expect(snap.bound).toBe(true);
+    expect(snap.nativeSessionId).toBe('native-sum');
+  });
+});
+
+describe('huge unparseable head lines (file-history-snapshot) — Dan 2026-07-22', () => {
+  it('binds by FILENAME once hooks deliver the id, even with an unreadable head', async () => {
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-big.jsonl');
+    // a first line far bigger than the head window, then real content
+    writeLines(file, [
+      JSON.stringify({ type: 'file-history-snapshot', blob: 'x'.repeat(300_000) }),
+      entry({ sessionId: 'native-big', message: { content: [{ type: 'text', text: 'hi there' }] } }),
+    ]);
+    await sleep(120);
+    expect(watcher.snapshot('s1')!.bound).toBe(false); // no evidence yet
+    watcher.setNativeSessionId('s1', 'native-big'); // hooks deliver the id
+    await sleep(150);
+    expect(watcher.snapshot('s1')!.bound).toBe(true);
+    expect(watcher.blocks('s1').some((b) => b.text === 'hi there')).toBe(true);
+  });
+});
+
+describe('same-cwd sessions never steal each other\'s transcript (E10 fix)', () => {
+  it('two sessions in one folder: neither binds until hooks deliver ids, then each gets its own', async () => {
+    watcher.watch('s1', { cwd });
+    watcher.watch('s2', { cwd });
+    const fileA = path.join(projectDir(), 'native-A.jsonl');
+    writeLines(fileA, [entry({ sessionId: 'native-A' })]);
+    await sleep(120);
+    // ambiguous — nobody claims on cwd alone
+    expect(watcher.snapshot('s1')!.bound).toBe(false);
+    expect(watcher.snapshot('s2')!.bound).toBe(false);
+
+    watcher.setNativeSessionId('s2', 'native-A'); // hooks: the file is s2's
+    await sleep(120);
+    expect(watcher.snapshot('s2')!.bound).toBe(true);
+    expect(watcher.snapshot('s2')!.nativeSessionId).toBe('native-A');
+    expect(watcher.snapshot('s1')!.bound).toBe(false);
+
+    const fileB = path.join(projectDir(), 'native-B.jsonl');
+    writeLines(fileB, [entry({ sessionId: 'native-B' })]);
+    watcher.setNativeSessionId('s1', 'native-B');
+    await sleep(120);
+    expect(watcher.snapshot('s1')!.bound).toBe(true);
+    expect(watcher.snapshot('s1')!.nativeSessionId).toBe('native-B');
+  });
+
+  it('a cwd-only mis-bind is corrected when the hooks deliver a different id', async () => {
+    watcher.watch('s1', { cwd }); // alone in the folder: cwd-only binds allowed
+    const fileA = path.join(projectDir(), 'native-A.jsonl');
+    writeLines(fileA, [
+      entry({ sessionId: 'native-A', message: { content: [{ type: 'text', text: 'stolen words' }] } }),
+    ]);
+    await sleep(120);
+    expect(watcher.snapshot('s1')!.bound).toBe(true); // bound to the WRONG file
+
+    watcher.setNativeSessionId('s1', 'native-B'); // hooks: actually a different conversation
+    expect(watcher.snapshot('s1')!.bound).toBe(false); // unbound + reset
+    expect(watcher.blocks('s1')).toHaveLength(0); // stolen blocks dropped
+
+    const fileB = path.join(projectDir(), 'native-B.jsonl');
+    writeLines(fileB, [
+      entry({ sessionId: 'native-B', message: { content: [{ type: 'text', text: 'my words' }] } }),
+    ]);
+    await sleep(150);
+    expect(watcher.snapshot('s1')!.bound).toBe(true);
+    expect(watcher.blocks('s1').some((b) => b.text === 'my words')).toBe(true);
   });
 });
 
@@ -232,6 +394,31 @@ describe('pre-existing transcripts are never adopted', () => {
     await sleep(120);
     expect(w2.snapshot('s1')!.bound).toBe(false);
     expect(w2.snapshot('s1')!.usage.output).toBe(0);
+    w2.stop();
+  });
+
+  it("EXCEPT the session's own resumed conversation, replayed with history (E10 fix)", async () => {
+    const file = path.join(projectDir(), 'native-res.jsonl');
+    writeLines(file, [
+      entry({ sessionId: 'native-res', message: { content: [{ type: 'text', text: 'history line' }] } }),
+    ]);
+    const w2 = new TranscriptWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: root }), 'transcripts'),
+      pollMs: 25,
+    });
+    w2.watch('s1', { cwd, nativeSessionId: 'native-res' }); // a --resume spawn
+    await sleep(150);
+    const snap = w2.snapshot('s1')!;
+    expect(snap.bound).toBe(true);
+    // the Feed gets the conversation history back on resume
+    expect(w2.blocks('s1').some((b) => b.text === 'history line')).toBe(true);
+    // and new lines keep flowing
+    writeLines(file, [
+      entry({ sessionId: 'native-res', message: { content: [{ type: 'text', text: 'fresh line' }] } }),
+    ]);
+    await sleep(120);
+    expect(w2.blocks('s1').some((b) => b.text === 'fresh line')).toBe(true);
     w2.stop();
   });
 });

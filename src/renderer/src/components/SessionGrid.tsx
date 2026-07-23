@@ -49,9 +49,13 @@ function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element 
       <button
         onClick={(e) => {
           // close the tab: for a session card this ends the session AND
-          // forgets the record (onDidRemovePanel -> closeCard); derived tabs
-          // (diff) just close
+          // forgets the record (onDidRemovePanel -> closeCard) — so it
+          // CONFIRMS first (Dan 2026-07-22); derived tabs (diff) just close
           e.stopPropagation();
+          if (props.params?.cardId) {
+            const title = props.api.title ?? props.params?.title ?? '';
+            if (!window.confirm(t('grid.closeConfirm', { title }))) return;
+          }
           props.api.close();
         }}
         onMouseDown={(e) => e.stopPropagation()} // don't start a tab drag
@@ -61,10 +65,13 @@ function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element 
           border: 'none',
           color: 'var(--faint)',
           cursor: 'pointer',
-          fontSize: 11,
+          fontSize: 10,
           lineHeight: 1,
-          padding: '1px 3px',
+          padding: '0 3px 6px',
           borderRadius: 3,
+          // pushed up-and-right, away from the click path to the tab itself
+          marginInlineStart: 14,
+          alignSelf: 'flex-start',
         }}
       >
         {t('grid.closeTabIcon')}
@@ -83,9 +90,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const [taskLabel, setTaskLabel] = React.useState<string>('');
   const [editingLabel, setEditingLabel] = React.useState(false);
   const [status, setStatus] = React.useState<string>('starting');
-  // Feed is the default view (§5.10, flipped in E12-07); Terminal is one click
-  // away and the waiting-chip jumps there when the CLI needs real input.
-  // The active tab is remembered per card across restarts (§5.25, E12-08).
+  // The Session view is the default (§5.10; internal view id stays 'feed' so
+  // stored ui-blob tab state needs no migration). The Terminal is ALWAYS
+  // present as the LAST tab (owner reversal 2026-07-22 — hide-by-default
+  // lasted one day of dogfooding). The active tab is remembered per card
+  // across restarts (§5.25, E12-08).
   const [view, setViewRaw] = React.useState<'feed' | 'terminal' | 'diff'>(() =>
     props.params?.cardId ? uiGet(`viewTab.${props.params.cardId}`, 'feed') : 'feed'
   );
@@ -93,6 +102,22 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     setViewRaw(v);
     if (cardId) uiSet(`viewTab.${cardId}`, v);
   };
+  // per-card autonomy for the composer options row (E10-05): persists to the
+  // record and applies on the NEXT spawn/resume (the CLI can't switch live)
+  const [cardAutonomy, setCardAutonomy] = React.useState<string | undefined>(undefined);
+  const cycleCardAutonomy = (): void => {
+    if (!cardId) return;
+    const order = ['ask', 'plan', 'auto-edit', 'full-auto'];
+    const next = order[(order.indexOf(cardAutonomy ?? 'ask') + 1) % order.length];
+    setCardAutonomy(next);
+    void window.switchboard.sessions.setAutonomy(cardId, next);
+  };
+  // held permissions awaiting decisions (E10-04) — a QUEUE, not a slot:
+  // parallel tool calls each hold their own request (review P0#4)
+  const [permQueue, setPermQueue] = React.useState<
+    Array<{ requestId: string; sessionId: string; tool: string; input: Record<string, unknown> }>
+  >([]);
+  const perm = permQueue[0] ?? null;
   const [poppedOut, setPoppedOut] = React.useState<boolean>(props.api.location.type === 'popout');
   const [suspended, setSuspended] = React.useState(false);
   const spawning = React.useRef(false);
@@ -128,6 +153,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         // so it's visibly present rather than appearing only after activity
         setUsage({ usage: record.priorUsage ?? ZERO_USAGE, model: record.priorModel });
         if (record.taskLabel) setTaskLabel(record.taskLabel);
+        setCardAutonomy(record.autonomy ?? 'ask');
       })
       .catch(() => {
         setExited({ code: -1, crashed: true }); // spawn failed — show the overlay
@@ -184,14 +210,63 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   }, [live, visible, folder]);
 
   // live status for the header pill (E8-05). Backend emits { sessionId, to }.
+  // Spawn starts at the RECORD's status — never assume "working" (Dan
+  // 2026-07-22: resumed sessions showed the working banner doing nothing).
   React.useEffect(() => {
     if (!live) return;
-    setStatus('working');
+    setStatus('starting');
     return window.switchboard.sessions.onStatus((c) => {
       const s = c as { sessionId: string; to?: string };
       if (s.sessionId === live.id && s.to) setStatus(s.to);
     });
   }, [live]);
+
+  // inline approvals (E10-04): held PreToolUse requests for THIS card queue
+  // into a review bar; allow-all answers future ones for the LIVE session
+  // only (review P0#2 — a respawn must prompt again). A hold needs eyes, so
+  // it surfaces the Session tab whatever tab is active (review P0#5).
+  React.useEffect(() => {
+    if (!cardId) return;
+    const enqueue = (r: {
+      requestId: string;
+      sessionId: string;
+      cardId?: string;
+      tool: string;
+      input: Record<string, unknown>;
+    }): void => {
+      if (r.cardId !== cardId) return;
+      if (allowAllByLive.has(r.sessionId)) {
+        void window.switchboard.sessions.decidePermission(r.requestId, 'allow');
+        return;
+      }
+      setPermQueue((prev) =>
+        prev.some((p) => p.requestId === r.requestId)
+          ? prev
+          : [...prev, { requestId: r.requestId, sessionId: r.sessionId, tool: r.tool, input: r.input }]
+      );
+      setView('feed');
+    };
+    const offReq = window.switchboard.sessions.onPermissionRequest(enqueue);
+    const offRes = window.switchboard.sessions.onPermissionResolved((r) => {
+      setPermQueue((prev) => prev.filter((p) => p.requestId !== r.requestId));
+    });
+    // replay holds that arrived before this card subscribed (reload / mount
+    // race) — a missed push must never park the CLI (review P0#3)
+    void window.switchboard.sessions.pendingPermissions().then((list) => list.forEach(enqueue));
+    return () => {
+      offReq();
+      offRes();
+    };
+    // setView identity is stable enough here; cardId is the real key (the
+    // exhaustive-deps plugin isn't installed in this repo)
+  }, [cardId]);
+  const decide = (decision: 'allow' | 'deny', allowAll = false): void => {
+    const head = permQueue[0];
+    if (!head) return;
+    if (allowAll) allowAllByLive.add(head.sessionId);
+    void window.switchboard.sessions.decidePermission(head.requestId, decision);
+    setPermQueue((prev) => prev.slice(1)); // resolved event prunes too (idempotent)
+  };
 
   // membership follows the panel when the user drags it between dockview
   // groups in the grid (E12-04)
@@ -446,10 +521,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             }}
           >
             <button style={vtabStyle(view === 'feed', false, live.accent)} onClick={() => setView('feed')}>
-              {t('grid.viewFeed')}
-            </button>
-            <button style={vtabStyle(view === 'terminal', false, live.accent)} onClick={() => setView('terminal')}>
-              {t('grid.viewTerminal')}
+              {t('grid.viewSession')}
             </button>
             <button style={vtabStyle(view === 'diff', false, live.accent)} onClick={() => setView('diff')}>
               {t('grid.viewDiff')}
@@ -458,6 +530,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             <span style={vtabStyle(false, true, live.accent)} title={t('grid.viewSoon')}>
               {t('grid.viewHistory')}
             </span>
+            {/* Terminal is always available, LAST (owner call 2026-07-22) */}
+            <button style={vtabStyle(view === 'terminal', false, live.accent)} onClick={() => setView('terminal')}>
+              {t('grid.viewTerminal')}
+            </button>
             <span style={{ flex: 1, minInlineSize: 8 }} />
             {plan && (
               <span title={t('grid.planTitle')} style={{ color: 'var(--status-working)', fontSize: 10, fontFamily: 'var(--font-mono)' }}>
@@ -478,6 +554,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 cardId={cardId}
                 visible={visible && view === 'feed'}
                 status={status}
+                autonomy={cardAutonomy}
+                model={usage?.model}
+                approval={perm}
+                approvalQueued={Math.max(0, permQueue.length - 1)}
+                onDecide={decide}
+                onCycleAutonomy={cycleCardAutonomy}
                 onJumpToTerminal={() => setView('terminal')}
               />
             )}
@@ -601,6 +683,9 @@ const components = { sessionCard: SessionCardPanel, diffPane: DiffPanel };
 // live session id -> stable card id (single-window app). Lets the rail, which
 // tracks live sessions, focus/diff a card by its ephemeral session id.
 const liveToCard = new Map<string, string>();
+// LIVE session ids where the user chose "Allow all (this session)" — keyed
+// by the ephemeral live id so a respawn/resume prompts again (review P0#2)
+const allowAllByLive = new Set<string>();
 // card ids currently docking back via the pop-out BUTTON (toggle). The panel's
 // location-change handler reads this to keep a button dock-back alive while a
 // bare window-close suspends the session (E8-04).

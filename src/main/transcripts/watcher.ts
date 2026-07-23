@@ -43,10 +43,26 @@ export interface TranscriptSnapshot {
  */
 export interface FeedBlock {
   seq: number;
-  kind: 'user' | 'assistant' | 'thinking' | 'tool';
+  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos';
   /** user/assistant/thinking prose */
   text?: string;
-  tool?: { name: string; summary: string; detail?: string };
+  tool?: {
+    name: string;
+    summary: string;
+    detail?: string;
+    /** Bash: the tool call's own description field (block header, E10-06) */
+    description?: string;
+    /** Edit/Write: structured fields for the inline diff preview (E10-06) */
+    filePath?: string;
+    oldString?: string;
+    newString?: string;
+    /** tool_result output, attached when it arrives (block re-emitted) */
+    out?: string;
+  };
+  /** TodoWrite checklist (E10-06) */
+  todos?: Array<{ content: string; status: string }>;
+  /** thinking: how long it lasted (set when the next block lands) */
+  durationMs?: number;
   /** true when the line came from a subagent transcript */
   sidechain: boolean;
   ts?: string;
@@ -67,6 +83,8 @@ interface WatchedSession {
   snap: TranscriptSnapshot;
   blocks: FeedBlock[];
   blockSeq: number;
+  /** tool_use id -> its block, so a later tool_result can attach its OUT */
+  toolBlocks: Map<string, FeedBlock>;
 }
 
 /** After this long unbound, widen discovery beyond the slug prefilter. */
@@ -82,6 +100,23 @@ export interface TranscriptWatcherOptions {
 
 export function slugForCwd(cwd: string): string {
   return cwd.replace(/[\\/:. ]/g, '-');
+}
+
+/** CLI plumbing disguised as user text — never conversation. */
+function isPlumbing(text: string): boolean {
+  return text.trimStart().startsWith('<local-command-');
+}
+
+/** Flatten a tool_result content field (string or text-item array) to text. */
+function toolResultText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return (content as Array<{ type?: string; text?: string }>)
+      .filter((x) => x?.type === 'text' && typeof x.text === 'string')
+      .map((x) => x.text)
+      .join('\n');
+  }
+  return '';
 }
 
 /**
@@ -152,14 +187,63 @@ export class TranscriptWatcher {
       },
       blocks: [],
       blockSeq: 0,
+      toolBlocks: new Map(),
     });
     this.ensurePolling();
   }
 
-  /** Late-arriving native id (from hooks) tightens binding validation. */
+  /**
+   * Late-arriving native id (from hooks) tightens binding validation — and
+   * CORRECTS a same-cwd mis-bind (Dan's 2026-07-21 find: two sessions in one
+   * folder cross-wired their Feeds): if we already bound a transcript whose
+   * sessionId doesn't match the id the hooks just delivered, unbind and let
+   * discovery re-run with the id as the authority.
+   */
   setNativeSessionId(sessionId: string, nativeId: string): void {
     const w = this.sessions.get(sessionId);
-    if (w) w.nativeSessionId = nativeId;
+    if (!w) return;
+    w.nativeSessionId = nativeId;
+    if (w.boundFile && w.snap.nativeSessionId && w.snap.nativeSessionId !== nativeId) {
+      this.opts.log.warn('transcript mis-bind corrected (same-cwd race)', {
+        sessionId,
+        boundTo: w.snap.nativeSessionId,
+        actual: nativeId,
+      });
+      this.resetBinding(w);
+    }
+  }
+
+  /** Drop a wrong binding and start discovery over, clean. */
+  private resetBinding(w: WatchedSession): void {
+    w.boundFile = null;
+    w.tails.clear();
+    w.blocks = [];
+    w.blockSeq = 0;
+    w.toolBlocks.clear();
+    w.snap = {
+      sessionId: w.sessionId,
+      bound: false,
+      usage: { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 },
+      lines: 0,
+      malformed: 0,
+      toolsSeen: [],
+      filesTouched: [],
+      subagents: [],
+      lastActivityAt: null,
+    };
+  }
+
+  /** This pre-existing file is the session's OWN resumed conversation. */
+  private isOwnResumedFile(w: WatchedSession, full: string): boolean {
+    return !!w.nativeSessionId && path.basename(full) === `${w.nativeSessionId}.jsonl`;
+  }
+
+  /** Another watched session shares this cwd — binding is ambiguous. */
+  private hasCwdSibling(w: WatchedSession): boolean {
+    for (const other of this.sessions.values()) {
+      if (other !== w && sameFolder(other.cwd, w.cwd)) return true;
+    }
+    return false;
   }
 
   unwatch(sessionId: string): void {
@@ -236,7 +320,13 @@ export class TranscriptWatcher {
       if (!w.boundFile) {
         const widen = Date.now() - w.watchedSince > (this.opts.widenAfterMs ?? WIDEN_AFTER_MS);
         for (const full of this.discoveryCandidates(w, widen)) {
-          if (this.known.has(full) || w.tails.has(full)) continue;
+          if (w.tails.has(full)) continue;
+          // pre-existing files are never adopted — EXCEPT our own resumed
+          // conversation (<nativeId>.jsonl existed before this launch by
+          // definition; Dan's 2026-07-22 find: resumed cards had an empty
+          // Session view forever). Replaying it from 0 also gives the Feed
+          // the conversation history back.
+          if (this.known.has(full) && !this.isOwnResumedFile(w, full)) continue;
           if (this.claim(w, full)) w.tails.set(full, { offset: 0, buf: '' });
         }
       } else {
@@ -283,16 +373,35 @@ export class TranscriptWatcher {
     return acc;
   }
 
-  /** Bind only files that verifiably belong to this session (the race fix). */
+  /** Bind only files that VERIFIABLY belong to this session (the race fix).
+   *  Positive evidence is required — Dan's 2026-07-22 find: resumed/compacted
+   *  transcripts open with a summary record that has NO cwd, and the old
+   *  "check cwd if present" rule let a widened scan claim a foreign file. */
   private claim(w: WatchedSession, full: string): boolean {
     if (full.includes(`${path.sep}subagents${path.sep}`)) return false; // handled post-bind
     if (w.boundFile) return false; // one main transcript per session
-    // AUTHORITY: the first parseable line's cwd must match (case-insensitive
-    // on win32); sessionId must match the native id when we know it
     const head = this.readHead(full);
     if (!head) return false;
+    // a known-wrong id or wrong cwd is always disqualifying
+    if (w.nativeSessionId && head.sessionId && head.sessionId !== w.nativeSessionId) return false;
     if (typeof head.cwd === 'string' && !sameFolder(head.cwd, w.cwd)) return false;
-    if (w.nativeSessionId && head.sessionId !== w.nativeSessionId) return false;
+    // id evidence: a matching head sessionId, or the FILENAME itself once the
+    // hooks told us our id — head lines can be unparseably huge (a fresh
+    // transcript may open with a file-history-snapshot line bigger than any
+    // sane read window; Dan's empty PLUSNative session, 2026-07-22)
+    const idMatch =
+      !!w.nativeSessionId &&
+      (head.sessionId === w.nativeSessionId ||
+        path.basename(full) === `${w.nativeSessionId}.jsonl`);
+    if (!idMatch) {
+      // without an id match we need a positive cwd match — absence of
+      // evidence is NOT evidence the file is ours
+      if (typeof head.cwd !== 'string' || !sameFolder(head.cwd, w.cwd)) return false;
+      // Same-cwd sessions make cwd-only claims AMBIGUOUS (two sessions in
+      // one folder must not steal each other's transcript): wait for the
+      // hooks to deliver our native id, then bind on the id match.
+      if (this.hasCwdSibling(w)) return false;
+    }
     w.boundFile = full;
     w.snap.bound = true;
     w.snap.nativeSessionId = typeof head.sessionId === 'string' ? head.sessionId : undefined;
@@ -300,17 +409,33 @@ export class TranscriptWatcher {
     return true;
   }
 
-  private readHead(full: string): { cwd?: unknown; sessionId?: unknown } | null {
+  /** First cwd + sessionId found in the head of the file — summary/meta
+   *  records on line 1 carry neither, so scan a handful of lines. */
+  private readHead(full: string): { cwd?: string; sessionId?: string } | null {
+    let text: string;
     try {
       const fd = fs.openSync(full, 'r');
-      const buf = Buffer.alloc(4096);
+      const buf = Buffer.alloc(262_144); // snapshot-sized first lines are real
       const n = fs.readSync(fd, buf, 0, buf.length, 0);
       fs.closeSync(fd);
-      const firstLine = buf.toString('utf8', 0, n).split('\n')[0];
-      return JSON.parse(firstLine) as { cwd?: unknown; sessionId?: unknown };
+      text = buf.toString('utf8', 0, n);
     } catch {
       return null;
     }
+    const out: { cwd?: string; sessionId?: string } = {};
+    for (const line of text.split('\n').slice(0, 25)) {
+      if (!line.trim()) continue;
+      try {
+        const e = JSON.parse(line) as { cwd?: unknown; sessionId?: unknown };
+        if (out.cwd === undefined && typeof e.cwd === 'string') out.cwd = e.cwd;
+        if (out.sessionId === undefined && typeof e.sessionId === 'string') out.sessionId = e.sessionId;
+        if (out.cwd !== undefined && out.sessionId !== undefined) break;
+      } catch {
+        /* oversized/partial line or junk — keep scanning; an empty result
+           still lets a filename id-match bind (claim() decides) */
+      }
+    }
+    return out;
   }
 
   private drain(w: WatchedSession, full: string, tail: { offset: number; buf: string }): void {
@@ -361,10 +486,25 @@ export class TranscriptWatcher {
     }
   }
 
-  private emitBlock(w: WatchedSession, b: Omit<FeedBlock, 'seq' | 'sidechain'>, sidechain: boolean): void {
+  private emitBlock(w: WatchedSession, b: Omit<FeedBlock, 'seq' | 'sidechain'>, sidechain: boolean): FeedBlock {
+    // a thinking block's duration becomes known when the NEXT block lands
+    const prev = w.blocks[w.blocks.length - 1];
+    if (prev?.kind === 'thinking' && !prev.durationMs && prev.ts && b.ts) {
+      const ms = Date.parse(b.ts) - Date.parse(prev.ts);
+      if (Number.isFinite(ms) && ms > 0) {
+        prev.durationMs = ms;
+        this.reemit(w, prev);
+      }
+    }
     const block: FeedBlock = { ...b, seq: ++w.blockSeq, sidechain };
     w.blocks.push(block);
     if (w.blocks.length > BLOCK_CAP) w.blocks.splice(0, w.blocks.length - BLOCK_CAP);
+    this.reemit(w, block);
+    return block;
+  }
+
+  /** Send a block (new OR updated — same seq) to the listeners. */
+  private reemit(w: WatchedSession, block: FeedBlock): void {
     for (const l of this.blockListeners) {
       try {
         l(w.sessionId, block);
@@ -381,14 +521,31 @@ export class TranscriptWatcher {
     const ts = typeof e.timestamp === 'string' ? e.timestamp : undefined;
     const message = e.message as { content?: unknown; role?: string } | undefined;
     if (!message) return;
+    if (e.isMeta === true) return; // CLI-internal lines are not conversation
     if (e.type === 'user') {
-      // a real prompt is a string (or text items); tool_result plumbing is not prose
+      // a real prompt is a string (or text items); tool_result items attach
+      // their output to the originating tool block (E10-06 OUT sections).
+      // <local-command-*> wrappers (slash-command stdout/caveats, often with
+      // raw ANSI inside) are CLI plumbing, not conversation (Dan 2026-07-22).
       if (typeof message.content === 'string' && message.content.trim()) {
+        if (isPlumbing(message.content)) return;
         this.emitBlock(w, { kind: 'user', text: message.content.slice(0, TEXT_CAP), ts }, sidechain);
       } else if (Array.isArray(message.content)) {
-        for (const c of message.content as Array<{ type?: string; text?: string }>) {
-          if (c?.type === 'text' && c.text?.trim()) {
+        for (const c of message.content as Array<{
+          type?: string;
+          text?: string;
+          tool_use_id?: string;
+          content?: unknown;
+        }>) {
+          if (c?.type === 'text' && c.text?.trim() && !isPlumbing(c.text)) {
             this.emitBlock(w, { kind: 'user', text: c.text.slice(0, TEXT_CAP), ts }, sidechain);
+          } else if (c?.type === 'tool_result' && typeof c.tool_use_id === 'string') {
+            const target = w.toolBlocks.get(c.tool_use_id);
+            if (target?.tool && !target.tool.out) {
+              target.tool.out = toolResultText(c.content).slice(0, DETAIL_CAP);
+              w.toolBlocks.delete(c.tool_use_id);
+              this.reemit(w, target);
+            }
           }
         }
       }
@@ -408,6 +565,14 @@ export class TranscriptWatcher {
         this.emitBlock(w, { kind: 'thinking', text: c.thinking.slice(0, TEXT_CAP), ts }, sidechain);
       } else if (c?.type === 'tool_use' && typeof c.name === 'string') {
         const input = c.input ?? {};
+        // TodoWrite renders as a checklist block, not a raw tool row (E10-06)
+        if (c.name === 'TodoWrite' && Array.isArray(input.todos)) {
+          const todos = (input.todos as Array<{ content?: unknown; status?: unknown }>)
+            .slice(0, 30)
+            .map((td) => ({ content: String(td?.content ?? ''), status: String(td?.status ?? '') }));
+          this.emitBlock(w, { kind: 'todos', todos, ts }, sidechain);
+          continue;
+        }
         const primary =
           input.file_path ?? input.path ?? input.notebook_path ?? input.command ?? input.description ?? input.pattern;
         const summary = typeof primary === 'string' ? primary.slice(0, 120) : '';
@@ -417,7 +582,25 @@ export class TranscriptWatcher {
         } catch {
           detail = undefined;
         }
-        this.emitBlock(w, { kind: 'tool', tool: { name: c.name, summary, detail }, ts }, sidechain);
+        const tool: NonNullable<FeedBlock['tool']> = { name: c.name, summary, detail };
+        // structured fields for the rich blocks (E10-06)
+        if (typeof input.description === 'string') tool.description = input.description.slice(0, 120);
+        if (typeof input.file_path === 'string') tool.filePath = input.file_path;
+        if (typeof input.old_string === 'string') tool.oldString = input.old_string.slice(0, 1500);
+        if (typeof input.new_string === 'string') tool.newString = input.new_string.slice(0, 1500);
+        if (c.name === 'Write' && typeof input.content === 'string') {
+          tool.newString = input.content.slice(0, 1500);
+        }
+        const block = this.emitBlock(w, { kind: 'tool', tool, ts }, sidechain);
+        const useId = (c as { id?: unknown }).id;
+        if (typeof useId === 'string') {
+          w.toolBlocks.set(useId, block);
+          // bounded: forget the oldest mappings past 200 in-flight calls
+          if (w.toolBlocks.size > 200) {
+            const first = w.toolBlocks.keys().next().value;
+            if (first !== undefined) w.toolBlocks.delete(first);
+          }
+        }
       }
     }
   }

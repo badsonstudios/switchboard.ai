@@ -281,7 +281,14 @@ app
     const stateDir = path.join(app.getPath('userData'), 'sessions');
     const ptys = new PtyService();
     const manager = new SessionManager(registry, ptys, createLogger(sink, 'sessions'), stateDir);
-    const hooks = new HookListener({ stateDir, manager, log: createLogger(sink, 'hooks') });
+    const hooks = new HookListener({
+      stateDir,
+      manager,
+      log: createLogger(sink, 'hooks'),
+      // hold policy (E10-03): gate by the session's own autonomy + folder
+      autonomyFor: (id) => manager.get(id)?.autonomy,
+      cwdFor: (id) => manager.get(id)?.identity.folder,
+    });
     const transcripts = new TranscriptWatcher({
       projectsRoot: path.join(os.homedir(), '.claude', 'projects'),
       log: createLogger(sink, 'transcripts'),
@@ -298,7 +305,9 @@ app
       titleFor: (sessionId) => manager.get(sessionId)?.identity.title ?? 'switchboard',
       bodyFor: (e) => e.kind.replace(/-/g, ' '),
     });
-    feed.onEvent((e) => notifier.handle(e));
+    feed.onEvent((e) => {
+      if (e) notifier.handle(e); // null = pure removal, nothing to announce
+    });
     ipcMain.handle('preflight:check', () => runPreflight());
     busySessions = () =>
       manager

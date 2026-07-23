@@ -3,7 +3,7 @@
 // the feed answers "what needs me / what finished", not "what happened".
 import { StatusChange } from '../sessions/session-manager';
 
-export type FeedKind = 'done' | 'needs-input' | 'needs-permission' | 'crashed';
+export type FeedKind = 'done' | 'ready' | 'needs-input' | 'needs-permission' | 'crashed';
 
 export interface FeedEvent {
   id: number;
@@ -22,13 +22,27 @@ const ATTENTION: ReadonlySet<string> = new Set<FeedKind>([
 export class EventFeed {
   private events: FeedEvent[] = [];
   private nextId = 1;
-  private listeners = new Set<(e: FeedEvent) => void>();
+  private listeners = new Set<(e: FeedEvent | null) => void>();
 
   constructor(private readonly maxEvents = 500) {}
 
-  /** Wire to SessionManager.onStatusChange. Returns the feed event, if any. */
+  /**
+   * Wire to SessionManager.onStatusChange. Returns the feed event, if any.
+   *
+   * Semantics (Dan, 2026-07-22): ONE event per session — the session's
+   * latest attention state. Any new status change REPLACES that session's
+   * prior event; a non-attention change (e.g. needs-permission → working
+   * after an approval) simply clears it. A `done` stays visible until the
+   * session produces something newer.
+   */
   ingest(change: StatusChange): FeedEvent | null {
-    if (!ATTENTION.has(change.to)) return null;
+    const removed = this.dropFor(change.sessionId);
+    if (!ATTENTION.has(change.to)) {
+      // cleared without a replacement (e.g. permission granted) — tell
+      // subscribers the list changed so the panel drops the stale item
+      if (removed) this.notify(null);
+      return null;
+    }
     const e: FeedEvent = {
       id: this.nextId++,
       sessionId: change.sessionId,
@@ -39,6 +53,36 @@ export class EventFeed {
     if (this.events.length > this.maxEvents) {
       this.events.splice(0, this.events.length - this.maxEvents);
     }
+    this.notify(e);
+    return e;
+  }
+
+  /** A session was closed/removed — its event goes with it. */
+  forget(sessionId: string): void {
+    if (this.dropFor(sessionId)) this.notify(null);
+  }
+
+  /**
+   * The user looked at a finished session (clicked its event / focused it):
+   * "Done." relaxes to "Ready" — still listed, no longer calling for eyes
+   * (Dan 2026-07-22). Other kinds are unaffected; answering/fixing them
+   * clears the item through normal status flow.
+   */
+  acknowledge(sessionId: string): void {
+    const e = this.events.find((x) => x.sessionId === sessionId);
+    if (!e || e.kind !== 'done') return;
+    const ready: FeedEvent = { id: this.nextId++, sessionId, kind: 'ready', at: e.at };
+    this.events[this.events.indexOf(e)] = ready;
+    this.notify(ready);
+  }
+
+  private dropFor(sessionId: string): boolean {
+    const before = this.events.length;
+    this.events = this.events.filter((e) => e.sessionId !== sessionId);
+    return this.events.length !== before;
+  }
+
+  private notify(e: FeedEvent | null): void {
     for (const l of this.listeners) {
       try {
         l(e);
@@ -46,14 +90,14 @@ export class EventFeed {
         /* a broken subscriber never breaks the feed (fail-open) */
       }
     }
-    return e;
   }
 
   list(): FeedEvent[] {
     return [...this.events];
   }
 
-  onEvent(l: (e: FeedEvent) => void): () => void {
+  /** Fires on ANY list change; the event is null for pure removals. */
+  onEvent(l: (e: FeedEvent | null) => void): () => void {
     this.listeners.add(l);
     return () => this.listeners.delete(l);
   }

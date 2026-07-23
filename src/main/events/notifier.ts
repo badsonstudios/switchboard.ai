@@ -11,9 +11,12 @@ export interface NotificationPrefs {
   /** "HH:MM" 24h local; both set = quiet window (may span midnight) */
   quietStart?: string;
   quietEnd?: string;
+  /** OS toast popups — OFF by default (Dan 2026-07-22: sound + Events
+   *  panel are the signal; popups are opt-in via settings, E14 adds UI) */
+  osToasts?: boolean;
 }
 
-export const DEFAULT_PREFS: NotificationPrefs = { enabled: true };
+export const DEFAULT_PREFS: NotificationPrefs = { enabled: true, osToasts: false };
 
 /** Pure gate: is `now` inside the quiet window? Overnight ranges supported. */
 export function inQuietHours(prefs: NotificationPrefs, now: Date): boolean {
@@ -52,13 +55,18 @@ export class Notifier {
   ) {}
 
   handle(e: FeedEvent): void {
-    if (!shouldNotify(this.opts.getPrefs(), e, new Date())) return;
+    const prefs = this.opts.getPrefs();
+    if (!shouldNotify(prefs, e, new Date())) return;
     try {
-      if (Notification.isSupported()) {
+      // The signal model (Dan 2026-07-22): SOUND always + the Events panel;
+      // taskbar flash when backgrounded; OS toast popups only when the user
+      // opted in (osToasts, default off — E14 adds the settings UI).
+      shell.beep();
+      if (prefs.osToasts && Notification.isSupported()) {
         new Notification({
           title: this.opts.titleFor(e.sessionId),
           body: this.opts.bodyFor(e),
-          silent: false, // OS toast sound = the sound cue
+          silent: true, // the beep above is the sound cue
         }).show();
       }
       const win = this.opts.getWindow();
@@ -70,7 +78,6 @@ export class Notifier {
           if (!win.isDestroyed()) win.flashFrame(false);
         });
       }
-      shell.beep();
     } catch {
       // notifying is best-effort; never let it break the session flow
     }

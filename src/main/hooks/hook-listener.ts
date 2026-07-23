@@ -42,6 +42,87 @@ export interface HookListenerOptions {
   stateDir: string;
   manager: Pick<SessionManager, 'apply' | 'setNativeSessionId'>;
   log: Logger;
+  /** session autonomy lookup for the hold policy (E10-03); absent = no holds */
+  autonomyFor?: (sessionId: string) => string | undefined;
+  /** session folder lookup — out-of-cwd reads are gated (E10 fix) */
+  cwdFor?: (sessionId: string) => string | undefined;
+  /** how long a held PreToolUse waits for a UI decision before failing OPEN
+   *  to the CLI's own TUI prompt. Default 300s — human-scale (Dan hit the
+   *  old 60s mid-testing); the CLI's own hook budget is ~600s (S-03). */
+  holdTimeoutMs?: number;
+}
+
+/** An in-flight permission request parked on a held PreToolUse (E10-03). */
+export interface PermissionRequest {
+  requestId: string;
+  sessionId: string;
+  tool: string;
+  input: Record<string, unknown>;
+}
+
+/**
+ * Hold policy (P2-E10-03, §5.16): hold ONLY calls the CLI itself would prompt
+ * for at this autonomy — otherwise we'd nag full-auto sessions the CLI would
+ * have let through. Unknown autonomy fails open (no hold).
+ */
+// Shell tools are platform-dependent: the CLI uses a PowerShell tool on
+// Windows (probe 2026-07-22 — "list my Downloads" ran tool_name:"PowerShell",
+// which our Bash-only gate missed and the TUI prompted instead).
+const SHELLISH = ['Bash', 'PowerShell'];
+const MUTATING = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'WebFetch'];
+const READ_TOOLS = ['Read', 'Glob', 'Grep', 'LS'];
+
+const GATED: Record<string, string[]> = {
+  ask: [...SHELLISH, ...MUTATING],
+  // plan NEVER holds (owner decision 2026-07-23, review P0#1): an in-app
+  // "Allow" returns permissionDecision:'allow', which BYPASSES the CLI's
+  // permission system — including plan mode's write-block. Plan sessions
+  // let the CLI's own plan enforcement run untouched.
+  plan: [],
+  'auto-edit': [...SHELLISH, 'WebFetch'],
+  'full-auto': [],
+};
+
+/** Autonomies whose out-of-cwd reads we hold (plan/full-auto excluded — see GATED). */
+const READ_GATED_AUTONOMIES = ['ask', 'auto-edit'];
+
+/** PreToolUse matcher — REQUIRED for tool hooks (S-03's proven shape used
+ *  one; without it the entry never fires and the CLI's own TUI prompt runs
+ *  instead — Dan's 2026-07-21 find). Union of everything the policy might
+ *  hold; the hold policy narrows per-session server-side. */
+const PRETOOL_MATCHER = [...SHELLISH, ...MUTATING, ...READ_TOOLS].join('|');
+
+/** The primary filesystem target of a read-tool call, if any. */
+function readToolPath(input: Record<string, unknown> | undefined): string | undefined {
+  const p = input?.file_path ?? input?.path ?? input?.notebook_path;
+  return typeof p === 'string' ? p : undefined;
+}
+
+/** Is `p` outside the session's folder? (The CLI prompts for outside reads.) */
+export function isOutsideCwd(p: string, cwd: string): boolean {
+  const norm = (x: string) => {
+    const r = path.resolve(x);
+    return process.platform === 'win32' ? r.toLowerCase() : r;
+  };
+  const target = norm(p);
+  const base = norm(cwd);
+  return target !== base && !target.startsWith(base + path.sep);
+}
+
+export function shouldHoldPermission(
+  autonomy: string | undefined,
+  tool: string | undefined,
+  input?: Record<string, unknown>,
+  cwd?: string
+): boolean {
+  if (!autonomy || !tool) return false;
+  if ((GATED[autonomy] ?? []).includes(tool)) return true;
+  // read tools only prompt when they leave the workspace — mirror that
+  if (READ_GATED_AUTONOMIES.includes(autonomy) && READ_TOOLS.includes(tool) && cwd) {
+    const target = readToolPath(input);
+    if (target && isOutsideCwd(target, cwd)) return true;
+  }
+  return false;
 }
 
 export class HookListener {
@@ -49,6 +130,16 @@ export class HookListener {
   private port = 0;
   private readonly tokens = new Map<string, string>(); // token -> sessionId
   private forwarderPath: string | null = null;
+  // held PreToolUse responses awaiting a UI decision (E10-03). The request
+  // rides along so a reloading/racing renderer can REPLAY what's pending
+  // (review P0#3 — a missed push must not park the CLI for the full hold).
+  private readonly pending = new Map<
+    string,
+    { res: http.ServerResponse; timer: NodeJS.Timeout; sessionId: string; request: PermissionRequest }
+  >();
+  private readonly permListeners = new Set<(r: PermissionRequest) => void>();
+  private readonly resolvedListeners = new Set<(requestId: string) => void>();
+  private reqCounter = 0;
 
   constructor(private readonly opts: HookListenerOptions) {}
 
@@ -79,10 +170,77 @@ export class HookListener {
   }
 
   stop(): void {
+    for (const id of [...this.pending.keys()]) this.release(id); // fail open
     this.server?.close();
     this.server?.closeAllConnections?.();
     this.server = null;
     this.tokens.clear();
+  }
+
+  /** Live permission requests (held PreToolUse calls) — E10-03/E10-04. */
+  onPermissionRequest(cb: (r: PermissionRequest) => void): () => void {
+    this.permListeners.add(cb);
+    return () => this.permListeners.delete(cb);
+  }
+
+  /** Everything currently held — for renderer (re)subscribe replay (P0#3). */
+  pendingRequests(): PermissionRequest[] {
+    return [...this.pending.values()].map((p) => ({ ...p.request }));
+  }
+
+  /** A held request ended (decision OR timeout/teardown) — dismiss UI. */
+  onPermissionResolved(cb: (requestId: string) => void): () => void {
+    this.resolvedListeners.add(cb);
+    return () => this.resolvedListeners.delete(cb);
+  }
+
+  private notifyResolved(requestId: string): void {
+    for (const l of this.resolvedListeners) {
+      try {
+        l(requestId);
+      } catch {
+        /* listener's problem */
+      }
+    }
+  }
+
+  /** Answer a held request. Returns false if it already resolved/timed out. */
+  decide(requestId: string, decision: 'allow' | 'deny', reason?: string): boolean {
+    const p = this.pending.get(requestId);
+    if (!p) return false;
+    clearTimeout(p.timer);
+    this.pending.delete(requestId);
+    const out = {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: decision,
+        permissionDecisionReason:
+          reason ?? (decision === 'deny' ? 'Denied from switchboard' : 'Approved from switchboard'),
+      },
+    };
+    try {
+      p.res.end(JSON.stringify(out));
+    } catch {
+      /* connection gone — the CLI's own prompt takes over (fail-open) */
+    }
+    this.opts.manager.apply(p.sessionId, { kind: 'permission-resolved' });
+    this.opts.log.info('permission decided', { requestId, decision, sessionId: p.sessionId });
+    this.notifyResolved(requestId);
+    return true;
+  }
+
+  /** Release a held request with no opinion — the CLI's own TUI prompt runs. */
+  private release(requestId: string): void {
+    const p = this.pending.get(requestId);
+    if (!p) return;
+    clearTimeout(p.timer);
+    this.pending.delete(requestId);
+    try {
+      p.res.end('{}');
+    } catch {
+      /* already gone */
+    }
+    this.notifyResolved(requestId);
   }
 
   /**
@@ -104,6 +262,8 @@ export class HookListener {
     for (const [tok, sid] of this.tokens) {
       if (sid === sessionId) this.tokens.delete(tok);
     }
+    // a session closed mid-hold must not leave the CLI hanging (fail-open)
+    for (const [id, p] of this.pending) if (p.sessionId === sessionId) this.release(id);
   }
 
   /**
@@ -120,6 +280,22 @@ export class HookListener {
     const entry = { hooks: [{ type: 'command', timeout: 10, command }] };
     const hooks: Record<string, unknown> = {};
     for (const ev of STATUS_EVENTS) hooks[ev] = [entry];
+    // PreToolUse gets its own entry: the forwarder waits (4th arg) for a held
+    // decision and prints the hook JSON verdict to stdout; the CLI-side
+    // timeout is a beat above ours so OUR timeout (fail-open '{}') wins.
+    const holdMs = this.opts.holdTimeoutMs ?? 300_000;
+    hooks['PreToolUse'] = [
+      {
+        matcher: PRETOOL_MATCHER,
+        hooks: [
+          {
+            type: 'command',
+            timeout: Math.ceil(holdMs / 1000) + 10,
+            command: `${command} ${holdMs + 5_000}`,
+          },
+        ],
+      },
+    ];
     return { hooks };
   }
 
@@ -145,9 +321,69 @@ export class HookListener {
     req.on('data', (c) => (body += c));
     req.on('end', () => {
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end('{}'); // ack first — status hooks must never hold the CLI (S-06)
+      // PreToolUse for a gated tool HOLDS (E10-03): the response is parked
+      // until the UI decides; everything else acks instantly (S-06).
+      const held = this.maybeHold(sessionId, body, res);
+      if (!held) res.end('{}');
       this.ingest(sessionId, body);
+      if (held) this.opts.manager.apply(sessionId, { kind: 'permission-held' });
     });
+  }
+
+  /** Park a gated PreToolUse response; returns true when held. */
+  private maybeHold(sessionId: string, body: string, res: http.ServerResponse): boolean {
+    let e: Record<string, unknown>;
+    try {
+      e = JSON.parse(body) as Record<string, unknown>;
+    } catch {
+      return false;
+    }
+    if (e.hook_event_name !== 'PreToolUse') return false;
+    if (this.permListeners.size === 0) return false; // nobody to ask — fail open
+    const tool = typeof e.tool_name === 'string' ? e.tool_name : undefined;
+    const input =
+      e.tool_input && typeof e.tool_input === 'object'
+        ? (e.tool_input as Record<string, unknown>)
+        : undefined;
+    if (
+      !shouldHoldPermission(
+        this.opts.autonomyFor?.(sessionId),
+        tool,
+        input,
+        this.opts.cwdFor?.(sessionId)
+      )
+    )
+      return false;
+
+    const requestId = `perm-${++this.reqCounter}`;
+    const timer = setTimeout(() => {
+      // no decision in time: no opinion — the CLI's own TUI prompt takes over
+      this.opts.log.warn('permission hold timed out — failing open to the TUI', {
+        requestId,
+        sessionId,
+      });
+      this.release(requestId);
+    }, this.opts.holdTimeoutMs ?? 300_000);
+    timer.unref?.();
+    const request: PermissionRequest = {
+      requestId,
+      sessionId,
+      tool: tool ?? '',
+      input:
+        e.tool_input && typeof e.tool_input === 'object'
+          ? (e.tool_input as Record<string, unknown>)
+          : {},
+    };
+    this.pending.set(requestId, { res, timer, sessionId, request });
+    this.opts.log.info('permission held', { requestId, sessionId, tool });
+    for (const l of this.permListeners) {
+      try {
+        l(request);
+      } catch (err) {
+        this.opts.log.error('permission listener threw', { error: String(err) });
+      }
+    }
+    return true;
   }
 
   private ingest(sessionId: string, body: string): void {
@@ -188,11 +424,18 @@ let stdin = '';
 try { stdin = fs.readFileSync(0, 'utf8'); } catch {}
 let token = '';
 try { token = fs.readFileSync(tokenPath, 'utf8').trim(); } catch {}
+const waitMs = Number(process.argv[4]) || 3000; // held PreToolUse waits longer
 const req = http.request(
   { host: '127.0.0.1', port: Number(port), path: '/hook', method: 'POST',
     headers: { 'content-type': 'application/json', 'x-switchboard-token': token },
-    timeout: 3000 },
-  (res) => { res.resume(); res.on('end', () => process.exit(0)); }
+    timeout: waitMs },
+  (res) => {
+    // the response body IS the hook verdict (held PreToolUse) — relay it to
+    // stdout so the CLI applies the permissionDecision; '{}' is a no-op
+    let out = '';
+    res.on('data', (d) => (out += d));
+    res.on('end', () => { if (out) process.stdout.write(out); process.exit(0); });
+  }
 );
 req.on('timeout', () => { req.destroy(); process.exit(0); });
 req.on('error', () => process.exit(0));

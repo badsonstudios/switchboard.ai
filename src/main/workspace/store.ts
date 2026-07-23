@@ -53,6 +53,8 @@ export interface NotificationPrefsState {
   enabled: boolean;
   quietStart?: string;
   quietEnd?: string;
+  /** OS toast popups — opt-in, default OFF (Dan 2026-07-22) */
+  osToasts?: boolean;
 }
 
 export interface WorkspaceState {
@@ -78,7 +80,7 @@ const EMPTY: WorkspaceState = {
   window: null,
   layout: null,
   ui: null,
-  notifications: { enabled: true },
+  notifications: { enabled: true, osToasts: false },
   autoTrust: true,
 };
 
@@ -275,6 +277,7 @@ function sanitizeNotifications(n: unknown): NotificationPrefsState {
   const x = n as Partial<NotificationPrefsState>;
   return {
     enabled: x.enabled !== false,
+    osToasts: x.osToasts === true, // default OFF
     ...(typeof x.quietStart === 'string' ? { quietStart: x.quietStart } : {}),
     ...(typeof x.quietEnd === 'string' ? { quietEnd: x.quietEnd } : {}),
   };

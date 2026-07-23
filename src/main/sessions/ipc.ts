@@ -47,6 +47,8 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   // when a session's native id is learned, persist it so the card can
   // --resume that conversation after an app restart
   manager.onNativeSessionId((liveId, nativeId) => {
+    // tighten transcript binding — corrects same-cwd mis-binds (E10 fix)
+    transcripts.setNativeSessionId(liveId, nativeId);
     const cardId = cardOfLive.get(liveId);
     if (!cardId) return;
     const existing = deps.persist.list().find((s) => s.id === cardId);
@@ -60,9 +62,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   manager.onStatusChange((change) => {
     send('sessions:status', change);
-    const fe = deps.feed.ingest(change);
-    if (fe) send('feed:event', fe);
+    deps.feed.ingest(change);
   });
+  // one event per session, latest state wins (Dan 2026-07-22) — push the
+  // whole list on ANY change (adds, replacements, and pure removals)
+  deps.feed.onEvent(() => send('events:changed', deps.feed.list()));
   manager.onSessionExit((e) => send('sessions:exited', e));
   transcripts.onUpdate((snap) => {
     send('sessions:usage', snap);
@@ -74,7 +78,29 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     if (prior) deps.persist.upsert({ ...prior, usage: snap.usage, model: snap.model ?? prior.model });
   });
 
-  ipcMain.handle('feed:list', () => deps.feed.list());
+  ipcMain.handle('events:list', () => deps.feed.list());
+  // "Done." relaxes to "Ready" once the user looks at the session (Dan #4)
+  ipcMain.handle('events:ack', (_e, sessionId: string) => {
+    if (typeof sessionId === 'string') deps.feed.acknowledge(sessionId);
+  });
+
+  // held PreToolUse permissions (E10-03): stream requests to the renderer,
+  // take decisions back. Card id rides along so the UI can find its panel.
+  hooks.onPermissionRequest((r) =>
+    send('sessions:permissionRequest', { ...r, cardId: cardOfLive.get(r.sessionId) })
+  );
+  hooks.onPermissionResolved((requestId) => send('sessions:permissionResolved', { requestId }));
+  // replay for a (re)mounting renderer — a missed push must not park the CLI
+  ipcMain.handle('sessions:pendingPermissions', () =>
+    hooks.pendingRequests().map((r) => ({ ...r, cardId: cardOfLive.get(r.sessionId) }))
+  );
+  ipcMain.handle(
+    'sessions:decidePermission',
+    (_e, requestId: string, decision: string, reason?: string) => {
+      if (typeof requestId !== 'string' || (decision !== 'allow' && decision !== 'deny')) return false;
+      return hooks.decide(requestId, decision, typeof reason === 'string' ? reason.slice(0, 500) : undefined);
+    }
+  );
 
   // Feed view blocks (P2-E12-06): live stream + backlog for attach
   transcripts.onBlock((sessionId, block) => send('sessions:feedBlock', { sessionId, block }));
@@ -153,7 +179,12 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         resumeSessionId: canResume ? prior?.nativeSessionId : undefined,
       });
       cardOfLive.set(record.id, opts.cardId);
-      transcripts.watch(record.id, { cwd: opts.folder });
+      // pass the resumed conversation id: the watcher may adopt ITS OWN
+      // pre-existing transcript (and replay history into the Session view)
+      transcripts.watch(record.id, {
+        cwd: opts.folder,
+        nativeSessionId: canResume ? prior?.nativeSessionId : undefined,
+      });
       deps.persist.upsert({
         id: opts.cardId,
         identity,
@@ -231,6 +262,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
           liveId,
           groupId: card.groupId,
           autoKey: await autoKeyFor(card.identity.folder),
+          taskLabel: card.taskLabel,
         };
       })
     );
@@ -244,6 +276,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   const dropLiveForCard = (cardId: string): void => {
     for (const [liveId, cid] of cardOfLive) {
       if (cid !== cardId) continue;
+      deps.feed.forget(liveId); // its event leaves the Events panel with it
       feeds.get(liveId)?.();
       feeds.delete(liveId);
       hooks.unregisterSession(liveId);
@@ -269,6 +302,15 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   // drop only the live session (restart): keep the record so it can respawn
   ipcMain.handle('sessions:dropLive', (_e, cardId: string) => dropLiveForCard(cardId));
+
+  // per-card autonomy (E10-05): persists to the record; the CLI can't change
+  // mode mid-flight, so it applies on the NEXT spawn/resume of this card
+  ipcMain.handle('sessions:setAutonomy', (_e, cardId: string, autonomy: string) => {
+    if (typeof cardId !== 'string') return;
+    if (!['plan', 'ask', 'auto-edit', 'full-auto'].includes(autonomy)) return;
+    const prior = deps.persist.list().find((s) => s.id === cardId);
+    if (prior) deps.persist.upsert({ ...prior, autonomy: autonomy as PersistedSession['autonomy'] });
+  });
 
   // freeform task label for a card (E7-03), persisted across restarts
   ipcMain.handle('sessions:setTaskLabel', (_e, cardId: string, label: string) => {

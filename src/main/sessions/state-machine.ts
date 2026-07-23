@@ -84,7 +84,11 @@ export function transition(current: SessionStatus, ev: SessionEvent): Transition
     case 'hook':
       switch (ev.event) {
         case 'SessionStart':
-          return to('starting');
+          // the session is up and its TUI is (about to be) ready — that's
+          // IDLE, not "working" (Dan 2026-07-22: three resumed sessions all
+          // claimed to be working at boot). A real turn opens with
+          // UserPromptSubmit.
+          return to('idle');
         case 'UserPromptSubmit':
           return to('working');
         case 'PreToolUse':
@@ -93,7 +97,11 @@ export function transition(current: SessionStatus, ev: SessionEvent): Transition
         case 'Notification': {
           const blob = `${ev.notificationType ?? ''} ${ev.message ?? ''}`;
           if (/permission/i.test(blob)) return to('needs-permission');
-          if (/waiting|input|idle/i.test(blob)) return to('needs-input');
+          // "Claude is waiting for your input" is the CLI's 60s IDLE nag —
+          // nothing actionable is on screen (Dan's phantom needs-input,
+          // 2026-07-22). Idle is calm: no event, no toast.
+          if (/waiting for your input|idle/i.test(blob)) return to('idle');
+          if (/waiting|input/i.test(blob)) return to('needs-input');
           return stay(`notification:${ev.notificationType ?? 'unknown'}`);
         }
         case 'Stop':

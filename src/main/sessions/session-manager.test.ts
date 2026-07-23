@@ -54,7 +54,7 @@ const identity = { title: 't', folder: 'C:/tmp/x', providerId: 'fake' };
 // spike/findings/artifacts/s06/transitions.json: SessionStart ->
 // UserPromptSubmit -> Notification(permission_prompt) -> Stop
 const S06_REAL_CYCLE = [
-  { ev: { kind: 'hook', event: 'SessionStart' } as const, expect: 'starting' },
+  { ev: { kind: 'hook', event: 'SessionStart' } as const, expect: 'idle' }, // ready-not-working (2026-07-22)
   { ev: { kind: 'hook', event: 'UserPromptSubmit' } as const, expect: 'working' },
   {
     ev: { kind: 'hook', event: 'Notification', notificationType: 'permission_prompt', message: 'Claude needs your permission' } as const,
@@ -121,9 +121,9 @@ describe('SessionManager (done-when: observable transitions through the cycle)',
 
     expect(mgr.get(s.id)!.status).toBe('done');
     const t = mgr.transitions(s.id);
-    expect(t.map((x) => x.to)).toEqual(['working', 'needs-permission', 'done']);
+    expect(t.map((x) => x.to)).toEqual(['idle', 'working', 'needs-permission', 'done']);
     expect(t.every((x) => x.sessionId === s.id)).toBe(true);
-    expect(seen).toEqual(['starting->working', 'working->needs-permission', 'needs-permission->done']);
+    expect(seen).toEqual(['starting->idle', 'idle->working', 'working->needs-permission', 'needs-permission->done']);
     // and the log file carries it, sessionId-filterable (E1-05 contract)
     const lines = fs
       .readFileSync(path.join(dir, 'switchboard.log'), 'utf8')
@@ -131,7 +131,7 @@ describe('SessionManager (done-when: observable transitions through the cycle)',
       .split('\n')
       .map((l) => JSON.parse(l))
       .filter((r) => r.sessionId === s.id && r.msg === 'session status');
-    expect(lines.map((r) => r.to)).toEqual(['working', 'needs-permission', 'done']);
+    expect(lines.map((r) => r.to)).toEqual(['idle', 'working', 'needs-permission', 'done']);
   });
 
   it('kill flips to done via exit(0); crash via nonzero', () => {

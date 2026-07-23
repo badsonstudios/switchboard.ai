@@ -47,6 +47,13 @@ export interface LaunchOptions {
   home?: string;
   /** extra env for the main process */
   env?: Record<string, string>;
+  /**
+   * Run the REAL claude CLI instead of the fake provider: copies the
+   * machine's claude credentials (~/.claude.json + ~/.claude/.credentials.json)
+   * into the isolated home. Local-only — CI has no login; gate specs with
+   * SWITCHBOARD_REAL_E2E=1.
+   */
+  realClaude?: boolean;
 }
 
 export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> {
@@ -60,7 +67,32 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.ELECTRON_NO_ATTACH_CONSOLE;
   delete env.NoDefaultCurrentDirectoryInExePath;
-  env.SWITCHBOARD_FAKE_PROVIDER = '1';
+  if (opts.realClaude) {
+    // Claude Code SKIPS writing conversation transcripts when it detects a
+    // test environment (persistence guard found via GH research 2026-07-23;
+    // escape hatch below). Also scrub the Playwright worker markers it may
+    // sniff — they'd leak into the hosted CLI through the app's env.
+    env.TEST_ENABLE_SESSION_PERSISTENCE = '1';
+    delete env.PLAYWRIGHT_TEST; // the test-detection smoking gun (env diff 2026-07-23)
+    delete env.TEST_WORKER_INDEX;
+    delete env.TEST_PARALLEL_INDEX;
+    delete env.PLAYWRIGHT_TEST_BASE_URL;
+    delete env.PWDEBUG;
+    // real CLI in the isolated home: bring the credentials over (copies —
+    // the temp home is deleted afterwards, the real profile is untouched)
+    const realHome = process.env.USERPROFILE ?? process.env.HOME ?? os.homedir();
+    for (const rel of ['.claude.json', path.join('.claude', '.credentials.json')]) {
+      const src = path.join(realHome, rel);
+      const dst = path.join(home, rel);
+      if (fs.existsSync(src) && !fs.existsSync(dst)) {
+        // pre-seeded homes win — lets tests supply a minimal config
+        fs.mkdirSync(path.dirname(dst), { recursive: true });
+        fs.copyFileSync(src, dst);
+      }
+    }
+  } else {
+    env.SWITCHBOARD_FAKE_PROVIDER = '1';
+  }
   // isolate every path the app derives from the profile
   env.HOME = home;
   env.USERPROFILE = home;
@@ -110,6 +142,11 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
       }
     },
   };
+}
+
+/** Switch to the Terminal tab (always present, last — 2026-07-22). */
+export async function showTerminal(window: Page): Promise<void> {
+  await window.getByRole('button', { name: 'Terminal' }).click();
 }
 
 /** A throwaway folder to point a session at (git-repo optional). */

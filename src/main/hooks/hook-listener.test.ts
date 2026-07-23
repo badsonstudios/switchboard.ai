@@ -3,7 +3,7 @@ import fs from 'fs';
 import http from 'http';
 import os from 'os';
 import path from 'path';
-import { HookListener } from './hook-listener';
+import { HookListener, PermissionRequest, shouldHoldPermission } from './hook-listener';
 import { LogSink, createLogger } from '../log/logger';
 import { SessionEvent } from '../sessions/state-machine';
 
@@ -108,6 +108,160 @@ describe('event routing', () => {
   });
 });
 
+describe('PreToolUse hold + decision round-trip (P2-E10-03, §5.16)', () => {
+  // a listener with holds armed: ask-autonomy sessions, short fail-open timeout
+  let held: HookListener;
+  let heldPort: number;
+  let requests: PermissionRequest[];
+  let heldApplied: Array<{ sessionId: string; ev: SessionEvent }>;
+
+  beforeEach(async () => {
+    requests = [];
+    heldApplied = [];
+    held = new HookListener({
+      stateDir: fs.mkdtempSync(path.join(os.tmpdir(), 'sb-hold-')),
+      log: createLogger(new LogSink({ dir }), 'hooks'),
+      manager: {
+        apply: (sessionId, ev) => heldApplied.push({ sessionId, ev }),
+        setNativeSessionId: () => {},
+      },
+      autonomyFor: () => 'ask',
+      holdTimeoutMs: 400,
+    });
+    heldPort = await held.start();
+    held.onPermissionRequest((r) => requests.push(r));
+  });
+
+  afterEach(() => held.stop());
+
+  function postHeld(body: string, token: string): Promise<{ status: number; body: string }> {
+    return new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          host: '127.0.0.1',
+          port: heldPort,
+          path: '/hook',
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-switchboard-token': token },
+        },
+        (res) => {
+          let out = '';
+          res.on('data', (d) => (out += d));
+          res.on('end', () => resolve({ status: res.statusCode ?? 0, body: out }));
+        }
+      );
+      req.on('error', reject);
+      req.end(body);
+    });
+  }
+
+  function heldToken(sessionId: string): string {
+    const { tokenPath } = held.registerSession(sessionId);
+    return fs.readFileSync(tokenPath, 'utf8');
+  }
+
+  const preToolUse = (tool: string) =>
+    JSON.stringify({
+      hook_event_name: 'PreToolUse',
+      tool_name: tool,
+      tool_input: { file_path: 'C:/x.ts', old_string: 'a', new_string: 'b' },
+    });
+
+  it('holds a gated call until allow; verdict JSON returns to the hook', async () => {
+    const t = heldToken('s1');
+    const pending = postHeld(preToolUse('Edit'), t);
+    await new Promise((r) => setTimeout(r, 100));
+    // parked: the request surfaced, the session flipped to needs-permission
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ tool: 'Edit', sessionId: 's1' });
+    expect(requests[0].input).toMatchObject({ file_path: 'C:/x.ts' });
+    expect(heldApplied.some((a) => a.ev.kind === 'permission-held')).toBe(true);
+
+    expect(held.decide(requests[0].requestId, 'allow')).toBe(true);
+    const res = await pending;
+    const verdict = JSON.parse(res.body).hookSpecificOutput;
+    expect(verdict).toMatchObject({ hookEventName: 'PreToolUse', permissionDecision: 'allow' });
+    expect(heldApplied.some((a) => a.ev.kind === 'permission-resolved')).toBe(true);
+  });
+
+  it('deny returns a deny verdict with the reason', async () => {
+    const t = heldToken('s1');
+    const pending = postHeld(preToolUse('Bash'), t);
+    await new Promise((r) => setTimeout(r, 100));
+    held.decide(requests[0].requestId, 'deny', 'not on my watch');
+    const verdict = JSON.parse((await pending).body).hookSpecificOutput;
+    expect(verdict).toMatchObject({ permissionDecision: 'deny', permissionDecisionReason: 'not on my watch' });
+  });
+
+  it('timeout fails OPEN: {} response, so the CLI runs its own TUI prompt', async () => {
+    const t = heldToken('s1');
+    const res = await postHeld(preToolUse('Write'), t); // resolves via the 400ms timeout
+    expect(res.body).toBe('{}');
+    // a late decide on the dead request is refused
+    expect(held.decide(requests[0].requestId, 'allow')).toBe(false);
+  });
+
+  it('non-gated calls are never held (instant {} ack)', async () => {
+    const t = heldToken('s1');
+    const res = await postHeld(preToolUse('Read'), t); // Read isn't gated for ask
+    expect(res.body).toBe('{}');
+    expect(requests).toHaveLength(0);
+  });
+
+  it('pendingRequests() replays in-flight holds; empties after decide (P0#3)', async () => {
+    const t = heldToken('s1');
+    const pending = postHeld(preToolUse('Edit'), t);
+    await new Promise((r) => setTimeout(r, 100));
+    const replay = held.pendingRequests();
+    expect(replay).toHaveLength(1);
+    expect(replay[0]).toMatchObject({ tool: 'Edit', sessionId: 's1' });
+    held.decide(replay[0].requestId, 'allow');
+    await pending;
+    expect(held.pendingRequests()).toHaveLength(0);
+  });
+
+  it('unregisterSession releases in-flight holds (fail-open)', async () => {
+    const t = heldToken('s1');
+    const pending = postHeld(preToolUse('Edit'), t);
+    await new Promise((r) => setTimeout(r, 100));
+    held.unregisterSession('s1');
+    expect((await pending).body).toBe('{}');
+  });
+});
+
+describe('shouldHoldPermission policy', () => {
+  it('gates by autonomy exactly as the CLI would prompt', () => {
+    expect(shouldHoldPermission('ask', 'Edit')).toBe(true);
+    expect(shouldHoldPermission('ask', 'Read')).toBe(false);
+    expect(shouldHoldPermission('auto-edit', 'Edit')).toBe(false);
+    expect(shouldHoldPermission('auto-edit', 'Bash')).toBe(true);
+    expect(shouldHoldPermission('full-auto', 'Bash')).toBe(false);
+    expect(shouldHoldPermission(undefined, 'Bash')).toBe(false); // unknown: fail open
+  });
+
+  it('plan NEVER holds — the CLI\'s own plan enforcement is authoritative (P0#1, Option A)', () => {
+    expect(shouldHoldPermission('plan', 'Edit')).toBe(false);
+    expect(shouldHoldPermission('plan', 'Bash')).toBe(false);
+    expect(shouldHoldPermission('plan', 'PowerShell')).toBe(false);
+    expect(shouldHoldPermission('plan', 'Read', { file_path: 'C:/elsewhere/x' }, 'C:/proj')).toBe(false);
+  });
+
+  it('gates the Windows PowerShell tool like Bash (2026-07-22 probe)', () => {
+    expect(shouldHoldPermission('ask', 'PowerShell')).toBe(true);
+    expect(shouldHoldPermission('auto-edit', 'PowerShell')).toBe(true);
+    expect(shouldHoldPermission('full-auto', 'PowerShell')).toBe(false);
+  });
+
+  it('read tools hold ONLY when they leave the session folder', () => {
+    const cwd = 'C:/proj/app';
+    expect(shouldHoldPermission('ask', 'Read', { file_path: 'C:/proj/app/src/x.ts' }, cwd)).toBe(false);
+    expect(shouldHoldPermission('ask', 'Read', { file_path: 'C:/Users/dan/Downloads/w2.pdf' }, cwd)).toBe(true);
+    expect(shouldHoldPermission('auto-edit', 'Glob', { path: 'C:/elsewhere' }, cwd)).toBe(true);
+    expect(shouldHoldPermission('ask', 'Grep', {}, cwd)).toBe(false); // no target = stays in cwd
+    expect(shouldHoldPermission('full-auto', 'Read', { file_path: 'C:/elsewhere/x' }, cwd)).toBe(false);
+  });
+});
+
 describe('buildHookSettings', () => {
   it('produces a valid injectable hook config with token-by-path (S-03)', () => {
     const settings = listener.buildHookSettings('s9') as {
@@ -120,6 +274,17 @@ describe('buildHookSettings', () => {
       expect(h.command).toContain('hook-forwarder.cjs');
       expect(h.command).toContain('hook-token'); // path, not the token itself
       expect(h.command).not.toMatch(/[0-9a-f]{32}/); // no raw token on argv
+    }
+    // PreToolUse: its own entry — long-wait forwarder, CLI timeout above ours,
+    // and a MATCHER (required for tool hooks; its absence silently disabled
+    // approvals in production — Dan 2026-07-21). Must cover the Windows shell
+    // tool and the read tools the out-of-cwd rule gates.
+    const preEntry = settings.hooks['PreToolUse'][0] as { matcher?: string; hooks: Array<{ command: string; timeout: number }> };
+    const pre = preEntry.hooks[0];
+    expect(pre.timeout).toBeGreaterThan(60);
+    expect(pre.command).toMatch(/hook-forwarder\.cjs.*\d{4,}$/); // waitMs argv
+    for (const tool of ['Bash', 'PowerShell', 'Write', 'Edit', 'Read', 'Glob']) {
+      expect(preEntry.matcher).toContain(tool);
     }
     expect(fs.existsSync(path.join(dir, 'hook-forwarder.cjs'))).toBe(true);
     expect(fs.existsSync(path.join(dir, 's9', 'hook-token'))).toBe(true);

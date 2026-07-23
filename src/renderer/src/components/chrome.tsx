@@ -77,6 +77,10 @@ export interface RailSession {
   groupId?: string;
   /** repo/folder auto-group key (E12-05); same key = same emergent group */
   autoKey?: string;
+  /** the live session under this card, when running (events map by this) */
+  liveId?: string;
+  /** freeform task label (shown under the title in the Events panel) */
+  taskLabel?: string;
 }
 
 export interface RailGroup {
@@ -287,7 +291,15 @@ export function SessionsRail(props: {
         const members = grouped.get(g.id) ?? [];
         const isCollapsed = collapsed.has(g.id);
         return (
-          <div key={g.id}>
+          <div
+            key={g.id}
+            style={{
+              // groups read as sections — ruled off from each other (Dan #8)
+              borderBlockEnd: '1px solid var(--border)',
+              marginBlockEnd: 6,
+              paddingBlockEnd: 4,
+            }}
+          >
             <div
               onClick={() => toggleCollapsed(g.id)}
               onDragOver={(e) => {
