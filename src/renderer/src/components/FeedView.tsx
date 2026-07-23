@@ -598,13 +598,17 @@ function Composer({
     const text = draft.replace(/\r\n/g, '\n').trimEnd();
     if (!text) return;
     // multiline goes as one bracketed paste so the TUI treats it as a single
-    // prompt; built from char codes -- no control bytes in source
+    // prompt; built from char codes -- no control bytes in source.
+    // The Enter is a SEPARATE, delayed write: text+CR in one chunk registers
+    // as a paste and never submits (S-03 finding — refound live 2026-07-22
+    // when real-claude composer prompts sat unsubmitted).
     const ESC = String.fromCharCode(27);
     const CR = String.fromCharCode(13);
     const payload = text.includes(String.fromCharCode(10))
-      ? ESC + '[200~' + text + ESC + '[201~' + CR
-      : text + CR;
+      ? ESC + '[200~' + text + ESC + '[201~'
+      : text;
     window.switchboard.pty.input(sessionId, payload);
+    setTimeout(() => window.switchboard.pty.input(sessionId, CR), 75);
     setDraft('');
     box.current?.focus();
   };

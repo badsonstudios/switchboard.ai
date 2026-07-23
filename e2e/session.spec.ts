@@ -56,9 +56,13 @@ test.describe('a session card', () => {
     a = await launchApp({ seedFolder: folder });
     const { window } = a;
     await expect(window.getByText(name).first()).toBeVisible({ timeout: 25_000 });
+    // ✕ CONFIRMS before ending a session (Dan 2026-07-22): declining keeps it
+    window.once('dialog', (d) => void d.dismiss());
     await window.getByTitle('Close (ends the session)').click();
-    // card gone from the grid AND the record forgotten (rail empties);
-    // (a "closed" toast may briefly mention the name — that's fine)
+    await expect(window.getByTitle('Close (ends the session)')).toBeVisible();
+    // accepting closes: card gone from the grid AND the record forgotten
+    window.once('dialog', (d) => void d.accept());
+    await window.getByTitle('Close (ends the session)').click();
     await expect(window.getByTitle('Close (ends the session)')).toHaveCount(0, { timeout: 15_000 });
     await expect(window.locator('nav').getByText(name)).toHaveCount(0);
     await expect(window.locator('nav').getByText('No sessions yet')).toBeVisible();
@@ -159,25 +163,20 @@ test.describe('a session card', () => {
     await expect(window.getByText(path.basename(folder2)).first()).toBeVisible({ timeout: 20_000 });
   });
 
-  test('default strip is Session·Changes·History; Terminal shows via the ⋯ menu (E10-01)', async () => {
+  test('strip is Session·Changes·History·Terminal, Terminal LAST and always present (2026-07-22)', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const { window } = a;
     await expect(window.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-    // §5.10 canonical strip with the Terminal HIDDEN by default (E10-01)
     await expect(window.getByRole('button', { name: 'Session', exact: true })).toBeVisible();
     await expect(window.getByRole('button', { name: 'Changes' })).toBeVisible();
     await expect(window.getByText('History', { exact: true })).toBeVisible(); // "soon" tab
-    await expect(window.getByRole('button', { name: 'Terminal' })).toHaveCount(0);
-    // ⋯ menu shows it; switching to Changes and back leaves it usable
-    await showTerminal(window);
+    await expect(window.getByRole('button', { name: 'Terminal' })).toBeVisible();
+    // switching Terminal -> Changes -> Terminal leaves it usable
+    await window.getByRole('button', { name: 'Terminal' }).click();
     await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 10_000 });
     await window.getByRole('button', { name: 'Changes' }).click();
     await window.getByRole('button', { name: 'Terminal' }).click();
     await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 10_000 });
-    // hide it again from the same menu
-    await window.getByTitle('Session menu').click();
-    await window.getByRole('button', { name: 'Hide Terminal' }).click();
-    await expect(window.getByRole('button', { name: 'Terminal' })).toHaveCount(0);
   });
 });

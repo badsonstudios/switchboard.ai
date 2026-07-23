@@ -47,6 +47,13 @@ export interface LaunchOptions {
   home?: string;
   /** extra env for the main process */
   env?: Record<string, string>;
+  /**
+   * Run the REAL claude CLI instead of the fake provider: copies the
+   * machine's claude credentials (~/.claude.json + ~/.claude/.credentials.json)
+   * into the isolated home. Local-only — CI has no login; gate specs with
+   * SWITCHBOARD_REAL_E2E=1.
+   */
+  realClaude?: boolean;
 }
 
 export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> {
@@ -60,7 +67,21 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.ELECTRON_NO_ATTACH_CONSOLE;
   delete env.NoDefaultCurrentDirectoryInExePath;
-  env.SWITCHBOARD_FAKE_PROVIDER = '1';
+  if (opts.realClaude) {
+    // real CLI in the isolated home: bring the credentials over (copies —
+    // the temp home is deleted afterwards, the real profile is untouched)
+    const realHome = process.env.USERPROFILE ?? process.env.HOME ?? os.homedir();
+    for (const rel of ['.claude.json', path.join('.claude', '.credentials.json')]) {
+      const src = path.join(realHome, rel);
+      if (fs.existsSync(src)) {
+        const dst = path.join(home, rel);
+        fs.mkdirSync(path.dirname(dst), { recursive: true });
+        fs.copyFileSync(src, dst);
+      }
+    }
+  } else {
+    env.SWITCHBOARD_FAKE_PROVIDER = '1';
+  }
   // isolate every path the app derives from the profile
   env.HOME = home;
   env.USERPROFILE = home;
@@ -112,10 +133,8 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   };
 }
 
-/** Surface the hidden-by-default Terminal tab (E10-01) and switch to it. */
+/** Switch to the Terminal tab (always present, last — 2026-07-22). */
 export async function showTerminal(window: Page): Promise<void> {
-  await window.getByTitle('Session menu').click();
-  await window.getByRole('button', { name: 'Show Terminal' }).click();
   await window.getByRole('button', { name: 'Terminal' }).click();
 }
 

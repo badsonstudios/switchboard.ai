@@ -46,6 +46,7 @@
     "menuIcon": "⋯",
     "closeTab": "Close (ends the session)",
     "closeTabIcon": "✕",
+    "closeConfirm": "Close \"{title}\"? This ends the session and removes the card.",
     "viewTerminal": "Terminal",
     "viewDiff": "Changes",
     "viewSession": "Session",

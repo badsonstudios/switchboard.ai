@@ -314,6 +314,24 @@ describe('positive evidence required to claim (Dan 2026-07-22: summary-first fil
   });
 });
 
+describe('huge unparseable head lines (file-history-snapshot) — Dan 2026-07-22', () => {
+  it('binds by FILENAME once hooks deliver the id, even with an unreadable head', async () => {
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-big.jsonl');
+    // a first line far bigger than the head window, then real content
+    writeLines(file, [
+      JSON.stringify({ type: 'file-history-snapshot', blob: 'x'.repeat(300_000) }),
+      entry({ sessionId: 'native-big', message: { content: [{ type: 'text', text: 'hi there' }] } }),
+    ]);
+    await sleep(120);
+    expect(watcher.snapshot('s1')!.bound).toBe(false); // no evidence yet
+    watcher.setNativeSessionId('s1', 'native-big'); // hooks deliver the id
+    await sleep(150);
+    expect(watcher.snapshot('s1')!.bound).toBe(true);
+    expect(watcher.blocks('s1').some((b) => b.text === 'hi there')).toBe(true);
+  });
+});
+
 describe('same-cwd sessions never steal each other\'s transcript (E10 fix)', () => {
   it('two sessions in one folder: neither binds until hooks deliver ids, then each gets its own', async () => {
     watcher.watch('s1', { cwd });

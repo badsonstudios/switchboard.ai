@@ -84,7 +84,11 @@ export function transition(current: SessionStatus, ev: SessionEvent): Transition
     case 'hook':
       switch (ev.event) {
         case 'SessionStart':
-          return to('starting');
+          // the session is up and its TUI is (about to be) ready — that's
+          // IDLE, not "working" (Dan 2026-07-22: three resumed sessions all
+          // claimed to be working at boot). A real turn opens with
+          // UserPromptSubmit.
+          return to('idle');
         case 'UserPromptSubmit':
           return to('working');
         case 'PreToolUse':

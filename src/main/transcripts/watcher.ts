@@ -385,7 +385,14 @@ export class TranscriptWatcher {
     // a known-wrong id or wrong cwd is always disqualifying
     if (w.nativeSessionId && head.sessionId && head.sessionId !== w.nativeSessionId) return false;
     if (typeof head.cwd === 'string' && !sameFolder(head.cwd, w.cwd)) return false;
-    const idMatch = !!w.nativeSessionId && head.sessionId === w.nativeSessionId;
+    // id evidence: a matching head sessionId, or the FILENAME itself once the
+    // hooks told us our id — head lines can be unparseably huge (a fresh
+    // transcript may open with a file-history-snapshot line bigger than any
+    // sane read window; Dan's empty PLUSNative session, 2026-07-22)
+    const idMatch =
+      !!w.nativeSessionId &&
+      (head.sessionId === w.nativeSessionId ||
+        path.basename(full) === `${w.nativeSessionId}.jsonl`);
     if (!idMatch) {
       // without an id match we need a positive cwd match — absence of
       // evidence is NOT evidence the file is ours
@@ -408,7 +415,7 @@ export class TranscriptWatcher {
     let text: string;
     try {
       const fd = fs.openSync(full, 'r');
-      const buf = Buffer.alloc(16_384);
+      const buf = Buffer.alloc(262_144); // snapshot-sized first lines are real
       const n = fs.readSync(fd, buf, 0, buf.length, 0);
       fs.closeSync(fd);
       text = buf.toString('utf8', 0, n);
@@ -416,20 +423,19 @@ export class TranscriptWatcher {
       return null;
     }
     const out: { cwd?: string; sessionId?: string } = {};
-    let sawParseable = false;
     for (const line of text.split('\n').slice(0, 25)) {
       if (!line.trim()) continue;
       try {
         const e = JSON.parse(line) as { cwd?: unknown; sessionId?: unknown };
-        sawParseable = true;
         if (out.cwd === undefined && typeof e.cwd === 'string') out.cwd = e.cwd;
         if (out.sessionId === undefined && typeof e.sessionId === 'string') out.sessionId = e.sessionId;
         if (out.cwd !== undefined && out.sessionId !== undefined) break;
       } catch {
-        /* partial trailing line or junk — keep scanning */
+        /* oversized/partial line or junk — keep scanning; an empty result
+           still lets a filename id-match bind (claim() decides) */
       }
     }
-    return sawParseable ? out : null;
+    return out;
   }
 
   private drain(w: WatchedSession, full: string, tail: { offset: number; buf: string }): void {

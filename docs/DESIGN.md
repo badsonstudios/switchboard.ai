@@ -375,9 +375,12 @@ or sits idle awaiting input, and `Stop` when it finishes. On top:
 - Quiet hours / do-not-disturb; missed-events digest per session.
 - **Per-session "notify when done" (owner request 2026-07-22):** a checkbox on
   the session card — done-toasts only for sessions the user opted into (long
-  tasks), because a toast for every short turn is noise. Interim behavior
-  until the rules engine lands: OS toasts are suppressed entirely while the
-  app window is focused (crashes always toast).
+  tasks), because a toast for every short turn is noise.
+- **The default signal model (owner decision 2026-07-22):** attention events
+  produce a **sound + an Events-panel item + a taskbar flash** (when
+  backgrounded). **OS toast popups are OFF by default** — an opt-in
+  Settings/Options switch (`osToasts`; stored in notification prefs today,
+  settings UI ships with E14's rules engine).
 
 **Reducing prompts at the source (autonomy profiles):** per-session spawn profile =
 `--permission-mode` + allowed tools + extra dirs, presented as a slider:
@@ -409,12 +412,11 @@ Each session offers two synchronized views of the same underlying session:
   `/` pops a slash-command autocomplete — CLI built-ins + the §5.19
   registry's skills/commands — owner request 2026-07-22). In-app
   approvals (§5.16) render inline here as a review bar.
-- **Terminal** (xterm.js + PTY): the real CLI — **hidden by default**
-  (owner decision 2026-07-21: when the Session view works, the Terminal is
-  rarely touched). Reachable via the card's ⋯ menu / a per-session toggle,
-  and the Session view's "continue in Terminal" chip surfaces it on demand
-  when the CLI is in a raw TUI state (menus, /login, trust prompts). It
-  still exists for every session — hidden, never gone.
+- **Terminal** (xterm.js + PTY): the real CLI — always present as the
+  **LAST tab** (owner reversal 2026-07-22: one day of dogfooding showed
+  hide-by-default was friction, not calm — "I like having a terminal").
+  The Session view's "continue in Terminal" chip jumps there when the CLI
+  is in a raw TUI state (menus, /login, trust prompts).
 
 **Block presentation (v2 — modeled on the Claude Code VS Code extension;
 owner screenshot 2026-07-21).** The reference look: a clean timeline with a
@@ -469,9 +471,8 @@ separate features:
   log view; §5.7).
 - **Inspector** — the §5.19 capability pane (Skills / Agents / MCP / Commands),
   present when opened.
-- **Terminal** — the real CLI; **not in the default strip** (2026-07-21) —
-  shown via the ⋯ menu / per-session toggle or the "continue in Terminal"
-  chip, and once shown it stays in the strip for that session until hidden.
+- **Terminal** — the real CLI, always present, **last in the strip**
+  (2026-07-22 reversal of the one-day hide-by-default experiment).
 
 Rules: active tab is per-session and remembered across restarts (§5.25) — the
 Terminal's shown/hidden state included. Any

@@ -36,6 +36,12 @@ numbers (latency, CPU, memory) where the item asks for them.
 build + check:pty on Windows/macOS/Linux; `e2e` job = Playwright on
 Windows + Linux (xvfb). Red CI blocks merge.
 
+**Opt-in REAL-claude e2e lane (local only, 2026-07-22):**
+`SWITCHBOARD_REAL_E2E=1 npx playwright test e2e/real-claude.spec.ts` — copies
+the machine's claude credentials into the isolated temp home and drives a
+real model turn through the Session tab (composer → response blocks). Skipped
+everywhere else; CI stays fake-provider.
+
 **The local pre-commit gate MUST mirror the CI matrix:** `npm run lint &&
 npm run typecheck && npm test && npm run build && npm run e2e`. Skipping
 `typecheck` locally shipped 6 TS errors to CI on 2026-07-21 — electron-vite's

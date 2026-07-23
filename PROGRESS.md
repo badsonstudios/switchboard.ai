@@ -54,6 +54,34 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-23 — **Dan's round 3 (9 items) + a REAL bug the new test lane
+  caught.** (a) Stuck "Claude is working" at boot: the card hardcoded
+  status 'working' on spawn AND SessionStart mapped to 'starting' —
+  now spawn starts at 'starting' and SessionStart → **idle** (resumed
+  sessions read idle). (b) Tab ✕ now CONFIRMS before closing and sits
+  up/right, away from the click path (e2e: dismiss keeps, accept closes).
+  (c) Signal model per Dan: **beep always** on attention events + Events
+  item + taskbar flash when backgrounded; **OS toasts OFF by default**
+  behind new `osToasts` pref (DESIGN §5.9 settings note; E14 ships the UI).
+  (d) Events already clear on close (feed.forget, landed yesterday).
+  (e) **Terminal reversal**: always present, LAST tab (hide-by-default
+  lasted one day; DESIGN §5.10 updated, menu toggle removed). (f) Empty
+  PLUSNative session root-caused via the new lane: **the composer sent
+  text+CR as ONE PTY write → the TUI treats it as a paste and never
+  submits** (S-03 finding, refound live); Enter is now a separate delayed
+  write. Also: 256KB head window + filename id-match for snapshot-first
+  transcripts. (g) **Opt-in real-claude Playwright lane**
+  (SWITCHBOARD_REAL_E2E=1, e2e/real-claude.spec.ts; fixture copies creds
+  into the temp home) — it caught (f) on its first run. KNOWN ANOMALY:
+  claude 2.1.218 writes session-env/memory but NO conversation .jsonl
+  under an isolated temp home (repro'd; -p works; real-home interactive
+  works) — lane asserts via Terminal until understood. (h) Phantom
+  needs-permission spam: almost certainly the old 60s hold-timeout loop
+  (each gated call → unseen bar → timeout → CLI TUI prompt → permission
+  Notification → event) + append-only events; 300s + inline bar + one-
+  event-per-session should end it — if it recurs, the app log pins it.
+  149 unit + 28 e2e green.
+
 - 2026-07-22 — **Dan's round 2 (5 items).** (#1) `<local-command-*>`
   wrappers + isMeta transcript lines no longer render as prompt pills (the
   /compact stdout with raw ANSI etc.); the startup /compact itself is CLI
