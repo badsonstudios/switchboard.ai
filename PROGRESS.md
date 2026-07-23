@@ -54,6 +54,23 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-23 — **Transcript-in-sandbox anomaly SOLVED (root cause
+  characterized; upstream CLI bug).** Dan asked for online research +
+  systematic isolation. Web findings suggested test-env detection /
+  kill-timing / config — all DISPROVEN empirically. Isolation matrix:
+  `-p` + temp home writes; `-p` + full Playwright-worker env + temp home
+  writes; app + minimal .claude.json + temp home doesn't;
+  TEST_ENABLE_SESSION_PERSISTENCE / PLAYWRIGHT_TEST scrubs don't help;
+  **interactive TUI via node-pty + temp home OUTSIDE the app doesn't
+  write either** (scratchpad tui-probe.cjs) — and the file is NOT in the
+  real profile. Verdict: **claude 2.1.218 interactive mode simply never
+  persists the conversation .jsonl when HOME/USERPROFILE is redirected**
+  (print mode does; real home does). Zero switchboard code involved. The
+  real-claude e2e lane keeps asserting via Terminal; repro recipe is
+  solid bug-report material for anthropics/claude-code (needs Dan's
+  go-ahead to file publicly). Fixture keeps the env scrubs (hygiene) +
+  pre-seeded-home-wins copy rule.
+
 - 2026-07-23 — **Session view opens at the BOTTOM of a restored history**
   (Dan's find: restored cards landed at the top). Tail-pinning now sets
   scrollTop directly after a layout frame instead of scrollIntoView, on

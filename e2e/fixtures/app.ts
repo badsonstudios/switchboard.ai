@@ -68,13 +68,24 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   delete env.ELECTRON_NO_ATTACH_CONSOLE;
   delete env.NoDefaultCurrentDirectoryInExePath;
   if (opts.realClaude) {
+    // Claude Code SKIPS writing conversation transcripts when it detects a
+    // test environment (persistence guard found via GH research 2026-07-23;
+    // escape hatch below). Also scrub the Playwright worker markers it may
+    // sniff — they'd leak into the hosted CLI through the app's env.
+    env.TEST_ENABLE_SESSION_PERSISTENCE = '1';
+    delete env.PLAYWRIGHT_TEST; // the test-detection smoking gun (env diff 2026-07-23)
+    delete env.TEST_WORKER_INDEX;
+    delete env.TEST_PARALLEL_INDEX;
+    delete env.PLAYWRIGHT_TEST_BASE_URL;
+    delete env.PWDEBUG;
     // real CLI in the isolated home: bring the credentials over (copies —
     // the temp home is deleted afterwards, the real profile is untouched)
     const realHome = process.env.USERPROFILE ?? process.env.HOME ?? os.homedir();
     for (const rel of ['.claude.json', path.join('.claude', '.credentials.json')]) {
       const src = path.join(realHome, rel);
-      if (fs.existsSync(src)) {
-        const dst = path.join(home, rel);
+      const dst = path.join(home, rel);
+      if (fs.existsSync(src) && !fs.existsSync(dst)) {
+        // pre-seeded homes win — lets tests supply a minimal config
         fs.mkdirSync(path.dirname(dst), { recursive: true });
         fs.copyFileSync(src, dst);
       }
