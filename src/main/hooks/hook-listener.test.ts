@@ -253,12 +253,20 @@ describe('shouldHoldPermission policy', () => {
   });
 
   it('read tools hold ONLY when they leave the session folder', () => {
-    const cwd = 'C:/proj/app';
-    expect(shouldHoldPermission('ask', 'Read', { file_path: 'C:/proj/app/src/x.ts' }, cwd)).toBe(false);
-    expect(shouldHoldPermission('ask', 'Read', { file_path: 'C:/Users/dan/Downloads/w2.pdf' }, cwd)).toBe(true);
-    expect(shouldHoldPermission('auto-edit', 'Glob', { path: 'C:/elsewhere' }, cwd)).toBe(true);
+    // platform-real paths: 'C:/...' is a RELATIVE path on POSIX, and the
+    // fixed isOutsideCwd resolves relative targets against the session
+    // folder (review P1 #10) — so drive-letter literals only mean
+    // "absolute" on Windows
+    const win = process.platform === 'win32';
+    const cwd = win ? 'C:/proj/app' : '/proj/app';
+    const inside = win ? 'C:/proj/app/src/x.ts' : '/proj/app/src/x.ts';
+    const downloads = win ? 'C:/Users/dan/Downloads/w2.pdf' : '/home/dan/Downloads/w2.pdf';
+    const elsewhere = win ? 'C:/elsewhere' : '/elsewhere';
+    expect(shouldHoldPermission('ask', 'Read', { file_path: inside }, cwd)).toBe(false);
+    expect(shouldHoldPermission('ask', 'Read', { file_path: downloads }, cwd)).toBe(true);
+    expect(shouldHoldPermission('auto-edit', 'Glob', { path: elsewhere }, cwd)).toBe(true);
     expect(shouldHoldPermission('ask', 'Grep', {}, cwd)).toBe(false); // no target = stays in cwd
-    expect(shouldHoldPermission('full-auto', 'Read', { file_path: 'C:/elsewhere/x' }, cwd)).toBe(false);
+    expect(shouldHoldPermission('full-auto', 'Read', { file_path: `${elsewhere}/x` }, cwd)).toBe(false);
   });
 });
 

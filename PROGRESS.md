@@ -36,10 +36,11 @@ a "[Dan eyeball]" note.**
 
 ## Blockers / open questions for Dan
 
-- **[user] "Red build blocks merge" (#13) can now be enforced** — the repo
-  went public (2026-07-23), so branch protection/rulesets are available on
-  the free plan. Say the word and I'll set up a ruleset requiring green CI
-  before merge to main.
+- ~~"Red build blocks merge" (#13)~~ **RESOLVED 2026-07-23**: repo is public
+  → ruleset "main: green CI required to merge" (id 19646817) is ACTIVE on
+  the default branch — all 5 CI checks required, force-pushes and branch
+  deletion blocked. No bypass actors (Dan can edit the ruleset in Settings →
+  Rules if an escape hatch is ever needed).
 - **Loose ends deferred** (not blocking): full-auto → bypass footgun (offer:
   remap to a safer mode), 9MB Monaco renderer bundle (slim it). Say the word.
 - **[user] ClaudeMon architecture read (OQ #8) is due.** `03-later-phases.md`
