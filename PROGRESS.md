@@ -5,15 +5,14 @@
 
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10 merged; E12 merged;
 E9/E11/E13/E14 still outlines)
-**In progress:** nothing mid-flight — review P1 follow-up COMPLETE on
-`fix/review-p1-followup` (PR open): all of P1 #6–#15 + P1-test #16–#17
-fixed + tested (see the annotated review doc). Remaining review scope:
-P2 #18–#21 + P3 cleanups (file issues or a follow-up pass; P3 #31 was
-folded into #6).
-**Next up (needs Dan):** merge the P1 follow-up PR when CI is green ·
-retest list: grid-drag between groups (still unverified), phantom
-needs-permission recurrence check on current build.
-**Branch:** fix/review-p1-followup
+**In progress:** nothing mid-flight. Review P1 follow-up **MERGED to main
+(PR #66, ec40c0b)** — all of P1 #6–#15 + P1-test #16–#17 fixed + tested
+(annotated review doc). Remaining review scope: P2 #18–#21 + P3 cleanups
+(file issues or a follow-up pass; P3 #31 was folded into #6).
+**Next up (needs Dan):** retest list on the merged build: grid-drag
+between groups (still unverified), phantom needs-permission recurrence.
+Then `/pm plan` to expand the next Phase 2 epic (E9/E11/E13/E14).
+**Branch:** main
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
 `npm test` (unit) · `npm run check:*` (local real-claude proofs) · `npm run e2e`
@@ -49,6 +48,14 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-23 — **PR #66 MERGED to main (ec40c0b)** — review P1 follow-up,
+  all 5 CI jobs green (one cross-platform test fix en route: the read-tool
+  policy test used 'C:/...' literals, which are RELATIVE on POSIX — the
+  fixed isOutsideCwd correctly called them inside; per-platform paths now).
+  Also NEW: ruleset "main: green CI required to merge" ACTIVE (repo public
+  → rulesets free) — all 5 checks required server-side, force-push +
+  deletion blocked. #13's manual merge gate is now enforced by GitHub.
 
 - 2026-07-23 — **Review P1 follow-up COMPLETE (#6–#17)** on
   `fix/review-p1-followup`. Watcher trio: (#6) once hooks deliver the native
