@@ -86,6 +86,31 @@ test.describe('Feed view (E12-06)', () => {
     await expect(w.getByText('Read', { exact: true })).toBeVisible();
   });
 
+  test('a long history opens scrolled to the BOTTOM (Dan 2026-07-23)', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
+
+    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
+    fs.mkdirSync(dir, { recursive: true });
+    const line = (o: Record<string, unknown>) =>
+      JSON.stringify({ sessionId: 'native-scroll', cwd: folder, timestamp: new Date().toISOString(), ...o }) + '\n';
+    let body = '';
+    for (let i = 1; i <= 60; i++) {
+      body += line({
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: `SCROLL_BLOCK_${i}` }] },
+      });
+    }
+    fs.writeFileSync(path.join(dir, 'native-scroll.jsonl'), body);
+
+    // the tail is on screen, the head is not — we're pinned to the bottom
+    await expect(w.getByText('SCROLL_BLOCK_60')).toBeVisible({ timeout: 15_000 });
+    await expect(w.getByText('SCROLL_BLOCK_60')).toBeInViewport();
+    await expect(w.getByText('SCROLL_BLOCK_1', { exact: true })).not.toBeInViewport();
+  });
+
   test('composer autonomy chip cycles and survives a relaunch (E10-05)', async () => {
     const folder = tempProjectFolder();
     const title = folder.split(/[\\/]/).pop()!;

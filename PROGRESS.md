@@ -54,6 +54,12 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-23 — **Session view opens at the BOTTOM of a restored history**
+  (Dan's find: restored cards landed at the top). Tail-pinning now sets
+  scrollTop directly after a layout frame instead of scrollIntoView, on
+  backlog load / each streamed block / visibility flips. e2e: 60-block
+  history → last block in viewport, first block not. 149 unit + 29 e2e.
+
 - 2026-07-23 — **Dan's round 3 (9 items) + a REAL bug the new test lane
   caught.** (a) Stuck "Claude is working" at boot: the card hardcoded
   status 'working' on spawn AND SessionStart mapped to 'starting' —

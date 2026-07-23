@@ -302,8 +302,18 @@ export function FeedView(props: {
     };
   }, [props.sessionId]);
 
+  // Stay glued to the tail: on backlog load, on every streamed block, and
+  // when the card becomes visible again — unless the user scrolled up.
+  // Direct scrollTop after a layout frame; scrollIntoView proved flaky for
+  // restored sessions with big replayed histories (Dan 2026-07-23: opening
+  // a restored card landed at the TOP).
   React.useEffect(() => {
-    if (props.visible && pinned.current) bottom.current?.scrollIntoView({ block: 'end' });
+    if (!props.visible || !pinned.current) return;
+    const id = requestAnimationFrame(() => {
+      const el = scroller.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(id);
   }, [blocks, props.visible]);
 
   const visibleBlocks = blocks.filter((b) => blockVisible(b, verbosity));
