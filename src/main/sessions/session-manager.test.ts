@@ -94,6 +94,20 @@ describe('state machine vs the recorded real cycle (S-06 artifact)', () => {
     expect(transition('needs-permission', { kind: 'permission-resolved' }).status).toBe('working');
   });
 
+  it('auto-compact SessionStart never interrupts a turn (review P1 #11)', () => {
+    // the CLI fires SessionStart(source:'compact') MID-TURN during
+    // auto-compaction; the turn resumes right after — status must hold
+    expect(transition('working', { kind: 'hook', event: 'SessionStart', source: 'compact' })).toMatchObject({
+      status: 'working',
+      changed: false,
+      note: 'compacting',
+    });
+    // real (re)starts still read idle
+    expect(transition('working', { kind: 'hook', event: 'SessionStart', source: 'startup' }).status).toBe('idle');
+    expect(transition('working', { kind: 'hook', event: 'SessionStart', source: 'resume' }).status).toBe('idle');
+    expect(transition('working', { kind: 'hook', event: 'SessionStart' }).status).toBe('idle');
+  });
+
   it('done is turn-terminal: idle notifications and keystrokes never revive it', () => {
     // the real ClaudeMon bug: done -> needs-input -> working via a stray key
     expect(

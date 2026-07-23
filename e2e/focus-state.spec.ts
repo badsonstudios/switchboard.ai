@@ -11,7 +11,8 @@ test.describe('focus-state persistence (E12-08)', () => {
   test('active view tab survives a relaunch (Session default -> Terminal restored)', async () => {
     const folder = tempProjectFolder();
     const title = folder.split(/[\\/]/).pop()!;
-    const first = await launchApp({ seedFolder: folder });
+    a = await launchApp({ seedFolder: folder }); // shared handle first (#16)
+    const first = a;
     const w = first.window;
     await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
 
@@ -35,7 +36,8 @@ test.describe('focus-state persistence (E12-08)', () => {
   });
 
   test('titlebar autonomy choice survives a relaunch (ui blob, not localStorage)', async () => {
-    const first = await launchApp();
+    a = await launchApp(); // shared handle first (#16)
+    const first = a;
     const w = first.window;
     await expect(w.getByRole('button', { name: /ask/ })).toBeVisible();
     await w.getByRole('button', { name: /ask/ }).click(); // -> plan

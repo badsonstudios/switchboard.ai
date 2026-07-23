@@ -6,6 +6,9 @@ export interface FeedBlockDto {
   text?: string;
   tool?: {
     name: string;
+    /** presentation class stamped by the watcher — dispatch on THIS, never
+     *  the raw name (PowerShell renders like Bash; review P1 #9) */
+    category?: 'shell' | 'edit' | 'read' | 'other';
     summary: string;
     detail?: string;
     description?: string;
@@ -28,7 +31,13 @@ export function upsertBlock(blocks: FeedBlockDto[], b: FeedBlockDto, cap = 1000)
     next[i] = b;
     return next;
   }
-  const next = [...blocks, b];
+  // insert by seq, never append blindly: a re-emit of a block that was
+  // already evicted from the capped window must not render as newest (it
+  // lands back at the head and the cap slice drops it again)
+  const next = [...blocks];
+  const at = next.findIndex((x) => x.seq > b.seq);
+  if (at < 0) next.push(b);
+  else next.splice(at, 0, b);
   return next.length > cap ? next.slice(-cap) : next;
 }
 

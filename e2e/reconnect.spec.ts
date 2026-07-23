@@ -34,7 +34,8 @@ test.describe('display reconnect offer (E8-06)', () => {
     const FAR = { x: 90_000, y: 0, width: 2000, height: 1200 };
 
     // 1. pop a card out, then quit keeping the profile
-    const first = await launchApp({ seedFolder: folder });
+    a = await launchApp({ seedFolder: folder }); // shared handle first (#16)
+    const first = a;
     await expect(first.window.getByText(title).first()).toBeVisible({ timeout: 25_000 });
     await first.window.getByTitle('Pop out into its own window').click();
     await expect.poll(() => first.app.windows().length, { timeout: 15_000 }).toBe(2);

@@ -107,9 +107,37 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   if (opts.seedFolder) env.SWITCHBOARD_SEED_SESSION = opts.seedFolder;
   Object.assign(env, opts.env);
 
-  const app = await electron.launch({ executablePath: electronPath, args: [ROOT], cwd: ROOT, env });
-  const window = await app.firstWindow();
-  await window.waitForLoadState('domcontentloaded');
+  let app: ElectronApplication;
+  let window: Page;
+  try {
+    app = await electron.launch({ executablePath: electronPath, args: [ROOT], cwd: ROOT, env });
+    window = await app.firstWindow();
+    await window.waitForLoadState('domcontentloaded');
+  } catch (err) {
+    // launch failed BEFORE a handle was returned — afterEach cleanup() never
+    // runs, so scrub here or the copied real credentials outlive the test on
+    // disk (review P1-test #17; credentials-never-in-files rule). While the
+    // app runs, the copy is a deliberate, documented exception: cleanup()
+    // deletes the whole home afterwards.
+    if (opts.realClaude) {
+      for (const rel of ['.claude.json', path.join('.claude', '.credentials.json')]) {
+        try {
+          fs.rmSync(path.join(home, rel), { force: true });
+        } catch {
+          /* best-effort */
+        }
+      }
+    }
+    if (!opts.home) {
+      // the temp home is ours — remove it wholesale
+      try {
+        fs.rmSync(home, { recursive: true, force: true });
+      } catch {
+        /* best-effort */
+      }
+    }
+    throw err;
+  }
 
   const close = async () => {
     const pid = app.process()?.pid;

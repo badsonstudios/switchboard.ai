@@ -114,7 +114,11 @@ test.describe('Feed view (E12-06)', () => {
   test('composer autonomy chip cycles and survives a relaunch (E10-05)', async () => {
     const folder = tempProjectFolder();
     const title = folder.split(/[\\/]/).pop()!;
-    const first = await launchApp({ seedFolder: folder });
+    // assign to the shared handle IMMEDIATELY: an assertion failing before
+    // close() must leave afterEach something to kill, or the Electron/PTY
+    // tree leaks and poisons CI teardown (review P1-test #16)
+    a = await launchApp({ seedFolder: folder });
+    const first = a;
     const w = first.window;
     await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
 

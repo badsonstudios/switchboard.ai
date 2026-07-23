@@ -20,6 +20,14 @@
 > §5.16 records the rule. Everything from P1 down is still OPEN — nothing
 > later was incidentally fixed (verified against the code before this
 > annotation). Next: P1 #6–#8 (watcher trio).
+>
+> **Status 2026-07-23 (later, branch `fix/review-p1-followup`):** PR #65 was
+> merged with P0 only (Dan's call — repo went public, CI green, merge now /
+> P1 as a fast-follow). **P1 #6–#15 and P1-test #16–#17 are ALL FIXED** on
+> this branch (per-item notes below). P3 #31 was folded into #6's edit as
+> planned. P2 #18–#21 and the rest of P3 remain open — file issues if
+> deferred past the follow-up merge. Gate: lint + typecheck + 164 unit +
+> 30 e2e green; check:hooks and check:transcripts re-PASS vs real claude.
 
 ---
 
@@ -79,35 +87,43 @@ breakage never blocks a session") and the permission model's intent.
 
 ## P1 — Correctness bugs (fix before merge)
 
-### [ ] 6. Wrong transcript can be bound when head lacks a parseable sessionId
+### [x] 6. Wrong transcript can be bound when head lacks a parseable sessionId
 
 - **Where:** `src/main/transcripts/watcher.ts:386` (mismatch guard requires truthy `head.sessionId`), idMatch ~:394–395, cwd-only branch ~:399–405
 - **Bug:** `main`'s old guard `if (w.nativeSessionId && head.sessionId !== w.nativeSessionId) return false` rejected candidates with an unparseable/absent head sessionId (`undefined !== nativeId`). The new guard requires `head.sessionId &&` to be truthy, and the filename is only used as *positive* evidence — so a file whose sessionId-bearing head lines are oversized/unparseable (readHead's catch "keeps scanning" and can return `{cwd, sessionId: undefined}`) can be claimed via the cwd path even though its filename is not `<nativeId>.jsonl`. Wrong conversation streams into the session.
 - **Fix direction:** When `w.nativeSessionId` is set, also reject candidates whose *filename* doesn't match `<nativeId>.jsonl` (or restore the strict head check). Filename check is cheap and robust.
 - **Test:** extend `watcher.test.ts`: nativeSessionId set + candidate with unparseable head sessionId + matching cwd → must NOT bind.
 
-### [ ] 7. `resetBinding()` never tells the renderer — stale blocks after a mis-bind correction
+- **DONE:** once hooks deliver the id, ONLY id evidence (head sessionId or `<nativeId>.jsonl` filename) binds — the cwd-only path is pre-id only; `cwdOk` computed once (#31 folded in). Unit: unparseable-head + matching cwd + foreign filename must NOT bind; same evidence binds via the filename.
+
+### [x] 7. `resetBinding()` never tells the renderer — stale blocks after a mis-bind correction
 
 - **Where:** `src/main/transcripts/watcher.ts:217–234`; only renderer channel is `sessions:feedBlock` (`src/main/sessions/ipc.ts:102`); renderer refetch only on sessionId change (`FeedView.tsx:289`); `upsertBlock` matches by seq (`src/renderer/src/lib/feed.ts:25`)
 - **Bug:** After a mis-bind correction, main clears blocks and resets `blockSeq = 0` but emits nothing. The renderer keeps the stolen blocks; the correct transcript re-emits from seq 1 and overwrites them one-by-one — if it's shorter, the tail still shows the other session's conversation until remount.
 - **Fix direction:** Emit a `sessions:feedReset` (or a `{kind:'reset'}` sentinel on the existing channel) from `resetBinding()`; renderer clears its block state on receipt.
 - **Test:** unit: resetBinding emits the reset; renderer store clears on it.
 
-### [ ] 8. Same-cwd sessions never bind when hooks are dead (fail-open regression)
+- **DONE:** watcher `onReset` listener → `sessions:feedReset` push (ipc + preload); FeedView clears its block state on receipt. Unit: mis-bind correction emits the reset.
+
+### [x] 8. Same-cwd sessions never bind when hooks are dead (fail-open regression)
 
 - **Where:** `src/main/transcripts/watcher.ts:396–403` (`if (this.hasCwdSibling(w)) return false;`), `hasCwdSibling` ~:242–247
 - **Bug:** cwd-only binds are hard-rejected whenever ANY other watched session (bound or unbound) shares the folder, with no time-based relaxation (`WIDEN_AFTER_MS` widens scan scope, not this rule). If hooks never deliver native ids (hook listener broken/blocked — the designed-for fail-open path — or a future no-hooks provider), two same-cwd sessions never bind; feed/usage/Session views stay empty forever. `main` bound first-match.
 - **Fix direction:** Add a deadline: after N seconds without a native id, fall back to best-effort cwd binding (accepting the ambiguity), or at least surface the unbound state in the UI instead of silent emptiness.
 - **Test:** watcher.test.ts: two same-cwd watchers, no native ids, advance past the deadline → binding proceeds (or documented alternative).
 
-### [ ] 9. Shell blocks render rich only for tool name `Bash` — misses `PowerShell` on Windows
+- **DONE:** `cwdBindFallbackMs` (default 30s): an ambiguous same-cwd session past the deadline binds best-effort (warn-logged); a late native id still corrects via setNativeSessionId. claim() also refuses files another session already bound, so the fallback can't double-bind. Unit: two same-cwd watchers, no ids → both bound after deadline, distinct files.
+
+### [x] 9. Shell blocks render rich only for tool name `Bash` — misses `PowerShell` on Windows
 
 - **Where:** `src/renderer/src/components/FeedView.tsx:210` (`b.tool?.name === 'Bash'`); `src/main/hooks/hook-listener.ts:68–71` (`SHELLISH = ['Bash','PowerShell']`, probe-dated comment)
 - **Bug:** The branch's rich shell rendering (description header, IN/OUT sections, attached output) dispatches on exactly `'Bash'`. Windows CLI sessions emit a `PowerShell` tool (the codebase itself records this) — so the feature silently degrades to a generic ToolRow on the app's primary platform.
 - **Fix direction:** Classify shell-ness once in the main process — extract the SHELLISH/MUTATING/READ taxonomy into a shared module, have the watcher stamp blocks with a category (`'shell' | 'edit' | ...`), and have the renderer dispatch on category, never raw tool names. (This also serves P2 finding #15.)
 - **Test:** feed e2e/unit: a PowerShell tool block renders the rich shell layout.
 
-### [ ] 10. `isOutsideCwd` misclassifies paths (two defects, same function)
+- **DONE:** taxonomy extracted to `src/shared/tool-taxonomy.ts` (SHELLISH/MUTATING/READ_TOOLS + toolCategory); watcher stamps `tool.category`; FeedView dispatches shell rendering on `category === 'shell'` (no raw-name dispatch left in the renderer). Unit: PowerShell/Write/Grep/unknown → shell/edit/read/other.
+
+### [x] 10. `isOutsideCwd` misclassifies paths (two defects, same function)
 
 - **Where:** `src/main/hooks/hook-listener.ts:95–103`
 - **Bug (a) — resolve base:** `path.resolve(x)` resolves relative tool paths against the **Electron process's cwd**, not the session folder. Glob/Grep `path` params can realistically be relative → in-workspace paths spuriously held; outside paths that happen to resolve under the app cwd wrongly allowed.
@@ -115,53 +131,69 @@ breakage never blocks a session") and the permission model's intent.
 - **Fix direction:** `const r = path.resolve(cwd, x)` for (a); for (b) compare via `path.relative(base, r)` (outside iff it starts with `..` or is absolute on another root) instead of string-prefixing — that fixes both trailing-sep and case handling in one move. Keep the win32 lowercase fold.
 - **Test:** unit table: relative in/out paths, drive-root base, normal base, cross-drive.
 
-### [ ] 11. Auto-compact `SessionStart` flips a working session to idle
+- **DONE:** `path.resolve(cwd, x)` (relative paths resolve against the session folder) + containment via `path.relative` (fixes drive-root and cross-drive; win32 case fold kept). Unit table: relative in/out, drive root, cross-drive, case fold, dotted sibling names.
+
+### [x] 11. Auto-compact `SessionStart` flips a working session to idle
 
 - **Where:** `src/main/sessions/state-machine.ts:86–91`; hook-listener `ingest()` ~:384–394 never extracts `source`
 - **Bug:** `SessionStart` unconditionally `to('idle')`. The CLI also fires SessionStart with `source: 'compact'` mid-turn during auto-compaction — the working banner disappears and the feed event is dropped even though the turn resumes seconds later.
 - **Fix direction:** Extract `source` in ingest and pass it through; state machine ignores SessionStart when `source === 'compact'` (and consider `'resume'` semantics deliberately).
 - **Test:** state-machine unit: working + SessionStart(compact) → stays working.
 
-### [ ] 12. Composer Enter submits mid-IME-composition
+- **DONE:** ingest extracts `source`; SessionStart(source:'compact') is a stay('compacting') — startup/resume/clear still → idle. Unit: working + compact stays working.
+
+### [x] 12. Composer Enter submits mid-IME-composition
 
 - **Where:** `src/renderer/src/components/FeedView.tsx:632–637`
 - **Bug:** `e.key === 'Enter' && !e.shiftKey` with no composition guard — confirming a CJK/IME candidate sends the half-typed draft + CR to the live PTY.
 - **Fix direction:** Bail when `e.nativeEvent.isComposing` (add `keyCode === 229` for Safari-family robustness if desired).
 
-### [ ] 13. Any prefs update wipes `osToasts` (and quiet hours) to defaults
+- **DONE:** composer onKeyDown bails on `e.nativeEvent.isComposing || e.keyCode === 229`.
+
+### [x] 13. Any prefs update wipes `osToasts` (and quiet hours) to defaults
 
 - **Where:** `src/main/workspace/store.ts:210–211` (`setNotificationPrefs` replaces wholesale), sanitize at ~:280 (`osToasts: x.osToasts === true`); preload type omits `osToasts` (`src/preload/index.ts:181–185`); only caller sends `{ enabled: next }` (`App.tsx:209`)
 - **Bug:** Replace-then-sanitize semantics mean the UI's enabled-toggle resets every other notification pref. `osToasts` isn't even settable from the UI.
 - **Fix direction:** Merge patch onto existing prefs before sanitizing: `sanitizeNotifications({ ...this.state.notifications, ...p })`.
 - **Test:** store unit: set osToasts true → setNotificationPrefs({enabled:false}) → osToasts still true.
 
-### [ ] 14. `upsertBlock` appends evicted-seq re-emits out of order
+- **DONE:** merge-patch (`{...current, ...p}` before sanitize); preload types gain `osToasts`/optional fields. Unit: enabled-toggle preserves osToasts + quiet hours.
+
+### [x] 14. `upsertBlock` appends evicted-seq re-emits out of order
 
 - **Where:** `src/renderer/src/lib/feed.ts:24–33`; watcher re-emit paths `watcher.ts:543–548`, `toolBlocks` retention ~:597–602, BLOCK_CAP eviction ~:501
 - **Bug:** On a seq miss (block evicted past the 1000 cap), the re-emitted old block is appended at the tail — an ancient block renders as newest. Reachable: toolBlocks keeps up to 200 in-flight blocks with no age pruning while the main list evicts.
 - **Fix direction:** On findIndex miss, insert by seq order (or drop re-emits whose seq is below the current window's minimum — dropping is simpler and correct for a capped view).
 
-### [ ] 15. EventsPanel initial `list()` races the `events:changed` push
+- **DONE:** upsertBlock inserts by seq on a miss (below-window re-emits get capped away instead of rendering newest). 4 unit cases.
+
+### [x] 15. EventsPanel initial `list()` races the `events:changed` push
 
 - **Where:** `src/renderer/src/components/EventsPanel.tsx:35–38`
 - **Bug:** `void events.list().then(setEvents)` + `onChanged` subscription with no staleness guard: a push arriving while `list()` is in flight is overwritten by the stale snapshot; self-heals only on the *next* change.
 - **Fix direction:** Ignore the `list()` result if a push has landed first (a `gotPush` flag in the effect), or subscribe first and re-fetch after.
 
+- **DONE:** subscribe-first + `gotPush` flag — a push always beats the in-flight list() snapshot.
+
 ---
 
 ## P1-test — Test-code bugs
 
-### [ ] 16. `feed.spec.ts` relaunch test leaks the first app instance on failure
+### [x] 16. `feed.spec.ts` relaunch test leaks the first app instance on failure
 
 - **Where:** `e2e/feed.spec.ts:92–103`; afterEach cleans only `a` (`:15`)
 - **Bug:** `const first = await launchApp(...)` is never assigned to the shared `a` until after `first.close()`; an assertion failure in between leaks the Electron/PTY tree — the exact CI tree-kill poison documented in project memory.
 - **Fix direction:** `a = first` immediately after launch (afterEach then covers it), or wrap in try/finally. Audit the file for the same pattern elsewhere.
 
-### [ ] 17. real-claude fixture copies live OAuth credentials into %TEMP% and can leak them
+- **DONE:** shared handle assigned immediately (`a = await launchApp(...); const first = a;`) in feed.spec + the same latent pattern in groups/focus-state/reconnect/session specs (5 files).
+
+### [x] 17. real-claude fixture copies live OAuth credentials into %TEMP% and can leak them
 
 - **Where:** `e2e/fixtures/app.ts:74–81` (copy happens before `electron.launch`, ~:99–101); rmSync failures swallowed ~:127–131
 - **Bug:** `~/.claude/.credentials.json` + `~/.claude.json` are copied to `mkdtempSync(os.tmpdir())`. If launch throws before the handle is returned, `afterEach a?.cleanup()` is a no-op and real subscription tokens persist on disk. Opt-in local lane and per-user %TEMP% temper severity, but it conflicts with the project's credentials-never-in-files rule.
 - **Fix direction:** try/catch around launch inside the fixture that rms the temp dir on failure; consider a process-exit hook as a backstop. Document the residual copy in the lane's README/comment.
+
+- **DONE:** launch failure inside the fixture scrubs the copied credential files and removes a fixture-created temp home before rethrowing; the running-app copy is documented as the deliberate exception (cleanup() deletes the home).
 
 ---
 
@@ -209,7 +241,7 @@ Duplication / simplification (all verified):
 - [ ] 28. Autonomy order list exists **three times with a discrepancy**: `App.tsx:99` and `SessionGrid.tsx:110` use `['ask','plan','auto-edit','full-auto']`; `ipc.ts:306` validator uses `['plan','ask','auto-edit','full-auto']`. Export one `AUTONOMY_ORDER` + `nextAutonomy()` from a shared module.
 - [ ] 29. `hook-listener.ts:96–99` — the win32 path normalizer duplicates the closure inside `sameFolder` (`watcher.ts:150–155`). Extract one exported normalizer both import (fold into #10's fix).
 - [ ] 30. `hook-listener.ts` — `this.opts.holdTimeoutMs ?? 300_000` duplicated at :273 and :353 (the CLI-side timeout must stay above the server hold — one getter protects the invariant). `tool_input` narrowing duplicated at :331–334 and :360–363 with drifting fallbacks (`undefined` vs `{}`) — reuse the local.
-- [ ] 31. `watcher.ts:387` + `:399` — the cwd predicate evaluated in two complementary forms calling `sameFolder` twice; compute `cwdOk` once (fold into #6's fix).
+- [x] 31. (folded into #6) `watcher.ts:387` + `:399` — the cwd predicate evaluated in two complementary forms calling `sameFolder` twice; compute `cwdOk` once (fold into #6's fix).
 - [ ] 32. `FeedView.tsx` — `String.fromCharCode(10)` at :99, :444, :607 where plain `'\n'` is used elsewhere in the same file; UserPill's expandable predicate spelled three ways (:443, :447, :456) — reduce to one `expandable` boolean.
 - [ ] 33. `e2e/approval.spec.ts:29–37` — hand-rolled `poll()` duplicates `expect.poll` (used in session.spec.ts/reconnect.spec.ts); the log-file/port/token extraction block repeats verbatim at :52–58, :96–102, :126–132 — hoist into a fixture helper. `e2e/real-claude.spec.ts:37` — use the `showTerminal()` fixture (`e2e/fixtures/app.ts:137`) instead of a raw Terminal-button click.
 

@@ -3,19 +3,17 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-**Milestone:** Phase 2 - The Switchboard (E7+E8 merged; E12 expanded + filed
-#49–#57, E8-06 filed #48; E9/E10/E11/E13/E14 still outlines)
-**In progress:** code review processing HANDED TO A SEPARATE SESSION
-(2026-07-23): work `docs/code-review-2026-07-23-phase-2-e10.md` in order —
-P0 #1–#5 are DONE (commit 7c55c78, annotated in the doc); start at
-**P1 #6–#8 (watcher trio)**. Branch `auto/phase-2-e10`, draft PR #65.
-E10 items #59–#64 all shipped + three rounds of Dan's live-test fixes.
-151 unit + 30 e2e green; opt-in real-claude lane green.
-**Next up (needs Dan):** [user] fix GitHub Actions billing, then re-run
-PR #65 checks · merge #65 once the review session finishes P1 · retest
-list: grid-drag between groups (still unverified), phantom
+**Milestone:** Phase 2 - The Switchboard (E7+E8+E10 merged; E12 merged;
+E9/E11/E13/E14 still outlines)
+**In progress:** nothing mid-flight — review P1 follow-up COMPLETE on
+`fix/review-p1-followup` (PR open): all of P1 #6–#15 + P1-test #16–#17
+fixed + tested (see the annotated review doc). Remaining review scope:
+P2 #18–#21 + P3 cleanups (file issues or a follow-up pass; P3 #31 was
+folded into #6).
+**Next up (needs Dan):** merge the P1 follow-up PR when CI is green ·
+retest list: grid-drag between groups (still unverified), phantom
 needs-permission recurrence check on current build.
-**Branch:** auto/phase-2-e10 (draft PR #65)
+**Branch:** fix/review-p1-followup
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
 `npm test` (unit) · `npm run check:*` (local real-claude proofs) · `npm run e2e`
@@ -38,16 +36,10 @@ a "[Dan eyeball]" note.**
 
 ## Blockers / open questions for Dan
 
-- **[user] GitHub Actions billing is broken** (found 2026-07-21 on PR #65's
-  CI run): every job dies in 3s with "recent account payments have failed or
-  your spending limit needs to be increased" — fix in GitHub Settings →
-  Billing & plans, then re-run the PR #65 checks. Local gate was fully green
-  (lint + typecheck + 137 unit + 27 e2e, Windows).
-
-- **[user] "Red build blocks merge" (#13) still procedural** — branch
-  protection/rulesets are plan-gated on free private repos. CI is live + green;
-  the merge gate is manual (I verify CI before merging). Upgrade to Pro / make
-  public to enforce server-side.
+- **[user] "Red build blocks merge" (#13) can now be enforced** — the repo
+  went public (2026-07-23), so branch protection/rulesets are available on
+  the free plan. Say the word and I'll set up a ruleset requiring green CI
+  before merge to main.
 - **Loose ends deferred** (not blocking): full-auto → bypass footgun (offer:
   remap to a safer mode), 9MB Monaco renderer bundle (slim it). Say the word.
 - **[user] ClaudeMon architecture read (OQ #8) is due.** `03-later-phases.md`
@@ -56,6 +48,33 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-23 — **Review P1 follow-up COMPLETE (#6–#17)** on
+  `fix/review-p1-followup`. Watcher trio: (#6) once hooks deliver the native
+  id, ONLY id evidence binds (unparseable-head files can't be cwd-claimed);
+  (#7) mis-bind corrections push `sessions:feedReset` so the renderer drops
+  stolen blocks; (#8) ambiguous same-cwd sessions bind best-effort after 30s
+  without a native id (fail-open when hooks are dead) — claim() now also
+  refuses files another session owns. (#9) tool taxonomy extracted to
+  `src/shared/tool-taxonomy.ts`; watcher stamps `tool.category`; the renderer
+  dispatches shell rendering on category — PowerShell gets the rich Bash
+  layout. (#10) isOutsideCwd: relative paths resolve against the session
+  folder; containment via path.relative (drive-root + cross-drive fixed).
+  (#11) SessionStart(source:'compact') no longer flips a working session to
+  idle. (#12) composer ignores Enter mid-IME-composition. (#13)
+  setNotificationPrefs is a merge-patch (enabled-toggle no longer wipes
+  osToasts/quiet hours). (#14) upsertBlock inserts by seq (evicted re-emits
+  can't render as newest). (#15) EventsPanel: push beats in-flight list().
+  (#16) relaunch-test leak pattern fixed in FIVE e2e specs. (#17) fixture
+  launch failure scrubs copied credentials + temp home. P3 #31 folded into
+  #6. Gate: lint + typecheck + 164 unit + 30 e2e green; check:hooks +
+  check:transcripts re-PASS vs real claude 2.1.218.
+
+- 2026-07-23 — **PR #65 MERGED to main** (Dan's call: merge now, finish the
+  review P1 as a follow-up PR). The Actions-billing blocker self-resolved:
+  Dan made the repo public → all 5 CI jobs re-ran GREEN (unit ×3 OS + e2e
+  Win/Linux). Squash-merged as 4d179e5, branch deleted. Review work
+  continues on `fix/review-p1-followup`: P1 #6–#15 + P1-test #16–#17.
 
 - 2026-07-23 — **Upstream bug FILED** (Dan's go-ahead):
   anthropics/claude-code#80683 — interactive mode never writes the

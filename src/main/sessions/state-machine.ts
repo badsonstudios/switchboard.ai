@@ -26,6 +26,8 @@ export type SessionEvent =
       notificationType?: string;
       message?: string;
       tool?: string;
+      /** SessionStart source: startup | resume | clear | compact */
+      source?: string;
     }
   | { kind: 'permission-held' } // our PreToolUse round-trip is pending (E2-05+)
   | { kind: 'permission-resolved' }
@@ -84,10 +86,14 @@ export function transition(current: SessionStatus, ev: SessionEvent): Transition
     case 'hook':
       switch (ev.event) {
         case 'SessionStart':
-          // the session is up and its TUI is (about to be) ready — that's
-          // IDLE, not "working" (Dan 2026-07-22: three resumed sessions all
-          // claimed to be working at boot). A real turn opens with
-          // UserPromptSubmit.
+          // Auto-compaction fires SessionStart(source:'compact') MID-TURN —
+          // the turn resumes seconds later, so the status must not move
+          // (review P1 #11: the working banner vanished during compacts).
+          if (ev.source === 'compact') return stay('compacting');
+          // Otherwise (startup/resume/clear) the session is up and its TUI
+          // is (about to be) ready — that's IDLE, not "working" (Dan
+          // 2026-07-22: three resumed sessions all claimed to be working at
+          // boot). A real turn opens with UserPromptSubmit.
           return to('idle');
         case 'UserPromptSubmit':
           return to('working');

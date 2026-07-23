@@ -3,7 +3,7 @@ import fs from 'fs';
 import http from 'http';
 import os from 'os';
 import path from 'path';
-import { HookListener, PermissionRequest, shouldHoldPermission } from './hook-listener';
+import { HookListener, PermissionRequest, isOutsideCwd, shouldHoldPermission } from './hook-listener';
 import { LogSink, createLogger } from '../log/logger';
 import { SessionEvent } from '../sessions/state-machine';
 
@@ -259,6 +259,36 @@ describe('shouldHoldPermission policy', () => {
     expect(shouldHoldPermission('auto-edit', 'Glob', { path: 'C:/elsewhere' }, cwd)).toBe(true);
     expect(shouldHoldPermission('ask', 'Grep', {}, cwd)).toBe(false); // no target = stays in cwd
     expect(shouldHoldPermission('full-auto', 'Read', { file_path: 'C:/elsewhere/x' }, cwd)).toBe(false);
+  });
+});
+
+describe('isOutsideCwd path handling (review P1 #10)', () => {
+  const win = process.platform === 'win32';
+  it('relative tool paths resolve against the SESSION folder, not the app cwd', () => {
+    const cwd = win ? 'C:/proj/app' : '/proj/app';
+    expect(isOutsideCwd('src/x.ts', cwd)).toBe(false);
+    expect(isOutsideCwd('./deep/y.ts', cwd)).toBe(false);
+    expect(isOutsideCwd('../sibling/z.ts', cwd)).toBe(true);
+    expect(isOutsideCwd('..', cwd)).toBe(true);
+  });
+
+  it('a drive-root/filesystem-root session folder contains its own files', () => {
+    const root = win ? 'D:\\' : '/';
+    expect(isOutsideCwd(win ? 'D:\\x.txt' : '/x.txt', root)).toBe(false);
+    expect(isOutsideCwd(win ? 'D:\\deep\\y.txt' : '/deep/y.txt', root)).toBe(false);
+    if (win) expect(isOutsideCwd('C:\\other.txt', 'D:\\')).toBe(true); // cross-drive
+  });
+
+  it('the base folder itself is inside; case differences fold on win32', () => {
+    const cwd = win ? 'C:/proj/app' : '/proj/app';
+    expect(isOutsideCwd(cwd, cwd)).toBe(false);
+    if (win) expect(isOutsideCwd('c:/PROJ/app/x.ts', cwd)).toBe(false);
+  });
+
+  it('a sibling folder whose name starts with dots is still outside-aware', () => {
+    const cwd = win ? 'C:/proj/app' : '/proj/app';
+    expect(isOutsideCwd(win ? 'C:/proj/app/..config/x' : '/proj/app/..config/x', cwd)).toBe(false);
+    expect(isOutsideCwd(win ? 'C:/proj/other/x' : '/proj/other/x', cwd)).toBe(true);
   });
 });
 

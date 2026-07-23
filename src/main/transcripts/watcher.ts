@@ -11,6 +11,7 @@
 import fs from 'fs';
 import path from 'path';
 import { Logger } from '../log/logger';
+import { ToolCategory, toolCategory } from '../../shared/tool-taxonomy';
 
 export interface UsageTotals {
   input: number;
@@ -48,6 +49,9 @@ export interface FeedBlock {
   text?: string;
   tool?: {
     name: string;
+    /** presentation class — the renderer dispatches on this, never on the
+     *  raw name (PowerShell must render like Bash; review P1 #9) */
+    category: ToolCategory;
     summary: string;
     detail?: string;
     /** Bash: the tool call's own description field (block header, E10-06) */
@@ -90,12 +94,20 @@ interface WatchedSession {
 /** After this long unbound, widen discovery beyond the slug prefilter. */
 const WIDEN_AFTER_MS = 10_000;
 
+/** After this long without a hooks-delivered native id, an ambiguous
+ *  same-cwd session may bind on cwd evidence alone (fail-open: hooks being
+ *  dead must not leave the Feed empty forever). */
+const CWD_BIND_FALLBACK_MS = 30_000;
+
 export interface TranscriptWatcherOptions {
   projectsRoot: string;
   log: Logger;
   pollMs?: number;
   /** how long to trust the slug prefilter before widening discovery */
   widenAfterMs?: number;
+  /** how long an ambiguous same-cwd session waits for a native id before
+   *  falling back to best-effort cwd binding */
+  cwdBindFallbackMs?: number;
 }
 
 export function slugForCwd(cwd: string): string {
@@ -160,6 +172,7 @@ export class TranscriptWatcher {
   private readonly known = new Set<string>(); // files existing before any watch
   private readonly listeners = new Set<(s: TranscriptSnapshot) => void>();
   private readonly blockListeners = new Set<(sessionId: string, b: FeedBlock) => void>();
+  private readonly resetListeners = new Set<(sessionId: string) => void>();
   private timer: NodeJS.Timeout | null = null;
 
   constructor(private readonly opts: TranscriptWatcherOptions) {
@@ -231,6 +244,15 @@ export class TranscriptWatcher {
       subagents: [],
       lastActivityAt: null,
     };
+    // the renderer must drop the stolen blocks too — the correct transcript
+    // re-emits from seq 1 and would otherwise interleave with the old tail
+    for (const l of this.resetListeners) l(w.sessionId);
+  }
+
+  /** A mis-bind was corrected: the session's derived blocks were discarded. */
+  onReset(l: (sessionId: string) => void): () => void {
+    this.resetListeners.add(l);
+    return () => this.resetListeners.delete(l);
   }
 
   /** This pre-existing file is the session's OWN resumed conversation. */
@@ -380,11 +402,17 @@ export class TranscriptWatcher {
   private claim(w: WatchedSession, full: string): boolean {
     if (full.includes(`${path.sep}subagents${path.sep}`)) return false; // handled post-bind
     if (w.boundFile) return false; // one main transcript per session
+    // ...and one session per transcript: a file another session already owns
+    // is never a candidate (keeps the #8 cwd fallback from double-binding)
+    for (const other of this.sessions.values()) {
+      if (other !== w && other.boundFile === full) return false;
+    }
     const head = this.readHead(full);
     if (!head) return false;
+    const cwdOk = typeof head.cwd === 'string' && sameFolder(head.cwd, w.cwd);
     // a known-wrong id or wrong cwd is always disqualifying
     if (w.nativeSessionId && head.sessionId && head.sessionId !== w.nativeSessionId) return false;
-    if (typeof head.cwd === 'string' && !sameFolder(head.cwd, w.cwd)) return false;
+    if (typeof head.cwd === 'string' && !cwdOk) return false;
     // id evidence: a matching head sessionId, or the FILENAME itself once the
     // hooks told us our id — head lines can be unparseably huge (a fresh
     // transcript may open with a file-history-snapshot line bigger than any
@@ -394,13 +422,29 @@ export class TranscriptWatcher {
       (head.sessionId === w.nativeSessionId ||
         path.basename(full) === `${w.nativeSessionId}.jsonl`);
     if (!idMatch) {
+      // Once the hooks delivered our id, ONLY id evidence may bind: a file
+      // whose head sessionId is unparseable (oversized snapshot lines) must
+      // not be adopted on cwd alone — its filename not matching our id is
+      // the tell that it's someone else's conversation.
+      if (w.nativeSessionId) return false;
       // without an id match we need a positive cwd match — absence of
       // evidence is NOT evidence the file is ours
-      if (typeof head.cwd !== 'string' || !sameFolder(head.cwd, w.cwd)) return false;
+      if (!cwdOk) return false;
       // Same-cwd sessions make cwd-only claims AMBIGUOUS (two sessions in
       // one folder must not steal each other's transcript): wait for the
-      // hooks to deliver our native id, then bind on the id match.
-      if (this.hasCwdSibling(w)) return false;
+      // hooks to deliver our native id, then bind on the id match. But if
+      // the hooks never deliver one (listener broken/blocked — the designed
+      // fail-open path), fall back to best-effort cwd binding after a
+      // deadline: a possibly-crossed Feed beats a forever-empty one, and a
+      // late native id still corrects a mis-bind (setNativeSessionId).
+      if (this.hasCwdSibling(w)) {
+        const deadline = this.opts.cwdBindFallbackMs ?? CWD_BIND_FALLBACK_MS;
+        if (Date.now() - w.watchedSince < deadline) return false;
+        this.opts.log.warn('ambiguous cwd-only bind (no native id after deadline)', {
+          sessionId: w.sessionId,
+          file: path.basename(full),
+        });
+      }
     }
     w.boundFile = full;
     w.snap.bound = true;
@@ -582,7 +626,12 @@ export class TranscriptWatcher {
         } catch {
           detail = undefined;
         }
-        const tool: NonNullable<FeedBlock['tool']> = { name: c.name, summary, detail };
+        const tool: NonNullable<FeedBlock['tool']> = {
+          name: c.name,
+          category: toolCategory(c.name),
+          summary,
+          detail,
+        };
         // structured fields for the rich blocks (E10-06)
         if (typeof input.description === 'string') tool.description = input.description.slice(0, 120);
         if (typeof input.file_path === 'string') tool.filePath = input.file_path;

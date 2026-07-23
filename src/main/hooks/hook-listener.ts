@@ -27,6 +27,7 @@ function findNodeOnPath(): string | null {
 }
 import { Logger } from '../log/logger';
 import { SessionManager } from '../sessions/session-manager';
+import { SHELLISH, MUTATING, READ_TOOLS } from '../../shared/tool-taxonomy';
 
 /** Hook events the listener subscribes to for status (S-06 set + PostToolUse). */
 const STATUS_EVENTS = [
@@ -65,12 +66,10 @@ export interface PermissionRequest {
  * for at this autonomy — otherwise we'd nag full-auto sessions the CLI would
  * have let through. Unknown autonomy fails open (no hold).
  */
-// Shell tools are platform-dependent: the CLI uses a PowerShell tool on
-// Windows (probe 2026-07-22 — "list my Downloads" ran tool_name:"PowerShell",
-// which our Bash-only gate missed and the TUI prompted instead).
-const SHELLISH = ['Bash', 'PowerShell'];
-const MUTATING = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'WebFetch'];
-const READ_TOOLS = ['Read', 'Glob', 'Grep', 'LS'];
+// Tool-name taxonomy (SHELLISH/MUTATING/READ_TOOLS) is imported from
+// src/shared/tool-taxonomy.ts — shared with the renderer's block presentation
+// so shell/edit classification can't drift between the hold policy and the
+// Feed (review P1 #9).
 
 const GATED: Record<string, string[]> = {
   ask: [...SHELLISH, ...MUTATING],
@@ -98,15 +97,17 @@ function readToolPath(input: Record<string, unknown> | undefined): string | unde
   return typeof p === 'string' ? p : undefined;
 }
 
-/** Is `p` outside the session's folder? (The CLI prompts for outside reads.) */
+/** Is `p` outside the session's folder? (The CLI prompts for outside reads.)
+ *  Relative tool paths resolve against the SESSION folder (not the app's own
+ *  cwd), and containment is judged via path.relative — string-prefixing broke
+ *  on drive-root folders, where resolve() keeps the trailing separator and
+ *  `base + sep` matches nothing (review P1 #10, reproduced). */
 export function isOutsideCwd(p: string, cwd: string): boolean {
-  const norm = (x: string) => {
-    const r = path.resolve(x);
-    return process.platform === 'win32' ? r.toLowerCase() : r;
-  };
-  const target = norm(p);
-  const base = norm(cwd);
-  return target !== base && !target.startsWith(base + path.sep);
+  const fold = (x: string) => (process.platform === 'win32' ? x.toLowerCase() : x);
+  const base = fold(path.resolve(cwd));
+  const target = fold(path.resolve(cwd, p));
+  const rel = path.relative(base, target);
+  return rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel);
 }
 
 export function shouldHoldPermission(
@@ -404,6 +405,8 @@ export class HookListener {
       notificationType: typeof e.notification_type === 'string' ? e.notification_type : undefined,
       message: typeof e.message === 'string' ? e.message : undefined,
       tool: typeof e.tool_name === 'string' ? e.tool_name : undefined,
+      // SessionStart carries source ('compact' fires mid-turn, review P1 #11)
+      source: typeof e.source === 'string' ? e.source : undefined,
     });
   }
 }
