@@ -68,7 +68,8 @@
     "title": "Allow {tool}?",
     "allow": "Allow",
     "allowAll": "Allow all (this session)",
-    "deny": "Deny"
+    "deny": "Deny",
+    "more": "+{n} more waiting"
   },
   "status": {
     "starting": "starting",

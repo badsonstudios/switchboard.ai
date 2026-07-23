@@ -54,6 +54,21 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-23 — **Upstream bug FILED** (Dan's go-ahead):
+  anthropics/claude-code#80683 — interactive mode never writes the
+  conversation .jsonl under a redirected HOME/USERPROFILE (full isolation
+  matrix in the report). **Review P0 cluster FIXED** (docs/code-review-
+  2026-07-23-phase-2-e10.md, all 5): (#1, owner picked Option A) plan
+  sessions NEVER hold — an in-app allow would bypass the CLI's plan
+  write-block; DESIGN §5.16 records the rule; (#2) allow-all keyed by LIVE
+  session id — respawns prompt again; (#3) pending holds replay to a
+  (re)mounting renderer via sessions:pendingPermissions — a missed push
+  can't park the CLI; (#4) held requests QUEUE per card ("+N more
+  waiting", advance on decide); (#5) a hold auto-surfaces the Session tab
+  from any tab. e2e: Terminal-tab hold → auto-surface → two-deep queue →
+  allow+deny verdicts. 151 unit + 30 e2e green; real-claude lane green.
+  P1 (#6–#15) next.
+
 - 2026-07-23 — **Transcript-in-sandbox anomaly SOLVED (root cause
   characterized; upstream CLI bug).** Dan asked for online research +
   systematic isolation. Web findings suggested test-env detection /

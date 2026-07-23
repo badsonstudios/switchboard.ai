@@ -266,6 +266,8 @@ export function FeedView(props: {
   onCycleAutonomy?: () => void;
   /** held permission (E10-04) — the bar renders just above the composer */
   approval?: { requestId: string; tool: string; input: Record<string, unknown> } | null;
+  /** more holds waiting behind this one (review P0#4) */
+  approvalQueued?: number;
   onDecide?: (decision: 'allow' | 'deny', allowAll?: boolean) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
@@ -426,7 +428,7 @@ export function FeedView(props: {
         </div>
       )}
       {props.approval && props.onDecide && (
-        <ApprovalBar approval={props.approval} onDecide={props.onDecide} />
+        <ApprovalBar approval={props.approval} queued={props.approvalQueued ?? 0} onDecide={props.onDecide} />
       )}
       <Composer
         sessionId={props.sessionId}
@@ -487,9 +489,11 @@ function UserPill({ text }: { text: string }): React.JSX.Element {
  */
 function ApprovalBar({
   approval,
+  queued,
   onDecide,
 }: {
   approval: { requestId: string; tool: string; input: Record<string, unknown> };
+  queued: number;
   onDecide: (decision: 'allow' | 'deny', allowAll?: boolean) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
@@ -529,6 +533,9 @@ function ApprovalBar({
         <span style={{ fontWeight: 700, color: 'var(--status-needs-permission)' }}>
           {t('approval.title', { tool: approval.tool })}
         </span>
+        {queued > 0 && (
+          <span style={{ fontSize: 10, color: 'var(--muted)' }}>{t('approval.more', { n: queued })}</span>
+        )}
         <span
           style={{
             fontFamily: 'var(--font-mono)',

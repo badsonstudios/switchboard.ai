@@ -208,6 +208,18 @@ describe('PreToolUse hold + decision round-trip (P2-E10-03, §5.16)', () => {
     expect(requests).toHaveLength(0);
   });
 
+  it('pendingRequests() replays in-flight holds; empties after decide (P0#3)', async () => {
+    const t = heldToken('s1');
+    const pending = postHeld(preToolUse('Edit'), t);
+    await new Promise((r) => setTimeout(r, 100));
+    const replay = held.pendingRequests();
+    expect(replay).toHaveLength(1);
+    expect(replay[0]).toMatchObject({ tool: 'Edit', sessionId: 's1' });
+    held.decide(replay[0].requestId, 'allow');
+    await pending;
+    expect(held.pendingRequests()).toHaveLength(0);
+  });
+
   it('unregisterSession releases in-flight holds (fail-open)', async () => {
     const t = heldToken('s1');
     const pending = postHeld(preToolUse('Edit'), t);
@@ -225,6 +237,13 @@ describe('shouldHoldPermission policy', () => {
     expect(shouldHoldPermission('auto-edit', 'Bash')).toBe(true);
     expect(shouldHoldPermission('full-auto', 'Bash')).toBe(false);
     expect(shouldHoldPermission(undefined, 'Bash')).toBe(false); // unknown: fail open
+  });
+
+  it('plan NEVER holds — the CLI\'s own plan enforcement is authoritative (P0#1, Option A)', () => {
+    expect(shouldHoldPermission('plan', 'Edit')).toBe(false);
+    expect(shouldHoldPermission('plan', 'Bash')).toBe(false);
+    expect(shouldHoldPermission('plan', 'PowerShell')).toBe(false);
+    expect(shouldHoldPermission('plan', 'Read', { file_path: 'C:/elsewhere/x' }, 'C:/proj')).toBe(false);
   });
 
   it('gates the Windows PowerShell tool like Bash (2026-07-22 probe)', () => {

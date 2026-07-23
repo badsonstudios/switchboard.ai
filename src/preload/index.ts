@@ -132,6 +132,15 @@ const api = {
     },
     decidePermission: (requestId: string, decision: 'allow' | 'deny', reason?: string): Promise<boolean> =>
       ipcRenderer.invoke('sessions:decidePermission', requestId, decision, reason),
+    pendingPermissions: (): Promise<
+      Array<{
+        requestId: string;
+        sessionId: string;
+        cardId?: string;
+        tool: string;
+        input: Record<string, unknown>;
+      }>
+    > => ipcRenderer.invoke('sessions:pendingPermissions'),
     onPermissionResolved: (cb: (r: { requestId: string }) => void): (() => void) => {
       const h = (_e: unknown, r: { requestId: string }) => cb(r);
       ipcRenderer.on('sessions:permissionResolved', h);

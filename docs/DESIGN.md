@@ -654,6 +654,16 @@ Pain point (owner, VS Code extension): edit approvals are a tiny checkbox on an
 opened file tab, or a jump back to the session tab. switchboard.ai replaces the
 approval UI entirely rather than decorating it.
 
+> **Plan-mode rule (owner decision 2026-07-23):** plan sessions are NEVER
+> held in-app. A hook `permissionDecision:'allow'` bypasses the CLI's whole
+> permission system — including plan mode's write-block — so an in-app Allow
+> would let a "read-only planning" session write files. The CLI's own plan
+> enforcement is authoritative; in-app approvals apply to ask/auto-edit.
+> Also settled: "Allow all (this session)" is scoped to the LIVE session
+> (a respawn/resume prompts again), held requests QUEUE per card, a hold
+> auto-surfaces the Session tab, and pending holds replay to a reloading
+> renderer so a missed push can never park the CLI.
+
 **Mechanism.** `PreToolUse` hook on `Edit|Write|MultiEdit` fires BEFORE execution
 with the full proposed change (file path, old/new content) and can RETURN the
 permission decision (allow / deny / ask). Flow: hook fires → switchboard.ai renders

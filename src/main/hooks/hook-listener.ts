@@ -74,10 +74,17 @@ const READ_TOOLS = ['Read', 'Glob', 'Grep', 'LS'];
 
 const GATED: Record<string, string[]> = {
   ask: [...SHELLISH, ...MUTATING],
-  plan: [...SHELLISH, ...MUTATING],
+  // plan NEVER holds (owner decision 2026-07-23, review P0#1): an in-app
+  // "Allow" returns permissionDecision:'allow', which BYPASSES the CLI's
+  // permission system — including plan mode's write-block. Plan sessions
+  // let the CLI's own plan enforcement run untouched.
+  plan: [],
   'auto-edit': [...SHELLISH, 'WebFetch'],
   'full-auto': [],
 };
+
+/** Autonomies whose out-of-cwd reads we hold (plan/full-auto excluded — see GATED). */
+const READ_GATED_AUTONOMIES = ['ask', 'auto-edit'];
 
 /** PreToolUse matcher — REQUIRED for tool hooks (S-03's proven shape used
  *  one; without it the entry never fires and the CLI's own TUI prompt runs
@@ -110,9 +117,8 @@ export function shouldHoldPermission(
 ): boolean {
   if (!autonomy || !tool) return false;
   if ((GATED[autonomy] ?? []).includes(tool)) return true;
-  // read tools only prompt when they leave the workspace — mirror that:
-  // hold an out-of-cwd read (full-auto never holds anything)
-  if (autonomy !== 'full-auto' && READ_TOOLS.includes(tool) && cwd) {
+  // read tools only prompt when they leave the workspace — mirror that
+  if (READ_GATED_AUTONOMIES.includes(autonomy) && READ_TOOLS.includes(tool) && cwd) {
     const target = readToolPath(input);
     if (target && isOutsideCwd(target, cwd)) return true;
   }
@@ -124,10 +130,12 @@ export class HookListener {
   private port = 0;
   private readonly tokens = new Map<string, string>(); // token -> sessionId
   private forwarderPath: string | null = null;
-  // held PreToolUse responses awaiting a UI decision (E10-03)
+  // held PreToolUse responses awaiting a UI decision (E10-03). The request
+  // rides along so a reloading/racing renderer can REPLAY what's pending
+  // (review P0#3 — a missed push must not park the CLI for the full hold).
   private readonly pending = new Map<
     string,
-    { res: http.ServerResponse; timer: NodeJS.Timeout; sessionId: string }
+    { res: http.ServerResponse; timer: NodeJS.Timeout; sessionId: string; request: PermissionRequest }
   >();
   private readonly permListeners = new Set<(r: PermissionRequest) => void>();
   private readonly resolvedListeners = new Set<(requestId: string) => void>();
@@ -173,6 +181,11 @@ export class HookListener {
   onPermissionRequest(cb: (r: PermissionRequest) => void): () => void {
     this.permListeners.add(cb);
     return () => this.permListeners.delete(cb);
+  }
+
+  /** Everything currently held — for renderer (re)subscribe replay (P0#3). */
+  pendingRequests(): PermissionRequest[] {
+    return [...this.pending.values()].map((p) => ({ ...p.request }));
   }
 
   /** A held request ended (decision OR timeout/teardown) — dismiss UI. */
@@ -352,7 +365,6 @@ export class HookListener {
       this.release(requestId);
     }, this.opts.holdTimeoutMs ?? 300_000);
     timer.unref?.();
-    this.pending.set(requestId, { res, timer, sessionId });
     const request: PermissionRequest = {
       requestId,
       sessionId,
@@ -362,6 +374,7 @@ export class HookListener {
           ? (e.tool_input as Record<string, unknown>)
           : {},
     };
+    this.pending.set(requestId, { res, timer, sessionId, request });
     this.opts.log.info('permission held', { requestId, sessionId, tool });
     for (const l of this.permListeners) {
       try {

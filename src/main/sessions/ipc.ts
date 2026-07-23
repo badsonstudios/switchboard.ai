@@ -90,6 +90,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     send('sessions:permissionRequest', { ...r, cardId: cardOfLive.get(r.sessionId) })
   );
   hooks.onPermissionResolved((requestId) => send('sessions:permissionResolved', { requestId }));
+  // replay for a (re)mounting renderer — a missed push must not park the CLI
+  ipcMain.handle('sessions:pendingPermissions', () =>
+    hooks.pendingRequests().map((r) => ({ ...r, cardId: cardOfLive.get(r.sessionId) }))
+  );
   ipcMain.handle(
     'sessions:decidePermission',
     (_e, requestId: string, decision: string, reason?: string) => {

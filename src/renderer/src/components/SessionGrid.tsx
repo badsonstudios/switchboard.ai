@@ -112,12 +112,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     setCardAutonomy(next);
     void window.switchboard.sessions.setAutonomy(cardId, next);
   };
-  // held permission awaiting a decision (E10-04); allow-all short-circuits
-  const [perm, setPerm] = React.useState<{
-    requestId: string;
-    tool: string;
-    input: Record<string, unknown>;
-  } | null>(null);
+  // held permissions awaiting decisions (E10-04) — a QUEUE, not a slot:
+  // parallel tool calls each hold their own request (review P0#4)
+  const [permQueue, setPermQueue] = React.useState<
+    Array<{ requestId: string; sessionId: string; tool: string; input: Record<string, unknown> }>
+  >([]);
+  const perm = permQueue[0] ?? null;
   const [poppedOut, setPoppedOut] = React.useState<boolean>(props.api.location.type === 'popout');
   const [suspended, setSuspended] = React.useState(false);
   const spawning = React.useRef(false);
@@ -221,31 +221,51 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     });
   }, [live]);
 
-  // inline approvals (E10-04): held PreToolUse requests for THIS card show a
-  // review bar; allow-all-this-session answers future ones automatically
+  // inline approvals (E10-04): held PreToolUse requests for THIS card queue
+  // into a review bar; allow-all answers future ones for the LIVE session
+  // only (review P0#2 — a respawn must prompt again). A hold needs eyes, so
+  // it surfaces the Session tab whatever tab is active (review P0#5).
   React.useEffect(() => {
     if (!cardId) return;
-    const offReq = window.switchboard.sessions.onPermissionRequest((r) => {
+    const enqueue = (r: {
+      requestId: string;
+      sessionId: string;
+      cardId?: string;
+      tool: string;
+      input: Record<string, unknown>;
+    }): void => {
       if (r.cardId !== cardId) return;
-      if (allowAllByCard.has(cardId)) {
+      if (allowAllByLive.has(r.sessionId)) {
         void window.switchboard.sessions.decidePermission(r.requestId, 'allow');
         return;
       }
-      setPerm({ requestId: r.requestId, tool: r.tool, input: r.input });
-    });
+      setPermQueue((prev) =>
+        prev.some((p) => p.requestId === r.requestId)
+          ? prev
+          : [...prev, { requestId: r.requestId, sessionId: r.sessionId, tool: r.tool, input: r.input }]
+      );
+      setView('feed');
+    };
+    const offReq = window.switchboard.sessions.onPermissionRequest(enqueue);
     const offRes = window.switchboard.sessions.onPermissionResolved((r) => {
-      setPerm((prev) => (prev && prev.requestId === r.requestId ? null : prev));
+      setPermQueue((prev) => prev.filter((p) => p.requestId !== r.requestId));
     });
+    // replay holds that arrived before this card subscribed (reload / mount
+    // race) — a missed push must never park the CLI (review P0#3)
+    void window.switchboard.sessions.pendingPermissions().then((list) => list.forEach(enqueue));
     return () => {
       offReq();
       offRes();
     };
+    // setView identity is stable enough here; cardId is the real key (the
+    // exhaustive-deps plugin isn't installed in this repo)
   }, [cardId]);
   const decide = (decision: 'allow' | 'deny', allowAll = false): void => {
-    if (!perm || !cardId) return;
-    if (allowAll) allowAllByCard.add(cardId);
-    void window.switchboard.sessions.decidePermission(perm.requestId, decision);
-    setPerm(null);
+    const head = permQueue[0];
+    if (!head) return;
+    if (allowAll) allowAllByLive.add(head.sessionId);
+    void window.switchboard.sessions.decidePermission(head.requestId, decision);
+    setPermQueue((prev) => prev.slice(1)); // resolved event prunes too (idempotent)
   };
 
   // membership follows the panel when the user drags it between dockview
@@ -537,6 +557,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 autonomy={cardAutonomy}
                 model={usage?.model}
                 approval={perm}
+                approvalQueued={Math.max(0, permQueue.length - 1)}
                 onDecide={decide}
                 onCycleAutonomy={cycleCardAutonomy}
                 onJumpToTerminal={() => setView('terminal')}
@@ -662,9 +683,9 @@ const components = { sessionCard: SessionCardPanel, diffPane: DiffPanel };
 // live session id -> stable card id (single-window app). Lets the rail, which
 // tracks live sessions, focus/diff a card by its ephemeral session id.
 const liveToCard = new Map<string, string>();
-// cards where the user chose "Allow all (this session)" — cleared on app
-// restart by construction (renderer memory), which is the safe default
-const allowAllByCard = new Set<string>();
+// LIVE session ids where the user chose "Allow all (this session)" — keyed
+// by the ephemeral live id so a respawn/resume prompts again (review P0#2)
+const allowAllByLive = new Set<string>();
 // card ids currently docking back via the pop-out BUTTON (toggle). The panel's
 // location-change handler reads this to keep a button dock-back alive while a
 // bare window-close suspends the session (E8-04).

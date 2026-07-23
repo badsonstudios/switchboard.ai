@@ -118,6 +118,45 @@ test.describe('inline approval bar (E10-04)', () => {
     expect(JSON.parse(await pending).hookSpecificOutput.permissionDecision).toBe('allow');
   });
 
+  test('a hold surfaces the Session tab from Terminal, and rapid holds QUEUE (P0#4/#5)', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
+    const logFile = await poll(() => {
+      const f = findFile(a.home, 'switchboard.log');
+      return f && fs.readFileSync(f, 'utf8').includes('hook listener up') ? f : null;
+    });
+    const port = Number(/"msg":"hook listener up".*?"port":(\d+)/.exec(fs.readFileSync(logFile, 'utf8'))![1]);
+    const tokenFile = await poll(() => findFile(a.home, 'hook-token'));
+    const token = fs.readFileSync(tokenFile, 'utf8').trim();
+    const hold = (file: string) =>
+      fetch(`http://127.0.0.1:${port}/hook`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-switchboard-token': token },
+        body: JSON.stringify({
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Edit',
+          tool_input: { file_path: file, old_string: 'a', new_string: 'b' },
+        }),
+      }).then((r) => r.text());
+
+    // park the card on the TERMINAL tab, then hold twice in quick succession
+    await w.getByRole('button', { name: 'Terminal' }).click();
+    const p1 = hold('C:/one.ts');
+    const p2 = hold('C:/two.ts');
+    // the Session tab auto-surfaces with the bar + queue badge
+    await expect(w.getByText('Allow Edit?')).toBeVisible({ timeout: 10_000 });
+    await expect(w.getByText('+1 more waiting')).toBeVisible();
+    await w.getByRole('button', { name: 'Allow', exact: true }).click();
+    expect(JSON.parse(await p1).hookSpecificOutput.permissionDecision).toBe('allow');
+    // the second request advances into the bar
+    await expect(w.getByText('C:/two.ts')).toBeVisible({ timeout: 10_000 });
+    await w.getByRole('button', { name: 'Deny' }).click();
+    expect(JSON.parse(await p2).hookSpecificOutput.permissionDecision).toBe('deny');
+    await expect(w.getByText('Allow Edit?')).toHaveCount(0);
+  });
+
   test('Deny returns a deny verdict', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
