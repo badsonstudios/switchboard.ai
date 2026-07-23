@@ -181,6 +181,23 @@ describe('persistent groups (P2-E12-01: durable containers, empty ≠ gone)', ()
   });
 });
 
+describe('notification prefs merge-patch (review P1 #13)', () => {
+  it('toggling enabled does not wipe osToasts or quiet hours', () => {
+    const st = new WorkspaceStore(file);
+    st.load();
+    st.setNotificationPrefs({ osToasts: true, quietStart: '22:00', quietEnd: '07:00' });
+    st.setNotificationPrefs({ enabled: false }); // the UI's only call shape
+    expect(st.getNotificationPrefs()).toEqual({
+      enabled: false,
+      osToasts: true,
+      quietStart: '22:00',
+      quietEnd: '07:00',
+    });
+    st.setNotificationPrefs({ osToasts: false });
+    expect(st.getNotificationPrefs()).toMatchObject({ enabled: false, osToasts: false });
+  });
+});
+
 describe('ui blob (P2-E12-08 focus/view-tab state)', () => {
   it('round-trips opaque ui state', () => {
     const a = new WorkspaceStore(file);

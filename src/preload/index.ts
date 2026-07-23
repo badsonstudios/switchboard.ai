@@ -185,13 +185,15 @@ const api = {
       ipcRenderer.invoke('git:fileVersions', folder, file),
   },
   notifications: {
-    getPrefs: (): Promise<{ enabled: boolean; quietStart?: string; quietEnd?: string }> =>
+    getPrefs: (): Promise<{ enabled: boolean; osToasts?: boolean; quietStart?: string; quietEnd?: string }> =>
       ipcRenderer.invoke('notifications:getPrefs'),
+    // merge-patch: send only the prefs you're changing (review P1 #13)
     setPrefs: (p: {
-      enabled: boolean;
+      enabled?: boolean;
+      osToasts?: boolean;
       quietStart?: string;
       quietEnd?: string;
-    }): Promise<{ enabled: boolean; quietStart?: string; quietEnd?: string }> =>
+    }): Promise<{ enabled: boolean; osToasts?: boolean; quietStart?: string; quietEnd?: string }> =>
       ipcRenderer.invoke('notifications:setPrefs', p),
   },
   events: {
@@ -210,6 +212,11 @@ const api = {
       const h = (_e: unknown, p: { sessionId: string; block: unknown }) => cb(p);
       ipcRenderer.on('sessions:feedBlock', h);
       return () => ipcRenderer.removeListener('sessions:feedBlock', h);
+    },
+    onReset: (cb: (payload: { sessionId: string }) => void): (() => void) => {
+      const h = (_e: unknown, p: { sessionId: string }) => cb(p);
+      ipcRenderer.on('sessions:feedReset', h);
+      return () => ipcRenderer.removeListener('sessions:feedReset', h);
     },
   },
   pty: {

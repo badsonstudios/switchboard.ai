@@ -8,7 +8,11 @@ test.describe('persistent groups (E12)', () => {
   test.afterEach(async () => a?.cleanup());
 
   test('create an empty group, rename it, and it survives a relaunch', async () => {
-    const first = await launchApp();
+    // shared handle FIRST: a failure before close() must leave afterEach
+    // something to kill (review P1-test #16 — leaked Electron/PTY trees
+    // poison CI teardown)
+    a = await launchApp();
+    const first = a;
     const w = first.window;
 
     await w.getByTitle('Create a persistent group').click();
@@ -32,7 +36,8 @@ test.describe('persistent groups (E12)', () => {
   test('drag a session into a group and back out; membership survives relaunch (E12-04)', async () => {
     const folder = tempProjectFolder();
     const title = folder.split(/[\\/]/).pop()!;
-    const first = await launchApp({ seedFolder: folder });
+    a = await launchApp({ seedFolder: folder }); // shared handle first (#16)
+    const first = a;
     const w = first.window;
     await expect(w.getByText(title).first()).toBeVisible();
 

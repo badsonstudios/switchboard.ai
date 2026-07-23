@@ -84,7 +84,8 @@ test.describe('a session card', () => {
   test('a popped-out window restores at its saved SCREEN POSITION after relaunch (E8-02/E8-04)', async () => {
     skipPopoutOnLinux();
     const folder = tempProjectFolder();
-    const first = await launchApp({ seedFolder: folder });
+    a = await launchApp({ seedFolder: folder }); // shared handle first (#16)
+    const first = a;
     await expect(first.window.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
     await first.window.getByTitle('Pop out into its own window').click();
     await expect.poll(() => first.app.windows().length, { timeout: 15_000 }).toBe(2);

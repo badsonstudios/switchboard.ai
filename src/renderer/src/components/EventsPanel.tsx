@@ -33,8 +33,17 @@ export function EventsPanel(props: {
   const [events, setEvents] = useState<EventDto[]>([]);
 
   useEffect(() => {
-    void window.switchboard.events.list().then((l) => setEvents(l as EventDto[]));
-    return window.switchboard.events.onChanged((l) => setEvents(l as EventDto[]));
+    // a push landing while list() is in flight must not be overwritten by
+    // the stale snapshot (review P1 #15) — pushes always win
+    let gotPush = false;
+    const off = window.switchboard.events.onChanged((l) => {
+      gotPush = true;
+      setEvents(l as EventDto[]);
+    });
+    void window.switchboard.events.list().then((l) => {
+      if (!gotPush) setEvents(l as EventDto[]);
+    });
+    return off;
   }, []);
 
   // events carry the LIVE session id; the rail rows know both ids (Dan #9 —

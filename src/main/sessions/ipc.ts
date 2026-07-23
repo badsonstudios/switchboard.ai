@@ -104,6 +104,8 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   // Feed view blocks (P2-E12-06): live stream + backlog for attach
   transcripts.onBlock((sessionId, block) => send('sessions:feedBlock', { sessionId, block }));
+  // a corrected mis-bind discarded the derived blocks — the renderer must too
+  transcripts.onReset((sessionId) => send('sessions:feedReset', { sessionId }));
   ipcMain.handle('transcripts:blocks', (_e, liveId: string) =>
     typeof liveId === 'string' ? transcripts.blocks(liveId) : []
   );

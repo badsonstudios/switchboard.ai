@@ -207,8 +207,11 @@ export class WorkspaceStore {
     return { ...this.state.notifications };
   }
 
-  setNotificationPrefs(p: NotificationPrefsState): void {
-    this.state.notifications = sanitizeNotifications(p);
+  setNotificationPrefs(p: Partial<NotificationPrefsState>): void {
+    // merge-patch semantics: the enabled-toggle must not reset osToasts /
+    // quiet hours to defaults (review P1 #13 — replace-then-sanitize wiped
+    // every pref the caller didn't send)
+    this.state.notifications = sanitizeNotifications({ ...this.state.notifications, ...p });
     this.saveSoon();
   }
 

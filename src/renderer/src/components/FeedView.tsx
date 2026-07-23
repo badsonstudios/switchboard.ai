@@ -207,7 +207,7 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const inner =
     b.kind === 'todos' ? (
       <TodosBlock b={b} />
-    ) : b.kind === 'tool' && b.tool?.name === 'Bash' ? (
+    ) : b.kind === 'tool' && b.tool?.category === 'shell' ? (
       <BashBlock b={b} />
     ) : b.kind === 'tool' && (b.tool?.oldString !== undefined || b.tool?.newString !== undefined) ? (
       <EditBlock b={b} />
@@ -298,9 +298,15 @@ export function FeedView(props: {
       // upsert: the watcher re-emits a block when its OUT / duration lands
       setBlocks((prev) => upsertBlock(prev, p.block as FeedBlockDto));
     });
+    // a corrected mis-bind restarts the stream from seq 1 — drop the stolen
+    // blocks or the shorter correct transcript leaves the old tail showing
+    const offReset = window.switchboard.transcripts.onReset((p) => {
+      if (p.sessionId === props.sessionId) setBlocks([]);
+    });
     return () => {
       cancelled = true;
       off();
+      offReset();
     };
   }, [props.sessionId]);
 
@@ -647,6 +653,9 @@ function Composer({
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
+          // confirming an IME candidate (CJK input) also fires Enter — never
+          // submit a half-composed draft (keyCode 229 covers WebKit quirks)
+          if (e.nativeEvent.isComposing || e.keyCode === 229) return;
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             submit();
