@@ -14,6 +14,13 @@
 **Review scope:** branch `auto/phase-2-e10` (E10 + live-test fixes), diff vs `main`.
 **Method:** 8 finder angles → 42 candidates → dedup → adversarial verification (18 individual correctness verifiers + 3 batched cleanup verifiers). 36 confirmed, 1 plausible, 1 refuted (dropped).
 
+> **Status 2026-07-23 (commit `7c55c78`):** P0 #1–#5 all fixed, tested, and
+> pushed. #1 resolved by OWNER DECISION (Option A): plan mode never holds —
+> `GATED.plan = []` and plan excluded from the out-of-cwd read rule; DESIGN
+> §5.16 records the rule. Everything from P1 down is still OPEN — nothing
+> later was incidentally fixed (verified against the code before this
+> annotation). Next: P1 #6–#8 (watcher trio).
+
 ---
 
 ## P0 — Permission-hold cluster (fix before merge)
@@ -30,12 +37,16 @@ breakage never blocks a session") and the permission model's intent.
 - **Fix direction:** In plan mode, an "allow" decision should *not* return `permissionDecision:'allow'`. Either return no decision (let the CLI's own plan-mode prompt/block run), or don't gate mutating tools in plan mode at all and let the CLI enforce plan semantics. Decide deliberately; document in DESIGN.md if behavior changes.
 - **Test:** unit test on `decide()` output for autonomy `'plan'` + tool `Write`.
 
+- **DONE (7c55c78):** Option A per owner — `GATED.plan = []`, plan excluded from `READ_GATED_AUTONOMIES`; DESIGN 5.16 note; policy unit tests assert plan never holds any tool or out-of-cwd read.
+
 ### [x] 2. "Allow all (this session)" outlives the session
 
 - **Where:** `src/renderer/src/components/SessionGrid.tsx:667` (`allowAllByCard`), consulted at ~line 230
 - **Bug:** The Set is module-level, keyed by **durable card id**, and never cleared (comment admits "cleared on app restart by construction"). Live sessions are ephemeral and respawn/`--resume` under the same cardId — so a new session inherits auto-approval with no prompt, despite the "this session" wording.
 - **Fix direction:** Key by live session id, or clear the card's entry on session exit/respawn. (See also P2 finding #16 — the flag arguably belongs in the main process entirely; if you do #16, this collapses into it.)
 - **Test:** e2e or unit: allow-all → session restart → next gated call must prompt again.
+
+- **DONE (7c55c78):** `allowAllByLive` keyed by LIVE session id (set from the held request's sessionId); a respawn/resume gets a fresh id and prompts again. Revisit home with P2 #19 (main-process move) later.
 
 ### [x] 3. Fire-and-forget permission push; fail-open guard permanently defeated
 
@@ -44,6 +55,8 @@ breakage never blocks a session") and the permission model's intent.
 - **Fix direction:** Expose the pending map over IPC (e.g. `sessions:pendingPermissions` invoke) and re-push pending requests when the renderer (re)subscribes / window recreates. Also consider releasing the hold immediately if the push provably has no recipient.
 - **Test:** unit on hook-listener + a replay test: hold → simulate renderer resubscribe → request re-delivered.
 
+- **DONE (7c55c78):** pending map now stores the full request; `pendingRequests()` + `sessions:pendingPermissions` invoke; the card replays pending holds on (re)subscribe. Unit test: replay list populated while held, empty after decide.
+
 ### [x] 4. Concurrent held requests overwrite the single `perm` slot
 
 - **Where:** `src/renderer/src/components/SessionGrid.tsx:234` (`setPerm({...})` overwrites), `:248` (`setPerm(null)` on decide)
@@ -51,12 +64,16 @@ breakage never blocks a session") and the permission model's intent.
 - **Fix direction:** Queue: hold a list of pending requests per card, show them one at a time (or stacked); on decide, advance to the next.
 - **Test:** unit on the queue logic; e2e with two rapid holds if feasible.
 
+- **DONE (7c55c78):** per-card queue (`permQueue`), bar shows head + "+N more waiting", decide advances; resolved events prune idempotently. e2e: two rapid holds -> allow first, deny second, both verdicts asserted.
+
 ### [x] 5. ApprovalBar unreachable when card is on Terminal/Changes tab
 
 - **Where:** `src/renderer/src/components/SessionGrid.tsx:531` (`{view === 'feed' && <FeedView ...>}`), perm state at ~:116, passed only to FeedView at ~:539
 - **Bug:** The ApprovalBar renders only inside FeedView. On the Terminal or Changes tab there is **no affordance at all** — the hold precedes the CLI's own TUI prompt so even the terminal shows nothing; the status pill is a non-clickable span. Session appears frozen up to 300s.
 - **Fix direction:** Render the approval UI at card level (above the tab switch), or auto-switch to the Session tab on a held request, or make the needs-permission pill a click-through to the bar. Card-level render is the robust option.
 - **Test:** e2e: hold while Terminal tab active → approval UI visible/decidable.
+
+- **DONE (7c55c78):** a held request auto-surfaces the Session tab (`setView('feed')` on enqueue) — keeps the owner's above-composer placement AND reachability from any tab. e2e: hold while Terminal active -> bar visible + decidable.
 
 ---
 
