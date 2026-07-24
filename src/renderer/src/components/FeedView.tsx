@@ -331,14 +331,37 @@ export function FeedView(props: {
   // Direct scrollTop after a layout frame; scrollIntoView proved flaky for
   // restored sessions with big replayed histories (Dan 2026-07-23: opening
   // a restored card landed at the TOP).
+  const autoPin = React.useRef(false); // our own scrolls must not unpin
+  const content = React.useRef<HTMLDivElement | null>(null);
+  const pin = React.useCallback((): void => {
+    const el = scroller.current;
+    if (!el) return;
+    autoPin.current = true;
+    el.scrollTop = el.scrollHeight;
+    requestAnimationFrame(() => (autoPin.current = false));
+  }, []);
   React.useEffect(() => {
     if (!props.visible || !pinned.current) return;
-    const id = requestAnimationFrame(() => {
-      const el = scroller.current;
-      if (el) el.scrollTop = el.scrollHeight;
-    });
+    const id = requestAnimationFrame(pin);
     return () => cancelAnimationFrame(id);
-  }, [blocks, props.visible]);
+  }, [blocks, props.visible, pin]);
+  // Self-healing pin (Dan round 5: cards you SWITCH to sat at the top after
+  // app start): a one-shot pin can land while the panel has no layout yet —
+  // dockview shows background panels a frame later, restore relayouts, and
+  // markdown reflows — so scrollHeight was 0 and the write was a no-op with
+  // nothing left to retry it. Observing the scroller AND its content re-pins
+  // on ANY size change while the view is tail-pinned.
+  React.useEffect(() => {
+    const el = scroller.current;
+    const inner = content.current;
+    if (!el || !inner) return;
+    const ro = new ResizeObserver(() => {
+      if (pinned.current) pin();
+    });
+    ro.observe(el);
+    ro.observe(inner);
+    return () => ro.disconnect();
+  }, [pin]);
 
   const visibleBlocks = blocks.filter((b) => blockVisible(b, verbosity));
   return (
@@ -394,26 +417,29 @@ export function FeedView(props: {
       <div
         ref={scroller}
         onScroll={() => {
+          if (autoPin.current) return; // our own pin — not user intent
           const el = scroller.current;
           if (el) pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
         style={{ flex: 1, minBlockSize: 0, overflowY: 'auto', fontSize: 12, lineHeight: 1.5, paddingBlock: 6 }}
       >
-        {visibleBlocks.length === 0 && (
-          <div style={{ color: 'var(--faint)', fontSize: 11, textAlign: 'center', marginBlockStart: 24 }}>
-            {t('feedView.empty')}
-          </div>
-        )}
-        {visibleBlocks.map((b, i) => (
-          <React.Fragment key={b.seq}>
-            {/* a new prompt starts a new turn — rule it off (Dan #11) */}
-            {b.kind === 'user' && i > 0 && (
-              <div style={{ borderBlockStart: '1px solid var(--border)', marginBlock: 8, marginInline: 8 }} />
-            )}
-            <Block b={b} />
-          </React.Fragment>
-        ))}
-        <div ref={bottom} />
+        <div ref={content}>
+          {visibleBlocks.length === 0 && (
+            <div style={{ color: 'var(--faint)', fontSize: 11, textAlign: 'center', marginBlockStart: 24 }}>
+              {t('feedView.empty')}
+            </div>
+          )}
+          {visibleBlocks.map((b, i) => (
+            <React.Fragment key={b.seq}>
+              {/* a new prompt starts a new turn — rule it off (Dan #11) */}
+              {b.kind === 'user' && i > 0 && (
+                <div style={{ borderBlockStart: '1px solid var(--border)', marginBlock: 8, marginInline: 8 }} />
+              )}
+              <Block b={b} />
+            </React.Fragment>
+          ))}
+          <div ref={bottom} />
+        </div>
       </div>
       {/* the working banner — LOUD by request (Dan, twice): full-width tinted
           bar, bold LEFT-aligned label, staggered pulse dots to its right

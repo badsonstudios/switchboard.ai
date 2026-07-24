@@ -230,13 +230,25 @@ Work items:
   expand/collapses; e2e covers Edit-diff and Bash IN/OUT via a synthetic
   transcript.
 
-- **P2-E10-07 · Composer slash-command autocomplete — M (§5.10). [not yet
-  filed — owner request 2026-07-22, "pipeline, not immediately"].** Typing
-  `/` in the composer pops a command list (the VS Code extension pattern):
-  the CLI's built-ins + the project's skills/commands (registry §5.19 knows
-  them). Selecting inserts; submission stays a plain PTY write.
+- **P2-E10-07 · Composer slash commands (full support) — M→L (§5.10, §5.17).
+  [PROMOTED to the NEXT work item — owner 2026-07-24: "we need to support
+  all the slash commands from Claude"; originally 2026-07-22 "pipeline,
+  not immediately". File the issue when picked up.]** Two halves:
+  (a) **Autocomplete** — typing `/` in the composer pops a command list (the
+  VS Code extension pattern): the CLI's built-ins + the project's
+  skills/commands (registry §5.19 knows them). Selecting inserts; submission
+  stays a plain PTY write (host-don't-reimplement: the CLI executes).
+  (b) **Session controls** — the commands a user reaches for from the
+  Session tab without remembering syntax, `/clear` first (owner: "I have no
+  way to clear a conversation"): surface as composer actions/⋯ menu entries
+  that write the command to the PTY. Watch out for the §5.10 startup-dialog
+  rule (don't write into a TUI dialog) and note `/clear` resets the CLI
+  conversation while our Feed keeps its derived blocks — decide whether
+  clear also resets the Feed view (probably yes: re-derive from the
+  post-clear transcript).
   *Done when:* `/` pops the list, arrow/enter selects, the composed command
-  runs in the session; no popup when `/` is mid-sentence.
+  runs in the session; no popup when `/` is mid-sentence; `/clear` works
+  from the Session tab and the Feed reflects the cleared conversation.
 
 **E10 exit:** a user can run a whole coding turn — prompt, watch, approve —
 without the Terminal tab even being VISIBLE; the turn reads like the VS Code

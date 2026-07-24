@@ -11,11 +11,12 @@ FIXED (allow-all now answered in main — was review P2 #19), starting-state
 Terminal chip (resume-picker visibility), working-banner restyle, Events
 uniform height + dismiss ✕, rail task labels, duplicate-title -N suffix,
 composer stop button. Review P1 (#6–#17) merged earlier (PR #66).
-**Next up (needs Dan):** re-run test 4 (out-of-cwd read) WITHOUT allow-all
-active and with autonomy=ask — tonight's log shows shell tools auto-allowed
-by allow-all, no Read hold ever fired · grid-drag between groups retest.
-Then `/pm plan` for the next Phase 2 epic.
-**Branch:** fix/dan-round-4
+**Next up:** **P2-E10-07 composer slash commands (full support)** — PROMOTED
+to the next work item (owner 2026-07-24; plan updated, issue filed on
+pickup; includes /clear as the first session control). [user] retests:
+test 4 (out-of-cwd read) WITHOUT allow-all + autonomy=ask · grid-drag
+between groups.
+**Branch:** fix/dan-round-4 (PR #67)
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
 `npm test` (unit) · `npm run check:*` (local real-claude proofs) · `npm run e2e`
@@ -53,6 +54,20 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-24 — **Round 5 (on PR #67): tail-pin made SELF-HEALING.** Dan:
+  switching to an already-open session after app start landed at the TOP.
+  Root cause: the pin was a one-shot rAF keyed on [blocks, visible] — if it
+  fired before the panel had real layout (dockview shows background panels
+  a frame later; restore relayouts), scrollTop wrote against scrollHeight=0
+  and nothing ever retried. Now a ResizeObserver on the scroller + content
+  re-pins on any size change while tail-pinned, and programmatic pins no
+  longer count as user scrolls (autoPin guard — a layout-induced scroll
+  event could permanently unpin). Also **P2-E10-07 slash commands PROMOTED
+  to the next work item** (owner: support ALL Claude slash commands;
+  /clear first — "no way to clear a conversation"); plan rewritten with
+  the two halves (autocomplete + session controls) and the /clear-vs-Feed
+  decision spelled out.
 
 - 2026-07-23 — **Dan's round 4 (live testing on merged main).** Root-caused
   from the app log: the "random Windows alert noises" were review P2 #19 in
