@@ -358,6 +358,14 @@ break-out; they interleave anywhere after E9:
   the full §5.12 event catalog, and the **questions-queue placeholder**
   (a session's clarification questions render as an expandable list the
   operator returns to later — owner request 2026-07-22).
+  **Inline permission decisions (owner request 2026-07-23):** a
+  needs-permission event carries the SAME buttons as the approval bar —
+  Allow · Allow all (this session) · Deny — decidable from the Events panel
+  without focusing the card ("blind allow/deny"). Plumbing: the event needs
+  the held requestId(s) attached (join `sessions:pendingPermissions` by live
+  id, or enrich the event push in ipc.ts); decisions ride the existing
+  `sessions:decidePermission` / `sessions:allowAllSession` IPC. Interim
+  shipped 2026-07-23: uniform item heights + per-item dismiss ✕.
 - **Per-session "notify when done" checkbox (§5.9, owner request
   2026-07-22).** Done-toasts opt-in per session; rides the rules engine.
   (Interim shipped: no OS toasts while the window is focused, crashes

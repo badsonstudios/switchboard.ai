@@ -200,6 +200,20 @@ export function SessionsRail(props: {
             <>
               <span style={{ flex: 1, minInlineSize: 0 }}>
                 <IdentityChip title={s.title} accent={s.accent} badge={s.badge} />
+                {s.taskLabel && (
+                  <div
+                    style={{
+                      color: 'var(--muted)',
+                      fontSize: 9.5,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      marginBlockStart: 1,
+                    }}
+                  >
+                    {s.taskLabel}
+                  </div>
+                )}
               </span>
               <span
                 onClick={(e) => {

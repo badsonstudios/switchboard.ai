@@ -174,20 +174,38 @@ export function EventsPanel(props: {
               <span style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)', fontSize: 9 }}>
                 {new Date(e.at).toLocaleTimeString()}
               </span>
-            </div>
-            {s?.taskLabel && (
-              <div
+              <button
+                onClick={(ev) => {
+                  ev.stopPropagation(); // dismiss, don't focus
+                  void window.switchboard.events.dismiss(e.sessionId);
+                }}
+                title={t('events.dismissHint')}
                 style={{
-                  color: 'var(--muted)',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--faint)',
+                  cursor: 'pointer',
                   fontSize: 10,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
+                  lineHeight: 1,
+                  padding: '0 1px',
+                  alignSelf: 'flex-start',
                 }}
               >
-                {s.taskLabel}
-              </div>
-            )}
+                {t('events.dismiss')}
+              </button>
+            </div>
+            {/* always rendered so every item is the SAME height (Dan round 4) */}
+            <div
+              style={{
+                color: 'var(--muted)',
+                fontSize: 10,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {s?.taskLabel ?? ' '}
+            </div>
             <span style={{ color: KIND_TOKEN[e.kind] }}>{t(`events.kind.${e.kind}`)}</span>
           </div>
         );

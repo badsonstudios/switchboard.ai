@@ -227,6 +227,31 @@ describe('PreToolUse hold + decision round-trip (P2-E10-03, §5.16)', () => {
     held.unregisterSession('s1');
     expect((await pending).body).toBe('{}');
   });
+
+  it('allow-all answers gated calls at the server: no hold, no event, no push (P2 #19)', async () => {
+    const t = heldToken('s1');
+    held.setAllowAll('s1');
+    const res = await postHeld(preToolUse('Edit'), t); // resolves immediately
+    const verdict = JSON.parse(res.body).hookSpecificOutput;
+    expect(verdict).toMatchObject({ permissionDecision: 'allow' });
+    expect(requests).toHaveLength(0); // renderer never bothered
+    expect(held.pendingRequests()).toHaveLength(0); // nothing parked
+    // and crucially: NO permission-held event -> no needs-permission beep
+    expect(heldApplied.some((a) => a.ev.kind === 'permission-held')).toBe(false);
+  });
+
+  it('allow-all is per-LIVE-session and ends with it', async () => {
+    const t1 = heldToken('s1');
+    held.setAllowAll('s1');
+    held.unregisterSession('s1'); // session over — the grant dies with it
+    const t2 = heldToken('s1'); // "respawn" under the same id
+    void t1;
+    const pending = postHeld(preToolUse('Edit'), t2);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(requests).toHaveLength(1); // prompts again
+    held.decide(requests[0].requestId, 'deny');
+    await pending;
+  });
 });
 
 describe('shouldHoldPermission policy', () => {

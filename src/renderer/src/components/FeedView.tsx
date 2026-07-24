@@ -283,10 +283,26 @@ export function FeedView(props: {
   const bottom = React.useRef<HTMLDivElement | null>(null);
   const pinned = React.useRef(true); // stick to the tail unless the user scrolls up
   const scroller = React.useRef<HTMLDivElement | null>(null);
-  // chip = raw TUI states only: needs-input, or a permission the inline bar
-  // is NOT handling (fail-open path where the CLI shows its own prompt)
+  // a session stuck in 'starting' usually means the CLI is showing a startup
+  // TUI dialog only the Terminal can render (e.g. 2.1.x's resume-from-summary
+  // picker — Dan round 4: it was invisible from the Session tab and his
+  // composer Enter blindly confirmed it). Hooks aren't up yet, so 'starting'
+  // that outlives a normal boot is the only signal we get.
+  const [startingLong, setStartingLong] = React.useState(false);
+  React.useEffect(() => {
+    if (props.status !== 'starting') {
+      setStartingLong(false);
+      return;
+    }
+    const id = setTimeout(() => setStartingLong(true), 8_000);
+    return () => clearTimeout(id);
+  }, [props.status]);
+  // chip = raw TUI states only: needs-input, a permission the inline bar is
+  // NOT handling (fail-open path), or a startup that's waiting on the TUI
   const waiting =
-    props.status === 'needs-input' || (props.status === 'needs-permission' && !props.approval);
+    props.status === 'needs-input' ||
+    (props.status === 'needs-permission' && !props.approval) ||
+    startingLong;
 
   React.useEffect(() => {
     let cancelled = false;
@@ -400,13 +416,14 @@ export function FeedView(props: {
         <div ref={bottom} />
       </div>
       {/* the working banner — LOUD by request (Dan, twice): full-width tinted
-          bar, bold label, staggered pulse dots */}
+          bar, bold LEFT-aligned label, staggered pulse dots to its right
+          (Dan round 4: text left, dots right of the text, no ellipsis) */}
       {!props.approval && props.status === 'working' && (
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
+            justifyContent: 'flex-start',
             gap: 10,
             paddingInline: 12,
             paddingBlock: 8,
@@ -418,6 +435,7 @@ export function FeedView(props: {
             letterSpacing: 0.2,
           }}
         >
+          {t('feedView.workingStrip')}
           {[0, 0.25, 0.5].map((delay) => (
             <span
               key={delay}
@@ -430,7 +448,6 @@ export function FeedView(props: {
               }}
             />
           ))}
-          {t('feedView.workingStrip')}
         </div>
       )}
       {props.approval && props.onDecide && (
@@ -677,6 +694,25 @@ function Composer({
           outline: 'none',
         }}
       />
+      {status === 'working' && (
+        <button
+          onClick={() => window.switchboard.pty.input(sessionId, String.fromCharCode(27))}
+          title={t('feedView.stop')}
+          style={{
+            background: 'color-mix(in srgb, var(--status-crashed) 14%, var(--panel))',
+            color: 'var(--status-crashed)',
+            border: '1px solid var(--status-crashed)',
+            borderRadius: 8,
+            inlineSize: 30,
+            blockSize: 30,
+            cursor: 'pointer',
+            fontSize: 11,
+            lineHeight: 1,
+          }}
+        >
+          {t('feedView.stopIcon')}
+        </button>
+      )}
       <button
         onClick={submit}
         disabled={!draft.trim()}

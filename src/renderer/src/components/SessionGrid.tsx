@@ -263,7 +263,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const decide = (decision: 'allow' | 'deny', allowAll = false): void => {
     const head = permQueue[0];
     if (!head) return;
-    if (allowAll) allowAllByLive.add(head.sessionId);
+    if (allowAll) {
+      // main answers future gated calls at the server — no hold/event/beep
+      // (P2 #19). The local set still drains anything ALREADY queued here.
+      allowAllByLive.add(head.sessionId);
+      void window.switchboard.sessions.allowAllSession(head.sessionId);
+    }
     void window.switchboard.sessions.decidePermission(head.requestId, decision);
     setPermQueue((prev) => prev.slice(1)); // resolved event prunes too (idempotent)
   };
