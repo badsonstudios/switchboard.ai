@@ -4,13 +4,22 @@
 // so UI tests are hermetic and CI-safe. Registered under the 'claude-code' id
 // the UI uses, replacing the real adapter in test mode only.
 import { ProviderAdapter, SpawnRecipe } from '../extensibility/contributions';
+import { SlashCommand } from '../../shared/slash-commands';
 
 export const fakeAdapter: ProviderAdapter = {
   manifest: {
     id: 'claude-code',
     displayName: 'Fake (test)',
     version: '0.0.0',
-    capabilities: ['sessions.spawn'],
+    capabilities: ['sessions.spawn', 'slash-commands.list'],
+  },
+  // a tiny builtin catalog so the composer popup + ⋯ session controls are
+  // e2e-drivable; the hosted shell just echoes an unknown "/clear" (harmless)
+  slashCommands(): SlashCommand[] {
+    return [
+      { name: 'clear', description: 'Clear conversation history', source: 'builtin' },
+      { name: 'compact', description: 'Summarize the conversation', source: 'builtin' },
+    ];
   },
   buildSpawn(): SpawnRecipe {
     return {

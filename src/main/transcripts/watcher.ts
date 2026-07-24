@@ -172,7 +172,7 @@ export class TranscriptWatcher {
   private readonly known = new Set<string>(); // files existing before any watch
   private readonly listeners = new Set<(s: TranscriptSnapshot) => void>();
   private readonly blockListeners = new Set<(sessionId: string, b: FeedBlock) => void>();
-  private readonly resetListeners = new Set<(sessionId: string) => void>();
+  private readonly resetListeners = new Set<(sessionId: string, cause?: 'clear') => void>();
   private timer: NodeJS.Timeout | null = null;
 
   constructor(private readonly opts: TranscriptWatcherOptions) {
@@ -212,22 +212,31 @@ export class TranscriptWatcher {
    * sessionId doesn't match the id the hooks just delivered, unbind and let
    * discovery re-run with the id as the authority.
    */
-  setNativeSessionId(sessionId: string, nativeId: string): void {
+  setNativeSessionId(sessionId: string, nativeId: string, cause?: 'clear'): void {
     const w = this.sessions.get(sessionId);
     if (!w) return;
     w.nativeSessionId = nativeId;
     if (w.boundFile && w.snap.nativeSessionId && w.snap.nativeSessionId !== nativeId) {
-      this.opts.log.warn('transcript mis-bind corrected (same-cwd race)', {
-        sessionId,
-        boundTo: w.snap.nativeSessionId,
-        actual: nativeId,
-      });
-      this.resetBinding(w);
+      if (cause === 'clear') {
+        // not a mis-bind: /clear started a fresh conversation on purpose
+        this.opts.log.info('conversation cleared — rebinding to the new transcript', {
+          sessionId,
+          from: w.snap.nativeSessionId,
+          to: nativeId,
+        });
+      } else {
+        this.opts.log.warn('transcript mis-bind corrected (same-cwd race)', {
+          sessionId,
+          boundTo: w.snap.nativeSessionId,
+          actual: nativeId,
+        });
+      }
+      this.resetBinding(w, cause);
     }
   }
 
-  /** Drop a wrong binding and start discovery over, clean. */
-  private resetBinding(w: WatchedSession): void {
+  /** Drop the current binding and start discovery over, clean. */
+  private resetBinding(w: WatchedSession, cause?: 'clear'): void {
     w.boundFile = null;
     w.tails.clear();
     w.blocks = [];
@@ -246,11 +255,14 @@ export class TranscriptWatcher {
     };
     // the renderer must drop the stolen blocks too — the correct transcript
     // re-emits from seq 1 and would otherwise interleave with the old tail
-    for (const l of this.resetListeners) l(w.sessionId);
+    for (const l of this.resetListeners) l(w.sessionId, cause);
   }
 
-  /** A mis-bind was corrected: the session's derived blocks were discarded. */
-  onReset(l: (sessionId: string) => void): () => void {
+  /**
+   * The session's derived blocks were discarded — a corrected mis-bind, or
+   * (cause 'clear') the CLI's /clear starting a fresh conversation.
+   */
+  onReset(l: (sessionId: string, cause?: 'clear') => void): () => void {
     this.resetListeners.add(l);
     return () => this.resetListeners.delete(l);
   }

@@ -5,18 +5,21 @@
 
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10 merged; E12 merged;
 E9/E11/E13/E14 still outlines)
-**In progress:** nothing mid-flight. Rounds 4+5 **MERGED to main (PR #67,
-baecd48)**: phantom-beep fix (allow-all answered in main — was review P2
-#19), starting-state Terminal chip, self-healing tail-pin, working-banner
-restyle, Events uniform height + dismiss ✕, rail task labels,
-duplicate-title -N suffix, composer stop button. Review P1 (#6–#17)
-merged earlier (PR #66).
-**Next up:** **P2-E10-07 composer slash commands (full support)** — PROMOTED
-to the next work item (owner 2026-07-24; plan updated, issue filed on
-pickup; includes /clear as the first session control). [user] retests on
-merged main (rebuild first): test 4 (out-of-cwd read) WITHOUT allow-all +
-autonomy=ask · grid-drag between groups · switch-to-session scroll ·
-allow-all sessions now silent.
+**In progress:** nothing mid-flight. **P2-E10-07 on PR #69** (open,
+awaiting Dan): original scope + the eyeball-round fix — /clear WAS
+executing (probe + Dan's own app log both prove it: new native id minted,
+watcher rebound); the bug was SILENCE. /clear has no output at all (empty
+local-command-stdout, no assistant reply), so a cleared feed read as
+"nothing happened". Fix: reset CAUSE plumbed hook→manager→watcher→
+renderer; the Session view now shows a "Conversation cleared — context
+starts fresh" divider on SessionStart(source:'clear').
+**Next up:** merge PR #69, then nothing filed — E9/E11/E13/E14 need `/pm
+plan`. [Dan eyeball] after merge: one real /clear from the ⋯ menu → Feed
+resets (rebind plumbing unit-proven; real-claude e2e blocked by upstream
+anthropics/claude-code#80683). [user] retests on merged main (rebuild
+first): test 4 (out-of-cwd read) WITHOUT allow-all + autonomy=ask ·
+grid-drag between groups · switch-to-session scroll · allow-all sessions
+now silent. Rounds 4+5 merged (PR #67); review P1 merged (PR #66).
 **Branch:** main
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
@@ -55,6 +58,41 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-24 — **/clear "not executing" (Dan's eyeball) root-caused: it
+  EXECUTES — silently.** Two independent proofs: (a) node-pty probe vs real
+  claude 2.1.218 (`.claude/work_files/clear-probe/`, reusable) — the app's
+  exact write pattern fires SessionStart(source:'clear') with a fresh
+  session id; (b) Dan's own app log at 18:33:57 shows the new conversation
+  (eea4f7ac…) binding seconds after his /clear. The CLI gives ZERO
+  feedback (empty `<local-command-stdout>`, no assistant turn), so the
+  wiped feed looked like a no-op. FIX on PR #69: the id-change now carries
+  a CAUSE ('clear') from hook-listener → manager.setNativeSessionId →
+  watcher reset → sessions:feedReset → FeedView renders a "Conversation
+  cleared — context starts fresh" divider (mis-bind corrections stay
+  unmarked; watcher logs info not warn for clear rebinds). +2 unit (hook
+  cause tagging, watcher cause propagation + rebind), +1 e2e (seeded
+  transcript → SessionStart(clear) POST → old blocks gone + marker shown).
+  189 unit + 34 e2e green.
+
+- 2026-07-24 — **P2-E10-07 done (#68, PR #69)**: composer slash commands.
+  (a) `/` at line start pops autocomplete — provider builtin catalog (new
+  optional ProviderAdapter.slashCommands seam; curated claude 2.1.x data)
+  merged with an ASYNC fail-open scan of project/user .claude/commands
+  (subdir → dir:name namespacing) + .claude/skills SKILL.md frontmatter;
+  ↑/↓ + Enter/Tab insert (never submits while open/fetching), Esc
+  dismisses, mid-sentence `/` never triggers. New sessions:slashCommands
+  IPC (folder from the session record, §5.29). (b) The card's inert ⋯ is a
+  real menu: Clear conversation (inline confirm) + Compact — type the real
+  /clear · /compact into the PTY; locked while starting (§5.10
+  startup-dialog rule) or crashed/exited. PTY prompt-write extracted to
+  lib/composer.ts (S-03 paste rule). Feed-after-/clear rides the existing
+  new-native-id rebind (unit-proven; real-CLI e2e impossible under the
+  isolated home — upstream #80683 — hence the [Dan eyeball]). Review: 0
+  blockers, 3 should-fixes fixed (async scanner, block-scalar frontmatter,
+  dead-session gating). Gate: lint + typecheck + 187 unit + 33 e2e green
+  (3 new Playwright specs; one drives the real hook listener to prove the
+  starting-lock unlocks live).
 
 - 2026-07-24 — **Round 5 (on PR #67): tail-pin made SELF-HEALING.** Dan:
   switching to an already-open session after app start landed at the TOP.

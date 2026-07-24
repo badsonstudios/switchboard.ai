@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import type { SlashCommand } from '../shared/slash-commands';
 
 const versionArg = process.argv.find((a) => a.startsWith('--switchboard-version='));
 const seedArg = process.argv.find((a) => a.startsWith('--switchboard-seed-panels='));
@@ -72,6 +73,9 @@ const api = {
       }
     > => ipcRenderer.invoke('sessions:create', opts),
     list: (): Promise<SessionRecordDto[]> => ipcRenderer.invoke('sessions:list'),
+    /** composer autocomplete data (E10-07): builtins + project/user commands */
+    slashCommands: (liveId: string): Promise<SlashCommand[]> =>
+      ipcRenderer.invoke('sessions:slashCommands', liveId),
     cards: (): Promise<
       Array<{
         cardId: string;
@@ -217,8 +221,8 @@ const api = {
       ipcRenderer.on('sessions:feedBlock', h);
       return () => ipcRenderer.removeListener('sessions:feedBlock', h);
     },
-    onReset: (cb: (payload: { sessionId: string }) => void): (() => void) => {
-      const h = (_e: unknown, p: { sessionId: string }) => cb(p);
+    onReset: (cb: (payload: { sessionId: string; cause?: 'clear' }) => void): (() => void) => {
+      const h = (_e: unknown, p: { sessionId: string; cause?: 'clear' }) => cb(p);
       ipcRenderer.on('sessions:feedReset', h);
       return () => ipcRenderer.removeListener('sessions:feedReset', h);
     },

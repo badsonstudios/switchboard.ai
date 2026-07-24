@@ -44,6 +44,15 @@
     "dockInIcon": "⤡",
     "menu": "Session menu",
     "menuIcon": "⋯",
+    "menuClear": "Clear conversation",
+    "menuClearHint": "Types /clear into the session — the CLI clears its conversation",
+    "menuClearConfirm": "Clear this conversation? The session's context starts over.",
+    "menuClearGo": "Clear",
+    "menuClearCancel": "Cancel",
+    "menuCompact": "Compact conversation",
+    "menuCompactHint": "Types /compact into the session — the CLI summarizes to free context",
+    "menuStarting": "Still starting — controls unlock once the session is ready",
+    "menuDead": "The session has ended — restart it to use session controls",
     "closeTab": "Close (ends the session)",
     "closeTabIcon": "✕",
     "closeConfirm": "Close \"{title}\"? This ends the session and removes the card.",
@@ -152,9 +161,17 @@
     "quietHint": "Prose only — your prompts and Claude's replies",
     "normalHint": "Prose + tool activity",
     "firehoseHint": "Everything, including thinking and subagent chatter",
+    "clearedMarker": "Conversation cleared — context starts fresh",
     "workingStrip": "Claude is working",
     "expandHint": "click to expand",
-    "collapsedIcon": "▸"
+    "collapsedIcon": "▸",
+    "slashSource": {
+      "builtin": "CLI",
+      "project-command": "project",
+      "user-command": "user",
+      "project-skill": "skill",
+      "user-skill": "skill · user"
+    }
   },
   "statusbar": {
     "sessions": "{count, plural, =0 {no sessions} one {# session} other {# sessions}}",

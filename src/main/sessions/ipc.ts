@@ -14,6 +14,7 @@ import { EventFeed } from '../events/feed';
 import { ensureFolderTrusted } from './trust';
 import { conversationExists } from '../transcripts/watcher';
 import { PersistedSession } from '../workspace/store';
+import { SlashCommand } from '../../shared/slash-commands';
 
 export interface SessionIpcDeps {
   manager: SessionManager;
@@ -35,6 +36,9 @@ export interface SessionIpcDeps {
   projectsRoot: string;
   /** git toplevel for a folder (null if not a repo) — auto-group key (E12-05) */
   repoRoot: (folder: string) => Promise<string | null>;
+  /** slash-command discovery for the composer popup (E10-07, §5.17) — async:
+   *  the scan must never stall the main process on a slow disk */
+  slashCommands: (folder: string, providerId: string) => Promise<SlashCommand[]>;
 }
 
 export function registerSessionIpc(deps: SessionIpcDeps): void {
@@ -46,9 +50,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   // when a session's native id is learned, persist it so the card can
   // --resume that conversation after an app restart
-  manager.onNativeSessionId((liveId, nativeId) => {
-    // tighten transcript binding — corrects same-cwd mis-binds (E10 fix)
-    transcripts.setNativeSessionId(liveId, nativeId);
+  manager.onNativeSessionId((liveId, nativeId, cause) => {
+    // tighten transcript binding — corrects same-cwd mis-binds (E10 fix);
+    // cause 'clear' = /clear minted a new conversation (E10-07 feedback)
+    transcripts.setNativeSessionId(liveId, nativeId, cause);
     const cardId = cardOfLive.get(liveId);
     if (!cardId) return;
     const existing = deps.persist.list().find((s) => s.id === cardId);
@@ -113,8 +118,9 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   // Feed view blocks (P2-E12-06): live stream + backlog for attach
   transcripts.onBlock((sessionId, block) => send('sessions:feedBlock', { sessionId, block }));
-  // a corrected mis-bind discarded the derived blocks — the renderer must too
-  transcripts.onReset((sessionId) => send('sessions:feedReset', { sessionId }));
+  // a corrected mis-bind (or /clear) discarded the derived blocks — the
+  // renderer must too; cause 'clear' shows the "conversation cleared" marker
+  transcripts.onReset((sessionId, cause) => send('sessions:feedReset', { sessionId, cause }));
   ipcMain.handle('transcripts:blocks', (_e, liveId: string) =>
     typeof liveId === 'string' ? transcripts.blocks(liveId) : []
   );
@@ -242,6 +248,16 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   );
 
   ipcMain.handle('sessions:list', () => manager.list());
+
+  // composer slash-command autocomplete (E10-07): builtins + the session
+  // folder's and user's own commands/skills. Scan errors fail open in the
+  // scanner; an unknown live id just returns nothing.
+  ipcMain.handle('sessions:slashCommands', (_e, liveId: string) => {
+    if (typeof liveId !== 'string') return [];
+    const rec = manager.get(liveId);
+    if (!rec) return [];
+    return deps.slashCommands(rec.identity.folder, rec.identity.providerId);
+  });
 
   // repo/folder auto-group keys (E12-05): same key -> same emergent group.
   // Cached per folder; a repo root beats the folder path so sibling checkouts
