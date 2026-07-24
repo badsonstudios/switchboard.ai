@@ -3,23 +3,22 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-**Milestone:** Phase 2 - The Switchboard (E7+E8+E10 merged; E12 merged;
-E9/E11/E13/E14 still outlines)
-**In progress:** nothing mid-flight. **P2-E10-07 on PR #69** (open,
-awaiting Dan): original scope + the eyeball-round fix — /clear WAS
-executing (probe + Dan's own app log both prove it: new native id minted,
-watcher rebound); the bug was SILENCE. /clear has no output at all (empty
-local-command-stdout, no assistant reply), so a cleared feed read as
-"nothing happened". Fix: reset CAUSE plumbed hook→manager→watcher→
-renderer; the Session view now shows a "Conversation cleared — context
-starts fresh" divider on SessionStart(source:'clear').
-**Next up:** merge PR #69, then nothing filed — E9/E11/E13/E14 need `/pm
-plan`. [Dan eyeball] after merge: one real /clear from the ⋯ menu → Feed
-resets (rebind plumbing unit-proven; real-claude e2e blocked by upstream
-anthropics/claude-code#80683). [user] retests on merged main (rebuild
-first): test 4 (out-of-cwd read) WITHOUT allow-all + autonomy=ask ·
-grid-drag between groups · switch-to-session scroll · allow-all sessions
-now silent. Rounds 4+5 merged (PR #67); review P1 merged (PR #66).
+**Milestone:** Phase 2 - The Switchboard (E7+E8+E10 complete & merged;
+E12 merged; E9/E11/E13/E14 still outlines)
+**In progress:** nothing mid-flight. **PR #69 MERGED 2026-07-24**
+(P2-E10-07 + the /clear-feedback fix; issue #68 closed; E10 epic fully
+shipped). Dan confirmed /clear works and is happy with the command
+coverage (⋯ menu: clear+compact; composer autocomplete: 36 builtins +
+project/user commands+skills; /model-/mcp-style TUI pickers finish in
+the Terminal tab by design).
+**Next up:** **`/pm plan`** — milestone is EMPTY; expand the next epic
+from E9 (palette/keyboard) / E11 (Session Bus — composer prerequisite now
+exists, see OQ #1 note) / E13 (Dispatch) / E14 (Notifications v2; carries
+Dan's inline Allow/Deny-on-events request). Dan picks direction. [user]
+retests still pending on merged main (rebuild first): test 4 (out-of-cwd
+read) WITHOUT allow-all + autonomy=ask · grid-drag between groups ·
+switch-to-session scroll · allow-all sessions now silent. Also pending:
+ClaudeMon architecture read (OQ #8) before Phase 3 planning.
 **Branch:** main
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
