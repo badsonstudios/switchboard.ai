@@ -5,18 +5,19 @@
 
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10 merged; E12 merged;
 E9/E11/E13/E14 still outlines)
-**In progress:** Dan's round 4 fixes on `fix/review-p1-followup`… branch
-`fix/dan-round-4` (PR pending Dan's merge word): phantom-beep root cause
-FIXED (allow-all now answered in main — was review P2 #19), starting-state
-Terminal chip (resume-picker visibility), working-banner restyle, Events
-uniform height + dismiss ✕, rail task labels, duplicate-title -N suffix,
-composer stop button. Review P1 (#6–#17) merged earlier (PR #66).
+**In progress:** nothing mid-flight. Rounds 4+5 **MERGED to main (PR #67,
+baecd48)**: phantom-beep fix (allow-all answered in main — was review P2
+#19), starting-state Terminal chip, self-healing tail-pin, working-banner
+restyle, Events uniform height + dismiss ✕, rail task labels,
+duplicate-title -N suffix, composer stop button. Review P1 (#6–#17)
+merged earlier (PR #66).
 **Next up:** **P2-E10-07 composer slash commands (full support)** — PROMOTED
 to the next work item (owner 2026-07-24; plan updated, issue filed on
-pickup; includes /clear as the first session control). [user] retests:
-test 4 (out-of-cwd read) WITHOUT allow-all + autonomy=ask · grid-drag
-between groups.
-**Branch:** fix/dan-round-4 (PR #67)
+pickup; includes /clear as the first session control). [user] retests on
+merged main (rebuild first): test 4 (out-of-cwd read) WITHOUT allow-all +
+autonomy=ask · grid-drag between groups · switch-to-session scroll ·
+allow-all sessions now silent.
+**Branch:** main
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
 `npm test` (unit) · `npm run check:*` (local real-claude proofs) · `npm run e2e`
