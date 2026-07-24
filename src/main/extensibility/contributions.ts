@@ -2,6 +2,7 @@
 // contribution point + capability manifest, even while everything is
 // in-process. The seam is the product decision; out-of-process loading can
 // arrive later without rewiring consumers.
+import { SlashCommand } from '../../shared/slash-commands';
 
 /** What a contributor declares about itself. */
 export interface CapabilityManifest {
@@ -24,6 +25,12 @@ export interface ProviderAdapter {
   manifest: CapabilityManifest;
   /** Build the spawn recipe for a session in `cwd`. */
   buildSpawn(options: SpawnOptions): SpawnRecipe;
+  /**
+   * The CLI's builtin slash commands, for the composer autocomplete
+   * (P2-E10-07, §5.17). Optional: a provider without the concept degrades to
+   * scanned project/user commands only.
+   */
+  slashCommands?(): SlashCommand[];
 }
 
 export interface SpawnOptions {

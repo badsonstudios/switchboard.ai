@@ -14,6 +14,7 @@ import { EventFeed } from '../events/feed';
 import { ensureFolderTrusted } from './trust';
 import { conversationExists } from '../transcripts/watcher';
 import { PersistedSession } from '../workspace/store';
+import { SlashCommand } from '../../shared/slash-commands';
 
 export interface SessionIpcDeps {
   manager: SessionManager;
@@ -35,6 +36,9 @@ export interface SessionIpcDeps {
   projectsRoot: string;
   /** git toplevel for a folder (null if not a repo) — auto-group key (E12-05) */
   repoRoot: (folder: string) => Promise<string | null>;
+  /** slash-command discovery for the composer popup (E10-07, §5.17) — async:
+   *  the scan must never stall the main process on a slow disk */
+  slashCommands: (folder: string, providerId: string) => Promise<SlashCommand[]>;
 }
 
 export function registerSessionIpc(deps: SessionIpcDeps): void {
@@ -242,6 +246,16 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   );
 
   ipcMain.handle('sessions:list', () => manager.list());
+
+  // composer slash-command autocomplete (E10-07): builtins + the session
+  // folder's and user's own commands/skills. Scan errors fail open in the
+  // scanner; an unknown live id just returns nothing.
+  ipcMain.handle('sessions:slashCommands', (_e, liveId: string) => {
+    if (typeof liveId !== 'string') return [];
+    const rec = manager.get(liveId);
+    if (!rec) return [];
+    return deps.slashCommands(rec.identity.folder, rec.identity.providerId);
+  });
 
   // repo/folder auto-group keys (E12-05): same key -> same emergent group.
   // Cached per folder; a repo root beats the folder path so sibling checkouts

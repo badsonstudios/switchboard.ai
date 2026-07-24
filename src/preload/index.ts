@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import type { SlashCommand } from '../shared/slash-commands';
 
 const versionArg = process.argv.find((a) => a.startsWith('--switchboard-version='));
 const seedArg = process.argv.find((a) => a.startsWith('--switchboard-seed-panels='));
@@ -72,6 +73,9 @@ const api = {
       }
     > => ipcRenderer.invoke('sessions:create', opts),
     list: (): Promise<SessionRecordDto[]> => ipcRenderer.invoke('sessions:list'),
+    /** composer autocomplete data (E10-07): builtins + project/user commands */
+    slashCommands: (liveId: string): Promise<SlashCommand[]> =>
+      ipcRenderer.invoke('sessions:slashCommands', liveId),
     cards: (): Promise<
       Array<{
         cardId: string;

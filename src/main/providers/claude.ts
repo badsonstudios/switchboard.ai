@@ -9,6 +9,7 @@
 import fs from 'fs';
 import path from 'path';
 import { ProviderAdapter, SpawnOptions, SpawnRecipe } from '../extensibility/contributions';
+import { SlashCommand } from '../../shared/slash-commands';
 
 const CLI_NAMES = process.platform === 'win32' ? ['claude.cmd', 'claude.exe'] : ['claude'];
 
@@ -89,12 +90,62 @@ function validateHooksShape(hooks: unknown): void {
   }
 }
 
+/**
+ * The CLI's builtin slash commands (P2-E10-07). CURATED DATA, not behavior:
+ * the descriptions are the CLI's own wording, and the set is version-volatile
+ * by nature (like tool-name coverage — see the 2026-07-22 PowerShell probe
+ * note). A stale entry is harmless — the CLI itself rejects or ignores it —
+ * so keeping this list fresh is a maintenance chore, not a correctness risk.
+ * Verified against claude 2.1.x.
+ */
+const CLAUDE_BUILTIN_COMMANDS: SlashCommand[] = [
+  { name: 'add-dir', description: 'Add a new working directory' },
+  { name: 'agents', description: 'Manage agent configurations' },
+  { name: 'bug', description: 'Submit feedback about Claude Code' },
+  { name: 'clear', description: 'Clear conversation history and free up context' },
+  { name: 'compact', description: 'Summarize the conversation to free up context' },
+  { name: 'config', description: 'Open the settings panel' },
+  { name: 'context', description: 'Visualize current context usage' },
+  { name: 'cost', description: 'Show token usage and cost for this session' },
+  { name: 'doctor', description: 'Diagnose and verify your installation' },
+  { name: 'exit', description: 'Exit the REPL' },
+  { name: 'export', description: 'Export the conversation to a file or clipboard' },
+  { name: 'help', description: 'Show help and available commands' },
+  { name: 'hooks', description: 'Manage hook configurations' },
+  { name: 'ide', description: 'Manage IDE integrations' },
+  { name: 'init', description: 'Initialize a CLAUDE.md file for this project' },
+  { name: 'login', description: 'Sign in with your Anthropic account' },
+  { name: 'logout', description: 'Sign out of your Anthropic account' },
+  { name: 'mcp', description: 'Manage MCP server connections' },
+  { name: 'memory', description: 'Edit memory files' },
+  { name: 'model', description: 'Set the model for this session' },
+  { name: 'output-style', description: 'Set the output style' },
+  { name: 'permissions', description: 'Manage tool permission rules' },
+  { name: 'plugin', description: 'Manage plugins and marketplaces' },
+  { name: 'pr-comments', description: 'Get comments from a GitHub pull request' },
+  { name: 'release-notes', description: 'View release notes' },
+  { name: 'resume', description: 'Resume a previous conversation' },
+  { name: 'review', description: 'Review a pull request' },
+  { name: 'rewind', description: 'Rewind the conversation and/or code changes' },
+  { name: 'security-review', description: 'Review pending changes for security issues' },
+  { name: 'status', description: 'Show version, model, account and connectivity' },
+  { name: 'statusline', description: 'Configure the status line' },
+  { name: 'terminal-setup', description: 'Configure terminal Shift+Enter binding' },
+  { name: 'todos', description: 'List current todo items' },
+  { name: 'usage', description: 'Show plan usage limits' },
+  { name: 'vim', description: 'Toggle vim editing mode' },
+].map((c) => ({ ...c, source: 'builtin' as const }));
+
 export const claudeAdapter: ProviderAdapter = {
   manifest: {
     id: 'claude-code',
     displayName: 'Claude Code',
     version: '0.2.0',
-    capabilities: ['sessions.spawn', 'sessions.resume', 'settings.inject'],
+    capabilities: ['sessions.spawn', 'sessions.resume', 'settings.inject', 'slash-commands.list'],
+  },
+
+  slashCommands(): SlashCommand[] {
+    return CLAUDE_BUILTIN_COMMANDS;
   },
 
   buildSpawn(options: SpawnOptions): SpawnRecipe {

@@ -9,6 +9,8 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { blockVisible, FeedBlockDto, upsertBlock, Verbosity } from '../lib/feed';
 import { uiGet, uiSet } from '../lib/ui-state';
+import { writePromptToPty } from '../lib/composer';
+import { filterCommands, insertCommand, SlashCommand, slashToken } from '../../../shared/slash-commands';
 
 export type { FeedBlockDto } from '../lib/feed';
 
@@ -660,28 +662,68 @@ function Composer({
   const [draft, setDraft] = React.useState('');
   const box = React.useRef<HTMLTextAreaElement | null>(null);
 
+  // Slash-command autocomplete (E10-07, §5.10): typing '/' as the FIRST
+  // character pops the list — CLI builtins + the project's/user's own
+  // commands and skills. Selecting only INSERTS text; submission stays a
+  // plain PTY write and the real CLI executes the command.
+  const [caret, setCaret] = React.useState(0);
+  const [commands, setCommands] = React.useState<SlashCommand[] | null>(null);
+  const [selected, setSelected] = React.useState(0);
+  const [dismissed, setDismissed] = React.useState(false);
+  const token = dismissed ? null : slashToken(draft, caret);
+  const popup = token !== null && commands !== null ? filterCommands(commands, token) : [];
+  const popupOpen = popup.length > 0;
+  const syncCaret = (): void => setCaret(box.current?.selectionStart ?? 0);
+  const popupWanted = token !== null;
+  React.useEffect(() => {
+    // fetch on every popup OPENING (not each keystroke) so a just-added
+    // command file shows up without restarting anything
+    if (!popupWanted) {
+      setCommands(null);
+      return;
+    }
+    let cancelled = false;
+    void window.switchboard.sessions.slashCommands(sessionId).then((list) => {
+      if (!cancelled) setCommands(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [popupWanted, sessionId]);
+  React.useEffect(() => setSelected(0), [token]);
+  // arrow-key navigation must keep the highlighted row visible in the
+  // scrollable popup (36+ builtins overflow the 200px box)
+  const selectedRow = React.useRef<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    selectedRow.current?.scrollIntoView({ block: 'nearest' });
+  }, [selected, token]);
+
+  const pick = (name: string): void => {
+    const next = insertCommand(draft, caret, name);
+    setDraft(next);
+    setDismissed(true); // closed until the token changes again
+    const el = box.current;
+    const pos = name.length + 2; // after "/name "
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(pos, pos);
+      setCaret(pos);
+    });
+  };
+
   const submit = (): void => {
     const text = draft.replace(/\r\n/g, '\n').trimEnd();
     if (!text) return;
-    // multiline goes as one bracketed paste so the TUI treats it as a single
-    // prompt; built from char codes -- no control bytes in source.
-    // The Enter is a SEPARATE, delayed write: text+CR in one chunk registers
-    // as a paste and never submits (S-03 finding — refound live 2026-07-22
-    // when real-claude composer prompts sat unsubmitted).
-    const ESC = String.fromCharCode(27);
-    const CR = String.fromCharCode(13);
-    const payload = text.includes(String.fromCharCode(10))
-      ? ESC + '[200~' + text + ESC + '[201~'
-      : text;
-    window.switchboard.pty.input(sessionId, payload);
-    setTimeout(() => window.switchboard.pty.input(sessionId, CR), 75);
+    writePromptToPty(sessionId, text);
     setDraft('');
+    setDismissed(false);
     box.current?.focus();
   };
 
   return (
     <div
       style={{
+        position: 'relative',
         display: 'flex',
         flexDirection: 'column',
         gap: 5,
@@ -690,15 +732,105 @@ function Composer({
         background: 'var(--panel2)',
       }}
     >
+      {popupOpen && (
+        <div
+          style={{
+            position: 'absolute',
+            insetBlockEnd: '100%',
+            insetInlineStart: 8,
+            insetInlineEnd: 8,
+            marginBlockEnd: 4,
+            zIndex: 20,
+            background: 'var(--panel)',
+            border: '1px solid var(--border)',
+            borderRadius: 8,
+            boxShadow: 'var(--tab-lift)',
+            maxBlockSize: 200,
+            overflowY: 'auto',
+            padding: 3,
+          }}
+        >
+          {popup.map((c, i) => {
+            const slashName = '/' + c.name;
+            return (
+            <div
+              key={`${c.source}:${c.name}`}
+              ref={i === selected ? selectedRow : undefined}
+              onMouseDown={(e) => e.preventDefault() /* keep the textarea focused */}
+              onClick={() => pick(c.name)}
+              onMouseEnter={() => setSelected(i)}
+              style={{
+                display: 'flex',
+                alignItems: 'baseline',
+                gap: 8,
+                padding: '3px 8px',
+                borderRadius: 5,
+                cursor: 'pointer',
+                background: i === selected ? 'var(--chip)' : 'transparent',
+              }}
+            >
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, color: 'var(--text)', flexShrink: 0 }}>
+                {slashName}
+              </span>
+              <span
+                style={{
+                  fontSize: 10.5,
+                  color: 'var(--muted)',
+                  flex: 1,
+                  minInlineSize: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {c.description ?? ''}
+              </span>
+              <span style={{ fontSize: 9, color: 'var(--faint)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+                {t(`feedView.slashSource.${c.source}`)}
+              </span>
+            </div>
+            );
+          })}
+        </div>
+      )}
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6 }}>
       <textarea
         ref={box}
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          setDismissed(false);
+          setCaret(e.target.selectionStart ?? 0);
+        }}
+        onClick={syncCaret}
+        onKeyUp={syncCaret}
         onKeyDown={(e) => {
           // confirming an IME candidate (CJK input) also fires Enter — never
           // submit a half-composed draft (keyCode 229 covers WebKit quirks)
           if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+          // fetch still in flight for a wanted popup: swallow Enter/Tab so a
+          // fast "/⏎" can't submit a bare slash before the list arrives
+          if (popupWanted && commands === null && (e.key === 'Enter' || e.key === 'Tab')) {
+            e.preventDefault();
+            return;
+          }
+          if (popupOpen) {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+              e.preventDefault();
+              setSelected((s) => (s + (e.key === 'ArrowDown' ? 1 : popup.length - 1)) % popup.length);
+              return;
+            }
+            if (e.key === 'Enter' || e.key === 'Tab') {
+              e.preventDefault();
+              pick(popup[Math.min(selected, popup.length - 1)].name);
+              return;
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              setDismissed(true);
+              return;
+            }
+          }
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             submit();

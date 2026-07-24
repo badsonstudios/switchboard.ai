@@ -231,9 +231,10 @@ Work items:
   transcript.
 
 - **P2-E10-07 · Composer slash commands (full support) — M→L (§5.10, §5.17).
-  [PROMOTED to the NEXT work item — owner 2026-07-24: "we need to support
-  all the slash commands from Claude"; originally 2026-07-22 "pipeline,
-  not immediately". File the issue when picked up.]** Two halves:
+  [Issue #68, filed on pickup 2026-07-24. Owner scope call at plan gate:
+  ⋯-menu session controls ship /clear + /compact (with confirm on clear);
+  /model · /mcp entries and plugin/MCP command discovery stay future work.]**
+  Two halves:
   (a) **Autocomplete** — typing `/` in the composer pops a command list (the
   VS Code extension pattern): the CLI's built-ins + the project's
   skills/commands (registry §5.19 knows them). Selecting inserts; submission

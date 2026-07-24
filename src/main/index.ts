@@ -18,6 +18,7 @@ import { GitService } from './git/git-service';
 import { runPreflight } from './preflight';
 import { startStaticServer, StaticServer } from './static-server';
 import { parsePopoutFeatures } from './popout-bounds';
+import { scanSlashCommands } from './capabilities/slash-commands';
 import { dialog } from 'electron';
 
 // Safe-by-default for every window this app will ever open (§5.29 posture).
@@ -358,6 +359,12 @@ app
       },
       projectsRoot: path.join(os.homedir(), '.claude', 'projects'),
       repoRoot: (folder) => gitService.root(folder),
+      slashCommands: (folder, providerId) =>
+        scanSlashCommands(
+          { cwd: folder, userClaudeDir: path.join(os.homedir(), '.claude') },
+          registry.resolve('provider-adapter', providerId)?.slashCommands?.() ?? [],
+          (msg) => log.app.info(msg)
+        ),
     });
     app.on('quit', () => {
       ptys.killAll();

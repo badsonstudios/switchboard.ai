@@ -21,6 +21,7 @@ import { RescuedPopout, sanitizePopoutLayout } from '../lib/layout';
 import { pickAdoptedGroupId } from '../lib/groups';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { setDraggedCard } from '../lib/drag-context';
+import { writePromptToPty } from '../lib/composer';
 
 // The DURABLE unit is the card (cardId + folder). The live claude session
 // under it is ephemeral: spawned — or --resumed — lazily the first time the
@@ -120,6 +121,13 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const perm = permQueue[0] ?? null;
   const [poppedOut, setPoppedOut] = React.useState<boolean>(props.api.location.type === 'popout');
   const [suspended, setSuspended] = React.useState(false);
+  // ⋯ session-controls menu (E10-07, §5.17): GUI sugar that TYPES the real
+  // slash command into the PTY — the CLI stays the source of truth
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const [confirmClear, setConfirmClear] = React.useState(false);
+  // locked while starting (§5.10 startup-dialog rule) or once the live
+  // session is gone — a PTY write to a dead session is a silent no-op
+  const controlsLocked = status === 'starting' || status === 'crashed' || exited !== null;
   const spawning = React.useRef(false);
   const cardId = props.params?.cardId;
   const folder = props.params?.folder;
@@ -505,8 +513,114 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             <button onClick={popOutToggle} title={poppedOut ? t('grid.dockIn') : t('grid.popOut')} style={cheadBtn}>
               {poppedOut ? t('grid.dockInIcon') : t('grid.popOutIcon')}
             </button>
-            <span title={t('grid.menu')} style={{ ...cheadBtn, cursor: 'default', color: 'var(--faint)' }}>
-              {t('grid.menuIcon')}
+            <span
+              style={{ position: 'relative' }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setMenuOpen(false);
+                  setConfirmClear(false);
+                }
+              }}
+            >
+              <button
+                title={t('grid.menu')}
+                onClick={() => {
+                  setMenuOpen((o) => !o);
+                  setConfirmClear(false);
+                }}
+                style={cheadBtn}
+              >
+                {t('grid.menuIcon')}
+              </button>
+              {menuOpen && (
+                <>
+                  {/* click-away closes; sits under the menu itself */}
+                  <div
+                    onClick={() => setMenuOpen(false)}
+                    style={{ position: 'fixed', inset: 0, zIndex: 30 }}
+                  />
+                  <div
+                    style={{
+                      position: 'absolute',
+                      insetBlockStart: '100%',
+                      insetInlineEnd: 0,
+                      marginBlockStart: 4,
+                      zIndex: 31,
+                      minInlineSize: 200,
+                      background: 'var(--panel)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 8,
+                      boxShadow: 'var(--tab-lift)',
+                      padding: 4,
+                      fontSize: 11,
+                      fontFamily: 'var(--font-ui)',
+                    }}
+                  >
+                    {/* session controls write the REAL slash command to the
+                        PTY. Locked while 'starting' — the CLI may still be in
+                        a startup TUI dialog the composer can't see (§5.10
+                        startup-dialog rule) — and once the session is dead
+                        (crashed/exited): the write would be a silent no-op.
+                        'done' stays live — the session is idle, not gone. */}
+                    {confirmClear && !controlsLocked ? (
+                      <div style={{ padding: '4px 8px' }}>
+                        <div style={{ color: 'var(--text)', marginBlockEnd: 6 }}>
+                          {t('grid.menuClearConfirm')}
+                        </div>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button
+                            onClick={() => {
+                              writePromptToPty(live.id, '/clear');
+                              setMenuOpen(false);
+                              setConfirmClear(false);
+                            }}
+                            style={menuConfirmBtn(true)}
+                          >
+                            {t('grid.menuClearGo')}
+                          </button>
+                          <button onClick={() => setConfirmClear(false)} style={menuConfirmBtn(false)}>
+                            {t('grid.menuClearCancel')}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          disabled={controlsLocked}
+                          title={
+                            !controlsLocked
+                              ? t('grid.menuClearHint')
+                              : status === 'starting'
+                                ? t('grid.menuStarting')
+                                : t('grid.menuDead')
+                          }
+                          onClick={() => setConfirmClear(true)}
+                          style={menuItemStyle(controlsLocked)}
+                        >
+                          {t('grid.menuClear')}
+                        </button>
+                        <button
+                          disabled={controlsLocked}
+                          title={
+                            !controlsLocked
+                              ? t('grid.menuCompactHint')
+                              : status === 'starting'
+                                ? t('grid.menuStarting')
+                                : t('grid.menuDead')
+                          }
+                          onClick={() => {
+                            writePromptToPty(live.id, '/compact');
+                            setMenuOpen(false);
+                          }}
+                          style={menuItemStyle(controlsLocked)}
+                        >
+                          {t('grid.menuCompact')}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
             </span>
           </div>
           {/* view tabs (.vtabs). Order/default per DESIGN §5.10: Feed is the
@@ -600,6 +714,35 @@ const cheadBtn: React.CSSProperties = {
   lineHeight: 1,
   padding: '2px 4px',
 };
+
+// ⋯ session-controls menu (E10-07)
+function menuItemStyle(disabled: boolean): React.CSSProperties {
+  return {
+    display: 'block',
+    inlineSize: '100%',
+    textAlign: 'start',
+    background: 'transparent',
+    border: 'none',
+    borderRadius: 5,
+    padding: '5px 8px',
+    fontSize: 11,
+    fontFamily: 'var(--font-ui)',
+    color: disabled ? 'var(--faint)' : 'var(--text)',
+    cursor: disabled ? 'default' : 'pointer',
+  };
+}
+function menuConfirmBtn(primary: boolean): React.CSSProperties {
+  return {
+    background: primary ? 'var(--btn-primary-bg)' : 'var(--panel)',
+    color: primary ? 'var(--btn-primary-text)' : 'var(--text)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-chip)',
+    padding: '3px 10px',
+    cursor: 'pointer',
+    fontFamily: 'var(--font-ui)',
+    fontSize: 11,
+  };
+}
 
 // status pill colors mirror the rail's STATUS_TOKEN (chrome.tsx)
 const STATUS_COLOR: Record<string, string> = {
