@@ -5,20 +5,16 @@
 
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10 merged; E12 merged;
 E9/E11/E13/E14 still outlines)
-**In progress:** **P2-E10-07 composer slash commands (#68)** — BUILT,
-tested, reviewed (0 blockers; all should-fixes addressed). Gate 2 (commit
-approval) pending. Composer `/`-autocomplete (builtins catalog via the
-provider seam + async fail-open scan of project/user commands+skills) +
-⋯-menu session controls (/clear w/ confirm, /compact; locked while
-starting/dead). Gate: lint + typecheck + 187 unit + 33 e2e green.
-[Dan eyeball] on a real session: /clear from the ⋯ menu → Feed resets
-(rebind plumbing is unit-proven; real-claude e2e blocked by upstream
-anthropics/claude-code#80683).
-**Next up:** (after #68) — nothing else filed; E9/E11/E13/E14 need `/pm
-plan`. [user] retests on merged main (rebuild first): test 4 (out-of-cwd
-read) WITHOUT allow-all + autonomy=ask · grid-drag between groups ·
-switch-to-session scroll · allow-all sessions now silent. Rounds 4+5 merged
-(PR #67, baecd48); review P1 (#6–#17) merged earlier (PR #66).
+**In progress:** nothing mid-flight. **P2-E10-07 DONE on PR #69**
+(2026-07-24, awaiting Dan's review/merge; Closes #68): composer
+`/`-autocomplete + ⋯-menu session controls (/clear w/ confirm, /compact).
+**Next up:** merge PR #69, then nothing filed — E9/E11/E13/E14 need `/pm
+plan`. [Dan eyeball] after merge: one real /clear from the ⋯ menu → Feed
+resets (rebind plumbing unit-proven; real-claude e2e blocked by upstream
+anthropics/claude-code#80683). [user] retests on merged main (rebuild
+first): test 4 (out-of-cwd read) WITHOUT allow-all + autonomy=ask ·
+grid-drag between groups · switch-to-session scroll · allow-all sessions
+now silent. Rounds 4+5 merged (PR #67); review P1 merged (PR #66).
 **Branch:** main
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
@@ -57,6 +53,25 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-24 — **P2-E10-07 done (#68, PR #69)**: composer slash commands.
+  (a) `/` at line start pops autocomplete — provider builtin catalog (new
+  optional ProviderAdapter.slashCommands seam; curated claude 2.1.x data)
+  merged with an ASYNC fail-open scan of project/user .claude/commands
+  (subdir → dir:name namespacing) + .claude/skills SKILL.md frontmatter;
+  ↑/↓ + Enter/Tab insert (never submits while open/fetching), Esc
+  dismisses, mid-sentence `/` never triggers. New sessions:slashCommands
+  IPC (folder from the session record, §5.29). (b) The card's inert ⋯ is a
+  real menu: Clear conversation (inline confirm) + Compact — type the real
+  /clear · /compact into the PTY; locked while starting (§5.10
+  startup-dialog rule) or crashed/exited. PTY prompt-write extracted to
+  lib/composer.ts (S-03 paste rule). Feed-after-/clear rides the existing
+  new-native-id rebind (unit-proven; real-CLI e2e impossible under the
+  isolated home — upstream #80683 — hence the [Dan eyeball]). Review: 0
+  blockers, 3 should-fixes fixed (async scanner, block-scalar frontmatter,
+  dead-session gating). Gate: lint + typecheck + 187 unit + 33 e2e green
+  (3 new Playwright specs; one drives the real hook listener to prove the
+  starting-lock unlocks live).
 
 - 2026-07-24 — **Round 5 (on PR #67): tail-pin made SELF-HEALING.** Dan:
   switching to an already-open session after app start landed at the TOP.
