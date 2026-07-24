@@ -10,7 +10,7 @@ import { SessionEvent } from '../sessions/state-machine';
 let dir: string;
 let listener: HookListener;
 let applied: Array<{ sessionId: string; ev: SessionEvent }>;
-let nativeIds: Array<{ sessionId: string; nativeId: string }>;
+let nativeIds: Array<{ sessionId: string; nativeId: string; cause?: 'clear' }>;
 let port: number;
 
 beforeEach(async () => {
@@ -22,7 +22,7 @@ beforeEach(async () => {
     log: createLogger(new LogSink({ dir }), 'hooks'),
     manager: {
       apply: (sessionId, ev) => applied.push({ sessionId, ev }),
-      setNativeSessionId: (sessionId, nativeId) => nativeIds.push({ sessionId, nativeId }),
+      setNativeSessionId: (sessionId, nativeId, cause) => nativeIds.push({ sessionId, nativeId, cause }),
     },
   });
   port = await listener.start();
@@ -92,6 +92,23 @@ describe('event routing', () => {
       event: 'Notification',
       notificationType: 'permission_prompt',
     });
+  });
+
+  it("SessionStart(source:'clear') tags the new native id with cause 'clear' (E10-07)", async () => {
+    const t = tokenFor('s1');
+    await post(
+      JSON.stringify({ hook_event_name: 'SessionStart', source: 'startup', session_id: 'native-1' }),
+      { 'x-switchboard-token': t }
+    );
+    await post(
+      JSON.stringify({ hook_event_name: 'SessionStart', source: 'clear', session_id: 'native-2' }),
+      { 'x-switchboard-token': t }
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    expect(nativeIds).toEqual([
+      { sessionId: 's1', nativeId: 'native-1', cause: undefined },
+      { sessionId: 's1', nativeId: 'native-2', cause: 'clear' },
+    ]);
   });
 
   it('tokens are per-session and revocable', async () => {

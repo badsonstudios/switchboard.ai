@@ -66,6 +66,10 @@ function seedProjectCommands(folder: string): void {
   );
 }
 
+function slugForCwd(cwd: string): string {
+  return cwd.replace(/[\\/:. ]/g, '-');
+}
+
 test.describe('composer slash commands (E10-07)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
@@ -148,5 +152,30 @@ test.describe('composer slash commands (E10-07)', () => {
 
     await showTerminal(w);
     await expect(w.getByText(/\/clear/).first()).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('a /clear-minted session id wipes the Feed and shows the cleared marker', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
+
+    // play the CLI: a bound conversation with visible content…
+    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
+    fs.mkdirSync(dir, { recursive: true });
+    const line = (o: Record<string, unknown>) =>
+      JSON.stringify({ sessionId: 'native-old', cwd: folder, timestamp: new Date().toISOString(), ...o }) + '\n';
+    fs.writeFileSync(
+      path.join(dir, 'native-old.jsonl'),
+      line({ type: 'assistant', message: { content: [{ type: 'text', text: 'OLD_CONversation_TEXT' }] } })
+    );
+    await expect(w.getByText('OLD_CONversation_TEXT')).toBeVisible({ timeout: 15_000 });
+
+    // …then /clear executes: SessionStart(source:'clear') delivers a NEW id
+    await postHook(a.home, { hook_event_name: 'SessionStart', source: 'clear', session_id: 'native-fresh' });
+
+    // the old conversation is wiped and the app SAYS SO (silent /clear fix)
+    await expect(w.getByText('Conversation cleared — context starts fresh')).toBeVisible({ timeout: 10_000 });
+    await expect(w.getByText('OLD_CONversation_TEXT')).toHaveCount(0);
   });
 });

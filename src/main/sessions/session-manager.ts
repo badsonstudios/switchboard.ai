@@ -9,6 +9,13 @@ import { SpawnRecipe } from '../extensibility/contributions';
 import { Logger } from '../log/logger';
 import { SessionEvent, SessionStatus, transition } from './state-machine';
 
+/**
+ * Why a session's native id CHANGED. 'clear' = the CLI ran /clear and minted
+ * a fresh conversation (SessionStart source:'clear'); absent = first learn or
+ * an unexplained change (e.g. correcting a same-cwd mis-bind).
+ */
+export type NativeIdCause = 'clear';
+
 export interface SessionIdentity {
   title: string;
   folder: string;
@@ -66,7 +73,9 @@ export class SessionManager {
   private readonly sessions = new Map<string, SessionRecord>();
   private readonly listeners = new Set<(c: StatusChange) => void>();
   private readonly exitListeners = new Set<(e: SessionExit) => void>();
-  private readonly nativeIdListeners = new Set<(sessionId: string, nativeId: string) => void>();
+  private readonly nativeIdListeners = new Set<
+    (sessionId: string, nativeId: string, cause?: NativeIdCause) => void
+  >();
   private readonly history: StatusChange[] = [];
 
   constructor(
@@ -190,21 +199,28 @@ export class SessionManager {
     }
   }
 
-  setNativeSessionId(id: string, nativeId: string): void {
+  setNativeSessionId(id: string, nativeId: string, cause?: NativeIdCause): void {
     const r = this.sessions.get(id);
     if (!r || r.nativeSessionId === nativeId) return;
     r.nativeSessionId = nativeId;
     for (const l of this.nativeIdListeners) {
       try {
-        l(id, nativeId);
+        l(id, nativeId, cause);
       } catch (err) {
         this.log.error('native-id listener threw', { sessionId: id, error: String(err) });
       }
     }
   }
 
-  /** Fires when a session's provider-native id (for --resume) is first learned. */
-  onNativeSessionId(l: (sessionId: string, nativeId: string) => void): () => void {
+  /**
+   * Fires when a session's provider-native id (for --resume) is learned OR
+   * replaced. `cause` is set when the caller knows WHY the id changed —
+   * 'clear' = the CLI executed /clear and minted a fresh conversation
+   * (E10-07 feedback: the renderer shows a "conversation cleared" marker).
+   */
+  onNativeSessionId(
+    l: (sessionId: string, nativeId: string, cause?: NativeIdCause) => void
+  ): () => void {
     this.nativeIdListeners.add(l);
     return () => this.nativeIdListeners.delete(l);
   }

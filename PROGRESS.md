@@ -5,9 +5,14 @@
 
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10 merged; E12 merged;
 E9/E11/E13/E14 still outlines)
-**In progress:** nothing mid-flight. **P2-E10-07 DONE on PR #69**
-(2026-07-24, awaiting Dan's review/merge; Closes #68): composer
-`/`-autocomplete + ⋯-menu session controls (/clear w/ confirm, /compact).
+**In progress:** nothing mid-flight. **P2-E10-07 on PR #69** (open,
+awaiting Dan): original scope + the eyeball-round fix — /clear WAS
+executing (probe + Dan's own app log both prove it: new native id minted,
+watcher rebound); the bug was SILENCE. /clear has no output at all (empty
+local-command-stdout, no assistant reply), so a cleared feed read as
+"nothing happened". Fix: reset CAUSE plumbed hook→manager→watcher→
+renderer; the Session view now shows a "Conversation cleared — context
+starts fresh" divider on SessionStart(source:'clear').
 **Next up:** merge PR #69, then nothing filed — E9/E11/E13/E14 need `/pm
 plan`. [Dan eyeball] after merge: one real /clear from the ⋯ menu → Feed
 resets (rebind plumbing unit-proven; real-claude e2e blocked by upstream
@@ -53,6 +58,22 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-24 — **/clear "not executing" (Dan's eyeball) root-caused: it
+  EXECUTES — silently.** Two independent proofs: (a) node-pty probe vs real
+  claude 2.1.218 (`.claude/work_files/clear-probe/`, reusable) — the app's
+  exact write pattern fires SessionStart(source:'clear') with a fresh
+  session id; (b) Dan's own app log at 18:33:57 shows the new conversation
+  (eea4f7ac…) binding seconds after his /clear. The CLI gives ZERO
+  feedback (empty `<local-command-stdout>`, no assistant turn), so the
+  wiped feed looked like a no-op. FIX on PR #69: the id-change now carries
+  a CAUSE ('clear') from hook-listener → manager.setNativeSessionId →
+  watcher reset → sessions:feedReset → FeedView renders a "Conversation
+  cleared — context starts fresh" divider (mis-bind corrections stay
+  unmarked; watcher logs info not warn for clear rebinds). +2 unit (hook
+  cause tagging, watcher cause propagation + rebind), +1 e2e (seeded
+  transcript → SessionStart(clear) POST → old blocks gone + marker shown).
+  189 unit + 34 e2e green.
 
 - 2026-07-24 — **P2-E10-07 done (#68, PR #69)**: composer slash commands.
   (a) `/` at line start pops autocomplete — provider builtin catalog (new

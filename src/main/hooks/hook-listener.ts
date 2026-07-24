@@ -430,7 +430,16 @@ export class HookListener {
     }
     const event = typeof e.hook_event_name === 'string' ? e.hook_event_name : 'unknown';
     const nativeId = typeof e.session_id === 'string' ? e.session_id : undefined;
-    if (nativeId) this.opts.manager.setNativeSessionId(sessionId, nativeId);
+    // /clear mints a NEW conversation id (verified vs claude 2.1.218): tag
+    // the id change with its cause so the feed can say "cleared", not just
+    // silently rebind (E10-07 feedback — Dan: "no response that it cleared")
+    if (nativeId) {
+      this.opts.manager.setNativeSessionId(
+        sessionId,
+        nativeId,
+        event === 'SessionStart' && e.source === 'clear' ? 'clear' : undefined
+      );
+    }
     this.opts.log.debug('hook event', { sessionId, event });
     this.opts.manager.apply(sessionId, {
       kind: 'hook',

@@ -274,6 +274,10 @@ export function FeedView(props: {
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [blocks, setBlocks] = React.useState<FeedBlockDto[]>([]);
+  // /clear executes SILENTLY (empty local-command stdout, no assistant reply
+  // — verified vs claude 2.1.218), so without an explicit marker a cleared
+  // conversation reads as "nothing happened" (Dan 2026-07-24)
+  const [cleared, setCleared] = React.useState(false);
   const [verbosity, setVerbosity] = React.useState<Verbosity>(() => {
     const v = uiGet<string>(`feedVerbosity.${props.cardId ?? ''}`, 'normal');
     return v === 'quiet' || v === 'firehose' ? v : 'normal';
@@ -316,10 +320,12 @@ export function FeedView(props: {
       // upsert: the watcher re-emits a block when its OUT / duration lands
       setBlocks((prev) => upsertBlock(prev, p.block as FeedBlockDto));
     });
-    // a corrected mis-bind restarts the stream from seq 1 — drop the stolen
-    // blocks or the shorter correct transcript leaves the old tail showing
+    // a corrected mis-bind (or /clear) restarts the stream from seq 1 — drop
+    // the stolen blocks or the shorter correct transcript leaves the old tail
     const offReset = window.switchboard.transcripts.onReset((p) => {
-      if (p.sessionId === props.sessionId) setBlocks([]);
+      if (p.sessionId !== props.sessionId) return;
+      setBlocks([]);
+      setCleared(p.cause === 'clear'); // a plain rebind clears any stale marker
     });
     return () => {
       cancelled = true;
@@ -327,6 +333,7 @@ export function FeedView(props: {
       offReset();
     };
   }, [props.sessionId]);
+  React.useEffect(() => setCleared(false), [props.sessionId]);
 
   // Stay glued to the tail: on backlog load, on every streamed block, and
   // when the card becomes visible again — unless the user scrolled up.
@@ -426,7 +433,25 @@ export function FeedView(props: {
         style={{ flex: 1, minBlockSize: 0, overflowY: 'auto', fontSize: 12, lineHeight: 1.5, paddingBlock: 6 }}
       >
         <div ref={content}>
-          {visibleBlocks.length === 0 && (
+          {cleared && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                marginBlock: 10,
+                marginInline: 10,
+                color: 'var(--muted)',
+                fontSize: 10.5,
+                fontFamily: 'var(--font-ui)',
+              }}
+            >
+              <span style={{ flex: 1, borderBlockStart: '1px solid var(--border)' }} />
+              {t('feedView.clearedMarker')}
+              <span style={{ flex: 1, borderBlockStart: '1px solid var(--border)' }} />
+            </div>
+          )}
+          {visibleBlocks.length === 0 && !cleared && (
             <div style={{ color: 'var(--faint)', fontSize: 11, textAlign: 'center', marginBlockStart: 24 }}>
               {t('feedView.empty')}
             </div>

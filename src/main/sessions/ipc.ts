@@ -50,9 +50,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   // when a session's native id is learned, persist it so the card can
   // --resume that conversation after an app restart
-  manager.onNativeSessionId((liveId, nativeId) => {
-    // tighten transcript binding — corrects same-cwd mis-binds (E10 fix)
-    transcripts.setNativeSessionId(liveId, nativeId);
+  manager.onNativeSessionId((liveId, nativeId, cause) => {
+    // tighten transcript binding — corrects same-cwd mis-binds (E10 fix);
+    // cause 'clear' = /clear minted a new conversation (E10-07 feedback)
+    transcripts.setNativeSessionId(liveId, nativeId, cause);
     const cardId = cardOfLive.get(liveId);
     if (!cardId) return;
     const existing = deps.persist.list().find((s) => s.id === cardId);
@@ -117,8 +118,9 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   // Feed view blocks (P2-E12-06): live stream + backlog for attach
   transcripts.onBlock((sessionId, block) => send('sessions:feedBlock', { sessionId, block }));
-  // a corrected mis-bind discarded the derived blocks — the renderer must too
-  transcripts.onReset((sessionId) => send('sessions:feedReset', { sessionId }));
+  // a corrected mis-bind (or /clear) discarded the derived blocks — the
+  // renderer must too; cause 'clear' shows the "conversation cleared" marker
+  transcripts.onReset((sessionId, cause) => send('sessions:feedReset', { sessionId, cause }));
   ipcMain.handle('transcripts:blocks', (_e, liveId: string) =>
     typeof liveId === 'string' ? transcripts.blocks(liveId) : []
   );

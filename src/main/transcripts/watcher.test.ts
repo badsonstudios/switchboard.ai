@@ -459,6 +459,32 @@ describe('same-cwd sessions never steal each other\'s transcript (E10 fix)', () 
     expect(watcher.snapshot('s1')!.bound).toBe(true);
     expect(watcher.blocks('s1').some((b) => b.text === 'my words')).toBe(true);
   });
+
+  it("/clear's new id resets WITH cause 'clear' and rebinds to the fresh transcript (E10-07)", async () => {
+    watcher.watch('s1', { cwd });
+    const resets: Array<{ sid: string; cause?: 'clear' }> = [];
+    const offReset = watcher.onReset((sid, cause) => resets.push({ sid, cause }));
+    const fileA = path.join(projectDir(), 'native-A.jsonl');
+    writeLines(fileA, [
+      entry({ sessionId: 'native-A', message: { content: [{ type: 'text', text: 'old conversation' }] } }),
+    ]);
+    await sleep(120);
+    expect(watcher.snapshot('s1')!.bound).toBe(true);
+
+    // hooks deliver SessionStart(source:'clear') with the freshly minted id
+    watcher.setNativeSessionId('s1', 'native-fresh', 'clear');
+    expect(watcher.blocks('s1')).toHaveLength(0); // old conversation dropped
+    expect(resets).toEqual([{ sid: 's1', cause: 'clear' }]); // renderer can say "cleared"
+    offReset();
+
+    const fileB = path.join(projectDir(), 'native-fresh.jsonl');
+    writeLines(fileB, [
+      entry({ sessionId: 'native-fresh', message: { content: [{ type: 'text', text: 'fresh start' }] } }),
+    ]);
+    await sleep(150);
+    expect(watcher.snapshot('s1')!.bound).toBe(true);
+    expect(watcher.blocks('s1').some((b) => b.text === 'fresh start')).toBe(true);
+  });
 });
 
 describe('pre-existing transcripts are never adopted', () => {

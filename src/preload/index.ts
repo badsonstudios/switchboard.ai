@@ -221,8 +221,8 @@ const api = {
       ipcRenderer.on('sessions:feedBlock', h);
       return () => ipcRenderer.removeListener('sessions:feedBlock', h);
     },
-    onReset: (cb: (payload: { sessionId: string }) => void): (() => void) => {
-      const h = (_e: unknown, p: { sessionId: string }) => cb(p);
+    onReset: (cb: (payload: { sessionId: string; cause?: 'clear' }) => void): (() => void) => {
+      const h = (_e: unknown, p: { sessionId: string; cause?: 'clear' }) => cb(p);
       ipcRenderer.on('sessions:feedReset', h);
       return () => ipcRenderer.removeListener('sessions:feedReset', h);
     },
