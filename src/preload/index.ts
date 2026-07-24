@@ -132,6 +132,9 @@ const api = {
     },
     decidePermission: (requestId: string, decision: 'allow' | 'deny', reason?: string): Promise<boolean> =>
       ipcRenderer.invoke('sessions:decidePermission', requestId, decision, reason),
+    /** future gated calls for this LIVE session answer 'allow' in main (P2 #19) */
+    allowAllSession: (liveId: string): Promise<void> =>
+      ipcRenderer.invoke('sessions:allowAllSession', liveId),
     pendingPermissions: (): Promise<
       Array<{
         requestId: string;
@@ -199,6 +202,7 @@ const api = {
   events: {
     list: (): Promise<unknown[]> => ipcRenderer.invoke('events:list'),
     ack: (sessionId: string): Promise<void> => ipcRenderer.invoke('events:ack', sessionId),
+    dismiss: (sessionId: string): Promise<void> => ipcRenderer.invoke('events:dismiss', sessionId),
     /** the FULL current list on every change (adds, replacements, removals) */
     onChanged: (cb: (list: unknown[]) => void): (() => void) => {
       const h = (_e: unknown, l: unknown[]) => cb(l);

@@ -140,6 +140,12 @@ export class HookListener {
   >();
   private readonly permListeners = new Set<(r: PermissionRequest) => void>();
   private readonly resolvedListeners = new Set<(requestId: string) => void>();
+  // LIVE sessions where the user chose "Allow all (this session)". Checked
+  // BEFORE parking (review P2 #19 / Dan round 4): an allow-all session must
+  // not hold, beep, or round-trip the renderer for every gated call — the
+  // verdict is answered right here. Keyed by live id so a respawn prompts
+  // again (P0 #2 semantics); cleared on unregister.
+  private readonly allowAllSessions = new Set<string>();
   private reqCounter = 0;
 
   constructor(private readonly opts: HookListenerOptions) {}
@@ -205,22 +211,32 @@ export class HookListener {
     }
   }
 
-  /** Answer a held request. Returns false if it already resolved/timed out. */
-  decide(requestId: string, decision: 'allow' | 'deny', reason?: string): boolean {
-    const p = this.pending.get(requestId);
-    if (!p) return false;
-    clearTimeout(p.timer);
-    this.pending.delete(requestId);
-    const out = {
+  /** Mark a LIVE session as allow-all: gated calls answer 'allow' at the
+   *  server, with no hold, no needs-permission event, and no beep. */
+  setAllowAll(sessionId: string): void {
+    this.allowAllSessions.add(sessionId);
+    this.opts.log.info('allow-all enabled for session', { sessionId });
+  }
+
+  private verdict(decision: 'allow' | 'deny', reason?: string): string {
+    return JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: decision,
         permissionDecisionReason:
           reason ?? (decision === 'deny' ? 'Denied from switchboard' : 'Approved from switchboard'),
       },
-    };
+    });
+  }
+
+  /** Answer a held request. Returns false if it already resolved/timed out. */
+  decide(requestId: string, decision: 'allow' | 'deny', reason?: string): boolean {
+    const p = this.pending.get(requestId);
+    if (!p) return false;
+    clearTimeout(p.timer);
+    this.pending.delete(requestId);
     try {
-      p.res.end(JSON.stringify(out));
+      p.res.end(this.verdict(decision, reason));
     } catch {
       /* connection gone — the CLI's own prompt takes over (fail-open) */
     }
@@ -263,6 +279,7 @@ export class HookListener {
     for (const [tok, sid] of this.tokens) {
       if (sid === sessionId) this.tokens.delete(tok);
     }
+    this.allowAllSessions.delete(sessionId); // "this session" ends here
     // a session closed mid-hold must not leave the CLI hanging (fail-open)
     for (const [id, p] of this.pending) if (p.sessionId === sessionId) this.release(id);
   }
@@ -323,24 +340,31 @@ export class HookListener {
     req.on('end', () => {
       res.writeHead(200, { 'content-type': 'application/json' });
       // PreToolUse for a gated tool HOLDS (E10-03): the response is parked
-      // until the UI decides; everything else acks instantly (S-06).
-      const held = this.maybeHold(sessionId, body, res);
-      if (!held) res.end('{}');
+      // until the UI decides; allow-all sessions are ANSWERED at the server
+      // (no hold, no event, no beep — P2 #19); everything else acks
+      // instantly (S-06).
+      const r = this.maybeHold(sessionId, body, res);
+      if (r === 'pass') res.end('{}');
       this.ingest(sessionId, body);
-      if (held) this.opts.manager.apply(sessionId, { kind: 'permission-held' });
+      if (r === 'held') this.opts.manager.apply(sessionId, { kind: 'permission-held' });
     });
   }
 
-  /** Park a gated PreToolUse response; returns true when held. */
-  private maybeHold(sessionId: string, body: string, res: http.ServerResponse): boolean {
+  /** Park a gated PreToolUse response ('held'), answer it server-side for an
+   *  allow-all session ('answered'), or leave it alone ('pass'). */
+  private maybeHold(
+    sessionId: string,
+    body: string,
+    res: http.ServerResponse
+  ): 'held' | 'answered' | 'pass' {
     let e: Record<string, unknown>;
     try {
       e = JSON.parse(body) as Record<string, unknown>;
     } catch {
-      return false;
+      return 'pass';
     }
-    if (e.hook_event_name !== 'PreToolUse') return false;
-    if (this.permListeners.size === 0) return false; // nobody to ask — fail open
+    if (e.hook_event_name !== 'PreToolUse') return 'pass';
+    if (this.permListeners.size === 0) return 'pass'; // nobody to ask — fail open
     const tool = typeof e.tool_name === 'string' ? e.tool_name : undefined;
     const input =
       e.tool_input && typeof e.tool_input === 'object'
@@ -354,7 +378,16 @@ export class HookListener {
         this.opts.cwdFor?.(sessionId)
       )
     )
-      return false;
+      return 'pass';
+    if (this.allowAllSessions.has(sessionId)) {
+      try {
+        res.end(this.verdict('allow', 'Allow-all (this session) from switchboard'));
+      } catch {
+        /* connection gone — CLI falls back to its own prompt */
+      }
+      this.opts.log.debug('gated call auto-allowed (allow-all session)', { sessionId, tool });
+      return 'answered';
+    }
 
     const requestId = `perm-${++this.reqCounter}`;
     const timer = setTimeout(() => {
@@ -384,7 +417,7 @@ export class HookListener {
         this.opts.log.error('permission listener threw', { error: String(err) });
       }
     }
-    return true;
+    return 'held';
   }
 
   private ingest(sessionId: string, body: string): void {

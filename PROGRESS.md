@@ -5,14 +5,18 @@
 
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10 merged; E12 merged;
 E9/E11/E13/E14 still outlines)
-**In progress:** nothing mid-flight. Review P1 follow-up **MERGED to main
-(PR #66, ec40c0b)** — all of P1 #6–#15 + P1-test #16–#17 fixed + tested
-(annotated review doc). Remaining review scope: P2 #18–#21 + P3 cleanups
-(file issues or a follow-up pass; P3 #31 was folded into #6).
-**Next up (needs Dan):** retest list on the merged build: grid-drag
-between groups (still unverified), phantom needs-permission recurrence.
-Then `/pm plan` to expand the next Phase 2 epic (E9/E11/E13/E14).
-**Branch:** main
+**In progress:** Dan's round 4 fixes on `fix/review-p1-followup`… branch
+`fix/dan-round-4` (PR pending Dan's merge word): phantom-beep root cause
+FIXED (allow-all now answered in main — was review P2 #19), starting-state
+Terminal chip (resume-picker visibility), working-banner restyle, Events
+uniform height + dismiss ✕, rail task labels, duplicate-title -N suffix,
+composer stop button. Review P1 (#6–#17) merged earlier (PR #66).
+**Next up:** **P2-E10-07 composer slash commands (full support)** — PROMOTED
+to the next work item (owner 2026-07-24; plan updated, issue filed on
+pickup; includes /clear as the first session control). [user] retests:
+test 4 (out-of-cwd read) WITHOUT allow-all + autonomy=ask · grid-drag
+between groups.
+**Branch:** fix/dan-round-4 (PR #67)
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
 `npm test` (unit) · `npm run check:*` (local real-claude proofs) · `npm run e2e`
@@ -50,6 +54,45 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-24 — **Round 5 (on PR #67): tail-pin made SELF-HEALING.** Dan:
+  switching to an already-open session after app start landed at the TOP.
+  Root cause: the pin was a one-shot rAF keyed on [blocks, visible] — if it
+  fired before the panel had real layout (dockview shows background panels
+  a frame later; restore relayouts), scrollTop wrote against scrollHeight=0
+  and nothing ever retried. Now a ResizeObserver on the scroller + content
+  re-pins on any size change while tail-pinned, and programmatic pins no
+  longer count as user scrolls (autoPin guard — a layout-induced scroll
+  event could permanently unpin). Also **P2-E10-07 slash commands PROMOTED
+  to the next work item** (owner: support ALL Claude slash commands;
+  /clear first — "no way to clear a conversation"); plan rewritten with
+  the two halves (autocomplete + session controls) and the /clear-vs-Feed
+  decision spelled out.
+
+- 2026-07-23 — **Dan's round 4 (live testing on merged main).** Root-caused
+  from the app log: the "random Windows alert noises" were review P2 #19 in
+  the wild — every gated call in an allow-all session still HELD in main
+  (needs-permission event → beep) before the renderer auto-allowed it 1–2ms
+  later (log shows held→decided in 1ms, humanly impossible). FIX: allow-all
+  moves to the MAIN process (HookListener.setAllowAll, keyed by live id,
+  dies with the session; sessions:allowAllSession IPC) — a granted session's
+  gated calls are answered server-side: no hold, no event, no beep. 2 unit
+  tests. Also: (a) resume-from-summary picker (claude 2.1.x, on --resume of
+  a 100k+ conversation) is a startup TUI dialog hooks can't see — a card
+  stuck in 'starting' >8s now shows the "continue in Terminal ↗" chip;
+  DESIGN §5.10 records the hazard (composer Enter blindly confirmed the
+  picker; muting the composer pre-SessionStart is the candidate v2). (b)
+  Working banner: label left-aligned, pulse dots right of it, ellipsis
+  dropped. (c) Events: every item same height (label row always renders),
+  per-item dismiss ✕ (events:dismiss → feed.forget). (d) Rail rows show the
+  task label under the title. (e) New same-folder sessions auto-suffix
+  their title with the first free -N (renames untouched). (f) Composer stop
+  button while working — writes Esc to the PTY (the CLI's own interrupt);
+  DESIGN §5.10 notes it. (g) E14 plan: events carry inline
+  Allow/Allow-all/Deny (owner request, plumbing sketched). Test 4's
+  "out-of-cwd read didn't prompt": log shows NO Read hold ever fired —
+  the reads rode shell tools inside allow-all sessions; retest post-fix.
+  Gate: lint + typecheck + 166 unit + 30 e2e green; check:hooks re-PASS.
 
 - 2026-07-23 — **PR #66 MERGED to main (ec40c0b)** — review P1 follow-up,
   all 5 CI jobs green (one cross-platform test fix en route: the read-tool

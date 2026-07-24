@@ -458,6 +458,21 @@ rendered view can't answer (menus, /login, trust prompts), the Session view
 shows a "continue in Terminal" chip that jumps there; permission prompts are
 answered inline via the §5.16 hook path, not the chip.
 
+**Startup TUI dialogs (2026-07-23, observed live).** The CLI can open an
+interactive dialog BEFORE hooks are up — e.g. 2.1.x's resume-from-summary
+picker on `--resume` of a big conversation. The Session view cannot see it
+(no hooks, no transcript yet), and a composer submit goes straight into the
+dialog — the owner's Enter blindly confirmed the picker. Mitigations: a
+session that stays `starting` past a normal boot window surfaces the
+"continue in Terminal" chip (shipped); longer-term, consider muting the
+composer (or routing it Terminal-first) while the session has not yet
+reached its first SessionStart.
+
+**Interrupt (2026-07-23).** A stop button beside the composer send button —
+shown only while the session is `working` — writes Esc to the PTY, the CLI's
+own interrupt. Same input-route rule: we send the keystroke, the CLI decides
+what stopping means.
+
 **Per-session view tabs (the session window's chrome).** Every session surface —
 grid card, maximized, popped-out OS window — carries one compact VS Code-style
 tab strip along its top. The tabs are *views over the same session*, not
@@ -663,6 +678,9 @@ approval UI entirely rather than decorating it.
 > (a respawn/resume prompts again), held requests QUEUE per card, a hold
 > auto-surfaces the Session tab, and pending holds replay to a reloading
 > renderer so a missed push can never park the CLI.
+> Refined 2026-07-23 (owner's phantom-beep find): allow-all is answered in
+> the MAIN process — a granted session's gated calls never hold, never
+> emit needs-permission, never beep; the grant dies with the live session.
 
 **Mechanism.** `PreToolUse` hook on `Edit|Write|MultiEdit` fires BEFORE execution
 with the full proposed change (file path, old/new content) and can RETURN the

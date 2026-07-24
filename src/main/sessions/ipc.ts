@@ -83,6 +83,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   ipcMain.handle('events:ack', (_e, sessionId: string) => {
     if (typeof sessionId === 'string') deps.feed.acknowledge(sessionId);
   });
+  // the ✕ on an event item removes it outright (Dan round 4)
+  ipcMain.handle('events:dismiss', (_e, sessionId: string) => {
+    if (typeof sessionId === 'string') deps.feed.forget(sessionId);
+  });
 
   // held PreToolUse permissions (E10-03): stream requests to the renderer,
   // take decisions back. Card id rides along so the UI can find its panel.
@@ -101,6 +105,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       return hooks.decide(requestId, decision, typeof reason === 'string' ? reason.slice(0, 500) : undefined);
     }
   );
+  // "Allow all (this session)": answered at the SERVER from now on — no
+  // hold, no needs-permission event, no beep (review P2 #19, Dan round 4)
+  ipcMain.handle('sessions:allowAllSession', (_e, liveId: string) => {
+    if (typeof liveId === 'string') hooks.setAllowAll(liveId);
+  });
 
   // Feed view blocks (P2-E12-06): live stream + backlog for attach
   transcripts.onBlock((sessionId, block) => send('sessions:feedBlock', { sessionId, block }));
@@ -153,7 +162,18 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       if (!isDir) throw new Error('folder is not a directory');
 
       const prior = deps.persist.list().find((s) => s.id === opts.cardId);
-      const title = (prior?.identity.title ?? (typeof opts.title === 'string' ? opts.title : opts.folder)).slice(0, 120);
+      let title = (prior?.identity.title ?? (typeof opts.title === 'string' ? opts.title : opts.folder)).slice(0, 120);
+      // a second session in the same folder would read IDENTICALLY in the
+      // rail/grid (Dan round 4) — suffix new cards with the first free -N.
+      // Renames stay free-form; existing cards keep their titles.
+      if (!prior) {
+        const taken = new Set(deps.persist.list().map((s) => s.identity.title.toLowerCase()));
+        if (taken.has(title.toLowerCase())) {
+          let n = 2;
+          while (taken.has(`${title}-${n}`.toLowerCase())) n++;
+          title = `${title}-${n}`.slice(0, 120);
+        }
+      }
       const identity = {
         title,
         folder: opts.folder,
