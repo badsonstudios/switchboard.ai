@@ -12,6 +12,7 @@ function deps(): CommandDeps & { focusCard: ReturnType<typeof vi.fn> } {
     popOutCard: vi.fn(),
     toggleRail: vi.fn(),
     openPalette: vi.fn(),
+    toggleTabRows: vi.fn(),
   } as CommandDeps & { focusCard: ReturnType<typeof vi.fn> };
 }
 
@@ -71,6 +72,14 @@ describe('seed command set (E9-01)', () => {
     const d = deps();
     byId(buildCommands(d), 'session.close').run(ctxWith(['a'], 'a'));
     expect(d.closeCard).toHaveBeenCalledWith('a');
+  });
+
+  it('the tab-rows command routes to its dep (palette-only, no binding)', () => {
+    const d = deps();
+    const cmds = buildCommands(d);
+    expect(byId(cmds, 'view.tabRows').binding).toBeUndefined();
+    byId(cmds, 'view.tabRows').run(ctxWith([]));
+    expect(d.toggleTabRows).toHaveBeenCalledOnce();
   });
 
   it('rail toggle and new session need no session at all', () => {

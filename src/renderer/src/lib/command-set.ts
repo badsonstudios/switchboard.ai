@@ -23,6 +23,8 @@ export interface CommandDeps {
   toggleRail: () => void;
   /** open the command palette (E9-02) */
   openPalette: () => void;
+  /** wrap the tab strip onto more rows, or keep it to one (#84) */
+  toggleTabRows: () => void;
 }
 
 const CATEGORY_SESSION = 'commands.category.session';
@@ -158,6 +160,13 @@ export function buildCommands(deps: CommandDeps): Command[] {
       binding: 'Mod+B',
       scope: 'app',
       run: () => deps.toggleRail(),
+    },
+    {
+      id: 'view.tabRows',
+      titleKey: 'commands.toggleTabRows',
+      categoryKey: CATEGORY_VIEW,
+      scope: 'app', // palette-only: a preference, not a per-minute action
+      run: () => deps.toggleTabRows(),
     },
   ];
 }
