@@ -52,6 +52,18 @@ Drag a card's tab to split the grid, stack cards as tabs, or reorder them. The
 arrangement is saved and restored next launch, along with which session you had
 focused and which tab it was showing.
 
+## When you have more tabs than fit
+
+They wrap onto another row, so every session stays visible and one click away.
+That's the default, on purpose: a session you can't see is a session you forget
+about.
+
+If you'd rather keep the tabs to a single row, open the command palette
+(`Ctrl+Shift+P`) and run **Toggle tabs on multiple rows**. In single-row mode
+the tabs that don't fit go behind a **⌄ N** button at the right of the strip —
+click it for a list of the hidden ones, and click any entry to jump to it. Your
+choice is remembered.
+
 ## Good to know
 
 - Everything in this page persists across restarts: layout, groups, collapse

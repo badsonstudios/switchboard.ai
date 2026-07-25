@@ -18,6 +18,14 @@ import { railOrder } from './lib/groups';
 import { buildCommands } from './lib/command-set';
 import { bindingFor, dispatch, formatBinding, Platform } from './lib/commands';
 import { CommandPalette } from './components/CommandPalette';
+import {
+  applyTabRows,
+  forgetPopoutWindow,
+  loadTabRows,
+  syncDocumentFlags,
+  toggleTabRows,
+  trackPopoutWindow,
+} from './lib/tab-rows';
 
 // Control-room shell (P1-E3-01): titlebar / rail / grid / statusbar.
 // Terminals (E3-02), identity kit (E3-03), and live badges (E3-05) land next.
@@ -52,6 +60,7 @@ export function App(): React.JSX.Element {
     void loadUiState().then(() => {
       setAutonomy(uiGet('autonomy', 'ask'));
       setRailHidden(uiGet('railHidden', false));
+      applyTabRows(loadTabRows()); // multi-row tab strip, default on (#84)
       setUiReady(true);
     });
   }, []);
@@ -216,6 +225,11 @@ export function App(): React.JSX.Element {
     railHiddenRef.current = railHidden;
     paletteOpenRef.current = paletteOpen;
   });
+  // a theme switch must reach the popped-out windows too — they're separate
+  // documents that don't inherit our <html> flags (#84)
+  useEffect(() => {
+    syncDocumentFlags();
+  }, [theme]);
   const platform: Platform = bridge.platform === 'darwin' ? 'darwin' : 'other';
   const toggleRail = React.useCallback(() => {
     const next = !railHiddenRef.current;
@@ -237,6 +251,9 @@ export function App(): React.JSX.Element {
         popOutCard: (cardId) => grid.current?.popOutCard(cardId),
         toggleRail,
         openPalette: () => setPaletteOpen(true),
+        toggleTabRows: () => {
+          toggleTabRows();
+        },
       }),
     [toggleRail], // other deps read live state through refs; grid.current is stable
   );
@@ -322,8 +339,17 @@ export function App(): React.JSX.Element {
       detach(win);
       attach(win);
     }
-    const onAdded = (e: Event): void => attach((e as CustomEvent<Window>).detail);
-    const onRemoved = (e: Event): void => detach((e as CustomEvent<Window>).detail);
+    const onAdded = (e: Event): void => {
+      const win = (e as CustomEvent<Window>).detail;
+      attach(win);
+      // a popout is its own document: give it our theme + tab-row flags (#84)
+      trackPopoutWindow(win);
+    };
+    const onRemoved = (e: Event): void => {
+      const win = (e as CustomEvent<Window>).detail;
+      detach(win);
+      forgetPopoutWindow(win);
+    };
     window.addEventListener('switchboard:popout-added', onAdded);
     window.addEventListener('switchboard:popout-removed', onRemoved);
 

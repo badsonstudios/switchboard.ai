@@ -6,9 +6,13 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 expanded & filed 2026-07-24 → issues #70–#80**; E11/E13/E14 still
 outlines)
-**In progress:** **P2-E9-02 (#71) — command palette** — BUILT + reviewed +
-**Dan's hover-crash root-caused and fixed** + full gate green (257 unit +
-52 e2e), awaiting commit approval on `feature/71-e9-02-command-palette`. Previous: **PR #82 MERGED 2026-07-25** (613c472) —
+**In progress:** **#84 tab-strip usability + #85 quit backstop** (Dan's live
+findings) — BUILT + reviewed + gate green (263 unit + 58 e2e) on
+`fix/84-tab-strip-usability` (branched off the E9-02 branch), awaiting commit
+approval. **#86 (popout on a 2nd monitor restores straddling the boundary) is
+FILED, not started** — the natural next item. Before it:
+**P2-E9-02 (#71) command palette — DONE, on PR #83, CI GREEN on all 5 jobs,
+awaiting Dan's squash-merge.** Previous: **PR #82 MERGED 2026-07-25** (613c472) —
 P2-E9-01 command registry + dispatcher + the Electron-menu fix; issue #70
 closed; CI green on all 5 jobs. Before that: PR #69
 MERGED 2026-07-24 (P2-E10-07 + the /clear-feedback fix; issue #68 closed;
@@ -59,6 +63,55 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-25 — **#85 app sometimes never exits after quit** (Dan: the
+  `switchboard.cmd` console stayed open, twice). Diagnosed from the process
+  table + his app log: main process ALIVE with no windows, no sockets, 44
+  threads, and `app quit` already logged — teardown ran, the process just never
+  died. NOT reproducible on demand: probes exited cleanly with a live PTY, with
+  a popout open, and without one (Dan re-tested the popout case too). Almost
+  certainly a native-handle race (ConPTY/node-pty or Chromium), and the e2e
+  suite can never see it because the harness force-kills the process tree.
+  Fix = a **hard-exit backstop**: everything durable is flushed before `quit`
+  (window-close geometry save + `workspace.save()`), so 1.5s later we log
+  `still alive after quit — forcing exit` and `app.exit(0)`. The timer is
+  unref'd so the backstop can't itself hold the process up, and the warning
+  keeps recurrence visible instead of silent. Verified: a clean autoclose run
+  still exits gracefully with the warning ABSENT.
+
+- 2026-07-25 — **#86 FILED (not started)**: a popped-out window moved to a
+  second monitor comes back straddling the boundary between monitors after a
+  relaunch. Suspects noted in the issue: `parsePopoutFeatures`, and
+  `sanitizePopoutLayout`'s off-display RESCUE clamping a legitimate
+  second-monitor box toward the primary display.
+
+- 2026-07-25 — **#84 tab strip: theming, spacing, multi-row** (Dan's live
+  findings, filed as its own issue). (1) **The `⌄ N` overflow dropdown looked
+  EMPTY.** Root cause, probed in a real window: dockview stamps its theme class
+  on the **shell** and defaults to `abyss`; our class sat on the inner root, so
+  the popup — which mounts on the shell — painted dark-on-dark inside the light
+  theme. The rows were real and clickable, just invisible. Fix: we now REGISTER
+  our own dockview theme (`api.updateOptions({theme:{className:
+  'dockview-theme-switchboard'}})`) and a new `theme/dockview-tokens.css` binds
+  every `--dv-*` variable to our tokens — so no dockview theme block matches
+  anything and stylesheet order stops being load-bearing. The dead
+  `className={dockview-theme-light|dark}` prop (a no-op since the v7 upgrade)
+  is gone. (2) **Tabs get a 3px gutter + rounded tops.** (3) **Tabs WRAP onto
+  more rows by default** (`data-tab-rows` on `<html>`, persisted in the ui
+  blob, toggled by a palette-only command) — burying sessions behind a dropdown
+  is the wrong default for a session host. Review caught two real defects,
+  both confirmed by measuring the live DOM before fixing: `flex-wrap` on the
+  outer actions container pushed the void container (the group's drag handle)
+  and the right actions onto a **zero-height second line**; and the wrapped
+  strip had no ceiling, so an E12 group clustering a dozen sessions into one
+  dockview group could starve the card below (now capped at 40% + scroll).
+  Also fixed from review: `--dv-tab-divider-color: transparent` had silently
+  killed the tab focus ring; a content-box `padding` overflowed the strip by
+  3px; and **popout windows are separate documents** — they now get
+  `data-theme` + `data-tab-rows` copied across on open and on change, which
+  also fixes the pre-existing bug where a popped-out session stayed dark in the
+  daylight theme. Gate: lint + typecheck + **263 unit + 58 e2e** (6 new,
+  incl. both-theme dropdown contrast measured numerically).
 
 - 2026-07-25 — **P2-E9-02 built (#71)**: the command palette. `Ctrl+Shift+P`
   (the ONE `typing-ok` command — it's the route to everything else) opens a

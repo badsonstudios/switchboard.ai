@@ -1,0 +1,217 @@
+// Issue #84 — tab strip usability: readable overflow dropdown, visible gaps,
+// and (by default) tabs that wrap onto another row instead of hiding behind a
+// dropdown. A session host must not bury the sessions.
+import { test, expect, Page } from '@playwright/test';
+import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
+
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+/** open N extra sessions, each in its own folder */
+async function addSessions(a: LaunchedApp, n: number): Promise<void> {
+  const w = a.window;
+  const before = await w.locator('nav [draggable="true"]').count();
+  for (let i = 0; i < n; i++) {
+    const dir = tempProjectFolder();
+    await a.app.evaluate(({ dialog }, d) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [d] });
+    }, dir);
+    await w.getByRole('button', { name: '+ session' }).click();
+    await expect(w.locator('nav [draggable="true"]')).toHaveCount(before + i + 1, {
+      timeout: 25_000,
+    });
+  }
+}
+
+/** distinct vertical positions of the session tabs = how many rows they occupy */
+async function tabRowCount(w: Page): Promise<number> {
+  return w.evaluate(() => {
+    const tops = [...document.querySelectorAll('.dv-tabs-container .dv-tab')].map((el) =>
+      Math.round(el.getBoundingClientRect().top)
+    );
+    return new Set(tops).size;
+  });
+}
+
+/** would the tabs overflow a single row? */
+async function tabsExceedStrip(w: Page): Promise<boolean> {
+  return w.evaluate(() => {
+    const strip = document.querySelector('.dv-tabs-container');
+    if (!strip) return false;
+    const total = [...strip.querySelectorAll('.dv-tab')].reduce(
+      (sum, el) => sum + el.getBoundingClientRect().width,
+      0
+    );
+    return total > strip.getBoundingClientRect().width;
+  });
+}
+
+test.describe('tab strip (#84)', () => {
+  let a: LaunchedApp;
+  test.afterEach(async () => a?.cleanup());
+
+  test('many sessions wrap onto more rows, with no overflow dropdown', async () => {
+    a = await launchApp({ seedFolder: tempProjectFolder() });
+    const w = a.window;
+    await expect(w.locator('nav [draggable="true"]')).toHaveCount(1, { timeout: 25_000 });
+    expect(await tabRowCount(w)).toBe(1);
+
+    // add until the tabs genuinely exceed the strip width — a fixed count would
+    // silently stop testing wrapping if the window size or tab width changed
+    await addSessions(a, 6);
+    expect(await tabsExceedStrip(w), 'tabs still fit — nothing to wrap').toBe(true);
+    // the whole point: every session is on screen, none hidden behind a `⌄ N`
+    expect(await tabRowCount(w)).toBeGreaterThan(1);
+    await expect(w.locator('.dv-tabs-overflow-dropdown-default')).toHaveCount(0);
+    await expect(w.locator('.dv-tabs-container .dv-tab')).toHaveCount(7);
+
+    // and the panel below still renders — a taller header must not eat it.
+    // E12 clusters a whole group into ONE dockview group, so the strip is
+    // capped rather than allowed to grow without limit.
+    const share = await w.evaluate(() => {
+      const header = document.querySelector('.dv-tabs-and-actions-container');
+      const group = document.querySelector('.dv-groupview');
+      if (!header || !group) return 1;
+      return header.getBoundingClientRect().height / group.getBoundingClientRect().height;
+    });
+    expect(share).toBeLessThanOrEqual(0.45);
+    await expect(w.locator('.dv-active-tab')).toBeVisible();
+    await expect(w.getByText('Session', { exact: true }).first()).toBeVisible();
+  });
+
+  test('turning wrapping off restores the single-row strip and its dropdown', async () => {
+    a = await launchApp({ seedFolder: tempProjectFolder() });
+    const w = a.window;
+    await expect(w.locator('nav [draggable="true"]')).toHaveCount(1, { timeout: 25_000 });
+    await addSessions(a, 6);
+    expect(await tabRowCount(w)).toBeGreaterThan(1);
+
+    // the toggle lives in the command palette (E9-02)
+    await w.keyboard.press(`${MOD}+Shift+P`);
+    await w.getByPlaceholder('Type a command or a session name…').fill('multiple rows');
+    await w.keyboard.press('Enter');
+
+    await expect.poll(() => tabRowCount(w), { timeout: 10_000 }).toBe(1);
+    await expect(w.locator('.dv-tabs-overflow-dropdown-default')).toHaveCount(1);
+  });
+
+  test('the choice survives a relaunch', async () => {
+    a = await launchApp({ seedFolder: tempProjectFolder() });
+    const first = a;
+    const w = first.window;
+    await expect(w.locator('nav [draggable="true"]')).toHaveCount(1, { timeout: 25_000 });
+    await w.keyboard.press(`${MOD}+Shift+P`);
+    await w.getByPlaceholder('Type a command or a session name…').fill('multiple rows');
+    await w.keyboard.press('Enter');
+    await expect
+      .poll(() => w.evaluate(() => document.documentElement.dataset.tabRows), { timeout: 10_000 })
+      .toBe('single');
+
+    await w.waitForTimeout(900); // let the debounced ui-blob save land
+    await first.close();
+    a = await launchApp({ home: first.home });
+    await expect(a.window.locator('nav [draggable="true"]')).toHaveCount(1, { timeout: 25_000 });
+    expect(await a.window.evaluate(() => document.documentElement.dataset.tabRows)).toBe('single');
+  });
+
+  test('the overflow dropdown is readable — our theme, not dockview’s default', async () => {
+    a = await launchApp({ seedFolder: tempProjectFolder() });
+    const w = a.window;
+    await expect(w.locator('nav [draggable="true"]')).toHaveCount(1, { timeout: 25_000 });
+    // single-row mode is where the dropdown exists at all
+    await w.keyboard.press(`${MOD}+Shift+P`);
+    await w.getByPlaceholder('Type a command or a session name…').fill('multiple rows');
+    await w.keyboard.press('Enter');
+    await addSessions(a, 6);
+
+    const control = w.locator('.dv-tabs-overflow-dropdown-default');
+    await expect(control).toHaveCount(1);
+
+    // Dan's bug: the popup mounts on dockview's shell, which we never themed, so
+    // it painted in dockview's DEFAULT dark theme and the rows vanished into the
+    // background. Theme-dependent — so check BOTH.
+    for (const theme of ['daylight', 'nordic']) {
+      await w.getByRole('button', { name: theme, exact: true }).click();
+      await w.waitForTimeout(200);
+      await control.click();
+      const rows = w.locator('.dv-tabs-overflow-container .dv-tab');
+      await expect(rows.first()).toBeVisible();
+
+      const contrast = await w.evaluate(() => {
+        const row = document.querySelector('.dv-tabs-overflow-container .dv-tab');
+        const container = document.querySelector('.dv-tabs-overflow-container');
+        if (!row || !container) return null;
+        const parse = (c: string): number[] =>
+          (c.match(/[\d.]+/g) ?? []).slice(0, 3).map((n) => Number(n));
+        const lum = (c: number[]): number =>
+          (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255;
+        const fg = lum(parse(getComputedStyle(row).color));
+        // the ROW's own background, falling back to the container when the row
+        // is transparent — text matching its own row would be just as invisible
+        const rowBg = getComputedStyle(row).backgroundColor;
+        const opaque = !/rgba\(.*,\s*0\s*\)/.test(rowBg) && rowBg !== 'transparent';
+        const bg = lum(parse(opaque ? rowBg : getComputedStyle(container).backgroundColor));
+        const [hi, lo] = fg > bg ? [fg, bg] : [bg, fg];
+        return { ratio: (hi + 0.05) / (lo + 0.05), text: (row as HTMLElement).innerText.trim() };
+      });
+      expect(contrast, `no dropdown row in ${theme}`).not.toBeNull();
+      expect(contrast!.text.length, `empty row label in ${theme}`).toBeGreaterThan(0);
+      expect(contrast!.ratio, `unreadable dropdown in ${theme}`).toBeGreaterThan(3);
+      await w.keyboard.press('Escape');
+    }
+
+    // clicking a row activates that session
+    await control.click();
+    const before = await w.locator('.dv-active-tab').innerText();
+    await w.locator('.dv-tabs-overflow-container .dv-tab').first().click();
+    await expect.poll(() => w.locator('.dv-active-tab').innerText()).not.toBe(before);
+  });
+
+  test('a popped-out window gets our theme and tab mode (separate document)', async () => {
+    test.skip(
+      process.platform === 'linux',
+      'popout opens a 2nd OS window — unreliable under headless xvfb'
+    );
+    a = await launchApp({ seedFolder: tempProjectFolder() });
+    const w = a.window;
+    await expect(w.locator('nav [draggable="true"]')).toHaveCount(1, { timeout: 25_000 });
+    await w.getByRole('button', { name: 'nordic', exact: true }).click();
+
+    await w.getByTitle('Pop out into its own window').click();
+    await expect.poll(() => a.app.windows().length, { timeout: 15_000 }).toBe(2);
+    const popout = a.app.windows().find((p) => p !== w)!;
+    await popout.waitForLoadState('domcontentloaded');
+
+    // its <html> carries the same flags, so the shared stylesheet paints it the
+    // same way — without this a popped-out session was dark in a light app
+    await expect
+      .poll(() => popout.evaluate(() => document.documentElement.dataset.theme), { timeout: 10_000 })
+      .toBe('nordic');
+    expect(await popout.evaluate(() => document.documentElement.dataset.tabRows)).toBe('wrap');
+
+    // and a theme switch in the main window follows it across
+    await w.getByRole('button', { name: 'daylight', exact: true }).click();
+    await expect
+      .poll(() => popout.evaluate(() => document.documentElement.dataset.theme), { timeout: 10_000 })
+      .toBe('daylight');
+  });
+
+  test('tabs are visually separated and rounded', async () => {
+    a = await launchApp({ seedFolder: tempProjectFolder() });
+    const w = a.window;
+    await expect(w.locator('nav [draggable="true"]')).toHaveCount(1, { timeout: 25_000 });
+    await addSessions(a, 1);
+
+    const shape = await w.evaluate(() => {
+      const tabs = [...document.querySelectorAll('.dv-tabs-container .dv-tab')];
+      if (tabs.length < 2) return null;
+      const [a1, b1] = [tabs[0].getBoundingClientRect(), tabs[1].getBoundingClientRect()];
+      return {
+        gap: Math.round(b1.left - a1.right),
+        radius: getComputedStyle(tabs[0]).borderTopLeftRadius,
+      };
+    });
+    expect(shape).not.toBeNull();
+    expect(shape!.gap).toBeGreaterThan(0); // Dan: "a tiny little space"
+    expect(parseFloat(shape!.radius)).toBeGreaterThan(0); // ...and curved corners
+  });
+});
