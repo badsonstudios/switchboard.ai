@@ -93,6 +93,15 @@ not converging, record state in `PROGRESS.md` and report.
 
 - **Done-when check:** walk the item's criteria explicitly — every point either
   met or explained.
+- **User docs (required for anything user-facing):** write or update the
+  relevant page in **`docs/manual/`** — before the PR, while the feature is
+  fresh. One page per user-facing area, not per work item; `docs/manual/README.md`
+  is the index + house style, `_template.md` the skeleton. Plain English,
+  second person, name the real buttons; no issue numbers, item IDs, or `src/`
+  paths. A rough draft or `TODO:` placeholder is fine — nothing at all is not.
+  Update the index's status column when a page graduates stub → draft → current.
+  Purely internal work (refactor, CI, tests) writes nothing: say "no user-facing
+  change".
 - Spike items: write/update the findings note the item requires.
 - If implementation diverged from DESIGN.md, amend DESIGN.md **before**
   committing (that's the definition of done in `docs/plans/00-process.md`).

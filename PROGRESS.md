@@ -3,18 +3,18 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-**Milestone:** Phase 2 - The Switchboard (E7+E8+E10 complete & merged;
-E12 merged; E9/E11/E13/E14 still outlines)
-**In progress:** nothing mid-flight. **PR #69 MERGED 2026-07-24**
-(P2-E10-07 + the /clear-feedback fix; issue #68 closed; E10 epic fully
-shipped). Dan confirmed /clear works and is happy with the command
-coverage (⋯ menu: clear+compact; composer autocomplete: 36 builtins +
-project/user commands+skills; /model-/mcp-style TUI pickers finish in
-the Terminal tab by design).
-**Next up:** **`/pm plan`** — milestone is EMPTY; expand the next epic
-from E9 (palette/keyboard) / E11 (Session Bus — composer prerequisite now
-exists, see OQ #1 note) / E13 (Dispatch) / E14 (Notifications v2; carries
-Dan's inline Allow/Deny-on-events request). Dan picks direction. [user]
+**Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
+**E9 expanded & filed 2026-07-24 → issues #70–#80**; E11/E13/E14 still
+outlines)
+**In progress:** **P2-E9-01 (#70) — command registry + keybinding
+dispatcher** (started 2026-07-24, `/next-item`, planning). Previous: PR #69
+MERGED 2026-07-24 (P2-E10-07 + the /clear-feedback fix; issue #68 closed;
+E10 epic fully shipped). Dan confirmed /clear works and is happy with the
+command coverage (⋯ menu: clear+compact; composer autocomplete: 36
+builtins + project/user commands+skills; /model-/mcp-style TUI pickers
+finish in the Terminal tab by design).
+**Next up:** after #70 → **P2-E9-02 (#71) command palette**, then the
+attention queue (#72). E9 closes Phase 2 exit criterion #1. [user]
 retests still pending on merged main (rebuild first): test 4 (out-of-cwd
 read) WITHOUT allow-all + autonomy=ask · grid-drag between groups ·
 switch-to-session scroll · allow-all sessions now silent. Also pending:
@@ -57,6 +57,44 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-24 — **User docs added to the workflow (Dan's call).** New
+  `docs/manual/` — a plain-English user manual in Markdown: index + house
+  style (`README.md`), a page skeleton (`_template.md`), and 11 stub pages
+  covering everything shipped so far (getting started, sessions, session view,
+  approvals/autonomy, slash commands, keyboard, workspace/groups/pop-out,
+  changes & git, notifications, settings, troubleshooting). **The rule:** any
+  work item that changes what a user can see or do writes/updates its manual
+  page BEFORE the PR opens; drafts and `TODO:` placeholders are acceptable, a
+  missing page is not; purely internal work is exempt but must say so. Wired
+  into `00-process.md` (new "User documentation" section + definition of done),
+  `/next-item` Step 8, `/autopilot` (explicitly non-optional unattended),
+  `/commit-push-pr` (pre-PR check), and `.claude/CLAUDE.md`. The
+  Markdown→HTML manual build (static site, screenshots, in-app Help link,
+  stub audit that fails the build) is filed as a **Phase 4 planning note** in
+  `03-later-phases.md` — pulled earlier if public release lands first.
+  **BACKFILLED the same day:** 10 of the 11 pages written to `draft` from the
+  shipped app (Phase 1 + E7/E8/E10/E12), sourced from `en.json`'s real labels,
+  the hold policy, the notifier, the autonomy→CLI-flag map and the card/rail/
+  events components — not from memory. 06-keyboard stays a stub (E9-01 writes
+  it). Open TODOs in the pages: switchboard's own download/install steps (no
+  release yet), log-path confirmation against a packaged build, screenshots
+  (`<!-- screenshot: … -->` markers left in place). **[Dan eyeball]** the
+  drafts against a running build — they've been read out of the source, not
+  clicked through.
+
+- 2026-07-24 — **E9 expanded + issues filed** (`/pm plan`; Dan picked E9 over
+  E11/E13/E14). **E9 — Attention-driven layout** broken into 11 work items
+  (P2-E9-01…11) in `04-phase-2-switchboard.md`, covering §5.8 in full plus
+  §8's command-palette/keyboard line: command registry + dispatcher (01),
+  palette (02), attention queue + Ctrl+Space (03), urgency strip + delayed
+  reset (04), presentation ladder + reveal contract (05), presentation policy
+  + auto-minimize on submit (06), layout modes grid/focus/queue + maximize
+  (07), idle collapse & aggregation (08), pinning contract (09),
+  focus-stealing policy (10), batch permission handling (11 — may slip to
+  E14). Issues **#70–#80** filed on the Phase 2 milestone; nothing L-sized,
+  ordered by dependency. E11/E13/E14 remain outlines (just-in-time; E13 is
+  blocked on E11). Next: `/next-item` → P2-E9-01.
 
 - 2026-07-24 — **/clear "not executing" (Dan's eyeball) root-caused: it
   EXECUTES — silently.** Two independent proofs: (a) node-pty probe vs real

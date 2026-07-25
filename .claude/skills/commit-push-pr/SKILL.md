@@ -19,6 +19,12 @@ Summarize the changes for the user. If this work implements a tracked item,
 confirm **`PROGRESS.md` reflects it** (the /next-item close-out) — that update
 belongs in the same commit — and that the PR body will carry `Closes #<issue>`.
 
+**User-docs check (`docs/manual/`).** If the diff changes anything a user can
+see or do, the matching manual page must be written/updated in this same
+commit (`docs/plans/00-process.md` → User documentation). If it isn't, write it
+now rather than opening the PR without it. Purely internal changes (refactor,
+CI, tests) are exempt — state that explicitly instead of skipping silently.
+
 ## Step 2: Get explicit approval
 
 **CRITICAL: Always ask the user for approval before committing or pushing.**

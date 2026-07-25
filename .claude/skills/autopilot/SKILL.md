@@ -66,6 +66,9 @@ Follow `/next-item` Steps 1–10 with these substitutions:
   findings, ~3 rounds). If not converging: revert/stash the broken attempt so
   the branch stays green, record the blocker in `PROGRESS.md` + the issue, and
   move to the next item that doesn't depend on it — or stop if everything does.
+- **User docs are NOT optional in autopilot.** Step 8's `docs/manual/` page
+  ships in the same commit as the feature. Unattended is exactly when this gets
+  skipped, so treat a missing page like a failing test.
 - **PROGRESS.md discipline is the resume mechanism.** Update at item start,
   finish, and on any blocker — if this session dies mid-run, a fresh
   `/autopilot` must resume from the file alone.

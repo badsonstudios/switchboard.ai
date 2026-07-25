@@ -52,10 +52,38 @@ future; the issue tracker holds the present.
 
 **Definition of done (every PR):** acceptance criteria met · CI green · no
 hardcoded strings or raw colors (lint enforces) · logging on new subsystem
-boundaries · DESIGN.md amended if the implementation diverged from it.
+boundaries · DESIGN.md amended if the implementation diverged from it ·
+**user documentation written (see below)**.
+
+## User documentation (added 2026-07-24)
+
+Every work item that changes something a **user** can see or do writes or
+updates its page in `docs/manual/` **before the PR opens** — while the feature
+is fresh, not reconstructed from a diff months later.
+
+- **Where:** `docs/manual/`, one page per user-facing area (not per work item).
+  `docs/manual/README.md` is the index and the house style guide;
+  `_template.md` is the starting skeleton.
+- **When:** `/next-item` Step 8, alongside the done-when check. `/commit-push-pr`
+  refuses to open the PR without it.
+- **Audience:** someone using the app, who has never read DESIGN.md. Plain
+  English, second person, name the actual buttons. No issue numbers, work-item
+  IDs, or `src/` paths.
+- **Good enough beats perfect.** A rough draft or a `TODO:` placeholder is an
+  acceptable page. No page at all is not.
+- **Purely internal items** (refactors, CI, test harnesses) write nothing —
+  say "no user-facing change" in the Gate 2 summary and move on.
+
+These pages are the **source for the shipped HTML manual** — the compile step
+is a planned work item (`03-later-phases.md` → "User manual build"). Writing
+them as we go is what makes that item small.
 
 ## Plan files
 
 - `01-spike-foundations.md` — de-risking spike (current)
 - `02-phase-1-mvp.md` — Phase 1 work items (next)
 - `03-later-phases.md` — Phases 2–4 outlines, expanded just-in-time
+
+## Other docs
+
+- `docs/manual/` — the user manual (Markdown source; see above)
