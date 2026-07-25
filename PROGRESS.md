@@ -7,15 +7,18 @@
 **E9 expanded & filed 2026-07-24 → issues #70–#80**; E11/E13/E14 still
 outlines)
 **In progress:** **P2-E9-01 (#70) — command registry + keybinding
-dispatcher** — BUILT + reviewed + full gate green (233 unit + 44 e2e),
-awaiting commit approval on `feature/70-e9-01-command-registry`. Previous: PR #69
+dispatcher — DONE, on PR #82** (2026-07-25, gate green: 233 unit + 44 e2e;
+Ctrl+W menu-collision blocker fixed and hand-confirmed). Awaiting Dan's
+review + squash-merge. Previous: PR #69
 MERGED 2026-07-24 (P2-E10-07 + the /clear-feedback fix; issue #68 closed;
 E10 epic fully shipped). Dan confirmed /clear works and is happy with the
 command coverage (⋯ menu: clear+compact; composer autocomplete: 36
 builtins + project/user commands+skills; /model-/mcp-style TUI pickers
 finish in the Terminal tab by design).
-**Next up:** after #70 → **P2-E9-02 (#71) command palette**, then the
-attention queue (#72). E9 closes Phase 2 exit criterion #1. [user]
+**Next up:** **P2-E9-02 (#71) command palette** (Ctrl+Shift+P over the new
+registry — it must decide the popped-out-window question E9-01 left open:
+shortcuts only listen in the main window today), then the attention queue
+(#72). E9 closes Phase 2 exit criterion #1. [user]
 retests still pending on merged main (rebuild first): test 4 (out-of-cwd
 read) WITHOUT allow-all + autonomy=ask · grid-drag between groups ·
 switch-to-session scroll · allow-all sessions now silent. Also pending:
