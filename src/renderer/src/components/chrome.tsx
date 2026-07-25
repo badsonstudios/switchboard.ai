@@ -7,7 +7,7 @@ import { ThemePreference } from '../theme/theme';
 import { LanguageChoice } from '../i18n';
 import { IdentityChip } from './IdentityChip';
 import { formatTokens, formatUsd } from '../lib/usage';
-import { computeAutoGroups } from '../lib/groups';
+import { railOrder } from '../lib/groups';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { getDraggedCard, setDraggedCard } from '../lib/drag-context';
 
@@ -34,6 +34,10 @@ export function TitleBar(props: {
   onCycleAutonomy: () => void;
   autoTrust: boolean;
   onToggleTrust: () => void;
+  /** sessions-rail visibility — the mouse path for the Ctrl+B command (E9-01) */
+  railHidden: boolean;
+  onToggleRail: () => void;
+  railBinding: string;
 }): React.JSX.Element {
   const { t } = useTranslation();
   return (
@@ -43,6 +47,13 @@ export function TitleBar(props: {
         {t('titlebar.version', { version: props.version })}
       </span>
       <span style={{ flex: 1 }} />
+      <Chip
+        selected={!props.railHidden}
+        onClick={props.onToggleRail}
+        title={t('titlebar.railHint', { binding: props.railBinding })}
+      >
+        {t('titlebar.rail')}
+      </Chip>
       <Chip selected={props.autoTrust} onClick={props.onToggleTrust}>
         {props.autoTrust ? t('titlebar.trustOn') : t('titlebar.trustOff')}
       </Chip>
@@ -246,18 +257,12 @@ export function SessionsRail(props: {
         </div>
   );
 
-  const grouped = new Map<string, RailSession[]>();
-  for (const g of props.groups) grouped.set(g.id, []);
-  const ungrouped: RailSession[] = [];
-  for (const s of props.sessions) {
-    if (s.groupId && grouped.has(s.groupId)) grouped.get(s.groupId)!.push(s);
-    else ungrouped.push(s);
-  }
-  // emergent repo/folder auto-groups among the ungrouped (E12-05)
-  const autoGroups = computeAutoGroups(ungrouped);
-  const autoMemberIds = new Set(autoGroups.flatMap((g) => g.memberIds));
-  const byId = new Map(ungrouped.map((s) => [s.id, s]));
-  const loose = ungrouped.filter((s) => !autoMemberIds.has(s.id));
+  // one ordering function for the rail AND for Ctrl+1..9 (E9-01): persistent
+  // groups and their members, then emergent auto-groups (E12-05), then loose
+  const order = railOrder(props.sessions, props.groups);
+  const grouped = new Map(order.groups.map((g) => [g.id, g.members]));
+  const autoGroups = order.autoGroups;
+  const loose = order.loose;
 
   return (
     <nav
@@ -490,13 +495,11 @@ export function SessionsRail(props: {
                 {name}
               </span>
               <span style={{ fontSize: 9, color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>
-                {ag.memberIds.length}
+                {ag.members.length}
               </span>
             </div>
             {!isCollapsed && (
-              <div style={{ paddingInlineStart: 10 }}>
-                {ag.memberIds.map((id) => byId.get(id)).filter(Boolean).map((s) => sessionRow(s!))}
-              </div>
+              <div style={{ paddingInlineStart: 10 }}>{ag.members.map(sessionRow)}</div>
             )}
           </div>
         );
@@ -556,10 +559,12 @@ export function Chip(props: {
   selected: boolean;
   onClick: () => void;
   children: React.ReactNode;
+  title?: string;
 }): React.JSX.Element {
   return (
     <button
       onClick={props.onClick}
+      title={props.title}
       style={{
         background: props.selected ? 'var(--chip)' : 'transparent',
         color: 'var(--text)',
