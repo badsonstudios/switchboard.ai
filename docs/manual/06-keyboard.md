@@ -9,6 +9,26 @@ mouse trips.
 
 On a Mac, use **⌘** everywhere this page says **Ctrl**.
 
+## The command palette — everything, in one list
+
+Press **`Ctrl+Shift+P`** (or click **▸ commands** in the title bar) to open the
+command palette: a searchable list of everything switchboard can do, each with
+its shortcut shown next to it. Start typing to narrow it down, `↑`/`↓` to move,
+`Enter` to run, `Esc` to close.
+
+You don't have to type a command's name exactly — initials work, so `cs` finds
+**Close session**.
+
+The palette also lists your open sessions by name, so **Go to trading-app** is
+a couple of keystrokes even when you can't remember which number it is.
+
+Commands that aren't available right now still appear, greyed out, with the
+reason beside them — "No session is focused", say. Nothing is ever hidden from
+you; the palette is the map of what exists.
+
+It's also the answer to "what was that shortcut again?" — you never need to
+memorize this page.
+
 ## Moving between sessions
 
 | Shortcut | What it does |
@@ -36,6 +56,7 @@ back to the first.
 | `Ctrl+W` | Close the focused session (asks first) |
 | ``Ctrl+` `` | Switch the focused session between its Session and Terminal views |
 | `Ctrl+Shift+O` | Pop the focused session out into its own window, or dock it back |
+| `Ctrl+Shift+P` | Open the command palette |
 
 `Ctrl+W` asks before it closes, because closing a session ends it and removes
 its card — the same confirmation you get from the tab's **✕**.
@@ -55,11 +76,14 @@ choice sticks across restarts.
 **While you're typing, switchboard keeps its hands off.** In the prompt box or
 a rename field, every keystroke goes where you're typing — pressing `1` types a
 `1`, and even `Ctrl+1` stays put rather than jumping you somewhere else. Click
-away from the text box first, and the shortcuts come back.
+away from the text box first, and the shortcuts come back. The one exception is
+`Ctrl+Shift+P`, the command palette — it's how you reach everything else, and
+it isn't a key you'd ever mean as text.
 
 **The Terminal tab is absolute.** switchboard never intercepts a key there,
 ever, because that's the real Claude Code and it should get everything you
-press — shortcuts included.
+press — shortcuts included, the command palette included. From the Terminal,
+reach the palette with the **▸ commands** button in the title bar.
 
 ## Good to know
 
@@ -70,10 +94,11 @@ press — shortcuts included.
   own **✕** when you mean it.
 - Hiding the Sessions list never removes anything: every session stays
   reachable by number, by next/previous, and from the title bar button.
-- **Popped-out sessions:** shortcuts work in the main switchboard window. A
-  session you've popped out into its own window doesn't listen for them — that
-  window is just the session. Jumping to a popped-out session by number still
-  works and brings its window to the front.
+- **Popped-out sessions** listen for shortcuts too. Because everything a
+  command touches lives in the main switchboard window, running one from a
+  popped-out window brings that window to the front. Ordinary typing in a
+  popped-out session never does — only a shortcut that actually did something.
+- Jumping to a popped-out session by number brings its own window forward.
 
 ## If something goes wrong
 
@@ -83,11 +108,10 @@ press — shortcuts included.
 - **`Ctrl+1` went to the wrong session** — the numbers follow the Sessions list
   from the top, including sessions nested inside groups (even collapsed ones),
   not the order the tabs happen to sit in.
-- **A shortcut did nothing in a popped-out window** — that's expected; click
-  back to the main switchboard window first.
 - **The Sessions list vanished** — you probably pressed `Ctrl+B`. Press it
   again, or click **▤ rail** in the title bar.
+- **You can't remember a shortcut** — you don't have to. Open the command
+  palette and read them off the list.
 
-<!-- TODO: the command palette (a searchable list of every command, with its
-shortcut) and the "jump to whatever needs me next" key are still being built —
-this page gets them when they ship. -->
+<!-- TODO: the "jump to whatever needs me next" key is still being built — this
+page gets it when it ships. -->

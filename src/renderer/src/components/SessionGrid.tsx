@@ -8,6 +8,7 @@ import {
   DockviewReadyEvent,
   DockviewApi,
   IDockviewPanelProps,
+  PopoutGroup,
 } from 'dockview-react';
 import 'dockview-react/dist/styles/dockview.css';
 import { TerminalPane } from './TerminalPane';
@@ -1121,7 +1122,19 @@ export function SessionGrid(props: {
       });
       // E8 diagnostics: surface popout success/failure
       api.onDidOpenPopoutWindowFail?.(() => console.error('[popout] onDidOpenPopoutWindowFail'));
-      api.onDidAddPopoutGroup?.(() => console.log('[popout] onDidAddPopoutGroup (opened OK)'));
+      // publish popout windows so App can give them the keyboard dispatcher
+      // (E9-02) — their DOM lives in another OS window, their JS lives here
+      api.onDidAddPopoutGroup?.((e: PopoutGroup) => {
+        console.log('[popout] onDidAddPopoutGroup (opened OK)');
+        if (e.window) {
+          window.dispatchEvent(new CustomEvent('switchboard:popout-added', { detail: e.window }));
+        }
+      });
+      api.onDidRemovePopoutGroup?.((e: PopoutGroup) => {
+        if (e.window) {
+          window.dispatchEvent(new CustomEvent('switchboard:popout-removed', { detail: e.window }));
+        }
+      });
       // window teardown must not be mistaken for the user closing cards
       window.addEventListener('beforeunload', () => {
         tearingDown = true;

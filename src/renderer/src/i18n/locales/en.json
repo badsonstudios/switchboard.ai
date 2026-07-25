@@ -12,7 +12,9 @@
     "trustOn": "🔓 auto-trust",
     "trustOff": "🔒 ask trust",
     "rail": "▤ rail",
-    "railHint": "Show or hide the sessions rail ({binding})"
+    "railHint": "Show or hide the sessions rail ({binding})",
+    "palette": "▸ commands",
+    "paletteHint": "Show every command, with its shortcut ({binding})"
   },
   "rail": {
     "eyebrow": "Sessions",
@@ -200,15 +202,23 @@
     "toggleTerminal": "Toggle Terminal view",
     "toggleChanges": "Toggle Changes view",
     "toggleRail": "Toggle the sessions rail",
+    "openPalette": "Show all commands",
+    "goToSession": "Go to {title}",
     "category": {
       "session": "Sessions",
-      "view": "View"
+      "view": "View",
+      "goTo": "Go to"
     },
     "disabled": {
       "noSuchSession": "There is no session in that slot",
       "noSessions": "No sessions are open",
       "noActiveSession": "No session is focused"
     }
+  },
+  "palette": {
+    "label": "Command palette",
+    "placeholder": "Type a command or a session name…",
+    "empty": "No matching commands"
   },
   "theme": {
     "system": "system",

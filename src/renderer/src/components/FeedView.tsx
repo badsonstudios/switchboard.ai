@@ -333,7 +333,9 @@ export function FeedView(props: {
       offReset();
     };
   }, [props.sessionId]);
-  React.useEffect(() => setCleared(false), [props.sessionId]);
+  React.useEffect(() => {
+    setCleared(false);
+  }, [props.sessionId]);
 
   // Stay glued to the tail: on backlog load, on every streamed block, and
   // when the card becomes visible again — unless the user scrolled up.
@@ -715,7 +717,9 @@ function Composer({
       cancelled = true;
     };
   }, [popupWanted, sessionId]);
-  React.useEffect(() => setSelected(0), [token]);
+  React.useEffect(() => {
+    setSelected(0);
+  }, [token]);
   // arrow-key navigation must keep the highlighted row visible in the
   // scrollable popup (36+ builtins overflow the 200px box)
   const selectedRow = React.useRef<HTMLDivElement | null>(null);

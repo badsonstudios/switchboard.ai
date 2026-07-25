@@ -21,6 +21,8 @@ export interface CommandDeps {
   popOutCard: (cardId: string) => void;
   /** show/hide the sessions rail */
   toggleRail: () => void;
+  /** open the command palette (E9-02) */
+  openPalette: () => void;
 }
 
 const CATEGORY_SESSION = 'commands.category.session';
@@ -61,6 +63,18 @@ export function buildCommands(deps: CommandDeps): Command[] {
   };
 
   return [
+    {
+      // The one command that may fire while you're typing (E9-02): the palette
+      // is the fail-open path to everything else, and Ctrl+Shift+P is not a
+      // text-editing key. It still NEVER fires inside a terminal — that rule
+      // doesn't bend for anyone; from there, the title-bar chip opens it.
+      id: 'palette.open',
+      titleKey: 'commands.openPalette',
+      categoryKey: CATEGORY_VIEW,
+      binding: 'Mod+Shift+P',
+      scope: 'typing-ok',
+      run: () => deps.openPalette(),
+    },
     ...jumps,
     {
       id: 'session.next',
