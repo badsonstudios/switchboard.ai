@@ -160,14 +160,113 @@ Work items:
 
 ---
 
-## E9 — Attention-driven layout (outline)
+## E9 — Attention-driven layout (milestone: Phase 2; issues #70–#80 filed 2026-07-24)
 
-Layout modes (grid/focus/queue), attention queue + hotkeys (Ctrl+Space / Ctrl+
-1..9), idle collapse, urgency strip, presentation ladder, pinning contract,
-batch permission handling (§5.8), plus the **command palette + complete
-keyboard vocabulary** for session lifecycle — spawn / focus / archive /
-review / merge (§8; every mouse flow has a key path — restored 2026-07-21,
-dropped in the original break-out). Filed just-in-time.
+*Goal: with 7–8 sessions open, the **queue** becomes the primary workflow and
+the grid a fallback — inbox-zero for agents. Everything reachable by keyboard;
+idle work folds away; a session that needs you says so without stealing the
+screen. Governing spec: DESIGN.md §5.8 in full, plus §8's "command palette +
+complete keyboard vocabulary" line. Closes Phase 2 exit criterion #1 — the
+biggest unmet one. Expanded 2026-07-24 (`/pm plan`, Dan picked E9 over
+E11/E14).*
+
+Work items:
+
+- **P2-E9-01 · Command registry + keybinding dispatcher — M (§5.8, §8).**
+  `renderer/lib/commands.ts`: `Command {id, title, category, enabled(ctx),
+  run(ctx)}` + a default keymap + a document-level dispatcher. Hard rule: a
+  text input (composer, rename field) or the xterm surface owns its own keys —
+  a binding NEVER steals a keystroke the CLI should get (host-don't-
+  reimplement). Seed commands: jump to session N (`Ctrl+1..9`, rail order),
+  next/prev session, new session, close session (existing confirm), toggle
+  rail, toggle Terminal tab, pop out.
+  *Done when:* Ctrl+1..9 focuses the Nth rail session; typing "1" in the
+  composer or the Terminal never jumps; e2e proves both directions.
+- **P2-E9-02 · Command palette — M (§8, §5.8 keyboard-fail-open).**
+  `Ctrl+Shift+P` opens a fuzzy-filter palette over the registry, each row
+  showing its binding; `go to session <name>` entries included; commands whose
+  preconditions are unmet render greyed with the reason. Enforces the §5.8
+  invariant — hiding chrome never removes capability.
+  *Done when:* the palette opens by hotkey, filters, runs a command, shows
+  bindings, closes on Esc; e2e drives a session-lifecycle command entirely
+  from the keyboard.
+- **P2-E9-03 · Attention queue + jump hotkey — M (§5.8, §5.12).** A persistent
+  ordered work list layered over the existing `EventFeed` (already one item
+  per session): priority order **needs-permission → needs-input → crashed →
+  completed-unreviewed**. `Ctrl+Space` jumps to the next one, focuses its
+  card, acknowledges it, wraps at the end, no-ops on an empty queue. The queue
+  is the ordering authority; the Events panel renders it.
+  *Done when:* three sessions in different attention states clear in priority
+  order under repeated Ctrl+Space; an answered item leaves the queue; ordering
+  unit-tested + e2e.
+- **P2-E9-04 · Urgency strip + delayed urgency reset — S (§5.8, i3 urgency
+  hint).** An always-visible global strip: one lamp per session, colored by
+  status, click to focus, pinned first, present regardless of layout mode.
+  After a jump the arrived-at lamp stays lit ~1.5s so you can still see WHICH
+  session called you.
+  *Done when:* the strip reflects live status for every session incl.
+  suspended, click focuses, the lamp lingers post-jump, and it stays visible
+  in all three layout modes; e2e.
+- **P2-E9-05 · Presentation ladder + reveal contract — M (§5.8).** Per-session
+  `expanded → collapsed strip → tabbed → hidden`. Hidden removes the card from
+  the workspace entirely — the session lives on in the rail, its lamp, and the
+  events list. Reveal triggers: needs-attention (permission / input / done) or
+  a user click anywhere; reveal restores it to EXACTLY its prior dock slot or
+  monitor.
+  *Done when:* a hidden session reveals on a permission hold into its original
+  slot; ladder state persists across relaunch (ui blob); e2e.
+- **P2-E9-06 · Presentation policy + auto-minimize on submit — S (§5.8).**
+  Setting `always-visible | auto-collapse | auto-hide`; global default is
+  **auto-collapse** (litmus: a new user watching their card vanish on first
+  submit fails intuitive-first), with per-group and per-session overrides.
+  Submitting a prompt collapses the card; `Stop` (done) or a needs-human
+  status restores it.
+  *Done when:* submit collapses under the default and restores on done;
+  auto-hide honors the E9-05 reveal contract; a per-session override beats the
+  global; e2e.
+- **P2-E9-07 · Layout modes grid · focus · queue + maximize toggle — M
+  (§5.8).** Per-workspace mode, persisted in the ui blob, switchable from the
+  palette and a binding: `grid` (today) · `focus` (one large + slim strips) ·
+  `queue` (only attention-needing sessions expanded). Focus mode is a
+  COMPOSITION of ladder states, not a bespoke mode; double-clicking a session
+  header toggles maximize and restores the prior layout on repeat.
+  *Done when:* switching modes rearranges live sessions and survives relaunch;
+  queue mode expands a session the instant it needs attention; maximize
+  round-trips; e2e.
+- **P2-E9-08 · Idle collapse & aggregation — S (§5.8; i3 tabbed layouts).**
+  Idle sessions collapse to compact rows; more than ~3 idle fold into a single
+  expandable "N idle sessions" row. Working / errored / focused sessions
+  always keep their own row.
+  *Done when:* 4 idle sessions become one row, a status change pops the right
+  one back out, and the focused session is never swallowed; unit + e2e.
+- **P2-E9-09 · Pinning contract — S (§5.8; VS Code / IntelliJ pinned-tab
+  semantics).** One-gesture pin/unpin (rail menu + palette + binding). A
+  pinned session sorts first, never scrolls out of view under overflow, and is
+  exempt from EVERY bulk operation — bulk-close, idle aggregation,
+  auto-collapse sweeps, future auto-eviction. Pinned ≠ always-expanded:
+  pinning protects existence and position, not size.
+  *Done when:* a pinned IDLE session neither aggregates nor auto-collapses,
+  still sorts first after relaunch, and survives a bulk-close; e2e.
+- **P2-E9-10 · Focus-stealing policy — S (§5.8; i3
+  `focus_on_window_activation`).** Global setting + per-session override:
+  `smart` (default) · `urgent` · `focus` · `none`, governing whether a session
+  that finishes or needs attention may grab focus.
+  *Done when:* under `urgent` nothing ever steals focus (lamp only); under
+  `smart` a visible card focuses while a hidden one only marks urgent; the
+  rule is unit-tested and the setting persists; e2e.
+- **P2-E9-11 · Batch permission handling — M (§5.8; octomux pattern).**
+  Similar pending permission prompts across sessions group into one card
+  answered once, riding the existing `sessions:decidePermission` /
+  `sessions:allowAllSession` IPC from E10.
+  *Done when:* two sessions holding the same tool + argument shape present as
+  one grouped prompt, one Allow answers both, and declining one leaves the
+  other held; e2e via the real hook listener. *(The one item that may slip to
+  E14 if this batch should stay layout-pure.)*
+
+**E9 exit:** with 7–8 sessions open the queue is the primary workflow
+(Ctrl+Space to inbox-zero), the grid is a fallback rather than the interface,
+idle sessions fold away, every mouse flow has a key path, and the palette
+keeps everything reachable when chrome is hidden. Litmus checked per surface.
 
 ## E10 — Session tab & Approval surfaces v1 (milestone: Phase 2; issues #59–#64 filed 2026-07-21)
 
