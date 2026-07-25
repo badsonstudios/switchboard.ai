@@ -44,6 +44,15 @@ Planning notes:
 *Theme: beyond Claude, beyond the desktop, beyond first-party.*
 
 Planning notes:
+- **User manual build (added 2026-07-24, owner request).** `docs/manual/*.md`
+  is written page-by-page as features ship (see `00-process.md` → User
+  documentation). This item turns that folder into the shipped manual: a
+  static-site build (Markdown → HTML, table of contents from the index,
+  searchable, themed to match the app), a screenshot pass, an in-app **Help**
+  entry pointing at it, and a `TODO:`/stub-page audit that fails the build on
+  unfinished pages. Deliberately late — the manual should compile content that
+  already exists, not become a writing project. Pull it earlier if the app
+  reaches outside users first (public release triggers it regardless).
 - Adapter order by likely demand: Codex → Gemini → Aider → generic.
 - Plugin API alpha gate: only after 2-3 dissimilar internal consumers exist on
   the seams (§5.23) — check the registry's actual consumer list before

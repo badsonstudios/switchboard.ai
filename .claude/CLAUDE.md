@@ -29,6 +29,7 @@ approvals, and usage tracking.
 | `docs/plans/01-spike-foundations.md` | Current work: spike spec (S-01…S-08) |
 | `docs/plans/02-phase-1-mvp.md` | Phase 1 epics & work items |
 | `design_handoff_control_room/` | Visual design (mockup export + theme screenshots) |
+| `docs/manual/` | **User manual** (Markdown) — written as features ship; source for the future HTML manual |
 | `PROGRESS.md` (root) | **Live state** — current/next item, log. Always current |
 
 **Hard constraints (never violate):** subscription-first (local `claude` CLI,
@@ -54,6 +55,12 @@ mirror phases; the current one is **Spike 01 - Foundations** (issues #1–#8).
 3. `/pm` manages planning: keeps `docs/plans/*` healthy and files the next
    milestone's issues when a phase nears exit. It does NOT bulk-file future
    phases.
+
+**User docs are part of every item (added 2026-07-24):** anything user-facing
+writes its `docs/manual/` page **before the PR opens**, while the feature is
+fresh. Plain English, for someone who has never read DESIGN.md. Drafts and
+`TODO:` placeholders are fine; a missing page is not. Details:
+`docs/plans/00-process.md` → User documentation.
 
 **PROGRESS.md discipline (critical):** update it the moment an item starts,
 the moment it finishes, and when anything notable happens between (blocker,
