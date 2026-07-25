@@ -6,8 +6,9 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 expanded & filed 2026-07-24 → issues #70–#80**; E11/E13/E14 still
 outlines)
-**In progress:** **P2-E9-02 (#71) — command palette** (started 2026-07-25,
-`/next-item`, planning). Previous: **PR #82 MERGED 2026-07-25** (613c472) —
+**In progress:** **P2-E9-02 (#71) — command palette** — BUILT + reviewed +
+**Dan's hover-crash root-caused and fixed** + full gate green (257 unit +
+52 e2e), awaiting commit approval on `feature/71-e9-02-command-palette`. Previous: **PR #82 MERGED 2026-07-25** (613c472) —
 P2-E9-01 command registry + dispatcher + the Electron-menu fix; issue #70
 closed; CI green on all 5 jobs. Before that: PR #69
 MERGED 2026-07-24 (P2-E10-07 + the /clear-feedback fix; issue #68 closed;
@@ -58,6 +59,46 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-25 — **P2-E9-02 built (#71)**: the command palette. `Ctrl+Shift+P`
+  (the ONE `typing-ok` command — it's the route to everything else) opens a
+  fuzzy-filter list over the E9-01 registry: bindings shown per row, dynamic
+  "Go to <session>" rows in rail order, unavailable commands greyed WITH their
+  reason (§5.8 — the palette is the map of what exists). New `lib/fuzzy.ts`
+  (two-pass matcher: acronym reading preferred, greedy-leftmost fallback, so
+  "cs" = Close session) and `lib/palette.ts` (pure row assembly), both fully
+  unit-tested; `components/CommandPalette.tsx` renders only. Title-bar
+  **▸ commands** chip is the mouse path — the terminal still eats every key,
+  palette included. **E9-01's popped-out-window gap CLOSED:** dockview popout
+  windows get the dispatcher (their JS runs in the main window), and a command
+  that actually runs raises the main window. Review found 2 blockers, both
+  fixed: (1) using `e.defaultPrevented` as the "a command ran" signal would
+  have raised the main window every time the user pressed Enter in a
+  popped-out composer — `dispatch`'s return value is now the signal; (2) lint
+  red on an unused e2e helper. Should-fixes fixed: focus restore no longer
+  clobbers the command that just ran (jumping to a session no longer leaves
+  you typing into the old one — new e2e), the dispatcher is gated while the
+  palette is open, the palette can't list/re-open itself, focus can't escape
+  the modal, popout handler map moved to a ref (re-attaches on effect re-run),
+  `PopoutGroup` type imported instead of cast, aria roles, hotkey toggles.
+  Docs: `06-keyboard.md` gains the palette section and the popped-out-window
+  text is now TRUE (this branch changed that behavior). Gate: lint +
+  typecheck + **257 unit + 52 e2e** green (8 new palette e2e).
+
+  **Dan's live find, same day — hovering the palette blanked the whole window.**
+  Root-caused from his app log (`destroy_ is not a function`, twice — once per
+  card) and reproduced in a Playwright probe: hovering moves the selection,
+  which re-ran the scroll-into-view effect, and that effect was written with an
+  **expression-bodied arrow** — so Chromium's `scrollIntoView({block})`, which
+  returns a **Promise** here, became React's cleanup. React called it, threw,
+  and unmounted the entire tree: blank window, only the menu left. Fix: block
+  body (3 more of the pattern existed and are now braced). Guardrail: a new
+  eslint `no-restricted-syntax` selector BANS expression-bodied `useEffect`
+  arrows across `src/**` — an effect that genuinely returns a cleanup opts out
+  by name on one line (App's `followSystemTheme`). Verified both rules still
+  fire in the right scopes (flat config REPLACES rule options rather than
+  merging — the colors rule and this one had to be composed deliberately).
+  Regression e2e hovers every palette row and asserts zero page errors.
 
 - 2026-07-25 — **P2-E9-01 built (#70)**: command registry + keybinding
   dispatcher. `lib/commands.ts` (pure: Command{id,titleKey,binding,scope,

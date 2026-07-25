@@ -11,6 +11,7 @@ function deps(): CommandDeps & { focusCard: ReturnType<typeof vi.fn> } {
     toggleCardView: vi.fn(),
     popOutCard: vi.fn(),
     toggleRail: vi.fn(),
+    openPalette: vi.fn(),
   } as CommandDeps & { focusCard: ReturnType<typeof vi.fn> };
 }
 
@@ -78,8 +79,12 @@ describe('seed command set (E9-01)', () => {
     expect(byId(cmds, 'session.new').enabled).toBeUndefined();
   });
 
-  it('every seed command is app-scoped — none fire while the user is typing', () => {
-    expect(buildCommands(deps()).every((c) => c.scope === 'app')).toBe(true);
+  it('the palette is the ONLY command allowed to fire while the user is typing', () => {
+    // E9-02: Ctrl+Shift+P is the fail-open route to everything else and isn't a
+    // text-editing key. Any OTHER typing-ok command is a bug — and no scope
+    // whatsoever fires inside a terminal (proven in commands.test.ts).
+    const typingOk = buildCommands(deps()).filter((c) => c.scope === 'typing-ok');
+    expect(typingOk.map((c) => c.id)).toEqual(['palette.open']);
   });
 
   it('every i18n key a command carries resolves in en.json (the palette shows these)', () => {

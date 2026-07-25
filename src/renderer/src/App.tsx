@@ -17,6 +17,7 @@ import { boxOnAnyDisplay, RescuedPopout } from './lib/layout';
 import { railOrder } from './lib/groups';
 import { buildCommands } from './lib/command-set';
 import { bindingFor, dispatch, formatBinding, Platform } from './lib/commands';
+import { CommandPalette } from './components/CommandPalette';
 
 // Control-room shell (P1-E3-01): titlebar / rail / grid / statusbar.
 // Terminals (E3-02), identity kit (E3-03), and live badges (E3-05) land next.
@@ -45,6 +46,8 @@ export function App(): React.JSX.Element {
   // rail visibility (E9-01 'toggle rail' command) — persisted like the other
   // renderer prefs, read once the ui blob has loaded
   const [railHidden, setRailHidden] = useState(false);
+  // command palette (E9-02) — deliberately NOT persisted: it opens on demand
+  const [paletteOpen, setPaletteOpen] = useState(false);
   useEffect(() => {
     void loadUiState().then(() => {
       setAutonomy(uiGet('autonomy', 'ask'));
@@ -109,6 +112,7 @@ export function App(): React.JSX.Element {
     setAutonomy(next);
   };
 
+  // eslint-disable-next-line no-restricted-syntax -- returns its unsubscribe
   useEffect(() => followSystemTheme(setTheme), []);
 
   // drag-a-folder-onto-window -> running session (E3-04)
@@ -202,12 +206,15 @@ export function App(): React.JSX.Element {
   const railSessions = railOrder(sessions, groups).flat;
   const railSessionsRef = React.useRef(railSessions);
   const railHiddenRef = React.useRef(railHidden);
+  // read by the dispatcher: an open modal swallows the app's accelerators
+  const paletteOpenRef = React.useRef(paletteOpen);
   // refs are written AFTER commit, never during render: the keydown handler
   // only ever runs post-commit, so this is fresh enough and stays correct if
   // React ever abandons a render
   useEffect(() => {
     railSessionsRef.current = railSessions;
     railHiddenRef.current = railHidden;
+    paletteOpenRef.current = paletteOpen;
   });
   const platform: Platform = bridge.platform === 'darwin' ? 'darwin' : 'other';
   const toggleRail = React.useCallback(() => {
@@ -229,15 +236,34 @@ export function App(): React.JSX.Element {
         toggleCardView: (cardId, view) => grid.current?.toggleCardView(cardId, view),
         popOutCard: (cardId) => grid.current?.popOutCard(cardId),
         toggleRail,
+        openPalette: () => setPaletteOpen(true),
       }),
     [toggleRail], // other deps read live state through refs; grid.current is stable
   );
-  // the rail chip advertises its own binding, derived from the registry so the
-  // tooltip can never drift from the key that actually works
+  // chips advertise their own binding, derived from the registry so a tooltip
+  // can never drift from the key that actually works
   const railBindingLabel = formatBinding(bindingFor(commands, 'view.rail'), platform);
+  const paletteBindingLabel = formatBinding(bindingFor(commands, 'palette.open'), platform);
+  // the palette reads the SAME context the dispatcher does, at open time
+  const commandContext = React.useCallback(
+    () => ({
+      sessions: railSessionsRef.current,
+      activeCardId: grid.current?.activeCardId() ?? null,
+    }),
+    [],
+  );
+  const focusCard = React.useCallback((cardId: string) => grid.current?.focusSession(cardId), []);
+  const popoutKeysRef = React.useRef(new Map<Window, (e: KeyboardEvent) => void>());
   useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      dispatch(
+    // Returns the command that ran (or null) — the popout bridge below needs
+    // the REAL answer, not a guess from e.defaultPrevented: the composer
+    // preventDefaults its own Enter, and mistaking that for a command would
+    // yank this window in front of the one being typed in.
+    const onKey = (e: KeyboardEvent): unknown => {
+      // while the palette owns the screen, nothing underneath it fires —
+      // regardless of where focus ended up inside the modal
+      if (paletteOpenRef.current) return null;
+      return dispatch(
         {
           key: e.key,
           ctrlKey: e.ctrlKey,
@@ -265,7 +291,51 @@ export function App(): React.JSX.Element {
     // real protection for text inputs is classifyTarget in lib/commands — the
     // composer only calls preventDefault, it never stops propagation.
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+
+    // Popped-out sessions live in their own OS windows, but their JS runs here
+    // (dockview adopts the DOM). Without this they'd be deaf to every shortcut
+    // — and the palette's whole promise is that capability is never out of
+    // reach (§5.8). Everything the commands touch is in THIS window, so a
+    // command that actually RUNS brings this window forward with it; an
+    // ordinary keystroke in the popout never does.
+    //
+    // The window→handler map lives in a ref, not this closure: if the effect
+    // ever re-runs (a new dep), popouts opened earlier must be re-attached,
+    // not silently deafened.
+    const popoutKeys = popoutKeysRef.current;
+    const attach = (win: Window): void => {
+      if (popoutKeys.has(win)) return;
+      const handler = (e: KeyboardEvent): void => {
+        if (onKey(e)) window.focus();
+      };
+      popoutKeys.set(win, handler);
+      win.addEventListener('keydown', handler);
+    };
+    const detach = (win: Window): void => {
+      const handler = popoutKeys.get(win);
+      if (!handler) return;
+      win.removeEventListener('keydown', handler);
+      popoutKeys.delete(win);
+    };
+    // re-attach anything opened before this (re-)run
+    for (const win of [...popoutKeys.keys()]) {
+      detach(win);
+      attach(win);
+    }
+    const onAdded = (e: Event): void => attach((e as CustomEvent<Window>).detail);
+    const onRemoved = (e: Event): void => detach((e as CustomEvent<Window>).detail);
+    window.addEventListener('switchboard:popout-added', onAdded);
+    window.addEventListener('switchboard:popout-removed', onRemoved);
+
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('switchboard:popout-added', onAdded);
+      window.removeEventListener('switchboard:popout-removed', onRemoved);
+      // detach the LISTENERS but keep the window keys: a re-run re-attaches
+      // them above with fresh handlers. (A popout closed during app teardown
+      // may not fire its remove event — a dead Window in the map is inert.)
+      for (const [win, handler] of popoutKeys) win.removeEventListener('keydown', handler);
+    };
   }, [commands, platform]);
 
   if (!uiReady) return <div style={{ blockSize: '100vh' }} />; // one-frame gate while UI state loads
@@ -301,6 +371,16 @@ export function App(): React.JSX.Element {
         railHidden={railHidden}
         onToggleRail={toggleRail}
         railBinding={railBindingLabel}
+        onOpenPalette={() => setPaletteOpen(true)}
+        paletteBinding={paletteBindingLabel}
+      />
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        commands={commands}
+        contextOf={commandContext}
+        focusCard={focusCard}
+        platform={platform}
       />
       {!preflightOk && <PreflightBanner />}
       <div style={{ flex: 1, display: 'flex', minBlockSize: 0 }}>

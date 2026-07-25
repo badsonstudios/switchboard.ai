@@ -38,6 +38,10 @@ export function TitleBar(props: {
   railHidden: boolean;
   onToggleRail: () => void;
   railBinding: string;
+  /** the palette's mouse path (E9-02) — the ONE way in from a terminal, where
+   *  no binding may fire */
+  onOpenPalette: () => void;
+  paletteBinding: string;
 }): React.JSX.Element {
   const { t } = useTranslation();
   return (
@@ -47,6 +51,13 @@ export function TitleBar(props: {
         {t('titlebar.version', { version: props.version })}
       </span>
       <span style={{ flex: 1 }} />
+      <Chip
+        selected={false}
+        onClick={props.onOpenPalette}
+        title={t('titlebar.paletteHint', { binding: props.paletteBinding })}
+      >
+        {t('titlebar.palette')}
+      </Chip>
       <Chip
         selected={!props.railHidden}
         onClick={props.onToggleRail}
