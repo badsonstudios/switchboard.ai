@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeAutoGroups, pickAdoptedGroupId } from './groups';
+import { computeAutoGroups, pickAdoptedGroupId, railOrder } from './groups';
 
 describe('computeAutoGroups (E12-05 emergent repo/folder groups)', () => {
   it('two ungrouped sessions sharing a key auto-group; singletons do not', () => {
@@ -29,6 +29,38 @@ describe('computeAutoGroups (E12-05 emergent repo/folder groups)', () => {
       { id: 'b', folder: 'c:/x' },
     ]);
     expect(gs.map((g) => g.memberIds)).toEqual([['a', 'b']]);
+  });
+});
+
+describe('railOrder (E9-01: what Ctrl+1..9 counts against)', () => {
+  it('paints groups (with members) first, then auto-groups, then loose', () => {
+    const r = railOrder(
+      [
+        { id: 'loose1', autoKey: 'c:/solo' },
+        { id: 'g1a', groupId: 'g1' },
+        { id: 'auto1', autoKey: 'c:/repo' },
+        { id: 'g2a', groupId: 'g2' },
+        { id: 'auto2', autoKey: 'c:/repo' },
+        { id: 'g1b', groupId: 'g1' },
+      ],
+      [{ id: 'g1' }, { id: 'g2' }]
+    );
+    expect(r.flat.map((s) => s.id)).toEqual(['g1a', 'g1b', 'g2a', 'auto1', 'auto2', 'loose1']);
+    expect(r.groups.map((g) => g.members.map((m) => m.id))).toEqual([['g1a', 'g1b'], ['g2a']]);
+    expect(r.autoGroups[0].members.map((m) => m.id)).toEqual(['auto1', 'auto2']);
+    expect(r.loose.map((s) => s.id)).toEqual(['loose1']);
+  });
+
+  it('a session whose groupId names a deleted group falls back to loose', () => {
+    const r = railOrder([{ id: 'a', groupId: 'gone' }], [{ id: 'g1' }]);
+    expect(r.loose.map((s) => s.id)).toEqual(['a']);
+    expect(r.flat.map((s) => s.id)).toEqual(['a']);
+  });
+
+  it('empty groups keep their header slot but contribute no sessions', () => {
+    const r = railOrder([{ id: 'a' }], [{ id: 'g1' }]);
+    expect(r.groups).toEqual([{ id: 'g1', members: [] }]);
+    expect(r.flat.map((s) => s.id)).toEqual(['a']);
   });
 });
 

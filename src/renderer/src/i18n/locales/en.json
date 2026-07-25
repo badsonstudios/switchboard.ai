@@ -10,7 +10,9 @@
     "notifOn": "🔔 on",
     "notifOff": "🔕 off",
     "trustOn": "🔓 auto-trust",
-    "trustOff": "🔒 ask trust"
+    "trustOff": "🔒 ask trust",
+    "rail": "▤ rail",
+    "railHint": "Show or hide the sessions rail ({binding})"
   },
   "rail": {
     "eyebrow": "Sessions",
@@ -187,6 +189,26 @@
     "outputTitle": "Output tokens",
     "cacheTitle": "Cache-read tokens",
     "costTitle": "Estimated cost (public per-model rates; you are billed by your subscription)"
+  },
+  "commands": {
+    "jumpTo": "Go to session {n}",
+    "nextSession": "Next session",
+    "prevSession": "Previous session",
+    "newSession": "New session…",
+    "closeSession": "Close session",
+    "popOut": "Pop out / dock in session",
+    "toggleTerminal": "Toggle Terminal view",
+    "toggleChanges": "Toggle Changes view",
+    "toggleRail": "Toggle the sessions rail",
+    "category": {
+      "session": "Sessions",
+      "view": "View"
+    },
+    "disabled": {
+      "noSuchSession": "There is no session in that slot",
+      "noSessions": "No sessions are open",
+      "noActiveSession": "No session is focused"
+    }
   },
   "theme": {
     "system": "system",

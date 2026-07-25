@@ -7,7 +7,8 @@
 **E9 expanded & filed 2026-07-24 → issues #70–#80**; E11/E13/E14 still
 outlines)
 **In progress:** **P2-E9-01 (#70) — command registry + keybinding
-dispatcher** (started 2026-07-24, `/next-item`, planning). Previous: PR #69
+dispatcher** — BUILT + reviewed + full gate green (233 unit + 44 e2e),
+awaiting commit approval on `feature/70-e9-01-command-registry`. Previous: PR #69
 MERGED 2026-07-24 (P2-E10-07 + the /clear-feedback fix; issue #68 closed;
 E10 epic fully shipped). Dan confirmed /clear works and is happy with the
 command coverage (⋯ menu: clear+compact; composer autocomplete: 36
@@ -57,6 +58,33 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-25 — **P2-E9-01 built (#70)**: command registry + keybinding
+  dispatcher. `lib/commands.ts` (pure: Command{id,titleKey,binding,scope,
+  enabled,run}, Mod-per-platform accelerator parse/match/format, target
+  classification, dispatch) + `lib/command-set.ts` (the seed set: Ctrl+1..9
+  jump, Ctrl+PageUp/Down, Ctrl+N, Ctrl+W close-with-confirm, Ctrl+B rail,
+  Ctrl+` Terminal view, Ctrl+Shift+O pop-out, palette-only Changes). One
+  window-level listener in App.tsx; `railOrder()` moved into `lib/groups.ts`
+  and the rail now RENDERS from it, so Ctrl+N numbering can't drift from the
+  eye. **Scope rule:** nothing fires in a text input; **nothing EVER fires in
+  an xterm** (not even a future 'typing-ok' command). **Review found a real
+  blocker:** Electron's DEFAULT menu owns Ctrl+W (Window>Close — would close
+  the window and every session in it) and Ctrl+R (reload mid-session) in the
+  browser process, ahead of the renderer — and Playwright can't catch it (CDP
+  bypasses native accelerators). Fixed by owning the menu: new
+  `src/main/app-menu.ts` (no Close/Reload roles; macOS keeps app+edit menus so
+  Cmd+C/V still work; DevTools kept), asserted both by unit test on the
+  template and by an e2e that inspects the REAL built menu. Other review
+  fixes: identity-checked cardActions cleanup, activeCardId ignores popped-out
+  panels, jumping to a popout raises its window, dispatch fails open
+  (try/catch + logger) and ignores key-repeat, `e.code` matching so Ctrl+1..9
+  works on AZERTY, refs written post-commit. Docs: `docs/manual/06-keyboard.md`
+  written (stub → draft). Gate: lint + typecheck + **233 unit + 44 e2e** green
+  (10 new e2e incl. both directions of the hard rule). **Dan CONFIRMED the
+  blocker fix with a real keypress 2026-07-25:** Ctrl+W raises "…This ends the
+  session and removes the card" (our card confirm), NOT the window-close
+  guard — the native accelerator no longer reaches Electron's menu.
 
 - 2026-07-24 — **User docs added to the workflow (Dan's call).** New
   `docs/manual/` — a plain-English user manual in Markdown: index + house

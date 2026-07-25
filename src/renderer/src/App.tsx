@@ -14,6 +14,9 @@ import { EventsPanel } from './components/EventsPanel';
 import { Usage, addUsage, estimateCostUsd, ZERO_USAGE } from './lib/usage';
 import { loadUiState, uiGet, uiSet } from './lib/ui-state';
 import { boxOnAnyDisplay, RescuedPopout } from './lib/layout';
+import { railOrder } from './lib/groups';
+import { buildCommands } from './lib/command-set';
+import { bindingFor, dispatch, formatBinding, Platform } from './lib/commands';
 
 // Control-room shell (P1-E3-01): titlebar / rail / grid / statusbar.
 // Terminals (E3-02), identity kit (E3-03), and live badges (E3-05) land next.
@@ -39,9 +42,13 @@ export function App(): React.JSX.Element {
   // gate the shell on the persisted UI state (E12-08): reads are sync after
   const [uiReady, setUiReady] = useState(false);
   const [autonomy, setAutonomy] = useState<string>('ask');
+  // rail visibility (E9-01 'toggle rail' command) — persisted like the other
+  // renderer prefs, read once the ui blob has loaded
+  const [railHidden, setRailHidden] = useState(false);
   useEffect(() => {
     void loadUiState().then(() => {
       setAutonomy(uiGet('autonomy', 'ask'));
+      setRailHidden(uiGet('railHidden', false));
       setUiReady(true);
     });
   }, []);
@@ -186,6 +193,81 @@ export function App(): React.JSX.Element {
     };
   }, [cards, refreshSessions]); // re-sync when the grid's cards change
 
+  // ── keyboard commands (E9-01) ────────────────────────────────────────────
+  // One document-level listener owns every binding; lib/commands decides
+  // whether a key is ours to take (never in a text input, NEVER in a terminal).
+  // Rail order is the numbering authority for Ctrl+1..9 — the same function the
+  // rail renders from (collapsed groups included: collapsing hides rows, it
+  // doesn't renumber the workspace).
+  const railSessions = railOrder(sessions, groups).flat;
+  const railSessionsRef = React.useRef(railSessions);
+  const railHiddenRef = React.useRef(railHidden);
+  // refs are written AFTER commit, never during render: the keydown handler
+  // only ever runs post-commit, so this is fresh enough and stays correct if
+  // React ever abandons a render
+  useEffect(() => {
+    railSessionsRef.current = railSessions;
+    railHiddenRef.current = railHidden;
+  });
+  const platform: Platform = bridge.platform === 'darwin' ? 'darwin' : 'other';
+  const toggleRail = React.useCallback(() => {
+    const next = !railHiddenRef.current;
+    railHiddenRef.current = next;
+    uiSet('railHidden', next);
+    setRailHidden(next);
+  }, []);
+  const commands = React.useMemo(
+    () =>
+      buildCommands({
+        focusCard: (cardId) => grid.current?.focusSession(cardId),
+        newSession: () => {
+          void bridge.sessions?.pickFolder?.().then((folder) => {
+            if (folder) void grid.current?.addSessionCard(folder);
+          });
+        },
+        closeCard: (cardId) => grid.current?.closeCard(cardId),
+        toggleCardView: (cardId, view) => grid.current?.toggleCardView(cardId, view),
+        popOutCard: (cardId) => grid.current?.popOutCard(cardId),
+        toggleRail,
+      }),
+    [toggleRail], // other deps read live state through refs; grid.current is stable
+  );
+  // the rail chip advertises its own binding, derived from the registry so the
+  // tooltip can never drift from the key that actually works
+  const railBindingLabel = formatBinding(bindingFor(commands, 'view.rail'), platform);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      dispatch(
+        {
+          key: e.key,
+          ctrlKey: e.ctrlKey,
+          metaKey: e.metaKey,
+          shiftKey: e.shiftKey,
+          altKey: e.altKey,
+          code: e.code,
+          isComposing: e.isComposing,
+          repeat: e.repeat,
+          target: e.target as Element | null,
+          preventDefault: () => e.preventDefault(),
+        },
+        commands,
+        {
+          sessions: railSessionsRef.current,
+          activeCardId: grid.current?.activeCardId() ?? null,
+        },
+        platform,
+        // fail-open: a broken command logs and is forgotten, never an uncaught
+        // error in the keydown handler (the main process tails this console)
+        (err, id) => console.error(`[commands] ${id} failed`, err),
+      );
+    };
+    // Bubble phase, so a component that stops propagation keeps its keys. The
+    // real protection for text inputs is classifyTarget in lib/commands — the
+    // composer only calls preventDefault, it never stops propagation.
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [commands, platform]);
+
   if (!uiReady) return <div style={{ blockSize: '100vh' }} />; // one-frame gate while UI state loads
 
   return (
@@ -216,48 +298,53 @@ export function App(): React.JSX.Element {
           setAutoTrust(next);
           void bridge.settings?.setAutoTrust?.(next);
         }}
+        railHidden={railHidden}
+        onToggleRail={toggleRail}
+        railBinding={railBindingLabel}
       />
       {!preflightOk && <PreflightBanner />}
       <div style={{ flex: 1, display: 'flex', minBlockSize: 0 }}>
-        <SessionsRail
-          sessions={sessions}
-          groups={groups}
-          palette={palette}
-          onRename={(cardId, title) => {
-            void bridge.sessions?.renameCard?.(cardId, title).then(() => refreshSessions());
-          }}
-          onFocus={(cardId) => grid.current?.focusSession(cardId)}
-          onDiff={(s) => {
-            if (s.folder) grid.current?.openDiff(s.id, s.folder, s.title);
-          }}
-          onCreateGroup={(name) => {
-            void bridge.groups?.create?.({ name }).then(() => refreshGroups());
-          }}
-          onRenameGroup={(id, name) => {
-            void bridge.groups?.update?.(id, { name }).then(() => refreshGroups());
-          }}
-          onRecolorGroup={(id, color) => {
-            void bridge.groups?.update?.(id, { color }).then(() => refreshGroups());
-          }}
-          onMoveToGroup={(cardId, gid) => {
-            void bridge.groups?.setSessionGroup?.(cardId, gid).then(() => {
-              grid.current?.moveCardToGroup(cardId, gid);
-              void refreshSessions();
-            });
-          }}
-          onOpenInGroup={(gid) => {
-            void bridge.sessions?.pickFolder?.().then((folder) => {
-              if (folder) void grid.current?.addSessionCard(folder, gid);
-            });
-          }}
-          onDeleteGroup={(id) => {
-            // members fall back to ungrouped, so the session list changes too
-            void bridge.groups?.remove?.(id).then(() => {
-              void refreshGroups();
-              void refreshSessions();
-            });
-          }}
-        />
+        {!railHidden && (
+          <SessionsRail
+            sessions={sessions}
+            groups={groups}
+            palette={palette}
+            onRename={(cardId, title) => {
+              void bridge.sessions?.renameCard?.(cardId, title).then(() => refreshSessions());
+            }}
+            onFocus={(cardId) => grid.current?.focusSession(cardId)}
+            onDiff={(s) => {
+              if (s.folder) grid.current?.openDiff(s.id, s.folder, s.title);
+            }}
+            onCreateGroup={(name) => {
+              void bridge.groups?.create?.({ name }).then(() => refreshGroups());
+            }}
+            onRenameGroup={(id, name) => {
+              void bridge.groups?.update?.(id, { name }).then(() => refreshGroups());
+            }}
+            onRecolorGroup={(id, color) => {
+              void bridge.groups?.update?.(id, { color }).then(() => refreshGroups());
+            }}
+            onMoveToGroup={(cardId, gid) => {
+              void bridge.groups?.setSessionGroup?.(cardId, gid).then(() => {
+                grid.current?.moveCardToGroup(cardId, gid);
+                void refreshSessions();
+              });
+            }}
+            onOpenInGroup={(gid) => {
+              void bridge.sessions?.pickFolder?.().then((folder) => {
+                if (folder) void grid.current?.addSessionCard(folder, gid);
+              });
+            }}
+            onDeleteGroup={(id) => {
+              // members fall back to ungrouped, so the session list changes too
+              void bridge.groups?.remove?.(id).then(() => {
+                void refreshGroups();
+                void refreshSessions();
+              });
+            }}
+          />
+        )}
         <SessionGrid
           theme={theme}
           seedPanels={bridge.seedPanels ?? 0}

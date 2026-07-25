@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, screen, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, screen, shell } from 'electron';
 import path from 'path';
 import { windowOptionsFrom, WindowState } from './window-state';
 import { WorkspaceStore, displayFingerprint } from './workspace/store';
@@ -19,6 +19,7 @@ import { runPreflight } from './preflight';
 import { startStaticServer, StaticServer } from './static-server';
 import { parsePopoutFeatures } from './popout-bounds';
 import { scanSlashCommands } from './capabilities/slash-commands';
+import { buildMenuTemplate } from './app-menu';
 import { dialog } from 'electron';
 
 // Safe-by-default for every window this app will ever open (§5.29 posture).
@@ -298,6 +299,11 @@ app
       // hooks are an accelerator, not the authority — start-failure degrades
       log.app.error('hook listener failed to start', { error: String(err) });
     });
+    // own the menu BEFORE the first window: Electron's default one registers
+    // Ctrl+W (closes the window and every session in it) and Ctrl+R (reloads
+    // the renderer mid-session) in the browser process, ahead of the
+    // renderer's command registry (E9-01)
+    Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate(process.platform)));
     createWindow(); // sets currentWindow; IPC/notifier read it via closure
     const feed = new EventFeed();
     const notifier = new Notifier({

@@ -1,0 +1,149 @@
+// The seed command set (P2-E9-01). Kept apart from the registry mechanics in
+// commands.ts: this file knows WHAT the app can do, that one knows how keys
+// reach a command. E9-02's palette renders whatever this returns; later items
+// (attention queue, layout modes, maximize) add to it rather than binding keys
+// of their own.
+//
+// Every seed command is scope 'app': none of them fire while the user is typing
+// in the composer, renaming a session, or working in a terminal.
+import { Command, CommandContext } from './commands';
+
+export interface CommandDeps {
+  /** focus the session card with this card id */
+  focusCard: (cardId: string) => void;
+  /** pick a folder and open a new session in it */
+  newSession: () => void;
+  /** close a card (asks for confirmation — it forgets the record) */
+  closeCard: (cardId: string) => void;
+  /** switch a card's view tab; the same view twice returns to the Session view */
+  toggleCardView: (cardId: string, view: 'feed' | 'terminal' | 'diff') => void;
+  /** pop a card out to its own window, or dock it back in */
+  popOutCard: (cardId: string) => void;
+  /** show/hide the sessions rail */
+  toggleRail: () => void;
+}
+
+const CATEGORY_SESSION = 'commands.category.session';
+const CATEGORY_VIEW = 'commands.category.view';
+
+/** index of the focused card in rail order, or -1 */
+function activeIndex(ctx: CommandContext): number {
+  return ctx.activeCardId ? ctx.sessions.findIndex((s) => s.id === ctx.activeCardId) : -1;
+}
+
+export function buildCommands(deps: CommandDeps): Command[] {
+  const hasActive = (ctx: CommandContext): boolean => ctx.activeCardId !== null;
+
+  // Ctrl+1..9 — the Nth session in RAIL order (lib/groups railOrder), so the
+  // keyboard and the eye always agree
+  const jumps: Command[] = Array.from({ length: 9 }, (_, i) => ({
+    id: `session.jump.${i + 1}`,
+    titleKey: 'commands.jumpTo',
+    titleParams: { n: i + 1 },
+    categoryKey: CATEGORY_SESSION,
+    binding: `Mod+${i + 1}`,
+    scope: 'app' as const,
+    enabled: (ctx: CommandContext) => ctx.sessions.length > i,
+    disabledReasonKey: 'commands.disabled.noSuchSession',
+    run: (ctx: CommandContext) => {
+      const s = ctx.sessions[i];
+      if (s) deps.focusCard(s.id);
+    },
+  }));
+
+  const step = (delta: number) => (ctx: CommandContext) => {
+    if (ctx.sessions.length === 0) return;
+    const i = activeIndex(ctx);
+    // no focused card: enter the list at either end rather than doing nothing
+    const next = i < 0 ? (delta > 0 ? 0 : ctx.sessions.length - 1) : i + delta;
+    const wrapped = (next + ctx.sessions.length) % ctx.sessions.length;
+    deps.focusCard(ctx.sessions[wrapped].id);
+  };
+
+  return [
+    ...jumps,
+    {
+      id: 'session.next',
+      titleKey: 'commands.nextSession',
+      categoryKey: CATEGORY_SESSION,
+      binding: 'Mod+PageDown',
+      scope: 'app',
+      enabled: (ctx) => ctx.sessions.length > 0,
+      disabledReasonKey: 'commands.disabled.noSessions',
+      run: step(1),
+    },
+    {
+      id: 'session.prev',
+      titleKey: 'commands.prevSession',
+      categoryKey: CATEGORY_SESSION,
+      binding: 'Mod+PageUp',
+      scope: 'app',
+      enabled: (ctx) => ctx.sessions.length > 0,
+      disabledReasonKey: 'commands.disabled.noSessions',
+      run: step(-1),
+    },
+    {
+      id: 'session.new',
+      titleKey: 'commands.newSession',
+      categoryKey: CATEGORY_SESSION,
+      binding: 'Mod+N',
+      scope: 'app',
+      run: () => deps.newSession(),
+    },
+    {
+      id: 'session.close',
+      titleKey: 'commands.closeSession',
+      categoryKey: CATEGORY_SESSION,
+      binding: 'Mod+W',
+      scope: 'app',
+      enabled: hasActive,
+      disabledReasonKey: 'commands.disabled.noActiveSession',
+      run: (ctx) => {
+        if (ctx.activeCardId) deps.closeCard(ctx.activeCardId);
+      },
+    },
+    {
+      id: 'session.popOut',
+      titleKey: 'commands.popOut',
+      categoryKey: CATEGORY_VIEW,
+      binding: 'Mod+Shift+O',
+      scope: 'app',
+      enabled: hasActive,
+      disabledReasonKey: 'commands.disabled.noActiveSession',
+      run: (ctx) => {
+        if (ctx.activeCardId) deps.popOutCard(ctx.activeCardId);
+      },
+    },
+    {
+      id: 'view.terminal',
+      titleKey: 'commands.toggleTerminal',
+      categoryKey: CATEGORY_VIEW,
+      binding: 'Mod+`',
+      scope: 'app',
+      enabled: hasActive,
+      disabledReasonKey: 'commands.disabled.noActiveSession',
+      run: (ctx) => {
+        if (ctx.activeCardId) deps.toggleCardView(ctx.activeCardId, 'terminal');
+      },
+    },
+    {
+      id: 'view.changes',
+      titleKey: 'commands.toggleChanges',
+      categoryKey: CATEGORY_VIEW,
+      scope: 'app', // palette-only for now — no binding to spare
+      enabled: hasActive,
+      disabledReasonKey: 'commands.disabled.noActiveSession',
+      run: (ctx) => {
+        if (ctx.activeCardId) deps.toggleCardView(ctx.activeCardId, 'diff');
+      },
+    },
+    {
+      id: 'view.rail',
+      titleKey: 'commands.toggleRail',
+      categoryKey: CATEGORY_VIEW,
+      binding: 'Mod+B',
+      scope: 'app',
+      run: () => deps.toggleRail(),
+    },
+  ];
+}

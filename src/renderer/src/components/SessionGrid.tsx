@@ -346,6 +346,30 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     const popoutUrl = new URL('popout.html', window.location.href).toString();
     void props.containerApi.addPopoutGroup(panel, { popoutUrl });
   };
+  // publish this card's imperative actions for the command dispatcher (E9-01).
+  // A ref keeps the registration stable across renders while the handlers it
+  // calls stay current.
+  const actionsRef = React.useRef<CardActions | null>(null);
+  React.useEffect(() => {
+    actionsRef.current = { setView, currentView: () => view, popOutToggle };
+  });
+  React.useEffect(() => {
+    // only a LIVE card has views to switch or a window to tear off; a
+    // suspended/dead one would silently persist a view tab nobody can see
+    if (!cardId || !live) return;
+    const entry: CardActions = {
+      setView: (v) => actionsRef.current?.setView(v),
+      currentView: () => actionsRef.current?.currentView() ?? 'feed',
+      popOutToggle: () => actionsRef.current?.popOutToggle(),
+    };
+    cardActions.set(cardId, entry);
+    return () => {
+      // identity-checked: if this card remounted before our cleanup ran, the
+      // NEW registration must survive (dockview re-creates panels on restore)
+      if (cardActions.get(cardId) === entry) cardActions.delete(cardId);
+    };
+  }, [cardId, live]);
+
   const resumeSelf = (): void => {
     // clear the suspended gate; the lazy-spawn effect re-fires while visible
     setSuspended(false);
@@ -841,6 +865,16 @@ const dockingBackByButton = new Set<string>();
 function cardIdForLive(liveId: string): string {
   return liveToCard.get(liveId) ?? liveId;
 }
+// Per-card imperative handles (E9-01). A card panel registers its own actions
+// on mount so the command dispatcher can drive ONE card — the view tabs and the
+// pop-out toggle live inside the panel component, and prop-drilling them up
+// through Dockview isn't possible. Same module-map pattern as liveToCard.
+interface CardActions {
+  setView: (view: 'feed' | 'terminal' | 'diff') => void;
+  currentView: () => 'feed' | 'terminal' | 'diff';
+  popOutToggle: () => void;
+}
+const cardActions = new Map<string, CardActions>();
 function forgetCardLiveIds(cardId: string): void {
   for (const [liveId, cid] of liveToCard) if (cid === cardId) liveToCard.delete(liveId);
 }
@@ -887,6 +921,15 @@ export interface GridController {
   restoreRescuedPopouts: () => void;
   /** open (or focus) the per-session diff tab (E5-02) */
   openDiff: (sessionId: string, folder: string, title: string) => void;
+  /** card id of the active session panel, or null (E9-01 command context) */
+  activeCardId: () => string | null;
+  /** close a card the way the tab ✕ does — including its confirm (E9-01) */
+  closeCard: (cardId: string) => void;
+  /** switch a card's active view tab; 'terminal' toggles back to the Session
+   *  view when the Terminal is already showing (E9-01) */
+  toggleCardView: (cardId: string, view: 'feed' | 'terminal' | 'diff') => void;
+  /** pop the card out to its own window, or dock it back in (E9-01) */
+  popOutCard: (cardId: string) => void;
 }
 
 export function SessionGrid(props: {
@@ -956,7 +999,40 @@ export function SessionGrid(props: {
         });
       },
       focusSession: (liveId) => {
-        apiRef.current?.getPanel(`session-${cardIdForLive(liveId)}`)?.focus();
+        const panel = apiRef.current?.getPanel(`session-${cardIdForLive(liveId)}`);
+        if (!panel) return;
+        panel.focus();
+        // a popped-out card is in another OS window — focusing the panel alone
+        // leaves it buried behind this one, so raise its window too (E9-01)
+        const loc = panel.group.api.location;
+        if (loc.type === 'popout') loc.getWindow()?.focus();
+      },
+      activeCardId: () => {
+        const panel = apiRef.current?.activePanel;
+        // a popped-out card lives in ANOTHER OS window; commands typed in this
+        // one must never act on it (you'd confirm-close a card you can't see)
+        if (!panel || panel.group.api.location.type !== 'grid') return null;
+        const m = /^session-(.+)$/.exec(panel.id);
+        return m ? m[1] : null;
+      },
+      closeCard: (cardId) => {
+        const api = apiRef.current;
+        const panel = api?.getPanel(`session-${cardId}`);
+        if (!api || !panel) return;
+        // same contract as the tab ✕ (Dan 2026-07-22): confirm, because this
+        // ends the session and forgets the record
+        const title = panel.title ?? '';
+        if (!window.confirm(t('grid.closeConfirm', { title }))) return;
+        api.removePanel(panel); // onDidRemovePanel -> closeCard
+      },
+      toggleCardView: (cardId, view) => {
+        const actions = cardActions.get(cardId);
+        if (!actions) return; // suspended/dead card: no view to switch
+        // toggling: a second press on the same view returns to the Session view
+        actions.setView(actions.currentView() === view && view !== 'feed' ? 'feed' : view);
+      },
+      popOutCard: (cardId) => {
+        cardActions.get(cardId)?.popOutToggle();
       },
       restoreRescuedPopouts: () => {
         const api = apiRef.current;
