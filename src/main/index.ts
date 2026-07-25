@@ -127,6 +127,27 @@ function trackWindowGeometry(win: BrowserWindow): void {
   });
 }
 
+/**
+ * Hard-exit backstop (#85). Twice now the main process has survived its own
+ * `quit`: no windows, no sockets, teardown done, `app quit` logged — and still
+ * breathing, leaving the launcher console open. Unreproducible on demand (a
+ * native-handle race: ConPTY threads or a Chromium handle), and invisible to
+ * the e2e suite, whose harness force-kills the process tree anyway.
+ *
+ * Everything durable is already flushed by the time `quit` fires — window
+ * geometry saves on close, and workspace.save() flushes its debounce there —
+ * so lingering buys nothing. Wait a beat for a graceful exit; if we're still
+ * here, say so in the log (recurrence stays visible) and exit hard.
+ */
+function scheduleForcedExit(): void {
+  const timer = setTimeout(() => {
+    log.app.warn('still alive after quit — forcing exit', { pid: process.pid });
+    app.exit(0);
+  }, 1500);
+  // never let the backstop itself be the reason the process stays up
+  timer.unref?.();
+}
+
 function createWindow(): BrowserWindow {
   const state: WindowState = workspace.restoreWindow(workAreas());
   const win = new BrowserWindow({
@@ -377,6 +398,7 @@ app
       hooks.stop();
       transcripts.stop();
       staticServer?.close();
+      scheduleForcedExit();
     });
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

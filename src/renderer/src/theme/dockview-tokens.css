@@ -1,0 +1,161 @@
+/*
+ * Dockview → switchboard token bridge (issue #84).
+ *
+ * WHY THIS FILE EXISTS. We used to hand dockview a `dockview-theme-light` /
+ * `dockview-theme-dark` class on the DockviewReact root and let its bundled
+ * theme paint the chrome. That leaks: dockview mounts popups (the tab-overflow
+ * dropdown) on the `dv-shell` element — an ancestor we never themed — so the
+ * dropdown fell back to dockview's DEFAULT `abyss` theme and rendered
+ * near-black-on-black inside our light app. Dan hit exactly that: a dropdown
+ * whose rows looked empty.
+ *
+ * So the variables are defined at `:root` instead, bound to OUR tokens: every
+ * dockview surface — inner root, shell, popups — resolves them the same way in
+ * both themes, with no class to forget. §5.20: colors live in tokens, never in
+ * component code.
+ *
+ * Popout windows are separate DOCUMENTS: they share this stylesheet but not our
+ * `<html>` flags, so lib/tab-rows.ts copies `data-theme` and `data-tab-rows`
+ * across when one opens and whenever either changes. Without that they render
+ * in the default theme and never wrap.
+ *
+ * Loaded AFTER dockview.css so these win.
+ *
+ * SessionGrid registers `dockview-theme-switchboard` as dockview's theme, so
+ * none of dockview's own `.dockview-theme-*` variable blocks match anything in
+ * this app — no specificity fight, and no dependence on stylesheet order.
+ */
+:root,
+.dockview-theme-switchboard {
+  /* --- surfaces --------------------------------------------------------- */
+  --dv-group-view-background-color: var(--card-bg);
+  --dv-tabs-and-actions-container-background-color: var(--panel2);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--panel);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--panel2);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--panel);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--panel2);
+  /* NOT transparent: dockview reuses this for the tab focus ring
+     (.dv-tab:focus-within::after). The gap already separates tabs, so the
+     divider is hidden further down instead — a keyboard user keeps a ring. */
+  --dv-tab-divider-color: var(--link);
+
+  /* --- text ------------------------------------------------------------- */
+  /* dropdown rows get an explicit color further down; these drive the strip */
+  --dv-activegroup-visiblepanel-tab-color: var(--text);
+  --dv-activegroup-hiddenpanel-tab-color: var(--muted);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--muted);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--muted);
+
+  /* --- lines, scrollbars, overlays -------------------------------------- */
+  --dv-separator-border: var(--border);
+  --dv-paneview-header-border-color: var(--border);
+  --dv-paneview-active-outline-color: var(--link);
+  --dv-scrollbar-background-color: var(--faint);
+  --dv-tabs-container-scrollbar-color: var(--faint);
+  --dv-icon-hover-background-color: var(--chip);
+  --dv-drag-over-background-color: var(--chip);
+  --dv-drag-over-border-color: var(--link);
+  --dv-floating-border: 1px solid var(--border);
+  --dv-floating-box-shadow: var(--window-shadow);
+  --dv-floating-titlebar-background-color: var(--panel2);
+  --dv-overlay-z-index: 40; /* under the command palette (50) */
+
+  /* --- shape (Dan: "a tiny little space", curved corners) ---------------- */
+  --dv-tab-margin: 0 3px 0 0;
+  --dv-tab-border-radius: 7px;
+  --dv-border-radius: 6px;
+  --dv-dropdown-border-radius: 8px;
+  --dv-sash-border-radius: 0px;
+  --dv-tab-font-size: inherit;
+  --dv-tabs-and-actions-container-font-size: 12px;
+  --dv-tabs-and-actions-container-height: 35px;
+  --dv-sash-color: transparent;
+  --dv-active-sash-color: var(--link);
+  --dv-spacing-padding: 0px;
+  --dv-floating-group-dragging-opacity: 0.5;
+  --dv-floating-titlebar-height: 22px;
+  --dv-tab-close-icon-size: inherit;
+}
+
+/* The tab strip: a small gutter so tabs read as separate chips rather than one
+   run-on bar, and rounded tops that make the click target obvious. */
+.dv-tabs-container {
+  /* border-box: dockview sets height:100% here, so padding on a content-box
+     would push the strip 3px taller than the header that contains it */
+  box-sizing: border-box;
+  padding-inline-start: 3px;
+  padding-block-start: 3px;
+  gap: 0; /* --dv-tab-margin already spaces them; gap would double it */
+}
+
+/* the gap replaces dockview's 1px divider between tabs */
+.dv-tabs-container .dv-tab::before {
+  display: none;
+}
+
+.dv-tab {
+  border: 1px solid var(--border);
+  border-block-end: none;
+  /* rounded on top only — a tab is attached to the panel below it */
+  border-start-start-radius: var(--dv-tab-border-radius);
+  border-start-end-radius: var(--dv-tab-border-radius);
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+
+/* The tab-overflow dropdown (single-row mode): our panel, our text, our border,
+   in both themes. This is the surface that used to render in dockview's default
+   dark theme and look empty. */
+.dv-tabs-overflow-dropdown-root,
+.dv-tabs-overflow-container {
+  background-color: var(--panel);
+  color: var(--text);
+  border-radius: var(--dv-dropdown-border-radius);
+  box-shadow: var(--window-shadow);
+}
+.dv-tabs-overflow-container {
+  border: 1px solid var(--border);
+  padding: 4px;
+  min-inline-size: 180px;
+}
+.dv-tabs-overflow-container .dv-tab {
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+}
+.dv-tabs-overflow-container .dv-tab:hover {
+  background-color: var(--chip);
+}
+
+/*
+ * Multi-row tabs (issue #84, default ON). Wrapping is opt-out because the
+ * alternative — hiding sessions behind a dropdown — hides the very thing this
+ * app is about. `overflow: visible` matters: the container scrolls by default,
+ * which would clip the second row instead of showing it.
+ */
+:root[data-tab-rows='wrap'] .dv-tabs-container {
+  flex-wrap: wrap;
+  overflow: visible;
+  block-size: auto;
+}
+/*
+ * The header grows with the rows it holds — but only so far. A persistent group
+ * (E12) clusters every member into ONE dockview group, so a short pane with a
+ * dozen sessions could otherwise grow a strip tall enough to starve the card
+ * below it; the header never shrinks and the group clips. Past the cap the
+ * strip scrolls, which is ugly but always leaves the session readable.
+ *
+ * NOTE: no flex-wrap here. This container is [tabs][void][right-actions] in a
+ * row; wrapping IT pushes the void container (the group's drag handle) and the
+ * right actions onto a zero-height second line. The wrap belongs on the inner
+ * tabs container alone.
+ */
+:root[data-tab-rows='wrap'] .dv-tabs-and-actions-container {
+  block-size: auto;
+  min-block-size: var(--dv-tabs-and-actions-container-height);
+  max-block-size: 40%;
+  overflow-y: auto;
+}
+:root[data-tab-rows='wrap'] .dv-tab {
+  margin-block-end: 3px;
+}

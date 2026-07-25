@@ -11,6 +11,9 @@ import {
   PopoutGroup,
 } from 'dockview-react';
 import 'dockview-react/dist/styles/dockview.css';
+// AFTER dockview's own sheet: binds every --dv-* variable to our tokens so the
+// shell, popups and popout windows can't fall back to a foreign theme (#84)
+import '../theme/dockview-tokens.css';
 import { TerminalPane } from './TerminalPane';
 import { IdentityChip } from './IdentityChip';
 import { DiffPane } from './DiffPane';
@@ -1097,6 +1100,21 @@ export function SessionGrid(props: {
       const api = event.api;
       apiRef.current = api;
 
+      // Own the theme outright (#84). dockview stamps its theme class on the
+      // SHELL — an element we don't render — and defaults to `abyss`; that's
+      // why the tab-overflow dropdown (a popup mounted on the shell) came out
+      // dark inside our light app. Registering our own theme puts OUR class up
+      // there, so every dockview surface, popups and popout containers
+      // included, resolves the variables in theme/dockview-tokens.css.
+      api.updateOptions({
+        theme: {
+          name: 'switchboard',
+          className: 'dockview-theme-switchboard',
+          colorScheme: props.theme === 'daylight' ? 'light' : 'dark',
+          tabGroupIndicator: 'none',
+        },
+      });
+
       const report = () => props.onCardsChanged(api.panels.map((p) => p.id));
       const saveLayout = () => window.switchboard.workspace.setLayout(api.toJSON());
       api.onDidLayoutChange(() => {
@@ -1244,7 +1262,8 @@ export function SessionGrid(props: {
           components={components}
           defaultTabComponent={IdentityTab}
           onReady={(e: DockviewReadyEvent) => void onReady(e)}
-          className={props.theme === 'daylight' ? 'dockview-theme-light' : 'dockview-theme-dark'}
+          /* the theme lives on the SHELL, set via api.updateOptions in onReady
+             (#84) — a class here never reached the popups */
         />
       </div>
     </main>

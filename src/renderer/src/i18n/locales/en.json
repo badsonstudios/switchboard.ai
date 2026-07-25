@@ -202,6 +202,7 @@
     "toggleTerminal": "Toggle Terminal view",
     "toggleChanges": "Toggle Changes view",
     "toggleRail": "Toggle the sessions rail",
+    "toggleTabRows": "Toggle tabs on multiple rows",
     "openPalette": "Show all commands",
     "goToSession": "Go to {title}",
     "category": {
