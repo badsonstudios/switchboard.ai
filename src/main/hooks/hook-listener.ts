@@ -218,13 +218,34 @@ export class HookListener {
     this.opts.log.info('allow-all enabled for session', { sessionId });
   }
 
+  /**
+   * `permissionDecisionReason` is not a log line — the CLI feeds it straight to
+   * the MODEL, and the model acts on how it reads.
+   *
+   * Dan, 2026-07-26: a denial used to say "Denied from switchboard", which
+   * reads exactly like an infrastructure gate. Claude concluded a hook or
+   * sandbox was blocking it, announced "PowerShell is getting blocked by
+   * something called switchboard", and routed around the denial with a
+   * different tool — then a third — until it got the listing anyway. A denial
+   * that the agent treats as an obstacle to solve is worse than no denial at
+   * all: the user pressed Deny and got the thing they refused.
+   *
+   * So the reason has to say three things: the USER decided this, it is not a
+   * technical fault, and working around it is not on the table.
+   */
   private verdict(decision: 'allow' | 'deny', reason?: string): string {
+    const denied =
+      'The user reviewed this request in switchboard and DENIED it. This is a ' +
+      'deliberate decision by the human operator — not a sandbox restriction, a ' +
+      'misconfiguration, or a transient error. Do NOT retry this call, and do NOT ' +
+      'attempt the same goal through another tool or a different route. Stop what ' +
+      'you were doing and ask the user how they would like to proceed.';
+    const allowed = 'The user reviewed this request in switchboard and allowed it.';
     return JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: decision,
-        permissionDecisionReason:
-          reason ?? (decision === 'deny' ? 'Denied from switchboard' : 'Approved from switchboard'),
+        permissionDecisionReason: reason ?? (decision === 'deny' ? denied : allowed),
       },
     });
   }

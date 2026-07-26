@@ -210,6 +210,27 @@ describe('PreToolUse hold + decision round-trip (P2-E10-03, §5.16)', () => {
     expect(verdict).toMatchObject({ permissionDecision: 'deny', permissionDecisionReason: 'not on my watch' });
   });
 
+  it("the DEFAULT deny reason tells the model a human refused — not that a gate blocked it", async () => {
+    // Dan 2026-07-26: "Denied from switchboard" read as an infrastructure
+    // block, so Claude announced it was "getting blocked by something called
+    // switchboard" and routed around the denial with other tools until it got
+    // the result anyway. The reason string is fed to the MODEL — it has to
+    // close that door explicitly.
+    const t = heldToken('s1');
+    const pending = postHeld(preToolUse('Bash'), t);
+    await new Promise((r) => setTimeout(r, 100));
+    held.decide(requests[0].requestId, 'deny'); // no reason -> the default
+    const verdict = JSON.parse((await pending).body).hookSpecificOutput;
+    const why = verdict.permissionDecisionReason as string;
+    expect(verdict.permissionDecision).toBe('deny');
+    expect(why).toMatch(/user/i); // a human decided
+    expect(why).toMatch(/denied/i);
+    expect(why).toMatch(/do not retry/i); // and must not be worked around
+    expect(why).toMatch(/another tool|different route/i);
+    // the old wording is the actual defect — it must not come back
+    expect(why).not.toBe('Denied from switchboard');
+  });
+
   it('timeout fails OPEN: {} response, so the CLI runs its own TUI prompt', async () => {
     const t = heldToken('s1');
     const res = await postHeld(preToolUse('Write'), t); // resolves via the 400ms timeout

@@ -16,7 +16,10 @@ Three buttons:
 - **Allow** — this one time.
 - **Allow all (this session)** — stop asking for this session. Resets when the
   session restarts.
-- **Deny** — refuse; Claude is told and carries on.
+- **Deny** — refuse. Claude is told you made the call deliberately, and that it
+  should stop rather than look for another way round. It won't retry the same
+  thing or reach for a different tool to get there anyway — it comes back and
+  asks what you'd like instead.
 
 If several requests pile up, they queue: the bar shows **+2 more waiting** and
 advances as you answer. The card surfaces its Session tab automatically when a
