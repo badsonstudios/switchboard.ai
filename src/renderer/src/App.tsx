@@ -10,13 +10,14 @@ import {
 import { LanguageChoice, loadLanguage, setLanguage } from './i18n';
 import { TitleBar, SessionsRail, StatusBar, RailSession, RailGroup } from './components/chrome';
 import { SessionGrid, GridController } from './components/SessionGrid';
-import { EventsPanel } from './components/EventsPanel';
+import { EventsPanel, EventDto } from './components/EventsPanel';
 import { Usage, addUsage, estimateCostUsd, ZERO_USAGE } from './lib/usage';
 import { loadUiState, uiGet, uiSet } from './lib/ui-state';
 import { boxOnAnyDisplay, RescuedPopout } from './lib/layout';
 import { railOrder } from './lib/groups';
 import { buildCommands } from './lib/command-set';
 import { bindingFor, dispatch, formatBinding, Platform } from './lib/commands';
+import { attentionQueue, nextInQueue, withVisit } from './lib/queue';
 import { CommandPalette } from './components/CommandPalette';
 import {
   applyTabRows,
@@ -56,6 +57,16 @@ export function App(): React.JSX.Element {
   const [railHidden, setRailHidden] = useState(false);
   // command palette (E9-02) — deliberately NOT persisted: it opens on demand
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // Attention events (E9-03). This subscription used to live inside
+  // EventsPanel; it moved up here because the queue is the SINGLE ordering
+  // authority — two independent subscriptions to events:changed could hand the
+  // panel and the Ctrl+Space walk different lists, and then the highlighted
+  // "next" row would not be where the hotkey actually takes you.
+  const [events, setEvents] = useState<EventDto[]>([]);
+  // the walk reads the events that are true at KEYPRESS time — the push
+  // handler below writes this ref directly, so a keydown arriving before
+  // React re-renders still sees the session that just called
+  const eventsRef = React.useRef(events);
   useEffect(() => {
     void loadUiState().then(() => {
       setAutonomy(uiGet('autonomy', 'ask'));
@@ -206,6 +217,28 @@ export function App(): React.JSX.Element {
     };
   }, [cards, refreshSessions]); // re-sync when the grid's cards change
 
+  // ── attention queue (E9-03, §5.8) ────────────────────────────────────────
+  useEffect(() => {
+    // a push landing while list() is in flight must not be overwritten by the
+    // stale snapshot (review P1 #15) — pushes always win
+    let gotPush = false;
+    const off = window.switchboard?.events?.onChanged?.((l) => {
+      gotPush = true;
+      // written HERE, not in the post-commit effect below: the walk has to see
+      // an event that landed since the last commit, and a keydown can arrive
+      // before React has re-rendered
+      eventsRef.current = l as EventDto[];
+      setEvents(l as EventDto[]);
+    });
+    void window.switchboard?.events?.list?.().then((l) => {
+      if (!gotPush) {
+        eventsRef.current = l as EventDto[];
+        setEvents(l as EventDto[]);
+      }
+    });
+    return off;
+  }, []);
+
   // ── keyboard commands (E9-01) ────────────────────────────────────────────
   // One document-level listener owns every binding; lib/commands decides
   // whether a key is ours to take (never in a text input, NEVER in a terminal).
@@ -225,6 +258,46 @@ export function App(): React.JSX.Element {
     railHiddenRef.current = railHidden;
     paletteOpenRef.current = paletteOpen;
   });
+
+  // Set when a command deliberately raised a DIFFERENT OS window (jumping to a
+  // popped-out session). The popout key bridge below reads it: without it,
+  // focusing a popout and then pulling the main window forward would bury the
+  // very session you asked for.
+  const raisedOtherWindowRef = React.useRef(false);
+  const focusSession = React.useCallback((sessionId: string): boolean => {
+    const raised = grid.current?.focusSession(sessionId) ?? false;
+    if (raised) raisedOtherWindowRef.current = true;
+    return raised;
+  }, []);
+
+  // Where the walk has already taken you, by EVENT id (see lib/queue).
+  //
+  // BOTH a ref and state, deliberately: the ref is the authority, written
+  // synchronously so two presses in one frame advance two steps rather than
+  // batching into one; the state exists only so the panel can render the
+  // cursor. If the panel showed a fixed head instead, its "next" marker would
+  // point at the wrong row from the second press onward — and the whole point
+  // of one shared ordering is that the eye and the keyboard agree.
+  const visitedRef = React.useRef<ReadonlySet<number>>(new Set());
+  const [visited, setVisited] = useState<ReadonlySet<number>>(visitedRef.current);
+  const visit = React.useCallback((events: EventDto[], eventId: number) => {
+    const next = withVisit(visitedRef.current, events, eventId);
+    visitedRef.current = next;
+    setVisited(next);
+  }, []);
+  const jumpToNextAttention = React.useCallback(() => {
+    const { next, visited: after } = nextInQueue(eventsRef.current, visitedRef.current);
+    visitedRef.current = after;
+    setVisited(after);
+    if (!next) return; // empty queue: a no-op, never a focus change
+    // focusSession maps a live session id to its card itself, and passes any
+    // id it doesn't recognise straight through
+    focusSession(next.sessionId);
+    // "Done." relaxes to "Ready" — you have now looked at it. Every other kind
+    // is untouched by ack and leaves the queue only when actually answered,
+    // which is exactly why the visited set above has to exist.
+    void window.switchboard?.events?.ack?.(next.sessionId);
+  }, [focusSession]);
   // a theme switch must reach the popped-out windows too — they're separate
   // documents that don't inherit our <html> flags (#84)
   useEffect(() => {
@@ -240,7 +313,7 @@ export function App(): React.JSX.Element {
   const commands = React.useMemo(
     () =>
       buildCommands({
-        focusCard: (cardId) => grid.current?.focusSession(cardId),
+        focusCard: (cardId) => focusSession(cardId),
         newSession: () => {
           void bridge.sessions?.pickFolder?.().then((folder) => {
             if (folder) void grid.current?.addSessionCard(folder);
@@ -254,22 +327,30 @@ export function App(): React.JSX.Element {
         toggleTabRows: () => {
           toggleTabRows();
         },
+        jumpToNextAttention,
       }),
-    [toggleRail], // other deps read live state through refs; grid.current is stable
+    [toggleRail, jumpToNextAttention], // other deps read live state through refs; grid.current is stable
   );
   // chips advertise their own binding, derived from the registry so a tooltip
   // can never drift from the key that actually works
   const railBindingLabel = formatBinding(bindingFor(commands, 'view.rail'), platform);
   const paletteBindingLabel = formatBinding(bindingFor(commands, 'palette.open'), platform);
+  const queueBindingLabel = formatBinding(bindingFor(commands, 'attention.next'), platform);
   // the palette reads the SAME context the dispatcher does, at open time
+  // ONE builder for both readers (the palette at open time, the dispatcher at
+  // keypress time). They used to construct this separately, which is how a
+  // command ends up enabled in the palette and dead on the keyboard.
   const commandContext = React.useCallback(
     () => ({
       sessions: railSessionsRef.current,
       activeCardId: grid.current?.activeCardId() ?? null,
+      // recomputed live rather than read off a ref: the depth decides whether
+      // the jump command is available at all
+      attentionCount: attentionQueue(eventsRef.current).length,
     }),
     [],
   );
-  const focusCard = React.useCallback((cardId: string) => grid.current?.focusSession(cardId), []);
+  const focusCard = React.useCallback((cardId: string) => focusSession(cardId), [focusSession]);
   const popoutKeysRef = React.useRef(new Map<Window, (e: KeyboardEvent) => void>());
   useEffect(() => {
     // Returns the command that ran (or null) — the popout bridge below needs
@@ -294,10 +375,7 @@ export function App(): React.JSX.Element {
           preventDefault: () => e.preventDefault(),
         },
         commands,
-        {
-          sessions: railSessionsRef.current,
-          activeCardId: grid.current?.activeCardId() ?? null,
-        },
+        commandContext(),
         platform,
         // fail-open: a broken command logs and is forgotten, never an uncaught
         // error in the keydown handler (the main process tails this console)
@@ -312,9 +390,15 @@ export function App(): React.JSX.Element {
     // Popped-out sessions live in their own OS windows, but their JS runs here
     // (dockview adopts the DOM). Without this they'd be deaf to every shortcut
     // — and the palette's whole promise is that capability is never out of
-    // reach (§5.8). Everything the commands touch is in THIS window, so a
+    // reach (§5.8). Most of what the commands touch is in THIS window, so a
     // command that actually RUNS brings this window forward with it; an
     // ordinary keystroke in the popout never does.
+    //
+    // The exception is a command that jumped to ANOTHER popped-out session:
+    // it already raised that window, and pulling the main window forward
+    // afterwards would bury the session the user just asked for. The attention
+    // jump makes this routine — the queue targets whatever is blocked, and
+    // blocked sessions are exactly the ones people pop out.
     //
     // The window→handler map lives in a ref, not this closure: if the effect
     // ever re-runs (a new dep), popouts opened earlier must be re-attached,
@@ -323,7 +407,8 @@ export function App(): React.JSX.Element {
     const attach = (win: Window): void => {
       if (popoutKeys.has(win)) return;
       const handler = (e: KeyboardEvent): void => {
-        if (onKey(e)) window.focus();
+        raisedOtherWindowRef.current = false;
+        if (onKey(e) && !raisedOtherWindowRef.current) window.focus();
       };
       popoutKeys.set(win, handler);
       win.addEventListener('keydown', handler);
@@ -362,7 +447,7 @@ export function App(): React.JSX.Element {
       // may not fire its remove event — a dead Window in the map is inert.)
       for (const [win, handler] of popoutKeys) win.removeEventListener('keydown', handler);
     };
-  }, [commands, platform]);
+  }, [commands, platform, commandContext]);
 
   if (!uiReady) return <div style={{ blockSize: '100vh' }} />; // one-frame gate while UI state loads
 
@@ -418,7 +503,7 @@ export function App(): React.JSX.Element {
             onRename={(cardId, title) => {
               void bridge.sessions?.renameCard?.(cardId, title).then(() => refreshSessions());
             }}
-            onFocus={(cardId) => grid.current?.focusSession(cardId)}
+            onFocus={(cardId) => focusSession(cardId)}
             onDiff={(s) => {
               if (s.folder) grid.current?.openDiff(s.id, s.folder, s.title);
             }}
@@ -459,7 +544,11 @@ export function App(): React.JSX.Element {
         />
         <EventsPanel
           sessions={sessions}
-          onFocus={(id) => grid.current?.focusSession(id)}
+          events={events}
+          visited={visited}
+          queueBinding={queueBindingLabel}
+          onFocus={(id) => focusSession(id)}
+          onVisit={(eventId) => visit(events, eventId)}
           reconnectOffer={reconnectOffer}
           onRestoreLayout={() => {
             grid.current?.restoreRescuedPopouts();

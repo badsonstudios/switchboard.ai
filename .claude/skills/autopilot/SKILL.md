@@ -46,7 +46,7 @@ Hard boundaries that still apply, always:
 
 ## Per-item loop
 
-Follow `/next-item` Steps 1–10 with these substitutions:
+Follow `/next-item` Steps 1–11 with these substitutions:
 
 - **Gate 1 (plan approval) → self-check.** Validate the plan against the
   issue's done-when criteria, the plan-file spec, and the cited DESIGN.md
@@ -69,6 +69,12 @@ Follow `/next-item` Steps 1–10 with these substitutions:
 - **User docs are NOT optional in autopilot.** Step 8's `docs/manual/` page
   ships in the same commit as the feature. Unattended is exactly when this gets
   skipped, so treat a missing page like a failing test.
+- **Step 9's hand-off is also NOT optional — it matters MORE here.** Dan wasn't
+  watching, so the draft PR description is his only account of the run. Append
+  a section per completed item: the plain-English **What this does**, then the
+  numbered **What to test** list as GitHub checkboxes (`- [ ] 1. …`). By the
+  end of the run that description IS his test plan, in merge order. A one-line
+  "done" per item is not enough.
 - **PROGRESS.md discipline is the resume mechanism.** Update at item start,
   finish, and on any blocker — if this session dies mid-run, a fresh
   `/autopilot` must resume from the file alone.

@@ -26,6 +26,13 @@ export interface CommandContext {
   sessions: Array<{ id: string; title: string }>;
   /** card id of the currently focused session card, if any */
   activeCardId: string | null;
+  /**
+   * How many sessions are waiting on a human right now (lib/queue). Required
+   * rather than optional so every dispatch site has to pass the LIVE depth —
+   * a stale or omitted count would grey out the jump hotkey while sessions
+   * are actually blocked, which is the one failure this command cannot have.
+   */
+  attentionCount: number;
 }
 
 export interface Command<Ctx extends CommandContext = CommandContext> {
@@ -127,6 +134,9 @@ export interface KeyLike {
 function codeFor(key: string): string | null {
   if (/^[0-9]$/.test(key)) return `Digit${key}`;
   if (key === '`') return 'Backquote';
+  // the spacebar reports key ' ' — a binding has to spell it 'Space' to be
+  // readable, so the physical code is the only thing that can match it
+  if (key === 'space') return 'Space';
   return null;
 }
 

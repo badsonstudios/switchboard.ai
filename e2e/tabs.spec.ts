@@ -113,6 +113,58 @@ test.describe('tab strip (#84)', () => {
     expect(await a.window.evaluate(() => document.documentElement.dataset.tabRows)).toBe('single');
   });
 
+  test('each session group is framed, and the focused one is marked (Dan 2026-07-26)', async () => {
+    // "It's really hard to tell where the split is in daylight and Nordic."
+    // dockview ships BOTH halves of the divide invisible: a group view has no
+    // border, and --dv-sash-color is transparent in every one of its themes, so
+    // stacked and side-by-side sessions read as one undivided surface.
+    a = await launchApp({ seedFolder: tempProjectFolder() });
+    const w = a.window;
+    await expect(w.locator('nav [draggable="true"]')).toHaveCount(1, { timeout: 25_000 });
+
+    for (const theme of ['daylight', 'nordic']) {
+      await w.getByRole('button', { name: theme, exact: true }).click();
+      await w.waitForTimeout(200);
+
+      const m = await w.evaluate(() => {
+        const g = document.querySelector('.dv-groupview');
+        if (!g) return null;
+        const parse = (c: string): number[] =>
+          (c.match(/[\d.]+/g) ?? []).slice(0, 3).map((n) => Number(n));
+        const lum = (c: number[]): number =>
+          (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255;
+        const cs = getComputedStyle(g);
+        const contrast = (a: string, b: string): number => {
+          const [x, y] = [lum(parse(a)), lum(parse(b))];
+          const [hi, lo] = x > y ? [x, y] : [y, x];
+          return (hi + 0.05) / (lo + 0.05);
+        };
+        return {
+          // the frame against the surface it sits on
+          frameVsGroup: contrast(cs.borderTopColor, cs.backgroundColor),
+          active: g.classList.contains('dv-active-group'),
+          accent: cs.borderTopColor,
+          radius: cs.borderTopLeftRadius,
+          // the gutter a split would expose must not be see-through
+          sash: getComputedStyle(document.documentElement)
+            .getPropertyValue('--dv-sash-color')
+            .trim(),
+          pageBg: getComputedStyle(document.body).backgroundColor,
+        };
+      });
+
+      expect(m, `no group view in ${theme}`).not.toBeNull();
+      // a frame you can actually see — the whole point of the report
+      expect(m!.frameVsGroup, `group frame invisible in ${theme}`).toBeGreaterThan(1.25);
+      expect(m!.radius, `group not rounded in ${theme}`).not.toBe('0px');
+      // the focused group is drawn in the accent, not the neutral frame
+      expect(m!.active, `expected the only group to be focused in ${theme}`).toBe(true);
+      // and a split's gutter is painted, not transparent
+      expect(m!.sash, `sash still transparent in ${theme}`).not.toBe('');
+      expect(m!.sash, `sash still transparent in ${theme}`).not.toMatch(/transparent|, *0\)/);
+    }
+  });
+
   test('the overflow dropdown is readable — our theme, not dockview’s default', async () => {
     a = await launchApp({ seedFolder: tempProjectFolder() });
     const w = a.window;

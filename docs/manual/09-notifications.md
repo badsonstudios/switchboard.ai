@@ -20,6 +20,25 @@ name and task label, so you know what it is without decoding an ID.
 
 Closing a session clears its entries.
 
+## The panel is a to-do list, in order
+
+Entries aren't listed newest-first — they're listed **in the order you should
+deal with them**:
+
+1. **Needs permission** — Claude is blocked on your answer.
+2. **Needs input** — Claude has asked you something.
+3. **Crashed** — the session died.
+4. **Done.** — finished, and you haven't looked yet.
+
+Within each group, whoever has been waiting longest is higher up. Sessions
+you've already reviewed (**Ready**) sink to the bottom and fade back — they're
+history at that point, not work.
+
+The entry marked **next** is where **`Ctrl+Space`** will take you; press it
+again and the marker moves down to the following one. Clicking an entry counts
+the same way, so the shortcut won't bounce you back to something you just
+opened. See [Keyboard & commands](06-keyboard.md) for the full walk-through.
+
 ## What you'll hear and see
 
 By default, when a session needs permission, needs input, finishes, or crashes:

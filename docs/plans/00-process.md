@@ -53,7 +53,35 @@ future; the issue tracker holds the present.
 **Definition of done (every PR):** acceptance criteria met · CI green · no
 hardcoded strings or raw colors (lint enforces) · logging on new subsystem
 boundaries · DESIGN.md amended if the implementation diverged from it ·
-**user documentation written (see below)**.
+**user documentation written (see below)** · **plain-English hand-off + test
+list delivered (see below)**.
+
+## The hand-off: plain English + what to test (added 2026-07-26)
+
+Every work item ends by telling the owner, **before** the technical summary and
+**before** the PR opens, two things:
+
+1. **What this does** — a few sentences a non-programmer could follow. What can
+   you do now that you couldn't, and why is that better? Real button, key, and
+   label names; no file paths, item IDs, or function names. Call out anything
+   it deliberately doesn't do where leaving that out would surprise him.
+2. **What to test** — a short **numbered** list of things to actually try, each
+   one an action plus what he should see. Lead with a one-liner on what the
+   automated tests already cover, then list only what needs a human: visual
+   judgment, multi-monitor, real `claude` CLI behavior, timing and feel. Order
+   it core behavior → edge cases → nearby regression risk. 3–7 items; if it
+   won't fit, the work item was too big.
+
+- **Where:** `/next-item` Step 9, before Gate 2. The same two sections go into
+  the **PR body** (test list as GitHub checkboxes, so it can be ticked off
+  during review), and into `/autopilot`'s draft-PR description per item — where
+  it matters most, since nobody watched the run.
+- **Why it's separate from `docs/manual/`:** the manual is standing reference
+  written for a stranger who has never seen the app. The hand-off is "here is
+  what just landed", written for the person deciding whether to merge it. One
+  is a product; the other is a delivery note.
+- **Purely internal items** get one or two sentences for part 1, and part 2
+  says "nothing to click — the gate is the test suite."
 
 ## User documentation (added 2026-07-24)
 

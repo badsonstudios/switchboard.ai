@@ -129,8 +129,12 @@
     "reconnectOffer": "A saved monitor is back — restore its pop-out layout?",
     "restore": "Restore",
     "notNow": "Not now",
-    "dismiss": "✕",
-    "dismissHint": "Dismiss this event",
+    "dismiss": "Dismiss",
+    "dismissHint": "Remove this event from the list (the session is untouched)",
+    "queueHint": "{binding} goes to the next one",
+    "nextUp": "next",
+    "nextUpHint": "Next stop for the go-to-next-session shortcut",
+    "reviewed": "Already seen",
     "kind": {
       "done": "Done.",
       "ready": "Ready",
@@ -205,15 +209,18 @@
     "toggleTabRows": "Toggle tabs on multiple rows",
     "openPalette": "Show all commands",
     "goToSession": "Go to {title}",
+    "jumpAttention": "Go to the next session that needs you",
     "category": {
       "session": "Sessions",
       "view": "View",
-      "goTo": "Go to"
+      "goTo": "Go to",
+      "attention": "Attention"
     },
     "disabled": {
       "noSuchSession": "There is no session in that slot",
       "noSessions": "No sessions are open",
-      "noActiveSession": "No session is focused"
+      "noActiveSession": "No session is focused",
+      "emptyQueue": "Nothing is waiting on you"
     }
   },
   "palette": {

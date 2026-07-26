@@ -69,7 +69,13 @@
   --dv-tab-font-size: inherit;
   --dv-tabs-and-actions-container-font-size: 12px;
   --dv-tabs-and-actions-container-height: 35px;
-  --dv-sash-color: transparent;
+  /* The gutter between split groups. dockview ships this transparent in every
+     one of its themes, which is half of why a split was invisible; painting it
+     with the PAGE background makes the seam read as a gap between cards rather
+     than a fold in one surface. Set as a token, not a `.dv-sash` rule — the
+     base selector is `.dv-split-view-container .dv-sash-container .dv-sash`
+     and would win on specificity. */
+  --dv-sash-color: var(--bg);
   --dv-active-sash-color: var(--link);
   --dv-spacing-padding: 0px;
   --dv-floating-group-dragging-opacity: 0.5;
@@ -125,6 +131,34 @@
 }
 .dv-tabs-overflow-container .dv-tab:hover {
   background-color: var(--chip);
+}
+
+/*
+ * GROUP FRAMES (Dan 2026-07-26: "it's hard to tell where the split is... is
+ * there a way to put some sort of frame around the dock section").
+ *
+ * dockview ships BOTH halves of the divide invisible — `--dv-sash-color` is
+ * transparent in every one of its themes, and a group view has no border at
+ * all — so a grid of sessions reads as one undivided surface. Two sessions
+ * stacked above a third look like one document with headers in it.
+ *
+ * A session card is the app's primary object, so it gets an actual edge. The
+ * FOCUSED group is drawn in the accent: with four sessions on screen, "which
+ * one am I typing into" has to be answerable without moving the mouse.
+ */
+.dv-groupview {
+  box-sizing: border-box;
+  border: 1px solid var(--group-frame);
+  border-radius: var(--dv-border-radius);
+  /* the tab strip's corners are square — let the frame clip them */
+  overflow: hidden;
+}
+
+/* Which session you are actually typing into, answerable without moving the
+   mouse. The accent reads at a glance against the neutral frames. */
+.dv-groupview.dv-active-group {
+  border-color: var(--link);
+  box-shadow: 0 0 0 1px var(--link);
 }
 
 /*

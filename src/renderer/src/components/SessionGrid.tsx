@@ -920,7 +920,9 @@ export interface GridController {
    *  after a rail drop set its membership (E12-04) */
   moveCardToGroup: (cardId: string, groupId: string | null) => void;
   /** focus an existing session's card */
-  focusSession: (sessionId: string) => void;
+  /** focus a card by card id or live session id; true if it raised ANOTHER
+   *  OS window (the card was popped out) — see the popout key bridge in App */
+  focusSession: (sessionId: string) => boolean;
   /** re-pop rescued popouts at their stashed positions (E8-06 accept) */
   restoreRescuedPopouts: () => void;
   /** open (or focus) the per-session diff tab (E5-02) */
@@ -1004,12 +1006,16 @@ export function SessionGrid(props: {
       },
       focusSession: (liveId) => {
         const panel = apiRef.current?.getPanel(`session-${cardIdForLive(liveId)}`);
-        if (!panel) return;
+        if (!panel) return false;
         panel.focus();
         // a popped-out card is in another OS window — focusing the panel alone
         // leaves it buried behind this one, so raise its window too (E9-01)
         const loc = panel.group.api.location;
-        if (loc.type === 'popout') loc.getWindow()?.focus();
+        if (loc.type !== 'popout') return false;
+        loc.getWindow()?.focus();
+        // tells the caller we raised a DIFFERENT window: the popout keyboard
+        // bridge must not then pull the main window in front of it
+        return true;
       },
       activeCardId: () => {
         const panel = apiRef.current?.activePanel;

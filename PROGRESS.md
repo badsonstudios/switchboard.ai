@@ -6,16 +6,20 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 expanded & filed 2026-07-24 → issues #70–#80**; E11/E13/E14 still
 outlines)
-**In progress:** **#86 — popped-out window restores to the wrong position** —
-BUILT + reviewed + gate green (277 unit + 61 e2e) on `fix/86-popout-geometry`,
-awaiting commit approval. Previous: **PR #88
-MERGED** (e561634) — tab strip (#84) + quit backstop (#85); #84/#85 closed;
-main CI green. Before that: PR #83 (E9-02 palette), PR #82 (E9-01 registry).
-**Next up:** after #86 → the attention queue (#72), then #73–#80. E9 closes Phase 2 exit criterion #1. [user]
-retests still pending on merged main (rebuild first): test 4 (out-of-cwd
-read) WITHOUT allow-all + autonomy=ask · grid-drag between groups ·
-switch-to-session scroll · allow-all sessions now silent. Also pending:
-ClaudeMon architecture read (OQ #8) before Phase 3 planning.
+**In progress:** nothing — three PRs merged 2026-07-26: **#94** (Deny means
+deny), **#95** (#92 interactive-question signal), **#93** (#72 P2-E9-03
+attention queue + Ctrl+Space, plus the scroll-position fix, Events dismiss
+button, session-group frames, the workflow hand-off change, and
+`docs/extensibility.md`). Before those: PR #89 (popout geometry #86), PR #88
+(tab strip #84 + quit backstop #85), PR #83 (E9-02 palette), PR #82 (E9-01).
+**Next up:** **#73 — P2-E9-04 urgency strip + delayed urgency reset**, then
+#74–#80. E9 closes Phase 2 exit criterion #1. Also open, filed 2026-07-26 and
+NOT yet scheduled: **#90** (no accelerator, palette included, reaches a session
+terminal) and **#91** (box the tool blocks + drop the timeline dot on plain
+assistant answers). [user] retests still pending on merged main (rebuild
+first): test 4 (out-of-cwd read) WITHOUT allow-all + autonomy=ask · grid-drag
+between groups · switch-to-session scroll · allow-all sessions now silent.
+Also pending: ClaudeMon architecture read (OQ #8) before Phase 3 planning.
 **Branch:** main
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
@@ -102,6 +106,121 @@ a "[Dan eyeball]" note.**
   real hook listener: needs-input entry, no approval bar, resumes on answer).
   NOT in scope, still planned: answering the picker inside the Session view
   (DESIGN §5.12 questions queue, E14).
+- 2026-07-26 — **Session groups are FRAMED now** (Dan: *"it's hard to
+  differentiate if I have them split... really hard to tell where the split is
+  in daylight and Nordic"*). dockview ships BOTH halves of the divide invisible
+  — a group view has no border, and `--dv-sash-color` is `transparent` in every
+  one of its bundled themes — so a grid of sessions reads as one undivided
+  surface. Judged from real screenshots in both themes, not from the CSS: the
+  first attempt used `--border`, which is tuned for hairlines INSIDE a card and
+  vanished at top level. So a new semantic token **`--group-frame`** (nordic
+  `#525d73`, daylight `#b9c2ce`), the focused group drawn in `--link` with a
+  1px ring so "which one am I typing into" is answerable without moving the
+  mouse, rounded corners, and the **sash painted with the page background** so
+  a split shows a real gutter. Note for next time: `.dv-sash` as a selector
+  LOSES to dockview's `.dv-split-view-container .dv-sash-container .dv-sash`
+  (0,3,0) — set the token, not the rule. Probed via a temporary `__dvApi` seam
+  in `SessionGrid.onReady` to split four panels; **seam removed**. e2e asserts
+  frame-vs-surface contrast numerically in both themes plus a non-transparent
+  sash. Also filed **#92**: a session blocked on the CLI's interactive question
+  picker shows NO signal — the PreToolUse matcher never covers that tool, no
+  Stop fires mid-turn, and the Notification maps to `idle`, so the card sits on
+  'working' while the CLI waits. Corrects the 2026-07-23 review note that
+  refuted this for prose questions (right there, wrong for the tool).
+
+- 2026-07-26 — **Output cut off at the bottom after allowing a permission.**
+  Probed: the approval bar docks BELOW the scroller, so it shrinks the viewport
+  ~95px and pushes content under the fold. `pinned` was re-derived from that raw
+  measurement, which is indistinguishable from "the user scrolled up" — one
+  such sample unpinned the tail permanently, and real Claude output reflows
+  constantly, so it only takes one. **`pinned` now moves only on a real gesture**
+  (wheel / touch / pointer / key, with a rolling 500ms window so a scrollbar
+  drag doesn't decay mid-movement); a scroll with nothing behind it is treated
+  as layout and re-pins instead of unpinning. New e2e asserts a gesture-less
+  scroll is corrected back to the tail.
+  **Split out of this branch (Dan's call):** the DENY-is-routed-around fix
+  found in the same pass ships on its own branch — see the entry below.
+
+- 2026-07-26 — **Dan's live pass on #72 → one real bug, root-caused with a
+  probe.** *"Clicking an event scrolls the session to the top."* Not the
+  Events code at all: **dockview DETACHES a background panel, and a detached
+  element loses its scrollTop.** The tail-pin only ever knew how to reach the
+  BOTTOM, so a session you had scrolled up in came back at 0 with nothing to
+  put it right — and stayed there, because an unpinned view was never
+  restored. Probe (`e2e/probe-scroll.spec.ts`, throwaway): read at 7014 →
+  switch away → return at 0; new content arrives → still 0. Two false starts
+  worth recording: `props.visible` never flips (dockview hides an ANCESTOR, so
+  React never learns), and the ResizeObserver never sees a zero-height frame
+  either (a detached element reports nothing, then reappears at full height
+  already reset). Fix: FeedView remembers `lastTop` from real scroll events
+  (ignoring the clientHeight-0 frames a hidden panel reports, which would
+  otherwise record "user scrolled to top" and unpin), and restores it — to the
+  tail if that's where you were, else to your offset — driven by the RO plus a
+  backstop that recognises the loss itself (`lastTop > 0 && scrollTop === 0`;
+  a user who genuinely scrolls to the top records `lastTop 0`, so it can't
+  fight them). 2 new e2e, both halves of the rule. Also from the same pass:
+  Ready-tail opacity 0.65 → 0.82 (too dim), and the Events **✕ in the
+  top-right corner became a real "Dismiss" button in the bottom-right** — it
+  had been sitting in the click path of the row you were trying to open.
+  Filed rather than folded in: **#91** (box the tool blocks + drop the
+  timeline dot on plain answers) and **#90** (from review: no accelerator,
+  palette included, is reachable from inside an xterm).
+
+- 2026-07-26 — **Workflow change (Dan's ask): every item now ends with a
+  hand-off.** Before the technical summary and before the PR: a **plain-English
+  "what this does"** (real button and key names, no paths or item IDs) and a
+  **numbered "what to test"** list — action plus what he should see, led by one
+  line on what the automated tests already cover so he never repeats machine
+  work. It is the existing **[Dan eyeball]** convention, itemized instead of
+  buried in prose. Wired into `/next-item` (new **Step 9**; old 9→10, 10→11),
+  `/commit-push-pr` (the PR body carries both, test list as GitHub checkboxes),
+  `/autopilot` (per item into the draft PR description — it matters most there,
+  since nobody watched the run), `docs/plans/00-process.md` (definition of done
+  + a section on why it isn't a duplicate of `docs/manual/`), and
+  `.claude/CLAUDE.md`.
+
+- 2026-07-26 — **P2-E9-03 built (#72)**: the attention queue + `Ctrl+Space`.
+  New pure `lib/queue.ts` orders the main-process `EventFeed` (already one item
+  per session) by **needs-permission → needs-input → crashed → done**,
+  oldest-first inside a band; `ready` (an acknowledged done) is excluded from
+  the queue but still rendered, which is §5.8's completed-unreviewed state.
+  **Two spec gaps had to be settled before a line was written.** (1)
+  `EventFeed.acknowledge()` only relaxes `done`→`ready` — a held permission
+  stays held until a human answers it, so jump+ack alone would hand you the
+  same blocked session forever and the done-when ("three sessions clear in
+  priority order under repeated Ctrl+Space") would be unreachable. Hence a
+  **visited cursor keyed by EVENT id, not session id**: `EventFeed` mints a
+  fresh id on every ingest, so a session that goes quiet and calls back
+  re-enters the walk on its own, where a session key would have suppressed it
+  for the life of the process. The walk wraps when everything has been seen.
+  (2) The `events:changed` subscription **moved out of `EventsPanel` into
+  `App`** — two independent subscriptions could hand the panel and the hotkey
+  different lists, and the spec makes the queue the single ordering authority.
+  `Mod+Space` also needed `codeFor('space')→'Space'`: the spacebar's `key` is
+  a literal `' '`, so only the physical code can match it. **Review found 1
+  blocker + 5 should-fixes, all fixed** — the manual pages (blocker: the
+  keyboard page's own TODO placeholder for this key was still sitting there);
+  a comment claiming the palette is keyboard-reachable from a terminal, which
+  is **false** (`dispatch` bails on the terminal branch before it ever reads
+  scope) → comment corrected and the real fix filed as **#90**; the panel's
+  "next" marker was pinned to the queue head and so lied from press 2 onward
+  → the cursor is now state as well as a ref and the marker tracks the walk
+  (new e2e asserts it moves); `eventsRef` was written in a post-commit effect
+  while its comment claimed keypress-freshness → the push handler writes it
+  directly; **jumping from one popout to another raised the MAIN window and
+  buried the target** (pre-existing for Ctrl+1..9, but the queue targets
+  blocked sessions and those are exactly the ones people pop out) →
+  `focusSession` now reports whether it raised another window; and the e2e
+  named for the hard rule clicked the *composer*, proving the text-input
+  branch rather than the terminal one → split into two tests, one clicking
+  `.xterm-screen`. **macOS caveat, accepted and documented:** `Mod` is Cmd
+  there and Cmd+Space is Spotlight, so the hotkey won't fire — it degrades to
+  palette-only (the §5.8 invariant) and a per-platform accelerator is the fix
+  if a Mac user turns up. Docs: `06-keyboard.md` (queue section + table row +
+  troubleshooting; its TODO placeholder consumed) and `09-notifications.md`
+  ("the panel is a to-do list, in order"). Gate: lint + typecheck + **300 unit
+  + 67 e2e** (19 queue unit tests, 6 new e2e driving the REAL hook listener to
+  put three sessions into three different states).
 
 - 2026-07-25 — **#86 popout geometry FIXED — two bugs, both proven with probes
   before a line was changed.** (1) **The move was never saved.** dockview only

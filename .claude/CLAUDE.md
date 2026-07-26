@@ -25,6 +25,7 @@ approvals, and usage tracking.
 |---|---|
 | `docs/DESIGN.md` | The design record — 29 feature sections, roadmap, open questions, competitive research |
 | `docs/PHILOSOPHY.md` | The constitution — principles + the feature litmus test **every feature must pass** |
+| `docs/extensibility.md` | Internal contributor guide — contribution points, capability manifests, the bootstrap rule (§5.23 seams; NOT a public plugin API) |
 | `docs/plans/00-process.md` | How we work: phases → work items → GitHub issues → PRs |
 | `docs/plans/01-spike-foundations.md` | Current work: spike spec (S-01…S-08) |
 | `docs/plans/02-phase-1-mvp.md` | Phase 1 epics & work items |
@@ -61,6 +62,14 @@ writes its `docs/manual/` page **before the PR opens**, while the feature is
 fresh. Plain English, for someone who has never read DESIGN.md. Drafts and
 `TODO:` placeholders are fine; a missing page is not. Details:
 `docs/plans/00-process.md` → User documentation.
+
+**Every item ends with a hand-off (added 2026-07-26):** before the technical
+summary and before the PR, say in **plain English what the thing does**, then
+give a **numbered list of what Dan should test** — actions plus what he should
+see, noting what the automated tests already cover so he never repeats machine
+work. `/next-item` Step 9; the same two sections go in the PR body (test list
+as checkboxes) and in `/autopilot`'s draft PR. Details:
+`docs/plans/00-process.md` → The hand-off.
 
 **PROGRESS.md discipline (critical):** update it the moment an item starts,
 the moment it finishes, and when anything notable happens between (blocker,

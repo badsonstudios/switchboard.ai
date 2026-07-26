@@ -344,6 +344,33 @@ export function FeedView(props: {
   // a restored card landed at the TOP).
   const autoPin = React.useRef(false); // our own scrolls must not unpin
   const content = React.useRef<HTMLDivElement | null>(null);
+  // Where the user was reading. Dockview HIDES a background panel, and a hidden
+  // element's scrollTop is reset to 0 by the browser — so coming back to a
+  // session you had scrolled up in used to dump you at the very top, with
+  // nothing to put you back (the tail-pin only ever knew how to reach the
+  // BOTTOM). Dan, 2026-07-26: clicking an Events row scrolled the session to
+  // the top. Probed: read at 7014 → switch away → return at 0, and it stayed
+  // there because an unpinned view was never restored.
+  const lastTop = React.useRef(0);
+  // set while a re-shown panel still owes the user their position back
+  const owesRestore = React.useRef(false);
+  // the scroller had zero height last time we looked — i.e. it was hidden
+  const wasCollapsed = React.useRef(false);
+  // When the user last actually TOUCHED the scroller. `pinned` used to be
+  // derived from a raw measurement, which cannot tell "the user scrolled up"
+  // apart from "something above the fold got taller". Dan, 2026-07-26: after
+  // allowing a permission the feed sat short of the bottom with output cut
+  // off. Probed — the approval bar docks BELOW the scroller, so it shrinks the
+  // viewport by ~95px, and any scroll event sampled in that window reads as
+  // "95px from the bottom → they must have scrolled up" and unpins the tail
+  // for good. Real Claude output reflows constantly (markdown, code, tool
+  // results), so it only takes one unlucky sample. Only a real gesture may
+  // change the pin now.
+  const lastGesture = React.useRef(0);
+  const GESTURE_MS = 500;
+  const markGesture = React.useCallback(() => {
+    lastGesture.current = Date.now();
+  }, []);
   const pin = React.useCallback((): void => {
     const el = scroller.current;
     if (!el) return;
@@ -351,28 +378,77 @@ export function FeedView(props: {
     el.scrollTop = el.scrollHeight;
     requestAnimationFrame(() => (autoPin.current = false));
   }, []);
+  /** put the scroller where THIS session belongs: glued to the tail if that's
+   *  where the user was, otherwise back at the offset they were reading. */
+  const restore = React.useCallback((): void => {
+    const el = scroller.current;
+    // no layout yet (hidden panel, mid-relayout): a write would be a silent
+    // no-op, so leave the debt outstanding and let the observer retry
+    if (!el || el.clientHeight === 0) return;
+    autoPin.current = true;
+    el.scrollTop = pinned.current ? el.scrollHeight : lastTop.current;
+    requestAnimationFrame(() => (autoPin.current = false));
+    owesRestore.current = false;
+  }, []);
   React.useEffect(() => {
     if (!props.visible || !pinned.current) return;
     const id = requestAnimationFrame(pin);
     return () => cancelAnimationFrame(id);
   }, [blocks, props.visible, pin]);
+  // becoming visible again is when the position was lost — claim the debt and
+  // pay it as soon as there's layout to pay it with
+  React.useEffect(() => {
+    if (!props.visible) return;
+    owesRestore.current = true;
+    const id = requestAnimationFrame(restore);
+    return () => cancelAnimationFrame(id);
+  }, [props.visible, restore]);
   // Self-healing pin (Dan round 5: cards you SWITCH to sat at the top after
   // app start): a one-shot pin can land while the panel has no layout yet —
   // dockview shows background panels a frame later, restore relayouts, and
   // markdown reflows — so scrollHeight was 0 and the write was a no-op with
   // nothing left to retry it. Observing the scroller AND its content re-pins
-  // on ANY size change while the view is tail-pinned.
+  // on ANY size change while the view is tail-pinned, and settles an
+  // outstanding restore the same way.
   React.useEffect(() => {
     const el = scroller.current;
     const inner = content.current;
     if (!el || !inner) return;
     const ro = new ResizeObserver(() => {
+      const s = scroller.current;
+      if (!s) return;
+      // COLLAPSE is the real signal that a position is about to be lost, not
+      // props.visible: dockview hides a background panel by collapsing an
+      // ANCESTOR, so our visible prop never changes and React never learns the
+      // panel went away — but the scroller's own height drops to 0 and comes
+      // back, which this observer does see.
+      if (s.clientHeight === 0) {
+        wasCollapsed.current = true;
+        return;
+      }
+      if (wasCollapsed.current) {
+        wasCollapsed.current = false;
+        owesRestore.current = true;
+      }
       if (pinned.current) pin();
+      // only while a restore is owed: otherwise every markdown reflow would
+      // yank a reading user back to where they started
+      else if (owesRestore.current) restore();
+      // Backstop for the case above that we CAN'T observe: dockview detaches a
+      // background panel outright, and a detached element neither keeps its
+      // scrollTop nor reports a zero-height frame — it simply reappears at full
+      // height, already back at 0. A remembered position with the scroller
+      // sitting at 0 means it was destroyed, not chosen: a user who genuinely
+      // scrolls to the top records lastTop 0 through the scroll handler, so
+      // this can't fight them.
+      else if (lastTop.current > 0 && s.scrollTop === 0 && s.scrollHeight > s.clientHeight) {
+        restore();
+      }
     });
     ro.observe(el);
     ro.observe(inner);
     return () => ro.disconnect();
-  }, [pin]);
+  }, [pin, restore]);
 
   const visibleBlocks = blocks.filter((b) => blockVisible(b, verbosity));
   return (
@@ -427,10 +503,32 @@ export function FeedView(props: {
       </div>
       <div
         ref={scroller}
+        onWheel={markGesture}
+        onTouchStart={markGesture}
+        onTouchMove={markGesture}
+        onPointerDown={markGesture}
+        onKeyDown={markGesture}
         onScroll={() => {
           if (autoPin.current) return; // our own pin — not user intent
           const el = scroller.current;
-          if (el) pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          // a hidden or mid-relayout panel reports clientHeight 0 and scrollTop
+          // 0; treating that as "the user scrolled to the top" would both unpin
+          // the tail and overwrite the position we're trying to give back
+          if (!el || el.clientHeight === 0) return;
+          // Nobody touched anything: this scroll came from LAYOUT (the approval
+          // bar docking, the working banner, content reflowing). It must never
+          // change what the user wants — and if they were following the tail,
+          // put them back on it rather than leaving output below the fold.
+          if (Date.now() - lastGesture.current > GESTURE_MS) {
+            if (pinned.current) pin();
+            return;
+          }
+          // a real gesture, and a continuing one keeps the window alive so a
+          // scrollbar drag or momentum scroll doesn't decay mid-movement
+          markGesture();
+          pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          lastTop.current = el.scrollTop;
+          owesRestore.current = false; // the user has taken the wheel
         }}
         style={{ flex: 1, minBlockSize: 0, overflowY: 'auto', fontSize: 12, lineHeight: 1.5, paddingBlock: 6 }}
       >

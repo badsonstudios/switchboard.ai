@@ -25,6 +25,14 @@ commit (`docs/plans/00-process.md` → User documentation). If it isn't, write i
 now rather than opening the PR without it. Purely internal changes (refactor,
 CI, tests) are exempt — state that explicitly instead of skipping silently.
 
+**Hand-off check (the PR body).** Every PR body carries, above the technical
+detail: a **plain-English "What this does"** (a few sentences, real button and
+key names, no paths or item IDs) and a **numbered "What to test"** list as
+GitHub checkboxes (`- [ ] 1. …`), noting in one line what the automated tests
+already cover so Dan doesn't repeat machine work. `/next-item` Step 9 produces
+both — reuse them verbatim. Arriving here without them (a direct `/commit-push-pr`
+on untracked work) means writing them now, to the same rules.
+
 ## Step 2: Get explicit approval
 
 **CRITICAL: Always ask the user for approval before committing or pushing.**

@@ -2,9 +2,15 @@
 // what needs attention right now — ONE item per session, its latest state.
 // Items are pushed wholesale from the main process (adds, replacements, and
 // removals when a permission is answered or a session closes).
-import React, { useEffect, useState } from 'react';
+//
+// E9-03: the panel no longer subscribes to events itself and no longer decides
+// their order. App owns the subscription and lib/queue owns the ordering, so
+// what you read top-to-bottom here is exactly what Ctrl+Space will walk —
+// "the feed is the log, the queue is the to-do list" (§5.12).
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailSession } from './chrome';
+import { panelOrder, nextInQueue } from '../lib/queue';
 
 export interface EventDto {
   id: number;
@@ -23,28 +29,29 @@ const KIND_TOKEN: Record<EventDto['kind'], string> = {
 
 export function EventsPanel(props: {
   sessions: RailSession[];
+  /** the feed's current items — App owns the subscription (E9-03) */
+  events: EventDto[];
+  /** event ids the walk has already taken you to (App owns the cursor) */
+  visited: ReadonlySet<number>;
   onFocus: (sessionId: string) => void;
+  /** the user opened this event by hand — mark it visited in the walk (E9-03).
+   *  Required, not optional: a second call site that forgot it would silently
+   *  send the hotkey back to the row the user just opened. */
+  onVisit: (eventId: number) => void;
+  /** label for the jump hotkey, e.g. 'Ctrl+Space' — derived from the registry */
+  queueBinding: string;
   /** a saved display is back — offer a one-click layout restore (E8-06) */
   reconnectOffer?: boolean;
   onRestoreLayout?: () => void;
   onDismissOffer?: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
-  const [events, setEvents] = useState<EventDto[]>([]);
-
-  useEffect(() => {
-    // a push landing while list() is in flight must not be overwritten by
-    // the stale snapshot (review P1 #15) — pushes always win
-    let gotPush = false;
-    const off = window.switchboard.events.onChanged((l) => {
-      gotPush = true;
-      setEvents(l as EventDto[]);
-    });
-    void window.switchboard.events.list().then((l) => {
-      if (!gotPush) setEvents(l as EventDto[]);
-    });
-    return off;
-  }, []);
+  const events = props.events;
+  const ordered = panelOrder(events);
+  // Where the hotkey will actually take you next — the same function the
+  // hotkey itself calls, fed the same cursor. Anything cheaper (say, always
+  // the head of the queue) would be a lie from the second press onward.
+  const head = nextInQueue(events, props.visited).next?.id ?? null;
 
   // events carry the LIVE session id; the rail rows know both ids (Dan #9 —
   // the panel was showing raw live-id fragments instead of session names)
@@ -79,6 +86,18 @@ export function EventsPanel(props: {
       >
         {t('events.eyebrow')}
       </div>
+      {head !== null && props.queueBinding && (
+        <div
+          style={{
+            fontSize: 10,
+            color: 'var(--muted)',
+            marginBlockEnd: 6,
+            fontFamily: 'var(--font-mono)',
+          }}
+        >
+          {t('events.queueHint', { binding: props.queueBinding })}
+        </div>
+      )}
       {props.reconnectOffer && (
         <div
           style={{
@@ -128,13 +147,22 @@ export function EventsPanel(props: {
       {events.length === 0 && !props.reconnectOffer && (
         <div style={{ color: 'var(--muted)', fontSize: 11 }}>{t('events.empty')}</div>
       )}
-      {[...events].reverse().map((e) => {
+      {ordered.map((e) => {
         const s = byId.get(e.sessionId);
+        const isNext = e.id === head;
+        const reviewed = e.kind === 'ready';
         return (
           <div
             key={e.id}
+            data-event-kind={e.kind}
+            data-next={isNext ? 'true' : undefined}
+            title={reviewed ? t('events.reviewed') : undefined}
             onClick={() => {
               props.onFocus(s?.id ?? e.sessionId);
+              // clicking IS visiting: the hotkey must not send you straight
+              // back to the row you just opened by hand (§5.8 — a click
+              // anywhere is a reveal trigger)
+              props.onVisit?.(e.id);
               void window.switchboard.events.ack(e.sessionId); // Done. -> Ready
             }}
             style={{
@@ -145,6 +173,13 @@ export function EventsPanel(props: {
               marginBlockEnd: 4,
               cursor: 'pointer',
               fontSize: 11,
+              // outline, not border: a ring that shifts the row's box would
+              // make the whole list jump every time the head changes
+              outline: isNext ? `1px solid ${KIND_TOKEN[e.kind]}` : undefined,
+              outlineOffset: -1,
+              // the reviewed tail is a log, not a to-do — it recedes, but it
+              // still has to be readable (Dan 2026-07-26: 0.65 was too dim)
+              opacity: reviewed ? 0.82 : 1,
             }}
           >
             <span
@@ -174,25 +209,6 @@ export function EventsPanel(props: {
               <span style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)', fontSize: 9 }}>
                 {new Date(e.at).toLocaleTimeString()}
               </span>
-              <button
-                onClick={(ev) => {
-                  ev.stopPropagation(); // dismiss, don't focus
-                  void window.switchboard.events.dismiss(e.sessionId);
-                }}
-                title={t('events.dismissHint')}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--faint)',
-                  cursor: 'pointer',
-                  fontSize: 10,
-                  lineHeight: 1,
-                  padding: '0 1px',
-                  alignSelf: 'flex-start',
-                }}
-              >
-                {t('events.dismiss')}
-              </button>
             </div>
             {/* always rendered so every item is the SAME height (Dan round 4) */}
             <div
@@ -206,7 +222,59 @@ export function EventsPanel(props: {
             >
               {s?.taskLabel ?? ' '}
             </div>
-            <span style={{ color: KIND_TOKEN[e.kind] }}>{t(`events.kind.${e.kind}`)}</span>
+            {/* status on the left, dismiss on the right — the ✕ used to sit in
+                the top-right corner, right in the click path of the row you
+                were trying to OPEN (Dan 2026-07-26: make it a real button, put
+                it out of the way) */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'flex-end',
+                justifyContent: 'space-between',
+                gap: 6,
+                marginBlockStart: 1,
+              }}
+            >
+              <span style={{ color: KIND_TOKEN[e.kind], flex: 1, minInlineSize: 0 }}>
+                {t(`events.kind.${e.kind}`)}
+                {isNext && (
+                  <span
+                    title={t('events.nextUpHint')}
+                    style={{
+                      marginInlineStart: 6,
+                      fontSize: 9,
+                      letterSpacing: 0.6,
+                      textTransform: 'uppercase',
+                      color: 'var(--faint)',
+                      fontFamily: 'var(--font-mono)',
+                    }}
+                  >
+                    {t('events.nextUp')}
+                  </span>
+                )}
+              </span>
+              <button
+                onClick={(ev) => {
+                  ev.stopPropagation(); // dismiss, don't focus
+                  void window.switchboard.events.dismiss(e.sessionId);
+                }}
+                title={t('events.dismissHint')}
+                style={{
+                  background: 'var(--chip)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-chip)',
+                  color: 'var(--muted)',
+                  cursor: 'pointer',
+                  fontSize: 9.5,
+                  lineHeight: 1.4,
+                  padding: '0 7px',
+                  fontFamily: 'var(--font-ui)',
+                  flexShrink: 0,
+                }}
+              >
+                {t('events.dismiss')}
+              </button>
+            </div>
           </div>
         );
       })}
