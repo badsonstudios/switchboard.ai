@@ -1059,7 +1059,18 @@ export function SessionGrid(props: {
               }
             } else if (loc.type === 'grid') {
               // docked back since (suspend/dock-in): pop it out fresh, in place
-              void api.addPopoutGroup(panel, { popoutUrl, position: r.box });
+              // dockview opens at `opener.screenX + position.left`, so hand it
+              // an opener-RELATIVE box or the stashed absolute rect gets the
+              // main window's origin added to it (#86)
+              void api.addPopoutGroup(panel, {
+                popoutUrl,
+                position: {
+                  left: r.box.left - window.screenX,
+                  top: r.box.top - window.screenY,
+                  width: r.box.width,
+                  height: r.box.height,
+                },
+              });
             }
           }
         }
@@ -1116,16 +1127,33 @@ export function SessionGrid(props: {
       });
 
       const report = () => props.onCardsChanged(api.panels.map((p) => p.id));
-      const saveLayout = () => window.switchboard.workspace.setLayout(api.toJSON());
+      const saveLayout = () => {
+        try {
+          window.switchboard.workspace.setLayout(api.toJSON());
+        } catch {
+          // a nudge arriving mid-teardown finds a disposed dockview; the
+          // geometry is nice-to-have, never a reason to throw in an IPC callback
+        }
+      };
       api.onDidLayoutChange(() => {
         report();
         saveLayout();
       });
-      // moving/resizing a popped-out window isn't a layout mutation, so persist
+      // Moving/resizing a popped-out window isn't a layout mutation, so persist
       // its geometry on those events too — else a dragged popout forgets its
       // spot on relaunch (E8-04 multi-monitor).
+      //
+      // These dockview events are kept, but they are NOT sufficient: dockview
+      // detects the move with a debounced requestAnimationFrame poll of
+      // screenX, and rAF throttles in a backgrounded window — precisely the
+      // state this window is in while you drag a popout across monitors. Quit
+      // before the poll catches up and the stale open-time position is what
+      // gets restored (#86). Electron's own move/resize events don't care about
+      // focus, so the main process nudges us and we re-read the truth here.
       api.onDidPopoutGroupPositionChange?.(saveLayout);
       api.onDidPopoutGroupSizeChange?.(saveLayout);
+      const offPopoutGeometry = window.switchboard.onPopoutGeometryChanged?.(saveLayout);
+      window.addEventListener('beforeunload', () => offPopoutGeometry?.());
       // dockview tab drags don't carry our dataTransfer type — publish the
       // in-flight card so the rail's group headers can accept the drop
       api.onWillDragPanel?.((e) => {

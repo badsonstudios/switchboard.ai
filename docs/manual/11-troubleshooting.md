@@ -42,6 +42,12 @@ everything with the 🔔 chip in the title bar.
 It was rescued back onto a visible screen. Plug the monitor back in and Events
 will offer to restore the layout.
 
+**A pop-out came back in the wrong place after a restart.**
+Pop-out windows are meant to reopen exactly where you left them, on whichever
+monitor that was. If one comes back somewhere else — drifted, or sitting across
+two monitors — that's a bug worth reporting with your log; it isn't something
+you need to work around.
+
 ## Where the logs are
 
 Useful when reporting a problem — they record what each session did, with

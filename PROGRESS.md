@@ -6,21 +6,12 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 expanded & filed 2026-07-24 → issues #70–#80**; E11/E13/E14 still
 outlines)
-**In progress:** **#84 tab-strip usability + #85 quit backstop** (Dan's live
-findings) — BUILT + reviewed + gate green (263 unit + 58 e2e) on
-`fix/84-tab-strip-usability` (branched off the E9-02 branch), awaiting commit
-approval. **#86 (popout on a 2nd monitor restores straddling the boundary) is
-FILED, not started** — the natural next item. Before it:
-**P2-E9-02 (#71) command palette — DONE, on PR #83, CI GREEN on all 5 jobs,
-awaiting Dan's squash-merge.** Previous: **PR #82 MERGED 2026-07-25** (613c472) —
-P2-E9-01 command registry + dispatcher + the Electron-menu fix; issue #70
-closed; CI green on all 5 jobs. Before that: PR #69
-MERGED 2026-07-24 (P2-E10-07 + the /clear-feedback fix; issue #68 closed;
-E10 epic fully shipped). Dan confirmed /clear works and is happy with the
-command coverage (⋯ menu: clear+compact; composer autocomplete: 36
-builtins + project/user commands+skills; /model-/mcp-style TUI pickers
-finish in the Terminal tab by design).
-**Next up:** after #71 → the attention queue (#72), then #73–#80. E9 closes Phase 2 exit criterion #1. [user]
+**In progress:** **#86 — popped-out window restores to the wrong position** —
+BUILT + reviewed + gate green (277 unit + 61 e2e) on `fix/86-popout-geometry`,
+awaiting commit approval. Previous: **PR #88
+MERGED** (e561634) — tab strip (#84) + quit backstop (#85); #84/#85 closed;
+main CI green. Before that: PR #83 (E9-02 palette), PR #82 (E9-01 registry).
+**Next up:** after #86 → the attention queue (#72), then #73–#80. E9 closes Phase 2 exit criterion #1. [user]
 retests still pending on merged main (rebuild first): test 4 (out-of-cwd
 read) WITHOUT allow-all + autonomy=ask · grid-drag between groups ·
 switch-to-session scroll · allow-all sessions now silent. Also pending:
@@ -63,6 +54,35 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-25 — **#86 popout geometry FIXED — two bugs, both proven with probes
+  before a line was changed.** (1) **The move was never saved.** dockview only
+  notices a popout moved via a debounced requestAnimationFrame poll of
+  `screenX`, and rAF throttles in a backgrounded window — precisely the state
+  the main window is in while you drag a popout onto another monitor. Probe:
+  move a popout, quit immediately → saved position is the OPEN-TIME one; wait
+  3s → correct. (2) **The restore double-counted the opener.** dockview's
+  `getBox()` returns the saved ABSOLUTE rect and then opens at
+  `window.screenX + box.left`, adding the main window's origin a second time —
+  so a popout marches across the desktop by that offset on EVERY relaunch,
+  which is how Dan's ended up straddling two monitors (measured: restored x =
+  stored 167 + opener 640 = 807). Fix: the main process now owns popout
+  geometry — tracks popout BrowserWindows, drives saves from Electron's own
+  move/resize events (which ignore focus), stamps live rects over the layout at
+  close, and `resolvePopoutBounds` un-does the double-count EXACTLY (asked ==
+  opener + stored, sizes must match too). `useContentSize: true` also fixes a
+  quieter bug: dockview stores INNER size, we restored it as OUTER, so popouts
+  shrank a little every launch. Review caught 2 blockers: `quitConfirmed` was
+  never reset, which on macOS would have killed layout persistence for the rest
+  of the session after the first window close; and matching popout windows to
+  layout entries BY ORDER is unsafe (dockview registers a popout when its
+  window finishes LOADING, we see it when it OPENS) — two popouts could swap
+  monitors, so matching is now by dockview GROUP ID with an order fallback only
+  when counts agree. Also from review: boot snapshot expires (a later tear-off
+  can't teleport onto a dead popout's rect), off-display sanity net, Linux
+  move/resize events, E8-06's rescue path compensated the same way. Gate: lint
+  + typecheck + **277 unit + 61 e2e** (new: nudge-reaches-disk-before-quit,
+  two-popouts-never-swap, size round-trip).
 
 - 2026-07-25 — **#85 app sometimes never exits after quit** (Dan: the
   `switchboard.cmd` console stayed open, twice). Diagnosed from the process
