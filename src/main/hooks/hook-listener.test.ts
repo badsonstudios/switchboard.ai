@@ -293,6 +293,19 @@ describe('PreToolUse hold + decision round-trip (P2-E10-03, §5.16)', () => {
 });
 
 describe('shouldHoldPermission policy', () => {
+  it('NEVER holds an interactive question tool, at any autonomy (#92)', () => {
+    // The tool is in the PreToolUse matcher purely so we learn the session is
+    // blocked. Holding it would park the CLI behind our approval bar for a
+    // dialog only the Terminal can answer — nothing to click, and a verdict
+    // that can never come.
+    for (const autonomy of ['ask', 'plan', 'auto-edit', 'full-auto', undefined]) {
+      expect(
+        shouldHoldPermission(autonomy, 'AskUserQuestion', {}, 'C:/proj'),
+        `held AskUserQuestion at autonomy=${autonomy}`
+      ).toBe(false);
+    }
+  });
+
   it('gates by autonomy exactly as the CLI would prompt', () => {
     expect(shouldHoldPermission('ask', 'Edit')).toBe(true);
     expect(shouldHoldPermission('ask', 'Read')).toBe(false);

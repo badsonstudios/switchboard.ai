@@ -251,6 +251,19 @@ Duplication / simplification (all verified):
 
 - **state-machine.ts:103 needs-input narrowing** — the claim that mapping "Claude is waiting for your input" to idle drops genuine ask-the-user cases was **refuted**: a genuine question ends the turn → Stop hook → `to('done')`, which is an attention feed kind that beeps/flashes; the idle_prompt notification arrives while status is 'done', where it was already inert (`stay('idle-after-done')`). The narrowing is correct as-is.
 
+  > **AMENDED 2026-07-26 (#92) — right about the case examined, blind to another.**
+  > The refutation holds for a question asked as **prose**: probed against real
+  > claude 2.1.220, that path does end the turn and fire `Stop`. It does **not**
+  > hold for a question asked via the **`AskUserQuestion` tool**, which blocks
+  > **mid-turn** — no `Stop` ever fires, so the "it lands on 'done'" reasoning
+  > never engages and the card sat on `working` while the CLI waited for a human.
+  > Dan hit exactly that. The narrowing itself is still correct and unchanged;
+  > what was missing was a signal for the tool case, now `PreToolUse` +
+  > `INTERACTIVE_TOOLS` → `needs-input`. Lesson worth keeping: "a question ends
+  > the turn" is an assumption about the CLI's behaviour, and assumptions about
+  > this CLI get probed, not reasoned about — the same mistake shape as the
+  > Bash-only gate that missed `PowerShell`.
+
 ## Suggested working order
 
 1. P0 #1–#5 as one focused branch/commit series (they all touch hook-listener/ipc/SessionGrid; #19 and #2 interact — decide the allow-all home first).

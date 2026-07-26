@@ -126,6 +126,55 @@ describe('state machine vs the recorded real cycle (S-06 artifact)', () => {
   });
 });
 
+describe('interactive question tools block on a human (#92)', () => {
+  // Probed against real claude 2.1.220 in a PTY (-p mode never offers the
+  // tool): PreToolUse fires with tool_name AskUserQuestion, and ~6s later the
+  // CLI's debounced nudge arrives as notification_type 'permission_prompt'.
+  const askQ = { kind: 'hook', event: 'PreToolUse', tool: 'AskUserQuestion' } as const;
+
+  it('flips to needs-input, NOT working — the turn never ends, so no Stop rescues it', () => {
+    const r = transition('working', askQ);
+    expect(r.status).toBe('needs-input');
+    expect(r.changed).toBe(true);
+  });
+
+  it('every OTHER tool still means working', () => {
+    for (const tool of ['Bash', 'PowerShell', 'Edit', 'Read', undefined]) {
+      expect(transition('working', { kind: 'hook', event: 'PreToolUse', tool }).status).toBe(
+        'working'
+      );
+    }
+  });
+
+  it("the CLI's late permission_prompt does not relabel a pending question", () => {
+    // it calls every on-screen dialog a permission prompt; demoting here would
+    // show "needs permission" with no approval bar, because nothing was held
+    const r = transition('needs-input', {
+      kind: 'hook',
+      event: 'Notification',
+      notificationType: 'permission_prompt',
+      message: 'Claude needs your permission',
+    });
+    expect(r.status).toBe('needs-input');
+    expect(r.changed).toBe(false);
+  });
+
+  it('a genuine permission prompt from working still flips to needs-permission', () => {
+    expect(
+      transition('working', {
+        kind: 'hook',
+        event: 'Notification',
+        notificationType: 'permission_prompt',
+        message: 'Claude needs your permission',
+      }).status
+    ).toBe('needs-permission');
+  });
+
+  it('answering the question resumes the turn', () => {
+    expect(transition('needs-input', { kind: 'hook', event: 'PostToolUse' }).status).toBe('working');
+  });
+});
+
 describe('SessionManager (done-when: observable transitions through the cycle)', () => {
   it('create -> real cycle -> transitions logged and queryable', () => {
     const seen: string[] = [];
