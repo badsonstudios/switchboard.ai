@@ -184,4 +184,46 @@ test.describe('inline approval bar (E10-04)', () => {
     await w.getByRole('button', { name: 'Deny' }).click();
     expect(JSON.parse(await pending).hookSpecificOutput.permissionDecision).toBe('deny');
   });
+
+  test('an interactive question flips the card to needs-input, not working (#92)', async () => {
+    // Probed against real claude 2.1.220: an AskUserQuestion blocks MID-TURN,
+    // so no Stop ever fires and the card used to sit on 'working' while the
+    // CLI waited for a person (Dan: "nothing seemed to have happened").
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+    const logFile = await poll(() => {
+      const f = findFile(a.home, 'switchboard.log');
+      return f && fs.readFileSync(f, 'utf8').includes('hook listener up') ? f : null;
+    });
+    const port = Number(/"msg":"hook listener up".*?"port":(\d+)/.exec(fs.readFileSync(logFile, 'utf8'))![1]);
+    const tokenFile = await poll(() => findFile(a.home, 'hook-token'));
+    const token = fs.readFileSync(tokenFile, 'utf8').trim();
+
+    const hook = (body: Record<string, unknown>) =>
+      fetch(`http://127.0.0.1:${port}/hook`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-switchboard-token': token },
+        body: JSON.stringify(body),
+      }).then((r) => r.text());
+
+    // the CLI's real payload for the picker
+    const verdict = await hook({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'AskUserQuestion',
+      tool_input: { questions: [{ question: 'Which directory?', header: 'Directory' }] },
+    });
+    // it must NOT be held — the answer lives in the CLI's own TUI, so parking
+    // it behind our approval bar would leave nothing to click
+    expect(JSON.parse(verdict).hookSpecificOutput, 'the question was HELD').toBeUndefined();
+    await expect(w.getByText('Allow AskUserQuestion?')).toHaveCount(0);
+
+    // the shipped machinery does the rest: an Events entry saying it needs you
+    await expect(w.locator('aside').getByText('needs input')).toBeVisible({ timeout: 15_000 });
+
+    // and answering it lets the turn resume
+    await hook({ hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion' });
+    await expect(w.locator('aside').getByText('needs input')).toHaveCount(0, { timeout: 15_000 });
+  });
 });

@@ -73,6 +73,36 @@ a "[Dan eyeball]" note.**
   it is a correctness bug in the safety mechanism and shouldn't wait behind a
   review of unrelated feature work.
 
+- 2026-07-26 — **#92: a session blocked on the CLI's question picker now SAYS
+  so.** Dan asked for a directory listing, nothing appeared to happen, and the
+  Terminal tab showed claude sitting on a numbered picker waiting for an
+  answer. **Probed before touching anything** (the PowerShell lesson): the tool
+  name came from the shipped `sdk-tools.d.ts` of claude 2.1.220 — `AskUserQuestion`,
+  not a guess — and a live PTY probe caught the wire traffic, because `-p` mode
+  never offers the tool at all. Result:
+  `{"ev":"PreToolUse","tool":"AskUserQuestion"}` then, ~6s later,
+  `{"ev":"Notification","nt":"permission_prompt","msg":"Claude needs your permission"}`.
+  **That corrected my own first diagnosis:** we were not permanently blind —
+  the debounced Notification does map to `needs-permission` (S-06 measured the
+  ~6s) — but it arrives late and calls a QUESTION a permission request, which
+  would show a card asking you to approve something with no approval bar,
+  because nothing was ever held. The `PreToolUse` is immediate and names the
+  tool. Fix: new `INTERACTIVE_TOOLS` in the shared taxonomy, added to
+  `PRETOOL_MATCHER` (it was built from shell+mutating+read, so the hook was
+  never registered for it), and the one place `PreToolUse → working` is wrong
+  — an interactive tool means Claude has STOPPED and is waiting for a person,
+  so it maps to **`needs-input`**. No `Stop` ever fires because the tool blocks
+  MID-TURN, which is why nothing rescued it. A late permission_prompt no longer
+  relabels a pending question. **Never held at any autonomy** (unit-asserted):
+  the answer lives in the CLI's own TUI, so parking it behind our bar would
+  leave nothing to click and a verdict that can never come. Also amended
+  `docs/code-review-2026-07-23-phase-2-e10.md` — its "refuted" note was right
+  about prose questions (they do end the turn; re-verified) and blind to the
+  tool case. Gate: lint + typecheck + **283 unit + 62 e2e** (new e2e drives the
+  real hook listener: needs-input entry, no approval bar, resumes on answer).
+  NOT in scope, still planned: answering the picker inside the Session view
+  (DESIGN §5.12 questions queue, E14).
+
 - 2026-07-25 — **#86 popout geometry FIXED — two bugs, both proven with probes
   before a line was changed.** (1) **The move was never saved.** dockview only
   notices a popout moved via a debounced requestAnimationFrame poll of

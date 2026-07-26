@@ -55,6 +55,13 @@ You'll be sent here on purpose for things like the model picker, and a
 **continue in Terminal ↗** chip appears whenever a session is waiting on
 something only the terminal can answer.
 
+**When Claude asks you a question** — a numbered list of choices, the kind you
+pick with the arrow keys — that dialog lives in the Terminal. The session marks
+itself **needs input**, raises an entry in Events, and shows the chip, so you
+can tell at a glance that it's stopped and waiting for you rather than still
+working. Answer it in the Terminal and the session carries on. Answering these
+inside the Session view is planned, not built.
+
 ## Changes and History
 
 **Changes** shows the files this session has modified — see

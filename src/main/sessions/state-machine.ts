@@ -9,6 +9,8 @@
 // 'idle' is currently only reachable via future idle-detection (E4 wiring —
 // Notification "waiting" classifies to needs-input today); kept in the union
 // because the spec names it and the UI ships a badge for it.
+import { INTERACTIVE_TOOLS } from '../../shared/tool-taxonomy';
+
 export type SessionStatus =
   | 'starting'
   | 'working'
@@ -98,10 +100,26 @@ export function transition(current: SessionStatus, ev: SessionEvent): Transition
         case 'UserPromptSubmit':
           return to('working');
         case 'PreToolUse':
+          // The ONE tool family where "a tool started" does not mean working:
+          // an interactive question BLOCKS mid-turn on a human answering the
+          // CLI's own dialog (#92). No Stop fires — the turn never ends — so
+          // without this a session sits on 'working' while it waits for you,
+          // which is exactly what Dan hit: "nothing seemed to have happened".
+          if (ev.tool && INTERACTIVE_TOOLS.includes(ev.tool)) return to('needs-input');
+          return to('working');
         case 'PostToolUse':
           return to('working');
         case 'Notification': {
           const blob = `${ev.notificationType ?? ''} ${ev.message ?? ''}`;
+          // A pending question already told us precisely what is happening,
+          // from the tool itself and ~6s sooner. The CLI's debounced nudge
+          // calls every on-screen dialog a permission_prompt (probed), and
+          // demoting to needs-permission here would relabel a QUESTION as a
+          // permission request — a card asking to approve something, with no
+          // approval bar, because nothing was ever held.
+          if (current === 'needs-input' && /permission/i.test(blob)) {
+            return stay('interactive-prompt-already-known');
+          }
           if (/permission/i.test(blob)) return to('needs-permission');
           // "Claude is waiting for your input" is the CLI's 60s IDLE nag —
           // nothing actionable is on screen (Dan's phantom needs-input,

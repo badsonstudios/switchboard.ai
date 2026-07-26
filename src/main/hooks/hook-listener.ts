@@ -27,7 +27,7 @@ function findNodeOnPath(): string | null {
 }
 import { Logger } from '../log/logger';
 import { SessionManager } from '../sessions/session-manager';
-import { SHELLISH, MUTATING, READ_TOOLS } from '../../shared/tool-taxonomy';
+import { SHELLISH, MUTATING, READ_TOOLS, INTERACTIVE_TOOLS } from '../../shared/tool-taxonomy';
 
 /** Hook events the listener subscribes to for status (S-06 set + PostToolUse). */
 const STATUS_EVENTS = [
@@ -88,8 +88,10 @@ const READ_GATED_AUTONOMIES = ['ask', 'auto-edit'];
 /** PreToolUse matcher — REQUIRED for tool hooks (S-03's proven shape used
  *  one; without it the entry never fires and the CLI's own TUI prompt runs
  *  instead — Dan's 2026-07-21 find). Union of everything the policy might
- *  hold; the hold policy narrows per-session server-side. */
-const PRETOOL_MATCHER = [...SHELLISH, ...MUTATING, ...READ_TOOLS].join('|');
+ *  hold, PLUS the interactive tools — those are never held, but the hook is
+ *  the only immediate signal that the CLI has stopped and is waiting for a
+ *  human (#92); without the entry we never hear about them at all. */
+const PRETOOL_MATCHER = [...SHELLISH, ...MUTATING, ...READ_TOOLS, ...INTERACTIVE_TOOLS].join('|');
 
 /** The primary filesystem target of a read-tool call, if any. */
 function readToolPath(input: Record<string, unknown> | undefined): string | undefined {
