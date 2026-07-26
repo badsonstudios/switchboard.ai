@@ -55,6 +55,24 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-26 — **DENY didn't mean deny — the agent routed around it.** Dan
+  denied a directory listing and Claude got the listing anyway: it announced
+  *"PowerShell is getting blocked by something called switchboard"*, tried
+  Bash, then file search. Root cause is one string. The hook's
+  `permissionDecisionReason` defaulted to `"Denied from switchboard"`, and that
+  field is **fed to the MODEL**, not written to a log — it reads as an
+  infrastructure gate, so the agent treated the refusal as an obstacle to
+  engineer around rather than a decision to respect. A denial the agent works
+  around is worse than no denial at all: the user pressed Deny and got the
+  thing they refused. The default now says three things explicitly — the USER
+  decided, it is not a technical fault or a sandbox restriction, and retrying
+  or re-routing through another tool is not on the table; stop and ask. Unit
+  test asserts all three and pins the old wording as forbidden so it can't
+  creep back. Manual (`04-approvals-and-autonomy.md`) now states what Deny
+  actually promises. **Split out of the #72 branch (Dan's call 2026-07-26)** —
+  it is a correctness bug in the safety mechanism and shouldn't wait behind a
+  review of unrelated feature work.
+
 - 2026-07-25 — **#86 popout geometry FIXED — two bugs, both proven with probes
   before a line was changed.** (1) **The move was never saved.** dockview only
   notices a popout moved via a debounced requestAnimationFrame poll of
