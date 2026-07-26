@@ -52,6 +52,12 @@ const api = {
     ipcRenderer.on('app:displaysChanged', h);
     return () => ipcRenderer.removeListener('app:displaysChanged', h);
   },
+  /** a popout window was moved or resized — re-save the layout (#86) */
+  onPopoutGeometryChanged: (cb: () => void): (() => void) => {
+    const h = (): void => cb();
+    ipcRenderer.on('app:popoutGeometryChanged', h);
+    return () => ipcRenderer.removeListener('app:popoutGeometryChanged', h);
+  },
   /** sandbox-safe path for a dropped File (drag-folder-onto-window, E3-04) */
   pathForFile: (file: File): string => webUtils.getPathForFile(file),
   sessions: {

@@ -20,6 +20,14 @@ import { startStaticServer, StaticServer } from './static-server';
 import { parsePopoutFeatures } from './popout-bounds';
 import { scanSlashCommands } from './capabilities/slash-commands';
 import { buildMenuTemplate } from './app-menu';
+import {
+  Box,
+  groupIdFromFrameName,
+  isUsableBox,
+  LivePopout,
+  patchPopoutPositions,
+  resolvePopoutBounds,
+} from './popout-geometry';
 import { dialog } from 'electron';
 
 // Safe-by-default for every window this app will ever open (§5.29 posture).
@@ -77,6 +85,15 @@ function isPopoutUrl(url: string): boolean {
 
 let workspace: WorkspaceStore;
 let currentWindow: BrowserWindow | null = null;
+// live popout windows, tagged with the dockview group each one hosts (#86).
+// The GROUP ID is what matches them to the serialized layout — creation order
+// famously doesn't, because dockview registers a popout when its window has
+// finished loading, not when it opened.
+const popoutWindows: Array<{ win: BrowserWindow; groupId?: string }> = [];
+// true while a saved layout is being restored: dockview reopens popouts ~100ms
+// apart, so a geometry nudge during that window would make the renderer
+// serialize a layout that is missing the popouts still to come (#86)
+let restoringLayout = false;
 let busySessions: () => string[] = () => [];
 let quitConfirmed = false;
 
@@ -127,6 +144,80 @@ function trackWindowGeometry(win: BrowserWindow): void {
   });
 }
 
+// Popout positions as they were on disk AT BOOT. Snapshotted because the
+// renderer rewrites the layout while it restores — and at that moment the
+// popout windows don't exist yet, so the stored positions are momentarily gone.
+// Reading them later would find nothing to match against (#86).
+let bootPopoutBoxes: Box[] = [];
+/** dockview staggers popout restores ~100ms apart; allow generous slack */
+const RESTORE_SETTLE_MS = 10_000;
+
+function snapshotPopoutBoxes(): void {
+  try {
+    const layout = workspace.getLayout() as { popoutGroups?: Array<{ position?: Box | null }> } | null;
+    bootPopoutBoxes = (layout?.popoutGroups ?? []).map((g) => g.position).filter(isUsableBox);
+  } catch {
+    bootPopoutBoxes = []; // geometry is a nicety — never block startup
+  }
+  // The snapshot only exists to recognise the restore burst. Keeping it around
+  // would let a pop-out torn off an hour later collide with a dead popout's old
+  // rect and teleport onto it, so it expires with the restore.
+  restoringLayout = bootPopoutBoxes.length > 0;
+  if (restoringLayout) {
+    const done = setTimeout(() => {
+      bootPopoutBoxes = [];
+      restoringLayout = false;
+    }, RESTORE_SETTLE_MS);
+    done.unref?.();
+  }
+}
+
+/** would this rect land on a display the user actually has? */
+function boundsOnAnyDisplay(b: Partial<{ x: number; y: number; width: number; height: number }>): boolean {
+  if (typeof b.x !== 'number' || typeof b.y !== 'number') return true; // nothing to judge
+  const w = typeof b.width === 'number' ? b.width : 0;
+  const h = typeof b.height === 'number' ? b.height : 0;
+  return workAreas().some(
+    (a) => b.x! < a.x + a.width - 80 && b.x! + w > a.x + 80 && b.y! < a.y + a.height - 40 && b.y! + h > a.y + 20
+  );
+}
+
+/** popout positions as last persisted, in the order dockview restores them */
+function storedPopoutBoxes(): Box[] {
+  return bootPopoutBoxes;
+}
+
+/**
+ * Tell the renderer a popout moved or resized, so it re-serializes the layout
+ * with fresh geometry (#86). Debounced: a drag emits a burst of events, and
+ * each notification costs a full layout serialize + store write.
+ *
+ * We deliberately send a bare nudge rather than the bounds themselves — the
+ * renderer owns the mapping from OS window to dockview popout group, and
+ * asking it to re-read its own truth keeps one source of that truth.
+ */
+function watchPopoutGeometry(child: BrowserWindow): void {
+  let timer: NodeJS.Timeout | undefined;
+  const nudge = (): void => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      // during a restore the renderer would serialize a layout missing the
+      // popouts still to come — the flush at close covers that window instead
+      if (restoringLayout) return;
+      const win = currentWindow;
+      if (win && !win.isDestroyed()) win.webContents.send('app:popoutGeometryChanged');
+    }, 250);
+    timer.unref?.();
+  };
+  // moved/resized are the settled events but are darwin+win32 only; move/resize
+  // fire everywhere (and continuously), which the debounce above absorbs
+  child.on('moved', nudge);
+  child.on('resized', nudge);
+  child.on('move', nudge);
+  child.on('resize', nudge);
+  child.on('closed', () => clearTimeout(timer));
+}
+
 /**
  * Hard-exit backstop (#85). Twice now the main process has survived its own
  * `quit`: no windows, no sockets, teardown done, `app quit` logged — and still
@@ -149,6 +240,13 @@ function scheduleForcedExit(): void {
 }
 
 function createWindow(): BrowserWindow {
+  // A window can close WITHOUT the app quitting (macOS keeps running; the dock
+  // icon reopens one). Reset the close-time state or the second window would
+  // inherit "we're quitting": layout writes silently dropped for the rest of
+  // the session, the busy-sessions prompt skipped, and a boot snapshot that no
+  // longer describes what's on disk.
+  quitConfirmed = false;
+  snapshotPopoutBoxes();
   const state: WindowState = workspace.restoreWindow(workAreas());
   const win = new BrowserWindow({
     ...windowOptionsFrom(state),
@@ -178,6 +276,33 @@ function createWindow(): BrowserWindow {
       return;
     }
     quitConfirmed = true;
+    // Last word on popout geometry (#86). The renderer's own save races the
+    // teardown — and dockview's position poll may not have caught the last
+    // drag at all — so stamp the live rects over the stored layout here, where
+    // we own both the windows and the store. Content rects, because the popout
+    // is reopened with useContentSize.
+    try {
+      const live: LivePopout[] = popoutWindows
+        .filter((p) => !p.win.isDestroyed())
+        .map((p) => {
+          // Mixed on purpose, matching what dockview stores and what Electron
+          // consumes on restore: OUTER origin (window.screenX) with the CONTENT
+          // size (innerWidth/innerHeight), reopened with useContentSize.
+          const outer = p.win.getBounds();
+          const content = p.win.getContentBounds();
+          return {
+            groupId: p.groupId,
+            box: { left: outer.x, top: outer.y, width: content.width, height: content.height },
+          };
+        });
+      if (live.length > 0) {
+        workspace.setLayout(patchPopoutPositions(workspace.getLayout(), live));
+        workspace.save(); // the store debounces; nothing else will flush this
+      }
+    } catch (err) {
+      // geometry is a nicety; never let it block a close
+      log.app.warn('popout geometry flush failed', { error: String(err) });
+    }
   });
   win.once('ready-to-show', () => {
     win.show();
@@ -194,20 +319,58 @@ function createWindow(): BrowserWindow {
     // unless we copy them onto the created window. dockview passes screen-
     // absolute left/top/width/height there, so without this a popout cascades
     // to a default spot and ignores its saved position (E8-04 multi-monitor).
-    const bounds = popout ? parsePopoutFeatures(features) : {};
-    log.ui.info('window-open requested', { url, popout, bounds }); // E8 diagnostic
+    const asked = popout ? parsePopoutFeatures(features) : {};
+    // dockview adds the opener's origin to the SAVED (already absolute)
+    // position when restoring — see resolvePopoutBounds (#86)
+    // getBounds(), not getContentBounds(): dockview reads the opener's
+    // `window.screenX`, which Electron reports as the OUTER frame origin
+    const opener = win.isDestroyed() ? { x: 0, y: 0 } : win.getBounds();
+    const resolved = popout
+      ? resolvePopoutBounds(asked, opener, storedPopoutBoxes())
+      : { bounds: asked, matchedIndex: -1 };
+    const { matchedIndex } = resolved;
+    // Sanity net, independent of the matching above: if the rect we're about to
+    // use sits on no display at all, drop the position and let the OS place the
+    // window. Better a window in the wrong place than one you can't reach.
+    const bounds =
+      popout && !boundsOnAnyDisplay(resolved.bounds)
+        ? { width: resolved.bounds.width, height: resolved.bounds.height }
+        : resolved.bounds;
+    log.ui.info('window-open requested', { url, popout, asked, bounds, restored: matchedIndex >= 0 });
     if (popout) {
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
           backgroundColor: '#242933',
           ...bounds,
+          // dockview persists the popout's INNER size (innerWidth/innerHeight);
+          // without this Electron would read those as the OUTER frame size and
+          // the window would lose the frame's worth of pixels on every
+          // save/restore cycle — a popout that shrinks a little each launch (#86)
+          useContentSize: true,
           webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
         },
       };
     }
     if (isSafeExternalUrl(url)) void shell.openExternal(url);
     return { action: 'deny' };
+  });
+  // Popout geometry is only durable if something notices the window moved.
+  // dockview notices via a debounced requestAnimationFrame poll of screenX —
+  // which throttles in a backgrounded window, i.e. exactly while you drag a
+  // popout on another monitor. Quit before it fires and the STALE (usually
+  // open-time) position is what gets restored: #86, a popout coming back
+  // straddling two monitors. Electron's own move/resize events are
+  // authoritative and fire regardless of focus, so drive the save from those.
+  win.webContents.on('did-create-window', (child, details) => {
+    if (!isPopoutUrl(details.url)) return;
+    const entry = { win: child, groupId: groupIdFromFrameName(details.frameName) };
+    popoutWindows.push(entry);
+    child.on('closed', () => {
+      const i = popoutWindows.indexOf(entry);
+      if (i >= 0) popoutWindows.splice(i, 1);
+    });
+    watchPopoutGeometry(child);
   });
   // surface renderer console into the main log (E8 diagnostic + general debug)
   win.webContents.on('console-message', (...args: unknown[]) => {
@@ -250,7 +413,14 @@ app
     workspace.load();
     // renderer <-> workspace layout persistence (E3-01)
     ipcMain.handle('workspace:getLayout', () => workspace.getLayout());
-    ipcMain.on('workspace:setLayout', (_e, layout: unknown) => workspace.setLayout(layout));
+    ipcMain.on('workspace:setLayout', (_e, layout: unknown) => {
+      // Once the close is confirmed, the main process has already stamped the
+      // authoritative popout geometry (#86). A renderer tearing down still
+      // emits layout changes as dockview disposes, and those carry the stale
+      // positions we just corrected — ignore them.
+      if (quitConfirmed) return;
+      workspace.setLayout(layout);
+    });
     // renderer-owned UI state (E12-08): focus, view tabs, prefs
     ipcMain.handle('workspace:getUi', () => workspace.getUi());
     ipcMain.on('workspace:setUi', (_e, ui: unknown) => workspace.setUi(ui));
@@ -286,6 +456,11 @@ app
           return Math.abs(b.x - from.x) <= 40 && Math.abs(b.y - from.y) <= 40;
         });
         if (!hit) return false;
+        // the move must survive a quit that follows immediately (#86)
+        setTimeout(() => {
+          const w = currentWindow;
+          if (w && !w.isDestroyed()) w.webContents.send('app:popoutGeometryChanged');
+        }, 300).unref?.();
         hit.setBounds({
           x: Math.round(to.left),
           y: Math.round(to.top),
@@ -325,6 +500,7 @@ app
     // the renderer mid-session) in the browser process, ahead of the
     // renderer's command registry (E9-01)
     Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate(process.platform)));
+    snapshotPopoutBoxes(); // before the renderer can rewrite the layout (#86)
     createWindow(); // sets currentWindow; IPC/notifier read it via closure
     const feed = new EventFeed();
     const notifier = new Notifier({
