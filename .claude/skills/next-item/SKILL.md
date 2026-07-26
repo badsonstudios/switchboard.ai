@@ -13,7 +13,7 @@ milestone. If the current milestone has no open issues, say so and suggest
 `/pm file-issues <next phase>`.
 
 This skill **orchestrates** other skills and agents. It has **two mandatory
-human approval gates** — plan approval (Step 3) and commit approval (Step 9) —
+human approval gates** — plan approval (Step 3) and commit approval (Step 10) —
 that are **never** skipped, even if the user said "go ahead" earlier for a
 different step.
 
@@ -107,16 +107,68 @@ not converging, record state in `PROGRESS.md` and report.
   committing (that's the definition of done in `docs/plans/00-process.md`).
 - If nothing doc-worthy changed, say "no doc changes needed".
 
-## Step 9 — Approval gate #2 (commit)
+## Step 9 — Hand-off: plain English + what to test
 
-Summarize: what changed, test status, review outcome, files touched, done-when
-status, docs updated (or why none). **Wait for explicit approval to commit and
-open the PR.**
+**This comes before the technical summary, not after it, and it is never
+skipped.** Dan has to decide whether to merge; he shouldn't have to reverse-
+engineer a diff to do it. Two parts, in this order:
 
-## Step 10 — Commit, push, PR, close out
+### A. What this does — in plain English
+
+Three to six sentences a non-programmer could follow. What can you *do* now
+that you couldn't before, and why is that better? Name the real buttons, keys,
+and labels. **No** file paths, item IDs, issue numbers, function names, or
+test counts — those live in the technical summary below it.
+
+Say what it deliberately does **not** do when leaving that out would surprise
+him (a known limitation, a platform where it won't fire, a case that still
+falls back to the old behavior). Two lines, not a disclaimer essay.
+
+This is not a duplicate of the `docs/manual/` page from Step 8: the manual is
+standing reference written for a stranger; this is "here is what just landed",
+written for the person about to review it.
+
+### B. What to test — a numbered list
+
+A short **numbered** list of things for Dan to actually try. Each item is one
+action plus what he should see:
+
+> 3. Drag a popped-out session to your second monitor, quit, relaunch — it
+>    should come back on that monitor, same size, not straddling the boundary.
+
+Rules that keep the list worth reading:
+
+- **Lead with what the automated tests already cover**, in one line, so he
+  never repeats work a machine did. Then list only what genuinely needs a
+  human: visual judgment, multi-monitor, real `claude` CLI behavior, timing
+  and feel, anything the fake provider can't produce. This is the existing
+  **[Dan eyeball]** convention, itemized instead of buried in prose.
+- **Order it:** the core new behavior first, then edge cases, then anything
+  nearby that this change could plausibly have broken.
+- **Include the setup** when a check needs one ("open two sessions in
+  different folders first").
+- **Say what "correct" looks like** for each item — a test he can't fail is
+  not a test.
+- **Keep it to 3–7 items.** If it won't fit, the work item was too big; say so.
+- If a criterion genuinely can't be verified by hand (CI-only, needs hardware
+  we don't have), say that explicitly rather than padding the list.
+
+Purely internal work (refactor, CI, tests) still gets part A in one or two
+sentences, and part B says "nothing to click — this is internal; the gate is
+the test suite."
+
+## Step 10 — Approval gate #2 (commit)
+
+Now the technical summary: what changed, test status, review outcome, files
+touched, done-when status, docs updated (or why none). **Wait for explicit
+approval to commit and open the PR.**
+
+## Step 11 — Commit, push, PR, close out
 
 1. Run **`/commit-push-pr`** — PR title `<item-id>: <title>`, body includes
-   `Closes #<issue>`. Dan reviews and squash-merges — that's the oversight
+   `Closes #<issue>` **and Step 9's plain-English summary + test list** (that's
+   what makes the PR reviewable weeks later, and on GitHub he can tick the
+   boxes as he goes). Dan reviews and squash-merges — that's the oversight
    point; never self-merge.
 2. **Close out the tracking (never skip):**
    - Update `PROGRESS.md`: item **done** with date + one-line outcome + PR

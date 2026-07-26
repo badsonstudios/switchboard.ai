@@ -111,6 +111,143 @@ test.describe('Feed view (E12-06)', () => {
     await expect(w.getByText('SCROLL_BLOCK_1', { exact: true })).not.toBeInViewport();
   });
 
+  test('switching away and back keeps your reading position (Dan 2026-07-26)', async () => {
+    // Dockview HIDES a background panel and the browser resets a hidden
+    // element's scrollTop to 0, so returning to a session you had scrolled up
+    // in dumped you at the very top — the tail-pin only knew how to reach the
+    // bottom. Dan hit it by clicking a finished session's Events row.
+    const folder = tempProjectFolder();
+    const other = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+
+    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
+    fs.mkdirSync(dir, { recursive: true });
+    const line = (o: Record<string, unknown>) =>
+      JSON.stringify({ sessionId: 'native-keep', cwd: folder, timestamp: new Date().toISOString(), ...o }) + '\n';
+    let body = '';
+    for (let i = 1; i <= 60; i++) {
+      body += line({ type: 'assistant', message: { content: [{ type: 'text', text: `KEEP_BLOCK_${i}` }] } });
+    }
+    fs.writeFileSync(path.join(dir, 'native-keep.jsonl'), body);
+    await expect(w.getByText('KEEP_BLOCK_60')).toBeVisible({ timeout: 15_000 });
+
+    const feed = () =>
+      w.evaluate(() => {
+        const el = [...document.querySelectorAll('div')].find(
+          (d) => d.scrollHeight > d.clientHeight + 40 && getComputedStyle(d).overflowY === 'auto'
+        );
+        return el ? Math.round(el.scrollTop) : -1;
+      });
+
+    // Read something partway up, with a REAL wheel gesture — that is what the
+    // scroll handler exists to notice, and it keeps the test honest about the
+    // path a user actually takes.
+    await w.getByText('KEEP_BLOCK_30').hover();
+    await w.mouse.wheel(0, -700);
+    await w.waitForTimeout(400); // let the scroll event land and unpin the tail
+    const target = await feed();
+    expect(target).toBeGreaterThan(0);
+
+    // switch to another session, then come back
+    await a.app.evaluate(({ dialog }, d) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [d] });
+    }, other);
+    await w.getByRole('button', { name: '+ session' }).click();
+    await expect(w.getByText(path.basename(other)).first()).toBeVisible({ timeout: 25_000 });
+    await w.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+1`);
+
+    await expect.poll(feed, { timeout: 10_000 }).toBe(target);
+
+    // and a block arriving while you're reading must not yank you anywhere
+    fs.appendFileSync(
+      path.join(dir, 'native-keep.jsonl'),
+      line({ type: 'assistant', message: { content: [{ type: 'text', text: 'KEEP_BLOCK_61' }] } })
+    );
+    await expect(w.getByText('KEEP_BLOCK_61')).toBeAttached({ timeout: 15_000 });
+    expect(await feed()).toBe(target);
+  });
+
+  test('a scroll nobody asked for cannot unpin the tail (Dan 2026-07-26)', async () => {
+    // The approval bar docks BELOW the feed, so it shrinks the viewport and
+    // pushes content under the fold. `pinned` used to be re-derived from that
+    // raw measurement, which reads identically to "the user scrolled up" — one
+    // such sample left the feed stuck short of the bottom with output cut off.
+    // Only a real gesture may move the pin now, so a layout-induced scroll
+    // must be corrected back to the tail.
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+
+    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
+    fs.mkdirSync(dir, { recursive: true });
+    const line = (o: Record<string, unknown>) =>
+      JSON.stringify({ sessionId: 'native-nudge', cwd: folder, timestamp: new Date().toISOString(), ...o }) + '\n';
+    let body = '';
+    for (let i = 1; i <= 60; i++) {
+      body += line({ type: 'assistant', message: { content: [{ type: 'text', text: `NUDGE_BLOCK_${i}` }] } });
+    }
+    fs.writeFileSync(path.join(dir, 'native-nudge.jsonl'), body);
+    await expect(w.getByText('NUDGE_BLOCK_60')).toBeInViewport({ timeout: 15_000 });
+
+    const feed = () =>
+      w.evaluate(() => {
+        const el = [...document.querySelectorAll('div')].find(
+          (d) => d.scrollHeight > d.clientHeight + 40 && getComputedStyle(d).overflowY === 'auto'
+        );
+        return el ? Math.round(el.scrollHeight - el.scrollTop - el.clientHeight) : -1;
+      });
+    await expect.poll(feed, { timeout: 5_000 }).toBeLessThan(2); // at the tail
+
+    // a scroll with NO gesture behind it — exactly what a layout change causes
+    await w.evaluate(() => {
+      const el = [...document.querySelectorAll('div')].find(
+        (d) => d.scrollHeight > d.clientHeight + 40 && getComputedStyle(d).overflowY === 'auto'
+      )!;
+      el.scrollTop = 200;
+    });
+
+    // it must come back, and stay back as new output lands
+    await expect.poll(feed, { timeout: 5_000 }).toBeLessThan(2);
+    fs.appendFileSync(
+      path.join(dir, 'native-nudge.jsonl'),
+      line({ type: 'assistant', message: { content: [{ type: 'text', text: 'NUDGE_BLOCK_61' }] } })
+    );
+    await expect(w.getByText('NUDGE_BLOCK_61')).toBeInViewport({ timeout: 15_000 });
+  });
+
+  test('switching away and back keeps you GLUED to the tail if that is where you were', async () => {
+    // the other half of the same rule: a tail-pinned session must come back
+    // pinned, not at the offset it happened to hold
+    const folder = tempProjectFolder();
+    const other = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+
+    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
+    fs.mkdirSync(dir, { recursive: true });
+    const line = (o: Record<string, unknown>) =>
+      JSON.stringify({ sessionId: 'native-tail', cwd: folder, timestamp: new Date().toISOString(), ...o }) + '\n';
+    let body = '';
+    for (let i = 1; i <= 60; i++) {
+      body += line({ type: 'assistant', message: { content: [{ type: 'text', text: `TAIL_BLOCK_${i}` }] } });
+    }
+    fs.writeFileSync(path.join(dir, 'native-tail.jsonl'), body);
+    await expect(w.getByText('TAIL_BLOCK_60')).toBeInViewport({ timeout: 15_000 });
+
+    await a.app.evaluate(({ dialog }, d) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [d] });
+    }, other);
+    await w.getByRole('button', { name: '+ session' }).click();
+    await expect(w.getByText(path.basename(other)).first()).toBeVisible({ timeout: 25_000 });
+    await w.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+1`);
+
+    await expect(w.getByText('TAIL_BLOCK_60')).toBeInViewport({ timeout: 10_000 });
+  });
+
   test('composer autonomy chip cycles and survives a relaunch (E10-05)', async () => {
     const folder = tempProjectFolder();
     const title = folder.split(/[\\/]/).pop()!;

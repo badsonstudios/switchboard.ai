@@ -8,6 +8,7 @@ const ctx: CommandContext = {
     { id: 'card-b', title: 'switchboard' },
   ],
   activeCardId: 'card-a',
+  attentionCount: 0,
 };
 
 // stand-in translator: 'commands.newSession' -> 'newSession', with params appended

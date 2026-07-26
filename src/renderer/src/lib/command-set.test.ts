@@ -13,12 +13,21 @@ function deps(): CommandDeps & { focusCard: ReturnType<typeof vi.fn> } {
     toggleRail: vi.fn(),
     openPalette: vi.fn(),
     toggleTabRows: vi.fn(),
-  } as CommandDeps & { focusCard: ReturnType<typeof vi.fn> };
+    jumpToNextAttention: vi.fn(),
+  } as CommandDeps & {
+    focusCard: ReturnType<typeof vi.fn>;
+    jumpToNextAttention: ReturnType<typeof vi.fn>;
+  };
 }
 
-const ctxWith = (ids: string[], active: string | null = null): CommandContext => ({
+const ctxWith = (
+  ids: string[],
+  active: string | null = null,
+  attentionCount = 0,
+): CommandContext => ({
   sessions: ids.map((id) => ({ id, title: id })),
   activeCardId: active,
+  attentionCount,
 });
 
 const byId = (cmds: Command[], id: string): Command => cmds.find((c) => c.id === id)!;
@@ -110,6 +119,30 @@ describe('seed command set (E9-01)', () => {
         expect(typeof lookup(key), `missing i18n key: ${key} (command ${c.id})`).toBe('string');
       }
     }
+  });
+
+  it('binds the attention jump to Ctrl+Space and runs the walk (E9-03)', () => {
+    const d = deps();
+    const cmds = buildCommands(d);
+    const jump = byId(cmds, 'attention.next');
+    expect(jump.binding).toBe('Mod+Space');
+    jump.run(ctxWith(['a'], 'a', 2));
+    expect(d.jumpToNextAttention).toHaveBeenCalledOnce();
+  });
+
+  it('the attention jump is unavailable — with a reason — when nothing is waiting', () => {
+    const jump = byId(buildCommands(deps()), 'attention.next');
+    expect(jump.enabled!(ctxWith(['a'], 'a', 0))).toBe(false);
+    expect(jump.enabled!(ctxWith(['a'], 'a', 1))).toBe(true);
+    // the palette greys it WITH the reason rather than hiding it (§5.8: the
+    // palette is the map of what exists)
+    expect(jump.disabledReasonKey).toBe('commands.disabled.emptyQueue');
+  });
+
+  it('the attention jump never fires while typing — the terminal owns Ctrl+Space', () => {
+    // Ctrl+Space is a real keystroke in a terminal (NUL); scope 'app' is the
+    // only correct answer here and a future edit to 'typing-ok' must fail
+    expect(byId(buildCommands(deps()), 'attention.next').scope).toBe('app');
   });
 
   it('no two commands share a binding', () => {

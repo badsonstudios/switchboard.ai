@@ -17,6 +17,10 @@
   --panel: #2b313d;
   --panel2: #333a48;
   --border: #3b4252;
+  /* Session frames need MORE contrast than --border: that one is tuned for
+     hairlines inside a card, and at top level it disappeared entirely (Dan
+     2026-07-26: "it's really hard to tell where the split is"). */
+  --group-frame: #525d73;
   --chip: #39414f;
   --bar: #20252e;
   --text: #e5e9f0;
@@ -34,6 +38,7 @@
   --panel: #ffffff;
   --panel2: #f4f6f9;
   --border: #dde1e7;
+  --group-frame: #b9c2ce;
   --chip: #e9edf2;
   --bar: #ffffff;
   --text: #1b2230;

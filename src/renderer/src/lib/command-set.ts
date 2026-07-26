@@ -25,10 +25,13 @@ export interface CommandDeps {
   openPalette: () => void;
   /** wrap the tab strip onto more rows, or keep it to one (#84) */
   toggleTabRows: () => void;
+  /** jump to the next session waiting on a human (E9-03 attention queue) */
+  jumpToNextAttention: () => void;
 }
 
 const CATEGORY_SESSION = 'commands.category.session';
 const CATEGORY_VIEW = 'commands.category.view';
+const CATEGORY_ATTENTION = 'commands.category.attention';
 
 /** index of the focused card in rail order, or -1 */
 function activeIndex(ctx: CommandContext): number {
@@ -76,6 +79,36 @@ export function buildCommands(deps: CommandDeps): Command[] {
       binding: 'Mod+Shift+P',
       scope: 'typing-ok',
       run: () => deps.openPalette(),
+    },
+    {
+      // Inbox-zero for agents (§5.8): with 7–8 sessions this, not the grid, is
+      // the primary workflow — so it sits directly under the palette.
+      //
+      // Scope 'app', deliberately: Ctrl+Space is a REAL keystroke in a terminal
+      // (NUL — emacs set-mark, and some CLIs' completion), and the hard rule
+      // says the terminal owns every key it can see.
+      //
+      // Note what that costs: from inside a session terminal NO accelerator
+      // fires, the palette's included (dispatch bails on `terminal` before it
+      // ever looks at scope), so the queue is mouse-only from there — the
+      // title-bar ▸ commands chip, or a click on an Events row. Reaching it by
+      // keyboard from inside an xterm needs an accelerator ABOVE the renderer
+      // (Electron before-input-event / globalShortcut), which is its own work
+      // item, not a scope change here.
+      //
+      // macOS caveat: 'Mod' is Cmd there, and Cmd+Space is Spotlight — the OS
+      // will usually win, so the hotkey quietly won't fire. It fails open (the
+      // palette still lists it, §5.8's hiding-chrome-never-removes-capability
+      // invariant) and Dan is on Windows; a per-platform accelerator override
+      // is the fix if a Mac user ever turns up.
+      id: 'attention.next',
+      titleKey: 'commands.jumpAttention',
+      categoryKey: CATEGORY_ATTENTION,
+      binding: 'Mod+Space',
+      scope: 'app',
+      enabled: (ctx) => ctx.attentionCount > 0,
+      disabledReasonKey: 'commands.disabled.emptyQueue',
+      run: () => deps.jumpToNextAttention(),
     },
     ...jumps,
     {

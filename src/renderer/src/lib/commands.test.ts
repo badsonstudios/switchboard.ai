@@ -18,7 +18,7 @@ const key = (k: string, mods: Partial<Record<'ctrl' | 'meta' | 'shift' | 'alt', 
   altKey: !!mods.alt,
 });
 
-const ctx: CommandContext = { sessions: [], activeCardId: null };
+const ctx: CommandContext = { sessions: [], activeCardId: null, attentionCount: 0 };
 
 function cmd(over: Partial<Command> = {}): Command {
   return {
@@ -60,6 +60,7 @@ describe('formatBinding', () => {
 
   it('keeps multi-character key names readable', () => {
     expect(formatBinding('Mod+PageDown', 'other')).toBe('Ctrl+PageDown');
+    expect(formatBinding('Mod+Space', 'other')).toBe('Ctrl+Space');
   });
 });
 
@@ -84,6 +85,18 @@ describe('matchesBinding', () => {
   it('a bare key needs no modifier', () => {
     expect(matchesBinding(key('Escape'), 'Escape', 'other')).toBe(true);
     expect(matchesBinding(key('Escape', { ctrl: true }), 'Escape', 'other')).toBe(false);
+  });
+
+  it('Mod+Space matches the spacebar, whose key is a literal space (E9-03)', () => {
+    // the ONLY thing that can match here is the physical code: the accelerator
+    // spells 'Space' for readability, the event reports key ' '
+    const space = { ...key(' ', { ctrl: true }), code: 'Space' };
+    expect(matchesBinding(space, 'Mod+Space', 'other')).toBe(true);
+    // without the code there is nothing to match on — proves the code path is
+    // load-bearing rather than incidentally passing via the key comparison
+    expect(matchesBinding(key(' ', { ctrl: true }), 'Mod+Space', 'other')).toBe(false);
+    // and a bare spacebar is still just a space
+    expect(matchesBinding({ ...key(' '), code: 'Space' }, 'Mod+Space', 'other')).toBe(false);
   });
 });
 
