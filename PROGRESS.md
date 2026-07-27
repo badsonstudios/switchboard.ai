@@ -6,17 +6,24 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#106 — P2-E15-09 DONE, PR open** (2026-07-27, first item of
-E15) on `feature/106-permission-hold-dead-window`. Dan tested steps 1–4 on the
-branch build: "testing all seems good". Gate: lint + typecheck + **326 unit +
-83 e2e** green. **Filed en route: #112** — `e2e/feed.spec.ts:172` (tail-pin) is
-FLAKY on `main` (not this branch: fails with the changes stashed, and took down
-#96's CI run including its retry; passes in other runs). Before this item,
-everything was merged and `main` clean at `4a3730c`.
-**Next up:** the rest of E15 — #98 (provider adapter capabilities) and #99
-(process-agnostic registry) are independent and either can go first; #99 then
-unblocks #100/#101, and #104 → #105 is the chain that unblocks E9-05/E9-07.
-The remaining standalone fixes are #107, #108, #109, #110, #111. Merged 2026-07-26: **#96** (sessions-rail redesign, three
+**In progress:** **nothing mid-flight.** `main` is at `9f8e3a9` —
+**PR #113 (P2-E15-09, #106) MERGED 2026-07-27**, the first E15 item done.
+**Next up — DECIDE FIRST: #112 blocks every PR.** `e2e/feed.spec.ts:172`
+(tail-pin) fails on the Linux e2e job, and `main` requires green CI, so every
+future PR lands red until it's fixed (#113 was merged over it deliberately —
+the failure reproduces on `main` with the branch stashed). CI evidence:
+`Expected < 2, Received 1301`, **identical on the retry** — the feed sits
+exactly where the test pushed it (`scrollTop = 200`), so `FeedView`'s
+re-pin never fired. Deterministic on that runner, not a race. Two candidates
+recorded on the issue: `pinned.current` already false when the programmatic
+scroll landed, or the 500ms gesture window swallowing it. *Discarded
+hypothesis (don't redo it): the sessions rail stealing the test's
+"first scrollable div" selector — probed at 737px and 538px, `railOverflow: 0`,
+feed was the only candidate.*
+*After that*, the rest of E15: **#98** (provider adapter capabilities) and
+**#99** (process-agnostic registry) are independent and either can go first;
+#99 then unblocks #100/#101, and #104 → #105 is the chain that unblocks
+E9-05/E9-07. Remaining standalone fixes: #107, #108, #109, #110, #111. Merged 2026-07-26: **#96** (sessions-rail redesign, three
 eyeball rounds, Dan signed off) and **#97** (architecture review + the E15
 epic). Before those, same day: **#94** (Deny means deny), **#95** (#92
 interactive-question signal), **#93** (#72 P2-E9-03 attention queue +
@@ -86,7 +93,16 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
-- 2026-07-27 — **P2-E15-09 (#106): the permission hold's "nobody to ask" check
+- 2026-07-27 — **P2-E15-09 (#106) MERGED as PR #113** (`9f8e3a9`). Merged over
+  a red Linux e2e job — the failure is **#112**, which reproduces on `main`
+  with the branch stashed. The branch's OWN Linux failure was found and fixed
+  first: the new crashed-renderer e2e died with `SocketError: other side
+  closed`, because under xvfb a renderer crash takes the WINDOW with it →
+  `window-all-closed` → non-darwin `app.quit()` → the hook server dies
+  mid-request instead of answering. On Windows the window provably survives
+  (probe: "windows still open: 1"), so the test is skipped on Linux with that
+  reasoning recorded, matching the existing xvfb skips in `reconnect.spec` and
+  `session.spec`. **The permission hold's "nobody to ask" check
   was testing the wrong thing.** `maybeHold` only failed open when
   `permListeners.size === 0` — but `ipc.ts` subscribes once at IPC setup and
   never unsubscribes, so that set is never empty in the running app and the
