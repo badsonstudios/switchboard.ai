@@ -509,12 +509,28 @@ export function FeedView(props: {
         onPointerDown={markGesture}
         onKeyDown={markGesture}
         onScroll={() => {
-          if (autoPin.current) return; // our own pin — not user intent
           const el = scroller.current;
           // a hidden or mid-relayout panel reports clientHeight 0 and scrollTop
           // 0; treating that as "the user scrolled to the top" would both unpin
           // the tail and overwrite the position we're trying to give back
           if (!el || el.clientHeight === 0) return;
+          if (autoPin.current) {
+            // Normally our own pin — not user intent, so ignore it. But
+            // `autoPin` stays set until the next animation frame, and a
+            // LAYOUT scroll landing in that same frame used to be swallowed
+            // with it: the view was left stranded mid-history with output
+            // below the fold and no further event to correct it (#112,
+            // measured — the stranded run saw exactly one scroll, with
+            // autoPin already true).
+            //
+            // Our pin always lands ON the tail, so a scroll arriving here
+            // that is nowhere near the tail is somebody else's. Correct it —
+            // but only with no recent gesture behind it, so a user scrolling
+            // up while a pin is in flight is never yanked back.
+            const away = el.scrollHeight - el.scrollTop - el.clientHeight;
+            if (pinned.current && away >= 40 && Date.now() - lastGesture.current > GESTURE_MS) pin();
+            return;
+          }
           // Nobody touched anything: this scroll came from LAYOUT (the approval
           // bar docking, the working banner, content reflowing). It must never
           // change what the user wants — and if they were following the tail,
