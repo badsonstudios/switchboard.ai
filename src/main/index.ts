@@ -85,6 +85,11 @@ function isPopoutUrl(url: string): boolean {
 
 let workspace: WorkspaceStore;
 let currentWindow: BrowserWindow | null = null;
+// Called when the main window's renderer is gone — closed OR crashed. Module-
+// level rather than wired once in the bootstrap because createWindow() runs
+// again on macOS `activate`, and the second window needs the same teardown as
+// the first (P2-E15-09).
+let onRendererLost: ((reason: string) => void) | null = null;
 // live popout windows, tagged with the dockview group each one hosts (#86).
 // The GROUP ID is what matches them to the serialized layout — creation order
 // famously doesn't, because dockview registers a popout when its window has
@@ -304,6 +309,24 @@ function createWindow(): BrowserWindow {
       log.app.warn('popout geometry flush failed', { error: String(err) });
     }
   });
+  // A window that can no longer answer a permission hold has to say so.
+  // Sessions keep running (the PTYs live in main), so anything already parked
+  // must fail open right here — otherwise it sits out the full 300s with
+  // nothing able to decide it (P2-E15-09).
+  //
+  // TWO ways to lose the renderer, and only one of them closes the window:
+  win.on('closed', () => {
+    // guard on identity: a stray second window must not release the live
+    // window's holds, and the app shouldn't keep a destroyed BrowserWindow
+    if (win !== currentWindow) return;
+    currentWindow = null;
+    onRendererLost?.('main window closed');
+  });
+  // a CRASHED renderer leaves the window open with dead contents — hasLiveWindow
+  // catches later calls, but this is what frees the ones already parked
+  win.webContents.on('render-process-gone', (_e, details) => {
+    if (win === currentWindow) onRendererLost?.(`renderer gone: ${details.reason}`);
+  });
   win.once('ready-to-show', () => {
     win.show();
     log.ui.info('window shown', { restored: !!state.bounds, maximized: state.isMaximized });
@@ -486,7 +509,15 @@ app
       // hold policy (E10-03): gate by the session's own autonomy + folder
       autonomyFor: (id) => manager.get(id)?.autonomy,
       cwdFor: (id) => manager.get(id)?.identity.folder,
+      // Is there anyone to ask? A destroyed window or a crashed renderer means
+      // no (P2-E15-09). A RELOADING renderer is neither, so the pending-holds
+      // replay path still gets its chance — that case must not regress.
+      hasLiveWindow: () => {
+        const w = currentWindow;
+        return !!w && !w.isDestroyed() && !w.webContents.isCrashed();
+      },
     });
+    onRendererLost = (reason) => hooks.releaseHeld(reason);
     const transcripts = new TranscriptWatcher({
       projectsRoot: path.join(os.homedir(), '.claude', 'projects'),
       log: createLogger(sink, 'transcripts'),

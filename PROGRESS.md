@@ -4,27 +4,41 @@
 > A fresh session reads this file and knows exactly where things stand.
 
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
-**E9 expanded & filed 2026-07-24 → issues #70–#80**; E11/E13/E14 still
-outlines)
-**In progress:** **sessions-rail redesign** on `feature/sessions-rail-redesign`
-(Dan's ad-hoc item, jumped ahead of #73 — implements
-`design_handoff_sessions_rail/`). Built, gated green, Dan signed off after
-three eyeball rounds; PR open. Before it, three PRs merged 2026-07-26: **#94** (Deny means
-deny), **#95** (#92 interactive-question signal), **#93** (#72 P2-E9-03
-attention queue + Ctrl+Space, plus the scroll-position fix, Events dismiss
-button, session-group frames, the workflow hand-off change, and
-`docs/extensibility.md`). Before those: PR #89 (popout geometry #86), PR #88
-(tab strip #84 + quit backstop #85), PR #83 (E9-02 palette), PR #82 (E9-01).
+**E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
+E11/E13/E14 still outlines)
+**In progress:** **#106 — P2-E15-09 DONE, PR open** (2026-07-27, first item of
+E15) on `feature/106-permission-hold-dead-window`. Dan tested steps 1–4 on the
+branch build: "testing all seems good". Gate: lint + typecheck + **326 unit +
+83 e2e** green. **Filed en route: #112** — `e2e/feed.spec.ts:172` (tail-pin) is
+FLAKY on `main` (not this branch: fails with the changes stashed, and took down
+#96's CI run including its retry; passes in other runs). Before this item,
+everything was merged and `main` clean at `4a3730c`.
+**Next up:** the rest of E15 — #98 (provider adapter capabilities) and #99
+(process-agnostic registry) are independent and either can go first; #99 then
+unblocks #100/#101, and #104 → #105 is the chain that unblocks E9-05/E9-07.
+The remaining standalone fixes are #107, #108, #109, #110, #111. Merged 2026-07-26: **#96** (sessions-rail redesign, three
+eyeball rounds, Dan signed off) and **#97** (architecture review + the E15
+epic). Before those, same day: **#94** (Deny means deny), **#95** (#92
+interactive-question signal), **#93** (#72 P2-E9-03 attention queue +
+Ctrl+Space, plus the scroll-position fix, Events dismiss button, session-group
+frames, the workflow hand-off change, and `docs/extensibility.md`). Earlier:
+PR #89 (popout geometry #86), PR #88 (tab strip #84 + quit backstop #85), PR
+#83 (E9-02 palette), PR #82 (E9-01).
 **Next up (CHANGED 2026-07-26 by the architecture review):** **E15 —
-Structural foundations** (`docs/plans/04-phase-2-switchboard.md`, 14 items
-P2-E15-01…14, **not yet filed as issues**), which runs BEFORE the rest of E9.
-Two reasons: **E9-05 and E9-07 are hard-blocked on E15-08** (presentation state
-lives in `SessionCardPanel`'s `useState`, and "reveal restores it to its exact
-prior slot" needs state that outlives the panel), and every other E15 item is
-cheap now and an audit later. Suggested first pick if a short item is wanted:
-**P2-E15-09 — a live defect**, where a dead/closed renderer stalls the CLI for
-the full 300s on every gated call (the `permListeners.size === 0` check can
-never fire because listeners register once and are never removed).
+Structural foundations** — 14 items, **filed as issues #98–#111 on 2026-07-27**
+(`/pm`; P2-E15-01 → #98 … P2-E15-14 → #111). E15 runs BEFORE the rest of E9.
+Two reasons: **E9-05 (#74) and E9-07 (#76) are hard-blocked on E15-08 (#105)**
+(presentation state lives in `SessionCardPanel`'s `useState`, and "reveal
+restores it to its exact prior slot" needs state that outlives the panel —
+both issues now carry a blocked comment), and every other E15 item is cheap
+now and an audit later.
+**Recommended first pick: #106 (P2-E15-09) — a live defect**, where a
+dead/closed renderer stalls the CLI for the full 300s on every gated call (the
+`permListeners.size === 0` check can never fire because listeners register once
+and are never removed). Within E15 the dependency order is: #98 (adapter) and
+#99 (registry) independent → #100 + #101 depend on #99 → #104 → #105 (unblocks
+E9-05/07) → #102 → #103. The standalone fixes (#106, #107, #108, #109, #110,
+#111) have no dependencies and can be taken any time.
 *After E15:* **#73 — P2-E9-04 urgency strip + delayed urgency reset**, then
 #74–#80. E9 closes Phase 2 exit criterion #1. Also open, filed 2026-07-26 and
 NOT yet scheduled: **#90** (no accelerator, palette included, reaches a session
@@ -33,7 +47,7 @@ assistant answers). [user] retests still pending on merged main (rebuild
 first): test 4 (out-of-cwd read) WITHOUT allow-all + autonomy=ask · grid-drag
 between groups · switch-to-session scroll · allow-all sessions now silent.
 Also pending: ClaudeMon architecture read (OQ #8) before Phase 3 planning.
-**Branch:** feature/sessions-rail-redesign
+**Branch:** main (clean)
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
 `npm test` (unit) · `npm run check:*` (local real-claude proofs) · `npm run e2e`
@@ -71,6 +85,80 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-27 — **P2-E15-09 (#106): the permission hold's "nobody to ask" check
+  was testing the wrong thing.** `maybeHold` only failed open when
+  `permListeners.size === 0` — but `ipc.ts` subscribes once at IPC setup and
+  never unsubscribes, so that set is never empty in the running app and the
+  guard could not fire. A dead renderer therefore parked the CLI for the full
+  300s on **every** gated call. Now gated on **window liveness**
+  (`hasLiveWindow`: not null, not destroyed, `webContents` not crashed), plus
+  `releaseHeld(reason)` for requests already parked when the renderer dies.
+  **Placement was the whole design:** the gate sits AFTER `shouldHoldPermission`
+  (so an ungated call never consults it — pinned by a call-counting test) and
+  AFTER the allow-all branch (that verdict is answered at the server and never
+  needed a renderer). A RELOADING renderer is neither destroyed nor crashed, so
+  the `sessions:pendingPermissions` replay path — the must-not-regress case —
+  is untouched and separately tested.
+  **Review found 2 should-fixes, both real.** (1) The crashed-renderer half was
+  missing: a crash does NOT close the window, so `hasLiveWindow` caught later
+  calls while anything already parked still sat out the 300s →
+  `render-process-gone` wired alongside `closed`, via a module-level
+  `onRendererLost` because `createWindow()` runs again on macOS `activate`.
+  (2) `hasLiveWindow` was called unguarded inside `req.on('end')`, which has no
+  error handling — a throw from those Electron natives would have left the
+  response unended (CLI parks on ITS timeout) and escaped as an
+  uncaughtException. Now `windowLive()` catches: **"I can't tell" resolves to
+  "no window"**, never to "park".
+  **Two mistakes of mine worth recording.** (a) The hand-off test list
+  described a macOS scenario as if it were Windows: `window-all-closed` quits
+  the app on non-darwin, so closing the window on Dan's machine quits — and
+  quit already ran `hooks.stop()`, which releases everything. **The
+  closed-window half of this fix is macOS-only; on Windows the reachable path
+  is a crashed renderer.** Dan ran the test against stock `main` (his log
+  showed three `permission held` lines and none of the new ones) and correctly
+  reported seeing nothing. The manual page said the same wrong thing and is now
+  platform-accurate. (b) My first "proof" that the new e2e catches the defect
+  was a **stale build**: `npm run e2e` builds, bare `npx playwright test` does
+  not — so reverting the fix and re-running the bare command "passed" against
+  the previous binary. Rebuilt properly, it fails without the fix. *Lesson for
+  next time: a revert-proof is only valid if the artefact under test was
+  rebuilt.*
+  Because the Windows-reachable path can't be hand-tested sensibly (kill the
+  renderer, stare at a blank window, read a log), it became an **e2e**: park a
+  real hold on the wire, `forcefullyCrashRenderer()`, assert the request comes
+  back `{}`. A throwaway probe measured it first — released in **176ms**,
+  `reason: renderer gone: crashed`, window still open (which is exactly why
+  `isDestroyed()` alone was not enough of a signal).
+  Also: warn once per session then debug (the condition repeats per gated
+  call); the dead `permListeners` guard kept but its comment corrected to say
+  it is defensive/test-only rather than claiming hook-check needs it.
+  Gate: lint + typecheck + **326 unit + 83 e2e** green (8 new unit, 1 new e2e).
+  **One run of the e2e suite took 18.9m with several tests failing-then-passing
+  on retry; the identical run immediately after was 5.4m with zero failures.**
+  Not reproducible, no orphaned processes found — recorded rather than
+  smoothed over. Filed separately: **#112**, `e2e/feed.spec.ts:172` is flaky on
+  `main` (proven not to be this branch — fails with the changes stashed, and
+  took down #96's CI run including its automatic retry).
+  **Deliberately NOT fixed:** the hung-renderer case (window alive, renderer
+  wedged) — never covered before, still isn't; the review's "renderer
+  acknowledged recently" probe is the candidate if it ever shows up in the
+  wild.
+
+- 2026-07-27 — **E15 FILED as issues #98–#111** (`/pm`, Dan's go-ahead). The 14
+  work items from the architecture review are now on the Phase 2 milestone,
+  numbered straight through (P2-E15-01 → #98 … P2-E15-14 → #111), each carrying
+  its What / Done-when / Size / Depends-on plus a pointer to its `AR-*` finding.
+  Dependency edges written into the issue bodies rather than left implicit:
+  #100 and #101 depend on #99 (the registry), #105 depends on #104 (the store),
+  #108 depends on #107. **#74 (E9-05) and #76 (E9-07) each got a comment naming
+  #105 as a hard block** — the two E9 items whose contracts panel-local state
+  cannot satisfy, so nobody picks them up ahead of it. The plan file's E15
+  header carries the issue range and the two E9 hard-block notes cite #105.
+  Also corrected the header of this file, which still described the rail
+  redesign as an open PR and the E15 docs as uncommitted; both merged (#96,
+  #97) and `main` is clean. Recommended first pick recorded as **#106** — the
+  only item in the epic that is a live defect rather than structure work.
 
 - 2026-07-26 — **FULL ARCHITECTURE REVIEW → new epic E15, runs next.**
   Dan asked for a deep architectural review (not a code review): does the

@@ -5,7 +5,7 @@
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
-import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
+import { hookPoster, launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
 
 function findFile(root: string, name: string, depth = 6): string | null {
   if (depth < 0) return null;
@@ -226,4 +226,38 @@ test.describe('inline approval bar (E10-04)', () => {
     await hook({ hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion' });
     await expect(w.locator('aside').getByText('needs input')).toHaveCount(0, { timeout: 15_000 });
   });
+
+  test('a CRASHED renderer releases the hold instead of parking the CLI (P2-E15-09)', async () => {
+    // The defect this pins: the "nobody to ask" check tested permListeners.size,
+    // which is never zero (ipc.ts subscribes once and never unsubscribes). So a
+    // dead renderer left the CLI parked the full 300s per gated call.
+    //
+    // This is the one path a human cannot reasonably test on Windows — closing
+    // the window quits the app there, so only a crash reaches it. Hence a test.
+    const folder = tempProjectFolder();
+    const title = folder.split(/[\\/]/).pop()!;
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+    const post = await hookPoster(a);
+
+    // park a real hold: the request is live on the wire, waiting for a click
+    const held = post(title, {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'PowerShell',
+      tool_input: { command: 'Get-ChildItem', description: 'List' },
+    });
+    await expect(w.getByText('Allow PowerShell?')).toBeVisible({ timeout: 15_000 });
+
+    // now kill the renderer. The BrowserWindow survives with dead contents —
+    // which is exactly why isDestroyed() alone was not enough of a signal.
+    await a.app.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0].webContents.forcefullyCrashRenderer();
+    });
+
+    // no opinion, immediately: the CLI falls back to its own TUI prompt. Before
+    // this fix the same await sat here for the full hold timeout.
+    expect(await held, 'the hold outlived the renderer').toBe('{}');
+  });
+
 });
