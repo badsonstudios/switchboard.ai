@@ -228,6 +228,15 @@ test.describe('inline approval bar (E10-04)', () => {
   });
 
   test('a CRASHED renderer releases the hold instead of parking the CLI (P2-E15-09)', async () => {
+    // Linux/xvfb can't host this scenario. Crashing the renderer there takes
+    // the WINDOW with it, so `window-all-closed` fires and (non-darwin) quits
+    // the whole app — the hook server dies mid-request and the POST comes back
+    // `SocketError: other side closed` instead of a verdict. On Windows the
+    // window provably survives the crash (probe: "windows still open: 1"),
+    // which is the state this test exists to cover. The guarantee still holds
+    // on Linux by a different route: app exit tears the listener down, and the
+    // forwarder fails open when it can't reach us (S-03).
+    test.skip(process.platform === 'linux', 'a renderer crash kills the whole app under xvfb; covered on Windows');
     // The defect this pins: the "nobody to ask" check tested permListeners.size,
     // which is never zero (ipc.ts subscribes once and never unsubscribes). So a
     // dead renderer left the CLI parked the full 300s per gated call.
