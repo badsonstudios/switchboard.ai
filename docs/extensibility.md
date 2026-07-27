@@ -133,6 +133,55 @@ outside Electron. Keep `SessionManager` (and anything like it) taking a registry
 as a constructor argument rather than reaching for the singleton, or that stops
 working.
 
+## Known gaps — the 2026-07-26 architecture review
+
+This section is the honest scoreboard. Full findings:
+`docs/architecture-review-2026-07-26.md`; the fix is **E15** in
+`docs/plans/04-phase-2-switchboard.md`, which runs next.
+
+**Consumer count on the seams: 1.** That is the number the Phase-4 gate reads,
+and until E15 lands it *cannot grow* — which is the actual finding, not the
+count itself:
+
+- **The seam covers the main process only, and the roster is mostly renderer.**
+  Of §5.23's nine first-party extensions, eight (usage pane, notification
+  channels, manager panes, feed block renderers, theme presets, status-bar
+  items, dispatch templates) are renderer contributions. There is no renderer
+  registry, so seven of them are plain in-process code with nowhere to land.
+  E15-02 makes `ContributionRegistry` process-agnostic; E15-03 adds `panel`,
+  `feed-block-renderer`, and `status-bar-item` and dogfoods them with the
+  hardcoded switches that already exist in `SessionGrid.tsx` and `FeedView.tsx`.
+- **A second registry already exists without being called one.**
+  `renderer/lib/commands.ts` + `command-set.ts` is
+  `{id, title, category, enabled(ctx), run(ctx)}` — exactly a contribution
+  point. E15-02 registers it through the real registry so we don't ship two
+  extension models.
+- **The provider contract can't describe a non-Claude CLI.** §5.3 specifies
+  `capabilities: { transcripts, hooks, resume, mcp }`; the shipped interface is
+  `buildSpawn()` + optional `slashCommands()`, and `sessions/ipc.ts` assumes
+  Claude for everything else (hardcoded `providerId`, unconditional hook
+  settings, unconditional `~/.claude/projects` watch, resume semantics owned by
+  the IPC handler). By this document's own rule — *if our own adapter can't be
+  expressed in the contract, the contract is wrong* — the contract is wrong.
+  E15-01 fixes it. **This is the one that blocks the multi-provider goal**: you
+  would discover it by writing adapter #2 and having to edit a consumer.
+- **Capabilities have no enforcement point at all.** The section above says
+  "declarative only — nothing enforces them yet", which is accurate but
+  understates it: the preload bridge is ~60 hand-maintained methods with no
+  capability scoping, so there is no place a check *could* go. E15-04 tags every
+  IPC channel with one declared capability and adds a single main-side choke
+  point — a runtime no-op for first-party, which is the point: Phase 4 wires a
+  plugin manifest into an existing check instead of inventing a permission
+  model.
+- **Themes are not a contribution shape yet.** §5.20 says a theme is a JSON
+  token map; the implementation is two hardcoded `[data-theme]` blocks and a
+  two-value `ThemeName` union that forbids a third theme. E15-05 makes themes
+  data, which is the prerequisite for a `theme` contribution point.
+
+Owner decision 2026-07-26: **third-party plugin support is a real goal**
+(first-party add-ons first). That is why E15-04 ships full-size rather than
+being trimmed to internal tidiness.
+
 ## What is deliberately NOT built
 
 No on-disk manifest format · no loader or install path · no `utilityProcess`

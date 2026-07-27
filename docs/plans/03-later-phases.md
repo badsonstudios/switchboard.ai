@@ -28,6 +28,23 @@ Planning notes for when this gets broken out:
 *Theme: review, safety, and fleet-level surfaces.*
 
 Planning notes:
+- **`utilityProcess` offload — plan it WITH the plugin host, not after**
+  (added 2026-07-26, architecture review AR-P2-14). `src/main/index.ts` is a
+  600-line monolith doing windows, popout geometry, the static server, five
+  subsystems' IPC, git, notifications, and preflight — on the one thread that
+  also pumps every PTY. When work has to move off it, the candidates are git
+  shell-outs and transcript parsing, and the mechanism is Electron's
+  `utilityProcess` — **the same mechanism §5.23 names for the Phase 4 plugin
+  host**, and the same one VS Code built its extension host on. That makes the
+  Phase-2/3 throughput fix and the Phase-4 substrate one piece of work. Trigger
+  to schedule it: P2-E15-14's real-app perf re-measure showing main-thread
+  contention, or the first plugin-host design session — whichever comes first.
+- **OQ #8 (ClaudeMon read) is OVERDUE and now has a code consequence**
+  (2026-07-26). Beyond the three Phase-3 surfaces that share its data plumbing,
+  `estimateCostUsd` currently bakes model pricing into the renderer's UI layer
+  (`lib/usage.ts`, AR-P2-12) — it belongs in whatever shared engine OQ #8
+  settles on. Every week this slips, more cost/usage logic accretes in the
+  wrong layer.
 - **Inherited from Phase 2** (2026-07-21 reconciliation, now in DESIGN.md §8
   Phase 3): watcher windows + undercard tray + attention bubbling (§5.6,
   §5.24) · tray mode + session archive v1 (§5.25) · fleet snapshots + layout
@@ -56,7 +73,21 @@ Planning notes:
 - Adapter order by likely demand: Codex → Gemini → Aider → generic.
 - Plugin API alpha gate: only after 2-3 dissimilar internal consumers exist on
   the seams (§5.23) — check the registry's actual consumer list before
-  scheduling.
+  scheduling. **Status 2026-07-26:** the count was 1 and *structurally could
+  not grow* — the seam covered the main process only, while 8 of the 9
+  first-party roster items are renderer contributions (architecture review
+  AR-P0-2). Phase 2's **E15** fixes that and should land the count at 4+ as a
+  byproduct of rewiring code that already exists. Re-check the roster table in
+  `docs/extensibility.md` — which states the real number — when this phase is
+  broken out. **Third-party support is a confirmed goal** (owner, 2026-07-26),
+  so E15-04's capability enforcement point is what this phase wires plugin
+  manifests into; it should not need to invent a permission model.
+- **Plugin host prerequisites now partly paid by Phase 2** (2026-07-26): E15
+  delivers the contribution points, the capability vocabulary + choke point,
+  and header-based CSP (E15-12 — load-bearing the moment a sandboxed webview
+  panel exists). What remains genuinely Phase 4: the `utilityProcess` host
+  itself, typed RPC, activation events, Tier-1 webview panels, and any
+  install/distribution path.
 - Mobile companion's security policy questions (OQ #12) need answers before its
   first line of code.
 - Packaging/public-release items trigger the name check (OQ #6) as a hard
