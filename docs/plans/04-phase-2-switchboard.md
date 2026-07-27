@@ -16,12 +16,24 @@ Pop-outs (E8) follow because the Phase-1 display-fingerprint groundwork already
 exists. Then the heavier signature epics: presentation/attention (E9),
 approvals (E10), and the Session Bus (E11).
 
-**Epics:** E7 Richer session cards · E8 Pop-out & multi-monitor · E9
-Attention-driven layout · E10 Approval surfaces v1 · E11 Session Bus & context
-transfer · E12 Session groups & Feed view · E13 Dispatch v1 · E14
-Notifications v2, event feed v2 & service status. (E9–E14 work items get filed
-just-in-time as the preceding epics near exit — per `00-process.md`, we do NOT
-bulk-file the whole phase.)
+**Epics:** E7 Richer session cards · E8 Pop-out & multi-monitor · **E15
+Structural foundations** · E9 Attention-driven layout · E10 Approval surfaces
+v1 · E11 Session Bus & context transfer · E12 Session groups & Feed view · E13
+Dispatch v1 · E14 Notifications v2, event feed v2 & service status. (E9–E14
+work items get filed just-in-time as the preceding epics near exit — per
+`00-process.md`, we do NOT bulk-file the whole phase.)
+
+> **Architecture review inserted E15 (2026-07-26).** A full review
+> (`docs/architecture-review-2026-07-26.md`) found that the extensibility seam
+> covers only provider spawning, that the adapter contract cannot express a
+> second provider, that themes are not the token maps §5.20 promises, and that
+> the renderer has no state layer for E9's cross-cutting per-session state.
+> **E15 runs NEXT — ahead of the rest of E9** — because E9-05/E9-07 are
+> blocked on it and everything in it gets materially more expensive once E9
+> lands eleven more items on the current shape. Numbered E15 (next free epic
+> number); sequenced third. Owner decision the same day: **third-party plugin
+> support is a real goal**, so capability brokering ships full-size rather than
+> trimmed to internal structure.
 
 > **Reconciliation note (2026-07-21):** a DESIGN.md §8 cross-check found the
 > original E7–E11 break-out had dropped several Phase 2 features. E13/E14 and
@@ -160,6 +172,199 @@ Work items:
 
 ---
 
+## E15 — Structural foundations (milestone: Phase 2; runs NEXT, added 2026-07-26)
+
+*Goal: make the seams real before the app gets big enough that they can't be.
+Four things the architecture review found: the provider contract can't describe
+a non-Claude CLI, there is no renderer-side contribution surface at all (8 of
+§5.23's 9 first-party extensions are renderer contributions), themes aren't the
+token maps §5.20 promises, and the renderer has no state layer for the
+cross-cutting state E9 is about to need. Governing spec: DESIGN.md §5.3, §5.20,
+§5.23, §5.26, §5.29. Findings: `docs/architecture-review-2026-07-26.md`
+(AR-P0-1 … AR-P2-14).*
+
+**Why now, not later.** E9-05 and E9-07 are hard-blocked on E15-08. Every other
+item is cheap today and an audit later. And the Phase-4 plugin-API gate ("2–3
+dissimilar internal consumers on the seams") is currently **unreachable** — the
+count is 1 and structurally cannot grow, because there is nothing but
+`provider-adapter` to be a consumer of. E15-03 alone takes it to 4.
+
+**Not in scope:** the real out-of-process plugin host, `utilityProcess`, typed
+RPC, activation events, sandboxed webview panels, any install/distribution path.
+All still Phase 4 (§5.23), and this epic is what makes that transition
+mechanical instead of archaeological.
+
+Work items:
+
+- **P2-E15-01 · Provider adapter capability objects — M (§5.3, AR-P0-1).**
+  Move `{ transcripts, hooks, resume, mcp }` onto the `ProviderAdapter`
+  contract as §5.3 always specified. Session creation ASKS the adapter instead
+  of assuming Claude: today `ipc.ts` hardcodes `providerId: 'claude-code'`,
+  calls `hooks.buildHookSettings()` unconditionally, watches
+  `~/.claude/projects` unconditionally, and owns `--resume` semantics itself.
+  *Done when:* a test adapter declaring ZERO capabilities spawns a PTY-only
+  session — no settings file written, no transcript watch started, no resume
+  attempted — and the app degrades without erroring; the Claude adapter's
+  behaviour is byte-identical (existing unit + e2e green); no
+  Claude-specific branch remains in `sessions/ipc.ts`.
+- **P2-E15-02 · Process-agnostic ContributionRegistry — S (§5.23, AR-P0-2,
+  AR-P2-13).** *(no deps)* `ContributionRegistry` imports nothing from `main/`;
+  a second instance is bootstrapped in the renderer with its own
+  `bootstrap.ts`-equivalent (the one-module-imports-contributors rule holds on
+  both sides). The E9-01 command set registers through it and the palette +
+  dispatcher RESOLVE from it rather than importing `command-set.ts` — it is
+  already a contribution point in everything but name. Decide `event-source`'s
+  fate here: a point with no registrant is a guess (delete it, or give it the
+  §5.14 status monitor as its first real registrant).
+  *Done when:* both registries share one class; duplicate ids still throw at
+  registration; commands resolve by point + id from the palette and the
+  keyboard dispatcher; a fresh registry per test (no singleton leakage).
+- **P2-E15-03 · Renderer contribution points: `panel`,
+  `feed-block-renderer`, `status-bar-item` — M (§5.10, §5.23, AR-P0-2).**
+  *(depends: 02)* The dogfood that makes the Phase-4 gate reachable. Three
+  DISSIMILAR shapes, each replacing code that already exists: the view-tab
+  strip is built from registered `panel` contributions (Session / Terminal /
+  Changes / History / Inspector); FeedView's hardcoded block switch dispatches
+  through `feed-block-renderer` resolution (Edit/Write, Bash, TodoWrite,
+  thinking, generic-tool registered as separate contributors); the status bar
+  renders registered `status-bar-item`s.
+  *Done when:* adding a new view tab or a new block renderer requires editing
+  ONLY its own module plus the renderer bootstrap — no edit to `SessionGrid.tsx`
+  or `FeedView.tsx`; every contribution carries an honest manifest; the startup
+  log lists renderer manifests the way `index.ts` already lists main's; consumer
+  count on the seams is 4+ and `extensibility.md`'s roster table is updated to
+  match reality.
+- **P2-E15-04 · Capability-brokered preload bridge — M (§5.23, §5.29,
+  AR-P0-2).** *(depends: 02)* The preload's ~60 hand-maintained methods become
+  capability-TAGGED: one declared capability string per IPC channel
+  (`sessions.read`, `sessions.spawn`, `pty.write`, `git.read`,
+  `settings.write`, …), and a single main-side choke point that checks the
+  caller's declared set before dispatch. First-party declares everything, so
+  this is a no-op at runtime today — that is the point: the enforcement POINT
+  exists, so Phase 4 wires a plugin's manifest into it instead of inventing
+  one. Vocabulary gets written down in `extensibility.md`.
+  *Done when:* every channel maps to exactly one declared capability (a test
+  asserts no channel is untagged); a call whose context lacks the capability is
+  refused and logged with the channel + capability; the existing renderer runs
+  unchanged; §5.23's "main process is the sole enforcer" is true in code.
+- **P2-E15-05 · Theme = a JSON token map — M (§5.20, AR-P0-3).** `ThemeName`
+  stops being a two-value union; a theme becomes a `Record<token, value>`
+  applied to `documentElement`. `tokens.css` stays as the built-in
+  nordic/daylight presets (and remains the ONLY place raw colors live — the
+  lint rule is untouched). Ship the third theme §5.20 has promised since day
+  one: **high-contrast** (accessibility, not decoration), authored as JSON with
+  no code change, which is the proof the map works.
+  *Done when:* three themes are selectable; high-contrast is a data file, not
+  code; a theme switch reaches popped-out windows (the #84 `syncDocumentFlags`
+  path); the raw-color lint rule is still green; token names are enumerable
+  (the future theme editor + `theme` contribution point need that list).
+- **P2-E15-06 · Renderer preference persistence — S (§5.25, AR-P0-3).**
+  Theme and language move from `localStorage` to the `ui` blob. The workspace
+  store already documents why localStorage is unsafe here — the packaged
+  renderer's loopback origin changes port per launch, so it resets every run —
+  which means **theme and language almost certainly reset on every launch of a
+  packaged build today**. Verify first, then fix.
+  *Done when:* an e2e against the BUILT app sets a non-default theme and
+  language, relaunches, and both survive; dev behaviour unchanged.
+- **P2-E15-07 · Renderer session store — M (AR-P1-4).** One observable store
+  (plain class + `useSyncExternalStore`; no new dependency) owning cards,
+  per-card status/usage/plan/pending-permissions, and the ui blob. The
+  module-level mutable maps in `SessionGrid.tsx` (`liveToCard`,
+  `allowAllByLive`, `cardActions`, `dockingBackByButton`) move into it, and the
+  `switchboard:groups-changed` DOM CustomEvent bus is replaced by a
+  subscription. The synchronous-read requirement that currently forces
+  `eventsRef` / `railSessionsRef` / `visitedRef` is the store's job — those
+  refs go away, and the reasoning behind them moves into the store's docs
+  (it was correct; only its home was wrong).
+  *Done when:* no module-level mutable state remains in renderer components; a
+  unit test constructs a store, drives it, and asserts derived rail order +
+  queue order without React; two presses of `Ctrl+Space` in one frame still
+  advance two steps (the batching behaviour the refs existed to protect).
+- **P2-E15-08 · Presentation state into the store — M (§5.8, AR-P1-5).**
+  *(depends: 07)* **Hard prerequisite for E9-05 and E9-07.** Per-card `view`
+  tab, popped-out, suspended, collapsed, and dock slot move out of
+  `SessionCardPanel`'s `useState` into the store + ui blob. Panel-local state
+  cannot satisfy E9-05's contract ("reveal restores it to EXACTLY its prior
+  dock slot or monitor") because the state must outlive the panel's unmount,
+  and cannot satisfy E9-07's ("switching modes rearranges live sessions")
+  because layout modes drive every card at once from the palette/queue.
+  *Done when:* a card unmounted and remounted restores its exact view tab and
+  slot; a hidden card's slot survives being hidden; E9-05 and E9-07 can be
+  implemented without touching panel-internal state; ladder state persists
+  across relaunch.
+- **P2-E15-09 · Permission hold fails open on a dead window — S (§5.16,
+  AR-P1-7).** `maybeHold` currently passes only when `permListeners.size === 0`,
+  but listeners are registered once at IPC setup and never removed — so the
+  real "nobody to ask" case (renderer crashed, window closed, headless sessions
+  still running) is NOT detected and the CLI stalls the full 300s per gated
+  call. Gate on window liveness instead. Consider a short renderer-ack deadline
+  (~5s) separate from the 300s human-decision budget.
+  *Done when:* with no live window a gated PreToolUse releases immediately with
+  `{}` (the CLI's own prompt takes over) instead of holding; unit-tested with a
+  stubbed window provider; the reloading-renderer replay path
+  (`sessions:pendingPermissions`) still works — that case must NOT regress.
+- **P2-E15-10 · Transcript drift detector + binding transparency — M (§5.26,
+  AR-P1-8).** §5.26 mandates the round-trip drift detector and it was never
+  built: re-serialize each parsed line, diff the key set against what we
+  consumed, warn ONCE per newly-seen key. It slots in beside the `malformed`
+  counter. Second half: binding state is invisible today — an unbound session
+  shows an empty Session view, which is P9 (trust through transparency) failing
+  on our own plumbing.
+  *Done when:* a synthetic transcript line carrying an unknown field logs
+  exactly one warning naming the field and is otherwise ingested normally
+  (tolerant reader unchanged); the Session view distinguishes "waiting for the
+  first prompt", "waiting for transcript", and "couldn't bind" — and says which.
+- **P2-E15-11 · Transcript discovery I/O — S (AR-P1-8).** *(depends: 10)*
+  `poll()` runs every 100ms and any session unbound past 10s triggers a full
+  recursive `scan()` of `~/.claude/projects` — on the thread that also pumps
+  every PTY, serves every IPC, and answers hooks. Move discovery to `fs.watch`
+  on the projects root with a backoff, keeping the poll for the bound-tail
+  drain.
+  *Done when:* a session binds no slower than today (the S-04 ~4s discovery
+  budget holds); no full recursive scan runs while every session is bound; the
+  widen-after-grace fallback still binds a session whose slug math failed.
+- **P2-E15-12 · Header-based CSP — S (§5.29, AR-P2-10).** `index.html` says
+  itself that the meta-tag CSP works in dev by accident of Vite's script
+  injection ordering, and says "revisit when IPC handlers land in E2" — E2
+  landed long ago. Serve CSP as a header via `onHeadersReceived` on our own
+  loopback static server. Must precede any sandboxed-webview plugin panel;
+  that is when CSP becomes load-bearing.
+  *Done when:* both windows (main + popout) receive the policy as a header; the
+  meta tag is removed or demoted to a dev-only backstop; dev and packaged
+  builds both boot clean with no CSP violations in the console.
+- **P2-E15-13 · Workspace schema migration hook — S (§5.26, AR-P2-9).**
+  `WorkspaceState.version` exists and `load()` never reads it. The
+  field-by-field sanitization is the more robust pattern and STAYS; this adds
+  the version-dispatch hook around it while there is exactly one version and it
+  is free. §5.26 promises a versioned, exportable schema.
+  *Done when:* `load()` dispatches on `version` with a v1 identity migration; an
+  unknown FUTURE version loads read-only-safe rather than being silently
+  sanitized into a lossy v1 (and says so in the log); a v0/absent version is
+  treated as v1.
+- **P2-E15-14 · Re-measure S-07 on the real app — S (§6, AR-P2-11).** The
+  concurrency spike measured a harness — PTY + tailer + one xterm. Since then:
+  dockview, Monaco (9MB bundle), live FeedView block streaming, per-card git
+  polling, the slash-command scanner. E9 is about to assert the 7–8 session
+  experience as the primary workflow, which is exactly where S6/S7 become
+  load-bearing.
+  *Done when:* 12 real sessions measured on the shipped app (visible/unoccluded
+  window — the S-07 occlusion artifact is a known measurement trap); findings
+  appended to `spike/findings/s-07-concurrency-perf.md` with a dated
+  "real-app" section; any regression against the harness numbers is either
+  fixed or filed with a named owner.
+
+**E15 exit:** a second provider adapter could be written without touching
+`sessions/ipc.ts`; a new view tab or feed block renderer is a self-contained
+module; a theme is a JSON file and three of them ship; every IPC channel
+carries a declared capability with a live enforcement point; the renderer has
+one state authority and E9-05/E9-07 are unblocked; the drift detector is
+watching for the next CLI release. Consumer count on the seams: 4+ (gate for
+the Phase-4 plugin API alpha is reachable for the first time). Litmus
+(PHILOSOPHY §4) applies to the two user-visible items only (E15-05 themes,
+E15-10 binding states); the rest are internal and write no manual page.
+
+---
+
 ## E9 — Attention-driven layout (milestone: Phase 2; issues #70–#80 filed 2026-07-24)
 
 *Goal: with 7–8 sessions open, the **queue** becomes the primary workflow and
@@ -207,7 +412,11 @@ Work items:
   *Done when:* the strip reflects live status for every session incl.
   suspended, click focuses, the lamp lingers post-jump, and it stays visible
   in all three layout modes; e2e.
-- **P2-E9-05 · Presentation ladder + reveal contract — M (§5.8).** Per-session
+- **P2-E9-05 · Presentation ladder + reveal contract — M (§5.8).**
+  ***(depends: P2-E15-08 — hard block.* Presentation state currently lives in
+  `SessionCardPanel`'s `useState`; "restores it to EXACTLY its prior dock slot"
+  requires state that outlives the panel's unmount. Do not start this before
+  E15-08 lands — see AR-P1-5.)* Per-session
   `expanded → collapsed strip → tabbed → hidden`. Hidden removes the card from
   the workspace entirely — the session lives on in the rail, its lamp, and the
   events list. Reveal triggers: needs-attention (permission / input / done) or
@@ -225,7 +434,9 @@ Work items:
   auto-hide honors the E9-05 reveal contract; a per-session override beats the
   global; e2e.
 - **P2-E9-07 · Layout modes grid · focus · queue + maximize toggle — M
-  (§5.8).** Per-workspace mode, persisted in the ui blob, switchable from the
+  (§5.8).** ***(depends: P2-E15-08 — hard block.* Modes drive every card at
+  once from the palette/queue; panel-local state can't be driven from outside
+  the panel — see AR-P1-5.)* Per-workspace mode, persisted in the ui blob, switchable from the
   palette and a binding: `grid` (today) · `focus` (one large + slim strips) ·
   `queue` (only attention-needing sessions expanded). Focus mode is a
   COMPOSITION of ladder states, not a bespoke mode; double-clicking a session
@@ -357,6 +568,24 @@ toggle away and raw TUI states surface it explicitly. Litmus checked per
 surface.
 
 ## E11 — Session Bus & context transfer (outline)
+
+> **Transport decided 2026-07-26 (architecture review AR-P1-6): the Session Bus
+> is stdio-only in v1.** §5.29 already preferred stdio; this closes it. Two
+> reasons. (1) The HookListener *must* be HTTP — hook commands are separate
+> processes — but the bus has no such constraint, and one stdio MCP server per
+> session DELETES the DNS-rebinding / CSRF / origin-check class from Phase 2
+> rather than hardening against it (Claude Code's stdio transport has no network
+> exposure and needs no auth; security is process isolation, one server process
+> per client). (2) Decisive: an MCP tool call carries **no ambient session
+> identity**, and the bus must know which switchboard session is calling. With
+> stdio that is free — one process per session, identity in argv/env at spawn.
+> With HTTP we would be minting and rotating per-session tokens again, i.e.
+> adding a transport in order to need the defence the transport created.
+> HTTP/WebSocket is deferred to §5.27 (mobile companion), where it is genuinely
+> unavoidable and §5.29's Origin-allowlist + pairing-token floor applies.
+> DESIGN.md §5.4 and §5.29 amended to match. The `mcp` capability on the
+> adapter contract (P2-E15-01) is how a non-Claude CLI declares whether it can
+> take the bus at all.
 
 Session Bus MCP server (`list/get/send/publish` **+ `get_session_context`**),
 @-references in a prompt composer, drag-drop text/files between sessions,
@@ -497,6 +726,10 @@ multi-session work routine; findings feed Phase 3's review-dashboard planning.
 ---
 
 ## Exit criteria (Phase 2 ships when)
+0. **(added 2026-07-26)** The seams are real: a second provider adapter could
+   be written without editing `sessions/ipc.ts`, renderer contributions resolve
+   through a registry with 4+ dissimilar consumers, every IPC channel carries a
+   declared capability, and a theme is a JSON token map. (E15.)
 1. The 7–8 session experience works: cards are information-rich, attention
    routing (queue + hotkeys) is the primary workflow, idle sessions collapse.
 2. A session can pop out to a second monitor and rescue on display change.
@@ -512,6 +745,17 @@ multi-session work routine; findings feed Phase 3's review-dashboard planning.
 E7 first (fast win, owner's ask) → E8 (groundwork exists) → E12 (owner-
 requested, builds on E8's card/tab surfaces) → **E10 (jumped ahead
 2026-07-21: owner's hands-on feedback confirmed exactly the "TUI approvals
-are the daily pain" clause — plus the Session-tab pivot)** → E9/E11 sequenced
-by feedback → E13 after E11 (needs its context packages) → E14 interleaves
-anywhere after E9 (actionable-toast slice pairs with E10's approval bar).
+are the daily pain" clause — plus the Session-tab pivot)** → E9-01/02/03
+(merged) → **E15 (inserted 2026-07-26 by the architecture review: runs NEXT,
+before the rest of E9 — E9-05 and E9-07 are hard-blocked on E15-08, and every
+other E15 item is cheap now and an audit later)** → rest of E9 → E11 →
+E13 after E11 (needs its context packages) → E14 interleaves anywhere after
+E9 (actionable-toast slice pairs with E10's approval bar).
+
+**Within E15**, the dependency order is: 01 (adapter) and 02 (registry) are
+independent and can go in either order → 03 + 04 depend on 02 → 07 → 08 (which
+unblocks E9-05/07) → 05 → 06. The standalone fixes (09 permission fail-open,
+10 drift detector, 11 discovery I/O, 12 CSP, 13 migration hook, 14 perf
+re-measure) have no dependencies and can be picked up any time — **09 is a live
+defect** (a dead renderer stalls the CLI 300s per gated call) and is the best
+candidate to take first if a short item is wanted.

@@ -15,7 +15,17 @@ attention queue + Ctrl+Space, plus the scroll-position fix, Events dismiss
 button, session-group frames, the workflow hand-off change, and
 `docs/extensibility.md`). Before those: PR #89 (popout geometry #86), PR #88
 (tab strip #84 + quit backstop #85), PR #83 (E9-02 palette), PR #82 (E9-01).
-**Next up:** **#73 — P2-E9-04 urgency strip + delayed urgency reset**, then
+**Next up (CHANGED 2026-07-26 by the architecture review):** **E15 —
+Structural foundations** (`docs/plans/04-phase-2-switchboard.md`, 14 items
+P2-E15-01…14, **not yet filed as issues**), which runs BEFORE the rest of E9.
+Two reasons: **E9-05 and E9-07 are hard-blocked on E15-08** (presentation state
+lives in `SessionCardPanel`'s `useState`, and "reveal restores it to its exact
+prior slot" needs state that outlives the panel), and every other E15 item is
+cheap now and an audit later. Suggested first pick if a short item is wanted:
+**P2-E15-09 — a live defect**, where a dead/closed renderer stalls the CLI for
+the full 300s on every gated call (the `permListeners.size === 0` check can
+never fire because listeners register once and are never removed).
+*After E15:* **#73 — P2-E9-04 urgency strip + delayed urgency reset**, then
 #74–#80. E9 closes Phase 2 exit criterion #1. Also open, filed 2026-07-26 and
 NOT yet scheduled: **#90** (no accelerator, palette included, reaches a session
 terminal) and **#91** (box the tool blocks + drop the timeline dot on plain
@@ -61,6 +71,85 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-26 — **FULL ARCHITECTURE REVIEW → new epic E15, runs next.**
+  Dan asked for a deep architectural review (not a code review): does the
+  shape hold, and will add-ins / customization actually work when we get
+  there. Record: **`docs/architecture-review-2026-07-26.md`** — findings are
+  ID'd `AR-P0-1 … AR-P2-14` so plan items and issues can cite them.
+  **Verdict: the architecture is sound.** The card/live split, the
+  hooks-are-status / transcript-is-telemetry authority split, and fail-open are
+  real in code rather than aspirational; the §5.29 security floor was genuinely
+  built before the first listener; the state machine encodes bugs we paid for.
+  Don't touch those.
+  **Three P0s, all of them "cheap now, audit later":**
+  (1) *The provider contract can't express a second provider* — §5.3's
+  `{transcripts, hooks, resume, mcp}` capabilities were never built, so
+  `sessions/ipc.ts` hardcodes `providerId: 'claude-code'`, writes Claude hook
+  settings unconditionally, and watches `~/.claude/projects` unconditionally.
+  By §5.23's own test ("if our own adapter can't be expressed in the contract,
+  the contract is wrong") the contract is wrong; we'd find out by writing
+  adapter #2 and having to edit a consumer. (2) *There is no renderer-side seam
+  at all* — 8 of §5.23's 9 first-party extensions are renderer contributions
+  with nowhere to land, and the preload's ~60 methods have no capability
+  scoping, so "main is the sole enforcer" is true only because there's nothing
+  to enforce. The consequence is structural: **the Phase-4 gate ("2–3
+  dissimilar consumers") was unreachable by construction** — count 1, unable to
+  grow. Also noted: `lib/commands.ts` is already a contribution point in
+  everything but name. (3) *Themes aren't token maps* — §5.20 promises JSON
+  maps and import/export; we ship two hardcoded `[data-theme]` blocks and a
+  `ThemeName` union that forbids a third theme. **With a live bug inside it:**
+  theme + language sit in `localStorage`, which the workspace store's own
+  comment says resets every launch in packaged builds (loopback port changes) —
+  so both prefs almost certainly reset on every packaged launch. Verify, then
+  fix.
+  **Two P1s that bite during E9/E11:** the renderer has no state layer (module-
+  level mutable `Map`s in `SessionGrid.tsx`, a DOM CustomEvent bus, and refs
+  shadowing state to defeat batching — the reasoning was right, the home was
+  wrong), and presentation state is panel-local where E9-05/E9-07 can't reach
+  it. Plus a **live defect**: the permission hold's "nobody to ask" check reads
+  `permListeners.size`, but listeners register once and never unregister — so a
+  crashed or closed renderer parks the CLI the full 300s per gated call instead
+  of failing open.
+  **One design decision taken, not just recorded:** the **Session Bus is
+  stdio-only in v1** (AR-P1-6). §5.29 already preferred stdio; this closes it.
+  Stdio deletes the whole DNS-rebinding/CSRF class instead of defending it —
+  and decisively, an MCP call carries no ambient session identity, so HTTP
+  would have us minting per-session tokens again, i.e. adding a transport in
+  order to need the defence the transport created. One process per session
+  makes identity free. **No new localhost listener ships in Phase 2.**
+  DESIGN.md §5.4 + §5.29 amended. **Dan confirmed it the same day** after the
+  trade was put to him plainly — stdio means the bus is reachable ONLY by
+  processes switchboard launches (no browser tab, no hand-run script, no other
+  app, no phone), and he couldn't name anything non-session that would ever
+  need in. That list being empty IS the cost, so it's a knowing trade, not an
+  inherited one. Reversal trigger recorded in §5.4: a wanted feature where a
+  non-session caller must reach the bus. Nothing else — and specifically not
+  the mobile companion, which is a separate §5.27 WebSocket and was never
+  riding this pipe.
+  **Dan's answers at the review gate:** third-party plugin support **is** the
+  real goal (first-party add-ons first) — so E15-04's capability brokering
+  ships full-size, not trimmed to internal tidiness; Phase 3/4 scope is **not**
+  being cut, reassessed when we get there.
+  **Docs written/amended:** new `docs/architecture-review-2026-07-26.md` ·
+  `04-phase-2-switchboard.md` (E15 epic, 14 items with done-whens; E9-05/E9-07
+  marked hard-blocked on E15-08; E11 transport decision; exit criterion #0;
+  Order + within-E15 dependency order) · DESIGN.md (§5.4 stdio, §5.29 listener
+  split, §5.23 renderer-seam amendment + consumer count is a tracked number) ·
+  `03-later-phases.md` (Phase 3: plan `utilityProcess` offload WITH the plugin
+  host — same mechanism, so the throughput fix and the Phase-4 substrate are
+  one job; OQ #8 now has a code consequence in `lib/usage.ts`. Phase 4: gate
+  status + what E15 already pays for) · `docs/extensibility.md` (a "Known gaps"
+  scoreboard so the contributor guide stops reading better than reality).
+  **Not done, awaiting Dan:** E15 issues are **not filed** — that's a `/pm`
+  step and needs his go-ahead. Nothing was committed: this landed while
+  `feature/sessions-rail-redesign` is mid-item with uncommitted work, so the
+  docs sit unstaged in the tree deliberately.
+  **Also worth knowing:** S-07's perf verdict is *stale, not wrong* — it
+  measured a harness (PTY + tailer + one xterm) before dockview, Monaco's 9MB
+  bundle, live FeedView streaming, and per-card git polling existed. E9 is
+  about to assert the 7–8-session experience as the primary workflow, which is
+  exactly where S6/S7 become load-bearing (P2-E15-14 re-measures).
 
 - 2026-07-26 — **Sessions rail REDESIGNED** from `design_handoff_sessions_rail/`
   (Dan's ad-hoc item, ahead of #73). Group *cards* on a tinted canvas: folder

@@ -174,8 +174,42 @@ messages, or a named artifact) and injects it as context ahead of the prompt tex
 Autocomplete popup lists live sessions by name/color.
 
 **Tier 3 — Session Bus MCP server (agent-driven).**
-switchboard.ai runs a local MCP server; each Claude session gets it attached at spawn
-(via `--mcp-config` with a per-session identity token). Tools exposed:
+switchboard.ai runs a local MCP server; each Claude session gets it attached at
+spawn via `--mcp-config`.
+
+> **Transport decided 2026-07-26 (architecture review AR-P1-6), owner-confirmed
+> the same day: stdio only in v1 — one server process per session, no listener,
+> no token.** The earlier
+> "per-session identity token" wording assumed an HTTP transport we no longer
+> ship. Two reasons. (1) §5.29's whole localhost attack class (DNS rebinding,
+> CSRF, missing Origin checks) is *deleted* rather than defended against —
+> stdio has no network exposure and its security model is process isolation.
+> The HookListener must stay HTTP (hook commands are separate processes); the
+> bus has no such constraint, so it shouldn't pay that cost. (2) Decisive: an
+> MCP tool call carries **no ambient session identity**, and the bus must know
+> which session is calling. With stdio that's free — one process per session,
+> identity passed in argv/env at spawn. With HTTP we'd be minting per-session
+> tokens again, i.e. adding a transport in order to need the defence the
+> transport created. HTTP/WebSocket is deferred to §5.27, where it's genuinely
+> unavoidable. A provider declares whether it can take the bus at all via the
+> `mcp` capability on the §5.3 adapter contract.
+>
+> **What this forbids, stated plainly so the trade is never re-argued from
+> memory:** the bus is reachable ONLY by processes switchboard itself launches.
+> Not a browser tab, not a browser extension, not a hand-run script, not
+> another app, not the phone, not another machine. That restriction IS the
+> security benefit — there is no door to guard rather than a door guarded
+> correctly forever. Owner was asked directly whether anything non-session
+> would ever need to reach into running sessions and confirmed nothing came to
+> mind (2026-07-26).
+>
+> **The one thing that reverses this:** a wanted feature where something that
+> is *not itself a session* must call the bus. That is the trigger to reopen —
+> not general unease about stdio, and not the mobile companion, which is a
+> separate §5.27 WebSocket projecting orchestrator state and was never going to
+> ride this pipe.
+
+Tools exposed:
 
 - `list_sessions()` → names, folders, providers, statuses
 - `get_session_output(session, lastN?)` → recent transcript tail of a sibling
@@ -858,6 +892,30 @@ for a public store.
   and required capabilities (`session:read`, `session:exec`, `git:write`,
   `network:fetch`) in a manifest, least-privilege, Tauri/MetaMask-schema style.
   Main process is the sole enforcer.
+
+> **Amended 2026-07-26 (architecture review AR-P0-2).** The seam shipped in
+> Phase 1 covers the MAIN process only — `provider-adapter` and an unconsumed
+> `event-source`. But **eight of the nine first-party extensions in the roster
+> below are RENDERER contributions**, so seven of them had nowhere to land and
+> the consumer count was stuck at one. Two consequences were structural, not
+> cosmetic: the API-stability gate ("2–3 dissimilar consumers before freeze")
+> was **unreachable by construction**, and the preload bridge grew into ~60
+> hand-maintained methods with no capability scoping at all — so "main process
+> is the sole enforcer" was true only because there was nothing to enforce.
+>
+> The correction (Phase 2, **E15**): `ContributionRegistry` becomes
+> process-agnostic with one instance per process (the bootstrap rule — only one
+> module imports contributors — holds on both sides); renderer points
+> `command`, `panel`, `feed-block-renderer`, `status-bar-item`,
+> `notification-channel`, and `theme` are added and **dogfooded by first-party
+> features that already exist as hardcoded switches**; and every IPC channel
+> gets a declared capability with a live main-side enforcement point (a no-op
+> for first-party today — the point of it is that Phase 4 wires a plugin
+> manifest into an existing check rather than inventing one).
+>
+> Owner decision the same day: **third-party plugin support is a real goal**,
+> initially serving first-party add-ons. So capability brokering ships
+> full-size rather than being trimmed to "internal structure only."
 - **Dogfood internally (VS Code / Nimbalyst EditorHost pattern).** First-party
   features are built against the same internal contract third parties would
   use. If our own adapter can't be expressed in the contract, the contract is
@@ -915,6 +973,11 @@ applies to us too.
   2–3 DISSIMILAR internal consumers; only then freeze + semver. (Cautionary
   tales: premature stable APIs lock awkward shapes; retroactive tightening on
   a live ecosystem = Manifest V3 backlash.)
+  **Consumer count is a tracked number, not a vibe** (added 2026-07-26): it sat
+  at 1 for all of Phase 1–2 and could not grow, which is what the E15
+  correction above exists to fix. Check `extensibility.md`'s roster table —
+  which states the real count — before anyone schedules the Phase 4 alpha.
+  E15-03 alone takes it to 4 by rewiring code that already exists.
 - **Distribution (deferred until real demand):** git-PR registry + automated
   scanning + tiered review (Obsidian's model — ~3 engineers sustained 2,700
   plugins; structurally identical to owner's work git-marketplace pattern).
@@ -1077,12 +1140,20 @@ specified BEFORE the first listener ships — not hardening-later items.
   same-origin-block WebSocket handshakes (RFC 6455 leaves origin enforcement to
   the server); Chrome's Local Network Access prompts are one-click-bypassable
   and absent in Firefox/Safari — server-side defenses are mandatory.
-- **HookListener + Session Bus (Phases 1–2)**: bind to loopback only;
-  server-side Host-header allowlist (127.0.0.1/localhost) AND a per-session
-  auth token required on every request — Host validation alone does not stop
-  plain CSRF; tokens alone do not stop rebinding; both, always. Prefer stdio
-  transport for the Session Bus MCP server where the CLI supports it — stdio
-  sidesteps the network attack class entirely.
+- **HookListener (Phase 1, shipped)**: bind to loopback only; server-side
+  Host-header allowlist (127.0.0.1/localhost) AND a per-session auth token
+  required on every request — Host validation alone does not stop plain CSRF;
+  tokens alone do not stop rebinding; both, always. The token lives in an ACL'd
+  file referenced by path, never on argv (S-03). HTTP is forced here: hook
+  commands are separate processes.
+- **Session Bus (Phase 2): stdio only — decided 2026-07-26** (architecture
+  review AR-P1-6; §5.4 carries the full reasoning). The earlier "prefer stdio
+  where the CLI supports it" is now a requirement, not a preference: Claude
+  Code's stdio transport has no network exposure and no auth to get wrong, so
+  this section's entire attack class does not apply to the bus. **No new
+  localhost listener ships in Phase 2.** If a future provider cannot do stdio,
+  it declares no `mcp` capability (§5.3) and simply does not get the bus —
+  we do not add an HTTP fallback to accommodate it.
 - **Mobile companion WebSocket (Phase 4)**: the near-isomorphic precedent is
   Cline's local Kanban WebSocket (CVE-2026-44211, CVSS 9.7): no origin check,
   no auth token → any webpage the developer visited received a full workspace
