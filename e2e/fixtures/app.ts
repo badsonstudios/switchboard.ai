@@ -183,3 +183,100 @@ export function tempProjectFolder(): string {
   fs.writeFileSync(path.join(dir, 'README.md'), '# e2e\n');
   return dir;
 }
+
+/* ---- driving the REAL hook listener ---------------------------------------
+ * Specs that need a session in a particular attention state play the CLI's
+ * part: POST the hook event the CLI would have sent, with that session's own
+ * token. Nothing is mocked between the state machine and the UI. */
+
+export function findFile(root: string, name: string, depth = 6): string | null {
+  if (depth < 0) return null;
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  for (const e of entries) {
+    const full = path.join(root, e.name);
+    if (e.isFile() && e.name === name) return full;
+    if (e.isDirectory()) {
+      const hit = findFile(full, name, depth - 1);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+/** every session's token file, keyed by the session id its directory is named for */
+export function findTokens(root: string, depth = 6): Map<string, string> {
+  const out = new Map<string, string>();
+  const walk = (dir: string, left: number): void => {
+    if (left < 0) return;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const full = path.join(dir, e.name);
+      if (e.isFile() && e.name === 'hook-token') {
+        out.set(path.basename(dir), fs.readFileSync(full, 'utf8').trim());
+      } else if (e.isDirectory()) {
+        walk(full, left - 1);
+      }
+    }
+  };
+  walk(root, depth);
+  return out;
+}
+
+export async function poll<T>(fn: () => T | null, timeoutMs = 25_000): Promise<T> {
+  const start = Date.now();
+  for (;;) {
+    const v = fn();
+    if (v) return v;
+    if (Date.now() - start > timeoutMs) throw new Error('poll timed out');
+    await new Promise((r) => setTimeout(r, 250));
+  }
+}
+
+/**
+ * A poster that sends hook events to a card BY TITLE. Waits for the listener
+ * to come up and for `expectSessions` tokens to appear, then resolves the
+ * live-session-id -> card-title mapping the same way the Events panel does.
+ */
+export async function hookPoster(
+  a: LaunchedApp,
+  expectSessions = 1
+): Promise<(title: string, body: Record<string, unknown>) => Promise<string>> {
+  const logFile = await poll(() => {
+    const f = findFile(a.home, 'switchboard.log');
+    return f && fs.readFileSync(f, 'utf8').includes('hook listener up') ? f : null;
+  });
+  const port = Number(
+    /"msg":"hook listener up".*?"port":(\d+)/.exec(fs.readFileSync(logFile, 'utf8'))![1]
+  );
+  const tokens = await poll(() => {
+    const t = findTokens(a.home);
+    return t.size >= expectSessions ? t : null;
+  });
+  const cards = (await a.window.evaluate(() => window.switchboard.sessions.cards())) as Array<{
+    title: string;
+    liveId?: string;
+  }>;
+  const titleFor = new Map<string, string>();
+  for (const c of cards) if (c.liveId) titleFor.set(c.liveId, c.title);
+
+  return async (title, body) => {
+    const sid = [...tokens.keys()].find((k) => titleFor.get(k) === title);
+    if (!sid) throw new Error(`no live session for card "${title}"`);
+    const r = await fetch(`http://127.0.0.1:${port}/hook`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-switchboard-token': tokens.get(sid)! },
+      body: JSON.stringify(body),
+    });
+    return r.text();
+  };
+}

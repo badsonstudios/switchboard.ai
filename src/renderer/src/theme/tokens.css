@@ -19,8 +19,14 @@
   --border: #3b4252;
   /* Session frames need MORE contrast than --border: that one is tuned for
      hairlines inside a card, and at top level it disappeared entirely (Dan
-     2026-07-26: "it's really hard to tell where the split is"). */
-  --group-frame: #525d73;
+     2026-07-26: "it's really hard to tell where the split is"). Strengthened
+     2026-07-26 (round 2) and now shared by BOTH containers — the grid's
+     session groups and the rail's group cards are the same kind of object, so
+     they get the same edge (Dan: "whatever we do here is what we're going to
+     want to do for the session windows too"). */
+  --group-frame: #6b7793;
+  /* the lift that separates a container from the surface behind it */
+  --group-lift: 0 1px 3px rgba(0, 0, 0, 0.3);
   --chip: #39414f;
   --bar: #20252e;
   --text: #e5e9f0;
@@ -31,6 +37,29 @@
   --tab-lift: 0 -2px 6px -2px rgba(0, 0, 0, 0.35);
   /* dimmer behind a modal surface (command palette, E9-02) */
   --scrim: rgba(10, 13, 18, 0.55);
+
+  /* Status TEXT ink (design_handoff_sessions_rail). The --status-* hues below
+     are tuned for dots and rings; 9.5px text needs its own value per theme.
+     On Nordic the bright hues already sit on a dark panel, so ink == hue. */
+  --status-working-ink: #58a6ff;
+  --status-needs-input-ink: #e3b341;
+  --status-needs-permission-ink: #f0883e;
+  --status-idle-ink: #8a92a0;
+  --status-done-ink: #3fb950;
+  --status-crashed-ink: #f85149;
+
+  /* sessions rail surfaces */
+  --rail-canvas: #242933;
+  --rail-card: #2b313d;
+  --rail-row-hover: #333a48;
+  --rail-divider: #3b4252;
+  --rail-close: #8a92a0;
+  --rail-close-hover: #f85149;
+
+  /* Emergent auto-groups (E12-05). Deliberately NOT a group-palette hue and
+     not a status hue: an auto-group is a category, not an individual, and its
+     look has to say "the app made this, you can't drop into it". */
+  --auto-ink: #8b9bc4;
 }
 
 :root[data-theme='daylight'] {
@@ -38,7 +67,8 @@
   --panel: #ffffff;
   --panel2: #f4f6f9;
   --border: #dde1e7;
-  --group-frame: #b9c2ce;
+  --group-frame: #8593a6;
+  --group-lift: 0 1px 3px rgba(20, 30, 50, 0.1);
   --chip: #e9edf2;
   --bar: #ffffff;
   --text: #1b2230;
@@ -48,6 +78,26 @@
   --window-shadow: 0 24px 70px rgba(20, 30, 50, 0.16);
   --tab-lift: 0 -2px 6px -2px rgba(20, 30, 50, 0.18);
   --scrim: rgba(20, 30, 50, 0.28);
+
+  /* Darkened for >=4.5:1 on the white group card — the bright --status-* hues
+     fail that at 9.5px. The hue still drives dots, rings and glyph backplates. */
+  --status-working-ink: #1c62c9;
+  --status-needs-input-ink: #8a5a06;
+  --status-needs-permission-ink: #94500d;
+  --status-idle-ink: #5f6875;
+  --status-done-ink: #1a7431;
+  --status-crashed-ink: #b02722;
+
+  --rail-canvas: #f4f6f9;
+  --rail-card: #ffffff;
+  --rail-row-hover: #eef1f6;
+  --rail-divider: #e7eaef;
+  /* ~3.4:1 on white — clears WCAG 1.4.11's 3:1 for controls, so the close
+     glyph is legible at rest and never needs a hover to be discoverable */
+  --rail-close: #7d8695;
+  --rail-close-hover: #b02722;
+
+  --auto-ink: #5a6a8f;
 }
 
 /* ---- Layer 2: semantic, theme-independent --------------------------------- */
@@ -100,6 +150,9 @@
   --usage-track: var(--chip);
   --statusbar-bg: var(--bar);
   --titlebar-bg: var(--bar);
+  /* an auto-group's own surface, derived so it tracks both themes for free */
+  --auto-surface: color-mix(in srgb, var(--auto-ink) 7%, var(--rail-card));
+  --auto-head: color-mix(in srgb, var(--auto-ink) 16%, var(--rail-card));
 }
 
 /* base document styling */
@@ -174,4 +227,84 @@ body {
 @keyframes sb-pulse {
   0%, 100% { opacity: 0.35; }
   50% { opacity: 1; }
+}
+
+/* ---- Sessions rail (design_handoff_sessions_rail) -------------------------
+ * Hover and the working ring are the only things the rail can't express as
+ * inline style. The ring is the rail's ONLY animation — the blinking status
+ * dot was an explicit rejection, so nothing else here moves. */
+@keyframes sb-spin {
+  to { transform: rotate(360deg); }
+}
+.rail-row {
+  transition: background 0.11s;
+  cursor: pointer;
+}
+.rail-row:hover {
+  background: var(--rail-row-hover);
+}
+/* a selected or attention-tinted row keeps its own tint on hover */
+.rail-row[data-tinted='true']:hover {
+  background: inherit;
+}
+.rail-head {
+  cursor: pointer;
+  user-select: none;
+}
+/* 18x18 hit target grown with the BOX, never by enlarging the glyph */
+.rail-x {
+  color: var(--rail-close);
+  transition: color 0.1s, background 0.1s;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 18px;
+  block-size: 18px;
+  border-radius: 4px;
+  line-height: 1;
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-family: var(--font-ui);
+}
+.rail-x:hover {
+  color: var(--rail-close-hover);
+  background: color-mix(in srgb, var(--rail-close-hover) 10%, transparent);
+}
+.rail-add-group:hover {
+  background: var(--rail-canvas);
+}
+/* the drag-to-resize edge — invisible until you reach for it */
+.rail-resize {
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.1s;
+}
+.rail-resize:hover,
+.rail-resize[data-dragging='true'] {
+  background: var(--link);
+}
+.rail-scroll::-webkit-scrollbar {
+  inline-size: 8px;
+}
+.rail-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+.rail-menu-item:hover {
+  background: var(--rail-row-hover);
+}
+/* A group's color is DATA (user-picked from the stored palette). The design
+ * darkens group colors "so the name is legible as text": raw, those mid-tones
+ * are 2.2-3.1:1 on the white card, under AA for 11.5px. Measuring proved the
+ * dark theme needs the mirror of it — #4a90d9 on the Nordic card is only
+ * 3.9:1 — so each theme blends the color toward its own extreme. The vivid
+ * original still drives the 7% header tint and the 12% chip backplate, where
+ * a hue is all that is wanted. --g is set inline by the group header. */
+.rail-group-ink {
+  color: color-mix(in srgb, var(--g) 78%, #ffffff);
+}
+:root[data-theme='daylight'] .rail-group-ink {
+  color: color-mix(in srgb, var(--g) 55%, #0d1424);
 }

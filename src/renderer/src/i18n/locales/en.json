@@ -17,7 +17,7 @@
     "paletteHint": "Show every command, with its shortcut ({binding})"
   },
   "rail": {
-    "eyebrow": "Sessions",
+    "eyebrow": "Sessions · {count}",
     "empty": "No sessions yet",
     "addGroup": "+ group",
     "addGroupHint": "Create a persistent group",
@@ -31,7 +31,35 @@
     "recolorGroup": "Click to change color",
     "collapse": "Collapse",
     "expand": "Expand",
-    "autoGroupHint": "Auto-grouped (same repo/folder)"
+    "autoGroupHint": "Grouped automatically because these sessions share a folder — drag a session in or out of a real group instead",
+    "autoBadge": "auto",
+    "chevron": "▾",
+    "ungrouped": "Ungrouped",
+    "needSummary": "{count} need you",
+    "calm": "calm",
+    "closeSession": "Close session",
+    "closeSessionIcon": "✕",
+    "footerSessions": "{count, plural, =0 {no sessions} one {# session} other {# sessions}}",
+    "footerNeed": "{count} need you",
+    "resize": "Drag to resize the rail",
+    "menuDiff": "Open changes",
+    "menuRename": "Rename…",
+    "menuClose": "Close session"
+  },
+  "railStatus": {
+    "starting": "starting…",
+    "working": "working",
+    "idle": "idle",
+    "suspended": "suspended",
+    "askInput": "Asked you a question",
+    "askPermission": "Wants permission to run",
+    "askDone": "Finished — review changes",
+    "askCrashed": "Crashed — needs restart",
+    "glyphInput": "?",
+    "glyphPermission": "!",
+    "glyphDone": "✓",
+    "glyphCrashed": "✕",
+    "glyphIdle": "–"
   },
   "grid": {
     "addCard": "+ session",
@@ -112,7 +140,6 @@
   },
   "diff": {
     "tabTitle": "{title} · diff",
-    "open": "diff",
     "notRepo": "Not a git repository",
     "clean": "Working tree clean",
     "badge": {

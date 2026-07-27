@@ -6,7 +6,10 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 expanded & filed 2026-07-24 → issues #70–#80**; E11/E13/E14 still
 outlines)
-**In progress:** nothing — three PRs merged 2026-07-26: **#94** (Deny means
+**In progress:** **sessions-rail redesign** on `feature/sessions-rail-redesign`
+(Dan's ad-hoc item, jumped ahead of #73 — implements
+`design_handoff_sessions_rail/`). Built, gated green, Dan signed off after
+three eyeball rounds; PR open. Before it, three PRs merged 2026-07-26: **#94** (Deny means
 deny), **#95** (#92 interactive-question signal), **#93** (#72 P2-E9-03
 attention queue + Ctrl+Space, plus the scroll-position fix, Events dismiss
 button, session-group frames, the workflow hand-off change, and
@@ -20,7 +23,7 @@ assistant answers). [user] retests still pending on merged main (rebuild
 first): test 4 (out-of-cwd read) WITHOUT allow-all + autonomy=ask · grid-drag
 between groups · switch-to-session scroll · allow-all sessions now silent.
 Also pending: ClaudeMon architecture read (OQ #8) before Phase 3 planning.
-**Branch:** main
+**Branch:** feature/sessions-rail-redesign
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
 `npm test` (unit) · `npm run check:*` (local real-claude proofs) · `npm run e2e`
@@ -58,6 +61,125 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-26 — **Sessions rail REDESIGNED** from `design_handoff_sessions_rail/`
+  (Dan's ad-hoc item, ahead of #73). Group *cards* on a tinted canvas: folder
+  icon + name + count chip + a per-group **"N need you" / "calm"** summary, and
+  a footer totalling the workspace. Rows lose the `diff ●` pair and the 7px
+  dot; the colored left edge bar is now the only identity mark (**no per-session
+  icon** — an explicit rejection in the design, don't reintroduce one), with a
+  ✕ pinned top-right and the status indicator bottom-right. **A session that
+  needs you states its case in words** — status tint, 4px bar, name at 700, and
+  the sub-label replaced by *Asked you a question* / *Wants permission to run* /
+  *Finished — review changes* / *Crashed — needs restart*. The working ring is
+  the only animation left.
+  **Two decisions Dan made up front:** the dropped diff link moved to a
+  **right-click menu** (Open changes / Rename / Close session), and the rail is
+  **drag-resizable** with the width persisted (286px default, clamped 200–520).
+  **The contrast work was the substance, and it needed measuring, not
+  eyeballing.** Status text got a per-theme `{text, indicator}` split — new
+  `--status-*-ink` tokens, darkened for daylight (`#1c62c9`, `#8a5a06`, …)
+  while the bright `--status-*` hues keep driving dots, rings and glyph
+  backplates, exactly as the handoff prescribes. Then the *group* colors:
+  `GROUP_PALETTE` is tuned for a dark panel, so as 11.5px text on the white
+  card its mid-tones sit at **2.2–3.1:1**, under AA — which is why the design
+  shipped darkened group colors. Rather than mutate saved user data,
+  `.rail-group-ink` blends the color per theme (55% toward ink in daylight).
+  **Measuring then caught the mirror bug the design didn't cover:** `#4a90d9`
+  on the Nordic card is only **3.9:1**, so Nordic blends 78% toward white. All
+  8 palette entries now clear AA in both themes (daylight 5.9–8.1, Nordic
+  4.8–6.6), pinned by an e2e that computes the ratio.
+  **Two false readings worth recording.** (1) My first contrast probe scored
+  1.00 — the walk up for a background accepted the header band's 7% tint, whose
+  rgba channels are the *un-composited* group color, so the text was measured
+  against itself; it must skip anything with alpha < 1 and land on the opaque
+  card. (2) The fixed walk then scored Nordic at 1.60: Chromium returns
+  anything that went through `color-mix()` as **`color(srgb r g b)` in 0–1
+  floats**, not `rgb()` in 0–255, and dividing those by 255 scores every mixed
+  color as black. Daylight had been *passing spuriously* on the same bug. A
+  contrast assertion that can't tell you which colors it read is worth very
+  little.
+  Structure: rail extracted out of `chrome.tsx` into `components/SessionsRail.tsx`
+  (chrome is titlebar + statusbar now), presentation rules isolated in a pure
+  `lib/rail-view.ts` so the row treatment, the group summary and the footer
+  count can't disagree about what "needs you" means (`done` is IN that set —
+  §5.8's completed-unreviewed). `starting`→working+spinner, `suspended`→idle,
+  unknown status **fails open to idle** — our blind spot must never invent an
+  alarm. `SessionGrid` gained `onActiveCardChanged` to feed the selected-row
+  tint. Auto-groups (E12-05) and Ungrouped render as the same card with the
+  tools removed and a dashed folder; a workspace with no groups at all skips
+  the Ungrouped header rather than adding pure chrome.
+  Also: hook-driving helpers (`hookPoster`, `findTokens`, `poll`) lifted from
+  `attention.spec.ts` into `e2e/fixtures/app.ts` instead of copied; `boot.spec`
+  scoped its "no sessions" assertion now that the rail has its own footer
+  count; dead `diff.open` i18n key removed. Manual: `07-workspace.md` rewritten
+  (status table, the attention treatment, resize, right-click menu).
+  Gate: lint + typecheck + **318 unit + 78 e2e** green (11 new rail-view unit,
+  6 new rail e2e).
+  **Round 2 (Dan's first eyeball), 3 findings, 2 actioned:**
+  (1) *"I need a better border around the main session windows... and around
+  the groups... whatever we do here is what we're going to want to do for the
+  session windows too."* So **`--group-frame` is now genuinely shared**: the
+  rail's group cards dropped `--border` (a hairline tuned for INSIDE a card)
+  and took the same frame the grid's `.dv-groupview` uses, plus a new
+  **`--group-lift`** shadow on both. Both tokens strengthened — daylight
+  `#b9c2ce`→`#8593a6`, nordic `#525d73`→`#6b7793`; the old daylight value was
+  only 1.30:1 against the white card, which is why it read as nothing.
+  `--rail-card-shadow` deleted in favour of the shared token, so there is one
+  container treatment and no way to drift.
+  (2) *"Dragging an item onto another group doesn't really work very well — I
+  have to drag it to the little folder icon."* True: the drop handler lived on
+  the header alone. **The whole card is the drop target now** (the header keeps
+  no handler — a drop there bubbles up), with a ring in the group's color while
+  you hover so the destination is visible before you let go, `dragleave` guarded
+  by `contains(relatedTarget)` so moving between the card's own children doesn't
+  flicker it off, a window `dragend`/`drop` listener so an abandoned drag can't
+  leave a card lit, and a same-group drop short-circuited instead of round-
+  tripping through IPC and a grid reshuffle.
+  (3) Ungroup — *"works fine, I like that"* — untouched.
+  **Test gap this exposed:** `tabs.spec`'s frame assertion measures the
+  *focused* group, which is drawn in `--link`, so the neutral frame Dan was
+  complaining about had never been covered. New e2e measures the **token**
+  against all three surfaces it borders (grid card, rail card, rail canvas) in
+  both themes — one assertion covering both consumers, including the unfocused
+  case. Plus an e2e that drops a session on another session's ROW, deep inside
+  the card body, to pin the new drop area.
+  Gate after round 2: lint + typecheck + **318 unit + 80 e2e** green.
+  **Round 3 (Dan's second eyeball) — the drop fix had a real hole in it.**
+  *"It works on a couple of the tabs, and then a couple it doesn't seem to want
+  to work on at all... Oh, I see it's an auto-generated group."* Root cause:
+  round 2's card `onDragOver` called `preventDefault()` for **every** card kind,
+  so an auto-group **advertised itself as a valid drop target** — and the drop
+  then resolved to `g?.id ?? null`, i.e. ungrouped, which for an
+  already-ungrouped session is a no-op. It looked droppable, wasn't, and said
+  nothing. **Auto-groups now refuse:** dragover returns WITHOUT preventDefault
+  (the browser only fires `drop` where dragover was prevented, so this is what
+  produces a real no-drop cursor) and — just as important — calls
+  `stopPropagation()`, because the `nav` behind them accepts drags as the
+  ungroup target, so letting it bubble would have made a release over an
+  auto-group *silently ungroup* the session instead of refusing it. Verified
+  the new e2e actually catches the old behavior by reverting the one line and
+  watching it fail.
+  **Then the deeper point Dan made: they didn't LOOK different enough** ("a
+  dotted folder isn't enough... it took me a while to figure that out"). The
+  card grew an explicit `kind: 'group' | 'auto' | 'ungrouped'` replacing the
+  boolean `computed`, and his call on the icons — which is the better semantic:
+  a group **you** made is a *label you applied*, so it gets a **colored dot**
+  (also restoring the pre-redesign recolor click target); an **auto** group
+  *literally is a folder on disk*, so it takes the **solid folder** at full
+  strength, plus its own surface (new `--auto-ink` / `--auto-surface` /
+  `--auto-head`, derived with `color-mix` so both themes come free), an **AUTO**
+  badge, and no ⊕/✕ since there is nothing to configure; **ungrouped** gets no
+  icon at all, being an absence rather than a thing. `--auto-ink` is
+  deliberately outside both the group palette and the status ramp — an
+  auto-group is a *category*, not an individual.
+  Also: `groups.spec` now selects auto-groups by `[data-group-kind="auto"]`
+  rather than a prose tooltip (the tooltip text changed and should be free to).
+  Gate after round 3: lint + typecheck + **318 unit + 82 e2e** green.
+  **Dan signed off after round 3** ("looks good") — PR opened.
+  Note for whoever picks this up: the architecture-review/E15 work was in the
+  same working tree and was deliberately NOT bundled here (Dan's call) — it
+  stays uncommitted for its own branch and PR.
 
 - 2026-07-26 — **DENY didn't mean deny — the agent routed around it.** Dan
   denied a directory listing and Claude got the listing anyway: it announced
