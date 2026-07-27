@@ -6,20 +6,19 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.** `main` is at `9f8e3a9` —
-**PR #113 (P2-E15-09, #106) MERGED 2026-07-27**, the first E15 item done.
-**Next up — DECIDE FIRST: #112 blocks every PR.** `e2e/feed.spec.ts:172`
-(tail-pin) fails on the Linux e2e job, and `main` requires green CI, so every
-future PR lands red until it's fixed (#113 was merged over it deliberately —
-the failure reproduces on `main` with the branch stashed). CI evidence:
-`Expected < 2, Received 1301`, **identical on the retry** — the feed sits
-exactly where the test pushed it (`scrollTop = 200`), so `FeedView`'s
-re-pin never fired. Deterministic on that runner, not a race. Two candidates
-recorded on the issue: `pinned.current` already false when the programmatic
-scroll landed, or the 500ms gesture window swallowing it. *Discarded
-hypothesis (don't redo it): the sessions rail stealing the test's
-"first scrollable div" selector — probed at 737px and 538px, `railOverflow: 0`,
-feed was the only candidate.*
+**In progress:** **#112 — the tail-pin race — FIXED, PR open** on
+`fix/112-pin-race-swallowed`. It was a real bug, not a flaky test: `pin()` sets
+`autoPin` until the next animation frame, and `onScroll` opened with
+`if (autoPin.current) return` — so a LAYOUT scroll landing in that same frame
+was swallowed with it, stranding the view mid-history with output below the
+fold and no further event to correct it. Exactly the symptom the test was
+written for (Dan, 2026-07-26); the guard had a one-frame hole. Fix: our pin
+always lands ON the tail, so a scroll arriving in that window nowhere near the
+tail is somebody else's — correct it, gated on no recent gesture so a user
+scrolling up mid-pin is never yanked back. Evidence (rebuilding between each):
+**without the fix 4 failed / 4 passed of 8; with it 8/8**. Gate: lint +
+typecheck + **326 unit + 83 e2e** green. `main` was at `34a5fe8`; PR #113
+(P2-E15-09) merged before it.
 *After that*, the rest of E15: **#98** (provider adapter capabilities) and
 **#99** (process-agnostic registry) are independent and either can go first;
 #99 then unblocks #100/#101, and #104 → #105 is the chain that unblocks
@@ -92,6 +91,37 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-27 — **#112 root-caused: a REAL bug in the tail-pin, not a flaky
+  test.** It had failed CI on #113 (Linux, twice, `Received 1301`) and was
+  merged over. Reproduced locally **on Windows** — ~1 in 3 isolated runs,
+  `Received 1318` — which killed the "Linux-only" framing before any fix was
+  written. Instrumented the scroll handler and ran until it stranded:
+  healthy runs log `autoPin=false pinned=true away=1318` (correction fires)
+  then `autoPin=true away=0` (our own pin, correctly ignored); the stranded run
+  logs **exactly one event, `autoPin=true pinned=true away=1318`** — dropped by
+  the early return. `pin()` holds `autoPin` until the next animation frame, so
+  a LAYOUT scroll landing in that same frame was swallowed as if it were ours,
+  leaving the view mid-history with output below the fold and nothing left to
+  correct it. Fix: our pin always lands ON the tail, so a scroll arriving in
+  that window nowhere near the tail belongs to someone else — correct it, gated
+  on no recent gesture so a user scrolling up mid-pin is never yanked back.
+  Proof, **with a rebuild between each** (the #113 lesson — `npm run e2e`
+  builds, bare `npx playwright test` does not): without the fix **4 failed /
+  4 passed of 8**; with it **8/8**.
+  **Two dead ends recorded so nobody repeats them:** (1) the rail is also an
+  `overflow-y:auto` div, so I theorised the test's "first scrollable div"
+  selector was measuring it — probed at 737px and 538px, `railOverflow: 0`,
+  feed was the only candidate. Wrong, and I had written the fix before testing
+  the claim. (2) WSL as a Linux repro: **WSLg works** (`DISPLAY=:0`, no xvfb
+  needed) and Electron runs there after a rootless `apt-get download` +
+  `dpkg-deb -x` of `libasound2t64` — but the test PASSES under WSLg (real
+  compositor, 1.2s), and rootless Xvfb won't start because WSLg owns
+  `/tmp/.X11-unix` and `xkbcomp` is absent. Windows reproduced it anyway.
+  **Guard strength, stated plainly:** the existing e2e catches this ~50% of the
+  time — it depends on the foreign scroll landing inside a one-frame window.
+  Enough to have caught it across two OSes in CI, but a deterministic
+  regression test would be better if this area is touched again.
 
 - 2026-07-27 — **P2-E15-09 (#106) MERGED as PR #113** (`9f8e3a9`). Merged over
   a red Linux e2e job — the failure is **#112**, which reproduces on `main`
