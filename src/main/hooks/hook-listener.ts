@@ -51,6 +51,10 @@ export interface HookListenerOptions {
    *  to the CLI's own TUI prompt. Default 300s — human-scale (Dan hit the
    *  old 60s mid-testing); the CLI's own hook budget is ~600s (S-03). */
   holdTimeoutMs?: number;
+  /** Is there a renderer that could actually answer a hold? (P2-E15-09.)
+   *  Absent = assume yes, so a listener driven without a UI (hook-check,
+   *  unit tests) keeps its old behaviour. */
+  hasLiveWindow?: () => boolean;
 }
 
 /** An in-flight permission request parked on a held PreToolUse (E10-03). */
@@ -148,7 +152,24 @@ export class HookListener {
   // verdict is answered right here. Keyed by live id so a respawn prompts
   // again (P0 #2 semantics); cleared on unregister.
   private readonly allowAllSessions = new Set<string>();
+  // sessions already warned about having no window to ask (P2-E15-09) — the
+  // condition repeats per gated call, the warning shouldn't
+  private readonly noWindowWarned = new Set<string>();
   private reqCounter = 0;
+
+  /** Is there a renderer that could answer a hold? A provider that THROWS
+   *  counts as "no" — "I can't tell" must never resolve to "park the CLI".
+   *  Absent provider = assume yes (hook-check, unit tests). */
+  private windowLive(): boolean {
+    try {
+      return this.opts.hasLiveWindow?.() !== false;
+    } catch (err) {
+      this.opts.log.warn('window liveness check threw — treating as no window', {
+        error: String(err),
+      });
+      return false;
+    }
+  }
 
   constructor(private readonly opts: HookListenerOptions) {}
 
@@ -211,6 +232,20 @@ export class HookListener {
         /* listener's problem */
       }
     }
+  }
+
+  /** Fail every parked request open at once (P2-E15-09). The hasLiveWindow
+   *  gate only helps calls that arrive AFTER the window dies; anything already
+   *  held when the user closes the window would otherwise sit out the full
+   *  300s with nothing able to answer it. */
+  releaseHeld(reason: string): void {
+    const ids = [...this.pending.keys()];
+    if (ids.length === 0) return;
+    this.opts.log.warn('releasing held permissions — failing open to the TUI', {
+      reason,
+      count: ids.length,
+    });
+    for (const id of ids) this.release(id);
   }
 
   /** Mark a LIVE session as allow-all: gated calls answer 'allow' at the
@@ -303,6 +338,7 @@ export class HookListener {
       if (sid === sessionId) this.tokens.delete(tok);
     }
     this.allowAllSessions.delete(sessionId); // "this session" ends here
+    this.noWindowWarned.delete(sessionId); // a respawn warns again if still blind
     // a session closed mid-hold must not leave the CLI hanging (fail-open)
     for (const [id, p] of this.pending) if (p.sessionId === sessionId) this.release(id);
   }
@@ -387,6 +423,11 @@ export class HookListener {
       return 'pass';
     }
     if (e.hook_event_name !== 'PreToolUse') return 'pass';
+    // Defensive only. This was the ORIGINAL "nobody to ask" guard and it never
+    // fires in the app — ipc.ts subscribes once at setup and never unsubscribes,
+    // and hook-check subscribes before any session spawns. Nothing but a unit
+    // test reaches it. Window liveness (below) is the check that actually does
+    // the work (P2-E15-09 / AR-P1-7).
     if (this.permListeners.size === 0) return 'pass'; // nobody to ask — fail open
     const tool = typeof e.tool_name === 'string' ? e.tool_name : undefined;
     const input =
@@ -410,6 +451,26 @@ export class HookListener {
       }
       this.opts.log.debug('gated call auto-allowed (allow-all session)', { sessionId, tool });
       return 'answered';
+    }
+    // Nobody to ask — the window is closed, destroyed, or its renderer crashed
+    // while sessions kept running. Holding here would park the CLI for the full
+    // 300s per gated call with no UI able to answer (AR-P1-7). Fail open: no
+    // opinion, so the CLI's own TUI prompt takes over.
+    //
+    // Deliberately checked AFTER the policy (so an ungated call never logs) and
+    // AFTER allow-all (that verdict is answered at the server and never needed a
+    // renderer). A RELOADING renderer is still live — its window is neither
+    // destroyed nor crashed — so the pendingPermissions replay path is untouched.
+    if (!this.windowLive()) {
+      // Loud the first time per session, quiet after: a closed window with a
+      // busy session produces one of these per gated call, and a log that
+      // repeats one line forever is a log nobody reads.
+      const first = !this.noWindowWarned.has(sessionId);
+      this.noWindowWarned.add(sessionId);
+      const where = { sessionId, tool };
+      if (first) this.opts.log.warn('no live window to ask — failing open to the TUI', where);
+      else this.opts.log.debug('no live window to ask — failing open to the TUI', where);
+      return 'pass';
     }
 
     const requestId = `perm-${++this.reqCounter}`;

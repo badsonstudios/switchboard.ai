@@ -292,6 +292,182 @@ describe('PreToolUse hold + decision round-trip (P2-E10-03, §5.16)', () => {
   });
 });
 
+describe('a hold needs somebody to ask: window liveness (P2-E15-09, AR-P1-7)', () => {
+  // The old guard was `permListeners.size === 0`, which can never fire in the
+  // app: ipc.ts subscribes once at setup and never unsubscribes. So a closed
+  // window or a crashed renderer left the CLI parked the full 300s per gated
+  // call. These pin the real signal.
+  let held: HookListener;
+  let heldPort: number;
+  let requests: PermissionRequest[];
+  let heldApplied: Array<{ sessionId: string; ev: SessionEvent }>;
+  let windowLive: boolean;
+  let livenessChecks: number;
+  let livenessThrows: boolean;
+
+  beforeEach(async () => {
+    requests = [];
+    heldApplied = [];
+    windowLive = true;
+    livenessChecks = 0;
+    livenessThrows = false;
+    held = new HookListener({
+      stateDir: fs.mkdtempSync(path.join(os.tmpdir(), 'sb-live-')),
+      log: createLogger(new LogSink({ dir }), 'hooks'),
+      manager: {
+        apply: (sessionId, ev) => heldApplied.push({ sessionId, ev }),
+        setNativeSessionId: () => {},
+      },
+      autonomyFor: () => 'ask',
+      // long on purpose: a fail-open here must be IMMEDIATE, not a timeout in
+      // disguise — both produce '{}', only one of them is the fix
+      holdTimeoutMs: 5_000,
+      hasLiveWindow: () => {
+        livenessChecks++;
+        if (livenessThrows) throw new Error('window torn down mid-check');
+        return windowLive;
+      },
+    });
+    heldPort = await held.start();
+    held.onPermissionRequest((r) => requests.push(r));
+  });
+
+  afterEach(() => held.stop());
+
+  function postHeld(body: string, token: string): Promise<{ status: number; body: string }> {
+    return new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          host: '127.0.0.1',
+          port: heldPort,
+          path: '/hook',
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-switchboard-token': token },
+        },
+        (res) => {
+          let out = '';
+          res.on('data', (d) => (out += d));
+          res.on('end', () => resolve({ status: res.statusCode ?? 0, body: out }));
+        }
+      );
+      req.on('error', reject);
+      req.end(body);
+    });
+  }
+
+  function heldToken(sessionId: string): string {
+    const { tokenPath } = held.registerSession(sessionId);
+    return fs.readFileSync(tokenPath, 'utf8');
+  }
+
+  const edit = JSON.stringify({
+    hook_event_name: 'PreToolUse',
+    tool_name: 'Edit',
+    tool_input: { file_path: 'C:/x.ts', old_string: 'a', new_string: 'b' },
+  });
+
+  it('no live window: a gated call fails open IMMEDIATELY instead of parking the CLI', async () => {
+    windowLive = false;
+    const t = heldToken('s1');
+    const started = Date.now();
+    const res = await postHeld(edit, t);
+    expect(res.body).toBe('{}'); // no opinion — the CLI's own prompt takes over
+    expect(Date.now() - started).toBeLessThan(1_000); // not the 5s timeout
+    expect(requests).toHaveLength(0); // nobody was asked
+    expect(held.pendingRequests()).toHaveLength(0); // nothing parked
+    // and no needs-permission state for a card that cannot be shown
+    expect(heldApplied.some((a) => a.ev.kind === 'permission-held')).toBe(false);
+    // but the event is STILL ingested — failing open must not make the session
+    // go dark. The status path is what later surfaces the CLI's own prompt.
+    expect(heldApplied.length).toBeGreaterThan(0);
+  });
+
+  it('an UNGATED call never consults the window (the gate sits after the policy)', async () => {
+    // ordering matters for the log: checking liveness first would warn on every
+    // PreToolUse a session makes, gated or not
+    windowLive = false;
+    const t = heldToken('s1');
+    const read = JSON.stringify({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Read', // not gated at ask, inside the cwd
+      tool_input: { file_path: 'C:/x.ts' },
+    });
+    expect((await postHeld(read, t)).body).toBe('{}');
+    expect(livenessChecks).toBe(0);
+  });
+
+  it('live window: the same call still holds (the control — else the test above is vacuous)', async () => {
+    const t = heldToken('s1');
+    const pending = postHeld(edit, t);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(requests).toHaveLength(1);
+    expect(heldApplied.some((a) => a.ev.kind === 'permission-held')).toBe(true);
+    held.decide(requests[0].requestId, 'allow');
+    await pending;
+  });
+
+  it('the pendingPermissions replay path still works with a live window (must not regress)', async () => {
+    const t = heldToken('s1');
+    const pending = postHeld(edit, t);
+    await new Promise((r) => setTimeout(r, 100));
+    // this is what a reloading renderer re-reads on mount — a reload leaves the
+    // window neither destroyed nor crashed, so it must still find its hold here
+    const replay = held.pendingRequests();
+    expect(replay).toHaveLength(1);
+    expect(replay[0]).toMatchObject({ tool: 'Edit', sessionId: 's1' });
+    held.decide(replay[0].requestId, 'allow');
+    await pending;
+    expect(held.pendingRequests()).toHaveLength(0);
+  });
+
+  it('allow-all is answered at the server even with no window — it never needed one', async () => {
+    windowLive = false;
+    const t = heldToken('s1');
+    held.setAllowAll('s1');
+    const res = await postHeld(edit, t);
+    // the liveness gate sits AFTER allow-all on purpose: a granted session gets
+    // its verdict, not a shrug
+    expect(JSON.parse(res.body).hookSpecificOutput).toMatchObject({ permissionDecision: 'allow' });
+    expect(requests).toHaveLength(0);
+  });
+
+  it('releaseHeld frees what was ALREADY parked when the window closed', async () => {
+    // the liveness gate only helps calls arriving after the window dies; this is
+    // the request that was already waiting when the user hit ✕
+    const t = heldToken('s1');
+    const pending = postHeld(edit, t);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(held.pendingRequests()).toHaveLength(1);
+
+    // deliberately NOT flipping windowLive: releaseHeld is the teardown path
+    // and must free the request on its own, without consulting the gate
+    held.releaseHeld('main window closed');
+    expect((await pending).body).toBe('{}');
+    expect(held.pendingRequests()).toHaveLength(0);
+    // a decision arriving after the release is refused, not applied late
+    expect(held.decide(requests[0].requestId, 'allow')).toBe(false);
+  });
+
+  it('a liveness check that THROWS counts as no window — never park on "I can\'t tell"', async () => {
+    // the real provider touches Electron natives on an object that can be torn
+    // down asynchronously. If it throws mid-request and we don't catch it, the
+    // response is never ended and the CLI parks on ITS timeout instead — the
+    // exact failure this item exists to remove.
+    livenessThrows = true;
+    const t = heldToken('s1');
+    const started = Date.now();
+    const res = await postHeld(edit, t);
+    expect(res.body).toBe('{}');
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(held.pendingRequests()).toHaveLength(0);
+  });
+
+  it('releaseHeld with nothing parked is a no-op', () => {
+    expect(() => held.releaseHeld('main window closed')).not.toThrow();
+    expect(held.pendingRequests()).toHaveLength(0);
+  });
+});
+
 describe('shouldHoldPermission policy', () => {
   it('NEVER holds an interactive question tool, at any autonomy (#92)', () => {
     // The tool is in the PreToolUse matcher purely so we learn the session is

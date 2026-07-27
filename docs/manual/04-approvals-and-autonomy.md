@@ -54,4 +54,13 @@ mode that *new* sessions start at; each session keeps its own after that.
   app is closing, something broke, you didn't answer in time — the question
   falls through to Claude Code's own prompt in the **Terminal** tab. You may
   have to look there, but you'll never find something approved behind your back.
+- **If switchboard can't reach you, it stops asking.** Two cases. On **macOS**,
+  closing the window leaves your sessions running in the background — with no
+  window to show an approval in, anything already waiting and anything that
+  comes up afterwards goes straight to Claude Code's own prompt in the
+  terminal. Reopen the window and approvals come back to the card. On
+  **Windows and Linux** closing the window quits switchboard, so this doesn't
+  arise. The other case is any platform: if switchboard's display crashes, the
+  sessions underneath it keep running and their approvals fall through the same
+  way, rather than waiting on a screen that isn't there any more.
 - **full-auto** is shown in red as a reminder.

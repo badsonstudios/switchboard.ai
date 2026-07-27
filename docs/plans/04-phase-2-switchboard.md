@@ -172,7 +172,9 @@ Work items:
 
 ---
 
-## E15 — Structural foundations (milestone: Phase 2; runs NEXT, added 2026-07-26)
+## E15 — Structural foundations (milestone: Phase 2; runs NEXT, added 2026-07-26; issues #98–#111 filed 2026-07-27)
+
+> Issue numbers map straight through: P2-E15-01 → #98 … P2-E15-14 → #111.
 
 *Goal: make the seams real before the app gets big enough that they can't be.
 Four things the architecture review found: the provider contract can't describe
@@ -413,7 +415,7 @@ Work items:
   suspended, click focuses, the lamp lingers post-jump, and it stays visible
   in all three layout modes; e2e.
 - **P2-E9-05 · Presentation ladder + reveal contract — M (§5.8).**
-  ***(depends: P2-E15-08 — hard block.* Presentation state currently lives in
+  ***(depends: P2-E15-08 / #105 — hard block.* Presentation state currently lives in
   `SessionCardPanel`'s `useState`; "restores it to EXACTLY its prior dock slot"
   requires state that outlives the panel's unmount. Do not start this before
   E15-08 lands — see AR-P1-5.)* Per-session
@@ -434,7 +436,7 @@ Work items:
   auto-hide honors the E9-05 reveal contract; a per-session override beats the
   global; e2e.
 - **P2-E9-07 · Layout modes grid · focus · queue + maximize toggle — M
-  (§5.8).** ***(depends: P2-E15-08 — hard block.* Modes drive every card at
+  (§5.8).** ***(depends: P2-E15-08 / #105 — hard block.* Modes drive every card at
   once from the palette/queue; panel-local state can't be driven from outside
   the panel — see AR-P1-5.)* Per-workspace mode, persisted in the ui blob, switchable from the
   palette and a binding: `grid` (today) · `focus` (one large + slim strips) ·
