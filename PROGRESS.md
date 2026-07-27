@@ -6,23 +6,15 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#112 — the tail-pin race — FIXED, PR open** on
-`fix/112-pin-race-swallowed`. It was a real bug, not a flaky test: `pin()` sets
-`autoPin` until the next animation frame, and `onScroll` opened with
-`if (autoPin.current) return` — so a LAYOUT scroll landing in that same frame
-was swallowed with it, stranding the view mid-history with output below the
-fold and no further event to correct it. Exactly the symptom the test was
-written for (Dan, 2026-07-26); the guard had a one-frame hole. Fix: our pin
-always lands ON the tail, so a scroll arriving in that window nowhere near the
-tail is somebody else's — correct it, gated on no recent gesture so a user
-scrolling up mid-pin is never yanked back. Evidence (rebuilding between each):
-**without the fix 4 failed / 4 passed of 8; with it 8/8**. Gate: lint +
-typecheck + **326 unit + 83 e2e** green. `main` was at `34a5fe8`; PR #113
-(P2-E15-09) merged before it.
-*After that*, the rest of E15: **#98** (provider adapter capabilities) and
+**In progress:** **nothing mid-flight.** `main` is at `3d5e70f` with
+**PR #114 (#112, the tail-pin race) MERGED 2026-07-27** — the CI blocker is
+gone, so PRs can go green on their own merits again. Before it, **PR #113**
+(P2-E15-09, #106) merged: the first E15 item.
+**Next up:** the rest of E15. **#98** (provider adapter capabilities) and
 **#99** (process-agnostic registry) are independent and either can go first;
 #99 then unblocks #100/#101, and #104 → #105 is the chain that unblocks
-E9-05/E9-07. Remaining standalone fixes: #107, #108, #109, #110, #111. Merged 2026-07-26: **#96** (sessions-rail redesign, three
+E9-05/E9-07. Remaining standalone fixes: #107, #108, #109, #110, #111.
+**Recently merged:** 2026-07-26 — **#96** (sessions-rail redesign, three
 eyeball rounds, Dan signed off) and **#97** (architecture review + the E15
 epic). Before those, same day: **#94** (Deny means deny), **#95** (#92
 interactive-question signal), **#93** (#72 P2-E9-03 attention queue +
@@ -30,21 +22,14 @@ Ctrl+Space, plus the scroll-position fix, Events dismiss button, session-group
 frames, the workflow hand-off change, and `docs/extensibility.md`). Earlier:
 PR #89 (popout geometry #86), PR #88 (tab strip #84 + quit backstop #85), PR
 #83 (E9-02 palette), PR #82 (E9-01).
-**Next up (CHANGED 2026-07-26 by the architecture review):** **E15 —
-Structural foundations** — 14 items, **filed as issues #98–#111 on 2026-07-27**
-(`/pm`; P2-E15-01 → #98 … P2-E15-14 → #111). E15 runs BEFORE the rest of E9.
-Two reasons: **E9-05 (#74) and E9-07 (#76) are hard-blocked on E15-08 (#105)**
-(presentation state lives in `SessionCardPanel`'s `useState`, and "reveal
-restores it to its exact prior slot" needs state that outlives the panel —
-both issues now carry a blocked comment), and every other E15 item is cheap
-now and an audit later.
-**Recommended first pick: #106 (P2-E15-09) — a live defect**, where a
-dead/closed renderer stalls the CLI for the full 300s on every gated call (the
-`permListeners.size === 0` check can never fire because listeners register once
-and are never removed). Within E15 the dependency order is: #98 (adapter) and
-#99 (registry) independent → #100 + #101 depend on #99 → #104 → #105 (unblocks
-E9-05/07) → #102 → #103. The standalone fixes (#106, #107, #108, #109, #110,
-#111) have no dependencies and can be taken any time.
+**Why E15 runs before the rest of E9** (architecture review, 2026-07-26):
+**E9-05 (#74) and E9-07 (#76) are hard-blocked on E15-08 (#105)** —
+presentation state lives in `SessionCardPanel`'s `useState`, and "reveal
+restores it to its exact prior slot" needs state that outlives the panel; both
+issues carry a blocked comment. Every other E15 item is cheap now and an audit
+later. Within E15 the dependency order is: #98 (adapter) and #99 (registry)
+independent → #100 + #101 depend on #99 → #104 → #105 (unblocks E9-05/07) →
+#102 → #103. **Done so far: #106** (P2-E15-09, PR #113).
 *After E15:* **#73 — P2-E9-04 urgency strip + delayed urgency reset**, then
 #74–#80. E9 closes Phase 2 exit criterion #1. Also open, filed 2026-07-26 and
 NOT yet scheduled: **#90** (no accelerator, palette included, reaches a session
