@@ -105,14 +105,14 @@ test.describe('persistent groups (E12)', () => {
     const title = folder.split(/[\\/]/).pop()!;
     await expect(w.getByText(title).first()).toBeVisible();
     // one session: no auto-group section
-    await expect(w.getByTitle('Auto-grouped (same repo/folder)')).toHaveCount(0);
+    await expect(w.locator('[data-group-kind="auto"]')).toHaveCount(0);
 
     // second session in the SAME folder via the stubbed picker
     await a.app.evaluate(({ dialog }, dir) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [dir] });
     }, folder);
     await w.getByRole('button', { name: '+ session' }).click();
-    await expect(w.getByTitle('Auto-grouped (same repo/folder)')).toBeVisible();
+    await expect(w.locator('[data-group-kind="auto"]')).toBeVisible();
 
     // an explicit group claims one member -> the auto-group dissolves (S4)
     await w.getByTitle('Create a persistent group').click();
@@ -121,7 +121,7 @@ test.describe('persistent groups (E12)', () => {
     const dt = await w.evaluateHandle(() => new DataTransfer());
     await row.dispatchEvent('dragstart', { dataTransfer: dt });
     await header.dispatchEvent('drop', { dataTransfer: dt });
-    await expect(w.getByTitle('Auto-grouped (same repo/folder)')).toHaveCount(0);
+    await expect(w.locator('[data-group-kind="auto"]')).toHaveCount(0);
   });
 
   test('delete removes the group', async () => {

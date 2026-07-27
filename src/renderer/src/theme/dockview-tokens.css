@@ -148,8 +148,13 @@
  */
 .dv-groupview {
   box-sizing: border-box;
+  /* --group-frame and --group-lift are shared with the rail's group cards:
+     both are "a container holding sessions", so both get the same edge
+     (Dan 2026-07-26 round 2 — the first pass was still too faint to read as
+     a real boundary). */
   border: 1px solid var(--group-frame);
   border-radius: var(--dv-border-radius);
+  box-shadow: var(--group-lift);
   /* the tab strip's corners are square — let the frame clip them */
   overflow: hidden;
 }

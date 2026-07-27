@@ -8,7 +8,8 @@ import {
   ThemePreference,
 } from './theme/theme';
 import { LanguageChoice, loadLanguage, setLanguage } from './i18n';
-import { TitleBar, SessionsRail, StatusBar, RailSession, RailGroup } from './components/chrome';
+import { TitleBar, StatusBar } from './components/chrome';
+import { SessionsRail, RailSession, RailGroup } from './components/SessionsRail';
 import { SessionGrid, GridController } from './components/SessionGrid';
 import { EventsPanel, EventDto } from './components/EventsPanel';
 import { Usage, addUsage, estimateCostUsd, ZERO_USAGE } from './lib/usage';
@@ -45,6 +46,8 @@ export function App(): React.JSX.Element {
   const [theme, setTheme] = useState<ThemeName>(() => applyPreference(loadPreference()));
   const [lang, setLang] = useState<LanguageChoice>(() => loadLanguage());
   const [cards, setCards] = useState<string[]>([]);
+  // which card the grid is showing — reflected as the rail's selected row
+  const [activeCard, setActiveCard] = useState<string | null>(null);
   const [sessions, setSessions] = useState<RailSession[]>([]);
   const [groups, setGroups] = useState<RailGroup[]>([]);
   const [palette, setPalette] = useState<string[]>([]);
@@ -507,6 +510,8 @@ export function App(): React.JSX.Element {
             onDiff={(s) => {
               if (s.folder) grid.current?.openDiff(s.id, s.folder, s.title);
             }}
+            onClose={(cardId) => grid.current?.closeCard(cardId)}
+            selectedId={activeCard}
             onCreateGroup={(name) => {
               void bridge.groups?.create?.({ name }).then(() => refreshGroups());
             }}
@@ -540,6 +545,7 @@ export function App(): React.JSX.Element {
           theme={theme}
           seedPanels={bridge.seedPanels ?? 0}
           onCardsChanged={setCards}
+          onActiveCardChanged={setActiveCard}
           controller={grid}
         />
         <EventsPanel

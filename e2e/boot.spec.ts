@@ -15,8 +15,14 @@ test.describe('app boots', () => {
     // empty-state messages (distinctive, unambiguous)
     await expect(window.getByText('No sessions yet')).toBeVisible();
     await expect(window.getByText('Nothing needs you right now')).toBeVisible();
-    // status bar shows the zero-session count
-    await expect(window.getByText('no sessions', { exact: true })).toBeVisible();
+    // status bar shows the zero-session count — scoped, because the rail has
+    // its own footer count now and both read "no sessions" when empty
+    await expect(
+      window.getByRole('contentinfo').getByText('no sessions', { exact: true })
+    ).toBeVisible();
+    await expect(
+      window.getByRole('navigation').getByText('no sessions', { exact: true })
+    ).toBeVisible();
   });
 
   test('is served over loopback http (so dockview popout can work)', async () => {

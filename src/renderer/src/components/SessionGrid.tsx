@@ -942,6 +942,8 @@ export function SessionGrid(props: {
   theme: 'nordic' | 'daylight';
   seedPanels: number;
   onCardsChanged: (ids: string[]) => void;
+  /** which card the grid is showing — the rail paints it as the selected row */
+  onActiveCardChanged?: (cardId: string | null) => void;
   controller?: React.MutableRefObject<GridController | null>;
 }): React.JSX.Element {
   const { t } = useTranslation();
@@ -1171,6 +1173,9 @@ export function SessionGrid(props: {
       api.onDidActivePanelChange((e) => {
         const m = e.panel ? /^session-(.+)$/.exec(e.panel.id) : null;
         if (m && !restoringLayout && !tearingDown) uiSet('focusedCardId', m[1]);
+        // the rail's selected tint follows the grid even mid-restore: it is a
+        // read-only reflection, not persisted state
+        props.onActiveCardChanged?.(m ? m[1] : null);
       });
       // E8 diagnostics: surface popout success/failure
       api.onDidOpenPopoutWindowFail?.(() => console.error('[popout] onDidOpenPopoutWindowFail'));

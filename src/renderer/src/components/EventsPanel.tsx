@@ -9,7 +9,7 @@
 // "the feed is the log, the queue is the to-do list" (§5.12).
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { RailSession } from './chrome';
+import { RailSession } from './SessionsRail';
 import { panelOrder, nextInQueue } from '../lib/queue';
 
 export interface EventDto {
