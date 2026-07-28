@@ -6,10 +6,13 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.** `main` is at `3d5e70f` with
-**PR #114 (#112, the tail-pin race) MERGED 2026-07-27** — the CI blocker is
-gone, so PRs can go green on their own merits again. Before it, **PR #113**
-(P2-E15-09, #106) merged: the first E15 item.
+**In progress:** **#99 — P2-E15-02 DONE, PR open** on
+`feature/99-process-agnostic-registry`. Registry class moved to
+`src/shared/extensibility/`, generic over a per-process contracts map; the
+renderer got its own instance, bootstrap and contracts, with `command-set` as
+its first real point; `event-source` deleted. **Consumer count on the seams
+1 → 2, and the ceiling is gone.** Gate: lint + typecheck + **341 unit + 83
+e2e** green. `main` is at `c4491a5` (PR #114 and PR #113 merged before it).
 **Next up:** the rest of E15. **#98** (provider adapter capabilities) and
 **#99** (process-agnostic registry) are independent and either can go first;
 #99 then unblocks #100/#101, and #104 → #105 is the chain that unblocks
@@ -76,6 +79,49 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-28 — **P2-E15-02 (#99): the extensibility seam works in both
+  processes now.** The registry class lived in `src/main/extensibility/` and its
+  contracts map hardcoded main's points, so the renderer had no seam at all —
+  while 8 of §5.23's 9 first-party extensions ARE renderer contributions. The
+  Phase-4 gate ("2–3 dissimilar internal consumers") was therefore unreachable
+  by construction: count 1, unable to grow. Class moved to
+  `src/shared/extensibility/registry.ts` and made generic over a per-process
+  contracts map; main keeps `MainContributions` + its singleton, the renderer
+  gained `RendererContributions`, a `bootstrap.ts` obeying the same
+  one-module-imports-contributors rule, and `command-set` as its first real
+  point. `App.tsx` resolves commands instead of importing `buildCommands` —
+  behaviour-identical, verified: `list()` is registration order, so with one
+  set the flattened array matches the old output and the memo deps are
+  unchanged. **Consumer count 1 → 2.**
+  **`event-source` DELETED** (AR-P2-13): no registrant, no consumer, no
+  reference anywhere in the tree. A tombstone comment records why, so it can
+  return beside the §5.14 status monitor rather than as decoration.
+  **Review found 1 blocker, and it was the load-bearing one.** Both contracts
+  maps were written `interface X extends ContributionMap`, which INHERITS the
+  index signature — so `keyof C` collapses to `string` and point names stop
+  being checked entirely: a typo, or a renderer point registered on main's
+  registry, compiled clean. A straight regression against the old
+  `ContributionPointId` union I thought I was preserving. Fixed by declaring
+  the maps as type aliases; the `@ts-expect-error` guard added for it
+  immediately caught a THIRD instance in the test file's own map.
+  *Lesson: `extends` on a `Record<string, T>` constraint is a silent
+  type-safety hole — the negative test is the only thing that shows it.*
+  Should-fixes, all folded in: the seam was **not fail-open** (a contributor
+  throwing inside App's render blanks the window — now skipped and logged, in a
+  pure `buildContributedCommands` with its own tests); **cross-set collisions
+  were silent** (the registry dedupes contribution ids, not the commands inside
+  them — first registration wins, collisions reported, and a shadowed command
+  still ships because §5.8 says hiding chrome never removes capability); the
+  registry moved to **module scope** (`useMemo` is a hint React may discard, and
+  E15-03 resolves contributions deep inside SessionGrid/FeedView); the
+  no-main-imports guard became a real **ESLint rule** scoped to `src/shared`
+  (proven to fire) rather than a regex over one file; docs counts corrected.
+  Gate: lint + typecheck + **341 unit (+15) + 83 e2e** green.
+  **Not done, deliberately:** main's `registerBuiltinContributions()` still
+  mutates its module singleton instead of taking a registry argument the way
+  the renderer's does. The renderer's shape is the better one; aligning main is
+  churn #101 will touch anyway.
 
 - 2026-07-27 — **#112 root-caused: a REAL bug in the tail-pin, not a flaky
   test.** It had failed CI on #113 (Linux, twice, `Received 1301`) and was

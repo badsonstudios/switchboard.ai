@@ -4,8 +4,8 @@
 // sessionId (queryable per the E1-05 logging contract) and observable via
 // subscription.
 import { randomUUID } from 'crypto';
-import { ContributionRegistry } from '../extensibility/registry';
-import { SpawnRecipe } from '../extensibility/contributions';
+import { ContributionRegistry } from '../../shared/extensibility/registry';
+import { MainContributions, SpawnRecipe } from '../extensibility/contributions';
 import { Logger } from '../log/logger';
 import { SessionEvent, SessionStatus, transition } from './state-machine';
 
@@ -79,7 +79,7 @@ export class SessionManager {
   private readonly history: StatusChange[] = [];
 
   constructor(
-    private readonly registry: ContributionRegistry,
+    private readonly registry: ContributionRegistry<MainContributions>,
     private readonly ptys: PtyLike,
     private readonly log: Logger,
     private readonly stateDir: string

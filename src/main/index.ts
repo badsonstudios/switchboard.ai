@@ -5,7 +5,7 @@ import { WorkspaceStore, displayFingerprint } from './workspace/store';
 import os from 'os';
 import { LogSink, createLogger } from './log/logger';
 import { registerBuiltinContributions } from './bootstrap';
-import { registry } from './extensibility/registry';
+import { registry } from './extensibility';
 import { PtyService } from './pty/pty-service';
 import { SessionManager } from './sessions/session-manager';
 import { HookListener } from './hooks/hook-listener';

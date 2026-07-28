@@ -43,6 +43,22 @@ export default tseslint.config(
     rules: { 'no-restricted-syntax': ['error', ...EFFECT_BODY_RULES] },
   },
   {
+    // §5.23: src/shared is imported by BOTH processes, so it must not reach
+    // into either. An import from main/ or renderer/ would bundle that
+    // process's code into the other and quietly re-make the contribution
+    // registry main-only — the exact defect P2-E15-02 fixed (AR-P0-2).
+    files: ['src/shared/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': ['error', ...EFFECT_BODY_RULES],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: ['**/main/**', '**/renderer/**', '../main*', '../renderer*'],
+        },
+      ],
+    },
+  },
+  {
     // §5.20: color values live ONLY in theme/tokens.css. Renderer files match
     // the block above too, and flat config REPLACES a rule's options rather
     // than merging them — so this last-matching object must repeat the effect

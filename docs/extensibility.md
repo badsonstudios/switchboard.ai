@@ -29,28 +29,52 @@ If a consumer can `import { claudeAdapter }`, the seam is decorative.
 
 | File | Role |
 |---|---|
-| [contributions.ts](../src/main/extensibility/contributions.ts) | The contracts — `CapabilityManifest`, the `ContributionPointId` union, one interface per point, and the `ContributionContracts` map that ties them together |
-| [registry.ts](../src/main/extensibility/registry.ts) | `ContributionRegistry` (`register` / `resolve` / `list` / `manifests`) plus the app-wide `registry` singleton |
-| [bootstrap.ts](../src/main/bootstrap.ts) | The **only** module allowed to import contributors directly; populates the registry |
-| [registry.test.ts](../src/main/extensibility/registry.test.ts) | Unit tests, including the P1-E1-06 done-when: the Claude adapter is resolvable via the registry |
+| [shared/extensibility/registry.ts](../src/shared/extensibility/registry.ts) | `ContributionRegistry` (`register` / `resolve` / `list` / `manifests`), generic over a per-process contracts map. Imports nothing from `main/` or `renderer/` |
+| [main/extensibility/contributions.ts](../src/main/extensibility/contributions.ts) | Main's contracts — `ProviderAdapter` and the `MainContributions` map |
+| [main/extensibility/index.ts](../src/main/extensibility/index.ts) | Main's `registry` instance (the app-wide singleton) |
+| [main/bootstrap.ts](../src/main/bootstrap.ts) | The **only** main module allowed to import contributors directly; populates main's registry |
+| [renderer/src/extensibility/contributions.ts](../src/renderer/src/extensibility/contributions.ts) | The renderer's contracts — `CommandSetContribution` and the `RendererContributions` map |
+| [renderer/src/bootstrap.ts](../src/renderer/src/bootstrap.ts) | The **only** renderer module allowed to import contributors directly; takes the registry as an argument so tests build fresh ones |
+| [shared/…/registry.test.ts](../src/shared/extensibility/registry.test.ts) | Mechanics, against toy contracts — plus the guard that the class stays free of `main/` and `renderer/` imports |
+| [main/…/contributions.test.ts](../src/main/extensibility/contributions.test.ts) | The P1-E1-06 done-when: the Claude adapter is resolvable via the registry |
+| [renderer/src/bootstrap.test.ts](../src/renderer/src/bootstrap.test.ts) | The renderer half: the seed command set arrives through the registry, not an import |
 
 ### Contribution points and their registrants
+
+The registry CLASS lives in
+[`src/shared/extensibility/registry.ts`](../src/shared/extensibility/registry.ts)
+and imports nothing from `main/` or `renderer/` — a unit test enforces that,
+because it is the property both processes depend on. Each process owns its own
+instance and its own contracts map, so a point is typed for the process that can
+actually serve it.
+
+**Main** — [`MainContributions`](../src/main/extensibility/contributions.ts):
 
 | Point | Contract | Registered today |
 |---|---|---|
 | `provider-adapter` | `ProviderAdapter` | [`claudeAdapter`](../src/main/providers/claude.ts) — real; [`fakeAdapter`](../src/main/providers/fake.ts) — test double, mutually exclusive (see below) |
-| `event-source` | `EventSource` | **nothing.** The contract is declared and unconsumed |
 
-That is the whole roster: one genuine contributor. The `event-source` point is
-a shape we committed to before we needed it — treat it as unproven. The §5.23
-roster lists nine first-party extensions; items 2–9 (usage pane, notification
-channels, manager panes, feed block renderers, themes, …) are currently plain
-in-process code that does **not** go through the registry.
+**Renderer** — [`RendererContributions`](../src/renderer/src/extensibility/contributions.ts):
+
+| Point | Contract | Registered today |
+|---|---|---|
+| `command-set` | `CommandSetContribution` | `core-commands` — the E9-01 seed set, resolved by the palette and the keyboard dispatcher |
+
+`event-source` used to sit in the main table with **nothing** registered against
+it. It was deleted in P2-E15-02: no registrant, no consumer, no reference to
+`EventSource` anywhere in the tree. It is quoted below as the cautionary example
+it became, and re-adding it beside a real registrant (the §5.14 status monitor)
+is a smaller job than keeping a contract nothing has had to satisfy.
+
+The §5.23 roster lists nine first-party extensions. Two points now carry real
+registrants across two processes; items 3–9 (usage pane, notification channels,
+manager panes, feed block renderers, themes, …) are still plain in-process code
+that does **not** go through the registry — P2-E15-03 lands the next three.
 
 ### Registry consumers
 
-Only two production call sites resolve through the registry, and both matter
-if you change the contracts:
+Three production call sites resolve through the registry, and all of them
+matter if you change the contracts:
 
 - [session-manager.ts:102](../src/main/sessions/session-manager.ts#L102) —
   resolves the adapter for a session's `providerId` to build its spawn recipe.
@@ -115,17 +139,20 @@ implementation with a two-line change in one file and no consumer edits.
 
 ## Adding a new contribution point
 
-1. Define the contract interface in `contributions.ts`.
-2. Add the id to the `ContributionPointId` union.
-3. Add the `point → contract` entry to `ContributionContracts`. The registry's
-   generics key off this map, so `resolve('your-point', id)` is typed correctly
-   with no cast at the call site.
-4. Register at least one real contributor. **A point with no registrant is a
-   guess**, and `event-source` is the cautionary example already in the tree.
+1. Decide which PROCESS serves the point, and define the contract interface in
+   that process's contributions module — `src/main/extensibility/contributions.ts`
+   or `src/renderer/src/extensibility/contributions.ts`.
+2. Add the `point → contract` entry to that process's map (`MainContributions`
+   or `RendererContributions`). The registry's generics key off the map, so
+   `resolve('your-point', id)` is typed correctly with no cast at the call site.
+3. Register at least one real contributor, in that process's `bootstrap.ts` —
+   the only module allowed to import contributors directly.
+4. **A point with no registrant is a guess.** `event-source` was exactly that
+   and was deleted rather than kept as decoration.
 
 ## Standalone entry points
 
-`registry` is a singleton for the app, but `ContributionRegistry` is a plain
+Main's `registry` is a singleton for the app, but `ContributionRegistry` is a plain
 class and standalone tooling constructs its own — see
 [hook-check.ts:33](../src/main/hooks/hook-check.ts#L33), a CLI check that builds
 a private registry, registers the Claude adapter, and drives a `SessionManager`
@@ -139,23 +166,29 @@ This section is the honest scoreboard. Full findings:
 `docs/architecture-review-2026-07-26.md`; the fix is **E15** in
 `docs/plans/04-phase-2-switchboard.md`, which runs next.
 
-**Consumer count on the seams: 1.** That is the number the Phase-4 gate reads,
-and until E15 lands it *cannot grow* — which is the actual finding, not the
-count itself:
+**Consumer count on the seams: 2** (`provider-adapter` in main,
+`command-set` in the renderer), up from 1 when the review was written. That is
+the number the Phase-4 gate reads, and the finding was never the count itself
+but that it *could not grow*: the seam was main-only, so a renderer
+contribution had nowhere to land. **P2-E15-02 removed that ceiling**; E15-03
+takes the count to 4+ by landing three dissimilar renderer points.
 
 - **The seam covers the main process only, and the roster is mostly renderer.**
   Of §5.23's nine first-party extensions, eight (usage pane, notification
   channels, manager panes, feed block renderers, theme presets, status-bar
-  items, dispatch templates) are renderer contributions. There is no renderer
-  registry, so seven of them are plain in-process code with nowhere to land.
-  E15-02 makes `ContributionRegistry` process-agnostic; E15-03 adds `panel`,
-  `feed-block-renderer`, and `status-bar-item` and dogfoods them with the
-  hardcoded switches that already exist in `SessionGrid.tsx` and `FeedView.tsx`.
+  items, dispatch templates) are renderer contributions. **Was:** no renderer
+  registry at all, so seven of them were plain in-process code with nowhere to
+  land. **E15-02 (done)** made `ContributionRegistry` process-agnostic and gave the
+  renderer its own instance, bootstrap and contracts map, with `command-set` as
+  the first real renderer point. E15-03 adds `panel`, `feed-block-renderer`, and
+  `status-bar-item` and dogfoods them with the hardcoded switches that already
+  exist in `SessionGrid.tsx` and `FeedView.tsx`.
 - **A second registry already exists without being called one.**
   `renderer/lib/commands.ts` + `command-set.ts` is
   `{id, title, category, enabled(ctx), run(ctx)}` — exactly a contribution
-  point. E15-02 registers it through the real registry so we don't ship two
-  extension models.
+  point. **E15-02 (done)** registers it through the real registry, so there is
+  one extension model rather than two: `App.tsx` resolves `command-set`
+  contributions instead of importing `buildCommands`.
 - **The provider contract can't describe a non-Claude CLI.** §5.3 specifies
   `capabilities: { transcripts, hooks, resume, mcp }`; the shipped interface is
   `buildSpawn()` + optional `slashCommands()`, and `sessions/ipc.ts` assumes

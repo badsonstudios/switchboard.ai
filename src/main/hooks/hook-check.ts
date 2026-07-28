@@ -10,7 +10,8 @@ import os from 'os';
 import path from 'path';
 import { HookListener } from './hook-listener';
 import { SessionManager } from '../sessions/session-manager';
-import { ContributionRegistry } from '../extensibility/registry';
+import { ContributionRegistry } from '../../shared/extensibility/registry';
+import { MainContributions } from '../extensibility/contributions';
 import { claudeAdapter } from '../providers/claude';
 import { PtyService } from '../pty/pty-service';
 import { LogSink, createLogger } from '../log/logger';
@@ -29,7 +30,7 @@ const strip = (s: string) =>
 
 async function main(): Promise<number> {
   const sink = new LogSink({ dir: stateDir });
-  const registry = new ContributionRegistry();
+  const registry = new ContributionRegistry<MainContributions>();
   registry.register('provider-adapter', claudeAdapter);
   const ptys = new PtyService();
   const manager = new SessionManager(registry, ptys, createLogger(sink, 'sessions'), stateDir);
