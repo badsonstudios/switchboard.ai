@@ -5,7 +5,11 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { ThemePreference } from '../theme/theme';
 import { LanguageChoice } from '../i18n';
-import { formatTokens, formatUsd } from '../lib/usage';
+import { rendererRegistry } from '../extensibility/registry-instance';
+import { listStatusBarItems } from '../extensibility/status-bar-items';
+import { ContributionBoundary } from '../extensibility/boundary';
+import { StatusBarContext } from '../extensibility/contributions';
+import { ThemeName } from '../theme/theme';
 
 const barStyle: React.CSSProperties = {
   background: 'var(--titlebar-bg)',
@@ -86,32 +90,26 @@ export function TitleBar(props: {
 
 export function StatusBar(props: {
   count: number;
-  theme: string;
+  theme: ThemeName;
   cliVersion?: string | null;
   totalOutputTokens?: number;
   totalCostUsd?: number;
 }): React.JSX.Element {
-  const { t } = useTranslation();
+  // Contributed items (§5.23): the bar owns the strip and the spacer, the
+  // items own what they say. An item returning null renders nothing, which is
+  // how "no usage yet" stays the item's business rather than the bar's.
+  const ctx: StatusBarContext = props;
+  const render = (align: 'start' | 'end'): React.JSX.Element[] =>
+    listStatusBarItems(rendererRegistry, align).map((i) => (
+      <ContributionBoundary key={i.manifest.id} id={i.manifest.id}>
+        {i.render(ctx)}
+      </ContributionBoundary>
+    ));
   return (
     <footer style={{ ...barStyle, borderBlockEnd: 'none', borderBlockStart: '1px solid var(--border)', fontSize: 11, color: 'var(--muted)' }}>
-      <span>{t('statusbar.sessions', { count: props.count })}</span>
-      {!!props.totalOutputTokens && (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}>
-          {t('statusbar.usage', {
-            tokens: formatTokens(props.totalOutputTokens),
-            cost: formatUsd(props.totalCostUsd ?? 0),
-          })}
-        </span>
-      )}
+      {render('start')}
       <span style={{ flex: 1 }} />
-      {props.cliVersion && (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}>
-          {t('preflight.version', { version: props.cliVersion })}
-        </span>
-      )}
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}>
-        {t('statusbar.theme', { theme: props.theme })}
-      </span>
+      {render('end')}
     </footer>
   );
 }

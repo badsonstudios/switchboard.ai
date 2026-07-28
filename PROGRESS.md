@@ -6,13 +6,13 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#99 — P2-E15-02 DONE, PR open** on
-`feature/99-process-agnostic-registry`. Registry class moved to
-`src/shared/extensibility/`, generic over a per-process contracts map; the
-renderer got its own instance, bootstrap and contracts, with `command-set` as
-its first real point; `event-source` deleted. **Consumer count on the seams
-1 → 2, and the ceiling is gone.** Gate: lint + typecheck + **341 unit + 83
-e2e** green. `main` is at `c4491a5` (PR #114 and PR #113 merged before it).
+**In progress:** **#100 — P2-E15-03 DONE, PR open** on
+`feature/100-renderer-contribution-points`: three dissimilar renderer points
+(`panel`, `feed-block-renderer`, `status-bar-item`), each replacing a hardcoded
+switch. **Consumer count on the seams 2 → 5 — the Phase-4 gate ("2–3
+dissimilar internal consumers") is met for the first time.** Gate: lint +
+typecheck + **362 unit + 83 e2e** green. `main` is at `5c6fd2e` (PR #115
+merged #99 before it).
 **Next up:** the rest of E15. **#98** (provider adapter capabilities) and
 **#99** (process-agnostic registry) are independent and either can go first;
 #99 then unblocks #100/#101, and #104 → #105 is the chain that unblocks
@@ -79,6 +79,43 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-28 — **P2-E15-03 (#100): the renderer seam is real now.** Three
+  contribution points, each replacing a switch that already existed: `panel`
+  (the card's view-tab strip, four hardcoded buttons + three render branches),
+  `feed-block-renderer` (FeedView's seven-branch ternary; the block components
+  MOVED OUT wholesale into `extensibility/feed-blocks.tsx`, byte-identical),
+  and `status-bar-item` (chrome's four hardcoded spans). Deliberately
+  DISSIMILAR — a panel renders a whole view and has a mount lifecycle
+  (`keepMounted`, because unmounting the terminal throws away its xterm view),
+  a block renderer COMPETES to claim an input and is order-sensitive, a status
+  item just puts a thing on a bar. A contract that has only seen one shape of
+  consumer has not been tested, which is exactly what the Phase-4 gate is
+  asking about. **Consumer count 2 → 5; the gate is met for the first time.**
+  One behaviour change, deliberate: **Changes is greyed rather than hidden**
+  on a folderless session. §5.8 — you can always see what exists — and it
+  closes a real trap, since `view.changes` switched to that tab
+  unconditionally.
+  **Review found 6 should-fixes; three were mine and material.** (1) A
+  CIRCULAR IMPORT `bootstrap → panels → FeedView → bootstrap`, working only
+  because nothing read the registry at module scope: one module-level `list()`
+  in that ring and the window fails to open with a stack pointing nowhere. The
+  instance moved to its own module, matching main's split. (2) I widened `view`
+  to `string` without answering what happens when the persisted id names no
+  panel — it rendered a BLANK CARD with no tab lit. Fixed, and fixing it
+  exposed a second hole: the fallback happily selected a *disabled* panel.
+  (3) Fail-open was ASYMMETRIC — I guarded the feed path and left panels and
+  status items bare, in a renderer with no error boundary anywhere, so one
+  throwing contribution white-screened every session's terminal. Now
+  `safely()` for predicates and a `ContributionBoundary` for output.
+  Also: the ordering rule was written four times **including in its own test**
+  (so the done-when was asserting against its own copy and would have stayed
+  green while the strip drifted); the renderer list was sorted per block per
+  frame; and `PanelId` stopped at the command layer, leaving contributed panels
+  unreachable from contributed commands.
+  *Lesson worth keeping: when a test re-implements the rule it is testing, it
+  proves the rule is writable, not that the consumer follows it.*
+  Gate: lint + typecheck + **362 unit (+21) + 83 e2e** green.
 
 - 2026-07-28 — **P2-E15-02 (#99): the extensibility seam works in both
   processes now.** The registry class lived in `src/main/extensibility/` and its

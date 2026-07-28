@@ -16,7 +16,7 @@ import { Usage, addUsage, estimateCostUsd, ZERO_USAGE } from './lib/usage';
 import { loadUiState, uiGet, uiSet } from './lib/ui-state';
 import { boxOnAnyDisplay, RescuedPopout } from './lib/layout';
 import { railOrder } from './lib/groups';
-import { rendererRegistry } from './bootstrap';
+import { rendererRegistry } from './extensibility/registry-instance';
 import { buildContributedCommands } from './extensibility/commands';
 import { bindingFor, dispatch, formatBinding, Platform } from './lib/commands';
 import { attentionQueue, nextInQueue, withVisit } from './lib/queue';

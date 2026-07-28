@@ -34,7 +34,14 @@ If a consumer can `import { claudeAdapter }`, the seam is decorative.
 | [main/extensibility/index.ts](../src/main/extensibility/index.ts) | Main's `registry` instance (the app-wide singleton) |
 | [main/bootstrap.ts](../src/main/bootstrap.ts) | The **only** main module allowed to import contributors directly; populates main's registry |
 | [renderer/src/extensibility/contributions.ts](../src/renderer/src/extensibility/contributions.ts) | The renderer's contracts — `CommandSetContribution` and the `RendererContributions` map |
-| [renderer/src/bootstrap.ts](../src/renderer/src/bootstrap.ts) | The **only** renderer module allowed to import contributors directly; takes the registry as an argument so tests build fresh ones |
+| [renderer/src/bootstrap.ts](../src/renderer/src/bootstrap.ts) | The **only** renderer module allowed to import contributors directly; takes the registry as an argument so tests build fresh ones. Also logs the renderer manifests at startup |
+| [renderer/src/extensibility/panels.tsx](../src/renderer/src/extensibility/panels.tsx) | The four session view tabs |
+| [renderer/src/extensibility/feed-blocks.tsx](../src/renderer/src/extensibility/feed-blocks.tsx) | The seven transcript block renderers |
+| [renderer/src/extensibility/feed-render.ts](../src/renderer/src/extensibility/feed-render.ts) | First-match-in-order resolution for a block, fail-open |
+| [renderer/src/extensibility/registry-instance.ts](../src/renderer/src/extensibility/registry-instance.ts) | The renderer's registry instance, and nothing else — consumers import this, not `bootstrap.ts`, which would close an import cycle |
+| [renderer/src/extensibility/boundary.tsx](../src/renderer/src/extensibility/boundary.tsx) | `ContributionBoundary` + `safely()`: one contribution failing costs that contribution |
+| [renderer/src/extensibility/status-bar-items.tsx](../src/renderer/src/extensibility/status-bar-items.tsx) | The four status bar items |
+| [renderer/src/extensibility/points.test.ts](../src/renderer/src/extensibility/points.test.ts) | The E15-03 done-when, executable: a new panel / block renderer / status item takes effect with no edit to any consumer |
 | [shared/…/registry.test.ts](../src/shared/extensibility/registry.test.ts) | Mechanics, against toy contracts — plus the guard that the class stays free of `main/` and `renderer/` imports |
 | [main/…/contributions.test.ts](../src/main/extensibility/contributions.test.ts) | The P1-E1-06 done-when: the Claude adapter is resolvable via the registry |
 | [renderer/src/bootstrap.test.ts](../src/renderer/src/bootstrap.test.ts) | The renderer half: the seed command set arrives through the registry, not an import |
@@ -59,6 +66,30 @@ actually serve it.
 | Point | Contract | Registered today |
 |---|---|---|
 | `command-set` | `CommandSetContribution` | `core-commands` — the E9-01 seed set, resolved by the palette and the keyboard dispatcher |
+| `panel` | `PanelContribution` | `panel-session`, `panel-changes`, `panel-history` (placeholder), `panel-terminal` — the session card's view-tab strip |
+| `feed-block-renderer` | `FeedBlockRendererContribution` | `feed-block-{todos,bash,edit,tool,thinking,user,markdown}` — one per transcript block shape |
+| `status-bar-item` | `StatusBarItemContribution` | `status-{session-count,usage,cli-version,theme}` |
+
+The three renderer points added by P2-E15-03 are deliberately **dissimilar**:
+`panel` renders a whole view and has a mount lifecycle (`keepMounted`, because
+unmounting the terminal throws away its xterm view), `feed-block-renderer`
+*competes* to claim an input and is order-sensitive, and `status-bar-item` just
+puts a thing on a bar. A contract that has only ever seen one shape of consumer
+has not been tested, and the Phase-4 gate asks for dissimilar consumers for
+exactly that reason.
+
+Two rules those points established, worth knowing before you add a fourth:
+
+- **A contribution never takes the window down.** Predicates (`enabled`,
+  `badge`, `matches`) are called through `safely()` and a throw counts as the
+  conservative answer; rendered output is wrapped in `ContributionBoundary`,
+  which logs and renders nothing. The renderer has no other error boundary, so
+  without this one bad contribution white-screens every session's terminal —
+  the exact "our breakage blocks a session" outcome the constitution forbids.
+- **A panel is greyed, never hidden.** `PanelContribution` has `enabled` and
+  deliberately no "hide me": §5.8 says the user can always see what exists. A
+  tab that vanishes teaches them the app is unpredictable; a greyed one tells
+  them why. It also means a persisted view id always still names a visible tab.
 
 `event-source` used to sit in the main table with **nothing** registered against
 it. It was deleted in P2-E15-02: no registrant, no consumer, no reference to
@@ -166,23 +197,28 @@ This section is the honest scoreboard. Full findings:
 `docs/architecture-review-2026-07-26.md`; the fix is **E15** in
 `docs/plans/04-phase-2-switchboard.md`, which runs next.
 
-**Consumer count on the seams: 2** (`provider-adapter` in main,
-`command-set` in the renderer), up from 1 when the review was written. That is
-the number the Phase-4 gate reads, and the finding was never the count itself
-but that it *could not grow*: the seam was main-only, so a renderer
-contribution had nowhere to land. **P2-E15-02 removed that ceiling**; E15-03
-takes the count to 4+ by landing three dissimilar renderer points.
+**Consumer count on the seams: 5** — `provider-adapter` in main, and
+`command-set`, `panel`, `feed-block-renderer` and `status-bar-item` in the
+renderer. It was **1** when the review was written, and the finding was never
+the count itself but that it *could not grow*: the seam was main-only, so a
+renderer contribution had nowhere to land. P2-E15-02 removed the ceiling and
+**P2-E15-03 (done)** dogfooded three dissimilar points onto surfaces that were
+already hardcoded. The Phase-4 gate ("2–3 dissimilar internal consumers") is
+met for the first time — which is a starting condition for that conversation,
+not a decision to ship a plugin API.
 
 - **The seam covers the main process only, and the roster is mostly renderer.**
   Of §5.23's nine first-party extensions, eight (usage pane, notification
   channels, manager panes, feed block renderers, theme presets, status-bar
   items, dispatch templates) are renderer contributions. **Was:** no renderer
   registry at all, so seven of them were plain in-process code with nowhere to
-  land. **E15-02 (done)** made `ContributionRegistry` process-agnostic and gave the
-  renderer its own instance, bootstrap and contracts map, with `command-set` as
-  the first real renderer point. E15-03 adds `panel`, `feed-block-renderer`, and
-  `status-bar-item` and dogfoods them with the hardcoded switches that already
-  exist in `SessionGrid.tsx` and `FeedView.tsx`.
+  land. **RESOLVED.** E15-02 made `ContributionRegistry` process-agnostic and
+  gave the renderer its own instance, bootstrap and contracts map; **E15-03**
+  added `panel`, `feed-block-renderer` and `status-bar-item`, each replacing a
+  hardcoded switch that already existed in `SessionGrid.tsx`, `FeedView.tsx` or
+  `chrome.tsx`. What remains unregistered is the usage pane, notification
+  channels and dispatch templates — code that does not exist yet rather than
+  code with nowhere to go.
 - **A second registry already exists without being called one.**
   `renderer/lib/commands.ts` + `command-set.ts` is
   `{id, title, category, enabled(ctx), run(ctx)}` — exactly a contribution

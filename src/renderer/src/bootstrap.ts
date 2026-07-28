@@ -7,9 +7,13 @@
 // registry as an argument keeps it callable from a test with a fresh instance.
 import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { RendererContributions } from './extensibility/contributions';
+import { RendererRegistry, rendererRegistry } from './extensibility/registry-instance';
 import { buildCommands } from './lib/command-set';
+import { feedBlockRenderers } from './extensibility/feed-blocks';
+import { statusBarItems } from './extensibility/status-bar-items';
+import { sessionPanels } from './extensibility/panels';
 
-export type RendererRegistry = ContributionRegistry<RendererContributions>;
+export type { RendererRegistry } from './extensibility/registry-instance';
 
 /** A registry with the built-in renderer contributions registered. */
 export function createRendererRegistry(): RendererRegistry {
@@ -30,13 +34,25 @@ export function registerBuiltinContributions(registry: RendererRegistry): void {
     },
     build: buildCommands,
   });
+  for (const r of feedBlockRenderers) registry.register('feed-block-renderer', r);
+  for (const i of statusBarItems) registry.register('status-bar-item', i);
+  for (const p of sessionPanels) registry.register('panel', p);
 }
 
 /**
- * The renderer's registry instance. Module scope, not a `useMemo` inside a
- * component: `useMemo` is a performance hint React may discard, and P2-E15-03
- * resolves `panel` and `feed-block-renderer` contributions deep inside
- * SessionGrid and FeedView, which would then mean prop-drilling or a context
- * retrofit. Module init runs exactly once, so this is StrictMode-safe.
+ * What registered, in the app log. Main does the same for its own manifests
+ * (`index.ts`: "contributions registered"); the renderer's console is piped
+ * into the same log by the `console-message` handler, so this needs no IPC.
  */
-export const rendererRegistry: RendererRegistry = createRendererRegistry();
+export function logManifests(registry: RendererRegistry): void {
+  // one greppable line per contribution rather than a single 15-entry blob
+  const ids = registry.manifests().map((m) => `${m.point}/${m.manifest.id}`);
+  console.info(`renderer contributions registered (${ids.length}): ${ids.join(', ')}`);
+}
+
+/** Populate the app's registry. Called once, at the entry point. */
+export function initRendererContributions(): RendererRegistry {
+  registerBuiltinContributions(rendererRegistry);
+  logManifests(rendererRegistry);
+  return rendererRegistry;
+}
