@@ -6,13 +6,11 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#100 — P2-E15-03 DONE, PR open** on
-`feature/100-renderer-contribution-points`: three dissimilar renderer points
-(`panel`, `feed-block-renderer`, `status-bar-item`), each replacing a hardcoded
-switch. **Consumer count on the seams 2 → 5 — the Phase-4 gate ("2–3
-dissimilar internal consumers") is met for the first time.** Gate: lint +
-typecheck + **362 unit + 83 e2e** green. `main` is at `5c6fd2e` (PR #115
-merged #99 before it).
+**In progress:** **nothing mid-flight.** `main` is at `f53c7d4`; **PR #116
+(#100, three renderer contribution points) merged**, after #115 (#99) and #113
+(#106). **Consumer count on the seams 1 → 5 — the Phase-4 gate ("2–3
+dissimilar internal consumers") is met for the first time**, which was the
+headline finding of the architecture review.
 **Next up:** the rest of E15. **#98** (provider adapter capabilities) and
 **#99** (process-agnostic registry) are independent and either can go first;
 #99 then unblocks #100/#101, and #104 → #105 is the chain that unblocks

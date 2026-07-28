@@ -80,7 +80,25 @@ read PROGRESS.md and know *exactly* where things stand without asking.
 
 ## Environment & Shell
 
-- **OS:** Windows 11, native (WSL exists but is not used).
+- **OS:** Windows 11, native. The app is developed and run natively; WSL
+  (Ubuntu 24.04) exists and is used for **one** thing: reproducing a Linux CI
+  failure locally instead of pushing and waiting ~10 minutes for the runner.
+  Recipe, proven 2026-07-28 (#112):
+  - Clone into the WSL filesystem (`git clone /mnt/c/Projects/Switchboard.ai
+    ~/sb-linux`), **not** `/mnt/c` — `node_modules` there holds win32 binaries
+    for electron and node-pty, and `/mnt/c` I/O is slow. Then `npm ci`.
+  - **WSLg gives a real display** (`DISPLAY=:0`), so `xvfb` is not needed and
+    Playwright runs as-is. Note this means it is NOT a faithful CI repro: CI
+    uses `xvfb-run -a` (screen `1280x1024x8`), and some failures are specific
+    to that. Rootless Xvfb does **not** work here — WSLg owns
+    `/tmp/.X11-unix` and `xkbcomp` is missing.
+  - Electron's system libs can be had **without sudo**: `apt-get download
+    <pkg>` then `dpkg-deb -x <deb> ~/elibs/root`, and export
+    `LD_LIBRARY_PATH=~/elibs/root/usr/lib/x86_64-linux-gnu`. Only
+    `libasound2t64` was missing on this machine (`ldd node_modules/electron/
+    dist/electron | grep "not found"` tells you).
+  - **Check Windows first.** #112 looked Linux-only and reproduced on Windows
+    at ~1 in 3 isolated runs; the WSL detour cost more than it returned.
 - **Shell preference: bash first** (Git Bash) for scripts/commands; PowerShell
   only when bash genuinely can't do the job.
 - Utility scripts ship in both `.sh` and `.ps1`; prefer the `.sh` version.
