@@ -4,12 +4,13 @@ import os from 'os';
 import path from 'path';
 import { SessionManager, PtyLike } from './session-manager';
 import { transition, SessionStatus } from './state-machine';
-import { ContributionRegistry } from '../extensibility/registry';
+import { ContributionRegistry } from '../../shared/extensibility/registry';
+import { MainContributions } from '../extensibility/contributions';
 import { LogSink, createLogger } from '../log/logger';
 
 // ---- fakes ------------------------------------------------------------------
-function fakeRegistry(): ContributionRegistry {
-  const r = new ContributionRegistry();
+function fakeRegistry(): ContributionRegistry<MainContributions> {
+  const r = new ContributionRegistry<MainContributions>();
   r.register('provider-adapter', {
     manifest: { id: 'fake', displayName: 'Fake', version: '0', capabilities: ['sessions.spawn'] },
     buildSpawn: (o) => ({ command: 'fake-cli', args: o.resumeSessionId ? ['--resume', o.resumeSessionId] : [], env: {} }),

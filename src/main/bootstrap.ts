@@ -1,6 +1,6 @@
 // Bootstrap: the ONLY module allowed to import contributors directly — it
 // populates the registry; everyone else resolves through it (§5.23).
-import { registry } from './extensibility/registry';
+import { registry } from './extensibility';
 import { claudeAdapter } from './providers/claude';
 import { fakeAdapter } from './providers/fake';
 

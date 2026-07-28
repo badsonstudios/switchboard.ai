@@ -16,7 +16,8 @@ import { Usage, addUsage, estimateCostUsd, ZERO_USAGE } from './lib/usage';
 import { loadUiState, uiGet, uiSet } from './lib/ui-state';
 import { boxOnAnyDisplay, RescuedPopout } from './lib/layout';
 import { railOrder } from './lib/groups';
-import { buildCommands } from './lib/command-set';
+import { rendererRegistry } from './bootstrap';
+import { buildContributedCommands } from './extensibility/commands';
 import { bindingFor, dispatch, formatBinding, Platform } from './lib/commands';
 import { attentionQueue, nextInQueue, withVisit } from './lib/queue';
 import { CommandPalette } from './components/CommandPalette';
@@ -313,24 +314,27 @@ export function App(): React.JSX.Element {
     uiSet('railHidden', next);
     setRailHidden(next);
   }, []);
+  // Contributed commands, not imported ones (§5.23): App knows the app's
+  // callbacks, the registry knows who wants them. Adding a command set means
+  // registering it in bootstrap.ts — no edit here.
   const commands = React.useMemo(
     () =>
-      buildCommands({
-        focusCard: (cardId) => focusSession(cardId),
-        newSession: () => {
-          void bridge.sessions?.pickFolder?.().then((folder) => {
-            if (folder) void grid.current?.addSessionCard(folder);
-          });
-        },
-        closeCard: (cardId) => grid.current?.closeCard(cardId),
-        toggleCardView: (cardId, view) => grid.current?.toggleCardView(cardId, view),
-        popOutCard: (cardId) => grid.current?.popOutCard(cardId),
-        toggleRail,
-        openPalette: () => setPaletteOpen(true),
-        toggleTabRows: () => {
-          toggleTabRows();
-        },
-        jumpToNextAttention,
+      buildContributedCommands(rendererRegistry, {
+          focusCard: (cardId) => focusSession(cardId),
+          newSession: () => {
+            void bridge.sessions?.pickFolder?.().then((folder) => {
+              if (folder) void grid.current?.addSessionCard(folder);
+            });
+          },
+          closeCard: (cardId) => grid.current?.closeCard(cardId),
+          toggleCardView: (cardId, view) => grid.current?.toggleCardView(cardId, view),
+          popOutCard: (cardId) => grid.current?.popOutCard(cardId),
+          toggleRail,
+          openPalette: () => setPaletteOpen(true),
+          toggleTabRows: () => {
+            toggleTabRows();
+          },
+          jumpToNextAttention,
       }),
     [toggleRail, jumpToNextAttention], // other deps read live state through refs; grid.current is stable
   );

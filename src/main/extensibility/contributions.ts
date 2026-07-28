@@ -1,21 +1,9 @@
-// Extensibility seams v0 (§5.23): every pluggable surface goes through a
-// contribution point + capability manifest, even while everything is
-// in-process. The seam is the product decision; out-of-process loading can
-// arrive later without rewiring consumers.
+// MAIN's contribution vocabulary (§5.23). The registry mechanics live in
+// src/shared/extensibility/registry.ts and are shared with the renderer; what
+// each process can contribute is its own business, and this file is main's
+// half of that. Contracts here may reference main-only concepts freely.
 import { SlashCommand } from '../../shared/slash-commands';
-
-/** What a contributor declares about itself. */
-export interface CapabilityManifest {
-  /** unique id, kebab-case, e.g. "claude-code" */
-  id: string;
-  displayName: string;
-  version: string;
-  /** capability strings, e.g. "sessions.spawn", "events.emit" */
-  capabilities: string[];
-}
-
-/** Known contribution points (grows with the app). */
-export type ContributionPointId = 'provider-adapter' | 'event-source';
+import { CapabilityManifest } from '../../shared/extensibility/registry';
 
 /**
  * Provider adapter contract v0 (§5.3). The full interface grows in P1-E2-02;
@@ -54,23 +42,22 @@ export interface SpawnRecipe {
   env: Record<string, string | undefined>;
 }
 
-/** Event-source contract v0 (feeds the §5.12 event stream). */
-export interface EventSource {
-  manifest: CapabilityManifest;
-  /** subscribe returns an unsubscribe */
-  subscribe(listener: (event: ContributedEvent) => void): () => void;
-}
-
-export interface ContributedEvent {
-  sourceId: string;
-  sessionId?: string;
-  kind: string;
-  at: string; // ISO
-  data?: unknown;
-}
-
-/** Map from contribution point to its contract type. */
-export interface ContributionContracts {
+/**
+ * Main's contribution points.
+ *
+ * `event-source` used to sit here as a v0 seam for the §5.12 event stream. It
+ * was deleted in P2-E15-02 (AR-P2-13): nothing registered into it and nothing
+ * consumed it, anywhere in the tree. A contribution point with nothing behind
+ * it is a guess about the future rather than a seam — it shaped nothing except
+ * this type map. Re-adding it next to a real registrant (the §5.14 status
+ * monitor) is a smaller job than keeping a contract no implementation has ever
+ * had to satisfy.
+ */
+// A type alias, NOT `interface ... extends ContributionMap`: extending the map
+// inherits its index signature, which makes `keyof C` collapse to `string` and
+// silently stops checking point names — a typo, or a RENDERER point registered
+// here, would both compile. An object type alias satisfies the constraint
+// through its implicit index signature without acquiring one of its own.
+export type MainContributions = {
   'provider-adapter': ProviderAdapter;
-  'event-source': EventSource;
-}
+};

@@ -906,7 +906,7 @@ for a public store.
 > The correction (Phase 2, **E15**): `ContributionRegistry` becomes
 > process-agnostic with one instance per process (the bootstrap rule — only one
 > module imports contributors — holds on both sides); renderer points
-> `command`, `panel`, `feed-block-renderer`, `status-bar-item`,
+> `command-set`, `panel`, `feed-block-renderer`, `status-bar-item`,
 > `notification-channel`, and `theme` are added and **dogfooded by first-party
 > features that already exist as hardcoded switches**; and every IPC channel
 > gets a declared capability with a live main-side enforcement point (a no-op
