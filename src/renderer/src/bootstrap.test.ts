@@ -1,4 +1,9 @@
+// @vitest-environment jsdom
+// Registering panels pulls in the real view components (xterm, Monaco), which
+// touch the DOM at module scope — so this file needs a DOM even though it
+// asserts nothing about rendering.
 import { describe, it, expect } from 'vitest';
+
 import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { RendererContributions } from './extensibility/contributions';
 import { createRendererRegistry, registerBuiltinContributions } from './bootstrap';

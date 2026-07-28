@@ -14,10 +14,12 @@ import 'dockview-react/dist/styles/dockview.css';
 // AFTER dockview's own sheet: binds every --dv-* variable to our tokens so the
 // shell, popups and popout windows can't fall back to a foreign theme (#84)
 import '../theme/dockview-tokens.css';
-import { TerminalPane } from './TerminalPane';
+import { rendererRegistry } from '../extensibility/registry-instance';
+import { PanelContext, PanelId } from '../extensibility/contributions';
+import { DEFAULT_PANEL_ID, listPanels, panelBadge, panelEnabled } from '../extensibility/panels';
+import { ContributionBoundary } from '../extensibility/boundary';
 import { IdentityChip } from './IdentityChip';
 import { DiffPane } from './DiffPane';
-import { FeedView } from './FeedView';
 import { UsageStrip } from './UsageStrip';
 import { GitContext, GitStatusDto } from './GitContext';
 import { Usage, ZERO_USAGE } from '../lib/usage';
@@ -100,10 +102,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // present as the LAST tab (owner reversal 2026-07-22 — hide-by-default
   // lasted one day of dogfooding). The active tab is remembered per card
   // across restarts (§5.25, E12-08).
-  const [view, setViewRaw] = React.useState<'feed' | 'terminal' | 'diff'>(() =>
-    props.params?.cardId ? uiGet(`viewTab.${props.params.cardId}`, 'feed') : 'feed'
+  const [view, setViewRaw] = React.useState<PanelId>(() =>
+    props.params?.cardId ? uiGet(`viewTab.${props.params.cardId}`, DEFAULT_PANEL_ID) : DEFAULT_PANEL_ID
   );
-  const setView = (v: 'feed' | 'terminal' | 'diff'): void => {
+  const setView = (v: PanelId): void => {
     setViewRaw(v);
     if (cardId) uiSet(`viewTab.${cardId}`, v);
   };
@@ -256,7 +258,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
           ? prev
           : [...prev, { requestId: r.requestId, sessionId: r.sessionId, tool: r.tool, input: r.input }]
       );
-      setView('feed');
+      setView(DEFAULT_PANEL_ID);
     };
     const offReq = window.switchboard.sessions.onPermissionRequest(enqueue);
     const offRes = window.switchboard.sessions.onPermissionResolved((r) => {
@@ -363,7 +365,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     if (!cardId || !live) return;
     const entry: CardActions = {
       setView: (v) => actionsRef.current?.setView(v),
-      currentView: () => actionsRef.current?.currentView() ?? 'feed',
+      currentView: () => actionsRef.current?.currentView() ?? DEFAULT_PANEL_ID,
       popOutToggle: () => actionsRef.current?.popOutToggle(),
     };
     cardActions.set(cardId, entry);
@@ -426,6 +428,32 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     </div>
   ) : null;
   const changed = git?.files.length ?? 0;
+  // Contributed view tabs (§5.23). The strip and the panel bodies below both
+  // render from this list, so a new tab is a contribution plus a bootstrap
+  // line — this file is not edited again.
+  const panelCtx: PanelContext = {
+    sessionId: live?.id ?? '',
+    cardId,
+    visible,
+    folder,
+    theme: docTheme(),
+    status,
+    autonomy: cardAutonomy,
+    model: usage?.model,
+    changed,
+    approval: perm,
+    approvalQueued: Math.max(0, permQueue.length - 1),
+    onDecide: decide,
+    onCycleAutonomy: cycleCardAutonomy,
+    setView,
+  };
+  const panels = listPanels(rendererRegistry);
+  // The persisted view id may name a panel that no longer exists (an id from a
+  // removed contribution, or a future one — both outlive a ui blob), or one
+  // that is currently disabled (Changes on a card whose folder went away).
+  // Either way, fall back to the first panel rather than rendering a blank
+  // card with no tab highlighted and nothing to explain it.
+  const active = panels.find((p) => p.id === view && panelEnabled(p, panelCtx)) ?? panels[0];
   return (
     <div
       style={{
@@ -667,20 +695,29 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               background: 'var(--panel2)',
             }}
           >
-            <button style={vtabStyle(view === 'feed', false, live.accent)} onClick={() => setView('feed')}>
-              {t('grid.viewSession')}
-            </button>
-            <button style={vtabStyle(view === 'diff', false, live.accent)} onClick={() => setView('diff')}>
-              {t('grid.viewDiff')}
-              {changed > 0 && <span style={{ color: 'var(--status-needs-input)', marginInlineStart: 4 }}>{changed}</span>}
-            </button>
-            <span style={vtabStyle(false, true, live.accent)} title={t('grid.viewSoon')}>
-              {t('grid.viewHistory')}
-            </span>
-            {/* Terminal is always available, LAST (owner call 2026-07-22) */}
-            <button style={vtabStyle(view === 'terminal', false, live.accent)} onClick={() => setView('terminal')}>
-              {t('grid.viewTerminal')}
-            </button>
+            {panels.map((p) => {
+              const on = panelEnabled(p, panelCtx);
+              const badge = panelBadge(p, panelCtx);
+              const label = (
+                <>
+                  {t(p.titleKey)}
+                  {badge !== null && (
+                    <span style={{ color: 'var(--status-needs-input)', marginInlineStart: 4 }}>{badge}</span>
+                  )}
+                </>
+              );
+              // a disabled panel still SHOWS — §5.8: you can always see what
+              // exists, even when it isn't ready
+              return on ? (
+                <button key={p.id} style={vtabStyle(active?.id === p.id, false, live.accent)} onClick={() => setView(p.id)}>
+                  {label}
+                </button>
+              ) : (
+                <span key={p.id} style={vtabStyle(false, true, live.accent)} title={t('grid.viewSoon')}>
+                  {label}
+                </span>
+              );
+            })}
             <span style={{ flex: 1, minInlineSize: 8 }} />
             {plan && (
               <span title={t('grid.planTitle')} style={{ color: 'var(--status-working)', fontSize: 10, fontFamily: 'var(--font-mono)' }}>
@@ -692,25 +729,24 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
           </div>
           {/* active view */}
           <div style={{ flex: 1, minBlockSize: 0, position: 'relative' }}>
-            <div style={{ blockSize: '100%', display: view === 'terminal' ? 'block' : 'none' }}>
-              <TerminalPane sessionId={live.id} visible={visible && view === 'terminal'} />
-            </div>
-            {view === 'feed' && (
-              <FeedView
-                sessionId={live.id}
-                cardId={cardId}
-                visible={visible && view === 'feed'}
-                status={status}
-                autonomy={cardAutonomy}
-                model={usage?.model}
-                approval={perm}
-                approvalQueued={Math.max(0, permQueue.length - 1)}
-                onDecide={decide}
-                onCycleAutonomy={cycleCardAutonomy}
-                onJumpToTerminal={() => setView('terminal')}
-              />
+            {panels.map((p) =>
+              // keepMounted panels stay in the tree and hide (the terminal
+              // would lose its xterm view otherwise); everything else mounts
+              // only while it is the active tab
+              // a contributed panel that throws must cost that panel, not the
+              // window — there is no other error boundary in the renderer
+              p.keepMounted ? (
+                <div key={p.id} style={{ blockSize: '100%', display: active?.id === p.id ? 'block' : 'none' }}>
+                  <ContributionBoundary id={p.manifest.id}>
+                    {p.render({ ...panelCtx, visible: visible && active?.id === p.id })}
+                  </ContributionBoundary>
+                </div>
+              ) : active?.id === p.id ? (
+                <ContributionBoundary key={p.id} id={p.manifest.id}>
+                  {p.render({ ...panelCtx, visible })}
+                </ContributionBoundary>
+              ) : null
             )}
-            {view === 'diff' && folder && <DiffPane folder={folder} theme={docTheme()} />}
             {exitedOverlay && <div style={overlayBackdrop}>{exitedOverlay}</div>}
           </div>
         </div>
@@ -874,8 +910,10 @@ function cardIdForLive(liveId: string): string {
 // pop-out toggle live inside the panel component, and prop-drilling them up
 // through Dockview isn't possible. Same module-map pattern as liveToCard.
 interface CardActions {
-  setView: (view: 'feed' | 'terminal' | 'diff') => void;
-  currentView: () => 'feed' | 'terminal' | 'diff';
+  // panel ids are contributed now, so this is the id space of whatever is
+  // registered at the `panel` point — not a closed union (P2-E15-03)
+  setView: (view: PanelId) => void;
+  currentView: () => PanelId;
   popOutToggle: () => void;
 }
 const cardActions = new Map<string, CardActions>();
@@ -933,7 +971,7 @@ export interface GridController {
   closeCard: (cardId: string) => void;
   /** switch a card's active view tab; 'terminal' toggles back to the Session
    *  view when the Terminal is already showing (E9-01) */
-  toggleCardView: (cardId: string, view: 'feed' | 'terminal' | 'diff') => void;
+  toggleCardView: (cardId: string, view: PanelId) => void;
   /** pop the card out to its own window, or dock it back in (E9-01) */
   popOutCard: (cardId: string) => void;
 }
@@ -1041,7 +1079,9 @@ export function SessionGrid(props: {
         const actions = cardActions.get(cardId);
         if (!actions) return; // suspended/dead card: no view to switch
         // toggling: a second press on the same view returns to the Session view
-        actions.setView(actions.currentView() === view && view !== 'feed' ? 'feed' : view);
+        actions.setView(
+          actions.currentView() === view && view !== DEFAULT_PANEL_ID ? DEFAULT_PANEL_ID : view
+        );
       },
       popOutCard: (cardId) => {
         cardActions.get(cardId)?.popOutToggle();

@@ -7,6 +7,7 @@
 // Every seed command is scope 'app': none of them fire while the user is typing
 // in the composer, renaming a session, or working in a terminal.
 import { Command, CommandContext } from './commands';
+import { PanelId } from '../extensibility/contributions';
 
 export interface CommandDeps {
   /** focus the session card with this card id */
@@ -16,7 +17,7 @@ export interface CommandDeps {
   /** close a card (asks for confirmation — it forgets the record) */
   closeCard: (cardId: string) => void;
   /** switch a card's view tab; the same view twice returns to the Session view */
-  toggleCardView: (cardId: string, view: 'feed' | 'terminal' | 'diff') => void;
+  toggleCardView: (cardId: string, view: PanelId) => void;
   /** pop a card out to its own window, or dock it back in */
   popOutCard: (cardId: string) => void;
   /** show/hide the sessions rail */
