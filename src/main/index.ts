@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, screen, shell } from 'electron';
+import { app, BrowserWindow, Menu, screen, shell } from 'electron';
 import path from 'path';
 import { windowOptionsFrom, WindowState } from './window-state';
 import { WorkspaceStore, displayFingerprint } from './workspace/store';
@@ -12,6 +12,8 @@ import { HookListener } from './hooks/hook-listener';
 import { TranscriptWatcher } from './transcripts/watcher';
 import { registerSessionIpc } from './sessions/ipc';
 import { registerGroupIpc } from './workspace/group-ipc';
+import { IpcBroker } from './ipc/broker';
+import { allCapabilities, Channel } from '../shared/ipc/capabilities';
 import { EventFeed } from './events/feed';
 import { Notifier } from './events/notifier';
 import { GitService } from './git/git-service';
@@ -90,6 +92,14 @@ let currentWindow: BrowserWindow | null = null;
 // again on macOS `activate`, and the second window needs the same teardown as
 // the first (P2-E15-09).
 let onRendererLost: ((reason: string) => void) | null = null;
+// set by the bootstrap once the broker exists; createWindow() runs again on
+// macOS `activate`, so a second window must be granted too (P2-E15-04)
+let grantFirstParty: ((win: BrowserWindow) => void) | null = null;
+// Outbound pushes from module-level helpers. Set by the bootstrap alongside
+// the broker: "every channel goes through the broker, in both directions" is
+// only true if the helpers obey it too (P2-E15-04).
+let pushToRenderer: ((win: BrowserWindow | null, channel: Channel, payload?: unknown) => void) | null =
+  null;
 // live popout windows, tagged with the dockview group each one hosts (#86).
 // The GROUP ID is what matches them to the serialized layout — creation order
 // famously doesn't, because dockview registers a popout when its window has
@@ -210,7 +220,7 @@ function watchPopoutGeometry(child: BrowserWindow): void {
       // popouts still to come — the flush at close covers that window instead
       if (restoringLayout) return;
       const win = currentWindow;
-      if (win && !win.isDestroyed()) win.webContents.send('app:popoutGeometryChanged');
+      pushToRenderer?.(win, 'app:popoutGeometryChanged');
     }, 250);
     timer.unref?.();
   };
@@ -274,6 +284,11 @@ function createWindow(): BrowserWindow {
 
   if (state.isMaximized) win.maximize();
   currentWindow = win;
+  // First-party holds EVERYTHING. Narrowing our own renderer is a different
+  // argument with real behaviour changes; this item's contract is that nothing
+  // changes at runtime. Phase 4 grants a plugin host its manifest's set here
+  // instead (P2-E15-04).
+  grantFirstParty?.(win);
   trackWindowGeometry(win);
   win.on('close', (e) => {
     if (!confirmCloseWithBusySessions(win)) {
@@ -371,6 +386,13 @@ function createWindow(): BrowserWindow {
           // the window would lose the frame's worth of pixels on every
           // save/restore cycle — a popout that shrinks a little each launch (#86)
           useContentSize: true,
+          // NO preload here, deliberately. dockview adopts the group's DOM
+          // into this window while the JS keeps running in the OPENER, so a
+          // popout never makes an IPC call of its own — which is why it is
+          // never granted capabilities (P2-E15-04). Adding a preload would make
+          // it an ungranted caller: `invoke`s would reject and `on`-channels
+          // would be dropped with only a log line, and nobody would connect
+          // that to this change. Grant it here if you ever do add one.
           webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
         },
       };
@@ -432,11 +454,19 @@ app
         log.app.error('static server failed; falling back to file://', { error: String(err) });
       }
     }
+    // The IPC choke point (P2-E15-04). Every channel registers through it, in
+    // both directions; it refuses a call whose caller does not hold the
+    // channel's capability. Created BEFORE any registration, and before the
+    // first window, so no channel can exist outside it.
+    const broker = new IpcBroker(createLogger(sink, 'ipc'));
+    grantFirstParty = (win) =>
+      broker.grant(win.webContents, { id: 'renderer', capabilities: allCapabilities() });
+    pushToRenderer = (win, channel, payload) => broker.send(win, channel, payload);
     workspace = new WorkspaceStore(path.join(app.getPath('userData'), 'workspace.json'));
     workspace.load();
     // renderer <-> workspace layout persistence (E3-01)
-    ipcMain.handle('workspace:getLayout', () => workspace.getLayout());
-    ipcMain.on('workspace:setLayout', (_e, layout: unknown) => {
+    broker.handle('workspace:getLayout', () => workspace.getLayout());
+    broker.on('workspace:setLayout', (_e, layout: unknown) => {
       // Once the close is confirmed, the main process has already stamped the
       // authoritative popout geometry (#86). A renderer tearing down still
       // emits layout changes as dockview disposes, and those carry the stale
@@ -445,24 +475,27 @@ app
       workspace.setLayout(layout);
     });
     // renderer-owned UI state (E12-08): focus, view tabs, prefs
-    ipcMain.handle('workspace:getUi', () => workspace.getUi());
-    ipcMain.on('workspace:setUi', (_e, ui: unknown) => workspace.setUi(ui));
+    broker.handle('workspace:getUi', () => workspace.getUi());
+    broker.on('workspace:setUi', (_e, ui: unknown) => workspace.setUi(ui));
     // display work areas — for popout-position rescue on restore (E8-02)
-    ipcMain.handle('app:workAreas', () => screen.getAllDisplays().map((d) => d.workArea));
+    broker.handle('app:workAreas', () => screen.getAllDisplays().map((d) => d.workArea));
     // display reconnected (docking back at the desk) — the renderer may offer
     // to restore rescued popouts; NEVER restores automatically (E8-06, §7)
     screen.on('display-added', () => {
       const win = currentWindow;
       if (win && !win.isDestroyed()) {
-        win.webContents.send('app:displaysChanged', screen.getAllDisplays().map((d) => d.workArea));
+        pushToRenderer?.(
+          win,
+          'app:displaysChanged',
+          screen.getAllDisplays().map((d) => d.workArea)
+        );
       }
     });
     // move a popout window to a restored display (E8-06 accept). Done here:
     // the DOM's window.moveTo clamps to currently-known screens mid-hotplug,
     // BrowserWindow.setBounds does not. The popout is identified by its
     // current position, which the renderer reads off the DOM window it owns.
-    ipcMain.handle(
-      'app:movePopout',
+    broker.handle('app:movePopout',
       (_e, from: { x: number; y: number }, to: { left: number; top: number; width: number; height: number }) => {
         if (
           typeof from?.x !== 'number' ||
@@ -482,7 +515,7 @@ app
         // the move must survive a quit that follows immediately (#86)
         setTimeout(() => {
           const w = currentWindow;
-          if (w && !w.isDestroyed()) w.webContents.send('app:popoutGeometryChanged');
+          pushToRenderer?.(w, 'app:popoutGeometryChanged');
         }, 300).unref?.();
         hit.setBounds({
           x: Math.round(to.left),
@@ -494,7 +527,7 @@ app
       }
     );
     // persistent groups (E12-01)
-    registerGroupIpc(workspace);
+    registerGroupIpc(workspace, broker);
     registerBuiltinContributions();
     log.app.info('contributions registered', { manifests: registry.manifests() });
 
@@ -543,7 +576,7 @@ app
     feed.onEvent((e) => {
       if (e) notifier.handle(e); // null = pure removal, nothing to announce
     });
-    ipcMain.handle('preflight:check', () => runPreflight());
+    broker.handle('preflight:check', () => runPreflight());
     busySessions = () =>
       manager
         .list()
@@ -555,10 +588,10 @@ app
     const knownFolder = (folder: string): boolean =>
       manager.list().some((s) => path.resolve(s.identity.folder) === path.resolve(folder));
     const gitService = new GitService();
-    ipcMain.handle('git:status', (_e, folder: string) =>
+    broker.handle('git:status', (_e, folder: string) =>
       knownFolder(folder) ? gitService.status(folder) : { isRepo: false, files: [] }
     );
-    ipcMain.handle('git:fileVersions', (_e, folder: string, file: string) => {
+    broker.handle('git:fileVersions', (_e, folder: string, file: string) => {
       // scope to a known folder AND forbid escaping it (path traversal)
       if (!knownFolder(folder)) return { original: '', modified: '' };
       const resolved = path.resolve(folder, file);
@@ -567,13 +600,13 @@ app
       }
       return gitService.fileVersions(folder, file);
     });
-    ipcMain.handle('notifications:getPrefs', () => workspace.getNotificationPrefs());
-    ipcMain.handle('notifications:setPrefs', (_e, p) => {
+    broker.handle('notifications:getPrefs', () => workspace.getNotificationPrefs());
+    broker.handle('notifications:setPrefs', (_e, p) => {
       workspace.setNotificationPrefs(p);
       return workspace.getNotificationPrefs();
     });
-    ipcMain.handle('settings:getAutoTrust', () => workspace.getAutoTrust());
-    ipcMain.handle('settings:setAutoTrust', (_e, on: boolean) => {
+    broker.handle('settings:getAutoTrust', () => workspace.getAutoTrust());
+    broker.handle('settings:setAutoTrust', (_e, on: boolean) => {
       workspace.setAutoTrust(on === true);
       return workspace.getAutoTrust();
     });
@@ -583,6 +616,7 @@ app
       hooks,
       transcripts,
       feed,
+      broker,
       log: createLogger(sink, 'ipc'),
       getWindow: () => currentWindow, // reassigned on macOS re-activate
       autoTrust: () => workspace.getAutoTrust(),

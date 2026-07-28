@@ -889,9 +889,21 @@ for a public store.
 
 - **Contribution points + capability manifest (day one).** Extension-shaped
   things declare contributions (panels, themes, event rules, provider adapters)
-  and required capabilities (`session:read`, `session:exec`, `git:write`,
-  `network:fetch`) in a manifest, least-privilege, Tauri/MetaMask-schema style.
-  Main process is the sole enforcer.
+  and required capabilities in a manifest, least-privilege, Tauri/MetaMask-schema
+  style. Main process is the sole enforcer.
+
+  *Vocabulary amended 2026-07-28 (P2-E15-04).* The illustrative
+  `session:read` / `session:exec` / `git:write` / `network:fetch` above predate
+  the implementation. The shipped IPC vocabulary is dot-separated and plural —
+  `sessions.read`, `sessions.spawn`, `pty.write`, `git.read`, `dialog.open`,
+  `environment.probe`, … — and lives in `src/shared/ipc/capabilities.ts`, which
+  is authoritative. **Note there are currently TWO capability vocabularies:**
+  these IPC-channel capabilities, and the free-form `capabilities: string[]` on
+  `CapabilityManifest` that contributions declare (`sessions.spawn`,
+  `commands.contribute`, `panel.render`, …). They overlap by accident of naming
+  rather than by design. Joining them — a plugin manifest's declared set
+  gating the IPC broker — is exactly the Phase-4 work this seam exists to make
+  mechanical, and it is where that join belongs.
 
 > **Amended 2026-07-26 (architecture review AR-P0-2).** The seam shipped in
 > Phase 1 covers the MAIN process only — `provider-adapter` and an unconsumed

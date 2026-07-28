@@ -2,9 +2,9 @@
 // CRUD over the WorkspaceStore's group records + session membership. All
 // renderer input is validated here (§5.29) — ids are minted in the main
 // process, never accepted from the renderer on create.
-import { ipcMain } from 'electron';
 import { randomUUID } from 'crypto';
 import { PersistedGroup, WorkspaceStore } from './store';
+import { IpcBroker } from '../ipc/broker';
 
 const NAME_MAX = 60;
 const SCOPES: ReadonlyArray<PersistedGroup['notifyScope']> = ['all', 'important', 'muted'];
@@ -33,11 +33,11 @@ function cleanName(n: unknown): string | null {
   return t.length > 0 ? t : null;
 }
 
-export function registerGroupIpc(store: WorkspaceStore): void {
-  ipcMain.handle('groups:list', () => store.listGroups());
-  ipcMain.handle('groups:palette', () => [...GROUP_PALETTE]);
+export function registerGroupIpc(store: WorkspaceStore, broker: IpcBroker): void {
+  broker.handle('groups:list', () => store.listGroups());
+  broker.handle('groups:palette', () => [...GROUP_PALETTE]);
 
-  ipcMain.handle('groups:create', (_e, opts: { name: string; color?: string }) => {
+  broker.handle('groups:create', (_e, opts: { name: string; color?: string }) => {
     const name = cleanName(opts?.name);
     if (!name) throw new Error('group needs a name');
     if (opts?.color !== undefined && !isColor(opts.color)) throw new Error('color must be #rrggbb');
@@ -47,8 +47,7 @@ export function registerGroupIpc(store: WorkspaceStore): void {
     return group;
   });
 
-  ipcMain.handle(
-    'groups:update',
+  broker.handle('groups:update',
     (_e, id: string, patch: { name?: string; color?: string; notifyScope?: string }) => {
       if (typeof id !== 'string') return null;
       const prior = store.listGroups().find((g) => g.id === id);
@@ -73,12 +72,12 @@ export function registerGroupIpc(store: WorkspaceStore): void {
     }
   );
 
-  ipcMain.handle('groups:delete', (_e, id: string) => {
+  broker.handle('groups:delete', (_e, id: string) => {
     if (typeof id !== 'string') return;
     store.removeGroup(id);
   });
 
-  ipcMain.handle('groups:setSessionGroup', (_e, cardId: string, groupId: string | null) => {
+  broker.handle('groups:setSessionGroup', (_e, cardId: string, groupId: string | null) => {
     if (typeof cardId !== 'string') return;
     if (groupId !== null && typeof groupId !== 'string') return;
     store.setSessionGroup(cardId, groupId);
