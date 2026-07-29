@@ -6,13 +6,13 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#105 (P2-E15-08 — presentation state into the store)** on
-`feature/105-presentation-state-store`, 2026-07-29. **Implemented, reviewed,
-green** (lint + typecheck + 421 unit + 86 e2e); docs written; awaiting the
-commit gate. *(Don't record a tip SHA here — it is stale the moment it is
+**In progress:** **#105 (P2-E15-08) is DONE and in review as PR #120** —
+`feature/105-presentation-state-store`, opened 2026-07-29, CI running. Nothing
+else mid-flight. *(Don't record a tip SHA here — it is stale the moment it is
 committed; `git log` is the authority for that one.)*
-**The queue, in order: #105 → #117 → #98 / #102-#103 / #107-#111.**
-**E15 is 6 of 14 done and BOTH P0s are closed** — #106 (permission hold),
+**The queue, in order: ~~#105~~ → #117 → #98 / #102-#103 / #107-#111.**
+**E15 is 7 of 14 done and BOTH P0s are closed** — #105 (presentation state,
+PR #120), #106 (permission hold),
 #99 (process-agnostic registry), #100 (three renderer contribution points),
 #101 (IPC capabilities), #104 (renderer state layer), plus #112 (the tail-pin
 race) fixed along the way. **Consumer count on the extensibility seams: 1 → 5**,
@@ -20,12 +20,14 @@ so the Phase-4 gate ("2–3 dissimilar internal consumers") is met for the first
 time — a starting condition for that conversation, not a decision to ship a
 plugin API.
 
-**Next up — recommended: #105 (P2-E15-08, presentation state into the store).**
-It is the hard prerequisite for **#74 (E9-05)** and **#76 (E9-07)**, i.e. the
-path back to E9 and visible features, and #104 just built the store it needs.
-Per-card view tab / popped-out / suspended / collapsed / dock slot move out of
-`SessionCardPanel`'s `useState`, because "reveal restores it to EXACTLY its
-prior slot" needs state that outlives the panel's unmount.
+**Next up: #117** (the `pty:attach` subscribe race), scheduled for this slot on
+2026-07-29 and now more clearly worth doing — #105's reveal path re-attaches a
+terminal, so it exercises exactly that window. After it, **#74 (E9-05)** and
+**#76 (E9-07)** are UNBLOCKED for the first time: #105 gave them the store-held
+view tab / ladder rung / dock slot they need, plus working hide and reveal
+primitives. E9-05 owns the policy from here (auto-hide triggers, attention
+reveal, and the `collapsed` / `tabbed` rungs — typed and persisted by #105 but
+with no transitions yet).
 
 *Also ready, no dependencies:* **#98** (provider adapter capabilities — the
 last piece of AR-P0-1; rewrites `sessions/ipc.ts`, which #101 just touched, so
