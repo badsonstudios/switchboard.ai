@@ -29,10 +29,15 @@ likely-live bug where theme + language reset on every packaged launch),
 **#107** (transcript drift detector) → **#108**, **#109** (header CSP),
 **#110** (workspace schema migration), **#111** (re-measure S-07 concurrency).
 
-*Filed during E15, not scheduled:* **#117** — terminal output can be lost
-between `pty:attach` returning and the renderer subscribing. A REAL
-pre-existing bug found by review; worth fixing before #111 re-measures, since
-a dropped-output race would muddy those numbers. Also open: **#90**, **#91**.
+**#117 is SCHEDULED (2026-07-29, Dan's call): it takes the slot right after
+#105.** Terminal output can be lost between `pty:attach` returning and the
+renderer subscribing — a REAL pre-existing bug found during #101's review, not
+introduced there. It is now a recorded **hard prerequisite for #111**
+(P2-E15-14): a load-dependent dropped-output race would muddy exactly the
+concurrency numbers that item measures. Fix direction from the issue: register
+the renderer's `pty:data` listener **before** invoking `pty:attach`, so the
+snapshot only ever returns to a subscriber already listening — removes the
+window instead of narrowing it. Still open and NOT scheduled: **#90**, **#91**.
 
 *Known not-closed:* AR-P1-4 is only partly retired — `switchboard:popout-added`
 / `-removed` are still a window-object bus, and `lib/drag-context.ts` still

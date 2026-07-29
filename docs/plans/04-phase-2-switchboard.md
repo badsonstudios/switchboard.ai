@@ -343,7 +343,10 @@ Work items:
   unknown FUTURE version loads read-only-safe rather than being silently
   sanitized into a lossy v1 (and says so in the log); a v0/absent version is
   treated as v1.
-- **P2-E15-14 · Re-measure S-07 on the real app — S (§6, AR-P2-11).** The
+- **P2-E15-14 · Re-measure S-07 on the real app — S (§6, AR-P2-11).**
+  *(depends: **#117** — the `pty:attach` subscribe race must be fixed first; a
+  load-dependent dropped-output bug would muddy exactly the numbers this item
+  is measuring.)* The
   concurrency spike measured a harness — PTY + tailer + one xterm. Since then:
   dockview, Monaco (9MB bundle), live FeedView block streaming, per-card git
   polling, the slash-command scanner. E9 is about to assert the 7–8 session
@@ -760,4 +763,14 @@ unblocks E9-05/07) → 05 → 06. The standalone fixes (09 permission fail-open,
 10 drift detector, 11 discovery I/O, 12 CSP, 13 migration hook, 14 perf
 re-measure) have no dependencies and can be picked up any time — **09 is a live
 defect** (a dead renderer stalls the CLI 300s per gated call) and is the best
-candidate to take first if a short item is wanted.
+candidate to take first if a short item is wanted. *(09 is done, PR #113.)*
+
+**Scheduled alongside E15: #117** (2026-07-29) — terminal output lost in the
+gap between `pty:attach` returning and the renderer subscribing. Not an E15
+item; a pre-existing live defect found during #101's review. It is **a hard
+prerequisite for 14 (#111)** and otherwise independent, so it takes the slot
+after 08 (#105): 08 is the item that unblocks E9, #117 is the one that must not
+be left sitting when 14 measures. Fix direction, per the issue: register the
+renderer's `pty:data` listener **before** invoking `pty:attach`, so the
+snapshot only ever returns to a subscriber that is already listening — that
+removes the window rather than narrowing it.
