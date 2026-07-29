@@ -45,8 +45,8 @@ holds module-level mutable state. Both are outside #104's done-when.
 
 *[user] retests still pending on merged main (rebuild first):* test 4
 (out-of-cwd read) WITHOUT allow-all + autonomy=ask · grid-drag between groups ·
-switch-to-session scroll · allow-all sessions now silent. Also pending: the
-ClaudeMon architecture read (OQ #8) before Phase 3 planning.
+switch-to-session scroll · allow-all sessions now silent. **The ClaudeMon read
+(OQ #8) is no longer pending — CLOSED 2026-07-29, we are not integrating.**
 
 **Recently merged:** 2026-07-26 — **#96** (sessions-rail redesign, three
 eyeball rounds, Dan signed off) and **#97** (architecture review + the E15
@@ -71,7 +71,7 @@ terminal) and **#91** (box the tool blocks + drop the timeline dot on plain
 assistant answers). [user] retests still pending on merged main (rebuild
 first): test 4 (out-of-cwd read) WITHOUT allow-all + autonomy=ask · grid-drag
 between groups · switch-to-session scroll · allow-all sessions now silent.
-Also pending: ClaudeMon architecture read (OQ #8) before Phase 3 planning.
+(OQ #8 / ClaudeMon closed 2026-07-29 — no longer a gate on Phase 3 planning.)
 **Branch:** main (clean)
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
@@ -104,12 +104,65 @@ a "[Dan eyeball]" note.**
   merge path still refuses a red PR; bypassing is an explicit act.
 - **Loose ends deferred** (not blocking): full-auto → bypass footgun (offer:
   remap to a safer mode), 9MB Monaco renderer bundle (slim it). Say the word.
-- **[user] ClaudeMon architecture read (OQ #8) is due.** `03-later-phases.md`
-  says it must happen before Phase 3 planning, "ideally far earlier" — and the
-  2026-07-21 reconciliation just moved MORE into Phase 3. Schedule a session
-  to review ClaudeMon and decide shared-library vs sidecar vs merge.
+- ~~[user] ClaudeMon architecture read (OQ #8)~~ — **CLOSED 2026-07-29, Dan's
+  call: we are not integrating ClaudeMon.** It was the last gate on Phase 3
+  planning, so **Phase 3 planning is now unblocked.** Usage tracking is
+  first-party and native (DESIGN §5.13); the idea is parked in DESIGN §10 with
+  a reversal trigger. Still true and now homeless: `estimateCostUsd` bakes
+  pricing into the renderer UI layer (AR-P2-12) and **defaults an unknown model
+  to Sonnet rates** — it invents a number. Not urgent, not waiting on anything.
 
 ## Log
+
+- 2026-07-29 — **OQ #8 CLOSED: no ClaudeMon integration. Usage is first-party
+  and native.** Dan's call, and it retires the last gate on Phase 3 planning.
+  The open question had been shared-library vs sidecar vs merge, unanswered
+  since 2026-07-18 and flagged overdue by the architecture review.
+  **A partial read of ClaudeMon's source informed the close** rather than
+  deciding it: it is .NET 10, so "shared library" was never actually available
+  — you cannot link .NET into an Electron main process without shipping the
+  runtime, which collapses that option into "sidecar." And the engine is small:
+  `JsonlUsageParser.cs` is 117 lines of JSON field access, `PricingTable.cs` is
+  a dictionary plus string normalization. A sidecar would buy a .NET runtime on
+  three OSes, a second CI toolchain and a second signing burden, in exchange
+  for hosting work that is *read JSONL, sum integers, multiply by a table*.
+  **The valuable thing in ClaudeMon is not its code — it is what it knows about
+  the transcript format**, so that was extracted into DESIGN §5.13 as a
+  requirement list and the source is now a reference, not a dependency: dedupe
+  on `messageId:requestId` because streaming repeats the same usage across
+  lines; NEVER sum `usage.iterations` on top of the totals; `<synthetic>` is
+  the model on locally-injected messages; cache writes split 5m/1h at different
+  rates; normalize Bedrock/Vertex/date decoration off model ids; and a numeric
+  suffix means a new model VERSION at a new price, so refuse the match and show
+  tokens with no cost rather than a confident wrong number.
+  **That last rule is a live bug in our code.** `lib/usage.ts` regex-matches
+  `/opus/i` and **defaults an unknown model to Sonnet rates** — it invents a
+  dollar figure. It also has no cache-write TTL split, no id normalization and
+  no dedupe key (so it will over-count the moment anything sums transcript
+  lines). Recorded in `03-later-phases.md`; NOT filed as an issue, because Dan
+  has not asked for usage work to be scheduled.
+  Parked in DESIGN §10 as a possible future addition with a **specific reversal
+  trigger**: ClaudeMon reads the OAuth credentials and calls
+  `api.anthropic.com/api/oauth/usage` for **authoritative plan headroom** — on
+  a subscription that is the number that matters, since you are rate-limited
+  rather than billed per token. That capability, and nothing else, is what
+  would justify revisiting; it carries a §5.29 credential-handling cost, which
+  is why it is not free.
+  Docs: DESIGN.md §5.13 (retitled "Usage & cost tracking"), OQ #8 struck
+  through and closed, §8 Phase 3 roadmap line, §5.23 extension roster #2
+  ("ClaudeMon usage pane" → "Usage pane"), §10 backlog entry ·
+  `03-later-phases.md` (the Phase-3 planning gate removed).
+
+- 2026-07-29 — **#117 SCHEDULED** (the `pty:attach` subscribe race). Takes the
+  slot right after #105, and is now a recorded hard prerequisite for **#111**
+  (P2-E15-14): not a code dependency but a **measurement-validity** one — a
+  load-dependent dropped-output race would muddy exactly the concurrency
+  numbers that item measures. Fix direction recorded on the issue: register the
+  renderer's `pty:data` listener BEFORE invoking `pty:attach`, so the snapshot
+  only ever returns to a subscriber already listening — that removes the window
+  rather than narrowing it, and is the smaller of the two options in the issue
+  body. Plan file carries it in the E15-14 entry and the Order section; both
+  issues have comments.
 
 - 2026-07-28 — **P2-E15-07 (#104): the renderer has a state layer.** Three
   things that were not one: module-level mutable Maps/Sets in `SessionGrid`

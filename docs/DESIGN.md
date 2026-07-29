@@ -605,12 +605,36 @@ filter by session / severity / type; "group by session" toggle; attention-tier
 events also enter the attention queue (§5.8) — the feed is the log, the queue is
 the to-do list.
 
-### 5.13 Usage & ClaudeMon integration
+### 5.13 Usage & cost tracking
 
-Owner's existing app (ClaudeMon) already parses Claude Code usage; switchboard.ai needs
-~80% of the same transcript parsing for the Feed and status machine. Preferred path:
-**extract ClaudeMon's parsing/usage engine into a shared library** consumed by both
-apps (final decision pending review of ClaudeMon's architecture — see Open Questions).
+**Usage is FIRST-PARTY and native (decided 2026-07-29).** switchboard.ai parses
+Claude Code transcripts for its own usage numbers, in TypeScript, in this
+repo. **ClaudeMon integration is dropped** — not deferred pending a decision,
+decided against for now; it lives in §10 as a possible future addition.
+
+*Why native, so nobody re-opens it cheaply.* ClaudeMon is .NET 10, so a shared
+library was never available: you cannot link .NET into an Electron main process
+without shipping the runtime, which collapses "shared library" into "sidecar."
+A sidecar means a .NET runtime on three OSes, a second toolchain in CI, and a
+second code-signing burden — bought for work that is read JSONL, sum integers,
+multiply by a table. Sidecars earn that when they wrap something genuinely hard
+to reimplement; this is not that. Phase 3 already plans a `utilityProcess`
+offload (§5.23), which is the natural home for a usage engine, in TypeScript.
+
+*ClaudeMon's source remains a REFERENCE, and a valuable one.* The expensive
+part is not its code — it is what it knows about the transcript format, which
+is invisible from the format itself. Any implementation here must honour:
+streaming writes several lines per assistant message repeating the same usage
+(dedupe on `messageId:requestId`); `usage.iterations` mirrors the top-level
+totals per internal iteration and must **never** be summed on top;
+`<synthetic>` is the model on locally-injected messages that never hit the API;
+cache writes split by TTL (`ephemeral_5m` / `ephemeral_1h`, different rates)
+with a fallback when the breakdown is absent; model ids need normalizing for
+Bedrock's `anthropic.` prefix, Vertex's `@` suffix and the API's date suffix;
+and a purely NUMERIC suffix means a new model **version** at a new price, so an
+unknown version must show tokens with **no cost** rather than a confident wrong
+number at the old rate. The pricing table is **data, not code** — a JSON file
+keyed by model, so a price change is a data edit.
 
 Per-session attribution is EXACT: each session maps 1:1 to a transcript JSONL,
 and every entry records token usage (input/output/cache read+write). Subagent
@@ -943,7 +967,9 @@ theming/i18n/logging runtimes · the extension host itself.
 *First-party extension roster (each proves a different API surface):*
 1. **Provider adapters** (Claude Code, Codex, Gemini, Aider) — flagship;
    `provider:register`, deepest surface.
-2. **ClaudeMon usage pane** — panel + event subscription + transcript read.
+2. **Usage pane** — panel + event subscription + transcript read. (Was framed as
+   a ClaudeMon pane until 2026-07-29; the integration was dropped, the pane is
+   first-party and the surface it proves is unchanged.)
 3. **Notification channels** — phone push / TTS / webhooks (core keeps
    sounds/toasts); proves the action-contribution surface.
 4. **Dispatch role templates** — declarative, data-only contributions.
@@ -1394,8 +1420,9 @@ mode + session archive v1; fleet snapshots + layout DSL.)*
   confirm gate (§5.25, OQ #14) — moved from Phase 2 (2026-07-21)
 - Worktree create/merge-back flows with review step
 - Cross-session same-repo conflict warnings
-- ClaudeMon integration: shared parsing/usage library, per-session usage chips,
-  plan-usage meter, burn-rate/rate-limit events
+- Usage tracking (§5.13): per-session usage chips, plan-usage meter,
+  burn-rate/rate-limit events — **first-party and native**; the ClaudeMon
+  shared-library framing was dropped 2026-07-29 (OQ #8 closed)
 - Cross-session review dashboard (all pending diffs, ranked by readiness)
 - Dispatch v2: `spawn_session` bus tool (agent-initiated), rules-engine auto-dispatch
   (on done + tests pass → clean-room review), bounded fix/re-review loops
@@ -1468,10 +1495,19 @@ mode + session archive v1; fleet snapshots + layout DSL.)*
 7. ~~Resume across app restarts~~ — **RESOLVED** (§5.25): resume-on-focus
    default; full workspace renders suspended, sessions relaunch on touch.
    Options: resume-all | ask-per-session.
-8. **ClaudeMon integration shape.** Shared library vs sidecar process vs full merge —
-   requires reviewing ClaudeMon's current architecture first. Also decide whether
-   ClaudeMon remains a standalone product (it's independently monetizable — see
-   project-ideas list #12) with switchboard.ai as a consumer of its engine.
+8. ~~ClaudeMon integration shape~~ — **CLOSED 2026-07-29: not doing it.** The
+   question was shared library vs sidecar vs full merge. Owner's call: drop the
+   integration for now — switchboard.ai builds its own usage tracking natively
+   (§5.13), and ClaudeMon stays a separate standalone product. A partial
+   architecture read informed the close: ClaudeMon is .NET 10, so "shared
+   library" was never on the table, and its usage engine is ~250 lines of JSON
+   parsing plus a pricing table — cheaper to port than to host. Recorded as a
+   possible future addition in §10. **Reversal trigger:** wanting ClaudeMon's
+   authoritative quota data (it reads OAuth credentials and calls
+   `api.anthropic.com/api/oauth/usage` — actual plan headroom, not an estimate)
+   rather than duplicating that capability here. Nothing else; and note the
+   parsing knowledge is captured in §5.13, so no future decision depends on
+   re-reading its source.
 9. **Merge-conflict endgame.** When 7-8 session branches land against the same main:
    auto-rebase queue? conflicts as attention-queue items? punt to terminal? TWO
    adversarially-verified research passes (2026-07-18) found no precedent anywhere
@@ -1530,6 +1566,17 @@ mode + session archive v1; fleet snapshots + layout DSL.)*
 - ~~Mission-control dashboard~~ — **PROMOTED** to Phase 3 core (research v2:
   Cursor 2.0, GitHub mission control, and Antigravity Manager made fleet
   dashboards the category standard).
+- **ClaudeMon integration** (added 2026-07-29, OQ #8 closed against it) — owner's
+  standalone .NET 10 usage monitor. **Explicitly not wanted now**; switchboard.ai
+  tracks usage natively (§5.13) and ClaudeMon stays its own product. The one thing
+  it has that we would not otherwise build: it reads the OAuth credentials and
+  calls `api.anthropic.com/api/oauth/usage` for **authoritative plan headroom**
+  rather than an estimate — which on a subscription is the number that actually
+  matters, since you are rate-limited rather than billed per token. If that is
+  ever wanted, the shape to consider is a sidecar or a first-party usage pane
+  extension (§5.23), NOT a shared library — .NET cannot be linked into the
+  Electron process. Carries a §5.29 credential-handling cost either way, which
+  is its own decision and the main reason it is not free.
 - **Session health**: stall detection (no output N min), crash auto-restart w/ --resume.
 - **Voice input**: dictate prompts via local Whisper (converges with owner's
   dictation-app project idea); TTS voice announcements already in Notifications v2.

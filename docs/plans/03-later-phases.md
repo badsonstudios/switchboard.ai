@@ -39,12 +39,17 @@ Planning notes:
   Phase-2/3 throughput fix and the Phase-4 substrate one piece of work. Trigger
   to schedule it: P2-E15-14's real-app perf re-measure showing main-thread
   contention, or the first plugin-host design session — whichever comes first.
-- **OQ #8 (ClaudeMon read) is OVERDUE and now has a code consequence**
-  (2026-07-26). Beyond the three Phase-3 surfaces that share its data plumbing,
-  `estimateCostUsd` currently bakes model pricing into the renderer's UI layer
-  (`lib/usage.ts`, AR-P2-12) — it belongs in whatever shared engine OQ #8
-  settles on. Every week this slips, more cost/usage logic accretes in the
-  wrong layer.
+- **OQ #8 (ClaudeMon) is CLOSED — we are not integrating** (2026-07-29, owner's
+  call). Usage tracking is first-party and native (DESIGN §5.13); ClaudeMon
+  stays a separate product; the idea is parked in DESIGN §10 with its reversal
+  trigger. **This unblocks Phase 3 planning** — it was the last gate on it.
+  What does NOT go away is the code consequence: `estimateCostUsd` bakes model
+  pricing into the renderer's UI layer (`lib/usage.ts`, AR-P2-12). With no
+  shared engine coming, that logic needs a home in main/shared **here**, and
+  the current implementation is wrong in ways DESIGN §5.13 now spells out —
+  notably it defaults an UNKNOWN model to Sonnet rates, i.e. it invents a
+  number. Fix when usage work is scheduled; it is not urgent, but it is not
+  waiting on anything either.
 - **Inherited from Phase 2** (2026-07-21 reconciliation, now in DESIGN.md §8
   Phase 3): watcher windows + undercard tray + attention bubbling (§5.6,
   §5.24) · tray mode + session archive v1 (§5.25) · fleet snapshots + layout
@@ -52,10 +57,10 @@ Planning notes:
   gets broken out.
 - Checkpoint & rollback v1 (§5.28) should land BEFORE dispatch v2's
   auto-dispatch loops — autonomy without seatbelts inverts the risk order.
-- Cross-session review dashboard + mission-control dashboard share data
-  plumbing with ClaudeMon integration — plan those three together.
-- ClaudeMon read (OQ #8) must happen before this phase's planning; ideally far
-  earlier.
+- Cross-session review dashboard + mission-control dashboard + the usage
+  surfaces (§5.13) share data plumbing — plan those three together. (Was
+  "share plumbing with ClaudeMon integration"; the third leg is now our own
+  usage engine.)
 
 ## Phase 4 — The Ecosystem
 *Theme: beyond Claude, beyond the desktop, beyond first-party.*

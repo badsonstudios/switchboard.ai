@@ -304,6 +304,18 @@ read gates Phase 3 planning, "ideally far earlier", and the 2026-07-21
 reconciliation moved *more* into Phase 3. Three Phase-3 surfaces depend on it.
 Highest-value non-code item on the list. → tracked in `03-later-phases.md`
 
+> **AMENDED 2026-07-29 — the second half of this finding is now wrong.**
+> OQ #8 is **closed against integration**: there is no ClaudeMon shared engine
+> and there will not be one; usage is first-party and native (DESIGN §5.13).
+> **The first half stands and got worse** — with no external engine coming,
+> pricing in the renderer has no destination unless we give it one in
+> main/shared. And the review understated the defect: `rateForModel` regex-
+> matches `/opus/i` and **defaults an UNKNOWN model to Sonnet rates**, so it
+> does not merely live in the wrong layer, it reports a confident wrong number
+> for any model it does not recognise. DESIGN §5.13 now carries the correct
+> rules (refuse to price an unknown model version; split cache writes by TTL;
+> normalize Bedrock/Vertex/date decoration; dedupe on `messageId:requestId`).
+
 ### AR-P2-13 · `event-source` is a point with no registrant
 
 `extensibility.md` already calls it the cautionary example. When the renderer
