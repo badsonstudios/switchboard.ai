@@ -6,11 +6,11 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#101 — P2-E15-04 DONE, PR open** on
-`feature/101-capability-brokered-ipc`: every IPC channel declares a capability
-and every registration goes through `IpcBroker`, in both directions. **The last
-P0 of E15.** Gate: lint + typecheck + **376 unit + 83 e2e** green, the latter
-**7 consecutive full runs**. `main` is at `11dbe94`.
+**In progress:** **#104 — P2-E15-07, PR #119 open** on
+`feature/104-renderer-session-store`. **PR #118 (#101, P2-E15-04) MERGED
+2026-07-29** — the last P0 of E15 is done. Gate for #104: lint + typecheck +
+**385 unit + 83 e2e** green (two consecutive full runs after the locator fix
+noted in the log).
 **Next up:** the rest of E15. **#98** (provider adapter capabilities) and
 **#99** (process-agnostic registry) are independent and either can go first;
 #99 then unblocks #100/#101, and #104 → #105 is the chain that unblocks
@@ -77,6 +77,54 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-28 — **P2-E15-07 (#104): the renderer has a state layer.** Three
+  things that were not one: module-level mutable Maps/Sets in `SessionGrid`
+  (`liveToCard`, `allowAllByLive`, `dockingBackByButton`, `cardActions`,
+  `tearingDown`, `restoringLayout`), a **DOM CustomEvent bus**
+  (`switchboard:groups-changed` — pub/sub built out of the window object), and
+  refs in `App` shadowing state so keydown handlers could read what React had
+  not committed. All now one `SessionStore` (plain class +
+  `useSyncExternalStore`, no new dependency).
+  **The refs were RIGHT** — a keydown runs outside React's batching and two
+  Ctrl+Space presses in one frame must advance two steps. The requirement did
+  not go away; it belongs to a store with a synchronous `getState()` rather
+  than to a pile of refs every component must remember to keep in sync. Derived
+  values (rail order, queue) recompute ON MUTATION and are cached, because
+  `useSyncExternalStore` loops forever if `getSnapshot` returns a fresh object.
+  **Review: no blockers, all seven invariants verified intact** (each audited
+  against its new home). Eight should-fixes taken, the notable ones:
+  `cards`/`activeCard` were declared in the store, wired to setters and
+  **written by nobody** — it advertised authority and would have handed any
+  future reader `[]` forever; `getState()` was only SHALLOWLY readonly, so
+  `getState().events.push(e)` compiled, mutated live state and rendered nothing
+  (identity is the change signal) — fields are `readonly` arrays now;
+  `if (patch.sessions || patch.groups)` became a key-presence check; and the
+  store **imported from `components/`** — the state layer downstream of the
+  view, which made the "test the store WITHOUT React" test pull in React,
+  react-i18next and a 700-line component for three type names. Types moved to
+  `model/types.ts`.
+  **A correction to my own plan, found by reading the code:**
+  `tearingDown`/`restoringLayout` are written by `SessionGrid` and READ BY
+  `SessionCardPanel` — cross-component, so the instance refs I had planned
+  would have broken them. They went into the store, deliberately OUTSIDE the
+  notify path so teardown does not trigger renders.
+  **An e2e failure worth recording.** `tabs.spec.ts:168` failed 2/2 full runs
+  on the branch and 0/5 on main — a strict-mode violation, `.dv-active-tab`
+  matching TWO elements. Cause: at that assertion the overflow dropdown is
+  OPEN, and dockview renders a copy of every overflowing tab inside it,
+  including the active one when it is among them. The locator was ALWAYS
+  ambiguous in that case; this change shifted which tabs overflow and exposed
+  it. Scoped to `.dv-tabs-container > .dv-active-tab` — the strip, which is
+  what the assertion means. 2/2 full runs green after.
+  *`--repeat-each` reproduced it on MAIN too, which is what proved the locator
+  rather than the branch was at fault.*
+  **NOT closed by this item, say so plainly:** `switchboard:popout-added` /
+  `-removed` are still a window-object bus (SessionGrid → App), and
+  `lib/drag-context.ts` still holds module-level mutable state. The done-when
+  says "no module-level mutable state in renderer COMPONENTS", which is met —
+  but AR-P1-4 is not fully closed.
+  Gate: lint + typecheck + **385 unit (+23) + 83 e2e** green.
 
 - 2026-07-28 — **P2-E15-04 (#101): §5.23's "main is the sole enforcer" is true
   in code now.** It used to be true only because there was nothing to enforce —
