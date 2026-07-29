@@ -26,11 +26,22 @@ Status: **design phase** (started 2026-07-18). No code yet.
 - Cross-platform: Windows / macOS / Linux (Electron + TypeScript + xterm.js +
   node-pty + Monaco).
 
-## Next steps
+## Status
 
-1. Phase 1 de-risking spike: PTY-host the CLI · hook round-trip for approvals ·
-   transcript tailing (proves the three load-bearing mechanisms; retires open
-   questions #2, #3, #5, #10)
-2. ClaudeMon architecture read (settles DESIGN.md open question #8)
-3. Phase 1 proper: Electron scaffold + day-one architecture (theme tokens, i18n
-   strings, logging pipeline) + session manager
+**`PROGRESS.md` is the live state** — current item, what's next, and the log.
+Read it first; this section only says which phase we're in.
+
+- **Spike 01 — Foundations: DONE.** All three load-bearing mechanisms proved
+  (PTY-hosting the CLI, hook round-trip for approvals, transcript tailing);
+  retired open questions #2, #3, #5, #10.
+- **Phase 1 — MVP: DONE and merged.** Session core, hooks, transcripts, git,
+  notifications, persistence + resume-on-focus, auto-trust.
+- **Phase 2 — The Switchboard: IN PROGRESS.** Richer cards, pop-out /
+  multi-monitor, session groups, the Session tab and approval surfaces are
+  merged; attention routing (E9) and the structural foundations from the
+  2026-07-26 architecture review (E15) are the current work.
+- **Phase 3 / 4** — see `docs/plans/03-later-phases.md`.
+
+> DESIGN.md open question #8 (ClaudeMon integration) was **closed 2026-07-29:
+> we are not integrating.** Usage tracking is first-party and native (§5.13);
+> the idea is parked in §10 with its reversal trigger.
