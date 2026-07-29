@@ -6,8 +6,9 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.** `main` is at `8ba6cb3` (2026-07-29,
-docs-only), working tree clean, nothing unpushed.
+**In progress:** **nothing mid-flight** (as of 2026-07-29). Working tree clean,
+nothing unpushed. *(Don't record a tip SHA here — it is stale the moment it is
+committed; `git log` is the authority for that one.)*
 **The queue, in order: #105 → #117 → #98 / #102-#103 / #107-#111.**
 **E15 is 6 of 14 done and BOTH P0s are closed** — #106 (permission hold),
 #99 (process-agnostic registry), #100 (three renderer contribution points),
