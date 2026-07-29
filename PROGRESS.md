@@ -6,15 +6,43 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#104 — P2-E15-07, PR #119 open** on
-`feature/104-renderer-session-store`. **PR #118 (#101, P2-E15-04) MERGED
-2026-07-29** — the last P0 of E15 is done. Gate for #104: lint + typecheck +
-**385 unit + 83 e2e** green (two consecutive full runs after the locator fix
-noted in the log).
-**Next up:** the rest of E15. **#98** (provider adapter capabilities) and
-**#99** (process-agnostic registry) are independent and either can go first;
-#99 then unblocks #100/#101, and #104 → #105 is the chain that unblocks
-E9-05/E9-07. Remaining standalone fixes: #107, #108, #109, #110, #111.
+**In progress:** **nothing mid-flight.** `main` is at `35e2e2f`, CI green.
+**E15 is 6 of 14 done and BOTH P0s are closed** — #106 (permission hold),
+#99 (process-agnostic registry), #100 (three renderer contribution points),
+#101 (IPC capabilities), #104 (renderer state layer), plus #112 (the tail-pin
+race) fixed along the way. **Consumer count on the extensibility seams: 1 → 5**,
+so the Phase-4 gate ("2–3 dissimilar internal consumers") is met for the first
+time — a starting condition for that conversation, not a decision to ship a
+plugin API.
+
+**Next up — recommended: #105 (P2-E15-08, presentation state into the store).**
+It is the hard prerequisite for **#74 (E9-05)** and **#76 (E9-07)**, i.e. the
+path back to E9 and visible features, and #104 just built the store it needs.
+Per-card view tab / popped-out / suspended / collapsed / dock slot move out of
+`SessionCardPanel`'s `useState`, because "reveal restores it to EXACTLY its
+prior slot" needs state that outlives the panel's unmount.
+
+*Also ready, no dependencies:* **#98** (provider adapter capabilities — the
+last piece of AR-P0-1; rewrites `sessions/ipc.ts`, which #101 just touched, so
+read that first), **#102 → #103** (themes as JSON token maps; #103 is the
+likely-live bug where theme + language reset on every packaged launch),
+**#107** (transcript drift detector) → **#108**, **#109** (header CSP),
+**#110** (workspace schema migration), **#111** (re-measure S-07 concurrency).
+
+*Filed during E15, not scheduled:* **#117** — terminal output can be lost
+between `pty:attach` returning and the renderer subscribing. A REAL
+pre-existing bug found by review; worth fixing before #111 re-measures, since
+a dropped-output race would muddy those numbers. Also open: **#90**, **#91**.
+
+*Known not-closed:* AR-P1-4 is only partly retired — `switchboard:popout-added`
+/ `-removed` are still a window-object bus, and `lib/drag-context.ts` still
+holds module-level mutable state. Both are outside #104's done-when.
+
+*[user] retests still pending on merged main (rebuild first):* test 4
+(out-of-cwd read) WITHOUT allow-all + autonomy=ask · grid-drag between groups ·
+switch-to-session scroll · allow-all sessions now silent. Also pending: the
+ClaudeMon architecture read (OQ #8) before Phase 3 planning.
+
 **Recently merged:** 2026-07-26 — **#96** (sessions-rail redesign, three
 eyeball rounds, Dan signed off) and **#97** (architecture review + the E15
 epic). Before those, same day: **#94** (Deny means deny), **#95** (#92
