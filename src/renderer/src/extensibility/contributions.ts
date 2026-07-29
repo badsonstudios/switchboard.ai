@@ -12,12 +12,15 @@
 // was already a contribution point in everything but name (register a thing,
 // resolve it by id, never import the contributor). P2-E15-03 adds `panel`,
 // `feed-block-renderer` and `status-bar-item` to this map.
+// Every import here is type-only, deliberately: this module is on the store's
+// dependency path (presentation state names a PanelId), and the store has to
+// stay testable without pulling React and a 700-line component in behind it.
 import type React from 'react';
-import { CapabilityManifest } from '../../../shared/extensibility/registry';
-import { Command } from '../lib/commands';
-import { CommandDeps } from '../lib/command-set';
-import { FeedBlockDto } from '../lib/feed';
-import { ThemeName } from '../theme/theme';
+import type { CapabilityManifest } from '../../../shared/extensibility/registry';
+import type { Command } from '../lib/commands';
+import type { CommandDeps } from '../lib/command-set';
+import type { FeedBlockDto } from '../lib/feed';
+import type { ThemeName } from '../theme/theme';
 
 /**
  * A set of commands. Built lazily from deps rather than supplied as a list:
@@ -56,6 +59,20 @@ export type RendererContributions = {
  * are whatever is registered at the `panel` point.
  */
 export type PanelId = string;
+
+/**
+ * The panel a card falls back to: the Session view.
+ *
+ * Named rather than spelled 'feed' at five call sites — it is the default tab,
+ * the toggle-back target, and the answer when a persisted id resolves to
+ * nothing. The string itself is a persisted contract (see above).
+ *
+ * It lives HERE rather than beside the panels themselves because the store's
+ * presentation state defaults to it, and `panels.tsx` imports the real view
+ * components — importing that from the state layer would put React back on the
+ * store's dependency path (P2-E15-07's lesson, kept).
+ */
+export const DEFAULT_PANEL_ID: PanelId = 'feed';
 
 /** Build a manifest. One helper so every contribution declares the same shape. */
 export function manifestFor(id: string, displayName: string, capability: string): CapabilityManifest {

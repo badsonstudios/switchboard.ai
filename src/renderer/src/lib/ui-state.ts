@@ -30,3 +30,22 @@ export function uiSet(key: string, value: unknown): void {
     /* fail-open */
   }
 }
+
+/** The whole blob, for readers that migrate keys they can't name up front
+ *  (the per-card `viewTab.<cardId>` keys — see lib/presentation.ts). */
+export function uiAll(): Readonly<Record<string, unknown>> {
+  return cache;
+}
+
+/** Forget a key outright. `uiSet(k, undefined)` would leave it in the blob as
+ *  an explicit undefined and JSON would drop it on the way out anyway — but
+ *  reads in THIS session would still see the key present. */
+export function uiDelete(keys: string[]): void {
+  if (keys.length === 0) return;
+  for (const k of keys) delete cache[k];
+  try {
+    window.switchboard.workspace.setUi(cache);
+  } catch {
+    /* fail-open */
+  }
+}

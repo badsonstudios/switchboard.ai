@@ -21,14 +21,15 @@
 import { EventDto, RailGroup, RailSession } from '../model/types';
 import { railOrder, RailOrderResult } from '../lib/groups';
 import { attentionQueue, nextInQueue, withVisit } from '../lib/queue';
-import { PanelId } from '../extensibility/contributions';
-
-/** Per-card imperative handles (E9-01) — how a command drives ONE card. */
-export interface CardActions {
-  setView: (view: PanelId) => void;
-  currentView: () => PanelId;
-  popOutToggle: () => void;
-}
+import {
+  CardPresentation,
+  DEFAULT_PRESENTATION,
+  PersistedPresentation,
+  persistablePresentation,
+  persistedChanged,
+  prunePresentation,
+  samePresentation,
+} from '../lib/presentation';
 
 /**
  * A snapshot. Every field is `readonly` deliberately: identity IS the change
@@ -46,6 +47,8 @@ export interface SessionState {
   readonly events: readonly EventDto[];
   /** where the attention walk has been, BY EVENT ID (see lib/queue) */
   readonly visited: ReadonlySet<number>;
+  /** per-card view tab / ladder rung / dock slot (P2-E15-08) */
+  readonly presentation: ReadonlyMap<string, CardPresentation>;
 }
 
 const EMPTY: SessionState = {
@@ -55,6 +58,7 @@ const EMPTY: SessionState = {
   groups: [],
   events: [],
   visited: new Set(),
+  presentation: new Map(),
 };
 
 export class SessionStore {
@@ -79,7 +83,11 @@ export class SessionStore {
   // Cards docking back via the pop-out BUTTON, as opposed to a bare window
   // close: the two look identical to dockview and mean opposite things (E8-04).
   private readonly dockingBackByButton = new Set<string>();
-  private readonly cardActions = new Map<string, CardActions>();
+  // Cards whose panel is being removed BY US to hide it, as opposed to the user
+  // closing it: dockview cannot tell the difference and they mean opposite
+  // things — hiding keeps the record and the running session, closing forgets
+  // both (P2-E15-08).
+  private readonly hidingCards = new Set<string>();
 
   /** The current state. Synchronous and always current — that is the point. */
   getState(): Readonly<SessionState> {
@@ -161,6 +169,66 @@ export class SessionStore {
     return next;
   }
 
+  // ── presentation (P2-E15-08) ────────────────────────────────────────────
+  // Part of `state`, unlike the registries below: cards RENDER from this, and
+  // E9-07's layout modes will drive every card's rung at once.
+  //
+  // Persistence is INJECTED rather than imported. The store writing to the ui
+  // blob directly would put the preload bridge on its dependency path, and the
+  // point of P2-E15-07 was a state layer that can be tested on its own.
+  private persistPresentation: (blob: Record<string, PersistedPresentation>) => void = () => {};
+
+  setPresentationPersister(fn: (blob: Record<string, PersistedPresentation>) => void): void {
+    this.persistPresentation = fn;
+  }
+
+  /** One card's presentation. Unknown cards share ONE frozen default object,
+   *  so a `useSyncExternalStore` snapshot for a card with no record is stable. */
+  getPresentation(cardId: string | undefined): CardPresentation {
+    return (cardId ? this.state.presentation.get(cardId) : undefined) ?? DEFAULT_PRESENTATION;
+  }
+
+  /** Seed the map from the ui blob at boot. Does not persist — it just read it. */
+  initPresentation(map: ReadonlyMap<string, CardPresentation>): void {
+    this.set({ presentation: new Map(map) });
+  }
+
+  setPresentation(cardId: string | undefined, patch: Partial<CardPresentation>): void {
+    if (!cardId) return; // a panel with no card id has no durable identity
+    const cur = this.getPresentation(cardId);
+    const next: CardPresentation = Object.freeze({ ...cur, ...patch });
+    // a no-op write must not publish a new object: slots are recaptured on
+    // every layout change, and identity is what tells React to re-render
+    if (samePresentation(cur, next)) return;
+    const map = new Map(this.state.presentation);
+    map.set(cardId, next);
+    this.set({ presentation: map });
+    if (persistedChanged(cur, next)) this.persistPresentation(persistablePresentation(map));
+  }
+
+  isHidden(cardId: string | undefined): boolean {
+    return this.getPresentation(cardId).ladder === 'hidden';
+  }
+
+  /** The card is gone for good — retire its record at that moment rather than
+   *  waiting for the next boot's prune. */
+  forgetPresentation(cardId: string): void {
+    if (!this.state.presentation.has(cardId)) return;
+    const map = new Map(this.state.presentation);
+    map.delete(cardId);
+    this.set({ presentation: map });
+    this.persistPresentation(persistablePresentation(map));
+  }
+
+  /** Forget records for cards that no longer exist (called after boot, when the
+   *  known-card list is in). */
+  prunePresentation(knownCardIds: Iterable<string>): void {
+    const next = prunePresentation(this.state.presentation, knownCardIds);
+    if (!next) return;
+    this.set({ presentation: next });
+    this.persistPresentation(persistablePresentation(next));
+  }
+
   // ── imperative registries ───────────────────────────────────────────────
   // Everything below is deliberately OUTSIDE the notify path: nothing renders
   // from it, so a write must not cost a re-render. Do not build a
@@ -193,17 +261,16 @@ export class SessionStore {
     return this.dockingBackByButton.delete(cardId);
   }
 
-  // ── per-card imperative handles (E9-01) ─────────────────────────────────
-  registerCardActions(cardId: string, actions: CardActions): () => void {
-    this.cardActions.set(cardId, actions);
-    return () => {
-      // identity-checked: a remount registers before the old unmount runs, and
-      // an unconditional delete would drop the LIVE handle
-      if (this.cardActions.get(cardId) === actions) this.cardActions.delete(cardId);
-    };
+  // ── hide vs close (P2-E15-08) ───────────────────────────────────────────
+  /** Set around the removePanel call that hides a card, so the grid's
+   *  onDidRemovePanel doesn't read it as the user closing the card and wipe
+   *  the persisted record. Same shape as the teardown flag, per card. */
+  setHiding(cardId: string, v: boolean): void {
+    if (v) this.hidingCards.add(cardId);
+    else this.hidingCards.delete(cardId);
   }
-  actionsFor(cardId: string): CardActions | undefined {
-    return this.cardActions.get(cardId);
+  isHiding(cardId: string): boolean {
+    return this.hidingCards.has(cardId);
   }
 
   // ── dockview lifecycle flags ────────────────────────────────────────────

@@ -95,6 +95,12 @@ its card — the same confirmation you get from the tab's **✕**.
 ``Ctrl+` `` is a toggle: press it once to look at the Terminal, press it again
 to go straight back to the Session view.
 
+Two more live in the palette without a shortcut of their own: **Toggle Changes
+view**, and **Hide session (keeps it running)** — which takes the focused
+session's card out of the workspace without ending it. Click the session in the
+Sessions list to bring it back where it was; see
+[Organizing your workspace](07-workspace.md).
+
 ## Hiding the Sessions list
 
 `Ctrl+B` hides and shows the Sessions list on the left, for when you want the
