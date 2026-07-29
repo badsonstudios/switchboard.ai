@@ -15,6 +15,7 @@ import 'dockview-react/dist/styles/dockview.css';
 // shell, popups and popout windows can't fall back to a foreign theme (#84)
 import '../theme/dockview-tokens.css';
 import { rendererRegistry } from '../extensibility/registry-instance';
+import { CardActions, sessionStore } from '../store/session-store';
 import { PanelContext, PanelId } from '../extensibility/contributions';
 import { DEFAULT_PANEL_ID, listPanels, panelBadge, panelEnabled } from '../extensibility/panels';
 import { ContributionBoundary } from '../extensibility/boundary';
@@ -156,7 +157,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     void window.switchboard.sessions
       .create({ cardId, folder, title: props.api.title ?? folder, autonomy, groupId: props.params?.groupId })
       .then((record) => {
-        if (cardId) liveToCard.set(record.id, cardId);
+        if (cardId) sessionStore.mapLiveToCard(record.id, cardId);
         setLive({
           id: record.id,
           accent: record.identity.accentColor,
@@ -249,7 +250,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       input: Record<string, unknown>;
     }): void => {
       if (r.cardId !== cardId) return;
-      if (allowAllByLive.has(r.sessionId)) {
+      if (sessionStore.isAllowAll(r.sessionId)) {
         void window.switchboard.sessions.decidePermission(r.requestId, 'allow');
         return;
       }
@@ -280,7 +281,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     if (allowAll) {
       // main answers future gated calls at the server — no hold/event/beep
       // (P2 #19). The local set still drains anything ALREADY queued here.
-      allowAllByLive.add(head.sessionId);
+      sessionStore.setAllowAll(head.sessionId);
       void window.switchboard.sessions.allowAllSession(head.sessionId);
     }
     void window.switchboard.sessions.decidePermission(head.requestId, decision);
@@ -291,7 +292,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // groups in the grid (E12-04)
   React.useEffect(() => {
     const d = props.api.onDidGroupChange(() => {
-      if (tearingDown || restoringLayout) return;
+      if (sessionStore.isTearingDown() || sessionStore.isRestoringLayout()) return;
       void adoptMembershipFromDockGroup(props);
     });
     return () => d.dispose();
@@ -312,13 +313,14 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       // race with beforeunload the only effect is the session ending a few ms
       // early: dropLive keeps the persisted record, so the card still resumes
       // next launch. Harmless either way (E8-04 review).
-      if (tearingDown) return;
+      if (sessionStore.isTearingDown()) return;
       if (wasPopout && now !== 'popout' && cardId) {
-        if (dockingBackByButton.has(cardId)) {
-          dockingBackByButton.delete(cardId); // button toggle: stay alive
-        } else {
+        // takeDockingBack CONSUMES the flag: a button toggle keeps the session
+        // alive, a bare window close suspends it, and the two look identical
+        // to dockview (E8-04)
+        if (!sessionStore.takeDockingBack(cardId)) {
           void window.switchboard.sessions.dropLive(cardId); // window closed: suspend
-          forgetCardLiveIds(cardId);
+          sessionStore.forgetCardLiveIds(cardId);
           setLive(null);
           setSuspended(true);
         }
@@ -340,13 +342,13 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       // only arm the "stay alive" flag when a window actually exists to close —
       // else a stale flag would later mis-classify a genuine user close as a
       // toggle and skip the suspend (E8-04 review).
-      if (w && cardId) dockingBackByButton.add(cardId);
+      if (w && cardId) sessionStore.markDockingBack(cardId);
       w?.close();
       return;
     }
     const panel = props.containerApi.getPanel(props.api.id);
     if (!panel) return;
-    if (cardId) dockingBackByButton.delete(cardId); // drop any stale toggle flag
+    if (cardId) sessionStore.takeDockingBack(cardId); // drop any stale toggle flag
     // same-origin popout.html; the terminal keeps running because its JS stays
     // in this window while its DOM is adopted into the new OS window (E8)
     const popoutUrl = new URL('popout.html', window.location.href).toString();
@@ -368,11 +370,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       currentView: () => actionsRef.current?.currentView() ?? DEFAULT_PANEL_ID,
       popOutToggle: () => actionsRef.current?.popOutToggle(),
     };
-    cardActions.set(cardId, entry);
+    const offActions = sessionStore.registerCardActions(cardId, entry);
     return () => {
       // identity-checked: if this card remounted before our cleanup ran, the
       // NEW registration must survive (dockview re-creates panels on restore)
-      if (cardActions.get(cardId) === entry) cardActions.delete(cardId);
+      offActions();
     };
   }, [cardId, live]);
 
@@ -386,7 +388,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     // drop the dead live session (keep the card record), then re-arm the lazy
     // spawn so the card respawns/resumes
     if (cardId) void window.switchboard.sessions.dropLive(cardId);
-    if (live) forgetCardLiveIds(cardId ?? '');
+    if (live) sessionStore.forgetCardLiveIds(cardId ?? '');
     setExited(null);
     setLive(null);
     spawning.current = false;
@@ -892,40 +894,8 @@ function DiffPanel(props: IDockviewPanelProps<{ folder?: string; theme?: string 
 
 const components = { sessionCard: SessionCardPanel, diffPane: DiffPanel };
 
-// live session id -> stable card id (single-window app). Lets the rail, which
-// tracks live sessions, focus/diff a card by its ephemeral session id.
-const liveToCard = new Map<string, string>();
-// LIVE session ids where the user chose "Allow all (this session)" — keyed
-// by the ephemeral live id so a respawn/resume prompts again (review P0#2)
-const allowAllByLive = new Set<string>();
-// card ids currently docking back via the pop-out BUTTON (toggle). The panel's
-// location-change handler reads this to keep a button dock-back alive while a
-// bare window-close suspends the session (E8-04).
-const dockingBackByButton = new Set<string>();
-function cardIdForLive(liveId: string): string {
-  return liveToCard.get(liveId) ?? liveId;
-}
-// Per-card imperative handles (E9-01). A card panel registers its own actions
-// on mount so the command dispatcher can drive ONE card — the view tabs and the
-// pop-out toggle live inside the panel component, and prop-drilling them up
-// through Dockview isn't possible. Same module-map pattern as liveToCard.
-interface CardActions {
-  // panel ids are contributed now, so this is the id space of whatever is
-  // registered at the `panel` point — not a closed union (P2-E15-03)
-  setView: (view: PanelId) => void;
-  currentView: () => PanelId;
-  popOutToggle: () => void;
-}
-const cardActions = new Map<string, CardActions>();
-function forgetCardLiveIds(cardId: string): void {
-  for (const [liveId, cid] of liveToCard) if (cid === cardId) liveToCard.delete(liveId);
-}
-// set while the window is tearing down: Dockview disposal must NOT be mistaken
-// for the user closing cards (which would wipe persisted records)
-let tearingDown = false;
-// set while fromJSON replays a saved layout: those group-change events are
-// restore mechanics, not user drags — never adopt membership from them
-let restoringLayout = false;
+// live-id mapping, allow-all, dock-back and card actions all live in the
+// store now (P2-E15-07) — see store/session-store.ts for why each exists.
 
 // Grid-drag membership sync (E12-04): after a user drag drops a session panel
 // into a dockview group, it adopts its new siblings' persistent group.
@@ -945,8 +915,8 @@ async function adoptMembershipFromDockGroup(
   const target = pickAdoptedGroupId(cardId, siblingIds, cards);
   if ((mine.groupId ?? null) !== target) {
     await window.switchboard.groups.setSessionGroup(cardId, target);
-    // the rail lives in App state — poke it to re-read memberships
-    window.dispatchEvent(new Event('switchboard:groups-changed'));
+    // the rail lives in App state — tell it to re-read memberships
+    sessionStore.notifyMembershipChanged();
   }
 }
 
@@ -1045,7 +1015,7 @@ export function SessionGrid(props: {
         });
       },
       focusSession: (liveId) => {
-        const panel = apiRef.current?.getPanel(`session-${cardIdForLive(liveId)}`);
+        const panel = apiRef.current?.getPanel(`session-${sessionStore.cardIdForLive(liveId)}`);
         if (!panel) return false;
         panel.focus();
         // a popped-out card is in another OS window — focusing the panel alone
@@ -1076,7 +1046,7 @@ export function SessionGrid(props: {
         api.removePanel(panel); // onDidRemovePanel -> closeCard
       },
       toggleCardView: (cardId, view) => {
-        const actions = cardActions.get(cardId);
+        const actions = sessionStore.actionsFor(cardId);
         if (!actions) return; // suspended/dead card: no view to switch
         // toggling: a second press on the same view returns to the Session view
         actions.setView(
@@ -1084,7 +1054,7 @@ export function SessionGrid(props: {
         );
       },
       popOutCard: (cardId) => {
-        cardActions.get(cardId)?.popOutToggle();
+        sessionStore.actionsFor(cardId)?.popOutToggle();
       },
       restoreRescuedPopouts: () => {
         const api = apiRef.current;
@@ -1127,7 +1097,7 @@ export function SessionGrid(props: {
       openDiff: (liveId, folder, title) => {
         const api = apiRef.current;
         if (!api) return;
-        const cardId = cardIdForLive(liveId);
+        const cardId = sessionStore.cardIdForLive(liveId);
         const existing = api.getPanel(`diff-${cardId}`);
         if (existing) return existing.focus();
         api.addPanel({
@@ -1212,7 +1182,8 @@ export function SessionGrid(props: {
       // remember which card has focus (E12-08); restored below after fromJSON
       api.onDidActivePanelChange((e) => {
         const m = e.panel ? /^session-(.+)$/.exec(e.panel.id) : null;
-        if (m && !restoringLayout && !tearingDown) uiSet('focusedCardId', m[1]);
+        if (m && !sessionStore.isRestoringLayout() && !sessionStore.isTearingDown())
+          uiSet('focusedCardId', m[1]);
         // the rail's selected tint follows the grid even mid-restore: it is a
         // read-only reflection, not persisted state
         props.onActiveCardChanged?.(m ? m[1] : null);
@@ -1234,17 +1205,17 @@ export function SessionGrid(props: {
       });
       // window teardown must not be mistaken for the user closing cards
       window.addEventListener('beforeunload', () => {
-        tearingDown = true;
+        sessionStore.setTearingDown(true);
       });
       // closing a card (tab X or the overlay) forgets it — it will NOT come
       // back next launch. Quitting keeps the record so sessions DO come back,
       // so we skip this during teardown (belt-and-suspenders vs Dockview
       // disposal ever firing removes).
       api.onDidRemovePanel((panel) => {
-        if (tearingDown) return;
+        if (sessionStore.isTearingDown()) return;
         const m = /^session-(.+)$/.exec(panel.id);
         if (!m) return;
-        forgetCardLiveIds(m[1]);
+        sessionStore.forgetCardLiveIds(m[1]);
         void window.switchboard.sessions.closeCard(m[1]);
       });
 
@@ -1257,11 +1228,11 @@ export function SessionGrid(props: {
           const workAreas = await window.switchboard.workAreas();
           const rescuedNow: RescuedPopout[] = [];
           const sane = sanitizePopoutLayout(saved, window.location.origin, workAreas, rescuedNow);
-          restoringLayout = true;
+          sessionStore.setRestoringLayout(true);
           try {
             api.fromJSON(sane as Parameters<DockviewApi['fromJSON']>[0]);
           } finally {
-            restoringLayout = false;
+            sessionStore.setRestoringLayout(false);
           }
           // stash what was rescued so the display-reconnect offer (E8-06) can
           // put it back — appended, cleared only by an accepted restore

@@ -213,9 +213,14 @@ test.describe('tab strip (#84)', () => {
 
     // clicking a row activates that session
     await control.click();
-    const before = await w.locator('.dv-active-tab').innerText();
+    // scoped to the STRIP: with the dropdown open, dockview renders a copy of
+    // every overflowing tab inside it — including the active one when it is
+    // among them — so a bare `.dv-active-tab` matches two elements and trips
+    // strict mode. The assertion is about the strip's active tab.
+    const activeTab = w.locator('.dv-tabs-container > .dv-active-tab');
+    const before = await activeTab.innerText();
     await w.locator('.dv-tabs-overflow-container .dv-tab').first().click();
-    await expect.poll(() => w.locator('.dv-active-tab').innerText()).not.toBe(before);
+    await expect.poll(() => activeTab.innerText()).not.toBe(before);
   });
 
   test('a popped-out window gets our theme and tab mode (separate document)', async () => {

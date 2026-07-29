@@ -21,33 +21,13 @@
 //     explicit rejection.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { RailGroup, RailSession } from '../model/types';
 import { railOrder } from '../lib/groups';
 import { presentStatus, needCount, clampRailWidth, RAIL_WIDTH_DEFAULT } from '../lib/rail-view';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { getDraggedCard, setDraggedCard } from '../lib/drag-context';
 
-export interface RailSession {
-  id: string;
-  title: string;
-  folder?: string;
-  accent?: string;
-  badge?: string;
-  status?: string;
-  /** persistent-group membership (E12); undefined = ungrouped */
-  groupId?: string;
-  /** repo/folder auto-group key (E12-05); same key = same emergent group */
-  autoKey?: string;
-  /** the live session under this card, when running (events map by this) */
-  liveId?: string;
-  /** freeform task label (shown under the title in the Events panel) */
-  taskLabel?: string;
-}
-
-export interface RailGroup {
-  id: string;
-  name: string;
-  color: string;
-}
+export type { RailSession, RailGroup } from '../model/types';
 
 const DND_TYPE = 'application/x-switchboard-card';
 
@@ -58,8 +38,8 @@ const tint = (color: string, pct: number): string =>
   `color-mix(in srgb, ${color} ${pct}%, transparent)`;
 
 export function SessionsRail(props: {
-  sessions: RailSession[];
-  groups: RailGroup[];
+  sessions: readonly RailSession[];
+  groups: readonly RailGroup[];
   onRename: (id: string, title: string) => void;
   onFocus: (id: string) => void;
   onDiff: (s: RailSession) => void;
