@@ -55,8 +55,8 @@ export interface RailOrderResult<T> {
 }
 
 export function railOrder<T extends AutoGroupable>(
-  sessions: T[],
-  groups: Array<{ id: string }>
+  sessions: readonly T[],
+  groups: ReadonlyArray<{ id: string }>
 ): RailOrderResult<T> {
   const grouped = new Map<string, T[]>();
   for (const g of groups) grouped.set(g.id, []);

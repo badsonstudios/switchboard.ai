@@ -7,17 +7,13 @@
 // their order. App owns the subscription and lib/queue owns the ordering, so
 // what you read top-to-bottom here is exactly what Ctrl+Space will walk —
 // "the feed is the log, the queue is the to-do list" (§5.12).
+import { EventDto } from '../model/types';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailSession } from './SessionsRail';
 import { panelOrder, nextInQueue } from '../lib/queue';
 
-export interface EventDto {
-  id: number;
-  sessionId: string;
-  kind: 'done' | 'ready' | 'needs-input' | 'needs-permission' | 'crashed';
-  at: string;
-}
+export type { EventDto } from '../model/types';
 
 const KIND_TOKEN: Record<EventDto['kind'], string> = {
   done: 'var(--status-done)',
@@ -28,9 +24,9 @@ const KIND_TOKEN: Record<EventDto['kind'], string> = {
 };
 
 export function EventsPanel(props: {
-  sessions: RailSession[];
+  sessions: readonly RailSession[];
   /** the feed's current items — App owns the subscription (E9-03) */
-  events: EventDto[];
+  events: readonly EventDto[];
   /** event ids the walk has already taken you to (App owns the cursor) */
   visited: ReadonlySet<number>;
   onFocus: (sessionId: string) => void;

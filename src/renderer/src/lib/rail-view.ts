@@ -96,7 +96,7 @@ export function presentStatus(status?: string): StatusPresentation {
 
 /** How many of these sessions need a human — drives the group header summary
  *  and the rail footer, from the same rule the rows paint themselves with. */
-export function needCount(sessions: Array<{ status?: string }>): number {
+export function needCount(sessions: ReadonlyArray<{ status?: string }>): number {
   return sessions.filter((s) => presentStatus(s.status).needsYou).length;
 }
 

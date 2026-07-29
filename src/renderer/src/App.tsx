@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   applyPreference,
@@ -9,17 +9,16 @@ import {
 } from './theme/theme';
 import { LanguageChoice, loadLanguage, setLanguage } from './i18n';
 import { TitleBar, StatusBar } from './components/chrome';
-import { SessionsRail, RailSession, RailGroup } from './components/SessionsRail';
+import { SessionsRail, RailGroup } from './components/SessionsRail';
 import { SessionGrid, GridController } from './components/SessionGrid';
 import { EventsPanel, EventDto } from './components/EventsPanel';
 import { Usage, addUsage, estimateCostUsd, ZERO_USAGE } from './lib/usage';
 import { loadUiState, uiGet, uiSet } from './lib/ui-state';
 import { boxOnAnyDisplay, RescuedPopout } from './lib/layout';
-import { railOrder } from './lib/groups';
 import { rendererRegistry } from './extensibility/registry-instance';
 import { buildContributedCommands } from './extensibility/commands';
 import { bindingFor, dispatch, formatBinding, Platform } from './lib/commands';
-import { attentionQueue, nextInQueue, withVisit } from './lib/queue';
+import { sessionStore } from './store/session-store';
 import { CommandPalette } from './components/CommandPalette';
 import {
   applyTabRows,
@@ -29,6 +28,11 @@ import {
   toggleTabRows,
   trackPopoutWindow,
 } from './lib/tab-rows';
+
+// One stable subscribe identity for every useSyncExternalStore call below.
+// An inline arrow is a new function each render, and React unsubscribes and
+// resubscribes whenever `subscribe` changes — six times per render, forever.
+const subscribeStore = (cb: () => void): (() => void) => sessionStore.subscribe(cb);
 
 // Control-room shell (P1-E3-01): titlebar / rail / grid / statusbar.
 // Terminals (E3-02), identity kit (E3-03), and live badges (E3-05) land next.
@@ -46,11 +50,19 @@ export function App(): React.JSX.Element {
   const [pref, setPref] = useState<ThemePreference>(() => loadPreference());
   const [theme, setTheme] = useState<ThemeName>(() => applyPreference(loadPreference()));
   const [lang, setLang] = useState<LanguageChoice>(() => loadLanguage());
-  const [cards, setCards] = useState<string[]>([]);
+  // cards + the active card live in the store like everything else: it claims
+  // to be the state authority, and a field it never receives would hand any
+  // future reader an empty list forever
+  const cards = useSyncExternalStore(subscribeStore, () => sessionStore.getState().cards);
   // which card the grid is showing — reflected as the rail's selected row
-  const [activeCard, setActiveCard] = useState<string | null>(null);
-  const [sessions, setSessions] = useState<RailSession[]>([]);
-  const [groups, setGroups] = useState<RailGroup[]>([]);
+  const activeCard = useSyncExternalStore(
+    subscribeStore,
+    () => sessionStore.getState().activeCard
+  );
+  // sessions + groups live in the store: the rail renders from them, the
+  // keyboard numbers from them, and one derivation means they cannot disagree
+  const sessions = useSyncExternalStore(subscribeStore, () => sessionStore.getState().sessions);
+  const groups = useSyncExternalStore(subscribeStore, () => sessionStore.getState().groups);
   const [palette, setPalette] = useState<string[]>([]);
   const [notifEnabled, setNotifEnabled] = useState(true);
   // gate the shell on the persisted UI state (E12-08): reads are sync after
@@ -66,11 +78,13 @@ export function App(): React.JSX.Element {
   // authority — two independent subscriptions to events:changed could hand the
   // panel and the Ctrl+Space walk different lists, and then the highlighted
   // "next" row would not be where the hotkey actually takes you.
-  const [events, setEvents] = useState<EventDto[]>([]);
-  // the walk reads the events that are true at KEYPRESS time — the push
-  // handler below writes this ref directly, so a keydown arriving before
-  // React re-renders still sees the session that just called
-  const eventsRef = React.useRef(events);
+  // Events and the walk cursor live in the STORE (P2-E15-07). They used to be
+  // state plus a shadowing ref, because a keydown arriving before React
+  // re-rendered had to see the session that just called. The store's
+  // getState() is synchronous, so the requirement is met by the state layer
+  // rather than by every component remembering to keep a ref in sync.
+  const events = useSyncExternalStore(subscribeStore, () => sessionStore.getState().events);
+  const visited = useSyncExternalStore(subscribeStore, () => sessionStore.getState().visited);
   useEffect(() => {
     void loadUiState().then(() => {
       setAutonomy(uiGet('autonomy', 'ask'));
@@ -164,7 +178,7 @@ export function App(): React.JSX.Element {
     // card-keyed view: includes SUSPENDED cards (restored, not yet resumed)
     const list = await bridge.sessions?.cards?.();
     if (!list) return;
-    setSessions(
+    sessionStore.setSessions(
       list.map((c) => ({
         id: c.cardId,
         title: c.title,
@@ -182,7 +196,7 @@ export function App(): React.JSX.Element {
 
   const refreshGroups = React.useCallback(async () => {
     const list = await bridge.groups?.list?.();
-    if (list) setGroups(list as RailGroup[]);
+    if (list) sessionStore.setGroups(list as RailGroup[]);
   }, []); // bridge is stable
 
   useEffect(() => {
@@ -207,8 +221,7 @@ export function App(): React.JSX.Element {
       void refreshSessions();
       void refreshGroups();
     };
-    window.addEventListener('switchboard:groups-changed', h);
-    return () => window.removeEventListener('switchboard:groups-changed', h);
+    return sessionStore.subscribeMembership(h);
   }, [refreshSessions, refreshGroups]);
 
   useEffect(() => {
@@ -228,17 +241,10 @@ export function App(): React.JSX.Element {
     let gotPush = false;
     const off = window.switchboard?.events?.onChanged?.((l) => {
       gotPush = true;
-      // written HERE, not in the post-commit effect below: the walk has to see
-      // an event that landed since the last commit, and a keydown can arrive
-      // before React has re-rendered
-      eventsRef.current = l as EventDto[];
-      setEvents(l as EventDto[]);
+      sessionStore.setEvents(l as EventDto[]);
     });
     void window.switchboard?.events?.list?.().then((l) => {
-      if (!gotPush) {
-        eventsRef.current = l as EventDto[];
-        setEvents(l as EventDto[]);
-      }
+      if (!gotPush) sessionStore.setEvents(l as EventDto[]);
     });
     return off;
   }, []);
@@ -249,16 +255,12 @@ export function App(): React.JSX.Element {
   // Rail order is the numbering authority for Ctrl+1..9 — the same function the
   // rail renders from (collapsed groups included: collapsing hides rows, it
   // doesn't renumber the workspace).
-  const railSessions = railOrder(sessions, groups).flat;
-  const railSessionsRef = React.useRef(railSessions);
+  // the store derives rail order from the same sessions+groups the rail
+  // renders, so Ctrl+1..9 numbering and the eye can never disagree
   const railHiddenRef = React.useRef(railHidden);
   // read by the dispatcher: an open modal swallows the app's accelerators
   const paletteOpenRef = React.useRef(paletteOpen);
-  // refs are written AFTER commit, never during render: the keydown handler
-  // only ever runs post-commit, so this is fresh enough and stays correct if
-  // React ever abandons a render
   useEffect(() => {
-    railSessionsRef.current = railSessions;
     railHiddenRef.current = railHidden;
     paletteOpenRef.current = paletteOpen;
   });
@@ -274,25 +276,10 @@ export function App(): React.JSX.Element {
     return raised;
   }, []);
 
-  // Where the walk has already taken you, by EVENT id (see lib/queue).
-  //
-  // BOTH a ref and state, deliberately: the ref is the authority, written
-  // synchronously so two presses in one frame advance two steps rather than
-  // batching into one; the state exists only so the panel can render the
-  // cursor. If the panel showed a fixed head instead, its "next" marker would
-  // point at the wrong row from the second press onward — and the whole point
-  // of one shared ordering is that the eye and the keyboard agree.
-  const visitedRef = React.useRef<ReadonlySet<number>>(new Set());
-  const [visited, setVisited] = useState<ReadonlySet<number>>(visitedRef.current);
-  const visit = React.useCallback((events: EventDto[], eventId: number) => {
-    const next = withVisit(visitedRef.current, events, eventId);
-    visitedRef.current = next;
-    setVisited(next);
-  }, []);
+
   const jumpToNextAttention = React.useCallback(() => {
-    const { next, visited: after } = nextInQueue(eventsRef.current, visitedRef.current);
-    visitedRef.current = after;
-    setVisited(after);
+    // synchronous read AND write: two presses in one frame advance two steps
+    const next = sessionStore.advanceQueue();
     if (!next) return; // empty queue: a no-op, never a focus change
     // focusSession maps a live session id to its card itself, and passes any
     // id it doesn't recognise straight through
@@ -349,11 +336,11 @@ export function App(): React.JSX.Element {
   // command ends up enabled in the palette and dead on the keyboard.
   const commandContext = React.useCallback(
     () => ({
-      sessions: railSessionsRef.current,
+      // read from the store, not a ref: this runs on KEYDOWN, outside React's
+      // commit, so it has to see what is true now
+      sessions: sessionStore.getRailOrder().flat,
       activeCardId: grid.current?.activeCardId() ?? null,
-      // recomputed live rather than read off a ref: the depth decides whether
-      // the jump command is available at all
-      attentionCount: attentionQueue(eventsRef.current).length,
+      attentionCount: sessionStore.getQueue().length,
     }),
     [],
   );
@@ -548,8 +535,8 @@ export function App(): React.JSX.Element {
         <SessionGrid
           theme={theme}
           seedPanels={bridge.seedPanels ?? 0}
-          onCardsChanged={setCards}
-          onActiveCardChanged={setActiveCard}
+          onCardsChanged={(c) => sessionStore.setCards(c)}
+          onActiveCardChanged={(c) => sessionStore.setActiveCard(c)}
           controller={grid}
         />
         <EventsPanel
@@ -558,7 +545,7 @@ export function App(): React.JSX.Element {
           visited={visited}
           queueBinding={queueBindingLabel}
           onFocus={(id) => focusSession(id)}
-          onVisit={(eventId) => visit(events, eventId)}
+          onVisit={(eventId) => sessionStore.visit(eventId)}
           reconnectOffer={reconnectOffer}
           onRestoreLayout={() => {
             grid.current?.restoreRescuedPopouts();
