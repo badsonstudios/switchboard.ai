@@ -2,11 +2,13 @@
 // session core. Hidden panes are ingest-only (S-07): PTY bytes always land in
 // the main-process ring buffer; the renderer gets a live feed ONLY while a
 // pane is attached, and a scrollback snapshot replay on attach.
-import { BrowserWindow, dialog, ipcMain } from 'electron';
+import { BrowserWindow, dialog } from 'electron';
 import fs from 'fs';
 import { SessionManager } from './session-manager';
 import { PtyService } from '../pty/pty-service';
 import { HookListener } from '../hooks/hook-listener';
+import { IpcBroker } from '../ipc/broker';
+import { Channel } from '../../shared/ipc/capabilities';
 import { TranscriptWatcher } from '../transcripts/watcher';
 import { Logger } from '../log/logger';
 import { assignAccent, detectProjectType } from './identity';
@@ -24,6 +26,8 @@ export interface SessionIpcDeps {
   feed: EventFeed;
   log: Logger;
   getWindow: () => BrowserWindow | null;
+  /** the IPC choke point — every channel, both directions (P2-E15-04) */
+  broker: IpcBroker;
   /** auto-trust the folder before spawning (default on; user picks folder) */
   autoTrust: () => boolean;
   /** persisted session cards (resume-on-focus across app restarts, §5.25) */
@@ -42,7 +46,7 @@ export interface SessionIpcDeps {
 }
 
 export function registerSessionIpc(deps: SessionIpcDeps): void {
-  const { manager, ptys, hooks, transcripts, log } = deps;
+  const { manager, ptys, hooks, transcripts, log, broker } = deps;
   // per-session live-feed unsubscribers (attached panes only)
   const feeds = new Map<string, () => void>();
   // a card is the durable unit; the live session under it is ephemeral
@@ -60,9 +64,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     if (existing) deps.persist.upsert({ ...existing, nativeSessionId: nativeId });
   });
 
-  const send = (channel: string, payload: unknown): void => {
-    const win = deps.getWindow();
-    if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+  // outbound goes through the broker too: it checks what the TARGET window
+  // holds, which is a no-op for first-party and the enforcement point a
+  // Phase-4 plugin needs (P2-E15-04)
+  const send = (channel: Channel, payload: unknown): void => {
+    deps.broker.send(deps.getWindow(), channel, payload);
   };
 
   manager.onStatusChange((change) => {
@@ -83,13 +89,13 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     if (prior) deps.persist.upsert({ ...prior, usage: snap.usage, model: snap.model ?? prior.model });
   });
 
-  ipcMain.handle('events:list', () => deps.feed.list());
+  broker.handle('events:list', () => deps.feed.list());
   // "Done." relaxes to "Ready" once the user looks at the session (Dan #4)
-  ipcMain.handle('events:ack', (_e, sessionId: string) => {
+  broker.handle('events:ack', (_e, sessionId: string) => {
     if (typeof sessionId === 'string') deps.feed.acknowledge(sessionId);
   });
   // the ✕ on an event item removes it outright (Dan round 4)
-  ipcMain.handle('events:dismiss', (_e, sessionId: string) => {
+  broker.handle('events:dismiss', (_e, sessionId: string) => {
     if (typeof sessionId === 'string') deps.feed.forget(sessionId);
   });
 
@@ -100,11 +106,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   );
   hooks.onPermissionResolved((requestId) => send('sessions:permissionResolved', { requestId }));
   // replay for a (re)mounting renderer — a missed push must not park the CLI
-  ipcMain.handle('sessions:pendingPermissions', () =>
+  broker.handle('sessions:pendingPermissions', () =>
     hooks.pendingRequests().map((r) => ({ ...r, cardId: cardOfLive.get(r.sessionId) }))
   );
-  ipcMain.handle(
-    'sessions:decidePermission',
+  broker.handle('sessions:decidePermission',
     (_e, requestId: string, decision: string, reason?: string) => {
       if (typeof requestId !== 'string' || (decision !== 'allow' && decision !== 'deny')) return false;
       return hooks.decide(requestId, decision, typeof reason === 'string' ? reason.slice(0, 500) : undefined);
@@ -112,7 +117,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   );
   // "Allow all (this session)": answered at the SERVER from now on — no
   // hold, no needs-permission event, no beep (review P2 #19, Dan round 4)
-  ipcMain.handle('sessions:allowAllSession', (_e, liveId: string) => {
+  broker.handle('sessions:allowAllSession', (_e, liveId: string) => {
     if (typeof liveId === 'string') hooks.setAllowAll(liveId);
   });
 
@@ -121,11 +126,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   // a corrected mis-bind (or /clear) discarded the derived blocks — the
   // renderer must too; cause 'clear' shows the "conversation cleared" marker
   transcripts.onReset((sessionId, cause) => send('sessions:feedReset', { sessionId, cause }));
-  ipcMain.handle('transcripts:blocks', (_e, liveId: string) =>
+  broker.handle('transcripts:blocks', (_e, liveId: string) =>
     typeof liveId === 'string' ? transcripts.blocks(liveId) : []
   );
 
-  ipcMain.handle('sessions:isDirectory', (_e, p: string) => {
+  broker.handle('sessions:isDirectory', (_e, p: string) => {
     try {
       return fs.statSync(p).isDirectory();
     } catch {
@@ -133,7 +138,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     }
   });
 
-  ipcMain.handle('sessions:pickFolder', async () => {
+  broker.handle('sessions:pickFolder', async () => {
     const win = deps.getWindow();
     if (!win) return null;
     const r = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
@@ -143,8 +148,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   // Spawn (or --resume) the live session for a card. cardId is the durable
   // key; identity (accent/title/badge) and the resumable conversation are
   // reused from the persisted record so they survive restarts.
-  ipcMain.handle(
-    'sessions:create',
+  broker.handle('sessions:create',
     (
       _e,
       opts: {
@@ -247,12 +251,12 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     }
   );
 
-  ipcMain.handle('sessions:list', () => manager.list());
+  broker.handle('sessions:list', () => manager.list());
 
   // composer slash-command autocomplete (E10-07): builtins + the session
   // folder's and user's own commands/skills. Scan errors fail open in the
   // scanner; an unknown live id just returns nothing.
-  ipcMain.handle('sessions:slashCommands', (_e, liveId: string) => {
+  broker.handle('sessions:slashCommands', (_e, liveId: string) => {
     if (typeof liveId !== 'string') return [];
     const rec = manager.get(liveId);
     if (!rec) return [];
@@ -280,7 +284,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   // joined view for the rail: every persisted card, with its live status if
   // running or 'suspended' if restored-but-not-yet-resumed (E7-05)
-  ipcMain.handle('sessions:cards', async () => {
+  broker.handle('sessions:cards', async () => {
     const live = manager.list();
     const liveByCard = new Map<string, string>(); // cardId -> liveId
     for (const [liveId, cardId] of cardOfLive) liveByCard.set(cardId, liveId);
@@ -308,7 +312,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   // cards with a persisted record — the renderer keeps these on boot, prunes
   // any restored panel that has no record (truly gone)
-  ipcMain.handle('sessions:knownCards', () => deps.persist.list().map((s) => ({ cardId: s.id, identity: s.identity })));
+  broker.handle('sessions:knownCards', () => deps.persist.list().map((s) => ({ cardId: s.id, identity: s.identity })));
 
   // kill the live session(s) under a card, keeping the persisted record
   const dropLiveForCard = (cardId: string): void => {
@@ -333,17 +337,17 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   };
 
   // close a card: kill its live session AND forget it (won't come back)
-  ipcMain.handle('sessions:closeCard', (_e, cardId: string) => {
+  broker.handle('sessions:closeCard', (_e, cardId: string) => {
     dropLiveForCard(cardId);
     deps.persist.remove(cardId);
   });
 
   // drop only the live session (restart): keep the record so it can respawn
-  ipcMain.handle('sessions:dropLive', (_e, cardId: string) => dropLiveForCard(cardId));
+  broker.handle('sessions:dropLive', (_e, cardId: string) => dropLiveForCard(cardId));
 
   // per-card autonomy (E10-05): persists to the record; the CLI can't change
   // mode mid-flight, so it applies on the NEXT spawn/resume of this card
-  ipcMain.handle('sessions:setAutonomy', (_e, cardId: string, autonomy: string) => {
+  broker.handle('sessions:setAutonomy', (_e, cardId: string, autonomy: string) => {
     if (typeof cardId !== 'string') return;
     if (!['plan', 'ask', 'auto-edit', 'full-auto'].includes(autonomy)) return;
     const prior = deps.persist.list().find((s) => s.id === cardId);
@@ -351,7 +355,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   });
 
   // freeform task label for a card (E7-03), persisted across restarts
-  ipcMain.handle('sessions:setTaskLabel', (_e, cardId: string, label: string) => {
+  broker.handle('sessions:setTaskLabel', (_e, cardId: string, label: string) => {
     if (typeof cardId !== 'string' || typeof label !== 'string') return;
     const prior = deps.persist.list().find((s) => s.id === cardId);
     if (prior) deps.persist.upsert({ ...prior, taskLabel: label.slice(0, 120) });
@@ -359,7 +363,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   // rename a card by cardId (works for suspended cards too) — updates the
   // persisted title and the live session if one is running
-  ipcMain.handle('sessions:renameCard', (_e, cardId: string, title: string) => {
+  broker.handle('sessions:renameCard', (_e, cardId: string, title: string) => {
     if (typeof cardId !== 'string' || typeof title !== 'string') return;
     const clean = title.slice(0, 120);
     const prior = deps.persist.list().find((s) => s.id === cardId);
@@ -367,7 +371,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     for (const [liveId, cid] of cardOfLive) if (cid === cardId) manager.rename(liveId, clean);
   });
 
-  ipcMain.handle('sessions:rename', (_e, liveId: string, title: string) => {
+  broker.handle('sessions:rename', (_e, liveId: string, title: string) => {
     manager.rename(liveId, title);
     const r = manager.get(liveId);
     // persist the rename so it survives a restart
@@ -380,7 +384,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   });
 
   // attach: replay scrollback, then stream. Returns the snapshot (utf8).
-  ipcMain.handle('pty:attach', (_e, id: string) => {
+  broker.handle('pty:attach', (_e, id: string) => {
     const s = ptys.get(id);
     if (!s) return null;
     feeds.get(id)?.(); // idempotent re-attach
@@ -389,18 +393,18 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     return s.scrollback.snapshot().toString('utf8');
   });
 
-  ipcMain.on('pty:detach', (_e, id: string) => {
+  broker.on('pty:detach', (_e, id: string) => {
     feeds.get(id)?.();
     feeds.delete(id);
   });
 
-  ipcMain.on('pty:input', (_e, id: string, data: string) => {
+  broker.on('pty:input', (_e, id: string, data: string) => {
     // Keystrokes are forwarded to the PTY but do NOT drive status — only the
     // CLI's own hooks do (a keystroke is not a submitted prompt).
     ptys.get(id)?.write(data);
   });
 
-  ipcMain.on('pty:resize', (_e, id: string, cols: number, rows: number) => {
+  broker.on('pty:resize', (_e, id: string, cols: number, rows: number) => {
     ptys.get(id)?.resize(cols, rows);
   });
 }

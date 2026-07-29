@@ -6,11 +6,11 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.** `main` is at `f53c7d4`; **PR #116
-(#100, three renderer contribution points) merged**, after #115 (#99) and #113
-(#106). **Consumer count on the seams 1 → 5 — the Phase-4 gate ("2–3
-dissimilar internal consumers") is met for the first time**, which was the
-headline finding of the architecture review.
+**In progress:** **#101 — P2-E15-04 DONE, PR open** on
+`feature/101-capability-brokered-ipc`: every IPC channel declares a capability
+and every registration goes through `IpcBroker`, in both directions. **The last
+P0 of E15.** Gate: lint + typecheck + **376 unit + 83 e2e** green, the latter
+**7 consecutive full runs**. `main` is at `11dbe94`.
 **Next up:** the rest of E15. **#98** (provider adapter capabilities) and
 **#99** (process-agnostic registry) are independent and either can go first;
 #99 then unblocks #100/#101, and #104 → #105 is the chain that unblocks
@@ -77,6 +77,51 @@ a "[Dan eyeball]" note.**
   to review ClaudeMon and decide shared-library vs sidecar vs merge.
 
 ## Log
+
+- 2026-07-28 — **P2-E15-04 (#101): §5.23's "main is the sole enforcer" is true
+  in code now.** It used to be true only because there was nothing to enforce —
+  the preload exposed ~60 methods and anything reaching the bridge could call
+  all of them. Now 53 channels each declare one capability
+  (`src/shared/ipc/capabilities.ts`) and all 43 registrations go through
+  `IpcBroker`, which refuses a call whose caller lacks it. First-party is
+  granted everything, so **nothing changes at runtime — that is the contract**;
+  Phase 4 wires a plugin manifest into the check instead of inventing it then.
+  Outbound is gated too (checked against the TARGET window), because otherwise
+  a plugin would receive every session event regardless of what it declared.
+  **The review was the best one yet** — it verified the Electron assumptions
+  EMPIRICALLY rather than from docs (popouts genuinely have no preload, so they
+  never call IPC and are deliberately never granted; `webContents.id` is never
+  reused; the grant lands before `loadURL`). Two of its nine should-fixes were
+  security-relevant and mine: (1) `CHANNEL_CAPABILITIES['constructor']` returned
+  the Object constructor — truthy, not a Capability, and it **skipped the
+  untagged-channel branch entirely**; prototype-chain lookup in a security
+  primitive, now a `Map`. (2) `preflight:check` was tagged `settings.read` while
+  it `execFile`s the CLI and stats `~/.claude.json` — a child process behind a
+  capability named "read settings" — and `sessions:isDirectory` stats an
+  ARBITRARY caller-supplied path unscoped. Both renamed for what they DO
+  (`environment.probe`, `fs.probe`). Also: three outbound sends bypassed the
+  broker, making my own documented invariant false; and there is now an
+  **ESLint rule** banning the `ipcMain` import outside `src/main/ipc/`, because
+  the type system only stops you registering an UNTAGGED channel, not
+  registering outside the broker entirely.
+  **The e2e investigation is the part worth remembering.**
+  `slash-commands.spec.ts:77` failed **3 of 5** full runs on the branch vs
+  **0 of 3** on main — a real signal, and I did not accept "pre-existing flake".
+  Findings, in order: the failing assertion was the slash-command POPUP, not
+  the terminal echo (so the reviewer's attach-race theory, formed without the
+  error artefact, did not fit — but that race is real and is filed as **#117**);
+  **zero capability refusals ever fired**, proven by writing to a fixed file
+  after realising main-process `console.error` may never reach Playwright's
+  output (95 grants, 0 refusals). That left the only per-frame change: every
+  terminal chunk was doing a prefix scan through `capabilityFor`. Memoised it —
+  worth doing regardless — and the failures stopped: **0 of 7** consecutive
+  runs since, where a persisting 60% rate would make that a 0.2% coincidence.
+  *Stated honestly: causation is not proven — it was never reproduced
+  deterministically — but pre-memo 3/5, post-memo 0/7, main 0/3.*
+  *Lesson: a diagnostic you cannot read is not a diagnostic. The first
+  instrumentation pass used `console.error` from the main process and produced
+  "zero refusals", which I nearly believed.*
+  Gate: lint + typecheck + **376 unit (+15) + 83 e2e** green.
 
 - 2026-07-28 — **P2-E15-03 (#100): the renderer seam is real now.** Three
   contribution points, each replacing a switch that already existed: `panel`

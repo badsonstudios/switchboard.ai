@@ -181,6 +181,89 @@ implementation with a two-line change in one file and no consumer edits.
 4. **A point with no registrant is a guess.** `event-source` was exactly that
    and was deleted rather than kept as decoration.
 
+## IPC capabilities — the enforcement point
+
+§5.23 says the main process is the sole enforcer. Until P2-E15-04 that was true
+only because there was nothing to enforce: the preload exposed ~60
+hand-maintained methods, and anything that could reach the bridge could call
+all of them.
+
+Now every channel declares exactly one capability in
+[`src/shared/ipc/capabilities.ts`](../src/shared/ipc/capabilities.ts), and every
+registration goes through [`IpcBroker`](../src/main/ipc/broker.ts), which
+refuses a call whose caller does not hold it.
+
+**First-party holds everything, so nothing changes at runtime today — that is
+the point.** The check exists, so Phase 4 wires a plugin manifest into it
+instead of inventing it at the moment it first matters. Narrowing our own
+renderer is a separate argument with real behavioural consequences.
+
+### The vocabulary
+
+| Capability | Covers |
+|---|---|
+| `sessions.read` | list cards, statuses, pending permissions |
+| `sessions.spawn` | create / resume / close — **starts processes** |
+| `sessions.write` | rename, task label, autonomy, permission decisions |
+| `pty.read` | attach to a terminal's output stream |
+| `pty.write` | send keystrokes to a running CLI |
+| `transcripts.read` | conversation blocks |
+| `git.read` | status and file versions |
+| `events.read` / `.write` | the attention feed; write is ack/dismiss |
+| `settings.read` / `.write` | preferences, notification prefs, preflight |
+| `workspace.read` / `.write` | layout and ui blob |
+| `groups.read` / `.write` | session groups |
+| `app.window` | display geometry, popout movement |
+| `environment.probe` | runs the CLI to read its version; stats the user's home config |
+| `fs.probe` | existence/type of an arbitrary caller-supplied path |
+| `dialog.open` | a **native** file dialog |
+
+The last three are named for **what they do, not where the answer is shown**.
+`preflight:check` sat under `settings.read` until review pointed out that it
+`execFile`s the CLI and stats `~/.claude.json` — a child process behind a
+capability called "read settings". `sessions:isDirectory` stats an arbitrary
+caller-supplied path with no folder scoping. And `dialog.open` is its own
+capability because holding "sessions" must not imply the power to put an OS
+dialog in front of the user.
+
+### Two vocabularies, not yet joined
+
+There are currently **two** sets of capability strings:
+
+1. **These** — IPC channel capabilities, a typed union in
+   `src/shared/ipc/capabilities.ts`, enforced by the broker.
+2. **`CapabilityManifest.capabilities`** — free-form `string[]` that
+   contributions declare (`commands.contribute`, `panel.render`,
+   `sessions.spawn`, …), enforced by nothing.
+
+They overlap by accident of naming (`sessions.spawn` appears in both) rather
+than by design. **Joining them is the Phase-4 job** — a plugin's manifest set
+becomes the grant the broker checks — and it is precisely what this seam exists
+to make mechanical. Until then, do not assume a string in one means anything in
+the other.
+
+Note also that the capability system covers **channels**. The preload can still
+hand the renderer non-channel powers — `pathForFile` (`webUtils.getPathForFile`)
+is one — and those sit outside the vocabulary entirely.
+
+### Rules worth knowing before you add a channel
+
+- **You cannot register an untagged channel.** `broker.handle` takes a channel
+  typed as the map's key set, so an untagged one does not compile. The unit
+  test covers the other direction — a tag left behind after its channel was
+  deleted, which reads like coverage and is not.
+- **Outbound is gated too.** `broker.send` checks what the *target* window
+  holds. A no-op for first-party; without it a Phase-4 plugin would receive
+  every session event regardless of what it declared.
+- **Dynamic channel families exist.** `pty:data:<sessionId>` is one channel per
+  attached pane, so it is matched by prefix. A completeness check that only
+  knew about fixed names would have reported full coverage while missing the
+  highest-volume channel in the app.
+- **The broker fails CLOSED**, uniquely in this codebase. Everywhere else our
+  breakage must not block a session; here an unknown channel or an ungranted
+  caller is refused, because both mean a wiring bug rather than a degraded
+  dependency.
+
 ## Standalone entry points
 
 Main's `registry` is a singleton for the app, but `ContributionRegistry` is a plain

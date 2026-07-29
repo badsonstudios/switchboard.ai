@@ -43,6 +43,29 @@ export default tseslint.config(
     rules: { 'no-restricted-syntax': ['error', ...EFFECT_BODY_RULES] },
   },
   {
+    // §5.23 + P2-E15-04: every IPC channel goes through the broker, which is
+    // what makes the capability check unavoidable. The TYPE system stops you
+    // registering an UNTAGGED channel; only this stops you registering outside
+    // the broker entirely, which would reopen the whole hole with one import.
+    files: ['src/main/**/*.ts'],
+    ignores: ['src/main/ipc/**'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...EFFECT_BODY_RULES,
+        {
+          selector: "ImportSpecifier[imported.name='ipcMain']",
+          message:
+            'Register IPC through IpcBroker (src/main/ipc/broker.ts), not ipcMain directly — the broker is where the capability check lives (P2-E15-04).',
+        },
+        {
+          selector: "MemberExpression[object.name='ipcMain']",
+          message: 'Use IpcBroker (src/main/ipc/broker.ts) instead of ipcMain directly.',
+        },
+      ],
+    },
+  },
+  {
     // §5.23: src/shared is imported by BOTH processes, so it must not reach
     // into either. An import from main/ or renderer/ would bundle that
     // process's code into the other and quietly re-make the contribution
