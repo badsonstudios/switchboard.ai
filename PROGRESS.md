@@ -64,10 +64,12 @@ window instead of narrowing it. Still open and NOT scheduled: **#90**, **#91**.
 / `-removed` are still a window-object bus, and `lib/drag-context.ts` still
 holds module-level mutable state. Both are outside #104's done-when.
 
-*[user] retests still pending on merged main (rebuild first):* test 4
-(out-of-cwd read) WITHOUT allow-all + autonomy=ask · grid-drag between groups ·
-switch-to-session scroll · allow-all sessions now silent. **The ClaudeMon read
-(OQ #8) is no longer pending — CLOSED 2026-07-29, we are not integrating.**
+**No [user] retests are outstanding.** The list that had been carried since
+2026-07-24 — test 4 (out-of-cwd read) WITHOUT allow-all + autonomy=ask ·
+grid-drag between groups · switch-to-session scroll · allow-all sessions now
+silent — was **run and PASSED by Dan on 2026-07-29**, alongside #105's own
+hand-off list. Nothing here is waiting on him. (OQ #8 / the ClaudeMon read was
+closed the same day — we are not integrating.)
 
 **Recently merged:** 2026-07-29 — **PR #120** (#105 P2-E15-08, presentation
 state into the store + hide/reveal; Dan hand-tested and merged). Before that,
@@ -79,22 +81,22 @@ Ctrl+Space, plus the scroll-position fix, Events dismiss button, session-group
 frames, the workflow hand-off change, and `docs/extensibility.md`). Earlier:
 PR #89 (popout geometry #86), PR #88 (tab strip #84 + quit backstop #85), PR
 #83 (E9-02 palette), PR #82 (E9-01).
-**Why E15 runs before the rest of E9** (architecture review, 2026-07-26):
-**E9-05 (#74) and E9-07 (#76) are hard-blocked on E15-08 (#105)** —
-presentation state lives in `SessionCardPanel`'s `useState`, and "reveal
-restores it to its exact prior slot" needs state that outlives the panel; both
-issues carry a blocked comment. Every other E15 item is cheap now and an audit
-later. Within E15 the dependency order is: #98 (adapter) and #99 (registry)
-independent → #100 + #101 depend on #99 → #104 → #105 (unblocks E9-05/07) →
-#102 → #103. **Done so far: #106** (P2-E15-09, PR #113).
-*After E15:* **#73 — P2-E9-04 urgency strip + delayed urgency reset**, then
+**Why E15 ran before the rest of E9** (architecture review, 2026-07-26) — kept
+because it explains the shape of the tree, but note it is now HISTORY: E9-05
+(#74) and E9-07 (#76) were hard-blocked on E15-08 (#105) because presentation
+state lived in `SessionCardPanel`'s `useState` and "reveal restores it to its
+exact prior slot" needs state that outlives the panel. **#105 merged 2026-07-29,
+so that block is gone and both issues' comments say so.** The rest of the
+argument — "every other E15 item is cheap now and an audit later" — was written
+while E15 blocked E9, and no longer decides anything on its own (see the fork
+above).
+Within-E15 dependency order, for the items that remain: #98 (adapter) is
+independent; #102 → #103. **Done: #99, #100, #101, #104, #105, #106.**
+*Remaining E9:* **#73 — P2-E9-04 urgency strip + delayed urgency reset**, then
 #74–#80. E9 closes Phase 2 exit criterion #1. Also open, filed 2026-07-26 and
 NOT yet scheduled: **#90** (no accelerator, palette included, reaches a session
 terminal) and **#91** (box the tool blocks + drop the timeline dot on plain
-assistant answers). [user] retests still pending on merged main (rebuild
-first): test 4 (out-of-cwd read) WITHOUT allow-all + autonomy=ask · grid-drag
-between groups · switch-to-session scroll · allow-all sessions now silent.
-(OQ #8 / ClaudeMon closed 2026-07-29 — no longer a gate on Phase 3 planning.)
+assistant answers).
 **Branch:** main (clean)
 
 ## Testing (3 layers — see skills/startup/references/testing.md)
@@ -136,6 +138,14 @@ a "[Dan eyeball]" note.**
   to Sonnet rates** — it invents a number. Not urgent, not waiting on anything.
 
 ## Log
+
+- 2026-07-29 — **#105 MERGED as PR #120**, and **the long-standing [user] retest
+  list is CLOSED — Dan ran all of it and it passed**: test 4 (out-of-cwd read)
+  WITHOUT allow-all + autonomy=ask · grid-drag between groups ·
+  switch-to-session scroll · allow-all sessions now silent, plus #105's own
+  hand-off list (the one that matters: hide a working session, reveal it,
+  scrollback and conversation intact). That list had been carried in the header
+  since 2026-07-24; **nothing in this file is waiting on Dan now.**
 
 - 2026-07-29 — **P2-E15-08 (#105): presentation state has a home that outlives
   the panel.** View tab, popped-out and suspended left `SessionCardPanel`'s
