@@ -61,6 +61,14 @@ Planning notes:
   surfaces (§5.13) share data plumbing — plan those three together. (Was
   "share plumbing with ClaudeMon integration"; the third leg is now our own
   usage engine.)
+- **Document viewer v2 belongs with the file tree** (added 2026-07-30). Phase 2's
+  E16 ships the markdown half — rendered view, source toggle, peek slot, viewer
+  window, the `fs.read` capability (DESIGN §5.30). What is left is the same
+  surface as §5.7's file tree and should be planned as one epic, not two: the
+  **Files** tab + tree with VCS decorations, the full file-type dispatch
+  (code / image / JSON / JSONL / CSV, and a card for binaries), follow-tail for
+  append-shaped files, and restoring open viewers across relaunch. Planning it
+  separately would build two file-navigation surfaces that disagree.
 
 ## Phase 4 — The Ecosystem
 *Theme: beyond Claude, beyond the desktop, beyond first-party.*

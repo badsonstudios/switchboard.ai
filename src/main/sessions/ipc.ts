@@ -9,6 +9,7 @@ import { PtyService } from '../pty/pty-service';
 import { HookListener } from '../hooks/hook-listener';
 import { IpcBroker } from '../ipc/broker';
 import { Channel } from '../../shared/ipc/capabilities';
+import type { PtyAttachment, PtyChunk } from '../../shared/ipc/pty';
 import { TranscriptWatcher } from '../transcripts/watcher';
 import { Logger } from '../log/logger';
 import { assignAccent, detectProjectType } from './identity';
@@ -49,6 +50,9 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   const { manager, ptys, hooks, transcripts, log, broker } = deps;
   // per-session live-feed unsubscribers (attached panes only)
   const feeds = new Map<string, () => void>();
+  // one attach = one epoch, stamped on every chunk that attach streams. Global
+  // rather than per-session so an id is never reused across sessions either.
+  let ptyEpoch = 0;
   // a card is the durable unit; the live session under it is ephemeral
   const cardOfLive = new Map<string, string>(); // liveSessionId -> cardId
 
@@ -413,14 +417,23 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     return r;
   });
 
-  // attach: replay scrollback, then stream. Returns the snapshot (utf8).
-  broker.handle('pty:attach', (_e, id: string) => {
+  // attach: replay scrollback, then stream. Returns the snapshot + this
+  // attach's epoch (see src/shared/ipc/pty.ts for what the epoch is for).
+  //
+  // Subscribing and snapshotting MUST stay in one synchronous tick — do not
+  // introduce an await between them. That is what makes the handover exact for
+  // THIS epoch: every byte up to this instant is in the snapshot, every byte
+  // after it arrives on `pty:data:<id>` stamped with this epoch. An await here
+  // would reopen the hole #117 closed from the renderer side, and the renderer
+  // relies on that split to know its buffered chunks belong AFTER the snapshot.
+  broker.handle('pty:attach', (_e, id: string): PtyAttachment | null => {
     const s = ptys.get(id);
     if (!s) return null;
     feeds.get(id)?.(); // idempotent re-attach
-    const off = s.onData((d) => send(`pty:data:${id}`, d));
+    const epoch = ++ptyEpoch;
+    const off = s.onData((d) => send(`pty:data:${id}`, { epoch, d } satisfies PtyChunk));
     feeds.set(id, off);
-    return s.scrollback.snapshot().toString('utf8');
+    return { epoch, snapshot: s.scrollback.snapshot().toString('utf8') };
   });
 
   broker.on('pty:detach', (_e, id: string) => {

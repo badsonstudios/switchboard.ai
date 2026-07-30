@@ -518,6 +518,9 @@ separate features:
   decorations, Monaco diff, editable-diff + commit (§5.7 mechanics as a tab).
 - **History** — the checkout's recent commits/branch state (read-only GitService
   log view; §5.7).
+- **Files** — the session folder's file tree (§5.7 decorations); clicking a file
+  opens it in the §5.30 document viewer. Listed here because E8-05 already ships
+  the tab as a disabled "soon" and §5.30 is what fills it (added 2026-07-30).
 - **Inspector** — the §5.19 capability pane (Skills / Agents / MCP / Commands),
   present when opened.
 - **Terminal** — the real CLI, always present, **last in the strip**
@@ -1201,6 +1204,124 @@ specified BEFORE the first listener ships — not hardening-later items.
   paired. Approval-from-phone hardening remains OQ #12; this section is the
   floor, not the ceiling.
 
+### 5.30 Document viewer — rendered markdown & file preview
+
+*(Added 2026-07-30, owner request.) Agents write markdown: `PROGRESS.md`, plan
+files, findings notes, review reports, hand-off summaries. Reading any of them
+meant alt-tabbing to VS Code — the exact five-windows trip this app exists to
+delete. And markdown source is the wrong artifact to read: a wall of `**`, `|`,
+and backticks is what the agent wrote, not what it said.*
+
+**The surface.** A **viewer** is a *document surface*: a panel whose content is a
+file on disk, rendered read-only. It is session-**attributed**, not
+session-**owned** — opened from a session it carries that session's accent tint
+and a `↳ session` chip (the §5.24 lineage convention), but it outlives that
+session, needs no session at all, and never appears in the sessions rail, the
+attention queue, or any bulk session operation.
+
+- **Rendered by default, source one gesture away.** A `.md` opens rendered; a
+  `Rendered | Source` toggle in the panel header flips to the raw text (Monaco,
+  read-only, syntax-highlighted) and back with scroll position kept. The default
+  is **per file type**, not per file: markdown → rendered, everything else →
+  source.
+- **Read-only, permanently.** PHILOSOPHY §5 already rejected a built-in editor
+  by name ("Monaco stays read-only + diff-only"), and this is that precedent
+  applied rather than a limitation to fix later. The escape hatch — **Open in
+  default app** / **Reveal in folder** — is always in the header. Edit-in-place
+  would be a philosophy amendment first and a feature second.
+- **Lives anywhere a group lives.** A viewer is a Dockview panel, so tabbing,
+  splitting, popping out to another monitor, geometry persistence, and
+  display-rescue are the §5.8 + E8 machinery already shipped, not new code.
+  "Pop it open in its own window" is the same `addPopoutGroup` a session card
+  uses; a popped-out viewer is a **viewer window**.
+- **One peek slot, pin to keep** (promoted from §10's IntelliJ preview-tab
+  idea): glancing at a file REPLACES the current viewer's content; pinning
+  promotes it to a permanent tab and sends the next glance to a fresh peek slot.
+  Without this rule the app accumulates thirty stale document tabs and fails the
+  calm check by accretion.
+- **A viewer never displaces a session.** It opens into the document area or its
+  own window — never as a tab inside a session's group. This is the E8-04 "new
+  sessions land in whatever popout is active" defect in mirror image, and the
+  rule is what keeps S1's two-gesture guarantee true.
+- **Opened from wherever a path already appears:** a file path in a Session-view
+  block (§5.10 promises those paths link somewhere), the Changes tab's file
+  list, the Files tree (§5.7), drag-and-drop of a file onto the window, and
+  `Open file…` in the command palette. Later a session may *offer* to show a
+  file — a Feed offer, like E8-06's restore-layout offer. An agent never opens a
+  window at the user; that fails the calm check outright.
+
+**Live documents are the point.** The agent is rewriting the file WHILE it is on
+screen. The viewer watches the file and re-renders on change, preserving scroll
+position, with an optional follow-tail for append-shaped files (logs, findings
+notes). This is the attention-ROI argument (litmus #2) and the one thing an
+external editor does badly: reading `PROGRESS.md` as it is being written should
+not need a reload, and a silently stale render is worse than no render at all.
+
+**Markdown rendering, aimed at what AIs actually emit.** GFM — tables, task-list
+checkboxes rendered as disabled checkboxes (agents write plans as `- [ ]`),
+strikethrough, autolinks. Fenced code with a language label and a copy button
+(you copy the command it just gave you). YAML front matter as a collapsed
+metadata chip, not an `<hr>` and a line of garbage. Heading anchors plus a
+**document outline** — our own docs run past 1,700 lines. Relative links
+navigate IN the viewer with back/forward (`DESIGN.md` → `docs/plans/00-process.md`
+works), which is what makes a cross-linked doc tree readable at all. A readable
+measure instead of 3,000-pixel lines, a sticky heading breadcrumb, wide tables
+scrolling inside their own container, and **find-in-page wired explicitly** —
+Chromium's find needs `webContents.findInPage` in Electron, so Ctrl+F does not
+come free.
+
+**One markdown renderer, shared with the Session view.** `marked` + DOMPurify
+already render assistant prose (§5.10). The viewer uses the same module and the
+same sanitizer configuration — stated as a requirement because two pipelines
+would drift, and the security configuration would drift with them.
+
+**File types beyond markdown.** One dispatch table, honest about its edges:
+text/code → Monaco read-only with syntax highlighting (already bundled) ·
+images (png/jpg/gif/webp/svg) → fit-to-pane with zoom, SVG via `<img>` and never
+inlined so it cannot carry script · JSON → pretty-printed and collapsible, JSONL
+→ record-per-line · CSV → a plain table · **PDF and everything binary → not
+rendered**: name, type, size, and "Open externally" (Chromium's PDF viewer inside
+a packaged Electron app is a rabbit hole, and users own a PDF reader) · very
+large text → truncate with a tail option, never "the app froze".
+
+**Security — this renders content we did not write.** §5.29 applies in full: a
+repository can contain hostile markdown, and an agent can be talked into writing
+some.
+
+- Every rendered byte goes through DOMPurify. No exceptions, no "trusted folder"
+  bypass.
+- **CSP stays `'self'`, so remote images do not load** — they render as a
+  click-to-load chip. A tracking pixel in a markdown file is both a beacon and a
+  read-receipt canary; fetching it silently would break P8 (local-first, no
+  telemetry) in the one place a user would never think to look.
+- Local images are served through a scoped protocol handler that resolves the
+  path and refuses anything outside the document's root, symlinks included.
+- `http`/`https`/`mailto` links open in the OS browser via `shell.openExternal`
+  against a scheme allowlist; every other scheme is refused. No in-app
+  navigation to remote content, ever.
+- **A new `fs.read` capability** joins §5.23's vocabulary. The existing
+  `fs.probe` reveals only a path's existence and type; reading arbitrary file
+  CONTENTS is strictly more power and must not ride in on it. Scope: anything
+  under an open session's folder, plus paths the user picks through the native
+  dialog (`dialog.open`) — nothing else. An agent must not be able to steer the
+  viewer at `~/.ssh`.
+- The size cap is enforced in main, before the bytes cross the bridge.
+
+**Litmus (§4).** (1) Zero-config — a `.md` opens rendered with no setup. (2)
+Attention ROI — it deletes the alt-tab trip for the document the agent just
+wrote, and live re-render is the part an editor cannot do. (3) Fail-open —
+read-only and out of band, wrapped in `ContributionBoundary`; a viewer that
+throws cannot touch a session, and the fallback is the editor the user already
+has. (4) Escape hatch — Open externally is always present, source view is one
+click, and a file type's default can be set to source-first. (5) Two-gesture —
+viewers never occupy a session's slot. (6) Calm — no badges, no notifications,
+nothing opens itself. (7) Host check — we render files the filesystem owns, and
+refuse to become an editor.
+
+**Deliberately out of scope:** editing · mermaid diagrams in v1 (rendered as a
+labeled code fence; §10 carries them with their CSP cost) · PDF ·
+rendered-markdown diffs (the Changes tab owns diffs; §10) · `[[wikilinks]]`.
+
 ## 6. Tech Stack — Decision
 
 **Chosen: Electron + TypeScript + xterm.js + node-pty + Monaco + React.**
@@ -1407,6 +1528,9 @@ context transfer, and the attention queue work across monitors.
   clean-room + briefed context policies, round-trip results, lineage nesting
 - Approval surfaces v1: PreToolUse interception spike, approval cards w/ Monaco
   diffs, session-flip mode, review queue pane, deny-with-feedback
+- Document viewer v1 (§5.30, added 2026-07-30): rendered markdown with a source
+  toggle, the peek slot + pin, viewer-in-its-own-window, the shared markdown
+  renderer, and the `fs.read` capability (epic E16)
 
 *(Moved to Phase 3, 2026-07-21 plan reconciliation — Phase 2 was overfull and
 these three lean on Phase 3 surfaces: watcher windows + undercard tray; tray
@@ -1420,6 +1544,10 @@ mode + session archive v1; fleet snapshots + layout DSL.)*
   confirm gate (§5.25, OQ #14) — moved from Phase 2 (2026-07-21)
 - Worktree create/merge-back flows with review step
 - Cross-session same-repo conflict warnings
+- Document viewer v2 (§5.30, added 2026-07-30): the **Files** tab + file tree
+  (§5.7), the full file-type dispatch (code / image / JSON / CSV / binary card),
+  live re-render follow-tail for append-shaped files, viewer restore across
+  relaunch — planned with the file tree because they are the same surface
 - Usage tracking (§5.13): per-session usage chips, plan-usage meter,
   burn-rate/rate-limit events — **first-party and native**; the ClaudeMon
   shared-library framing was dropped 2026-07-29 (OQ #8 closed)
@@ -1604,8 +1732,20 @@ mode + session archive v1; fleet snapshots + layout DSL.)*
   (resurrectable), NEVER kill; never evicts running or pinned sessions. Open:
   the right eviction ranking (idle-and-reviewed first? least-recently-attended?)
   — IDE policies key on file modification, which has no live-agent analogue.
-- **Peek slot** (IntelliJ preview-tab): one reusable transient pane for glancing
-  at archived/background sessions without opening N cards.
+- ~~Peek slot~~ (IntelliJ preview-tab) — **PROMOTED** to core for documents
+  (§5.30, 2026-07-30): one reusable transient viewer, pin to keep. The original
+  idea — a peek slot for glancing at archived/background *sessions* without
+  opening N cards — is still unscheduled, and §5.30 is the proof the ergonomic
+  works before it is applied to something as heavy as a session.
+- **Mermaid diagram rendering in the document viewer** (§5.30, deferred
+  2026-07-30): agents emit ```mermaid constantly and v1 renders it as a labeled
+  code fence. Cost that kept it out: a ~megabyte dependency plus an
+  untrusted-text-to-SVG path needing its own sanitizer review — a real piece of
+  security work, not a flag flip. Promote when reading the fence actually annoys
+  someone.
+- **Rendered-markdown diff** (§5.30, 2026-07-30): view a doc's HEAD-vs-working
+  change as rendered prose rather than a source diff. The Changes tab owns diffs
+  today; this is a presentation of the same data and should not fork the pipeline.
 - **Unified attachment spectrum** (IntelliJ's five tool-window view modes): one
   per-surface mode selector — docked / auto-hide / overlay / float / own-window —
   applied uniformly to session panes, watchers, queue, and feed instead of

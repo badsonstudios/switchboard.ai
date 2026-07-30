@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { SlashCommand } from '../shared/slash-commands';
+import type { PtyAttachment, PtyChunk } from '../shared/ipc/pty';
 
 const versionArg = process.argv.find((a) => a.startsWith('--switchboard-version='));
 const seedArg = process.argv.find((a) => a.startsWith('--switchboard-seed-panels='));
@@ -234,14 +235,16 @@ const api = {
     },
   },
   pty: {
-    attach: (id: string): Promise<string | null> => ipcRenderer.invoke('pty:attach', id),
+    // resolves with { epoch, snapshot } — the epoch tells the renderer which
+    // buffered chunks are newer than the snapshot (#117, shared/ipc/pty.ts)
+    attach: (id: string): Promise<PtyAttachment | null> => ipcRenderer.invoke('pty:attach', id),
     detach: (id: string): void => ipcRenderer.send('pty:detach', id),
     input: (id: string, data: string): void => ipcRenderer.send('pty:input', id, data),
     resize: (id: string, cols: number, rows: number): void =>
       ipcRenderer.send('pty:resize', id, cols, rows),
-    onData: (id: string, cb: (d: string) => void): (() => void) => {
+    onData: (id: string, cb: (chunk: PtyChunk) => void): (() => void) => {
       const channel = `pty:data:${id}`;
-      const h = (_e: unknown, d: string) => cb(d);
+      const h = (_e: unknown, chunk: PtyChunk) => cb(chunk);
       ipcRenderer.on(channel, h);
       return () => ipcRenderer.removeListener(channel, h);
     },

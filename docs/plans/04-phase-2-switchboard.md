@@ -723,6 +723,113 @@ break-out; they interleave anywhere after E9:
 
 ---
 
+## E16 — Document viewer v1: rendered markdown (milestone: Phase 2; added 2026-07-30, owner request)
+
+*Goal: read what the agent wrote, in the app, rendered. Governing spec:
+DESIGN.md §5.30 (written with this epic), plus §5.7, §5.10, §5.23, §5.29.*
+
+**Why it is here and not Phase 3.** The full viewer belongs beside the §5.7 file
+tree in Phase 3 — and that is where v2 sits. But the reading problem is a daily
+one right now (`PROGRESS.md`, the plan files, findings notes, review reports are
+all markdown written by an agent and read by a human who currently alt-tabs to
+VS Code), and the cheap 80% of it needs **no new infrastructure**: `marked` and
+`dompurify` are already dependencies rendering assistant prose in FeedView,
+Monaco with its workers is already bundled for DiffPane, the `panel` contribution
+point already exists, and popping a Dockview group into its own OS window is
+E8's shipped `addPopoutGroup` path. Three items of glue, one new capability.
+Phase 2 is overfull, so the scope is drawn tight on purpose — see *Not in scope*.
+
+**Decisions taken up front** (owner, 2026-07-30 — recorded so the items don't
+re-litigate them): rendered-by-default with a source toggle, defaulted **per file
+type** · **one reusable peek slot, pin to keep**, not a tab per file · mermaid
+**deferred** to a code fence (DESIGN §10 carries it with its CSP cost) ·
+`fs.read` scoped to **open session folders plus user-picked paths**, nothing
+wider · **read-only forever** (PHILOSOPHY §5's rejected-editor precedent).
+
+Work items:
+
+- **P2-E16-01 · Shared markdown renderer + the `fs.read` capability — M
+  (§5.23, §5.29).** *(no deps)* Extract FeedView's inline `marked` + DOMPurify
+  call ([`feed-blocks.tsx`](../../src/renderer/src/extensibility/feed-blocks.tsx))
+  into one renderer-side markdown module with ONE sanitizer configuration, and
+  give the viewer a way to read a file: a new `fs.read` capability in
+  `shared/ipc/capabilities.ts` plus a broker-gated channel behind it. The scope
+  check, the size cap, and the path-escape rejection all live in **main** — a
+  renderer-side check protects nobody. `fs.probe` is not widened to cover this:
+  existence-and-type is strictly less power than contents, and the whole point of
+  the capability split is that a Phase-4 consumer can hold one without the other.
+  *Done when:* FeedView renders through the shared module with no visual change
+  and its existing tests green; a read of a path outside every open session
+  folder and outside the dialog-picked set is refused and logged; `../`
+  traversal and a symlink pointing out of the root are both refused; an
+  over-cap file returns truncated-with-a-flag rather than hanging the bridge;
+  the scope check has table-driven unit tests; the new channel appears in
+  `CHANNEL_CAPABILITIES` (the untagged-channel test enforces it anyway).
+- **P2-E16-02 · The viewer panel — M (§5.30).** *(depends: 01)* The document
+  surface itself: header (file name, full path on hover, `Rendered | Source`
+  toggle, Open externally, Reveal in folder, pin) and two bodies — rendered
+  markdown, and Monaco read-only for source. Markdown scope for v1: GFM tables,
+  task-list checkboxes, strikethrough, fenced code with language label + copy
+  button, YAML front-matter chip, heading anchors + outline, relative-link
+  navigation with back/forward, readable measure, wide tables scrolling in their
+  own container, `webContents.findInPage` wired for Ctrl+F. Non-markdown text
+  opens in source; anything binary or PDF gets the "open externally" card, not
+  garbage. Opens from `Open file…` in the command palette and from a path click
+  in the Changes tab's file list.
+  *Done when:* a `.md` opens rendered by default and the toggle round-trips to
+  source with scroll position kept; a `.ts` opens in highlighted source; a PDF
+  and a binary each show the card; a remote `<img>` renders as a click-to-load
+  chip and issues **no** network request (CSP `'self'` holds — assert it, don't
+  assume it); an `http` link opens in the OS browser via `shell.openExternal`
+  and a `javascript:` link does nothing at all; a markdown file containing
+  `<script>` and an `onerror` attribute renders inert (sanitizer test with real
+  hostile input, not a smoke test).
+- **P2-E16-03 · Peek slot, pinning, and the viewer window — M (§5.30, §5.8).**
+  *(depends: 02)* One reusable viewer whose content is replaced by the next
+  glance; pin promotes it to a permanent tab and sends the next open to a fresh
+  peek slot. The pop-out control opens it as its own OS window through E8's
+  existing `addPopoutGroup` path. Session attribution when opened from a card:
+  accent tint + `↳ session` chip (§5.24 convention). And the invariant that
+  makes it safe: **a viewer never opens into a session's group**, and never
+  appears in the sessions rail, the attention queue, or a bulk-close.
+  *Done when:* opening a second file replaces the peek slot; pinning makes the
+  next open a NEW panel; the viewer pops out to its own window and docks back;
+  opening a file while a popped-out session group is focused puts the viewer in
+  the document area rather than in that popout — **the E8-04 defect in mirror
+  image, asserted in e2e, not reasoned about**; a viewer is absent from the rail,
+  the queue, and bulk-close; closing the app with viewers open loses no session
+  state.
+- **P2-E16-04 · Live re-render — S (§5.30).** *(depends: 02)* Watch the open
+  file and re-render on change, preserving scroll position. **This is the
+  differentiator, not the polish** — the whole attention-ROI case for the epic is
+  reading `PROGRESS.md` while an agent rewrites it, which is the one thing an
+  external editor does badly. If the slice has to be cut, cut it last. Reuse the
+  watch approach in `main/transcripts/watcher.ts` rather than inventing a second
+  one; debounce, because an agent's write is often several writes.
+  *Done when:* an external edit to the open file re-renders it within a beat with
+  scroll position intact; a rapid burst of writes produces one re-render, not
+  ten; deleting the file shows a "file is gone" strip instead of an error or a
+  blank pane; the watch is torn down when the panel closes (asserted — a leaked
+  watcher per opened file is exactly the kind of thing that only shows up at
+  session 12).
+
+**Not in scope — this is Phase 3's viewer v2** (DESIGN §8): the **Files** tab and
+the §5.7 file tree · image / JSON / JSONL / CSV rendering beyond v1's
+open-externally fallback · follow-tail for logs · restoring open viewers across
+relaunch · mermaid · rendered-markdown diffs · anything that writes to a file.
+
+**Sequencing:** 01 → 02 → 03 → 04. It slots after E15 and the rest of E9, and it
+does not block or depend on E11/E13/E14 — a good candidate for a short slot
+between heavier epics. **User doc:** `docs/manual/` page before the PR (the
+`00-process.md` rule); this one is genuinely user-facing.
+
+**Manual-test note for the hand-off:** the remote-image and hostile-markdown
+cases are automated, so Dan's list should be the ones a machine reads wrong —
+does a real doc *look right*, is the source toggle where the hand expects it,
+does the viewer window land on the intended monitor.
+
+---
+
 **Embedded empirical spike (OQ #9 — carried from `03-later-phases.md` notes,
 restored 2026-07-21):** the merge-conflict endgame wants its 7–8-real-branches
 experiment once parallel worktree use is real. Schedule it when E11 makes
@@ -744,7 +851,10 @@ multi-session work routine; findings feed Phase 3's review-dashboard planning.
    to the author.
 6. A notification rule routes a needs-permission event to a chosen channel,
    and an actionable toast can answer it without switching windows.
-7. Litmus test passes on everything shipped.
+7. **(added 2026-07-30)** A markdown file an agent just wrote can be read
+   *rendered* in the app — in a pane or its own window — with its source one
+   click away, and nobody alt-tabs to VS Code to read `PROGRESS.md`. (E16.)
+8. Litmus test passes on everything shipped.
 
 ## Order
 E7 first (fast win, owner's ask) → E8 (groundwork exists) → E12 (owner-
@@ -756,6 +866,13 @@ before the rest of E9 — E9-05 and E9-07 are hard-blocked on E15-08, and every
 other E15 item is cheap now and an audit later)** → rest of E9 → E11 →
 E13 after E11 (needs its context packages) → E14 interleaves anywhere after
 E9 (actionable-toast slice pairs with E10's approval bar).
+
+**E16 (added 2026-07-30)** has no dependencies on E11/E13/E14 and blocks nothing,
+so it takes a short slot rather than a place in the chain — after E15 and the
+rest of E9, whenever a small user-facing win is wanted between heavier epics.
+Its one hard prerequisite is already met: E15-03's `panel` contribution point and
+E15-04's capability broker are what it registers and extends, so it is glue
+rather than groundwork.
 
 **Within E15**, the dependency order is: 01 (adapter) and 02 (registry) are
 independent and can go in either order → 03 + 04 depend on 02 → 07 → 08 (which
@@ -774,3 +891,11 @@ be left sitting when 14 measures. Fix direction, per the issue: register the
 renderer's `pty:data` listener **before** invoking `pty:attach`, so the
 snapshot only ever returns to a subscriber that is already listening — that
 removes the window rather than narrowing it.
+*(#117 DONE 2026-07-30. Subscribe-before-invoke as planned, plus two things the
+issue did not foresee: the gap chunks must be **buffered and replayed after**
+the snapshot, since they are newer than it; and the wire needed an **epoch**
+(`pty:attach` → `{epoch, snapshot}`, `pty:data:<id>` → `{epoch, d}`), because
+subscribing first also lets a chunk from a PREVIOUS attach reach the new
+listener — which would trade the silent loss for duplicated output. Sequencing
+lives in `renderer/src/lib/terminal-attach.ts`; contract in
+`shared/ipc/pty.ts`. **#111 is unblocked.**)*
