@@ -6,7 +6,16 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.** #105 (P2-E15-08) **MERGED 2026-07-29 as
+**In progress:** **#117 — the `pty:attach` subscribe race.** Implemented,
+reviewed twice, full gate green (lint + typecheck + 444 unit + 86 e2e); Dan
+approved, **PR open and waiting on CI**. Shipped more than the recorded fix
+direction: subscribe-before-invoke, *plus* buffer-and-replay-after-snapshot
+(the gap chunks are newer than the snapshot), *plus* an **epoch** on the wire,
+because subscribing first also lets a chunk from the PREVIOUS attach reach the
+new listener — which would have traded silent loss for duplicated output.
+**#111 unblocks on merge.**
+
+Before it: #105 (P2-E15-08) **MERGED 2026-07-29 as
 PR #120**, after Dan ran the whole hand-off test list by hand and passed it —
 including the one that matters (hide a working session, reveal it, scrollback and
 conversation intact). Working tree clean. *(Don't record a tip SHA here — it is
@@ -138,6 +147,81 @@ a "[Dan eyeball]" note.**
   to Sonnet rates** — it invents a number. Not urgent, not waiting on anything.
 
 ## Log
+
+- 2026-07-30 — **New epic E16: the document viewer (Dan's ask — "AIs love
+  markdown and we can't read it").** Design written as **DESIGN.md §5.30**;
+  epic filed in `docs/plans/04-phase-2-switchboard.md` (P2-E16-01…04, **not yet
+  filed as issues** — just-in-time, `/pm` files them when the slot comes up);
+  Phase-3's v2 half noted in `03-later-phases.md`. Four decisions taken up front
+  so the items don't re-argue them: rendered-by-default with a source toggle
+  defaulted per *file type* · **one peek slot, pin to keep** (promotes the §10
+  IntelliJ preview-tab idea) · **mermaid deferred** to a code fence, with its
+  ~megabyte + untrusted-SVG cost recorded in §10 · **`fs.read` scoped to open
+  session folders + user-picked paths**, and deliberately NOT folded into the
+  existing `fs.probe` (contents ≫ existence). Read-only is not a v1 limitation —
+  it is PHILOSOPHY §5's rejected-editor precedent, so editing would need a
+  philosophy amendment first. Placed in Phase 2 despite the phase being overfull
+  because the cheap 80% needs **no new infrastructure**: `marked`/`dompurify` are
+  already rendering assistant prose, Monaco+workers are already bundled, the
+  `panel` point exists (E15-03), and own-window is E8's `addPopoutGroup`. Two
+  doc inconsistencies fixed on the way past: §5.10's view-tab strip never listed
+  the **Files** tab E8-05 ships as a disabled "soon", and Phase 2's exit criteria
+  gained #7 (renumbering litmus to #8).
+- 2026-07-30 — **#117: the `pty:attach` gap is closed, and closing it turned out
+  to have a second half.** The recorded fix direction — register the renderer's
+  `pty:data` listener BEFORE invoking `pty:attach` — is right but not
+  sufficient on its own, and the two things it misses are both silent.
+  (1) **Order.** Main takes the snapshot in the same synchronous tick it
+  subscribes, so a chunk arriving during the round trip is *newer* than the
+  snapshot. Writing it on arrival puts it ahead of the snapshot's content —
+  xterm's write queue is FIFO and `reset()` does NOT drain it (verified in the
+  shipped dist, not assumed), so the result is out-of-order, not overwritten.
+  Hence buffer-then-flush-after-the-snapshot.
+  (2) **Duplication.** Subscribing first also means a chunk main sent for the
+  PREVIOUS attach can still be in the renderer's message queue when the next
+  pane subscribes — and that one already went into the ring buffer before the
+  new snapshot was taken. Replaying it duplicates output. **Arrival time cannot
+  tell the two cases apart** (both land after the invoke was issued), so the
+  wire carries an **epoch**: `pty:attach` → `{epoch, snapshot}`,
+  `pty:data:<id>` → `{epoch, d}`, contract in `src/shared/ipc/pty.ts`. Without
+  it the fix would have traded #117's silent loss for silent duplication — and
+  React StrictMode makes the double-attach happen on *every* pane mount in dev.
+  Sequencing lives in `renderer/src/lib/terminal-attach.ts` (pure, ported, no
+  React and no xterm in its tests); `TerminalPane` just builds the ports.
+  **Two review rounds, no blockers, 11 should-fixes taken.** Round 1 found the
+  duplication hole above — my `ipc.ts` comment was asserting "no gap and no
+  duplication" while the code could duplicate, which is the worst kind of
+  comment. It also found that a synchronous throw from `attach()` would escape
+  the effect AND leave a listener nothing could remove (the caller never gets a
+  feed back), that `onReady` — the fit hook — sat inside the try whose catch
+  tears the feed down, so a geometry hiccup could kill a healthy stream, and
+  that the live write path was unguarded.
+  **Round 2 found the sharpest one: my own fail-open path could reproduce
+  #117.** `epoch` was assigned *after* `ports.reset()`; if reset threw, the
+  catch marked the feed live with `epoch === null`, and every later chunk then
+  failed the epoch test and was dropped — silently, permanently. Fixed by
+  assigning before anything that can throw, and pinned by a test. Round 2 also
+  argued the filter should drop only **strictly older** epochs rather than
+  "not equal": a *newer* epoch means something attached after us, those bytes
+  are genuinely new, and dropping them would freeze the pane. Unreachable today
+  (one feed per session, one pane per session) — which is exactly why the tight
+  version would fail silently the day that changes.
+  **Two comment claims were factually wrong and got corrected**, both caught by
+  a reviewer who checked instead of trusting: `reset()` does not drain xterm's
+  write buffer (so the failure is order, not loss), and "the stale chunk is
+  already in the snapshot" ignores that the 2 MB ring **evicts** — it may have
+  aged out, which changes the guarantee from "no loss" to "no out-of-order".
+  **Three revert-proofs, each with the test re-run:** the old
+  attach-then-subscribe sequencing fails 7 of the first 10 tests; stripping both
+  epoch filters fails 3; moving the `epoch` assignment back below `reset()`
+  fails the blindness test.
+  **No new e2e, stated plainly:** the race is load-dependent and I could not
+  force it deterministically from Playwright, and a test that catches a bug half
+  the time is what #112 cost us. The 23 unit tests are the deterministic gate;
+  the existing suite covers the attach path end to end.
+  Gate: lint + typecheck + **444 unit (+23) + 86 e2e** green. No manual page —
+  defect fix, no new surface. `docs/extensibility.md` gained the payload note
+  (it documents that channel); plan file records what actually shipped.
 
 - 2026-07-29 — **#105 MERGED as PR #120**, and **the long-standing [user] retest
   list is CLOSED — Dan ran all of it and it passed**: test 4 (out-of-cwd read)

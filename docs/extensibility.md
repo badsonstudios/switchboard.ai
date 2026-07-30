@@ -258,7 +258,10 @@ is one — and those sit outside the vocabulary entirely.
 - **Dynamic channel families exist.** `pty:data:<sessionId>` is one channel per
   attached pane, so it is matched by prefix. A completeness check that only
   knew about fixed names would have reported full coverage while missing the
-  highest-volume channel in the app.
+  highest-volume channel in the app. Its payload is not a bare string: every
+  chunk carries the **epoch** of the attach that produced it (`shared/ipc/pty.ts`),
+  which is how a consumer tells output it has not seen from output already in
+  its snapshot (#117).
 - **The broker fails CLOSED**, uniquely in this codebase. Everywhere else our
   breakage must not block a session; here an unknown channel or an ungranted
   caller is refused, because both mean a wiring bug rather than a degraded

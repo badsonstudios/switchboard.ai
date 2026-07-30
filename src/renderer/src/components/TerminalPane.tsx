@@ -6,6 +6,7 @@ import React, { useEffect, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
+import { attachTerminalFeed } from '../lib/terminal-attach';
 
 export function TerminalPane(props: { sessionId: string; visible: boolean }): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -73,35 +74,41 @@ export function TerminalPane(props: { sessionId: string; visible: boolean }): Re
     const term = termRef.current;
     if (!term) return;
     if (!props.visible) {
+      // The feed owns the subscribe/detach pair (#117) — but there is no feed on
+      // this path: either the previous run's cleanup already detached, or the
+      // pane rendered hidden and never attached, where main treats this as a
+      // no-op. Keep it, and don't split the pair for the attached path.
       window.switchboard.pty.detach(props.sessionId);
       return;
     }
-    let off: (() => void) | null = null;
     let cancelled = false;
     const raf: number[] = [];
-    void window.switchboard.pty.attach(props.sessionId).then((snapshot) => {
+    // Re-fit on show, but the container size often settles a frame or two
+    // after a dockview dock-back/move — retry across a few frames until a
+    // real fit lands so we never leave the terminal at NaN/stale geometry.
+    const tryFit = (attemptsLeft: number): void => {
       if (cancelled) return;
-      term.reset();
-      if (snapshot) term.write(snapshot);
-      off = window.switchboard.pty.onData(props.sessionId, (d) => term.write(d));
-      // Re-fit on show, but the container size often settles a frame or two
-      // after a dockview dock-back/move — retry across a few frames until a
-      // real fit lands so we never leave the terminal at NaN/stale geometry.
-      const tryFit = (attemptsLeft: number): void => {
-        if (cancelled) return;
-        if (safeFit()) {
-          window.switchboard.pty.resize(props.sessionId, term.cols, term.rows);
-        } else if (attemptsLeft > 0) {
-          raf.push(requestAnimationFrame(() => tryFit(attemptsLeft - 1)));
-        }
-      };
-      tryFit(10);
+      if (safeFit()) {
+        window.switchboard.pty.resize(props.sessionId, term.cols, term.rows);
+      } else if (attemptsLeft > 0) {
+        raf.push(requestAnimationFrame(() => tryFit(attemptsLeft - 1)));
+      }
+    };
+    // Subscribe-then-attach, so main never streams to a channel nobody is
+    // listening on (#117). The sequencing lives in lib/terminal-attach.ts.
+    const feed = attachTerminalFeed({
+      subscribe: (cb) => window.switchboard.pty.onData(props.sessionId, cb),
+      attach: () => window.switchboard.pty.attach(props.sessionId),
+      detach: () => window.switchboard.pty.detach(props.sessionId),
+      reset: () => term.reset(),
+      write: (d) => term.write(d),
+      onReady: () => tryFit(10),
+      onError: (err) => console.warn('[terminal] feed problem', props.sessionId, err),
     });
     return () => {
       cancelled = true;
       raf.forEach((h) => cancelAnimationFrame(h));
-      off?.();
-      window.switchboard.pty.detach(props.sessionId);
+      feed.off(); // unsubscribes AND detaches, in that order
     };
   }, [props.sessionId, props.visible]);
 
