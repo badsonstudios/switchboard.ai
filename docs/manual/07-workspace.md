@@ -97,6 +97,26 @@ off-screen — and when that monitor comes back, Events offers a one-click
 **Restore** to put the layout back the way it was. It never moves your windows
 without asking.
 
+## Getting a session out of the way
+
+A session you're not watching right now doesn't have to take up space. Open the
+command palette (`Ctrl+Shift+P`) and run **Hide session (keeps it running)**,
+and its card leaves the workspace.
+
+**Hiding is not closing.** The session keeps working, its conversation is
+untouched, and it stays in the Sessions list on the left with its status
+indicator — so if it finishes or needs you, you'll still see it. The only thing
+that goes away is the card.
+
+To bring it back, click it anywhere — its row in the Sessions list, or its
+entry in Events. It returns to the exact spot it left: the same position among
+its neighbours, on the same view tab you had open, and if it was in its own
+window, back into one. If the layout around it has changed enough that its old
+spot no longer exists, it comes back into the main grid rather than nowhere.
+
+Hidden sessions stay hidden across restarts. And the **✕** on its row still
+works while it's hidden — that closes the session for real, and asks first.
+
 ## Rearranging cards
 
 Drag a card's tab to split the grid, stack cards as tabs, or reorder them. The
@@ -118,7 +138,8 @@ choice is remembered.
 ## Good to know
 
 - Everything in this page persists across restarts: layout, groups, collapse
-  state, the width of the sessions list, pop-out positions, and focus.
+  state, the width of the sessions list, pop-out positions, which sessions are
+  hidden, each card's view tab, and focus.
 - The only thing that moves in the sessions list is the working ring. Nothing
   blinks or pulses — if something has caught your eye there, it's because a
   session genuinely changed state.

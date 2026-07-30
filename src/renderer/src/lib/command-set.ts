@@ -20,6 +20,8 @@ export interface CommandDeps {
   toggleCardView: (cardId: string, view: PanelId) => void;
   /** pop a card out to its own window, or dock it back in */
   popOutCard: (cardId: string) => void;
+  /** take a card out of the workspace, keeping the session running (§5.8) */
+  hideCard: (cardId: string) => void;
   /** show/hide the sessions rail */
   toggleRail: () => void;
   /** open the command palette (E9-02) */
@@ -150,6 +152,21 @@ export function buildCommands(deps: CommandDeps): Command[] {
       disabledReasonKey: 'commands.disabled.noActiveSession',
       run: (ctx) => {
         if (ctx.activeCardId) deps.closeCard(ctx.activeCardId);
+      },
+    },
+    {
+      // §5.8's presentation ladder, bottom rung. NOT a close: the session keeps
+      // running and the card keeps its record, its rail row, its lamp and its
+      // events — which is also why it needs no confirmation, unlike Mod+W.
+      // Clicking the session anywhere brings it back to the slot it left.
+      id: 'session.hide',
+      titleKey: 'commands.hideSession',
+      categoryKey: CATEGORY_VIEW,
+      scope: 'app', // palette-only: E9-05 owns the ladder's bindings
+      enabled: hasActive,
+      disabledReasonKey: 'commands.disabled.noActiveSession',
+      run: (ctx) => {
+        if (ctx.activeCardId) deps.hideCard(ctx.activeCardId);
       },
     },
     {

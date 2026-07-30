@@ -7,6 +7,7 @@ import {
   DockviewReact,
   DockviewReadyEvent,
   DockviewApi,
+  IDockviewPanel,
   IDockviewPanelProps,
   PopoutGroup,
 } from 'dockview-react';
@@ -15,20 +16,25 @@ import 'dockview-react/dist/styles/dockview.css';
 // shell, popups and popout windows can't fall back to a foreign theme (#84)
 import '../theme/dockview-tokens.css';
 import { rendererRegistry } from '../extensibility/registry-instance';
-import { CardActions, sessionStore } from '../store/session-store';
-import { PanelContext, PanelId } from '../extensibility/contributions';
-import { DEFAULT_PANEL_ID, listPanels, panelBadge, panelEnabled } from '../extensibility/panels';
+import { sessionStore } from '../store/session-store';
+import { DEFAULT_PANEL_ID, PanelContext, PanelId } from '../extensibility/contributions';
+import { listPanels, panelBadge, panelEnabled } from '../extensibility/panels';
 import { ContributionBoundary } from '../extensibility/boundary';
 import { IdentityChip } from './IdentityChip';
 import { DiffPane } from './DiffPane';
 import { UsageStrip } from './UsageStrip';
 import { GitContext, GitStatusDto } from './GitContext';
 import { Usage, ZERO_USAGE } from '../lib/usage';
-import { RescuedPopout, sanitizePopoutLayout } from '../lib/layout';
+import { Box, boxOnAnyDisplay, RescuedPopout, sanitizePopoutLayout, WorkArea } from '../lib/layout';
+import { captureSlot, openerRelative, placeAt } from '../lib/dock-slot';
 import { pickAdoptedGroupId } from '../lib/groups';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { setDraggedCard } from '../lib/drag-context';
 import { writePromptToPty } from '../lib/composer';
+
+/** Subscribe helper for useSyncExternalStore — module-level so its identity is
+ *  stable across renders (a fresh function resubscribes every commit). */
+const subscribeStore = (cb: () => void): (() => void) => sessionStore.subscribe(cb);
 
 // The DURABLE unit is the card (cardId + folder). The live claude session
 // under it is ephemeral: spawned — or --resumed — lazily the first time the
@@ -47,6 +53,10 @@ interface Live {
   accent?: string;
   badge?: string;
   autonomy?: string;
+  /** the record's status at bind time — a card that ADOPTED a running session
+   *  (reveal, P2-E15-08) must not claim 'starting': no further push is coming
+   *  for an idle session, and the card would sit there lying about it */
+  status?: string;
 }
 
 function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element {
@@ -98,18 +108,28 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const [taskLabel, setTaskLabel] = React.useState<string>('');
   const [editingLabel, setEditingLabel] = React.useState(false);
   const [status, setStatus] = React.useState<string>('starting');
-  // The Session view is the default (§5.10; internal view id stays 'feed' so
-  // stored ui-blob tab state needs no migration). The Terminal is ALWAYS
-  // present as the LAST tab (owner reversal 2026-07-22 — hide-by-default
-  // lasted one day of dogfooding). The active tab is remembered per card
-  // across restarts (§5.25, E12-08).
-  const [view, setViewRaw] = React.useState<PanelId>(() =>
-    props.params?.cardId ? uiGet(`viewTab.${props.params.cardId}`, DEFAULT_PANEL_ID) : DEFAULT_PANEL_ID
+  const cardId = props.params?.cardId;
+  // PRESENTATION STATE LIVES IN THE STORE (P2-E15-08, AR-P1-5), not here.
+  //
+  // The view tab, the popped-out flag and the suspended flag all have to
+  // outlive this panel: hiding a card unmounts it, and §5.8's reveal contract
+  // is "restores it to exactly where it was". They also have to be writable by
+  // things that are not this card — the palette, and E9-07's layout modes,
+  // which rearrange every session at once.
+  //
+  // The Session view is the default (§5.10; the internal view id stays 'feed').
+  // The Terminal is ALWAYS present as the LAST tab (owner reversal 2026-07-22 —
+  // hide-by-default lasted one day of dogfooding).
+  const presentation = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getPresentation(cardId)
   );
-  const setView = (v: PanelId): void => {
-    setViewRaw(v);
-    if (cardId) uiSet(`viewTab.${cardId}`, v);
-  };
+  const view = presentation.view;
+  const poppedOut = presentation.poppedOut;
+  const suspended = presentation.suspended;
+  // A panel with no cardId (the dev seed panels) has no durable identity, so
+  // its writes are dropped by the store — it also never reaches the tab strip,
+  // which only renders for a live session.
+  const setView = (v: PanelId): void => sessionStore.setPresentation(cardId, { view: v });
   // per-card autonomy for the composer options row (E10-05): persists to the
   // record and applies on the NEXT spawn/resume (the CLI can't switch live)
   const [cardAutonomy, setCardAutonomy] = React.useState<string | undefined>(undefined);
@@ -126,8 +146,6 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     Array<{ requestId: string; sessionId: string; tool: string; input: Record<string, unknown> }>
   >([]);
   const perm = permQueue[0] ?? null;
-  const [poppedOut, setPoppedOut] = React.useState<boolean>(props.api.location.type === 'popout');
-  const [suspended, setSuspended] = React.useState(false);
   // ⋯ session-controls menu (E10-07, §5.17): GUI sugar that TYPES the real
   // slash command into the PTY — the CLI stays the source of truth
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -136,13 +154,28 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // session is gone — a PTY write to a dead session is a silent no-op
   const controlsLocked = status === 'starting' || status === 'crashed' || exited !== null;
   const spawning = React.useRef(false);
-  const cardId = props.params?.cardId;
   const folder = props.params?.folder;
 
   React.useEffect(() => {
     const d = props.api.onDidVisibilityChange((e) => setVisible(e.isVisible));
     return () => d.dispose();
   }, [props.api]);
+
+  // dockview is the authority on WHERE the panel is; the store mirrors it so
+  // that layout modes and the palette can ask without mounting the card. Sync
+  // on mount, because a revealed panel is created directly into its slot.
+  React.useEffect(() => {
+    const poppedOut = props.api.location.type === 'popout';
+    // A MOUNTED PANEL IS IN THE WORKSPACE, whatever the blob says. The rung is
+    // written before dockview's (microtask-buffered) layout save, so a quit in
+    // between could restore a card that has a panel AND says 'hidden' — and
+    // nothing else would ever correct it, because reveal early-returns when a
+    // panel already exists. Dockview wins; E9-05 will read this rung.
+    sessionStore.setPresentation(
+      cardId,
+      sessionStore.isHidden(cardId) ? { poppedOut, ladder: 'expanded' } : { poppedOut }
+    );
+  }, [cardId, props.api]);
 
   // resume-on-focus: spawn (or --resume) the session when the card first
   // becomes visible. Background restored cards stay suspended until touched.
@@ -163,6 +196,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
           accent: record.identity.accentColor,
           badge: record.identity.langBadge,
           autonomy: record.autonomy,
+          status: record.status,
         });
         // show the usage strip from the start (zeros until the first prompt),
         // so it's visibly present rather than appearing only after activity
@@ -229,7 +263,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // 2026-07-22: resumed sessions showed the working banner doing nothing).
   React.useEffect(() => {
     if (!live) return;
-    setStatus('starting');
+    setStatus(live.status ?? 'starting');
     return window.switchboard.sessions.onStatus((c) => {
       const s = c as { sessionId: string; to?: string };
       if (s.sessionId === live.id && s.to) setStatus(s.to);
@@ -308,12 +342,15 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       const now = props.api.location.type as string;
       const wasPopout = prev.type === 'popout';
       prev.type = now;
-      setPoppedOut(now === 'popout');
+      sessionStore.setPresentation(cardId, { poppedOut: now === 'popout' });
       // App quit tears popouts down — not a user close. If this ever loses the
       // race with beforeunload the only effect is the session ending a few ms
       // early: dropLive keeps the persisted record, so the card still resumes
       // next launch. Harmless either way (E8-04 review).
       if (sessionStore.isTearingDown()) return;
+      // hiding a popped-out card removes its panel, which closes the window —
+      // that is US, not the user, and it must NOT suspend the session (E15-08)
+      if (cardId && sessionStore.isHiding(cardId)) return;
       if (wasPopout && now !== 'popout' && cardId) {
         // takeDockingBack CONSUMES the flag: a button toggle keeps the session
         // alive, a bare window close suspends it, and the two look identical
@@ -322,7 +359,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
           void window.switchboard.sessions.dropLive(cardId); // window closed: suspend
           sessionStore.forgetCardLiveIds(cardId);
           setLive(null);
-          setSuspended(true);
+          sessionStore.setPresentation(cardId, { suspended: true });
         }
       }
     });
@@ -333,54 +370,17 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     const panel = props.containerApi.getPanel(props.api.id);
     if (panel) props.containerApi.removePanel(panel); // onDidRemovePanel -> closeCard
   };
-  // Pop-out TOGGLE: docked -> tear into its own OS window; popped -> dock back
-  // in (close its window, flagged so it stays alive rather than suspending).
+  // The pop-out toggle is a MODULE function (P2-E15-08): a command may target a
+  // card that is not mounted — hidden, or being rearranged by a layout mode —
+  // so it cannot live in this component's closure. The header button and the
+  // command path now call one implementation.
   const popOutToggle = (): void => {
-    const loc = props.api.location;
-    if (loc.type === 'popout') {
-      const w = loc.getWindow();
-      // only arm the "stay alive" flag when a window actually exists to close —
-      // else a stale flag would later mis-classify a genuine user close as a
-      // toggle and skip the suspend (E8-04 review).
-      if (w && cardId) sessionStore.markDockingBack(cardId);
-      w?.close();
-      return;
-    }
-    const panel = props.containerApi.getPanel(props.api.id);
-    if (!panel) return;
-    if (cardId) sessionStore.takeDockingBack(cardId); // drop any stale toggle flag
-    // same-origin popout.html; the terminal keeps running because its JS stays
-    // in this window while its DOM is adopted into the new OS window (E8)
-    const popoutUrl = new URL('popout.html', window.location.href).toString();
-    void props.containerApi.addPopoutGroup(panel, { popoutUrl });
+    if (cardId) popOutCardPanel(props.containerApi, cardId);
   };
-  // publish this card's imperative actions for the command dispatcher (E9-01).
-  // A ref keeps the registration stable across renders while the handlers it
-  // calls stay current.
-  const actionsRef = React.useRef<CardActions | null>(null);
-  React.useEffect(() => {
-    actionsRef.current = { setView, currentView: () => view, popOutToggle };
-  });
-  React.useEffect(() => {
-    // only a LIVE card has views to switch or a window to tear off; a
-    // suspended/dead one would silently persist a view tab nobody can see
-    if (!cardId || !live) return;
-    const entry: CardActions = {
-      setView: (v) => actionsRef.current?.setView(v),
-      currentView: () => actionsRef.current?.currentView() ?? DEFAULT_PANEL_ID,
-      popOutToggle: () => actionsRef.current?.popOutToggle(),
-    };
-    const offActions = sessionStore.registerCardActions(cardId, entry);
-    return () => {
-      // identity-checked: if this card remounted before our cleanup ran, the
-      // NEW registration must survive (dockview re-creates panels on restore)
-      offActions();
-    };
-  }, [cardId, live]);
 
   const resumeSelf = (): void => {
     // clear the suspended gate; the lazy-spawn effect re-fires while visible
-    setSuspended(false);
+    sessionStore.setPresentation(cardId, { suspended: false });
     setExited(null);
     spawning.current = false;
   };
@@ -894,8 +894,66 @@ function DiffPanel(props: IDockviewPanelProps<{ folder?: string; theme?: string 
 
 const components = { sessionCard: SessionCardPanel, diffPane: DiffPanel };
 
-// live-id mapping, allow-all, dock-back and card actions all live in the
-// store now (P2-E15-07) — see store/session-store.ts for why each exists.
+// live-id mapping, allow-all, dock-back and per-card presentation all live in
+// the store now (P2-E15-07, P2-E15-08) — see store/session-store.ts.
+
+/**
+ * Pop a card out to its own OS window, or dock it back in.
+ *
+ * Takes the container api and a card id rather than a mounted panel's props:
+ * commands and layout modes drive cards that may not be mounted, and there
+ * must be exactly ONE implementation of the toggle — the two dock-back
+ * semantics below are subtle enough without a second copy.
+ */
+export function popOutCardPanel(api: DockviewApi | null, cardId: string): void {
+  const panel = api?.getPanel(`session-${cardId}`);
+  if (!api || !panel) return;
+  const loc = panel.api.location;
+  if (loc.type === 'popout') {
+    const w = loc.getWindow();
+    // only arm the "stay alive" flag when a window actually exists to close —
+    // else a stale flag would later mis-classify a genuine user close as a
+    // toggle and skip the suspend (E8-04 review).
+    if (w) sessionStore.markDockingBack(cardId);
+    w?.close();
+    return;
+  }
+  sessionStore.takeDockingBack(cardId); // drop any stale toggle flag
+  // same-origin popout.html; the terminal keeps running because its JS stays
+  // in this window while its DOM is adopted into the new OS window (E8)
+  const popoutUrl = new URL('popout.html', window.location.href).toString();
+  void api.addPopoutGroup(panel, { popoutUrl });
+}
+
+/** The popout window's rect on screen, when this panel is in one. */
+function popoutBoxOf(panel: IDockviewPanel): Box | null {
+  const loc = panel.api.location;
+  if (loc.type !== 'popout') return null;
+  const w = loc.getWindow();
+  if (!w) return null;
+  return { left: w.screenX, top: w.screenY, width: w.outerWidth, height: w.outerHeight };
+}
+
+/**
+ * Remember where every session card currently sits (P2-E15-08).
+ *
+ * Runs on layout change beside the layout save, for the same reason: dockview
+ * knows a card's slot only while its panel exists, and a hidden card's panel
+ * does not. Writes that change nothing are dropped by the store, so this is
+ * cheap despite firing on every drag frame's settle.
+ */
+function captureSlots(api: DockviewApi): void {
+  // Never during teardown: quit removes panels one at a time, so the survivors'
+  // index inside a shrinking group keeps changing and we would persist that
+  // churn as the LAST write before exit. Same guard as its two neighbours.
+  if (sessionStore.isTearingDown()) return;
+  for (const panel of api.panels) {
+    const m = /^session-(.+)$/.exec(panel.id);
+    if (!m) continue;
+    const slot = captureSlot(panel, popoutBoxOf(panel));
+    if (slot) sessionStore.setPresentation(m[1], { slot });
+  }
+}
 
 // Grid-drag membership sync (E12-04): after a user drag drops a session panel
 // into a dockview group, it adopts its new siblings' persistent group.
@@ -944,6 +1002,11 @@ export interface GridController {
   toggleCardView: (cardId: string, view: PanelId) => void;
   /** pop the card out to its own window, or dock it back in (E9-01) */
   popOutCard: (cardId: string) => void;
+  /** take the card out of the workspace, remembering its slot (§5.8 ladder).
+   *  The session KEEPS RUNNING and the record survives — this is not a close. */
+  hideCard: (cardId: string) => void;
+  /** put a hidden card back where it was (§5.8's reveal contract) */
+  revealCard: (cardId: string) => void;
 }
 
 export function SessionGrid(props: {
@@ -993,6 +1056,103 @@ export function SessionGrid(props: {
     });
   }, []);
 
+  // §5.8's presentation ladder, bottom rung: hide takes the card out of the
+  // workspace WITHOUT ending anything — the session runs on, the record stays,
+  // and the rail, its lamp and the Events list still list it (that is the
+  // difference between hidden and closed). Reveal puts it back in its slot.
+  const hideCard = useCallback((cardId: string) => {
+    const api = apiRef.current;
+    const panel = api?.getPanel(`session-${cardId}`);
+    if (!api || !panel) return;
+    sessionStore.setPresentation(cardId, {
+      ladder: 'hidden',
+      slot: captureSlot(panel, popoutBoxOf(panel)),
+      // a hidden card is in no window; poppedOut reflects dockview's truth and
+      // must not keep asserting one that no longer exists
+      poppedOut: false,
+    });
+    // dockview cannot tell our removal from the user closing the tab, and the
+    // two mean opposite things — the flag is how onDidRemovePanel (and the
+    // popout location handler) tell them apart
+    sessionStore.setHiding(cardId, true);
+    try {
+      api.removePanel(panel);
+    } finally {
+      sessionStore.setHiding(cardId, false);
+    }
+  }, []);
+
+  // Reveals in flight. The existence check below happens BEFORE an await, so
+  // two clicks inside one `sessions:cards` round-trip would both get past it
+  // and the second would hit dockview's duplicate-panel-id throw — an uncaught
+  // rejection on an ordinary double-click.
+  const revealing = useRef(new Set<string>());
+  const revealCard = useCallback(async (cardId: string) => {
+    const api = apiRef.current;
+    if (!api || revealing.current.has(cardId)) return;
+    const existing = api.getPanel(`session-${cardId}`);
+    if (existing) {
+      existing.focus(); // already in the workspace: reveal means "show me"
+      return;
+    }
+    revealing.current.add(cardId);
+    try {
+      await revealNow(api, cardId);
+    } finally {
+      revealing.current.delete(cardId);
+    }
+  }, []);
+
+  const revealNow = async (api: DockviewApi, cardId: string): Promise<void> => {
+    const card = (await window.switchboard.sessions.cards()).find((c) => c.cardId === cardId);
+    if (!card) return; // the record is gone — there is nothing to reveal
+    const place = placeAt(
+      sessionStore.getPresentation(cardId).slot,
+      api.groups.map((g) => g.id)
+    );
+    const target = place.groupId ? api.groups.find((g) => g.id === place.groupId) : undefined;
+    // its old group may have died with it (removing a group's last panel
+    // destroys the group) — land it in the grid rather than nowhere
+    const refGroup = target ?? api.groups.find((g) => g.api.location.type === 'grid') ?? api.addGroup();
+    const panel = api.addPanel({
+      id: `session-${cardId}`,
+      component: 'sessionCard',
+      title: card.title,
+      params: {
+        cardId,
+        folder: card.folder,
+        title: card.title,
+        groupId: card.groupId,
+      } satisfies CardParams,
+      position: { referenceGroup: refGroup },
+    });
+    if (target && place.index >= 0) {
+      try {
+        panel.api.moveTo({ group: target, index: place.index });
+      } catch {
+        // the group has fewer tabs than it did; being in the right group at
+        // the wrong index beats refusing to come back
+      }
+    }
+    sessionStore.setPresentation(cardId, { ladder: 'expanded' });
+    if (place.popout) {
+      // It was in its own window and that window is gone: open a new one at the
+      // remembered rect, opener-relative (#86). The rect is absolute screen
+      // coordinates from a previous session, so it gets the same display check
+      // a restored layout gets (E8-02) — a monitor that has since been
+      // unplugged must not swallow the card. No position = dockview opens it
+      // on top of the main window, which is exactly the E8-02 rescue.
+      const areas = await window.switchboard.workAreas();
+      const onScreen = boxOnAnyDisplay(place.popout, areas as WorkArea[]);
+      void api.addPopoutGroup(panel, {
+        popoutUrl: new URL('popout.html', window.location.href).toString(),
+        ...(onScreen ? { position: openerRelative(place.popout, window) } : {}),
+      });
+    } else {
+      panel.focus();
+    }
+  };
+
   React.useEffect(() => {
     if (!props.controller) return;
     props.controller.current = {
@@ -1014,9 +1174,18 @@ export function SessionGrid(props: {
           if (sibling && sibling.group !== panel.group) panel.api.moveTo({ group: sibling.group });
         });
       },
+      hideCard,
+      revealCard: (cardId) => void revealCard(cardId),
       focusSession: (liveId) => {
-        const panel = apiRef.current?.getPanel(`session-${sessionStore.cardIdForLive(liveId)}`);
-        if (!panel) return false;
+        const cardId = sessionStore.cardIdForLive(liveId);
+        const panel = apiRef.current?.getPanel(`session-${cardId}`);
+        // §5.8: "reveal triggers: ... user click anywhere (sidebar, event,
+        // lamp)". Every one of those paths lands here, so a hidden card comes
+        // back rather than the click doing nothing.
+        if (!panel) {
+          void revealCard(cardId);
+          return false;
+        }
         panel.focus();
         // a popped-out card is in another OS window — focusing the panel alone
         // leaves it buried behind this one, so raise its window too (E9-01)
@@ -1038,24 +1207,34 @@ export function SessionGrid(props: {
       closeCard: (cardId) => {
         const api = apiRef.current;
         const panel = api?.getPanel(`session-${cardId}`);
-        if (!api || !panel) return;
         // same contract as the tab ✕ (Dan 2026-07-22): confirm, because this
         // ends the session and forgets the record
-        const title = panel.title ?? '';
+        const title =
+          panel?.title ?? sessionStore.getState().sessions.find((s) => s.id === cardId)?.title ?? '';
         if (!window.confirm(t('grid.closeConfirm', { title }))) return;
-        api.removePanel(panel); // onDidRemovePanel -> closeCard
+        if (api && panel) {
+          api.removePanel(panel); // onDidRemovePanel -> closeCard
+          return;
+        }
+        // A HIDDEN card has no panel, and its ✕ is right there in the rail.
+        // §5.8's invariant is that hiding chrome never removes capability, so
+        // closing has to work on a card that isn't in the workspace — do by
+        // hand exactly what onDidRemovePanel would have done.
+        sessionStore.forgetCardLiveIds(cardId);
+        sessionStore.forgetPresentation(cardId);
+        void window.switchboard.sessions.closeCard(cardId);
       },
       toggleCardView: (cardId, view) => {
-        const actions = sessionStore.actionsFor(cardId);
-        if (!actions) return; // suspended/dead card: no view to switch
+        // straight at the store: this used to go through a handle the card
+        // registered only while LIVE, so a suspended or hidden card silently
+        // ignored the command. Now the tab is set and is right when it returns.
         // toggling: a second press on the same view returns to the Session view
-        actions.setView(
-          actions.currentView() === view && view !== DEFAULT_PANEL_ID ? DEFAULT_PANEL_ID : view
-        );
+        const current = sessionStore.getPresentation(cardId).view;
+        sessionStore.setPresentation(cardId, {
+          view: current === view && view !== DEFAULT_PANEL_ID ? DEFAULT_PANEL_ID : view,
+        });
       },
-      popOutCard: (cardId) => {
-        sessionStore.actionsFor(cardId)?.popOutToggle();
-      },
+      popOutCard: (cardId) => popOutCardPanel(apiRef.current, cardId),
       restoreRescuedPopouts: () => {
         const api = apiRef.current;
         if (!api) return;
@@ -1109,7 +1288,7 @@ export function SessionGrid(props: {
       },
     };
     // eslint's exhaustive-deps plugin isn't installed; deps kept accurate by hand
-  }, [props.controller, addSessionCard, props.theme, t]);
+  }, [props.controller, addSessionCard, hideCard, revealCard, props.theme, t]);
 
   const [error, setError] = React.useState<string | null>(null);
   const addCard = useCallback(async () => {
@@ -1156,6 +1335,9 @@ export function SessionGrid(props: {
       api.onDidLayoutChange(() => {
         report();
         saveLayout();
+        // remember where each card sits WHILE it still has a panel to ask —
+        // a hidden card has none, and reveal has to know (P2-E15-08)
+        captureSlots(api);
       });
       // Moving/resizing a popped-out window isn't a layout mutation, so persist
       // its geometry on those events too — else a dragged popout forgets its
@@ -1168,9 +1350,15 @@ export function SessionGrid(props: {
       // before the poll catches up and the stale open-time position is what
       // gets restored (#86). Electron's own move/resize events don't care about
       // focus, so the main process nudges us and we re-read the truth here.
-      api.onDidPopoutGroupPositionChange?.(saveLayout);
-      api.onDidPopoutGroupSizeChange?.(saveLayout);
-      const offPopoutGeometry = window.switchboard.onPopoutGeometryChanged?.(saveLayout);
+      // a moved/resized popout changes a card's SLOT as well as the layout —
+      // its monitor is exactly what §5.8's reveal contract promises to restore
+      const saveGeometry = (): void => {
+        saveLayout();
+        captureSlots(api);
+      };
+      api.onDidPopoutGroupPositionChange?.(saveGeometry);
+      api.onDidPopoutGroupSizeChange?.(saveGeometry);
+      const offPopoutGeometry = window.switchboard.onPopoutGeometryChanged?.(saveGeometry);
       window.addEventListener('beforeunload', () => offPopoutGeometry?.());
       // dockview tab drags don't carry our dataTransfer type — publish the
       // in-flight card so the rail's group headers can accept the drop
@@ -1215,7 +1403,11 @@ export function SessionGrid(props: {
         if (sessionStore.isTearingDown()) return;
         const m = /^session-(.+)$/.exec(panel.id);
         if (!m) return;
+        // hiding removes the panel too, and means the opposite: keep the record
+        // AND the running session (P2-E15-08)
+        if (sessionStore.isHiding(m[1])) return;
         sessionStore.forgetCardLiveIds(m[1]);
+        sessionStore.forgetPresentation(m[1]);
         void window.switchboard.sessions.closeCard(m[1]);
       });
 
@@ -1245,6 +1437,10 @@ export function SessionGrid(props: {
           const known = new Set(
             (await window.switchboard.sessions.knownCards()).map((c) => c.cardId)
           );
+          // presentation records outlive their panels by design (that is the
+          // point of hiding), so the only thing that can retire one is the card
+          // itself being gone — otherwise the blob grows for ever
+          sessionStore.prunePresentation(known);
           for (const p of [...api.panels]) {
             const s = /^session-(.+)$/.exec(p.id);
             const d = /^diff-/.exec(p.id);

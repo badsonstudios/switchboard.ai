@@ -7,7 +7,7 @@
 // the ui blob (`viewTab.<cardId>`) and named by the E9-01 commands and by
 // `GridController.setView`. 'feed' is the Session view — the internal id
 // predates the rename and changing it would be a migration for no gain.
-import { manifestFor, PanelContext, PanelContribution, PanelId } from './contributions';
+import { manifestFor, PanelContext, PanelContribution } from './contributions';
 import { RendererRegistry } from './registry-instance';
 import { safely } from './boundary';
 import { TerminalPane } from '../components/TerminalPane';
@@ -37,14 +37,11 @@ export function panelBadge(p: PanelContribution, ctx: PanelContext): number | nu
   return safely(p.manifest.id, 'badge()', () => p.badge?.(ctx) ?? null, null);
 }
 
-/**
- * The panel a card falls back to: the Session view.
- *
- * Named rather than spelled 'feed' at five call sites — it is the default tab,
- * the toggle-back target, and the answer when a persisted id resolves to
- * nothing. The string itself is a persisted contract (see the header).
- */
-export const DEFAULT_PANEL_ID: PanelId = 'feed';
+// DEFAULT_PANEL_ID moved to contributions.ts (P2-E15-08): the store defaults a
+// card's view to it, and the store must not import this file — these panels
+// pull in React and every view component. Re-exported so existing importers,
+// which think of it as "the panels module's business", keep working.
+export { DEFAULT_PANEL_ID } from './contributions';
 
 export const sessionPanels: PanelContribution[] = [
   {

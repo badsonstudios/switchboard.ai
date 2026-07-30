@@ -6,11 +6,13 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight** (as of 2026-07-29). Working tree clean,
-nothing unpushed. *(Don't record a tip SHA here — it is stale the moment it is
+**In progress:** **#105 (P2-E15-08) is DONE and in review as PR #120** —
+`feature/105-presentation-state-store`, opened 2026-07-29, CI running. Nothing
+else mid-flight. *(Don't record a tip SHA here — it is stale the moment it is
 committed; `git log` is the authority for that one.)*
-**The queue, in order: #105 → #117 → #98 / #102-#103 / #107-#111.**
-**E15 is 6 of 14 done and BOTH P0s are closed** — #106 (permission hold),
+**The queue, in order: ~~#105~~ → #117 → #98 / #102-#103 / #107-#111.**
+**E15 is 7 of 14 done and BOTH P0s are closed** — #105 (presentation state,
+PR #120), #106 (permission hold),
 #99 (process-agnostic registry), #100 (three renderer contribution points),
 #101 (IPC capabilities), #104 (renderer state layer), plus #112 (the tail-pin
 race) fixed along the way. **Consumer count on the extensibility seams: 1 → 5**,
@@ -18,12 +20,14 @@ so the Phase-4 gate ("2–3 dissimilar internal consumers") is met for the first
 time — a starting condition for that conversation, not a decision to ship a
 plugin API.
 
-**Next up — recommended: #105 (P2-E15-08, presentation state into the store).**
-It is the hard prerequisite for **#74 (E9-05)** and **#76 (E9-07)**, i.e. the
-path back to E9 and visible features, and #104 just built the store it needs.
-Per-card view tab / popped-out / suspended / collapsed / dock slot move out of
-`SessionCardPanel`'s `useState`, because "reveal restores it to EXACTLY its
-prior slot" needs state that outlives the panel's unmount.
+**Next up: #117** (the `pty:attach` subscribe race), scheduled for this slot on
+2026-07-29 and now more clearly worth doing — #105's reveal path re-attaches a
+terminal, so it exercises exactly that window. After it, **#74 (E9-05)** and
+**#76 (E9-07)** are UNBLOCKED for the first time: #105 gave them the store-held
+view tab / ladder rung / dock slot they need, plus working hide and reveal
+primitives. E9-05 owns the policy from here (auto-hide triggers, attention
+reveal, and the `collapsed` / `tabbed` rungs — typed and persisted by #105 but
+with no transitions yet).
 
 *Also ready, no dependencies:* **#98** (provider adapter capabilities — the
 last piece of AR-P0-1; rewrites `sessions/ipc.ts`, which #101 just touched, so
@@ -116,6 +120,53 @@ a "[Dan eyeball]" note.**
   to Sonnet rates** — it invents a number. Not urgent, not waiting on anything.
 
 ## Log
+
+- 2026-07-29 — **P2-E15-08 (#105): presentation state has a home that outlives
+  the panel.** View tab, popped-out and suspended left `SessionCardPanel`'s
+  `useState` for the store, joined by §5.8's **ladder rung** and a **dock
+  slot**. The split that carries the design: **view / ladder / slot persist**,
+  **poppedOut / suspended are reflections** of dockview and lifecycle truth and
+  are deliberately NOT written — dockview's own layout JSON already round-trips
+  popout geometry, and a second copy is two authorities waiting to disagree.
+  Legacy per-card `viewTab.<cardId>` keys migrate into one `presentation` blob
+  and are then deleted, new home written FIRST.
+  **Shipped the mechanism, not just the bag.** A state nobody writes is exactly
+  what #104's review caught, and done-when 1 and 2 are untestable without a way
+  to unmount a card and bring it back — so hide (palette) and reveal (click the
+  session anywhere) are real, with `placeAt`/`captureSlot` pure and unit-tested.
+  E9-05 keeps the POLICY (auto-hide triggers, attention reveal, the collapsed
+  and tabbed rungs, which are typed and persisted but have no transitions yet).
+  **`CardActions` deleted from the store** — it only registered while a card was
+  LIVE, so a suspended or hidden card ignored every command; view switching goes
+  straight to the store and pop-out became a module function on (api, cardId).
+  **A real defect fixed in main:** `sessions:create` is now idempotent per card.
+  A revealed card remounts over a session that is still running, and the old
+  handler would have spawned a SECOND claude for one card. The e2e caught it,
+  and the first fix was wrong in an instructive way — `exitCode` is
+  `number | null`, so the `!== undefined` liveness test matched every live
+  session and adopted none of them. A throwaway probe printing `sessions.list()`
+  at each step is what showed it (two pids, one card).
+  **Review: 1 blocker, 7 should-fixes, all taken.** The blocker was mine and
+  user-visible: **a hidden card could not be closed** — the rail's ✕ routes
+  through `closeCard`, which returned early when no panel existed, so clicking
+  it did nothing on the one card §5.8 says still exists in the sidebar. Also
+  fixed: an adopted session reported `starting` for ever (no further status push
+  is coming for an idle one, so the pill lied, ⋯ controls stayed locked and the
+  8s "stuck in a startup dialog" chip lit); `revealCard` checked for an existing
+  panel BEFORE its await, so a double-click hit dockview's duplicate-id throw;
+  the ladder could go stale on a MOUNTED card (quit between the hide write and
+  dockview's microtask-buffered layout save) and nothing would ever correct it,
+  which is precisely what E9-05 will read — a mounted panel now wins; the
+  remembered popout rect skipped the E8-02 display check, so a card hidden on a
+  monitor you later unplug would reveal off-screen; `captureSlots` ran during
+  teardown, persisting index churn as the last write before exit; and the
+  legacy-key migration deleted the old home before writing the new one.
+  **Both fixes proved by reverting them with a rebuild in between** (the #113
+  lesson): the slot test fails with `placeAt` stubbed, the close test fails with
+  the hidden-card branch removed.
+  Gate: lint + typecheck + **421 unit (+36) + 86 e2e (+4)** green.
+  Manual: `07-workspace.md` (a new "Getting a session out of the way"),
+  `06-keyboard.md` (the palette-only commands).
 
 - 2026-07-29 — **OQ #8 CLOSED: no ClaudeMon integration. Usage is first-party
   and native.** Dan's call, and it retires the last gate on Phase 3 planning.

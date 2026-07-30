@@ -172,6 +172,36 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       if (!isDir) throw new Error('folder is not a directory');
 
       const prior = deps.persist.list().find((s) => s.id === opts.cardId);
+
+      // ONE live session per card, always (P2-E15-08). A card's panel used to
+      // mount exactly once per live session, so create() could assume it was
+      // being asked to spawn; hiding a card unmounts it and revealing it mounts
+      // it again over a session that is still running. Spawning a second claude
+      // for one card would leave an orphan PTY nothing can reach.
+      // `exitCode === null` is the liveness test — the field is `number | null`
+      // and a running session carries null, NOT undefined (a probe caught that
+      // the hard way: `!== undefined` matched every live session and adopted
+      // none of them). A crashed session keeps its record so the card can show
+      // the overlay, and must never be adopted.
+      // a crashed session leaves its mapping behind; drop those on the way past
+      // so "the live session for this card" never depends on Map ordering
+      for (const [liveId, cid] of [...cardOfLive]) {
+        if (cid !== opts.cardId) continue;
+        const running = manager.get(liveId);
+        if (!running || running.exitCode !== null) {
+          if (!running) cardOfLive.delete(liveId);
+          continue;
+        }
+        log.info('session already live for card, adopting', { sessionId: liveId, cardId: opts.cardId });
+        return {
+          ...running,
+          cardId: opts.cardId,
+          priorUsage: prior?.usage,
+          priorModel: prior?.model,
+          autonomy: prior?.autonomy ?? running.autonomy,
+          taskLabel: prior?.taskLabel,
+        };
+      }
       let title = (prior?.identity.title ?? (typeof opts.title === 'string' ? opts.title : opts.folder)).slice(0, 120);
       // a second session in the same folder would read IDENTICALLY in the
       // rail/grid (Dan round 4) — suffix new cards with the first free -N.

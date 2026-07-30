@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SessionStore } from './session-store';
 import { EventDto, RailGroup, RailSession } from '../model/types';
+import { DEFAULT_PRESENTATION } from '../lib/presentation';
 
 // The done-when: "a unit test constructs a store, drives it, and asserts
 // derived rail order + queue order WITHOUT React." That was impossible before
@@ -262,13 +263,91 @@ describe('identity maps that used to be module globals', () => {
     expect(store.takeDockingBack('card-A')).toBe(false);
   });
 
-  it('card actions unregister by IDENTITY, so a remount does not drop the live handle', () => {
-    const first = { setView: () => {}, currentView: () => 'feed', popOutToggle: () => {} };
-    const second = { setView: () => {}, currentView: () => 'terminal', popOutToggle: () => {} };
-    const offFirst = store.registerCardActions('card-A', first);
-    // React remounts: the NEW registration lands before the old cleanup runs
-    store.registerCardActions('card-A', second);
-    offFirst();
-    expect(store.actionsFor('card-A')).toBe(second);
+  it('hiding is flagged per card, so dockview removals can be told apart', () => {
+    // removing a panel to HIDE it and the user closing the tab look identical
+    // to dockview and mean opposite things (P2-E15-08)
+    expect(store.isHiding('card-A')).toBe(false);
+    store.setHiding('card-A', true);
+    expect(store.isHiding('card-A')).toBe(true);
+    expect(store.isHiding('card-B')).toBe(false);
+    store.setHiding('card-A', false);
+    expect(store.isHiding('card-A')).toBe(false);
+  });
+});
+
+describe('SessionStore — presentation (P2-E15-08)', () => {
+  let store: SessionStore;
+  let persisted: Record<string, unknown>[];
+
+  beforeEach(() => {
+    store = new SessionStore();
+    persisted = [];
+    store.setPresentationPersister((blob) => persisted.push(blob));
+  });
+
+  it('an unknown card gets the SAME default object every read', () => {
+    // useSyncExternalStore compares snapshots by identity: a fresh object per
+    // call is an infinite render loop, not a cosmetic issue
+    expect(store.getPresentation('nobody')).toBe(store.getPresentation('nobody'));
+    expect(store.getPresentation(undefined)).toBe(store.getPresentation('nobody'));
+    expect(store.getPresentation('nobody').view).toBe('feed');
+  });
+
+  it('a write publishes a NEW object for that card and leaves the others alone', () => {
+    store.setPresentation('card-A', { view: 'terminal' });
+    store.setPresentation('card-B', { view: 'diff' });
+    const a = store.getPresentation('card-A');
+    store.setPresentation('card-B', { view: 'feed' });
+    expect(store.getPresentation('card-A')).toBe(a); // untouched card, same ref
+    expect(store.getPresentation('card-B').view).toBe('feed');
+  });
+
+  it('a no-op write neither notifies nor persists', () => {
+    store.setPresentation('card-A', { view: 'terminal' });
+    const before = persisted.length;
+    let notified = 0;
+    store.subscribe(() => notified++);
+    // slots are recaptured on every layout change — an identical one must not
+    // re-render every card in the grid
+    store.setPresentation('card-A', { view: 'terminal' });
+    store.setPresentation('card-A', {
+      slot: { groupId: 'g1', index: 0, location: 'grid' },
+    });
+    store.setPresentation('card-A', {
+      slot: { groupId: 'g1', index: 0, location: 'grid' },
+    });
+    expect(notified).toBe(1); // only the first (real) slot change
+    expect(persisted.length).toBe(before + 1);
+  });
+
+  it('reflected-only fields never reach the blob', () => {
+    // dockview's layout JSON already round-trips popout location; a second
+    // copy is two authorities waiting to disagree
+    store.setPresentation('card-A', { poppedOut: true, suspended: true });
+    expect(store.getPresentation('card-A').poppedOut).toBe(true);
+    expect(persisted).toEqual([]);
+  });
+
+  it('persists the ladder and the slot, and prunes cards that are gone', () => {
+    store.setPresentation('card-A', {
+      ladder: 'hidden',
+      slot: { groupId: 'g1', index: 2, location: 'grid' },
+    });
+    store.setPresentation('card-B', { view: 'terminal' });
+    expect(persisted.at(-1)).toEqual({
+      'card-A': { ladder: 'hidden', slot: { groupId: 'g1', index: 2, location: 'grid' } },
+      'card-B': { view: 'terminal' },
+    });
+    store.prunePresentation(['card-B']);
+    expect(store.isHidden('card-A')).toBe(false); // record gone with the card
+    expect(persisted.at(-1)).toEqual({ 'card-B': { view: 'terminal' } });
+  });
+
+  it('init seeds the map without writing it back', () => {
+    store.initPresentation(
+      new Map([['card-A', { ...DEFAULT_PRESENTATION, ladder: 'hidden' as const }]])
+    );
+    expect(store.isHidden('card-A')).toBe(true);
+    expect(persisted).toEqual([]); // it just READ the blob; writing it is a no-op at best
   });
 });

@@ -10,6 +10,7 @@ function deps(): CommandDeps & { focusCard: ReturnType<typeof vi.fn> } {
     closeCard: vi.fn(),
     toggleCardView: vi.fn(),
     popOutCard: vi.fn(),
+    hideCard: vi.fn(),
     toggleRail: vi.fn(),
     openPalette: vi.fn(),
     toggleTabRows: vi.fn(),

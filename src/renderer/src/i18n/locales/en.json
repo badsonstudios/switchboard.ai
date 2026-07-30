@@ -230,6 +230,7 @@
     "newSession": "New session…",
     "closeSession": "Close session",
     "popOut": "Pop out / dock in session",
+    "hideSession": "Hide session (keeps it running)",
     "toggleTerminal": "Toggle Terminal view",
     "toggleChanges": "Toggle Changes view",
     "toggleRail": "Toggle the sessions rail",

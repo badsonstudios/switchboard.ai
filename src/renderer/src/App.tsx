@@ -14,6 +14,7 @@ import { SessionGrid, GridController } from './components/SessionGrid';
 import { EventsPanel, EventDto } from './components/EventsPanel';
 import { Usage, addUsage, estimateCostUsd, ZERO_USAGE } from './lib/usage';
 import { loadUiState, uiGet, uiSet } from './lib/ui-state';
+import { initPresentation } from './lib/presentation-boot';
 import { boxOnAnyDisplay, RescuedPopout } from './lib/layout';
 import { rendererRegistry } from './extensibility/registry-instance';
 import { buildContributedCommands } from './extensibility/commands';
@@ -87,6 +88,10 @@ export function App(): React.JSX.Element {
   const visited = useSyncExternalStore(subscribeStore, () => sessionStore.getState().visited);
   useEffect(() => {
     void loadUiState().then(() => {
+      // before anything can write presentation state, and before the grid
+      // mounts (uiReady gates it): an early write would persist an empty map
+      // over the saved one (P2-E15-08)
+      initPresentation();
       setAutonomy(uiGet('autonomy', 'ask'));
       setRailHidden(uiGet('railHidden', false));
       applyTabRows(loadTabRows()); // multi-row tab strip, default on (#84)
@@ -316,6 +321,7 @@ export function App(): React.JSX.Element {
           closeCard: (cardId) => grid.current?.closeCard(cardId),
           toggleCardView: (cardId, view) => grid.current?.toggleCardView(cardId, view),
           popOutCard: (cardId) => grid.current?.popOutCard(cardId),
+          hideCard: (cardId) => grid.current?.hideCard(cardId),
           toggleRail,
           openPalette: () => setPaletteOpen(true),
           toggleTabRows: () => {
