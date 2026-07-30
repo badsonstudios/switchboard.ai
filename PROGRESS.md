@@ -6,10 +6,11 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#105 (P2-E15-08) is DONE and in review as PR #120** —
-`feature/105-presentation-state-store`, opened 2026-07-29, CI running. Nothing
-else mid-flight. *(Don't record a tip SHA here — it is stale the moment it is
-committed; `git log` is the authority for that one.)*
+**In progress:** **nothing mid-flight.** #105 (P2-E15-08) **MERGED 2026-07-29 as
+PR #120**, after Dan ran the whole hand-off test list by hand and passed it —
+including the one that matters (hide a working session, reveal it, scrollback and
+conversation intact). Working tree clean. *(Don't record a tip SHA here — it is
+stale the moment it is committed; `git log` is the authority for that one.)*
 **The queue, in order: ~~#105~~ → #117 → #98 / #102-#103 / #107-#111.**
 **E15 is 7 of 14 done and BOTH P0s are closed** — #105 (presentation state,
 PR #120), #106 (permission hold),
@@ -20,14 +21,27 @@ so the Phase-4 gate ("2–3 dissimilar internal consumers") is met for the first
 time — a starting condition for that conversation, not a decision to ship a
 plugin API.
 
-**Next up: #117** (the `pty:attach` subscribe race), scheduled for this slot on
-2026-07-29 and now more clearly worth doing — #105's reveal path re-attaches a
-terminal, so it exercises exactly that window. After it, **#74 (E9-05)** and
-**#76 (E9-07)** are UNBLOCKED for the first time: #105 gave them the store-held
-view tab / ladder rung / dock slot they need, plus working hide and reveal
-primitives. E9-05 owns the policy from here (auto-hide triggers, attention
-reveal, and the `collapsed` / `tabbed` rungs — typed and persisted by #105 but
-with no transitions yet).
+**Next up: #117** (the `pty:attach` subscribe race) — scheduled for this exact
+slot on 2026-07-29, small, a real pre-existing bug, and a hard prerequisite for
+**#111**. #105 made it more reachable, not less: every reveal re-attaches a
+terminal through exactly that window. Fix direction is recorded on the issue —
+register the renderer's `pty:data` listener BEFORE invoking `pty:attach`, which
+removes the window instead of narrowing it.
+
+**#74 (E9-05) and #76 (E9-07) are UNBLOCKED for the first time.** #105 gave them
+the store-held view tab / ladder rung / dock slot, plus working hide and reveal
+primitives; both issues' blocked-on-#105 comments are answered (2026-07-29).
+E9-05 owns the policy from here: auto-hide / auto-collapse triggers, reveal on
+attention, the presentation-policy setting, and the `collapsed` / `tabbed`
+rungs — **typed and persisted by #105 but with no transitions yet, and they
+render as expanded if something sets them.**
+
+**The fork worth deciding once, after #117:** finish E15's remaining 6 (#98,
+#102-#103, #107-#111 — all audit-ish, no user-visible change) or go back to E9
+and ship features (#73 → #74 → #76 …). The recorded 2026-07-26 reasoning was
+"every other E15 item is cheap now and an audit later", which argues for
+finishing E15 — but that was written when E15 blocked E9, and it no longer does.
+Dan's call, not a default.
 
 *Also ready, no dependencies:* **#98** (provider adapter capabilities — the
 last piece of AR-P0-1; rewrites `sessions/ipc.ts`, which #101 just touched, so
@@ -55,7 +69,9 @@ holds module-level mutable state. Both are outside #104's done-when.
 switch-to-session scroll · allow-all sessions now silent. **The ClaudeMon read
 (OQ #8) is no longer pending — CLOSED 2026-07-29, we are not integrating.**
 
-**Recently merged:** 2026-07-26 — **#96** (sessions-rail redesign, three
+**Recently merged:** 2026-07-29 — **PR #120** (#105 P2-E15-08, presentation
+state into the store + hide/reveal; Dan hand-tested and merged). Before that,
+2026-07-26 — **#96** (sessions-rail redesign, three
 eyeball rounds, Dan signed off) and **#97** (architecture review + the E15
 epic). Before those, same day: **#94** (Deny means deny), **#95** (#92
 interactive-question signal), **#93** (#72 P2-E9-03 attention queue +
