@@ -17,9 +17,11 @@ prerequisite is met. That PR also carried Dan's docs, no code: **DESIGN §5.30
 document viewer** + **epic E16** (4 items, `04-phase-2-switchboard.md`) +
 Phase-3 viewer-v2 note + §10 backlog moves. **E16 is planned but NOT filed as
 issues** — that needs `/pm` and Dan's go-ahead.
-**[user] test list outstanding for #117:** 5 items in PR #121's body (busy-tab
-switch, fast tab bounce, popout dock-back, TUI redraw, reveal a hidden worker).
-None block anything; a duplicated block of output is the one new risk to watch.
+**#117's hand-off list was run by Dan BEFORE the merge and PASSED** — all 5
+(busy-tab switch, fast tab bounce, popout dock-back, TUI redraw, reveal a hidden
+worker). The thing to watch was a *duplicated* block of output, the failure mode
+the epoch stamp prevents; none appeared. **Nothing in this file is waiting on
+Dan.**
 
 Before it: #105 (P2-E15-08) **MERGED 2026-07-29 as
 PR #120**, after Dan ran the whole hand-off test list by hand and passed it —
@@ -71,8 +73,8 @@ took. Still open and NOT scheduled: **#90**, **#91**.
 / `-removed` are still a window-object bus, and `lib/drag-context.ts` still
 holds module-level mutable state. Both are outside #104's done-when.
 
-**[user] retests outstanding: #117's five, listed in PR #121's body** (and in
-the header above). Nothing else — the list that had been carried since
+**No [user] retests are outstanding.** #117's five were run before the merge and
+passed (see the header). Before them, the list carried since
 2026-07-24 — test 4 (out-of-cwd read) WITHOUT allow-all + autonomy=ask ·
 grid-drag between groups · switch-to-session scroll · allow-all sessions now
 silent — was **run and PASSED by Dan on 2026-07-29**, alongside #105's own
@@ -168,6 +170,12 @@ a "[Dan eyeball]" note.**
   doc inconsistencies fixed on the way past: §5.10's view-tab strip never listed
   the **Files** tab E8-05 ships as a disabled "soon", and Phase 2's exit criteria
   gained #7 (renumbering litmus to #8).
+- 2026-07-30 — **#117 MERGED as PR #121** (5 CI jobs green), and **Dan ran the
+  hand-off list before the merge — all 5 passed**: busy-tab switch, fast tab
+  bounce, popout dock-back, TUI redraw, reveal a hidden worker. No duplicated
+  output anywhere, which is the failure mode the epoch stamp exists to prevent
+  and the only new risk this change carried.
+
 - 2026-07-30 — **#117: the `pty:attach` gap is closed, and closing it turned out
   to have a second half.** The recorded fix direction — register the renderer's
   `pty:data` listener BEFORE invoking `pty:attach` — is right but not
