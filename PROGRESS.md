@@ -6,21 +6,27 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#117 — the `pty:attach` subscribe race.** Implemented,
-reviewed twice, full gate green (lint + typecheck + 444 unit + 86 e2e); Dan
-approved, **PR open and waiting on CI**. Shipped more than the recorded fix
-direction: subscribe-before-invoke, *plus* buffer-and-replay-after-snapshot
-(the gap chunks are newer than the snapshot), *plus* an **epoch** on the wire,
-because subscribing first also lets a chunk from the PREVIOUS attach reach the
-new listener — which would have traded silent loss for duplicated output.
-**#111 unblocks on merge.**
+**In progress:** **nothing mid-flight.** #117 **MERGED 2026-07-30 as PR #121**
+(all 5 CI jobs green) — the `pty:attach` subscribe race is closed. It shipped
+more than the recorded fix direction: subscribe-before-invoke, *plus*
+buffer-and-replay-after-snapshot (the gap chunks are newer than the snapshot),
+*plus* an **epoch** on the wire, because subscribing first also lets a chunk
+from the PREVIOUS attach reach the new listener — which would have traded silent
+loss for duplicated output. **#111 (P2-E15-14) is UNBLOCKED**; its one recorded
+prerequisite is met. That PR also carried Dan's docs, no code: **DESIGN §5.30
+document viewer** + **epic E16** (4 items, `04-phase-2-switchboard.md`) +
+Phase-3 viewer-v2 note + §10 backlog moves. **E16 is planned but NOT filed as
+issues** — that needs `/pm` and Dan's go-ahead.
+**[user] test list outstanding for #117:** 5 items in PR #121's body (busy-tab
+switch, fast tab bounce, popout dock-back, TUI redraw, reveal a hidden worker).
+None block anything; a duplicated block of output is the one new risk to watch.
 
 Before it: #105 (P2-E15-08) **MERGED 2026-07-29 as
 PR #120**, after Dan ran the whole hand-off test list by hand and passed it —
 including the one that matters (hide a working session, reveal it, scrollback and
 conversation intact). Working tree clean. *(Don't record a tip SHA here — it is
 stale the moment it is committed; `git log` is the authority for that one.)*
-**The queue, in order: ~~#105~~ → #117 → #98 / #102-#103 / #107-#111.**
+**The queue, in order: ~~#105~~ → ~~#117~~ → #98 / #102-#103 / #107-#111.**
 **E15 is 7 of 14 done and BOTH P0s are closed** — #105 (presentation state,
 PR #120), #106 (permission hold),
 #99 (process-agnostic registry), #100 (three renderer contribution points),
@@ -30,12 +36,11 @@ so the Phase-4 gate ("2–3 dissimilar internal consumers") is met for the first
 time — a starting condition for that conversation, not a decision to ship a
 plugin API.
 
-**Next up: #117** (the `pty:attach` subscribe race) — scheduled for this exact
-slot on 2026-07-29, small, a real pre-existing bug, and a hard prerequisite for
-**#111**. #105 made it more reachable, not less: every reveal re-attaches a
-terminal through exactly that window. Fix direction is recorded on the issue —
-register the renderer's `pty:data` listener BEFORE invoking `pty:attach`, which
-removes the window instead of narrowing it.
+**Next up: Dan's call — the fork below is now the live decision.** Nothing is
+scheduled. The queue's remaining candidates are #98 / #102-#103 / #107-#111
+(E15's audit-ish six, none user-visible), the rest of E9 starting at #73, the two
+unscheduled UX issues #90 and #91, and — newly planned but NOT filed — **E16**,
+the document viewer (needs `/pm` to file its 4 items).
 
 **#74 (E9-05) and #76 (E9-07) are UNBLOCKED for the first time.** #105 gave them
 the store-held view tab / ladder rung / dock slot, plus working hide and reveal
@@ -45,7 +50,7 @@ attention, the presentation-policy setting, and the `collapsed` / `tabbed`
 rungs — **typed and persisted by #105 but with no transitions yet, and they
 render as expanded if something sets them.**
 
-**The fork worth deciding once, after #117:** finish E15's remaining 6 (#98,
+**The fork worth deciding, now that #117 is done:** finish E15's remaining 6 (#98,
 #102-#103, #107-#111 — all audit-ish, no user-visible change) or go back to E9
 and ship features (#73 → #74 → #76 …). The recorded 2026-07-26 reasoning was
 "every other E15 item is cheap now and an audit later", which argues for
@@ -59,28 +64,24 @@ likely-live bug where theme + language reset on every packaged launch),
 **#107** (transcript drift detector) → **#108**, **#109** (header CSP),
 **#110** (workspace schema migration), **#111** (re-measure S-07 concurrency).
 
-**#117 is SCHEDULED (2026-07-29, Dan's call): it takes the slot right after
-#105.** Terminal output can be lost between `pty:attach` returning and the
-renderer subscribing — a REAL pre-existing bug found during #101's review, not
-introduced there. It is now a recorded **hard prerequisite for #111**
-(P2-E15-14): a load-dependent dropped-output race would muddy exactly the
-concurrency numbers that item measures. Fix direction from the issue: register
-the renderer's `pty:data` listener **before** invoking `pty:attach`, so the
-snapshot only ever returns to a subscriber already listening — removes the
-window instead of narrowing it. Still open and NOT scheduled: **#90**, **#91**.
+**#117 is DONE (PR #121, 2026-07-30)** — see the log entry for what it actually
+took. Still open and NOT scheduled: **#90**, **#91**.
 
 *Known not-closed:* AR-P1-4 is only partly retired — `switchboard:popout-added`
 / `-removed` are still a window-object bus, and `lib/drag-context.ts` still
 holds module-level mutable state. Both are outside #104's done-when.
 
-**No [user] retests are outstanding.** The list that had been carried since
+**[user] retests outstanding: #117's five, listed in PR #121's body** (and in
+the header above). Nothing else — the list that had been carried since
 2026-07-24 — test 4 (out-of-cwd read) WITHOUT allow-all + autonomy=ask ·
 grid-drag between groups · switch-to-session scroll · allow-all sessions now
 silent — was **run and PASSED by Dan on 2026-07-29**, alongside #105's own
 hand-off list. Nothing here is waiting on him. (OQ #8 / the ClaudeMon read was
 closed the same day — we are not integrating.)
 
-**Recently merged:** 2026-07-29 — **PR #120** (#105 P2-E15-08, presentation
+**Recently merged:** 2026-07-30 — **PR #121** (#117, the `pty:attach` subscribe
+race + the epoch on the wire; also carried DESIGN §5.30 and epic E16, docs only).
+Before that, 2026-07-29 — **PR #120** (#105 P2-E15-08, presentation
 state into the store + hide/reveal; Dan hand-tested and merged). Before that,
 2026-07-26 — **#96** (sessions-rail redesign, three
 eyeball rounds, Dan signed off) and **#97** (architecture review + the E15
