@@ -29,20 +29,32 @@ including the one that matters (hide a working session, reveal it, scrollback an
 conversation intact). Working tree clean. *(Don't record a tip SHA here — it is
 stale the moment it is committed; `git log` is the authority for that one.)*
 **The queue, in order: ~~#105~~ → ~~#117~~ → #98 / #102-#103 / #107-#111.**
-**E15 is 7 of 14 done and BOTH P0s are closed** — #105 (presentation state,
-PR #120), #106 (permission hold),
-#99 (process-agnostic registry), #100 (three renderer contribution points),
-#101 (IPC capabilities), #104 (renderer state layer), plus #112 (the tail-pin
-race) fixed along the way. **Consumer count on the extensibility seams: 1 → 5**,
+**E15 is 6 of 14 done** — #99 (process-agnostic registry), #100 (three renderer
+contribution points), #101 (IPC capabilities), #104 (renderer state layer),
+#105 (presentation state, PR #120), #106 (permission hold). *(Corrected
+2026-07-30: this line said "7 of 14" because it was counting #112, the tail-pin
+race — that was fixed in this period but is NOT an E15 item. Neither is #117.
+**Every E15 item cites an `AR-*` finding from
+`docs/architecture-review-2026-07-26.md`**; if it has no AR id, it is not E15.)*
+**AR-P0-2 is fully closed; AR-P0-1 and AR-P0-3 are NOT** — #98 is the last piece
+of P0-1, and #102/#103 are P0-3. **Consumer count on the extensibility seams: 1 → 5**,
 so the Phase-4 gate ("2–3 dissimilar internal consumers") is met for the first
 time — a starting condition for that conversation, not a decision to ship a
 plugin API.
 
-**Next up: Dan's call — the fork below is now the live decision.** Nothing is
-scheduled. The queue's remaining candidates are #98 / #102-#103 / #107-#111
-(E15's audit-ish six, none user-visible), the rest of E9 starting at #73, the two
-unscheduled UX issues #90 and #91, and — newly planned but NOT filed — **E16**,
-the document viewer (needs `/pm` to file its 4 items).
+**Next up: #98 (P2-E15-01).** **DECIDED 2026-07-30 (Dan): finish E15 first, then
+E16.** The fork below is therefore closed — E9 (#73 → #74 → #76 …), #90, #91 and
+E16 all wait until E15's remaining 8 are done.
+**Run them in this order** (dependency-forced where noted):
+**#98** (independent; the last piece of AR-P0-1 — rewrites `sessions/ipc.ts`,
+which #101 and #117 both touched, so read that file first) → **#102 → #103**
+(#103 depends on #102; #103 is the likely-LIVE bug where theme + language reset
+on every packaged launch — verify it before fixing) → **#107 → #108** (#108
+depends on #107) → **#109** (header CSP) → **#110** (workspace schema migration)
+→ **#111 LAST** (re-measure S-07 concurrency: it should measure the shape we are
+keeping, and its one hard prerequisite — #117 — is now merged).
+**E16 (document viewer, DESIGN §5.30) is planned but NOT filed** — 4 items in
+`04-phase-2-switchboard.md`; run `/pm` to file them when E15 closes.
 
 **#74 (E9-05) and #76 (E9-07) are UNBLOCKED for the first time.** #105 gave them
 the store-held view tab / ladder rung / dock slot, plus working hide and reveal
@@ -52,14 +64,14 @@ attention, the presentation-policy setting, and the `collapsed` / `tabbed`
 rungs — **typed and persisted by #105 but with no transitions yet, and they
 render as expanded if something sets them.**
 
-**The fork worth deciding, now that #117 is done:** finish E15's remaining 6 (#98,
-#102-#103, #107-#111 — all audit-ish, no user-visible change) or go back to E9
-and ship features (#73 → #74 → #76 …). The recorded 2026-07-26 reasoning was
-"every other E15 item is cheap now and an audit later", which argues for
-finishing E15 — but that was written when E15 blocked E9, and it no longer does.
-Dan's call, not a default.
+**~~The fork~~ — CLOSED 2026-07-30, Dan's call: finish E15, then E16, then the
+rest.** It had been "finish E15's audit items or go back to E9 and ship
+features". Recorded so it is not re-litigated: the remaining 8 are audit work
+with **no user-visible change**, so the next stretch produces nothing to
+eyeball — that is expected, not a stall.
 
-*Also ready, no dependencies:* **#98** (provider adapter capabilities — the
+*The remaining 8, with what each is (all cite `AR-*` findings from the
+architecture review — that is what makes them E15):* **#98** (provider adapter capabilities — the
 last piece of AR-P0-1; rewrites `sessions/ipc.ts`, which #101 just touched, so
 read that first), **#102 → #103** (themes as JSON token maps; #103 is the
 likely-live bug where theme + language reset on every packaged launch),
@@ -170,6 +182,19 @@ a "[Dan eyeball]" note.**
   doc inconsistencies fixed on the way past: §5.10's view-tab strip never listed
   the **Files** tab E8-05 ships as a disabled "soon", and Phase 2's exit criteria
   gained #7 (renumbering litmus to #8).
+- 2026-07-30 — **DECISION (Dan): finish E15 before E16.** The remaining 8 —
+  #98, #102, #103, #107, #108, #109, #110, #111 — run in that order (#103 needs
+  #102, #108 needs #107, #111 goes last so it measures the shape we keep).
+  Confirmed while asking the right question: **is E15 all audit work?** Yes —
+  every one of the 14 items cites an `AR-*` finding from
+  `docs/architecture-review-2026-07-26.md`, and nothing else in the tree does.
+  **A count in this file was wrong and is fixed:** "E15 is 7 of 14 done" was
+  counting #112 (the tail-pin race), which was fixed during E15 but is not an
+  E15 item — neither is #117. It is **6 of 14**, and AR-P0-1 (#98) and AR-P0-3
+  (#102/#103) are still open; only AR-P0-2 is fully closed.
+  E16 (document viewer) is planned in the plan file but **not filed as issues** —
+  that is a `/pm` step for when E15 closes.
+
 - 2026-07-30 — **#117 MERGED as PR #121** (5 CI jobs green), and **Dan ran the
   hand-off list before the merge — all 5 passed**: busy-tab switch, fast tab
   bounce, popout dock-back, TUI redraw, reveal a hidden worker. No duplicated
