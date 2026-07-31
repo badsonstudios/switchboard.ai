@@ -268,7 +268,14 @@ function createWindow(): BrowserWindow {
     minWidth: 800,
     minHeight: 600,
     show: false,
-    backgroundColor: '#242933', // pre-paint only: --bg (nordic) from tokens.css
+    // pre-paint only: --bg (nordic) from tokens.css. A daylight or
+    // high-contrast user still gets one dark frame here before the renderer
+    // paints. Main can now READ the choice — P2-E15-06 moved it into this
+    // store — but not its color: `--bg` lives in the renderer's tokens.css and
+    // theme JSON, so closing this needs the token maps somewhere both
+    // processes can see. Not worth that today; recorded so the next person
+    // knows the blocker moved.
+    backgroundColor: '#242933',
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: true,

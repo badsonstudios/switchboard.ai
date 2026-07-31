@@ -259,7 +259,9 @@
   "theme": {
     "system": "system",
     "nordic": "nordic",
-    "daylight": "daylight"
+    "daylight": "daylight",
+    "high-contrast": "high contrast",
+    "soft-contrast": "soft contrast"
   },
   "language": {
     "en": "en",

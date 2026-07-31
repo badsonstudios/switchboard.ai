@@ -8,6 +8,7 @@
 // theme/dockview-tokens.css can switch on it and the popout windows (separate
 // documents that inherit the same stylesheet) behave identically.
 import { uiGet, uiSet } from './ui-state';
+import { copyThemeOverlay } from '../theme/theme';
 
 export type TabRows = 'wrap' | 'single';
 
@@ -37,17 +38,27 @@ export function toggleTabRows(): TabRows {
  * nor `data-tab-rows` on its `<html>` — it would render in the stylesheet's
  * default theme and never wrap. Copy both across.
  *
- * Called when a popout opens and whenever either flag changes; `windows`
+ * Since P2-E15-05 a theme is a base preset PLUS a token overlay, and the
+ * overlay is inline style on our own `<html>` — which a popout inherits even
+ * less than an attribute. Copying only the flags would give a high-contrast
+ * app a nordic popout: the base right and every override missing, which looks
+ * exactly like a theme that half-applied.
+ *
+ * Called when a popout opens and whenever any of it changes; `windows`
  * defaults to every popout dockview has told us about.
  */
 export function syncDocumentFlags(windows: Iterable<Window> = popoutWindows): void {
-  const src = document.documentElement.dataset;
+  const srcEl = document.documentElement;
+  const src = srcEl.dataset;
   for (const win of windows) {
     try {
       const dest = win.document?.documentElement;
       if (!dest) continue;
       if (src.theme) dest.dataset.theme = src.theme;
+      if (src.themeId) dest.dataset.themeId = src.themeId;
+      if (src.colorScheme) dest.dataset.colorScheme = src.colorScheme;
       if (src.tabRows) dest.dataset.tabRows = src.tabRows;
+      copyThemeOverlay(srcEl, dest);
     } catch {
       /* window closed mid-iteration — fail open, it's cosmetic */
     }

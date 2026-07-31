@@ -139,7 +139,23 @@ test.describe('tab strip (#84)', () => {
           const [hi, lo] = x > y ? [x, y] : [y, x];
           return (hi + 0.05) / (lo + 0.05);
         };
+        // How much room the frame has before the nearest CLIPPING ancestor.
+        // Dan 2026-07-31: the right border was missing while the other three
+        // showed. Cause: dockview sizes the group to its container exactly and
+        // an ancestor clips at that same coordinate, so on a scaled display —
+        // where a 1px border is snapped to one DEVICE pixel — the right sliver
+        // lands on the boundary and is rounded away. Geometry, not color, so
+        // the contrast check above cannot see it.
+        let clipper = g.parentElement;
+        while (clipper && getComputedStyle(clipper).overflowX === 'visible') {
+          clipper = clipper.parentElement;
+        }
+        const rightRoom = clipper
+          ? clipper.getBoundingClientRect().right - g.getBoundingClientRect().right
+          : 0;
+
         return {
+          rightRoom,
           // the frame against the surface it sits on
           frameVsGroup: contrast(cs.borderTopColor, cs.backgroundColor),
           active: g.classList.contains('dv-active-group'),
@@ -157,11 +173,23 @@ test.describe('tab strip (#84)', () => {
       // a frame you can actually see — the whole point of the report
       expect(m!.frameVsGroup, `group frame invisible in ${theme}`).toBeGreaterThan(1.25);
       expect(m!.radius, `group not rounded in ${theme}`).not.toBe('0px');
+      // ...on all four sides: flush against the clip, the right one is rounded
+      // away and the card reads as open on that edge
+      expect(
+        m!.rightRoom,
+        `group is flush against its clipping container in ${theme} — the right border will not paint`
+      ).toBeGreaterThanOrEqual(1);
       // the focused group is drawn in the accent, not the neutral frame
       expect(m!.active, `expected the only group to be focused in ${theme}`).toBe(true);
-      // and a split's gutter is painted, not transparent
-      expect(m!.sash, `sash still transparent in ${theme}`).not.toBe('');
-      expect(m!.sash, `sash still transparent in ${theme}`).not.toMatch(/transparent|, *0\)/);
+      // A split's gutter is TRANSPARENT, and that reversed on 2026-07-31.
+      // #84 painted it with the page background because dockview ships it
+      // invisible and a split read as a fold in one surface — written before a
+      // group had a frame. The sash is 4px, `z-index: 99` and centred on the
+      // seam, so once frames existed the fill covered the border on BOTH sides
+      // (Dan: "you can see a black space, but there is no line on each one").
+      // What makes a split visible now is the two frames; `split.spec.ts`
+      // asserts they actually paint. Hover and drag still light the sash.
+      expect(m!.sash, `sash paints over the frames in ${theme}`).toMatch(/transparent|, *0\)/);
     }
   });
 

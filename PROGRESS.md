@@ -6,7 +6,27 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.** #98 (P2-E15-01) **MERGED 2026-07-30 as
+**In progress:** **#102 (P2-E15-05) — theme = a JSON token map (+ high-contrast),
+now carrying #103 (P2-E15-06) too.** Picked up 2026-07-30; **code complete, two
+review rounds done, gate green (lint + typecheck + 569 unit + 91 e2e)** —
+awaiting commit approval. **Four themes ship, not three:** Dan asked for a
+softer high-contrast after trying it, and `soft-contrast` cost one JSON file +
+one list entry + one string, no code path — the item's own claim, cashed by
+someone who did not know they were testing it. **Also rides along: the session
+group frame's missing RIGHT border** (Dan spotted it 2026-07-31), which turned
+out to be **TWO causes**: (1) dockview sizes a group flush to a clipping
+ancestor and on a scaled display a 1px border snaps to one device pixel the clip
+rounds away; (2) the **sash** — 4px, `z-index: 99`, painted `var(--bg)` by #84
+back when groups had no frame — covered the border on BOTH sides of a split.
+Both fixed in `dockview-tokens.css`. **New `e2e/split.spec.ts`** restores a
+two-group layout (the single-group suite could see neither cause) and READS
+PIXELS via a new dependency-free PNG decoder in `e2e/fixtures/png.ts` — because
+computed styles, geometry and `elementFromPoint` all said "fine" while Dan
+looked at black. Both fixes revert-proofed. **#103 was folded in 2026-07-31 because Dan's hand-off
+test 5 failed**: the theme picker worked and the choice vanished on relaunch.
+Reproduced and MEASURED — the built app's origin is a random loopback port
+(`:58814` then `:57029`), so localStorage is a new store every launch. Theme and
+language now live in the `ui` blob. **That closes AR-P0-3 entirely.** Before it: #98 (P2-E15-01) **MERGED 2026-07-30 as
 PR #122**, all 5 CI jobs green. Session creation ASKS the adapter now, so
 **AR-P0-1 is CLOSED** — the last of the three P0s. Shipped FOUR capabilities —
 transcripts / hooks / resume / **trust** — with **mcp deferred to E11**; the log

@@ -9,7 +9,7 @@ import { rendererRegistry } from '../extensibility/registry-instance';
 import { listStatusBarItems } from '../extensibility/status-bar-items';
 import { ContributionBoundary } from '../extensibility/boundary';
 import { StatusBarContext } from '../extensibility/contributions';
-import { ThemeName } from '../theme/theme';
+import { ThemeDefinition } from '../theme/theme';
 
 const barStyle: React.CSSProperties = {
   background: 'var(--titlebar-bg)',
@@ -25,6 +25,9 @@ const barStyle: React.CSSProperties = {
 export function TitleBar(props: {
   version: string;
   pref: ThemePreference;
+  /** what the app resolved from — the picker must not offer a theme the
+   *  resolver cannot find, or the chip lights on a theme nobody painted */
+  themes: readonly ThemeDefinition[];
   onTheme: (p: ThemePreference) => void;
   lang: LanguageChoice;
   onLang: (l: LanguageChoice) => void;
@@ -74,9 +77,14 @@ export function TitleBar(props: {
       <Chip selected={props.notifEnabled} onClick={props.onToggleNotif}>
         {props.notifEnabled ? t('titlebar.notifOn') : t('titlebar.notifOff')}
       </Chip>
-      {(['system', 'nordic', 'daylight'] as const).map((p) => (
-        <Chip key={p} selected={p === props.pref} onClick={() => props.onTheme(p)}>
-          {t(`theme.${p}`)}
+      {/* 'system' is not a theme — it is the absence of a choice, so it is not
+          a contribution either and stays hard-coded here (§5.20 OS sync). */}
+      <Chip selected={props.pref === 'system'} onClick={() => props.onTheme('system')}>
+        {t('theme.system')}
+      </Chip>
+      {props.themes.map((th) => (
+        <Chip key={th.id} selected={th.id === props.pref} onClick={() => props.onTheme(th.id)}>
+          {t(th.nameKey)}
         </Chip>
       ))}
       {(['en', 'pseudo'] as const).map((l) => (
@@ -90,7 +98,7 @@ export function TitleBar(props: {
 
 export function StatusBar(props: {
   count: number;
-  theme: ThemeName;
+  theme: ThemeDefinition;
   cliVersion?: string | null;
   totalOutputTokens?: number;
   totalCostUsd?: number;
@@ -98,7 +106,10 @@ export function StatusBar(props: {
   // Contributed items (§5.23): the bar owns the strip and the spacer, the
   // items own what they say. An item returning null renders nothing, which is
   // how "no usage yet" stays the item's business rather than the bar's.
-  const ctx: StatusBarContext = props;
+  //
+  // The theme arrives RESOLVED — id for the contract, name key for the label —
+  // so an item never has to reach for the registry singleton to render a word.
+  const ctx: StatusBarContext = { ...props, theme: props.theme.id, themeNameKey: props.theme.nameKey };
   const render = (align: 'start' | 'end'): React.JSX.Element[] =>
     listStatusBarItems(rendererRegistry, align).map((i) => (
       <ContributionBoundary key={i.manifest.id} id={i.manifest.id}>

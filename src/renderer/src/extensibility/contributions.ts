@@ -20,7 +20,7 @@ import type { CapabilityManifest } from '../../../shared/extensibility/registry'
 import type { Command } from '../lib/commands';
 import type { CommandDeps } from '../lib/command-set';
 import type { FeedBlockDto } from '../lib/feed';
-import type { ThemeName } from '../theme/theme';
+import type { ThemeDefinition, ThemeId } from '../theme/theme';
 
 /**
  * A set of commands. Built lazily from deps rather than supplied as a list:
@@ -45,7 +45,25 @@ export type RendererContributions = {
   panel: PanelContribution;
   'feed-block-renderer': FeedBlockRendererContribution;
   'status-bar-item': StatusBarItemContribution;
+  theme: ThemeContribution;
 };
+
+/**
+ * A theme (§5.20, P2-E15-05).
+ *
+ * The fifth point and the only DATA-ONLY one: every other contribution here
+ * hands over a function — build these commands, render this block — and this
+ * one hands over a value. That is the shape a plugin manifest can carry
+ * without executing anything, which is why §5.23's tier-1 (sandboxed) trust
+ * level exists at all, and why it is worth having in the roster before Phase 4
+ * has to design for it.
+ */
+export interface ThemeContribution {
+  manifest: CapabilityManifest;
+  /** ascending; decides picker order */
+  order: number;
+  theme: ThemeDefinition;
+}
 
 // ---------------------------------------------------------------------------
 // P2-E15-03: the three renderer points that make the seam a real one. They are
@@ -89,7 +107,15 @@ export interface PanelContext {
   visible: boolean;
   /** the session's working folder; absent for a session with none */
   folder?: string;
-  theme: ThemeName;
+  /** the ACTIVE theme's id — an open set, so never switch on it */
+  theme: ThemeId;
+  /**
+   * light or dark. Separate from `theme` because a panel embedding something
+   * with two skins (Monaco) needs an answer that stays correct when a third
+   * theme lands — `theme === 'daylight'` silently means "not light" for every
+   * theme but one.
+   */
+  colorScheme: 'light' | 'dark';
   status?: string;
   autonomy?: string;
   model?: string;
@@ -151,7 +177,10 @@ export interface FeedBlockRendererContribution {
 /** What a status bar item is given to render itself. */
 export interface StatusBarContext {
   count: number;
-  theme: ThemeName;
+  /** the ACTIVE theme's id — the contract */
+  theme: ThemeId;
+  /** and its display name, already resolved (§5.21: translate, don't print an id) */
+  themeNameKey: string;
   cliVersion?: string | null;
   totalOutputTokens?: number;
   totalCostUsd?: number;

@@ -316,6 +316,28 @@ Work items:
   code; a theme switch reaches popped-out windows (the #84 `syncDocumentFlags`
   path); the raw-color lint rule is still green; token names are enumerable
   (the future theme editor + `theme` contribution point need that list).
+  **SHIPPED 2026-07-31 (#102).** All five met, and **four themes shipped, not
+  three**: Dan asked for a softer high-contrast after seeing the first one, and
+  `soft-contrast` cost one JSON file, one entry in `builtin-themes.ts` and one
+  string — no code path, no test edited to accommodate it. That is the item's
+  own claim, tested by someone who did not know it was being tested. It is held
+  to the SAME measured contrast bars as high-contrast (body text 15:1 vs 21:1 —
+  softer on purpose, still AAA), because "softer" must not become "worse".
+  What shipped differs from the wording above in three ways, all recorded in DESIGN §5.20 "as built": a theme
+  is a **base preset + overlay** (the presets keep empty maps, which is also
+  what makes the first paint correct); the layer-2 semantic tokens became
+  **overridable** (a contrast theme that cannot touch the status hues is
+  decoration) while session accents stayed identity; and the map is **colors
+  and shadows only**. The `theme` contribution point came WITH this item rather
+  than after it — the registry existed, so it was ~20 lines, and it is the
+  first data-only point (consumer count 5 → 6). Two guards worth knowing about
+  before touching this area: `tokens.drift.test.ts` parses `tokens.css` and
+  fails if the enumerated list drifts, and the same file asserts WCAG ratios
+  computed from the JSON, so "high contrast" is a measured claim. A **token
+  `kind`** (`color | shadow`) exists because a shadow token is concatenated
+  into a shorthand at some call sites and `none` there makes the whole
+  declaration invalid — that cost the rail's drop-target ring in the first
+  draft and is now pinned by a unit test and an e2e.
 - **P2-E15-06 · Renderer preference persistence — S (§5.25, AR-P0-3).**
   Theme and language move from `localStorage` to the `ui` blob. The workspace
   store already documents why localStorage is unsafe here — the packaged
@@ -324,6 +346,22 @@ Work items:
   packaged build today**. Verify first, then fix.
   *Done when:* an e2e against the BUILT app sets a non-default theme and
   language, relaunches, and both survive; dev behaviour unchanged.
+  **SHIPPED 2026-07-31, folded into #102's PR.** It was not planned that way:
+  Dan ran E15-05's hand-off list, and test 5 — "pick high contrast, quit,
+  relaunch" — failed. Shipping a theme picker whose choice evaporates was not
+  worth the tidiness of a separate PR, and the verification the item asks for
+  had just happened in the most direct way available.
+  **The bug was live and is now measured, not inferred:** launch 1 of the built
+  app is served from `http://127.0.0.1:58814`, launch 2 from
+  `http://127.0.0.1:57029` — a different ORIGIN, so a different localStorage,
+  so the stored preference reads back `null` and the app resolves to the OS
+  default. Both prefs moved to the `ui` blob (`uiGet`/`uiSet`), with the same
+  one-time localStorage migration `autonomy` already had — which only ever
+  finds anything in dev, where Vite's origin is stable and the old value is
+  genuinely still there. `main.tsx` now awaits `loadUiState()` BEFORE
+  `initI18n()` and the first render, which is what keeps both preferences
+  synchronous at boot instead of arriving a frame late.
+  **AR-P0-3 is fully closed** by this plus #102.
 - **P2-E15-07 · Renderer session store — M (AR-P1-4).** One observable store
   (plain class + `useSyncExternalStore`; no new dependency) owning cards,
   per-card status/usage/plan/pending-permissions, and the ui blob. The

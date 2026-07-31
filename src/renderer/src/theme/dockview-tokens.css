@@ -69,13 +69,22 @@
   --dv-tab-font-size: inherit;
   --dv-tabs-and-actions-container-font-size: 12px;
   --dv-tabs-and-actions-container-height: 35px;
-  /* The gutter between split groups. dockview ships this transparent in every
-     one of its themes, which is half of why a split was invisible; painting it
-     with the PAGE background makes the seam read as a gap between cards rather
-     than a fold in one surface. Set as a token, not a `.dv-sash` rule — the
-     base selector is `.dv-split-view-container .dv-sash-container .dv-sash`
-     and would win on specificity. */
-  --dv-sash-color: var(--bg);
+  /* The gutter between split groups.
+     TRANSPARENT AGAIN, and the history matters (Dan 2026-07-31: "you can see a
+     black space, but there is no line on each one"). dockview ships the sash
+     transparent; #84 painted it with the PAGE background so a split would read
+     as a gap rather than a fold — a fix written when a group had NO frame. The
+     sash is 4px wide, `position: absolute`, `z-index: 99`, and sits centred on
+     the seam, so once groups gained borders it was painting over BOTH of them:
+     `elementFromPoint` at each border returned `.dv-sash`, not the group. The
+     gap looks identical without the fill — what is behind the sash is the same
+     page background — and the two frames are visible again.
+     The seam is still findable while you use it: `--dv-active-sash-color`
+     lights it on hover and drag, which is where that feedback belongs.
+     Set as a token, not a `.dv-sash` rule — the base selector is
+     `.dv-split-view-container .dv-sash-container .dv-sash` and would win on
+     specificity. */
+  --dv-sash-color: transparent;
   --dv-active-sash-color: var(--link);
   --dv-spacing-padding: 0px;
   --dv-floating-group-dragging-opacity: 0.5;
@@ -157,6 +166,33 @@
   box-shadow: var(--group-lift);
   /* the tab strip's corners are square — let the frame clip them */
   overflow: hidden;
+  /*
+   * THE RIGHT EDGE NEEDS A PIXEL OF ROOM (Dan 2026-07-31: "a nice border around
+   * the top left and bottom, but nothing on the right").
+   *
+   * dockview sizes `.dv-view` to the container exactly, this fills it exactly,
+   * and an ancestor (`.dv-split-view-container`) is `overflow: hidden` at that
+   * same coordinate. On a scaled display a `1px` border is snapped to ONE
+   * DEVICE pixel — measured at 150%: `border-right-width` computes to
+   * 0.666667px — and that last sliver lands on the clip boundary and is
+   * rounded away. The left, top and bottom borders survive the same rounding;
+   * only the right loses. Measured on the running app: group right edge 1019,
+   * every ancestor's right edge 1019, and the border reappears the moment the
+   * box is 1px narrower.
+   *
+   * `width`, not `margin-inline-end`: dockview gives this element
+   * `width: 100%`, so a margin leaves the box 721px wide inside a 721px parent
+   * and overflows by the very pixel it was meant to give back — measured, and
+   * indistinguishable from the bug. An `outline` with a negative offset was
+   * tried too and is clipped just the same. Only shrinking the box works.
+   *
+   * `!important` because dockview writes that width as an INLINE style
+   * (`style="outline: none; height: 100%; width: 100%; overflow: hidden"`), and
+   * a stylesheet cannot beat inline any other way. It is not a fight with
+   * dockview's layout: the layout is driven by `.dv-view`, and this only gives
+   * the frame its pixel back inside it.
+   */
+  width: calc(100% - 1px) !important;
 }
 
 /* Which session you are actually typing into, answerable without moving the

@@ -12,10 +12,27 @@ export async function loadUiState(): Promise<void> {
   } catch {
     cache = {}; // fail-open: prefs are nice-to-have, never a boot blocker
   }
-  // one-time migration from the old localStorage home (dev origin keeps it)
-  const legacyAutonomy = localStorage.getItem('switchboard.autonomy');
-  if (legacyAutonomy && cache['autonomy'] === undefined) cache['autonomy'] = legacyAutonomy;
+  // One-time migration from the old localStorage home. It only ever finds
+  // anything in DEV: Vite serves from a fixed origin, so a developer's stored
+  // prefs are still there — the packaged app's origin changed port every
+  // launch, which is the whole reason these moved (P2-E15-06 / AR-P0-3).
+  for (const [key, legacy] of LEGACY_KEYS) {
+    if (cache[key] !== undefined) continue;
+    try {
+      const v = localStorage.getItem(legacy);
+      if (v) cache[key] = v;
+    } catch {
+      /* fail-open: a throwing store costs the migration, not the boot */
+    }
+  }
 }
+
+/** ui-blob key -> the localStorage key it used to live under */
+const LEGACY_KEYS: ReadonlyArray<[string, string]> = [
+  ['autonomy', 'switchboard.autonomy'],
+  ['theme', 'switchboard.theme'],
+  ['language', 'switchboard.language'],
+];
 
 export function uiGet<T>(key: string, fallback: T): T {
   const v = cache[key];

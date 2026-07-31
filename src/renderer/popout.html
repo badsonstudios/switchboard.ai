@@ -12,6 +12,9 @@
       body {
         margin: 0;
         block-size: 100vh;
+        /* pre-paint only — tab-rows.ts copies the real theme (base flag +
+           token overlay) across as soon as the group is adopted. Same caveat
+           as the main window: one dark frame for a light-theme user. */
         background: #242933;
       }
     </style>

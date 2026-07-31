@@ -6,14 +6,17 @@ import { initReactI18next } from 'react-i18next';
 import ICU from 'i18next-icu';
 import en from './locales/en.json';
 import { pseudolocalizeResource } from './pseudo';
+import { uiGet, uiSet } from '../lib/ui-state';
 
 export type LanguageChoice = 'en' | 'pseudo';
 
-const STORAGE_KEY = 'switchboard.language';
+// the workspace `ui` blob, not localStorage — same reason as the theme
+// (P2-E15-06): the packaged renderer's origin changes port every launch, so
+// anything stored against it is gone by the next one
+const STORAGE_KEY = 'language';
 
 export function loadLanguage(): LanguageChoice {
-  const v = localStorage.getItem(STORAGE_KEY);
-  return v === 'pseudo' ? 'pseudo' : 'en';
+  return uiGet<string>(STORAGE_KEY, 'en') === 'pseudo' ? 'pseudo' : 'en';
 }
 
 export async function initI18n(): Promise<void> {
@@ -33,6 +36,6 @@ export async function initI18n(): Promise<void> {
 }
 
 export async function setLanguage(lang: LanguageChoice): Promise<void> {
-  localStorage.setItem(STORAGE_KEY, lang);
+  uiSet(STORAGE_KEY, lang);
   await i18next.changeLanguage(lang);
 }
