@@ -6,13 +6,17 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#98 (P2-E15-01) — provider adapter capability objects.**
-Implemented, reviewed twice, full gate green (lint + typecheck + **489 unit** +
-86 e2e); **awaiting Dan's commit approval, nothing pushed** (branch
-`feature/98-provider-capabilities`). Session creation ASKS the adapter now, so
-**AR-P0-1 closes with this**. Shipped FOUR capabilities — transcripts / hooks /
-resume / **trust** — with **mcp deferred to E11**; see the log entry for why the
-shape differs from §5.3 and for the two defects found on the way.
+**In progress:** **nothing mid-flight.** #98 (P2-E15-01) **MERGED 2026-07-30 as
+PR #122**, all 5 CI jobs green. Session creation ASKS the adapter now, so
+**AR-P0-1 is CLOSED** — the last of the three P0s. Shipped FOUR capabilities —
+transcripts / hooks / resume / **trust** — with **mcp deferred to E11**; the log
+entry has why the shape differs from §5.3 and the two defects found on the way
+(a session could adopt an OLD conversation's transcript; a card whose adapter
+was gone could never start again). That PR also carried Dan's docs, no code:
+**DESIGN §5.31 session find + epic E17**, the §5.30 `findInPage` correction,
+**auto task labels (§5.11) as P2-E7-06**, and §10 backlog moves.
+**No [user] testing outstanding** — this item had none to give (internal), and
+nothing else in this file is waiting on Dan.
 **Note for P2-E7-06:** the `titles` capability that item adds slots straight into
 `ProviderCapabilities` in `main/extensibility/contributions.ts`, and the decision
 goes in `sessions/start-plan.ts` beside the other four.
@@ -39,26 +43,28 @@ PR #120**, after Dan ran the whole hand-off test list by hand and passed it —
 including the one that matters (hide a working session, reveal it, scrollback and
 conversation intact). Working tree clean. *(Don't record a tip SHA here — it is
 stale the moment it is committed; `git log` is the authority for that one.)*
-**The queue, in order: ~~#105~~ → ~~#117~~ → #98 / #102-#103 / #107-#111.**
-**E15 is 6 of 14 done** — #99 (process-agnostic registry), #100 (three renderer
-contribution points), #101 (IPC capabilities), #104 (renderer state layer),
-#105 (presentation state, PR #120), #106 (permission hold). *(Corrected
+**The queue, in order: ~~#105~~ → ~~#117~~ → ~~#98~~ → #102-#103 / #107-#111.**
+**E15 is 7 of 14 done** — #98 (provider capabilities, PR #122), #99
+(process-agnostic registry), #100 (three renderer contribution points), #101
+(IPC capabilities), #104 (renderer state layer), #105 (presentation state,
+PR #120), #106 (permission hold). *(Corrected
 2026-07-30: this line said "7 of 14" because it was counting #112, the tail-pin
 race — that was fixed in this period but is NOT an E15 item. Neither is #117.
 **Every E15 item cites an `AR-*` finding from
 `docs/architecture-review-2026-07-26.md`**; if it has no AR id, it is not E15.)*
-**AR-P0-2 is fully closed; AR-P0-1 and AR-P0-3 are NOT** — #98 is the last piece
-of P0-1, and #102/#103 are P0-3. **Consumer count on the extensibility seams: 1 → 5**,
+**AR-P0-1 and AR-P0-2 are fully closed; AR-P0-3 is NOT** — #102/#103 are the
+last of it (themes as token maps, and the prefs that likely reset every
+packaged launch). **Consumer count on the extensibility seams: 1 → 5**,
 so the Phase-4 gate ("2–3 dissimilar internal consumers") is met for the first
 time — a starting condition for that conversation, not a decision to ship a
 plugin API.
 
-**Next up: #98 (P2-E15-01).** **DECIDED 2026-07-30 (Dan): finish E15 first, then
-E16.** The fork below is therefore closed — E9 (#73 → #74 → #76 …), #90, #91 and
-E16 all wait until E15's remaining 8 are done.
+**Next up: #102 (P2-E15-05) — themes as JSON token maps.** **DECIDED 2026-07-30
+(Dan): finish E15 first, then E16.** The fork below is therefore closed — E9
+(#73 → #74 → #76 …), #90, #91, E16 and E17 all wait until E15's remaining 7 are
+done.
 **Run them in this order** (dependency-forced where noted):
-**#98** (independent; the last piece of AR-P0-1 — rewrites `sessions/ipc.ts`,
-which #101 and #117 both touched, so read that file first) → **#102 → #103**
+~~#98~~ (done, PR #122) → **#102 → #103**
 (#103 depends on #102; #103 is the likely-LIVE bug where theme + language reset
 on every packaged launch — verify it before fixing) → **#107 → #108** (#108
 depends on #107) → **#109** (header CSP) → **#110** (workspace schema migration)
@@ -90,10 +96,8 @@ features". Recorded so it is not re-litigated: the remaining 8 are audit work
 with **no user-visible change**, so the next stretch produces nothing to
 eyeball — that is expected, not a stall.
 
-*The remaining 8, with what each is (all cite `AR-*` findings from the
-architecture review — that is what makes them E15):* **#98** (provider adapter capabilities — the
-last piece of AR-P0-1; rewrites `sessions/ipc.ts`, which #101 just touched, so
-read that first), **#102 → #103** (themes as JSON token maps; #103 is the
+*The remaining 7, with what each is (all cite `AR-*` findings from the
+architecture review — that is what makes them E15):* **#102 → #103** (themes as JSON token maps; #103 is the
 likely-live bug where theme + language reset on every packaged launch),
 **#107** (transcript drift detector) → **#108**, **#109** (header CSP),
 **#110** (workspace schema migration), **#111** (re-measure S-07 concurrency).
@@ -113,7 +117,9 @@ silent — was **run and PASSED by Dan on 2026-07-29**, alongside #105's own
 hand-off list. Nothing here is waiting on him. (OQ #8 / the ClaudeMon read was
 closed the same day — we are not integrating.)
 
-**Recently merged:** 2026-07-30 — **PR #121** (#117, the `pty:attach` subscribe
+**Recently merged:** 2026-07-30 — **PR #122** (#98 P2-E15-01, provider adapter
+capability objects; also carried DESIGN §5.31 / epic E17 / P2-E7-06, docs only).
+Before that, same day — **PR #121** (#117, the `pty:attach` subscribe
 race + the epoch on the wire; also carried DESIGN §5.30 and epic E16, docs only).
 Before that, 2026-07-29 — **PR #120** (#105 P2-E15-08, presentation
 state into the store + hide/reveal; Dan hand-tested and merged). Before that,
@@ -183,8 +189,8 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
-- 2026-07-30 — **P2-E15-01 (#98): session creation asks the provider instead of
-  assuming Claude.** Four assumptions were inlined in `sessions/ipc.ts` —
+- 2026-07-30 — **P2-E15-01 (#98) MERGED as PR #122** (5 CI jobs green).
+  **Session creation asks the provider instead of assuming Claude.** Four assumptions were inlined in `sessions/ipc.ts` —
   `providerId: 'claude-code'`, hook settings built unconditionally,
   `~/.claude/projects` watched unconditionally, `--resume` eligibility decided by
   calling a Claude-shaped helper. Each was invisible until adapter #2, at which
