@@ -953,6 +953,40 @@ Day-one architecture (retrofit is brutal); v1 ships dark + light only.
 - Boundary (P7): terminal pane CONTENT colors belong to the CLI. We theme the
   frame and may offer xterm.js palette mapping; we never repaint CLI output.
 
+**As built (P2-E15-05, 2026-07-31)** — ships **four** themes, not the three
+listed above: dark (nordic), light (daylight), **high-contrast**, and
+**soft-contrast** — high-contrast with pure white and pure black pulled back a
+step, held to the same measured ratios. The fourth was asked for after the
+mechanism was built and cost one JSON file plus one list entry, which is the
+section's "a theme = a JSON token map" claim being cashed rather than asserted.
+Three deliberate differences from the wording above, each recorded because the
+code is the thing that ships:
+
+1. **A theme is a base preset PLUS an overlay**, not always a whole map:
+   `{id, base: 'nordic'|'daylight', colorScheme, tokens}`, where `tokens` is
+   applied to `documentElement` as custom properties. nordic and daylight stay
+   as the `[data-theme]` blocks in `tokens.css` with EMPTY maps — they are what
+   an overlay inherits, and they are also the first paint, which a map applied
+   by JS can never be. This is what serves the "ten-token tweaker" the section
+   promises: a small theme is a small file, not a 42-token fork.
+2. **The semantic tokens are defaults, not constants.** `tokens.css` called
+   layer 2 (status hues, diff colors, links) "theme-INDEPENDENT"; a theme may
+   now override them, because a status hue tuned for a dark panel is not
+   readable on pure black and a high-contrast theme that cannot touch them is
+   decoration. **Session accents stay theme-independent** — an accent is an
+   identity, and §5.11 says it survives a theme switch.
+3. **Colors only, so far.** The 42 enumerated tokens (`theme/tokens.ts`, with a
+   test that fails when they drift from `tokens.css`) are colors and shadows —
+   typography, radii and spacing are not themeable yet. Widening the map later
+   is additive and does not invalidate a stored theme.
+
+Not built here and NOT started: user theme import/export, the theme editor GUI,
+and following the OS `prefers-contrast` signal (OS sync today is light/dark
+only). The JSON escape hatch the section calls the day-one litmus answer exists
+as a FILE FORMAT — `high-contrast` proves it — but there is no import path for a
+theme the app did not ship, and values from outside the bundle would need
+validation `applyTheme` does not do (names are allow-listed; values are not).
+
 ### 5.21 Internationalization
 
 Day-one architecture; v1 ships English only.
@@ -1169,6 +1203,13 @@ Designed answer:
   active session/window/pane, even zoom state): save which session had focus and
   which pane was active; restore lands the user exactly where they were, not at
   a default card. Cheap, invisible, serves attention-driven layout directly.
+- **Renderer preferences live in the workspace store, never `localStorage`**
+  (P2-E15-06). Not a style rule — a correctness one, measured 2026-07-31: the
+  packaged renderer is served from a random loopback port, so launch 1 is
+  `http://127.0.0.1:58814` and launch 2 is `:57029`. Different origin, different
+  storage, and every preference written to it is gone. Theme and language were
+  the last two holdouts and cost exactly that; anything a user chooses in the
+  renderer goes in the `ui` blob behind `workspace.getUi`/`setUi`.
 - **First-run & preflight** (P1): detect installed provider CLIs (found?
   version? logged in?) with guided fixes; then point-at-a-folder → first
   session in under a minute. Preflight re-runs per spawn ("you're logged out"

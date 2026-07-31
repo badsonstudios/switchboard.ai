@@ -12,6 +12,7 @@ import { buildCommands } from './lib/command-set';
 import { feedBlockRenderers } from './extensibility/feed-blocks';
 import { statusBarItems } from './extensibility/status-bar-items';
 import { sessionPanels } from './extensibility/panels';
+import { themeContributions } from './extensibility/themes';
 
 export type { RendererRegistry } from './extensibility/registry-instance';
 
@@ -37,6 +38,7 @@ export function registerBuiltinContributions(registry: RendererRegistry): void {
   for (const r of feedBlockRenderers) registry.register('feed-block-renderer', r);
   for (const i of statusBarItems) registry.register('status-bar-item', i);
   for (const p of sessionPanels) registry.register('panel', p);
+  for (const th of themeContributions) registry.register('theme', th);
 }
 
 /**

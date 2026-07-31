@@ -2,11 +2,14 @@ import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   applyPreference,
+  applyTheme,
   followSystemTheme,
   loadPreference,
-  ThemeName,
+  resolveTheme,
+  ThemeDefinition,
   ThemePreference,
 } from './theme/theme';
+import { listThemes } from './extensibility/themes';
 import { LanguageChoice, loadLanguage, setLanguage } from './i18n';
 import { TitleBar, StatusBar } from './components/chrome';
 import { SessionsRail, RailGroup } from './components/SessionsRail';
@@ -48,8 +51,17 @@ export function App(): React.JSX.Element {
       seedSessionFolder: '',
       workspace: { getLayout: async () => null, setLayout: () => {} },
     } as unknown as typeof window.switchboard);
-  const [pref, setPref] = useState<ThemePreference>(() => loadPreference());
-  const [theme, setTheme] = useState<ThemeName>(() => applyPreference(loadPreference()));
+  // Themes are contributions now (§5.20/§5.23): the registry is filled at the
+  // entry point, before the first render, so resolving once here is safe — and
+  // a memo rather than module scope, which would read an empty registry at
+  // import time.
+  const themes = React.useMemo(() => listThemes(rendererRegistry), []);
+  const [pref, setPref] = useState<ThemePreference>(() => loadPreference(themes));
+  // paint at boot, do NOT persist: writing back what we merely resolved would
+  // overwrite a good preference the one time it failed to resolve
+  const [theme, setTheme] = useState<ThemeDefinition>(() =>
+    applyTheme(resolveTheme(loadPreference(themes), themes))
+  );
   const [lang, setLang] = useState<LanguageChoice>(() => loadLanguage());
   // cards + the active card live in the store like everything else: it claims
   // to be the state authority, and a field it never receives would hand any
@@ -156,7 +168,7 @@ export function App(): React.JSX.Element {
   };
 
   // eslint-disable-next-line no-restricted-syntax -- returns its unsubscribe
-  useEffect(() => followSystemTheme(setTheme), []);
+  useEffect(() => followSystemTheme(themes, setTheme), [themes]);
 
   // drag-a-folder-onto-window -> running session (E3-04)
   useEffect(() => {
@@ -298,7 +310,7 @@ export function App(): React.JSX.Element {
   // documents that don't inherit our <html> flags (#84)
   useEffect(() => {
     syncDocumentFlags();
-  }, [theme]);
+  }, [theme.id]);
   const platform: Platform = bridge.platform === 'darwin' ? 'darwin' : 'other';
   const toggleRail = React.useCallback(() => {
     const next = !railHiddenRef.current;
@@ -456,9 +468,10 @@ export function App(): React.JSX.Element {
       <TitleBar
         version={bridge.appVersion}
         pref={pref}
+        themes={themes}
         onTheme={(p) => {
           setPref(p);
-          setTheme(applyPreference(p));
+          setTheme(applyPreference(p, themes));
         }}
         lang={lang}
         onLang={(l) => {
@@ -539,7 +552,7 @@ export function App(): React.JSX.Element {
           />
         )}
         <SessionGrid
-          theme={theme}
+          colorScheme={theme.colorScheme}
           seedPanels={bridge.seedPanels ?? 0}
           onCardsChanged={(c) => sessionStore.setCards(c)}
           onActiveCardChanged={(c) => sessionStore.setActiveCard(c)}

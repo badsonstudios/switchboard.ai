@@ -24,6 +24,7 @@ function ctx(over: Partial<PanelContext> = {}): PanelContext {
     visible: true,
     folder: 'C:/proj',
     theme: 'nordic',
+    colorScheme: 'dark',
     changed: 0,
     setView: () => {},
     ...over,
@@ -120,7 +121,7 @@ describe('the built-in renderer points', () => {
     const usage = createRendererRegistry()
       .list('status-bar-item')
       .find((i) => i.manifest.id === 'status-usage')!;
-    const base: StatusBarContext = { count: 1, theme: 'nordic' };
+    const base: StatusBarContext = { count: 1, theme: 'nordic', themeNameKey: 'theme.nordic' };
     expect(usage.render(base)).toBeNull();
     expect(usage.render({ ...base, totalOutputTokens: 100 })).not.toBeNull();
   });

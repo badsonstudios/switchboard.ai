@@ -5,23 +5,12 @@
 // Accepting re-pops the card; the offer itself is never automatic.
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
-import path from 'path';
-import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
+import { launchApp, LaunchedApp, tempProjectFolder, workspaceJsonPath } from './fixtures/app';
 
 // popout windows are flaky under xvfb — covered on Windows (+macOS locally),
 // same skip as session.spec's popout tests
 const skipOnLinux = () =>
   test.skip(process.platform === 'linux', 'popout window-open is unreliable under xvfb');
-
-function workspaceJsonPath(home: string): string {
-  const base =
-    process.platform === 'win32'
-      ? path.join(home, 'AppData', 'Roaming')
-      : process.platform === 'darwin'
-        ? path.join(home, 'Library', 'Application Support')
-        : path.join(home, '.config');
-  return path.join(base, 'switchboard', 'workspace.json');
-}
 
 test.describe('display reconnect offer (E8-06)', () => {
   let a: LaunchedApp;

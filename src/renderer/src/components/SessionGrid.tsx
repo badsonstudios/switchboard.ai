@@ -7,6 +7,7 @@ import {
   DockviewReact,
   DockviewReadyEvent,
   DockviewApi,
+  DockviewTheme,
   IDockviewPanel,
   IDockviewPanelProps,
   PopoutGroup,
@@ -438,7 +439,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     cardId,
     visible,
     folder,
-    theme: docTheme(),
+    ...docTheme(),
     status,
     autonomy: cardAutonomy,
     model: usage?.model,
@@ -766,9 +767,25 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   );
 }
 
-// current app theme, for the in-card Diff view (theme lives on <html>)
-function docTheme(): 'nordic' | 'daylight' {
-  return document.documentElement.dataset.theme === 'daylight' ? 'daylight' : 'nordic';
+// The active theme, read off <html> — a dockview panel is mounted outside this
+// component's props, so the document is the one place both can see (P2-E15-05
+// puts the id and the light/dark verdict there beside the base preset).
+//
+// KNOWN AND UNCHANGED BY P2-E15-05: this is a read, not a subscription, so an
+// in-card Changes tab keeps the value it last rendered with until something
+// else re-renders that card. The standalone Changes TAB is corrected on every
+// switch (the colorScheme effect below); the in-card one would need the active
+// theme to live somewhere a panel can subscribe to, which is a state-layer
+// change rather than a theming one. In practice Monaco's theme is process-
+// GLOBAL, so an in-card editor often follows anyway the moment any diff editor
+// is re-created — that is luck, not a guarantee, and it is why this is written
+// down rather than relied on.
+function docTheme(): { theme: string; colorScheme: 'light' | 'dark' } {
+  const d = document.documentElement.dataset;
+  return {
+    theme: d.themeId ?? d.theme ?? 'nordic',
+    colorScheme: d.colorScheme === 'light' ? 'light' : 'dark',
+  };
 }
 
 const cheadBtn: React.CSSProperties = {
@@ -883,16 +900,28 @@ function overlayBtn(primary: boolean): React.CSSProperties {
   };
 }
 
-function DiffPanel(props: IDockviewPanelProps<{ folder?: string; theme?: string }>): React.JSX.Element {
+function DiffPanel(
+  props: IDockviewPanelProps<{ folder?: string; colorScheme?: string }>
+): React.JSX.Element {
   return (
     <DiffPane
       folder={props.params?.folder ?? ''}
-      theme={props.params?.theme === 'daylight' ? 'daylight' : 'nordic'}
+      colorScheme={props.params?.colorScheme === 'light' ? 'light' : 'dark'}
     />
   );
 }
 
 const components = { sessionCard: SessionCardPanel, diffPane: DiffPanel };
+
+/** Our dockview theme (#84) — one definition, applied at ready and on switch. */
+function dockviewTheme(colorScheme: 'light' | 'dark'): DockviewTheme {
+  return {
+    name: 'switchboard',
+    className: 'dockview-theme-switchboard',
+    colorScheme,
+    tabGroupIndicator: 'none',
+  };
+}
 
 // live-id mapping, allow-all, dock-back and per-card presentation all live in
 // the store now (P2-E15-07, P2-E15-08) — see store/session-store.ts.
@@ -1010,7 +1039,8 @@ export interface GridController {
 }
 
 export function SessionGrid(props: {
-  theme: 'nordic' | 'daylight';
+  /** the light/dark verdict dockview and Monaco need */
+  colorScheme: 'light' | 'dark';
   seedPanels: number;
   onCardsChanged: (ids: string[]) => void;
   /** which card the grid is showing — the rail paints it as the selected row */
@@ -1283,12 +1313,31 @@ export function SessionGrid(props: {
           id: `diff-${cardId}`,
           component: 'diffPane',
           title: t('diff.tabTitle', { title }),
-          params: { folder, theme: props.theme },
+          params: { folder, colorScheme: props.colorScheme },
         });
       },
     };
     // eslint's exhaustive-deps plugin isn't installed; deps kept accurate by hand
-  }, [props.controller, addSessionCard, hideCard, revealCard, props.theme, t]);
+  }, [props.controller, addSessionCard, hideCard, revealCard, props.colorScheme, t]);
+
+  // Dockview learns the light/dark verdict in onReady, which runs ONCE — so a
+  // theme switch after mount left it on the scheme the app booted with. Every
+  // dockview COLOR comes from our tokens (theme/dockview-tokens.css), so this
+  // only drives its own scheme-dependent chrome, but "only cosmetic" is what
+  // the last four #84 bugs were called too.
+  React.useEffect(() => {
+    const api = apiRef.current;
+    if (!api) return;
+    api.updateOptions({ theme: dockviewTheme(props.colorScheme) });
+    // An OPEN Changes tab took its scheme as a panel PARAM when it opened, so
+    // without this it keeps whatever skin it was born with through every later
+    // switch. Only the LIVE case needs covering: a restore drops every diff
+    // panel on purpose (see restoreLayout below), so none survives a relaunch
+    // to be healed here. `updateParameters` MERGES, so this names one key.
+    for (const panel of api.panels) {
+      if (panel.id.startsWith('diff-')) panel.api.updateParameters({ colorScheme: props.colorScheme });
+    }
+  }, [props.colorScheme]);
 
   const [error, setError] = React.useState<string | null>(null);
   const addCard = useCallback(async () => {
@@ -1314,14 +1363,7 @@ export function SessionGrid(props: {
       // dark inside our light app. Registering our own theme puts OUR class up
       // there, so every dockview surface, popups and popout containers
       // included, resolves the variables in theme/dockview-tokens.css.
-      api.updateOptions({
-        theme: {
-          name: 'switchboard',
-          className: 'dockview-theme-switchboard',
-          colorScheme: props.theme === 'daylight' ? 'light' : 'dark',
-          tabGroupIndicator: 'none',
-        },
-      });
+      api.updateOptions({ theme: dockviewTheme(props.colorScheme) });
 
       const report = () => props.onCardsChanged(api.panels.map((p) => p.id));
       const saveLayout = () => {

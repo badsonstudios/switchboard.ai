@@ -28,9 +28,11 @@ function CliVersion({ version }: { version: string }): React.JSX.Element {
   return <span style={MONO}>{t('preflight.version', { version })}</span>;
 }
 
-function Theme({ theme }: { theme: string }): React.JSX.Element {
+function Theme({ nameKey }: { nameKey: string }): React.JSX.Element {
   const { t } = useTranslation();
-  return <span style={MONO}>{t('statusbar.theme', { theme })}</span>;
+  // the id is the contract; what the bar SHOWS is the theme's own display name,
+  // which a theme owns and i18n translates (§5.21)
+  return <span style={MONO}>{t('statusbar.theme', { theme: t(nameKey) })}</span>;
 }
 
 const manifest = (id: string, displayName: string) => manifestFor(id, displayName, 'statusbar.item');
@@ -72,6 +74,6 @@ export const statusBarItems: StatusBarItemContribution[] = [
     manifest: manifest('status-theme', 'Active theme'),
     align: 'end',
     order: 20,
-    render: (ctx) => <Theme theme={ctx.theme} />,
+    render: (ctx) => <Theme nameKey={ctx.themeNameKey} />,
   },
 ];

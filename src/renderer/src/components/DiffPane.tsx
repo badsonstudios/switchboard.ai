@@ -29,7 +29,12 @@ interface GitStatusDto {
   files: GitFileDto[];
 }
 
-export function DiffPane(props: { folder: string; theme: 'nordic' | 'daylight' }): React.JSX.Element {
+export function DiffPane(props: {
+  folder: string;
+  /** Monaco has exactly two skins, so this takes the RESOLVED answer rather
+   *  than a theme id it would have to guess a light/dark verdict from. */
+  colorScheme: 'light' | 'dark';
+}): React.JSX.Element {
   const { t } = useTranslation();
   const [status, setStatus] = useState<GitStatusDto | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -47,7 +52,7 @@ export function DiffPane(props: { folder: string; theme: 'nordic' | 'daylight' }
       renderSideBySide: true,
       automaticLayout: true,
       minimap: { enabled: false },
-      theme: props.theme === 'daylight' ? 'vs' : 'vs-dark',
+      theme: props.colorScheme === 'light' ? 'vs' : 'vs-dark',
     });
     editorRef.current = editor;
     return () => {
@@ -56,7 +61,7 @@ export function DiffPane(props: { folder: string; theme: 'nordic' | 'daylight' }
       editor.dispose();
       editorRef.current = null;
     };
-  }, [props.theme]);
+  }, [props.colorScheme]);
 
   useEffect(() => {
     if (!selected || !editorRef.current) return;

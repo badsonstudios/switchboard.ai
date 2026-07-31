@@ -69,6 +69,17 @@ actually serve it.
 | `panel` | `PanelContribution` | `panel-session`, `panel-changes`, `panel-history` (placeholder), `panel-terminal` — the session card's view-tab strip |
 | `feed-block-renderer` | `FeedBlockRendererContribution` | `feed-block-{todos,bash,edit,tool,thinking,user,markdown}` — one per transcript block shape |
 | `status-bar-item` | `StatusBarItemContribution` | `status-{session-count,usage,cli-version,theme}` |
+| `theme` | `ThemeContribution` | `theme-{nordic,daylight,high-contrast,soft-contrast}` — the picker and the status bar list from here |
+
+`theme` (P2-E15-05) is the first **data-only** point: every other contribution
+hands over a function — build these commands, render this block — and this one
+hands over a value (`ThemeDefinition`: a base preset plus a map of token
+overrides). That is the shape a manifest can carry without executing anything,
+which is what §5.23's tier-1 (sandboxed) trust level exists for. `high-contrast`
+is authored as `theme/themes/high-contrast.json` and reaches the app without a
+code change, which is the proof the point is real rather than ceremony —
+and `soft-contrast`, asked for after that code was written, cost exactly one
+JSON file, one list entry and one string, with no test edited to accommodate it.
 
 The three renderer points added by P2-E15-03 are deliberately **dissimilar**:
 `panel` renders a whole view and has a mount lifecycle (`keepMounted`, because
@@ -283,9 +294,9 @@ This section is the honest scoreboard. Full findings:
 `docs/architecture-review-2026-07-26.md`; the fix is **E15** in
 `docs/plans/04-phase-2-switchboard.md`, which runs next.
 
-**Consumer count on the seams: 5** — `provider-adapter` in main, and
-`command-set`, `panel`, `feed-block-renderer` and `status-bar-item` in the
-renderer. It was **1** when the review was written, and the finding was never
+**Consumer count on the seams: 6** — `provider-adapter` in main, and
+`command-set`, `panel`, `feed-block-renderer`, `status-bar-item` and `theme` in
+the renderer. It was **1** when the review was written, and the finding was never
 the count itself but that it *could not grow*: the seam was main-only, so a
 renderer contribution had nowhere to land. P2-E15-02 removed the ceiling and
 **P2-E15-03 (done)** dogfooded three dissimilar points onto surfaces that were
@@ -328,10 +339,15 @@ not a decision to ship a plugin API.
   point — a runtime no-op for first-party, which is the point: Phase 4 wires a
   plugin manifest into an existing check instead of inventing a permission
   model.
-- **Themes are not a contribution shape yet.** §5.20 says a theme is a JSON
-  token map; the implementation is two hardcoded `[data-theme]` blocks and a
-  two-value `ThemeName` union that forbids a third theme. E15-05 makes themes
-  data, which is the prerequisite for a `theme` contribution point.
+- **~~Themes are not a contribution shape yet.~~ RESOLVED (E15-05).** §5.20 says
+  a theme is a JSON token map; the implementation was two hardcoded
+  `[data-theme]` blocks and a two-value `ThemeName` union that made a third
+  theme a *type error*. A theme is now `{base, colorScheme, tokens}` applied to
+  `documentElement`, the 42 themeable token names are enumerated in
+  `theme/tokens.ts` (with a test that fails when they drift from `tokens.css`),
+  and `high-contrast` ships as data. The `theme` point came with it rather than
+  after it — the registry already existed, so it was ~20 lines, and it is the
+  only point that proves a contribution can be inert data.
 
 Owner decision 2026-07-26: **third-party plugin support is a real goal**
 (first-party add-ons first). That is why E15-04 ships full-size rather than

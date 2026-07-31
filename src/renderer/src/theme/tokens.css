@@ -1,13 +1,25 @@
 /* Theme token system (§5.20, design_handoff_control_room).
  *
- * THE ONLY FILE WHERE RAW COLOR VALUES ARE ALLOWED.
+ * THE ONLY *CODE* FILE WHERE RAW COLOR VALUES ARE ALLOWED.
  * Components consume var(--...) exclusively — an ESLint rule fails any
- * hex/rgb literal in renderer TS/TSX.
+ * hex/rgb literal in renderer TS/TSX. Since P2-E15-05 there is one other
+ * legitimate home for color values and it is deliberately not code:
+ * theme/themes/*.json, where a theme's own token map lives.
  *
  * Layer 1: theme maps (swap wholesale on theme change; default = Nordic).
- * Layer 2: semantic tokens — theme-INDEPENDENT (status machine, diff, session
- *          accents §5.11) — these survive theme switches by design.
+ * Layer 2: semantic tokens — the defaults every theme inherits (status machine,
+ *          diff, session accents §5.11). SESSION ACCENTS are theme-independent
+ *          by design: an accent is an identity and must survive a theme switch.
+ *          The rest are defaults, not constants — a theme MAY override them
+ *          (high-contrast does; a status hue tuned for a dark panel is not
+ *          readable on pure black), and P2-E15-05's theme/tokens.ts says which.
  * Layer 3: component tokens built on layers 1–2.
+ *
+ * A THEME IS A TOKEN MAP (§5.20): the two `[data-theme]` blocks below are the
+ * built-in presets and the BASE other themes build on; a theme's own overrides
+ * arrive as inline custom properties on <html> (theme/theme.ts). Names are
+ * enumerated in theme/tokens.ts, and tokens.drift.test.ts fails if this file
+ * and that list disagree.
  */
 
 /* ---- Layer 1: theme maps -------------------------------------------------- */
@@ -32,6 +44,11 @@
   --text: #e5e9f0;
   --muted: #9aa4b8;
   --faint: #6d7689;
+  /* NOT WIRED, on purpose (Dan 2026-07-31): xterm is constructed with no theme
+     at all, so terminal output renders in its own default palette — the CLI
+     owns what it prints (§5.20's P7 boundary) and mapping even the foreground
+     was declined. The token stays because it is the seat that mapping would
+     take, and every theme already fills it. Nothing reads it today. */
   --term: #cdd4e2;
   --window-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
   --tab-lift: 0 -2px 6px -2px rgba(0, 0, 0, 0.35);
@@ -305,6 +322,9 @@ body {
 .rail-group-ink {
   color: color-mix(in srgb, var(--g) 78%, #ffffff);
 }
-:root[data-theme='daylight'] .rail-group-ink {
+/* keyed on the light/dark VERDICT, not on the base preset: a theme is free to
+   invert the preset it builds on, and then `[data-theme='daylight']` would be
+   asking the wrong question (P2-E15-05) */
+:root[data-color-scheme='light'] .rail-group-ink {
   color: color-mix(in srgb, var(--g) 55%, #0d1424);
 }

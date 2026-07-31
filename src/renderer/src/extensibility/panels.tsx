@@ -75,7 +75,8 @@ export const sessionPanels: PanelContribution[] = [
     // unconditionally, on a card with no such tab.
     enabled: (ctx) => !!ctx.folder,
     badge: (ctx) => (ctx.changed > 0 ? ctx.changed : null),
-    render: (ctx) => (ctx.folder ? <DiffPane folder={ctx.folder} theme={ctx.theme} /> : null),
+    render: (ctx) =>
+      ctx.folder ? <DiffPane folder={ctx.folder} colorScheme={ctx.colorScheme} /> : null,
   },
   {
     // Shown but not clickable — §5.8's rule that you can always SEE what
