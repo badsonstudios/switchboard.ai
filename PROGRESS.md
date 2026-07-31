@@ -6,10 +6,12 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#102 (P2-E15-05) — theme = a JSON token map (+ high-contrast),
-now carrying #103 (P2-E15-06) too.** Picked up 2026-07-30; **code complete, two
-review rounds done, gate green (lint + typecheck + 569 unit + 91 e2e)** —
-awaiting commit approval. **Four themes ship, not three:** Dan asked for a
+**In progress:** **nothing mid-flight.** **#102 (P2-E15-05) + #103 (P2-E15-06)
+are IN REVIEW as PR #123** (opened 2026-07-31, CI running at hand-off; gate was
+green locally — lint + typecheck + 569 unit + 94 e2e). **Dan hand-tested the
+whole thing as it was built and signed off**; the PR's checklist is the same
+list, kept for the record rather than as outstanding work. **Four themes ship,
+not three:** Dan asked for a
 softer high-contrast after trying it, and `soft-contrast` cost one JSON file +
 one list entry + one string, no code path — the item's own claim, cashed by
 someone who did not know they were testing it. **Also rides along: the session
@@ -79,17 +81,20 @@ so the Phase-4 gate ("2–3 dissimilar internal consumers") is met for the first
 time — a starting condition for that conversation, not a decision to ship a
 plugin API.
 
-**Next up: #102 (P2-E15-05) — themes as JSON token maps.** **DECIDED 2026-07-30
-(Dan): finish E15 first, then E16.** The fork below is therefore closed — E9
-(#73 → #74 → #76 …), #90, #91, E16 and E17 all wait until E15's remaining 7 are
-done.
+**Next up: #107 (P2-E15-10) — transcript drift detector + binding transparency**
+(once PR #123 merges). **DECIDED 2026-07-30 (Dan): finish E15 first, then E16.**
+The fork below is therefore closed — E9 (#73 → #74 → #76 …), #90, #91, E16 and
+E17 all wait until E15's remaining items are done.
 **Run them in this order** (dependency-forced where noted):
-~~#98~~ (done, PR #122) → **#102 → #103**
-(#103 depends on #102; #103 is the likely-LIVE bug where theme + language reset
-on every packaged launch — verify it before fixing) → **#107 → #108** (#108
+~~#98~~ (PR #122) → ~~#102 → #103~~ (PR #123 — #103 was folded into #102's PR
+after its live bug surfaced during hand-off testing) → **#107 → #108** (#108
 depends on #107) → **#109** (header CSP) → **#110** (workspace schema migration)
 → **#111 LAST** (re-measure S-07 concurrency: it should measure the shape we are
 keeping, and its one hard prerequisite — #117 — is now merged).
+**Note for #107:** it gains a second real customer beyond `ai-title` — the theme
+work found nothing new, but `soft-contrast`/`high-contrast` prove the token list
+can drift from `tokens.css`, and `tokens.drift.test.ts` is the pattern that
+detector should follow (parse the source of truth, fail on divergence).
 **E16 (document viewer, DESIGN §5.30) is planned but NOT filed** — 4 items in
 `04-phase-2-switchboard.md`; run `/pm` to file them when E15 closes.
 **E17 (session find / Ctrl+F, DESIGN §5.31) is planned and NOT filed** (added
@@ -208,6 +213,70 @@ a "[Dan eyeball]" note.**
   to Sonnet rates** — it invents a number. Not urgent, not waiting on anything.
 
 ## Log
+
+- 2026-07-31 — **P2-E15-05 (#102) + P2-E15-06 (#103) → PR #123.** A theme stops
+  being a two-value union — the type system literally forbade a third — and
+  becomes a **base preset + token overlay** applied to `<html>`. Four themes
+  ship: nordic and daylight keep their `tokens.css` blocks with EMPTY maps (they
+  are what an overlay inherits, and they are the first paint, which a map
+  applied by JS can never be); **high-contrast** and **soft-contrast** are JSON
+  files. Themes register at a new **`theme` contribution point** — the
+  registry's first DATA-ONLY point, which is the shape §5.23's tier-1 trust
+  level needs; **consumer count 5 → 6**.
+  **Soft contrast is the item's own claim being cashed, by someone who did not
+  know he was testing it.** Dan asked for a gentler high-contrast after using
+  the first one; it cost one JSON file, one list entry and one string — no code
+  path, no branch, and not one test edited to accommodate it, because the value
+  rules already iterate the themes as data. Both contrast themes are held to the
+  SAME measured WCAG bars (body text 12.7:1 vs 21:1 — softer on purpose, both
+  AAA), so "softer" cannot quietly become "worse".
+  **#103 was folded in because the hand-off list failed.** Test 5 — pick a
+  theme, quit, relaunch — came back daylight. Root cause MEASURED, not inferred:
+  the built app is served from a random loopback port, launch 1
+  `http://127.0.0.1:58814`, launch 2 `:57029`. Different origin, different
+  localStorage, choice gone; the same bug ate the language setting. Both moved
+  to the workspace `ui` blob with the migration `autonomy` already had, and
+  `main.tsx` now awaits the blob before `initI18n()` and the first render so
+  both stay synchronous at boot. **AR-P0-3 fully closed.**
+  **The blocker was mine and silent:** `--group-lift: none` in the JSON made the
+  rail's drop-target ring `box-shadow: 0 0 0 2px <accent>, none` — `none` is a
+  whole-property keyword, not a list item, so the declaration is INVALID and
+  Chromium drops all of it. The one theme whose job is visible structure lost
+  its drag highlight. Fixed with a transparent shadow plus a **token `kind`**
+  (`color | shadow`) that a test enforces across every built-in map. Round 2
+  found the same bug class still open on the OS-change path: `followSystemTheme`
+  called `applyPreference`, which WRITES, and `loadPreference` returns 'system'
+  both when the user chose it and when a stored id fails to resolve — one OS
+  light/dark flip would have destroyed a good preference.
+  **Rider: the session group frame's missing right border — TWO bugs on one
+  pixel.** (1) dockview sizes a group flush to a clipping ancestor and a 1px
+  border snaps to ONE DEVICE pixel that the clip rounds away; (2) the **sash**
+  (4px, `z-index: 99`) was painted `var(--bg)` by #84 back when a group had no
+  frame at all, so it covered the border on BOTH sides of a split. The second
+  one is why the first fix looked like it had failed.
+  **The lesson worth keeping: three cheap proxies all lied.**
+  `getComputedStyle` said the border existed (true), geometry said it had room
+  (true), and `elementFromPoint` returns the sash even now that it is
+  transparent — hit-testing is not painting. Only "is this column of pixels
+  bright" matched what Dan could see, so `e2e/split.spec.ts` restores a
+  two-group layout and READS PIXELS through a dependency-free PNG decoder
+  (`e2e/fixtures/png.ts`). Skipped on Linux CI: xvfb runs 8-bit colour and
+  quantises the anti-aliased edge.
+  **Six revert-proofs, each rebuilt and re-run:** restoring `none` fails both
+  new guards · removing a token fails the drift test · dropping
+  `copyThemeOverlay` fails the popout e2e · localStorage persistence fails the
+  relaunch e2e · repainting the sash fails the seam pixel test · reverting the
+  group width fails both split assertions.
+  Gate: lint + typecheck + **569 unit (+80) + 94 e2e (+8)**, 1 skipped.
+  Manual: `10-settings.md` (four themes, what each is for). DESIGN §5.20 "as
+  built" + §5.25 (renderer prefs never go in localStorage, with the port
+  numbers); `extensibility.md` (the `theme` point, the resolved gap, the count).
+  **Known and written down, not fixed:** an in-card Changes tab can keep its old
+  editor skin until something re-renders it (the standalone tab is corrected on
+  every switch); `--term` is a dead token — the terminal is deliberately NOT
+  themed, Dan's call, the CLI owns what it prints; and high-contrast cannot
+  reach the derived layer-3 tokens, so the selected-row tint and auto-group
+  surface are decoration rather than signal there.
 
 - 2026-07-30 — **P2-E15-01 (#98) MERGED as PR #122** (5 CI jobs green).
   **Session creation asks the provider instead of assuming Claude.** Four assumptions were inlined in `sessions/ipc.ts` —
