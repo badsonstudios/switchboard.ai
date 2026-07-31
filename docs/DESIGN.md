@@ -145,6 +145,32 @@ tool becomes a hostable session). Codex/Gemini/Aider adapters grow capabilities 
 those CLIs expose them. **Design rule: no feature may assume Claude-only, but features
 may degrade gracefully to "Claude-only for now."**
 
+**As built (P2-E15-01, 2026-07-30)** — the sketch above is the intent; the shipped
+contract differs in three ways, each deliberate:
+
+- **`trust` is a fourth capability.** Claude refuses to work in a folder the user
+  has not accepted, and writing that acceptance into `~/.claude.json` was
+  unconditional in the session-start path — a Claude-shaped side effect applied to
+  every provider. It is the same class of assumption as the other three, so it is
+  declared like them. A provider that has never heard of that file gets nothing
+  written on its behalf.
+- **`mcp` is NOT shipped yet.** There is no Session Bus to attach to until E11, and
+  a capability with no implementation and no consumer is exactly what AR-P2-13 had
+  us delete (`event-source`). It arrives beside its first registrant and first
+  caller — as a config-writing capability, since §5.4 made the bus stdio-only.
+- **`transcripts` LOCATES transcripts; it does not abstract reading them.** The
+  sketch names a `TranscriptReader`. Our tolerant parser, tailer and block builder
+  stay host-side and are shared by every provider writing that shape; the adapter
+  says only where its conversations live and whether a given one is resumable. The
+  day a provider writes a different transcript FORMAT is the day the reader moves
+  behind the seam.
+
+The host ASKS these — session creation has no branch on which provider it is
+talking to. An adapter that declares nothing spawns a PTY and nothing else: no
+settings written, no transcript watch, no resume attempted, nothing done to the
+folder. Every capability call is fail-open; a contributor that throws degrades that
+one capability, never the session.
+
 Concrete provider lineup: Claude Code (first-class) · OpenAI Codex CLI (ChatGPT) ·
 Google Gemini CLI · Aider / opencode (API-native OSS) · generic (any CLI).
 
@@ -551,8 +577,13 @@ Every session carries an identity that renders IDENTICALLY everywhere it appears
   `Cargo.toml`→Rust, `pyproject.toml`→Python, …); emoji/icon picker to override.
   Provider badge (Claude/Codex/…) shown alongside.
 - **Git context line**: branch · dirty-file count · ahead/behind.
-- **Task label**: one-line "what am I doing" — derived from the last user prompt
-  (optionally LLM-compressed to ≤6 words). Shown under the title, updated per turn.
+- **Task label**: one-line "what am I doing", shown under the title. User-typed,
+  and **auto-filled from the CLI's own session title when the user has not set
+  one** — see "Auto task labels" below. *(Revised 2026-07-30: this bullet used to
+  read "derived from the last user prompt, optionally LLM-compressed to ≤6 words".
+  Both halves are now wrong. The CLI already writes a title, so deriving our own
+  is redundant, and compressing it with an LLM of ours would spend the user's
+  subscription tokens on chrome — the exact P7 move §5.11 has no business making.)*
 - **Plan-as-progress chip** (research v2: Cascade's in-conversation Todo lists,
   Antigravity's Artifacts): when the agent maintains a todo/plan in its transcript
   (TodoWrite events), render it as a live progress indicator — "step 3/7: running
@@ -563,6 +594,63 @@ Every session carries an identity that renders IDENTICALLY everywhere it appears
   Auto-edit / Full-auto, §5.9) on the card and sidebar — "will this one interrupt
   me?" answered at a glance.
 - Optional: per-session notification sound doubles as an audio identity.
+
+**Auto task labels — the CLI already wrote one** *(added 2026-07-30, owner
+request; the Claude Code VS Code extension does the same thing to its tab text).*
+
+A session whose label reads "Switchboard.ai" three times over answers nothing.
+The fix costs nothing, because **Claude Code writes a title of the conversation
+into its own transcript** — verified 2026-07-30 against 27 real transcripts in
+`~/.claude/projects/`:
+
+```jsonl
+{"type":"ai-title","sessionId":"bd2517c3-…","aiTitle":"Add markdown and file preview feature"}
+```
+
+We are already tailing that file (§5.2). Reading a line out of it is textbook
+P7: **the CLI computed the description, we display it.** Deriving our own —
+summarizing the prompt with a model call — would spend the user's subscription
+tokens on window dressing and is explicitly rejected.
+
+Rules, all four decided by the owner on 2026-07-30:
+
+- **It fills the task label, never the title.** Title answers *which project*
+  (folder name — how you find a session spatially); the label answers *what it
+  is doing*. Collapsing them costs the first answer to buy the second.
+- **User-set is sticky, and clearing reverts to auto.** The session record
+  carries `labelSource: 'auto' | 'user'`. Typing anything makes the label yours
+  and auto never touches it again; clearing the field to empty hands it back to
+  auto. "Is it empty?" is NOT the test — if empty meant auto-fill, a deliberately
+  blank label would be impossible to keep.
+- **While on auto, it keeps tracking, debounced.** The CLI revises its title (an
+  observed session went `"…preview windows"` → `"…preview feature"` one line
+  later) and then re-emits the settled value **every turn** — 14 identical lines
+  in a 171-line transcript. Last-wins with de-duping, so a repeat costs no render
+  and no write. Undeduped, this is a persist-per-turn on every session at once.
+- **No title means no label** — the folder name simply stands, exactly as today.
+
+Consequences worth designing for, not discovering:
+
+- **Timing is not guaranteed.** Observed first `ai-title` at line 8 of one
+  transcript but line 339 and line 510 of others. The label arrives late or
+  never, so the card must reserve its space and never reflow when it lands.
+- **This is a §5.3 adapter capability, not a Claude special case.** The
+  capability object gains `titles`; an adapter that does not declare it gets
+  folder names and no dead code path. *(As built by P2-E15-01 that object is
+  `{ transcripts, hooks, resume, trust }` — `mcp` waits for E11; see §5.3's "as
+  built" note. `titles` slots in beside them, and its decision belongs in
+  `sessions/start-plan.ts` with the rest.)*
+- **`ai-title` is undocumented.** No Claude Code contract promises the key
+  exists or keeps its name, which makes it a §5.26 version-drift item and the
+  natural second customer for the transcript drift detector. Fail-open is
+  structural here, not a nicety: the failure mode of a missing key is "the label
+  stays empty", which is where the app already lives.
+- **The label reaches OS toasts and taskbar text**, where "Add markdown and file
+  preview feature needs your input" beats "Switchboard.ai needs your input" —
+  the §5.11 problem statement, solved. It also means a prompt-derived phrase
+  leaves the app window, so a screen-sharing user needs a way to suppress it:
+  notification text falls back to the title when auto labels are turned off
+  (§5.9 preference, off-switch per litmus #4).
 
 ### 5.12 Events — what needs the operator NOW
 
@@ -1268,7 +1356,11 @@ works), which is what makes a cross-linked doc tree readable at all. A readable
 measure instead of 3,000-pixel lines, a sticky heading breadcrumb, wide tables
 scrolling inside their own container, and **find-in-page wired explicitly** —
 Chromium's find needs `webContents.findInPage` in Electron, so Ctrl+F does not
-come free.
+come free. *(Corrected 2026-07-30: `findInPage` is right for a viewer in its
+**own window** and wrong everywhere else, because it searches the entire
+webContents — in the main window it would cheerfully match text in three other
+sessions' panes. A docked viewer registers a §5.31 find provider like every
+other panel; only the popped-out case may use `findInPage`.)*
 
 **One markdown renderer, shared with the Session view.** `marked` + DOMPurify
 already render assistant prose (§5.10). The viewer uses the same module and the
@@ -1321,6 +1413,85 @@ refuse to become an editor.
 **Deliberately out of scope:** editing · mermaid diagrams in v1 (rendered as a
 labeled code fence; §10 carries them with their CSP cost) · PDF ·
 rendered-markdown diffs (the Changes tab owns diffs; §10) · `[[wikilinks]]`.
+
+### 5.31 Session find — Ctrl+F over a session
+
+*(Added 2026-07-30, owner request; the Claude Code VS Code extension does NOT
+have this, and the absence is felt. You worked in a session for two hours, you
+know the agent printed that path, and there is no way to ask where.)*
+
+Ctrl+F, the way a browser means it: a bar, a term, Enter and Shift+Enter to
+step, a count, Esc to close.
+
+**Search runs in main, against the transcript file — not against what is
+rendered.** This is the load-bearing decision, and it is forced by measurement
+(2026-07-30, three real transcripts from this project):
+
+| transcript | lines | derived blocks | text |
+|---|---|---|---|
+| `ff322375` | 4,697 | **3,356** | 1.2 MB |
+| `2074da1e` | 2,963 | 2,163 | 744 KB |
+| `bfcc7af0` | 1,897 | 1,363 | 495 KB |
+
+`BLOCK_CAP` is **1,000** and the feed is explicitly "a view buffer, not an
+archive", so roughly **70% of that first session is already gone from memory**.
+A find that searched the DOM would answer "no results" for a string that is
+provably in the session — worse than shipping nothing, because it teaches the
+user to distrust the one tool whose whole value is being trusted. The transcript
+JSONL is the complete archive; main scans it.
+
+Rules, all four decided by the owner on 2026-07-30:
+
+- **One Ctrl+F covers the whole session, results grouped by view** — "14 in
+  Session · 3 in Terminal". You remember that you saw the error, not which tab
+  it was in. The grouping is also where the honesty lives (below).
+- **It searches everything, including what the view is hiding.** Verbosity
+  presets hide tool calls, thinking folds to one line, and tool detail truncates
+  at `DETAIL_CAP`. Find ignores all of it and jumping to a hit **expands that
+  block**. A find that respected a display filter would be the same silent lie
+  as searching the DOM, only subtler — and `quiet` mode hides exactly the tool
+  output where error strings live.
+- **Hybrid presentation: the browser bar plus an expandable results list** with
+  context snippets. The list is not a nicety — it is the only way to reach hits
+  in the ~2,300 blocks that were evicted, because you cannot scroll-to-highlight
+  a block that no longer exists in the renderer.
+- **Per-session now; scope is a parameter, not a rewrite.** §10's global
+  transcript search is the same engine with a wider scope and its own result
+  surface (which session · jump-and-focus), which is a real design job rather
+  than a flag.
+
+**Two engines, one bar, and the boundary is stated out loud.** The Session view
+searches the transcript (complete). The Terminal searches xterm's scrollback via
+the official search addon — and that is **5,000 lines**, with a byte-capped ring
+buffer behind it, so it is genuinely shallower. The bar labels it
+("terminal: scrollback only") instead of letting a 0 imply absence. Shipping two
+sources of truth with one number on top of them would be the kind of small lie
+that costs more than the feature earns.
+
+**One keybinding, per-panel find providers.** Ctrl+F dispatches to the focused
+panel's registered provider, which is what keeps it correct: **Electron's
+`webContents.findInPage` is the wrong primitive here** — it searches the whole
+webContents, so in a four-card grid it would match text in the three sessions
+you are not looking at. Immediate registrants: Session view (transcript engine),
+Terminal (xterm addon), the §5.30 document viewer, and Changes (delegating to
+Monaco's own find, which already exists and should not be reimplemented). Four
+dissimilar consumers is the bar `extensibility.md` sets for adding a
+contribution point, and this clears it on day one rather than on a promise.
+
+**Litmus (§4):** (1) zero-config — Ctrl+F, no setup; (2) attention ROI — this is
+the "where did I see that" tax, paid once per lookup instead of by re-reading;
+(3) fail-open — search is read-only and out of band, a failed scan reports "could
+not search" and the session is untouched; (4) escape hatch — the transcript is a
+file on disk and `grep` still works; (5) two-gesture — the bar is per-session
+chrome and moves nothing; (6) calm — opens on a keystroke, closes on Esc, no
+badges; (7) host check — we read a file the CLI already writes.
+
+**v1 boundary, stated so it is not discovered:** a hit in a block the renderer
+has evicted is **readable in the results list but not jump-to-able in place** —
+in-place jump requires deriving a window of blocks around an arbitrary
+transcript offset, which the watcher cannot do today. v1 gives those hits a
+generous snippet and marks them as earlier than the loaded view; on-demand block
+loading is the named follow-up, not a silent gap.
 
 ## 6. Tech Stack — Decision
 
@@ -1522,7 +1693,8 @@ context transfer, and the attention queue work across monitors.
   phone push, TTS announcements
 - Event feed v2: inline actions, filters, severity tiers, full event catalog
 - Identity v2: task labels, git context line, autonomy badge, plan-as-progress
-  chip (§5.11)
+  chip (§5.11) — plus **auto task labels** from the CLI's own `ai-title`
+  (E7-06, added 2026-07-30)
 - Status bar: Anthropic service health polling + local corroboration
 - Dispatch v1: role templates (Reviewer/Doc Writer/PR Author), manual dispatch,
   clean-room + briefed context policies, round-trip results, lineage nesting
@@ -1531,6 +1703,9 @@ context transfer, and the attention queue work across monitors.
 - Document viewer v1 (§5.30, added 2026-07-30): rendered markdown with a source
   toggle, the peek slot + pin, viewer-in-its-own-window, the shared markdown
   renderer, and the `fs.read` capability (epic E16)
+- Session find (§5.31, added 2026-07-30): Ctrl+F over a session — transcript
+  search engine in main, one find bar over per-panel providers, terminal
+  scrollback search, grouped results (epic E17)
 
 *(Moved to Phase 3, 2026-07-21 plan reconciliation — Phase 2 was overfull and
 these three lean on Phase 3 surfaces: watcher windows + undercard tray; tray
@@ -1691,6 +1866,11 @@ mode + session archive v1; fleet snapshots + layout DSL.)*
   template. Builds directly on context-transfer plumbing.
 - **Scheduled sessions**: cron-spawned sessions (nightly digest agent gets a home).
 - **Global transcript search**: full-text/semantic search across all sessions ever.
+  *(2026-07-30: no longer a from-scratch item. §5.31's per-session find puts the
+  search engine in main scanning transcript files with **scope as a parameter**,
+  so this becomes a wider scope plus its own result surface — which session a hit
+  belongs to, and jump-and-focus into it. That surface is the real remaining
+  work; the searching is not.)*
 - ~~Mission-control dashboard~~ — **PROMOTED** to Phase 3 core (research v2:
   Cursor 2.0, GitHub mission control, and Antigravity Manager made fleet
   dashboards the category standard).

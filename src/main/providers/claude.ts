@@ -7,9 +7,15 @@
 //         per-session file, VALIDATED before spawn (invalid settings files
 //         are silently ignored by the CLI — our hooks would vanish quietly)
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { ProviderAdapter, SpawnOptions, SpawnRecipe } from '../extensibility/contributions';
 import { SlashCommand } from '../../shared/slash-commands';
+// The transcript LOCATION is Claude's, so the check for "is this conversation
+// really there" belongs to this adapter; the tolerant reader it shares with
+// every other provider stays host-side (see ProviderCapabilities.transcripts).
+import { conversationExists } from '../transcripts/paths';
+import { ensureFolderTrusted } from '../sessions/trust';
 
 const CLI_NAMES = process.platform === 'win32' ? ['claude.cmd', 'claude.exe'] : ['claude'];
 
@@ -136,12 +142,40 @@ const CLAUDE_BUILTIN_COMMANDS: SlashCommand[] = [
   { name: 'vim', description: 'Toggle vim editing mode' },
 ].map((c) => ({ ...c, source: 'builtin' as const }));
 
+/**
+ * Where the CLI writes conversation transcripts. Read per call rather than
+ * captured at module load: cheap, and it removes a startup-order dependency on
+ * when `HOME` is resolved.
+ */
+export function claudeProjectsRoot(): string {
+  return path.join(os.homedir(), '.claude', 'projects');
+}
+
 export const claudeAdapter: ProviderAdapter = {
   manifest: {
     id: 'claude-code',
     displayName: 'Claude Code',
-    version: '0.2.0',
+    version: '0.3.0',
     capabilities: ['sessions.spawn', 'sessions.resume', 'settings.inject', 'slash-commands.list'],
+  },
+
+  // §5.3: Claude Code implements everything. This is the adapter the contract
+  // was derived FROM, so if any of it cannot be expressed here, the contract is
+  // wrong (§5.23's own test).
+  capabilities: {
+    transcripts: { projectsRoot: claudeProjectsRoot },
+    // pass the host's wiring straight through — the CLI's `settings.hooks`
+    // schema IS the shape HookListener builds
+    hooks: { settingsFor: (sessionId, host) => host.buildHookSettings(sessionId) },
+    resume: {
+      canResume: (folder, nativeSessionId) =>
+        conversationExists(claudeProjectsRoot(), folder, nativeSessionId),
+    },
+    // §5.9: the CLI refuses to work in a folder the user has not accepted, and
+    // it asks with a modal we cannot answer from here. Writing the acceptance
+    // is Claude-specific — a provider that has never heard of `~/.claude.json`
+    // must not have it written on its behalf.
+    trust: { ensureTrusted: (folder) => ensureFolderTrusted(folder) },
   },
 
   slashCommands(): SlashCommand[] {

@@ -162,14 +162,14 @@ export class SessionManager {
     this.log.info('session removed', { sessionId: id });
   }
 
-  restart(id: string): SessionRecord {
-    const r = this.mustGet(id);
-    r.killRequested = true;
-    this.ptys.remove(id);
-    this.sessions.delete(id);
-    this.log.info('session restarting', { sessionId: id });
-    return this.create(r.identity, { resumeSessionId: r.nativeSessionId });
-  }
+  // `restart()` USED TO LIVE HERE. Deleted in P2-E15-01: it was a second
+  // session-start path with none of the provider's say in it — no hook
+  // settings, and `resumeSessionId` passed straight through with no
+  // `canResume` check, which is exactly the stale-id spawn crash the resume
+  // capability exists to prevent. Nothing outside its own test called it (the
+  // UI restarts via `sessions:dropLive` then `sessions:create`, which goes
+  // through `planSessionStart`), so it was dead code encoding a wrong
+  // assumption — the worst kind to leave next to the thing it contradicts.
 
   /** Hook/permission/user events feed the state machine here. */
   apply(id: string, ev: SessionEvent): void {

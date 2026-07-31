@@ -6,7 +6,18 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.** #117 **MERGED 2026-07-30 as PR #121**
+**In progress:** **#98 (P2-E15-01) — provider adapter capability objects.**
+Implemented, reviewed twice, full gate green (lint + typecheck + **489 unit** +
+86 e2e); **awaiting Dan's commit approval, nothing pushed** (branch
+`feature/98-provider-capabilities`). Session creation ASKS the adapter now, so
+**AR-P0-1 closes with this**. Shipped FOUR capabilities — transcripts / hooks /
+resume / **trust** — with **mcp deferred to E11**; see the log entry for why the
+shape differs from §5.3 and for the two defects found on the way.
+**Note for P2-E7-06:** the `titles` capability that item adds slots straight into
+`ProviderCapabilities` in `main/extensibility/contributions.ts`, and the decision
+goes in `sessions/start-plan.ts` beside the other four.
+
+Before it: #117 **MERGED 2026-07-30 as PR #121**
 (all 5 CI jobs green) — the `pty:attach` subscribe race is closed. It shipped
 more than the recorded fix direction: subscribe-before-invoke, *plus*
 buffer-and-replay-after-snapshot (the gap chunks are newer than the snapshot),
@@ -55,6 +66,15 @@ depends on #107) → **#109** (header CSP) → **#110** (workspace schema migrat
 keeping, and its one hard prerequisite — #117 — is now merged).
 **E16 (document viewer, DESIGN §5.30) is planned but NOT filed** — 4 items in
 `04-phase-2-switchboard.md`; run `/pm` to file them when E15 closes.
+**E17 (session find / Ctrl+F, DESIGN §5.31) is planned and NOT filed** (added
+2026-07-30) — 3 items; file it with E16 and run it **after** E16, which builds
+the find bar E17-02 reuses and supplies its fourth find provider.
+**P2-E7-06 (auto task labels, DESIGN §5.11) is also planned and NOT filed**
+(added 2026-07-30) — one small item that reopens the otherwise-merged E7. It
+**depends on #98**, the very item in flight, since `titles` joins the §5.3
+capability object that #98 builds; file it with E16 and take it first — it is
+the smaller of the two and the only one that gets cheaper by riding #98's work
+while that code is fresh.
 
 **#74 (E9-05) and #76 (E9-07) are UNBLOCKED for the first time.** #105 gave them
 the store-held view tab / ladder rung / dock slot, plus working hide and reveal
@@ -163,6 +183,119 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
+- 2026-07-30 — **P2-E15-01 (#98): session creation asks the provider instead of
+  assuming Claude.** Four assumptions were inlined in `sessions/ipc.ts` —
+  `providerId: 'claude-code'`, hook settings built unconditionally,
+  `~/.claude/projects` watched unconditionally, `--resume` eligibility decided by
+  calling a Claude-shaped helper. Each was invisible until adapter #2, at which
+  point you would have had to edit the consumer, which is the exact failure the
+  seam exists to prevent. Decisions now live in a pure `sessions/start-plan.ts`;
+  an adapter declaring nothing spawns a PTY and nothing else. **AR-P0-1 closed.**
+  **The contract as shipped differs from §5.3 in three ways, all deliberate, all
+  recorded in DESIGN as an "as built" note.** `mcp` is NOT shipped — there is no
+  Session Bus until E11, and a capability with no implementation and no consumer
+  is exactly what AR-P2-13 had us delete (`event-source`). `trust` is a FOURTH
+  capability the design never listed: writing Claude's `~/.claude.json`
+  acceptance ran for every provider, which review correctly called a
+  Claude-specific branch surviving in side-effect form. And `transcripts`
+  LOCATES transcripts rather than abstracting reading them — §5.3 names a
+  `TranscriptReader`, but our parser is shared by every provider writing that
+  shape, and moving it behind the seam has no consumer asking for it.
+  **The fake e2e adapter keeps all four on purpose** — it is a Claude stand-in,
+  not the generic adapter: the harness reads the real `hook-token` files the hook
+  capability causes to be written, and several specs write real transcript JSONL.
+  A capability-less fake would have deleted half the harness and proved nothing.
+  **Two review rounds, one blocker, twelve should-fixes, all taken.** The blocker
+  was mine and data-loss-shaped: the watcher's `known` set — the thing that stops
+  a fresh session adopting a conversation already on disk — was seeded ONCE from
+  the constructor's root, so the moment a session brought its own root that root
+  was unguarded and a brand-new card would replay an old conversation into the
+  Feed and add its tokens to the usage totals. The reviewer reproduced it against
+  the real class. Seeding is per-root and lazy now, and `known` is a Map keyed by
+  root, because one flat set lets a second root's seed swallow the first root's
+  live files whenever one nests inside the other — or is merely spelled
+  differently.
+  **Round 2 caught the sharper one: my own fail-open path was silent.** The plan
+  collected degradations into a `warnings` array the caller drained
+  immediately — but two decisions are LAZY (`buildSettings` runs inside the
+  session manager, `ensureTrusted` after the caller read the plan), so an adapter
+  throwing at spawn time wrote into an array nobody would read again: no hooks,
+  no token, a status-blind session and zero diagnostics. It is a sink now.
+  *The tests had encoded the wrong contract — they read `warnings` AFTER invoking
+  the closure, which is the ordering production does not use. A test that passes
+  while the caller is broken is worse than no test.*
+  **Two real defects fixed on the way, neither in the issue.** A card persisted
+  under an adapter that is no longer registered was permanently unstartable
+  (spawn resolves the adapter and throws, and the dead id stayed persisted) — it
+  now falls back to the default and heals the record. And
+  `SessionManager.restart()` was deleted: a second session-start path with no
+  hook settings and no `canResume` check, dead outside its own test, sitting
+  right next to the thing it contradicted.
+  Also: `slugForCwd`/`conversationExists` moved to `transcripts/paths.ts` so an
+  adapter no longer imports the host's watcher (the dependency runs one way);
+  `nativeId` is charset-checked before it is interpolated into a path (it comes
+  from the store and from hook payloads, and `..` made it an existence oracle);
+  the watcher refuses a non-absolute root rather than crawling from the process
+  cwd, and says so against the CARD, since a warning keyed by a live session id
+  is not something anyone can connect to "the Session tab is empty".
+  **Revert-proofs, each re-run:** restoring constructor-only seeding fails the
+  adoption test; restoring the unconditional `settingsFor`/`watch` fails the
+  zero-capability test.
+  Gate: lint + typecheck + **489 unit (+26) + 86 e2e** green. No manual page — no
+  user-facing change. DESIGN §5.3 amended; the plan file records what shipped.
+
+- 2026-07-30 — **New epic E17: session find (Ctrl+F), and the measurement that
+  saved it from being wrong.** Dan's ask: search a session's text like a browser
+  — a feature the Claude Code VS Code extension does NOT have. The obvious build
+  (search the rendered blocks) **would have shipped a lie**: `BLOCK_CAP` is 1,000
+  and the feed is explicitly "a view buffer, not an archive", but three real
+  transcripts measured 3,356 / 2,163 / 1,363 derived blocks (1.2 MB, 744 KB,
+  495 KB), so **~70% of a long session is already evicted from the renderer** and
+  a DOM search would answer "no results" for strings provably in the session. So
+  the engine reads the transcript FILE in main. It needs **no new capability** —
+  `transcripts.read` already covers it, unlike E16's `fs.read`. Decisions: one
+  Ctrl+F covers the **whole session, grouped by view** · searches **everything
+  including verbosity-hidden and folded** content, jump expands · **hybrid** bar
+  + results list (the list is the only way to reach evicted hits) · per-session
+  now with **scope as an engine parameter**, which downgrades §10's global
+  transcript search from a from-scratch item to a result surface. Two things
+  recorded on the epic: `@xterm/addon-search` is **0.16.0 with no peer-dep pin**,
+  so it installs against our xterm 6.0.0 but predates it (the 0.17 beta wants
+  ^6.1.0-beta) — verify at runtime before building on it; and a **v1 boundary**,
+  that hits in evicted blocks are readable in the list but not jump-to-able in
+  place, with on-demand block loading as the named follow-up. Also **corrected
+  §5.30**: I had specified `webContents.findInPage` for the viewer's Ctrl+F, which
+  is right for a popped-out window and **wrong for a docked pane** — it searches
+  the whole webContents, so in a four-card grid it matches the three sessions you
+  are not looking at. Docked panels register a §5.31 find provider instead; the
+  E17-02 test asserts it with two cards holding the same string.
+- 2026-07-30 — **P2-E7-06: auto task labels, and the finding that made it
+  cheap.** Dan asked whether a blank task label could auto-fill with a
+  description of the session, the way the Claude Code VS Code extension fills
+  its tab text. **It can, and we compute nothing:** the CLI writes
+  `{"type":"ai-title","aiTitle":"…"}` into the transcript we are already tailing
+  — verified against 27 real transcripts in `~/.claude/projects/`, including
+  this design session's own (`"Add markdown and file preview feature"`). That
+  makes it textbook P7 and **kills the old §5.11 wording**, which said the label
+  would be "derived from the last user prompt, optionally LLM-compressed" — a
+  model call of ours, spending Dan's subscription on chrome, to recompute
+  something the CLI hands us free. §5.11 rewritten; item filed as **P2-E7-06**
+  (E7 is otherwise merged, so this reopens the epic for one item; **not yet an
+  issue**). Decisions: fills the **task label, never the title** (title answers
+  *which project*, label answers *what it is doing* — collapsing them loses the
+  first) · `labelSource: 'auto' | 'user'`, typing pins it, **clearing reverts to
+  auto** (because "is it empty?" would make a deliberately blank label
+  impossible) · keeps tracking while auto, **de-duped** · no title → no label,
+  folder name stands. Three observed facts the implementation must respect, all
+  recorded on the item: the CLI **revises** its title (`"…preview windows"` →
+  `"…preview feature"`), it **re-emits every turn** (14 identical lines in a
+  171-line file — undeduped that is a persist-per-turn per session), and it can
+  arrive **very late** (line 8 in one transcript, lines 339 and 510 in two
+  others), so the card must not reflow when it lands. `ai-title` is
+  **undocumented** — a §5.26 drift item and the second real customer for #107's
+  drift detector; fail-open is structural since a missing key just leaves the
+  label empty. `titles` joins the §5.3 adapter capability object (E15-01) so
+  non-Claude adapters get no dead code path.
 - 2026-07-30 — **New epic E16: the document viewer (Dan's ask — "AIs love
   markdown and we can't read it").** Design written as **DESIGN.md §5.30**;
   epic filed in `docs/plans/04-phase-2-switchboard.md` (P2-E16-01…04, **not yet

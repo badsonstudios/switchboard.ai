@@ -5,13 +5,37 @@
 // the UI uses, replacing the real adapter in test mode only.
 import { ProviderAdapter, SpawnRecipe } from '../extensibility/contributions';
 import { SlashCommand } from '../../shared/slash-commands';
+import { conversationExists } from '../transcripts/paths';
+import { ensureFolderTrusted } from '../sessions/trust';
+// the real adapter's root, imported rather than re-derived: a hand-copied
+// second copy is how "indistinguishable from the real thing" quietly stops
+// being true
+import { claudeProjectsRoot } from './claude';
 
 export const fakeAdapter: ProviderAdapter = {
   manifest: {
     id: 'claude-code',
     displayName: 'Fake (test)',
     version: '0.0.0',
-    capabilities: ['sessions.spawn', 'slash-commands.list'],
+    capabilities: ['sessions.spawn', 'sessions.resume', 'settings.inject', 'slash-commands.list'],
+  },
+
+  // The same capabilities as the real adapter, deliberately (P2-E15-01).
+  // This is a stand-in for Claude, NOT the generic PTY-only adapter: the e2e
+  // harness posts to the hook server using the per-session `hook-token` files
+  // that the hook capability causes to be written, and several specs write real
+  // transcript JSONL into the temp home and assert the Session view renders it.
+  // A capability-less fake would quietly delete both halves of the harness and
+  // prove nothing about the seam. The zero-capability path is exercised by a
+  // test adapter in `sessions/start-plan.test.ts` and `sessions/ipc.test.ts`.
+  capabilities: {
+    transcripts: { projectsRoot: claudeProjectsRoot },
+    hooks: { settingsFor: (sessionId, host) => host.buildHookSettings(sessionId) },
+    resume: {
+      canResume: (folder, nativeSessionId) =>
+        conversationExists(claudeProjectsRoot(), folder, nativeSessionId),
+    },
+    trust: { ensureTrusted: (folder) => ensureFolderTrusted(folder) },
   },
   // a tiny builtin catalog so the composer popup + ⋯ session controls are
   // e2e-drivable; the hosted shell just echoes an unknown "/clear" (harmless)

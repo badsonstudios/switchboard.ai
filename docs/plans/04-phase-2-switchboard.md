@@ -78,9 +78,54 @@ costing — at a glance. Uses existing data; mostly UI wiring.*
   *Done when:* after relaunch, every restored card appears in the rail before
   it is focused, with a "suspended" affordance.
 
+- **P2-E7-06 · Auto task labels from the CLI's own title — S (§5.11, §5.3,
+  §5.26). [added 2026-07-30, owner request]** A blank task label fills itself
+  from the description Claude Code *already writes into its transcript* — the
+  same thing the Claude Code VS Code extension puts in its tab text. E7-03
+  shipped the user-typed label; this fills it when the user has not.
+  **This costs no tokens and no model call**: `TranscriptWatcher` is already
+  tailing the file, and the line is `{"type":"ai-title","aiTitle":"…"}` (verified
+  2026-07-30 across 27 real transcripts in `~/.claude/projects/`, one of them
+  this very design session — `"Add markdown and file preview feature"`).
+  Deriving our own summary was the old §5.11 wording and is explicitly rejected:
+  it would spend the user's subscription on chrome and reimplement what the CLI
+  hands us (P7).
+  Decisions already taken (owner, 2026-07-30 — do not re-litigate in the item):
+  fills the **task label, never the title** · persist
+  `labelSource: 'auto' | 'user'`, typing makes it the user's forever and
+  **clearing the field reverts to auto** · while on auto it **keeps tracking,
+  de-duped** · **no title means no label**, folder name stands.
+  `titles` joins the §5.3 adapter capability object (E15-01) so a non-Claude
+  adapter simply does not get labels — no Claude branch in shared code.
+  *Done when:* a fresh session's blank label fills itself within a turn or two of
+  the first prompt and matches the CLI's own title; typing a label pins it and no
+  later `ai-title` overwrites it, across a restart; clearing that label lets auto
+  take over again; a session whose transcript has **no** `ai-title` looks exactly
+  as it does today (this is the fail-open case and it gets a test, because the
+  key is undocumented and may be renamed or dropped by any CLI release); an
+  adapter that does not declare `titles` starts no title watch at all; and
+  **repeat titles cost nothing** — the CLI re-emits the settled value every turn
+  (14 identical lines in a 171-line transcript), so the de-dupe is asserted with
+  a repeat-heavy fixture, not assumed. Fixture note: capture a real transcript's
+  `ai-title` lines rather than hand-writing them — including the observed
+  revision (`"…preview windows"` → `"…preview feature"`) and a late-arriving case
+  (observed at line 339 and line 510 of two transcripts, so "it shows up early"
+  is not a property to rely on).
+  *Also in scope, small:* the label rides into OS toast text (§5.9), which is the
+  actual payoff at 7–8 sessions — "Add markdown and file preview feature needs
+  your input" instead of three toasts all reading "Switchboard.ai". That puts a
+  prompt-derived phrase on screen during a screen-share, so the auto-label
+  preference must be switchable off, and toast text falls back to the title when
+  it is (litmus #4).
+  *(Depends: E15-01 for the capability object — which is the item in flight as
+  #98, so this follows it closely. Nothing else. Per Dan's 2026-07-30 call it
+  waits for E15 to finish, alongside E16; it is the smaller of the two.)*
+
 **E7 exit:** a 5-session workspace reads at a glance — identity, live status,
 cost, git, and plan progress — and the rail mirrors every card. Litmus
-(PHILOSOPHY §4) checked on each visible surface.
+(PHILOSOPHY §4) checked on each visible surface. *(E7-01…05 shipped in PR #42;
+**E7-06 added 2026-07-30 and is NOT yet filed as an issue** — the epic is
+otherwise merged, so this one item reopens it rather than starting an epic.)*
 
 ---
 
@@ -209,6 +254,17 @@ Work items:
   attempted — and the app degrades without erroring; the Claude adapter's
   behaviour is byte-identical (existing unit + e2e green); no
   Claude-specific branch remains in `sessions/ipc.ts`.
+  *(DONE 2026-07-30. Shipped **four** capabilities, not §5.3's four: transcripts
+  / hooks / resume / **trust**, with **mcp deferred to E11** — a capability with
+  no implementation and no consumer is what AR-P2-13 had us delete. `trust` was
+  found in review: writing Claude's `~/.claude.json` acceptance was
+  unconditional for every provider. Decisions live in a pure
+  `sessions/start-plan.ts`; DESIGN §5.3 carries an "as built" note. Also fixed
+  on the way: a persisted card whose adapter is GONE now falls back to the
+  default instead of being permanently unstartable, and the transcript watcher's
+  pre-existing-file guard is per-root — it was seeded once from one root, so any
+  second root was unguarded and a fresh session would have adopted an old
+  conversation.)*
 - **P2-E15-02 · Process-agnostic ContributionRegistry — S (§5.23, AR-P0-2,
   AR-P2-13).** *(no deps)* `ContributionRegistry` imports nothing from `main/`;
   a second instance is bootstrapped in the renderer with its own
@@ -830,6 +886,94 @@ does the viewer window land on the intended monitor.
 
 ---
 
+## E17 — Session find (Ctrl+F) (milestone: Phase 2; added 2026-07-30, owner request)
+
+*Goal: find a string in a session the way you find one in a browser. Governing
+spec: DESIGN.md §5.31 (written with this epic), plus §5.10, §5.23.*
+
+**Why it is worth its own epic.** The Claude Code VS Code extension does not have
+this, and the gap is felt daily: two hours into a session you know the agent
+printed a path, and there is no way to ask where. It is also **not** the
+half-hour job it looks like, for one measured reason — searching what is rendered
+would return "no results" for strings that are provably in the session.
+
+**The measurement that shapes every item** (2026-07-30, three real transcripts in
+`~/.claude/projects/c--Projects-Switchboard-ai/`): a 4,697-line transcript derives
+**3,356 blocks / 1.2 MB of text**, against a `BLOCK_CAP` of **1,000**. About 70%
+of a long session is already evicted from the renderer's view buffer, which is
+working as designed — `watcher.ts` calls it "a view buffer, not an archive". So
+the search engine reads the transcript FILE in main. A DOM search would ship a
+confident lie, and a search tool that lies once is never trusted again.
+
+**Decisions taken up front** (owner, 2026-07-30 — items must not re-litigate
+them): one Ctrl+F covers the **whole session, results grouped by view** ·
+it searches **everything including verbosity-hidden and folded content**, and
+jumping expands the block · **hybrid presentation** — browser bar plus an
+expandable results list with snippets · **per-session now**, with scope as an
+engine parameter so §10's global search extends it rather than replacing it.
+
+Work items:
+
+- **P2-E17-01 · Transcript search engine in main — M (§5.31).** *(no deps)*
+  Scan a session's transcript file and return block-anchored hits with context
+  snippets. Case-insensitive by default; case-sensitive, whole-word and regex as
+  options. Scope is a **parameter** (a session list), which is the entire seam
+  §10's cross-session search needs. Reads through the existing
+  `transcripts.read` capability — **no new capability**, unlike E16, because the
+  file is one we already watch and already expose.
+  *Done when:* searching the 4,697-line fixture returns hits in blocks the view
+  buffer has evicted (that is the whole point — assert it explicitly against a
+  captured real transcript, not a synthetic one); an uncompilable regex is
+  reported as a bad pattern rather than thrown; a session with no transcript
+  returns empty and does not error; searching a file being appended to right now
+  neither misses the tail nor double-counts it; a 1.2 MB scan does not block the
+  main thread long enough to stall a PTY (this is the thread that pumps every
+  terminal — measure it, and chunk the read if it does).
+- **P2-E17-02 · The find bar + `find-provider` seam — M (§5.31, §5.23).**
+  *(depends: 01)* One bar, browser rhythm (Enter / Shift+Enter / count / Esc /
+  sticky term across tab switches), dispatching to the FOCUSED panel's registered
+  provider. Registrants day one: Session view (the 01 engine), Terminal (item
+  03), the §5.30 document viewer, and Changes — which **delegates to Monaco's own
+  find** rather than reimplementing it. Jumping to a hit expands folded or
+  verbosity-hidden content.
+  *Done when:* Ctrl+F searches the focused session and **never matches text in
+  another card** — assert it with two cards containing the same string, because
+  `webContents.findInPage` gets this wrong by design and is the obvious thing for
+  someone to reach for later; Esc closes and returns focus where it was; a panel
+  with no provider greys the bar instead of silently searching the wrong surface;
+  four registrants exist and `extensibility.md`'s roster table is updated.
+- **P2-E17-03 · Terminal search + grouped results — S (§5.31).**
+  *(depends: 02)* `@xterm/addon-search` behind the Terminal's provider, plus the
+  grouped count in the bar. **Check the version first:** 0.16.0 declares no peer
+  dependency so it installs against our `@xterm/xterm@6.0.0`, but it predates
+  xterm 6 and the 0.17 beta pins `^6.1.0-beta` — verify it actually works at
+  runtime before building on it, and say so in the item's findings if it does not.
+  *Done when:* a match in scrollback highlights and steps; the bar labels that
+  group **"scrollback only"** so a 0 never implies absence (the terminal sees
+  5,000 lines behind a byte-capped ring buffer, the transcript sees everything —
+  one number over two depths would be a small lie that costs more than the
+  feature earns); a term present only in the transcript still shows its Session
+  count correctly.
+
+**v1 boundary, recorded so nobody discovers it in review:** a hit in an evicted
+block is **readable in the results list but not jump-to-able in place** —
+in-place jump needs the watcher to derive a window of blocks around an arbitrary
+transcript offset, which it cannot do today. v1 gives those hits a generous
+snippet and marks them as earlier than the loaded view. On-demand block loading
+is the named follow-up; it is a gap with a label on it, not a surprise.
+
+**Not in scope:** cross-session / global search (§10 — this builds its engine,
+not its result surface) · semantic or fuzzy matching · search inside the git
+diff beyond delegating to Monaco · persisting search history.
+
+**Sequencing:** after E16, or interleaved with it — E17-02's find bar and E16's
+viewer both want the same bar component, so whichever ships second reuses it.
+Neither blocks the other; if both are open, do E16 first so the viewer exists as
+E17-02's fourth registrant rather than a promised one. **User doc:**
+`docs/manual/` page before the PR.
+
+---
+
 **Embedded empirical spike (OQ #9 — carried from `03-later-phases.md` notes,
 restored 2026-07-21):** the merge-conflict endgame wants its 7–8-real-branches
 experiment once parallel worktree use is real. Schedule it when E11 makes
@@ -867,12 +1011,17 @@ other E15 item is cheap now and an audit later)** → rest of E9 → E11 →
 E13 after E11 (needs its context packages) → E14 interleaves anywhere after
 E9 (actionable-toast slice pairs with E10's approval bar).
 
-**E16 (added 2026-07-30)** has no dependencies on E11/E13/E14 and blocks nothing,
-so it takes a short slot rather than a place in the chain — after E15 and the
-rest of E9, whenever a small user-facing win is wanted between heavier epics.
-Its one hard prerequisite is already met: E15-03's `panel` contribution point and
-E15-04's capability broker are what it registers and extends, so it is glue
-rather than groundwork.
+**Three items added 2026-07-30**, all user-facing, none blocking anything:
+**E7-06** (auto task labels), **E16** (document viewer) and **E17** (session
+find). They pair well — one makes sessions tell you what they are, one makes what
+they wrote readable, one makes it findable. E16 and E17 share a find-bar
+component, so run E16 first and E17 inherits both the bar and a fourth find
+provider. None is filed as an issue yet, and **all wait for E15**: Dan closed the
+E15-vs-E9 fork on 2026-07-30 with *finish E15, then E16, then the rest*. That is
+also the technically convenient order — E7-06 wants E15-01's capability object,
+and E16 registers against E15-03's `panel` point and E15-04's capability broker,
+so both are glue over seams E15 is finishing rather than groundwork of their own.
+E7-06 is the smaller of the two and the natural warm-up.
 
 **Within E15**, the dependency order is: 01 (adapter) and 02 (registry) are
 independent and can go in either order → 03 + 04 depend on 02 → 07 → 08 (which
