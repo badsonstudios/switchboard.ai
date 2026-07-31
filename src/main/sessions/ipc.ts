@@ -10,12 +10,12 @@ import { HookListener } from '../hooks/hook-listener';
 import { IpcBroker } from '../ipc/broker';
 import { Channel } from '../../shared/ipc/capabilities';
 import type { PtyAttachment, PtyChunk } from '../../shared/ipc/pty';
+import type { ProviderCapabilities } from '../extensibility/contributions';
 import { TranscriptWatcher } from '../transcripts/watcher';
 import { Logger } from '../log/logger';
 import { assignAccent, detectProjectType } from './identity';
 import { EventFeed } from '../events/feed';
-import { ensureFolderTrusted } from './trust';
-import { conversationExists } from '../transcripts/watcher';
+import { planSessionStart } from './start-plan';
 import { PersistedSession } from '../workspace/store';
 import { SlashCommand } from '../../shared/slash-commands';
 
@@ -37,8 +37,14 @@ export interface SessionIpcDeps {
     upsert: (s: PersistedSession) => void;
     remove: (cardId: string) => void;
   };
-  /** ~/.claude/projects root, for checking a resumable conversation exists */
-  projectsRoot: string;
+  /** what a provider can do beyond being a process in a terminal (§5.3) —
+   *  undefined for an unknown id, and for an adapter that declares nothing */
+  capabilitiesOf: (providerId: string) => ProviderCapabilities | undefined;
+  /** is this provider available right now? A card persisted under an adapter
+   *  that is gone falls back to the default rather than becoming unstartable */
+  isRegisteredProvider: (providerId: string) => boolean;
+  /** the provider a BRAND-NEW card runs on; existing cards keep their own */
+  defaultProviderId: () => string;
   /** git toplevel for a folder (null if not a repo) — auto-group key (E12-05) */
   repoRoot: (folder: string) => Promise<string | null>;
   /** slash-command discovery for the composer popup (E10-07, §5.17) — async:
@@ -218,10 +224,28 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
           title = `${title}-${n}`.slice(0, 120);
         }
       }
+      // ASK the provider what this session start involves; do not assume Claude
+      // (P2-E15-01, §5.3). Everything Claude-shaped that used to be inline —
+      // the provider id, hook settings, the transcript root, resume
+      // eligibility — is a declared capability now.
+      const plan = planSessionStart(
+        {
+          capabilitiesOf: deps.capabilitiesOf,
+          isRegistered: deps.isRegisteredProvider,
+          defaultProviderId: deps.defaultProviderId,
+          folder: opts.folder,
+          prior: { providerId: prior?.identity.providerId, nativeSessionId: prior?.nativeSessionId },
+          // a degraded capability is never silent — the card still starts. A
+          // callback rather than reading plan.warnings: two of the decisions
+          // are lazy and fire long after this line.
+          onDegraded: (reason) => log.warn('session start degraded', { cardId: opts.cardId, reason }),
+        },
+        hooks
+      );
       const identity = {
         title,
         folder: opts.folder,
-        providerId: 'claude-code',
+        providerId: plan.providerId,
         // stable across resumes: reuse the card's assigned accent/badge
         accentColor: prior?.identity.accentColor ?? assignAccent(manager.list().map((s) => s.identity.accentColor ?? '')),
         langBadge: prior?.identity.langBadge ?? detectProjectType(opts.folder),
@@ -232,32 +256,51 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       // sessions, never silently changes a running one)
       const autonomy = prior?.autonomy ?? opts.autonomy;
 
-      if (deps.autoTrust()) ensureFolderTrusted(opts.folder, log);
-      // only --resume when a real conversation exists for that id; otherwise a
-      // stale/empty id would make claude exit ("No conversation found") and
-      // crash the card, so fall back to a fresh session
-      const canResume =
-        !!prior?.nativeSessionId &&
-        conversationExists(deps.projectsRoot, opts.folder, prior.nativeSessionId);
+      // Preparing the folder is the PROVIDER's business (§5.9 trust is Claude's
+      // `~/.claude.json`); a provider that has never heard of it must not have
+      // it written on its behalf.
+      if (deps.autoTrust() && plan.ensureTrusted && !plan.ensureTrusted(opts.folder)) {
+        log.warn('auto-trust failed — the provider may prompt in the terminal', {
+          cardId: opts.cardId,
+          folder: opts.folder,
+        });
+      }
+      const canResume = !!plan.resumeSessionId;
       const record = manager.create(identity, {
-        settingsFor: (id) => hooks.buildHookSettings(id),
+        // no hook capability = nothing injected and no token registered
+        settingsFor: plan.buildSettings,
         autonomy,
-        resumeSessionId: canResume ? prior?.nativeSessionId : undefined,
+        resumeSessionId: plan.resumeSessionId,
       });
       cardOfLive.set(record.id, opts.cardId);
-      // pass the resumed conversation id: the watcher may adopt ITS OWN
-      // pre-existing transcript (and replay history into the Session view)
-      transcripts.watch(record.id, {
-        cwd: opts.folder,
-        nativeSessionId: canResume ? prior?.nativeSessionId : undefined,
-      });
+      // A provider with no transcripts is never watched at all — the session is
+      // a terminal and nothing more, which is what §5.3 promises degrading
+      // looks like. Otherwise pass the resumed conversation id, so the watcher
+      // may adopt ITS OWN pre-existing transcript (and replay history into the
+      // Session view).
+      if (plan.transcriptsRoot !== undefined) {
+        const watching = transcripts.watch(record.id, {
+          cwd: opts.folder,
+          nativeSessionId: plan.resumeSessionId,
+          projectsRoot: plan.transcriptsRoot,
+        });
+        // the watcher refuses a root it cannot poll safely. Say so against the
+        // CARD — a warning keyed by a live session id, in the transcripts log,
+        // is not something anyone can connect to "the Session tab is empty".
+        if (!watching) {
+          log.warn('provider declares transcripts but the root was refused', {
+            cardId: opts.cardId,
+            root: plan.transcriptsRoot,
+          });
+        }
+      }
       deps.persist.upsert({
         id: opts.cardId,
         identity,
         layoutSlot: prior?.layoutSlot ?? 0,
         // don't keep a stale id we just declined to resume — the fresh
         // session's onNativeSessionId will fill in the new one
-        nativeSessionId: canResume ? prior?.nativeSessionId : undefined,
+        nativeSessionId: plan.resumeSessionId,
         suspendedAt: prior?.suspendedAt ?? '',
         usage: prior?.usage,
         model: prior?.model,

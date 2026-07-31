@@ -531,6 +531,17 @@ app
     registerBuiltinContributions();
     log.app.info('contributions registered', { manifests: registry.manifests() });
 
+    // Which provider a brand-new card runs on: the first REGISTERED adapter.
+    // Registration order is precedence (P2-E15-02), and bootstrap is the only
+    // module that registers — so swapping the default is a bootstrap edit, not
+    // a string spread through the session core. Existing cards keep the
+    // provider they were created with (see planSessionStart).
+    const defaultProviderId = (): string => {
+      const first = registry.list('provider-adapter')[0];
+      if (!first) throw new Error('no provider adapter registered — bootstrap did not run');
+      return first.manifest.id;
+    };
+
     // session core (E2) bootstrap
     const stateDir = path.join(app.getPath('userData'), 'sessions');
     const ptys = new PtyService();
@@ -551,8 +562,22 @@ app
       },
     });
     onRendererLost = (reason) => hooks.releaseHeld(reason);
+    // Only the DEFAULT provider's root, and only as a seed for "files that were
+    // already on disk before we started" — every session brings the root its own
+    // provider declared (P2-E15-01). Undefined when the default provider has no
+    // transcripts, in which case nothing is watched anyway. Guarded because this
+    // is contributor code running before the first window exists: an adapter
+    // that throws here would take startup down with it.
+    let seedRoot: string | undefined;
+    try {
+      seedRoot = registry
+        .resolve('provider-adapter', defaultProviderId())
+        ?.capabilities?.transcripts?.projectsRoot();
+    } catch (err) {
+      log.app.warn('default provider transcripts root failed', { error: String(err) });
+    }
     const transcripts = new TranscriptWatcher({
-      projectsRoot: path.join(os.homedir(), '.claude', 'projects'),
+      projectsRoot: seedRoot,
       log: createLogger(sink, 'transcripts'),
     });
     void hooks.start().catch((err) => {
@@ -625,7 +650,10 @@ app
         upsert: (s) => workspace.upsertSession(s),
         remove: (cardId) => workspace.removeSession(cardId),
       },
-      projectsRoot: path.join(os.homedir(), '.claude', 'projects'),
+      capabilitiesOf: (providerId) =>
+        registry.resolve('provider-adapter', providerId)?.capabilities,
+      isRegisteredProvider: (providerId) => !!registry.resolve('provider-adapter', providerId),
+      defaultProviderId,
       repoRoot: (folder) => gitService.root(folder),
       slashCommands: (folder, providerId) =>
         scanSlashCommands(

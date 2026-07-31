@@ -1,0 +1,263 @@
+import { describe, it, expect, vi } from 'vitest';
+import { planSessionStart, StartPlanInput } from './start-plan';
+import { ProviderCapabilities } from '../extensibility/contributions';
+
+const host = { buildHookSettings: (id: string) => ({ hooks: { seen: id } }) };
+
+/** An adapter that declares everything, the way Claude does. */
+function fullCaps(over: Partial<ProviderCapabilities> = {}): ProviderCapabilities {
+  return {
+    transcripts: { projectsRoot: () => '/roots/claude' },
+    hooks: { settingsFor: (id, h) => h.buildHookSettings(id) },
+    resume: { canResume: () => true },
+    trust: { ensureTrusted: () => true },
+    ...over,
+  };
+}
+
+/** One registered provider, `p`, unless the test says otherwise. */
+function input(over: Partial<StartPlanInput> = {}): StartPlanInput {
+  return {
+    capabilitiesOf: () => undefined,
+    isRegistered: (id) => id === 'p',
+    defaultProviderId: () => 'p',
+    folder: '/work/app',
+    ...over,
+  };
+}
+
+const plan = (over: Partial<StartPlanInput> = {}) => planSessionStart(input(over), host);
+
+/** Plan + everything reported through the sink, which is the channel the only
+ *  production caller actually reads. */
+function planWithSink(over: Partial<StartPlanInput> = {}) {
+  const reported: string[] = [];
+  const p = planSessionStart(input({ onDegraded: (r) => reported.push(r), ...over }), host);
+  return { plan: p, reported };
+}
+
+describe('planSessionStart', () => {
+  describe('a provider that declares NOTHING degrades to PTY-only', () => {
+    it('injects no settings', () => {
+      // undefined, not an empty object: the manager skips settingsFor entirely,
+      // so no file is written AND no hook token is registered
+      expect(plan({ prior: { nativeSessionId: 'native-1' } }).buildSettings).toBeUndefined();
+    });
+    it('starts no transcript watch', () => {
+      expect(plan().transcriptsRoot).toBeUndefined();
+    });
+    it('does nothing to the project folder', () => {
+      expect(plan().ensureTrusted).toBeUndefined();
+    });
+    it('does not resume, even with a native id on the card', () => {
+      expect(plan({ prior: { nativeSessionId: 'native-1' } }).resumeSessionId).toBeUndefined();
+    });
+    it('still names a provider to spawn, and warns about nothing', () => {
+      const p = plan();
+      expect(p.providerId).toBe('p');
+      expect(p.warnings).toEqual([]);
+    });
+  });
+
+  it('an empty capabilities object is the same as none', () => {
+    const p = plan({ capabilitiesOf: () => ({}), prior: { nativeSessionId: 'n' } });
+    expect(p.buildSettings).toBeUndefined();
+    expect(p.transcriptsRoot).toBeUndefined();
+    expect(p.resumeSessionId).toBeUndefined();
+    expect(p.ensureTrusted).toBeUndefined();
+  });
+
+  it('a fully-capable provider gets all four', () => {
+    const p = plan({ capabilitiesOf: () => fullCaps(), prior: { nativeSessionId: 'native-1' } });
+    expect(p.transcriptsRoot).toBe('/roots/claude');
+    expect(p.resumeSessionId).toBe('native-1');
+    expect(p.buildSettings?.('sess-9')).toEqual({ hooks: { seen: 'sess-9' } });
+    expect(p.ensureTrusted).toBeTypeOf('function');
+  });
+
+  describe('each capability is independent', () => {
+    it('transcripts without hooks writes nothing', () => {
+      const p = plan({ capabilitiesOf: () => ({ transcripts: { projectsRoot: () => '/r' } }) });
+      expect(p.transcriptsRoot).toBe('/r');
+      expect(p.buildSettings).toBeUndefined();
+    });
+
+    it('hooks without transcripts watches nothing', () => {
+      const p = plan({
+        capabilitiesOf: () => ({ hooks: { settingsFor: (id, h) => h.buildHookSettings(id) } }),
+      });
+      expect(p.transcriptsRoot).toBeUndefined();
+      expect(p.buildSettings).toBeTypeOf('function');
+    });
+
+    it('a provider that cannot say WHERE its transcripts are is not watched', () => {
+      // an empty root would poll a directory that does not exist for ever and
+      // report nothing — that reads as a bug, not as "no transcripts"
+      const p = plan({ capabilitiesOf: () => ({ transcripts: { projectsRoot: () => '' } }) });
+      expect(p.transcriptsRoot).toBeUndefined();
+    });
+  });
+
+  describe('resume asks the provider rather than assuming', () => {
+    it('no resume capability means a fresh session even with a native id', () => {
+      const p = plan({
+        capabilitiesOf: () => fullCaps({ resume: undefined }),
+        prior: { nativeSessionId: 'native-1' },
+      });
+      expect(p.resumeSessionId).toBeUndefined();
+    });
+
+    it('the provider saying "that conversation is gone" falls back to fresh', () => {
+      // a stale id is not harmless — the CLI exits at spawn and the card
+      // crashes, which is why this is checked before it is used
+      const p = plan({
+        capabilitiesOf: () => fullCaps({ resume: { canResume: () => false } }),
+        prior: { nativeSessionId: 'native-1' },
+      });
+      expect(p.resumeSessionId).toBeUndefined();
+    });
+
+    it('no native id means the provider is never even asked', () => {
+      const canResume = vi.fn(() => true);
+      const p = plan({ capabilitiesOf: () => fullCaps({ resume: { canResume } }) });
+      expect(p.resumeSessionId).toBeUndefined();
+      expect(canResume).not.toHaveBeenCalled();
+    });
+
+    it('asks with the folder and the id it is deciding about', () => {
+      const canResume = vi.fn(() => true);
+      plan({
+        capabilitiesOf: () => fullCaps({ resume: { canResume } }),
+        prior: { nativeSessionId: 'native-1' },
+      });
+      expect(canResume).toHaveBeenCalledWith('/work/app', 'native-1');
+    });
+  });
+
+  describe('which provider a card runs on', () => {
+    it('a new card takes the default', () => {
+      expect(plan().providerId).toBe('p');
+    });
+
+    it('an EXISTING card keeps its own provider over the default', () => {
+      // otherwise changing the default would silently migrate every existing
+      // card onto a different CLI — and its persisted native session id would
+      // belong to a provider that never wrote it
+      const p = plan({
+        isRegistered: () => true,
+        prior: { providerId: 'codex' },
+      });
+      expect(p.providerId).toBe('codex');
+      expect(p.warnings).toEqual([]);
+    });
+
+    it('an empty provider id on the card falls back rather than spawning ""', () => {
+      expect(plan({ prior: { providerId: '' } }).providerId).toBe('p');
+    });
+
+    it('a card whose provider is GONE falls back instead of becoming unstartable', () => {
+      // spawning resolves the adapter and throws when it is missing, so keeping
+      // the dead id would brick this card for ever — one degraded card beats a
+      // card that can never start again
+      const p = plan({ prior: { providerId: 'codex', nativeSessionId: 'native-1' } });
+      expect(p.providerId).toBe('p');
+      expect(p.warnings).toHaveLength(1);
+      expect(p.warnings[0]).toMatch(/codex/);
+    });
+
+    it('a card that falls back is judged by the DEFAULT provider capabilities', () => {
+      // the native id belongs to a provider that is gone; the fallback provider
+      // decides whether it means anything
+      const canResume = vi.fn(() => false);
+      const p = plan({
+        capabilitiesOf: (id) => (id === 'p' ? fullCaps({ resume: { canResume } }) : undefined),
+        prior: { providerId: 'codex', nativeSessionId: 'native-1' },
+      });
+      expect(canResume).toHaveBeenCalledWith('/work/app', 'native-1');
+      expect(p.resumeSessionId).toBeUndefined();
+    });
+
+    it('does not reach for the default when the card already names a live one', () => {
+      const defaultProviderId = vi.fn(() => 'p');
+      plan({ isRegistered: () => true, defaultProviderId, prior: { providerId: 'codex' } });
+      expect(defaultProviderId).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a contributor that throws degrades that capability, not the session', () => {
+    const boom = () => {
+      throw new Error('adapter is broken');
+    };
+
+    it('resume', () => {
+      const p = plan({
+        capabilitiesOf: () => fullCaps({ resume: { canResume: boom } }),
+        prior: { nativeSessionId: 'native-1' },
+      });
+      expect(p.resumeSessionId).toBeUndefined();
+      expect(p.providerId).toBe('p'); // still startable
+      expect(p.warnings.join()).toMatch(/resume.canResume/);
+    });
+
+    it('transcripts', () => {
+      const p = plan({ capabilitiesOf: () => fullCaps({ transcripts: { projectsRoot: boom } }) });
+      expect(p.transcriptsRoot).toBeUndefined();
+      expect(p.warnings.join()).toMatch(/transcripts.projectsRoot/);
+    });
+
+    it('hooks — lazily, and the report reaches the SINK, not a drained array', () => {
+      // buildSettings runs inside the session manager, long after the caller
+      // read the plan — a warnings list would be empty by then
+      const { plan: p, reported } = planWithSink({
+        capabilitiesOf: () => fullCaps({ hooks: { settingsFor: boom } }),
+      });
+      expect(reported).toEqual([]); // nothing has gone wrong yet
+      // empty settings, not a crashed spawn: the session starts without hooks
+      expect(p.buildSettings?.('sess-1')).toEqual({});
+      expect(reported.join()).toMatch(/hooks.settingsFor/);
+    });
+
+    it('trust — also lazily, also through the sink', () => {
+      const { plan: p, reported } = planWithSink({
+        capabilitiesOf: () => fullCaps({ trust: { ensureTrusted: boom } }),
+      });
+      expect(reported).toEqual([]);
+      expect(p.ensureTrusted?.('/work/app')).toBe(false); // the caller can say so
+      expect(reported.join()).toMatch(/trust.ensureTrusted/);
+    });
+
+    it('isRegistered — and the reason does not claim the provider is missing', () => {
+      // "not registered" when the CHECK blew up sends the next reader hunting
+      // for a registration bug that does not exist
+      const { plan: p, reported } = planWithSink({
+        isRegistered: boom,
+        prior: { providerId: 'codex' },
+      });
+      expect(p.providerId).toBe('p');
+      expect(reported.join()).toMatch(/could not tell/);
+    });
+
+    it('a default provider that is not registered either is called out', () => {
+      const { plan: p, reported } = planWithSink({ isRegistered: () => false });
+      expect(p.providerId).toBe('p'); // still the best answer available
+      expect(reported.join()).toMatch(/default provider "p" is not registered/);
+    });
+
+    it('capabilitiesOf itself', () => {
+      const p = plan({ capabilitiesOf: boom });
+      expect(p.providerId).toBe('p');
+      expect(p.buildSettings).toBeUndefined();
+      expect(p.warnings.join()).toMatch(/capabilitiesOf/);
+    });
+  });
+
+  it('hook settings are built lazily, per session id', () => {
+    // the id does not exist until the manager mints it, so this must be a
+    // function and not a value computed here
+    const settingsFor = vi.fn((id: string) => ({ id }));
+    const p = plan({ capabilitiesOf: () => ({ hooks: { settingsFor } }) });
+    expect(settingsFor).not.toHaveBeenCalled();
+    expect(p.buildSettings?.('late-id')).toEqual({ id: 'late-id' });
+    expect(settingsFor).toHaveBeenCalledWith('late-id', host);
+  });
+});

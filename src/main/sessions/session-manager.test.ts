@@ -208,17 +208,6 @@ describe('SessionManager (done-when: observable transitions through the cycle)',
     expect(mgr.get(b.id)!.status).toBe('crashed');
   });
 
-  it('restart preserves identity and passes the native id as resume', () => {
-    const a = mgr.create(identity);
-    mgr.setNativeSessionId(a.id, 'native-9');
-    const b = mgr.restart(a.id);
-    expect(b.id).not.toBe(a.id);
-    expect(b.identity).toEqual(identity);
-    const spawn = ptys.spawned.at(-1)!;
-    expect(spawn.args).toEqual(['--resume', 'native-9']);
-    expect(mgr.get(a.id)).toBeUndefined();
-  });
-
   it('late events for removed sessions are dropped silently', () => {
     expect(() => mgr.apply('ghost', { kind: 'hook', event: 'Stop' })).not.toThrow();
   });

@@ -12,6 +12,11 @@ import fs from 'fs';
 import path from 'path';
 import { Logger } from '../log/logger';
 import { ToolCategory, toolCategory } from '../../shared/tool-taxonomy';
+import { conversationExists, slugForCwd } from './paths';
+
+// Re-exported: these moved to `paths.ts` so the provider adapters can use them
+// without importing the watcher (P2-E15-01).
+export { conversationExists, slugForCwd };
 
 export interface UsageTotals {
   input: number;
@@ -81,6 +86,10 @@ interface WatchedSession {
   sessionId: string;
   cwd: string;
   nativeSessionId?: string;
+  /** where THIS session's provider writes transcripts (P2-E15-01). Defaults to
+   *  the watcher's own root; a provider that writes somewhere else says so via
+   *  its `transcripts` capability, and one watcher can then serve both. */
+  projectsRoot: string;
   boundFile: string | null;
   watchedSince: number;
   tails: Map<string, { offset: number; buf: string }>;
@@ -100,7 +109,10 @@ const WIDEN_AFTER_MS = 10_000;
 const CWD_BIND_FALLBACK_MS = 30_000;
 
 export interface TranscriptWatcherOptions {
-  projectsRoot: string;
+  /** Default root for sessions that do not name one, and the first root seeded.
+   *  Optional: a workspace whose provider has no transcripts capability watches
+   *  nothing, and there is no root to speak of (P2-E15-01). */
+  projectsRoot?: string;
   log: Logger;
   pollMs?: number;
   /** how long to trust the slug prefilter before widening discovery */
@@ -108,10 +120,6 @@ export interface TranscriptWatcherOptions {
   /** how long an ambiguous same-cwd session waits for a native id before
    *  falling back to best-effort cwd binding */
   cwdBindFallbackMs?: number;
-}
-
-export function slugForCwd(cwd: string): string {
-  return cwd.replace(/[\\/:. ]/g, '-');
 }
 
 /** CLI plumbing disguised as user text — never conversation. */
@@ -131,33 +139,6 @@ function toolResultText(content: unknown): string {
   return '';
 }
 
-/**
- * Does a resumable conversation actually exist for this session id? Claude
- * only writes the transcript once a real turn happens, so `--resume <id>` on
- * a session that never got a prompt errors with "No conversation found" and
- * exits — checking the file first lets us fall back to a fresh session.
- * Slug matched case-insensitively (real paths lowercase the drive letter).
- */
-export function conversationExists(projectsRoot: string, folder: string, nativeId: string): boolean {
-  const wantSlug = slugForCwd(folder).toLowerCase();
-  let dirs: fs.Dirent[];
-  try {
-    dirs = fs.readdirSync(projectsRoot, { withFileTypes: true });
-  } catch {
-    return false;
-  }
-  for (const d of dirs) {
-    if (d.isDirectory() && d.name.toLowerCase() === wantSlug) {
-      try {
-        if (fs.statSync(path.join(projectsRoot, d.name, `${nativeId}.jsonl`)).isFile()) return true;
-      } catch {
-        /* keep looking */
-      }
-    }
-  }
-  return false;
-}
-
 /** Path equality that tolerates case + separator differences on win32. */
 export function sameFolder(a: string, b: string): boolean {
   const norm = (p: string) => {
@@ -169,21 +150,63 @@ export function sameFolder(a: string, b: string): boolean {
 
 export class TranscriptWatcher {
   private readonly sessions = new Map<string, WatchedSession>();
-  private readonly known = new Set<string>(); // files existing before any watch
+  // Files that were already under a root when we first watched it, PER ROOT.
+  // One flat set would let seeding a second root swallow the first root's live
+  // files — trivially so if one root nests inside the other, or is merely
+  // spelled differently. Keyed by root, cross-contamination is impossible by
+  // construction (P2-E15-01).
+  //
+  // What this does and does NOT buy: it stops a session adopting a transcript
+  // that predates our watch of that root. It does not stop a NEW card adopting
+  // the transcript of a card closed earlier in the same run — that file arrived
+  // after the seed, and nothing here distinguishes it. Pre-existing, and the
+  // cwd-evidence rules in `claim()` are what stand between us and it.
+  private readonly known = new Map<string, Set<string>>();
   private readonly listeners = new Set<(s: TranscriptSnapshot) => void>();
   private readonly blockListeners = new Set<(sessionId: string, b: FeedBlock) => void>();
   private readonly resetListeners = new Set<(sessionId: string, cause?: 'clear') => void>();
   private timer: NodeJS.Timeout | null = null;
 
   constructor(private readonly opts: TranscriptWatcherOptions) {
-    for (const f of this.scan()) this.known.add(f);
+    if (opts.projectsRoot) this.seed(opts.projectsRoot);
   }
 
-  watch(sessionId: string, session: { cwd: string; nativeSessionId?: string }): void {
+  /** Record everything already under `root`, once, so it can never be mistaken
+   *  for a transcript this app's sessions produced. */
+  private seed(root: string): void {
+    if (this.known.has(root)) return;
+    this.known.set(root, new Set(this.scan(root)));
+  }
+
+  /** Start watching. Returns false when the root is unusable — the caller owns
+   *  saying so, because it is the one that knows which CARD this is. */
+  watch(
+    sessionId: string,
+    session: { cwd: string; nativeSessionId?: string; projectsRoot?: string }
+  ): boolean {
+    const root = session.projectsRoot ?? this.opts.projectsRoot ?? '';
+    // A relative root would make the poll loop crawl from the process cwd every
+    // 100ms. First-party adapters today; the check is here because Phase 4
+    // makes this string third-party and this is the cheapest moment to draw the
+    // line (§5.29 — validate at the boundary, not at the use site).
+    if (!root || !path.isAbsolute(root)) {
+      // A relative root would make the poll loop crawl from the process cwd
+      // every 100ms. Absolute is the bar, deliberately not narrower: a home
+      // directory on a UNC share is a real setup, not an attack.
+      this.opts.log.warn('transcript watch refused: root is not an absolute path', {
+        sessionId,
+        root,
+      });
+      // never leave a previous watch of this id running under a stale root
+      this.sessions.delete(sessionId);
+      return false;
+    }
+    this.seed(root);
     this.sessions.set(sessionId, {
       sessionId,
       cwd: session.cwd,
       nativeSessionId: session.nativeSessionId,
+      projectsRoot: root,
       boundFile: null,
       watchedSince: Date.now(),
       tails: new Map(),
@@ -203,6 +226,7 @@ export class TranscriptWatcher {
       toolBlocks: new Map(),
     });
     this.ensurePolling();
+    return true;
   }
 
   /**
@@ -322,7 +346,9 @@ export class TranscriptWatcher {
     this.timer.unref?.();
   }
 
-  private scan(root = this.opts.projectsRoot, depth = 0, acc: string[] = []): string[] {
+  // Every caller now passes a root explicitly (P2-E15-01) — there is no
+  // process-wide "the transcripts directory" any more.
+  private scan(root: string, depth = 0, acc: string[] = []): string[] {
     if (depth > 4) return acc;
     let names: string[];
     try {
@@ -360,7 +386,7 @@ export class TranscriptWatcher {
           // definition; Dan's 2026-07-22 find: resumed cards had an empty
           // Session view forever). Replaying it from 0 also gives the Feed
           // the conversation history back.
-          if (this.known.has(full) && !this.isOwnResumedFile(w, full)) continue;
+          if (this.known.get(w.projectsRoot)?.has(full) && !this.isOwnResumedFile(w, full)) continue;
           if (this.claim(w, full)) w.tails.set(full, { offset: 0, buf: '' });
         }
       } else {
@@ -373,19 +399,22 @@ export class TranscriptWatcher {
     }
   }
 
+  // Discovery runs against the SESSION's root, not the watcher's: two providers
+  // writing to different places must not have their conversations offered to
+  // each other's sessions (P2-E15-01).
   private discoveryCandidates(w: WatchedSession, widen: boolean): string[] {
-    if (widen) return this.scan();
+    if (widen) return this.scan(w.projectsRoot);
     const want = slugForCwd(w.cwd).toLowerCase();
     const acc: string[] = [];
     let entries: fs.Dirent[];
     try {
-      entries = fs.readdirSync(this.opts.projectsRoot, { withFileTypes: true });
+      entries = fs.readdirSync(w.projectsRoot, { withFileTypes: true });
     } catch {
       return acc;
     }
     for (const e of entries) {
       if (e.isDirectory() && e.name.toLowerCase() === want) {
-        this.scan(path.join(this.opts.projectsRoot, e.name), 1, acc);
+        this.scan(path.join(w.projectsRoot, e.name), 1, acc);
       }
     }
     return acc;

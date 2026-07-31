@@ -529,3 +529,86 @@ describe('pre-existing transcripts are never adopted', () => {
     w2.stop();
   });
 });
+
+describe('per-session transcripts root (P2-E15-01)', () => {
+  let rootB: string;
+
+  beforeEach(() => {
+    rootB = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-tw-rootb-'));
+  });
+  afterEach(() => fs.rmSync(rootB, { recursive: true, force: true }));
+
+  it('a session watches under ITS provider root, not the watcher default', async () => {
+    const dir = path.join(rootB, slugForCwd(cwd));
+    fs.mkdirSync(dir, { recursive: true });
+
+    watcher.watch('s1', { cwd, projectsRoot: rootB });
+    writeLines(path.join(dir, 'native-b.jsonl'), [entry({ sessionId: 'native-b' })]);
+    await sleep(150);
+
+    const snap = watcher.snapshot('s1')!;
+    expect(snap.bound).toBe(true);
+    expect(snap.nativeSessionId).toBe('native-b');
+  });
+
+  it('an identically-slugged folder under the OTHER root is not offered', async () => {
+    // same cwd, so the same slug — only the root separates them. A second
+    // provider's conversations must never be handed to this one's session.
+    const mine = path.join(rootB, slugForCwd(cwd));
+    const theirs = path.join(root, slugForCwd(cwd));
+    fs.mkdirSync(mine, { recursive: true });
+    fs.mkdirSync(theirs, { recursive: true });
+
+    watcher.watch('s1', { cwd, projectsRoot: rootB });
+    writeLines(path.join(theirs, 'native-other.jsonl'), [entry({ sessionId: 'native-other' })]);
+    await sleep(200);
+
+    expect(watcher.snapshot('s1')!.bound).toBe(false);
+  });
+
+  it('the widened scan does not cross roots either', async () => {
+    const w2 = new TranscriptWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: root }), 'transcripts'),
+      pollMs: 25,
+      widenAfterMs: 50, // widen almost immediately
+    });
+    const theirs = path.join(root, slugForCwd('C:/tmp/somewhere-else'));
+    fs.mkdirSync(theirs, { recursive: true });
+    fs.mkdirSync(path.join(rootB, slugForCwd(cwd)), { recursive: true });
+
+    w2.watch('s1', { cwd, projectsRoot: rootB });
+    // a file that WOULD be claimable on evidence, but lives under the other root
+    writeLines(path.join(theirs, 'native-wide.jsonl'), [entry({ sessionId: 'native-wide' })]);
+    await sleep(300);
+
+    expect(w2.snapshot('s1')!.bound).toBe(false);
+    w2.stop();
+  });
+
+  it('a transcript already on disk under a non-default root is not adopted', async () => {
+    // The `known` set is what stops a fresh session replaying an old
+    // conversation (the S-04/S-05 adoption race). It used to be seeded once,
+    // from the watcher's own root — so any OTHER root was entirely unguarded
+    // and a brand-new session would bind a pre-existing file on cwd evidence
+    // alone. Seeding now follows the sessions.
+    const dir = path.join(rootB, slugForCwd(cwd));
+    fs.mkdirSync(dir, { recursive: true });
+    writeLines(path.join(dir, 'old-conversation.jsonl'), [
+      entry({ sessionId: 'native-ancient', message: { role: 'assistant', content: 'ANCIENT' } }),
+    ]);
+
+    watcher.watch('s1', { cwd, projectsRoot: rootB }); // no native id: fresh session
+    await sleep(200);
+
+    expect(watcher.snapshot('s1')!.bound).toBe(false);
+    expect(watcher.blocks('s1')).toHaveLength(0);
+  });
+
+  it('refuses a relative root rather than crawling from the process cwd', async () => {
+    watcher.watch('s1', { cwd, projectsRoot: 'relative/path' });
+    await sleep(80);
+    // refused outright — no session, so nothing polls
+    expect(watcher.snapshot('s1')).toBeUndefined();
+  });
+});
