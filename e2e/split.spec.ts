@@ -14,8 +14,7 @@
 // pressure on the outer edge it checks and no sash at all. Hence this file.
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
-import path from 'path';
-import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
+import { launchApp, LaunchedApp, tempProjectFolder, workspaceJsonPath } from './fixtures/app';
 import { decodePng, rowLuminance } from './fixtures/png';
 
 /**
@@ -34,7 +33,7 @@ async function twoGroups(): Promise<LaunchedApp> {
   await first.window.waitForTimeout(1200); // let the layout reach disk
   await first.close();
 
-  const file = path.join(first.home, 'AppData', 'Roaming', 'switchboard', 'workspace.json');
+  const file = workspaceJsonPath(first.home);
   const json = JSON.parse(fs.readFileSync(file, 'utf8'));
   const layout = json.layout ?? json.state.layout;
   const views: string[] = layout.grid.root.data[0].data.views;

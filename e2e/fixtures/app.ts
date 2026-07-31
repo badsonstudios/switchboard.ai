@@ -177,6 +177,24 @@ export async function showTerminal(window: Page): Promise<void> {
   await window.getByRole('button', { name: 'Terminal' }).click();
 }
 
+/**
+ * The workspace store inside a launched app's isolated home.
+ *
+ * Electron puts userData somewhere different on each OS, and hard-coding the
+ * Windows path is a real trap: it does not throw until a spec that reads the
+ * file runs on Linux, and the specs that read it were all Windows-only until
+ * `split.spec.ts` (which cost one red CI job to learn). One definition here.
+ */
+export function workspaceJsonPath(home: string): string {
+  const base =
+    process.platform === 'win32'
+      ? path.join(home, 'AppData', 'Roaming')
+      : process.platform === 'darwin'
+        ? path.join(home, 'Library', 'Application Support')
+        : path.join(home, '.config');
+  return path.join(base, 'switchboard', 'workspace.json');
+}
+
 /** A throwaway folder to point a session at (git-repo optional). */
 export function tempProjectFolder(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-proj-'));

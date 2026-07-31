@@ -9,12 +9,11 @@
 // own move/resize events, so quitting immediately after a move is safe.
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
-import path from 'path';
-import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
+import { launchApp, LaunchedApp, tempProjectFolder, workspaceJsonPath } from './fixtures/app';
 
 /** popout positions as they currently sit ON DISK */
 function persistedPopouts(home: string): Array<{ left: number; top: number }> {
-  const file = path.join(home, 'AppData', 'Roaming', 'switchboard', 'workspace.json');
+  const file = workspaceJsonPath(home);
   if (!fs.existsSync(file)) return [];
   const json = JSON.parse(fs.readFileSync(file, 'utf8'));
   const layout = json.layout ?? json.state?.layout;
