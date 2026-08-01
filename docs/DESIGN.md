@@ -78,6 +78,7 @@ and an operator who can connect any of them.
 │ Main process (orchestrator)                                    │
 │  SessionManager      – spawn/kill/restart agent processes      │
 │  PtyService          – node-pty (ConPTY on Win, forkpty *nix)  │
+│  StreamService       – stream-json over pipes (E18; §6 amend.) │
 │  ProviderAdapters    – claude | codex | gemini | aider | …     │
 │  TranscriptWatcher   – tails ~/.claude/projects/*.jsonl        │
 │  HookListener        – local HTTP endpoint hit by CC hooks     │
@@ -91,8 +92,10 @@ and an operator who can connect any of them.
 
 1. User adds a session: picks a folder (or "new worktree from repo X"), a provider,
    a display name/color.
-2. SessionManager spawns the provider CLI in a PTY with `cwd` = that folder.
-   Environment is augmented (see 5.4) so the agent can reach the Session Bus.
+2. SessionManager spawns the provider CLI with `cwd` = that folder, in the
+   transport its adapter declares — a PTY, or duplex stream-json over pipes
+   (§6 amendment 2026-08-01). Environment is augmented (see 5.4) so the agent
+   can reach the Session Bus.
 3. TranscriptWatcher + HookListener feed structured events (status, tool use, cost,
    files touched) to the sidebar without touching the interactive stream.
 4. On exit/crash: status badge updates; user can restart with `--resume <session-id>`
@@ -101,10 +104,29 @@ and an operator who can connect any of them.
 ### 5.2 Claude Code integration (first-class adapter)
 
 All integration is via the locally installed CLI — which authenticates through the
-user's `claude login` (Max subscription). Three channels:
+user's `claude login` (Max subscription). The first two bullets are
+**alternative transports**, chosen per session (§6 amendment 2026-08-01); the
+transcript and hook channels ride alongside either:
 
-- **Interactive PTY** (the main surface): spawn `claude` in the session folder.
-  Full fidelity: permission prompts, slash commands, plan mode, TUI rendering.
+- **Interactive PTY** (the default transport): spawn `claude` in the session
+  folder. Full fidelity of the TUI: permission prompts, slash commands, plan
+  mode, ANSI rendering — and the affordances only a terminal has (Ctrl-R
+  history, vim mode, the `/resume` and `--from-pr` pickers).
+- **Duplex stream-json** (opt-in, per session; epic E18): the same CLI over
+  `child_process` pipes with `--output-format stream-json --verbose
+  --input-format stream-json`, plus a bidirectional control channel. What it
+  buys that the PTY cannot: **`can_use_tool` permission requests** carrying
+  `decision_reason`, `decision_reason_type` and `permission_suggestions` —
+  including the `.claude/` writes the hook path cannot answer at all (see the
+  hooks caveat below) — token-by-token `stream_event` deltas, and a live
+  `system:init.slash_commands` list instead of a hand-curated one. All three are
+  MEASURED (S-10). The protocol also carries `interrupt`,
+  `set_permission_mode`, `set_model` and `rewind` as control requests, which
+  would replace injected keystrokes — but those are **present, not verified**
+  (S-10 §3: interrupt semantics were never exercised, and `rewind` exists as a
+  request while its picker does not). E18-12 measures them; until it does, do
+  not plan against them. What it costs is in the §6 amendment. The JSONL
+  transcript is still written, so the channel below keeps working unchanged.
 - **Structured JSONL transcripts**: Claude Code writes per-session transcripts under
   `~/.claude/projects/<folder-slug>/`. Tail these for: current status, token/cost
   tallies, tool calls, files modified, subagent (sidechain) activity. Read-only; zero
@@ -121,9 +143,22 @@ user's `claude login` (Max subscription). Three channels:
   grew a `fork` source value while docs listed four). Transcript tailing is the
   AUTHORITATIVE status channel; hooks only lower latency. Never exhaustively match
   hook enum fields; smoke-test hooks on every CLI version bump.
+  **Sharper caveat, measured 2026-08-01: a hook's verdict is worth LESS than the
+  permission-prompt channel's.** Claude Code guards `.claude/**` writes above
+  both the `permissions.allow` layer and the hook layer, so a hook returning
+  `permissionDecision: "allow"` satisfies the ordinary permission layer and then
+  fails the `.claude/` safety check applied on top — the user is asked, answers,
+  and the answer is discarded. This is not a bug to route around (the rules live
+  *in* `.claude/`, so a rule there granting write access to `.claude/` would be
+  privilege escalation); it is the ceiling on what the hook path can ever do, and
+  it is why the stream-json transport exists. See the §6 amendment.
 - **Headless mode** (v2, for fire-and-forget task panes):
   `claude -p --output-format stream-json --input-format stream-json` with
-  `--permission-mode` / `--allowedTools` for autonomy control.
+  `--permission-mode` / `--allowedTools` for autonomy control. *(Note 2026-07-31,
+  S-10: `--print` is NOT required for stream-json — the `--help` text saying so
+  is stale. Without it the same flags give a long-lived conversation, which is
+  the duplex transport above; headless is that transport plus `-p`, not a
+  separate mechanism.)*
 
 ### 5.3 Provider adapter interface
 
@@ -428,7 +463,7 @@ or sits idle awaiting input, and `Stop` when it finishes. On top:
   permission"), flash taskbar/dock icon, restore/focus window, OS toast, phone push
   (ntfy / Pushover), webhook.
 - **Actionable toasts**: permission toasts carry Allow / Deny buttons that send the
-  keystroke to that session's PTY — approve without switching windows.
+  verdict on that session's input route — approve without switching windows.
 - Rule conditions include visibility (research v2: Zed's `when_hidden`): fire a
   channel only when the session/app is backgrounded — no toast for a session
   already on screen. This is the calm default for S3.
@@ -459,16 +494,17 @@ badge (§5.11) so a glance answers "will this one interrupt me?"
 > view — previously "the Feed", read-only — is now the **Session view**: the
 > tab users actually work in, shaped like the VS Code extension panel. It
 > renders the conversation AND accepts prompts via a composer that writes to
-> the real CLI's PTY. Host-don't-reimplement holds: the composer is an input
-> route to the real CLI, never a reimplementation of it. (The right-panel
-> *event* feed of §5.12 is unrelated and keeps its name.)
+> the real CLI on the session's transport. Host-don't-reimplement holds: the
+> composer is an input route to the real CLI, never a reimplementation of it.
+> (The right-panel *event* feed of §5.12 is unrelated and keeps its name.)
 
 Each session offers two synchronized views of the same underlying session:
 
 - **Session** (primary, interactive): rendered from structured transcript/
   stream events — assistant text, tool calls, diffs, subagent sidechains — as
   styled blocks, with a **prompt composer** docked at the bottom (Enter
-  submits to the CLI's PTY; options row for autonomy/model context; typing
+  submits to the CLI over the session's transport; options row for autonomy/
+  model context; typing
   `/` pops a slash-command autocomplete — CLI built-ins + the §5.19
   registry's skills/commands — owner request 2026-07-22). In-app
   approvals (§5.16) render inline here as a review bar.
@@ -477,6 +513,10 @@ Each session offers two synchronized views of the same underlying session:
   hide-by-default was friction, not calm — "I like having a terminal").
   The Session view's terminal-handoff BAR jumps there when the CLI
   is in a raw TUI state (menus, /login, trust prompts).
+  *(2026-08-01: a session on the stream-json transport has no PTY, so this tab
+  has nothing to show. It must say so in one sentence and offer no dead
+  controls — E18-08 — rather than render an empty black pane. Whether the tab
+  survives at all is E18-16's call, on evidence; see the §6 amendment.)*
 
 **Block presentation (v2 — modeled on the Claude Code VS Code extension;
 owner screenshot 2026-07-21).** The reference look: a clean timeline with a
@@ -512,8 +552,10 @@ Feed customization (the "pleasing to the eye" surface):
   file tree / diff pane.
 
 Guardrail (revised 2026-07-21): the Session view's composer and approval bar
-are INPUT ROUTES to the real CLI (PTY write / hook verdict) — the view never
-fakes CLI behavior it can't route. When the CLI is in a raw TUI state the
+are INPUT ROUTES to the real CLI (a write on the session's transport / a
+permission verdict — hook verdict on the PTY transport, a `can_use_tool`
+response on stream-json) — the view never fakes CLI behavior it can't route.
+When the CLI is in a raw TUI state the
 rendered view can't answer (menus, /login, trust prompts), the Session view
 shows a full-width terminal-handoff bar above the composer that jumps there
 (P2 #125 — it was a header chip until then, and nobody saw it); permission
@@ -531,9 +573,10 @@ composer (or routing it Terminal-first) while the session has not yet
 reached its first SessionStart.
 
 **Interrupt (2026-07-23).** A stop button beside the composer send button —
-shown only while the session is `working` — writes Esc to the PTY, the CLI's
-own interrupt. Same input-route rule: we send the keystroke, the CLI decides
-what stopping means.
+shown only while the session is `working` — triggers the CLI's own interrupt:
+Esc on the PTY transport, an `interrupt` control request on stream-json
+(E18-12). Same input-route rule: we send the signal, the CLI decides what
+stopping means.
 
 **Per-session view tabs (the session window's chrome).** Every session surface —
 grid card, maximized, popped-out OS window — carries one compact VS Code-style
@@ -682,7 +725,7 @@ applicable). Inline actions on the event itself where possible.
 | Event | Payload / inline actions |
 |---|---|
 | Done | task label, duration, diff stat (+42 −7, 3 files) · [View diff] |
-| Needs permission | what's being asked · [Allow] [Deny] (sends keystroke to PTY) |
+| Needs permission | what's being asked · [Allow] [Deny] (sends the verdict on the session's input route) |
 | Needs input | preview of Claude's question · click → jump to terminal |
 | Error / crash | exit info · [Restart & resume] |
 | Stalled | no output for N min · [Peek] [Nudge] |
@@ -840,9 +883,27 @@ the change → user decides → hook returns decision → CLI proceeds. The TUI 
 never appears. Hook-timeout fallback: no response in time → "ask" → normal
 terminal prompt (nothing ever blocks on switchboard.ai).
 *Verification spike needed early:* exact decision semantics vs the TUI's richer
-options ("yes, don't ask again"). Fallback plumbing if hooks can't express it:
+options ("yes, don't ask again"). ~~Fallback plumbing if hooks can't express it:
 detect prompt via Notification hook, render our diff, send keystrokes to PTY —
-same UX, uglier mechanism.
+same UX, uglier mechanism.~~ **That fallback is REJECTED (2026-07-31).** It is
+screen-scraping a decision the CLI kept, which the amended P7's third line
+forbids outright and PHILOSOPHY §5 records as precedent (S-09 option 3): a
+mis-parse answers the wrong question on the user's behalf. Where hooks cannot
+express it, the answers are the stream-json transport (below) or saying plainly
+that the decision lives in the terminal (§5.10's handoff bar).
+
+> **The mechanism above is transport-scoped (added 2026-08-01, E18-01).**
+> Everything in this section describes the **PTY transport's** approval path,
+> and it is bounded by the hook ceiling recorded in §5.2: a hook's `allow` does
+> not satisfy the CLI's `.claude/` safety check, so those prompts cannot be
+> answered here at all. On the **stream-json transport** the CLI delegates the
+> same decision as a `can_use_tool` control request — richer payload
+> (`decision_reason`, `decision_reason_type`, `permission_suggestions`), no
+> hold-and-release dance, and the `.claude/` case included. **This section is
+> rewritten by E18-07, which builds it** — deliberately not before, so DESIGN
+> keeps describing what exists rather than what is planned. The plan-mode rule
+> above is one of the things E18-11 re-examines: it rests on hook semantics that
+> the control channel may not share.
 
 **The approval card.** Session identity banner (color stripe · icon · name · task
 label) + file path + full Monaco diff (side-by-side/inline) + button row:
@@ -871,11 +932,15 @@ tab — it's the real CLI. On top, GUI sugar that never forks CLI behavior:
   / user settings / Session Bus auto-attached), health status, enable/disable,
   add/remove. Implementation: read the real config files; mutate via the real CLI
   (`claude mcp add/remove/list`); a "reconnect" action injects `/mcp` into that
-  session's PTY (live reconnect is in-session CLI behavior — we type, not fake).
+  session's input route (live reconnect is in-session CLI behavior — we type,
+  not fake).
   Per-session view (what THIS session sees) and global view (all scopes).
 - **Session controls strip**: buttons/palette entries for common slash commands
   (`/model` picker, `/compact`, `/clear`, `/mcp`) that inject the real command
-  into the PTY. GUI is sugar; the CLI stays the source of truth (PHILOSOPHY P7).
+  into the session's input route. GUI is sugar; the CLI stays the source of
+  truth (PHILOSOPHY P7). *(Slash commands work as plain user text on the
+  stream-json transport too — verified S-10 probe C — so this surface is
+  transport-independent.)*
 - Non-Claude adapters map the same surface to their CLI's equivalents where they
   exist; the pane degrades gracefully to "not supported by this provider."
 
@@ -904,7 +969,8 @@ VS Code extension are single-session):
 - One pane: all marketplaces + plugins × WHICH SESSIONS each is active in
   (user/project/local scope resolved per session folder).
 - Scope-aware install/enable toggles → shell out to real CLI commands; "reload in
-  running sessions" injects `/reload-plugins` into affected PTYs.
+  running sessions" injects `/reload-plugins` on each affected session's input
+  route.
 - Add the company marketplace once; see instantly which projects carry it.
 - `strictKnownMarketplaces` (managed policy) surfaced explicitly: "blocked by org
   settings," never a mystery failure.
@@ -1086,7 +1152,7 @@ for a public store.
 
 **The core/extension split (decided 2026-07-18):**
 
-*Kernel — never extensions:* session manager + PTY hosting · layout/docking
+*Kernel — never extensions:* session manager + transport hosting · layout/docking
 engine · Session Bus + event stream · approval/permission enforcer (it judges
 extensions; cannot be one) · identity kit · attention queue · git service ·
 theming/i18n/logging runtimes · the extension host itself.
@@ -1227,7 +1293,7 @@ Designed answer:
 - **CLI version drift**: transcript schema, hook payloads, and storage layout
   are UNOFFICIAL contracts that move per Claude Code release. Compat layer:
   detect CLI version per session; warn on untested versions; degrade gracefully
-  — badges/feed may thin out, PTY hosting keeps working (fail-open applied to
+  — badges/feed may thin out, session hosting keeps working (fail-open applied to
   parsing). **Verified track record (research v2)**: the schema is explicitly
   unversioned (anthropics/claude-code#53516 is an open feature request);
   claude-code-log needed schema-driven parser fixes in three of its four
@@ -1587,6 +1653,9 @@ loading is the named follow-up, not a silent gap.
 ## 6. Tech Stack — Decision
 
 **Chosen: Electron + TypeScript + xterm.js + node-pty + Monaco + React.**
+*(Amended 2026-08-01 — a second transport, duplex stream-json over
+`child_process` pipes, joins node-pty as a per-session choice. See the
+amendment block at the end of this section.)*
 
 Reasoning:
 - Cross-platform requirement effectively eliminates WPF/WinUI (Windows-only) and
@@ -1604,6 +1673,65 @@ Considered and rejected:
   worst of both worlds. Revisit only if an Avalonia terminal control matures.
 - **Tauri (Rust + web)**: lighter footprint, but backend in Rust (new language cost)
   and PTY/process story is more DIY than node-pty. Not worth it for v1.
+
+### Amended 2026-08-01 — the transport is a per-session choice
+
+**Changed.** node-pty is no longer *the* substrate. A session's provider adapter
+declares its transport, and there are two: the **PTY** (node-pty + xterm.js, as
+above) and **duplex stream-json** (`child_process.spawn` over pipes,
+`--output-format stream-json --verbose --input-format stream-json`, with a
+bidirectional control channel). `StreamService` lands **beside** `PtyService`,
+not instead of it. Epic **E18** (`docs/plans/05-transport-migration.md`) is the
+migration; stream mode ships opt-in, per session, defaulting to PTY.
+
+**What forced it.** Our entire approval path rides PreToolUse hooks, and hooks
+are blind to anything the CLI decides *above* the hook layer. On 2026-08-01 that
+stopped being theoretical: editing a file in a project's own `.claude/` folder
+prompted the owner **twice** — our approval bar, then the CLI's own terminal
+prompt six seconds after he allowed it. The CLI honours a hook's
+`permissionDecision:"allow"` for the ordinary permission layer, then applies its
+`.claude/` safety check on top, which a hook verdict does not satisfy. **His
+answer was discarded.**
+
+There is no flag that fixes this while we host a TUI: `--permission-prompt-tool`
+is honoured under `--print` and **silently ignored by an interactive session**
+(`spike/findings/s-09-permission-prompt-tool.md`). The *identical* write arrived
+over stream-json as a `can_use_tool` control request carrying
+`decision_reason_type: "safetyCheck"` and a suggested remedy; we answered allow
+and the file was written, with no second prompt
+(`spike/findings/s-10-stream-json-transport.md`, probe B). **The same verdict is
+worth less from a hook than from the permission-prompt channel** — our approval
+path is structurally second-class, and only a transport change fixes that.
+
+Measured against **our own PATH CLI on the subscription**, not the VS Code
+extension's bundled copy: duplex stream-json runs without `--print`, streams
+token deltas, stays alive between turns, keeps writing the JSONL transcript, and
+reports the same five-hour/weekly rate-limit windows. No API key — the
+subscription-first constraint is not threatened.
+
+**What it costs.** The CLI's TUI affordances that have no stream equivalent:
+Ctrl-R history, vim mode, and the `/resume`, `/rewind` and `--from-pr` pickers.
+Each is either rebuilt — a P7 violation, since screen-scraping is rejected
+precedent (PHILOSOPHY §5) — or dropped honestly and said out loud. We also swap
+one undocumented dependency for another; stream-json is the SDK's own surface,
+which is a better bet than hook payloads that have mutated across patch releases
+with no changelog (§5.2), but it is not a safe one.
+**And a cost of unknown size, stated so it is not mistaken for zero:** six
+behaviours were never measured in stream mode (S-10 §3) — plan mode +
+`ExitPlanMode`, `AskUserQuestion`, sidechain rendering from `parent_tool_use_id`,
+the `/resume` · `/rewind` · `--from-pr` pickers, interrupt semantics, and
+long-run stability. Any of the first two turning out to be a decision the CLI
+*keeps* changes what this transport can offer, which is why the terminal's fate
+is decided after them and not now.
+
+**What it does NOT decide.** Whether the terminal goes away. PHILOSOPHY P7 as
+amended (§6, 2026-07-31) removed the constitutional objection to a native
+surface; it explicitly left the terminal's fate as an engineering call, still
+bound by the fail-open and escape-hatch tests (litmus 3 and 4). That call is
+**E18-16**, and it is made on evidence — whether plan mode, `ExitPlanMode` and
+`AskUserQuestion` turn out to be decisions the CLI *keeps* — not on preference.
+Anthropic's own extension keeps both modes (`claudeCode.useTerminal`), which is
+the precedent for our sequencing.
 
 **Performance envelope (research v2).** S6/S7 ("calm with twelve", "background
 sessions cost ~nothing") are conditional on mechanism, not free: xterm.js
@@ -1662,7 +1790,8 @@ Layout: grid of session cards (1–6 visible), each expandable to full window; s
 always shows all sessions with live status; watchers float or dock at bottom.
 
 **Orchestrator / subwindow model.** The main window IS the orchestrator: the single
-main process owns all sessions, PTYs, the Session Bus, and GitService. Any session
+main process owns all sessions and their transports, the Session Bus, and
+GitService. Any session
 card can pop out into its own OS-level subwindow (Electron multi-window over shared
 main-process state). Popped-out windows remain owned by the orchestrator: drag-and-drop
 and context transfer work across OS windows, sidebar still tracks them. Two ways back
@@ -1853,7 +1982,8 @@ mode + session archive v1; fleet snapshots + layout DSL.)*
 
 1. **Prompt composer vs typing directly in the terminal.** The composer enables
    @-references and drag-drop targets, but duplicates the CLI's own input line.
-   Proposal: composer is optional per session; it forwards to the PTY stdin. Validate
+   Proposal: composer is optional per session; it forwards to the session's stdin
+   (the PTY, or the stream-json pipe — §6 amendment 2026-08-01). Validate
    this feels right early in Phase 2.
 2. ~~Hook injection etiquette~~ — **RESOLVED** (Spike 01 / S-02, CLI 2.1.215):
    `claude --settings <abs-file-path>` at spawn. Hooks fire, merge with
@@ -2038,8 +2168,8 @@ mode + session archive v1; fleet snapshots + layout DSL.)*
   delivery policy and the §5.11 plan-as-progress chip).
 - **Steer-from-review-surface** (GitHub mission-control pattern): type a steering
   message directly from an approval card / review-dashboard row, routed to that
-  session's composer/PTY. §5.16 deny-with-feedback already covers the denial
-  case; this is the affirmative-guidance sibling.
+  session's composer / input route. §5.16 deny-with-feedback already covers the
+  denial case; this is the affirmative-guidance sibling.
 - **Remote-host sessions** (VS Code Remote model): sessions running on a dev
   server/VPS over SSH, controlled from the local app. Big lift; noted as the
   only "other platform" worth future thought — the 3-OS desktop scope itself is

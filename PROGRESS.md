@@ -6,13 +6,13 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.** Working tree clean, everything pushed,
-main green. **#108 MERGED 2026-08-01 as PR #130** (see below). The only thing
-still running is the **S-11 probe**, which is a background measurement, not a
-work item.
-**Next up: #131 (P2-E18-01)** — the first item of the **stream-json transport
-migration**, scoped and filed by `/pm` on 2026-08-01 as epic **E18**, issues
-**#131–#140**. See the START HERE block immediately below.
+**In progress:** **#131 (P2-E18-01) — DESIGN.md amendment: the transport is a
+choice.** Started 2026-08-01. Docs-only, the first item of epic **E18**. Branch
+`feature/131-design-transport-amendment`. Also still running: the **S-11 probe**,
+a background measurement, not a work item.
+**Next up after #131: #132 (P2-E18-02)** — the transport seam. The E18 queue is
+**#131–#140**, scoped and filed by `/pm` on 2026-08-01. See the START HERE block
+immediately below.
 **Also newly open and unscheduled: #129** (a transcript-discovery session that
 has GIVEN UP still full-scans the root for ever — filed 2026-08-01 off #108's
 work). Unrelated to the transport; takeable any time; not blocking anything.
