@@ -10,14 +10,25 @@ terminal. New sessions stay disabled until it's found.
 **A session sits on "starting" and won't finish.**
 Some Claude Code start-up prompts — trust dialogs, the "resume from summary"
 picker on a very long conversation — appear only in the terminal, where
-switchboard can't see them. After about eight seconds the card offers a
-**continue in Terminal ↗** chip. Click it, answer the prompt there, and the
-session carries on normally.
+switchboard can't see them. After about eight seconds the Session tab shows a
+bar across the bottom: **"Claude is showing a start-up dialog."** Click **Open
+Terminal**, answer the prompt there, and the session carries on normally.
 
 **Claude asked me in the Terminal instead of in the card.**
-That's the deliberate fallback. Whenever switchboard can't put the question in
-front of you, it hands it back to Claude Code's own prompt rather than
-answering on your behalf. Nothing gets auto-approved.
+That's the deliberate fallback, and the Session tab tells you when it happens —
+a coloured bar along the bottom with an **Open Terminal** button, in the same
+place the Allow/Deny bar appears.
+
+Two different things can put it there. Usually switchboard simply couldn't get
+the question in front of you and handed it back rather than answering on your
+behalf. But some decisions **Claude Code handles in its own prompt without
+offering them to switchboard at all** — most commonly writing to a project's own
+`.claude` folder, which it treats as a sensitive location. You'll see it every
+time such a file changes, and no setting on our side turns it off, because
+we're never asked in the first place. Answer it in the Terminal; choosing the
+"…for this session" option stops it repeating until that session ends.
+
+Either way, **nothing gets auto-approved.**
 
 **The Session tab is empty but the Terminal is working.**
 The tab itself tells you which case you're in — read what it says before doing

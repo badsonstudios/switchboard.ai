@@ -605,7 +605,7 @@ Work items:
 - **P2-E10-01 · Tab rename + Terminal hidden by default — M (§5.10, revised
   2026-07-21 from owner screenshot).** Rename Feed → Session (i18n, tests);
   **Terminal leaves the default strip** — shown via the card ⋯ menu /
-  per-session toggle or the "continue in Terminal" chip (re-labeled from
+  per-session toggle or the terminal-handoff bar (re-labeled from
   "waiting in", scoped to raw-TUI needs-input states; E10-04 takes
   permission prompts). Shown/hidden persists per session (ui blob).
   *Done when:* default strip reads Session · Changes · History-soon; the ⋯

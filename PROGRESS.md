@@ -6,7 +6,17 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.** **#107 (P2-E15-10) MERGED 2026-07-31 as
+**In progress:** **#125 — terminal-handoff bar — IS IN REVIEW AS PR #126**
+(opened 2026-08-01). Gate green: lint + typecheck + **621 unit (+9) + 98 e2e
+(+1)**, 1 skipped. **One review round, 1 blocker + 8 should-fixes, all taken.**
+The blocker was mine and was a *regression in the very thing the item exists to
+fix*: I used the `-ink` token on a hue-tinted background, and on nordic — the
+default theme — ink IS the hue, so the bar's own prose measured **3.89:1**,
+worse than the chip it replaced (which used `--text`). Colour now lives in the
+border and the tint; the words are `--text` at 8:1.
+**Next after it: #108 (P2-E15-11), and S-11** (the six unmeasured stream-json
+items — see the LIVE INVESTIGATION block below).
+Before it: **#107 (P2-E15-10) MERGED 2026-07-31 as
 PR #124**, all 5 CI jobs green. Gate: lint + typecheck +
 **612 unit (+43) + 97 e2e (+4)**, 1 skipped; `npm run check:transcripts` run
 against the real CLI 2.1.220 — bound, and **no drift**. **Two review rounds, 3
@@ -158,12 +168,12 @@ anything they turn up is a fix-forward, not a revert.
 > **NEXT: nothing is filed.** This needs `/pm` to decide whether it is a new
 > epic or a re-scoped E11, and Dan's go-ahead before any issue exists.
 >
-> **Also outstanding, ours, cheap, and real regardless of the above:** when the
-> CLI asks something we cannot answer, the Session tab shows a **10px chip in the
-> top-left header row in the `--status-needs-input` hue** ("continue in Terminal
-> ↗"), while every permission Dan has ever answered arrived as a full-width
-> tinted bar at the BOTTOM. He looked where the bar always is. It should be a
-> real bar, in the permission colour, in the same place. **Not yet filed.**
+> **The fallback is FIXED — #125, in review as PR #126 (2026-08-01).** When the
+> CLI keeps a decision, the Session tab now shows a full-width bar docked above
+> the composer, where every permission Dan has ever answered appeared, instead
+> of the 10px header chip nobody saw. Under amended P7 this is not a
+> consolation prize — it is the constitution's *prescribed* behaviour for a
+> decision the CLI keeps, and it stays correct after any transport migration.
 Before it: **#102 (P2-E15-05) + #103 (P2-E15-06) MERGED 2026-07-31 as PR #123**,
 all 5 CI jobs green (windows/ubuntu/macos unit + e2e windows/ubuntu). Gate was
 lint + typecheck + 569 unit + 94 e2e. **Dan hand-tested the
@@ -372,6 +382,53 @@ a "[Dan eyeball]" note.**
   to Sonnet rates** — it invents a number. Not urgent, not waiting on anything.
 
 ## Log
+
+- 2026-08-01 — **#125: a decision the CLI keeps gets a bar, not a whisper.**
+  The fallback affordance was a **10px chip in the top-left header strip**, in
+  the `--status-needs-input` hue, while every permission Dan had ever answered
+  arrived as a full-width tinted bar docked above the composer. On 2026-07-31 he
+  looked at the bottom, saw nothing, and concluded the app had lost the session.
+  **The chip was rendering correctly the whole time** — which is why this was
+  never a logic bug and why the fix is presentational.
+  Under **P7 as amended the same day**, this is the constitution's prescribed
+  behaviour, not a consolation prize: a decision the CLI *keeps* may never be
+  faked (screen-scraping is rejected precedent, §5), so *"say so plainly and
+  route the user to where the decision lives"* is the whole of what we are
+  permitted to do — which makes doing it well the entire job. It also survives
+  any transport migration: there will always be decisions the CLI keeps.
+  Shape follows `binding-copy.ts` from #107 — a pure `terminal-handoff.ts`
+  decides *what* to say, `TerminalHandoffBar` renders it in `ApprovalBar`'s dock.
+  **Review: 1 blocker, 8 should-fixes, all taken. The blocker was mine and was a
+  regression in the exact sentence the item exists to make readable.** I reached
+  for the `-ink` token — the #107 round-2 lesson — but applied it over a
+  *hue-tinted* background, and on **nordic, the default theme, ink IS the hue**
+  (tokens.css says so in as many words). Measured: **3.89:1**, against the 4.5
+  bar the drift test enforces, and *worse than the chip I replaced*, which used
+  `--text`. Colour now carries the tone in the border and the tint; the words are
+  `--text` at 8:1. *The lesson is narrower than "use ink": a token validated
+  against one background is not validated against a tinted one.*
+  Four more worth keeping. **The bar flashed a false statement after every
+  Allow** — the queue pops synchronously while `permission-resolved` needs a
+  full IPC round trip, so for a frame the card read "needs-permission with
+  nothing held" and told the user we couldn't answer *in the spot they had just
+  clicked*; a `recentlyDecided` window closes it. **The suppression predicate
+  disagreed with the render predicate** (`!!approval` vs `approval && onDecide`)
+  — unreachable today, but if they ever diverged the user would get neither
+  surface; they are one expression now. **My new e2e's positional assertion
+  could evaporate silently** — it compared against a feed element that only
+  exists while the feed is EMPTY, behind a `.catch(() => null)`; it asserts
+  against the composer now, unconditionally. And **the copy asserted something
+  our own findings contradict** — it said the CLI "always keeps `.claude` edits
+  for itself", but S-09/S-10 proved that guard *is* delegatable, just not to our
+  transport. Reworded to describe what we observe rather than the CLI's nature,
+  so it does not quietly become false the day a migration lands.
+  Two revert-proofs, each re-run: dropping `recentlyDecided` fails the in-flight
+  test; pointing a tone at a non-existent token fails the new theme-token test
+  (which replaced a tautology that asserted the TypeScript union back to itself).
+  Gate: lint + typecheck + **621 unit (+9) + 98 e2e (+1)**, 1 skipped.
+  Docs: `03-session-view.md` + `11-troubleshooting.md` rewritten around the bar;
+  **DESIGN §5.10/§5.16 and the E9 plan entry corrected in 4 places** — they still
+  documented the chip as shipped.
 
 - 2026-07-31 — **P2-E15-10 (#107) MERGED as PR #124 (5 CI jobs green): the
   transcript contract is written down, and an empty Session view stops being a

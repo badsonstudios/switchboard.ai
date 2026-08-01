@@ -475,7 +475,7 @@ Each session offers two synchronized views of the same underlying session:
 - **Terminal** (xterm.js + PTY): the real CLI — always present as the
   **LAST tab** (owner reversal 2026-07-22: one day of dogfooding showed
   hide-by-default was friction, not calm — "I like having a terminal").
-  The Session view's "continue in Terminal" chip jumps there when the CLI
+  The Session view's terminal-handoff BAR jumps there when the CLI
   is in a raw TUI state (menus, /login, trust prompts).
 
 **Block presentation (v2 — modeled on the Claude Code VS Code extension;
@@ -515,7 +515,9 @@ Guardrail (revised 2026-07-21): the Session view's composer and approval bar
 are INPUT ROUTES to the real CLI (PTY write / hook verdict) — the view never
 fakes CLI behavior it can't route. When the CLI is in a raw TUI state the
 rendered view can't answer (menus, /login, trust prompts), the Session view
-shows a "continue in Terminal" chip that jumps there; permission prompts are
+shows a full-width terminal-handoff bar above the composer that jumps there
+(P2 #125 — it was a header chip until then, and nobody saw it); permission
+prompts are
 answered inline via the §5.16 hook path, not the chip.
 
 **Startup TUI dialogs (2026-07-23, observed live).** The CLI can open an
@@ -524,7 +526,7 @@ picker on `--resume` of a big conversation. The Session view cannot see it
 (no hooks, no transcript yet), and a composer submit goes straight into the
 dialog — the owner's Enter blindly confirmed the picker. Mitigations: a
 session that stays `starting` past a normal boot window surfaces the
-"continue in Terminal" chip (shipped); longer-term, consider muting the
+terminal-handoff bar (shipped, #125); longer-term, consider muting the
 composer (or routing it Terminal-first) while the session has not yet
 reached its first SessionStart.
 

@@ -111,9 +111,12 @@ test.describe('inline approval bar (E10-04)', () => {
         tool_input: { command: 'Get-ChildItem C:/Users/dan/Downloads', description: 'List Downloads' },
       }),
     }).then((r) => r.text());
-    // the bar shows IN THE SESSION TAB — no chip-to-terminal dance
+    // the bar shows IN THE SESSION TAB — and the "answer it in the Terminal"
+    // handoff must NOT appear beside it (#125): this decision was delegated to
+    // us, so sending the user to the terminal would push them away from the
+    // very control that answers it
     await expect(w.getByText('Allow PowerShell?')).toBeVisible({ timeout: 10_000 });
-    await expect(w.getByText('continue in Terminal ↗')).toHaveCount(0);
+    await expect(w.locator('[data-handoff]')).toHaveCount(0);
     await w.getByRole('button', { name: 'Allow', exact: true }).click();
     expect(JSON.parse(await pending).hookSpecificOutput.permissionDecision).toBe('allow');
   });
@@ -269,4 +272,49 @@ test.describe('inline approval bar (E10-04)', () => {
     expect(await held, 'the hold outlived the renderer').toBe('{}');
   });
 
+  // #125 — the case that started this: a decision the CLI KEPT. Dan hit it live
+  // on 2026-07-31 (a `.claude\scripts\coverage.sh` write). No PreToolUse ever
+  // reaches us, so there is no hold and no approval bar; the only signal is the
+  // CLI's own debounced Notification. The Session tab used to answer that with
+  // a 10px chip in the top-left header strip while the user stared at the
+  // bottom, where every permission they had ever answered appeared.
+  test('a permission the CLI KEPT gets a full bar in the Session tab, not a chip (#125)', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    const title = folder.split(/[\\/]/).pop()!;
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+
+    const post = await hookPoster(a);
+    // Exactly what the CLI sent in the live incident: not a PreToolUse we can
+    // hold, just a nudge that it is waiting on a human.
+    await post(title, {
+      hook_event_name: 'Notification',
+      notification_type: 'permission_prompt',
+      message: 'Claude needs your permission to use Write',
+    });
+
+    const bar = w.locator('[data-handoff="permission"]');
+    await expect(bar).toBeVisible({ timeout: 15_000 });
+    await expect(bar.getByText('Claude is asking permission in the terminal')).toBeVisible();
+    // it explains WHY we cannot answer, rather than just pointing elsewhere
+    await expect(bar.getByText(/rather than offering it to switchboard/)).toBeVisible();
+
+    // Docked at the BOTTOM, directly above the composer — the entire point of
+    // #125. Asserted against the composer, which always exists: an earlier
+    // version compared against the feed scroller behind a `.catch(() => null)`,
+    // so on any run where a block had arrived the check silently evaporated.
+    const barBox = (await bar.boundingBox())!;
+    const composerBox = (await w.locator('textarea').first().boundingBox())!;
+    expect(barBox.y + barBox.height).toBeLessThanOrEqual(composerBox.y + 2);
+    // in the bottom half of the window, i.e. emphatically not the header strip
+    // it used to live in. `viewportSize()` is null for an Electron window, so
+    // ask the page for its real height.
+    const winHeight = await w.evaluate(() => window.innerHeight);
+    expect(barBox.y).toBeGreaterThan(winHeight / 2);
+
+    // one click reaches the real prompt
+    await bar.getByRole('button', { name: 'Open Terminal' }).click();
+    await expect(w.locator('.xterm')).toBeVisible({ timeout: 10_000 });
+  });
 });

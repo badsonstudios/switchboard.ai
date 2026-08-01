@@ -73,15 +73,27 @@ Switch any time; it applies instantly and is remembered per session.
 
 The real Claude Code interface, always available as the last tab. It's the same
 session — not a copy — so anything switchboard can't handle finishes here.
-You'll be sent here on purpose for things like the model picker, and a
-**continue in Terminal ↗** chip appears whenever a session is waiting on
-something only the terminal can answer.
+You'll be sent here on purpose for things like the model picker.
 
-**When Claude asks you a question** — a numbered list of choices, the kind you
-pick with the arrow keys — that dialog lives in the Terminal. The session marks
-itself **needs input**, raises an entry in Events, and shows the chip, so you
-can tell at a glance that it's stopped and waiting for you rather than still
-working. Answer it in the Terminal and the session carries on. Answering these
+**When something can only be answered in the terminal, the Session tab says
+so** — a coloured bar across the bottom, in the same place the approval bar
+appears, with an **Open Terminal** button. You'll see it in three situations:
+
+- **"Claude is asking permission in the terminal."** Some decisions Claude Code
+  always keeps for itself — most commonly edits inside a project's own
+  `.claude` folder. switchboard isn't allowed to answer those on your behalf,
+  and won't pretend it can.
+- **"Claude is waiting for your answer."** A question with a numbered list of
+  choices, the kind you pick with the arrow keys.
+- **"Claude is showing a start-up dialog."** Trusting a folder, or picking a
+  conversation to resume.
+
+For the first two the session also marks itself **needs input** or **needs
+permission** and raises an entry in Events, so you can tell at a glance that
+it's stopped and waiting rather than still working. (A session still starting
+up doesn't raise an Events entry — it hasn't got going yet.) Answer it in the
+Terminal
+and the session carries on. Answering these
 inside the Session view is planned, not built.
 
 ## Changes and History
