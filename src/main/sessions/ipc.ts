@@ -332,12 +332,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         settingsFor: plan.buildSettings,
         autonomy,
         resumeSessionId: plan.resumeSessionId,
-        // Which transport to ASK for (P2-E18-08a). Env-selected for now, the
-        // same way the two fakes are, because this item deliberately ships no
-        // UI — the per-session setting is P2-E18-08b (#149). The adapter still
-        // gets the final say: it answers in the recipe, and one that cannot
-        // speak stream-json returns a PTY recipe we honour.
-        transport: deps.preferredTransport?.(),
+        // Which transport to ASK for. The CARD's own choice wins (P2-E18-08b);
+        // the env default is the escape hatch that predates the setting. The
+        // adapter still has the final say — it answers in the recipe, and one
+        // that cannot speak stream-json returns a PTY recipe we honour.
+        transport: prior?.transport ?? deps.preferredTransport?.(),
       });
       cardOfLive.set(record.id, opts.cardId);
       // A provider with no transcripts is never watched at all — the session is
@@ -488,6 +487,23 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   // drop only the live session (restart): keep the record so it can respawn
   broker.handle('sessions:dropLive', (_e, cardId: string) => dropLiveForCard(cardId));
+
+  // per-card transport (P2-E18-08b). REFUSED while a session is live: a
+  // running CLI cannot change how we talk to it, and silently accepting the
+  // click would leave the card's stored answer disagreeing with the process
+  // actually running — the user would believe they had switched.
+  broker.handle('sessions:setTransport', (_e, cardId: string, transport: string) => {
+    if (typeof cardId !== 'string') return { ok: false, reason: 'unknown-card' };
+    if (transport !== 'pty' && transport !== 'stream') return { ok: false, reason: 'bad-value' };
+    for (const [liveId, cid] of cardOfLive) {
+      if (cid === cardId && manager.get(liveId)) return { ok: false, reason: 'session-running' };
+    }
+    const prior = deps.persist.list().find((s) => s.id === cardId);
+    if (!prior) return { ok: false, reason: 'unknown-card' };
+    deps.persist.upsert({ ...prior, transport });
+    log.info('card transport changed', { cardId, transport });
+    return { ok: true };
+  });
 
   // per-card autonomy (E10-05): persists to the record; the CLI can't change
   // mode mid-flight, so it applies on the NEXT spawn/resume of this card

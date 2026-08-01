@@ -59,6 +59,8 @@ interface Live {
    *  (reveal, P2-E15-08) must not claim 'starting': no further push is coming
    *  for an idle session, and the card would sit there lying about it */
   status?: string;
+  /** which transport hosts it (P2-E18-08b) — the Terminal tab needs to know */
+  transport?: 'pty' | 'stream';
 }
 
 function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element {
@@ -146,6 +148,25 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     setCardAutonomy(next);
     void window.switchboard.sessions.setAutonomy(cardId, next);
   };
+  // per-card transport (P2-E18-08b). Applies on the NEXT spawn — a running CLI
+  // cannot change how we talk to it — so main REFUSES while a session is live
+  // and we surface the refusal rather than swallowing it.
+  const [cardTransport, setCardTransport] = React.useState<'pty' | 'stream'>('pty');
+  const [transportRefused, setTransportRefused] = React.useState(false);
+  const toggleTransport = (): void => {
+    if (!cardId) return;
+    const next = cardTransport === 'stream' ? 'pty' : 'stream';
+    void window.switchboard.sessions.setTransport(cardId, next).then((r) => {
+      if (r.ok) {
+        setCardTransport(next);
+        setTransportRefused(false);
+      } else {
+        // say so: a click that silently does nothing teaches the user that the
+        // control is decorative
+        setTransportRefused(true);
+      }
+    });
+  };
   // held permissions awaiting decisions (E10-04) — a QUEUE, not a slot:
   // parallel tool calls each hold their own request (review P0#4)
   const [permQueue, setPermQueue] = React.useState<
@@ -210,12 +231,15 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
           badge: record.identity.langBadge,
           autonomy: record.autonomy,
           status: record.status,
+          transport: record.transport,
         });
         // show the usage strip from the start (zeros until the first prompt),
         // so it's visibly present rather than appearing only after activity
         setUsage({ usage: record.priorUsage ?? ZERO_USAGE, model: record.priorModel });
         if (record.taskLabel) setTaskLabel(record.taskLabel);
         setCardAutonomy(record.autonomy ?? 'ask');
+        // the card's stored choice, so the menu shows what will happen NEXT spawn
+        setCardTransport(record.transport === 'stream' ? 'stream' : 'pty');
       })
       .catch(() => {
         setExited({ code: -1, crashed: true }); // spawn failed — show the overlay
@@ -513,6 +537,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     folder,
     ...docTheme(),
     status,
+    transport: live?.transport,
     autonomy: cardAutonomy,
     model: usage?.model,
     binding: binding?.binding,
@@ -719,6 +744,22 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                       </div>
                     ) : (
                       <>
+                        <button
+                          onClick={toggleTransport}
+                          title={t('grid.menuTransportHint')}
+                          style={menuItemStyle(false)}
+                        >
+                          {t(
+                            cardTransport === 'stream'
+                              ? 'grid.menuTransportStream'
+                              : 'grid.menuTransportPty'
+                          )}
+                        </button>
+                        {transportRefused && (
+                          <div style={{ padding: '2px 8px 6px', color: 'var(--muted)', fontSize: 10 }}>
+                            {t('grid.menuTransportBusy')}
+                          </div>
+                        )}
                         <button
                           disabled={controlsLocked}
                           title={

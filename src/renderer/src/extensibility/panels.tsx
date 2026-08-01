@@ -7,6 +7,8 @@
 // the ui blob (`viewTab.<cardId>`) and named by the E9-01 commands and by
 // `GridController.setView`. 'feed' is the Session view — the internal id
 // predates the rename and changing it would be a migration for no gain.
+import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { manifestFor, PanelContext, PanelContribution } from './contributions';
 import { RendererRegistry } from './registry-instance';
 import { safely } from './boundary';
@@ -102,6 +104,43 @@ export const sessionPanels: PanelContribution[] = [
     titleKey: 'grid.viewTerminal',
     order: 100,
     keepMounted: true,
-    render: (ctx) => <TerminalPane sessionId={ctx.sessionId} visible={ctx.visible} />,
+    // A stream session has NO PTY, so there is nothing for xterm to attach to.
+    // Saying that in one sentence is the honest degrade (P2-E18-08b); rendering
+    // an empty black rectangle would look like a broken terminal, which is the
+    // failure mode #125 was about — a surface that is technically correct and
+    // reads as breakage.
+    render: (ctx) =>
+      ctx.transport === 'stream' ? (
+        <StreamTerminalNotice />
+      ) : (
+        <TerminalPane sessionId={ctx.sessionId} visible={ctx.visible} />
+      ),
   },
 ];
+
+/**
+ * What the Terminal tab shows for a STREAM session (P2-E18-08b).
+ *
+ * There is no PTY to attach to, so xterm would render an empty black
+ * rectangle — technically correct and indistinguishable from a broken
+ * terminal, which is exactly the failure #125 was about. Say what is true
+ * instead, and say what the user gains rather than only what is missing.
+ */
+function StreamTerminalNotice(): React.JSX.Element {
+  const { t } = useTranslation();
+  return (
+    <div
+      style={{
+        padding: '16px 18px',
+        fontSize: 12,
+        lineHeight: 1.6,
+        color: 'var(--text)',
+        fontFamily: 'var(--font-ui)',
+        maxInlineSize: 560,
+      }}
+    >
+      <div style={{ fontWeight: 700, marginBlockEnd: 6 }}>{t('terminal.streamTitle')}</div>
+      <div style={{ color: 'var(--muted)' }}>{t('terminal.streamBody')}</div>
+    </div>
+  );
+}

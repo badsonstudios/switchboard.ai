@@ -21,6 +21,8 @@ export interface SessionRecordDto {
   nativeSessionId?: string;
   pid?: number;
   exitCode: number | null;
+  /** which transport hosts this session (P2-E18-08b) */
+  transport?: 'pty' | 'stream';
 }
 
 // The bridge grows with each subsystem. Every surface is promise/event based.
@@ -108,6 +110,17 @@ const api = {
       ipcRenderer.invoke('sessions:setTaskLabel', cardId, label),
     setAutonomy: (cardId: string, autonomy: string): Promise<void> =>
       ipcRenderer.invoke('sessions:setAutonomy', cardId, autonomy),
+    /**
+     * Choose a card's transport (P2-E18-08b). Applies to the NEXT spawn — a
+     * running CLI cannot change how we talk to it, so this REFUSES while a
+     * session is live rather than storing an answer that disagrees with the
+     * process actually running.
+     */
+    setTransport: (
+      cardId: string,
+      transport: 'pty' | 'stream'
+    ): Promise<{ ok: boolean; reason?: string }> =>
+      ipcRenderer.invoke('sessions:setTransport', cardId, transport),
     rename: (id: string, title: string): Promise<SessionRecordDto | undefined> =>
       ipcRenderer.invoke('sessions:rename', id, title),
     onStatus: (cb: (change: unknown) => void): (() => void) => {

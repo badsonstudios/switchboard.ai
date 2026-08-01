@@ -21,6 +21,17 @@ export interface FakeStreamHost {
   exit(code: number): void;
   /** Absolute-path join/resolve, injected so path semantics are testable. */
   resolve(cwd: string, target: string): string;
+  /**
+   * Append one line to this conversation's JSONL transcript (P2-E18-08b).
+   *
+   * The REAL CLI writes a transcript in stream mode too — S-10 confirmed it,
+   * and that is exactly why the transcript stack survives the migration. The
+   * fake did not, so a stream session's Session view read "Looking for this
+   * session's transcript…" for ever and the Feed could never be tested against
+   * it. A fake that is missing something the real thing does is a fake that
+   * hides a bug.
+   */
+  appendTranscript?(line: Record<string, unknown>): void;
 }
 
 export const FAKE_SESSION_ID = '00000000-fake-4000-8000-000000000000';
@@ -44,6 +55,7 @@ export class FakeStreamProtocol {
   private onUser(msg: Record<string, unknown>): void {
     const text = extractText(msg.message);
     const cwd = this.host.cwd();
+    this.transcribe('user', { role: 'user', content: [{ type: 'text', text }] }, cwd);
 
     // ONCE PER TURN, not once per session. S-11 measured the real CLI doing
     // exactly this (4 turns -> 4 `system:init`). The fake reproduces the
@@ -142,6 +154,19 @@ export class FakeStreamProtocol {
     });
   }
 
+  /** Mirror a turn into the JSONL transcript, the way the real CLI does. */
+  private transcribe(type: 'user' | 'assistant', message: unknown, cwd?: string): void {
+    this.host.appendTranscript?.({
+      type,
+      sessionId: FAKE_SESSION_ID,
+      cwd: cwd ?? this.host.cwd(),
+      timestamp: new Date().toISOString(),
+      isSidechain: false,
+      isMeta: false,
+      message,
+    });
+  }
+
   private emitAssistantText(text: string): void {
     // deltas first, then the assembled message — the order S-10 observed
     // (stream_event xN -> assistant -> result)
@@ -153,12 +178,14 @@ export class FakeStreamProtocol {
         parent_tool_use_id: null,
       });
     }
+    const message = { role: 'assistant', content: [{ type: 'text', text }] };
     this.emit({
       type: 'assistant',
-      message: { role: 'assistant', content: [{ type: 'text', text }] },
+      message,
       session_id: FAKE_SESSION_ID,
       parent_tool_use_id: null,
     });
+    this.transcribe('assistant', message);
   }
 
   private emitResult(isError = false): void {
