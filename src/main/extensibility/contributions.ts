@@ -4,6 +4,7 @@
 // half of that. Contracts here may reference main-only concepts freely.
 import { SlashCommand } from '../../shared/slash-commands';
 import { CapabilityManifest } from '../../shared/extensibility/registry';
+import { TransportKind } from '../transport/transport';
 
 /**
  * Provider adapter contract v0 (§5.3). The full interface grows in P1-E2-02;
@@ -149,6 +150,20 @@ export interface SpawnRecipe {
   args: string[];
   /** env DELTAS applied over a scrubbed process env (see S-01 findings) */
   env: Record<string, string | undefined>;
+  /**
+   * Which transport hosts this process (P2-E18-02; DESIGN §6 amendment
+   * 2026-08-01). Omitted means `'pty'` — every adapter written before E18 keeps
+   * working untouched, which is what makes the rest of the epic additive.
+   *
+   * The ADAPTER decides, not the host: the flags in `args` and the transport
+   * are one decision (`--output-format stream-json` is meaningless on a PTY,
+   * and a PTY recipe carries none of it). Splitting them across two owners is
+   * how they drift apart.
+   *
+   * An unrecognised value THROWS at spawn rather than falling back — see
+   * `UnknownTransportError`.
+   */
+  transport?: TransportKind;
 }
 
 /**

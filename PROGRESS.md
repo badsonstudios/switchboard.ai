@@ -6,14 +6,19 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#131 (P2-E18-01) is DONE and awaiting Dan's review as
-PR #141** — DESIGN.md amendment, the first item of epic **E18**. Docs-only;
-gate was lint + typecheck + **654 unit** (unchanged count — no code touched).
-Branch `feature/131-design-transport-amendment`. Also still running: the **S-11
+**In progress:** **#132 (P2-E18-02) — the transport seam.** Branch
+`feature/132-transport-seam`. Gate green: lint + typecheck + **665 unit (+11)**
++ **98 e2e**, 1 skipped, **and not one existing test edited** — which is this
+item's whole acceptance criterion.
+**#131 (P2-E18-01) MERGED 2026-08-01 as PR #141**, all 5 CI jobs green.
+**Dan changed the working mode 2026-08-01:** he authorised **merge-and-continue
+through the E18 spine** — I squash-merge each E18 PR on green CI and roll into
+the next item, rather than stopping at the two gates. Applies to **#132–#140**;
+genuine blockers and decisions that are his still stop the run. *(Recorded here
+because it overrides `00-process.md`'s "Dan reviews and squash-merges" for this
+epic only.)*
+**Next up: #133 (P2-E18-03)** — StreamService. Also still running: the **S-11
 probe**, a background measurement, not a work item.
-**Next up: #132 (P2-E18-02)** — the transport seam. **Do not start it before
-#141 merges**: #132's whole acceptance criterion is *"all existing tests pass
-unedited"* against a DESIGN that already says the transport is a choice.
 The E18 queue is **#131–#140**, scoped and filed by `/pm` on 2026-08-01. See the
 START HERE block immediately below.
 **Also newly open and unscheduled: #129** (a transcript-discovery session that
@@ -628,6 +633,52 @@ a "[Dan eyeball]" note.**
   to Sonnet rates** — it invents a number. Not urgent, not waiting on anything.
 
 ## Log
+
+- 2026-08-01 — **#132 (P2-E18-02) → PR: the transport seam. Zero behaviour
+  change, and that is the deliverable.**
+  `SessionManager` already took a narrow `PtyLike` (spawn/remove; pid/onExit/
+  kill) from P1, so this widened an existing interface rather than inventing
+  one: `PtyLike` is now an alias of `SessionTransport`, `SpawnRecipe` gained an
+  optional `transport?: 'pty' | 'stream'` defaulting to `'pty'`, and the manager
+  routes on it. The PTY stays a positional constructor arg and extra transports
+  arrive in an optional 5th — so **every existing call site and test compiles
+  unedited**, which was the acceptance criterion. 654 → 665 unit; the 11 new are
+  all about routing.
+  **An unimplemented transport THROWS rather than falling back to the PTY**, and
+  resolves BEFORE the record is created so nothing is orphaned — the same
+  contract as the "no provider adapter" throw it sits beside. A silent fallback
+  would hand a stream-json adapter a terminal and surface hours later as garbled
+  output or a session that never answers a permission request.
+  **`buildEnv` / the S-01 landmine list moved to `transport/env.ts`** and is
+  re-exported from `pty-service.ts` so the old import path still works. The
+  scrub is a property of spawning a child from Electron, not of node-pty. A test
+  asserts the two import paths are the SAME function object, because a copied
+  second list is how "both transports behave the same" stops being true without
+  anything failing.
+  **Beyond the issue text, and worth the scope:** `sessions/ipc.ts` called
+  `ptys.remove(liveId)` directly on card close, bypassing the seam entirely —
+  for a stream session that is a no-op on a service that never had it, i.e. **a
+  leaked child process nobody would notice until the count grew.** The teardown
+  moved inside `SessionManager.remove()`, where the record's transport is known.
+  Its doc comment had claimed it killed the process since P1 while the body did
+  not; now it does.
+  **The ordering inside `remove()` is load-bearing and I got its rationale wrong
+  first.** The record is deleted BEFORE the teardown because a transport's
+  `remove()` fires `onExit` synchronously and `apply()` drops events for
+  sessions it no longer knows. My first test asserted no *exit event* — which
+  fails, because the exit listeners live in the `onExit` closure and never
+  consult the map, before this item as well as after. The real invariant is no
+  *status transition*: swap the two lines and closing a card pushes
+  `starting->done` into history and notifies every status listener about a
+  session the user just closed. **The test caught my own comment being wrong,
+  which is the entire argument for writing it.**
+  Also caught: a revert-proof I ran via `perl -0pi` **silently did not apply**
+  and reported a pass — a test that could not fail, the #107 lesson in a new
+  costume. Re-run as a real edit, it fails correctly. *Scripted reverts must be
+  verified to have changed the file before their result is believed.*
+  Three revert-proofs, each re-run: silent fallback fails 3 tests · killing
+  through the default fails the routing test · swapping the `remove()` order
+  fails the transition test.
 
 - 2026-08-01 — **#131 (P2-E18-01) → PR #141: DESIGN.md catches up with the
   constitution.** Docs-only, and first in the epic on purpose. P7 was amended

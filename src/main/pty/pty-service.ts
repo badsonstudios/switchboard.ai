@@ -7,6 +7,12 @@
 // (the lifecycle check runs it under `electron --run-as-node`).
 import * as pty from 'node-pty';
 import { RingBuffer } from './ring-buffer';
+import { buildEnv } from '../transport/env';
+
+// Re-exported, not redefined: the scrub moved to `transport/env.ts` in
+// P2-E18-02 because every transport needs it, and this keeps the P1 import
+// path working for callers (and tests) that predate the move.
+export { buildEnv };
 
 export interface PtySpawnOptions {
   id: string;
@@ -24,22 +30,6 @@ export interface PtySessionInfo {
   id: string;
   pid: number;
   exitCode: number | null;
-}
-
-// S-01 landmines: these must never leak from our process into a hosted CLI.
-const SCRUB_ALWAYS = ['ELECTRON_RUN_AS_NODE', 'ELECTRON_NO_ATTACH_CONSOLE'];
-
-export function buildEnv(
-  base: NodeJS.ProcessEnv,
-  deltas?: Record<string, string | undefined>
-): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...base };
-  for (const k of SCRUB_ALWAYS) delete env[k];
-  for (const [k, v] of Object.entries(deltas ?? {})) {
-    if (v === undefined) delete env[k];
-    else env[k] = v;
-  }
-  return env;
 }
 
 export class PtySession {
