@@ -6,37 +6,83 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight. Working tree clean, everything pushed,
-main green. Three PRs merged today: #126 (#125), #128 (#127), plus #124 (#107)
-late yesterday.**
+**In progress:** **nothing mid-flight.** Working tree clean, everything pushed,
+main green. **#108 MERGED 2026-08-01 as PR #130** (see below). The only thing
+still running is the **S-11 probe**, which is a background measurement, not a
+work item.
 
-> ## ▶ START HERE — DECIDED 2026-08-01 (Dan): **MIGRATE to the stream-json
-> transport.** S-11 becomes phase 0 of that work; #108 ships in parallel.
+> # ▶▶ START HERE — THE NEXT THING IS THE **STREAM-JSON MIGRATION**
+> ## Dan's instruction, 2026-08-01, verbatim in spirit: *"Next, I want to work on the migration. Before we do anything else, I want to get this done now."*
+>
+> ### What to say in a fresh session, after `/startup`:
+>
+> > **"Run `/pm` to scope the stream-json migration."**
+>
+> That is the whole hand-off. **Do NOT run `/next-item`** — it resolves the
+> lowest-numbered open issue in the milestone and would pick **#109**, which is
+> header CSP and is NOT what Dan wants next. The migration has **no issues filed
+> at all**, which is exactly what `/pm` is for.
+>
+> ### The ONE question `/pm` must put to Dan first (his open question (d))
+> **Is the migration a NEW EPIC, or a re-scoped E11?** Nothing can be filed until
+> he answers. Everything else about the migration is already decided or measured.
+>
+> ### ⚠ Dan was confused on 2026-08-01 and the confusion is worth pre-empting
+> He believed the migration had already shipped, because a `.claude/` write still
+> sends him to the Terminal. **It had not, and that message is correct behaviour
+> from the STOPGAP, not a symptom of the migration.** Confirmed by code the same
+> day: `src/main/pty/pty-service.ts` is still the only transport, there is **no
+> `StreamService`**, and the string `stream-json` appears **nowhere in `src/`** —
+> only in `spike/`. S-09/S-10/S-11 are throwaway probe scripts under `spike/`,
+> never wired into the app. **Zero application code has moved.**
+> If he asks again: after the migration that specific case DOES change — S-10
+> probe B answered the identical `.claude/` write over `can_use_tool` and the
+> file was written with no second prompt. It needs the transport swapped first.
+>
+> ### What is already settled, so `/pm` does not re-open it
+> - **WHETHER: decided.** Do not re-litigate. PHILOSOPHY P7 amended §6
+>   2026-07-31 to permit it.
+> - **VIABLE: measured.** S-10, against Dan's own PATH CLI on his subscription.
+> - **SEQUENCING: known.** `StreamService` lands BESIDE `PtyService` behind a
+>   per-session flag; feed, transcript stack, state machine and the
+>   extensibility registry all survive the cut. The VS Code extension keeps both
+>   modes itself (`claudeCode.useTerminal`), which is the precedent.
+> - **BLAST RADIUS: counted.** 14 load-bearing files; `composer.ts` deleted
+>   outright. Table in the S-10 note.
+> - **THE PRECONDITION NOBODY HAS BUILT:** `providers/fake.ts` spawns the OS
+>   shell in a REAL PTY, and all 98 e2e tests plus the entire
+>   CI-safe-without-a-login property rest on it. **A stream-json fake that
+>   answers control requests is a PRECONDITION for testing stream mode, not a
+>   follow-on.** This is missing from S-10's blast-radius table — add it.
+>
+> ### What is NOT settled — the six unmeasured items = S-11
+> Probe 1 (long-run stability) is **RUNNING or DONE** — see the S-11 block below
+> for its verdicts. The rest are unstarted: plan mode + `ExitPlanMode`, then
+> `AskUserQuestion` (**these two are the CHOOSERS, and they decide whether the
+> terminal stays as an escape hatch**), then sidechains from
+> `parent_tool_use_id`, `interrupt` semantics, and the `/resume` · `/rewind` ·
+> `--from-pr` pickers.
+>
+> **Do NOT re-run the S-09/S-10 probes** — they spend real subscription tokens
+> and their outputs are transcribed in the findings notes.
+> **If a CLI contract is unclear, read `docs/reference-implementations.md`
+> BEFORE guessing** — now also a standing rule in `.claude/CLAUDE.md`.
+>
+> ---
+>
+> ### Background: how the decision was reached
 >
 > **The decision is made.** Dan, after the double-prompt failure below: *"I think
 > we're going to have to just move to do it the way VS Code does it so we don't
-> have this issue."* PHILOSOPHY P7 was already amended (§6, 2026-07-31) to permit
-> it. **Do not re-litigate whether — the remaining questions are all *how*.**
+> have this issue."*
 >
 > **S-11 did NOT go away; it changed job.** It was a gate on deciding; it is now
 > the first phase of building, because discovering a pipe deadlocks at hour three
 > is cheap now and brutal after fourteen files have been rewritten. Same probes,
 > same order.
 >
-> Nothing is filed for S-11; it is a spike → `spike/s11/` + a findings note.
-> **#108 is issue #108 (P2-E15-11)** and runs the normal `/next-item` flow.
-> **The migration itself is NOT filed** — it needs `/pm` and Dan's go-ahead on
-> scope (new epic vs re-scoped E11 — his (d), still open).
->
-> **Why parallel:** S-11's first probe is mostly *waiting* (a pipe held open for
-> hours), so it runs in the background while #108 gets worked normally.
->
-> ### ⚠ `/next-item` WILL NOT PICK THIS UP
-> It resolves the lowest-numbered open issue in the milestone, so it will select
-> **#108** — correct, and half of what was decided. **S-11 is a SPIKE with no
-> issue**, so ask for it by name ("start S-11", or "do the migration phase 0").
-> The migration proper is still unfiled and needs `/pm` plus Dan's answer on
-> scope (new epic vs re-scoped E11 — his open question (d)).
+> S-11 is a spike → `spike/s11/` + a findings note; it is not filed and never
+> will be.
 >
 > **The stopgap Dan approved is DONE — #127 MERGED 2026-08-01 as PR #128**,
 > all 5 CI jobs green.
@@ -48,6 +94,45 @@ late yesterday.**
 > passes, the session goes `working`, and `needs-permission` only lands on the
 > CLI's debounced Notification. That gap is inherent, not a hang.
 >
+> ### S-11 PROBE 1 IS RUNNING (launched 2026-08-01 ~13:10, 8h, detached)
+> `spike/s11/`. `node spike/s11/status.cjs` reads it at any time;
+> `node spike/s11/stop.cjs` ends it cleanly (SIGTERM — the verdicts are computed
+> on the way out, so do NOT taskkill it). Artifacts:
+> `spike/findings/artifacts/s11/`. **The findings note is not written yet** — it
+> gets written when the run ends.
+>
+> **Q1 (backpressure) IS ALREADY ANSWERED, from a 7-minute validation run:**
+> we stopped draining stdout for 150s mid-turn; **358,556 bytes piled up behind
+> us and then arrived intact — 0 parse failures, the turn completed with its
+> full 35,527-token output, and the process never died.** The CLI blocks on a
+> full pipe and recovers; it does not wedge and does not corrupt framing.
+> **A message written to the CLI *while it was blocked* was queued, not lost.**
+> ⇒ **The #112/#117-class deadlock we were most afraid of did not reproduce.**
+>
+> **⚠ THE FIRST SMOKE RUN REPORTED `RECOVERED` AND HAD PROVED NOTHING.** A
+> 5k-token answer is only ~90 KB of stdout, and Node's 64 KB
+> `readableHighWaterMark` plus the OS pipe buffer swallowed all of it — the CLI
+> was never blocked, so pausing our reader tested nothing. The probe now
+> measures the bytes actually waiting at resume and reports **INCONCLUSIVE**
+> below 150 KB. *Same lesson as #107's test-that-could-not-fail: it is worse
+> than no test, because it gets counted.* Any future probe of this shape must
+> state how it filled the buffer.
+>
+> **Two incidental findings already worth carrying into the migration:**
+> - **`system:init` is emitted ONCE PER TURN, not once per session** (4 turns →
+>   4 `system:init`). A host that treats `init` as a one-time event — and that
+>   is exactly how one would naively consume it for `slash_commands` — will
+>   re-initialise on every turn.
+> - **Child RSS is ~380 MB for ONE idle-ish session** (3 processes: cmd.exe →
+>   claude.cmd → node). The product is 8 concurrent sessions, so that is
+>   ~3 GB of CLI before switchboard's own footprint. Not a blocker, but it is a
+>   number nobody had, and it belongs in the migration's cost column.
+>
+> Still open in probe 1, answered only by the long run: Q2 survival across
+> hours + the `keep_alive` cadence (**0 keep_alives in 7 minutes**), Q3 memory
+> and latency drift, Q4 context cost (**cacheRead grew 25,951 → 72,763 over
+> 3 turns**; `input` stays at 2 and would lie if read alone).
+
 > ### S-11 — the six unmeasured stream-json items, REORDERED
 > Source: `spike/findings/s-10-stream-json-transport.md` §3. The order there is
 > not the order to run them in.
@@ -351,9 +436,12 @@ so the Phase-4 gate ("2–3 dissimilar internal consumers") is met for the first
 time — a starting condition for that conversation, not a decision to ship a
 plugin API.
 
-**Next up: #108 (P2-E15-11) — transcript discovery I/O off the hot
-thread**, which depends on #107 (merged), run in parallel with **S-11**
-(START HERE block, top of file). **#111 is parked behind S-11** — see there. **DECIDED 2026-07-30 (Dan): finish E15 first, then E16.**
+**#108 (P2-E15-11) is DONE — MERGED 2026-08-01 as PR #130.** Dan ran its
+hand-off list (all 4, including the same-folder pair) and passed it.
+**Next is NOT another E15 item — it is the MIGRATION.** See the START HERE
+block at the top of this file. E15's remaining items (#109 header CSP, #110
+workspace schema migration, #111 concurrency re-measure) are **parked behind
+the migration**, not cancelled. **#111 is parked behind S-11** — see there. **DECIDED 2026-07-30 (Dan): finish E15 first, then E16.**
 The fork below is therefore closed — E9 (#73 → #74 → #76 …), #90, #91, E16 and
 E17 all wait until E15's remaining items are done.
 **Run them in this order** (dependency-forced where noted):
@@ -2381,3 +2469,73 @@ a "[Dan eyeball]" note.**
   settings injection, hook round-trips (HOOK PATH), transcript tailing,
   sidechain visibility, hook-driven status, 12-session concurrency all proven;
   verdicts written into DESIGN.md; findings in `spike/findings/`.
+
+- 2026-08-01 — **P2-E15-11 (#108) MERGED as PR #130: transcript discovery stops
+  hammering the disk on the thread everything else lives on.**
+  `poll()` runs every 100ms and any session unbound past 10s triggered a FULL
+  recursive scan of `~/.claude/projects`. **Measured, not estimated: 43 dirs,
+  1,128 transcripts, 2,090 entries — a `readdirSync` per directory plus a
+  `statSync` per entry, ten times a second, per unbound session ≈ 21,000
+  syscalls/sec** on the one thread that also pumps every PTY, serves every IPC
+  call and answers every hook. Three unbound cards tripled it.
+  **The contract, and the reason it is safe: `fs.watch` is an ACCELERATOR, never
+  the authority** — the same rule this file already applied to slug math. Every
+  done-when guarantee is met by the timed backoff ladder ALONE (250→500→1000→
+  2000ms, capped at 2s so the degraded path still fits the S-04 ~4s budget);
+  the watch only makes it fast. Recursive `fs.watch` is the flakiest API in
+  Node's stdlib and fail-open is a hard constraint, so it gets to be an
+  optimisation and nothing more. The tail drain stays ungated on the 100ms
+  tick — it is what puts words on the screen.
+  **The `rename`-only event filter is load-bearing, not an optimisation:** a
+  recursive watch on the projects root sees every APPEND to every transcript,
+  and the CLI appends constantly during a turn, so without it the root would be
+  dirty on nearly every tick and we would have rebuilt the firehose with extra
+  steps.
+  **Review: 1 blocker + 6 should-fixes + 6 nits; blocker and all six taken.**
+  The blocker was mine and was invisible without tracing call sites: I committed
+  the sweep AFTER the session loop, but `claim()` marks the root dirty when it
+  binds and `claim()` only ever runs INSIDE that loop — so the post-pass cleared,
+  on the same tick, the flag the bind had just raised. **The sibling notification
+  that mark exists for (P2-E15-10: evidence can RETRACT) was dead in the only
+  path that raises it.** Consumed in the pre-pass now, which also keeps the
+  anti-starvation property that put it there.
+  **Then the regression test I wrote for that blocker PASSED against the broken
+  code, and the cause is the keeper: the test fixture pointed the LOG SINK at
+  the projects root.** The watcher's own "transcript bound" log line created a
+  file inside the tree it watches, raised a `rename`, and re-dirtied the root —
+  handing the test back the sweep the bug had taken away. **The watcher was
+  marking its own homework.** Harmless for the entire life of the blind 100ms
+  poll; the moment the root went under `fs.watch` it silently disarmed a test.
+  Log sinks get their own directory now. *Third time this project has been bitten
+  by a test that could not fail (#107 twice, now this) — and the lesson that
+  generalises is that the fixture is part of the system under test.*
+  Five more taken, each a real defect: **`unwatch()` never released the recursive
+  watch** (close every card and it lived until the process died — refcounted
+  now, last one out closes it); **`widen` and the cwd-bind deadline are
+  CLOCK-driven with no dirty site**, so they would have bound ~2s later than
+  today — a real regression against "binds no slower than today", on exactly the
+  fallback paths that only run because something already went wrong; **a
+  backwards clock step** (NTP, VM resume) made the interval arithmetic negative
+  and stalled discovery entirely on the fail-open path; **`markWatchFailed` was
+  one-way**, so a single `ReadDirectoryChangesW` overflow — plausible on a root
+  holding 1,128 transcripts — pinned the process to flat sweeps for ever (60s
+  re-arm now); and **`defaultWatchFactory`, the only code that runs in
+  production, had ZERO coverage** because every test injected a factory, so
+  there is now a real-`fs.watch` test whose second assertion is that APPENDING
+  does not raise an event, which is what actually pins the filter.
+  **Four revert-proofs, each re-run:** removing the gate gives 17 readdirs vs <5
+  across ~20 ticks · the naive per-session `noteSwept` starves the sibling so it
+  never binds · ungating `candidateSeen` breaks an existing P2-E15-10 test
+  (`awaiting-prompt` instead of `searching`, because retracting evidence every
+  unswept tick holds `evidenceSince` at null and the give-up clock can never
+  run) · post-pass commit fails the new sibling-retraction test.
+  Gate: lint + typecheck + **651 unit (+19) + 98 e2e**, 1 skipped. One e2e flake
+  (`slash-commands`) on the first full run; passed in isolation and on two
+  subsequent full runs — not this change.
+  **Follow-up filed, #129:** a session that has already GIVEN UP still
+  full-scans the root at the 2s cap for ever (~1,050 syscalls/sec each), so
+  AR-P1-8's "three unbound cards" case is REDUCED ~20x, not removed. Outside
+  this item's done-when; recorded rather than implied.
+  No user-facing change, so no `docs/manual/` page. DESIGN.md never specified
+  the discovery mechanism (only the binding contract, untouched), so no
+  amendment.

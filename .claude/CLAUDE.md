@@ -43,6 +43,34 @@ blocks a session) · every feature passes the PHILOSOPHY.md §4 litmus test.
 
 ---
 
+## Standing rule: never guess a CLI contract
+
+**If you are stuck on how the `claude` CLI behaves — a flag, a payload shape, a
+protocol message, a settings key — read `docs/reference-implementations.md`
+BEFORE guessing.** This applies to every item, not just the transport work.
+
+The **Claude Code VS Code extension is unpacked on this machine** and is a
+*known-correct consumer* of every contract we depend on:
+
+- the **embedded Agent SDK**, including its full **CLI argument builder** — the
+  authoritative list of what the CLI accepts and in what combination;
+- the **stream-json protocol** — message types, the `control_request` /
+  `control_response` channel, `can_use_tool` payloads;
+- the complete **`settings.json` schema**, including keys `--help` never
+  mentions.
+
+**How to read it without destroying your context:** the bundle is minified —
+`extension.js` is one 2.6 MB line, `webview/index.js` is 4.8 MB. **`Read` will
+blow up your context.** Use `grep -o` with fixed context widths; the recipes are
+in the doc.
+
+**The rules:** read *contracts*, don't copy *code* · **verify anything
+load-bearing against the CLI on PATH** — the extension ships its own `claude`
+binary (265 MB, `resources/native-binary/`) and can differ from Dan's install,
+which is exactly why S-10 probe A had to be run instead of assumed.
+
+---
+
 ## The Work Loop (GitHub issues, just-in-time)
 
 Tracker: **GitHub issues** at `badsonstudios/switchboard.ai`, filed per-milestone
