@@ -6,7 +6,51 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.** **#125 MERGED 2026-08-01 as PR #126**,
+**In progress:** **nothing mid-flight. Working tree clean, everything pushed.**
+
+> ## ▶ START HERE — DECIDED 2026-08-01 (Dan): do **S-11 and #108 in parallel**
+>
+> Dan picked "option C" and then cleared context. Nothing is filed for S-11; it
+> is a spike, so it goes in `spike/s11/` with a findings note and needs no issue.
+> **#108 is issue #108 (P2-E15-11)** and runs through the normal `/next-item`
+> flow.
+>
+> **Why parallel:** S-11's first probe is mostly *waiting* (a pipe held open for
+> hours), so it runs in the background while #108 gets worked normally.
+>
+> ### S-11 — the six unmeasured stream-json items, REORDERED
+> Source: `spike/findings/s-10-stream-json-transport.md` §3. The order there is
+> not the order to run them in.
+> 1. **Long-run stability FIRST, started immediately and left running.** S-10
+>    lists it sixth; every probe so far was a SINGLE TURN, and the actual product
+>    is 8 sessions on open pipes for 8 hours. A PTY is a well-understood
+>    long-lived object; an NDJSON pipe with a control channel and `keep_alive` is
+>    not, and unhandled stdout backpressure deadlocks a busy session — the
+>    #112/#117 class of bug, which cost weeks each. **If this is bad, nothing
+>    else matters.**
+> 2. **Plan mode + `ExitPlanMode`**, then **`AskUserQuestion`**. These are the
+>    CHOOSERS, and per S-10 §5 the choosers are what decide whether the terminal
+>    stays as an escape hatch. Everything else is detail by comparison.
+> 3. Then sidechains from `parent_tool_use_id`, `interrupt` semantics, and the
+>    `/resume` · `/rewind` · `--from-pr` pickers.
+>
+> **Known gap in S-10's blast-radius table, add it:** `providers/fake.ts` spawns
+> the OS shell **in a real PTY**, and all 98 e2e tests plus the entire
+> CI-safe-without-a-login property rest on it. Stream mode has no fake at all —
+> one that speaks stream-json NDJSON and answers control requests is a
+> **precondition** for testing stream mode, not a follow-on.
+>
+> **Do NOT re-run the S-09/S-10 probes** — they spend real subscription tokens
+> and their outputs are transcribed in the findings notes.
+> **If a CLI contract is unclear, read `docs/reference-implementations.md`
+> before guessing.**
+>
+> ### Consequence already recorded: **#111 is questionable**
+> Its premise is "measure the shape we are keeping", and we do not yet know if
+> PTY concurrency is that shape. Park it behind S-11 rather than spend it
+> measuring something we may migrate off.
+
+**#125 MERGED 2026-08-01 as PR #126**,
 all 5 CI jobs green. Gate: lint + typecheck + **621 unit (+9) + 98 e2e
 (+1)**, 1 skipped. **One review round, 1 blocker + 8 should-fixes, all taken.**
 The blocker was mine and was a *regression in the very thing the item exists to
@@ -14,8 +58,7 @@ fix*: I used the `-ink` token on a hue-tinted background, and on nordic — the
 default theme — ink IS the hue, so the bar's own prose measured **3.89:1**,
 worse than the chip it replaced (which used `--text`). Colour now lives in the
 border and the tint; the words are `--text` at 8:1.
-**Next after it: #108 (P2-E15-11), and S-11** (the six unmeasured stream-json
-items — see the LIVE INVESTIGATION block below).
+**Next: S-11 + #108 in parallel — see the START HERE block at the top.**
 Before it: **#107 (P2-E15-10) MERGED 2026-07-31 as
 PR #124**, all 5 CI jobs green. Gate: lint + typecheck +
 **612 unit (+43) + 97 e2e (+4)**, 1 skipped; `npm run check:transcripts` run
@@ -25,10 +68,30 @@ design: evidence that a conversation started may NOT be hook traffic, because
 `SessionStart` fires at spawn and carries a session id, so the first version
 turned every un-prompted card red 45s after it opened. Six revert-proofs, each
 re-run.
-**[user] #124's 6 hand-off tests were NOT run before the merge** (Dan said land
-it while we were mid-investigation on the permission finding below). They are
-still worth running — the list is in the PR body; main is always-working, so
-anything they turn up is a fix-forward, not a revert.
+> ## ⬜ [user] TESTING OUTSTANDING — 10 items across two merged PRs
+>
+> Both merged without their hand-off lists being run (Dan said land them while
+> we were mid-investigation). Main has been green throughout, so anything these
+> turn up is a **fix-forward, not a revert**. Full text in the PR bodies —
+> `gh pr view 124` and `gh pr view 126`.
+>
+> **From #124 (transcript binding — 6):** ① a new session left untouched must
+> keep saying "No conversation yet" in grey, never turn red *(the one that
+> matters — the first version turned every idle card red after 45s)* · ② same at
+> scale, 4-5 cards, work in one · ③ prompting a card replaces it with the
+> conversation · ④ `/clear` then idle two minutes must NOT go red · ⑤ the red
+> "couldn't find" headline must be readable on daylight, not pale pink · ⑥ on
+> **quiet** verbosity a session whose blocks are all filtered must show NOTHING,
+> never "No conversation yet" over a real conversation.
+>
+> **From #126 (handoff bar — 4):** ① ask a session to edit a file inside its own
+> `.claude` folder → a BAR along the bottom, not a chip at the top · ② readable
+> in daylight AND nordic *(I got the contrast wrong first time)* · ③ **answer an
+> ordinary permission and watch the instant after clicking Allow — no FLASH of
+> "Claude is asking permission in the terminal" where the button just was.
+> This is the one I most want eyes on: the suppression window is a 2s guess I
+> could not verify by hand** · ④ the working banner and approval bar still
+> behave, and scroll stays pinned to the tail.
 
 > ## 🟠 DECIDED, NOT BUILT (2026-07-31) — permission prompts switchboard cannot see
 >
@@ -251,7 +314,8 @@ time — a starting condition for that conversation, not a decision to ship a
 plugin API.
 
 **Next up: #108 (P2-E15-11) — transcript discovery I/O off the hot
-thread**, which depends on #107. **DECIDED 2026-07-30 (Dan): finish E15 first, then E16.**
+thread**, which depends on #107 (merged), run in parallel with **S-11**
+(START HERE block, top of file). **#111 is parked behind S-11** — see there. **DECIDED 2026-07-30 (Dan): finish E15 first, then E16.**
 The fork below is therefore closed — E9 (#73 → #74 → #76 …), #90, #91, E16 and
 E17 all wait until E15's remaining items are done.
 **Run them in this order** (dependency-forced where noted):
