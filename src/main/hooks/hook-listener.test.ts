@@ -3,7 +3,13 @@ import fs from 'fs';
 import http from 'http';
 import os from 'os';
 import path from 'path';
-import { HookListener, PermissionRequest, isOutsideCwd, shouldHoldPermission } from './hook-listener';
+import {
+  HookListener,
+  PermissionRequest,
+  isInsideClaudeDir,
+  isOutsideCwd,
+  shouldHoldPermission,
+} from './hook-listener';
 import { LogSink, createLogger } from '../log/logger';
 import { SessionEvent } from '../sessions/state-machine';
 
@@ -465,6 +471,109 @@ describe('a hold needs somebody to ask: window liveness (P2-E15-09, AR-P1-7)', (
   it('releaseHeld with nothing parked is a no-op', () => {
     expect(() => held.releaseHeld('main window closed')).not.toThrow();
     expect(held.pendingRequests()).toHaveLength(0);
+  });
+});
+
+describe('never ask a question whose answer the CLI discards (#127)', () => {
+  // Measured 2026-08-01: Claude Code accepts our `permissionDecision:"allow"`
+  // for the ordinary permission layer, then applies its `.claude/` safety check
+  // ON TOP — so the user answered our bar and was prompted again in the
+  // terminal six seconds later. Holding it presents a decision we do not own
+  // (PHILOSOPHY P7); the #125 handoff bar explains the CLI's prompt instead.
+  //
+  // Paths are platform-shaped: a `C:/...` literal is a RELATIVE path on POSIX,
+  // so hard-coding drive letters makes the positive cases fail on the Linux and
+  // macOS CI legs AND the negative cases pass vacuously — a green half-suite
+  // proving nothing. Same guard the out-of-cwd tests below already use.
+  const win = process.platform === 'win32';
+  const CWD = win ? 'C:/proj' : '/proj';
+  const inClaude = win ? 'C:/proj/.claude/scripts/coverage.sh' : '/proj/.claude/scripts/coverage.sh';
+  const inSrc = win ? 'C:/proj/src/index.ts' : '/proj/src/index.ts';
+  const lookalike = win ? 'C:/proj/.claude-backup/x' : '/proj/.claude-backup/x';
+  const otherProject = win ? 'C:/other/.claude/settings.json' : '/other/.claude/settings.json';
+
+  it("does not hold a write into the project's own .claude folder", () => {
+    for (const tool of ['Write', 'Edit', 'MultiEdit', 'NotebookEdit']) {
+      expect(
+        shouldHoldPermission('ask', tool, { file_path: inClaude }, CWD),
+        `held ${tool} into .claude`
+      ).toBe(false);
+    }
+  });
+
+  it('holds the same tools everywhere else — this is a carve-out, not a retreat', () => {
+    expect(shouldHoldPermission('ask', 'Write', { file_path: inSrc }, CWD)).toBe(true);
+    // a sibling whose name merely STARTS with .claude is not inside it
+    expect(shouldHoldPermission('ask', 'Write', { file_path: lookalike }, CWD)).toBe(true);
+  });
+
+  it("still holds a write into ANOTHER project's .claude folder", () => {
+    // Only the session's OWN folder is guarded by the CLI on its behalf; a
+    // write into someone else's .claude is exactly what our bar exists for.
+    expect(shouldHoldPermission('ask', 'Write', { file_path: otherProject }, CWD)).toBe(true);
+  });
+
+  it('resolves RELATIVE tool paths against the session folder', () => {
+    expect(shouldHoldPermission('ask', 'Write', { file_path: '.claude/hooks.json' }, CWD)).toBe(false);
+    expect(shouldHoldPermission('ask', 'Write', { file_path: 'src/app.ts' }, CWD)).toBe(true);
+  });
+
+  it('carves out the GLOBAL .claude too, when a session runs in the home folder', () => {
+    // The highest-consequence instance: `<cwd>/.claude` is then global
+    // settings, global CLAUDE.md, and hooks that fire in EVERY session. Still
+    // correct — the CLI guards it identically and it is that session's own
+    // `.claude` — but it must be a deliberate, recorded choice rather than a
+    // surprise nobody considered.
+    const home = win ? 'C:/Users/dan' : '/home/dan';
+    const target = win ? 'C:/Users/dan/.claude/settings.json' : '/home/dan/.claude/settings.json';
+    expect(shouldHoldPermission('ask', 'Write', { file_path: target }, home)).toBe(false);
+  });
+
+  it('leaves pathless and shell tools alone', () => {
+    // WebFetch is MUTATING but not an EDIT tool, so the carve-out never
+    // considers it — which is why the branch keys off toolCategory rather than
+    // MUTATING. Bash could redirect into .claude and we cannot tell from the
+    // command string; it keeps its normal hold. (Whether the CLI's guard is
+    // tool-scoped, and therefore whether a Bash write double-prompts too, is
+    // UNVERIFIED — worth a probe if it ever bites.)
+    expect(shouldHoldPermission('ask', 'WebFetch', { url: 'https://x' }, CWD)).toBe(true);
+    expect(shouldHoldPermission('ask', 'Bash', { command: 'echo hi > .claude/x' }, CWD)).toBe(true);
+  });
+
+  it('needs a cwd to judge containment, and does not guess without one', () => {
+    expect(shouldHoldPermission('ask', 'Write', { file_path: '.claude/x' }, undefined)).toBe(true);
+  });
+});
+
+describe('isInsideClaudeDir', () => {
+  const win = process.platform === 'win32';
+  const cwd = win ? 'C:/proj' : '/proj';
+  const abs = (rest: string) => (win ? `C:/proj/${rest}` : `/proj/${rest}`);
+
+  it('is true for the directory itself and anything under it', () => {
+    expect(isInsideClaudeDir(abs('.claude'), cwd)).toBe(true);
+    expect(isInsideClaudeDir(abs('.claude/skills/a/b.md'), cwd)).toBe(true);
+    expect(isInsideClaudeDir('.claude/settings.json', cwd)).toBe(true);
+  });
+
+  it('is false for siblings, parents and lookalikes', () => {
+    expect(isInsideClaudeDir(abs('src/x.ts'), cwd)).toBe(false);
+    expect(isInsideClaudeDir(abs('.claude-backup/x'), cwd)).toBe(false);
+    expect(isInsideClaudeDir(win ? 'C:/other/.claude/x' : '/other/.claude/x', cwd)).toBe(false);
+    expect(isInsideClaudeDir('../.claude/x', cwd)).toBe(false);
+  });
+
+  it('escapes fail toward HOLDING, which is the safe direction', () => {
+    expect(isInsideClaudeDir('.claude/../../escape.txt', cwd)).toBe(false);
+    expect(isInsideClaudeDir('', cwd)).toBe(false);
+  });
+
+  it('handles a drive-root / filesystem-root session folder', () => {
+    // The case string-prefixing broke on (review P1 #10): resolve() keeps the
+    // trailing separator, so `base + sep` matches nothing.
+    const root = win ? 'C:/' : '/';
+    expect(isInsideClaudeDir(win ? 'C:/.claude/x' : '/.claude/x', root)).toBe(true);
+    expect(isInsideClaudeDir(win ? 'C:/src/x' : '/src/x', root)).toBe(false);
   });
 });
 

@@ -27,7 +27,13 @@ function findNodeOnPath(): string | null {
 }
 import { Logger } from '../log/logger';
 import { SessionManager } from '../sessions/session-manager';
-import { SHELLISH, MUTATING, READ_TOOLS, INTERACTIVE_TOOLS } from '../../shared/tool-taxonomy';
+import {
+  SHELLISH,
+  MUTATING,
+  READ_TOOLS,
+  INTERACTIVE_TOOLS,
+  toolCategory,
+} from '../../shared/tool-taxonomy';
 
 /** Hook events the listener subscribes to for status (S-06 set + PostToolUse). */
 const STATUS_EVENTS = [
@@ -97,23 +103,51 @@ const READ_GATED_AUTONOMIES = ['ask', 'auto-edit'];
  *  human (#92); without the entry we never hear about them at all. */
 const PRETOOL_MATCHER = [...SHELLISH, ...MUTATING, ...READ_TOOLS, ...INTERACTIVE_TOOLS].join('|');
 
-/** The primary filesystem target of a read-tool call, if any. */
-function readToolPath(input: Record<string, unknown> | undefined): string | undefined {
+/** The primary filesystem target of a tool call, if any. Serves both the
+ *  out-of-cwd read branch and the `.claude` carve-out below. */
+function toolPath(input: Record<string, unknown> | undefined): string | undefined {
   const p = input?.file_path ?? input?.path ?? input?.notebook_path;
   return typeof p === 'string' ? p : undefined;
 }
 
-/** Is `p` outside the session's folder? (The CLI prompts for outside reads.)
- *  Relative tool paths resolve against the SESSION folder (not the app's own
- *  cwd), and containment is judged via path.relative — string-prefixing broke
- *  on drive-root folders, where resolve() keeps the trailing separator and
- *  `base + sep` matches nothing (review P1 #10, reproduced). */
-export function isOutsideCwd(p: string, cwd: string): boolean {
+/** Does `base` contain `target`? Judged via path.relative — string-prefixing
+ *  broke on drive-root folders, where resolve() keeps the trailing separator
+ *  and `base + sep` matches nothing (review P1 #10, reproduced).
+ *
+ *  LEXICAL, deliberately: no `realpath`. This runs on the hook hot path, and
+ *  the target frequently does not exist yet (it is about to be created). The
+ *  cost is that a junction or symlink inside the base escapes containment —
+ *  see `isInsideClaudeDir`, where that assumption is load-bearing. */
+function contains(base: string, target: string): boolean {
   const fold = (x: string) => (process.platform === 'win32' ? x.toLowerCase() : x);
-  const base = fold(path.resolve(cwd));
-  const target = fold(path.resolve(cwd, p));
-  const rel = path.relative(base, target);
-  return rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel);
+  const rel = path.relative(fold(base), fold(target));
+  return !(rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel));
+}
+
+/** Is `p` outside the session's folder? (The CLI prompts for outside reads.)
+ *  Relative tool paths resolve against the SESSION folder, not the app's own
+ *  cwd. */
+export function isOutsideCwd(p: string, cwd: string): boolean {
+  return !contains(path.resolve(cwd), path.resolve(cwd, p));
+}
+
+/**
+ * Is `p` inside the session folder's own `.claude/` directory?
+ *
+ * The two resolve bases are asymmetric on purpose — the TARGET resolves
+ * against `cwd`, the BASE against `cwd/.claude` — because a relative tool path
+ * like `.claude/hooks.json` is relative to the session folder. This looks like
+ * it could be written as `!isOutsideCwd(p, join(cwd, '.claude'))`; it cannot,
+ * because that resolves the target to `.claude/.claude/hooks.json`.
+ *
+ * Note "the session folder's own `.claude`" is the GLOBAL config when a session
+ * runs in the home directory — global settings, global CLAUDE.md, global hooks
+ * that fire in every session. Still correct (the CLI guards it identically,
+ * and it is that session's own `.claude`), but it is the highest-consequence
+ * instance of the carve-out below, so it is pinned by a test.
+ */
+export function isInsideClaudeDir(p: string, cwd: string): boolean {
+  return contains(path.resolve(cwd, '.claude'), path.resolve(cwd, p));
 }
 
 export function shouldHoldPermission(
@@ -123,10 +157,42 @@ export function shouldHoldPermission(
   cwd?: string
 ): boolean {
   if (!autonomy || !tool) return false;
+  // A decision the CLI KEEPS — never ask a question whose answer we cannot
+  // honour (#127, P7 third line). Claude Code guards writes into a project's
+  // own `.claude/` above the permission layer: it accepts our
+  // `permissionDecision:"allow"` for the ordinary check and then applies its
+  // safety check anyway, so the user answered OUR bar and was asked again in
+  // the terminal six seconds later (measured 2026-08-01). Holding it presents a
+  // decision we do not own and teaches the user our approvals are advisory;
+  // passing hands it to the layer that actually owns it, which the #125 handoff
+  // bar then explains. Checked FIRST so it beats the GATED table.
+  //
+  // THE LOAD-BEARING ASSUMPTION is not "the CLI will keep guarding this" — it
+  // is that the CLI's guard uses the SAME containment rule we do. Both are
+  // lexical; neither resolves links. A junction at `<cwd>/.claude/link`
+  // pointing elsewhere skips our bar, and whether the CLI still catches it
+  // depends on whether it resolves links. Not worth a sync `realpath` on this
+  // path (it throws for a target about to be created), but that is the thing
+  // that would actually break.
+  //
+  // Note this branch is UNREACHABLE in the configuration S-09 documented,
+  // where no PreToolUse reached us for the `.claude` write at all — #127's log
+  // and S-09 describe two different configurations, and only #127's reaches
+  // here. Where it is unreachable, the carve-out cannot be what exposes
+  // anything.
+  // `toolCategory === 'edit'`, NOT all of MUTATING: MUTATING also holds
+  // WebFetch, which is pathless today but one schema change away from growing
+  // a `path` field and silently un-holding a network tool. The CLI's guard is
+  // scoped to its own edit tools — its prompt says "allow Claude to edit its
+  // own settings".
+  if (cwd && toolCategory(tool) === 'edit') {
+    const target = toolPath(input);
+    if (target && isInsideClaudeDir(target, cwd)) return false;
+  }
   if ((GATED[autonomy] ?? []).includes(tool)) return true;
   // read tools only prompt when they leave the workspace — mirror that
   if (READ_GATED_AUTONOMIES.includes(autonomy) && READ_TOOLS.includes(tool) && cwd) {
-    const target = readToolPath(input);
+    const target = toolPath(input);
     if (target && isOutsideCwd(target, cwd)) return true;
   }
   return false;
