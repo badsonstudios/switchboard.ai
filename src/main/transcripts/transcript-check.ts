@@ -41,10 +41,22 @@ async function main(): Promise<number> {
   }
   const s = watcher.snapshot('check-1')!;
   console.log(
-    `[transcript-check] bound=${s.bound} native=${s.nativeSessionId} ` +
+    `[transcript-check] bound=${s.bound} binding=${s.binding} native=${s.nativeSessionId} ` +
       `tokens(in/out/cacheRead)=${s.usage.input}/${s.usage.output}/${s.usage.cacheRead} ` +
       `lines=${s.lines} malformed=${s.malformed}`
   );
+  // The §5.26 drift detector against a REAL transcript from the installed CLI —
+  // the only check in the tree that can catch a release adding a field, since
+  // every unit fixture is a shape we wrote ourselves. Reported, never fatal:
+  // "the CLI grew a key" is news, not a broken build.
+  if (s.driftKeys.length > 0) {
+    console.log(
+      `[transcript-check] SCHEMA DRIFT — ${s.driftKeys.length} unknown key(s) vs ` +
+        `src/main/transcripts/schema.ts:\n  ${s.driftKeys.join('\n  ')}`
+    );
+  } else {
+    console.log('[transcript-check] no schema drift against this CLI build');
+  }
   const ok = s.bound && s.usage.output > 0 && s.lines > 0;
   console.log(ok ? '[transcript-check] PASS' : '[transcript-check] FAIL');
   watcher.stop();

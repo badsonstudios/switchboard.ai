@@ -170,8 +170,19 @@
       "crashed": "crashed"
     }
   },
+  "binding": {
+    "awaitingPrompt": "No conversation yet",
+    "awaitingPromptDetail": "Send a prompt below and it will appear here.",
+    "searching": "Looking for this session's transcript…",
+    "searchingDetail": "The conversation has started — this usually takes a moment.",
+    "unbound": "Couldn't find this session's transcript",
+    "unboundFound": "This session has run at least one turn, and transcripts are being written for this folder — but none of them match this session. Its conversation may belong to another card, or Claude Code may have changed where it saves them.",
+    "unboundFoundQuiet": "Transcripts are being written for this folder, but none match this session — and Claude Code has not reported any activity to switchboard.ai either, which usually means its hooks aren't reaching us.",
+    "unboundSilent": "This session has run at least one turn, but no transcript for it has turned up in {path}.",
+    "unboundNothing": "Nothing has turned up in {path}.",
+    "unboundFallback": "The Terminal tab is unaffected — your session is still running there."
+  },
   "feedView": {
-    "empty": "No activity yet — the Feed renders the conversation once it starts.",
     "thinking": "thinking…",
     "thoughtFor": "Thought for {s}s",
     "editStats": "+{added} / -{removed} lines",

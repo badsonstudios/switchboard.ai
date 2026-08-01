@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { SlashCommand } from '../shared/slash-commands';
 import type { PtyAttachment, PtyChunk } from '../shared/ipc/pty';
+import type { BindingSnapshot } from '../shared/transcripts';
 
 const versionArg = process.argv.find((a) => a.startsWith('--switchboard-version='));
 const seedArg = process.argv.find((a) => a.startsWith('--switchboard-seed-panels='));
@@ -223,6 +224,12 @@ const api = {
   },
   transcripts: {
     blocks: (liveId: string): Promise<unknown[]> => ipcRenderer.invoke('transcripts:blocks', liveId),
+    // binding state for a (re)mounting panel — the live pushes ride
+    // `sessions:usage`, but a panel that mounts between transitions would
+    // otherwise show "no conversation yet" over a session that failed to bind
+    // half an hour ago (P2-E15-10)
+    binding: (liveId: string): Promise<BindingSnapshot | null> =>
+      ipcRenderer.invoke('transcripts:binding', liveId),
     onBlock: (cb: (payload: { sessionId: string; block: unknown }) => void): (() => void) => {
       const h = (_e: unknown, p: { sessionId: string; block: unknown }) => cb(p);
       ipcRenderer.on('sessions:feedBlock', h);

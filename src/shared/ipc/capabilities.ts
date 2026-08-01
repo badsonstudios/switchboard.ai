@@ -91,6 +91,7 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:slashCommands': 'sessions.read',
   'settings:getAutoTrust': 'settings.read',
   'settings:setAutoTrust': 'settings.write',
+  'transcripts:binding': 'transcripts.read',
   'transcripts:blocks': 'transcripts.read',
   'workspace:getLayout': 'workspace.read',
   'workspace:getUi': 'workspace.read',

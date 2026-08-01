@@ -116,6 +116,14 @@ function workAreas() {
   return screen.getAllDisplays().map((d) => d.workArea);
 }
 
+/** A positive millisecond count from an env var, or undefined. Junk and
+ *  negatives fall through to the caller's default rather than disabling a
+ *  timeout by accident. */
+function positiveMs(raw: string | undefined): number | undefined {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 // Quit protection (P1-E6-02): intercept the WINDOW close — on Windows the X
 // destroys the sole window before before-quit, so guarding there strands
 // headless PTYs. Prompt here, then destroy + quit only on confirm.
@@ -586,6 +594,10 @@ app
     const transcripts = new TranscriptWatcher({
       projectsRoot: seedRoot,
       log: createLogger(sink, 'transcripts'),
+      // Test-only: the real deadline is 45s, which no e2e should sit through.
+      // Read only in a dev/test build, so the shipped binary has no env var
+      // that can move a user-visible deadline (P2-E15-10).
+      bindGiveUpMs: app.isPackaged ? undefined : positiveMs(process.env.SWITCHBOARD_BIND_GIVEUP_MS),
     });
     void hooks.start().catch((err) => {
       // hooks are an accelerator, not the authority — start-failure degrades

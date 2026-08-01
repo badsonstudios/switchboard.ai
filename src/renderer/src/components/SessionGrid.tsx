@@ -26,6 +26,7 @@ import { DiffPane } from './DiffPane';
 import { UsageStrip } from './UsageStrip';
 import { GitContext, GitStatusDto } from './GitContext';
 import { Usage, ZERO_USAGE } from '../lib/usage';
+import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
 import { Box, boxOnAnyDisplay, RescuedPopout, sanitizePopoutLayout, WorkArea } from '../lib/layout';
 import { captureSlot, openerRelative, placeAt } from '../lib/dock-slot';
 import { pickAdoptedGroupId } from '../lib/groups';
@@ -105,6 +106,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const [live, setLive] = React.useState<Live | null>(null);
   const [exited, setExited] = React.useState<{ code: number; crashed: boolean } | null>(null);
   const [usage, setUsage] = React.useState<{ usage: Usage; model?: string } | null>(null);
+  const [binding, setBinding] = React.useState<{
+    binding: BindingState;
+    bindingDiag: BindingDiagnostics | null;
+  } | null>(null);
   const [plan, setPlan] = React.useState<{ total: number; completed: number; inProgress: number } | null>(null);
   const [taskLabel, setTaskLabel] = React.useState<string>('');
   const [editingLabel, setEditingLabel] = React.useState(false);
@@ -221,7 +226,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     });
   }, [live]);
 
-  // live token usage for this session (P2-E7-01)
+  // live token usage for this session (P2-E7-01), and — riding the same
+  // snapshot — its transcript binding state (P2-E15-10)
   React.useEffect(() => {
     if (!live) return;
     return window.switchboard.sessions.onUsage((snap) => {
@@ -230,11 +236,37 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         usage: Usage;
         model?: string;
         plan?: { total: number; completed: number; inProgress: number };
+        binding?: BindingState;
+        bindingDiag?: BindingDiagnostics;
       };
       if (s.sessionId !== live.id) return;
       setUsage({ usage: s.usage, model: s.model });
       setPlan(s.plan && s.plan.total > 0 ? s.plan : null);
+      if (s.binding) setBinding({ binding: s.binding, bindingDiag: s.bindingDiag ?? null });
     });
+  }, [live]);
+
+  // Binding state for a card that MOUNTS after the fact: a session that failed
+  // to bind ten minutes ago will never push another snapshot, and without this
+  // pull its pane would claim "no conversation yet" for the rest of the run.
+  React.useEffect(() => {
+    if (!live) return;
+    // Drop the OLD session's answer first. A card whose session was restarted
+    // or resumed gets a brand-new live id, and without this the `prev ??`
+    // below — which exists to protect a newer live push from a slower reply —
+    // would preserve the DEAD session's state instead, so a fresh healthy
+    // session would inherit the red "couldn't find this transcript" banner
+    // from the one it replaced, with no push coming to clear it.
+    setBinding(null);
+    let cancelled = false;
+    void window.switchboard.transcripts.binding(live.id).then((b) => {
+      // A live push that landed while this was in flight is NEWER than what we
+      // asked for — it must not be overwritten by the reply.
+      if (!cancelled && b) setBinding((prev) => prev ?? { binding: b.binding, bindingDiag: b.bindingDiag });
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [live]);
 
   // git context (P2-E7-02): refresh when the card is shown and after each
@@ -443,6 +475,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     status,
     autonomy: cardAutonomy,
     model: usage?.model,
+    binding: binding?.binding,
+    bindingDiag: binding?.bindingDiag ?? null,
     changed,
     approval: perm,
     approvalQueued: Math.max(0, permQueue.length - 1),

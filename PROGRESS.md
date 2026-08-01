@@ -6,9 +6,19 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.** **#102 (P2-E15-05) + #103 (P2-E15-06)
-are IN REVIEW as PR #123** (opened 2026-07-31, CI running at hand-off; gate was
-green locally — lint + typecheck + 569 unit + 94 e2e). **Dan hand-tested the
+**In progress:** **#107 (P2-E15-10) — transcript drift detector + binding
+transparency — CODE COMPLETE 2026-07-31, awaiting Dan's commit approval.**
+Branch `feature/107-transcript-drift-binding`. Gate green: lint + typecheck +
+**612 unit (+43) + 97 e2e (+4)**, 1 skipped; `npm run check:transcripts` run
+against the real CLI 2.1.220 — bound, and **no drift**. **Two review rounds, 3
+blockers + 14 should-fixes, all taken**, and the first blocker rewrote the
+design: evidence that a conversation started may NOT be hook traffic, because
+`SessionStart` fires at spawn and carries a session id, so the first version
+turned every un-prompted card red 45s after it opened. Six revert-proofs, each
+re-run. **[user] hand-off testing outstanding — see the PR checklist.**
+Before it: **#102 (P2-E15-05) + #103 (P2-E15-06) MERGED 2026-07-31 as PR #123**,
+all 5 CI jobs green (windows/ubuntu/macos unit + e2e windows/ubuntu). Gate was
+lint + typecheck + 569 unit + 94 e2e. **Dan hand-tested the
 whole thing as it was built and signed off**; the PR's checklist is the same
 list, kept for the record rather than as outstanding work. **Four themes ship,
 not three:** Dan asked for a
@@ -65,24 +75,25 @@ PR #120**, after Dan ran the whole hand-off test list by hand and passed it —
 including the one that matters (hide a working session, reveal it, scrollback and
 conversation intact). Working tree clean. *(Don't record a tip SHA here — it is
 stale the moment it is committed; `git log` is the authority for that one.)*
-**The queue, in order: ~~#105~~ → ~~#117~~ → ~~#98~~ → #102-#103 / #107-#111.**
-**E15 is 7 of 14 done** — #98 (provider capabilities, PR #122), #99
+**The queue, in order: ~~#105~~ → ~~#117~~ → ~~#98~~ → ~~#102-#103~~ → #107-#111.**
+**E15 is 8 of 14 done** — #98 (provider capabilities, PR #122), #99
 (process-agnostic registry), #100 (three renderer contribution points), #101
-(IPC capabilities), #104 (renderer state layer), #105 (presentation state,
-PR #120), #106 (permission hold). *(Corrected
+(IPC capabilities), #102+#103 (themes as data + prefs that survive relaunch,
+PR #123 — two issues, one PR), #104 (renderer state layer), #105 (presentation
+state, PR #120), #106 (permission hold). *(Corrected
 2026-07-30: this line said "7 of 14" because it was counting #112, the tail-pin
 race — that was fixed in this period but is NOT an E15 item. Neither is #117.
 **Every E15 item cites an `AR-*` finding from
 `docs/architecture-review-2026-07-26.md`**; if it has no AR id, it is not E15.)*
-**AR-P0-1 and AR-P0-2 are fully closed; AR-P0-3 is NOT** — #102/#103 are the
-last of it (themes as token maps, and the prefs that likely reset every
-packaged launch). **Consumer count on the extensibility seams: 1 → 5**,
+**All three P0s are now closed** — AR-P0-1 (#98), AR-P0-2, and AR-P0-3
+(#102/#103: themes as token maps, and the prefs that reset on every packaged
+launch — measured, not suspected). **Consumer count on the extensibility seams: 1 → 6**,
 so the Phase-4 gate ("2–3 dissimilar internal consumers") is met for the first
 time — a starting condition for that conversation, not a decision to ship a
 plugin API.
 
-**Next up: #107 (P2-E15-10) — transcript drift detector + binding transparency**
-(once PR #123 merges). **DECIDED 2026-07-30 (Dan): finish E15 first, then E16.**
+**Next up (after #107): #108 (P2-E15-11) — transcript discovery I/O off the hot
+thread**, which depends on #107. **DECIDED 2026-07-30 (Dan): finish E15 first, then E16.**
 The fork below is therefore closed — E9 (#73 → #74 → #76 …), #90, #91, E16 and
 E17 all wait until E15's remaining items are done.
 **Run them in this order** (dependency-forced where noted):
@@ -213,6 +224,90 @@ a "[Dan eyeball]" note.**
   to Sonnet rates** — it invents a number. Not urgent, not waiting on anything.
 
 ## Log
+
+- 2026-07-31 — **P2-E15-10 (#107): the transcript contract is written down, and
+  an empty Session view stops being a shrug.**
+  **Half 1 — the §5.26 drift detector, which had never been built.** Every
+  parsed line is now walked against a DECLARED contract
+  (`transcripts/schema.ts`) and a newly-seen key warns exactly once. It sits
+  after the parse with no branch between it and `absorb()`: the line is
+  ingested whatever it reports, which is the half of the done-when worth
+  guarding — a detector that quarantines what it does not understand has traded
+  a silent schema break for data loss.
+  **The design changed because of a measurement.** §5.26 specifies
+  re-serialize-and-diff; the corpus said don't. **250 real transcripts, 10,138
+  lines: 75 distinct top-level keys, 12 line types, and we consume 7 of the
+  75.** "Warn on anything we don't read" is ~50 warnings on the first session
+  and a muted detector by day two. So the list is split into *read* and
+  *seen-and-skipped*, and a warning now means one thing only: the CLI wrote
+  something the file has not been told about. Re-serializing would also have
+  reported key order and number formatting as drift. DESIGN §5.26 amended with
+  an "as built" note carrying the numbers.
+  **Two things the corpus could not tell us, both found in review.** It is a
+  LOWER BOUND on the format — one machine's history, so `redacted_thinking`,
+  `citations` and `cache_control` are absent from the measurement without being
+  absent from the schema, and each would have fired a false alarm the first
+  time Dan used the feature. And `summary` records were missing entirely, which
+  would have made the first resume of a compacted conversation report drift —
+  in a file whose neighbouring code is built around exactly that record.
+  The detector is scoped **per transcripts root**: the watcher went
+  provider-generic in #98 while this schema is Claude-shaped, so a process-wide
+  budget would let one foreign-dialect adapter exhaust `MAX_TRACKED` and switch
+  detection off for the Claude sessions too — the detector silencing itself.
+  `npm run check:transcripts` prints drifted keys now; run against CLI 2.1.220
+  it reports **none**, which is the schema tracking reality rather than a
+  passing test we wrote ourselves.
+  **Half 2 — binding transparency, and the blocker that rewrote it.** The
+  Session view renders only if binding succeeds, so an empty pane meant any of
+  four things. It now derives `bound` / `awaiting-prompt` / `searching` /
+  `unbound` and says which — four states, not the three the issue asked for,
+  because "waiting for transcript" is really two: a normal short wait, and a
+  failure. Only the last is dressed as a problem.
+  **Review round 1 killed the first evidence model outright.** I took "hooks
+  delivered a native id" as proof a conversation had started. `SessionStart`
+  fires at CLI LAUNCH and carries a session id, and the CLI does not write a
+  transcript until the first prompt (our own S-07 measurement) — so the clock
+  started on every card at spawn and **every card you had opened and not typed
+  into would have turned red 45 seconds later**, which is precisely the false
+  alarm the item exists to remove. Open five cards, work in one, and four of
+  them scream. My e2e was structurally blind to it: the fake provider sends no
+  hook traffic, so the suite only ever exercised the hooks-are-silent path. The
+  signal is now a turn actually RUNNING (status reaching `working`), pushed in
+  by `sessions/ipc.ts`, and the e2e posts a real `SessionStart` so it can fail.
+  **The rule that came out of it is the load-bearing one: `unbound` always
+  rests on positive evidence** — a turn that ran, or a transcript under our
+  folder nobody can claim. With hooks dead and nothing on disk we cannot tell
+  "not yet asked" from "written somewhere we aren't looking", and announcing a
+  failure we cannot distinguish from silence is a guess in a warning's clothes.
+  `awaiting-prompt` correspondingly never times out.
+  **Round 2 found the same bug class twice more, one step further along.**
+  `/clear` mints a brand-new conversation and writes nothing until the next
+  prompt — so carrying the old turn's evidence across the reset put a cleared,
+  idle session into the red. And the conversation it just abandoned sits on
+  disk unclaimable for ever, which made *our own history* permanent evidence
+  that our transcript was missing. Also: `candidateSeen` latched, so two cards
+  in one folder marked each other during the ambiguity window (it is recomputed
+  every poll now, and evidence can RETRACT); `searchingMs` kept counting up for
+  the life of a healthy bound session; and the red headline used
+  `--status-crashed`, which `tokens.css` says in as many words is tuned for
+  dots and rings — ~3.2:1 as 11px text on daylight, below the bar the token
+  drift test enforces for `--status-crashed-ink` two lines away.
+  **Round 2 also caught a test of mine that could not fail.** The retraction
+  guard watched the owning session first, and `poll()` iterates in insertion
+  order — so the owner claimed the file before the other session ever swept,
+  and the assertions passed identically against the latching implementation
+  they were meant to catch. Reordered, and it now samples the transition rather
+  than the endpoint. *A test that cannot fail is worse than no test, because it
+  is counted.*
+  **Six revert-proofs, each re-run:** restoring hook-traffic evidence fails the
+  B1 test · re-latching `candidateSeen` fails the retraction test · dropping the
+  abandoned-file rule fails the `/clear` test · removing the emit early-return
+  turns 1 push into 7 · making the detector process-wide fails the cross-root
+  test · dropping the non-object guard warns 13 times on a bare string.
+  Gate: lint + typecheck + **612 unit (+43) + 97 e2e (+4)**, 1 skipped.
+  Manual: `03-session-view.md` (what the three messages mean) and
+  `11-troubleshooting.md` (rewritten — it had been telling users the view
+  "occasionally takes a moment", which the app now says itself, and better).
 
 - 2026-07-31 — **P2-E15-05 (#102) + P2-E15-06 (#103) → PR #123.** A theme stops
   being a two-value union — the type system literally forbade a third — and

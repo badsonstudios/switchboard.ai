@@ -209,7 +209,7 @@ test.describe('keyboard commands (E9-01)', () => {
     // pressing it again returns to the Session view rather than sticking
     await w.keyboard.press(`${MOD}+\``);
     await expect(
-      w.getByText('No activity yet — the Feed renders the conversation once it starts.')
+      w.getByText('No conversation yet')
     ).toBeVisible();
   });
 });

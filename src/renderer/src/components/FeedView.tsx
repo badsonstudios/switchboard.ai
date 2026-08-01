@@ -6,6 +6,8 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { blockVisible, FeedBlockDto, upsertBlock, Verbosity } from '../lib/feed';
+import { emptyStateCopy } from '../lib/binding-copy';
+import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
 import { rendererRegistry } from '../extensibility/registry-instance';
 import { renderFeedBlock } from '../extensibility/feed-render';
 import { uiGet, uiSet } from '../lib/ui-state';
@@ -50,6 +52,61 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
   );
 }
 
+/**
+ * What an empty Session view says (P2-E15-10, §5.26). It used to say one thing
+ * — "No activity yet" — whether the session had never been prompted, was still
+ * being located, or had failed to bind at all. That is the primary working
+ * surface staying silent about its own plumbing (AR-P1-8), so it now names
+ * which of the three it is, and only the last one looks like a problem.
+ */
+function EmptyState({
+  binding,
+  diag,
+}: {
+  binding: BindingState;
+  diag: BindingDiagnostics | null;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  const copy = emptyStateCopy(binding, diag);
+  const path = diag?.projectsRoot ?? '';
+  return (
+    <div
+      data-binding={binding}
+      style={{
+        color: 'var(--faint)',
+        fontSize: 11,
+        textAlign: 'center',
+        marginBlockStart: 24,
+        marginInline: 'auto',
+        maxInlineSize: 420,
+        paddingInline: 12,
+        lineHeight: 1.6,
+      }}
+    >
+      <div
+        style={{
+          // `-ink`, not the plain hue: tokens.css says in as many words that
+          // the --status-* colours are tuned for DOTS AND RINGS and that text
+          // needs its own per-theme value. This is 11px bold body copy, and
+          // the raw hue measures ~3.2:1 on daylight — below the 4.5:1 the
+          // token drift test enforces for exactly this token.
+          color: copy.problem ? 'var(--status-crashed-ink)' : 'var(--muted)',
+          fontWeight: copy.problem ? 700 : 400,
+          marginBlockEnd: 4,
+        }}
+      >
+        {t(copy.title)}
+      </div>
+      <div style={{ wordBreak: 'break-word' }}>{t(copy.detail, { path })}</div>
+      {/* fail-open, said out loud: our binding failing never stops the CLI, and
+          a user staring at an error needs to know where the session still is */}
+      {copy.problem && (
+        <div style={{ marginBlockStart: 6 }}>{t('binding.unboundFallback')}</div>
+      )}
+    </div>
+  );
+}
+
 export function FeedView(props: {
   sessionId: string;
   /** durable key for per-card preferences (the live id churns on resume) */
@@ -57,6 +114,9 @@ export function FeedView(props: {
   visible: boolean;
   /** current session status — needs-input/needs-permission shows the chip */
   status?: string;
+  /** transcript binding state (P2-E15-10) — decides what an EMPTY feed says */
+  binding?: BindingState;
+  bindingDiag?: BindingDiagnostics | null;
   /** the Feed never accepts input; this jumps to the Terminal tab (§5.10) */
   onJumpToTerminal?: () => void;
   /** composer options row data (E10-05) */
@@ -364,10 +424,11 @@ export function FeedView(props: {
               <span style={{ flex: 1, borderBlockStart: '1px solid var(--border)' }} />
             </div>
           )}
-          {visibleBlocks.length === 0 && !cleared && (
-            <div style={{ color: 'var(--faint)', fontSize: 11, textAlign: 'center', marginBlockStart: 24 }}>
-              {t('feedView.empty')}
-            </div>
+          {/* `blocks`, not `visibleBlocks`: a session with blocks that the
+              current verbosity filters out has plenty of conversation, and
+              telling its owner there is none would be a confident lie */}
+          {blocks.length === 0 && !cleared && (
+            <EmptyState binding={props.binding ?? 'awaiting-prompt'} diag={props.bindingDiag ?? null} />
           )}
           {visibleBlocks.map((b, i) => (
             <React.Fragment key={b.seq}>
