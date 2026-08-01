@@ -1237,6 +1237,54 @@ Designed answer:
   release (claude-code-transcripts crate pattern). **Named accepted risk**:
   schema drift is a MONTHLY expected-maintenance line item, not a background
   assumption.
+
+  > **As built (P2-E15-10, 2026-07-31) — the drift detector is a declared
+  > key-set diff, not a re-serialize-and-compare.** The mechanism above was
+  > written from the claude-code-transcripts pattern; implementing it turned up
+  > two reasons to change it, both measured rather than argued.
+  >
+  > *Re-serializing would report noise as drift.* `JSON.stringify` of a parsed
+  > line differs from the original on key order and number formatting, neither
+  > of which is a schema change. The comparison that carries the actual signal
+  > is over KEYS, so that is what `src/main/transcripts/drift.ts` walks —
+  > against a declared contract in `schema.ts`, warning once per newly-seen key
+  > and once per unknown line `type`.
+  >
+  > *A naive detector would have been muted within a day.* Measured against the
+  > real corpus in `~/.claude/projects` — **250 transcripts, 10,138 lines** —
+  > a line carries **75 distinct top-level keys** across **12 line types**, and
+  > we consume 7 of the 75. "Warn on anything we don't read" is therefore ~50
+  > warnings on the first real session. The declared list splits the corpus
+  > into *read* and *seen-and-skipped*, so a warning means "the CLI wrote
+  > something the file has not been told about" and nothing else.
+  >
+  > Two consequences worth writing down. The corpus is a **lower bound on the
+  > format**, not the format — it is one machine's history, so block types
+  > nobody here has triggered are absent from the measurement without being
+  > absent from the schema; those keys are declared from the public API shape
+  > and marked as such. And the detector is scoped **per transcripts root**,
+  > because the watcher has been provider-generic since §5.3's capability
+  > object while this schema is Claude-shaped: a process-wide budget would let
+  > one foreign-dialect adapter exhaust it and switch drift detection off for
+  > the Claude sessions too.
+  >
+  > `npm run check:transcripts` now prints the drifted keys against the
+  > installed CLI — the only check in the tree that can see real drift, since
+  > every unit fixture is a shape we wrote ourselves.
+
+- **Binding transparency** (P2-E15-10, AR-P1-8): the Session view renders only
+  if transcript binding succeeds, and binding rides two undocumented contracts
+  in series — the storage layout, and hooks liveness. An empty pane therefore
+  used to mean any of four things. The watcher now derives a **binding state**
+  (`bound` · `awaiting-prompt` · `searching` · `unbound`) and the view says
+  which, with the diagnosis naming the contract that went quiet. Two rules keep
+  it honest: **`awaiting-prompt` never times out** (a session you opened and
+  walked away from is not broken — transcripts appear on the first prompt, per
+  S-04/S-05), and **`unbound` always rests on positive evidence** — a turn that
+  actually ran, or a transcript under our folder that nobody can claim. With
+  hooks dead and nothing on disk we cannot distinguish "not yet asked" from
+  "written somewhere we aren't looking", and announcing a failure we cannot
+  tell from silence would be a guess in a warning's clothes.
 - **Data portability**: versioned app-data schema; workspaces, layouts, themes,
   and settings exportable/importable as plain files — back up or move the whole
   setup.

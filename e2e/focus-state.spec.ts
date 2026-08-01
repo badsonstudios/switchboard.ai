@@ -18,7 +18,7 @@ test.describe('focus-state persistence (E12-08)', () => {
 
     // Session is the default; surface the hidden Terminal and switch to it —
     // both the shown-state and the active tab must survive the relaunch
-    await expect(w.getByText('No activity yet — the Feed renders the conversation once it starts.')).toBeVisible();
+    await expect(w.getByText('No conversation yet')).toBeVisible();
     await showTerminal(w);
     await expect(w.locator('.xterm-screen').first()).toBeVisible({ timeout: 15_000 });
 
@@ -31,7 +31,7 @@ test.describe('focus-state persistence (E12-08)', () => {
     // choice survived the relaunch (and the focused card auto-resumed)
     await expect(a.window.locator('.xterm-screen').first()).toBeVisible({ timeout: 20_000 });
     await expect(
-      a.window.getByText('No activity yet — the Feed renders the conversation once it starts.')
+      a.window.getByText('No conversation yet')
     ).toHaveCount(0);
   });
 

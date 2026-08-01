@@ -612,3 +612,336 @@ describe('per-session transcripts root (P2-E15-01)', () => {
     expect(watcher.snapshot('s1')).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// P2-E15-10 — binding transparency (§5.26, AR-P1-8)
+//
+// The Session view renders only if binding succeeds, and until this item every
+// way of failing looked the same: a blank pane. These pin the four states the
+// watcher can honestly tell apart — and, the part that matters, that only ONE
+// of them means something is wrong.
+// ---------------------------------------------------------------------------
+describe('binding state (P2-E15-10)', () => {
+  it('a fresh session is awaiting-prompt and STAYS there — an unprompted session is not late', async () => {
+    // The give-up deadline is 20ms here; a session nobody has prompted must
+    // still never age into "couldn't bind", because nothing is wrong with it.
+    const w = new TranscriptWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: root }), 'transcripts'),
+      pollMs: 10,
+      bindGiveUpMs: 20,
+    });
+    w.watch('s1', { cwd });
+    expect(w.snapshot('s1')!.binding).toBe('awaiting-prompt');
+    await sleep(200);
+    expect(w.snapshot('s1')!.binding).toBe('awaiting-prompt');
+    expect(w.snapshot('s1')!.bindingDiag.searchingMs).toBeNull();
+    w.stop();
+  });
+
+  it('a turn running is evidence: awaiting-prompt -> searching', () => {
+    watcher.watch('s1', { cwd });
+    expect(watcher.snapshot('s1')!.binding).toBe('awaiting-prompt');
+    watcher.noteConversationStarted('s1');
+    const snap = watcher.snapshot('s1')!;
+    expect(snap.binding).toBe('searching');
+    expect(snap.bindingDiag.conversationStarted).toBe(true);
+    expect(snap.bindingDiag.searchingMs).not.toBeNull();
+  });
+
+  it('HOOK TRAFFIC ALONE is not evidence — an un-prompted session never goes red', async () => {
+    // Regression for the bug this model was rebuilt around. `SessionStart`
+    // fires at CLI launch and carries a session_id, so it reaches
+    // `setNativeSessionId` about a second after every card spawns — while the
+    // CLI does not create the transcript until the FIRST PROMPT. Taking that
+    // as evidence meant every card you had opened and not typed into turned
+    // red 45 seconds later, which is the exact false alarm this item exists to
+    // remove.
+    const w = new TranscriptWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: root }), 'transcripts'),
+      pollMs: 10,
+      bindGiveUpMs: 20,
+    });
+    w.watch('s1', { cwd });
+    w.setNativeSessionId('s1', 'native-1'); // what SessionStart does, at spawn
+    await sleep(200); // ten times the give-up deadline
+    expect(w.snapshot('s1')!.binding).toBe('awaiting-prompt');
+    expect(w.snapshot('s1')!.bindingDiag.conversationStarted).toBe(false);
+    w.stop();
+  });
+
+  it('an unclaimable file under our own folder is INDEPENDENT evidence (hooks silent)', async () => {
+    // AR-P1-8's actual complaint: binding rides two undocumented contracts in
+    // series. A storage-layout change must be visible even when hooks never
+    // fire, or the UI can only ever report one of the two failures.
+    watcher.watch('s1', { cwd });
+    writeLines(path.join(projectDir(), 'imposter.jsonl'), [entry({ cwd: 'C:/somewhere/else' })]);
+    await sleep(120);
+    const snap = watcher.snapshot('s1')!;
+    expect(snap.binding).toBe('searching');
+    expect(snap.bindingDiag.candidateSeen).toBe(true);
+    expect(snap.bindingDiag.conversationStarted).toBe(false);
+  });
+
+  it('searching past the deadline becomes unbound, and says where it looked', async () => {
+    const w = new TranscriptWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: root }), 'transcripts'),
+      pollMs: 10,
+      bindGiveUpMs: 30,
+    });
+    w.watch('s1', { cwd });
+    w.noteConversationStarted('s1');
+    expect(w.snapshot('s1')!.binding).toBe('searching');
+    await sleep(200);
+    const snap = w.snapshot('s1')!;
+    expect(snap.binding).toBe('unbound');
+    expect(snap.bindingDiag.projectsRoot).toBe(root);
+    w.stop();
+  });
+
+  it('binding a real transcript reaches bound from any state', async () => {
+    watcher.watch('s1', { cwd });
+    watcher.noteConversationStarted('s1');
+    expect(watcher.snapshot('s1')!.binding).toBe('searching');
+    writeLines(path.join(projectDir(), 'native-1.jsonl'), [entry()]);
+    await sleep(150);
+    expect(watcher.snapshot('s1')!.binding).toBe('bound');
+  });
+
+  it('pushes a snapshot when the state MOVES, so the UI never waits on a line that is not coming', async () => {
+    // The whole point: an unbound session produces no transcript lines, so the
+    // usual emit-on-drain path never fires for it. Without this push the pane
+    // would sit on its mount-time answer for ever.
+    watcher.watch('s1', { cwd });
+    const seen: string[] = [];
+    const off = watcher.onUpdate((s) => seen.push(s.binding));
+    watcher.noteConversationStarted('s1');
+    await sleep(200); // ~8 poll ticks
+    off();
+    expect(seen).toContain('searching');
+    // ...and it is a TRANSITION, not a 10Hz firehose: the poll re-derives the
+    // state every tick, so without an early return on "nothing moved" this
+    // would be one `sessions:usage` push per 100ms per unbound session.
+    expect(seen).toHaveLength(1);
+  });
+
+  it('a corrected mis-bind restarts the clock instead of reporting failure on arrival', async () => {
+    // `conversationStarted` survives a rebind (a turn demonstrably ran — that
+    // is HOW we got here), so carrying the ORIGINAL evidence timestamp would
+    // declare the fresh search failed the instant it began, ten minutes into a
+    // healthy session.
+    const w = new TranscriptWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: root }), 'transcripts'),
+      pollMs: 10,
+      bindGiveUpMs: 5_000,
+    });
+    w.watch('s1', { cwd });
+    w.noteConversationStarted('s1');
+    writeLines(path.join(projectDir(), 'native-1.jsonl'), [entry()]);
+    await sleep(150);
+    expect(w.snapshot('s1')!.binding).toBe('bound');
+
+    w.setNativeSessionId('s1', 'a-different-conversation'); // mis-bind correction
+    const snap = w.snapshot('s1')!;
+    expect(snap.binding).toBe('searching');
+    expect(snap.bindingDiag.searchingMs!).toBeLessThan(1_000);
+    w.stop();
+  });
+
+  it('/clear drops the evidence too — a cleared, idle session is not a failure', async () => {
+    // The same fact B1 rests on, one step further along: `/clear` mints a
+    // BRAND-NEW conversation, and the CLI writes nothing for it until the next
+    // prompt. Carrying the previous turn's evidence across the reset would put
+    // a session you cleared and then walked away from into a red failure state
+    // 45 seconds later. (A corrected MIS-BIND is the opposite case and must
+    // keep its evidence — the test above covers that.)
+    //
+    // This needs TWO things to hold, and fails if either is dropped: the
+    // cleared session must give up its `conversationStarted` latch, AND the
+    // conversation it just abandoned — which stays on disk, unclaimable by us
+    // for ever — must stop counting as a transcript we failed to pick up.
+    const w = new TranscriptWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: root }), 'transcripts'),
+      pollMs: 10,
+      bindGiveUpMs: 30,
+    });
+    w.watch('s1', { cwd });
+    w.noteConversationStarted('s1');
+    writeLines(path.join(projectDir(), 'native-1.jsonl'), [entry()]);
+    await sleep(150);
+    expect(w.snapshot('s1')!.binding).toBe('bound');
+
+    w.setNativeSessionId('s1', 'a-fresh-conversation', 'clear');
+    await sleep(200); // many times the give-up deadline
+    const snap = w.snapshot('s1')!;
+    expect(snap.binding).toBe('awaiting-prompt');
+    expect(snap.bindingDiag.conversationStarted).toBe(false);
+    w.stop();
+  });
+
+  it('a bound session stops reporting search diagnostics about itself', async () => {
+    // `searchingMs` kept counting up for the life of a healthy bound session,
+    // and `candidateSeen` froze at whatever the binding sweep saw — two fields
+    // that end up in a bug report saying the opposite of what is happening.
+    watcher.watch('s1', { cwd });
+    watcher.noteConversationStarted('s1');
+    await sleep(60);
+    expect(watcher.snapshot('s1')!.bindingDiag.searchingMs).not.toBeNull();
+
+    writeLines(path.join(projectDir(), 'native-1.jsonl'), [entry()]);
+    await sleep(150);
+    const snap = watcher.snapshot('s1')!;
+    expect(snap.binding).toBe('bound');
+    expect(snap.bindingDiag.searchingMs).toBeNull();
+    expect(snap.bindingDiag.candidateSeen).toBe(false);
+  });
+
+  it('evidence RETRACTS when a troubling file finds its rightful owner', async () => {
+    // Two cards in one folder, neither bound: card 1's transcript is visible
+    // to BOTH as an unclaimable candidate. Latching that would leave the
+    // innocent card permanently marked and time it out into a red banner it
+    // did nothing to deserve — so the flag is recomputed every poll.
+    //
+    // WATCH ORDER IS LOAD-BEARING. `poll()` iterates sessions in insertion
+    // order, so with the owner watched FIRST it claims the file before the
+    // other session ever sweeps, `isEvidence` already returns false, and the
+    // end-state assertions below pass just as happily against a latching
+    // implementation. Watching the innocent card first is what makes the
+    // window real — verified: in this order `candidateSeen` genuinely goes
+    // true and then back to false; in the other it is never true at all.
+    watcher.watch('s2', { cwd, nativeSessionId: 'native-2' });
+    watcher.watch('s1', { cwd, nativeSessionId: 'native-1' });
+
+    const sawEvidence: boolean[] = [];
+    const sampler = setInterval(() => {
+      const s = watcher.snapshot('s2');
+      if (s) sawEvidence.push(s.bindingDiag.candidateSeen);
+    }, 5);
+    writeLines(path.join(projectDir(), 'native-1.jsonl'), [entry({ sessionId: 'native-1' })]);
+    await sleep(250);
+    clearInterval(sampler);
+
+    expect(watcher.snapshot('s1')!.binding).toBe('bound');
+    // it WAS evidence for a moment — that is the state a latch would keep...
+    expect(sawEvidence).toContain(true);
+    // ...and it was given back the moment the file found its owner
+    const s2 = watcher.snapshot('s2')!;
+    expect(s2.bindingDiag.candidateSeen).toBe(false);
+    expect(s2.bindingDiag.searchingMs).toBeNull(); // the clock reset with it
+    expect(s2.binding).toBe('awaiting-prompt');
+  });
+
+  it('a sibling session bound file is not counted as evidence against us', async () => {
+    // Two cards in one folder take turns; treating the other one's transcript
+    // as "a file we could not claim" would make every same-folder pair report
+    // a binding problem neither of them has.
+    watcher.watch('s1', { cwd });
+    writeLines(path.join(projectDir(), 'native-1.jsonl'), [entry()]);
+    await sleep(150);
+    expect(watcher.snapshot('s1')!.binding).toBe('bound');
+
+    watcher.watch('s2', { cwd, nativeSessionId: 'native-2' });
+    await sleep(150);
+    const snap = watcher.snapshot('s2')!;
+    expect(snap.bindingDiag.candidateSeen).toBe(false);
+    expect(snap.binding).toBe('awaiting-prompt');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P2-E15-10 — the §5.26 drift detector, through the watcher
+// ---------------------------------------------------------------------------
+describe('transcript schema drift (P2-E15-10, §5.26)', () => {
+  it('an unknown field warns ONCE naming it, and the line is ingested normally', async () => {
+    // The done-when verbatim. The second clause is the one worth guarding: a
+    // detector that quarantined the line it did not understand would trade a
+    // silent schema break for outright data loss.
+    const warnings: Array<{ msg: string; fields?: Record<string, unknown> }> = [];
+    const base = createLogger(new LogSink({ dir: root }), 'transcripts');
+    const log = {
+      ...base,
+      warn: (msg: string, fields?: Record<string, unknown>) => {
+        warnings.push({ msg, fields });
+        base.warn(msg, fields);
+      },
+    };
+    const w = new TranscriptWatcher({ projectsRoot: root, log, pollMs: 20 });
+    w.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    const withUnknown = (n: number) =>
+      entry({
+        thinkingBudget: 4096,
+        message: {
+          usage: { input_tokens: n, output_tokens: n },
+          content: [{ type: 'text', text: `line ${n}` }],
+        },
+      });
+    writeLines(file, [withUnknown(1), withUnknown(2), withUnknown(3)]);
+    await sleep(250);
+
+    const drift = warnings.filter((x) => x.msg.includes('schema drift'));
+    expect(drift).toHaveLength(1);
+    expect(drift[0].fields?.key).toBe('thinkingBudget');
+
+    // ...and nothing about ingestion changed
+    const snap = w.snapshot('s1')!;
+    expect(snap.bound).toBe(true);
+    expect(snap.lines).toBe(3);
+    expect(snap.malformed).toBe(0);
+    expect(snap.usage).toMatchObject({ input: 6, output: 6 });
+    expect(snap.driftKeys).toEqual(['thinkingBudget']);
+    expect(w.blocks('s1').map((b) => b.text)).toEqual(['line 1', 'line 2', 'line 3']);
+    w.stop();
+  });
+
+  it('a corpus-shaped transcript produces NO drift — the schema tracks reality', async () => {
+    // The guard against the schema rotting away from the parser: these lines
+    // carry the full shape measured across 250 real transcripts on 2026-07-31.
+    // Teach the watcher a new field without declaring it, or let the declared
+    // list decay, and this goes red.
+    watcher.watch('s1', { cwd });
+    const ts = new Date().toISOString();
+    writeLines(path.join(projectDir(), 'native-1.jsonl'), [
+      JSON.stringify({
+        parentUuid: 'p', isSidechain: false, userType: 'external', cwd, sessionId: 'native-1',
+        version: '2.1.220', gitBranch: 'main', entrypoint: 'cli', uuid: 'u1', requestId: 'r1',
+        timestamp: ts, type: 'assistant', effort: 'high', promptId: 'pid',
+        message: {
+          id: 'm1', type: 'message', role: 'assistant', model: 'claude-opus-5',
+          stop_reason: 'end_turn', stop_sequence: null, stop_details: null, diagnostics: {},
+          content: [
+            { type: 'thinking', thinking: 'hmm', signature: 'sig' },
+            { type: 'text', text: 'answer' },
+            { type: 'tool_use', id: 't1', name: 'Read', input: { file_path: 'a.md' }, caller: 'x' },
+          ],
+          usage: {
+            input_tokens: 1, output_tokens: 2, cache_read_input_tokens: 3,
+            cache_creation_input_tokens: 4, service_tier: 'standard',
+            cache_creation: { ephemeral_5m_input_tokens: 4, ephemeral_1h_input_tokens: 0 },
+            server_tool_use: { web_search_requests: 0, web_fetch_requests: 0 },
+            inference_geo: 'us', iterations: 1, speed: 'fast',
+          },
+        },
+      }),
+      JSON.stringify({ type: 'ai-title', aiTitle: 'A title', sessionId: 'native-1', timestamp: ts }),
+      JSON.stringify({ type: 'file-history-snapshot', snapshot: {}, isSnapshotUpdate: false, messageId: 'm1' }),
+      JSON.stringify({
+        type: 'user', sessionId: 'native-1', cwd, timestamp: ts,
+        toolUseResult: { stdout: 'x' }, sourceToolAssistantUUID: 'u1',
+        message: {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok', is_error: false }],
+        },
+      }),
+    ]);
+    await sleep(250);
+    const snap = watcher.snapshot('s1')!;
+    expect(snap.bound).toBe(true);
+    expect(snap.driftKeys).toEqual([]);
+    expect(snap.malformed).toBe(0);
+  });
+});

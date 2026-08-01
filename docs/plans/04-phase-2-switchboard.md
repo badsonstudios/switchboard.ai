@@ -410,6 +410,19 @@ Work items:
   exactly one warning naming the field and is otherwise ingested normally
   (tolerant reader unchanged); the Session view distinguishes "waiting for the
   first prompt", "waiting for transcript", and "couldn't bind" — and says which.
+  **SHIPPED 2026-07-31.** Both halves, with three deliberate departures, all
+  recorded as an "as built" note in DESIGN §5.26: the detector diffs a
+  **declared key set** rather than re-serializing (measured — 75 top-level keys
+  across 250 real transcripts, of which we consume 7, so "warn on anything we
+  don't read" is ~50 warnings on the first session); it is scoped **per
+  transcripts root**, since the watcher went provider-generic in E15-01 while
+  this schema is Claude-shaped; and the binding half added a FOURTH state,
+  because "waiting for transcript" turned out to be two different things —
+  `searching` (normal, neutral) and `unbound` (a real failure, and the only one
+  that looks like one). The load-bearing rule, found in review: `unbound` must
+  rest on **positive evidence** (a turn that ran, or an unclaimable file), never
+  on hook traffic alone — `SessionStart` fires at spawn, so the first draft
+  turned every un-prompted card red 45 seconds after it opened.
 - **P2-E15-11 · Transcript discovery I/O — S (AR-P1-8).** *(depends: 10)*
   `poll()` runs every 100ms and any session unbound past 10s triggers a full
   recursive `scan()` of `~/.claude/projects` — on the thread that also pumps

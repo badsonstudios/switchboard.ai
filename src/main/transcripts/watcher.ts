@@ -12,7 +12,9 @@ import fs from 'fs';
 import path from 'path';
 import { Logger } from '../log/logger';
 import { ToolCategory, toolCategory } from '../../shared/tool-taxonomy';
+import { BindingDiagnostics, BindingState } from '../../shared/transcripts';
 import { conversationExists, slugForCwd } from './paths';
+import { DriftDetector } from './drift';
 
 // Re-exported: these moved to `paths.ts` so the provider adapters can use them
 // without importing the watcher (P2-E15-01).
@@ -28,12 +30,23 @@ export interface UsageTotals {
 export interface TranscriptSnapshot {
   sessionId: string;
   bound: boolean;
+  /** what the UI shows when `bound` is false — and why (P2-E15-10) */
+  binding: BindingState;
+  bindingDiag: BindingDiagnostics;
   nativeSessionId?: string;
   usage: UsageTotals;
   /** last-seen model id from the transcript, for cost estimation */
   model?: string;
   lines: number;
   malformed: number;
+  /** Schema keys this run has never seen before (§5.26 drift detector). Sits
+   *  beside `malformed` on purpose: both count "the file was not what we
+   *  expected", and neither ever changes what gets ingested.
+   *
+   *  `readonly` and genuinely frozen: one array is shared by every snapshot
+   *  taken under a root rather than copied per call (that IS the saving), so
+   *  the compiler carries the invariant instead of a comment nobody reads. */
+  driftKeys: readonly string[];
   toolsSeen: string[];
   filesTouched: string[];
   subagents: Array<{ agentId: string; agentType?: string; description?: string }>;
@@ -92,6 +105,36 @@ interface WatchedSession {
   projectsRoot: string;
   boundFile: string | null;
   watchedSince: number;
+  /** A TURN HAS RUN in this session (P2-E15-10 evidence #1). Latched, because
+   *  a turn having happened never becomes untrue.
+   *
+   *  Deliberately NOT "hooks have spoken to us": `SessionStart` fires at CLI
+   *  launch and carries a session_id, so treating any hook traffic as evidence
+   *  would start the give-up clock on every card at spawn — and a transcript
+   *  is not created until the FIRST PROMPT (the S-07 measurement). Every card
+   *  you opened and had not typed into yet would turn red 45 seconds later,
+   *  which is precisely the false alarm this item exists to remove. */
+  conversationStarted: boolean;
+  /** A transcript is sitting under our folder that nobody can claim (evidence
+   *  #2 — deliberately independent, because AR-P1-8's point is that binding
+   *  rides TWO contracts in series and the UI should be able to say which one
+   *  went quiet).
+   *
+   *  RECOMPUTED every poll, never latched: while two same-folder cards are
+   *  waiting out the ambiguity deadline, each can see the other's file as
+   *  unclaimable. Latching would leave the innocent one permanently marked —
+   *  so the evidence must be able to RETRACT when the file finds its owner. */
+  candidateSeen: boolean;
+  /** when the current run of evidence began — the clock the give-up deadline
+   *  runs on. Not `watchedSince`: a session nobody has prompted is not late.
+   *  Cleared when the evidence retracts. */
+  evidenceSince: number | null;
+  /** Transcripts we were bound to and gave up: a `/clear`'s previous
+   *  conversation, or a mis-bind we corrected. They stay on disk, unclaimable
+   *  by us for ever, so without this they would count as "a file under our
+   *  folder that nobody can take" — turning our own abandoned history into
+   *  permanent evidence that our transcript is missing (P2-E15-10). */
+  abandoned: Set<string>;
   tails: Map<string, { offset: number; buf: string }>;
   snap: TranscriptSnapshot;
   blocks: FeedBlock[];
@@ -108,6 +151,14 @@ const WIDEN_AFTER_MS = 10_000;
  *  dead must not leave the Feed empty forever). */
 const CWD_BIND_FALLBACK_MS = 30_000;
 
+/** After this long WITH EVIDENCE and still unbound, stop calling it "searching"
+ *  and tell the user we failed. Chosen to be longer than CWD_BIND_FALLBACK_MS
+ *  so the fail-open cwd bind gets its full chance first — note the two clocks
+ *  have DIFFERENT origins (`evidenceSince` vs `watchedSince`), so that ordering
+ *  holds comfortably in the common case (evidence arrives at the first prompt)
+ *  rather than by arithmetic. */
+const BIND_GIVEUP_MS = 45_000;
+
 export interface TranscriptWatcherOptions {
   /** Default root for sessions that do not name one, and the first root seeded.
    *  Optional: a workspace whose provider has no transcripts capability watches
@@ -120,6 +171,8 @@ export interface TranscriptWatcherOptions {
   /** how long an ambiguous same-cwd session waits for a native id before
    *  falling back to best-effort cwd binding */
   cwdBindFallbackMs?: number;
+  /** how long a session searches WITH EVIDENCE before the UI says it failed */
+  bindGiveUpMs?: number;
 }
 
 /** CLI plumbing disguised as user text — never conversation. */
@@ -166,9 +219,62 @@ export class TranscriptWatcher {
   private readonly blockListeners = new Set<(sessionId: string, b: FeedBlock) => void>();
   private readonly resetListeners = new Set<(sessionId: string, cause?: 'clear') => void>();
   private timer: NodeJS.Timeout | null = null;
+  // ONE detector for the whole watcher, not one per session: every session is
+  // reading transcripts written by the same CLI build, so a new field is one
+  // piece of news however many sessions happen to see it (§5.26 "warned once").
+  private readonly drift: DriftDetector;
+  // `driftKeys` rides every snapshot, and every snapshot is structured-cloned
+  // to the renderer. It is empty in the overwhelming majority of runs and
+  // identical for every session under one root, so it is built once per root
+  // and invalidated when the detector actually reports something.
+  private readonly driftCache = new Map<string, readonly string[]>();
 
   constructor(private readonly opts: TranscriptWatcherOptions) {
+    this.drift = new DriftDetector((key, sample) => {
+      this.driftCache.clear();
+      this.opts.log.warn('transcript schema drift: unknown key', {
+        key,
+        // which line type, and which CLI BUILD wrote it — the version is
+        // sitting on the very line we are inspecting, and without it the log
+        // entry cannot be turned into a bug report without guesswork
+        line: sample,
+        hint: 'the CLI writes a field src/main/transcripts/schema.ts does not declare — see §5.26',
+      });
+    });
     if (opts.projectsRoot) this.seed(opts.projectsRoot);
+  }
+
+  private driftKeysFor(root: string): readonly string[] {
+    let keys = this.driftCache.get(root);
+    if (!keys) {
+      keys = Object.freeze(this.drift.keys(root));
+      this.driftCache.set(root, keys);
+    }
+    return keys;
+  }
+
+  /** A snapshot with nothing in it yet. Two callers (first watch, and a reset
+   *  after a corrected mis-bind) and they must not drift apart. */
+  private blankSnap(sessionId: string, projectsRoot: string): TranscriptSnapshot {
+    return {
+      sessionId,
+      bound: false,
+      binding: 'awaiting-prompt',
+      bindingDiag: {
+        conversationStarted: false,
+        candidateSeen: false,
+        searchingMs: null,
+        projectsRoot,
+      },
+      usage: { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 },
+      lines: 0,
+      malformed: 0,
+      driftKeys: [],
+      toolsSeen: [],
+      filesTouched: [],
+      subagents: [],
+      lastActivityAt: null,
+    };
   }
 
   /** Record everything already under `root`, once, so it can never be mistaken
@@ -209,18 +315,12 @@ export class TranscriptWatcher {
       projectsRoot: root,
       boundFile: null,
       watchedSince: Date.now(),
+      conversationStarted: false,
+      candidateSeen: false,
+      evidenceSince: null,
+      abandoned: new Set(),
       tails: new Map(),
-      snap: {
-        sessionId,
-        bound: false,
-        usage: { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 },
-        lines: 0,
-        malformed: 0,
-        toolsSeen: [],
-        filesTouched: [],
-        subagents: [],
-        lastActivityAt: null,
-      },
+      snap: this.blankSnap(sessionId, root),
       blocks: [],
       blockSeq: 0,
       toolBlocks: new Map(),
@@ -240,6 +340,9 @@ export class TranscriptWatcher {
     const w = this.sessions.get(sessionId);
     if (!w) return;
     w.nativeSessionId = nativeId;
+    // Deliberately NOT evidence that a conversation started: this fires from
+    // `SessionStart` too, which the CLI sends at launch (P2-E15-10 — see
+    // `conversationStarted`). The caller tells us about turns separately.
     if (w.boundFile && w.snap.nativeSessionId && w.snap.nativeSessionId !== nativeId) {
       if (cause === 'clear') {
         // not a mis-bind: /clear started a fresh conversation on purpose
@@ -261,22 +364,35 @@ export class TranscriptWatcher {
 
   /** Drop the current binding and start discovery over, clean. */
   private resetBinding(w: WatchedSession, cause?: 'clear'): void {
+    // Whatever we were reading is now positively somebody else's conversation
+    // (a corrected mis-bind) or a closed chapter of our own (`/clear`). Either
+    // way it will sit there unclaimable for the rest of the run, so it must
+    // stop being treated as a transcript we failed to pick up.
+    if (w.boundFile) w.abandoned.add(w.boundFile);
     w.boundFile = null;
     w.tails.clear();
     w.blocks = [];
     w.blockSeq = 0;
     w.toolBlocks.clear();
-    w.snap = {
-      sessionId: w.sessionId,
-      bound: false,
-      usage: { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 },
-      lines: 0,
-      malformed: 0,
-      toolsSeen: [],
-      filesTouched: [],
-      subagents: [],
-      lastActivityAt: null,
-    };
+    w.snap = this.blankSnap(w.sessionId, w.projectsRoot);
+    // A fresh search starts now, so the give-up clock restarts — otherwise a
+    // rebind ten minutes into a healthy session would report as failed on
+    // arrival. What survives depends on WHY we are here, and the two causes
+    // genuinely differ:
+    //
+    //  - a corrected MIS-BIND: the conversation is still running and its
+    //    transcript exists, we were merely reading the wrong one. A turn
+    //    demonstrably ran — that is how we learned the correct id — so the
+    //    evidence stands and a failure to re-find it is worth reporting.
+    //  - a `/clear`: the CLI minted a BRAND-NEW conversation, and it will not
+    //    write a transcript for it until the next prompt. Carrying the old
+    //    turn's evidence over would put a cleared-and-then-idle session into a
+    //    red failure state 45 seconds later — B1 again, one step further along.
+    //    The next prompt re-latches it through the ordinary `working` path.
+    w.candidateSeen = false;
+    w.evidenceSince = null;
+    if (cause === 'clear') w.conversationStarted = false;
+    this.refreshBinding(w); // re-arms the clock from whatever evidence survived
     // the renderer must drop the stolen blocks too — the correct transcript
     // re-emits from seq 1 and would otherwise interleave with the old tail
     for (const l of this.resetListeners) l(w.sessionId, cause);
@@ -291,9 +407,135 @@ export class TranscriptWatcher {
     return () => this.resetListeners.delete(l);
   }
 
+  /**
+   * A TURN HAS RUN in this session — the only thing that makes a missing
+   * transcript newsworthy on its own (P2-E15-10). The caller owns this because
+   * only it can tell a turn from a launch: `SessionStart` and `UserPromptSubmit`
+   * both arrive as hook traffic carrying a session id, and only the second one
+   * means the CLI has written, or is about to write, a transcript.
+   */
+  noteConversationStarted(sessionId: string): void {
+    const w = this.sessions.get(sessionId);
+    if (!w || w.conversationStarted) return;
+    w.conversationStarted = true;
+    this.refreshBinding(w);
+  }
+
+  /**
+   * What the watcher can honestly say about this session's binding right now
+   * (P2-E15-10). Pure derivation from evidence already held — it decides
+   * nothing and changes no behaviour; `claim()`'s heuristics are untouched.
+   */
+  private deriveBinding(w: WatchedSession): BindingState {
+    if (w.boundFile) return 'bound';
+    // No evidence a conversation started. This is the NORMAL state of a
+    // freshly spawned session and stays until something says otherwise — it
+    // deliberately never times out, because a session you opened and walked
+    // away from is not broken.
+    //
+    // It also means `unbound` ALWAYS rests on positive evidence. With hooks
+    // dead and nothing on disk we genuinely cannot tell "nobody has prompted
+    // it" from "the CLI is writing somewhere we are not looking" — and
+    // announcing a failure we cannot distinguish from silence is a guess
+    // wearing a warning's clothes.
+    if (w.evidenceSince === null) return 'awaiting-prompt';
+    const giveUp = this.opts.bindGiveUpMs ?? BIND_GIVEUP_MS;
+    return Date.now() - w.evidenceSince > giveUp ? 'unbound' : 'searching';
+  }
+
+  /** Recompute binding state and, if anything the UI shows MOVED, tell the
+   *  listeners. Called from the poll and from every evidence site, so the UI
+   *  never waits on a transcript line that is not coming. */
+  private refreshBinding(w: WatchedSession): void {
+    if (w.boundFile) {
+      // The search is over, so nothing about it is true any more. Without
+      // this, `searchingMs` keeps counting up for the rest of a perfectly
+      // healthy session's life and `candidateSeen` stays stuck at whatever it
+      // was on the sweep that bound — two diagnostics that would end up in a
+      // bug report saying the opposite of what is happening.
+      w.evidenceSince = null;
+      w.candidateSeen = false;
+    } else {
+      // The give-up clock runs on the CURRENT run of evidence, and evidence
+      // can retract: `candidateSeen` is recomputed each poll, so a file that
+      // finds its rightful owner stops counting against this session and the
+      // clock resets rather than marking it for the rest of the run.
+      const hasEvidence = w.conversationStarted || w.candidateSeen;
+      if (!hasEvidence) w.evidenceSince = null;
+      else w.evidenceSince ??= Date.now();
+    }
+
+    const next = this.deriveBinding(w);
+    const d = w.snap.bindingDiag;
+    // The diagnostics decide WHICH explanation the pane shows, so a change in
+    // them is as user-visible as a change of state — a session that reaches
+    // `unbound` on one contract and later fails the other would otherwise keep
+    // showing the first diagnosis for the rest of the run (the IPC pull only
+    // happens at mount).
+    const diagMoved =
+      d.conversationStarted !== w.conversationStarted || d.candidateSeen !== w.candidateSeen;
+    // Mutated in place, and `searchingMs` is filled in by `snapshot()` rather
+    // than stored: this runs every 100ms per unbound session, and a value that
+    // is stale the instant it is written has no business being cached.
+    d.conversationStarted = w.conversationStarted;
+    d.candidateSeen = w.candidateSeen;
+    const entering = next !== w.snap.binding;
+    // Nothing the UI shows has moved. This runs on every 100ms poll tick for
+    // every unbound session, so without this return it is a push firehose
+    // rather than the two or three messages a session's lifetime deserves.
+    if (!entering && !diagMoved) return;
+    w.snap.binding = next;
+    if (entering && next === 'unbound') {
+      // The one state that means something is wrong, so it earns a log line
+      // naming which of the two contracts (§5.26) went quiet.
+      this.opts.log.warn('transcript binding gave up', {
+        sessionId: w.sessionId,
+        cwd: w.cwd,
+        projectsRoot: w.projectsRoot,
+        conversationStarted: w.conversationStarted,
+        candidateSeen: w.candidateSeen,
+      });
+    }
+    this.emit(w);
+  }
+
+  /** Push this session's snapshot to the update listeners. */
+  private emit(w: WatchedSession): void {
+    const snap = this.snapshot(w.sessionId);
+    if (!snap) return;
+    for (const l of this.listeners) {
+      try {
+        l(snap);
+      } catch (err) {
+        this.opts.log.error('transcript listener threw', {
+          sessionId: w.sessionId,
+          error: String(err),
+        });
+      }
+    }
+  }
+
   /** This pre-existing file is the session's OWN resumed conversation. */
   private isOwnResumedFile(w: WatchedSession, full: string): boolean {
     return !!w.nativeSessionId && path.basename(full) === `${w.nativeSessionId}.jsonl`;
+  }
+
+  /**
+   * Would a refusal to claim this file be NEWS (P2-E15-10)? Only a file that
+   * could plausibly have been ours counts:
+   *  - subagent files are bound after the main transcript by design, so their
+   *    refusal is the normal path, not a symptom;
+   *  - a file another session already owns is that session's, and two cards in
+   *    one folder taking turns is expected — counting it would make every
+   *    same-folder pair report a binding problem it does not have.
+   */
+  private isEvidence(w: WatchedSession, full: string): boolean {
+    if (full.includes(`${path.sep}subagents${path.sep}`)) return false;
+    if (w.abandoned.has(full)) return false;
+    for (const other of this.sessions.values()) {
+      if (other !== w && other.boundFile === full) return false;
+    }
+    return true;
   }
 
   /** Another watched session shares this cwd — binding is ambiguous. */
@@ -314,7 +556,23 @@ export class TranscriptWatcher {
 
   snapshot(sessionId: string): TranscriptSnapshot | undefined {
     const w = this.sessions.get(sessionId);
-    return w ? { ...w.snap, toolsSeen: [...w.snap.toolsSeen], filesTouched: [...w.snap.filesTouched], subagents: [...w.snap.subagents] } : undefined;
+    return w
+      ? {
+          ...w.snap,
+          bindingDiag: {
+            ...w.snap.bindingDiag,
+            searchingMs: w.evidenceSince === null ? null : Date.now() - w.evidenceSince,
+          },
+          // per ROOT, not per session: one provider writes every transcript
+          // under a root, so "which keys are new" is one answer there, and
+          // attributing it to whichever session happened to see it first would
+          // be an accident of scheduling dressed up as information
+          driftKeys: this.driftKeysFor(w.projectsRoot),
+          toolsSeen: [...w.snap.toolsSeen],
+          filesTouched: [...w.snap.filesTouched],
+          subagents: [...w.snap.subagents],
+        }
+      : undefined;
   }
 
   onUpdate(l: (s: TranscriptSnapshot) => void): () => void {
@@ -379,6 +637,7 @@ export class TranscriptWatcher {
       // rule changes must degrade to a slower scan, not silent unbound)
       if (!w.boundFile) {
         const widen = Date.now() - w.watchedSince > (this.opts.widenAfterMs ?? WIDEN_AFTER_MS);
+        let candidates = false;
         for (const full of this.discoveryCandidates(w, widen)) {
           if (w.tails.has(full)) continue;
           // pre-existing files are never adopted — EXCEPT our own resumed
@@ -387,8 +646,21 @@ export class TranscriptWatcher {
           // Session view forever). Replaying it from 0 also gives the Feed
           // the conversation history back.
           if (this.known.get(w.projectsRoot)?.has(full) && !this.isOwnResumedFile(w, full)) continue;
-          if (this.claim(w, full)) w.tails.set(full, { offset: 0, buf: '' });
+          const evidence = this.isEvidence(w, full);
+          if (this.claim(w, full)) {
+            w.tails.set(full, { offset: 0, buf: '' });
+          } else if (evidence) {
+            // A transcript appeared under OUR folder during OUR watch and we
+            // could not take it. That is the storage-layout contract moving —
+            // the exact failure AR-P1-8 says the UI must stop hiding.
+            candidates = true;
+          }
         }
+        // Assigned from THIS tick's sweep, not OR-ed into the old value: the
+        // moment a sibling claims the file that was troubling us, it stops
+        // being evidence against this session and the give-up clock resets.
+        w.candidateSeen = candidates;
+        this.refreshBinding(w);
       } else {
         // bound: only look for new subagent files under our session dir
         for (const full of this.subagentFiles(w)) {
@@ -557,17 +829,21 @@ export class TranscriptWatcher {
         w.snap.malformed++;
         continue;
       }
+      // §5.26 drift detection sits HERE — after the parse, before absorb, and
+      // with no branch between it and ingestion. The line is absorbed whatever
+      // it reports; the detector observes, it does not gate (see drift.ts).
+      this.drift.inspect(
+        w.projectsRoot,
+        e,
+        `type=${typeof e.type === 'string' ? e.type : '(none)'} cli=${
+          typeof e.version === 'string' ? e.version : '(unknown)'
+        }`
+      );
       this.absorb(w, full, e);
     }
     if (touched) {
       w.snap.lastActivityAt = new Date().toISOString();
-      for (const l of this.listeners) {
-        try {
-          l(this.snapshot(w.sessionId)!);
-        } catch (err) {
-          this.opts.log.error('transcript listener threw', { sessionId: w.sessionId, error: String(err) });
-        }
-      }
+      this.emit(w);
     }
   }
 

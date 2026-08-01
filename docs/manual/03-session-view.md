@@ -21,6 +21,28 @@ This is the conversation, rendered to be read rather than scrolled past:
 The view stays pinned to the newest message, including when you switch back to
 a session you'd left. Scroll up freely; it won't yank you back.
 
+## When the Session tab has nothing in it
+
+An empty Session tab is usually normal, so it tells you which kind of empty it
+is rather than leaving you guessing:
+
+- **"No conversation yet"** — the session is up and waiting. Claude Code
+  doesn't start writing a conversation until you send your first prompt, so a
+  card you've just opened sits here, however long you leave it. Nothing is
+  wrong.
+- **"Looking for this session's transcript…"** — you've sent something and
+  switchboard is matching the conversation to this card. It normally passes in
+  a moment.
+- **"Couldn't find this session's transcript"** — shown in red, and the only
+  one that means something is actually wrong. It tells you where it looked and
+  what it found. **Your session is unaffected** — it's still running, and the
+  **Terminal** tab shows it exactly as Claude Code renders it. See
+  [Troubleshooting](11-troubleshooting.md).
+
+If you have two cards open on the *same folder*, expect the second one to spend
+a little longer on "Looking for…" — switchboard waits until it can tell the two
+conversations apart rather than guessing and showing you the wrong one.
+
 ## Talking to the session
 
 The box at the bottom sends straight to the real Claude Code session:

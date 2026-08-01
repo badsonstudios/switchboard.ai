@@ -17,6 +17,7 @@
 // stay testable without pulling React and a 700-line component in behind it.
 import type React from 'react';
 import type { CapabilityManifest } from '../../../shared/extensibility/registry';
+import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
 import type { Command } from '../lib/commands';
 import type { CommandDeps } from '../lib/command-set';
 import type { FeedBlockDto } from '../lib/feed';
@@ -119,6 +120,12 @@ export interface PanelContext {
   status?: string;
   autonomy?: string;
   model?: string;
+  /** transcript binding state and what the watcher observed getting there
+   *  (P2-E15-10). On the context rather than inside the Session panel because
+   *  it describes the SESSION, not one view of it — a future panel that also
+   *  reads the transcript needs the same answer. */
+  binding?: BindingState;
+  bindingDiag?: BindingDiagnostics | null;
   /** count of changed files, for a tab badge */
   changed: number;
   approval?: { requestId: string; tool: string; input: Record<string, unknown> } | null;

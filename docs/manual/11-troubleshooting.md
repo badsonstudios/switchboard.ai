@@ -20,9 +20,36 @@ front of you, it hands it back to Claude Code's own prompt rather than
 answering on your behalf. Nothing gets auto-approved.
 
 **The Session tab is empty but the Terminal is working.**
-The conversation view reads Claude Code's transcript file, which occasionally
-takes a moment to appear. The Terminal tab is the same session and always
-works — use it while you wait.
+The tab itself tells you which case you're in — read what it says before doing
+anything:
+
+- *"No conversation yet"* — nothing is wrong. Claude Code only starts a
+  conversation file when you send your first prompt. Send one.
+- *"Looking for this session's transcript…"* — it's matching the conversation
+  to this card; give it a moment.
+- *"Couldn't find this session's transcript"* — see below.
+
+The Terminal tab is the same session either way, and always works.
+
+**The Session tab says it couldn't find the transcript.**
+The conversation view reads the file Claude Code writes for each session. When
+that file can't be found, the message names what switchboard did see:
+
+- *"Transcripts are being written for this folder, but none match this
+  session"* — most often two cards open on one folder, where the conversation
+  you're looking for belongs to the other card. Check the other card first.
+- *"…and Claude Code has not reported any activity"* — Claude Code's hooks
+  aren't reaching switchboard, so status pills and the attention queue will be
+  quiet too. Check that this session's folder isn't blocking hook scripts, and
+  see **"Statuses never change"** below.
+- *"No transcript for it has turned up in `…`"* — the path is in the message.
+  If a Claude Code update moved where conversations are stored, that's what
+  this looks like; please report it with the path shown.
+
+**In every case the session itself is fine.** This only affects the rendered
+conversation view — the CLI is running, your work is not lost, and the
+**Terminal** tab shows the session exactly as Claude Code draws it. Restarting
+the app is safe and often enough, since matching starts fresh.
 
 **A session ended on its own.**
 The card stays with **Session ended** and a **Restart** button. If it exited

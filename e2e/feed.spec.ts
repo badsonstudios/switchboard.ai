@@ -22,7 +22,7 @@ test.describe('Feed view (E12-06)', () => {
     await expect(w.getByText(title).first()).toBeVisible();
 
     // Feed is the DEFAULT view (E12-07) — the empty state shows with no click
-    await expect(w.getByText('No activity yet — the Feed renders the conversation once it starts.')).toBeVisible();
+    await expect(w.getByText('No conversation yet')).toBeVisible();
 
     // simulate the CLI writing its transcript in the isolated HOME
     const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));

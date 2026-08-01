@@ -84,6 +84,13 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   manager.onStatusChange((change) => {
     send('sessions:status', change);
     deps.feed.ingest(change);
+    // A turn is running, so a transcript exists or is about to (P2-E15-10).
+    // This is the ONLY honest "a conversation started" signal available: the
+    // watcher sees hook traffic from `SessionStart` at launch too, and a
+    // session that has merely been spawned has no transcript by design — so
+    // taking evidence from hook traffic alone would put every un-prompted card
+    // into a failure state 45 seconds after it opened.
+    if (change.to === 'working') transcripts.noteConversationStarted(change.sessionId);
   });
   // one event per session, latest state wins (Dan 2026-07-22) — push the
   // whole list on ANY change (adds, replacements, and pure removals)
@@ -91,6 +98,13 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   manager.onSessionExit((e) => send('sessions:exited', e));
   transcripts.onUpdate((snap) => {
     send('sessions:usage', snap);
+    // A snapshot that has ingested nothing has nothing to SAY about usage, and
+    // since P2-E15-10 these fire on binding transitions too — including the
+    // zeroed snapshot a /clear or a corrected mis-bind installs before the
+    // replay rebuilds the totals. Persisting that would wipe a resumed card's
+    // stored figures and blank the usage strip (the totals come back on the
+    // next drain, but the stored ones would already be gone).
+    if (snap.lines === 0) return;
     // persist usage per card so the number survives a resume/restart
     const cardId = cardOfLive.get(snap.sessionId);
     if (!cardId) return;
@@ -139,6 +153,15 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   broker.handle('transcripts:blocks', (_e, liveId: string) =>
     typeof liveId === 'string' ? transcripts.blocks(liveId) : []
   );
+  // Binding state on demand (P2-E15-10). Transitions ride `sessions:usage`
+  // like everything else on the snapshot; this is the pull a panel needs when
+  // it MOUNTS, since a session that failed to bind long ago will never push
+  // again and the pane must not claim "no conversation yet".
+  broker.handle('transcripts:binding', (_e, liveId: string) => {
+    if (typeof liveId !== 'string') return null;
+    const snap = transcripts.snapshot(liveId);
+    return snap ? { binding: snap.binding, bindingDiag: snap.bindingDiag } : null;
+  });
 
   broker.handle('sessions:isDirectory', (_e, p: string) => {
     try {
