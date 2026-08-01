@@ -57,13 +57,22 @@ anything they turn up is a fix-forward, not a revert.
 > stream-json` — it hosts NO terminal and renders everything itself.** That is the
 > opposite architectural choice from ours.
 >
-> **The open lever:** the same flag has a second form,
-> `--permission-prompt-tool <mcp-tool-name>`, pointing the CLI at a tool served by
-> an MCP server we run. **Verified: the CLI accepts the flag** (`claude -p …
-> --permission-prompt-tool mcp__sb__approve` exits 0; the flag is hidden from
-> `--help`, so it is SDK-facing but live). **UNVERIFIED and the whole question:
-> does it fire in INTERACTIVE (TUI) mode, or only under `--print`/stream-json?**
-> That is the spike in flight.
+> **The lever was tested and it is CLOSED — spike S-09, 2026-07-31**
+> (`spike/findings/s-09-permission-prompt-tool.md`, `spike/s09/`).
+> `--permission-prompt-tool <mcp-tool>` is honoured under `--print` — the
+> control run caught the *exact* `.claude/scripts/coverage.sh` write and allowed
+> it — and is **SILENTLY IGNORED by an interactive TUI session**: MCP server
+> connected, `initialize` + `tools/list` served, `tools/call` never sent, CLI drew
+> its own prompt. **There is no flag that gives switchboard the permission prompt
+> while it hosts a TUI. The cheap win does not exist.**
+> Two useful by-products: the `.claude/` guard **is** delegatable in principle
+> (so it is not special-cased against us — we are simply not on the receiving
+> end), and **MCP works fine interactively**, which matters for E11's Session Bus
+> even though permission delegation does not ride it.
+> *Read the findings note's "four false negatives" section before running any
+> spike of this shape — a .cmd shim, inherited `CLAUDE_CODE_*` env, a
+> bracket-pasted single-line prompt and a trust dialog each produced a result
+> indistinguishable from "the flag does nothing".*
 >
 > **Why it matters beyond the annoyance:** our entire approval path rides on
 > PreToolUse hooks, which is a workaround — blind to anything the CLI decides
@@ -75,10 +84,18 @@ anything they turn up is a fix-forward, not a revert.
 > about having the terminal and would rather the session window worked like the
 > extension's. **That is a PHILOSOPHY-level change** — "host-don't-reimplement
 > (real CLI in real terminals)" is one of four hard constraints — so it gets
-> amended deliberately and first, not eroded in a PR. **Not decided. Sequenced
-> deliberately:** prove or kill `--permission-prompt-tool` in interactive mode
-> FIRST, because if it works Dan gets the prompt he wants with the terminal
-> intact and the constitutional question does not arise.
+> amended deliberately and first, not eroded in a PR.
+> **STATUS: awaiting Dan's decision (2026-07-31).** The terminal-preserving
+> option is dead (S-09), so the four that remain are: **(1)** accept it and fix
+> the whisper chip · **(2)** the extension trade — stream-json, no terminal,
+> which also deletes the whole transcript-binding subsystem (#107/#108/#112/#117
+> exist only because we read files instead of a stream) · **(3)** screen-scrape
+> the TUI prompt (works, keeps the architecture, is a §5.26 drift liability by
+> construction — never auto-answer on a fuzzy match) · **(4)** ask upstream for
+> the flag to work interactively (free, parallel). Full trade-offs in the S-09
+> findings note. **What is NOT yet measured, and is the precondition for even
+> discussing (2): what stream-json mode costs in slash commands, plan mode,
+> `AskUserQuestion` and subscription auth.**
 >
 > **Also outstanding, ours, cheap, and real regardless of the above:** when the
 > CLI asks something we cannot answer, the Session tab shows a **10px chip in the
