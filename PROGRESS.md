@@ -6,19 +6,21 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#132 (P2-E18-02) — the transport seam.** Branch
-`feature/132-transport-seam`. Gate green: lint + typecheck + **665 unit (+11)**
-+ **98 e2e**, 1 skipped, **and not one existing test edited** — which is this
-item's whole acceptance criterion.
-**#131 (P2-E18-01) MERGED 2026-08-01 as PR #141**, all 5 CI jobs green.
+**In progress:** **#133 (P2-E18-03) — StreamService.** Branch
+`feature/133-stream-service`. Gate green: lint + typecheck + **708 unit (+43)**.
+Not wired into the app — nothing outside `src/main/transport/` imports it, which
+is what the item specifies.
+**#131 MERGED as PR #141** and **#132 MERGED as PR #142**, all 5 CI jobs green
+on each.
 **Dan changed the working mode 2026-08-01:** he authorised **merge-and-continue
 through the E18 spine** — I squash-merge each E18 PR on green CI and roll into
 the next item, rather than stopping at the two gates. Applies to **#132–#140**;
 genuine blockers and decisions that are his still stop the run. *(Recorded here
 because it overrides `00-process.md`'s "Dan reviews and squash-merges" for this
 epic only.)*
-**Next up: #133 (P2-E18-03)** — StreamService. Also still running: the **S-11
-probe**, a background measurement, not a work item.
+**Next up: #134 (P2-E18-04)** — the stream-json fake provider, the precondition
+for testing stream mode. Also still running: the **S-11 probe**, a background
+measurement, not a work item.
 The E18 queue is **#131–#140**, scoped and filed by `/pm` on 2026-08-01. See the
 START HERE block immediately below.
 **Also newly open and unscheduled: #129** (a transcript-discovery session that
@@ -633,6 +635,50 @@ a "[Dan eyeball]" note.**
   to Sonnet rates** — it invents a number. Not urgent, not waiting on anything.
 
 ## Log
+
+- 2026-08-01 — **#133 (P2-E18-03) → PR: StreamService — and a bug the S-10
+  probes would have handed us.**
+  `child_process.spawn` over pipes, NDJSON both ways, sibling to `PtyService`
+  and electron-free for the same reason. Split three ways so the interesting
+  part is testable without spawning: `ndjson.ts` (framing), `message-ring.ts`
+  (bounded by COUNT, not bytes — "the last N messages" is what a late attacher
+  needs; byte-bounding would evict a long turn and keep a hundred keep_alives),
+  `stream-service.ts` (lifecycle). **43 tests, 14 of them against a REAL child**
+  — `process.execPath` running a generated script, so no login and no network,
+  the same property the PTY fake gives e2e.
+  **The find worth carrying: the S-10 probes' read loop is subtly wrong, and
+  copying it would have shipped a real bug.** They do `chunk.toString('utf8')`
+  per chunk; a multi-byte character straddling a pipe read then decodes to two
+  replacement characters and corrupts the whole JSON line. We use
+  `stdout.setEncoding('utf8')`, which puts a StringDecoder on the stream to hold
+  the partial sequence — the same job the NDJSON decoder does one level up.
+  **Revert-proofed: remove `setEncoding` and 500 KB of emoji comes back
+  corrupted.** Any non-ASCII output — a path, a diff of a UTF-8 file — can hit
+  this. *"Read contracts, don't copy code" now has a concrete instance.*
+  **`.cmd` wrapping is the transport's job, and it is NOT `shell: true`.** On
+  Windows the adapter hands us `claude.cmd`; node-pty runs that directly,
+  `child_process.spawn` does not. We wrap in `cmd.exe /c` explicitly, as the
+  probes did (and as S-11's three-processes-per-session measurement reflects).
+  `shell: true` would launch it just as well and hand command injection a
+  foothold — cwd, args and the resolved CLI path are all user-influenced and a
+  shell re-parses them. Pinned by a test asserting `shell` is never set.
+  **`launchSpec` takes the platform as a PARAMETER** rather than reading
+  `process.platform`, so both branches run on all three CI legs. Read from the
+  ambient platform, the win32 cases would pass **vacuously** on ubuntu and
+  macOS — #127's exact failure, applied before it could happen this time.
+  **No separate `lifecycle-check` entry point, deliberately.** P1 needed one
+  because node-pty is a NATIVE module that cannot load under vitest. `StreamService`
+  has no native dependency, so the concurrency coverage (12 sessions, 64 KB
+  each, no cross-talk, all exit) is a normal test that runs on every CI leg
+  instead of a script someone has to remember to invoke.
+  Four revert-proofs, each verified to have actually changed the file first:
+  dropping `windowsHide` fails 2 · adding a `pause()` fails the flood test ·
+  dropping the partial-line hold fails 7 (including both real-child framing
+  tests) · dropping `setEncoding` fails the multi-byte test.
+  *(Process note: a `perl -0pi` revert in #132 silently did not apply and
+  reported a pass. Every revert-proof here asserts the edit landed before its
+  result is believed.)*
+  Gate: lint + typecheck + **708 unit (+43)**. No user-facing change.
 
 - 2026-08-01 — **#132 (P2-E18-02) → PR: the transport seam. Zero behaviour
   change, and that is the deliverable.**
