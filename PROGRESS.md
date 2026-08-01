@@ -6,11 +6,10 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#133 (P2-E18-03) — StreamService.** Branch
-`feature/133-stream-service`. Gate green: lint + typecheck + **708 unit (+43)**.
-Not wired into the app — nothing outside `src/main/transport/` imports it, which
-is what the item specifies.
-**#131 MERGED as PR #141** and **#132 MERGED as PR #142**, all 5 CI jobs green
+**In progress:** **#134 (P2-E18-04) — the stream-json fake provider.** Branch
+`feature/134-stream-fake`. Gate green: lint + typecheck + **728 unit (+20)** +
+**98 e2e untouched** + **`npm run check:fake-stream` PASS (14/14)**.
+**#131 → PR #141, #132 → PR #142, #133 → PR #143 — all MERGED**, 5 CI jobs green
 on each.
 **Dan changed the working mode 2026-08-01:** he authorised **merge-and-continue
 through the E18 spine** — I squash-merge each E18 PR on green CI and roll into
@@ -18,9 +17,9 @@ the next item, rather than stopping at the two gates. Applies to **#132–#140**
 genuine blockers and decisions that are his still stop the run. *(Recorded here
 because it overrides `00-process.md`'s "Dan reviews and squash-merges" for this
 epic only.)*
-**Next up: #134 (P2-E18-04)** — the stream-json fake provider, the precondition
-for testing stream mode. Also still running: the **S-11 probe**, a background
-measurement, not a work item.
+**Next up: #135 (P2-E18-05)** — session status and lifecycle from the stream.
+Also still running: the **S-11 probe**, a background measurement, not a work
+item.
 The E18 queue is **#131–#140**, scoped and filed by `/pm` on 2026-08-01. See the
 START HERE block immediately below.
 **Also newly open and unscheduled: #129** (a transcript-discovery session that
@@ -635,6 +634,49 @@ a "[Dan eyeball]" note.**
   to Sonnet rates** — it invents a number. Not urgent, not waiting on anything.
 
 ## Log
+
+- 2026-08-01 — **#134 (P2-E18-04) → PR: the stream-json fake — and a done-when
+  I had to correct in public.**
+  The precondition S-10's blast-radius table missed. `providers/fake.ts` hosts
+  the OS shell in a real PTY and all 98 e2e tests rest on it; stream mode had no
+  equivalent, so nothing about it was testable without a subscription. Now there
+  are TWO fakes, one per transport, selected by distinct VALUES of
+  `SWITCHBOARD_FAKE_PROVIDER` (`1` = the original PTY fake, untouched;
+  `stream` = the new one) rather than two variables, so both modes cannot be on
+  at once and race to register the same `claude-code` id.
+  **Split into protocol + plumbing, and the reason is a testing constraint worth
+  remembering: the CI unit job does not run a build.** Anything asserting on a
+  compiled entry point could only ever SKIP there, and a test that silently does
+  not run is worse than none (#107's lesson). So all behaviour lives in
+  `fake-stream-protocol.ts` — 20 synchronous tests, no spawn — and the compiled
+  program is proven over real pipes by a new **`npm run check:fake-stream`**,
+  following the four existing `check:*` entries.
+  **That check immediately earned its place by catching a bug the unit tests
+  structurally could not.** `fake-stream-cli.ts` is a rollup ENTRY so it lands
+  in `out/main/`, but `fake-stream.ts` is imported by bootstrap and rollup put it
+  in `out/main/chunks/` — so `join(__dirname, 'fake-stream-cli.js')` resolved one
+  directory too deep. Worse, it failed as a **15-second spawn timeout**, because
+  a child that cannot resolve its script dies on stderr while we wait on stdout.
+  Now it tries both candidates and **throws a named error** if neither exists: a
+  wrong path must fail as a wrong path.
+  **The fake reproduces the SURPRISING behaviour, not the intuitive one.**
+  `system:init` is emitted once per TURN, because S-11 measured the real CLI
+  doing that — a fake kinder than the real thing hides the bug it exists to
+  catch, and #135/#139 each need to pin that behaviour. Every message shape is
+  copied from S-10's captured payloads, including `decision_reason_type:
+  "safetyCheck"` and `permission_suggestions`, which is exactly what #137
+  renders.
+  **DONE-WHEN CORRECTED, not silently redefined.** #134's issue claimed *"an e2e
+  drives a full turn in stream mode"*. That is unmeetable by this item — a full
+  turn needs session wiring (#135) and a way to CREATE a stream session from the
+  UI (#138) — and it was **my planning error in `/pm`, not a shortfall in the
+  work**. The criterion moved to #138; both issues carry a comment and the plan
+  file records it in both places.
+  Gate: lint + typecheck + **728 unit (+20)** + **98 e2e (untouched)** +
+  `check:fake-stream` **14/14 PASS**, including the `.claude/scripts/coverage.sh`
+  permission round trip that started this epic — raised, answered allow, file
+  written, over real pipes. `references/testing.md` updated: the two fakes, and
+  why the `check:*` layer exists for build-dependent proofs.
 
 - 2026-08-01 — **#133 (P2-E18-03) → PR: StreamService — and a bug the S-10
   probes would have handed us.**

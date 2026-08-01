@@ -11,17 +11,33 @@ numbers (latency, CPU, memory) where the item asks for them.
 1. **Unit — `npm test` (vitest).** Services and pure logic: SessionManager
    state machine, TranscriptWatcher tolerant parsing + plan/usage extraction,
    GitService output parsing, token/theme/usage utilities. No Electron, no CLI.
-2. **Local live checks — `npm run check:*`.** Real-`claude` integration proofs
-   that need a logged-in CLI, so they run locally (not CI): `check:pty` (12
-   concurrent PTYs — this ONE is in CI, no login needed), `check:adapter`
+2. **Local live checks — `npm run check:*`.** Integration proofs that need
+   something CI's unit job does not have — a logged-in CLI, or a BUILD:
+   `check:pty` (12 concurrent PTYs — in CI, no login needed), `check:adapter`
    (spawn + `--resume`), `check:hooks` (hook-driven status), `check:transcripts`
-   (usage extraction). Run the relevant one when you touch that subsystem.
+   (usage extraction), **`check:fake-stream`** (P2-E18-04: the compiled
+   stream-json fake over real pipes — no login, but needs `npm run build`
+   first). Run the relevant one when you touch that subsystem.
+   *Why this layer exists for the stream work:* the unit job does not build, so
+   anything asserting on a compiled entry point could only skip there — and a
+   test that silently does not run is worse than none. `check:fake-stream`
+   caught a real bug the unit tests structurally could not: the adapter is
+   bundled into `out/main/chunks/`, so a `__dirname`-relative path to a rollup
+   ENTRY resolved one directory too deep.
 3. **E2E — `npm run e2e` (Playwright + Electron).** Drives the REAL app window
    headlessly — this is how we verify UI without a human ("Dan eyeball"):
    - Harness: `e2e/fixtures/app.ts` launches the built app fully isolated (temp
      HOME, so it never touches the real `~/.claude.json` or workspace) with the
      **fake provider** (`SWITCHBOARD_FAKE_PROVIDER=1`) — a shell-in-a-PTY, so
      tests need no `claude` login and run in CI.
+   - **There are TWO fakes, one per transport (P2-E18-04).**
+     `SWITCHBOARD_FAKE_PROVIDER=1` is the original shell-in-a-PTY and is what
+     every pre-E18 spec uses. `=stream` selects the **stream-json fake**
+     (`providers/fake-stream.ts` + the compiled `fake-stream-cli.js`), which
+     speaks NDJSON and answers `can_use_tool` control requests. Distinct VALUES
+     of one variable, not two variables, so the modes cannot both be on and race
+     to register the same `claude-code` id. Stream-mode e2e arrives with
+     P2-E18-08, when a stream session can first be created from the UI.
    - Seed a session with `launchApp({ seedFolder })`; assert on chrome (theme,
      pseudo-locale, autonomy), the card header (usage strip, git, plan chip),
      the live terminal (type a command → see output), pop-out (a second OS

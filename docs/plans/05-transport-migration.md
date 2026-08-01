@@ -176,11 +176,23 @@ answer — is a **precondition for testing stream mode, not a follow-on.**
 Scriptable from the spec side, so a test can say "next turn, ask permission for
 a `.claude/` write" without a login or a network.
 
-*Done when:* an e2e drives a full turn in stream mode against the fake; a
-control request round-trips (raise → our answer → the fake proceeds or aborts);
-the fake honours `--input-format stream-json` framing exactly as the real CLI
-does; **the existing PTY fake is untouched and all 98 existing e2e tests still
-pass**; CI needs no `claude` login.
+*Done when:* ~~an e2e drives a full turn in stream mode against the fake~~
+**(CORRECTED — see below)**; a control request round-trips (raise → our answer →
+the fake proceeds or aborts); the fake honours `--input-format stream-json`
+framing exactly as the real CLI does; **the existing PTY fake is untouched and
+all 98 existing e2e tests still pass**; CI needs no `claude` login.
+
+> **Done-when correction, made while building it (2026-08-01).** The first
+> criterion was unmeetable by this item, and it was a planning error here rather
+> than a shortfall there: driving a full turn *end to end* needs session wiring
+> (E18-05) and a way to CREATE a stream session from the UI (E18-08). E18-04
+> only builds the fake. The turn is proven two other ways —
+> `fake-stream-protocol.test.ts` (synchronous, runs in the CI unit job) and
+> `npm run check:fake-stream` (the compiled program over real pipes, driven
+> through the real `StreamService` and the real adapter recipe) — and **the e2e
+> criterion moves to E18-08**, where it first becomes possible. Recorded rather
+> than silently redefined.
+
 *Depends on:* E18-03.
 
 ### E18-05 · Session status and lifecycle from the stream — M — [#135](https://github.com/badsonstudios/switchboard.ai/issues/135)
@@ -260,7 +272,9 @@ requirement for it.
 survives a relaunch; the Terminal tab in a stream session explains itself in one
 sentence and offers no dead controls; the Feed renders a stream session's turn
 via the existing transcript path; switching a **running** session's transport is
-refused with a reason, not silently ignored.
+refused with a reason, not silently ignored; **an e2e drives a full turn in
+stream mode against the E18-04 fake** (inherited from E18-04, which could not
+meet it — this is the first item where a stream session can be created at all).
 *Depends on:* E18-07.
 
 ### E18-09 · Slash commands from `system:init` — S — [#139](https://github.com/badsonstudios/switchboard.ai/issues/139)

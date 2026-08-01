@@ -2,7 +2,7 @@
   "name": "switchboard",
   "version": "0.1.0",
   "private": true,
-  "description": "switchboard.ai — an IDE for AI sessions: one window, many agents",
+  "description": "switchboard.ai \u2014 an IDE for AI sessions: one window, many agents",
   "main": "./out/main/index.js",
   "type": "commonjs",
   "engines": {
@@ -23,7 +23,8 @@
     "check:pty": "node scripts/run-electron-node.js out/main/pty-check.js",
     "check:adapter": "node scripts/run-electron-node.js out/main/adapter-check.js",
     "check:hooks": "node scripts/run-electron-node.js out/main/hook-check.js",
-    "check:transcripts": "node scripts/run-electron-node.js out/main/transcript-check.js"
+    "check:transcripts": "node scripts/run-electron-node.js out/main/transcript-check.js",
+    "check:fake-stream": "node scripts/run-electron-node.js out/main/fake-stream-check.js"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
