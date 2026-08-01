@@ -8,15 +8,31 @@
 E11/E13/E14 still outlines)
 **In progress:** **nothing mid-flight. Working tree clean, everything pushed.**
 
-> ## ▶ START HERE — DECIDED 2026-08-01 (Dan): do **S-11 and #108 in parallel**
+> ## ▶ START HERE — DECIDED 2026-08-01 (Dan): **MIGRATE to the stream-json
+> transport.** S-11 becomes phase 0 of that work; #108 ships in parallel.
 >
-> Dan picked "option C" and then cleared context. Nothing is filed for S-11; it
-> is a spike, so it goes in `spike/s11/` with a findings note and needs no issue.
-> **#108 is issue #108 (P2-E15-11)** and runs through the normal `/next-item`
-> flow.
+> **The decision is made.** Dan, after the double-prompt failure below: *"I think
+> we're going to have to just move to do it the way VS Code does it so we don't
+> have this issue."* PHILOSOPHY P7 was already amended (§6, 2026-07-31) to permit
+> it. **Do not re-litigate whether — the remaining questions are all *how*.**
+>
+> **S-11 did NOT go away; it changed job.** It was a gate on deciding; it is now
+> the first phase of building, because discovering a pipe deadlocks at hour three
+> is cheap now and brutal after fourteen files have been rewritten. Same probes,
+> same order.
+>
+> Nothing is filed for S-11; it is a spike → `spike/s11/` + a findings note.
+> **#108 is issue #108 (P2-E15-11)** and runs the normal `/next-item` flow.
+> **The migration itself is NOT filed** — it needs `/pm` and Dan's go-ahead on
+> scope (new epic vs re-scoped E11 — his (d), still open).
 >
 > **Why parallel:** S-11's first probe is mostly *waiting* (a pipe held open for
 > hours), so it runs in the background while #108 gets worked normally.
+>
+> **OPEN QUESTION for Dan, asked 2026-08-01, unanswered:** a ~20-line stopgap —
+> make `shouldHoldPermission` decline writes into `<cwd>/.claude/`, since our
+> allow is discarded there anyway. Turns two prompts into one, today. Throwaway
+> (the migration deletes it). He had not answered when context was cleared.
 >
 > ### S-11 — the six unmeasured stream-json items, REORDERED
 > Source: `spike/findings/s-10-stream-json-transport.md` §3. The order there is
@@ -68,30 +84,38 @@ design: evidence that a conversation started may NOT be hook traffic, because
 `SessionStart` fires at spawn and carries a session id, so the first version
 turned every un-prompted card red 45s after it opened. Six revert-proofs, each
 re-run.
-> ## ⬜ [user] TESTING OUTSTANDING — 10 items across two merged PRs
+> ## ✅ [user] TESTING DONE 2026-08-01 — 9 of 10 pass, one real defect found
 >
-> Both merged without their hand-off lists being run (Dan said land them while
-> we were mid-investigation). Main has been green throughout, so anything these
-> turn up is a **fix-forward, not a revert**. Full text in the PR bodies —
-> `gh pr view 124` and `gh pr view 126`.
+> **#124's six: ALL PASS.** *(Recording an error of mine: Dan had already run
+> these and said so; I logged them as outstanding anyway and he re-ran them.
+> Don't repeat that — when he says a list passed, it passed.)*
+> **#126's ②③④: PASS** — contrast good in both themes, **no post-Allow flash**
+> (the 2s `recentlyDecided` window is correctly sized), banner/scroll unaffected.
 >
-> **From #124 (transcript binding — 6):** ① a new session left untouched must
-> keep saying "No conversation yet" in grey, never turn red *(the one that
-> matters — the first version turned every idle card red after 45s)* · ② same at
-> scale, 4-5 cards, work in one · ③ prompting a card replaces it with the
-> conversation · ④ `/clear` then idle two minutes must NOT go red · ⑤ the red
-> "couldn't find" headline must be readable on daylight, not pale pink · ⑥ on
-> **quiet** verbosity a session whose blocks are all filtered must show NOTHING,
-> never "No conversation yet" over a real conversation.
+> ### ❌ #126 ① FAILED — and the failure is the most important finding to date
 >
-> **From #126 (handoff bar — 4):** ① ask a session to edit a file inside its own
-> `.claude` folder → a BAR along the bottom, not a chip at the top · ② readable
-> in daylight AND nordic *(I got the contrast wrong first time)* · ③ **answer an
-> ordinary permission and watch the instant after clicking Allow — no FLASH of
-> "Claude is asking permission in the terminal" where the button just was.
-> This is the one I most want eyes on: the suppression window is a 2s guess I
-> could not verify by hand** · ④ the working banner and approval bar still
-> behave, and scroll stays pinned to the tail.
+> Editing a file in a project's own `.claude` folder prompts Dan **TWICE**:
+> first our approval bar, then — after he allows it — the CLI's own terminal
+> prompt. **Confirmed in the log, not inferred:**
+> ```
+> 10:28:22  permission held   tool: Write        → needs-permission (permission-held)
+> 10:29:19  permission decided: allow            → we answered the CLI "allow"
+> 10:29:25  needs-permission  cause: hook:Notification   ← it asks AGAIN, 6s later
+> ```
+> **Mechanism:** our hook returns `permissionDecision:"allow"`; the CLI honours
+> that for the ordinary permission layer, then applies its `.claude/` safety
+> check ON TOP, and **a hook's allow does not satisfy it.** We ask, he answers,
+> the answer is discarded.
+>
+> **Contrast with S-10 probe B**, where the identical write arrived over
+> stream-json as `can_use_tool` with `decision_reason_type:"safetyCheck"`, we
+> answered allow, **and the file was written — no second prompt.**
+>
+> ⇒ **The same verdict is worth LESS from a hook than from the permission-prompt
+> channel. Our approval path is structurally second-class.** This was not known
+> from S-09 or S-10 — both probed the stream path or print mode, never the
+> hook path against a `.claude/` write in the real app. It is the strongest
+> single argument for the migration.
 
 > ## 🟠 DECIDED, NOT BUILT (2026-07-31) — permission prompts switchboard cannot see
 >
