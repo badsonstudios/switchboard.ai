@@ -6,13 +6,16 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.** Working tree clean, everything pushed,
-main green. **#108 MERGED 2026-08-01 as PR #130** (see below). The only thing
-still running is the **S-11 probe**, which is a background measurement, not a
-work item.
-**Next up: #131 (P2-E18-01)** — the first item of the **stream-json transport
-migration**, scoped and filed by `/pm` on 2026-08-01 as epic **E18**, issues
-**#131–#140**. See the START HERE block immediately below.
+**In progress:** **#131 (P2-E18-01) is DONE and awaiting Dan's review as
+PR #141** — DESIGN.md amendment, the first item of epic **E18**. Docs-only;
+gate was lint + typecheck + **654 unit** (unchanged count — no code touched).
+Branch `feature/131-design-transport-amendment`. Also still running: the **S-11
+probe**, a background measurement, not a work item.
+**Next up: #132 (P2-E18-02)** — the transport seam. **Do not start it before
+#141 merges**: #132's whole acceptance criterion is *"all existing tests pass
+unedited"* against a DESIGN that already says the transport is a choice.
+The E18 queue is **#131–#140**, scoped and filed by `/pm` on 2026-08-01. See the
+START HERE block immediately below.
 **Also newly open and unscheduled: #129** (a transcript-discovery session that
 has GIVEN UP still full-scans the root for ever — filed 2026-08-01 off #108's
 work). Unrelated to the transport; takeable any time; not blocking anything.
@@ -625,6 +628,39 @@ a "[Dan eyeball]" note.**
   to Sonnet rates** — it invents a number. Not urgent, not waiting on anything.
 
 ## Log
+
+- 2026-08-01 — **#131 (P2-E18-01) → PR #141: DESIGN.md catches up with the
+  constitution.** Docs-only, and first in the epic on purpose. P7 was amended
+  2026-07-31 (PHILOSOPHY §6); DESIGN.md never was, and asserted the PTY as *the*
+  substrate or *the* input route in ~12 places. Two documents disagreeing is how
+  every E18 item ends up re-arguing the decision in review.
+  §6 gains an amendment block in PHILOSOPHY's own three-part shape — changed /
+  what forced it / what it costs / what it does NOT decide — so there is **one**
+  place to read the argument and one place to get it wrong. Structural edits:
+  `StreamService` in the §5 diagram, §5.1's spawn, §5.2 three-channels → two
+  alternative transports plus the two that ride alongside either, §5.10's
+  Terminal tab. Ten input-route phrase swaps.
+  **§5.16 got a forward-pointer, not a rewrite** — deliberate: it describes the
+  PTY transport's approval path, and E18-07 rewrites it when E18-07 *builds* it.
+  Writing it now would be recording unbuilt behaviour as settled design, which is
+  DESIGN drifting from reality in the other direction.
+  **Self-review caught an overclaim in my own text, and it is the finding worth
+  keeping.** I had written that the transport "buys" `interrupt` /
+  `set_permission_mode` / `set_model` / `rewind`. S-10 §3 says the opposite —
+  interrupt semantics were **never exercised**, and `rewind` exists as a control
+  request while its *picker* does not. Stated my way it read as measured. Now
+  split into MEASURED (`can_use_tool`, token deltas, live slash commands) vs
+  present-but-unverified, with an explicit *"do not plan against them until
+  E18-12 measures them."* **Same error class as the S-11 smoke run that reported
+  RECOVERED having proved nothing** — a claim that is true about the protocol
+  and false about our evidence. §6 also now names all six unmeasured behaviours
+  as a cost of unknown size, so the amendment cannot be read as "this is free."
+  **One thing beyond the approved plan, flagged not buried:** §5.16 still
+  proposed a screen-scraping fallback ("detect prompt via Notification hook,
+  render our diff, send keystrokes to PTY") — forbidden outright by amended P7's
+  third line and recorded as rejected precedent in PHILOSOPHY §5. **Struck
+  through rather than deleted**, because the rejection is the useful part.
+  Gate: lint + typecheck + **654 unit**, count unchanged because no code moved.
 
 - 2026-08-01 — **`/pm`: the stream-json migration is scoped and filed as epic
   E18 — plan `docs/plans/05-transport-migration.md`, issues #131–#140.**
