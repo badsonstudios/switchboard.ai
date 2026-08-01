@@ -34,6 +34,17 @@ export interface TransportSession {
   pid: number;
   onExit(l: (code: number) => void): () => void;
   kill(): void;
+  /**
+   * Typed protocol messages, if this transport HAS any (P2-E18-05).
+   *
+   * Optional because the PTY genuinely does not: it carries bytes destined for
+   * a terminal emulator, and the only way to get structure out of them is to
+   * parse the CLI's own rendering — which amended P7 forbids outright
+   * (PHILOSOPHY §5, screen-scraping as rejected precedent). So this is not a
+   * gap to be filled later; it is a real difference between the transports, and
+   * making it optional says so instead of forcing PtyService to fake it.
+   */
+  onMessage?(l: (m: Record<string, unknown>) => void): () => void;
 }
 
 /**

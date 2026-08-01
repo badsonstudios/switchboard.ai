@@ -34,6 +34,26 @@ export type SessionEvent =
   | { kind: 'permission-held' } // our PreToolUse round-trip is pending (E2-05+)
   | { kind: 'permission-resolved' }
   | { kind: 'user-input' } // user typed into the terminal
+  /**
+   * A stream-json message (P2-E18-05) — stream mode's equivalent of a hook,
+   * and deliberately a SEPARATE kind rather than a synthesised `hook`: these
+   * are not hooks, and `describeCause` must not claim they are when someone is
+   * reading a transition log to work out where a status came from.
+   */
+  | { kind: 'stream'; event: string; subtype?: string }
+  /** We wrote a prompt to the session's transport (P2-E18-05). */
+  | { kind: 'prompt-sent' }
+  /**
+   * The transport is up and the CLI is ready to take a prompt (P2-E18-05).
+   *
+   * Stream mode has no startup event of its own — MEASURED: S-11's log shows
+   * nothing at all between spawn and the first message we provoke, and
+   * `system:init` arrives ~10-20ms AFTER our own send, never before. So
+   * readiness is the spawn succeeding. That is honest here and would not be for
+   * the PTY, where a TUI still has to boot and can stop on a trust dialog;
+   * S-10 confirmed stream mode draws none.
+   */
+  | { kind: 'transport-ready' }
   | { kind: 'exit'; code: number };
 
 export interface TransitionResult {
@@ -72,6 +92,15 @@ export function transition(current: SessionStatus, ev: SessionEvent): Transition
       return to('working');
     }
     if (ev.kind === 'permission-held') return to('needs-permission');
+    // Stream mode's new turn. `prompt-sent` is the exact analogue of
+    // UserPromptSubmit above — it is us writing to stdin — and assistant output
+    // arriving is a turn running whether or not we saw the send (a resumed
+    // conversation, or a message the CLI had queued: S-11 watched one written
+    // during a 150s stall get picked up 144s after we resumed reading).
+    if (ev.kind === 'prompt-sent') return to('working');
+    if (ev.kind === 'stream' && (ev.event === 'assistant' || ev.event === 'stream_event')) {
+      return to('working');
+    }
     return stay('idle-after-done');
   }
 
@@ -85,6 +114,30 @@ export function transition(current: SessionStatus, ev: SessionEvent): Transition
       // The UserPromptSubmit hook marks 'working' on actual submit; answering
       // a permission/input prompt is reflected by the subsequent tool hooks.
       return stay('keystroke');
+    case 'transport-ready':
+      // Only ever a promotion out of 'starting'. A late or duplicated ready
+      // must not drag a working session backwards.
+      return current === 'starting' ? to('idle') : stay('already-started');
+    case 'prompt-sent':
+      // Stream mode's UserPromptSubmit, except we do not have to wait for a
+      // round trip to learn it: WE did the writing.
+      return to('working');
+    case 'stream':
+      switch (ev.event) {
+        case 'assistant':
+        case 'stream_event':
+          // Output is arriving. Normally a no-op after `prompt-sent`; it
+          // matters when nobody told us a turn began.
+          return to('working');
+        case 'result':
+          // Stream mode's `Stop`. `subtype` distinguishes success from an
+          // error, but both END the turn — a failed turn is finished, not
+          // running, and the error surfaces in the feed rather than the badge.
+          return to('done');
+        default:
+          // Same posture as an unknown hook (§5.26): log, never transition.
+          return stay(`unknown-stream:${ev.event}`);
+      }
     case 'hook':
       switch (ev.event) {
         case 'SessionStart':
