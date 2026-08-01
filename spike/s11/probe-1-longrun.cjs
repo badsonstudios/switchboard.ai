@@ -105,6 +105,16 @@ const S = {
 
 function writeSummary() {
   S.elapsedMs = Date.now() - START;
+  // Verdicts are computed on EVERY write, not just at finish.
+  //
+  // The original design computed them in a SIGTERM handler, which is a POSIX
+  // habit that silently does not work here: on Windows `process.kill(pid,
+  // 'SIGTERM')` maps to TerminateProcess and the handler never runs. The first
+  // real stop of this probe produced a summary with no verdicts block at all,
+  // and the README confidently said the opposite. A long-running probe must
+  // assume it will be killed rudely — by a reboot, a crash, or an impatient
+  // human — so the file on disk has to be complete at all times.
+  try { computeVerdicts(); } catch { /* never let reporting kill the probe */ }
   try { fs.writeFileSync(summaryPath, JSON.stringify(S, null, 2)); } catch {}
 }
 
@@ -392,7 +402,12 @@ function procTree(rootPid, cb) {
       'powershell.exe',
       ['-NoProfile', '-NonInteractive', '-Command',
        'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,WorkingSetSize | ConvertTo-Json -Compress'],
-      { maxBuffer: 8 * 1024 * 1024 },
+      // windowsHide is NOT the default in child_process, and without it this
+      // flashes a PowerShell console on Dan's desktop every SAMPLE_MS — 96
+      // times over an 8-hour run. The CLI spawn above already sets it; this
+      // one was missed, which is the whole lesson: every spawn on Windows
+      // needs it, not just the interesting one.
+      { maxBuffer: 8 * 1024 * 1024, windowsHide: true },
       (err, stdout) => {
         if (err) return cb(null);
         let rows;
@@ -530,3 +545,16 @@ const sampleTimer = setInterval(sample, SAMPLE_MS);
 setTimeout(() => { clearInterval(hbTimer); clearInterval(sampleTimer); finish('duration-reached'); }, DURATION_MS);
 
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => finish(`signal:${sig}`));
+
+// Windows cannot deliver a real SIGTERM to a detached process, so a signal is
+// not a stop mechanism here — it is a kill. `stop.cjs` drops a sentinel file
+// instead and this notices it, which works identically on every platform.
+const stopFile = path.join(OUT, 'stop.request');
+try { fs.rmSync(stopFile, { force: true }); } catch { /* nothing to clear */ }
+const stopWatch = setInterval(() => {
+  if (!fs.existsSync(stopFile)) return;
+  clearInterval(stopWatch);
+  try { fs.rmSync(stopFile, { force: true }); } catch { /* best effort */ }
+  finish('stop-requested');
+}, 5_000);
+stopWatch.unref?.();

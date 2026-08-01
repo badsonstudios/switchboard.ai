@@ -19,8 +19,20 @@ Order is deliberate and is **not** the order S-10 §3 lists them in:
 ```
 node start-longrun.cjs     # detached; survives the session that launched it
 node status.cjs            # read the live summary, safe at any time
-node stop.cjs              # SIGTERM — verdicts are computed on the way out
+node stop.cjs              # drops a sentinel; the probe exits within ~5s
 ```
+
+**You can kill it however you like.** `longrun-summary.json` recomputes its
+verdicts on every periodic write, so the file on disk is complete at all times —
+a reboot, a crash or Task Manager costs you the next sample, nothing more.
+
+*This was not true at first, and the way it failed is worth keeping.* The
+verdicts used to be computed in a `SIGTERM` handler, which is a POSIX habit that
+**silently does not work on Windows**: `process.kill(pid, 'SIGTERM')` maps to
+`TerminateProcess`, so the handler never runs. The first real stop of this probe
+threw away 85 minutes of verdicts while this README confidently claimed they
+were "computed on the way out". Hence both changes: verdicts are always current,
+and `stop.cjs` uses a sentinel file that behaves identically everywhere.
 
 Artifacts land in `../findings/artifacts/s11/`: `longrun-summary.json` (rewritten
 every sample, so it is readable mid-run and survives a kill),
