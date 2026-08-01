@@ -16,3 +16,17 @@ export function writePromptToPty(sessionId: string, text: string): void {
   window.switchboard.pty.input(sessionId, payload);
   setTimeout(() => window.switchboard.pty.input(sessionId, CR), SUBMIT_DELAY_MS);
 }
+
+/**
+ * Submit a prompt, whichever transport this session is on (P2-E18-08a).
+ *
+ * TRY-THEN-FALL-BACK, deliberately: main answers false when the session has no
+ * typed-message transport, and only then do we do the PTY dance. That keeps the
+ * renderer completely ignorant of transports — it has no session record to
+ * consult and, until P2-E18-08b, no setting either. When the choice becomes a
+ * user-facing one, this function does not change.
+ */
+export async function submitPrompt(sessionId: string, text: string): Promise<void> {
+  if (await window.switchboard.sessions.submitPrompt(sessionId, text)) return;
+  writePromptToPty(sessionId, text);
+}

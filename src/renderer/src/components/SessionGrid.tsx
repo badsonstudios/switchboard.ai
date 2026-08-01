@@ -149,7 +149,14 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // held permissions awaiting decisions (E10-04) — a QUEUE, not a slot:
   // parallel tool calls each hold their own request (review P0#4)
   const [permQueue, setPermQueue] = React.useState<
-    Array<{ requestId: string; sessionId: string; tool: string; input: Record<string, unknown> }>
+    Array<{
+      requestId: string;
+      sessionId: string;
+      tool: string;
+      input: Record<string, unknown>;
+      /** the CLI's own prose for WHY (P2-E18-07) — stream transport only */
+      reason?: string;
+    }>
   >([]);
   const perm = permQueue[0] ?? null;
   // ⋯ session-controls menu (E10-07, §5.17): GUI sugar that TYPES the real
@@ -326,7 +333,20 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       setPermQueue((prev) =>
         prev.some((p) => p.requestId === r.requestId)
           ? prev
-          : [...prev, { requestId: r.requestId, sessionId: r.sessionId, tool: r.tool, input: r.input }]
+          : [
+              ...prev,
+              {
+                requestId: r.requestId,
+                sessionId: r.sessionId,
+                tool: r.tool,
+                input: r.input,
+                // Field-by-field, so a new field is a DECISION rather than a
+                // silent pass-through — but that also means forgetting one is
+                // silent. `reason` was dropped exactly this way and only the
+                // e2e caught it; the unit tests all passed.
+                reason: r.reason,
+              },
+            ]
       );
       setView(DEFAULT_PANEL_ID);
     };

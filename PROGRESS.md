@@ -6,8 +6,12 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.** Next is **#138 (P2-E18-08a)** — a real
-stream session runs.
+**In progress:** **#138 (P2-E18-08a) — a real stream session runs.** Branch
+`feature/138-stream-session-runs`. Gate green: lint + typecheck + **797 unit
+(+9)** + **100 e2e (+2)**.
+**🎉 THE EPIC'S PURPOSE IS DEMONSTRATED END TO END:** a `.claude/` permission is
+raised by the CLI, answered ONCE in switchboard, and **the file is written** —
+in the real app, in an e2e that runs on every commit.
 **E18 is 7 of 11 done, ALL MERGED with 5 CI jobs green:** #131 → PR #141 ·
 #132 → PR #142 · #133 → PR #143 · #134 → PR #144 · #135 → PR #146 · #136 →
 PR #147 · **#137 → PR #148 (the item the epic exists for)**.
@@ -662,6 +666,43 @@ a "[Dan eyeball]" note.**
   to Sonnet rates** — it invents a number. Not urgent, not waiting on anything.
 
 ## Log
+
+- 2026-08-01 — **#138 (P2-E18-08a) → PR: a real stream session runs, and the
+  double prompt is gone — proven in the app, not in a unit test.**
+  Three things nobody owned until now: `providers/claude.ts` builds S-10 §1's
+  flags (`--output-format stream-json --verbose --input-format stream-json
+  --permission-prompt-tool stdio --replay-user-messages`) and declares
+  `transport:'stream'`; **`StreamService` is finally CONSTRUCTED in
+  `index.ts`** — every item before this drove it from tests and nothing in the
+  app had ever made one; and `StreamPermissions` is wired to the manager's
+  message fan-out.
+  **`SpawnOptions.transport` is a REQUEST, not an order.** The host asks; the
+  adapter answers in the recipe, because only it knows whether its CLI speaks
+  the protocol. A provider that has never heard of stream-json keeps returning a
+  PTY recipe and we honour it — the same degrade-gracefully posture as the §5.3
+  capabilities.
+  **The composer became transport-agnostic without learning about transports.**
+  `submitPrompt` tries the typed-message route and FALLS BACK to the bracketed
+  paste when main answers false. The renderer has no session record to consult
+  and, until #149, no setting either — and when the choice becomes user-facing,
+  this function does not change.
+  **THE E2E CAUGHT A BUG EVERY UNIT TEST MISSED.** `SessionGrid`'s approval
+  queue copies requests field by field, and I had not added `reason` — so the
+  CLI's own prose reached the renderer and died one line short of the bar. The
+  router's unit tests all passed; the field was simply never carried. *Copying
+  field-by-field makes a NEW field a decision, which is good, and makes a
+  FORGOTTEN field silent, which is the cost.* Comment added at the site.
+  **Second gap, filed not absorbed (#149): the stream fake writes no JSONL
+  transcript.** The real CLI does (S-10) — that is why the transcript stack
+  survives the migration — so a stream session's Session view reads "Looking for
+  this session's transcript…" for ever. That blocks #149's "the Feed renders a
+  stream session's turn", so the fix belongs there. **This item's e2e is scoped
+  around it deliberately**, asserting the turn COMPLETES via the Events panel
+  rather than asserting on rendered Feed content, with a comment saying why.
+  Gate: lint + typecheck + **797 unit (+9)** + **100 e2e (+2)**. Stream mode is
+  env-selected (`SWITCHBOARD_TRANSPORT=stream`) — deliberately NO UI, because a
+  half-wired mode with a switch on it invites being switched. The switch is
+  #149.
 
 - 2026-08-01 — **#137 (P2-E18-07) → PR: the double prompt is answered once, and
   the answer is honoured.**
