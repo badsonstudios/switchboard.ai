@@ -224,7 +224,8 @@ acknowledgment instead of inferring one.
 
 *Done when:* a multi-line prompt containing backticks, a leading `/`, and a
 trailing newline arrives **verbatim** (asserted against the fake's received
-frames); the replay echo marks the message sent; `renderer/lib/composer.ts` is
+frames); ~~the replay echo marks the message sent~~ **(MOVED to E18-08 — see the
+planning gap below)**; `renderer/lib/composer.ts` is
 unreferenced on the stream path (**deleted outright when PTY mode goes in
 E18-16**, not before); submitting to a dead child is a no-op, not a throw.
 *Depends on:* E18-05.
@@ -268,8 +269,20 @@ still written in stream mode (S-10), so the existing transcript-driven Feed
 renders a stream session today. E18-10 is an *upgrade* to that, not a
 requirement for it.
 
+> **PLANNING GAP, found while building E18-06 (2026-08-01): nobody owned the
+> REAL adapter's stream recipe.** Every item so far has driven the *fake*, whose
+> `buildSpawn` needs no flags. For a real stream session, `providers/claude.ts`
+> must build `--output-format stream-json --verbose --input-format stream-json
+> --permission-prompt-tool stdio` (S-10 §1, copied from the SDK's own arg
+> builder) and declare `transport: 'stream'`. No item said so. It belongs here,
+> because this is the item that makes a real stream session creatable at all —
+> which also means **E18-06's `--replay-user-messages` criterion lands here**,
+> since the flag has nowhere to live until the recipe exists. Sizing moves S -> M.
+
 *Done when:* a new session can be created in stream mode from the UI; the choice
-survives a relaunch; the Terminal tab in a stream session explains itself in one
+survives a relaunch; **`providers/claude.ts` builds the stream recipe** (the four
+S-10 flags + `transport: 'stream'`) and `--replay-user-messages` acknowledges a
+sent prompt (inherited from E18-06); the Terminal tab in a stream session explains itself in one
 sentence and offers no dead controls; the Feed renders a stream session's turn
 via the existing transcript path; switching a **running** session's transport is
 refused with a reason, not silently ignored; **an e2e drives a full turn in
