@@ -6,7 +6,9 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight. Working tree clean, everything pushed.**
+**In progress:** **nothing mid-flight. Working tree clean, everything pushed,
+main green. Three PRs merged today: #126 (#125), #128 (#127), plus #124 (#107)
+late yesterday.**
 
 > ## ▶ START HERE — DECIDED 2026-08-01 (Dan): **MIGRATE to the stream-json
 > transport.** S-11 becomes phase 0 of that work; #108 ships in parallel.
@@ -29,7 +31,15 @@ E11/E13/E14 still outlines)
 > **Why parallel:** S-11's first probe is mostly *waiting* (a pipe held open for
 > hours), so it runs in the background while #108 gets worked normally.
 >
-> **The stopgap Dan approved is DONE — #127, PR #128 (2026-08-01).**
+> ### ⚠ `/next-item` WILL NOT PICK THIS UP
+> It resolves the lowest-numbered open issue in the milestone, so it will select
+> **#108** — correct, and half of what was decided. **S-11 is a SPIKE with no
+> issue**, so ask for it by name ("start S-11", or "do the migration phase 0").
+> The migration proper is still unfiled and needs `/pm` plus Dan's answer on
+> scope (new epic vs re-scoped E11 — his open question (d)).
+>
+> **The stopgap Dan approved is DONE — #127 MERGED 2026-08-01 as PR #128**,
+> all 5 CI jobs green.
 > `shouldHoldPermission` now declines edit-family writes into `<cwd>/.claude/`,
 > so the double prompt becomes one. Deleted by the migration; kept because the
 > migration is months away and this bites every skill-file edit.
@@ -475,7 +485,8 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
-- 2026-08-01 — **#127: never ask a question whose answer the CLI discards.**
+- 2026-08-01 — **#127 MERGED as PR #128 (5 CI jobs green): never ask a
+  question whose answer the CLI discards.**
   Editing a file in a project's own `.claude/` folder prompted Dan **twice** —
   our approval bar, then the CLI's own terminal prompt six seconds after he
   allowed it. **Measured, not inferred** (log at 10:28:22 / 10:29:19 / 10:29:25):
