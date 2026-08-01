@@ -11,11 +11,13 @@ import {
   DEFAULT_TRANSPORT,
   SessionTransport,
   TransportKind,
+  TransportSession,
   TransportMap,
   UnknownTransportError,
 } from '../transport/transport';
 import { SessionEvent, SessionStatus, transition } from './state-machine';
 import { streamStatusEvent } from './stream-status';
+import { userMessage } from '../../shared/stream-protocol';
 
 /**
  * Why a session's native id CHANGED. 'clear' = the CLI ran /clear and minted
@@ -88,6 +90,12 @@ export class SessionManager {
 
   /** Every transport this host can spawn on, keyed by what a recipe may ask for. */
   private readonly transports: TransportMap;
+  /**
+   * The live handle per session (P2-E18-06), so a prompt can be sent after
+   * spawn. Dropped in `remove()` alongside the record — a handle outliving its
+   * session is a reference to a dead child nobody can reach to kill.
+   */
+  private readonly handles = new Map<string, TransportSession>();
 
   constructor(
     private readonly registry: ContributionRegistry<MainContributions>,
@@ -171,6 +179,7 @@ export class SessionManager {
       throw err; // no orphan record: it was never added
     }
     this.sessions.set(id, record);
+    this.handles.set(id, proc);
     record.pid = proc.pid;
 
     // Stream mode's lifecycle wiring (P2-E18-05). Two things happen here that
@@ -239,6 +248,7 @@ export class SessionManager {
     // onExit closure and never consult the map. Pinned by a test, because the
     // first version of that test asserted the wrong one of the two.)
     this.sessions.delete(id);
+    this.handles.delete(id);
     try {
       // not resolveTransport(): a teardown that THROWS leaves the card
       // half-closed, and fail-open (P6) outranks loudness on this path
@@ -257,6 +267,37 @@ export class SessionManager {
   // UI restarts via `sessions:dropLive` then `sessions:create`, which goes
   // through `planSessionStart`), so it was dead code encoding a wrong
   // assumption — the worst kind to leave next to the thing it contradicts.
+
+  /**
+   * Submit a prompt on the session's own transport (P2-E18-06).
+   *
+   * Returns false when this session's transport does not take typed messages —
+   * i.e. the PTY, which needs `renderer/lib/composer.ts`'s bracketed paste and
+   * delayed CR instead. The caller then falls back to that route; the renderer
+   * gains that branch in P2-E18-08, when it first learns which transport a
+   * session is on.
+   *
+   * The text goes through UNTOUCHED. Newlines, backticks and a leading `/` are
+   * just characters: `JSON.stringify` escapes the newline so it can never be
+   * read as a frame boundary — the property the PTY path had to fake.
+   */
+  submitPrompt(id: string, text: string): boolean {
+    const handle = this.handles.get(id);
+    if (!handle?.send) return false;
+    handle.send(userMessage(text));
+    // We know the turn began because WE started it — no round trip, unlike the
+    // PTY path waiting on a UserPromptSubmit hook.
+    this.apply(id, { kind: 'prompt-sent' });
+    return true;
+  }
+
+  /** Send a raw protocol message (control responses — P2-E18-07). */
+  sendToTransport(id: string, msg: unknown): boolean {
+    const handle = this.handles.get(id);
+    if (!handle?.send) return false;
+    handle.send(msg);
+    return true;
+  }
 
   /** Hook/permission/user events feed the state machine here. */
   apply(id: string, ev: SessionEvent): void {

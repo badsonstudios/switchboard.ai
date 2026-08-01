@@ -6,9 +6,18 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#135 (P2-E18-05) — session status and lifecycle from the
-stream.** Branch `feature/135-stream-lifecycle`. Gate green: lint + typecheck +
-**752 unit (+24)** + **98 e2e untouched**.
+**In progress:** **#136 (P2-E18-06) — prompt submission over stdin.** Branch
+`feature/136-prompt-submission`. Gate green: lint + typecheck + **765 unit
+(+13)**.
+**#135 MERGED as PR #146**, 5 CI jobs green.
+**⚠ FLAKE CLASS, recorded on #145 (2026-08-01): three load-sensitive test
+failures in one day, three platforms, three unrelated specs** — macOS
+`discovery-scheduler` (FIXED in #143), ubuntu `slash-commands` (open), Windows
+`popout-geometry` (passes in isolation). Same defect shape every time: **a fixed
+sleep standing in for "wait until the thing actually happened."** Correlates
+with the suite getting heavier — E18 has added ~57 unit tests including 12
+concurrent child processes. Worth one sweep, not three chases, and worth doing
+before the suite grows further.
 **E18 so far, ALL MERGED with 5 CI jobs green: #131 → PR #141 · #132 → PR #142 ·
 #133 → PR #143 · #134 → PR #144.** Four of the ten filed spine items done.
 **NEW ISSUE #145 (filed 2026-08-01): a flaky e2e**, `slash-commands.spec.ts`
@@ -640,6 +649,38 @@ a "[Dan eyeball]" note.**
   to Sonnet rates** — it invents a number. Not urgent, not waiting on anything.
 
 ## Log
+
+- 2026-08-01 — **#136 (P2-E18-06) → PR: a prompt becomes a struct, and a
+  planning gap surfaced.**
+  `composer.ts` wraps multiline text in a bracketed paste and sends the carriage
+  return **75ms later**, because text+CR in one chunk registers as a paste and
+  never submits (S-03, refound live 2026-07-22). On this transport that entire
+  class of timing bug does not exist: `shared/stream-protocol.ts` builds the SDK
+  envelope, `JSON.stringify` escapes the newline so it can never be read as a
+  frame boundary, and `SessionManager.submitPrompt` writes one frame.
+  **`session_id` is deliberately EMPTY** in the envelope, matching what S-10
+  sent: the id belongs to the conversation the CLI is already running, and
+  echoing a stale one is how a message gets attributed to a conversation that
+  has since been replaced (`/clear` mints a new one — #107).
+  **The turn is marked working with no round trip**, because WE started it —
+  the PTY path has to wait on a `UserPromptSubmit` hook to learn the same fact.
+  `submitPrompt` returns **false** on a PTY session rather than pretending: the
+  bracketed-paste route is a different operation, not this one in other clothes,
+  and the renderer gains that branch in #138 when it first learns which
+  transport a session is on.
+  **The best test closes the loop through both real halves** — our encoder and
+  the #134 fake's decoder — and asserts the fake echoes back the exact text,
+  backticks, newlines, leading slash and all. If either side drifted, it fails.
+  **PLANNING GAP FOUND AND RECORDED: nobody owned the REAL adapter's stream
+  recipe.** Every item so far drives the fake, whose `buildSpawn` needs no
+  flags. A real stream session needs `providers/claude.ts` to build S-10 §1's
+  four flags and declare `transport: 'stream'`, and **no issue said so**. It
+  belongs to #138 (the item that makes a real stream session creatable), which
+  therefore also inherits #136's `--replay-user-messages` criterion — the flag
+  has nowhere to live until the recipe exists. #138 goes S -> M. Plan file and
+  both issues updated; that is now TWO criteria #138 has absorbed from earlier
+  items, both because I sized the earlier ones optimistically.
+  Gate: lint + typecheck + **765 unit (+13)**.
 
 - 2026-08-01 — **#135 (P2-E18-05) → PR: status from the stream — and S-11's log
   corrected an assumption before it became code.**

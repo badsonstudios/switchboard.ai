@@ -45,6 +45,17 @@ export interface TransportSession {
    * making it optional says so instead of forcing PtyService to fake it.
    */
   onMessage?(l: (m: Record<string, unknown>) => void): () => void;
+  /**
+   * Send one typed message to the CLI (P2-E18-06). Optional for the same reason
+   * as `onMessage`: the PTY takes BYTES for a terminal to interpret, and a
+   * prompt has to be dressed as a bracketed paste plus a delayed carriage
+   * return before it counts as submitted (S-03). Those are not the same
+   * operation wearing different clothes, so they do not share a method.
+   *
+   * Must be a no-op on a dead child, never a throw — writes to a closed pipe
+   * raise asynchronously (the S-01 lesson).
+   */
+  send?(msg: unknown): void;
 }
 
 /**
