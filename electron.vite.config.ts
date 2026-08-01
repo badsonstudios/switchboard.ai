@@ -15,6 +15,10 @@ export default defineConfig({
           'adapter-check': 'src/main/providers/adapter-check.ts',
           'hook-check': 'src/main/hooks/hook-check.ts',
           'transcript-check': 'src/main/transcripts/transcript-check.ts',
+          // the stream-json fake CLI (P2-E18-04) — a real program the fake
+          // adapter spawns, run under `electron --run-as-node` like the checks
+          'fake-stream-cli': 'src/main/providers/fake-stream-cli.ts',
+          'fake-stream-check': 'src/main/providers/fake-stream-check.ts',
         },
       },
     },

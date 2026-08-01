@@ -1,0 +1,94 @@
+// The stream-json fake ADAPTER (P2-E18-04) — pairs with `fake-stream-cli.ts`,
+// which is the program it spawns.
+//
+// Registered under the same 'claude-code' id the UI uses, replacing the real
+// adapter in test mode only, exactly as `fake.ts` does for the PTY. The two
+// fakes are siblings and neither knows about the other: `SWITCHBOARD_FAKE_PROVIDER=1`
+// still selects the PTY fake and its 98 e2e tests are untouched by this file.
+import fs from 'fs';
+import path from 'path';
+import { ProviderAdapter, SpawnRecipe } from '../extensibility/contributions';
+import { SlashCommand } from '../../shared/slash-commands';
+import { conversationExists } from '../transcripts/paths';
+import { ensureFolderTrusted } from '../sessions/trust';
+import { claudeProjectsRoot } from './claude';
+
+/**
+ * The compiled fake CLI.
+ *
+ * It is a rollup ENTRY, so it always lands in `out/main/`. This module,
+ * however, is not: it is imported by `bootstrap.ts` and rollup is free to place
+ * it in `out/main/chunks/`, which is exactly where it went the first time —
+ * making `join(__dirname, 'fake-stream-cli.js')` point one directory too deep.
+ * That failed as a 15 s spawn timeout rather than an error, because a child
+ * that cannot resolve its script dies on stderr while we wait for stdout.
+ *
+ * So: try the candidates, and throw a NAMED error if none exists. A wrong path
+ * must fail as a wrong path.
+ */
+export function fakeStreamCliPath(): string {
+  const candidates = [
+    path.join(__dirname, 'fake-stream-cli.js'), // unbundled / same dir
+    path.join(__dirname, '..', 'fake-stream-cli.js'), // bundled into chunks/
+  ];
+  const found = candidates.find((p) => fs.existsSync(p));
+  if (!found) {
+    throw new Error(
+      `fake-stream-cli.js not found (looked in: ${candidates.join(', ')}). ` +
+        `Run \`npm run build\` — the fake stream provider needs the compiled CLI.`
+    );
+  }
+  return found;
+}
+
+export const fakeStreamAdapter: ProviderAdapter = {
+  manifest: {
+    id: 'claude-code',
+    displayName: 'Fake stream (test)',
+    version: '0.0.0',
+    capabilities: ['sessions.spawn', 'sessions.resume', 'settings.inject', 'slash-commands.list'],
+  },
+
+  // Same capabilities as the PTY fake, and for the same reason (P2-E15-01): a
+  // capability-less fake would quietly delete half the harness and prove
+  // nothing about the seam.
+  capabilities: {
+    transcripts: { projectsRoot: claudeProjectsRoot },
+    hooks: { settingsFor: (sessionId, host) => host.buildHookSettings(sessionId) },
+    resume: {
+      canResume: (folder, nativeSessionId) =>
+        conversationExists(claudeProjectsRoot(), folder, nativeSessionId),
+    },
+    trust: { ensureTrusted: (folder) => ensureFolderTrusted(folder) },
+  },
+
+  // Deliberately the SAME list the PTY fake returns. In stream mode the live
+  // list arrives on `system:init.slash_commands` (P2-E18-09); until that lands,
+  // a static list keeps the composer popup drivable and the two fakes
+  // comparable.
+  slashCommands(): SlashCommand[] {
+    return [
+      { name: 'clear', description: 'Clear conversation history', source: 'builtin' },
+      { name: 'compact', description: 'Summarize the conversation', source: 'builtin' },
+    ];
+  },
+
+  buildSpawn(): SpawnRecipe {
+    return {
+      // process.execPath in the main process IS the Electron binary; with
+      // ELECTRON_RUN_AS_NODE it runs plain Node, which is how the four
+      // done-when checks already run (`scripts/run-electron-node.js`).
+      command: process.execPath,
+      args: [fakeStreamCliPath()],
+      env: {
+        // Set DELIBERATELY, and it survives the S-01 scrub because `buildEnv`
+        // applies explicit deltas AFTER deleting the inherited landmines. That
+        // ordering is what makes "never leak it, but let a caller mean it"
+        // expressible at all — see `transport/env.ts`.
+        ELECTRON_RUN_AS_NODE: '1',
+        ELECTRON_NO_ATTACH_CONSOLE: undefined,
+      },
+      transport: 'stream',
+    };
+  },
+};
