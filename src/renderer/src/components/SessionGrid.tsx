@@ -353,7 +353,25 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     }
     void window.switchboard.sessions.decidePermission(head.requestId, decision);
     setPermQueue((prev) => prev.slice(1)); // resolved event prunes too (idempotent)
+    // The queue pops NOW; `permission-resolved` only comes back after a full
+    // IPC round trip, so for a frame or two the card reads
+    // "needs-permission with nothing held" — which is exactly the state the
+    // handoff bar exists for. Without this window, answering a permission
+    // flashes "switchboard can't answer it for you" where the button was
+    // (#125 review). The window is generous on purpose: it costs nothing if
+    // the status beats it, and a stale bar is worse than a late one.
+    setRecentlyDecided(true);
   };
+  const [recentlyDecided, setRecentlyDecided] = React.useState(false);
+  React.useEffect(() => {
+    if (!recentlyDecided) return;
+    const id = setTimeout(() => setRecentlyDecided(false), 2_000);
+    return () => clearTimeout(id);
+  }, [recentlyDecided]);
+  // a new hold means the round trip finished and the next question is live
+  React.useEffect(() => {
+    if (perm) setRecentlyDecided(false);
+  }, [perm]);
 
   // membership follows the panel when the user drags it between dockview
   // groups in the grid (E12-04)
@@ -477,6 +495,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     model: usage?.model,
     binding: binding?.binding,
     bindingDiag: binding?.bindingDiag ?? null,
+    recentlyDecided,
     changed,
     approval: perm,
     approvalQueued: Math.max(0, permQueue.length - 1),

@@ -126,6 +126,10 @@ export interface PanelContext {
    *  reads the transcript needs the same answer. */
   binding?: BindingState;
   bindingDiag?: BindingDiagnostics | null;
+  /** an approval was answered moments ago and the status has not caught up
+   *  yet (#125) — a panel showing "the CLI is waiting on you" must not say so
+   *  in the gap between the click and the resolved event */
+  recentlyDecided?: boolean;
   /** count of changed files, for a tab badge */
   changed: number;
   approval?: { requestId: string; tool: string; input: Record<string, unknown> } | null;

@@ -182,6 +182,15 @@
     "unboundNothing": "Nothing has turned up in {path}.",
     "unboundFallback": "The Terminal tab is unaffected — your session is still running there."
   },
+  "handoff": {
+    "permissionTitle": "Claude is asking permission in the terminal",
+    "permissionBody": "Claude Code is handling this one in its own prompt rather than offering it to switchboard — most often an edit inside the project's .claude folder. Answer it in the Terminal.",
+    "inputTitle": "Claude is waiting for your answer",
+    "inputBody": "It is waiting for you in its own prompt, which only the Terminal tab can show.",
+    "startingTitle": "Claude is showing a start-up dialog",
+    "startingBody": "This session hasn't finished starting. Some start-up prompts — trusting a folder, picking a conversation to resume — appear only in the terminal.",
+    "jump": "Open Terminal"
+  },
   "feedView": {
     "thinking": "thinking…",
     "thoughtFor": "Thought for {s}s",
@@ -193,7 +202,6 @@
     "todoActive": "[~]",
     "todoPending": "[ ]",
     "you": "you",
-    "waiting": "continue in Terminal ↗",
     "composerPlaceholder": "Prompt this session — Enter to send, Shift+Enter for a new line",
     "autonomyHint": "Autonomy for this session (applies on next resume)",
     "modelHint": "Model last seen in this session's transcript",

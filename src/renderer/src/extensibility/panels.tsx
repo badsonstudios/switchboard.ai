@@ -57,6 +57,7 @@ export const sessionPanels: PanelContribution[] = [
         status={ctx.status}
         binding={ctx.binding}
         bindingDiag={ctx.bindingDiag}
+        recentlyDecided={ctx.recentlyDecided}
         autonomy={ctx.autonomy}
         model={ctx.model}
         approval={ctx.approval}

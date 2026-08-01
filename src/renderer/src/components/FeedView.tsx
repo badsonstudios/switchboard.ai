@@ -7,6 +7,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { blockVisible, FeedBlockDto, upsertBlock, Verbosity } from '../lib/feed';
 import { emptyStateCopy } from '../lib/binding-copy';
+import { terminalHandoff, TerminalHandoff, toneToken } from '../lib/terminal-handoff';
 import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
 import { rendererRegistry } from '../extensibility/registry-instance';
 import { renderFeedBlock } from '../extensibility/feed-render';
@@ -112,8 +113,12 @@ export function FeedView(props: {
   /** durable key for per-card preferences (the live id churns on resume) */
   cardId?: string;
   visible: boolean;
-  /** current session status — needs-input/needs-permission shows the chip */
+  /** current session status — drives the working banner and the handoff bar */
   status?: string;
+  /** an approval was answered moments ago and the status has not caught up
+   *  (P2 #125) — suppresses the handoff bar so clicking Allow never flashes
+   *  "switchboard can't answer this" where the button just was */
+  recentlyDecided?: boolean;
   /** transcript binding state (P2-E15-10) — decides what an EMPTY feed says */
   binding?: BindingState;
   bindingDiag?: BindingDiagnostics | null;
@@ -160,12 +165,21 @@ export function FeedView(props: {
     const id = setTimeout(() => setStartingLong(true), 8_000);
     return () => clearTimeout(id);
   }, [props.status]);
-  // chip = raw TUI states only: needs-input, a permission the inline bar is
-  // NOT handling (fail-open path), or a startup that's waiting on the TUI
-  const waiting =
-    props.status === 'needs-input' ||
-    (props.status === 'needs-permission' && !props.approval) ||
-    startingLong;
+  // The CLI is waiting on something we are not allowed to answer for it — a
+  // decision it kept (P7), or one our hook path never saw. Rendered as a BAR
+  // above the composer (#125), not the 10px header chip it used to be.
+  const handoff = terminalHandoff({
+    status: props.status,
+    // The SAME predicate the approval bar renders on, deliberately written as
+    // one expression: if these two ever disagree, the user gets neither
+    // surface and is stranded with no affordance at all.
+    hasApproval: !!(props.approval && props.onDecide),
+    // `startingLong` is cleared by an effect, so the first render that sees a
+    // new status still has the old flag — without this, one frame can paint
+    // the working banner and a "still starting" handoff together.
+    startingLong: props.status === 'starting' && startingLong,
+    recentlyDecided: !!props.recentlyDecided,
+  });
 
   React.useEffect(() => {
     let cancelled = false;
@@ -320,23 +334,6 @@ export function FeedView(props: {
           borderBlockEnd: '1px solid var(--border)',
         }}
       >
-        {waiting && (
-          <button
-            onClick={props.onJumpToTerminal}
-            style={{
-              background: 'color-mix(in srgb, var(--status-needs-input) 16%, transparent)',
-              border: '1px solid var(--status-needs-input)',
-              color: 'var(--text)',
-              borderRadius: 'var(--radius-chip)',
-              fontSize: 10,
-              padding: '1px 8px',
-              cursor: 'pointer',
-              fontFamily: 'var(--font-ui)',
-            }}
-          >
-            {t('feedView.waiting')}
-          </button>
-        )}
         <span style={{ flex: 1 }} />
         {(['quiet', 'normal', 'firehose'] as const).map((v) => (
           <button
@@ -480,6 +477,11 @@ export function FeedView(props: {
       {props.approval && props.onDecide && (
         <ApprovalBar approval={props.approval} queued={props.approvalQueued ?? 0} onDecide={props.onDecide} />
       )}
+      {/* Docked in the SAME place as the approval bar, deliberately: this is
+          where the user's eyes already are for anything the session is waiting
+          on. `terminalHandoff` returns null while a held approval is showing,
+          so the two can never appear together. */}
+      {handoff && <TerminalHandoffBar handoff={handoff} onJump={props.onJumpToTerminal} />}
       <Composer
         sessionId={props.sessionId}
         autonomy={props.autonomy}
@@ -487,6 +489,74 @@ export function FeedView(props: {
         status={props.status}
         onCycleAutonomy={props.onCycleAutonomy}
       />
+    </div>
+  );
+}
+
+/**
+ * The CLI is waiting on a decision we may not answer for it (#125, P7 §6).
+ *
+ * Shaped like `ApprovalBar` on purpose — same dock, same weight, same tinted
+ * left-to-right band — because the two answer the same user question ("what is
+ * this session waiting for?") and only differ in who gets to answer it. The
+ * previous version was a 10px chip in the header strip, which was invisible
+ * next to a bar the user had been trained by every prior permission to look
+ * for at the bottom.
+ */
+function TerminalHandoffBar({
+  handoff,
+  onJump,
+}: {
+  handoff: TerminalHandoff;
+  onJump?: () => void;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  const hue = `var(${toneToken(handoff.tone)})`;
+  return (
+    <div
+      data-handoff={handoff.tone}
+      // its whole job is to announce a state change the user did not cause
+      role="status"
+      aria-live="polite"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        borderBlockStart: `2px solid ${hue}`,
+        background: `color-mix(in srgb, ${hue} 10%, var(--panel2))`,
+        paddingInline: 12,
+        paddingBlock: 9,
+        fontSize: 11.5,
+        fontFamily: 'var(--font-ui)',
+      }}
+    >
+      {/* `--text`, NOT the status hue or its `-ink` variant. tokens.css says the
+          --status-* hues are tuned for dots and rings, and on nordic — the
+          default theme — ink IS the hue, so ink on this hue-tinted background
+          measures 3.89:1: worse than the 10px chip this replaced, which used
+          --text. Colour carries the tone in the border and the tint; the words
+          stay at 8:1. (The working banner below does the same thing.) */}
+      <div style={{ flex: 1, minInlineSize: 0, color: 'var(--text)' }}>
+        <div style={{ fontWeight: 700, marginBlockEnd: 2 }}>{t(handoff.title)}</div>
+        <div style={{ lineHeight: 1.45 }}>{t(handoff.body)}</div>
+      </div>
+      <button
+        onClick={onJump}
+        style={{
+          background: 'var(--btn-primary-bg)',
+          color: 'var(--btn-primary-text)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-chip)',
+          padding: '5px 14px',
+          cursor: 'pointer',
+          fontFamily: 'var(--font-ui)',
+          fontSize: 11.5,
+          fontWeight: 600,
+          flexShrink: 0,
+        }}
+      >
+        {t('handoff.jump')}
+      </button>
     </div>
   );
 }
