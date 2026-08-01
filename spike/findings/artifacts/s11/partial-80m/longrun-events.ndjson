@@ -1,0 +1,48 @@
+{"t":1785589700162,"ms":23,"kind":"spawn","pid":49380,"cwd":"C:\\Users\\dheinz\\AppData\\Local\\Temp\\sb-s11-longrun-A4xrRN","args":["--output-format","stream-json","--verbose","--input-format","stream-json","--include-partial-messages","--permission-prompt-tool","stdio"]}
+{"t":1785589702167,"ms":2028,"kind":"heartbeat","n":0,"prompt":"Reply with exactly: PING-0"}
+{"t":1785589702399,"ms":2260,"kind":"init","session_id":"2633d234-d597-478c-a059-ba169c19234d","model":"claude-opus-5[1m]","version":"2.1.220","apiKeySource":"none","slashCommands":59,"keys":["type","subtype","cwd","session_id","tools","mcp_servers","model","permissionMode","slash_commands","apiKeySource","claude_code_version","output_style","agents","skills","plugins","capabilities","analytics_disabled","product_feedback_disabled","uuid","memory_paths","fast_mode_state","fast_mode_disabled_reason"]}
+{"t":1785589704288,"ms":2122,"kind":"first-delta","n":0}
+{"t":1785589704501,"ms":4362,"kind":"turn-done","n":0,"latencyMs":2335,"subtype":"success","usage":{"input":2,"output":6,"cacheRead":25951,"cacheCreate":11243}}
+{"t":1785589880178,"ms":180039,"kind":"backpressure","n":1,"prompt":"Print the integers from 1 to 12000, one per line, as plain text. No commentary, no code, no tools, no truncation — just "}
+{"t":1785589880190,"ms":180051,"kind":"init","session_id":"2633d234-d597-478c-a059-ba169c19234d","model":"claude-opus-5[1m]","version":"2.1.220","apiKeySource":"none","slashCommands":59,"keys":["type","subtype","cwd","session_id","tools","mcp_servers","model","permissionMode","slash_commands","apiKeySource","claude_code_version","output_style","agents","skills","plugins","capabilities","analytics_disabled","product_feedback_disabled","uuid","memory_paths","fast_mode_state","fast_mode_disabled_reason"]}
+{"t":1785589881595,"ms":1417,"kind":"first-delta","n":1}
+{"t":1785589884186,"ms":184047,"kind":"backpressure-stall-begin","bytesSoFar":12015,"pauseMs":120000}
+{"t":1785589944194,"ms":244055,"kind":"backpressure-stdin-during-stall"}
+{"t":1785590000919,"ms":300780,"kind":"sample","alive":true,"childRssMb":365.3,"procCount":3,"hostRssMb":31.1,"stdoutBytes":12015,"stdoutLines":20,"keepAlives":0,"msSinceLastMsg":116968}
+{"t":1785590004201,"ms":304062,"kind":"backpressure-resume","aliveAfterStall":true,"stalledMs":120015}
+{"t":1785590145223,"ms":445084,"kind":"turn-done","n":1,"latencyMs":265045,"subtype":"success","usage":{"input":2,"output":35428,"cacheRead":37194,"cacheCreate":54}}
+{"t":1785590145223,"ms":445084,"kind":"backpressure-verdict","verdict":"RECOVERED — 358649 bytes were blocked behind us and arrived intact; the turn completed","bytesAfterResume":358649,"filledBuffers":true,"parseFailures":0}
+{"t":1785590145228,"ms":445089,"kind":"init","session_id":"2633d234-d597-478c-a059-ba169c19234d","model":"claude-opus-5[1m]","version":"2.1.220","apiKeySource":"none","slashCommands":59,"keys":["type","subtype","cwd","session_id","tools","mcp_servers","model","permissionMode","slash_commands","apiKeySource","claude_code_version","output_style","agents","skills","plugins","capabilities","analytics_disabled","product_feedback_disabled","uuid","memory_paths","fast_mode_state","fast_mode_disabled_reason"]}
+{"t":1785590148778,"ms":448639,"kind":"backpressure-stdin-honoured","afterResumeMs":144577}
+{"t":1785590300912,"ms":600773,"kind":"sample","alive":true,"childRssMb":378.5,"procCount":3,"hostRssMb":35.1,"stdoutBytes":378135,"stdoutLines":594,"keepAlives":0,"msSinceLastMsg":152134}
+{"t":1785590600905,"ms":900766,"kind":"sample","alive":true,"childRssMb":379,"procCount":3,"hostRssMb":35.3,"stdoutBytes":378135,"stdoutLines":594,"keepAlives":0,"msSinceLastMsg":452127}
+{"t":1785590900174,"ms":1200035,"kind":"heartbeat","n":2,"prompt":"Reply with exactly: PING-2"}
+{"t":1785590900187,"ms":1200048,"kind":"init","session_id":"2633d234-d597-478c-a059-ba169c19234d","model":"claude-opus-5[1m]","version":"2.1.220","apiKeySource":"none","slashCommands":59,"keys":["type","subtype","cwd","session_id","tools","mcp_servers","model","permissionMode","slash_commands","apiKeySource","claude_code_version","output_style","agents","skills","plugins","capabilities","analytics_disabled","product_feedback_disabled","uuid","memory_paths","fast_mode_state","fast_mode_disabled_reason"]}
+{"t":1785590901170,"ms":1201031,"kind":"sample","alive":true,"childRssMb":380.8,"procCount":3,"hostRssMb":35.3,"stdoutBytes":380825,"stdoutLines":596,"keepAlives":0,"msSinceLastMsg":982}
+{"t":1785590903463,"ms":3289,"kind":"first-delta","n":2}
+{"t":1785590903488,"ms":1203349,"kind":"turn-done","n":2,"latencyMs":3314,"subtype":"success","usage":{"input":2,"output":6,"cacheRead":72686,"cacheCreate":20}}
+{"t":1785591200955,"ms":1500816,"kind":"sample","alive":true,"childRssMb":380.4,"procCount":3,"hostRssMb":35.3,"stdoutBytes":385337,"stdoutLines":604,"keepAlives":0,"msSinceLastMsg":297467}
+{"t":1785591500888,"ms":1800749,"kind":"sample","alive":true,"childRssMb":365.9,"procCount":3,"hostRssMb":35.3,"stdoutBytes":385337,"stdoutLines":604,"keepAlives":0,"msSinceLastMsg":597400}
+{"t":1785591800898,"ms":2100759,"kind":"sample","alive":true,"childRssMb":352.4,"procCount":3,"hostRssMb":34.1,"stdoutBytes":385337,"stdoutLines":604,"keepAlives":0,"msSinceLastMsg":897410}
+{"t":1785592100185,"ms":2400046,"kind":"heartbeat","n":3,"prompt":"Reply with exactly: PING-3"}
+{"t":1785592100197,"ms":2400058,"kind":"init","session_id":"2633d234-d597-478c-a059-ba169c19234d","model":"claude-opus-5[1m]","version":"2.1.220","apiKeySource":"none","slashCommands":59,"keys":["type","subtype","cwd","session_id","tools","mcp_servers","model","permissionMode","slash_commands","apiKeySource","claude_code_version","output_style","agents","skills","plugins","capabilities","analytics_disabled","product_feedback_disabled","uuid","memory_paths","fast_mode_state","fast_mode_disabled_reason"]}
+{"t":1785592100951,"ms":2400812,"kind":"sample","alive":true,"childRssMb":351.7,"procCount":3,"hostRssMb":34.5,"stdoutBytes":388027,"stdoutLines":606,"keepAlives":0,"msSinceLastMsg":754}
+{"t":1785592102668,"ms":2483,"kind":"first-delta","n":3}
+{"t":1785592102757,"ms":2402618,"kind":"turn-done","n":3,"latencyMs":2572,"subtype":"success","usage":{"input":2,"output":6,"cacheRead":72706,"cacheCreate":20}}
+{"t":1785592401076,"ms":2700937,"kind":"sample","alive":true,"childRssMb":348.6,"procCount":3,"hostRssMb":34.1,"stdoutBytes":392777,"stdoutLines":615,"keepAlives":0,"msSinceLastMsg":298319}
+{"t":1785592700989,"ms":3000850,"kind":"sample","alive":true,"childRssMb":348.6,"procCount":3,"hostRssMb":34.2,"stdoutBytes":392777,"stdoutLines":615,"keepAlives":0,"msSinceLastMsg":598232}
+{"t":1785593001027,"ms":3300888,"kind":"sample","alive":true,"childRssMb":348.6,"procCount":3,"hostRssMb":34.3,"stdoutBytes":392777,"stdoutLines":615,"keepAlives":0,"msSinceLastMsg":898270}
+{"t":1785593300194,"ms":3600055,"kind":"heartbeat","n":4,"prompt":"Reply with exactly: PING-4"}
+{"t":1785593300209,"ms":3600070,"kind":"init","session_id":"2633d234-d597-478c-a059-ba169c19234d","model":"claude-opus-5[1m]","version":"2.1.220","apiKeySource":"none","slashCommands":59,"keys":["type","subtype","cwd","session_id","tools","mcp_servers","model","permissionMode","slash_commands","apiKeySource","claude_code_version","output_style","agents","skills","plugins","capabilities","analytics_disabled","product_feedback_disabled","uuid","memory_paths","fast_mode_state","fast_mode_disabled_reason"]}
+{"t":1785593301141,"ms":3601002,"kind":"sample","alive":true,"childRssMb":349.6,"procCount":3,"hostRssMb":34.3,"stdoutBytes":395467,"stdoutLines":617,"keepAlives":0,"msSinceLastMsg":932}
+{"t":1785593302453,"ms":2259,"kind":"first-delta","n":4}
+{"t":1785593302493,"ms":3602354,"kind":"turn-done","n":4,"latencyMs":2299,"subtype":"success","usage":{"input":2,"output":6,"cacheRead":72726,"cacheCreate":20}}
+{"t":1785593600984,"ms":3900845,"kind":"sample","alive":true,"childRssMb":349.9,"procCount":3,"hostRssMb":34.5,"stdoutBytes":399980,"stdoutLines":625,"keepAlives":0,"msSinceLastMsg":298491}
+{"t":1785593900979,"ms":4200840,"kind":"sample","alive":true,"childRssMb":349.8,"procCount":3,"hostRssMb":34.5,"stdoutBytes":399980,"stdoutLines":625,"keepAlives":0,"msSinceLastMsg":598486}
+{"t":1785594200978,"ms":4500839,"kind":"sample","alive":true,"childRssMb":350.7,"procCount":3,"hostRssMb":34.7,"stdoutBytes":399980,"stdoutLines":625,"keepAlives":0,"msSinceLastMsg":898485}
+{"t":1785594500197,"ms":4800058,"kind":"heartbeat","n":5,"prompt":"Reply with exactly: PING-5"}
+{"t":1785594500202,"ms":4800062,"kind":"init","session_id":"2633d234-d597-478c-a059-ba169c19234d","model":"claude-opus-5[1m]","version":"2.1.220","apiKeySource":"none","slashCommands":59,"keys":["type","subtype","cwd","session_id","tools","mcp_servers","model","permissionMode","slash_commands","apiKeySource","claude_code_version","output_style","agents","skills","plugins","capabilities","analytics_disabled","product_feedback_disabled","uuid","memory_paths","fast_mode_state","fast_mode_disabled_reason"]}
+{"t":1785594500998,"ms":4800859,"kind":"sample","alive":true,"childRssMb":335.9,"procCount":3,"hostRssMb":34.1,"stdoutBytes":402670,"stdoutLines":627,"keepAlives":0,"msSinceLastMsg":796}
+{"t":1785594501476,"ms":1279,"kind":"first-delta","n":5}
+{"t":1785594502246,"ms":4802107,"kind":"turn-done","n":5,"latencyMs":2049,"subtype":"success","usage":{"input":2,"output":6,"cacheRead":72746,"cacheCreate":20}}
+{"t":1785594800977,"ms":5100838,"kind":"sample","alive":true,"childRssMb":326.9,"procCount":3,"hostRssMb":33.4,"stdoutBytes":407419,"stdoutLines":636,"keepAlives":0,"msSinceLastMsg":298731}

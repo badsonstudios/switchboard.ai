@@ -1,0 +1,408 @@
+{
+  "probe": "s-11 probe 1 — long-run stability",
+  "startedAt": "2026-08-01T13:08:20.139Z",
+  "cwd": "C:\\Users\\dheinz\\AppData\\Local\\Temp\\sb-s11-longrun-A4xrRN",
+  "pid": 49380,
+  "cli": "claude.cmd",
+  "config": {
+    "DURATION_MS": 28800000,
+    "HEARTBEAT_MS": 1200000,
+    "SAMPLE_MS": 300000,
+    "BACKPRESSURE_AT_MS": 180000,
+    "PAUSE_MS": 120000
+  },
+  "init": {
+    "ms": 4800062,
+    "session_id": "2633d234-d597-478c-a059-ba169c19234d",
+    "model": "claude-opus-5[1m]",
+    "version": "2.1.220",
+    "apiKeySource": "none",
+    "slashCommands": 59,
+    "keys": [
+      "type",
+      "subtype",
+      "cwd",
+      "session_id",
+      "tools",
+      "mcp_servers",
+      "model",
+      "permissionMode",
+      "slash_commands",
+      "apiKeySource",
+      "claude_code_version",
+      "output_style",
+      "agents",
+      "skills",
+      "plugins",
+      "capabilities",
+      "analytics_disabled",
+      "product_feedback_disabled",
+      "uuid",
+      "memory_paths",
+      "fast_mode_state",
+      "fast_mode_disabled_reason"
+    ]
+  },
+  "alive": true,
+  "exit": null,
+  "stdoutBytes": 407419,
+  "stdoutLines": 636,
+  "parseFailures": 0,
+  "typeCounts": {
+    "system:init": 7,
+    "system:status": 7,
+    "stream_event": 601,
+    "assistant": 8,
+    "rate_limit_event": 1,
+    "result:success": 7,
+    "system:thinking_tokens": 5
+  },
+  "keepAlives": {
+    "count": 0,
+    "firstMs": null,
+    "lastMs": null,
+    "gapsMs": []
+  },
+  "turns": [
+    {
+      "n": 0,
+      "kind": "heartbeat",
+      "sentAt": 1785589702166,
+      "sentMs": 2027,
+      "firstDeltaMs": 2122,
+      "resultMs": 4362,
+      "latencyMs": 2335,
+      "prompt": "Reply with exactly: PING-0",
+      "reply": "PING-0",
+      "subtype": "success",
+      "is_error": false,
+      "usage": {
+        "input": 2,
+        "output": 6,
+        "cacheRead": 25951,
+        "cacheCreate": 11243
+      }
+    },
+    {
+      "n": 1,
+      "kind": "backpressure",
+      "sentAt": 1785589880178,
+      "sentMs": 180039,
+      "firstDeltaMs": 1417,
+      "resultMs": 445084,
+      "latencyMs": 265045,
+      "prompt": "Print the integers from 1 to 12000, one per line, as plain text. No commentary, no code, no tools, no truncation — just ",
+      "reply": "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\n31\n32\n33\n34\n35\n36\n37\n38\n39\n40\n41\n42\n43\n44\n45\n46\n47\n48\n49\n50\n51\n52\n53\n54\n55\n56\n57\n58\n59\n60\n61\n62\n63\n64\n65\n66\n67\n68\n69\n70",
+      "subtype": "success",
+      "is_error": false,
+      "usage": {
+        "input": 2,
+        "output": 35428,
+        "cacheRead": 37194,
+        "cacheCreate": 54
+      }
+    },
+    {
+      "n": 2,
+      "kind": "heartbeat",
+      "sentAt": 1785590900174,
+      "sentMs": 1200035,
+      "firstDeltaMs": 3289,
+      "resultMs": 1203349,
+      "latencyMs": 3314,
+      "prompt": "Reply with exactly: PING-2",
+      "reply": "PING-2",
+      "subtype": "success",
+      "is_error": false,
+      "usage": {
+        "input": 2,
+        "output": 6,
+        "cacheRead": 72686,
+        "cacheCreate": 20
+      }
+    },
+    {
+      "n": 3,
+      "kind": "heartbeat",
+      "sentAt": 1785592100185,
+      "sentMs": 2400046,
+      "firstDeltaMs": 2483,
+      "resultMs": 2402618,
+      "latencyMs": 2572,
+      "prompt": "Reply with exactly: PING-3",
+      "reply": "PING-3",
+      "subtype": "success",
+      "is_error": false,
+      "usage": {
+        "input": 2,
+        "output": 6,
+        "cacheRead": 72706,
+        "cacheCreate": 20
+      }
+    },
+    {
+      "n": 4,
+      "kind": "heartbeat",
+      "sentAt": 1785593300194,
+      "sentMs": 3600055,
+      "firstDeltaMs": 2259,
+      "resultMs": 3602354,
+      "latencyMs": 2299,
+      "prompt": "Reply with exactly: PING-4",
+      "reply": "PING-4",
+      "subtype": "success",
+      "is_error": false,
+      "usage": {
+        "input": 2,
+        "output": 6,
+        "cacheRead": 72726,
+        "cacheCreate": 20
+      }
+    },
+    {
+      "n": 5,
+      "kind": "heartbeat",
+      "sentAt": 1785594500197,
+      "sentMs": 4800058,
+      "firstDeltaMs": 1279,
+      "resultMs": 4802107,
+      "latencyMs": 2049,
+      "prompt": "Reply with exactly: PING-5",
+      "reply": "PING-5",
+      "subtype": "success",
+      "is_error": false,
+      "usage": {
+        "input": 2,
+        "output": 6,
+        "cacheRead": 72746,
+        "cacheCreate": 20
+      }
+    }
+  ],
+  "samples": [
+    {
+      "ms": 300780,
+      "alive": true,
+      "childRssMb": 365.3,
+      "procCount": 3,
+      "hostRssMb": 31.1,
+      "stdoutBytes": 12015,
+      "stdoutLines": 20,
+      "keepAlives": 0,
+      "msSinceLastMsg": 116968
+    },
+    {
+      "ms": 600773,
+      "alive": true,
+      "childRssMb": 378.5,
+      "procCount": 3,
+      "hostRssMb": 35.1,
+      "stdoutBytes": 378135,
+      "stdoutLines": 594,
+      "keepAlives": 0,
+      "msSinceLastMsg": 152134
+    },
+    {
+      "ms": 900766,
+      "alive": true,
+      "childRssMb": 379,
+      "procCount": 3,
+      "hostRssMb": 35.3,
+      "stdoutBytes": 378135,
+      "stdoutLines": 594,
+      "keepAlives": 0,
+      "msSinceLastMsg": 452127
+    },
+    {
+      "ms": 1201031,
+      "alive": true,
+      "childRssMb": 380.8,
+      "procCount": 3,
+      "hostRssMb": 35.3,
+      "stdoutBytes": 380825,
+      "stdoutLines": 596,
+      "keepAlives": 0,
+      "msSinceLastMsg": 982
+    },
+    {
+      "ms": 1500816,
+      "alive": true,
+      "childRssMb": 380.4,
+      "procCount": 3,
+      "hostRssMb": 35.3,
+      "stdoutBytes": 385337,
+      "stdoutLines": 604,
+      "keepAlives": 0,
+      "msSinceLastMsg": 297467
+    },
+    {
+      "ms": 1800749,
+      "alive": true,
+      "childRssMb": 365.9,
+      "procCount": 3,
+      "hostRssMb": 35.3,
+      "stdoutBytes": 385337,
+      "stdoutLines": 604,
+      "keepAlives": 0,
+      "msSinceLastMsg": 597400
+    },
+    {
+      "ms": 2100759,
+      "alive": true,
+      "childRssMb": 352.4,
+      "procCount": 3,
+      "hostRssMb": 34.1,
+      "stdoutBytes": 385337,
+      "stdoutLines": 604,
+      "keepAlives": 0,
+      "msSinceLastMsg": 897410
+    },
+    {
+      "ms": 2400812,
+      "alive": true,
+      "childRssMb": 351.7,
+      "procCount": 3,
+      "hostRssMb": 34.5,
+      "stdoutBytes": 388027,
+      "stdoutLines": 606,
+      "keepAlives": 0,
+      "msSinceLastMsg": 754
+    },
+    {
+      "ms": 2700937,
+      "alive": true,
+      "childRssMb": 348.6,
+      "procCount": 3,
+      "hostRssMb": 34.1,
+      "stdoutBytes": 392777,
+      "stdoutLines": 615,
+      "keepAlives": 0,
+      "msSinceLastMsg": 298319
+    },
+    {
+      "ms": 3000850,
+      "alive": true,
+      "childRssMb": 348.6,
+      "procCount": 3,
+      "hostRssMb": 34.2,
+      "stdoutBytes": 392777,
+      "stdoutLines": 615,
+      "keepAlives": 0,
+      "msSinceLastMsg": 598232
+    },
+    {
+      "ms": 3300888,
+      "alive": true,
+      "childRssMb": 348.6,
+      "procCount": 3,
+      "hostRssMb": 34.3,
+      "stdoutBytes": 392777,
+      "stdoutLines": 615,
+      "keepAlives": 0,
+      "msSinceLastMsg": 898270
+    },
+    {
+      "ms": 3601002,
+      "alive": true,
+      "childRssMb": 349.6,
+      "procCount": 3,
+      "hostRssMb": 34.3,
+      "stdoutBytes": 395467,
+      "stdoutLines": 617,
+      "keepAlives": 0,
+      "msSinceLastMsg": 932
+    },
+    {
+      "ms": 3900845,
+      "alive": true,
+      "childRssMb": 349.9,
+      "procCount": 3,
+      "hostRssMb": 34.5,
+      "stdoutBytes": 399980,
+      "stdoutLines": 625,
+      "keepAlives": 0,
+      "msSinceLastMsg": 298491
+    },
+    {
+      "ms": 4200840,
+      "alive": true,
+      "childRssMb": 349.8,
+      "procCount": 3,
+      "hostRssMb": 34.5,
+      "stdoutBytes": 399980,
+      "stdoutLines": 625,
+      "keepAlives": 0,
+      "msSinceLastMsg": 598486
+    },
+    {
+      "ms": 4500839,
+      "alive": true,
+      "childRssMb": 350.7,
+      "procCount": 3,
+      "hostRssMb": 34.7,
+      "stdoutBytes": 399980,
+      "stdoutLines": 625,
+      "keepAlives": 0,
+      "msSinceLastMsg": 898485
+    },
+    {
+      "ms": 4800859,
+      "alive": true,
+      "childRssMb": 335.9,
+      "procCount": 3,
+      "hostRssMb": 34.1,
+      "stdoutBytes": 402670,
+      "stdoutLines": 627,
+      "keepAlives": 0,
+      "msSinceLastMsg": 796
+    },
+    {
+      "ms": 5100838,
+      "alive": true,
+      "childRssMb": 326.9,
+      "procCount": 3,
+      "hostRssMb": 33.4,
+      "stdoutBytes": 407419,
+      "stdoutLines": 636,
+      "keepAlives": 0,
+      "msSinceLastMsg": 298731
+    }
+  ],
+  "backpressure": {
+    "state": "done",
+    "stallStartMs": 184047,
+    "resumeMs": 304062,
+    "bytesAtStall": 12015,
+    "bytesAtResume": 12015,
+    "bytesAfterResume": 358649,
+    "aliveAfterStall": true,
+    "sentDuringStall": true,
+    "stallProbeResultMs": 448639,
+    "stallProbeHonoured": true,
+    "resultAfterResumeMs": 141022,
+    "totalTurnMs": 265045,
+    "parseFailures": 0,
+    "filledBuffers": true,
+    "verdict": "RECOVERED — 358649 bytes were blocked behind us and arrived intact; the turn completed"
+  },
+  "rateLimit": {
+    "ms": 4359,
+    "payload": {
+      "type": "rate_limit_event",
+      "rate_limit_info": {
+        "status": "allowed",
+        "resetsAt": 1785596400,
+        "rateLimitType": "five_hour",
+        "overageStatus": "rejected",
+        "overageDisabledReason": "org_level_disabled",
+        "isUsingOverage": false
+      },
+      "uuid": "f48e8373-6a8d-4087-bf90-e886aff7f859",
+      "session_id": "2633d234-d597-478c-a059-ba169c19234d"
+    }
+  },
+  "compactions": [],
+  "stderr": [],
+  "verdicts": {},
+  "elapsedMs": 5100838
+}

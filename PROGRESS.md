@@ -6,9 +6,35 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#149 (P2-E18-08b) — turn stream mode on.** Branch
-`feature/149-turn-stream-on`. Gate green: lint + typecheck + **803 unit (+6)** +
-**103 e2e (+3)**. **#138 MERGED as PR #150**, 5 CI jobs green.
+**In progress:** **nothing mid-flight.** Next is **#139 (P2-E18-09)** — slash
+commands from `system:init`.
+**E18 IS 9 OF 11 DONE, ALL MERGED with 5 CI jobs green:** #131 → PR #141 ·
+#132 → PR #142 · #133 → PR #143 · #134 → PR #144 · #135 → PR #146 · #136 →
+PR #147 · #137 → PR #148 · #138 → PR #150 · **#149 → PR #151 (the first
+user-visible surface — ⋯ menu → Transport: Direct, and a manual page)**.
+**Remaining filed: #139** (slash commands from `system:init`) and **#140** (Feed
+from typed messages).
+
+> ## ✅ S-11 PROBE 1 COMPLETE — 8h, CLEAN PASS. **Findings note written:
+> `spike/findings/s-11-long-run-stability.md`.**
+> Survived the full 8h and was still answering; **25 turns sent, 25 completed;
+> 832 lines, 0 parse failures; 0 keep_alives; child RSS 367.8 → 302.3 MB
+> (DOWN, then flat); heartbeat latency flat (median 2016ms); 0 compactions.**
+> The **#112/#117-class deadlock did not reproduce**: a deliberate 120s stall
+> blocked 359,003 bytes behind us and they arrived intact, and a message written
+> to the BLOCKED CLI was queued not lost.
+> **This was the gate that could have stopped the migration. It did not** —
+> E18-01…E18-08b shipped against this evidence.
+> **Three findings that changed code the same day:** `system:init` is once per
+> TURN (26 for 25 turns); **`init` arrives ~10-20ms AFTER our own send and the
+> CLI emits NOTHING at spawn** (which decided #135's readiness design); and
+> **`system:thinking_tokens` appeared — a type S-10 never saw** — absorbed with
+> no transition because the mapper lists what it knows rather than defaulting.
+> **The number the product must live with: ~300 MB per session × 3 processes,
+> so 8 sessions ≈ 2.4 GB of CLI.** #111 inherits it.
+> **What it does NOT say:** nothing about concurrency (one session), compaction
+> (zero occurred), or the CHOOSERS. **Probes 2-6 remain unstarted, and they are
+> what gates E18-11…E18-16 and the terminal's fate.**
 **🎉 THE EPIC'S PURPOSE IS DEMONSTRATED END TO END:** a `.claude/` permission is
 raised by the CLI, answered ONCE in switchboard, and **the file is written** —
 in the real app, in an e2e that runs on every commit.
