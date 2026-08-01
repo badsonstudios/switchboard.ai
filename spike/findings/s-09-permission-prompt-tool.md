@@ -128,6 +128,25 @@ decision with its own spike — what stream-json mode actually costs in slash
 commands, plan mode, `AskUserQuestion` and subscription auth is **unmeasured**,
 and that measurement is the precondition for the conversation, not the outcome.
 
+## POSTSCRIPT — 2026-07-31, later the same day
+
+**The recommended sequencing did not survive contact.** Two things happened:
+
+1. **The option 1/3 workaround was attempted in a parallel session and did not
+   work** (Dan's report; that session holds the specifics). The cheap path is
+   not merely unsatisfying — it is not available.
+2. **The precondition got measured.** `spike/findings/s-10-stream-json-transport.md`
+   ran the transport against our own PATH CLI and found it works on the
+   subscription, delivers the exact `.claude/` prompt above as a `can_use_tool`
+   control request, keeps writing the JSONL transcript, handles slash commands
+   as plain text, and never draws a trust dialog.
+
+**So the verdict at the top of this file still stands and is still the right
+answer to the question it asked** — there is no flag that gives us the prompt
+while we host a TUI. What changed is that option 2 stopped being the expensive
+hypothetical and became the only route that reaches the goal. **Read S-10
+next.**
+
 ## Reproducing
 
 ```

@@ -26,6 +26,7 @@ approvals, and usage tracking.
 | `docs/DESIGN.md` | The design record — 29 feature sections, roadmap, open questions, competitive research |
 | `docs/PHILOSOPHY.md` | The constitution — principles + the feature litmus test **every feature must pass** |
 | `docs/extensibility.md` | Internal contributor guide — contribution points, capability manifests, the bootstrap rule (§5.23 seams; NOT a public plugin API) |
+| `docs/reference-implementations.md` | **When a CLI contract is unclear, read this first.** The Claude Code VS Code extension is unpacked on this machine — a known-correct consumer of every contract we depend on (the embedded Agent SDK, the stream-json protocol, the full `settings.json` schema). How to navigate the minified bundle, and the rules for using it |
 | `docs/plans/00-process.md` | How we work: phases → work items → GitHub issues → PRs |
 | `docs/plans/01-spike-foundations.md` | Current work: spike spec (S-01…S-08) |
 | `docs/plans/02-phase-1-mvp.md` | Phase 1 epics & work items |
@@ -34,7 +35,9 @@ approvals, and usage tracking.
 | `PROGRESS.md` (root) | **Live state** — current/next item, log. Always current |
 
 **Hard constraints (never violate):** subscription-first (local `claude` CLI,
-never require an API key) · host-don't-reimplement (real CLI in real terminals)
+never require an API key) · host-don't-reimplement (the real CLI decides and
+does; never fake an interaction it kept for itself — **P7 amended 2026-07-31,
+PHILOSOPHY §6: the terminal is a transport, not the constitution**)
 · local-first (no accounts/cloud/telemetry) · fail-open (our breakage never
 blocks a session) · every feature passes the PHILOSOPHY.md §4 litmus test.
 

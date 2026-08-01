@@ -20,8 +20,9 @@ Status: **design phase** (started 2026-07-18). No code yet.
 
 - Subscription-first: drives the local `claude` CLI under the user's Claude
   subscription by default; per-session API-key mode optional. Never requires an API key.
-- Host, don't reimplement: the real CLI runs in real terminals; we render, route,
-  and notify — we never fork agent behavior.
+- Host, don't reimplement: the real CLI does the deciding and the doing; we
+  render, route, and notify — we never fork agent behavior, and we never fake an
+  interaction the CLI kept for itself.
 - Local-first: no accounts, no cloud, no telemetry.
 - Cross-platform: Windows / macOS / Linux (Electron + TypeScript + xterm.js +
   node-pty + Monaco).

@@ -20,10 +20,16 @@ it while we were mid-investigation on the permission finding below). They are
 still worth running — the list is in the PR body; main is always-working, so
 anything they turn up is a fix-forward, not a revert.
 
-> ## 🔴 LIVE INVESTIGATION (2026-07-31) — permission prompts switchboard cannot see
+> ## 🟠 DECIDED, NOT BUILT (2026-07-31) — permission prompts switchboard cannot see
 >
-> **Dan hit a real bug mid-session and it opened a foundational question. Read
-> this before picking up any E10/E11 work.**
+> **Dan hit a real bug mid-session; it opened a foundational question, and the
+> answer changed the constitution. Read this before picking up any E10/E11 work,
+> and before touching anything PTY-shaped.**
+>
+> **One-line state:** the bug is understood, the terminal-preserving fix is
+> proven impossible (S-09), the workaround failed, the stream-json route is
+> proven viable on our own CLI (S-10), P7 is amended — and **no code has moved
+> and no issue is filed.**
 >
 > **Symptom:** ClaudeMon asked to create `.claude\scripts\coverage.sh`. The
 > rail and Events showed *needs-permission*; the Session view showed no approval
@@ -85,17 +91,72 @@ anything they turn up is a fix-forward, not a revert.
 > extension's. **That is a PHILOSOPHY-level change** — "host-don't-reimplement
 > (real CLI in real terminals)" is one of four hard constraints — so it gets
 > amended deliberately and first, not eroded in a PR.
-> **STATUS: awaiting Dan's decision (2026-07-31).** The terminal-preserving
-> option is dead (S-09), so the four that remain are: **(1)** accept it and fix
-> the whisper chip · **(2)** the extension trade — stream-json, no terminal,
-> which also deletes the whole transcript-binding subsystem (#107/#108/#112/#117
-> exist only because we read files instead of a stream) · **(3)** screen-scrape
-> the TUI prompt (works, keeps the architecture, is a §5.26 drift liability by
-> construction — never auto-answer on a fuzzy match) · **(4)** ask upstream for
-> the flag to work interactively (free, parallel). Full trade-offs in the S-09
-> findings note. **What is NOT yet measured, and is the precondition for even
-> discussing (2): what stream-json mode costs in slash commands, plan mode,
-> `AskUserQuestion` and subscription auth.**
+> **STATUS (updated 2026-07-31, later): DECIDED IN PRINCIPLE — the stream-json
+> transport is the route. P7 has been amended. The migration is NOT started and
+> NOT filed.**
+>
+> Two things closed the question after S-09:
+> 1. **The workaround failed.** The option-1/3 workaround for `.claude/` writes
+>    was attempted in a parallel session and did not work (Dan, 2026-07-31 — that
+>    session holds the specifics). The cheap path is not available, not merely
+>    unsatisfying.
+> 2. **The precondition got measured — spike S-10**
+>    (`spike/findings/s-10-stream-json-transport.md`, `spike/s10/`). Against
+>    **our own PATH CLI**, not the extension's bundled copy:
+>    - Duplex stream-json runs **without `--print`** (the `--help` text saying
+>      otherwise is stale), streams token deltas, and stays alive between turns.
+>    - `--permission-prompt-tool stdio` delivered **the exact
+>      `.claude/scripts/coverage.sh` case** as a `can_use_tool` control request
+>      carrying `decision_reason`, `decision_reason_type: safetyCheck` and
+>      `permission_suggestions`. Answered allow; the file was written.
+>    - **Subscription auth is fine** (`rate_limit_event` reports the same
+>      five-hour/weekly windows; no API key anywhere).
+>    - **The JSONL transcript is still written** — so `watcher.ts` / `drift.ts` /
+>      binding **survive the migration** rather than needing replacement in the
+>      same step. (The stream also carries `transcript_mirror`, so they become
+>      redundant later, on their own schedule.)
+>    - **Slash commands work as plain user text**, and `system:init` advertises
+>      `slash_commands` live — 59 entries including this machine's *project and
+>      user* commands, which replaces the 40-entry hand-curated list in
+>      `providers/claude.ts` with ground truth.
+>    - **No trust dialog** is drawn in this mode.
+>
+> **The VS Code extension uses NO PTY at all** — plain `child_process.spawn` with
+> pipes; `node-pty` does not appear in its bundle. It also **keeps a terminal
+> mode as an escape hatch** (`claudeCode.useTerminal`, default false), which is
+> the precedent for our own sequencing. Full mechanism in the S-10 note.
+>
+> **PHILOSOPHY P7 AMENDED 2026-07-31** — see the new **PHILOSOPHY §6 Amendments**.
+> Fidelity to the CLI's behavior is the invariant; the terminal was one transport
+> for it. New hard line added: *a decision the CLI delegates we may present; a
+> decision the CLI keeps we may never fake* — which kills S-09's option 3
+> (screen-scraping) on principle, now recorded as a §5 precedent. The amendment
+> explicitly does **not** decide that the terminal goes away; that is an
+> engineering call still bound by litmus 3 and 4.
+> `README.md` and `.claude/CLAUDE.md` restatements updated to match.
+>
+> **STILL UNMEASURED — do not treat as answered** (S-10 §3): plan mode +
+> `ExitPlanMode`, `AskUserQuestion`, sidechain/subagent rendering from
+> `parent_tool_use_id`, the `/resume` `/rewind` `--from-pr` pickers, `interrupt`
+> semantics, and **long-run stability** (every probe was a single turn). The ones
+> that turn out to be choosers are what decides whether the terminal stays as an
+> escape hatch.
+>
+> **Blast radius, counted:** 14 load-bearing files (68 mention `pty`; the rest
+> are comments and tests). `composer.ts` is deleted outright — the bracketed
+> paste and the 75 ms delayed CR become one `stdin.write`. Feed, transcript
+> stack, state machine and the extensibility registry all survive. Table in the
+> S-10 note.
+>
+> **When stuck on a CLI contract during this work: `docs/reference-implementations.md`.**
+> The VS Code extension is unpacked on this machine and is a known-correct
+> consumer of every contract the migration touches — the embedded Agent SDK and
+> its arg builder, the stream-json protocol, and the full `settings.json` schema.
+> That doc has the navigation recipes for the minified bundle and the rules
+> (read contracts, don't copy code; verify against the PATH CLI before building).
+>
+> **NEXT: nothing is filed.** This needs `/pm` to decide whether it is a new
+> epic or a re-scoped E11, and Dan's go-ahead before any issue exists.
 >
 > **Also outstanding, ours, cheap, and real regardless of the above:** when the
 > CLI asks something we cannot answer, the Session tab shows a **10px chip in the

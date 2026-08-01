@@ -40,9 +40,30 @@ Claude Code. Approvals time out into the normal terminal prompt. Killing the app
 never kills work; recovery is resume. We are a layer over the CLI — never a
 hostage-taker.
 
-**P7. Host, don't reimplement.**
-Display is ours; interaction belongs to the CLI. We render, decorate, route, and
-notify — we never fork the agent's behavior or fake its UI.
+**P7. Host, don't reimplement.** *(amended 2026-07-31 — see §6)*
+The real CLI does the deciding and the doing. We render, decorate, route, and
+notify — we never fork the agent's behavior, and we never invent an interaction
+the CLI did not offer us.
+
+Three lines, in order of hardness:
+
+- **The process is the product.** We host the actual `claude` binary on the
+  user's own subscription. We never reimplement the agent, and we never
+  reimplement a decision it makes. Non-negotiable.
+- **Rendering is ours, and the transport is an implementation detail.** Drawing
+  the CLI's ANSI in a terminal emulator and rendering the CLI's typed message
+  stream are the same act — display — and neither is more "real" than the other.
+  Choose the transport that shows the user more of what the CLI is actually
+  doing.
+- **A decision the CLI delegates, we may present. A decision the CLI keeps, we
+  may not fake.** If the CLI hands us a choice (a `can_use_tool` request), a
+  native surface for it is hosting. If the CLI keeps a choice for itself, we do
+  not screen-scrape it, guess at it, or answer it on the user's behalf — we say
+  so plainly and route the user to where the decision actually lives.
+
+The old wording said "interaction belongs to the CLI," which read as *the
+terminal is the constitution*. It is not. **Fidelity to the CLI's behavior is
+the constitution; the terminal was one way to get it.**
 
 **P8. Local-first and private.**
 No accounts, no cloud dependency, no telemetry. Everything lives on the user's
@@ -111,7 +132,8 @@ Before any feature ships, it must pass ALL of:
 4. **Escape hatch** — can be done manually and turned off? (P4)
 5. **Two-gesture rule** — every session still ≤ 2 gestures away? (S1)
 6. **Calm check** — adds zero noise to the default experience, or is opt-in? (P3)
-7. **Host check** — does not reimplement or fork CLI behavior? (P7)
+7. **Host check** — does not reimplement or fork CLI behavior, and does not
+   fake an interaction the CLI kept for itself? (P7)
 
 A feature that fails any test gets redesigned, parked in the DESIGN.md backlog,
 or killed. **"It would be cool" is not a reason.** The backlog exists precisely
@@ -126,3 +148,42 @@ so good ideas can wait without bloating the product.
 - *A built-in code editor*: fails host check spirit and attention ROI — users
   have editors. Monaco stays read-only + diff-only. Rejected as a feature
   direction; recorded here as precedent.
+- *Screen-scraping the TUI's permission prompt* (S-09 option 3): fails the host
+  check under the amended P7 — the CLI kept that decision, so parsing its prose
+  and sending `1`/`2`/`3` is faking an interaction, and a mis-parse answers the
+  wrong question. Rejected; recorded as precedent.
+
+## 6. Amendments
+
+Amendments are deliberate: this file changes first, then the feature. Each one
+records what changed, what forced it, and what it does **not** license.
+
+### 2026-07-31 — P7, on terminals vs. transports
+
+**Changed.** P7 no longer implies that hosting the CLI means hosting a terminal
+emulator. Fidelity to the CLI's behavior is the invariant; the terminal was one
+means to it. Three explicit lines replace one sentence, and a new one is added:
+a decision the CLI *delegates* may be presented natively, a decision the CLI
+*keeps* may never be faked.
+
+**What forced it.** A permission prompt switchboard could see but not answer —
+Claude Code guards `.claude/**` writes above both the `permissions.allow` layer
+and the PreToolUse hook layer, so our entire approval path was blind to it
+(`spike/findings/s-09-permission-prompt-tool.md`). No flag surfaces that prompt
+to a host that runs a TUI; the workaround was attempted and failed. The CLI's
+stream-json transport delivers it as a `can_use_tool` request with a
+human-readable reason attached, verified against our own PATH CLI on the
+subscription (`spike/findings/s-10-stream-json-transport.md`). The old reading
+of P7 forbade the only route that reaches the user's goal, which is the
+definition of a principle that needs amending rather than a feature that needs
+redesigning.
+
+**What it does NOT license.**
+- It does not authorize reimplementing the agent, its permission logic, or any
+  decision it makes. That line got *harder*, not softer.
+- It does not decide that the terminal goes away. It removes the constitutional
+  objection to a native surface; whether the terminal stays as an escape hatch
+  is an engineering call, and the fail-open and escape-hatch tests (litmus 3 and
+  4) still apply to it. Anthropic's own extension keeps both modes.
+- It does not license screen-scraping. The new third line forbids it explicitly,
+  and the §5 example records that.
