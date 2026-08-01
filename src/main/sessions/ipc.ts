@@ -54,6 +54,10 @@ export interface SessionIpcDeps {
   /** slash-command discovery for the composer popup (E10-07, §5.17) — async:
    *  the scan must never stall the main process on a slow disk */
   slashCommands: (folder: string, providerId: string) => Promise<SlashCommand[]>;
+  /** Which transport a NEW session should ask its adapter for (P2-E18-08a).
+   *  Absent = the adapter's default, i.e. the PTY. Replaced by the persisted
+   *  per-session setting in P2-E18-08b (#149). */
+  preferredTransport?: () => 'pty' | 'stream' | undefined;
 }
 
 export function registerSessionIpc(deps: SessionIpcDeps): void {
@@ -164,6 +168,15 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       );
     }
   );
+  // Submit a prompt on the session's own transport (P2-E18-08a). Returns
+  // false for a PTY session, whose composer route is a bracketed paste and a
+  // delayed CR — a genuinely different operation. The renderer tries this
+  // first and falls back, which is how it stays transport-ignorant until
+  // P2-E18-08b gives the user the choice.
+  broker.handle('sessions:submitPrompt', (_e, sessionId: string, text: string) => {
+    if (typeof sessionId !== 'string' || typeof text !== 'string') return false;
+    return manager.submitPrompt(sessionId, text);
+  });
   // "Allow all (this session)": answered at the SERVER from now on — no
   // hold, no needs-permission event, no beep (review P2 #19, Dan round 4)
   broker.handle('sessions:allowAllSession', (_e, liveId: string) => {
@@ -319,6 +332,12 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         settingsFor: plan.buildSettings,
         autonomy,
         resumeSessionId: plan.resumeSessionId,
+        // Which transport to ASK for (P2-E18-08a). Env-selected for now, the
+        // same way the two fakes are, because this item deliberately ships no
+        // UI — the per-session setting is P2-E18-08b (#149). The adapter still
+        // gets the final say: it answers in the recipe, and one that cannot
+        // speak stream-json returns a PTY recipe we honour.
+        transport: deps.preferredTransport?.(),
       });
       cardOfLive.set(record.id, opts.cardId);
       // A provider with no transcripts is never watched at all — the session is

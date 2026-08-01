@@ -143,6 +143,18 @@ export interface SpawnOptions {
   autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
   /** extra settings to inject at spawn (S-02 mechanism); hooks land in E2-05 */
   settings?: Record<string, unknown>;
+  /**
+   * The transport the HOST would like (P2-E18-08a). A request, not an order:
+   * the adapter answers with what it will actually do in `SpawnRecipe.transport`,
+   * because only it knows whether its CLI speaks that protocol. A provider that
+   * has never heard of stream-json ignores this and keeps returning a PTY
+   * recipe, which is the same degrade-gracefully posture as the §5.3
+   * capabilities.
+   *
+   * Absent = the adapter's own default, which is the PTY for every adapter
+   * today.
+   */
+  transport?: TransportKind;
 }
 
 export interface SpawnRecipe {

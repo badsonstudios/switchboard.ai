@@ -140,6 +140,10 @@ export class SessionManager {
       resumeSessionId?: string;
       autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
       settings?: Record<string, unknown>;
+      /** Which transport to ASK the adapter for (P2-E18-08a). The adapter
+       *  answers in the recipe; a provider that cannot speak it returns a PTY
+       *  recipe and we honour that rather than forcing it. */
+      transport?: TransportKind;
       /**
        * Settings that need the session id before spawn (hook wiring: the
        * HookListener registers a token for the id and returns the injectable
@@ -159,6 +163,7 @@ export class SessionManager {
       resumeSessionId: opts?.resumeSessionId,
       autonomy: opts?.autonomy,
       settings: Object.keys(settings).length > 0 ? settings : undefined,
+      transport: opts?.transport,
     });
     // Resolved BEFORE the record exists, so an adapter asking for a transport
     // we do not have leaves nothing behind — same contract as the "no provider

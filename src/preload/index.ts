@@ -144,6 +144,16 @@ const api = {
     },
     decidePermission: (requestId: string, decision: 'allow' | 'deny', reason?: string): Promise<boolean> =>
       ipcRenderer.invoke('sessions:decidePermission', requestId, decision, reason),
+    /**
+     * Submit a prompt on the session's OWN transport (P2-E18-08a).
+     *
+     * Resolves FALSE when that session has no typed-message transport — i.e.
+     * the PTY, which needs the bracketed paste and delayed CR instead. The
+     * caller falls back. Deliberately shaped as try-then-fall-back so the
+     * renderer never has to know which transport a session is on.
+     */
+    submitPrompt: (sessionId: string, text: string): Promise<boolean> =>
+      ipcRenderer.invoke('sessions:submitPrompt', sessionId, text),
     /** future gated calls for this LIVE session answer 'allow' in main (P2 #19) */
     allowAllSession: (liveId: string): Promise<void> =>
       ipcRenderer.invoke('sessions:allowAllSession', liveId),

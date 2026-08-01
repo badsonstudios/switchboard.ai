@@ -7,6 +7,8 @@ import { LogSink, createLogger } from './log/logger';
 import { registerBuiltinContributions } from './bootstrap';
 import { registry } from './extensibility';
 import { PtyService } from './pty/pty-service';
+import { StreamService } from './transport/stream-service';
+import { StreamPermissions } from './sessions/stream-permissions';
 import { SessionManager } from './sessions/session-manager';
 import { HookListener } from './hooks/hook-listener';
 import { TranscriptWatcher } from './transcripts/watcher';
@@ -560,7 +562,20 @@ app
     // session core (E2) bootstrap
     const stateDir = path.join(app.getPath('userData'), 'sessions');
     const ptys = new PtyService();
-    const manager = new SessionManager(registry, ptys, createLogger(sink, 'sessions'), stateDir);
+    // The stream transport, finally constructed (P2-E18-08a). Every item before
+    // this one drove StreamService from tests; nothing in the app had ever made
+    // one. It sits BESIDE PtyService, which is the whole shape of the migration.
+    const streams = new StreamService();
+    const manager = new SessionManager(registry, ptys, createLogger(sink, 'sessions'), stateDir, {
+      stream: streams,
+    });
+    // can_use_tool -> the approval bar (P2-E18-07). Answers go back on the same
+    // session's transport, which only the manager can reach.
+    const streamPermissions = new StreamPermissions(
+      (sessionId, msg) => manager.sendToTransport(sessionId, msg),
+      createLogger(sink, 'permissions')
+    );
+    manager.onStreamMessage((sessionId, msg) => streamPermissions.offer(sessionId, msg));
     const hooks = new HookListener({
       stateDir,
       manager,
@@ -659,6 +674,7 @@ app
     registerSessionIpc({
       manager,
       ptys,
+      streamPermissions,
       hooks,
       transcripts,
       feed,
@@ -682,9 +698,16 @@ app
           registry.resolve('provider-adapter', providerId)?.slashCommands?.() ?? [],
           (msg) => log.app.info(msg)
         ),
+      // Env-selected until P2-E18-08b (#149) gives it a per-session setting —
+      // the same way the two fakes are selected, and deliberately NOT a UI
+      // control yet, because a half-wired mode with a switch on it invites
+      // being switched.
+      preferredTransport: () =>
+        process.env.SWITCHBOARD_TRANSPORT === 'stream' ? 'stream' : undefined,
     });
     app.on('quit', () => {
       ptys.killAll();
+      streams.killAll();
       hooks.stop();
       transcripts.stop();
       staticServer?.close();

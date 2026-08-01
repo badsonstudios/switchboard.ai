@@ -198,6 +198,28 @@ export const claudeAdapter: ProviderAdapter = {
       );
       args.push('--settings', settingsPath);
     }
+    // Duplex stream-json (P2-E18-08a). The flag list is S-10 §1, read out of the
+    // SDK's own argument builder inside the VS Code extension bundle — NOT
+    // reconstructed from `--help`, whose claim that these "only work with
+    // --print" is stale (S-10 probe A ran without it).
+    //
+    // `--permission-prompt-tool stdio` is the one that matters: it is what makes
+    // the CLI delegate `can_use_tool` instead of drawing its own prompt, and
+    // S-09 proved it is silently IGNORED by an interactive TUI session — so it
+    // belongs here, on the stream branch, and nowhere else.
+    const stream = options.transport === 'stream';
+    if (stream) {
+      args.push(
+        '--output-format', 'stream-json',
+        '--verbose',
+        '--input-format', 'stream-json',
+        '--permission-prompt-tool', 'stdio',
+        // echo our own user messages back, so a send is ACKNOWLEDGED rather
+        // than assumed (P2-E18-06's criterion, which landed here with the
+        // recipe because the flag had nowhere else to live)
+        '--replay-user-messages'
+      );
+    }
     if (options.resumeSessionId) args.push('--resume', options.resumeSessionId);
     // §5.9 autonomy profiles -> CLI permission modes ('ask' = CLI default)
     const mode = {
@@ -215,6 +237,9 @@ export const claudeAdapter: ProviderAdapter = {
         ELECTRON_RUN_AS_NODE: undefined,
         ELECTRON_NO_ATTACH_CONSOLE: undefined,
       },
+      // We ANSWER with what we will actually do. The host asked; only the
+      // adapter knows whether its CLI speaks the protocol.
+      transport: stream ? 'stream' : undefined,
     };
   },
 };

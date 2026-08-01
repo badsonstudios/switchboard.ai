@@ -12,7 +12,7 @@ import type { BindingDiagnostics, BindingState } from '../../../shared/transcrip
 import { rendererRegistry } from '../extensibility/registry-instance';
 import { renderFeedBlock } from '../extensibility/feed-render';
 import { uiGet, uiSet } from '../lib/ui-state';
-import { writePromptToPty } from '../lib/composer';
+import { submitPrompt } from '../lib/composer';
 import { filterCommands, insertCommand, SlashCommand, slashToken } from '../../../shared/slash-commands';
 
 export type { FeedBlockDto } from '../lib/feed';
@@ -775,7 +775,9 @@ function Composer({
   const submit = (): void => {
     const text = draft.replace(/\r\n/g, '\n').trimEnd();
     if (!text) return;
-    writePromptToPty(sessionId, text);
+    // transport-agnostic (P2-E18-08a): main answers whether it took it, and
+    // this falls back to the PTY dance if not
+    void submitPrompt(sessionId, text);
     setDraft('');
     setDismissed(false);
     box.current?.focus();
