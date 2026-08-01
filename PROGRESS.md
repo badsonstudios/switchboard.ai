@@ -6,8 +6,8 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#125 — terminal-handoff bar — IS IN REVIEW AS PR #126**
-(opened 2026-08-01). Gate green: lint + typecheck + **621 unit (+9) + 98 e2e
+**In progress:** **nothing mid-flight.** **#125 MERGED 2026-08-01 as PR #126**,
+all 5 CI jobs green. Gate: lint + typecheck + **621 unit (+9) + 98 e2e
 (+1)**, 1 skipped. **One review round, 1 blocker + 8 should-fixes, all taken.**
 The blocker was mine and was a *regression in the very thing the item exists to
 fix*: I used the `-ink` token on a hue-tinted background, and on nordic — the
@@ -168,7 +168,7 @@ anything they turn up is a fix-forward, not a revert.
 > **NEXT: nothing is filed.** This needs `/pm` to decide whether it is a new
 > epic or a re-scoped E11, and Dan's go-ahead before any issue exists.
 >
-> **The fallback is FIXED — #125, in review as PR #126 (2026-08-01).** When the
+> **The fallback is FIXED — #125, MERGED 2026-08-01 as PR #126.** When the
 > CLI keeps a decision, the Session tab now shows a full-width bar docked above
 > the composer, where every permission Dan has ever answered appeared, instead
 > of the 10px header chip nobody saw. Under amended P7 this is not a
@@ -383,7 +383,8 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
-- 2026-08-01 — **#125: a decision the CLI keeps gets a bar, not a whisper.**
+- 2026-08-01 — **#125 MERGED as PR #126 (5 CI jobs green): a decision the CLI
+  keeps gets a bar, not a whisper.**
   The fallback affordance was a **10px chip in the top-left header strip**, in
   the `--status-needs-input` hue, while every permission Dan had ever answered
   arrived as a full-width tinted bar docked above the composer. On 2026-07-31 he
