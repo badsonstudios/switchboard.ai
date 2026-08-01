@@ -49,9 +49,16 @@ function harness(
     autoTrust?: boolean;
     /** the watcher refuses a root it cannot poll safely */
     watchAccepts?: boolean;
+    /** live session ids the manager should claim to know (P2-E18-08b) */
+    liveIds?: string[];
   } = {}
 ) {
-  const created: Array<{ identity: SessionIdentity; settingsFor?: unknown; resumeSessionId?: string }> = [];
+  const created: Array<{
+    identity: SessionIdentity;
+    settingsFor?: unknown;
+    resumeSessionId?: string;
+    transport?: string;
+  }> = [];
   const upserted: PersistedSession[] = [];
   const watched: Array<{ sessionId: string; projectsRoot?: string }> = [];
   const buildHookSettings = vi.fn(() => ({ hooks: {} }));
@@ -74,9 +81,17 @@ function harness(
       onStatusChange: () => {},
       onSessionExit: () => {},
       list: () => [],
-      get: () => undefined,
-      create: (identity: SessionIdentity, o: { settingsFor?: unknown; resumeSessionId?: string }) => {
-        created.push({ identity, settingsFor: o?.settingsFor, resumeSessionId: o?.resumeSessionId });
+      get: (id: string) => (opts.liveIds?.includes(id) ? { ...record, id } : undefined),
+      create: (
+        identity: SessionIdentity,
+        o: { settingsFor?: unknown; resumeSessionId?: string; transport?: string }
+      ) => {
+        created.push({
+          identity,
+          settingsFor: o?.settingsFor,
+          resumeSessionId: o?.resumeSessionId,
+          transport: o?.transport,
+        });
         return { ...record, identity };
       },
     },
@@ -333,5 +348,82 @@ describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
 
       expect(h.created[0].identity.providerId).toBe('generic');
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P2-E18-08b — the per-card transport setting.
+//
+// The refusal is the interesting half: a RUNNING CLI cannot change how we talk
+// to it, so accepting the click would store an answer that disagrees with the
+// process actually running, and the user would believe they had switched.
+describe('per-card transport (P2-E18-08b)', () => {
+  const CARD = 'card-1';
+  let dir: string;
+  let prior: PersistedSession;
+  beforeEach(() => {
+    // a real directory: session creation reads it to detect the project type
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-tr-'));
+    prior = {
+      id: CARD,
+      identity: { title: 't', folder: dir, providerId: 'generic' },
+      layoutSlot: 0,
+      suspendedAt: '',
+    };
+  });
+
+  it('stores the choice on the card', async () => {
+    const h = harness(undefined, dir, { prior });
+
+    const res = await h.call('sessions:setTransport', CARD, 'stream');
+
+    expect(res).toEqual({ ok: true });
+    expect(h.upserted.at(-1)?.transport).toBe('stream');
+  });
+
+  it('switches back again', async () => {
+    const h = harness(undefined, dir, { prior: { ...prior, transport: 'stream' } });
+
+    await h.call('sessions:setTransport', CARD, 'pty');
+
+    expect(h.upserted.at(-1)?.transport).toBe('pty');
+  });
+
+  it('REFUSES while a session is live, and says why', async () => {
+    const h = harness(undefined, dir, { prior, liveIds: ['live-1'] });
+    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    h.upserted.length = 0;
+
+    const res = await h.call('sessions:setTransport', CARD, 'stream');
+
+    expect(res).toEqual({ ok: false, reason: 'session-running' });
+    // and nothing was written: a refused change must not half-apply
+    expect(h.upserted.filter((s) => s.transport !== undefined)).toEqual([]);
+  });
+
+  it('rejects a value that is not a transport', async () => {
+    const h = harness(undefined, dir, { prior });
+    expect(await h.call('sessions:setTransport', CARD, 'carrier-pigeon')).toEqual({
+      ok: false,
+      reason: 'bad-value',
+    });
+  });
+
+  it('rejects an unknown card rather than inventing one', async () => {
+    const h = harness(undefined, dir, {});
+    expect(await h.call('sessions:setTransport', 'nope', 'stream')).toEqual({
+      ok: false,
+      reason: 'unknown-card',
+    });
+  });
+
+  // The card's stored choice must WIN over the env default, or the setting
+  // would be decorative on a machine that has the escape hatch set.
+  it("a new session asks for the CARD's transport", async () => {
+    const h = harness(undefined, dir, { prior: { ...prior, transport: 'stream' } });
+
+    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+
+    expect(h.created[0].transport).toBe('stream');
   });
 });

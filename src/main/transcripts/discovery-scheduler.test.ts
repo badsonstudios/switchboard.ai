@@ -244,7 +244,12 @@ describe('DiscoverySchedule — the REAL fs.watch (no injected factory)', () => 
       s.noteSwept(realRoot, 0);
 
       fs.writeFileSync(path.join(realRoot, 'appeared.jsonl'), '{}\n');
-      await new Promise((r) => setTimeout(r, 200));
+      // Wait for the CONDITION, not a guessed duration. This was a fixed 200ms
+      // sleep and it flaked on macOS CI under load (P2-E18-08b) — the sibling
+      // of the race fixed in P2-E18-03, in the same file, which I fixed and
+      // then left this one alone. A fixed sleep standing in for "wait until the
+      // thing actually happened" is the defect shape; both instances had it.
+      await waitFor(() => s.stats(realRoot)!.events > 0, 10_000);
       expect(s.stats(realRoot)!.events).toBeGreaterThan(0);
     } finally {
       s.stop();

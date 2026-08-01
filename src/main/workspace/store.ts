@@ -25,6 +25,15 @@ export interface PersistedSession {
   model?: string;
   /** autonomy mode this card runs at (stable across resumes) */
   autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
+  /**
+   * Which transport this card's sessions run on (P2-E18-08b).
+   *
+   * Absent = `pty`, which is every card that existed before E18 and every new
+   * one: stream mode ships OPT-IN, the mirror image of the VS Code extension's
+   * `claudeCode.useTerminal`. Stored per CARD, not per live session, so the
+   * choice survives a resume the same way autonomy does.
+   */
+  transport?: 'pty' | 'stream';
   /** freeform "what is this doing" label, distinct from the folder title */
   taskLabel?: string;
   /** persistent-group membership (E12); absent/null = ungrouped */

@@ -79,6 +79,7 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:create': 'sessions.spawn',
   'sessions:decidePermission': 'sessions.write',
   'sessions:submitPrompt': 'sessions.write',
+  'sessions:setTransport': 'sessions.write',
   'sessions:dropLive': 'sessions.spawn',
   'sessions:isDirectory': 'fs.probe',
   'sessions:knownCards': 'sessions.read',

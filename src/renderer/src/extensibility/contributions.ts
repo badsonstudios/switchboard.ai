@@ -117,6 +117,12 @@ export interface PanelContext {
    * theme but one.
    */
   colorScheme: 'light' | 'dark';
+  /**
+   * Which transport hosts this session (P2-E18-08b). A stream session has NO
+   * PTY, so a panel built around one has to say so rather than render an empty
+   * black rectangle.
+   */
+  transport?: 'pty' | 'stream';
   status?: string;
   autonomy?: string;
   model?: string;

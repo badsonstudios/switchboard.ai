@@ -81,3 +81,67 @@ test.describe('a stream-json session (P2-E18-08a)', () => {
     await expect(w.getByText(/sensitive file/)).toHaveCount(0);
   });
 });
+
+// P2-E18-08b (#149) — the criterion the fake's missing transcript blocked.
+//
+// The Feed reads TRANSCRIPTS until E18-10 swaps it to typed messages, and the
+// real CLI writes one in stream mode (S-10). The fake now does too, so this is
+// testable — and it proves the claim that made the migration incremental: the
+// transcript stack survives the transport change untouched.
+test.describe('the Feed renders a stream session (P2-E18-08b)', () => {
+  let a: LaunchedApp;
+  test.afterEach(async () => a?.cleanup());
+
+  test('a turn appears in the Session view via the existing transcript path', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w = a.window;
+
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('render me');
+    await box.press('Enter');
+
+    // the assistant's reply, rendered as a Session-view block — no code in the
+    // feed pipeline changed for this
+    await expect(w.getByText(/FAKE-REPLY: render me/)).toBeVisible({ timeout: 30_000 });
+  });
+});
+
+// P2-E18-08b (#149) — the Terminal tab in a stream session.
+test.describe('the Terminal tab degrades honestly (P2-E18-08b)', () => {
+  let a: LaunchedApp;
+  test.afterEach(async () => a?.cleanup());
+
+  test('says there is no terminal instead of showing an empty black pane', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    await w.getByRole('button', { name: 'Terminal' }).first().click();
+
+    await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 15_000 });
+    // and it says what you GAIN, not only what is missing
+    await expect(w.getByText(/permission requests appear in this window/i)).toBeVisible();
+  });
+
+  test('a PTY session still gets a real terminal', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder }); // the PTY fake, the default
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    await w.getByRole('button', { name: 'Terminal' }).first().click();
+
+    await expect(w.getByText('No terminal for this session')).toHaveCount(0);
+  });
+});

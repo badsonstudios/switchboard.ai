@@ -6,9 +6,9 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#138 (P2-E18-08a) — a real stream session runs.** Branch
-`feature/138-stream-session-runs`. Gate green: lint + typecheck + **797 unit
-(+9)** + **100 e2e (+2)**.
+**In progress:** **#149 (P2-E18-08b) — turn stream mode on.** Branch
+`feature/149-turn-stream-on`. Gate green: lint + typecheck + **803 unit (+6)** +
+**103 e2e (+3)**. **#138 MERGED as PR #150**, 5 CI jobs green.
 **🎉 THE EPIC'S PURPOSE IS DEMONSTRATED END TO END:** a `.claude/` permission is
 raised by the CLI, answered ONCE in switchboard, and **the file is written** —
 in the real app, in an e2e that runs on every commit.
@@ -666,6 +666,36 @@ a "[Dan eyeball]" note.**
   to Sonnet rates** — it invents a number. Not urgent, not waiting on anything.
 
 ## Log
+
+- 2026-08-01 — **#149 (P2-E18-08b) → PR: stream mode gets a switch, an honest
+  Terminal tab, and the epic's first user documentation.**
+  **The blocker I filed against this item is fixed first: the fake now writes a
+  JSONL transcript**, because the real CLI does (S-10) — that is precisely why
+  the transcript stack survives the migration. Without it a stream session's
+  Session view read "Looking for this session's transcript…" for ever. **A fake
+  that is missing something the real thing does is a fake that hides a bug.**
+  With it, an e2e proves the Feed renders a stream turn **through the unchanged
+  transcript path** — the concrete demonstration of the claim that made this
+  migration incremental rather than a rewrite.
+  **The switch is per CARD, not per session**, stored beside autonomy and
+  applied on the NEXT spawn. Main **REFUSES** while a session is live and the
+  menu says why: a running CLI cannot change how we talk to it, and storing the
+  answer anyway would leave the card disagreeing with the process actually
+  running — the user would believe they had switched. Revert-proofed.
+  **The Terminal tab now says there is no terminal** instead of rendering an
+  empty black rectangle. That distinction is #125's lesson exactly: a surface
+  that is technically correct and reads as breakage. The copy says what you
+  GAIN, not only what is missing.
+  **Manual page 12 written** — the first `docs/manual/` page this epic owes,
+  because this is its first user-visible surface. It leads with the bug being
+  fixed (the `.claude` double prompt), states plainly what you give up (Ctrl-R,
+  vim mode, the `/resume` and `/rewind` pickers), and says when to leave it off.
+  **Process note, twice bitten: `cat <<'EOF'` ATE MY BACKSLASHES.** Two e2e
+  regexes shipped as `/[\/]/` instead of `/[\/]/`, so on Windows they never
+  split a path and `.pop()` returned the whole thing — the assertion matched
+  something else and let the test run before the session was ready, costing a
+  confusing debug round. **Write TypeScript with Write/Edit, not heredocs.**
+  Gate: lint + typecheck + **803 unit (+6)** + **103 e2e (+3)**.
 
 - 2026-08-01 — **#138 (P2-E18-08a) → PR: a real stream session runs, and the
   double prompt is gone — proven in the app, not in a unit test.**

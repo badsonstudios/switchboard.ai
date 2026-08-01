@@ -13,7 +13,9 @@
 // run under `electron --run-as-node`, exactly like the four done-when checks.
 import fs from 'fs';
 import path from 'path';
-import { FakeStreamProtocol } from './fake-stream-protocol';
+import { FakeStreamProtocol, FAKE_SESSION_ID } from './fake-stream-protocol';
+import { slugForCwd } from '../transcripts/paths';
+import { claudeProjectsRoot } from './claude';
 
 const proto = new FakeStreamProtocol(
   {
@@ -25,6 +27,20 @@ const proto = new FakeStreamProtocol(
     stderr: (line) => process.stderr.write(line + '\n'),
     exit: (code) => process.exit(code),
     resolve: (cwd, target) => (path.isAbsolute(target) ? target : path.join(cwd, target)),
+    // The real CLI writes a JSONL transcript in stream mode too (S-10), which
+    // is why the transcript stack survives the migration. Reproduce it, or the
+    // Session view has nothing to render and the Feed can never be tested
+    // against this fake.
+    appendTranscript: (line) => {
+      try {
+        const dir = path.join(claudeProjectsRoot(), slugForCwd(process.cwd()));
+        fs.mkdirSync(dir, { recursive: true });
+        fs.appendFileSync(path.join(dir, `${FAKE_SESSION_ID}.jsonl`), JSON.stringify(line) + '\n');
+      } catch {
+        // fail open: a fake that cannot write its transcript is still a usable
+        // fake for everything else
+      }
+    },
   },
   (m) => process.stdout.write(JSON.stringify(m) + '\n')
 );
