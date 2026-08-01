@@ -96,6 +96,9 @@ export class SessionManager {
    * session is a reference to a dead child nobody can reach to kill.
    */
   private readonly handles = new Map<string, TransportSession>();
+  private readonly streamMessageListeners = new Set<
+    (sessionId: string, msg: Record<string, unknown>) => void
+  >();
 
   constructor(
     private readonly registry: ContributionRegistry<MainContributions>,
@@ -191,10 +194,19 @@ export class SessionManager {
       //    fires — `create()` has not returned yet, and a status listener that
       //    calls back into `get(id)` would otherwise see a half-built session.
       setImmediate(() => this.apply(id, { kind: 'transport-ready' }));
-      // 2. The messages themselves drive status from here.
+      // 2. The messages themselves drive status from here, and are fanned out
+      //    to whoever else needs them (P2-E18-07's permission router).
       proc.onMessage((m) => {
         const ev = streamStatusEvent(m);
         if (ev) this.apply(id, ev);
+        for (const l of this.streamMessageListeners) {
+          try {
+            l(id, m);
+          } catch (err) {
+            // a broken subscriber must never take the pump down (P6)
+            this.log.error('stream message listener threw', { sessionId: id, error: String(err) });
+          }
+        }
       });
     }
     proc.onExit((code) => {
@@ -289,6 +301,18 @@ export class SessionManager {
     // PTY path waiting on a UserPromptSubmit hook.
     this.apply(id, { kind: 'prompt-sent' });
     return true;
+  }
+
+  /**
+   * Every typed message from every stream session (P2-E18-07).
+   *
+   * The manager is the only thing that holds the handles, so it is the only
+   * place a fan-out can live. Consumers filter by what they care about — the
+   * permission router takes `control_request`, and nothing else subscribes yet.
+   */
+  onStreamMessage(l: (sessionId: string, msg: Record<string, unknown>) => void): () => void {
+    this.streamMessageListeners.add(l);
+    return () => this.streamMessageListeners.delete(l);
   }
 
   /** Send a raw protocol message (control responses — P2-E18-07). */

@@ -61,14 +61,41 @@ export interface HookListenerOptions {
    *  Absent = assume yes, so a listener driven without a UI (hook-check,
    *  unit tests) keeps its old behaviour. */
   hasLiveWindow?: () => boolean;
+  /** Which transport hosts this session (P2-E18-07). A 'stream' session's
+   *  permissions ride `can_use_tool`, so PreToolUse is never held for it.
+   *  Absent = PTY, which is every pre-E18 caller. */
+  transportFor?: (sessionId: string) => 'pty' | 'stream' | undefined;
 }
 
-/** An in-flight permission request parked on a held PreToolUse (E10-03). */
+/**
+ * An in-flight permission request (E10-03).
+ *
+ * ONE shape for both transports (P2-E18-07): a held `PreToolUse` hook, or a
+ * `can_use_tool` control request over stream-json. The approval bar must not
+ * care which — the user is answering the same question either way, and a second
+ * request type would mean a second bar to keep in step with the first.
+ *
+ * The optional fields exist only on the stream path, because the hook payload
+ * simply does not carry them. That asymmetry is the entire argument for the
+ * migration, so it is worth seeing in the type: the CLI tells the
+ * permission-prompt channel WHY it is asking and what would satisfy it, and
+ * tells a hook nothing.
+ */
 export interface PermissionRequest {
   requestId: string;
   sessionId: string;
   tool: string;
   input: Record<string, unknown>;
+  /** Where it came from. Absent = hook (every pre-E18 request). */
+  source?: 'hook' | 'stream';
+  /** Human-readable prose from the CLI — renderable, and we did not write it. */
+  reason?: string;
+  /** e.g. 'safetyCheck' — the `.claude/` guard that started this epic. */
+  reasonType?: string;
+  /** The CLI's own label for the tool, when it differs from `tool`. */
+  displayName?: string;
+  /** Remedies the CLI suggests, e.g. switch this session to acceptEdits. */
+  suggestions?: Array<Record<string, unknown>>;
 }
 
 /**
@@ -495,6 +522,24 @@ export class HookListener {
     // test reaches it. Window liveness (below) is the check that actually does
     // the work (P2-E15-09 / AR-P1-7).
     if (this.permListeners.size === 0) return 'pass'; // nobody to ask — fail open
+    // A STREAM session's permissions belong to the control channel, not here
+    // (P2-E18-07). Hooks are independent of the transport, so a stream session
+    // can still fire PreToolUse — and holding it would ask the user the same
+    // question TWICE, once from each channel, which is a worse version of the
+    // very bug this epic exists to fix. The `can_use_tool` request is the one
+    // that carries the reason and that the `.claude/` guard actually honours,
+    // so it wins and this passes.
+    //
+    // UNMEASURED and worth saying so: nobody has yet confirmed whether the real
+    // CLI fires PreToolUse at all under `--permission-prompt-tool stdio`. S-10
+    // never ran hooks and stream together. This guard is correct either way —
+    // if hooks are silent it costs nothing — but it is a guard, not a finding.
+    if (this.opts.transportFor?.(sessionId) === 'stream') {
+      this.opts.log.debug('PreToolUse passed: stream session, permissions ride can_use_tool', {
+        sessionId,
+      });
+      return 'pass';
+    }
     const tool = typeof e.tool_name === 'string' ? e.tool_name : undefined;
     const input =
       e.tool_input && typeof e.tool_input === 'object'
