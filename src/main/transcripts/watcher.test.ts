@@ -6,15 +6,25 @@ import { TranscriptWatcher, slugForCwd, conversationExists } from './watcher';
 import { LogSink, createLogger } from '../log/logger';
 
 let root: string;
+let logDir: string;
 let cwd: string;
 let watcher: TranscriptWatcher;
 
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-tw-root-'));
+  // The log sink gets its OWN directory, deliberately. It used to write into
+  // `root` — i.e. inside the very tree the watcher scans — which was harmless
+  // while discovery was a blind 100ms poll (`scan` only collects `.jsonl`).
+  // With P2-E15-11 the root is under `fs.watch`, so creating a log file raises
+  // a `rename` event and prods discovery. That is not just noise: it silently
+  // defeated a regression test, which passed against the very defect it was
+  // written to catch because the watcher's own "transcript bound" log line was
+  // re-dirtying the root for it.
+  logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-tw-log-'));
   cwd = 'C:/tmp/tw-project';
   watcher = new TranscriptWatcher({
     projectsRoot: root,
-    log: createLogger(new LogSink({ dir: root }), 'transcripts'),
+    log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
     pollMs: 25,
   });
 });
@@ -308,7 +318,7 @@ describe('positive evidence required to claim (Dan 2026-07-22: summary-first fil
     // widen quickly so the full-root scan definitely sees the foreign file
     const w2 = new TranscriptWatcher({
       projectsRoot: root,
-      log: createLogger(new LogSink({ dir: root }), 'transcripts'),
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 25,
       widenAfterMs: 50,
     });
@@ -385,7 +395,7 @@ describe('cwd fallback when hooks never deliver an id (review P1 #8, fail-open)'
   it('two same-cwd sessions bind best-effort after the deadline, one file each', async () => {
     const w2 = new TranscriptWatcher({
       projectsRoot: root,
-      log: createLogger(new LogSink({ dir: root }), 'transcripts'),
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 25,
       cwdBindFallbackMs: 120,
     });
@@ -493,7 +503,7 @@ describe('pre-existing transcripts are never adopted', () => {
     writeLines(file, [entry()]);
     const w2 = new TranscriptWatcher({
       projectsRoot: root,
-      log: createLogger(new LogSink({ dir: root }), 'transcripts'),
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 25,
     });
     w2.watch('s1', { cwd });
@@ -511,7 +521,7 @@ describe('pre-existing transcripts are never adopted', () => {
     ]);
     const w2 = new TranscriptWatcher({
       projectsRoot: root,
-      log: createLogger(new LogSink({ dir: root }), 'transcripts'),
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 25,
     });
     w2.watch('s1', { cwd, nativeSessionId: 'native-res' }); // a --resume spawn
@@ -569,7 +579,7 @@ describe('per-session transcripts root (P2-E15-01)', () => {
   it('the widened scan does not cross roots either', async () => {
     const w2 = new TranscriptWatcher({
       projectsRoot: root,
-      log: createLogger(new LogSink({ dir: root }), 'transcripts'),
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 25,
       widenAfterMs: 50, // widen almost immediately
     });
@@ -627,7 +637,7 @@ describe('binding state (P2-E15-10)', () => {
     // still never age into "couldn't bind", because nothing is wrong with it.
     const w = new TranscriptWatcher({
       projectsRoot: root,
-      log: createLogger(new LogSink({ dir: root }), 'transcripts'),
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 10,
       bindGiveUpMs: 20,
     });
@@ -659,7 +669,7 @@ describe('binding state (P2-E15-10)', () => {
     // remove.
     const w = new TranscriptWatcher({
       projectsRoot: root,
-      log: createLogger(new LogSink({ dir: root }), 'transcripts'),
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 10,
       bindGiveUpMs: 20,
     });
@@ -687,7 +697,7 @@ describe('binding state (P2-E15-10)', () => {
   it('searching past the deadline becomes unbound, and says where it looked', async () => {
     const w = new TranscriptWatcher({
       projectsRoot: root,
-      log: createLogger(new LogSink({ dir: root }), 'transcripts'),
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 10,
       bindGiveUpMs: 30,
     });
@@ -734,7 +744,7 @@ describe('binding state (P2-E15-10)', () => {
     // healthy session.
     const w = new TranscriptWatcher({
       projectsRoot: root,
-      log: createLogger(new LogSink({ dir: root }), 'transcripts'),
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 10,
       bindGiveUpMs: 5_000,
     });
@@ -765,7 +775,7 @@ describe('binding state (P2-E15-10)', () => {
     // for ever — must stop counting as a transcript we failed to pick up.
     const w = new TranscriptWatcher({
       projectsRoot: root,
-      log: createLogger(new LogSink({ dir: root }), 'transcripts'),
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 10,
       bindGiveUpMs: 30,
     });
@@ -861,7 +871,7 @@ describe('transcript schema drift (P2-E15-10, §5.26)', () => {
     // detector that quarantined the line it did not understand would trade a
     // silent schema break for outright data loss.
     const warnings: Array<{ msg: string; fields?: Record<string, unknown> }> = [];
-    const base = createLogger(new LogSink({ dir: root }), 'transcripts');
+    const base = createLogger(new LogSink({ dir: logDir }), 'transcripts');
     const log = {
       ...base,
       warn: (msg: string, fields?: Record<string, unknown>) => {
@@ -943,5 +953,154 @@ describe('transcript schema drift (P2-E15-10, §5.26)', () => {
     expect(snap.bound).toBe(true);
     expect(snap.driftKeys).toEqual([]);
     expect(snap.malformed).toBe(0);
+  });
+});
+
+describe('discovery I/O is off the hot thread (P2-E15-11 / AR-P1-8)', () => {
+  /** Count directory walking under the projects root. `drain()` uses statSync
+   *  and readSync on a file it already holds; only discovery calls readdirSync,
+   *  so this is a clean proxy for "walked the disk". */
+  function countReaddirs(under: string): { calls: () => number; restore: () => void } {
+    const real = fs.readdirSync;
+    let n = 0;
+    const spy = ((p: fs.PathLike, o?: unknown) => {
+      if (String(p).startsWith(under)) n++;
+      return (real as (p: fs.PathLike, o?: unknown) => unknown)(p, o);
+    }) as typeof fs.readdirSync;
+    fs.readdirSync = spy;
+    return { calls: () => n, restore: () => { fs.readdirSync = real; } };
+  }
+
+  it('a bound session stops walking the disk every tick', async () => {
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [entry()]);
+    watcher.watch('s1', { cwd });
+    await sleep(200);
+    expect(watcher.snapshot('s1')!.bound).toBe(true);
+
+    // Measure a quiet window AFTER binding: nothing is created, so the watch
+    // has nothing to report and only the backoff can trigger a sweep.
+    // try/finally: the spy replaces a global, and a leak would make every
+    // later test in this file silently measure the wrong thing.
+    const spy = countReaddirs(root);
+    try {
+      await sleep(500); // pollMs is 25 here => ~20 ticks
+    } finally {
+      spy.restore();
+    }
+
+    // Before this item every tick walked; the ladder caps at 2s, so a 500ms
+    // quiet window allows at most a couple of sweeps. The assertion is against
+    // TICKS, which is what makes it a regression test rather than a magic
+    // number: revert the gate and this is ~20.
+    expect(spy.calls()).toBeLessThan(5);
+  });
+
+  it('a bind prods the siblings on the NEXT tick, not a backoff step later', async () => {
+    // The blocker review round 1 found: `claim()` marks the root dirty when it
+    // binds, and `claim()` only ever runs from inside the poll loop — so
+    // committing `noteSwept` AFTER the loop cleared, on the very same tick, the
+    // flag the bind had just raised. The retraction mechanism was dead in the
+    // only path that raises it, and the sibling waited out the ladder instead.
+    //
+    // Timing is what makes this discriminate: with the defect the sibling
+    // re-sweeps at backoff[1] = 500ms, so a 120ms window fails.
+    watcher.watch('s1', { cwd });
+    watcher.watch('s2', { cwd }); // same folder => ambiguous, neither can claim yet
+    writeLines(path.join(projectDir(), 'native-A.jsonl'), [entry({ sessionId: 'native-A' })]);
+    await sleep(150);
+
+    // Both see a file they cannot take: that is evidence against each of them.
+    expect(watcher.snapshot('s1')!.bindingDiag.candidateSeen).toBe(true);
+    expect(watcher.snapshot('s2')!.bindingDiag.candidateSeen).toBe(true);
+
+    // Hooks name the owner; s2 binds it and s1's evidence must retract.
+    watcher.setNativeSessionId('s2', 'native-A');
+    await sleep(120);
+    expect(watcher.snapshot('s2')!.bound).toBe(true);
+    expect(watcher.snapshot('s1')!.bindingDiag.candidateSeen).toBe(false);
+  });
+
+  it('a permanently-unbound session does not starve its sibling of sweeps', async () => {
+    // The bug this pins: `noteSwept` mutates the backoff, so calling it inside
+    // the session loop lets the FIRST session on a root consume every sweep
+    // opportunity — and `sessions` iterates in insertion order, so the same
+    // session wins every time and the second one never discovers anything.
+    //
+    // It has to be set up carefully or it proves nothing (this test passed
+    // against the broken implementation on the first attempt): s1 must stay
+    // unbound for the whole window, because the moment it binds it stops
+    // taking the discovery branch and releases the sweeps it was hogging. And
+    // the watch must be OFF, or real filesystem events keep re-dirtying the
+    // root and hand out the extra opportunities that hide the starvation.
+    const w = new TranscriptWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
+      pollMs: 25,
+      discovery: { watchFactory: () => null, watchFailedMs: 50 },
+    });
+    try {
+      const cwd2 = 'C:/tmp/tw-project-two';
+      w.watch('s1', { cwd }); // first in insertion order, and never gets a transcript
+      w.watch('s2', { cwd: cwd2 });
+
+      const d2 = path.join(root, slugForCwd(cwd2));
+      fs.mkdirSync(d2, { recursive: true });
+      writeLines(path.join(d2, 'native-2.jsonl'), [
+        JSON.stringify({ type: 'assistant', sessionId: 'native-2', cwd: cwd2, timestamp: new Date().toISOString() }),
+      ]);
+
+      await sleep(400);
+      expect(w.snapshot('s1')!.bound).toBe(false); // the setup is still honest
+      expect(w.snapshot('s2')!.bound).toBe(true);
+    } finally {
+      w.stop();
+    }
+  });
+});
+
+describe('discovery still works with no filesystem watch at all (P2-E15-11 fail-open)', () => {
+  // Recursive fs.watch is unsupported on some Linux builds and unreliable over
+  // network homes. The watch is an ACCELERATOR; every guarantee below is met by
+  // the timed sweeps alone. If these fail, the feature is not shippable.
+  function blindWatcher(over: Partial<ConstructorParameters<typeof TranscriptWatcher>[0]> = {}) {
+    return new TranscriptWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
+      pollMs: 25,
+      discovery: { watchFactory: () => null, watchFailedMs: 50 },
+      ...over,
+    });
+  }
+
+  it('binds a transcript that appears, on the backoff alone', async () => {
+    const w = blindWatcher();
+    try {
+      w.watch('s1', { cwd });
+      await sleep(80);
+      expect(w.snapshot('s1')!.bound).toBe(false);
+      writeLines(path.join(projectDir(), 'native-1.jsonl'), [entry()]);
+      await sleep(300);
+      expect(w.snapshot('s1')!.bound).toBe(true);
+    } finally {
+      w.stop();
+    }
+  });
+
+  it('the widen-after-grace fallback still binds when slug math fails', async () => {
+    // The session's cwd hashes to one slug; the transcript is written under a
+    // DIFFERENT directory, so only the widened full-root scan can find it —
+    // and here it has to get there with no watch events to prod it.
+    const w = blindWatcher({ widenAfterMs: 50 });
+    try {
+      w.watch('s1', { cwd });
+      const odd = path.join(root, 'slug-rules-changed-under-us');
+      fs.mkdirSync(odd, { recursive: true });
+      writeLines(path.join(odd, 'native-1.jsonl'), [entry()]);
+      await sleep(400);
+      expect(w.snapshot('s1')!.bound).toBe(true);
+    } finally {
+      w.stop();
+    }
   });
 });

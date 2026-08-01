@@ -15,6 +15,7 @@ import { ToolCategory, toolCategory } from '../../shared/tool-taxonomy';
 import { BindingDiagnostics, BindingState } from '../../shared/transcripts';
 import { conversationExists, slugForCwd } from './paths';
 import { DriftDetector } from './drift';
+import { DiscoverySchedule, DiscoveryScheduleOptions } from './discovery-scheduler';
 
 // Re-exported: these moved to `paths.ts` so the provider adapters can use them
 // without importing the watcher (P2-E15-01).
@@ -105,6 +106,10 @@ interface WatchedSession {
   projectsRoot: string;
   boundFile: string | null;
   watchedSince: number;
+  /** One-shot latches so the two CLOCK-driven verdict changes each prod
+   *  discovery exactly once instead of every tick (P2-E15-11). */
+  widenedMarked: boolean;
+  cwdDeadlineMarked: boolean;
   /** A TURN HAS RUN in this session (P2-E15-10 evidence #1). Latched, because
    *  a turn having happened never becomes untrue.
    *
@@ -173,6 +178,9 @@ export interface TranscriptWatcherOptions {
   cwdBindFallbackMs?: number;
   /** how long a session searches WITH EVIDENCE before the UI says it failed */
   bindGiveUpMs?: number;
+  /** Discovery scheduling knobs (P2-E15-11) — injectable so tests can drive
+   *  filesystem events and simulate an unusable watch. */
+  discovery?: Omit<DiscoveryScheduleOptions, 'log'>;
 }
 
 /** CLI plumbing disguised as user text — never conversation. */
@@ -228,8 +236,13 @@ export class TranscriptWatcher {
   // identical for every session under one root, so it is built once per root
   // and invalidated when the detector actually reports something.
   private readonly driftCache = new Map<string, readonly string[]>();
+  // Decides when discovery may touch the disk (P2-E15-11 / AR-P1-8). The 100ms
+  // tick still runs — the TAIL DRAIN is latency-critical and stays on it — but
+  // the directory walking behind it is now event-driven with a timed floor.
+  private readonly discovery: DiscoverySchedule;
 
   constructor(private readonly opts: TranscriptWatcherOptions) {
+    this.discovery = new DiscoverySchedule({ log: opts.log, ...(opts.discovery ?? {}) });
     this.drift = new DriftDetector((key, sample) => {
       this.driftCache.clear();
       this.opts.log.warn('transcript schema drift: unknown key', {
@@ -291,6 +304,10 @@ export class TranscriptWatcher {
     session: { cwd: string; nativeSessionId?: string; projectsRoot?: string }
   ): boolean {
     const root = session.projectsRoot ?? this.opts.projectsRoot ?? '';
+    // Re-watching an id REPLACES a watch, so the old root loses a reference.
+    // Without this the refcount only ever climbs and the handle outlives every
+    // session on it — the leak `release()` exists to prevent, reintroduced.
+    const prev = this.sessions.get(sessionId);
     // A relative root would make the poll loop crawl from the process cwd every
     // 100ms. First-party adapters today; the check is here because Phase 4
     // makes this string third-party and this is the cheapest moment to draw the
@@ -305,9 +322,22 @@ export class TranscriptWatcher {
       });
       // never leave a previous watch of this id running under a stale root
       this.sessions.delete(sessionId);
+      if (prev) {
+        this.discovery.markDirty(prev.projectsRoot);
+        this.discovery.release(prev.projectsRoot);
+      }
       return false;
     }
     this.seed(root);
+    // Starts the watch for this root if it is the first session on it, and asks
+    // for an immediate first sweep either way — a new card must not wait out a
+    // backoff step before anyone looks for its transcript.
+    //
+    // Registered BEFORE the old root is released so that re-watching under the
+    // SAME root never dips the refcount to zero — which would tear the watch
+    // down and immediately rebuild it, losing every event in between.
+    this.discovery.register(root);
+    if (prev) this.discovery.release(prev.projectsRoot);
     this.sessions.set(sessionId, {
       sessionId,
       cwd: session.cwd,
@@ -315,6 +345,8 @@ export class TranscriptWatcher {
       projectsRoot: root,
       boundFile: null,
       watchedSince: Date.now(),
+      widenedMarked: false,
+      cwdDeadlineMarked: false,
       conversationStarted: false,
       candidateSeen: false,
       evidenceSince: null,
@@ -340,6 +372,12 @@ export class TranscriptWatcher {
     const w = this.sessions.get(sessionId);
     if (!w) return;
     w.nativeSessionId = nativeId;
+    // The id is the AUTHORITY that `claim()` was waiting for: a transcript it
+    // refused a moment ago may be claimable now, and that file is already on
+    // disk, so no filesystem event is ever coming to tell us to look again.
+    // Every evidence site that can change a sweep's verdict must say so — the
+    // watch only knows about the disk.
+    this.discovery.markDirty(w.projectsRoot);
     // Deliberately NOT evidence that a conversation started: this fires from
     // `SessionStart` too, which the CLI sends at launch (P2-E15-10 — see
     // `conversationStarted`). The caller tells us about turns separately.
@@ -370,6 +408,11 @@ export class TranscriptWatcher {
     // stop being treated as a transcript we failed to pick up.
     if (w.boundFile) w.abandoned.add(w.boundFile);
     w.boundFile = null;
+    // Discovery has to start over for this session right now — a corrected
+    // mis-bind or a `/clear` both leave it hunting, and the transcript it needs
+    // may already be on disk, so there is no future filesystem event to wait
+    // for.
+    this.discovery.markDirty(w.projectsRoot);
     w.tails.clear();
     w.blocks = [];
     w.blockSeq = 0;
@@ -418,6 +461,10 @@ export class TranscriptWatcher {
     const w = this.sessions.get(sessionId);
     if (!w || w.conversationStarted) return;
     w.conversationStarted = true;
+    // A turn just ran, so the CLI is writing a transcript right now if it has
+    // not already. Look immediately rather than at whatever the ladder had
+    // decayed to — this is the moment binding is most likely to succeed.
+    this.discovery.markDirty(w.projectsRoot);
     this.refreshBinding(w);
   }
 
@@ -547,7 +594,22 @@ export class TranscriptWatcher {
   }
 
   unwatch(sessionId: string): void {
+    const gone = this.sessions.get(sessionId);
     this.sessions.delete(sessionId);
+    if (gone) {
+      // Removing a session changes three things a sweep concludes for its
+      // SIBLINGS, and no filesystem event describes any of them: its bound file
+      // becomes unowned (so `claim()`'s "already owned" check and `isEvidence`
+      // both flip), and `hasCwdSibling` can go false, which un-blocks the
+      // ambiguous cwd-only bind. The file is already on disk and only gets
+      // appends afterwards — which the `rename` filter drops — so nothing else
+      // would ever prod discovery.
+      this.discovery.markDirty(gone.projectsRoot);
+      // ...and the last session off a root closes its recursive watch. Closing
+      // every card otherwise leaves a live OS watch on ~/.claude/projects for
+      // the rest of the process's life.
+      this.discovery.release(gone.projectsRoot);
+    }
     if (this.sessions.size === 0 && this.timer) {
       clearInterval(this.timer);
       this.timer = null;
@@ -594,6 +656,7 @@ export class TranscriptWatcher {
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    this.discovery.stop();
   }
 
   // --- internals -------------------------------------------------------------
@@ -629,16 +692,59 @@ export class TranscriptWatcher {
   }
 
   private poll(): void {
+    const now = Date.now();
+    // Which roots may be walked on THIS tick (P2-E15-11). Two properties, and
+    // both are load-bearing — the pre-pass exists to satisfy them together:
+    //
+    //  - decided ONCE PER ROOT, not per session. `noteSwept` mutates the
+    //    backoff, so asking-and-consuming inside the session loop would let the
+    //    first session on a shared root take the sweep and leave every later
+    //    one with nothing. `sessions` iterates in insertion order, so the same
+    //    session wins every time and its siblings starve indefinitely.
+    //  - CONSUMED here, before the loop, never committed after it. `claim()`
+    //    marks the root dirty when it binds and only ever runs from inside this
+    //    loop, so a post-pass `noteSwept` would clear — on the very same tick —
+    //    the flag the bind had just raised, killing the sibling notification
+    //    that mark exists for (P2-E15-10: evidence can RETRACT). Same hazard
+    //    for anything a listener does re-entrantly during `drain()`.
+    const sweeping = new Set<string>();
     for (const w of this.sessions.values()) {
+      if (!sweeping.has(w.projectsRoot) && this.discovery.shouldSweep(w.projectsRoot, now)) {
+        sweeping.add(w.projectsRoot);
+        this.discovery.noteSwept(w.projectsRoot, now);
+      }
+    }
+
+    for (const w of this.sessions.values()) {
+      const maySweep = sweeping.has(w.projectsRoot);
       // discovery: scan narrowly (this session's slug dirs, case-insensitive)
       // until bound; widen to the full root if binding hasn't happened after a
       // grace period (slug math is a PREFILTER, never the authority — the
       // spike's own rule; Claude lowercases drive letters, and future slug
       // rule changes must degrade to a slower scan, not silent unbound)
       if (!w.boundFile) {
-        const widen = Date.now() - w.watchedSince > (this.opts.widenAfterMs ?? WIDEN_AFTER_MS);
+        const widen = now - w.watchedSince > (this.opts.widenAfterMs ?? WIDEN_AFTER_MS);
+        // Two verdict changes are driven by the CLOCK alone, and no filesystem
+        // event or evidence site describes either: `widen` opening discovery to
+        // the whole root, and the ambiguous-cwd deadline in `claim()` releasing
+        // the fail-open bind. Before this item the next 100ms tick acted on
+        // them; without these latches they would wait out the ladder instead,
+        // binding ~2s later than today — a real regression against "binds no
+        // slower than today", small but on exactly the fallback paths that
+        // exist because something has already gone wrong.
+        if (widen && !w.widenedMarked) {
+          w.widenedMarked = true;
+          this.discovery.markDirty(w.projectsRoot);
+        }
+        if (!w.cwdDeadlineMarked && now - w.watchedSince >= (this.opts.cwdBindFallbackMs ?? CWD_BIND_FALLBACK_MS)) {
+          w.cwdDeadlineMarked = true;
+          this.discovery.markDirty(w.projectsRoot);
+        }
         let candidates = false;
-        for (const full of this.discoveryCandidates(w, widen)) {
+        // The ONLY disk-walking branch for an unbound session, and the one that
+        // AR-P1-8 measured at ~21,000 syscalls/sec on this machine once `widen`
+        // was true. Everything below still runs every tick.
+        for (const full of maySweep ? this.discoveryCandidates(w, widen) : []) {
           if (w.tails.has(full)) continue;
           // pre-existing files are never adopted — EXCEPT our own resumed
           // conversation (<nativeId>.jsonl existed before this launch by
@@ -656,17 +762,36 @@ export class TranscriptWatcher {
             candidates = true;
           }
         }
-        // Assigned from THIS tick's sweep, not OR-ed into the old value: the
-        // moment a sibling claims the file that was troubling us, it stops
-        // being evidence against this session and the give-up clock resets.
-        w.candidateSeen = candidates;
+        // Assigned from THIS SWEEP, not OR-ed into the old value: the moment a
+        // sibling claims the file that was troubling us, it stops being
+        // evidence against this session and the give-up clock resets.
+        //
+        // Only on a sweep tick, though. Between sweeps we have not looked, and
+        // "we did not look" is not the same news as "we looked and found
+        // nothing" — clearing it on every unswept tick would retract the
+        // evidence ~20 times a second and hold `evidenceSince` at null, so the
+        // give-up clock could never run and a genuinely unbound session would
+        // sit in `searching` for ever. The value stands until the next sweep
+        // replaces it, and any event that could change it marks the root dirty.
+        if (maySweep) w.candidateSeen = candidates;
+        // Never gated: this drives `searchingMs`, `awaiting-prompt` and the
+        // give-up clock. Making the UI's own clocks event-driven would make
+        // them lumpy for no I/O saving — it touches no disk.
         this.refreshBinding(w);
-      } else {
-        // bound: only look for new subagent files under our session dir
+      } else if (maySweep) {
+        // bound: only look for new subagent files under our session dir. Same
+        // gate — it is a `readdirSync` per bound session per tick, and the
+        // recursive watch covers this directory too, so a subagent transcript
+        // still shows up as fast as the filesystem can tell us about it.
         for (const full of this.subagentFiles(w)) {
           if (!w.tails.has(full)) w.tails.set(full, { offset: 0, buf: '' });
         }
       }
+      // The tail drain is NEVER gated. It is the latency-critical path (it is
+      // what puts words on the screen), and it is a cheap stat + read from a
+      // known offset on a file we already hold — not a directory walk. This
+      // item moves discovery off the hot thread, not the thing the hot thread
+      // exists for.
       for (const [full, tail] of w.tails) this.drain(w, full, tail);
     }
   }
@@ -760,6 +885,12 @@ export class TranscriptWatcher {
       }
     }
     w.boundFile = full;
+    // A bind changes what a sweep would conclude for every OTHER session on
+    // this root, and no filesystem event describes it. P2-E15-10's
+    // `candidateSeen` can RETRACT — a sibling only learns that the file
+    // troubling it found its rightful owner by sweeping again — so this is
+    // correctness, not speed.
+    this.discovery.markDirty(w.projectsRoot);
     w.snap.bound = true;
     w.snap.nativeSessionId = typeof head.sessionId === 'string' ? head.sessionId : undefined;
     this.opts.log.info('transcript bound', { sessionId: w.sessionId, file: path.basename(full) });
