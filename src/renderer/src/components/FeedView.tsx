@@ -129,7 +129,13 @@ export function FeedView(props: {
   model?: string;
   onCycleAutonomy?: () => void;
   /** held permission (E10-04) — the bar renders just above the composer */
-  approval?: { requestId: string; tool: string; input: Record<string, unknown> } | null;
+  approval?: {
+    requestId: string;
+    tool: string;
+    input: Record<string, unknown>;
+    /** stream transport only (P2-E18-07) */
+    reason?: string;
+  } | null;
   /** more holds waiting behind this one (review P0#4) */
   approvalQueued?: number;
   onDecide?: (decision: 'allow' | 'deny', allowAll?: boolean) => void;
@@ -570,7 +576,12 @@ function ApprovalBar({
   queued,
   onDecide,
 }: {
-  approval: { requestId: string; tool: string; input: Record<string, unknown> };
+  approval: {
+    requestId: string;
+    tool: string;
+    input: Record<string, unknown>;
+    reason?: string;
+  };
   queued: number;
   onDecide: (decision: 'allow' | 'deny', allowAll?: boolean) => void;
 }): React.JSX.Element {
@@ -629,6 +640,27 @@ function ApprovalBar({
           {String(approval.input.file_path ?? approval.input.command ?? approval.input.url ?? '')}
         </span>
       </div>
+      {/* The CLI's OWN prose for why it is asking (P2-E18-07, stream transport
+          only — a hook payload carries nothing like it). Renderable text we did
+          not have to write, which is P7 working in our favour.
+          `--text`, NOT a hue token: this background is already tinted with
+          `--status-needs-permission`, and on nordic the ink IS the hue, which
+          measured 3.89:1 in #125. A token validated against a flat background
+          is not validated against a tinted one. */}
+      {approval.reason && (
+        <div
+          style={{
+            color: 'var(--text)',
+            marginBlockEnd: 6,
+            lineHeight: 1.4,
+            // long reasons must not shove the buttons off a short card
+            maxBlockSize: 64,
+            overflow: 'auto',
+          }}
+        >
+          {approval.reason}
+        </div>
+      )}
       {typeof approval.input.old_string === 'string' && typeof approval.input.new_string === 'string' && (
         <div style={{ display: 'flex', gap: 6, marginBlockEnd: 6, maxBlockSize: 120, overflow: 'auto' }}>
           <pre style={pane('var(--diff-removed-bg)')}>{approval.input.old_string.slice(0, 1500)}</pre>

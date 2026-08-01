@@ -6,6 +6,7 @@ import { BrowserWindow, dialog } from 'electron';
 import fs from 'fs';
 import { SessionManager } from './session-manager';
 import { PtyService } from '../pty/pty-service';
+import { StreamPermissions } from './stream-permissions';
 import { HookListener } from '../hooks/hook-listener';
 import { IpcBroker } from '../ipc/broker';
 import { Channel } from '../../shared/ipc/capabilities';
@@ -22,6 +23,9 @@ import { SlashCommand } from '../../shared/slash-commands';
 export interface SessionIpcDeps {
   manager: SessionManager;
   ptys: PtyService;
+  /** Stream-transport permission router (P2-E18-07). Absent until a stream
+   *  session can exist, which keeps every PTY-only wiring path unchanged. */
+  streamPermissions?: StreamPermissions;
   hooks: HookListener;
   transcripts: TranscriptWatcher;
   feed: EventFeed;
@@ -53,7 +57,7 @@ export interface SessionIpcDeps {
 }
 
 export function registerSessionIpc(deps: SessionIpcDeps): void {
-  const { manager, ptys, hooks, transcripts, log, broker } = deps;
+  const { manager, ptys, hooks, transcripts, log, broker, streamPermissions } = deps;
   // per-session live-feed unsubscribers (attached panes only)
   const feeds = new Map<string, () => void>();
   // one attach = one epoch, stamped on every chunk that attach streams. Global
@@ -129,14 +133,35 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     send('sessions:permissionRequest', { ...r, cardId: cardOfLive.get(r.sessionId) })
   );
   hooks.onPermissionResolved((requestId) => send('sessions:permissionResolved', { requestId }));
+  // The stream transport's identical half (P2-E18-07). Same events, same
+  // shape, same bar: the user is answering the same question, and the renderer
+  // must not have to know which channel carried it.
+  streamPermissions?.onPermissionRequest((r) =>
+    send('sessions:permissionRequest', { ...r, cardId: cardOfLive.get(r.sessionId) })
+  );
+  streamPermissions?.onPermissionResolved((requestId) =>
+    send('sessions:permissionResolved', { requestId })
+  );
   // replay for a (re)mounting renderer — a missed push must not park the CLI
   broker.handle('sessions:pendingPermissions', () =>
-    hooks.pendingRequests().map((r) => ({ ...r, cardId: cardOfLive.get(r.sessionId) }))
+    [...hooks.pendingRequests(), ...(streamPermissions?.pendingRequests() ?? [])].map((r) => ({
+      ...r,
+      cardId: cardOfLive.get(r.sessionId),
+    }))
   );
   broker.handle('sessions:decidePermission',
     (_e, requestId: string, decision: string, reason?: string) => {
       if (typeof requestId !== 'string' || (decision !== 'allow' && decision !== 'deny')) return false;
-      return hooks.decide(requestId, decision, typeof reason === 'string' ? reason.slice(0, 500) : undefined);
+      const clean = typeof reason === 'string' ? reason.slice(0, 500) : undefined;
+      // Ids are namespaced (`stream:<sessionId>:<native>`), so exactly one of
+      // these can own a given request and the order is not load-bearing.
+      // Falls through rather than branching on the prefix: the prefix is an
+      // implementation detail of the stream router, and asking the routers who
+      // owns it cannot go stale the way a string test would.
+      return (
+        hooks.decide(requestId, decision, clean) ||
+        (streamPermissions?.decide(requestId, decision, clean) ?? false)
+      );
     }
   );
   // "Allow all (this session)": answered at the SERVER from now on — no
@@ -429,6 +454,8 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       // The transport teardown lives INSIDE remove() as of P2-E18-02 — this
       // used to call `ptys.remove(liveId)` here, which silently tears down
       // nothing for a session hosted on any transport but the PTY.
+      // an unanswered control request leaves the CLI waiting for ever
+      streamPermissions?.forgetSession(liveId, 'session closed');
       manager.remove(liveId);
       cardOfLive.delete(liveId);
     }

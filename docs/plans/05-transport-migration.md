@@ -249,8 +249,8 @@ PTY mode until E18-16.
 *Done when:* a write to `<cwd>/.claude/scripts/coverage.sh` raises **our** bar,
 and Allow writes the file with **no second prompt anywhere** (the acceptance
 test, and it is the exact case that started this); Deny propagates and the CLI
-reports the denial; `decision_reason` renders as prose; at least one
-`permission_suggestion` is offered as a real action; a control request that
+reports the denial; `decision_reason` renders as prose; ~~at least one
+`permission_suggestion` is offered as a real action~~ **(BLOCKED — see below)**; a control request that
 arrives while the card is closed is answered deny rather than left hanging; the
 #127 carve-out is asserted **not** to fire in stream mode and asserted to still
 fire in PTY mode.

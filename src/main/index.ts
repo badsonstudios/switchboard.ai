@@ -568,6 +568,8 @@ app
       // hold policy (E10-03): gate by the session's own autonomy + folder
       autonomyFor: (id) => manager.get(id)?.autonomy,
       cwdFor: (id) => manager.get(id)?.identity.folder,
+      // a stream session's permissions ride can_use_tool, never a held hook
+      transportFor: (id) => manager.get(id)?.transport,
       // Is there anyone to ask? A destroyed window or a crashed renderer means
       // no (P2-E15-09). A RELOADING renderer is neither, so the pending-holds
       // replay path still gets its chance — that case must not regress.

@@ -6,10 +6,10 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#136 (P2-E18-06) — prompt submission over stdin.** Branch
-`feature/136-prompt-submission`. Gate green: lint + typecheck + **765 unit
-(+13)**.
-**#135 MERGED as PR #146**, 5 CI jobs green.
+**In progress:** **#137 (P2-E18-07) — `can_use_tool` → the approval bar. THE
+ITEM THIS EPIC EXISTS FOR.** Branch `feature/137-can-use-tool`. Gate green:
+lint + typecheck + **788 unit (+23)** + **98 e2e untouched**.
+**#135 → PR #146 and #136 → PR #147 MERGED**, 5 CI jobs green on each.
 **⚠ FLAKE CLASS, recorded on #145 (2026-08-01): three load-sensitive test
 failures in one day, three platforms, three unrelated specs** — macOS
 `discovery-scheduler` (FIXED in #143), ubuntu `slash-commands` (open), Windows
@@ -649,6 +649,45 @@ a "[Dan eyeball]" note.**
   to Sonnet rates** — it invents a number. Not urgent, not waiting on anything.
 
 ## Log
+
+- 2026-08-01 — **#137 (P2-E18-07) → PR: the double prompt is answered once, and
+  the answer is honoured.**
+  The measured bug, restated: editing a file in a project's own `.claude/`
+  folder prompts Dan TWICE, because the CLI honours a hook's allow for the
+  ordinary permission layer and then applies its `.claude/` safety check on top,
+  which a hook verdict does not satisfy. Over `can_use_tool` the same verdict IS
+  honoured (S-10 probe B). `StreamPermissions` routes it.
+  **One shape, one bar.** The stream router emits the SAME `PermissionRequest`
+  and the same `onPermissionRequest` / `onPermissionResolved` /
+  `pendingRequests` / `decide` surface as the hook path, so `ipc.ts` wires it
+  identically and the renderer cannot tell them apart. A second request type
+  would have meant a second bar to keep in step with the first.
+  `decidePermission` falls through hooks → stream on ONE channel and asks the
+  routers who owns an id rather than testing the `stream:` prefix — a prefix
+  test is a string that can go stale.
+  **The best test is end-to-end in process:** the #134 fake raises the request,
+  the router offers it, we answer allow, and **the file actually gets written**
+  — S-10 probe B reproduced as a repeatable test rather than a spike transcript.
+  Deny writes nothing.
+  **A stream session's PreToolUse is now never held** (`transportFor` on the
+  hook listener). Hooks are independent of the transport, so a stream session
+  can still fire PreToolUse, and holding it would ask the same question twice —
+  a worse version of the bug we are fixing. **UNMEASURED and flagged in the
+  code: nobody has confirmed the real CLI fires PreToolUse at all under
+  `--permission-prompt-tool stdio`** — S-10 never ran hooks and stream together.
+  It is a guard, not a finding. Revert-proofed.
+  **A closed card auto-DENIES anything outstanding** rather than dropping it: an
+  unanswered control request leaves the CLI waiting for ever, and a wedged
+  session is worse than a refused tool call.
+  **`decision_reason` renders in the bar** — the CLI's own prose, which a hook
+  payload has no equivalent of. `--text`, NOT a hue token, because the bar's
+  background is already tinted and #125 measured that exact mistake at 3.89:1.
+  **ANOTHER criterion of mine turned out to be blocked, and it is recorded.**
+  *"At least one `permission_suggestion` offered as a real action"* needs
+  `set_permission_mode`, which is **E18-12, behind the S-11 gate**. We can render
+  the suggestion but not honour it, and a button that looks like it works and
+  does not is worse than no button. Moved to E18-12; issue and plan updated.
+  Gate: lint + typecheck + **788 unit (+23)** + **98 e2e untouched**.
 
 - 2026-08-01 — **#136 (P2-E18-06) → PR: a prompt becomes a struct, and a
   planning gap surfaced.**

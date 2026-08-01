@@ -315,6 +315,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       cardId?: string;
       tool: string;
       input: Record<string, unknown>;
+      /** stream transport only (P2-E18-07): the CLI's own prose for WHY */
+      reason?: string;
     }): void => {
       if (r.cardId !== cardId) return;
       if (sessionStore.isAllowAll(r.sessionId)) {
