@@ -215,6 +215,21 @@ describe('DiscoverySchedule — lifecycle, clock and recovery (review round 1)',
   });
 });
 
+/**
+ * Wait for `check`, up to `ms`. Resolves either way — callers decide whether a
+ * timeout means anything, because for the real-fs.watch tests it is often a
+ * legitimate platform answer ("this OS does not fire that event") rather than a
+ * failure.
+ */
+async function waitFor(check: () => boolean, ms: number): Promise<boolean> {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    if (check()) return true;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  return check();
+}
+
 describe('DiscoverySchedule — the REAL fs.watch (no injected factory)', () => {
   // Everything above injects a factory, which left the only code that actually
   // runs in production with zero coverage — including the `rename`-only filter
@@ -250,7 +265,23 @@ describe('DiscoverySchedule — the REAL fs.watch (no injected factory)', () => 
       fs.writeFileSync(f, '{}\n');
       s.register(realRoot);
       if (s.stats(realRoot)!.watchFailed) return; // recursive watch unsupported here
-      await new Promise((r) => setTimeout(r, 150));
+
+      // Make the path KNOWN by construction (P2-E18-03: this was a fixed 150 ms
+      // sleep and it raced). `seenNames` starts EMPTY at register and is only
+      // ever populated by an observed event — it is never seeded from the
+      // directory — so a file created BEFORE register is unknown until some
+      // event names it. The old sleep was hoping macOS would deliver an event
+      // for the pre-existing file within 150 ms; under load it does not, the
+      // first append below is then a NEW path, the root goes immediately dirty,
+      // and the assertion inverts. Windows and Linux never fire on appends at
+      // all, so they reached the right answer by another road and the race was
+      // invisible there — it surfaced on macOS CI the first time the suite got
+      // heavy enough to slow the runner down.
+      fs.appendFileSync(f, '{"seed":1}\n');
+      await waitFor(() => s.stats(realRoot)!.events > 0, 2000);
+      // No assertion on that wait ON PURPOSE: on Windows and Linux no event
+      // ever fires for an append, so it times out and the test proceeds — there
+      // the property holds because nothing dirties the root in the first place.
 
       const t = 100_000; // synthetic clock: the sweep just happened
       s.noteSwept(realRoot, t);
@@ -261,7 +292,10 @@ describe('DiscoverySchedule — the REAL fs.watch (no injected factory)', () => 
     } finally {
       s.stop();
     }
-  });
+    // Explicit timeout: on Windows and Linux the waitFor above always runs its
+    // full 2 s (no append events exist to observe there), which sits too close
+    // to vitest's 5 s default on a loaded runner.
+  }, 20_000);
 
   it('an append STORM on a known path never sweeps faster than the fastest rung', () => {
     // The guarantee that does not depend on any platform's event semantics.
