@@ -687,6 +687,16 @@ a "[Dan eyeball]" note.**
   `set_permission_mode`, which is **E18-12, behind the S-11 gate**. We can render
   the suggestion but not honour it, and a button that looks like it works and
   does not is worse than no button. Moved to E18-12; issue and plan updated.
+  **CI caught a test bug of mine that local Windows STRUCTURALLY could not.**
+  My hold-guard test found the session's hook token by regex-scraping
+  `buildHookSettings()`'s JSON; `[^"]*` swallowed the backslash from an escaped
+  quote, producing `/tmp/.../hook-token\` — ENOENT on **both POSIX legs**, while
+  Windows passed because it matched the other alternation branch entirely. The
+  listener has a public `registerSession()` that RETURNS `{ tokenPath }`, built
+  with `path.join`. **Read the API; do not scrape its output.** The fix removes
+  string path-manipulation altogether, so it is platform-correct by
+  construction rather than by a regex I happened to get right. Same family as
+  #127 — a path assumption that only one OS can disprove.
   Gate: lint + typecheck + **788 unit (+23)** + **98 e2e untouched**.
 
 - 2026-08-01 — **#136 (P2-E18-06) → PR: a prompt becomes a struct, and a

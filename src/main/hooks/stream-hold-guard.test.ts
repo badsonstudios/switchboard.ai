@@ -49,9 +49,13 @@ afterEach(() => listener.stop());
 
 /** Register a session and POST it a PreToolUse for a normally-gated write. */
 async function preToolUse(sessionId: string): Promise<string> {
-  const cfg = listener.buildHookSettings(sessionId);
-  const tokenFile = findTokenFile(cfg);
-  const token = fs.readFileSync(tokenFile, 'utf8').trim();
+  // registerSession() is the listener's OWN answer for "where is this
+  // session's token". The first version of this helper regex-scraped
+  // buildHookSettings()'s JSON instead and captured a trailing backslash out of
+  // an escaped quote — which Windows tolerated and both POSIX legs did not.
+  // Read the API, do not scrape its output.
+  const { tokenPath } = listener.registerSession(sessionId);
+  const token = fs.readFileSync(tokenPath, 'utf8').trim();
   const body = JSON.stringify({
     hook_event_name: 'PreToolUse',
     session_id: 'native-1',
@@ -82,19 +86,6 @@ async function preToolUse(sessionId: string): Promise<string> {
     req.on('error', reject);
     req.end(body);
   });
-}
-
-/** The per-session token file the hook capability writes. */
-function findTokenFile(cfg: Record<string, unknown>): string {
-  const found = JSON.stringify(cfg).match(/[A-Za-z]:[\\/][^"]*hook-token[^"]*|\/[^"]*hook-token[^"]*/);
-  if (found) return found[0].replace(/\\\\/g, '\\');
-  // fall back to scanning the state dir
-  const hit = fs
-    .readdirSync(dir, { recursive: true } as { recursive: true })
-    .map(String)
-    .find((f) => f.includes('hook-token'));
-  if (!hit) throw new Error('no token file written');
-  return path.join(dir, hit);
 }
 
 describe('a stream session is never held on a hook (P2-E18-07)', () => {
@@ -131,9 +122,8 @@ describe('a stream session is never held on a hook (P2-E18-07)', () => {
     other.onPermissionRequest((r) => seen.push(r));
     const p = await other.start();
     try {
-      const cfg = other.buildHookSettings('s-legacy');
-      const tokenFile = findTokenFile(cfg);
-      const token = fs.readFileSync(tokenFile, 'utf8').trim();
+      const { tokenPath } = other.registerSession('s-legacy');
+      const token = fs.readFileSync(tokenPath, 'utf8').trim();
       const body = JSON.stringify({
         hook_event_name: 'PreToolUse',
         session_id: 'native-1',
