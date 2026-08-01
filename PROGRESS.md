@@ -94,12 +94,32 @@ work item.
 > passes, the session goes `working`, and `needs-permission` only lands on the
 > CLI's debounced Notification. That gap is inherent, not a hang.
 >
-> ### S-11 PROBE 1 IS RUNNING (launched 2026-08-01 ~13:10, 8h, detached)
+> ### S-11 PROBE 1 IS RUNNING (RESTARTED 2026-08-01 14:39, 8h, detached — ends ~22:39)
 > `spike/s11/`. `node spike/s11/status.cjs` reads it at any time;
-> `node spike/s11/stop.cjs` ends it cleanly (SIGTERM — the verdicts are computed
-> on the way out, so do NOT taskkill it). Artifacts:
-> `spike/findings/artifacts/s11/`. **The findings note is not written yet** — it
-> gets written when the run ends.
+> `node spike/s11/stop.cjs` asks it to stop (sentinel file, ~5s). **Kill it any
+> way you like** — `longrun-summary.json` recomputes its verdicts on every
+> periodic write, so the file on disk is complete at all times. Artifacts:
+> `spike/findings/artifacts/s11/` (deliberately UNCOMMITTED while the run is
+> live; they get committed with the findings note when it ends).
+> **The findings note is not written yet.**
+>
+> **It was restarted because the first run had three bugs, all surfaced by Dan
+> asking "is this what keeps popping up a blue window?":**
+> 1. **`windowsHide` was set on the interesting spawn and missed on the boring
+>    one.** The 5-minutely PowerShell call that sums the CLI's RSS flashed a
+>    console on his desktop — 96 times over an 8h run. *Every* spawn on Windows
+>    needs it.
+> 2. **The clean stop never worked on Windows and silently threw away 85 minutes
+>    of verdicts.** They were computed in a `SIGTERM` handler — a POSIX habit;
+>    `process.kill(pid,'SIGTERM')` maps to `TerminateProcess` here and the
+>    handler never runs. The README confidently documented the opposite. Fixed
+>    by making the summary complete at all times rather than at exit.
+> 3. `stop.cjs` refused to act with no pid file, though a probe started any
+>    other way is very much alive.
+>
+> The 85-minute partial run is archived at
+> `spike/findings/artifacts/s11/partial-80m/` (raw data intact, no verdicts
+> block — it can be recomputed offline if ever needed).
 >
 > **Q1 (backpressure) IS ALREADY ANSWERED, from a 7-minute validation run:**
 > we stopped draining stdout for 150s mid-turn; **358,556 bytes piled up behind
@@ -2529,9 +2549,29 @@ a "[Dan eyeball]" note.**
   (`awaiting-prompt` instead of `searching`, because retracting evidence every
   unswept tick holds `evidenceSince` at null and the give-up clock can never
   run) · post-pass commit fails the new sibling-retraction test.
-  Gate: lint + typecheck + **651 unit (+19) + 98 e2e**, 1 skipped. One e2e flake
-  (`slash-commands`) on the first full run; passed in isolation and on two
-  subsequent full runs — not this change.
+  **macOS CI then caught a hole nothing local could have.** The new
+  real-`fs.watch` test failed there with `expected 2 to be 1`: **FSEvents
+  reports an APPEND as `rename`**, so the event-type filter this file called
+  "load-bearing, not an optimization" **does not hold appends back on macOS at
+  all.** Every write during a turn would have re-triggered discovery and
+  restored the firehose on one platform, invisibly, because the only test
+  covering it asserted Windows/Linux behaviour.
+  **Urgency is decided by the PATH now, which is portable:** a path the watch
+  has never named is a file APPEARING (sweep next tick, as before); a path
+  already seen is the CLI appending to a transcript it owns (floored at the
+  ladder's fastest rung); no filename at all is treated as urgent because it
+  cannot be ruled out. *An earlier attempt floored ALL filesystem events — that
+  bounded the storm but delayed binding by 250ms and broke five existing
+  binding tests, correctly, since "binds no slower than today" is a done-when.*
+  The real-fs test now asserts BEHAVIOUR rather than event counts, so it covers
+  three platforms instead of passing on two and lying about the third.
+  **The pattern, three for three today: every check that failed was shaped like
+  the platform I happened to be on** — this, the Windows `SIGTERM` that is not
+  a signal, and the smoke run that "recovered" from a stall that never
+  happened. None failed loudly; all three reported success.
+  Gate: lint + typecheck + **654 unit (+22) + 98 e2e**, 1 skipped, all 5 CI jobs
+  green. One e2e flake (`slash-commands`) on the first full run; passed in
+  isolation and on two subsequent full runs — not this change.
   **Follow-up filed, #129:** a session that has already GIVEN UP still
   full-scans the root at the 2s cap for ever (~1,050 syscalls/sec each), so
   AR-P1-8's "three unbound cards" case is REDUCED ~20x, not removed. Outside
