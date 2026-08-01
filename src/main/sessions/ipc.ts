@@ -423,15 +423,13 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       feeds.delete(liveId);
       hooks.unregisterSession(liveId);
       transcripts.unwatch(liveId);
-      // mark the kill intentional BEFORE tearing the PTY down, mirroring
+      // marks the kill intentional BEFORE tearing the process down, mirroring
       // kill()/restart(): otherwise onExit could see killRequested=false and
       // report a spurious `crashed` for an ordinary suspend/restart (review nit).
+      // The transport teardown lives INSIDE remove() as of P2-E18-02 — this
+      // used to call `ptys.remove(liveId)` here, which silently tears down
+      // nothing for a session hosted on any transport but the PTY.
       manager.remove(liveId);
-      try {
-        ptys.remove(liveId);
-      } catch {
-        /* already gone */
-      }
       cardOfLive.delete(liveId);
     }
   };

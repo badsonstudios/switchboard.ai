@@ -7,6 +7,13 @@ import { randomUUID } from 'crypto';
 import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { MainContributions, SpawnRecipe } from '../extensibility/contributions';
 import { Logger } from '../log/logger';
+import {
+  DEFAULT_TRANSPORT,
+  SessionTransport,
+  TransportKind,
+  TransportMap,
+  UnknownTransportError,
+} from '../transport/transport';
 import { SessionEvent, SessionStatus, transition } from './state-machine';
 
 /**
@@ -35,25 +42,25 @@ export interface SessionRecord {
   exitCode: number | null;
   /** autonomy mode this session was spawned at (drives the E10-03 hold policy) */
   autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
+  /**
+   * Which transport is hosting this session (P2-E18-02). Recorded at spawn and
+   * never changed: a live session cannot move between transports, and kill()
+   * must reach the same service that spawned it.
+   */
+  transport: TransportKind;
   /** set by kill()/restart(): the coming exit is intentional, not a crash */
   killRequested?: boolean;
 }
 
-/** The slice of PtyService the manager needs — injectable for tests. */
-export interface PtyLike {
-  spawn(opts: {
-    id: string;
-    command: string;
-    args: string[];
-    cwd: string;
-    env?: Record<string, string | undefined>;
-  }): {
-    pid: number;
-    onExit(l: (code: number) => void): () => void;
-    kill(): void;
-  };
-  remove(id: string): void;
-}
+/**
+ * The slice of a transport the manager needs — injectable for tests.
+ *
+ * @deprecated Name only. This is `SessionTransport` from `transport/transport.ts`
+ * as of P2-E18-02; the PTY is no longer the only thing that satisfies it. Kept
+ * as an alias because the name is load-bearing in existing call sites and
+ * renaming them is churn that would obscure the one real change in this item.
+ */
+export type PtyLike = SessionTransport;
 
 export interface StatusChange {
   sessionId: string;
@@ -78,12 +85,42 @@ export class SessionManager {
   >();
   private readonly history: StatusChange[] = [];
 
+  /** Every transport this host can spawn on, keyed by what a recipe may ask for. */
+  private readonly transports: TransportMap;
+
   constructor(
     private readonly registry: ContributionRegistry<MainContributions>,
-    private readonly ptys: PtyLike,
+    ptys: SessionTransport,
     private readonly log: Logger,
-    private readonly stateDir: string
-  ) {}
+    private readonly stateDir: string,
+    /**
+     * Transports beyond the PTY (P2-E18-02). Empty today — `StreamService`
+     * registers here in P2-E18-03. Optional and last so every existing call
+     * site is unchanged; the PTY stays positional because it is the default
+     * and every caller already passes it.
+     */
+    extraTransports?: TransportMap
+  ) {
+    this.transports = { pty: ptys, ...extraTransports };
+  }
+
+  /**
+   * Resolve the transport a recipe asked for, or throw.
+   *
+   * Never falls back to the PTY — see `UnknownTransportError` for why a silent
+   * fallback is the expensive failure mode here.
+   */
+  private resolveTransport(kind: TransportKind, providerId: string): SessionTransport {
+    const t = this.transports[kind];
+    if (!t) {
+      throw new UnknownTransportError(
+        kind,
+        providerId,
+        Object.keys(this.transports).filter((k) => this.transports[k as TransportKind])
+      );
+    }
+    return t;
+  }
 
   create(
     identity: SessionIdentity,
@@ -111,6 +148,11 @@ export class SessionManager {
       autonomy: opts?.autonomy,
       settings: Object.keys(settings).length > 0 ? settings : undefined,
     });
+    // Resolved BEFORE the record exists, so an adapter asking for a transport
+    // we do not have leaves nothing behind — same contract as the "no provider
+    // adapter" throw above.
+    const kind: TransportKind = recipe.transport ?? DEFAULT_TRANSPORT;
+    const transport = this.resolveTransport(kind, identity.providerId);
     const record: SessionRecord = {
       id,
       identity,
@@ -118,12 +160,13 @@ export class SessionManager {
       createdAt: new Date().toISOString(),
       exitCode: null,
       autonomy: opts?.autonomy,
+      transport: kind,
     };
     let proc;
     try {
-      proc = this.ptys.spawn({ id, command: recipe.command, args: recipe.args, cwd: identity.folder, env: recipe.env });
+      proc = transport.spawn({ id, command: recipe.command, args: recipe.args, cwd: identity.folder, env: recipe.env });
     } catch (err) {
-      this.log.error('session spawn failed', { sessionId: id, folder: identity.folder, error: String(err) });
+      this.log.error('session spawn failed', { sessionId: id, folder: identity.folder, transport: kind, error: String(err) });
       throw err; // no orphan record: it was never added
     }
     this.sessions.set(id, record);
@@ -149,17 +192,44 @@ export class SessionManager {
   kill(id: string): void {
     const r = this.mustGet(id);
     r.killRequested = true;
-    this.ptys.remove(id);
-    this.log.info('session killed', { sessionId: id });
+    // routed to the transport that SPAWNED it, not the default — a stream
+    // session killed through the PTY service would simply not die
+    this.resolveTransport(r.transport, r.identity.providerId).remove(id);
+    this.log.info('session killed', { sessionId: id, transport: r.transport });
   }
 
-  /** Drop a session record entirely (card closed) — kills the PTY if alive. */
+  /**
+   * Drop a session record entirely (card closed) AND tear its process down.
+   *
+   * The teardown moved in here in P2-E18-02. It used to live in
+   * `sessions/ipc.ts`, which called `ptys.remove(id)` directly — fine while the
+   * PTY was the only transport, and a process leak the moment it is not: a
+   * stream session removed from the PTY service is a no-op on a service that
+   * never had it, and nobody would notice until the child count grew. The
+   * manager is the only thing that knows which transport spawned a session, so
+   * it is the only thing that can tear one down correctly.
+   */
   remove(id: string): void {
     const r = this.sessions.get(id);
     if (!r) return;
     r.killRequested = true;
+    // The record is deleted BEFORE the teardown, deliberately, preserving the
+    // order the IPC layer used: a transport's remove() fires onExit
+    // synchronously, and apply() drops events for sessions it no longer knows.
+    // Reverse these two and closing a card pushes a starting->exited transition
+    // into history and notifies every status listener about a session the user
+    // just closed. (The exit LISTENERS fire either way — they live in the
+    // onExit closure and never consult the map. Pinned by a test, because the
+    // first version of that test asserted the wrong one of the two.)
     this.sessions.delete(id);
-    this.log.info('session removed', { sessionId: id });
+    try {
+      // not resolveTransport(): a teardown that THROWS leaves the card
+      // half-closed, and fail-open (P6) outranks loudness on this path
+      this.transports[r.transport]?.remove(id);
+    } catch {
+      /* already gone */
+    }
+    this.log.info('session removed', { sessionId: id, transport: r.transport });
   }
 
   // `restart()` USED TO LIVE HERE. Deleted in P2-E15-01: it was a second
