@@ -6,16 +6,86 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#107 (P2-E15-10) — transcript drift detector + binding
-transparency — CODE COMPLETE 2026-07-31, awaiting Dan's commit approval.**
-Branch `feature/107-transcript-drift-binding`. Gate green: lint + typecheck +
+**In progress:** **nothing mid-flight.** **#107 (P2-E15-10) MERGED 2026-07-31 as
+PR #124**, all 5 CI jobs green. Gate: lint + typecheck +
 **612 unit (+43) + 97 e2e (+4)**, 1 skipped; `npm run check:transcripts` run
 against the real CLI 2.1.220 — bound, and **no drift**. **Two review rounds, 3
 blockers + 14 should-fixes, all taken**, and the first blocker rewrote the
 design: evidence that a conversation started may NOT be hook traffic, because
 `SessionStart` fires at spawn and carries a session id, so the first version
 turned every un-prompted card red 45s after it opened. Six revert-proofs, each
-re-run. **[user] hand-off testing outstanding — see the PR checklist.**
+re-run.
+**[user] #124's 6 hand-off tests were NOT run before the merge** (Dan said land
+it while we were mid-investigation on the permission finding below). They are
+still worth running — the list is in the PR body; main is always-working, so
+anything they turn up is a fix-forward, not a revert.
+
+> ## 🔴 LIVE INVESTIGATION (2026-07-31) — permission prompts switchboard cannot see
+>
+> **Dan hit a real bug mid-session and it opened a foundational question. Read
+> this before picking up any E10/E11 work.**
+>
+> **Symptom:** ClaudeMon asked to create `.claude\scripts\coverage.sh`. The
+> rail and Events showed *needs-permission*; the Session view showed no approval
+> bar and no way to answer; the Terminal showed the CLI's own prompt.
+>
+> **Diagnosed from the live log + the shipped session settings — all confirmed,
+> none inferred:**
+> 1. Allow-all was enabled on that session at 00:19:45.
+> 2. The status came from `hook:Notification`, **not** `permission-held` — so
+>    nothing was ever held, `approval` was null, and the missing bar is correct
+>    by construction.
+> 3. The session's shipped `PreToolUse` matcher **does** include `Write`, and the
+>    card is on `ask`, which gates `Write`. So a PreToolUse never reached us.
+> 4. **ClaudeMon's project `.claude/settings.json` already allows bare `Write`
+>    and `Edit`** — and it still prompted.
+>
+> ⇒ **Claude Code guards `.claude/` writes ABOVE both the permissions layer and
+> the hooks layer.** Deliberate on their part: the rules live *in* `.claude/`, so
+> a rule there granting write access to `.claude/` would be privilege escalation
+> (and would let a repo disable our own hook config). We should not route around
+> it.
+>
+> **But the VS Code extension DOES surface these prompts** (Dan's counter-example,
+> and he was right). Mechanism found in the shipped extension bundle
+> (`~/.vscode/extensions/anthropic.claude-code-2.1.220-win32-x64/extension.js`):
+> the CLI delegates via a `can_use_tool` control request whose payload carries
+> `blocked_path`, `decision_reason`, `title`, `display_name` and
+> `permission_suggestions` — i.e. **the CLI is built to hand this exact prompt to
+> a host UI.** The extension gets it by passing `--permission-prompt-tool stdio`
+> **and driving the CLI with `--output-format stream-json --input-format
+> stream-json` — it hosts NO terminal and renders everything itself.** That is the
+> opposite architectural choice from ours.
+>
+> **The open lever:** the same flag has a second form,
+> `--permission-prompt-tool <mcp-tool-name>`, pointing the CLI at a tool served by
+> an MCP server we run. **Verified: the CLI accepts the flag** (`claude -p …
+> --permission-prompt-tool mcp__sb__approve` exits 0; the flag is hidden from
+> `--help`, so it is SDK-facing but live). **UNVERIFIED and the whole question:
+> does it fire in INTERACTIVE (TUI) mode, or only under `--print`/stream-json?**
+> That is the spike in flight.
+>
+> **Why it matters beyond the annoyance:** our entire approval path rides on
+> PreToolUse hooks, which is a workaround — blind to anything the CLI decides
+> above the hook layer (this bug), and needing the hold-and-release dance.
+> `--permission-prompt-tool` is the sanctioned mechanism, and it would be the
+> first real customer for the `mcp` capability deferred to **E11**.
+>
+> **Dan's position, recorded verbatim in spirit:** he does not personally care
+> about having the terminal and would rather the session window worked like the
+> extension's. **That is a PHILOSOPHY-level change** — "host-don't-reimplement
+> (real CLI in real terminals)" is one of four hard constraints — so it gets
+> amended deliberately and first, not eroded in a PR. **Not decided. Sequenced
+> deliberately:** prove or kill `--permission-prompt-tool` in interactive mode
+> FIRST, because if it works Dan gets the prompt he wants with the terminal
+> intact and the constitutional question does not arise.
+>
+> **Also outstanding, ours, cheap, and real regardless of the above:** when the
+> CLI asks something we cannot answer, the Session tab shows a **10px chip in the
+> top-left header row in the `--status-needs-input` hue** ("continue in Terminal
+> ↗"), while every permission Dan has ever answered arrived as a full-width
+> tinted bar at the BOTTOM. He looked where the bar always is. It should be a
+> real bar, in the permission colour, in the same place. **Not yet filed.**
 Before it: **#102 (P2-E15-05) + #103 (P2-E15-06) MERGED 2026-07-31 as PR #123**,
 all 5 CI jobs green (windows/ubuntu/macos unit + e2e windows/ubuntu). Gate was
 lint + typecheck + 569 unit + 94 e2e. **Dan hand-tested the
@@ -92,7 +162,7 @@ so the Phase-4 gate ("2–3 dissimilar internal consumers") is met for the first
 time — a starting condition for that conversation, not a decision to ship a
 plugin API.
 
-**Next up (after #107): #108 (P2-E15-11) — transcript discovery I/O off the hot
+**Next up: #108 (P2-E15-11) — transcript discovery I/O off the hot
 thread**, which depends on #107. **DECIDED 2026-07-30 (Dan): finish E15 first, then E16.**
 The fork below is therefore closed — E9 (#73 → #74 → #76 …), #90, #91, E16 and
 E17 all wait until E15's remaining items are done.
@@ -225,8 +295,9 @@ a "[Dan eyeball]" note.**
 
 ## Log
 
-- 2026-07-31 — **P2-E15-10 (#107): the transcript contract is written down, and
-  an empty Session view stops being a shrug.**
+- 2026-07-31 — **P2-E15-10 (#107) MERGED as PR #124 (5 CI jobs green): the
+  transcript contract is written down, and an empty Session view stops being a
+  shrug.**
   **Half 1 — the §5.26 drift detector, which had never been built.** Every
   parsed line is now walked against a DECLARED contract
   (`transcripts/schema.ts`) and a newly-seen key warns exactly once. It sits
