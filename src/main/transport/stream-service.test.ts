@@ -34,8 +34,17 @@ function run(body: string, id = 'sess'): ReturnType<StreamService['spawn']> {
   });
 }
 
-/** Resolve when `check` holds, or reject on timeout — no arbitrary sleeps. */
-function until(check: () => boolean, ms = 10_000): Promise<void> {
+/**
+ * Resolve when `check` holds, or reject on timeout — no arbitrary sleeps.
+ *
+ * The `ms` passed here must stay STRICTLY BELOW the enclosing test's timeout,
+ * or vitest kills the test first and reports its own generic message instead of
+ * ours. The default is 4 s against vitest's default 5 s; tests that spawn real
+ * children raise BOTH, together. (First version had 10–30 s waits under a 5 s
+ * test timeout — the waits could never fire, so every slow-machine failure
+ * would have surfaced as an unexplained timeout rather than a named condition.)
+ */
+function until(check: () => boolean, ms = 4_000): Promise<void> {
   return new Promise((res, rej) => {
     const t0 = Date.now();
     const tick = (): void => {
@@ -101,7 +110,7 @@ describe('StreamService — a real child over real pipes (P2-E18-03)', () => {
     await until(() => got.length === 1, 20_000);
     expect(got[0].text).toHaveLength(500 * 1024);
     expect(s.health.parseFailures).toBe(0);
-  });
+  }, 30_000);
 
   // The S-10 probes do `chunk.toString('utf8')` per chunk, which is subtly
   // wrong: a multi-byte character straddling a pipe read decodes to two
@@ -120,7 +129,7 @@ describe('StreamService — a real child over real pipes (P2-E18-03)', () => {
     expect(s.health.parseFailures).toBe(0);
     expect(got[0].text).toBe('\u{1F600}\u{1F680}é中'.repeat(30000));
     expect(got[0].text).not.toContain('�'); // no replacement characters
-  });
+  }, 30_000);
 
   it('a garbage line costs one message and the session keeps reading', async () => {
     const got: Record<string, unknown>[] = [];
@@ -293,7 +302,7 @@ describe('concurrency — the shape the product actually runs (P2-E18-03)', () =
 
     svc.killAll();
     await until(() => svc.list().every((s) => s.exitCode !== null), 15_000);
-  });
+  }, 60_000);
 });
 
 describe('StreamService bookkeeping (P2-E18-03)', () => {
