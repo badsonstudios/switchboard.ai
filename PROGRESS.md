@@ -6,11 +6,16 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#134 (P2-E18-04) — the stream-json fake provider.** Branch
-`feature/134-stream-fake`. Gate green: lint + typecheck + **728 unit (+20)** +
-**98 e2e untouched** + **`npm run check:fake-stream` PASS (14/14)**.
-**#131 → PR #141, #132 → PR #142, #133 → PR #143 — all MERGED**, 5 CI jobs green
-on each.
+**In progress:** **#135 (P2-E18-05) — session status and lifecycle from the
+stream.** Just started.
+**E18 so far, ALL MERGED with 5 CI jobs green: #131 → PR #141 · #132 → PR #142 ·
+#133 → PR #143 · #134 → PR #144.** Four of the ten filed spine items done.
+**NEW ISSUE #145 (filed 2026-08-01): a flaky e2e**, `slash-commands.spec.ts`
+second-popup-open, ubuntu under load. Failed twice during #144's CI, passed all
+5 on a plain re-run with no code change — **non-deterministic, not a
+regression**. Filed rather than fixed inside #134 (out of scope). The diagnosis
+is in the issue, including why the test cannot currently distinguish "popup
+never opened" from "scan returned nothing".
 **Dan changed the working mode 2026-08-01:** he authorised **merge-and-continue
 through the E18 spine** — I squash-merge each E18 PR on green CI and roll into
 the next item, rather than stopping at the two gates. Applies to **#132–#140**;
