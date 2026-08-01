@@ -21,12 +21,14 @@ place the Allow/Deny bar appears.
 
 Two different things can put it there. Usually switchboard simply couldn't get
 the question in front of you and handed it back rather than answering on your
-behalf. But some decisions **Claude Code handles in its own prompt without
-offering them to switchboard at all** — most commonly writing to a project's own
-`.claude` folder, which it treats as a sensitive location. You'll see it every
-time such a file changes, and no setting on our side turns it off, because
-we're never asked in the first place. Answer it in the Terminal; choosing the
-"…for this session" option stops it repeating until that session ends.
+behalf. But some decisions **Claude Code insists on making in its own prompt** —
+most commonly writing to a project's own `.claude` folder, which it treats as a
+sensitive location. For those, switchboard deliberately **stands aside instead
+of asking you the same question twice**: it can see the request, but its answer
+wouldn't stick, so the only prompt you get is the real one. You'll see it every
+time such a file changes, and no setting on our side turns it off. Answer it in
+the Terminal; choosing the "…for this session" option stops it repeating until
+that session ends.
 
 Either way, **nothing gets auto-approved.**
 

@@ -29,10 +29,14 @@ E11/E13/E14 still outlines)
 > **Why parallel:** S-11's first probe is mostly *waiting* (a pipe held open for
 > hours), so it runs in the background while #108 gets worked normally.
 >
-> **OPEN QUESTION for Dan, asked 2026-08-01, unanswered:** a ~20-line stopgap —
-> make `shouldHoldPermission` decline writes into `<cwd>/.claude/`, since our
-> allow is discarded there anyway. Turns two prompts into one, today. Throwaway
-> (the migration deletes it). He had not answered when context was cleared.
+> **The stopgap Dan approved is DONE — #127, PR #128 (2026-08-01).**
+> `shouldHoldPermission` now declines edit-family writes into `<cwd>/.claude/`,
+> so the double prompt becomes one. Deleted by the migration; kept because the
+> migration is months away and this bites every skill-file edit.
+> **Behaviour note for the hand-off:** the remaining prompt now arrives ~6s
+> LATER than the old one did. Previously we held instantly; now the PreToolUse
+> passes, the session goes `working`, and `needs-permission` only lands on the
+> CLI's debounced Notification. That gap is inherent, not a hang.
 >
 > ### S-11 — the six unmeasured stream-json items, REORDERED
 > Source: `spike/findings/s-10-stream-json-transport.md` §3. The order there is
@@ -470,6 +474,43 @@ a "[Dan eyeball]" note.**
   to Sonnet rates** — it invents a number. Not urgent, not waiting on anything.
 
 ## Log
+
+- 2026-08-01 — **#127: never ask a question whose answer the CLI discards.**
+  Editing a file in a project's own `.claude/` folder prompted Dan **twice** —
+  our approval bar, then the CLI's own terminal prompt six seconds after he
+  allowed it. **Measured, not inferred** (log at 10:28:22 / 10:29:19 / 10:29:25):
+  the CLI honours a hook's `permissionDecision:"allow"` for the ordinary
+  permission layer and then applies its `.claude/` safety check ON TOP, which a
+  hook verdict does not satisfy. His answer was discarded.
+  **This is P7, not UX.** We had now *proven* the CLI keeps that decision, so
+  holding it presented a decision we do not own and taught him our approvals are
+  advisory. `shouldHoldPermission` declines it; the #125 handoff bar explains
+  the CLI's prompt. **The same verdict over stream-json's `can_use_tool` channel
+  DOES satisfy the safety check (S-10 probe B) — a hook's word is worth less
+  than the permission-prompt channel's, which is the sharpest argument yet for
+  the migration and was not known from S-09 or S-10.**
+  **Review caught a blocker that Windows could never have shown: the new tests
+  would have FAILED on the ubuntu and macOS CI legs** — a `C:/...` literal is a
+  *relative* path on POSIX, so `path.resolve` mangled it. Worse, the negative
+  cases would have passed **vacuously** there (the carve-out never fires, so
+  they hold even if the predicate were `() => false`) — a green half-suite
+  proving nothing. The file already had the `win ? … : …` pattern for exactly
+  this, twice. Now platform-shaped, and verified by simulating all nine cases
+  under `path.posix` before pushing.
+  Three more taken: the branch keys off `toolCategory === 'edit'` rather than
+  `MUTATING` (which also holds `WebFetch` — pathless today, one schema change
+  from silently un-holding a network tool); the comment's stated risk was wrong
+  and now names the real load-bearing assumption (**the CLI's guard uses the
+  same LEXICAL containment rule we do — neither resolves links**, so a junction
+  under `.claude/` escapes both); and the **home-directory case is pinned by a
+  test**, because a session running in `~` makes `<cwd>/.claude` the GLOBAL
+  config — global hooks that fire in every session — which is the
+  highest-consequence instance of the carve-out.
+  `isOutsideCwd` and `isInsideClaudeDir` now share one `contains()`, with a
+  comment recording why the resolve bases are asymmetric and why the obvious
+  refactor (`!isOutsideCwd(p, join(cwd, '.claude'))`) is wrong.
+  Gate: lint + typecheck + **632 unit (+11) + approval e2e green**. One
+  revert-proof re-run.
 
 - 2026-08-01 — **#125 MERGED as PR #126 (5 CI jobs green): a decision the CLI
   keeps gets a bar, not a whisper.**
