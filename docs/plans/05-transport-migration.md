@@ -2,7 +2,8 @@
 
 **Milestone:** Phase 2 — The Switchboard (epic E18; next free epic number)
 **Status:** planned 2026-08-01. **E18-01…E18-10 filed 2026-08-01 as issues
-#131–#140** (in order); E18-11…E18-16 deliberately unfiled — see *What is NOT
+#131–#140** (in order), plus **#149 (E18-08b)** when E18-08 was split;
+E18-11…E18-16 deliberately unfiled — see *What is NOT
 fileable yet* below.
 
 **Theme:** switchboard stops emulating a terminal and starts speaking the CLI's
@@ -256,39 +257,56 @@ arrives while the card is closed is answered deny rather than left hanging; the
 fire in PTY mode.
 *Depends on:* E18-05.
 
-### E18-08 · Per-session transport flag + honest Terminal tab — S — [#138](https://github.com/badsonstudios/switchboard.ai/issues/138)
+### E18-08a · A real stream session runs — M — [#138](https://github.com/badsonstudios/switchboard.ai/issues/138)
 
-**What.** The first point the owner can turn this on and actually use it. A
-per-session setting (default **PTY** — this ships opt-in, exactly as
-`claudeCode.useTerminal` did in reverse), persisted with the session record, and
-a Session-view surface that degrades honestly: **in stream mode there is no PTY,
-so the Terminal tab must say what it is** rather than show an empty black pane.
+**What.** The back half. Everything needed for a real stream session to spawn,
+take a prompt and finish a turn — with no UI to select it, exactly as the two
+fakes are selected today.
 
-**Note the Feed keeps working with no extra work** — the JSONL transcript is
-still written in stream mode (S-10), so the existing transcript-driven Feed
-renders a stream session today. E18-10 is an *upgrade* to that, not a
-requirement for it.
+**Split from a single E18-08 on 2026-08-01, because it had become an L** and
+`00-process.md` says an L is split before work starts. It grew that way for
+reasons worth naming: it absorbed the e2e-drives-a-turn criterion from E18-04,
+`--replay-user-messages` from E18-06, and a **planning gap nobody owned** — the
+real adapter's stream recipe. On top of that, **`StreamService` is still not
+constructed anywhere**: every item so far has driven it from tests.
 
-> **PLANNING GAP, found while building E18-06 (2026-08-01): nobody owned the
-> REAL adapter's stream recipe.** Every item so far has driven the *fake*, whose
-> `buildSpawn` needs no flags. For a real stream session, `providers/claude.ts`
-> must build `--output-format stream-json --verbose --input-format stream-json
-> --permission-prompt-tool stdio` (S-10 §1, copied from the SDK's own arg
-> builder) and declare `transport: 'stream'`. No item said so. It belongs here,
-> because this is the item that makes a real stream session creatable at all —
-> which also means **E18-06's `--replay-user-messages` criterion lands here**,
-> since the flag has nowhere to live until the recipe exists. Sizing moves S -> M.
+Scope: `providers/claude.ts` builds S-10 §1's flags (`--output-format
+stream-json --verbose --input-format stream-json --permission-prompt-tool
+stdio`, copied from the SDK's own arg builder) and declares `transport:
+'stream'`; `StreamService` is constructed in `index.ts` and handed to
+`SessionManager` and `StreamPermissions`; `--replay-user-messages` acknowledges
+a sent prompt.
+
+*Done when:* a stream session spawns, takes a prompt and reaches `done` — driven
+by an **e2e against the E18-04 fake** (the criterion inherited from E18-04, and
+the first point it is meetable); the replay echo marks a prompt sent; the real
+adapter's stream recipe matches S-10 §1 flag for flag, asserted against the
+findings note rather than reconstructed from memory; **all 98 PTY e2e tests
+still pass**.
+*Depends on:* E18-07.
+
+### E18-08b · Turn stream mode on — M — [#149](https://github.com/badsonstudios/switchboard.ai/issues/149)
+
+**What.** The front half: the user-facing choice, and being honest about what
+changes when they make it.
+
+Scope: a per-session transport setting (default **PTY** — opt-in, as
+`claudeCode.useTerminal` is in reverse), persisted with the session record and
+surfaced at session creation; the **Terminal tab explains itself** in a stream
+session rather than showing an empty black pane; switching a **running**
+session's transport refused with a reason.
+
+**The Feed needs no work** — the JSONL transcript is still written in stream
+mode (S-10), so the existing transcript-driven Feed renders a stream session
+as-is. E18-10 is an upgrade to that, not a prerequisite.
 
 *Done when:* a new session can be created in stream mode from the UI; the choice
-survives a relaunch; **`providers/claude.ts` builds the stream recipe** (the four
-S-10 flags + `transport: 'stream'`) and `--replay-user-messages` acknowledges a
-sent prompt (inherited from E18-06); the Terminal tab in a stream session explains itself in one
+survives a relaunch; the Terminal tab in a stream session explains itself in one
 sentence and offers no dead controls; the Feed renders a stream session's turn
-via the existing transcript path; switching a **running** session's transport is
-refused with a reason, not silently ignored; **an e2e drives a full turn in
-stream mode against the E18-04 fake** (inherited from E18-04, which could not
-meet it — this is the first item where a stream session can be created at all).
-*Depends on:* E18-07.
+via the existing transcript path; switching a running session's transport is
+refused with a reason, not silently ignored; **user documentation written** —
+this is the first user-visible surface of the whole epic.
+*Depends on:* E18-08a.
 
 ### E18-09 · Slash commands from `system:init` — S — [#139](https://github.com/badsonstudios/switchboard.ai/issues/139)
 

@@ -6,10 +6,23 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#137 (P2-E18-07) — `can_use_tool` → the approval bar. THE
-ITEM THIS EPIC EXISTS FOR.** Branch `feature/137-can-use-tool`. Gate green:
-lint + typecheck + **788 unit (+23)** + **98 e2e untouched**.
-**#135 → PR #146 and #136 → PR #147 MERGED**, 5 CI jobs green on each.
+**In progress:** **nothing mid-flight.** Next is **#138 (P2-E18-08a)** — a real
+stream session runs.
+**E18 is 7 of 11 done, ALL MERGED with 5 CI jobs green:** #131 → PR #141 ·
+#132 → PR #142 · #133 → PR #143 · #134 → PR #144 · #135 → PR #146 · #136 →
+PR #147 · **#137 → PR #148 (the item the epic exists for)**.
+**#138 WAS SPLIT 2026-08-01 (Dan's call) because it had become an L** —
+`00-process.md` says an L is split before work starts. **#138 is now E18-08a**
+(back half: the real adapter's stream recipe, `StreamService` finally
+constructed in `index.ts`, `--replay-user-messages`, proven by an e2e turn
+against the #134 fake — no UI). **NEW #149 is E18-08b** (front half: the
+per-session flag, the honest Terminal tab, refusing a live switch, and the
+**first `docs/manual/` page this epic owes**).
+It grew that way for reasons worth naming: it absorbed the e2e-drives-a-turn
+criterion from #134, `--replay-user-messages` from #136, a **planning gap
+nobody owned** (the real adapter's stream recipe), and the fact that
+**`StreamService` is still not constructed anywhere** — every item so far has
+driven it from tests.
 **⚠ FLAKE CLASS, recorded on #145 (2026-08-01): three load-sensitive test
 failures in one day, three platforms, three unrelated specs** — macOS
 `discovery-scheduler` (FIXED in #143), ubuntu `slash-commands` (open), Windows
