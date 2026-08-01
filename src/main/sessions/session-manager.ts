@@ -15,6 +15,7 @@ import {
   UnknownTransportError,
 } from '../transport/transport';
 import { SessionEvent, SessionStatus, transition } from './state-machine';
+import { streamStatusEvent } from './stream-status';
 
 /**
  * Why a session's native id CHANGED. 'clear' = the CLI ran /clear and minted
@@ -171,6 +172,22 @@ export class SessionManager {
     }
     this.sessions.set(id, record);
     record.pid = proc.pid;
+
+    // Stream mode's lifecycle wiring (P2-E18-05). Two things happen here that
+    // have no PTY equivalent, and both rest on the same measurement: the CLI
+    // emits NOTHING between spawn and our first prompt (S-11's log).
+    if (proc.onMessage) {
+      // 1. Readiness is the spawn, because nothing else will ever announce it.
+      //    Deferred a tick so the caller holds the record before any transition
+      //    fires — `create()` has not returned yet, and a status listener that
+      //    calls back into `get(id)` would otherwise see a half-built session.
+      setImmediate(() => this.apply(id, { kind: 'transport-ready' }));
+      // 2. The messages themselves drive status from here.
+      proc.onMessage((m) => {
+        const ev = streamStatusEvent(m);
+        if (ev) this.apply(id, ev);
+      });
+    }
     proc.onExit((code) => {
       record.exitCode = code;
       // intentional kills are wind-downs, not crashes (ConPTY termination
@@ -338,6 +355,10 @@ function describeCause(ev: SessionEvent): string {
   switch (ev.kind) {
     case 'hook':
       return `hook:${ev.event}`;
+    case 'stream':
+      // NOT `hook:` — someone reading a transition log to find where a status
+      // came from must be able to tell the two transports apart.
+      return `stream:${ev.event}${ev.subtype ? ':' + ev.subtype : ''}`;
     case 'exit':
       return `exit:${ev.code}`;
     default:

@@ -7,7 +7,8 @@
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
 **In progress:** **#135 (P2-E18-05) — session status and lifecycle from the
-stream.** Just started.
+stream.** Branch `feature/135-stream-lifecycle`. Gate green: lint + typecheck +
+**752 unit (+24)** + **98 e2e untouched**.
 **E18 so far, ALL MERGED with 5 CI jobs green: #131 → PR #141 · #132 → PR #142 ·
 #133 → PR #143 · #134 → PR #144.** Four of the ten filed spine items done.
 **NEW ISSUE #145 (filed 2026-08-01): a flaky e2e**, `slash-commands.spec.ts`
@@ -639,6 +640,49 @@ a "[Dan eyeball]" note.**
   to Sonnet rates** — it invents a number. Not urgent, not waiting on anything.
 
 ## Log
+
+- 2026-08-01 — **#135 (P2-E18-05) → PR: status from the stream — and S-11's log
+  corrected an assumption before it became code.**
+  In PTY mode hooks feed the state machine; in stream mode the messages do.
+  `stream-status.ts` is the pure mapper, `SessionEvent` gains three kinds
+  (`stream`, `prompt-sent`, `transport-ready`), and `describeCause` reports
+  **`stream:`, never `hook:`** — someone reading a transition log to find where
+  a status came from has to be able to tell the transports apart.
+  **The design question was "what marks a freshly spawned stream session as
+  ready?" and I did not guess it.** S-11's own event log
+  (`artifacts/s11/longrun-events.ndjson`) answers it: `spawn` at ms=14, our
+  prompt at ms=2026, **`init` at ms=2048 — 22ms AFTER the send**, and the same
+  ordering on every later turn (+6ms, +11ms). **The CLI emits NOTHING at
+  spawn.** So readiness cannot come from the stream at all; it comes from the
+  spawn succeeding — honest for this transport specifically, because there is no
+  TUI to boot and S-10 confirmed no trust dialog is drawn in this mode. Had I
+  reasoned by analogy with `SessionStart`, a stream session would have sat on
+  `starting` until the user typed.
+  **`system:init` therefore transitions NOTHING**, which is the opposite of what
+  its name invites. It arrives once per TURN, ~10-20ms after a send we made
+  ourselves, so it tells us nothing we did not already know — and treating it as
+  a session start re-initialises the session every turn.
+  **A revert-proof taught me something about my own tests.** Mapping `init` to
+  `transport-ready` fails only ONE test — the mapper's — because
+  `transport-ready` only promotes out of `starting`, so the end-to-end
+  three-turns test absorbs it. That is defence in depth working, but it means
+  the three-turns test is NOT what guards this. A comment now says so, in the
+  test, so nobody deletes the mapper test believing it is covered.
+  Also pinned: an error `result` still ENDS the turn (a failed turn is finished,
+  not running — the error belongs in the feed, not in a busy badge); output
+  arriving revives a `done` session even with no `prompt-sent`, because S-11
+  watched a message written during a 150s stall get picked up 144s after we
+  resumed reading; `transport-ready` never drags a working session backwards;
+  and the ready transition lands AFTER `create()` returns, so a status listener
+  cannot observe a half-built record.
+  **`TransportSession.onMessage` is OPTIONAL and stays that way.** The PTY has
+  no typed messages and never will — the only way to get structure out of a
+  terminal is to parse the CLI's own rendering, which amended P7 forbids
+  outright (PHILOSOPHY §5, screen-scraping as rejected precedent). Optional says
+  that; forcing PtyService to fake it would not.
+  **`prompt-sent` is defined and tested here but EMITTED by #136**, which owns
+  the send path. Noted rather than left as a puzzle.
+  Gate: lint + typecheck + **752 unit (+24)** + **98 e2e untouched**.
 
 - 2026-08-01 — **#134 (P2-E18-04) → PR: the stream-json fake — and a done-when
   I had to correct in public.**
