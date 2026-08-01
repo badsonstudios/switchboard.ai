@@ -17,8 +17,17 @@ function log() {
 /** A watch we drive by hand: `fire()` is a filesystem event, `fail()` is the
  *  watch dying under us. */
 function fakeWatch() {
-  const state = { fire: () => {}, fail: (() => {}) as (e: unknown) => void, closed: false, created: 0 };
-  const factory = (_root: string, onChange: () => void, onError: (e: unknown) => void): WatchHandle => {
+  const state = {
+    fire: (() => {}) as (filename?: string | null) => void,
+    fail: (() => {}) as (e: unknown) => void,
+    closed: false,
+    created: 0,
+  };
+  const factory = (
+    _root: string,
+    onChange: (filename?: string | null) => void,
+    onError: (e: unknown) => void
+  ): WatchHandle => {
     state.created++;
     state.fire = onChange;
     state.fail = onError;
@@ -55,7 +64,7 @@ describe('DiscoverySchedule — the watch accelerates, the backoff guarantees', 
     expect(s.stats(ROOT)!.backoffMs).toBe(400); // capped, never grows past the ladder
   });
 
-  it('a filesystem event sweeps on the next tick and resets the ladder', () => {
+  it('a NEW path sweeps on the next tick and resets the ladder', () => {
     const { state, factory } = fakeWatch();
     const s = new DiscoverySchedule({ log: log(), watchFactory: factory, backoffMs: [100, 200, 400] });
     s.register(ROOT);
@@ -64,11 +73,21 @@ describe('DiscoverySchedule — the watch accelerates, the backoff guarantees', 
     s.noteSwept(ROOT, 600);
     expect(s.stats(ROOT)!.backoffMs).toBe(400);
 
-    state.fire();
+    state.fire('native-abc.jsonl'); // a transcript APPEARING
     expect(s.shouldSweep(ROOT, 601)).toBe(true); // immediately, not in 400ms
     s.noteSwept(ROOT, 601);
     expect(s.stats(ROOT)!.backoffMs).toBe(200); // back to the fast end of the ladder
     expect(s.stats(ROOT)!.events).toBe(1);
+  });
+
+  it('an event with no filename is treated as urgent — we cannot rule it out', () => {
+    const { state, factory } = fakeWatch();
+    const s = new DiscoverySchedule({ log: log(), watchFactory: factory, backoffMs: [100, 200] });
+    s.register(ROOT);
+    s.noteSwept(ROOT, 1000);
+    expect(s.shouldSweep(ROOT, 1001)).toBe(false);
+    state.fire(null); // the platform did not say which path moved
+    expect(s.shouldSweep(ROOT, 1001)).toBe(true);
   });
 
   it('markDirty does the same for changes no filesystem event describes', () => {
@@ -202,29 +221,70 @@ describe('DiscoverySchedule — the REAL fs.watch (no injected factory)', () => 
   // that the module calls load-bearing.
   const realRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-ds-real-'));
 
-  it('fires on a file APPEARING and ignores appends to it', async () => {
+  it('fires on a file APPEARING', async () => {
     const s = new DiscoverySchedule({ log: log(), backoffMs: [10] });
     try {
       s.register(realRoot);
       if (s.stats(realRoot)!.watchFailed) return; // recursive watch unsupported here
       s.noteSwept(realRoot, 0);
 
-      const f = path.join(realRoot, 'appeared.jsonl');
-      fs.writeFileSync(f, '{}\n');
+      fs.writeFileSync(path.join(realRoot, 'appeared.jsonl'), '{}\n');
       await new Promise((r) => setTimeout(r, 200));
-      const afterCreate = s.stats(realRoot)!.events;
-      expect(afterCreate).toBeGreaterThan(0);
-
-      // THE assertion that pins the filter: the CLI appends to a transcript
-      // constantly during a turn. If appends marked the root dirty we would
-      // have rebuilt the 100ms scan firehose with extra steps.
-      s.noteSwept(realRoot, 1);
-      fs.appendFileSync(f, '{"more":1}\n');
-      fs.appendFileSync(f, '{"more":2}\n');
-      await new Promise((r) => setTimeout(r, 200));
-      expect(s.stats(realRoot)!.events).toBe(afterCreate);
+      expect(s.stats(realRoot)!.events).toBeGreaterThan(0);
     } finally {
       s.stop();
     }
+  });
+
+  it('appends to a known file do not earn a sweep, on every platform', async () => {
+    // Asserts the BEHAVIOUR, not the event count. The first version of this
+    // counted events and passed on Windows and Linux while failing on macOS,
+    // because FSEvents reports an append as `rename` and the event-type filter
+    // does not hold it back there. Windows/Linux reach the same conclusion by
+    // never firing at all; macOS reaches it because the path is already known
+    // and known paths are floored. One assertion, three platforms, and it is
+    // the property that actually matters.
+    const s = new DiscoverySchedule({ log: log(), backoffMs: [400, 800] });
+    try {
+      const f = path.join(realRoot, 'appended.jsonl');
+      fs.writeFileSync(f, '{}\n');
+      s.register(realRoot);
+      if (s.stats(realRoot)!.watchFailed) return; // recursive watch unsupported here
+      await new Promise((r) => setTimeout(r, 150));
+
+      const t = 100_000; // synthetic clock: the sweep just happened
+      s.noteSwept(realRoot, t);
+      fs.appendFileSync(f, '{"more":1}\n');
+      fs.appendFileSync(f, '{"more":2}\n');
+      await new Promise((r) => setTimeout(r, 200));
+      expect(s.shouldSweep(realRoot, t + 399)).toBe(false);
+    } finally {
+      s.stop();
+    }
+  });
+
+  it('an append STORM on a known path never sweeps faster than the fastest rung', () => {
+    // The guarantee that does not depend on any platform's event semantics.
+    // macOS reports appends as `rename`, so the event-type filter does not hold
+    // them back there; without this, a busy turn would have restored the 100ms
+    // firehose on macOS while Windows and Linux looked fine.
+    const { state, factory } = fakeWatch();
+    const s = new DiscoverySchedule({ log: log(), watchFactory: factory, backoffMs: [100, 200, 400] });
+    s.register(ROOT);
+
+    state.fire('native-abc.jsonl'); // seen once — this is the create
+    s.noteSwept(ROOT, 1000);
+
+    for (let i = 0; i < 50; i++) state.fire('native-abc.jsonl'); // the turn appending
+    expect(s.stats(ROOT)!.events).toBe(51);
+    expect(s.shouldSweep(ROOT, 1000)).toBe(false); // same instant
+    expect(s.shouldSweep(ROOT, 1099)).toBe(false); // still inside the floor
+    expect(s.shouldSweep(ROOT, 1100)).toBe(true); // one rung later, exactly once
+
+    // ...and a DIFFERENT path appearing during the storm is still immediate,
+    // because that is the one thing discovery exists to notice.
+    s.noteSwept(ROOT, 1100);
+    state.fire('native-xyz.jsonl');
+    expect(s.shouldSweep(ROOT, 1101)).toBe(true);
   });
 });
