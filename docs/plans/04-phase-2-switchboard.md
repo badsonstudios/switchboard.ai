@@ -17,11 +17,21 @@ exists. Then the heavier signature epics: presentation/attention (E9),
 approvals (E10), and the Session Bus (E11).
 
 **Epics:** E7 Richer session cards · E8 Pop-out & multi-monitor · **E15
-Structural foundations** · E9 Attention-driven layout · E10 Approval surfaces
-v1 · E11 Session Bus & context transfer · E12 Session groups & Feed view · E13
-Dispatch v1 · E14 Notifications v2, event feed v2 & service status. (E9–E14
-work items get filed just-in-time as the preceding epics near exit — per
-`00-process.md`, we do NOT bulk-file the whole phase.)
+Structural foundations** · **E18 Stream-json transport migration** · E9
+Attention-driven layout · E10 Approval surfaces v1 · E11 Session Bus & context
+transfer · E12 Session groups & Feed view · E13 Dispatch v1 · E14 Notifications
+v2, event feed v2 & service status. (E9–E14 work items get filed just-in-time as
+the preceding epics near exit — per `00-process.md`, we do NOT bulk-file the
+whole phase.)
+
+> **E18 — the transport migration — runs NEXT, and it has its own plan file:
+> `docs/plans/05-transport-migration.md` (planned 2026-08-01).** It is here
+> rather than in E11 because the one thread tying them together was cut: S-09
+> proved permission delegation rides the stream-json control channel, **not**
+> MCP, so E11's deferred `mcp` capability is no longer its first customer. E18
+> is about how we talk to the CLI; E11 is about sessions talking to each other.
+> **E15's remaining items (#109, #110, #111) are parked behind E18**, not
+> cancelled.
 
 > **Architecture review inserted E15 (2026-07-26).** A full review
 > (`docs/architecture-review-2026-07-26.md`) found that the extensibility seam

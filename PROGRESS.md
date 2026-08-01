@@ -10,22 +10,53 @@ E11/E13/E14 still outlines)
 main green. **#108 MERGED 2026-08-01 as PR #130** (see below). The only thing
 still running is the **S-11 probe**, which is a background measurement, not a
 work item.
+**Next up: #131 (P2-E18-01)** — the first item of the **stream-json transport
+migration**, scoped and filed by `/pm` on 2026-08-01 as epic **E18**, issues
+**#131–#140**. See the START HERE block immediately below.
+**Also newly open and unscheduled: #129** (a transcript-discovery session that
+has GIVEN UP still full-scans the root for ever — filed 2026-08-01 off #108's
+work). Unrelated to the transport; takeable any time; not blocking anything.
 
-> # ▶▶ START HERE — THE NEXT THING IS THE **STREAM-JSON MIGRATION**
+> # ▶▶ START HERE — THE MIGRATION IS **SCOPED AND FILED**. NEXT ITEM IS **#131**.
 > ## Dan's instruction, 2026-08-01, verbatim in spirit: *"Next, I want to work on the migration. Before we do anything else, I want to get this done now."*
 >
 > ### What to say in a fresh session, after `/startup`:
 >
-> > **"Run `/pm` to scope the stream-json migration."**
+> > **`/next-item 131`**
 >
-> That is the whole hand-off. **Do NOT run `/next-item`** — it resolves the
-> lowest-numbered open issue in the milestone and would pick **#109**, which is
-> header CSP and is NOT what Dan wants next. The migration has **no issues filed
-> at all**, which is exactly what `/pm` is for.
+> **Say the number.** A bare `/next-item` resolves the lowest-numbered open issue
+> in the milestone and would pick **#90**, then **#109** — neither is the
+> migration. The E18 issues are #131–#140, filed LAST, so they never win by
+> number and must always be named explicitly until the older ones are closed.
 >
-> ### The ONE question `/pm` must put to Dan first (his open question (d))
-> **Is the migration a NEW EPIC, or a re-scoped E11?** Nothing can be filed until
-> he answers. Everything else about the migration is already decided or measured.
+> ### `/pm` RAN 2026-08-01 — here is what it decided
+> **Dan's open question (d) is ANSWERED: it is a NEW EPIC, E18** — not a
+> re-scoped E11. The one thread tying them together was cut by S-09 (permission
+> delegation rides the stream-json control channel, **not** MCP, so E11's
+> deferred `mcp` capability is no longer its first customer). E11 stays a
+> separate epic about sessions talking to *each other*.
+>
+> - **Plan:** `docs/plans/05-transport-migration.md` — its own file, 16 items,
+>   with the full rationale, the two S-11 facts every item must respect, and the
+>   S-11 gate structure. `04-phase-2-switchboard.md` has a pointer.
+> - **FILED (10 issues, #131–#140):** E18-01 DESIGN.md amendment → 02 transport
+>   seam → 03 StreamService → 04 **the stream-json fake** → 05 lifecycle from the
+>   stream → 06 prompt submission → 07 **`can_use_tool` → the approval bar** →
+>   08 per-session flag (**the first dogfoodable point**) → 09 slash commands
+>   from `system:init` → 10 Feed from typed messages.
+> - **NOT FILED, on purpose:** E18-11…E18-16 (choosers, interrupt, sidechains,
+>   transport-matrix e2e, hook-listener retirement, cutover). Their done-when
+>   depends on S-11 probes 2–6, which are unstarted. **File them when S-11's
+>   findings note lands** — do not write acceptance criteria against guesses.
+>
+> **Two things baked into the issues as testable constraints, so they cannot be
+> forgotten:** `system:init` fires **once per turn** (#135 and #139 each pin it
+> with a named test), and **`windowsHide` on every Windows spawn** (#133) — the
+> bug that flashed a console on Dan's desktop 96 times during S-11.
+>
+> **#131 is docs-only and deliberately first.** DESIGN.md still describes a PTY
+> substrate in ~30 places while PHILOSOPHY P7 was amended 2026-07-31. Amend it
+> before code, the same way P7 was amended — deliberately, not eroded in a PR.
 >
 > ### ⚠ Dan was confused on 2026-08-01 and the confusion is worth pre-empting
 > He believed the migration had already shipped, because a `.claude/` write still
@@ -371,8 +402,10 @@ re-run.
 > That doc has the navigation recipes for the minified bundle and the rules
 > (read contracts, don't copy code; verify against the PATH CLI before building).
 >
-> **NEXT: nothing is filed.** This needs `/pm` to decide whether it is a new
-> epic or a re-scoped E11, and Dan's go-ahead before any issue exists.
+> **NEXT: ~~nothing is filed~~ — SUPERSEDED 2026-08-01.** `/pm` ran, Dan chose
+> **new epic E18** with its own plan file, and **#131–#140 are filed**. See the
+> START HERE block at the top of this file for the queue and for what was
+> deliberately left unfiled behind S-11.
 >
 > **The fallback is FIXED — #125, MERGED 2026-08-01 as PR #126.** When the
 > CLI keeps a decision, the Session tab now shows a full-width bar docked above
@@ -592,6 +625,59 @@ a "[Dan eyeball]" note.**
   to Sonnet rates** — it invents a number. Not urgent, not waiting on anything.
 
 ## Log
+
+- 2026-08-01 — **`/pm`: the stream-json migration is scoped and filed as epic
+  E18 — plan `docs/plans/05-transport-migration.md`, issues #131–#140.**
+  **Dan's open question (d) answered: NEW EPIC, not a re-scoped E11.** The only
+  thing that ever tied them together was "permission delegation would be the
+  first customer for E11's deferred `mcp` capability" — and **S-09 cut that
+  thread**: delegation rides the stream-json control channel, not MCP. E11 is
+  about sessions talking to *each other*; E18 is about how we talk to the CLI.
+  Folding a 14-file transport rewrite into E11 would have rewritten E11's exit
+  criteria to describe a different feature.
+  **Its own plan file, not an appendix to `04-phase-2-switchboard.md`** — that
+  file is already ~800 lines across E7–E17, and E18 carries its own exit
+  criteria and its own gate structure.
+  **16 items; 10 filed, 6 deliberately not.** The filed spine is exactly the set
+  that is independent of how the S-11 chooser probes turn out: seam → service →
+  **fake** → lifecycle → submission → **approvals** → flag → commands → feed.
+  E18-11…E18-16 (plan mode/`ExitPlanMode`/`AskUserQuestion`, interrupt,
+  sidechains, transport-matrix e2e, hook-listener retirement, cutover) stay
+  unfiled because their done-when depends on probes 2–6, which are unstarted —
+  per `00-process.md` we do not file issues whose acceptance criteria we already
+  know to be unstable.
+  **Three things the scoping surfaced that were not in S-10's blast-radius
+  table or the earlier notes:**
+  1. **DESIGN.md is a live fork and gets amended FIRST (#131, docs-only).** P7
+     was amended 2026-07-31; DESIGN was not, and it still names the PTY as *the*
+     input route in ~30 places (§6 stack, the architecture diagram, §5.9's
+     Esc-to-PTY, §5.16's "sends keystroke to PTY"). Amend it deliberately ahead
+     of code, the way P7 was — not eroded in whichever PR trips over it.
+  2. **`SessionManager` already has the seam.** It takes a narrow `PtyLike`
+     (spawn/remove; pid/onExit/kill) from P1, so #132 widens an existing
+     interface rather than inventing one. Its acceptance criterion is therefore
+     *"all existing unit + e2e tests pass **unedited**"* — **if that PR touches a
+     test, the seam was wrong.**
+  3. **#138 (the per-session flag) is the first dogfoodable point, and the Feed
+     needs no work to get there** — the JSONL transcript is still written in
+     stream mode (S-10), so the existing transcript-driven Feed renders a stream
+     session as-is. #140 is a token-level-streaming *upgrade*, not a
+     prerequisite. What #138 does have to handle: **stream mode has no PTY, so
+     the Terminal tab must say what it is** instead of showing an empty black
+     pane.
+  **Two S-11 findings are baked into issue done-whens so they cannot be
+  forgotten:** `system:init` is emitted **once per turn, not once per session**
+  (#135 and #139 each pin it with a test named for the finding — the naive
+  `slash_commands` consumer re-initialises every turn or grows the list without
+  bound), and **`windowsHide` on every Windows spawn** (#133), which is the bug
+  that flashed a console on Dan's desktop 96 times during the first S-11 run.
+  Also recorded in the plan as the migration's cost column: **~300–380 MB child
+  RSS per session × 8 sessions ≈ 2.4–3 GB of CLI**, which #111's re-measure now
+  inherits as a second question.
+  **Nothing was re-litigated.** The plan opens with a "what we are NOT
+  re-opening" section (whether — decided; viable — measured; sequencing — known;
+  the transcript stack survives) precisely so no item spends a review round
+  re-deriving it.
 
 - 2026-08-01 — **#127 MERGED as PR #128 (5 CI jobs green): never ask a
   question whose answer the CLI discards.**

@@ -1,0 +1,391 @@
+# E18 — The stream-json transport migration
+
+**Milestone:** Phase 2 — The Switchboard (epic E18; next free epic number)
+**Status:** planned 2026-08-01. **E18-01…E18-10 filed 2026-08-01 as issues
+#131–#140** (in order); E18-11…E18-16 deliberately unfiled — see *What is NOT
+fileable yet* below.
+
+**Theme:** switchboard stops emulating a terminal and starts speaking the CLI's
+own protocol. `StreamService` lands **beside** `PtyService` behind a per-session
+flag; the feed, transcript stack, state machine and extensibility registry all
+survive the cut.
+
+---
+
+## Why this epic exists (the short version)
+
+Our entire approval path rides **PreToolUse hooks**, which is a workaround. It is
+blind to anything the CLI decides *above* the hook layer, and on 2026-08-01 that
+stopped being theoretical:
+
+- Editing a file in a project's own `.claude/` folder prompted the owner
+  **twice** — our bar, then the CLI's own terminal prompt six seconds after he
+  allowed it. Measured in the log, not inferred. The CLI honours a hook's
+  `permissionDecision:"allow"` for the ordinary permission layer, then applies
+  its `.claude/` safety check **on top**, which a hook verdict does not satisfy.
+  **His answer was discarded.**
+- The *identical* write arrived over stream-json as a `can_use_tool` control
+  request with `decision_reason_type:"safetyCheck"`. We answered allow and
+  **the file was written, with no second prompt** (S-10 probe B).
+
+⇒ **The same verdict is worth less from a hook than from the permission-prompt
+channel. Our approval path is structurally second-class.** That is the epic's
+one-sentence justification.
+
+**S-09 closed the cheap door:** `--permission-prompt-tool` is honoured under
+`--print` and **silently ignored by an interactive TUI session**. There is no
+flag that gives switchboard the permission prompt while it hosts a TUI.
+
+**PHILOSOPHY P7 was amended 2026-07-31 (§6 Amendments)** to permit this:
+fidelity to the CLI's behaviour is the invariant; the terminal was one transport
+for it. The amendment explicitly does **not** decide that the terminal goes
+away — that is an engineering call still bound by litmus 3 and 4, and it is what
+E18-16 settles.
+
+**Sources.** `spike/findings/s-10-stream-json-transport.md` (what the transport
+costs — the blast-radius table is §4), `spike/findings/s-09-permission-prompt-tool.md`
+(why the cheap route is closed), and the S-11 probe notes (long-run stability;
+findings note pending). **When a CLI contract is unclear, read
+`docs/reference-implementations.md` before guessing** — the VS Code extension is
+unpacked on this machine and is a known-correct consumer of every contract this
+epic touches.
+
+---
+
+## What we are NOT re-litigating
+
+Recorded so no item re-opens it:
+
+- **WHETHER — decided.** P7 amended; the owner's call, 2026-07-31.
+- **VIABLE — measured.** S-10, against the PATH CLI on the subscription. No API
+  key; `rate_limit_event` reports the same five-hour/weekly windows.
+- **SEQUENCING — known.** Beside, not instead of, behind a per-session flag. The
+  VS Code extension keeps both modes itself (`claudeCode.useTerminal`, default
+  false), which is the precedent.
+- **The transcript stack survives.** The JSONL is still written in stream mode,
+  so `watcher.ts` / `drift.ts` / binding / #107's contract keep working
+  **through** the migration rather than needing replacement in the same step.
+  (The stream also carries `transcript_mirror`, so they become redundant later,
+  on their own schedule — not this epic's problem.)
+
+## What this epic does NOT claim
+
+- It does not decide the terminal is removed. E18-16 does, on S-11's evidence.
+- It does not touch the Session Bus (E11). The one thread that used to tie them
+  together — "permission delegation would be the first customer for E11's `mcp`
+  capability" — was **cut by S-09**: permission delegation rides the stream-json
+  control channel, not MCP. E11 remains a separate epic about sessions talking
+  to *each other*.
+
+---
+
+## Two measured facts every item must respect
+
+1. **`system:init` is emitted ONCE PER TURN, not once per session** (S-11: 4
+   turns → 4 `system:init`). A host that treats `init` as a one-time event —
+   which is exactly how one naively consumes it for `slash_commands` — will
+   re-initialise on every turn. E18-05 and E18-09 both pin this with a test.
+2. **Child RSS is ~300–380 MB for ONE idle-ish session** (3 processes:
+   cmd.exe → claude.cmd → node). The product targets 8 concurrent sessions, so
+   that is ~2.4–3 GB of CLI before switchboard's own footprint. Not a blocker,
+   but it is the migration's cost column and it belongs in **#111**'s
+   re-measure.
+
+**Backpressure is answered, and it is good news.** S-11 stopped draining stdout
+for 150 s mid-turn: **359,003 bytes piled up behind us and arrived intact — 0
+parse failures, the turn completed with its full output, and the process never
+died.** A message written to the CLI *while it was blocked* was queued, not
+lost. The #112/#117-class deadlock we most feared did not reproduce. E18-03
+still must never pause its reader — but it does not need heroics.
+
+---
+
+## Work items
+
+### E18-01 · DESIGN.md amendment: the transport is a choice — S (docs only) — [#131](https://github.com/badsonstudios/switchboard.ai/issues/131)
+
+**What.** DESIGN.md describes a PTY substrate in ~30 places (§6 stack rationale,
+§5.10 view set, §5.16 approvals, the architecture diagram, §5.9's Esc-to-PTY,
+§5.28's `/reload-plugins` injection). PHILOSOPHY P7 has been amended; DESIGN has
+not. Amend it **before** code, so no later PR silently forks the design or
+re-argues the decision in review.
+
+Scope: an amendment note recording the transport as a per-session choice, the
+§6 stack entry gaining `child_process` + NDJSON beside `node-pty`/xterm, and the
+§5 sections that assert "sends a keystroke to the PTY" reworded to "sends the
+input to the session's transport". **Not** a rewrite — DESIGN keeps describing
+PTY hosting, because PTY hosting still ships.
+
+*Done when:* §6 records both transports and why; every §5 line that names the
+PTY as *the* input route names the transport instead; the amendment cites P7 §6,
+S-09 and S-10 by name; no code changes. (The pointer from
+`docs/plans/04-phase-2-switchboard.md` was added when this plan was written.)
+*Depends on:* nothing.
+
+### E18-02 · The transport seam — S — [#132](https://github.com/badsonstudios/switchboard.ai/issues/132)
+
+**What.** Make the transport a declared choice rather than a hardcoded
+`PtyService`. `SessionManager` already takes a narrow `PtyLike` (spawn/remove;
+pid/onExit/kill) — widen it to a `SessionTransport` interface, add
+`SpawnRecipe.transport?: 'pty' | 'stream'` (defaulting to `'pty'`) so the
+adapter declares what its recipe wants, and route on it. **No `StreamService`
+yet.** Pure refactor: PTY remains the only implementation and behaviour is
+byte-identical, which is what makes every item after this one purely additive.
+
+*Done when:* all existing unit + e2e tests pass **unedited**; `SpawnRecipe`
+without `transport` still spawns a PTY; a test adapter declaring `'stream'`
+fails loudly ("transport not implemented") rather than silently receiving a PTY;
+the S-01 env scrub (`buildEnv`, `SCRUB_ALWAYS`) moves somewhere both transports
+import, with one copy of the landmine list.
+*Depends on:* E18-01.
+
+### E18-03 · StreamService: spawn, NDJSON framing, lifecycle — M — [#133](https://github.com/badsonstudios/switchboard.ai/issues/133)
+
+**What.** The sibling service. `child_process.spawn` over pipes —
+**`windowsHide: true` on every spawn** — line-delimited JSON framing with
+partial-line buffering, a bounded ring of parsed messages (the scrollback
+analogue), stderr captured separately and logged, and the PtyService lifecycle
+logic (dead-process write guard, exit codes, listener-exception swallowing)
+ported near-verbatim. Not wired into the app yet: driven by unit tests and a
+`lifecycle-check` sibling.
+
+**`windowsHide` is called out because it has already bitten us.** S-11's first
+run set it on the interesting spawn and missed it on the boring one, and flashed
+a console window on the owner's desktop 96 times over 8 hours. *Every* spawn on
+Windows needs it.
+
+*Done when:* framing survives a message split across chunks, several messages in
+one chunk, and a single ~500 KB message; a partial trailing line is held, not
+dropped; **the stdout reader is never paused** (a test asserts we consume on
+`data` unconditionally, since S-11 proved the CLI blocks and recovers rather
+than corrupting); malformed JSON increments a counter and is logged **without**
+killing the pump (fail-open, P6); kill resolves `onExit`; no console window
+appears on Windows.
+*Depends on:* E18-02.
+
+### E18-04 · The stream-json fake provider — M — [#134](https://github.com/badsonstudios/switchboard.ai/issues/134)
+
+**What.** **The precondition, and it is missing from S-10's blast-radius
+table.** `providers/fake.ts` spawns the OS shell in a **real PTY**, and all 98
+e2e tests plus the entire CI-safe-without-a-login property rest on it. Stream
+mode has no fake at all. A fake that speaks stream-json — emits `system:init`
+(with a `slash_commands` list), `stream_event` deltas, `assistant`, `result`,
+and can be *told* to raise a `can_use_tool` control request and to await our
+answer — is a **precondition for testing stream mode, not a follow-on.**
+
+Scriptable from the spec side, so a test can say "next turn, ask permission for
+a `.claude/` write" without a login or a network.
+
+*Done when:* an e2e drives a full turn in stream mode against the fake; a
+control request round-trips (raise → our answer → the fake proceeds or aborts);
+the fake honours `--input-format stream-json` framing exactly as the real CLI
+does; **the existing PTY fake is untouched and all 98 existing e2e tests still
+pass**; CI needs no `claude` login.
+*Depends on:* E18-03.
+
+### E18-05 · Session status and lifecycle from the stream — M — [#135](https://github.com/badsonstudios/switchboard.ai/issues/135)
+
+**What.** In PTY mode the state machine is fed by hook events. In stream mode
+the messages themselves are the signal: `system:init`, assistant start,
+`result`, `rate_limit_event`, exit. Feed the existing state machine from them —
+same statuses, same transitions, new source. Hooks stay live in PTY mode and are
+not touched.
+
+**Pin the once-per-turn fact.** `system:init` arrives on every turn; a second
+one must not re-initialise the session, reset its native id, or re-derive
+anything treated as start-of-session.
+
+*Done when:* a stream session walks starting → idle → working → idle across
+three turns driven only by stream messages; a second and third `system:init`
+change nothing (explicit test, named for the finding); `killRequested` still
+distinguishes a wind-down from a crash; the native session id is learned from
+`system:init.session_id` and `/clear`'s new conversation is detected (the #107
+`/clear` rule still holds).
+*Depends on:* E18-04.
+
+### E18-06 · Prompt submission; `composer.ts` deleted — S — [#136](https://github.com/badsonstudios/switchboard.ai/issues/136)
+
+**What.** One `stdin.write(JSON.stringify(msg) + '\n')`. The bracketed-paste
+wrapper and the 75 ms delayed CR (S-03) — an entire class of timing bug — stop
+existing in stream mode. `--replay-user-messages` gives us a real send
+acknowledgment instead of inferring one.
+
+*Done when:* a multi-line prompt containing backticks, a leading `/`, and a
+trailing newline arrives **verbatim** (asserted against the fake's received
+frames); the replay echo marks the message sent; `renderer/lib/composer.ts` is
+unreferenced on the stream path (**deleted outright when PTY mode goes in
+E18-16**, not before); submitting to a dead child is a no-op, not a throw.
+*Depends on:* E18-05.
+
+### E18-07 · `can_use_tool` → the approval bar — M — [#137](https://github.com/badsonstudios/switchboard.ai/issues/137)
+
+**What. The reason the epic exists.** Answer `can_use_tool` control requests
+over the pipe we already own, and render what the payload gives us:
+`decision_reason` (renderable prose we did not have to write),
+`decision_reason_type`, `title`/`display_name`, `blocked_path`, and
+`permission_suggestions` (e.g. *"switch this session to acceptEdits"*) as
+offered actions. The hold-and-release dance over a local HTTP listener collapses
+into replying on a socket.
+
+**The #127 stopgap is scoped OUT of stream mode.** `shouldHoldPermission`
+declines edit-family writes into `<cwd>/.claude/` because a hook's allow is
+discarded there. Over `can_use_tool` it is **not** discarded, so the carve-out
+must not fire in stream mode — that is the whole point. It stays in force for
+PTY mode until E18-16.
+
+*Done when:* a write to `<cwd>/.claude/scripts/coverage.sh` raises **our** bar,
+and Allow writes the file with **no second prompt anywhere** (the acceptance
+test, and it is the exact case that started this); Deny propagates and the CLI
+reports the denial; `decision_reason` renders as prose; at least one
+`permission_suggestion` is offered as a real action; a control request that
+arrives while the card is closed is answered deny rather than left hanging; the
+#127 carve-out is asserted **not** to fire in stream mode and asserted to still
+fire in PTY mode.
+*Depends on:* E18-05.
+
+### E18-08 · Per-session transport flag + honest Terminal tab — S — [#138](https://github.com/badsonstudios/switchboard.ai/issues/138)
+
+**What.** The first point the owner can turn this on and actually use it. A
+per-session setting (default **PTY** — this ships opt-in, exactly as
+`claudeCode.useTerminal` did in reverse), persisted with the session record, and
+a Session-view surface that degrades honestly: **in stream mode there is no PTY,
+so the Terminal tab must say what it is** rather than show an empty black pane.
+
+**Note the Feed keeps working with no extra work** — the JSONL transcript is
+still written in stream mode (S-10), so the existing transcript-driven Feed
+renders a stream session today. E18-10 is an *upgrade* to that, not a
+requirement for it.
+
+*Done when:* a new session can be created in stream mode from the UI; the choice
+survives a relaunch; the Terminal tab in a stream session explains itself in one
+sentence and offers no dead controls; the Feed renders a stream session's turn
+via the existing transcript path; switching a **running** session's transport is
+refused with a reason, not silently ignored.
+*Depends on:* E18-07.
+
+### E18-09 · Slash commands from `system:init` — S — [#139](https://github.com/badsonstudios/switchboard.ai/issues/139)
+
+**What.** `CLAUDE_BUILTIN_COMMANDS` in `main/providers/claude.ts` is 40
+hand-curated builtins that the file itself calls "version-volatile by nature… a
+maintenance chore". `system:init.slash_commands` came back with **59 entries
+including this machine's own project and user commands** (`/startup`,
+`/check-code`, the android-* set) — ground truth, plus commands we could never
+have enumerated.
+
+Feeds the existing composer autocomplete (P2-E10-07) through the existing
+`slashCommands()` adapter contract; no new contribution point.
+
+*Done when:* the composer popup in a stream session lists this machine's own
+`/startup`; the list refreshes if `system:commands_changed` arrives; a session
+that has not yet received `init` falls back to the hand-curated list rather than
+showing nothing; **a second `system:init` replaces rather than appends** (the
+once-per-turn fact, again); the hand-curated list stays for PTY mode and is
+deleted with it.
+*Depends on:* E18-05.
+
+### E18-10 · Feed from typed messages — M — [#140](https://github.com/badsonstudios/switchboard.ai/issues/140)
+
+**What.** Same blocks, better source: typed messages and token-level
+`stream_event` deltas instead of file-poll latency. The block shapes, the
+renderer contribution points and `lib/feed.ts` all survive — this changes what
+feeds them.
+
+**Sidechain rendering is explicitly out of scope here** — `parent_tool_use_id`
+is on every message, but driving our S-05 sidechain rendering from it is
+unmeasured and is E18-13, behind S-11.
+
+*Done when:* assistant text appears token-by-token in a stream session rather
+than in file-poll bursts; every existing Feed block type renders from the stream
+source; the transcript-driven path still renders PTY sessions unchanged (both
+sources, one renderer, one test matrix); a stream session that never receives a
+`result` does not leave a block open for ever.
+*Depends on:* E18-08.
+
+---
+
+## Behind S-11 — do not file, do not start
+
+These are gated on the S-11 probes, and the gate is real: **the ones that turn
+out to be *choosers* are what decide whether the terminal survives as an escape
+hatch.** Probe 1 (long-run stability) is running; probes 2–6 are unstarted.
+Writing done-when criteria for these now would be writing them against guesses.
+
+### E18-11 · Plan mode, `ExitPlanMode` and `AskUserQuestion` — M [S-11 gate]
+
+The two choosers. `--permission-mode plan` sets the mode, but plan approval is a
+TUI interaction: does it arrive as `can_use_tool`, or does it need a control
+request we have not seen? `AskUserQuestion` is the same question in the shape
+that most looks like *"interaction the CLI owns"* under P7. **If either is
+CLI-kept, the terminal stays** and E18-16 changes shape entirely.
+
+### E18-12 · Session controls as control requests — M [S-11 gate]
+
+`interrupt`, `set_permission_mode`, `set_model`, `rewind` become first-class
+operations instead of keystroke injection (§5.9's Esc-to-PTY becomes a real
+interrupt). `interrupt` is in the protocol and has never been exercised.
+
+### E18-13 · Sidechains from `parent_tool_use_id` — M [S-11 gate]
+
+Drive the S-05 sidechain rendering from the field that is already on every
+message. Unmeasured against our feed.
+
+### E18-14 · Transport-matrix e2e — M
+
+The specs that assert against terminal output or the hook path —
+`real-claude`, `reconnect`, `session`, `approval`, `binding`, `slash-commands`,
+`split` — get run against **both** transports where the behaviour should be
+identical, and split where it should not. Sized after E18-11 tells us how many
+behaviours genuinely differ.
+
+### E18-15 · Retire the hook listener — M [gated on the default flip]
+
+`hook_callback` on the control channel can delete the local HTTP listener
+outright (`hook-listener.ts`, 27.6 KB + 30.3 KB of tests) along with the
+forwarder script and the per-session token files. Only once stream mode is the
+default and PTY mode's fate is settled — until then the listener is load-bearing
+for every PTY session.
+
+### E18-16 · Cutover: the default flip and the terminal's fate — M [S-11 gate]
+
+Flip the default, and decide — **on E18-11's evidence, not on preference** —
+whether `TerminalPane.tsx`, `terminal-attach.ts`, `shared/ipc/pty.ts`, the #117
+epoch protocol and `node-pty` are deleted or kept as an escape hatch. What is
+lost either way, and must be stated plainly in the user manual rather than
+quietly dropped: **Ctrl-R history, vim mode, and the `/resume` `/rewind`
+`--from-pr` pickers.** Each is either rebuilt (a P7 violation — screen-scraping
+is rejected precedent, §5) or dropped honestly.
+
+---
+
+## What is NOT fileable yet, and why
+
+**Filed now: E18-01…E18-10.** Every one of them is independent of how the S-11
+chooser probes turn out. They build the spine — seam, service, fake, lifecycle,
+submission, approvals, the opt-in flag, commands, feed — and by E18-08 the epic
+is dogfoodable.
+
+**Unfiled: E18-11…E18-16.** Their done-when depends on measurements that do not
+exist yet. Per `00-process.md` we do not file issues whose acceptance criteria
+we know to be unstable. File them when S-11's findings note lands.
+
+## Relationship to the rest of Phase 2
+
+- **E15's remaining items are parked behind this epic, not cancelled** — #109
+  (header CSP), #110 (workspace schema migration), #111 (concurrency
+  re-measure).
+- **#111 is doubly parked.** Its premise is *"measure the shape we are
+  keeping"*, and until E18-16 we do not know whether PTY concurrency is that
+  shape. It also gains a new question from this epic: the ~300–380 MB per
+  session number above is a **stream-mode** cost too, and 8 sessions is the
+  target.
+- **#129** (a transcript-discovery session that has given up still full-scans
+  the root) is unrelated to the transport and can be taken at any time.
+- **E11 is untouched.** See *What this epic does NOT claim*.
+
+## E18 exit
+
+A session runs a whole turn over stream-json — prompt, token-by-token output,
+tool calls, and **a `.claude/` permission answered once, in switchboard, and
+honoured** — with the transport chosen per session and the PTY path still green.
+Whether the terminal survives is answered by evidence, recorded in DESIGN.md,
+and whatever the CLI keeps for itself is stated plainly rather than faked.
