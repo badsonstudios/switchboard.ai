@@ -99,6 +99,13 @@ export class SessionStore {
   // things — hiding keeps the record and the running session, closing forgets
   // both (P2-E15-08).
   private readonly hidingCards = new Set<string>();
+  // Cards whose panel is being MOVED by us, for a ladder change (P2-E9-05).
+  // Same shape and same reason as hidingCards: dockview fires the very events a
+  // user tab-drag fires, and two of our listeners act on them — one adopts the
+  // new neighbours' persistent group, the other reads a popout leaving its
+  // window as "the user closed it" and suspends the session. Neither is true of
+  // a rung change, and presentation must never write session data.
+  private readonly movingCards = new Set<string>();
 
   /** The current state. Synchronous and always current — that is the point. */
   getState(): Readonly<SessionState> {
@@ -155,7 +162,20 @@ export class SessionStore {
   }
   /** Replace the event list (a push from main, or the initial list). */
   setEvents(events: EventDto[]): void {
+    this.feedDelivered = true;
     this.set({ events });
+  }
+
+  // Has the feed ever handed us a list? NOT the same as `events.length > 0`:
+  // the store starts with an empty array, and E9-05's reveal-on-attention has
+  // to tell "the feed has not spoken yet" from "the feed says nothing is
+  // waiting". Getting that wrong makes the FIRST real list look like a burst of
+  // new events and unfolds every session that was blocked when you quit
+  // (P2-E9-05 review, blocker 2). Outside the notify path — nothing renders
+  // from it; the events array's own identity change is what re-runs readers.
+  private feedDelivered = false;
+  hasFeed(): boolean {
+    return this.feedDelivered;
   }
 
   /** Mark an event visited by the walk, so the panel's cursor tracks it. */
@@ -310,6 +330,19 @@ export class SessionStore {
   }
   isHiding(cardId: string): boolean {
     return this.hidingCards.has(cardId);
+  }
+
+  // ── our move vs the user's drag (P2-E9-05) ──────────────────────────────
+  /** Set around a `moveTo` (or a reveal's addPanel) that a LADDER change is
+   *  making, so the membership-adoption and popout-close listeners can tell it
+   *  from a user drag. Not a rung and not persisted: it is true for the length
+   *  of one dockview call. */
+  setMoving(cardId: string, v: boolean): void {
+    if (v) this.movingCards.add(cardId);
+    else this.movingCards.delete(cardId);
+  }
+  isMoving(cardId: string): boolean {
+    return this.movingCards.has(cardId);
   }
 
   // ── dockview lifecycle flags ────────────────────────────────────────────

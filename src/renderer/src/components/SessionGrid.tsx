@@ -29,6 +29,8 @@ import { Usage, ZERO_USAGE } from '../lib/usage';
 import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
 import { Box, boxOnAnyDisplay, RescuedPopout, sanitizePopoutLayout, WorkArea } from '../lib/layout';
 import { captureSlot, openerRelative, placeAt } from '../lib/dock-slot';
+import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
+import type { Ladder } from '../lib/presentation';
 import { pickAdoptedGroupId } from '../lib/groups';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { setDraggedCard } from '../lib/drag-context';
@@ -198,12 +200,17 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     const poppedOut = props.api.location.type === 'popout';
     // A MOUNTED PANEL IS IN THE WORKSPACE, whatever the blob says. The rung is
     // written before dockview's (microtask-buffered) layout save, so a quit in
-    // between could restore a card that has a panel AND says 'hidden' — and
-    // nothing else would ever correct it, because reveal early-returns when a
-    // panel already exists. Dockview wins; E9-05 will read this rung.
+    // between could restore a card that has a panel AND claims a panel-less
+    // rung — and nothing else would ever correct it, because reveal
+    // early-returns when a panel already exists. Dockview wins.
+    //
+    // `hasPanel` and not an `=== 'hidden'` test (P2-E9-05): `collapsed` is the
+    // second panel-less rung and would otherwise leave a card mounted in the
+    // grid AND listed in the collapsed strip — visibly in two places at once.
+    const rung = sessionStore.getPresentation(cardId).ladder;
     sessionStore.setPresentation(
       cardId,
-      sessionStore.isHidden(cardId) ? { poppedOut, ladder: 'expanded' } : { poppedOut }
+      hasPanel(rung) ? { poppedOut } : { poppedOut, ladder: 'expanded' }
     );
   }, [cardId, props.api]);
 
@@ -420,11 +427,19 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   React.useEffect(() => {
     const d = props.api.onDidGroupChange(() => {
       if (sessionStore.isTearingDown() || sessionStore.isRestoringLayout()) return;
+      // A LADDER move is not a user drag (P2-E9-05). dockview fires this from
+      // the plain group setter, so our own `moveTo` is indistinguishable from a
+      // tab being dragged — and adopting from it would let a presentation
+      // change rewrite the session's persistent group: tabbing a card would
+      // move it into its stack-mate's group, and expanding it into a fresh
+      // group (no siblings) would adopt `null` and ERASE the membership the
+      // user made. Same guard as isHiding two handlers down.
+      if (cardId && sessionStore.isMoving(cardId)) return;
       void adoptMembershipFromDockGroup(props);
     });
     return () => d.dispose();
     // props.api is stable for the panel's lifetime
-  }, [props.api]);
+  }, [props.api, cardId]);
 
   // Track popout location + implement the two dock-back semantics (E8-04):
   // the pop-out BUTTON toggling in keeps the session alive; the user closing
@@ -444,6 +459,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       // hiding a popped-out card removes its panel, which closes the window —
       // that is US, not the user, and it must NOT suspend the session (E15-08)
       if (cardId && sessionStore.isHiding(cardId)) return;
+      // ...and neither is a LADDER move (P2-E9-05). Moving a popped-out card
+      // into the grid to expand or stack it takes its window down, which looks
+      // exactly like the user closing it — and would suspend a session for a
+      // rung change. Unreachable from the palette today (activeCardId ignores
+      // popouts), but E9-07's layout modes drive every card including those.
+      if (cardId && sessionStore.isMoving(cardId)) return;
       if (wasPopout && now !== 'popout' && cardId) {
         // takeDockingBack CONSUMES the flag: a button toggle keeps the session
         // alive, a bare window close suspends it, and the two look identical
@@ -665,6 +686,19 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               </span>
             )}
             <span style={statusPillStyle(status)}>{t(`status.${status}`)}</span>
+            {/* §5.8's ladder, one rung down (P2-E9-05). A mouse gesture for the
+                thing the two bindings and the palette also do — the card gives
+                its slot back and becomes a row in the collapsed strip, still
+                running, one click from coming straight back here. */}
+            <button
+              data-testid="card-collapse"
+              onClick={() => cardId && setCardLadder(props.containerApi, cardId, 'collapsed')}
+              title={t('ladder.collapse')}
+              aria-label={t('ladder.collapse')}
+              style={cheadBtn}
+            >
+              {t('ladder.collapseIcon')}
+            </button>
             <button onClick={popOutToggle} title={poppedOut ? t('grid.dockIn') : t('grid.popOut')} style={cheadBtn}>
               {poppedOut ? t('grid.dockInIcon') : t('grid.popOutIcon')}
             </button>
@@ -1120,8 +1154,352 @@ function captureSlots(api: DockviewApi): void {
   for (const panel of api.panels) {
     const m = /^session-(.+)$/.exec(panel.id);
     if (!m) continue;
+    // A TABBED card's panel is in the shared stack, which is not where it came
+    // from (P2-E9-05). Recording that as its slot would overwrite home with the
+    // stack on the very next layout change — and then stepping back up would
+    // "restore" it to where it already is, permanently. Its remembered slot is
+    // the one captured on the way in; only a card that is actually AT its slot
+    // may write one.
+    if (!slotIsLive(sessionStore.getPresentation(m[1]).ladder)) continue;
     const slot = captureSlot(panel, popoutBoxOf(panel));
     if (slot) sessionStore.setPresentation(m[1], { slot });
+  }
+}
+
+/**
+ * The dockview group holding the tabbed cards, or null when there isn't one yet.
+ *
+ * Found by asking the store which OTHER cards are tabbed and looking up their
+ * panels, rather than by keeping a group id of our own: dockview mints group
+ * ids and round-trips them through the layout JSON, so a stack that survives a
+ * relaunch is found again for free, and there is no second record of "which
+ * group is the stack" to fall out of date.
+ *
+ * Popped-out groups are skipped — a card sent to the tab stack should join the
+ * cards in the main window, not get swept into somebody's second monitor.
+ */
+function tabStackGroup(api: DockviewApi, exceptCardId: string): DockviewApi['groups'][number] | null {
+  for (const [cardId, p] of sessionStore.getState().presentation) {
+    if (cardId === exceptCardId || p.ladder !== 'tabbed') continue;
+    const panel = api.getPanel(`session-${cardId}`);
+    if (panel && panel.group.api.location.type === 'grid') return panel.group;
+  }
+  return null;
+}
+
+// ── §5.8's presentation ladder (P2-E9-05) ───────────────────────────────────
+//
+// ONE verb drives all four rungs, and that is the point: E9-06's presentation
+// policy and E9-07's layout modes both need to put a NAMED session on a NAMED
+// rung from outside the card, so a layout mode is nothing but a map of
+// card -> rung applied through setCardLadder, not a fourth way to rearrange
+// the workspace.
+//
+// The dockview work each rung needs falls out of the two questions lib/ladder
+// answers — does the rung have a panel, and is the card's slot its home:
+//
+//   expanded   panel, at its own slot          -> place it back at the slot
+//   collapsed  no panel, a row in the strip    -> capture slot, remove panel
+//   tabbed     panel, in the SHARED tab stack  -> capture slot, then move it
+//   hidden     no panel, no row                -> capture slot, remove panel
+//
+// None of them ends anything: the session runs on in the main process, the
+// record survives, and the rail, the lamp and the Events list still list it.
+// That is the whole difference between the bottom rung and a close.
+//
+// Module functions on (api, cardId), like popOutCardPanel above and for the
+// same reason — commands, the card header and layout modes all drive cards
+// that may not be mounted, and a second copy of these rules is how the ladder
+// starts disagreeing with itself.
+
+/**
+ * Transitions in flight, by card id.
+ *
+ * A re-entrancy guard, not app state — which is why it is allowed in module
+ * scope after P2-E15-07 moved the app's state into the store. Every transition
+ * below has an `await` in it, and the panel-exists check happens BEFORE that
+ * await: two clicks inside one `sessions:cards` round-trip would both get past
+ * it and the second would hit dockview's duplicate-panel-id throw, an uncaught
+ * rejection on an ordinary double-click.
+ */
+const laddering = new Set<string>();
+
+/** Take a card's panel out of the workspace, remembering where it was. Shared
+ *  by the two panel-less rungs, which differ only in what is left behind. */
+function removePanelKeepingSlot(api: DockviewApi, cardId: string, rung: Ladder): void {
+  const panel = api.getPanel(`session-${cardId}`);
+  sessionStore.setPresentation(cardId, {
+    ladder: rung,
+    // a card already in the tab stack is NOT at its home slot, so re-reading
+    // dockview would record the stack as home and strand it there
+    ...(panel && slotIsLive(sessionStore.getPresentation(cardId).ladder)
+      ? { slot: captureSlot(panel, popoutBoxOf(panel)) }
+      : {}),
+    // a card with no panel is in no window; poppedOut reflects dockview's truth
+    // and must not keep asserting one that no longer exists
+    poppedOut: false,
+  });
+  if (!panel) return;
+  // dockview cannot tell our removal from the user closing the tab, and the two
+  // mean opposite things — the flag is how onDidRemovePanel (and the popout
+  // location handler) tell them apart
+  sessionStore.setHiding(cardId, true);
+  try {
+    api.removePanel(panel);
+  } finally {
+    sessionStore.setHiding(cardId, false);
+  }
+}
+
+/** Put a card on a named rung. Safe on a card with no panel — that is the point. */
+export function setCardLadder(api: DockviewApi | null, cardId: string, rung: Ladder): void {
+  if (!api || !cardId) return;
+  // A transition for this card is already in flight. Without this, a collapse
+  // issued while a reveal is awaiting `sessions.cards()` would write its rung,
+  // find no panel, return — and then the in-flight reveal would add the panel
+  // and write `expanded` on top, silently discarding the user's command.
+  if (laddering.has(cardId)) return;
+  if (sessionStore.getPresentation(cardId).ladder === rung) return; // already there
+  if (rung === 'expanded') return void revealCardPanel(api, cardId, true);
+  if (rung === 'tabbed') return void toTabbed(api, cardId);
+  removePanelKeepingSlot(api, cardId, rung);
+}
+
+/**
+ * Step a card one rung down (collapse) or up (expand).
+ *
+ * The current rung is read HERE rather than in the command, which keeps
+ * lib/command-set free of presentation state: it knows what the app can do, not
+ * what the app is currently doing.
+ */
+export function stepCardLadder(
+  api: DockviewApi | null,
+  cardId: string,
+  dir: 'down' | 'up'
+): void {
+  if (!api || !cardId) return;
+  const cur = sessionStore.getPresentation(cardId).ladder;
+  setCardLadder(api, cardId, dir === 'down' ? stepDown(cur) : stepUp(cur));
+}
+
+/**
+ * Bring a card back to `expanded`, in exactly the slot it left.
+ *
+ * `focus` is false for an ATTENTION reveal. §5.8 makes reveal and focus two
+ * different questions — whether a session that needs you may grab the screen is
+ * the focus-stealing policy's call (E9-10: `smart`, the default, is "focus if
+ * its card is visible, else mark urgent"), and a blocked session yanking the
+ * cursor out of the card you are typing in is precisely what that setting
+ * exists to prevent. Reveal puts it back where you can see it; the lamp and the
+ * queue are what say it wants you.
+ */
+export async function revealCardPanel(
+  api: DockviewApi | null,
+  cardId: string,
+  focus = true
+): Promise<void> {
+  if (!api || laddering.has(cardId)) return;
+  const existing = api.getPanel(`session-${cardId}`);
+  if (existing && sessionStore.getPresentation(cardId).ladder !== 'tabbed') {
+    // A MOUNTED PANEL IS IN THE WORKSPACE, so heal the rung on the way past.
+    // SessionCardPanel's mount effect says the same thing, but dockview's
+    // default renderer only mounts a panel when it becomes visible — an
+    // inactive restored tab whose blob says `collapsed` would otherwise show as
+    // BOTH a tab and a strip row until somebody clicked it.
+    sessionStore.setPresentation(cardId, { ladder: 'expanded' });
+    if (focus) existing.focus(); // already in the workspace: reveal means "show me"
+    return;
+  }
+  laddering.add(cardId);
+  try {
+    // A TABBED card is a panel too, buried in the shared stack — expanding it
+    // has to move it home, not merely select its tab, or the ladder would have
+    // a rung with no way back up.
+    if (existing) await moveHome(api, cardId, existing, focus);
+    else await revealNow(api, cardId, focus);
+  } finally {
+    laddering.delete(cardId);
+  }
+}
+
+/**
+ * Move a card into the SHARED tab stack (§5.8's third rung).
+ *
+ * All tabbed cards share one dockview group, so together they cost one slot and
+ * only the selected one is on screen — dockview's own tab group IS i3's tabbed
+ * layout, so this rung is a move rather than a new widget. The stack is found
+ * by looking for another tabbed card's group (tabStackGroup), so it survives a
+ * relaunch for free and there is no "which group is the stack" record of our
+ * own to keep true.
+ *
+ * A card with no panel (collapsed or hidden) is placed back first: you cannot
+ * move what is not there, and stepping UP from hidden to tabbed has to arrive
+ * somewhere.
+ */
+async function toTabbed(api: DockviewApi, cardId: string): Promise<void> {
+  if (laddering.has(cardId)) return;
+  laddering.add(cardId);
+  try {
+    let panel = api.getPanel(`session-${cardId}`);
+    if (!panel) {
+      // land it at home first: that establishes the slot the stack has to give
+      // back later, and reuses the one reveal path rather than a second copy
+      await revealNow(api, cardId, false);
+      panel = api.getPanel(`session-${cardId}`);
+      if (!panel) return; // record gone mid-flight — revealNow already bailed
+    }
+    // capture home BEFORE the move, and only while the card still is at home
+    const cur = sessionStore.getPresentation(cardId);
+    const slot = slotIsLive(cur.ladder) ? captureSlot(panel, popoutBoxOf(panel)) : cur.slot;
+    const stack = tabStackGroup(api, cardId);
+    if (stack && stack !== panel.group) {
+      // OUR move, not a user drag — see setMoving. Without the flag this would
+      // adopt the stack-mate's persistent group as this session's own.
+      sessionStore.setMoving(cardId, true);
+      try {
+        panel.api.moveTo({ group: stack });
+      } catch {
+        // a stack that vanished between the lookup and the move: the card stays
+        // where it is and still counts as tabbed. The wrong group beats an
+        // uncaught rejection on a layout command.
+      } finally {
+        sessionStore.setMoving(cardId, false);
+      }
+    }
+    sessionStore.setPresentation(cardId, { ladder: 'tabbed', slot, poppedOut: false });
+  } finally {
+    laddering.delete(cardId);
+  }
+}
+
+/** Put a card that HAS a panel back at its home slot, and mark it expanded. */
+async function moveHome(
+  api: DockviewApi,
+  cardId: string,
+  panel: IDockviewPanel,
+  focus: boolean
+): Promise<void> {
+  const place = placeAt(
+    sessionStore.getPresentation(cardId).slot,
+    api.groups.map((g) => g.id)
+  );
+  const home = place.groupId ? api.groups.find((g) => g.id === place.groupId) : undefined;
+  // Is the card's remembered home the tab stack itself? It is for the card that
+  // SEEDED the stack: the first card tabbed finds no stack to join, stays put,
+  // and records the group it is standing in as home. Expanding it would then
+  // find home == its current group, move nothing, and leave it stacked with the
+  // tabbed cards while claiming to be expanded — the rung as a lie, which is
+  // exactly what the fresh-group branch below exists to prevent.
+  const homeIsStack =
+    !!home &&
+    home.panels.some((p) => {
+      const m = /^session-(.+)$/.exec(p.id);
+      return !!m && m[1] !== cardId && sessionStore.getPresentation(m[1]).ladder === 'tabbed';
+    });
+  const target = homeIsStack ? undefined : home;
+  // OUR move, not a user drag — see setMoving. The fresh-group branch is the
+  // one that MUST be flagged: a group with no siblings adopts `null`, which
+  // would erase the session's persistent group outright.
+  sessionStore.setMoving(cardId, true);
+  try {
+    if (target && target !== panel.group) {
+      try {
+        panel.api.moveTo({
+          group: target,
+          ...(place.index >= 0 ? { index: place.index } : {}),
+          skipSetActive: !focus,
+        });
+      } catch {
+        // fewer tabs than there were: the right group at the wrong index beats
+        // refusing to come back (the same call revealNow makes)
+      }
+    } else if (!target) {
+      // Home is gone, was never recorded, or IS the stack. Give it a group of
+      // its own in the grid rather than leaving it where it is.
+      //
+      // A popout home is NOT re-opened here, unlike revealNow's placement: a
+      // tabbed card is by definition sitting in the main window's stack, and
+      // having a rung change spawn an OS window is a bigger surprise than
+      // landing in the grid. The slot record is untouched, so the monitor is
+      // still what a later hide-and-click restores.
+      try {
+        panel.api.moveTo({ group: api.addGroup(), skipSetActive: !focus });
+      } catch {
+        /* fail-open: it stays in the stack, still marked expanded */
+      }
+    }
+  } finally {
+    sessionStore.setMoving(cardId, false);
+  }
+  // Home may BE the group it is already in — a card tabbed while it was already
+  // sharing a group with neighbours that are NOT tabbed. Then the rung change is
+  // the whole transition, which is why both branches above can be skipped.
+  sessionStore.setPresentation(cardId, { ladder: 'expanded' });
+  if (focus) panel.focus();
+}
+
+/** Create a card's panel at its remembered slot (or monitor). */
+async function revealNow(api: DockviewApi, cardId: string, focus = true): Promise<void> {
+  const card = (await window.switchboard.sessions.cards()).find((c) => c.cardId === cardId);
+  if (!card) return; // the record is gone — there is nothing to reveal
+  const place = placeAt(
+    sessionStore.getPresentation(cardId).slot,
+    api.groups.map((g) => g.id)
+  );
+  const target = place.groupId ? api.groups.find((g) => g.id === place.groupId) : undefined;
+  // its old group may have died with it (removing a group's last panel destroys
+  // the group) — land it in the grid rather than nowhere
+  const refGroup =
+    target ?? api.groups.find((g) => g.api.location.type === 'grid') ?? api.addGroup();
+  const panel = api.addPanel({
+    id: `session-${cardId}`,
+    component: 'sessionCard',
+    title: card.title,
+    params: {
+      cardId,
+      folder: card.folder,
+      title: card.title,
+      groupId: card.groupId,
+    } satisfies CardParams,
+    position: { referenceGroup: refGroup },
+    // dockview activates a newly added panel by default, which for an ATTENTION
+    // reveal is precisely the focus steal this path exists to avoid: the card
+    // has to come back visible WITHOUT pulling the tab out from under whatever
+    // the user is typing in. `focus` is the caller's answer to that question.
+    inactive: !focus,
+  });
+  if (target && place.index >= 0) {
+    // OUR move (see setMoving). addPanel above carries the card's own groupId
+    // in its params, so the create path is already right; this reposition would
+    // otherwise adopt whatever the slot's neighbours belong to.
+    sessionStore.setMoving(cardId, true);
+    try {
+      // skipSetActive for the same reason as `inactive` above: the move must
+      // not undo the very thing that flag just bought
+      panel.api.moveTo({ group: target, index: place.index, skipSetActive: !focus });
+    } catch {
+      // the group has fewer tabs than it did; being in the right group at the
+      // wrong index beats refusing to come back
+    } finally {
+      sessionStore.setMoving(cardId, false);
+    }
+  }
+  sessionStore.setPresentation(cardId, { ladder: 'expanded' });
+  if (place.popout) {
+    // It was in its own window and that window is gone: open a new one at the
+    // remembered rect, opener-relative (#86). The rect is absolute screen
+    // coordinates from a previous session, so it gets the same display check a
+    // restored layout gets (E8-02) — a monitor that has since been unplugged
+    // must not swallow the card. No position = dockview opens it on top of the
+    // main window, which is exactly the E8-02 rescue.
+    const areas = await window.switchboard.workAreas();
+    const onScreen = boxOnAnyDisplay(place.popout, areas as WorkArea[]);
+    void api.addPopoutGroup(panel, {
+      popoutUrl: new URL('popout.html', window.location.href).toString(),
+      ...(onScreen ? { position: openerRelative(place.popout, window) } : {}),
+    });
+  } else if (focus) {
+    panel.focus();
   }
 }
 
@@ -1175,8 +1553,21 @@ export interface GridController {
   /** take the card out of the workspace, remembering its slot (§5.8 ladder).
    *  The session KEEPS RUNNING and the record survives — this is not a close. */
   hideCard: (cardId: string) => void;
-  /** put a hidden card back where it was (§5.8's reveal contract) */
-  revealCard: (cardId: string) => void;
+  /** put a card back where it was (§5.8's reveal contract). `focus` is false
+   *  for an ATTENTION reveal — see revealCard's own note on why showing and
+   *  focusing are two questions. */
+  revealCard: (cardId: string, focus?: boolean) => void;
+  /**
+   * Put a card on a named rung of §5.8's ladder (P2-E9-05).
+   *
+   * The general form of hide/reveal, and the seam E9-06's presentation policy
+   * and E9-07's layout modes are meant to drive: a layout MODE is a map of card
+   * -> rung applied through this, not a fourth way to rearrange the workspace.
+   * Safe on a card with no panel — that is most of the point.
+   */
+  setLadder: (cardId: string, rung: Ladder) => void;
+  /** step the card one rung down (collapse) or up (expand) — the two bindings */
+  stepLadder: (cardId: string, dir: 'down' | 'up') => void;
 }
 
 export function SessionGrid(props: {
@@ -1227,102 +1618,24 @@ export function SessionGrid(props: {
     });
   }, []);
 
-  // §5.8's presentation ladder, bottom rung: hide takes the card out of the
-  // workspace WITHOUT ending anything — the session runs on, the record stays,
-  // and the rail, its lamp and the Events list still list it (that is the
-  // difference between hidden and closed). Reveal puts it back in its slot.
-  const hideCard = useCallback((cardId: string) => {
-    const api = apiRef.current;
-    const panel = api?.getPanel(`session-${cardId}`);
-    if (!api || !panel) return;
-    sessionStore.setPresentation(cardId, {
-      ladder: 'hidden',
-      slot: captureSlot(panel, popoutBoxOf(panel)),
-      // a hidden card is in no window; poppedOut reflects dockview's truth and
-      // must not keep asserting one that no longer exists
-      poppedOut: false,
-    });
-    // dockview cannot tell our removal from the user closing the tab, and the
-    // two mean opposite things — the flag is how onDidRemovePanel (and the
-    // popout location handler) tell them apart
-    sessionStore.setHiding(cardId, true);
-    try {
-      api.removePanel(panel);
-    } finally {
-      sessionStore.setHiding(cardId, false);
-    }
-  }, []);
-
-  // Reveals in flight. The existence check below happens BEFORE an await, so
-  // two clicks inside one `sessions:cards` round-trip would both get past it
-  // and the second would hit dockview's duplicate-panel-id throw — an uncaught
-  // rejection on an ordinary double-click.
-  const revealing = useRef(new Set<string>());
-  const revealCard = useCallback(async (cardId: string) => {
-    const api = apiRef.current;
-    if (!api || revealing.current.has(cardId)) return;
-    const existing = api.getPanel(`session-${cardId}`);
-    if (existing) {
-      existing.focus(); // already in the workspace: reveal means "show me"
-      return;
-    }
-    revealing.current.add(cardId);
-    try {
-      await revealNow(api, cardId);
-    } finally {
-      revealing.current.delete(cardId);
-    }
-  }, []);
-
-  const revealNow = async (api: DockviewApi, cardId: string): Promise<void> => {
-    const card = (await window.switchboard.sessions.cards()).find((c) => c.cardId === cardId);
-    if (!card) return; // the record is gone — there is nothing to reveal
-    const place = placeAt(
-      sessionStore.getPresentation(cardId).slot,
-      api.groups.map((g) => g.id)
-    );
-    const target = place.groupId ? api.groups.find((g) => g.id === place.groupId) : undefined;
-    // its old group may have died with it (removing a group's last panel
-    // destroys the group) — land it in the grid rather than nowhere
-    const refGroup = target ?? api.groups.find((g) => g.api.location.type === 'grid') ?? api.addGroup();
-    const panel = api.addPanel({
-      id: `session-${cardId}`,
-      component: 'sessionCard',
-      title: card.title,
-      params: {
-        cardId,
-        folder: card.folder,
-        title: card.title,
-        groupId: card.groupId,
-      } satisfies CardParams,
-      position: { referenceGroup: refGroup },
-    });
-    if (target && place.index >= 0) {
-      try {
-        panel.api.moveTo({ group: target, index: place.index });
-      } catch {
-        // the group has fewer tabs than it did; being in the right group at
-        // the wrong index beats refusing to come back
-      }
-    }
-    sessionStore.setPresentation(cardId, { ladder: 'expanded' });
-    if (place.popout) {
-      // It was in its own window and that window is gone: open a new one at the
-      // remembered rect, opener-relative (#86). The rect is absolute screen
-      // coordinates from a previous session, so it gets the same display check
-      // a restored layout gets (E8-02) — a monitor that has since been
-      // unplugged must not swallow the card. No position = dockview opens it
-      // on top of the main window, which is exactly the E8-02 rescue.
-      const areas = await window.switchboard.workAreas();
-      const onScreen = boxOnAnyDisplay(place.popout, areas as WorkArea[]);
-      void api.addPopoutGroup(panel, {
-        popoutUrl: new URL('popout.html', window.location.href).toString(),
-        ...(onScreen ? { position: openerRelative(place.popout, window) } : {}),
-      });
-    } else {
-      panel.focus();
-    }
-  };
+  // §5.8's presentation ladder (P2-E9-05). The verbs are MODULE functions on
+  // (api, cardId) — see setCardLadder — for the reason popOutCardPanel is one:
+  // commands, the card header and E9-07's layout modes all drive cards that may
+  // not be mounted, and there must be exactly one implementation. These are the
+  // component's handles on them.
+  const setLadder = useCallback(
+    (cardId: string, rung: Ladder) => setCardLadder(apiRef.current, cardId, rung),
+    []
+  );
+  const stepLadder = useCallback(
+    (cardId: string, dir: 'down' | 'up') => stepCardLadder(apiRef.current, cardId, dir),
+    []
+  );
+  const hideCard = useCallback((cardId: string) => setCardLadder(apiRef.current, cardId, 'hidden'), []);
+  const revealCard = useCallback(
+    (cardId: string, focus = true) => revealCardPanel(apiRef.current, cardId, focus),
+    []
+  );
 
   React.useEffect(() => {
     if (!props.controller) return;
@@ -1346,7 +1659,9 @@ export function SessionGrid(props: {
         });
       },
       hideCard,
-      revealCard: (cardId) => void revealCard(cardId),
+      revealCard: (cardId, focus) => void revealCard(cardId, focus ?? true),
+      setLadder,
+      stepLadder,
       focusSession: (liveId) => {
         const cardId = sessionStore.cardIdForLive(liveId);
         const panel = apiRef.current?.getPanel(`session-${cardId}`);
@@ -1459,7 +1774,7 @@ export function SessionGrid(props: {
       },
     };
     // eslint's exhaustive-deps plugin isn't installed; deps kept accurate by hand
-  }, [props.controller, addSessionCard, hideCard, revealCard, props.colorScheme, t]);
+  }, [props.controller, addSessionCard, hideCard, revealCard, setLadder, stepLadder, props.colorScheme, t]);
 
   // Dockview learns the light/dark verdict in onReady, which runs ONCE — so a
   // theme switch after mount left it on the scheme the app booted with. Every

@@ -19,6 +19,8 @@ function noopDeps(): CommandDeps {
     toggleCardView: () => {},
     popOutCard: () => {},
     hideCard: () => {},
+    setLadder: () => {},
+    stepLadder: () => {},
     toggleRail: () => {},
     openPalette: () => {},
     toggleTabRows: () => {},

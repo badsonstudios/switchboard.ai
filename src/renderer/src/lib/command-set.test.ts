@@ -12,6 +12,8 @@ function deps(): CommandDeps & { focusCard: ReturnType<typeof vi.fn> } {
     toggleCardView: vi.fn(),
     popOutCard: vi.fn(),
     hideCard: vi.fn(),
+    setLadder: vi.fn(),
+    stepLadder: vi.fn(),
     toggleRail: vi.fn(),
     openPalette: vi.fn(),
     toggleTabRows: vi.fn(),
@@ -83,6 +85,58 @@ describe('seed command set (E9-01)', () => {
     const d = deps();
     byId(buildCommands(d), 'session.close').run(ctxWith(['a'], 'a'));
     expect(d.closeCard).toHaveBeenCalledWith('a');
+  });
+
+  // ── §5.8's presentation ladder (E9-05) ──────────────────────────────────
+
+  it('the two ladder bindings step the ACTIVE card, one rung per press', () => {
+    const d = deps();
+    const cmds = buildCommands(d);
+    expect(byId(cmds, 'session.ladder.down').binding).toBe('Mod+Shift+ArrowDown');
+    expect(byId(cmds, 'session.ladder.up').binding).toBe('Mod+Shift+ArrowUp');
+    byId(cmds, 'session.ladder.down').run(ctxWith(['a'], 'a'));
+    expect(d.stepLadder).toHaveBeenCalledWith('a', 'down');
+    byId(cmds, 'session.ladder.up').run(ctxWith(['a'], 'a'));
+    expect(d.stepLadder).toHaveBeenCalledWith('a', 'up');
+  });
+
+  it('each rung has its own palette entry, naming that rung', () => {
+    // the invariant this item is written against: hiding chrome never removes
+    // capability, so every rung is reachable by name and not only by counting
+    // keystrokes
+    const rungs: Array<[string, string]> = [
+      ['session.expand', 'expanded'],
+      ['session.collapse', 'collapsed'],
+      ['session.tabbed', 'tabbed'],
+    ];
+    for (const [id, rung] of rungs) {
+      const d = deps();
+      byId(buildCommands(d), id).run(ctxWith(['a'], 'a'));
+      expect(d.setLadder).toHaveBeenCalledWith('a', rung);
+    }
+    // and hide stays on its own dep — it is the one with a different history
+    const d = deps();
+    byId(buildCommands(d), 'session.hide').run(ctxWith(['a'], 'a'));
+    expect(d.hideCard).toHaveBeenCalledWith('a');
+  });
+
+  it('every ladder command is disabled with no focused session, and never steals typing', () => {
+    const cmds = buildCommands(deps());
+    const empty = ctxWith(['a'], null);
+    for (const id of [
+      'session.ladder.down',
+      'session.ladder.up',
+      'session.expand',
+      'session.collapse',
+      'session.tabbed',
+      'session.hide',
+    ]) {
+      expect(byId(cmds, id).enabled?.(empty), id).toBe(false);
+      expect(byId(cmds, id).enabled?.(ctxWith(['a'], 'a')), id).toBe(true);
+      // Ctrl+Shift+Arrow is a selection key in a text field and a real
+      // keystroke in a terminal: 'app' scope is what keeps both of them
+      expect(byId(cmds, id).scope, id).toBe('app');
+    }
   });
 
   it('the tab-rows command routes to its dep (palette-only, no binding)', () => {
