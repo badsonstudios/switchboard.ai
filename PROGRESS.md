@@ -6,9 +6,11 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#153 — the Direct-mode setting could NEVER take effect.**
-Branch `fix/153-transport-restart`. Gate green: lint + typecheck + **804 unit**
-+ **105 e2e (+2)**. **#152 MERGED**, 5 CI jobs green.
+**In progress:** **nothing mid-flight.** Next is **#139 (P2-E18-09)** — slash
+commands from `system:init` — then **#140** (Feed from typed messages), and
+that closes the filed E18 spine.
+**#152 and #155 MERGED**, 5 CI jobs green on each. **#153 and #154 CLOSED.**
+Gate at merge: lint + typecheck + **814 unit** + **108 e2e**.
 
 > ## ⚠ #153 IS THE MOST INSTRUCTIVE FAILURE OF THE EPIC — READ THIS
 > **Dan found it by using the feature. Every automated layer was green.**
@@ -779,6 +781,52 @@ a "[Dan eyeball]" note.**
   to Sonnet rates** — it invents a number. Not urgent, not waiting on anything.
 
 ## Log
+
+- 2026-08-01 — **DAN TESTED DIRECT MODE BY HAND AND FOUND FOUR BUGS IN TWENTY
+  MINUTES. All fixed (#152, #155). The `.claude` double prompt is CONFIRMED
+  FIXED by the person who reported it.**
+  He asked for a file inside a project's `.claude/` folder in Direct mode: **one
+  approval in the session window, he approved it, the file was written, no
+  second terminal prompt.** That is the 31 July bug closed, verified by hand.
+  Everything else in this epic was scaffolding for that sentence.
+  **The four bugs, and what they have in common:**
+  1. **The setting could never take effect (#153).** It applied "on next start",
+     and the only route to a next start was the card's ✕ — which
+     `persist.remove`s the card and the setting with it. Fixed with **Restart
+     session now** in the menu (`restartSelf` already did the right thing and
+     was only reachable for an already-DEAD session).
+  2. **The label lied.** It showed only the CURRENT mode, and menu entries read
+     as commands — so "Transport: Terminal" looked like "switch to Terminal".
+     **I misread my own control while helping him test and told him he was in
+     Direct when he was not.** Now `Transport: {now} — switch to {next}`.
+  3. **The hand-off bar offered a terminal that does not exist**, over a dead
+     [Open Terminal] button, beside a Terminal tab correctly saying there is no
+     terminal. `terminalHandoff` had no notion of transport and EVERY branch
+     routes to one. Compounded by the session being genuinely stuck on
+     `starting` — **my #135 bug**: `transport-ready` was deferred a tick, but
+     the renderer learns the session id from a much slower IPC response, so the
+     only status push it would ever get was filtered out for an id nobody knew.
+     **Stream readiness is immediate, and immediate is what a
+     subscribe-then-push design cannot deliver.** Now synchronous.
+  4. **The setting did not survive an app relaunch.** The create-time card write
+     rebuilt the record field by field and dropped `transport`. Now spreads
+     `prior` and overrides only what a start decides.
+  Plus **#154**: **Stop did nothing** — it wrote Esc to a PTY a stream session
+  does not have. Now an `interrupt` control request, shape read out of the SDK
+  bundle.
+  **THE PATTERN, and it is the lesson of the day: every one of these lived in
+  the gap between "the parts work" and "a person can do the thing."** 800+ tests
+  were green. Each test either drove the API directly or launched the app
+  pre-configured. **Nothing had ever LOOKED at a running stream session.** Three
+  of the five were the same shape — a PTY affordance surviving into a mode with
+  no PTY (Terminal tab, hand-off bar, Stop button) — and two were the same shape
+  as each other (**field-by-field copying silently dropping a new field**:
+  `reason` in the approval queue, `transport` in the card write).
+  **Also compounding: the FAKE ignored the requested transport**, always
+  returning a stream recipe — so no test could exercise switching even in
+  principle. *A fake that cannot say "no" to a request cannot test the request.*
+  New e2e now walks the human path end to end: set it, restart, use it, relaunch
+  the built app, and interrupt a turn.
 
 - 2026-08-01 — **#149 (P2-E18-08b) → PR: stream mode gets a switch, an honest
   Terminal tab, and the epic's first user documentation.**
