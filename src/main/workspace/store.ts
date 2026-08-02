@@ -7,10 +7,12 @@
 //
 // Persistence rules: tolerant load (corrupt file -> backed aside, fresh
 // start — never crash on our own state), atomic save (tmp + rename),
-// debounced save-soon for churny callers.
+// debounced save-soon for churny callers, and a version dispatch on the way in
+// (§5.26) — a file from a FUTURE version is shown but never written back.
 import fs from 'fs';
 import path from 'path';
 import { Rectangle } from 'electron';
+import { Logger } from '../log/logger';
 import { SessionIdentity } from '../sessions/session-manager';
 import { WindowState, mergeState, isOnAnyDisplay } from '../window-state';
 
@@ -82,8 +84,51 @@ export interface WorkspaceState {
   autoTrust: boolean;
 }
 
+/** The schema version this build writes. Bump it and add a MIGRATIONS entry. */
+export const CURRENT_VERSION = 1;
+
+/**
+ * Version dispatch (P2-E15-13, §5.26, AR-P2-9).
+ *
+ * Keyed by the version found IN THE FILE; each entry lifts that shape **all the
+ * way to the current one** — entries are not chained. The field-by-field
+ * sanitization in `load()` then runs unchanged: the migration decides *what the
+ * fields mean*, the sanitizer decides *whether they are usable*. That
+ * belt-and-braces split is deliberate — a migration can be wrong about a
+ * hand-edited file, the sanitizer never is.
+ *
+ * There is exactly one version today, so the only entry is the identity, and
+ * writing the hook now is free. **The rule when you add v2:** bump
+ * `CURRENT_VERSION`, add `2: (raw) => raw` as the new identity, and rewrite
+ * `1:` to lift a v1 file *directly* to v2 — every version below
+ * `CURRENT_VERSION` keeps an entry, and each is rewritten (not composed) on the
+ * next bump. Nothing outside this table moves.
+ */
+type Migration = (raw: Record<string, unknown>) => Record<string, unknown>;
+const MIGRATIONS: Record<number, Migration | undefined> = {
+  1: (raw) => raw, // identity: v1 IS the current shape
+};
+
+/** No entry for this version (a future file, or a table gap): read it as-is. */
+const passthrough: Migration = (raw) => raw;
+
+/**
+ * The file's declared version, normalized.
+ *
+ * Absent and `0` mean **v1** — that is what a file predating the field is. A
+ * numeric STRING is coerced (`"2"` is a v2 file with a sloppy writer, and the
+ * expensive mistake would be to call it v1 and overwrite it). Anything else
+ * that cannot be a version — `null`, `"abc"`, an object — falls back to v1,
+ * where the tolerant field-by-field reader can still make something of it.
+ * Only a well-formed number ABOVE `CURRENT_VERSION` counts as "from the future".
+ */
+function detectVersion(v: unknown): number {
+  const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
+}
+
 const EMPTY: WorkspaceState = {
-  version: 1,
+  version: CURRENT_VERSION,
   sessions: [],
   groups: [],
   window: null,
@@ -101,19 +146,54 @@ export function displayFingerprint(workAreas: Rectangle[]): string {
     .join('|');
 }
 
-export class WorkspaceStore {
-  private state: WorkspaceState = EMPTY;
-  private saveTimer: NodeJS.Timeout | null = null;
+/** A fresh empty state — never the shared `EMPTY`, whose arrays are mutable. */
+function emptyState(): WorkspaceState {
+  return { ...EMPTY, sessions: [], groups: [], notifications: { ...EMPTY.notifications } };
+}
 
-  constructor(private readonly file: string) {}
+export class WorkspaceStore {
+  private state: WorkspaceState = emptyState();
+  private saveTimer: NodeJS.Timeout | null = null;
+  private readOnly = false;
+
+  constructor(
+    private readonly file: string,
+    private readonly log?: Logger
+  ) {}
 
   load(): WorkspaceState {
+    this.readOnly = false;
     try {
-      const raw = JSON.parse(fs.readFileSync(this.file, 'utf8')) as Partial<WorkspaceState>;
+      const parsed: unknown = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+      // `null`, a bare number, an array: valid JSON, not a workspace. Throwing
+      // here keeps the pre-existing corrupt-file path (back the corpse aside,
+      // start fresh) — reading fields off it would just yield a silent empty
+      // workspace and lose the post-mortem material.
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        throw new Error('workspace file is not a JSON object');
+      }
+      const obj = parsed as Record<string, unknown>;
+      const fileVersion = detectVersion(obj.version);
+      if (fileVersion > CURRENT_VERSION) {
+        // Written by a NEWER switchboard.ai. Fail-open says boot anyway, so we
+        // read what we recognize — but saving would rewrite their file as a
+        // lossy v1 and destroy whatever this build cannot see. So: display it,
+        // never write it.
+        this.readOnly = true;
+        this.log?.warn(
+          'workspace file was written by a newer version of switchboard.ai — loading it read-only; changes made this run will NOT be saved',
+          { file: this.file, fileVersion, supportedVersion: CURRENT_VERSION }
+        );
+      }
+      // Unknown future versions have no migration; fall through to the current
+      // reader and let the sanitizer keep whatever still makes sense. (Nothing
+      // below is reset in the `catch` on purpose: if the sanitizer ever chokes
+      // on a future file, staying read-only is the safe half of the failure.)
+      const raw = (MIGRATIONS[fileVersion] ?? passthrough)(obj) as Partial<WorkspaceState>;
       const groups = Array.isArray(raw.groups) ? raw.groups.filter(isSaneGroup) : [];
       const groupIds = new Set(groups.map((g) => g.id));
       this.state = {
-        version: 1,
+        version: CURRENT_VERSION,
         sessions: (Array.isArray(raw.sessions) ? raw.sessions.filter(isSaneSession) : []).map(
           // a dangling groupId (group gone, e.g. hand-edited file) degrades to ungrouped
           (s) => (s.groupId && !groupIds.has(s.groupId) ? { ...s, groupId: undefined } : s)
@@ -134,7 +214,7 @@ export class WorkspaceStore {
           /* best-effort */
         }
       }
-      this.state = { ...EMPTY, sessions: [] };
+      this.state = emptyState();
       void err;
     }
     return this.snapshot();
@@ -247,11 +327,20 @@ export class WorkspaceStore {
     return { bounds: null, isMaximized: w.isMaximized }; // rescue, keep maximized
   }
 
+  /**
+   * True when the loaded file came from a newer schema version than this build
+   * understands. The workspace is usable in memory; nothing is persisted.
+   */
+  isReadOnly(): boolean {
+    return this.readOnly;
+  }
+
   save(): void {
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
+    if (this.readOnly) return; // never downgrade a future-version file to v1
     const tmp = `${this.file}.tmp`;
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
@@ -263,6 +352,7 @@ export class WorkspaceStore {
   }
 
   saveSoon(): void {
+    if (this.readOnly) return;
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => this.save(), 500);
     this.saveTimer.unref?.();

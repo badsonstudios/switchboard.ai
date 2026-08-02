@@ -17,6 +17,19 @@ import { mergeCommands, SlashCommand, SlashCommandSource } from '../../shared/sl
 const MAX_COMMAND_DEPTH = 3; // subdirs namespace commands: sub/cmd.md -> /sub:cmd
 const FRONTMATTER_BYTES = 4096; // descriptions live in the first few lines
 
+/**
+ * "There are no commands to read here", which for every scan below is the normal
+ * case rather than a failure — so it stays silent.
+ *
+ * ENOENT is the obvious one. ENOTDIR means a path component is a file (a
+ * `.claude` file, or a `commands` file): still not a folder of commands, still
+ * not our breakage, and not something to shout about on every popup opening.
+ */
+function isMissing(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException | null)?.code;
+  return code === 'ENOENT' || code === 'ENOTDIR';
+}
+
 export interface ScanRoots {
   /** the session's folder — project-scope `.claude/` lives here */
   cwd: string;
@@ -51,8 +64,16 @@ async function scanCommandsDir(
   let entries;
   try {
     entries = await fsp.readdir(dir, { withFileTypes: true });
-  } catch {
-    return out; // no such dir — the common case, not an error
+  } catch (err) {
+    // A MISSING directory is the common case, not an error — most projects have
+    // no `.claude/commands`. Anything else (permissions, EMFILE under load, a
+    // network home dir hiccup) still fails open, but must not do it SILENTLY:
+    // a short list with no log line is indistinguishable from "this project
+    // genuinely has no commands", which is how a transient scan failure becomes
+    // an unexplainable "my commands vanished" (#145 had to rule this out by
+    // hand, for want of exactly this line).
+    if (!isMissing(err)) log?.(`slash-command scan failed for ${dir}: ${String(err)}`);
+    return out;
   }
   for (const e of entries) {
     try {
@@ -62,7 +83,11 @@ async function scanCommandsDir(
         }
       } else if (e.isFile() && e.name.toLowerCase().endsWith('.md')) {
         const name = prefix + e.name.slice(0, -3);
-        out.push({ name, source, description: (await readFrontmatter(path.join(dir, e.name)))?.description });
+        out.push({
+          name,
+          source,
+          description: (await readFrontmatter(path.join(dir, e.name), log))?.description,
+        });
       }
     } catch (err) {
       log?.(`slash-command scan skipped ${path.join(dir, e.name)}: ${String(err)}`);
@@ -81,13 +106,14 @@ async function scanSkillsDir(
   let entries;
   try {
     entries = await fsp.readdir(dir, { withFileTypes: true });
-  } catch {
+  } catch (err) {
+    if (!isMissing(err)) log?.(`skill scan failed for ${dir}: ${String(err)}`);
     return out;
   }
   for (const e of entries) {
     if (!e.isDirectory()) continue;
     try {
-      const fm = await readFrontmatter(path.join(dir, e.name, 'SKILL.md'));
+      const fm = await readFrontmatter(path.join(dir, e.name, 'SKILL.md'), log);
       if (fm === null) continue; // no SKILL.md -> not a skill
       out.push({ name: fm.name ?? e.name, source, description: fm.description });
     } catch (err) {
@@ -105,7 +131,10 @@ async function scanSkillsDir(
  * indicator character. Returns null when the file can't be read (missing);
  * malformed content just yields empty fields — fail-open.
  */
-async function readFrontmatter(file: string): Promise<{ name?: string; description?: string } | null> {
+async function readFrontmatter(
+  file: string,
+  log?: (msg: string) => void
+): Promise<{ name?: string; description?: string } | null> {
   let head = '';
   let fh;
   try {
@@ -113,7 +142,10 @@ async function readFrontmatter(file: string): Promise<{ name?: string; descripti
     const buf = Buffer.alloc(FRONTMATTER_BYTES);
     const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
     head = buf.toString('utf8', 0, bytesRead);
-  } catch {
+  } catch (err) {
+    // absent is meaningful here ("not a skill"), anything else is a real read
+    // failure that would otherwise silently cost a command — see scanCommandsDir
+    if (!isMissing(err)) log?.(`slash-command read failed for ${file}: ${String(err)}`);
     return null;
   } finally {
     await fh?.close();
