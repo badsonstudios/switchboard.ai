@@ -493,7 +493,10 @@ app
     grantFirstParty = (win) =>
       broker.grant(win.webContents, { id: 'renderer', capabilities: allCapabilities() });
     pushToRenderer = (win, channel, payload) => broker.send(win, channel, payload);
-    workspace = new WorkspaceStore(path.join(app.getPath('userData'), 'workspace.json'));
+    workspace = new WorkspaceStore(
+      path.join(app.getPath('userData'), 'workspace.json'),
+      createLogger(sink, 'workspace')
+    );
     workspace.load();
     // renderer <-> workspace layout persistence (E3-01)
     broker.handle('workspace:getLayout', () => workspace.getLayout());
