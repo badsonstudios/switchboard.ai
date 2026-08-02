@@ -34,13 +34,16 @@ explanation of *why* it's asking, which the normal mode never receives.
 
 1. Open the **⋯** menu on the session's header.
 2. Click **Transport: Terminal** to switch it to **Transport: Direct (beta)**.
-3. **Stop and restart the session.** The change applies the next time the
-   session starts — a session that's already running can't switch mid-flight,
-   and switchboard will tell you so rather than pretending.
+
+That's it — the choice is saved immediately. If the session is currently
+running, the menu will tell you the change **takes effect the next time it
+starts**, because a session that's already talking to Claude can't switch
+mid-conversation. Close the session and open it again, or just carry on and it
+will come up in Direct mode next time.
 
 The choice is remembered per session, so a session you set to Direct stays that
-way next time you open it. Every session starts on Terminal unless you change
-it.
+way. Every session starts on Terminal unless you change it. (This works the same
+way as the autonomy setting: chosen now, applied at the next start.)
 
 ## What you give up
 
@@ -80,10 +83,9 @@ one bug above.
 
 - **The Terminal tab is empty and says there's no terminal.** That's correct
   for a Direct-mode session. Switch back via the ⋯ menu if you need it.
-- **The ⋯ menu refuses to switch.** The session is still running. Stop it
-  first.
-- **You switched and nothing changed.** The change applies at the *next* start.
-  Stop the session and start it again.
+- **You switched and nothing changed.** The change applies at the *next* start —
+  the menu says so when a session is running. Close the session and open it
+  again.
 
 See also: [04 — Approvals & autonomy](04-approvals-and-autonomy.md) ·
 [11 — Troubleshooting](11-troubleshooting.md)

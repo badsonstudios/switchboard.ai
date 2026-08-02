@@ -106,8 +106,8 @@
     "cardTitle": "Session {n}",
     "menuTransportPty": "Transport: Terminal",
     "menuTransportStream": "Transport: Direct (beta)",
-    "menuTransportHint": "Direct mode talks to Claude Code without a terminal, so permission requests appear in this window. Takes effect the next time this session starts.",
-    "menuTransportBusy": "Stop this session first — a running session cannot change transport."
+    "menuTransportHint": "Direct mode talks to Claude Code without a terminal, so permission requests appear in this window instead of escaping into it. Takes effect the next time this session starts.",
+    "menuTransportPending": "Saved — takes effect when this session next starts."
   },
   "approval": {
     "title": "Allow {tool}?",
