@@ -532,8 +532,14 @@ test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
     // ONE Enter sent it: the composer is empty, not sitting on `/usage `
     await expect(box).toHaveValue('', { timeout: 15_000 });
 
-    // the output, which the transcript-driven Feed dropped on the floor
-    await expect(w.getByText(/LOCAL-OUTPUT for \/usage/)).toBeVisible({ timeout: 30_000 });
+    // THE OUTPUT IS ON SCREEN, WITH NO CLICK — and scoped to `.feed-md`, the
+    // assistant-prose renderer, so it can only pass by rendering as its own
+    // visible block. A loose page-text match would also be satisfied by the
+    // text sitting inside a collapsed container, which is the failure this
+    // assertion exists to rule out.
+    await expect(
+      w.locator('.feed-md', { hasText: 'LOCAL-OUTPUT for /usage' })
+    ).toBeVisible({ timeout: 30_000 });
     // …and the turn still completed, as it always did — the done-sound played
     // even when the text did not appear, which is what made the bug confusing
     await expect(w.getByText('Done.')).toBeVisible({ timeout: 30_000 });
