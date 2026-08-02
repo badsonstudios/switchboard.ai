@@ -708,7 +708,10 @@ app
         scanSlashCommands(
           { cwd: folder, userClaudeDir: path.join(os.homedir(), '.claude') },
           registry.resolve('provider-adapter', providerId)?.slashCommands?.() ?? [],
-          (msg) => log.app.info(msg)
+          // `warn`: everything this callback carries is a scan that failed and
+          // fell open to a shorter list. The line you grep for after "my
+          // commands vanished" should not sit at info among routine chatter.
+          (msg) => log.app.warn(msg)
         ),
       // Env-selected until P2-E18-08b (#149) gives it a per-session setting —
       // the same way the two fakes are selected, and deliberately NOT a UI
