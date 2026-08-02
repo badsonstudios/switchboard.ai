@@ -6,10 +6,30 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **#139 (P2-E18-09) is BUILT and awaiting Dan's commit
-approval** (2026-08-02) — slash commands from `system:init`. Gate green: lint +
-typecheck + **840 unit (+26)** + **111 e2e (+3)**. Then **#140** (Feed from
-typed messages), and that closes the filed E18 spine.
+**In progress:** **nothing mid-flight.**
+
+> # ▶▶ START HERE — NEXT IS **`/next-item 140`**. SAY THE NUMBER.
+> **#140 (P2-E18-10) — Feed from typed messages.** It is the LAST filed item in
+> the E18 spine; when it lands, E18-01…E18-10 are all done and what remains is
+> E18-11…E18-16, still unfiled behind the S-11 chooser probes.
+> **A bare `/next-item` would pick #73**, not this. The E18 issues were filed
+> last so they never win by number.
+>
+> **#140 is an M, not an S** — it moves the Session view off transcript-polling
+> and onto the stream, so it touches the Feed pipeline properly.
+> **It got MORE valuable on 2026-08-02: it is the fix for #156** (`/usage` shows
+> nothing). A comment on #140 says to ASSERT that case, not assume it falls out.
+>
+> **Nothing is blocked and nothing is waiting on Dan except hand-testing** (the
+> #139 list below, and #156 is a known open gap he already found).
+
+**#139 (P2-E18-09) DONE — MERGED 2026-08-02 as PR #157**, all 5 CI jobs green.
+Gate: lint + typecheck + **840 unit (+26)** + **111 e2e (+3)**. Dan merged.
+**E18 is 10 of 11 filed items done; only #140 remains.**
+**[user] hand-testing NOT yet run** — the 6-item list is in PR #157's body as
+checkboxes. The one that matters most is #4: in a FRESH Direct session type `/`
+BEFORE prompting it — you should get the curated list, not an empty box. That is
+the behaviour most likely to look like a bug when hit cold.
 
 > # ▶ DECISION 2026-08-02 (Dan): **TERMINAL MODE IS BEING DROPPED.**
 > Verbatim in spirit: *"We're going to be dropping Terminal Mode anyway once we
@@ -98,6 +118,37 @@ typed messages), and that closes the filed E18 spine.
 > **Every new test was revert-proofed by breaking the code and watching it
 > fail** — including the two the review asked for, one of which (`forgetSession`
 > wiring) could be deleted entirely with the whole suite still green.
+>
+> ### ⚠ Its CI found TWO REAL DEFECTS in an unrelated test — recorded on #145
+> macOS unit went red twice, on two DIFFERENT tests, both in
+> `discovery-scheduler.test.ts`, neither related to this item. Both were genuine,
+> not load:
+> 1. **A 10,000ms `waitFor` inside vitest's default 5,000ms `testTimeout`.** The
+>    budget was fiction — killed at 5s, so a slow runner produced a TIMEOUT
+>    instead of the test's own assertion. **That line WAS the #145-class fix from
+>    #149** (a fixed 200ms sleep replaced by wait-for-the-condition) — and was
+>    then capped below its own budget by a default nobody looked at. The sibling
+>    test in the same block had its `}, 20_000)`. A sweep of every wait budget in
+>    `src/**/*.test.ts` found **no other instance**.
+> 2. **`waitFor` RESOLVES EITHER WAY, and the seed wait was non-asserting.** The
+>    append test needs its path KNOWN before it measures; it waited 2s for any
+>    event and carried on regardless. On a loaded macOS runner the event never
+>    came, so it measured an UNKNOWN path, the root went dirty, and the assertion
+>    inverted — reading `expected true to be false`, which points at the property,
+>    **the one place the fault was not.** Now 10s, and on darwin a miss THROWS
+>    naming the setup.
+>
+> **The finding underneath, and the one that matters most:** three macOS runs
+> gave `5254ms fail` → `2256ms fail` → **`90ms pass`**. Ninety milliseconds for a
+> file with two multi-second real-`fs.watch` tests: they **early-returned via
+> `watchFailed`**. **macOS CI is non-deterministic about whether recursive
+> `fs.watch` registers at all**, so this file's green is indistinguishable from a
+> skip. That is the #107 class one level up — not a test that cannot fail, but a
+> test whose PASS is indistinguishable from having tested nothing.
+> ⇒ **Neither fix has actually been exercised on CI.** Correct by construction
+> (one was provably impossible to pass), unproven in the environment that breaks
+> them. Recommendations for the sweep are on **#145**, including making
+> `watchFailed` skips visible instead of silently green.
 **#152 and #155 MERGED**, 5 CI jobs green on each. **#153 and #154 CLOSED.**
 Gate at merge: lint + typecheck + **814 unit** + **108 e2e**.
 
