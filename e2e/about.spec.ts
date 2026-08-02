@@ -35,9 +35,11 @@ test.describe('build identity (E15-15)', () => {
     await expect(about(w)).toBeVisible();
     await expect(field(w, 'commit')).toHaveText(/^[0-9a-f]{8}\*?$/);
     await expect(field(w, 'version')).toHaveText(/^\d+\.\d+\.\d+$/);
-    // built moments ago by `npm run e2e`, so the age is real and recent — the
-    // field that actually catches a stale out/ directory
-    await expect(field(w, 'age')).toHaveText(/just now|min ago/);
+    // The age computed from a real timestamp — the field that actually catches
+    // a stale out/ directory. Asserted by SHAPE, not by a number: this build is
+    // minutes old, but the suite's own runtime must not decide whether the
+    // assertion passes.
+    await expect(field(w, 'age')).toHaveText(/^(just now|\d+ (min|h) ago)$/);
     await expect(field(w, 'builtAt')).not.toHaveText('unknown');
     await expect(field(w, 'branch')).not.toHaveText('unknown');
 

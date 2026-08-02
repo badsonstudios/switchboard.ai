@@ -26,13 +26,13 @@ export function AboutPanel(props: {
   const { t } = useTranslation();
   const [copied, setCopied] = React.useState(false);
   const returnFocusTo = React.useRef<HTMLElement | null>(null);
-  const closeButton = React.useRef<HTMLButtonElement | null>(null);
+  const dialog = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
     if (!props.open) return;
     setCopied(false); // a re-open must not still be boasting about the last copy
     returnFocusTo.current = document.activeElement as HTMLElement | null;
-    closeButton.current?.focus();
+    dialog.current?.focus();
   }, [props.open]);
 
   if (!props.open) return null;
@@ -101,9 +101,16 @@ export function AboutPanel(props: {
       }}
     >
       <div
+        ref={dialog}
         role="dialog"
         aria-modal="true"
         aria-label={t('about.title')}
+        // tabIndex, not a preventDefault on mousedown: clicking the panel's
+        // body must not strand focus on <body>, or Escape would go dead the
+        // moment you clicked anything. A focusable CONTAINER catches focus for
+        // its non-focusable children while leaving the text selectable — and
+        // the whole point of this panel is data someone may want to select.
+        tabIndex={-1}
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           // the dialog owns its keys while open — nothing underneath may fire
@@ -122,6 +129,7 @@ export function AboutPanel(props: {
           fontFamily: 'var(--font-ui)',
           color: 'var(--text)',
           overflow: 'hidden',
+          outline: 'none', // the container is focusable for key handling, not as a control
         }}
       >
         <div
@@ -194,9 +202,7 @@ export function AboutPanel(props: {
           }}
         >
           <AboutButton onClick={copy}>{copied ? t('about.copied') : t('about.copy')}</AboutButton>
-          <AboutButton onClick={close} buttonRef={closeButton}>
-            {t('about.close')}
-          </AboutButton>
+          <AboutButton onClick={close}>{t('about.close')}</AboutButton>
         </div>
       </div>
     </div>
@@ -206,11 +212,9 @@ export function AboutPanel(props: {
 function AboutButton(props: {
   onClick: () => void;
   children: React.ReactNode;
-  buttonRef?: React.Ref<HTMLButtonElement>;
 }): React.JSX.Element {
   return (
     <button
-      ref={props.buttonRef}
       onClick={props.onClick}
       style={{
         background: 'var(--chip)',
