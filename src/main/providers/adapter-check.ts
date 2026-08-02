@@ -1,7 +1,9 @@
-// P1-E2-02 done-when check (local only — needs a logged-in claude CLI, so NOT
-// in CI): a session spawns in an arbitrary chosen folder, and --resume
-// restores it. Uses headless -p runs: plant a marker word in session 1,
-// resume it, ask the marker back. Exits 0 on PASS.
+// P1-E2-02 done-when check (LOCAL ONLY — needs a logged-in claude CLI and
+// SPENDS REAL SUBSCRIPTION TOKENS on two model turns, so it can never run in
+// CI; recorded as such in .github/workflows/ci.yml and enforced by
+// src/main/check-scripts.test.ts — #182): a session spawns in an arbitrary
+// chosen folder, and --resume restores it. Uses headless -p runs: plant a
+// marker word in session 1, resume it, ask the marker back. Exits 0 on PASS.
 //
 // Run: npm run check:adapter
 import { execFileSync } from 'child_process';

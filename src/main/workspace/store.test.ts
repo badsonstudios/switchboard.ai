@@ -211,19 +211,55 @@ describe('ui blob (P2-E12-08 focus/view-tab state)', () => {
   });
 });
 
-describe('schema version dispatch (P2-E15-13, §5.26 / AR-P2-9)', () => {
-  type Line = { msg: string; fields?: Record<string, unknown> };
-  const fakeLogger = (warns: Line[]): Logger => {
-    const l: Logger = {
-      debug: () => {},
-      info: () => {},
-      warn: (msg, fields) => warns.push({ msg, fields }),
-      error: () => {},
-      child: () => l,
-    };
-    return l;
+/** A logger that keeps only what was warned about, for the assertions below. */
+type Line = { msg: string; fields?: Record<string, unknown> };
+const fakeLogger = (warns: Line[]): Logger => {
+  const l: Logger = {
+    debug: () => {},
+    info: () => {},
+    warn: (msg, fields) => warns.push({ msg, fields }),
+    error: () => {},
+    child: () => l,
   };
+  return l;
+};
 
+describe('a failed save is audible (#165)', () => {
+  it('a write that throws still fails open — but says so, naming the file and the cause', () => {
+    const warns: Line[] = [];
+    const st = new WorkspaceStore(file, fakeLogger(warns));
+    st.load();
+    st.upsertSession(sess('a', 0));
+
+    const boom = new Error('EPERM: operation not permitted, rename');
+    const spy = vi.spyOn(fs, 'renameSync').mockImplementation(() => {
+      throw boom;
+    });
+    try {
+      // fail-open holds: a doomed save must never propagate into the caller,
+      // which on the quit path is an Electron `close` handler (#86)
+      expect(() => st.save()).not.toThrow();
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(warns).toHaveLength(1);
+    expect(warns[0].msg).toMatch(/workspace save failed/);
+    expect(warns[0].fields).toMatchObject({ file, error: expect.stringContaining('EPERM') });
+  });
+
+  it('a save that works stays silent', () => {
+    const warns: Line[] = [];
+    const st = new WorkspaceStore(file, fakeLogger(warns));
+    st.load();
+    st.upsertSession(sess('a', 0));
+    st.save();
+    expect(warns).toEqual([]);
+    expect(new WorkspaceStore(file).load().sessions.map((x) => x.id)).toEqual(['a']);
+  });
+});
+
+describe('schema version dispatch (P2-E15-13, §5.26 / AR-P2-9)', () => {
   /** A file on disk with an arbitrary `version` value and real content. */
   const writeFile = (version: unknown): void =>
     fs.writeFileSync(
