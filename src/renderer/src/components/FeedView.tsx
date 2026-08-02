@@ -5,7 +5,7 @@
 // Guardrail (§5.10 Non-Goals): no input surface of any kind lives here.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { blockVisible, FeedBlockDto, upsertBlock, Verbosity } from '../lib/feed';
+import { blockVisible, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
 import { emptyStateCopy } from '../lib/binding-copy';
 import { terminalHandoff, TerminalHandoff, toneToken } from '../lib/terminal-handoff';
 import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
@@ -28,8 +28,10 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
   // naming every renderer. A new block shape is now a contribution plus a
   // bootstrap line, and this file is not touched.
   const inner = renderFeedBlock(rendererRegistry, b);
+  const dot = showsTimelineDot(b.kind);
   return (
     <div
+      data-feed-block={b.kind}
       style={{
         display: 'flex',
         gap: 8,
@@ -43,15 +45,24 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
           : {}),
       }}
     >
-      {/* timeline dot gutter (E10-06, extension reference) */}
+      {/* Timeline dot gutter (E10-06, extension reference). The GUTTER is
+          unconditional and the DOT is not (#91): assistant prose gets the same
+          6px of reserved column so the left edge stays flush with the boxed
+          blocks above it, but no marker — see `showsTimelineDot`. */}
       <span
+        {...(dot ? { 'data-feed-dot': b.kind } : {})}
+        aria-hidden
         style={{
           inlineSize: 6,
           blockSize: 6,
-          borderRadius: '50%',
-          background: b.kind === 'user' ? 'var(--status-needs-input)' : 'var(--faint)',
           flexShrink: 0,
           marginBlockStart: 5,
+          ...(dot
+            ? {
+                borderRadius: '50%',
+                background: b.kind === 'user' ? 'var(--status-needs-input)' : 'var(--faint)',
+              }
+            : {}),
         }}
       />
       <div style={{ flex: 1, minInlineSize: 0 }}>{inner}</div>
