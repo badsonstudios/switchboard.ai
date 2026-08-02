@@ -6,17 +6,36 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **a UX fix on #149, found by Dan using it within minutes of
-the merge** — the transport toggle REFUSED while a session was live and told him
-to "stop this session first", which is a **dead end**: a live session has no
-stop control (`restartSelf` only drops an already-dead one), and it contradicted
-`setAutonomy` directly above it in the same menu, which has the IDENTICAL
-constraint and simply applies on the next spawn. Now it accepts, persists, and
-says *"Saved — takes effect when this session next starts."* Branch
-`fix/152-transport-switch-deadend`.
-**Lesson worth keeping: a refusal is only correct if the thing it tells you to
-do is possible.** I reasoned about the stored-answer-vs-running-process
-mismatch and never checked whether the user could act on the instruction.
+**In progress:** **#153 — the Direct-mode setting could NEVER take effect.**
+Branch `fix/153-transport-restart`. Gate green: lint + typecheck + **804 unit**
++ **105 e2e (+2)**. **#152 MERGED**, 5 CI jobs green.
+
+> ## ⚠ #153 IS THE MOST INSTRUCTIVE FAILURE OF THE EPIC — READ THIS
+> **Dan found it by using the feature. Every automated layer was green.**
+> The setting saved, said "takes effect on next start" — and **every route to a
+> next start destroyed it**: the only user-facing restart is the card's ✕, which
+> is `sessions:closeCard` → `persist.remove(cardId)`. The choice died with the
+> card. **A feature that could not work, shipped behind a full green suite.**
+> **Why no test caught it:** `setTransport` was unit-tested for persistence AND
+> the pending flag; the stream e2e drove a full session end to end. But **the
+> e2e launched with stream already selected by an env var**, so nothing ever
+> walked *set it → restart → use it*. The parts were each verified; the product
+> did not work.
+> **A second, compounding cause: the FAKE ignored the requested transport.** It
+> always returned a stream recipe, so no test could exercise SWITCHING even in
+> principle. **A fake that cannot say "no" to a request cannot test the
+> request.** It now honours `options.transport` exactly as the real adapter
+> does, and the stream specs pass `SWITCHBOARD_TRANSPORT=stream` to ASK.
+> **And I misread my own control while helping him test**, telling him
+> "Transport: Terminal" meant he was in Direct. It showed the CURRENT mode; in a
+> menu, entries read as commands. Now `Transport: {now} — switch to {next}`.
+> **Two more self-inflicted bugs found on the way, both from shell-passed
+> strings:** i18n here is **ICU (single-brace `{now}`)** and I wrote i18next's
+> `{{now}}`, which rendered the raw template; and earlier, `cat <<'EOF'` ate
+> backslashes in two e2e regexes. **Write TS and locale strings with
+> Write/Edit, never through a heredoc.**
+> Also filed from the same session: **#154** — stopping a running turn wedges
+> the session (no further prompts accepted; unreproduced, needs a repro first).
 Next after this: **#139 (P2-E18-09)** — slash commands from `system:init`.
 **E18 IS 9 OF 11 DONE, ALL MERGED with 5 CI jobs green:** #131 → PR #141 ·
 #132 → PR #142 · #133 → PR #143 · #134 → PR #144 · #135 → PR #146 · #136 →

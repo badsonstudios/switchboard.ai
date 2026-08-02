@@ -7,7 +7,7 @@
 // still selects the PTY fake and its 98 e2e tests are untouched by this file.
 import fs from 'fs';
 import path from 'path';
-import { ProviderAdapter, SpawnRecipe } from '../extensibility/contributions';
+import { ProviderAdapter, SpawnOptions, SpawnRecipe } from '../extensibility/contributions';
 import { SlashCommand } from '../../shared/slash-commands';
 import { conversationExists } from '../transcripts/paths';
 import { ensureFolderTrusted } from '../sessions/trust';
@@ -73,7 +73,27 @@ export const fakeStreamAdapter: ProviderAdapter = {
     ];
   },
 
-  buildSpawn(): SpawnRecipe {
+  /**
+   * Honour the REQUESTED transport, exactly as the real adapter does.
+   *
+   * The first version always returned a stream recipe, which meant no test
+   * could ever exercise SWITCHING — the fake ignored the very setting #149
+   * added, so the human path (set it, restart, use it) was untestable and the
+   * feature shipped unusable (#153). A fake that cannot say "no" to a request
+   * cannot test the request.
+   */
+  buildSpawn(options: SpawnOptions): SpawnRecipe {
+    if (options.transport !== 'stream') {
+      // the PTY fake's recipe: a real shell in a real PTY
+      return {
+        command: process.platform === 'win32' ? 'cmd.exe' : 'sh',
+        args: [],
+        env: {
+          ELECTRON_RUN_AS_NODE: undefined,
+          ELECTRON_NO_ATTACH_CONSOLE: undefined,
+        },
+      };
+    }
     return {
       // process.execPath in the main process IS the Electron binary; with
       // ELECTRON_RUN_AS_NODE it runs plain Node, which is how the four

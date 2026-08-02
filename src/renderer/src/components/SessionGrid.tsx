@@ -745,15 +745,44 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                           title={t('grid.menuTransportHint')}
                           style={menuItemStyle(false)}
                         >
-                          {t(
-                            cardTransport === 'stream'
-                              ? 'grid.menuTransportStream'
-                              : 'grid.menuTransportPty'
-                          )}
+                          {/* State and ACTION stated separately. The first
+                              version showed only the current mode — and in a
+                              menu, entries read as commands, so "Transport:
+                              Terminal" looked like "switch to Terminal". I
+                              misread my own control while helping Dan test it
+                              (#153). */}
+                          {t('grid.menuTransportSwitch', {
+                            now: t(
+                              cardTransport === 'stream'
+                                ? 'grid.transportStream'
+                                : 'grid.transportPty'
+                            ),
+                            next: t(
+                              cardTransport === 'stream'
+                                ? 'grid.transportPty'
+                                : 'grid.transportStream'
+                            ),
+                          })}
                         </button>
                         {transportPending && (
-                          <div style={{ padding: '2px 8px 6px', color: 'var(--muted)', fontSize: 10 }}>
-                            {t('grid.menuTransportPending')}
+                          <div style={{ padding: '2px 8px 6px' }}>
+                            <div style={{ color: 'var(--muted)', fontSize: 10, marginBlockEnd: 4 }}>
+                              {t('grid.menuTransportPending')}
+                            </div>
+                            {/* Without this the setting could NEVER take
+                                effect: the only other route to a restart is the
+                                card's ✕, which DELETES the card record and the
+                                stored choice with it (#153). */}
+                            <button
+                              onClick={() => {
+                                setMenuOpen(false);
+                                setTransportPending(false);
+                                restartSelf();
+                              }}
+                              style={menuConfirmBtn(true)}
+                            >
+                              {t('grid.menuTransportRestart')}
+                            </button>
                           </div>
                         )}
                         <button
