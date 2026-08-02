@@ -11,8 +11,9 @@
 import fs from 'fs';
 import path from 'path';
 import { Logger } from '../log/logger';
-import { ToolCategory, toolCategory } from '../../shared/tool-taxonomy';
 import { BindingDiagnostics, BindingState } from '../../shared/transcripts';
+import { FeedBlock, deriveIntents } from '../feed/blocks';
+import { FeedBuffer } from '../feed/buffer';
 import { conversationExists, slugForCwd } from './paths';
 import { DriftDetector } from './drift';
 import { DiscoverySchedule, DiscoveryScheduleOptions } from './discovery-scheduler';
@@ -56,45 +57,11 @@ export interface TranscriptSnapshot {
   lastActivityAt: string | null;
 }
 
-/**
- * One rendered unit of the Feed (P2-E12-06, §5.10): derived from transcript
- * lines, read-only by construction. `detail` is capped — the Feed is a view,
- * not an archive; the transcript stays the source of truth.
- */
-export interface FeedBlock {
-  seq: number;
-  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos';
-  /** user/assistant/thinking prose */
-  text?: string;
-  tool?: {
-    name: string;
-    /** presentation class — the renderer dispatches on this, never on the
-     *  raw name (PowerShell must render like Bash; review P1 #9) */
-    category: ToolCategory;
-    summary: string;
-    detail?: string;
-    /** Bash: the tool call's own description field (block header, E10-06) */
-    description?: string;
-    /** Edit/Write: structured fields for the inline diff preview (E10-06) */
-    filePath?: string;
-    oldString?: string;
-    newString?: string;
-    /** tool_result output, attached when it arrives (block re-emitted) */
-    out?: string;
-  };
-  /** TodoWrite checklist (E10-06) */
-  todos?: Array<{ content: string; status: string }>;
-  /** thinking: how long it lasted (set when the next block lands) */
-  durationMs?: number;
-  /** true when the line came from a subagent transcript */
-  sidechain: boolean;
-  ts?: string;
-}
-
-/** Feed blocks kept per session (view buffer, not an archive). */
-const BLOCK_CAP = 1000;
-const DETAIL_CAP = 4000;
-const TEXT_CAP = 20_000;
+// `FeedBlock` moved to `../feed/blocks.ts` in P2-E18-10, when the Feed grew a
+// second source. Re-exported so every existing importer is unaffected: the type
+// is the Feed's, not the transcript's, and both sources now build it with the
+// same code.
+export type { FeedBlock };
 
 interface WatchedSession {
   sessionId: string;
@@ -142,10 +109,18 @@ interface WatchedSession {
   abandoned: Set<string>;
   tails: Map<string, { offset: number; buf: string }>;
   snap: TranscriptSnapshot;
-  blocks: FeedBlock[];
-  blockSeq: number;
-  /** tool_use id -> its block, so a later tool_result can attach its OUT */
-  toolBlocks: Map<string, FeedBlock>;
+  /** the Feed's own state — seq, cap, tool-result stitching (P2-E18-10) */
+  feed: FeedBuffer;
+  /**
+   * Does the Feed take its blocks from THIS session's transcript?
+   *
+   * False for a stream session, whose Feed is built from typed messages by
+   * `StreamFeed` (P2-E18-10). Everything else the watcher does — binding,
+   * usage totals, the native id, drift — is still wanted there, so the answer
+   * is a flag on the watch rather than "do not watch at all". Two sources
+   * feeding one Feed would render every block twice.
+   */
+  deriveFeed: boolean;
 }
 
 /** After this long unbound, widen discovery beyond the slug prefilter. */
@@ -181,23 +156,6 @@ export interface TranscriptWatcherOptions {
   /** Discovery scheduling knobs (P2-E15-11) — injectable so tests can drive
    *  filesystem events and simulate an unusable watch. */
   discovery?: Omit<DiscoveryScheduleOptions, 'log'>;
-}
-
-/** CLI plumbing disguised as user text — never conversation. */
-function isPlumbing(text: string): boolean {
-  return text.trimStart().startsWith('<local-command-');
-}
-
-/** Flatten a tool_result content field (string or text-item array) to text. */
-function toolResultText(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    return (content as Array<{ type?: string; text?: string }>)
-      .filter((x) => x?.type === 'text' && typeof x.text === 'string')
-      .map((x) => x.text)
-      .join('\n');
-  }
-  return '';
 }
 
 /** Path equality that tolerates case + separator differences on win32. */
@@ -301,7 +259,21 @@ export class TranscriptWatcher {
    *  saying so, because it is the one that knows which CARD this is. */
   watch(
     sessionId: string,
-    session: { cwd: string; nativeSessionId?: string; projectsRoot?: string }
+    session: {
+      cwd: string;
+      nativeSessionId?: string;
+      projectsRoot?: string;
+      /**
+       * Should this session's Feed be built from its transcript? Default true.
+       *
+       * A stream session says false: its Feed comes from typed messages
+       * (P2-E18-10), and deriving from both sources would double every block.
+       * The rest of the watch — binding, usage, native id, drift — is unchanged
+       * and still wanted, which is why this is a flag and not a decision to
+       * stop watching.
+       */
+      deriveFeed?: boolean;
+    }
   ): boolean {
     const root = session.projectsRoot ?? this.opts.projectsRoot ?? '';
     // Re-watching an id REPLACES a watch, so the old root loses a reference.
@@ -353,9 +325,8 @@ export class TranscriptWatcher {
       abandoned: new Set(),
       tails: new Map(),
       snap: this.blankSnap(sessionId, root),
-      blocks: [],
-      blockSeq: 0,
-      toolBlocks: new Map(),
+      feed: new FeedBuffer((b) => this.reemit(sessionId, b)),
+      deriveFeed: session.deriveFeed !== false,
     });
     this.ensurePolling();
     return true;
@@ -414,9 +385,7 @@ export class TranscriptWatcher {
     // for.
     this.discovery.markDirty(w.projectsRoot);
     w.tails.clear();
-    w.blocks = [];
-    w.blockSeq = 0;
-    w.toolBlocks.clear();
+    w.feed.reset();
     w.snap = this.blankSnap(w.sessionId, w.projectsRoot);
     // A fresh search starts now, so the give-up clock restarts — otherwise a
     // rebind ten minutes into a healthy session would report as failed on
@@ -650,7 +619,7 @@ export class TranscriptWatcher {
 
   /** Backlog of derived blocks for a session (attach/replay). */
   blocks(sessionId: string): FeedBlock[] {
-    return [...(this.sessions.get(sessionId)?.blocks ?? [])];
+    return this.sessions.get(sessionId)?.feed.list() ?? [];
   }
 
   stop(): void {
@@ -978,127 +947,38 @@ export class TranscriptWatcher {
     }
   }
 
-  private emitBlock(w: WatchedSession, b: Omit<FeedBlock, 'seq' | 'sidechain'>, sidechain: boolean): FeedBlock {
-    // a thinking block's duration becomes known when the NEXT block lands
-    const prev = w.blocks[w.blocks.length - 1];
-    if (prev?.kind === 'thinking' && !prev.durationMs && prev.ts && b.ts) {
-      const ms = Date.parse(b.ts) - Date.parse(prev.ts);
-      if (Number.isFinite(ms) && ms > 0) {
-        prev.durationMs = ms;
-        this.reemit(w, prev);
-      }
-    }
-    const block: FeedBlock = { ...b, seq: ++w.blockSeq, sidechain };
-    w.blocks.push(block);
-    if (w.blocks.length > BLOCK_CAP) w.blocks.splice(0, w.blocks.length - BLOCK_CAP);
-    this.reemit(w, block);
-    return block;
-  }
-
   /** Send a block (new OR updated — same seq) to the listeners. */
-  private reemit(w: WatchedSession, block: FeedBlock): void {
+  private reemit(sessionId: string, block: FeedBlock): void {
     for (const l of this.blockListeners) {
       try {
-        l(w.sessionId, block);
+        l(sessionId, block);
       } catch (err) {
-        this.opts.log.error('block listener threw', { sessionId: w.sessionId, error: String(err) });
+        this.opts.log.error('block listener threw', { sessionId, error: String(err) });
       }
     }
   }
 
-  /** Derive Feed blocks (E12-06) from one transcript line. Tolerant: unknown
-   *  shapes produce nothing, never a throw. */
+  /**
+   * Derive Feed blocks (E12-06) from one transcript line.
+   *
+   * The DERIVATION itself moved to `../feed/blocks.ts` in P2-E18-10, shared
+   * with the stream source so a block cannot look one way from a transcript and
+   * another from a stream. What stays here is what only the watcher knows:
+   * whether the line came from a subagent file, and whether this session's Feed
+   * is transcript-driven at all.
+   *
+   * Tolerant: unknown shapes produce nothing, never a throw.
+   */
   private deriveBlocks(w: WatchedSession, full: string, e: Record<string, unknown>): void {
+    if (!w.deriveFeed) return;
     const sidechain = full !== w.boundFile || e.isSidechain === true;
-    const ts = typeof e.timestamp === 'string' ? e.timestamp : undefined;
-    const message = e.message as { content?: unknown; role?: string } | undefined;
-    if (!message) return;
-    if (e.isMeta === true) return; // CLI-internal lines are not conversation
-    if (e.type === 'user') {
-      // a real prompt is a string (or text items); tool_result items attach
-      // their output to the originating tool block (E10-06 OUT sections).
-      // <local-command-*> wrappers (slash-command stdout/caveats, often with
-      // raw ANSI inside) are CLI plumbing, not conversation (Dan 2026-07-22).
-      if (typeof message.content === 'string' && message.content.trim()) {
-        if (isPlumbing(message.content)) return;
-        this.emitBlock(w, { kind: 'user', text: message.content.slice(0, TEXT_CAP), ts }, sidechain);
-      } else if (Array.isArray(message.content)) {
-        for (const c of message.content as Array<{
-          type?: string;
-          text?: string;
-          tool_use_id?: string;
-          content?: unknown;
-        }>) {
-          if (c?.type === 'text' && c.text?.trim() && !isPlumbing(c.text)) {
-            this.emitBlock(w, { kind: 'user', text: c.text.slice(0, TEXT_CAP), ts }, sidechain);
-          } else if (c?.type === 'tool_result' && typeof c.tool_use_id === 'string') {
-            const target = w.toolBlocks.get(c.tool_use_id);
-            if (target?.tool && !target.tool.out) {
-              target.tool.out = toolResultText(c.content).slice(0, DETAIL_CAP);
-              w.toolBlocks.delete(c.tool_use_id);
-              this.reemit(w, target);
-            }
-          }
-        }
+    for (const intent of deriveIntents(e)) {
+      if (intent.t === 'tool-result') {
+        w.feed.attachResult(intent.toolUseId, intent.out);
+        continue;
       }
-      return;
-    }
-    if (e.type !== 'assistant' || !Array.isArray(message.content)) return;
-    for (const c of message.content as Array<{
-      type?: string;
-      text?: string;
-      thinking?: string;
-      name?: string;
-      input?: Record<string, unknown>;
-    }>) {
-      if (c?.type === 'text' && c.text?.trim()) {
-        this.emitBlock(w, { kind: 'assistant', text: c.text.slice(0, TEXT_CAP), ts }, sidechain);
-      } else if (c?.type === 'thinking' && c.thinking?.trim()) {
-        this.emitBlock(w, { kind: 'thinking', text: c.thinking.slice(0, TEXT_CAP), ts }, sidechain);
-      } else if (c?.type === 'tool_use' && typeof c.name === 'string') {
-        const input = c.input ?? {};
-        // TodoWrite renders as a checklist block, not a raw tool row (E10-06)
-        if (c.name === 'TodoWrite' && Array.isArray(input.todos)) {
-          const todos = (input.todos as Array<{ content?: unknown; status?: unknown }>)
-            .slice(0, 30)
-            .map((td) => ({ content: String(td?.content ?? ''), status: String(td?.status ?? '') }));
-          this.emitBlock(w, { kind: 'todos', todos, ts }, sidechain);
-          continue;
-        }
-        const primary =
-          input.file_path ?? input.path ?? input.notebook_path ?? input.command ?? input.description ?? input.pattern;
-        const summary = typeof primary === 'string' ? primary.slice(0, 120) : '';
-        let detail: string | undefined;
-        try {
-          detail = JSON.stringify(input, null, 2)?.slice(0, DETAIL_CAP);
-        } catch {
-          detail = undefined;
-        }
-        const tool: NonNullable<FeedBlock['tool']> = {
-          name: c.name,
-          category: toolCategory(c.name),
-          summary,
-          detail,
-        };
-        // structured fields for the rich blocks (E10-06)
-        if (typeof input.description === 'string') tool.description = input.description.slice(0, 120);
-        if (typeof input.file_path === 'string') tool.filePath = input.file_path;
-        if (typeof input.old_string === 'string') tool.oldString = input.old_string.slice(0, 1500);
-        if (typeof input.new_string === 'string') tool.newString = input.new_string.slice(0, 1500);
-        if (c.name === 'Write' && typeof input.content === 'string') {
-          tool.newString = input.content.slice(0, 1500);
-        }
-        const block = this.emitBlock(w, { kind: 'tool', tool, ts }, sidechain);
-        const useId = (c as { id?: unknown }).id;
-        if (typeof useId === 'string') {
-          w.toolBlocks.set(useId, block);
-          // bounded: forget the oldest mappings past 200 in-flight calls
-          if (w.toolBlocks.size > 200) {
-            const first = w.toolBlocks.keys().next().value;
-            if (first !== undefined) w.toolBlocks.delete(first);
-          }
-        }
-      }
+      const block = w.feed.push(intent.block, sidechain);
+      if (intent.toolUseId) w.feed.remember(intent.toolUseId, block);
     }
   }
 

@@ -8,6 +8,7 @@ import { SessionManager } from './session-manager';
 import { PtyService } from '../pty/pty-service';
 import { StreamPermissions } from './stream-permissions';
 import { StreamCommands } from './stream-commands';
+import { StreamFeed } from '../feed/stream-feed';
 import { HookListener } from '../hooks/hook-listener';
 import { IpcBroker } from '../ipc/broker';
 import { Channel } from '../../shared/ipc/capabilities';
@@ -30,6 +31,9 @@ export interface SessionIpcDeps {
   /** The CLI's own slash-command list, off the stream (P2-E18-09). Absent for
    *  a PTY-only wiring, in which case the curated list is all there is. */
   streamCommands?: StreamCommands;
+  /** The Feed, built from a stream session's typed messages (P2-E18-10).
+   *  Absent for a PTY-only wiring, where the transcript is the only source. */
+  streamFeed?: StreamFeed;
   hooks: HookListener;
   transcripts: TranscriptWatcher;
   feed: EventFeed;
@@ -195,14 +199,41 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     if (typeof liveId === 'string') hooks.setAllowAll(liveId);
   });
 
-  // Feed view blocks (P2-E12-06): live stream + backlog for attach
+  // Feed view blocks (P2-E12-06): live stream + backlog for attach.
+  //
+  // TWO SOURCES, ONE CHANNEL (P2-E18-10). A PTY session's blocks are derived
+  // from its JSONL transcript; a stream session's are derived from its typed
+  // messages. They are the same blocks, built by the same code
+  // (`main/feed/blocks.ts`), and the renderer must not be able to tell which
+  // one it is looking at — so they share `sessions:feedBlock` rather than
+  // getting a second channel the FeedView would have to subscribe to twice.
+  //
+  // Exactly one source is live per session: the watcher is told not to derive
+  // (below, at `sessions:create`) for a stream session, which is what keeps
+  // this from rendering every block twice.
+  const isStream = (liveId: string): boolean => manager.get(liveId)?.transport === 'stream';
   transcripts.onBlock((sessionId, block) => send('sessions:feedBlock', { sessionId, block }));
+  deps.streamFeed?.onBlock((sessionId, block) => send('sessions:feedBlock', { sessionId, block }));
   // a corrected mis-bind (or /clear) discarded the derived blocks — the
   // renderer must too; cause 'clear' shows the "conversation cleared" marker
-  transcripts.onReset((sessionId, cause) => send('sessions:feedReset', { sessionId, cause }));
-  broker.handle('transcripts:blocks', (_e, liveId: string) =>
-    typeof liveId === 'string' ? transcripts.blocks(liveId) : []
-  );
+  //
+  // A reset is routed by source for the same reason a block is, and it is the
+  // sharper of the two: the watcher goes on watching a stream session (usage,
+  // the native id, drift), so it still corrects mis-binds and still sees a
+  // /clear — and an ungated reset would blank a Feed the transcript never
+  // built, with nothing to replay it from. A stream session's resets come off
+  // its own `system:init` instead.
+  transcripts.onReset((sessionId, cause) => {
+    if (isStream(sessionId)) return;
+    send('sessions:feedReset', { sessionId, cause });
+  });
+  deps.streamFeed?.onReset((sessionId, cause) => send('sessions:feedReset', { sessionId, cause }));
+  broker.handle('transcripts:blocks', (_e, liveId: string) => {
+    if (typeof liveId !== 'string') return [];
+    return isStream(liveId) && deps.streamFeed
+      ? deps.streamFeed.blocks(liveId)
+      : transcripts.blocks(liveId);
+  });
   // Binding state on demand (P2-E15-10). Transitions ride `sessions:usage`
   // like everything else on the snapshot; this is the pull a panel needs when
   // it MOUNTS, since a session that failed to bind long ago will never push
@@ -361,6 +392,13 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
           cwd: opts.folder,
           nativeSessionId: plan.resumeSessionId,
           projectsRoot: plan.transcriptsRoot,
+          // A stream session's Feed comes from its typed messages (P2-E18-10),
+          // so the transcript must not derive blocks for it as well — the two
+          // sources would interleave and every block would appear twice. The
+          // watch itself stays: usage totals, the native id for --resume, and
+          // the drift detector are all still wanted, and the CLI writes the
+          // JSONL in stream mode too (S-10).
+          deriveFeed: record.transport !== 'stream',
         });
         // the watcher refuses a root it cannot poll safely. Say so against the
         // CARD — a warning keyed by a live session id, in the transcripts log,
@@ -534,6 +572,8 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       streamPermissions?.forgetSession(liveId, 'session closed');
       // the next session under this card gets its own list from its own CLI
       streamCommands?.forgetSession(liveId);
+      // …and its own Feed blocks (P2-E18-10)
+      deps.streamFeed?.forgetSession(liveId);
       manager.remove(liveId);
       cardOfLive.delete(liveId);
     }

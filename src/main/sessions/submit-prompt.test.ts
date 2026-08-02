@@ -134,10 +134,16 @@ describe('framing — what bracketed paste was faking (P2-E18-06)', () => {
       if (r.ok) proto.handle(r.value);
     }
 
-    const assistant = out.find((m) => m.type === 'assistant') as {
-      message: { content: Array<{ text: string }> };
-    };
-    expect(assistant.message.content[0].text).toBe(`FAKE-REPLY: ${text}`);
+    // the assistant message carrying TEXT — the real CLI sends one message per
+    // CONTENT BLOCK and the first of them is the thinking block (measured
+    // 2026-08-02, `spike/s11/probe-140-slash-flags.cjs`; the fake reproduces it)
+    const replied = out
+      .filter((m) => m.type === 'assistant')
+      .flatMap(
+        (m) => (m.message as { content: Array<{ type?: string; text?: string }> }).content ?? []
+      )
+      .find((c) => c.type === 'text')?.text;
+    expect(replied).toBe(`FAKE-REPLY: ${text}`);
   });
 });
 

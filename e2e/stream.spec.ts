@@ -461,3 +461,113 @@ test.describe('switching transport the way a user does (#153)', () => {
     });
   });
 });
+
+// P2-E18-10 (#140) — the Feed reads the stream, not the transcript.
+//
+// Both of these are chosen so that the transcript CANNOT be the source: the
+// fake writes no JSONL line for either turn, exactly as the real CLI does not.
+// A test whose text could have come from either place would prove nothing.
+test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
+  let a: LaunchedApp;
+  test.afterEach(async () => a?.cleanup());
+
+  test('assistant text appears token by token, before the message is complete', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({
+      seedFolder: folder,
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+    });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    // `!partial` emits three text deltas and then stops: no `assistant`
+    // message, no `result`, no transcript line. The only way this text can be
+    // on screen is partial-message rendering.
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('!partial');
+    await box.press('Enter');
+
+    await expect(w.getByText(/HALF-WRITTEN-SENTENCE/)).toBeVisible({ timeout: 30_000 });
+    // and the turn is genuinely still running while we can read it
+    await expect(w.getByText('Done.')).toHaveCount(0);
+  });
+
+  // #156, measured in `spike/findings/s-11-local-slash-commands.md`. `/usage`
+  // displayed NOTHING in the Session view: the CLI emits it on the stream as an
+  // ordinary assistant turn, but records it in the JSONL as
+  // `system`/`local_command` with no assistant entry at all — and the Feed read
+  // the JSONL. The fake reproduces both halves of that divergence.
+  test('a local slash command\'s output renders (#156)', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({
+      seedFolder: folder,
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+    });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    // TYPED THE WAY A USER TYPES IT, and ONE Enter. This test used to press
+    // Escape first, to get the autocomplete popup out of the way — and that
+    // workaround is what let the real bug ship. Dan hand-tested PR #163 and
+    // found EVERY slash command dead in Direct mode: the popup claimed Enter to
+    // confirm a completion, so `/usage` + Enter became `/usage ` and ran
+    // nothing. A test that teaches itself the unnatural keystroke cannot catch
+    // the natural one failing.
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.pressSequentially('/usage');
+    // The popup really is OPEN and offering this exact command — asserted via
+    // its DESCRIPTION, because `/usage` matches the textarea's own value too
+    // and an ambiguous locator here would let the test pass with no popup at
+    // all, i.e. without ever reaching the code #163 broke.
+    await expect(w.getByText('Show subscription usage')).toBeVisible({ timeout: 15_000 });
+
+    await box.press('Enter');
+
+    // ONE Enter sent it: the composer is empty, not sitting on `/usage `
+    await expect(box).toHaveValue('', { timeout: 15_000 });
+
+    // THE OUTPUT IS ON SCREEN, WITH NO CLICK — and scoped to `.feed-md`, the
+    // assistant-prose renderer, so it can only pass by rendering as its own
+    // visible block. A loose page-text match would also be satisfied by the
+    // text sitting inside a collapsed container, which is the failure this
+    // assertion exists to rule out.
+    await expect(
+      w.locator('.feed-md', { hasText: 'LOCAL-OUTPUT for /usage' })
+    ).toBeVisible({ timeout: 30_000 });
+    // …and the turn still completed, as it always did — the done-sound played
+    // even when the text did not appear, which is what made the bug confusing
+    await expect(w.getByText('Done.')).toBeVisible({ timeout: 30_000 });
+  });
+
+  test('the user\'s own prompt still renders, off the replayed user message', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({
+      seedFolder: folder,
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+    });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('remember this prompt');
+    await box.press('Enter');
+
+    // `exact`, because the reply quotes the prompt back and a substring match
+    // would find both — which is the same trap the duplicate check below is for
+    const pill = w.getByText('remember this prompt', { exact: true });
+    await expect(pill).toBeVisible({ timeout: 30_000 });
+    // ONE copy: the stream is the only source now, and a session whose watcher
+    // still derived blocks from the transcript would show every block twice
+    await expect(pill).toHaveCount(1);
+    await expect(w.getByText(/FAKE-REPLY: remember this prompt/)).toHaveCount(1);
+  });
+});

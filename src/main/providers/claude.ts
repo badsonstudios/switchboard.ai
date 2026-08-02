@@ -217,7 +217,14 @@ export const claudeAdapter: ProviderAdapter = {
         // echo our own user messages back, so a send is ACKNOWLEDGED rather
         // than assumed (P2-E18-06's criterion, which landed here with the
         // recipe because the flag had nowhere else to live)
-        '--replay-user-messages'
+        '--replay-user-messages',
+        // Token-level `stream_event` deltas (P2-E18-10) — without it the CLI
+        // sends only the finished `assistant` message and a reply appears all
+        // at once, which is the file-poll experience with extra steps. Both
+        // S-10 and S-11 spawned with it; the SDK's own argument builder in the
+        // extension bundle emits exactly this flag for its
+        // `includePartialMessages` option.
+        '--include-partial-messages'
       );
     }
     if (options.resumeSessionId) args.push('--resume', options.resumeSessionId);

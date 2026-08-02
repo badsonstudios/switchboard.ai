@@ -12,13 +12,20 @@ import { ProviderCapabilities } from '../extensibility/contributions';
 import { PersistedSession } from '../workspace/store';
 import { SessionIdentity } from './session-manager';
 import { StreamCommands } from './stream-commands';
+import { StreamFeed } from '../feed/stream-feed';
 import { SlashCommand } from '../../shared/slash-commands';
 
 type Handler = (e: unknown, ...args: unknown[]) => unknown;
 
 /** Capture what `registerSessionIpc` registers, so a channel can be called. */
-function fakeBroker(): { broker: SessionIpcDeps['broker']; call: (c: string, ...a: unknown[]) => unknown } {
+function fakeBroker(): {
+  broker: SessionIpcDeps['broker'];
+  call: (c: string, ...a: unknown[]) => unknown;
+  /** everything PUSHED to the renderer, so a routing decision is assertable */
+  pushed: Array<{ channel: string; payload: unknown }>;
+} {
   const handlers = new Map<string, Handler>();
+  const pushed: Array<{ channel: string; payload: unknown }> = [];
   const put = (channel: string, fn: Handler): void => {
     // `handle` and `on` share one map here; a channel registered on both would
     // otherwise be silently overwritten and the test would assert the wrong one
@@ -28,10 +35,11 @@ function fakeBroker(): { broker: SessionIpcDeps['broker']; call: (c: string, ...
   const broker = {
     handle: put,
     on: put,
-    send: () => {},
+    send: (_win: unknown, channel: string, payload: unknown) => pushed.push({ channel, payload }),
   } as unknown as SessionIpcDeps['broker'];
   return {
     broker,
+    pushed,
     call: (channel, ...args) => {
       const fn = handlers.get(channel);
       if (!fn) throw new Error(`nothing registered on ${channel}`);
@@ -58,6 +66,10 @@ function harness(
     /** the CLI's own list, off the stream (P2-E18-09) — the real class, so the
      *  test exercises the real wiring rather than a stand-in for it */
     streamCommands?: StreamCommands;
+    /** the Feed built from typed messages (P2-E18-10) — the real class, again */
+    streamFeed?: StreamFeed;
+    /** the transport the manager reports for a live session (P2-E18-10) */
+    transport?: 'pty' | 'stream';
   } = {}
 ) {
   const created: Array<{
@@ -67,12 +79,14 @@ function harness(
     transport?: string;
   }> = [];
   const upserted: PersistedSession[] = [];
-  const watched: Array<{ sessionId: string; projectsRoot?: string }> = [];
+  const watched: Array<{ sessionId: string; projectsRoot?: string; deriveFeed?: boolean }> = [];
   const buildHookSettings = vi.fn(() => ({ hooks: {} }));
   const warn = vi.fn();
   const askedFor: string[] = [];
+  /** the watcher's reset listeners, so a test can fire one (P2-E18-10) */
+  const resets: Array<(sessionId: string, cause?: string) => void> = [];
   const watchAccepts = opts.watchAccepts ?? true;
-  const { broker, call } = fakeBroker();
+  const { broker, call, pushed } = fakeBroker();
 
   const record = {
     id: 'live-1',
@@ -80,6 +94,7 @@ function harness(
     status: 'starting',
     createdAt: '',
     exitCode: null,
+    transport: opts.transport ?? 'pty',
   };
 
   const deps = {
@@ -113,11 +128,14 @@ function harness(
     transcripts: {
       onUpdate: () => {},
       onBlock: () => {},
-      onReset: () => {},
-      watch: (sessionId: string, s: { projectsRoot?: string }) => {
-        watched.push({ sessionId, projectsRoot: s.projectsRoot });
+      onReset: (l: (sessionId: string, cause?: string) => void) => {
+        resets.push(l);
+      },
+      watch: (sessionId: string, s: { projectsRoot?: string; deriveFeed?: boolean }) => {
+        watched.push({ sessionId, projectsRoot: s.projectsRoot, deriveFeed: s.deriveFeed });
         return watchAccepts;
       },
+      blocks: (id: string) => [{ seq: 1, kind: 'assistant', text: `transcript block for ${id}` }],
       unwatch: () => {},
     },
     feed: { onEvent: () => {}, ingest: () => {}, list: () => [], forget: () => {} },
@@ -139,10 +157,11 @@ function harness(
     repoRoot: async () => null,
     slashCommands: async () => opts.known ?? [],
     streamCommands: opts.streamCommands,
+    streamFeed: opts.streamFeed,
   } as unknown as SessionIpcDeps;
 
   registerSessionIpc(deps);
-  return { call, created, upserted, watched, buildHookSettings, warn, askedFor };
+  return { call, created, upserted, watched, buildHookSettings, warn, askedFor, pushed, resets };
 }
 
 /** A persisted card, the way the workspace store hands it back. */
@@ -191,7 +210,11 @@ describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
 
     h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
 
-    expect(h.watched).toEqual([{ sessionId: 'live-1', projectsRoot: '/somewhere/else' }]);
+    // deriveFeed true: a PTY session's Feed is still built from its transcript
+    // (P2-E18-10 changed the source only for stream sessions)
+    expect(h.watched).toEqual([
+      { sessionId: 'live-1', projectsRoot: '/somewhere/else', deriveFeed: true },
+    ]);
     expect(h.buildHookSettings).not.toHaveBeenCalled(); // still no hooks
   });
 
@@ -648,5 +671,117 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
     const list = (await h.call('sessions:slashCommands', 'live-1')) as SlashCommand[];
 
     expect(list.map((c) => c.name)).toEqual(['clear', 'curated-only', 'startup']);
+  });
+});
+
+// P2-E18-10 (#140). Two sources feed one Feed: a PTY session's blocks come
+// from its JSONL transcript, a stream session's from its typed messages. The
+// renderer must not be able to tell them apart — and, more importantly, exactly
+// ONE source may be live for a given session or every block renders twice.
+describe('the Feed has two sources and one channel (P2-E18-10)', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-ipc-feed-'));
+  });
+  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const caps = { transcripts: { projectsRoot: () => '/root' } };
+
+  it('a STREAM session tells the watcher not to derive blocks for it', () => {
+    const h = harness(caps, dir, { transport: 'stream', streamFeed: new StreamFeed() });
+
+    h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
+
+    // still watched — usage, the native id for --resume, and drift all still
+    // want the transcript, and the CLI writes one in stream mode (S-10)
+    expect(h.watched).toEqual([{ sessionId: 'live-1', projectsRoot: '/root', deriveFeed: false }]);
+  });
+
+  it('the backlog for a stream session comes from the stream, not the transcript', () => {
+    const streamFeed = new StreamFeed();
+    const h = harness(caps, dir, { transport: 'stream', liveIds: ['live-1'], streamFeed });
+    streamFeed.offer('live-1', {
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'from the stream' }] },
+      parent_tool_use_id: null,
+    });
+
+    const blocks = h.call('transcripts:blocks', 'live-1') as Array<{ text: string }>;
+
+    expect(blocks.map((b) => b.text)).toEqual(['from the stream']);
+  });
+
+  it('a PTY session still reads its backlog from the transcript', () => {
+    const h = harness(caps, dir, { transport: 'pty', liveIds: ['live-1'], streamFeed: new StreamFeed() });
+
+    const blocks = h.call('transcripts:blocks', 'live-1') as Array<{ text: string }>;
+
+    expect(blocks.map((b) => b.text)).toEqual(['transcript block for live-1']);
+  });
+
+  it('a stream session\'s blocks are forgotten when its live session is dropped', () => {
+    const streamFeed = new StreamFeed();
+    const h = harness(caps, dir, { transport: 'stream', liveIds: ['live-1'], streamFeed });
+    h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
+    streamFeed.offer('live-1', {
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'old turn' }] },
+      parent_tool_use_id: null,
+    });
+    expect(streamFeed.blocks('live-1')).toHaveLength(1);
+
+    h.call('sessions:dropLive', 'card-1');
+
+    expect(streamFeed.blocks('live-1')).toEqual([]);
+  });
+
+  it('the PTY-only wiring works with no StreamFeed at all', () => {
+    const h = harness(caps, dir, { liveIds: ['live-1'] });
+
+    expect(() => h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' })).not.toThrow();
+    expect(h.call('transcripts:blocks', 'live-1')).toHaveLength(1);
+  });
+});
+
+// The watcher keeps watching a stream session (usage, the native id, drift), so
+// it still corrects mis-binds and still notices a /clear. Its RESET must not be
+// routed there: the renderer would drop a Feed the transcript never built, and
+// nothing would replay it. Found in review; nothing else pins it.
+describe('a transcript reset never blanks a stream session (P2-E18-10)', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-ipc-reset-'));
+  });
+  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const caps = { transcripts: { projectsRoot: () => '/root' } };
+  const feedResets = (h: { pushed: Array<{ channel: string }> }): number =>
+    h.pushed.filter((p) => p.channel === 'sessions:feedReset').length;
+
+  it('a PTY session still gets its reset', () => {
+    const h = harness(caps, dir, { transport: 'pty', liveIds: ['live-1'] });
+
+    for (const l of h.resets) l('live-1', 'clear');
+
+    expect(feedResets(h)).toBe(1);
+  });
+
+  it('a STREAM session does not', () => {
+    const h = harness(caps, dir, { transport: 'stream', liveIds: ['live-1'], streamFeed: new StreamFeed() });
+
+    for (const l of h.resets) l('live-1', 'clear');
+
+    expect(feedResets(h)).toBe(0);
+  });
+
+  it('…but its OWN reset still reaches the renderer', () => {
+    const streamFeed = new StreamFeed();
+    const h = harness(caps, dir, { transport: 'stream', liveIds: ['live-1'], streamFeed });
+
+    // the CLI minting a new conversation: a second init with a different id
+    streamFeed.offer('live-1', { type: 'system', subtype: 'init', session_id: 'conv-1' });
+    streamFeed.offer('live-1', { type: 'system', subtype: 'init', session_id: 'conv-2' });
+
+    expect(feedResets(h)).toBe(1);
   });
 });

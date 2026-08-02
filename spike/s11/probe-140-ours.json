@@ -1,0 +1,34 @@
+{
+  "variant": "ours",
+  "args": [
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--input-format",
+    "stream-json",
+    "--permission-prompt-tool",
+    "stdio",
+    "--replay-user-messages",
+    "--include-partial-messages"
+  ],
+  "results": [
+    {
+      "command": "/model",
+      "messages": [
+        "system:init",
+        "assistant",
+        "result:success"
+      ],
+      "renderedText": true
+    },
+    {
+      "command": "/agents",
+      "messages": [
+        "system:init",
+        "assistant",
+        "result:success"
+      ],
+      "renderedText": true
+    }
+  ]
+}
