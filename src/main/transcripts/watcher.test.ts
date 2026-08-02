@@ -595,7 +595,16 @@ describe('per-session transcripts root (P2-E15-01)', () => {
   beforeEach(() => {
     rootB = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-tw-rootb-'));
   });
-  afterEach(() => fs.rmSync(rootB, { recursive: true, force: true }));
+  afterEach(() => {
+    // Stop FIRST. These tests point the watcher at `rootB`, and discovery puts
+    // it under `fs.watch` — an open directory handle. Vitest runs the innermost
+    // `afterEach` before the outer one, so without this the rm here would race
+    // the outer `watcher.stop()` and throw EBUSY on Windows, which vitest
+    // reports as a failed FILE with zero failing tests (the #167 shape).
+    // `stop()` is idempotent, so the outer hook calling it again is fine.
+    watcher.stop();
+    fs.rmSync(rootB, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  });
 
   it('a session watches under ITS provider root, not the watcher default', async () => {
     const dir = path.join(rootB, slugForCwd(cwd));

@@ -7,7 +7,7 @@
 // The stand-in CLI is `process.execPath` running a generated script, so the
 // suite needs no `claude` login and no network — the same property the PTY
 // fake gives the e2e suite.
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -15,6 +15,12 @@ import { StreamService, StreamDiagnostic } from './stream-service';
 
 let dir: string;
 let svc: StreamService;
+/**
+ * EVERY service this file creates, not just the current one — teardown has to
+ * reap children from earlier tests too, and `beforeEach` throws the previous
+ * service away. See `reapAll`.
+ */
+const services: StreamService[] = [];
 const diagnostics: StreamDiagnostic[] = [];
 
 /** Write a throwaway node script and return its path. */
@@ -56,16 +62,55 @@ function until(check: () => boolean, ms = 4_000): Promise<void> {
   });
 }
 
+/**
+ * Kill every child this file started and WAIT for the OS to finish reaping it.
+ *
+ * `kill()` only *asks*. On Windows a process holds a lock on its `cwd` — which
+ * for every session here is the temp `dir` — and that lock outlives the kill
+ * request by however long the kernel takes to tear the process down. An
+ * `rmSync` issued straight after therefore races it and throws EBUSY on the
+ * directory itself. Vitest attributes a hook throw to the FILE, so the suite
+ * reported "1 file failed" with ZERO failing tests: a phantom failure that
+ * reads as a broken test run and isn't one (#167). Reproduced 20/20 locally
+ * with a bare spawn-kill-rmSync loop; in this file it needed the children of
+ * the *last* test still dying, which is why it only showed up ~2 runs in 20.
+ *
+ * Waiting on `exitCode` is the real fix: it settles from the child's 'exit'
+ * event, which libuv raises off the process handle — i.e. once the process
+ * object is genuinely signalled and its handles, cwd lock included, are gone.
+ */
+async function reapAll(): Promise<void> {
+  for (const s of services) s.killAll();
+  try {
+    await until(
+      () => services.every((s) => s.list().every((e) => e.exitCode !== null)),
+      10_000
+    );
+  } catch {
+    // A straggler must not fail the file — the retrying rm below is the net.
+  }
+}
+
 beforeAll(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-stream-'));
 });
-afterAll(() => {
-  svc?.killAll();
-  fs.rmSync(dir, { recursive: true, force: true });
+afterEach(async () => {
+  // Reap per test rather than only at the end, so a child never outlives the
+  // test that spawned it and the wait is over one test's worth of processes.
+  await reapAll();
+});
+afterAll(async () => {
+  await reapAll();
+  // Second layer, and the reason for the explicit options: even with every
+  // child reaped, a virus scanner or the search indexer can hold a transient
+  // handle on a file it just saw appear. `maxRetries` makes node retry on
+  // exactly the transient codes (EBUSY/EPERM/ENOTEMPTY/EMFILE/ENFILE) instead
+  // of throwing on the first one.
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 beforeEach(() => {
-  svc?.killAll();
   svc = new StreamService();
+  services.push(svc);
   diagnostics.length = 0;
 });
 
