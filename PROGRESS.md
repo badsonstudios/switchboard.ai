@@ -76,8 +76,24 @@ Branch `fix/153-transport-restart`. Gate green: lint + typecheck + **804 unit**
 > terminal prompt, no discarded answer. That is the 31 July bug, fixed and
 > verified by the person who reported it.
 >
-> Also filed from the same session: **#154** — stopping a running turn wedges
-> the session (no further prompts accepted; unreproduced, needs a repro first).
+> **#154 FIXED — Dan gave a reliable repro: in Direct mode the Stop button did
+> NOTHING.** Cause: `onClick` wrote **Esc to the PTY**, and a stream session has
+> no PTY, so `ptys.get(id)?.write()` was a silent no-op and the turn ran to
+> completion. **THIRD instance of one class — a PTY-shaped affordance surviving
+> into a mode with no PTY** (the others: the Terminal tab, the hand-off bar).
+> Now sends an `interrupt` control request, with the shape **read out of the SDK
+> in the extension bundle, not guessed** (`interrupt()` there is
+> `request({subtype:'interrupt'})`, wrapped as `{type:'control_request',
+> request_id, request}`; the reply carries `still_queued`). Try-then-fall-back
+> like `submitPrompt`, so the renderer stays transport-ignorant.
+> **Scope note: this is a slice of E18-12, which is S-11-GATED.** What the CLI
+> actually DOES on interrupt is still unmeasured. It ships anyway because the
+> alternative was a dead button; the rest of E18-12 (`set_permission_mode`,
+> `set_model`, `rewind`) stays behind the gate.
+> The fake gained **`!hang`** — start a turn and never finish it — because
+> `working` is the only state the stop button renders in and nothing else could
+> hold a session there. The tooltip said **"(sends Esc)"**, which is false in
+> Direct mode; it now names the EFFECT, not the mechanism.
 Next after this: **#139 (P2-E18-09)** — slash commands from `system:init`.
 **E18 IS 9 OF 11 DONE, ALL MERGED with 5 CI jobs green:** #131 → PR #141 ·
 #132 → PR #142 · #133 → PR #143 · #134 → PR #144 · #135 → PR #146 · #136 →

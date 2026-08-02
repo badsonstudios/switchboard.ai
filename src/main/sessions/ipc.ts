@@ -177,6 +177,13 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     if (typeof sessionId !== 'string' || typeof text !== 'string') return false;
     return manager.submitPrompt(sessionId, text);
   });
+  // Interrupt the running turn (#154). Returns false for a PTY session, whose
+  // interrupt is an Esc keystroke — the renderer falls back, exactly as it does
+  // for submitPrompt, and so never has to know which transport it is on.
+  broker.handle('sessions:interrupt', (_e, sessionId: string) => {
+    if (typeof sessionId !== 'string') return false;
+    return manager.interrupt(sessionId);
+  });
   // "Allow all (this session)": answered at the SERVER from now on — no
   // hold, no needs-permission event, no beep (review P2 #19, Dan round 4)
   broker.handle('sessions:allowAllSession', (_e, liveId: string) => {

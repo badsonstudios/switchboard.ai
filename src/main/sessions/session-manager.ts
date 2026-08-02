@@ -17,7 +17,7 @@ import {
 } from '../transport/transport';
 import { SessionEvent, SessionStatus, transition } from './state-machine';
 import { streamStatusEvent } from './stream-status';
-import { userMessage } from '../../shared/stream-protocol';
+import { interruptRequest, userMessage } from '../../shared/stream-protocol';
 
 /**
  * Why a session's native id CHANGED. 'clear' = the CLI ran /clear and minted
@@ -335,6 +335,22 @@ export class SessionManager {
   onStreamMessage(l: (sessionId: string, msg: Record<string, unknown>) => void): () => void {
     this.streamMessageListeners.add(l);
     return () => this.streamMessageListeners.delete(l);
+  }
+
+  /**
+   * Ask the CLI to interrupt the running turn (#154).
+   *
+   * Returns false when this session has no typed-message transport — the PTY,
+   * whose interrupt is an Esc keystroke and a genuinely different operation.
+   * The caller falls back, which keeps the renderer transport-ignorant in the
+   * same way `submitPrompt` does.
+   */
+  interrupt(id: string): boolean {
+    const handle = this.handles.get(id);
+    if (!handle?.send) return false;
+    handle.send(interruptRequest(randomUUID()));
+    this.log.info('interrupt requested', { sessionId: id });
+    return true;
   }
 
   /** Send a raw protocol message (control responses — P2-E18-07). */

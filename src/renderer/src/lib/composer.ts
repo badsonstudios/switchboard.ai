@@ -30,3 +30,17 @@ export async function submitPrompt(sessionId: string, text: string): Promise<voi
   if (await window.switchboard.sessions.submitPrompt(sessionId, text)) return;
   writePromptToPty(sessionId, text);
 }
+
+/**
+ * Stop the running turn, whichever transport this session is on (#154).
+ *
+ * The stop button used to write Esc to the PTY unconditionally. A stream
+ * session HAS no PTY, so `ptys.get(id)?.write()` was a silent no-op and the
+ * button did nothing at all — Dan reproduced it every time. Same try-then-
+ * fall-back shape as `submitPrompt`, for the same reason: the renderer has no
+ * business knowing which transport it is on.
+ */
+export async function interruptSession(sessionId: string): Promise<void> {
+  if (await window.switchboard.sessions.interrupt(sessionId)) return;
+  window.switchboard.pty.input(sessionId, ESC);
+}

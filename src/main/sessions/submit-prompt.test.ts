@@ -213,3 +213,59 @@ describe('controlResponse — the reply shape S-10 used (P2-E18-06)', () => {
     });
   });
 });
+
+// #154 — the stop button did nothing in Direct mode.
+//
+// It wrote Esc to the PTY unconditionally. A stream session HAS no PTY, so
+// `ptys.get(id)?.write()` was a silent no-op — Dan reproduced it every time:
+// submit a prompt, click stop repeatedly, watch the turn run to completion.
+//
+// Third instance of one class: a PTY-shaped affordance surviving into a mode
+// with no PTY (the others were the Terminal tab and the hand-off bar).
+describe('interrupt (#154)', () => {
+  it('sends the SDK control_request shape, not a keystroke', () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity);
+
+    expect(mgr.interrupt(rec.id)).toBe(true);
+    expect(stream.sent).toHaveLength(1);
+    const sent = stream.sent[0] as { type: string; request_id: string; request: unknown };
+    expect(sent.type).toBe('control_request');
+    expect(sent.request).toEqual({ subtype: 'interrupt' });
+    // a real id, because the CLI answers by echoing it back
+    expect(sent.request_id).toMatch(/[0-9a-f-]{36}/);
+  });
+
+  it('gives every interrupt its own request id', () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity);
+    mgr.interrupt(rec.id);
+    mgr.interrupt(rec.id);
+    const ids = (stream.sent as Array<{ request_id: string }>).map((m) => m.request_id);
+    expect(ids[0]).not.toBe(ids[1]);
+  });
+
+  // The PTY's interrupt is an Esc keystroke — a genuinely different operation,
+  // so this reports "not mine" and the renderer falls back.
+  it('returns FALSE on a PTY session so the caller can send Esc instead', () => {
+    const mgr = new SessionManager(
+      registryFor('pty'),
+      new ByteTransport(),
+      createLogger(new LogSink({ dir }), 'sessions'),
+      dir
+    );
+    const rec = mgr.create(identity);
+    expect(mgr.interrupt(rec.id)).toBe(false);
+  });
+
+  it('returns false for a session that does not exist', () => {
+    expect(streamManager().interrupt('nope')).toBe(false);
+  });
+
+  it('interrupting does NOT count as a prompt — the status must not go working', () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity);
+    mgr.interrupt(rec.id);
+    expect(mgr.get(rec.id)!.status).toBe('idle');
+  });
+});

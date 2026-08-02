@@ -47,6 +47,7 @@ export class FakeStreamProtocol {
 
   /** Feed one decoded inbound message. */
   handle(msg: Record<string, unknown>): void {
+    if (msg.type === 'control_request') return this.onControlRequest(msg);
     if (msg.type === 'control_response') return this.onControlResponse(msg);
     if (msg.type === 'user') return this.onUser(msg);
     // Anything else is ignored, like the real CLI ignores what it does not know.
@@ -75,6 +76,15 @@ export class FakeStreamProtocol {
       this.emitResult();
       return;
     }
+    // Start a turn and never finish it. The only way to hold a session in
+    // `working` deliberately — which is the one state the stop button renders
+    // in, and therefore the only way to test it (#154). `!perm` cannot serve:
+    // it moves the session to `needs-permission`.
+    if (text === '!hang') {
+      this.emitAssistantText('working on it');
+      return; // no result: the turn stays open until something interrupts it
+    }
+
     if (text.startsWith('!perm ')) {
       const target = text.slice(6).trim();
       const filePath = this.host.resolve(cwd, target);
@@ -83,6 +93,32 @@ export class FakeStreamProtocol {
     }
     this.emitAssistantText(`FAKE-REPLY: ${text}`);
     this.emitResult();
+  }
+
+  /**
+   * A control request FROM the host (#154). Only `interrupt` today.
+   *
+   * The fake models an interrupt as "the turn ends now": it answers the request
+   * and closes the turn with an error result, so a test can tell an interrupted
+   * turn from a completed one. What the REAL CLI does is still unmeasured
+   * (E18-12) — this is a plausible shape, not a measured one, and the fake
+   * cannot make it true.
+   */
+  private onControlRequest(msg: Record<string, unknown>): void {
+    const req = msg.request as { subtype?: unknown } | undefined;
+    if (req?.subtype !== 'interrupt') return;
+    this.emit({
+      type: 'control_response',
+      response: {
+        subtype: 'success',
+        request_id: String(msg.request_id ?? ''),
+        response: { still_queued: [] },
+      },
+    });
+    // any permission we were waiting on is moot once the turn is abandoned
+    this.pending.clear();
+    this.emitAssistantText('INTERRUPTED');
+    this.emitResult(true);
   }
 
   private onControlResponse(msg: Record<string, unknown>): void {

@@ -213,7 +213,7 @@
     "modelHint": "Model last seen in this session's transcript",
     "send": "Send to the session",
     "sendIcon": "↑",
-    "stop": "Stop Claude — interrupts the current turn (sends Esc)",
+    "stop": "Stop Claude — interrupts the current turn",
     "stopIcon": "■",
     "quiet": "quiet",
     "normal": "normal",

@@ -167,6 +167,12 @@ const api = {
      */
     submitPrompt: (sessionId: string, text: string): Promise<boolean> =>
       ipcRenderer.invoke('sessions:submitPrompt', sessionId, text),
+    /**
+     * Interrupt the running turn (#154). Resolves FALSE for a PTY session,
+     * whose interrupt is an Esc keystroke; the caller falls back.
+     */
+    interrupt: (sessionId: string): Promise<boolean> =>
+      ipcRenderer.invoke('sessions:interrupt', sessionId),
     /** future gated calls for this LIVE session answer 'allow' in main (P2 #19) */
     allowAllSession: (liveId: string): Promise<void> =>
       ipcRenderer.invoke('sessions:allowAllSession', liveId),

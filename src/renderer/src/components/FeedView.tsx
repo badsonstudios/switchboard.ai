@@ -12,7 +12,7 @@ import type { BindingDiagnostics, BindingState } from '../../../shared/transcrip
 import { rendererRegistry } from '../extensibility/registry-instance';
 import { renderFeedBlock } from '../extensibility/feed-render';
 import { uiGet, uiSet } from '../lib/ui-state';
-import { submitPrompt } from '../lib/composer';
+import { interruptSession, submitPrompt } from '../lib/composer';
 import { filterCommands, insertCommand, SlashCommand, slashToken } from '../../../shared/slash-commands';
 
 export type { FeedBlockDto } from '../lib/feed';
@@ -921,7 +921,7 @@ function Composer({
       />
       {status === 'working' && (
         <button
-          onClick={() => window.switchboard.pty.input(sessionId, String.fromCharCode(27))}
+          onClick={() => void interruptSession(sessionId)}
           title={t('feedView.stop')}
           style={{
             background: 'color-mix(in srgb, var(--status-crashed) 14%, var(--panel))',

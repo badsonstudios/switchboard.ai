@@ -136,6 +136,46 @@ test.describe('the Feed renders a stream session (P2-E18-08b)', () => {
   });
 });
 
+// #154 — the stop button did nothing in Direct mode.
+//
+// It wrote Esc to the PTY unconditionally, and a stream session has no PTY, so
+// the write was a silent no-op. Dan reproduced it every time: submit a prompt,
+// click stop repeatedly, watch the turn run to completion anyway.
+test.describe('the stop button actually stops (#154)', () => {
+  let a: LaunchedApp;
+  test.afterEach(async () => a?.cleanup());
+
+  test('stopping a Direct-mode turn interrupts it', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({
+      seedFolder: folder,
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+    });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    // `!hang` starts a turn and never finishes it, which is the only way to
+    // hold a session in `working` — the one state the stop button renders in.
+    // `!perm` cannot serve: it moves the session to `needs-permission`, which
+    // is precisely why the first version of this test could not find the
+    // button at all.
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('!hang');
+    await box.press('Enter');
+    await expect(w.getByText(/working on it/)).toBeVisible({ timeout: 30_000 });
+
+    // by TITLE, not role-name: the button's content is the icon glyph, so its
+    // accessible name is the glyph, not the word "stop"
+    await w.getByTitle(/Stop Claude/i).first().click();
+
+    // the fake reports an interrupted turn rather than running on for ever
+    await expect(w.getByText('INTERRUPTED')).toBeVisible({ timeout: 30_000 });
+  });
+});
+
 // P2-E18-08b (#149) — the Terminal tab in a stream session.
 test.describe('the Terminal tab degrades honestly (P2-E18-08b)', () => {
   let a: LaunchedApp;
