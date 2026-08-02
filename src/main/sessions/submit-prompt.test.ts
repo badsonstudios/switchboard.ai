@@ -198,8 +198,10 @@ describe('SessionManager.submitPrompt (P2-E18-06)', () => {
     const msg = controlResponse('req-1', { behavior: 'allow' });
     expect(mgr.sendToTransport(rec.id, msg)).toBe(true);
     expect(stream.sent).toEqual([msg]);
-    // and it is NOT a prompt: the status must not move
-    expect(mgr.get(rec.id)!.status).toBe('starting');
+    // and it is NOT a prompt: the status must not move. (It reads `idle`, not
+    // `starting`, since P2 #153's follow-up made transport-ready synchronous —
+    // the point of the assertion is that sending did not change it.)
+    expect(mgr.get(rec.id)!.status).toBe('idle');
   });
 });
 

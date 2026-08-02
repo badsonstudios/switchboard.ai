@@ -222,6 +222,41 @@ test.describe('switching transport the way a user does (#153)', () => {
     await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 30_000 });
   });
 
+  // Dan hit this within minutes of the switch working: a freshly restarted
+  // Direct session showed "Claude is showing a start-up dialog … appear only in
+  // the terminal" over an [Open Terminal] button — next to a Terminal tab that
+  // correctly said there was no terminal. Two surfaces in one window
+  // contradicting each other.
+  //
+  // TWO bugs behind it. The bar had no notion of transport, and every branch of
+  // it routes to a terminal a stream session does not have. And the session was
+  // genuinely stuck reporting `starting`, because transport-ready was deferred
+  // by a tick while the renderer learns the session id from a much slower IPC
+  // response — so the only status push it would ever get was filtered out for
+  // an id nobody knew yet.
+  test('a restarted Direct session does not offer a terminal it does not have', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    await w.getByRole('button', { name: '⋯' }).first().click();
+    await w.getByRole('button', { name: /switch to Direct/i }).click();
+    await w.getByRole('button', { name: /Restart session now/i }).click();
+
+    // the Terminal tab is honest about there being no terminal...
+    await w.getByRole('button', { name: 'Terminal' }).first().click();
+    await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 30_000 });
+
+    // ...and nothing else in the window contradicts it. The bar's grace period
+    // is 8s, so this has to outlast it to mean anything.
+    await w.waitForTimeout(10_000);
+    await expect(w.getByText(/start-up dialog/i)).toHaveCount(0);
+    await expect(w.getByRole('button', { name: /Open Terminal/i })).toHaveCount(0);
+  });
+
   test('the choice survives the restart it triggered', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });

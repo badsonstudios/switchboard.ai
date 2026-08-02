@@ -195,10 +195,27 @@ export class SessionManager {
     // emits NOTHING between spawn and our first prompt (S-11's log).
     if (proc.onMessage) {
       // 1. Readiness is the spawn, because nothing else will ever announce it.
-      //    Deferred a tick so the caller holds the record before any transition
-      //    fires — `create()` has not returned yet, and a status listener that
-      //    calls back into `get(id)` would otherwise see a half-built session.
-      setImmediate(() => this.apply(id, { kind: 'transport-ready' }));
+      //
+      //    Applied SYNCHRONOUSLY, before the record is returned. It used to be
+      //    deferred by `setImmediate` so `create()` would return first — and
+      //    that quietly broke the renderer (#153 follow-up): the renderer
+      //    learns a session's id from the IPC RESPONSE, which is far slower
+      //    than a tick, so the `starting -> idle` push fired before it knew the
+      //    session existed and was filtered out. `cardOfLive` is not populated
+      //    until `create()` returns either, so the push had no cardId to route
+      //    by. The card then sat on `starting` for ever and grew a "Claude is
+      //    showing a start-up dialog" bar at 8s.
+      //
+      //    PTY sessions never showed this: their first status change comes from
+      //    a hook seconds later, by which time everyone is subscribed. Stream
+      //    readiness is IMMEDIATE, and immediate is exactly what a
+      //    subscribe-then-push design cannot deliver.
+      //
+      //    Doing it here is safe: the record is in the map and `pid` is set, so
+      //    a listener that calls `get(id)` sees a complete session. And the
+      //    returned copy now carries the true status, which is what the
+      //    renderer actually reads.
+      this.apply(id, { kind: 'transport-ready' });
       // 2. The messages themselves drive status from here, and are fanned out
       //    to whoever else needs them (P2-E18-07's permission router).
       proc.onMessage((m) => {

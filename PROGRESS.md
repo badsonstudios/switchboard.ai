@@ -34,6 +34,29 @@ Branch `fix/153-transport-restart`. Gate green: lint + typecheck + **804 unit**
 > `{{now}}`, which rendered the raw template; and earlier, `cat <<'EOF'` ate
 > backslashes in two e2e regexes. **Write TS and locale strings with
 > Write/Edit, never through a heredoc.**
+> **TWO MORE BUGS DAN FOUND ON THE NEXT TRY, both shipped by the same blind
+> spot — nothing had ever LOOKED at a running stream session:**
+> 1. **The terminal-handoff bar rendered in a mode with no terminal.** A freshly
+>    restarted Direct session showed *"Claude is showing a start-up dialog …
+>    appear only in the terminal"* over an **[Open Terminal]** button, right next
+>    to a Terminal tab correctly saying there is no terminal. Two surfaces in one
+>    window contradicting each other. `terminalHandoff` had no notion of
+>    transport and EVERY branch of it routes to a terminal. The `startingLong`
+>    branch is provably false there — S-10 measured that stream mode draws no
+>    startup dialog at all.
+> 2. **The session was genuinely stuck reporting `starting`** (the bar needs 8s
+>    of it). **My bug from #135:** `transport-ready` was deferred by
+>    `setImmediate` so `create()` would return first — but the renderer learns a
+>    session's id from the IPC RESPONSE, which is far slower than a tick, so the
+>    only `starting -> idle` push it would ever get was filtered out for an id
+>    nobody knew yet. `cardOfLive` is not populated until create returns either.
+>    **PTY sessions never showed it** because their first status change comes
+>    from a hook seconds later. **Stream readiness is IMMEDIATE, and immediate is
+>    exactly what a subscribe-then-push design cannot deliver.** Now applied
+>    synchronously, so the RETURNED record already says idle — which is what the
+>    renderer actually reads. The test that asserted the old ordering was
+>    asserting the bug; it now checks the thing that actually mattered (a
+>    listener firing during create sees a COMPLETE record).
 > Also filed from the same session: **#154** — stopping a running turn wedges
 > the session (no further prompts accepted; unreproduced, needs a repro first).
 Next after this: **#139 (P2-E18-09)** — slash commands from `system:init`.

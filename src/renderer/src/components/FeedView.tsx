@@ -138,6 +138,9 @@ export function FeedView(props: {
   } | null;
   /** more holds waiting behind this one (review P0#4) */
   approvalQueued?: number;
+  /** which transport hosts this session — the handoff bar must not point at a
+   *  terminal that does not exist (P2 #153 follow-up) */
+  transport?: 'pty' | 'stream';
   onDecide?: (decision: 'allow' | 'deny', allowAll?: boolean) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
@@ -185,6 +188,7 @@ export function FeedView(props: {
     // the working banner and a "still starting" handoff together.
     startingLong: props.status === 'starting' && startingLong,
     recentlyDecided: !!props.recentlyDecided,
+    transport: props.transport,
   });
 
   React.useEffect(() => {
