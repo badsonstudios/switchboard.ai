@@ -346,8 +346,19 @@ export class WorkspaceStore {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
       fs.writeFileSync(tmp, JSON.stringify(this.state, null, 2));
       fs.renameSync(tmp, this.file);
-    } catch {
-      /* persistence is best-effort — never take the app down (fail-open) */
+    } catch (err) {
+      // Persistence is best-effort — never take the app down (fail-open, P6).
+      // But it was also SILENT, and this is the write that carries the whole
+      // layout: every card, every group, every popped-out window. A failure
+      // here means the next launch quietly restores a stale workspace with no
+      // hint as to why, which is indistinguishable from the app forgetting on
+      // purpose. It is exactly the kind of failure a busy machine produces —
+      // on Windows the tmp+rename dance loses to a scanner or an indexer
+      // holding the file for a moment (EPERM/EBUSY) — so say so (#165).
+      this.log?.warn('workspace save failed — this run will not be restored', {
+        file: this.file,
+        error: String(err),
+      });
     }
   }
 

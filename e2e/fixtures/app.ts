@@ -204,6 +204,35 @@ export async function retype(box: Locator, text: string): Promise<void> {
   await box.pressSequentially(text);
 }
 
+/**
+ * How many popped-out groups the app would PERSIST right now.
+ *
+ * Not the same thing as `app.windows().length`, and a test that quits without
+ * settling needs this one. A popout's OS window exists the moment `window.open`
+ * returns, but dockview only appends the group to the serialized layout once the
+ * child window has finished LOADING — and the main process's quit-time geometry
+ * flush can only PATCH popout entries the renderer already sent it, never invent
+ * one. Quit in between and a layout with no popout in it is what gets saved, so
+ * the window never comes back.
+ *
+ * MEASURED (#165): the gap is small. Polling this straight after the window
+ * count reached 2 found it already registered in 10/10 runs, including 8 with
+ * every core saturated, so this closes a real hole but is NOT known to be the
+ * cause of that issue's flake. Waiting on the durable thing instead of the
+ * visible one is right regardless of which race bites.
+ *
+ * Reads main's own copy over IPC (`workspace:getLayout`), i.e. exactly the
+ * object that would be written to disk — not the file, which the store debounces
+ * by 500 ms and would make this poll answer "not yet" for reasons that have
+ * nothing to do with registration.
+ */
+export async function registeredPopouts(a: LaunchedApp): Promise<number> {
+  const layout = (await a.window.evaluate(() => window.switchboard.workspace.getLayout())) as {
+    popoutGroups?: unknown;
+  } | null;
+  return Array.isArray(layout?.popoutGroups) ? layout.popoutGroups.length : 0;
+}
+
 /** Switch to the Terminal tab (always present, last — 2026-07-22). */
 export async function showTerminal(window: Page): Promise<void> {
   await window.getByRole('button', { name: 'Terminal' }).click();
