@@ -461,3 +461,95 @@ test.describe('switching transport the way a user does (#153)', () => {
     });
   });
 });
+
+// P2-E18-10 (#140) — the Feed reads the stream, not the transcript.
+//
+// Both of these are chosen so that the transcript CANNOT be the source: the
+// fake writes no JSONL line for either turn, exactly as the real CLI does not.
+// A test whose text could have come from either place would prove nothing.
+test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
+  let a: LaunchedApp;
+  test.afterEach(async () => a?.cleanup());
+
+  test('assistant text appears token by token, before the message is complete', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({
+      seedFolder: folder,
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+    });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    // `!partial` emits three text deltas and then stops: no `assistant`
+    // message, no `result`, no transcript line. The only way this text can be
+    // on screen is partial-message rendering.
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('!partial');
+    await box.press('Enter');
+
+    await expect(w.getByText(/HALF-WRITTEN-SENTENCE/)).toBeVisible({ timeout: 30_000 });
+    // and the turn is genuinely still running while we can read it
+    await expect(w.getByText('Done.')).toHaveCount(0);
+  });
+
+  // #156, measured in `spike/findings/s-11-local-slash-commands.md`. `/usage`
+  // displayed NOTHING in the Session view: the CLI emits it on the stream as an
+  // ordinary assistant turn, but records it in the JSONL as
+  // `system`/`local_command` with no assistant entry at all — and the Feed read
+  // the JSONL. The fake reproduces both halves of that divergence.
+  test('a local slash command\'s output renders (#156)', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({
+      seedFolder: folder,
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+    });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('/usage');
+    // The autocomplete popup is open — a leading `/` is what opens it — and it
+    // takes Enter to CONFIRM a completion rather than to send. Escape dismisses
+    // it, which is exactly what a user does when the command is already typed.
+    await box.press('Escape');
+    await box.press('Enter');
+
+    // the output, which the transcript-driven Feed dropped on the floor
+    await expect(w.getByText(/LOCAL-OUTPUT for \/usage/)).toBeVisible({ timeout: 30_000 });
+    // …and the turn still completed, as it always did — the done-sound played
+    // even when the text did not appear, which is what made the bug confusing
+    await expect(w.getByText('Done.')).toBeVisible({ timeout: 30_000 });
+  });
+
+  test('the user\'s own prompt still renders, off the replayed user message', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({
+      seedFolder: folder,
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+    });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('remember this prompt');
+    await box.press('Enter');
+
+    // `exact`, because the reply quotes the prompt back and a substring match
+    // would find both — which is the same trap the duplicate check below is for
+    const pill = w.getByText('remember this prompt', { exact: true });
+    await expect(pill).toBeVisible({ timeout: 30_000 });
+    // ONE copy: the stream is the only source now, and a session whose watcher
+    // still derived blocks from the transcript would show every block twice
+    await expect(pill).toHaveCount(1);
+    await expect(w.getByText(/FAKE-REPLY: remember this prompt/)).toHaveCount(1);
+  });
+});

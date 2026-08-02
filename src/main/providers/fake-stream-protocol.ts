@@ -56,7 +56,8 @@ export class FakeStreamProtocol {
   private onUser(msg: Record<string, unknown>): void {
     const text = extractText(msg.message);
     const cwd = this.host.cwd();
-    this.transcribe('user', { role: 'user', content: [{ type: 'text', text }] }, cwd);
+    const message = { role: 'user', content: [{ type: 'text', text }] };
+    this.transcribe('user', message, cwd);
 
     // ONCE PER TURN, not once per session. S-11 measured the real CLI doing
     // exactly this (4 turns -> 4 `system:init`). The fake reproduces the
@@ -65,6 +66,14 @@ export class FakeStreamProtocol {
     // `init` as a session event re-initialises every turn, and P2-E18-05/09
     // each pin that with a test they could not otherwise write.
     this.emitInit(cwd);
+
+    // `--replay-user-messages`: the CLI echoes our own turn back, so a send is
+    // ACKNOWLEDGED rather than assumed (the flag P2-E18-06 added to the
+    // recipe). The fake did not, and once the Feed reads the stream instead of
+    // the transcript (P2-E18-10) that omission means a stream session shows no
+    // user prompt at all — a fake missing something the real thing does is a
+    // fake that hides a bug.
+    this.emit({ type: 'user', message, session_id: FAKE_SESSION_ID, parent_tool_use_id: null });
 
     if (text.startsWith('!exit ')) {
       this.host.exit(Number(text.slice(6).trim()) || 0);
@@ -85,6 +94,38 @@ export class FakeStreamProtocol {
       return; // no result: the turn stays open until something interrupts it
     }
 
+    // Tokens and NOTHING ELSE (P2-E18-10): deltas, then silence. No `assistant`
+    // message, no `result`, and — the point — no transcript line either.
+    //
+    // It is the only way to prove token-by-token rendering from the outside.
+    // Every other turn ends with an assembled `assistant` message that the
+    // transcript also records, so text on screen proves nothing about WHICH
+    // source put it there or WHEN. Here the text can only have come from
+    // partial deltas, and it must be visible while the turn is still running.
+    if (text === '!partial') {
+      this.emit({
+        type: 'stream_event',
+        event: { type: 'message_start', message: { role: 'assistant', content: [] } },
+        session_id: FAKE_SESSION_ID,
+        parent_tool_use_id: null,
+      });
+      this.emit({
+        type: 'stream_event',
+        event: { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+        session_id: FAKE_SESSION_ID,
+        parent_tool_use_id: null,
+      });
+      for (const piece of ['HALF-', 'WRITTEN-', 'SENTENCE']) {
+        this.emit({
+          type: 'stream_event',
+          event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: piece } },
+          session_id: FAKE_SESSION_ID,
+          parent_tool_use_id: null,
+        });
+      }
+      return;
+    }
+
     // The CLI's command set changing mid-session — a plugin installed, a
     // command file added. Object-shaped, unlike `init`'s bare names: the shape
     // is read out of the shipped extension bundle, which stores `e.commands`
@@ -99,6 +140,37 @@ export class FakeStreamProtocol {
         ],
       });
       this.emitAssistantText('commands changed');
+      this.emitResult();
+      return;
+    }
+
+    // A LOCAL slash command (#156, `spike/findings/s-11-local-slash-commands.md`).
+    //
+    // The two transports genuinely disagree about this turn, and the fake
+    // reproduces the disagreement rather than the tidy version of it:
+    //
+    //   on the stream   — an ordinary `assistant` message carrying the output
+    //   in the JSONL    — `system`/`subtype:"local_command"`, output wrapped in
+    //                     <local-command-stdout>, AND NO `assistant` ENTRY
+    //
+    // That gap is the whole of the bug: `/usage` rendered nothing in the Session
+    // view because the transcript-driven Feed had no assistant line to find. A
+    // fake that transcribed an assistant entry here would make the fix look
+    // like it worked without proving anything.
+    if (text.startsWith('/')) {
+      const out = `LOCAL-OUTPUT for ${text}`;
+      this.emitAssistantText(out, false);
+      this.host.appendTranscript?.({
+        type: 'system',
+        subtype: 'local_command',
+        level: 'info',
+        isMeta: false,
+        isSidechain: false,
+        sessionId: FAKE_SESSION_ID,
+        cwd,
+        timestamp: new Date().toISOString(),
+        content: `<local-command-stdout>${out}</local-command-stdout>`,
+      });
       this.emitResult();
       return;
     }
@@ -221,17 +293,45 @@ export class FakeStreamProtocol {
     });
   }
 
-  private emitAssistantText(text: string): void {
+  /**
+   * @param transcribe false for a LOCAL slash command, which writes no
+   *   `assistant` entry to the JSONL at all — see the `/` branch in `onUser`.
+   */
+  private emitAssistantText(text: string, transcribe = true): void {
     // deltas first, then the assembled message — the order S-10 observed
-    // (stream_event xN -> assistant -> result)
+    // (stream_event xN -> assistant -> result).
+    //
+    // The full envelope, not just the delta: `index` is how a host matches a
+    // delta to the content block it belongs to, and how the `assistant` message
+    // that follows supersedes the block the deltas built instead of appending a
+    // second copy of the reply (P2-E18-10). A fake that omitted the index would
+    // make an index-blind consumer look correct.
+    this.emit({
+      type: 'stream_event',
+      event: { type: 'message_start', message: { role: 'assistant', content: [] } },
+      session_id: FAKE_SESSION_ID,
+      parent_tool_use_id: null,
+    });
+    this.emit({
+      type: 'stream_event',
+      event: { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+      session_id: FAKE_SESSION_ID,
+      parent_tool_use_id: null,
+    });
     for (const piece of text.match(/[\s\S]{1,8}/g) ?? []) {
       this.emit({
         type: 'stream_event',
-        event: { type: 'content_block_delta', delta: { type: 'text_delta', text: piece } },
+        event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: piece } },
         session_id: FAKE_SESSION_ID,
         parent_tool_use_id: null,
       });
     }
+    this.emit({
+      type: 'stream_event',
+      event: { type: 'content_block_stop', index: 0 },
+      session_id: FAKE_SESSION_ID,
+      parent_tool_use_id: null,
+    });
     const message = { role: 'assistant', content: [{ type: 'text', text }] };
     this.emit({
       type: 'assistant',
@@ -239,7 +339,7 @@ export class FakeStreamProtocol {
       session_id: FAKE_SESSION_ID,
       parent_tool_use_id: null,
     });
-    this.transcribe('assistant', message);
+    if (transcribe) this.transcribe('assistant', message);
   }
 
   private emitResult(isError = false): void {

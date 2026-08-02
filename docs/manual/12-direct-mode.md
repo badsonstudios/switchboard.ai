@@ -66,9 +66,11 @@ show, and the tab says so. That means you lose:
   request from the command line
 - Anything else that only exists as a full-screen terminal interface
 
-Everything else works the same. Your conversation still appears in the Session
-view, prompts still go in the same box, slash commands still work, and your
-usage figures and file changes are unaffected.
+Everything else works the same — better, in a couple of places. Your
+conversation still appears in the Session view (and arrives faster; see
+[Replies arrive as they're written](#replies-arrive-as-theyre-written)), prompts
+still go in the same box, slash commands still work, and your usage figures and
+file changes are unaffected.
 
 ## What it doesn't change
 
@@ -92,19 +94,26 @@ history, vim mode, or a command that opens its own picker. Use Direct mode
 everywhere else, and tell us what breaks: that feedback is the gate on removing
 Terminal mode.
 
-## Known gap: some commands show nothing
+## Fixed: `/usage`, `/cost` and `/context` now show their output
 
 Commands that Claude Code answers *itself* rather than by asking Claude —
-**`/usage`**, **`/cost`**, **`/context`** — currently produce no visible output
-in the Session view. The command does run; there's just nothing on screen.
+**`/usage`**, **`/cost`**, **`/context`** — used to produce no visible output in
+the Session view at all. The command ran; there was simply nothing on screen.
 
-This isn't really a Direct-mode fault: the output has always been missing from
-the Session view, and in Terminal mode you'd see it in the Terminal tab instead.
-Direct mode removed the place it was hiding. It's being fixed as part of the
-next piece of work on the Session view.
+They now print their output into the Session view like any other reply, in both
+modes. (It was never really a Direct-mode fault — the output had always been
+missing from the Session view, and in Terminal mode you'd see it in the Terminal
+tab instead, so Direct mode only removed the place it was hiding.)
 
-Commands that go to Claude — your own skills and project commands, anything that
-produces a reply — are unaffected, and so is `/clear`.
+## Replies arrive as they're written
+
+In Direct mode Claude's reply appears **a word at a time**, with a small block
+cursor at the end while it's still being written — the same way it looks in the
+terminal. In Terminal mode the Session view instead waits for each message to be
+finished and written to disk, so replies land in chunks a moment behind.
+
+Nothing else about the Session view changes: prompts, file edits, commands,
+thinking and checklists all look and behave exactly the same in either mode.
 
 ## If something looks wrong
 

@@ -21,6 +21,8 @@ export interface FeedBlockDto {
   durationMs?: number;
   sidechain: boolean;
   ts?: string;
+  /** tokens are still arriving into this block (P2-E18-10, stream sessions) */
+  streaming?: boolean;
 }
 
 /** Insert-or-replace by seq: the watcher re-emits updated blocks (E10-06). */

@@ -56,9 +56,16 @@ describe('a plain turn (P2-E18-04)', () => {
   it('the deltas concatenate to exactly the assistant text', () => {
     proto.handle(userMsg('hello'));
 
+    // P2-E18-10 widened the fake's stream_event repertoire from deltas alone to
+    // the full message envelope (message_start / content_block_start / delta /
+    // content_block_stop), because a delta's `index` is how a host matches it
+    // to the block it belongs to. Filter on the event type, not on being a
+    // stream_event at all.
     const deltas = out
-      .filter((m) => m.type === 'stream_event')
-      .map((m) => ((m.event as { delta: { text: string } }).delta.text));
+      .filter(
+        (m) => m.type === 'stream_event' && (m.event as { type: string }).type === 'content_block_delta'
+      )
+      .map((m) => (m.event as { delta: { text: string } }).delta.text);
     const assistant = out.find((m) => m.type === 'assistant') as {
       message: { content: Array<{ text: string }> };
     };

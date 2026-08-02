@@ -10,6 +10,7 @@ import { PtyService } from './pty/pty-service';
 import { StreamService } from './transport/stream-service';
 import { StreamPermissions } from './sessions/stream-permissions';
 import { StreamCommands } from './sessions/stream-commands';
+import { StreamFeed } from './feed/stream-feed';
 import { SessionManager } from './sessions/session-manager';
 import { HookListener } from './hooks/hook-listener';
 import { TranscriptWatcher } from './transcripts/watcher';
@@ -587,6 +588,16 @@ app
     // and with no symptom but a stale popup.
     const streamCommands = new StreamCommands(createLogger(sink, 'sessions'));
     manager.onStreamMessage((sessionId, msg) => streamCommands.offer(sessionId, msg));
+    // The Feed, off the same stream (P2-E18-10). A THIRD subscription, for the
+    // reason spelled out above: one listener per consumer, one blast radius
+    // each. This one carries the most traffic by far — S-11 counted 719
+    // `stream_event`s against 27 `assistant` messages in a working day.
+    const streamFeed = new StreamFeed(createLogger(sink, 'sessions'));
+    manager.onStreamMessage((sessionId, msg) => streamFeed.offer(sessionId, msg));
+    // A turn that never produced a `result` must not leave a block claiming to
+    // still be filling in (#140). The session's exit is the last honest moment
+    // to say so.
+    manager.onSessionExit((e) => streamFeed.finalize(e.sessionId));
     const hooks = new HookListener({
       stateDir,
       manager,
@@ -687,6 +698,7 @@ app
       ptys,
       streamPermissions,
       streamCommands,
+      streamFeed,
       hooks,
       transcripts,
       feed,

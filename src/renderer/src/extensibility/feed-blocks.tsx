@@ -17,11 +17,35 @@ import DOMPurify from 'dompurify';
 import { FeedBlockDto } from '../lib/feed';
 import { FeedBlockRendererContribution, manifestFor } from './contributions';
 
-function Markdown({ text }: { text: string }): React.JSX.Element {
+/** The "still typing" cue. A glyph, not copy — nothing here to translate. */
+const STREAMING_CARET = '▌';
+
+/**
+ * Assistant prose. While it is STILL ARRIVING (P2-E18-10) it renders as plain
+ * text with a caret on the end, and only becomes markdown once it is complete.
+ *
+ * Two reasons, and both matter:
+ *
+ *  - Half a document is not a document. A code fence, list or table that is
+ *    mid-write parses as something else entirely, so a streamed reply would
+ *    reflow and re-style itself on almost every token.
+ *  - Cost. `useMemo` is keyed on the text, so parsing per token means parsing
+ *    the WHOLE reply once per token — quadratic in the length of the answer, on
+ *    the renderer thread, times every session streaming at once.
+ */
+function Markdown({ text, streaming }: { text: string; streaming?: boolean }): React.JSX.Element {
   const html = React.useMemo(
-    () => DOMPurify.sanitize(marked.parse(text, { async: false }) as string),
-    [text]
+    () => (streaming ? '' : DOMPurify.sanitize(marked.parse(text, { async: false }) as string)),
+    [text, streaming]
   );
+  if (streaming) {
+    return (
+      <div className="feed-md" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>
+        {text}
+        <span style={{ color: 'var(--status-working)', opacity: 0.8 }}>{STREAMING_CARET}</span>
+      </div>
+    );
+  }
   return <div className="feed-md" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
@@ -296,7 +320,7 @@ export const feedBlockRenderers: FeedBlockRendererContribution[] = [
     manifest: manifest('feed-block-markdown', 'Assistant prose (fallback)'),
     order: 1_000,
     matches: () => true,
-    render: (b) => <Markdown text={b.text ?? ''} />,
+    render: (b) => <Markdown text={b.text ?? ''} streaming={b.streaming} />,
   },
 ];
 
