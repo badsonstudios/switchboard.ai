@@ -4,24 +4,204 @@
 > A fresh session reads this file and knows exactly where things stand.
 
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
-**E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
-E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.**
+**E18-01…10 ALL DONE 2026-08-02**; E15 done except #111 [held — real tokens];
+E9 at 4 of 11 — #70–#73 done, #74–#80 open; E11/E13/E14 still outlines)
+**In progress:** **nothing mid-flight.** First /orchestrate run closed
+2026-08-02 — six items shipped in one day (see the run record below).
 
-> # ▶▶ START HERE — NEXT IS **`/next-item 140`**. SAY THE NUMBER.
-> **#140 (P2-E18-10) — Feed from typed messages.** It is the LAST filed item in
-> the E18 spine; when it lands, E18-01…E18-10 are all done and what remains is
-> E18-11…E18-16, still unfiled behind the S-11 chooser probes.
-> **A bare `/next-item` would pick #73**, not this. The E18 issues were filed
-> last so they never win by number.
+> # ▶▶ START HERE — NEXT IS **`/orchestrate`** (wave 2).
+> The first orchestration run (2026-08-02, record below) merged everything it
+> dispatched. The next run's queue analysis, pre-done:
+> - **#74 (P2-E9-05, presentation ladder, M)** — E9 track head now #73 is
+>   merged. Dan accepted #73's two flagged calls (no strip off-switch;
+>   Ctrl+Space-only lamp), so build on them.
+> - **#91 (Session view: box tool blocks, drop timeline dot)** — Feed track,
+>   unblocked now #163 is merged. Different files than #74; can run parallel.
+> - **Small-fix pool for a third worker:** #172/P2-E15-15 (app version +
+>   build identity — Dan wants it SOON, spec in plan §E15-15), #170 (resume
+>   status refresh), #168 (read-only workspace UI notice), #167 (EBUSY
+>   phantom), #165 (popout-geometry flake), #164 (check:fake-stream), #161
+>   (Monaco diff e2e).
+> - **#111 (re-measure S-07) still HELD** — it spends real subscription
+>   tokens; ask Dan before dispatching.
+> - E18-11…16 stay unfiled behind the S-11 probes; E9's tail past #80 and
+>   E11/E13/E14 expansion need Dan (/pm scoping).
+
+> # 🎛 ORCHESTRATION RUN 1 — 2026-08-02, **CLOSED: ALL SIX ITEMS MERGED.**
+> 6 work items dispatched to parallel Opus workers, 6 on `main` same day:
+> #109→PR#160, #145→PR#162, #110→PR#166 (internal, orchestrator-merged);
+> #140→PR#163, #73→PR#169, #90→PR#171 (user-facing, Dan hand-tested +
+> merged). **#156 closed** (fixed by #163, both transports). 7 issues filed
+> from worker discoveries: #161 #164 #165 #167 #168 #170 #172.
+> **#140 took three rounds and each paid rent:** round 1 = the fake-blind
+> composer bug (Enter fed the autocomplete, commands never sent — BOTH
+> transports) + the real per-block assistant message shape; round 2 = Dan
+> was hand-testing a stale `out/` build of main, which spawned #172/E15-15
+> (app version + build identity) AND a no-click visibility e2e. Lesson
+> normalized: a fake must be able to FAIL the way reality fails, and a test
+> that teaches an unnatural keystroke can't see the natural one break.
+> **Worktree pool:** sb-wt-1/2/3 parked clean, detached on 2b8d217; merged
+> local branches deleted. **`npm ci` in a fresh worktree does NOT install
+> Electron's binary** — run `node node_modules/electron/install.js` after
+> (fold into the /orchestrate skill's recipe).
+> Worker handoffs remain in `.claude/work_files/orchestrator/<issue#>.md`.
+> Historical detail of the run below (kept as the log of record).
 >
-> **#140 is an M, not an S** — it moves the Session view off transcript-polling
-> and onto the stream, so it touches the Feed pipeline properly.
-> **It got MORE valuable on 2026-08-02: it is the fix for #156** (`/usage` shows
-> nothing). A comment on #140 says to ASSERT that case, not assume it falls out.
+> **Active workers** (issue → worktree → branch):
+> - ~~#140 P2-E18-10 Feed from typed messages~~ **WORKER DONE** — PR #163
+>   marked ready, IN DAN'S QUEUE (user-facing; orchestrator never merges it).
+>   Gates: 888 unit (+48) / 114 e2e +1 skip. #156 asserted twice (unit+e2e)
+>   AND fixed for PTY too via shared `local_command` derivation. Handoff:
+>   `.claude/work_files/orchestrator/140.md` (8-step hand-test list, also in
+>   the PR body).
+> - ~~#73 P2-E9-04 Urgency strip + delayed urgency reset~~ **WORKER DONE** —
+>   PR #169 ready, IN DAN'S QUEUE (user-facing). Gates: 868 unit (+28) /
+>   116 e2e (+5). Two calls flagged for Dan in the PR body: no off switch
+>   for the strip, and only Ctrl+Space lights a lamp (not click). Urgency
+>   store shaped for the later E9 items; pinned-first inherited from rail
+>   order rather than a second sort. Handoff:
+>   `.claude/work_files/orchestrator/73.md`.
+>   **#74 deliberately NOT dispatched yet** — it extends #73's store while
+>   Dan has two overrulable calls open on it; the serial E9 track resumes
+>   after Dan merges #169. `sb-wt-1` parked on detached main (fa8eed7).
+> - ~~#145 e2e flake: slash popup second open~~ **WORKER DONE** — PR #162 in
+>   the merge queue below. Diagnosis: cause 1 confirmed two ways (`fill('')`
+>   never reaches React on a textarea — Playwright's own source; plus a stale
+>   rAF caret write reproducing the exact CI symptom); cause 2 ruled out and
+>   the fail-open scan made observable (warn log + switchboard.log attached
+>   on e2e failure). Target spec 6/6 clean + 4/4 under CPU saturation.
+> - ~~#90 Terminal-focus accelerators~~ **WORKER DONE — ALL WORKERS DONE.**
+>   PR #171 ready, IN DAN'S QUEUE (user-facing). Gates: 913 unit / 120 e2e
+>   +1 skip. P7 verified against the shipped CLI's own keybinding table
+>   (both chords unbound); allowlist growth rule written at the definition
+>   site; popouts covered; fail-open handshake added after review found a
+>   swallow-before-subscribe hole. Handoff:
+>   `.claude/work_files/orchestrator/90.md`. `sb-wt-2` parked (fa8eed7).
+> - ~~#109 P2-E15-12 Header-based CSP~~ **WORKER DONE** — PR #160 in the
+>   merge queue below.
+> - ~~#110 P2-E15-13 Workspace schema migration hook~~ **WORKER DONE** — PR
+>   #166 in the merge queue below. Read-only-safe = boots fail-open but
+>   refuses writes (the lossy overwrite is the harm). Includes two latent
+>   `store.ts` bugs fixed in passing, both tested (non-object JSON loaded
+>   empty with no `.corrupt` backup then got overwritten; fresh-start state
+>   aliased module-level `EMPTY`, leaking groups across stores). Worktree
+>   `sb-wt-3` idle after merge — next dispatch is #74 when #73 lands.
 >
-> **Nothing is blocked and nothing is waiting on Dan except hand-testing** (the
-> #139 list below, and #156 is a known open gap he already found).
+> **Status:** #140, #145, #110 workers running. #109's worker finished: all
+> gates green (858 unit / 115 e2e), handoff in
+> `.claude/work_files/orchestrator/109.md`.
+> NOTE: Dan's tooling PR #159 landed on main mid-run — PR #160's branch was
+> updated from main (CI re-running); #110's branch is cut from e09ba68.
+> Workers #140/#145 branch from de8dcdc — their PRs will need the same
+> update-from-main before merge (no expected conflicts; #159 touched only
+> .claude/settings.json + .gitignore).
+>
+> **Merge queue:** Internal PRs squash-merged on green CI, one at a
+> time, rebase-after-every-merge. User-facing PRs marked ready and QUEUED FOR
+> DAN, never merged by the orchestrator.
+> - ✅ **PR #160 (#109, internal) MERGED 2026-08-02**, all 5 jobs green on
+>   the updated head; issue #109 closed; branch deleted. One flagged
+>   DESIGN-reading divergence (meta tag is a BUILD-TIME backstop for the
+>   `file://` fallback, not dev-only — dev-only would re-break Vite's
+>   preamble; ~15-line revert if Dan prefers the literal reading). Post-merge
+>   sanity for Dan is in PR #160's body; the Monaco diff pane is the one
+>   surface with no automated coverage (filed #161).
+> - ✅ **PR #162 (#145, internal) MERGED 2026-08-02**, all 5 jobs green on
+>   the updated head; issue #145 closed; branch deleted. Note for Dan: this
+>   internal merge included two small renderer fixes (composer caret
+>   rAF→useLayoutEffect — the flake's product-side cause — and scan
+>   warn-logging), not only test code.
+> - **PR #163 (#140, user-facing)** — on post-#162 main, **all 5 jobs GREEN.
+>   Ready for Dan** — nothing pending on it. (If another internal merge lands
+>   first, the orchestrator will bump + re-green it again.)
+> - ✅ **PR #166 (#110, internal) MERGED 2026-08-02**, all 5 jobs green on
+>   the updated head; issue #110 closed. `sb-wt-3` parked on detached main
+>   (fa8eed7), idle — reserved for #74 when #73 lands.
+> - **PR #163 GREEN on post-#166 main** (all internal merges done) — ready
+>   for Dan, nothing pending.
+>
+> **Filed mid-run:**
+> - #161 (Monaco diff pane has zero e2e coverage; dev-mode coverage gap noted
+>   inside) — from #109's handoff.
+> - #164 (`npm run check:fake-stream` broken on Windows, pre-existing on
+>   main — cmd.exe banner leaks into the pipe) — from #140's handoff.
+> - #165 (popout-geometry.spec.ts:149 flaked under load — same load-sensitive
+>   class #145 just fixed for the slash popup; #145's staging pattern applies)
+>   — from #145's handoff.
+> - #167 (stream-service.test.ts afterAll rmSync EBUSY race on Windows —
+>   phantom "1 file failed, 0 tests failed" unit runs) — from #110's handoff.
+> - #168 (workspace read-only mode is log-only; a P9 surface —
+>   `isReadOnly()` is the seam) — from #110's handoff.
+> - #170 (resuming a suspended session never refreshes status — rail and
+>   strip both stay "suspended"; `refreshSessions` only fires on a change
+>   event a resume doesn't emit) — from #73's handoff.
+>
+> **Worktree gotcha (hit every fresh worktree):** `npm ci` does NOT install
+> Electron's binary (`node_modules/electron/` lacks `dist/`) — `npm run dev`
+> / `e2e` die with "Electron uninstall". Fix: `node
+> node_modules/electron/install.js` (instant, from cache). Relayed to both
+> running workers; fold into the /orchestrate skill's worktree recipe when
+> the run ends.
+>
+> **Dan's queue: ALL CLEARED 2026-08-02 — Dan merged #163, #169, #171.**
+> Only leftover: PR #157's 6-item hand-test list was never run; its code has
+> been on main since morning. Historical entries follow.
+> 1. **PR #163 (#140) — ROUND 2 RESOLVED: Dan was hand-testing a STALE
+>    BUILD OF MAIN.** The main checkout's `out/` was built 08:11 from
+>    de8dcdc — zero `local_command` code; the collapsed `/usage` stub is
+>    main's original #156 bug faithfully reproduced. Dan's own failing
+>    session transcript contained the output all four times. The branch,
+>    actually built, renders `/usage` figures visibly in BOTH transports —
+>    verified against the real CLI. Round 2 still paid rent: the transcript
+>    half of #156 had NO e2e (unit only — "on screen" vs "in a data
+>    structure" was untestable); a new e2e asserts the output visible with
+>    no click, scoped to the assistant-prose renderer so text hidden in the
+>    collapsed pill cannot satisfy it. Gates: 930 unit / 121 e2e + 1 skip.
+>    Filed #172 (no build identity in the UI — the ambiguity that cost the
+>    cycle). **Dan's re-test — BUILD THE BRANCH FIRST:**
+>    `cd C:/Projects/sb-wt-1 && npm run build && npm start`, then `/usage`
+>    + one Enter in both modes, `/us`+Tab, streamed paragraph (no duplicate
+>    copy). Round-1 history below.
+>    Dan found no slash command ran in a Direct session (2026-08-02). Worker
+>    measured before touching: the CLI was INNOCENT — all five commands
+>    (/usage /cost /context /model /agents) return full output over the
+>    stream with our exact flags. **The composer's autocomplete popup was
+>    claiming Enter to confirm a completion** — a fully-typed `/usage` +
+>    Enter became `/usage ` and ran nothing, in BOTH transports (Terminal
+>    mode only worked because you type into the terminal). The worker's own
+>    e2e had hit the wall and worked AROUND it (Escape first) — the test
+>    taught the unnatural keystroke, so it couldn't see the natural one
+>    fail. Fix: Enter runs a fully-typed command, Tab still completes.
+>    Same probe run also exposed a second fake blindness: the real CLI
+>    emits ONE assistant message PER content block mid-stream (all index 0)
+>    — the index-only reconcile would have duplicated every block after the
+>    first; now reconciled by index then kind. Fake upgraded to emit the
+>    measured reality; findings in
+>    `spike/findings/s-11-slash-commands-and-message-shape.md`.
+>    Gates: 930 unit / 120 e2e + 1 skip; CI re-running on the fixed head.
+>    **Dan's re-test:** `/usage` + Enter ONCE (also /cost /context /model
+>    /agents); `/us` + Tab completes without sending; same checks in
+>    Terminal mode; a streamed paragraph has NO duplicate copy underneath.
+> 2. **PR #169 (#73, urgency strip)** — ready for review, **all 5 jobs GREEN
+>    on post-#166 main**. Hand-test list in the PR body;
+>    the two judgment calls to confirm or overrule: strip has no off switch
+>    (§5.8 persistent), and only Ctrl+Space triggers the lingering lamp.
+> 3. **PR #171 (#90, terminal accelerators)** — ready for review, **all 5
+>    jobs GREEN on post-#166 main**. Headline hand-tests: from
+>    terminal focus, Ctrl+Shift+P opens the palette and Ctrl+Space jumps to
+>    the session needing attention (main window AND popout); every other key
+>    still reaches the CLI (Ctrl+R history search etc.).
+> 4. (carried over, pre-run) PR #157's 6-item hand-test list — still unrun.
+>
+> **Up next (queue analysis):** Feed track is serial #140 → #91 → verify #156
+> closes. E9 (#73–#80) is one serial track — starts after wave 1 frees a
+> worktree. #110 (workspace schema migration) and #90 (keyboard reachability)
+> are candidates for wave 2. #111 (re-measure S-07 concurrency) HELD — it runs
+> real sessions on the subscription; asking Dan before dispatching. E18 tail
+> (E18-11…E18-16) unfiled behind S-11 probes — not filed without Dan.
+
+> *(superseded 2026-08-02 — this block used to say "next is /next-item 140";
+> #140 shipped in orchestration run 1, see the START HERE block at the top)*
 
 **#139 (P2-E18-09) DONE — MERGED 2026-08-02 as PR #157**, all 5 CI jobs green.
 Gate: lint + typecheck + **840 unit (+26)** + **111 e2e (+3)**. Dan merged.

@@ -474,8 +474,22 @@ Work items:
   appended to `spike/findings/s-07-concurrency-perf.md` with a dated
   "real-app" section; any regression against the harness numbers is either
   fixed or filed with a named owner.
-
-**E15 exit:** a second provider adapter could be written without touching
+- **P2-E15-15 · App version + build identity — S (#172, added 2026-08-02 at
+  Dan's request).** During PR #163's hand-testing Dan twice tested a stale
+  `out/` build of main and read its old bugs as the PR failing — a full
+  diagnostic cycle spent answering "which build is this?". Dan's direction:
+  a version number visible in the app, moving with the code. Mechanism
+  (agreed 2026-08-02): the `package.json` semver is the human-bumped release
+  number, and the build stamps **git SHA + branch + dirty flag + build time**
+  into the app at build time (electron-vite `define`) — NOT a per-PR/per-
+  build counter in a committed file, which would put a guaranteed merge
+  conflict into every concurrently-open PR (the update-branch cascade of
+  2026-08-02 would have conflicted three times over).
+  *Done when:* the running app shows version + short SHA + branch + build
+  time somewhere findable in ≤5s (About/status surface; title bar in
+  non-main builds); a dirty working tree is marked; a hand-tester can
+  confirm "am I running the branch I think I am?" without leaving the app;
+  `docs/manual/` mentions where to look. a second provider adapter could be written without touching
 `sessions/ipc.ts`; a new view tab or feed block renderer is a self-contained
 module; a theme is a JSON file and three of them ship; every IPC channel
 carries a declared capability with a live enforcement point; the renderer has
