@@ -351,3 +351,65 @@ describe('SessionStore — presentation (P2-E15-08)', () => {
     expect(persisted).toEqual([]); // it just READ the blob; writing it is a no-op at best
   });
 });
+
+describe("SessionStore — the urgency strip's delayed reset (P2-E9-04)", () => {
+  let store: SessionStore;
+  const T = 1_000_000;
+  beforeEach(() => {
+    store = new SessionStore();
+  });
+
+  it('starts with nothing lit', () => {
+    expect(store.getState().urgency.size).toBe(0);
+  });
+
+  it('markUrgency lights a card and publishes a new state object', () => {
+    const before = store.getState();
+    store.markUrgency('card-A', T);
+    expect(store.getState().urgency.get('card-A')).toBe(T + 1500);
+    expect(store.getState()).not.toBe(before); // identity IS the change signal
+  });
+
+  it('is readable SYNCHRONOUSLY, the way the keydown handler needs it', () => {
+    // the jump marks the lamp from a keydown handler that runs outside React's
+    // commit; two presses in one frame must both land, and the SECOND must see
+    // the first without a render in between
+    store.markUrgency('card-A', T);
+    expect(store.getState().urgency.has('card-A')).toBe(true); // visible already
+    store.markUrgency('card-B', T);
+    expect([...store.getState().urgency.keys()]).toEqual(['card-A', 'card-B']);
+  });
+
+  it('ignores an empty card id rather than lighting a lamp nobody owns', () => {
+    store.markUrgency('', T);
+    expect(store.getState().urgency.size).toBe(0);
+  });
+
+  it('expireUrgency puts out only the lamps whose beat has passed', () => {
+    store.markUrgency('card-A', T);
+    store.markUrgency('card-B', T + 400);
+    store.expireUrgency(T + 1500);
+    expect([...store.getState().urgency.keys()]).toEqual(['card-B']);
+  });
+
+  it('expireUrgency with nothing to drop is a NO-OP — no re-render for a stray timer', () => {
+    store.markUrgency('card-A', T);
+    let notifications = 0;
+    store.subscribe(() => {
+      notifications += 1;
+    });
+    const before = store.getState();
+    store.expireUrgency(T + 100);
+    expect(store.getState()).toBe(before);
+    expect(notifications).toBe(0);
+  });
+
+  it('notifies subscribers when a lamp lights, so the strip repaints', () => {
+    let notifications = 0;
+    store.subscribe(() => {
+      notifications += 1;
+    });
+    store.markUrgency('card-A', T);
+    expect(notifications).toBe(1);
+  });
+});

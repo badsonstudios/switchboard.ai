@@ -108,8 +108,9 @@ untouched, and it stays in the Sessions list on the left with its status
 indicator — so if it finishes or needs you, you'll still see it. The only thing
 that goes away is the card.
 
-To bring it back, click it anywhere — its row in the Sessions list, or its
-entry in Events. It returns to the exact spot it left: the same position among
+To bring it back, click it anywhere — its row in the Sessions list, its lamp in
+[the strip along the top](09-notifications.md#the-lamp-strip), or its entry in
+Events. It returns to the exact spot it left: the same position among
 its neighbours, on the same view tab you had open, and if it was in its own
 window, back into one. If the layout around it has changed enough that its old
 spot no longer exists, it comes back into the main grid rather than nowhere.

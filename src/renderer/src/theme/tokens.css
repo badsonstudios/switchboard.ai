@@ -268,6 +268,90 @@ body {
   cursor: pointer;
   user-select: none;
 }
+
+/* ---- Urgency strip (P2-E9-04, §5.8) --------------------------------------
+ * The lamp's LOOK lives here rather than inline, because it has a hover state
+ * and an inline background would beat any :hover rule on specificity. The
+ * component passes the two values it can't know statically — the status hue and
+ * its ink — as custom properties, and every rule below is keyed off the data
+ * attributes it already sets.
+ *
+ * The lit ring is the delayed urgency reset made visible; it FADES out rather
+ * than snapping off, because the strip is on screen permanently and an abrupt
+ * change reads as a new event. Nothing here blinks: the rail's blinking status
+ * dot was an explicit rejection, and this bar is always in view. */
+.urgency-lamp {
+  --lamp-hue: var(--status-idle);
+  --lamp-ink: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  /* NEVER shrink: `overflow: hidden` on the name drives its automatic minimum
+   * size to zero, so a flexible lamp would squash to a bare dot long before the
+   * strip decided to scroll — "every session at a glance" turning into "every
+   * session's hue at a glance" exactly when there are enough sessions to need
+   * it. Overflow is the right answer here; §5.8's pinning contract already
+   * presumes it ("never scrolls out of view under overflow"). */
+  flex: 0 0 auto;
+  min-inline-size: 80px;
+  max-inline-size: 140px;
+  padding: 2px 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background 0.11s,
+    border-color 0.35s;
+}
+.urgency-lamp[data-active='true'] {
+  background: var(--chip);
+  border-color: var(--border);
+}
+.urgency-lamp[data-needs-you='true'] {
+  background: color-mix(in srgb, var(--lamp-hue) 12%, transparent);
+  color: var(--lamp-ink);
+  font-weight: 600;
+}
+.urgency-lamp[data-lit='true'] {
+  background: color-mix(in srgb, var(--lamp-hue) 22%, transparent);
+  border-color: var(--lamp-hue);
+}
+.urgency-lamp:hover {
+  background: var(--rail-row-hover);
+}
+/* a lamp that already carries a signal keeps it on hover */
+.urgency-lamp[data-needs-you='true']:hover,
+.urgency-lamp[data-lit='true']:hover {
+  background: color-mix(in srgb, var(--lamp-hue) 26%, transparent);
+}
+/* calm = hollow ring, needy = filled: legible before any color is read, which
+ * is also what keeps the strip working for color-blind users (§5.20) */
+.urgency-dot {
+  flex: 0 0 auto;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  background: transparent;
+  border: 1.5px solid var(--lamp-hue);
+}
+.urgency-lamp[data-needs-you='true'] .urgency-dot {
+  background: var(--lamp-hue);
+}
+/* restored-but-not-resumed folds to the idle hue; a fainter ring says it is
+ * not merely quiet, it is not running */
+.urgency-lamp[data-suspended='true'] .urgency-dot {
+  border-color: color-mix(in srgb, var(--lamp-hue) 45%, transparent);
+}
+.urgency-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* 18x18 hit target grown with the BOX, never by enlarging the glyph */
 .rail-x {
   color: var(--rail-close);
