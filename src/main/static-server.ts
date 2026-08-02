@@ -7,6 +7,7 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { CSP_PROD } from '../shared/csp';
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -49,7 +50,13 @@ export function startStaticServer(root: string): Promise<StaticServer> {
         res.writeHead(404);
         return void res.end();
       }
-      res.writeHead(200, { 'content-type': MIME[path.extname(resolved).toLowerCase()] ?? 'application/octet-stream' });
+      res.writeHead(200, {
+        'content-type': MIME[path.extname(resolved).toLowerCase()] ?? 'application/octet-stream',
+        // The renderer's Content-Security-Policy comes from here, not from a
+        // <meta> tag (P2-E15-12, AR-P2-10). Main re-asserts the identical
+        // policy via onHeadersReceived so dev is covered too; see shared/csp.ts.
+        'content-security-policy': CSP_PROD,
+      });
       res.end(data);
     });
   });
