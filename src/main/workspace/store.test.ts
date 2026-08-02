@@ -9,7 +9,8 @@ vi.mock('electron', () => ({
   BrowserWindow: class {},
 }));
 
-import { WorkspaceStore, displayFingerprint, PersistedSession } from './store';
+import { WorkspaceStore, displayFingerprint, PersistedSession, CURRENT_VERSION } from './store';
+import { Logger } from '../log/logger';
 
 let dir: string;
 let file: string;
@@ -207,6 +208,156 @@ describe('ui blob (P2-E12-08 focus/view-tab state)', () => {
     const b = new WorkspaceStore(file);
     b.load();
     expect(b.getUi()).toEqual({ focusedCardId: 'c1', 'viewTab.c1': 'terminal', autonomy: 'plan' });
+  });
+});
+
+describe('schema version dispatch (P2-E15-13, §5.26 / AR-P2-9)', () => {
+  type Line = { msg: string; fields?: Record<string, unknown> };
+  const fakeLogger = (warns: Line[]): Logger => {
+    const l: Logger = {
+      debug: () => {},
+      info: () => {},
+      warn: (msg, fields) => warns.push({ msg, fields }),
+      error: () => {},
+      child: () => l,
+    };
+    return l;
+  };
+
+  /** A file on disk with an arbitrary `version` value and real content. */
+  const writeFile = (version: unknown): void =>
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        version,
+        sessions: [sess('a', 2)],
+        groups: [{ id: 'g1', name: 'IT', color: '#4a90d9' }],
+        window: null,
+        layout: { grid: 'opaque' },
+        ui: { focusedCardId: 'a' },
+      })
+    );
+
+  it.each([
+    ['absent', undefined],
+    ['v0', 0],
+    ['v1', 1],
+    ['a v1 string', '1'],
+    ['unusable garbage', 'abc'],
+    ['null', null],
+  ])('%s loads as v1 — sanitized, writable, and silent', (_label, version) => {
+    writeFile(version);
+    const warns: Line[] = [];
+    const st = new WorkspaceStore(file, fakeLogger(warns));
+    const s = st.load();
+
+    expect(s.version).toBe(CURRENT_VERSION);
+    expect(s.sessions.map((x) => x.id)).toEqual(['a']);
+    expect(s.groups.map((g) => g.id)).toEqual(['g1']);
+    expect(s.layout).toEqual({ grid: 'opaque' });
+    expect(st.isReadOnly()).toBe(false);
+    expect(warns).toEqual([]);
+
+    st.upsertSession(sess('b', 3));
+    st.save();
+    expect(new WorkspaceStore(file).load().sessions.map((x) => x.id)).toEqual(['a', 'b']);
+  });
+
+  it('a FUTURE version loads read-only: shown in memory, never written back', () => {
+    writeFile(99);
+    const before = fs.readFileSync(file, 'utf8');
+    const warns: Line[] = [];
+    const st = new WorkspaceStore(file, fakeLogger(warns));
+    const s = st.load();
+
+    // fail-open: the app still boots on what it recognizes
+    expect(s.sessions.map((x) => x.id)).toEqual(['a']);
+    expect(s.groups.map((g) => g.id)).toEqual(['g1']);
+    expect(st.isReadOnly()).toBe(true);
+
+    // ...but nothing this run does can overwrite the newer file
+    st.upsertSession(sess('b', 3));
+    st.setUi({ wiped: true });
+    st.removeSession('a');
+    st.save();
+    expect(fs.readFileSync(file, 'utf8')).toBe(before);
+    expect(fs.existsSync(`${file}.tmp`)).toBe(false);
+  });
+
+  it('a FUTURE version says so in the log, naming both versions', () => {
+    writeFile(CURRENT_VERSION + 1);
+    const warns: Line[] = [];
+    new WorkspaceStore(file, fakeLogger(warns)).load();
+    expect(warns).toHaveLength(1);
+    expect(warns[0].msg).toMatch(/newer version/i);
+    expect(warns[0].fields).toMatchObject({
+      fileVersion: CURRENT_VERSION + 1,
+      supportedVersion: CURRENT_VERSION,
+    });
+  });
+
+  it('a numeric STRING version is coerced, not read as v1 and overwritten', () => {
+    writeFile(String(CURRENT_VERSION + 1)); // sloppy writer, still from the future
+    const st = new WorkspaceStore(file);
+    st.load();
+    expect(st.isReadOnly()).toBe(true);
+  });
+
+  it('read-only survives the debounce: saveSoon never fires a write', () => {
+    vi.useFakeTimers();
+    try {
+      writeFile(CURRENT_VERSION + 1);
+      const before = fs.readFileSync(file, 'utf8');
+      const st = new WorkspaceStore(file);
+      st.load();
+      st.upsertSession(sess('b', 3)); // goes through saveSoon()
+      expect(vi.getTimerCount()).toBe(0); // no pointless write is even armed
+      vi.runAllTimers();
+      expect(fs.readFileSync(file, 'utf8')).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('read-only is per-load, not sticky', () => {
+    writeFile(CURRENT_VERSION + 1);
+    const st = new WorkspaceStore(file);
+    st.load();
+    expect(st.isReadOnly()).toBe(true);
+    writeFile(CURRENT_VERSION); // e.g. the user restored a backup
+    st.load();
+    expect(st.isReadOnly()).toBe(false);
+    st.upsertSession(sess('b', 3));
+    st.save();
+    expect(new WorkspaceStore(file).load().sessions.map((x) => x.id)).toEqual(['a', 'b']);
+  });
+
+  it.each([
+    ['valid JSON that is not a workspace', 'null'],
+    ['a bare array', '[1,2]'],
+  ])('%s is backed aside and restarts writable', (_label, content) => {
+    fs.writeFileSync(file, content);
+    const st = new WorkspaceStore(file);
+    const s = st.load();
+    expect(s.sessions).toEqual([]);
+    expect(st.isReadOnly()).toBe(false);
+    expect(fs.existsSync(`${file}.corrupt`)).toBe(true);
+  });
+
+  // Latent since P1-E2-04, surfaced by the stores this suite builds: the
+  // fresh-start state used to alias the module-level EMPTY, so one store's
+  // groups leaked into the next store's "empty" workspace.
+  it('two stores that both start empty do not share state', () => {
+    fs.writeFileSync(file, '{not json'); // forces the fresh-start path
+    const a = new WorkspaceStore(file);
+    a.load();
+    a.upsertGroup({ id: 'g1', name: 'IT', color: '#4a90d9' });
+    a.upsertSession(sess('a'));
+
+    const other = path.join(dir, 'other.json');
+    const b = new WorkspaceStore(other);
+    expect(b.load().groups).toEqual([]);
+    expect(b.snapshot().sessions).toEqual([]);
   });
 });
 

@@ -763,17 +763,36 @@ function Composer({
     selectedRow.current?.scrollIntoView({ block: 'nearest' });
   }, [selected, token]);
 
-  const pick = (name: string): void => {
-    const next = insertCommand(draft, caret, name);
-    setDraft(next);
-    setDismissed(true); // closed until the token changes again
+  // Placing the caret after an insert has to wait for React to COMMIT the new
+  // draft: the textarea is controlled, so its DOM value is written during the
+  // commit and a caret moved before that is simply overwritten. A layout effect
+  // is exactly that moment — the same commit, after the DOM mutation.
+  //
+  // This used to be a requestAnimationFrame, which is a whole frame LATER and is
+  // throttled hard when the window is occluded or the machine is loaded (CI).
+  // A late caret write lands after the user has moved on: it collapses a
+  // selection they just made and re-anchors typing into the middle of the old
+  // draft. Measured while chasing #145 — delivering that stale write by hand,
+  // between a select-all and the typing, left the box reading "/compact /he"
+  // with an empty popup, which is exactly what CI reported. Whether CI's own
+  // failure arrived by this route is NOT proven; that it can is enough.
+  // A fresh OBJECT per pick, not a bare number: it makes the effect run once per
+  // PICK rather than per distinct value, so an insert that happens to produce
+  // the identical draft still places the caret.
+  const [pendingCaret, setPendingCaret] = React.useState<{ pos: number } | null>(null);
+  React.useLayoutEffect(() => {
+    if (!pendingCaret) return;
     const el = box.current;
-    const pos = name.length + 2; // after "/name "
-    requestAnimationFrame(() => {
-      el?.focus();
-      el?.setSelectionRange(pos, pos);
-      setCaret(pos);
-    });
+    el?.focus();
+    el?.setSelectionRange(pendingCaret.pos, pendingCaret.pos);
+    setCaret(pendingCaret.pos);
+    setPendingCaret(null);
+  }, [pendingCaret]);
+
+  const pick = (name: string): void => {
+    setDraft(insertCommand(draft, caret, name));
+    setDismissed(true); // closed until the token changes again
+    setPendingCaret({ pos: name.length + 2 }); // after "/name "
   };
 
   const submit = (): void => {

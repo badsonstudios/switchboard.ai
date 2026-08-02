@@ -1,7 +1,7 @@
-import fs from 'fs';
+import fs, { promises as fsp } from 'fs';
 import os from 'os';
 import path from 'path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SlashCommand } from '../../shared/slash-commands';
 import { scanSlashCommands } from './slash-commands';
 
@@ -86,6 +86,39 @@ describe('scanSlashCommands', () => {
       source: 'project-command',
       description: undefined,
     });
+  });
+
+  // #145: the scan fails open, which is right — but a SILENT fail-open is
+  // indistinguishable from "this project has no commands", and that ambiguity
+  // cost a CI flake investigation. Failing open is still the behaviour; saying
+  // so is the addition.
+  it('a real scan failure is logged, and the scan still fails open', async () => {
+    write(path.join(cwd(), '.claude', 'commands', 'deploy.md'), '---\ndescription: Ship it\n---\n');
+    const commandsDir = path.join(cwd(), '.claude', 'commands');
+    const real = fsp.readdir.bind(fsp);
+    const spy = vi.spyOn(fsp, 'readdir').mockImplementation(((dir: string, opts: never) =>
+      String(dir) === commandsDir
+        ? Promise.reject(Object.assign(new Error('permission denied'), { code: 'EACCES' }))
+        : real(dir, opts)) as typeof fsp.readdir);
+
+    const msgs: string[] = [];
+    let list: SlashCommand[];
+    try {
+      list = await scanSlashCommands(roots(), BUILTINS, (m) => msgs.push(m));
+    } finally {
+      spy.mockRestore(); // never leak the fs mock into the rest of the file
+    }
+
+    expect(list).toEqual(BUILTINS); // fail-open: still answers, minus the folder
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]).toContain(commandsDir); // WHICH folder…
+    expect(msgs[0]).toContain('permission denied'); // …and WHY
+  });
+
+  it('says NOTHING when the directories merely do not exist (the common case)', async () => {
+    const msgs: string[] = [];
+    await scanSlashCommands(roots(), BUILTINS, (m) => msgs.push(m));
+    expect(msgs).toEqual([]);
   });
 
   it('YAML block-scalar descriptions read as NO description, not a "|" glyph', async () => {

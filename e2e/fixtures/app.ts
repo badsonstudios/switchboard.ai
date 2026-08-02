@@ -1,7 +1,7 @@
 // Launch the built Electron app under Playwright, fully isolated: a temp HOME
 // so it never touches the real ~/.claude.json or workspace, the fake provider
 // (shell-in-a-PTY, no claude login), and the S-01 env landmines scrubbed.
-import { _electron as electron, ElectronApplication, Page } from '@playwright/test';
+import { _electron as electron, ElectronApplication, Locator, Page } from '@playwright/test';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -170,6 +170,38 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
       }
     },
   };
+}
+
+/**
+ * Replace a text box's contents the way a user does: select all, then type.
+ *
+ * NOT `fill('')` followed by typing. MEASURED on this app's composer (#145), by
+ * reading React's own fiber next to the DOM value:
+ *
+ *   box.fill('')                  -> react="/compact "  dom=""   (still diverged
+ *                                    after a 500ms settle — not a flush race)
+ *   box.fill('some prompt text')  -> react="some prompt text" dom=same
+ *
+ * So an EMPTY fill leaves the component's state stale indefinitely, while a
+ * non-empty one does not — which is why the suite's other `fill(...)` call sites
+ * are fine and only CLEARING has to be keystrokes.
+ *
+ * The internal reason is NOT pinned down, and the obvious story is wrong: for a
+ * textarea, Playwright's `fill` does not assign `.value` at all (it selects the
+ * text and then issues `insertText`, or `press('Delete')` when the value is
+ * empty), so "React's value tracker swallowed a property assignment" does not
+ * explain it. Recorded as behaviour, not as theory.
+ *
+ * What it costs is a window in which the component's idea of the draft is stale
+ * while the box looks empty. The next keystroke heals it — so the pattern
+ * usually works, and therefore usually hides — but anything that re-renders or
+ * restores the controlled value first puts the old text back, with the caret
+ * after it, so the "replacement" is appended to the old draft instead. Typing
+ * over a selection never opens that window.
+ */
+export async function retype(box: Locator, text: string): Promise<void> {
+  await box.press('ControlOrMeta+a');
+  await box.pressSequentially(text);
 }
 
 /** Switch to the Terminal tab (always present, last — 2026-07-22). */
