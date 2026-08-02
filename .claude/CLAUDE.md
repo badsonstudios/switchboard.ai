@@ -175,6 +175,7 @@ Run skills with `/<name>`; agents are delegated to automatically.
 | `/pm` | Planning manager — keep `docs/plans/*` healthy, file next milestone's issues just-in-time, triage |
 | `/next-item` | **Orchestrator** — pick up the next issue in the current milestone → plan → **approve** → implement → test → review → **approve** → PR → update PROGRESS.md |
 | `/autopilot` | **Unattended orchestrator** — run a whole milestone issue-by-issue with the gates replaced by self-checks; single `auto/<milestone>` branch + draft PR, never merges to `main` |
+| `/orchestrate` | **Parallel orchestrator (Fable)** — analyze the queue, dispatch parallel Opus workers in worktrees, sole writer of PROGRESS.md, merge internal PRs on green CI, queue user-facing PRs for Dan. Supersedes /next-item + /autopilot while a run is active |
 | `/check-code` | Code-quality analysis of changed files |
 | `/review` | Deeper architecture / correctness review (code-reviewer agent) |
 | `/commit-push-pr` | Commit, push, open a PR (asks for approval) |
