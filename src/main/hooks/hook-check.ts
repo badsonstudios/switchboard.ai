@@ -1,4 +1,7 @@
-// P1-E2-05 done-when check (local only — needs a logged-in claude CLI):
+// P1-E2-05 done-when check (LOCAL ONLY — needs a logged-in claude CLI and
+// SPENDS REAL SUBSCRIPTION TOKENS driving a real interactive session, so it can
+// never run in CI; recorded in .github/workflows/ci.yml and enforced by
+// src/main/check-scripts.test.ts — #182):
 // the INTEGRATED product path — SessionManager.create() with hook settings
 // injected via settingsFor, spawning a real interactive claude through the
 // real PtyService — flips status from hook events alone; invalid listener

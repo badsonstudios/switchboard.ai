@@ -12,12 +12,24 @@ numbers (latency, CPU, memory) where the item asks for them.
    state machine, TranscriptWatcher tolerant parsing + plan/usage extraction,
    GitService output parsing, token/theme/usage utilities. No Electron, no CLI.
 2. **Local live checks — `npm run check:*`.** Integration proofs that need
-   something CI's unit job does not have — a logged-in CLI, or a BUILD:
-   `check:pty` (12 concurrent PTYs — in CI, no login needed), `check:adapter`
-   (spawn + `--resume`), `check:hooks` (hook-driven status), `check:transcripts`
-   (usage extraction), **`check:fake-stream`** (P2-E18-04: the compiled
-   stream-json fake over real pipes — no login, but needs `npm run build`
-   first). Run the relevant one when you touch that subsystem.
+   something the unit job does not have — a logged-in CLI, or a BUILD. Run the
+   relevant one when you touch that subsystem. **Every check is either in CI or
+   recorded as local-only with a reason (#182)** — `src/main/check-scripts.test.ts`
+   fails the build if a new one is neither:
+
+   | Check | Where it runs | Why |
+   |---|---|---|
+   | `check:pty` (12 concurrent PTYs) | **CI**, all 3 OSes | no login, no tokens |
+   | `check:fake-stream` (P2-E18-04: the compiled stream-json fake over real pipes) | **CI**, all 3 OSes | no login; needs `npm run build` first |
+   | `check:adapter` (spawn + `--resume`) | local only | two real `-p` turns — **spends subscription tokens** |
+   | `check:hooks` (hook-driven status) | local only | a real interactive session + a real Write tool call — **spends tokens** |
+   | `check:transcripts` (usage extraction) | local only | a real `-p` turn, then parses the CLI's own transcript — **spends tokens** |
+
+   The three local-only ones can never be wired in: a runner has no
+   subscription login, and the only ways to give it one (an API key, or
+   spending Dan's tokens per PR) are hard constraints we do not cross. Re-run
+   them by hand when you touch adapters, hooks, or transcripts — that is the
+   whole safety net for those three, so it is not optional.
    *Why this layer exists for the stream work:* the unit job does not build, so
    anything asserting on a compiled entry point could only skip there — and a
    test that silently does not run is worse than none. `check:fake-stream`
@@ -49,8 +61,8 @@ numbers (latency, CPU, memory) where the item asks for them.
      PROGRESS "[Dan eyeball]" note.
 
 **CI (GitHub Actions), every PR:** `build` job = lint + typecheck + unit +
-build + check:pty on Windows/macOS/Linux; `e2e` job = Playwright on
-Windows + Linux (xvfb). Red CI blocks merge.
+build + check:pty + check:fake-stream on Windows/macOS/Linux; `e2e` job =
+Playwright on Windows + Linux (xvfb). Red CI blocks merge.
 
 **Opt-in REAL-claude e2e lane (local only, 2026-07-22):**
 `SWITCHBOARD_REAL_E2E=1 npx playwright test e2e/real-claude.spec.ts` — copies
