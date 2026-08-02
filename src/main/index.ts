@@ -9,6 +9,7 @@ import { registry } from './extensibility';
 import { PtyService } from './pty/pty-service';
 import { StreamService } from './transport/stream-service';
 import { StreamPermissions } from './sessions/stream-permissions';
+import { StreamCommands } from './sessions/stream-commands';
 import { SessionManager } from './sessions/session-manager';
 import { HookListener } from './hooks/hook-listener';
 import { TranscriptWatcher } from './transcripts/watcher';
@@ -576,6 +577,16 @@ app
       createLogger(sink, 'permissions')
     );
     manager.onStreamMessage((sessionId, msg) => streamPermissions.offer(sessionId, msg));
+    // the CLI's own slash-command list, off the same stream (P2-E18-09).
+    //
+    // A SEPARATE subscription, not a second call inside the one above: the
+    // manager wraps each listener in its own try/catch so "a broken subscriber
+    // must never take the pump down" (P6). Two offers sharing one listener
+    // would put them back in the same blast radius — a throw from the
+    // permission router would silently stop the command list updating, for ever
+    // and with no symptom but a stale popup.
+    const streamCommands = new StreamCommands(createLogger(sink, 'sessions'));
+    manager.onStreamMessage((sessionId, msg) => streamCommands.offer(sessionId, msg));
     const hooks = new HookListener({
       stateDir,
       manager,
@@ -675,6 +686,7 @@ app
       manager,
       ptys,
       streamPermissions,
+      streamCommands,
       hooks,
       transcripts,
       feed,

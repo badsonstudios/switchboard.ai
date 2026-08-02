@@ -62,14 +62,22 @@ export const fakeStreamAdapter: ProviderAdapter = {
     trust: { ensureTrusted: (folder) => ensureFolderTrusted(folder) },
   },
 
-  // Deliberately the SAME list the PTY fake returns. In stream mode the live
-  // list arrives on `system:init.slash_commands` (P2-E18-09); until that lands,
-  // a static list keeps the composer popup drivable and the two fakes
-  // comparable.
+  // The FALLBACK list — what the composer offers before the CLI has spoken.
+  // In stream mode the live list arrives on `system:init.slash_commands`
+  // (P2-E18-09) and replaces this entirely, which is only observable because
+  // `curated-only` is deliberately NOT in the fake's `init`.
+  //
+  // That entry is the whole reason this test can exist. Without it the fallback
+  // was a strict SUBSET of the advertised list, so "replaced" and "merged"
+  // produced identical popups and no test could tell them apart — the same
+  // hole as #153, where the fake ignored the requested transport and made
+  // switching untestable in principle. A fake that cannot say "no" cannot test
+  // the request.
   slashCommands(): SlashCommand[] {
     return [
       { name: 'clear', description: 'Clear conversation history', source: 'builtin' },
       { name: 'compact', description: 'Summarize the conversation', source: 'builtin' },
+      { name: 'curated-only', description: 'Only in the curated list', source: 'builtin' },
     ];
   },
 

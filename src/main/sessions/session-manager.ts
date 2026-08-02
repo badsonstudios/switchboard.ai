@@ -329,8 +329,12 @@ export class SessionManager {
    * Every typed message from every stream session (P2-E18-07).
    *
    * The manager is the only thing that holds the handles, so it is the only
-   * place a fan-out can live. Consumers filter by what they care about — the
-   * permission router takes `control_request`, and nothing else subscribes yet.
+   * place a fan-out can live. Consumers filter by what they care about: the
+   * permission router takes `control_request` (P2-E18-07), the slash-command
+   * store takes `system:init` and `system:commands_changed` (P2-E18-09).
+   *
+   * Subscribe once per consumer. Each listener is wrapped in its own try/catch
+   * at the call site, so sharing one is sharing a blast radius.
    */
   onStreamMessage(l: (sessionId: string, msg: Record<string, unknown>) => void): () => void {
     this.streamMessageListeners.add(l);

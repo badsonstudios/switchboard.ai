@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { filterCommands, insertCommand, mergeCommands, SlashCommand, slashToken } from './slash-commands';
+import {
+  commandsFromCli,
+  filterCommands,
+  insertCommand,
+  mergeCommands,
+  SlashCommand,
+  slashToken,
+} from './slash-commands';
 
 const cmd = (name: string, source: SlashCommand['source'] = 'builtin'): SlashCommand => ({
   name,
@@ -78,5 +85,65 @@ describe('mergeCommands (precedence)', () => {
   it('dedupes case-insensitively and sorts by name', () => {
     const merged = mergeCommands([cmd('B'), cmd('a')], [cmd('b', 'user-command')]);
     expect(merged.map((c) => c.name)).toEqual(['a', 'B']);
+  });
+});
+
+describe('commandsFromCli (P2-E18-09: the CLI advertises its own commands)', () => {
+  const known: SlashCommand[] = [
+    { name: 'clear', source: 'builtin', description: 'Clear conversation history' },
+    { name: 'doctor', source: 'builtin', description: 'Diagnose your installation' },
+    { name: 'startup', source: 'project-skill', description: 'Load project context' },
+  ];
+
+  it('keeps our description and badge for a name we can classify', () => {
+    const out = commandsFromCli([{ name: 'startup' }], known);
+    expect(out).toEqual([
+      { name: 'startup', source: 'project-skill', description: 'Load project context' },
+    ]);
+  });
+
+  it('REPLACES rather than merges: what the CLI does not advertise is gone', () => {
+    // `doctor` is in our curated list and not in the CLI's. A stale curated
+    // entry disappearing is the whole point of the item.
+    const out = commandsFromCli([{ name: 'clear' }], known);
+    expect(out.map((c) => c.name)).toEqual(['clear']);
+  });
+
+  it('surfaces a command we could never have enumerated, tagged builtin', () => {
+    const out = commandsFromCli([{ name: 'some-plugin:thing' }], known);
+    expect(out).toEqual([{ name: 'some-plugin:thing', source: 'builtin', description: undefined }]);
+  });
+
+  it("a CLI-supplied description wins over ours; ours fills in when there is none", () => {
+    const out = commandsFromCli(
+      [
+        { name: 'clear', description: 'Wipe it all' },
+        { name: 'startup' },
+      ],
+      known
+    );
+    expect(out.find((c) => c.name === 'clear')!.description).toBe('Wipe it all');
+    expect(out.find((c) => c.name === 'startup')!.description).toBe('Load project context');
+  });
+
+  it('matches our knowledge case-insensitively but types the CLI spelling', () => {
+    const out = commandsFromCli([{ name: 'Startup' }], known);
+    expect(out[0]).toMatchObject({ name: 'Startup', source: 'project-skill' });
+  });
+
+  it('dedupes repeats, drops blanks, and sorts by name', () => {
+    const out = commandsFromCli(
+      [{ name: 'b' }, { name: '  ' }, { name: 'a' }, { name: 'B', description: 'second' }],
+      []
+    );
+    expect(out.map((c) => c.name)).toEqual(['a', 'b']);
+    expect(out.find((c) => c.name === 'b')!.description).toBeUndefined(); // first won
+  });
+
+  it('an empty CLI list means an empty popup, not a silent fallback', () => {
+    // The fallback decision belongs to the caller, which knows whether the CLI
+    // has spoken at all. Deciding it here would make "the CLI told us nothing"
+    // indistinguishable from "the CLI has not told us yet".
+    expect(commandsFromCli([], known)).toEqual([]);
   });
 });

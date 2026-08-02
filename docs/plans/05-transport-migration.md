@@ -39,9 +39,42 @@ flag that gives switchboard the permission prompt while it hosts a TUI.
 
 **PHILOSOPHY P7 was amended 2026-07-31 (§6 Amendments)** to permit this:
 fidelity to the CLI's behaviour is the invariant; the terminal was one transport
-for it. The amendment explicitly does **not** decide that the terminal goes
-away — that is an engineering call still bound by litmus 3 and 4, and it is what
-E18-16 settles.
+for it. The amendment explicitly did **not** decide that the terminal goes away.
+
+> ## ▶ THE OWNER HAS NOW DECIDED IT: **THE TERMINAL IS GOING.**
+>
+> Dan, 2026-08-02, declining to hand-test a change in Terminal mode: *"We're
+> going to be dropping Terminal Mode anyway once we get Direct Mode completely
+> tested here and working."*
+>
+> **The condition is real and it is the only one: Direct mode has to be tested
+> and working first.** This is a direction, not a date, and nothing is deleted
+> until it is met.
+>
+> **What this changes in the plan, concretely:**
+>
+> 1. **E18-16 is no longer a decision, it is an execution.** It used to ask
+>    *whether* the terminal is deleted or kept as an escape hatch. That is
+>    answered. What remains is sequencing and what gets dropped honestly.
+> 2. **E18-11 changes job, exactly as S-11 did before it.** It was a go/no-go —
+>    *"if either chooser is CLI-kept, the terminal stays"*. It is now a scoping
+>    probe: a CLI-kept chooser becomes **a gap to build for or to accept and
+>    document**, not a reason to keep a terminal. The measurement matters as
+>    much as it ever did; only the question it answers has changed.
+> 3. **Terminal-mode behaviour stops being a testing obligation.** Regressions
+>    there are worth knowing about and are no longer worth blocking on. What
+>    must not slip: PTY mode has to keep WORKING until the flip, because it is
+>    the fallback while Direct mode is being tested.
+> 4. **Anything that exists only in a terminal is now a known loss, not an open
+>    question** — Ctrl-R history, vim mode, and the `/resume` · `/rewind` ·
+>    `--from-pr` pickers. Each is rebuilt properly, or dropped and SAID so in
+>    the manual. Screen-scraping is rejected precedent (§5, P7) and stays
+>    rejected: a decision the CLI keeps we may never fake.
+>
+> **What it does NOT change.** The litmus test still applies to whatever
+> replaces each terminal-only affordance, and P7's hard line is untouched. The
+> decision is *the terminal goes*; it is not *therefore anything is permitted
+> in its place*.
 
 **Sources.** `spike/findings/s-10-stream-json-transport.md` (what the transport
 costs — the blast-radius table is §4), `spike/findings/s-09-permission-prompt-tool.md`
@@ -71,7 +104,11 @@ Recorded so no item re-opens it:
 
 ## What this epic does NOT claim
 
-- It does not decide the terminal is removed. E18-16 does, on S-11's evidence.
+- ~~It does not decide the terminal is removed. E18-16 does, on S-11's
+  evidence.~~ **SUPERSEDED 2026-08-02 — the owner decided it: the terminal goes,
+  once Direct mode is tested and working.** See the decision block above. E18-16
+  now executes that rather than settling it; S-11's chooser probes scope the
+  loss instead of gating the direction.
 - It does not touch the Session Bus (E11). The one thread that used to tie them
   together — "permission delegation would be the first customer for E11's `mcp`
   capability" — was **cut by S-09**: permission delegation rides the stream-json
@@ -360,8 +397,13 @@ Writing done-when criteria for these now would be writing them against guesses.
 The two choosers. `--permission-mode plan` sets the mode, but plan approval is a
 TUI interaction: does it arrive as `can_use_tool`, or does it need a control
 request we have not seen? `AskUserQuestion` is the same question in the shape
-that most looks like *"interaction the CLI owns"* under P7. **If either is
-CLI-kept, the terminal stays** and E18-16 changes shape entirely.
+that most looks like *"interaction the CLI owns"* under P7.
+
+~~**If either is CLI-kept, the terminal stays**~~ — **no longer true as of the
+owner's 2026-08-02 decision.** A CLI-kept chooser is now a **gap to build for or
+to accept and document**, not a reason to keep a terminal. This probe still
+comes before E18-16, because it is what says how much is being given up — but it
+no longer holds a veto.
 
 ### E18-12 · Session controls as control requests — M [S-11 gate]
 
@@ -390,15 +432,27 @@ forwarder script and the per-session token files. Only once stream mode is the
 default and PTY mode's fate is settled — until then the listener is load-bearing
 for every PTY session.
 
-### E18-16 · Cutover: the default flip and the terminal's fate — M [S-11 gate]
+### E18-16 · Cutover: the default flip and the terminal's removal — M
 
-Flip the default, and decide — **on E18-11's evidence, not on preference** —
-whether `TerminalPane.tsx`, `terminal-attach.ts`, `shared/ipc/pty.ts`, the #117
-epoch protocol and `node-pty` are deleted or kept as an escape hatch. What is
-lost either way, and must be stated plainly in the user manual rather than
-quietly dropped: **Ctrl-R history, vim mode, and the `/resume` `/rewind`
-`--from-pr` pickers.** Each is either rebuilt (a P7 violation — screen-scraping
-is rejected precedent, §5) or dropped honestly.
+**No longer a decision — an execution.** The owner settled the terminal's fate
+on 2026-08-02 (see the decision block at the top of this file). This item flips
+the default and deletes `TerminalPane.tsx`, `terminal-attach.ts`,
+`shared/ipc/pty.ts`, the #117 epoch protocol, `PtyService` and `node-pty`.
+
+**The one condition, and it is the whole gate: Direct mode tested and working.**
+Not "shipped" — *used*, by the person who has to live in it. Until then PTY mode
+stays entirely functional, because it is the fallback while Direct mode is being
+tested, and a broken fallback turns a bad week into a stopped one.
+
+What is lost, and must be stated plainly in the user manual rather than quietly
+dropped: **Ctrl-R history, vim mode, and the `/resume` · `/rewind` ·
+`--from-pr` pickers**, plus whatever E18-11 finds is CLI-kept. Each is either
+rebuilt properly or dropped honestly. **Screen-scraping remains rejected
+precedent (§5, P7)** — the terminal going away does not make faking it
+permissible; it makes saying "this is gone" mandatory.
+
+*Sizing note:* this is the item where the epic's cost is repaid — the deletion
+list above is most of the 14 load-bearing files in S-10's blast-radius table.
 
 ---
 

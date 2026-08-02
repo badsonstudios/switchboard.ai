@@ -1,0 +1,35 @@
+[
+  {
+    "command": "/usage",
+    "messages": [
+      "system:init",
+      "assistant",
+      "result:success"
+    ]
+  },
+  {
+    "command": "/cost",
+    "messages": [
+      "system:init",
+      "assistant",
+      "result:success"
+    ]
+  },
+  {
+    "command": "/context",
+    "messages": [
+      "system:init",
+      "assistant",
+      "result:success"
+    ]
+  },
+  {
+    "command": "say the single word OK",
+    "messages": [
+      "system:init",
+      "rate_limit_event",
+      "assistant",
+      "result:success"
+    ]
+  }
+]

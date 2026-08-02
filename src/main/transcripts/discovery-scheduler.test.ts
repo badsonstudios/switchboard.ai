@@ -254,7 +254,20 @@ describe('DiscoverySchedule — the REAL fs.watch (no injected factory)', () => 
     } finally {
       s.stop();
     }
-  });
+    // 15s, because the wait above budgets 10 and vitest's default is FIVE.
+    //
+    // Without this the fix above could never work: the test was killed at 5s,
+    // so the "wait up to 10s" was a fiction and a slow macOS runner produced a
+    // TIMEOUT rather than this test's own assertion. That is what it did on
+    // #157's CI. The fixed sleep was correctly replaced by a wait-for-the-
+    // condition, and the replacement was then capped below its own budget by a
+    // default nobody looked at — the sibling at the end of this describe block
+    // got its `}, 20_000)` and this one did not.
+    //
+    // Rule for anything of this shape: a wait budget that exceeds the enclosing
+    // test timeout is not a generous wait, it is a shorter wait with a worse
+    // failure message.
+  }, 15_000);
 
   it('appends to a known file do not earn a sweep, on every platform', async () => {
     // Asserts the BEHAVIOUR, not the event count. The first version of this
@@ -283,16 +296,42 @@ describe('DiscoverySchedule — the REAL fs.watch (no injected factory)', () => 
       // invisible there — it surfaced on macOS CI the first time the suite got
       // heavy enough to slow the runner down.
       fs.appendFileSync(f, '{"seed":1}\n');
-      await waitFor(() => s.stats(realRoot)!.events > 0, 2000);
-      // No assertion on that wait ON PURPOSE: on Windows and Linux no event
-      // ever fires for an append, so it times out and the test proceeds — there
-      // the property holds because nothing dirties the root in the first place.
+      const seeded = await waitFor(() => s.stats(realRoot)!.events > 0, 10_000);
+
+      // On Windows and Linux no event EVER fires for an append, so `seeded` is
+      // false by design and the test proceeds: there the property holds for a
+      // different reason (nothing dirties the root in the first place).
+      //
+      // On macOS it fires, and `seeded === false` means the SETUP failed, not
+      // that the property is broken. That distinction is the whole fix. The
+      // wait used to be 2 s and non-asserting, so a slow runner silently
+      // reached the measurement with an UNKNOWN path — the next append then
+      // looked like a new file, the root went dirty, and the assertion
+      // inverted. #157's macOS CI did exactly that, and the failure read
+      // "expected true to be false", which points at the property rather than
+      // at the setup that never happened.
+      //
+      // Fail LOUDLY instead. A test that cannot establish its own precondition
+      // must say so, not measure something else and report the answer.
+      if (process.platform === 'darwin' && !seeded) {
+        throw new Error(
+          'setup failed: macOS delivered no event in 10s, so the path is not KNOWN — ' +
+            'this test would be measuring an unknown path, not the property it claims'
+        );
+      }
 
       const t = 100_000; // synthetic clock: the sweep just happened
       s.noteSwept(realRoot, t);
+      const before = s.stats(realRoot)!.events;
       fs.appendFileSync(f, '{"more":1}\n');
       fs.appendFileSync(f, '{"more":2}\n');
-      await new Promise((r) => setTimeout(r, 200));
+      // Wait for the appends to be OBSERVED rather than for 200ms and a hope.
+      // Bounded and non-asserting on purpose: on Windows and Linux these
+      // produce no events at all, so the wait legitimately runs out. The
+      // difference from the old fixed sleep is the failure it prevents — a
+      // blind sleep that is too SHORT lets the assertion run before the events
+      // land, which passes for the wrong reason.
+      await waitFor(() => s.stats(realRoot)!.events > before, 2000);
       expect(s.shouldSweep(realRoot, t + 399)).toBe(false);
     } finally {
       s.stop();

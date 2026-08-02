@@ -21,6 +21,29 @@ personal ones. Each row is tagged with where it came from: **CLI**,
 A `/` typed mid-sentence is just a slash; the list only opens at the start of a
 line, and it never submits your prompt while it's open.
 
+## Where the list comes from
+
+In the normal mode, switchboard builds the list itself: a built-in catalogue of
+Claude Code's own commands, plus a scan of your project's and your personal
+`.claude` folder. It's accurate, but the built-in half is a copy — a command
+added in a newer Claude Code won't be in it until switchboard is updated.
+
+In **[Direct mode](12-direct-mode.md)**, Claude Code tells switchboard its real
+list instead, so the popup shows exactly what that version of Claude Code
+actually accepts — including commands from plugins and anywhere else switchboard
+can't see. Two things to expect:
+
+- **The list only arrives after your first prompt in that session.** Claude Code
+  says nothing until you talk to it. Until then you get the built-in list, which
+  is nearly always the same thing.
+- **A few descriptions may be blank.** Claude Code sends the command *names*;
+  switchboard fills the descriptions back in from what it knows, and there won't
+  be one for a command it has never heard of. The command still works.
+
+If Claude Code's commands change while a session is running — you install a
+plugin, say — the next time you open the list it's up to date. (A list that's
+already open on screen doesn't change under you.)
+
 ## Clearing and compacting
 
 The **⋯** menu in the card header has two shortcuts:

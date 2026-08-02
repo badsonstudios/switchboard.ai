@@ -136,6 +136,109 @@ test.describe('the Feed renders a stream session (P2-E18-08b)', () => {
   });
 });
 
+// P2-E18-09 — the composer's command list comes from the CLI itself.
+//
+// `CLAUDE_BUILTIN_COMMANDS` is 40 hand-curated builtins that the file itself
+// calls "version-volatile by nature… a maintenance chore". In Direct mode the
+// CLI advertises its real set (S-10: 59 entries, including this machine's own
+// `/startup` — commands no curated list could have contained).
+//
+// The assertion that matters is the NEGATIVE one. `curated-only` exists in the
+// fake adapter's static list and NOT in its `init`, purely so this test can
+// tell "the CLI's list replaced ours" from "the two were merged" — which the
+// old fake could not, its fallback being a strict subset of what it advertised.
+test.describe('slash commands come from the CLI in Direct mode (P2-E18-09)', () => {
+  let a: LaunchedApp;
+  test.afterEach(async () => a?.cleanup());
+
+  test('the curated list is a fallback, and the first turn replaces it', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({
+      seedFolder: folder,
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+    });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    // BEFORE any turn: the curated list, and this is the normal state rather
+    // than a race. The CLI emits nothing at spawn (S-11 measured `init`
+    // arriving 10-20ms AFTER a send we made ourselves), so a Direct session
+    // genuinely has no list until its first prompt.
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.pressSequentially('/');
+    await expect(w.getByText('/curated-only', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(w.getByText('/fake-only', { exact: true })).toHaveCount(0);
+
+    // send a turn, which is what makes the CLI announce itself
+    await box.fill('hello stream');
+    await box.press('Enter');
+    await expect(w.getByText('Done.')).toBeVisible({ timeout: 30_000 });
+
+    // AFTER: the CLI's own list. `fake-only` is a command no scan could have
+    // found, and `curated-only` is gone — replaced, not merged.
+    await box.click();
+    await box.pressSequentially('/');
+    await expect(w.getByText('/fake-only', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(w.getByText('/curated-only', { exact: true })).toHaveCount(0);
+    // and what we DO know about a survivor survives with it: `init` carries
+    // bare names, so this description can only have come from our own scan
+    await expect(w.getByText('Clear conversation history')).toBeVisible();
+  });
+
+  // The second payload that carries commands, and the one we have never seen in
+  // production: object-shaped, with descriptions, arriving mid-session when the
+  // CLI's command set changes (a plugin installed, a command file added).
+  //
+  // `/fake-only` disappearing is what makes this test worth having. The fake
+  // emits `init` at the START of every turn, so the list this replaces arrived
+  // milliseconds earlier in the very same turn — nothing but `commands_changed`
+  // being consumed can produce that outcome.
+  test('commands_changed replaces the list mid-session', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({
+      seedFolder: folder,
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+    });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('!commands');
+    await box.press('Enter');
+    await expect(w.getByText('commands changed')).toBeVisible({ timeout: 30_000 });
+
+    await box.click();
+    await box.pressSequentially('/');
+    await expect(w.getByText('/just-installed', { exact: true })).toBeVisible({ timeout: 15_000 });
+    // the same turn's `init` list is gone, so this really is the later message
+    await expect(w.getByText('/fake-only', { exact: true })).toHaveCount(0);
+    // and this payload carries its OWN descriptions, unlike init's bare names
+    await expect(w.getByText('Arrived mid-session')).toBeVisible();
+  });
+
+  test('a PTY session keeps the curated list', async () => {
+    const folder = tempProjectFolder();
+    // the dual-capable fake, asked for nothing — so it runs on the PTY
+    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.pressSequentially('/');
+    await expect(w.getByText('/curated-only', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(w.getByText('/fake-only', { exact: true })).toHaveCount(0);
+  });
+});
+
 // #154 — the stop button did nothing in Direct mode.
 //
 // It wrote Esc to the PTY unconditionally, and a stream session has no PTY, so

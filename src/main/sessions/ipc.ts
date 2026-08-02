@@ -7,6 +7,7 @@ import fs from 'fs';
 import { SessionManager } from './session-manager';
 import { PtyService } from '../pty/pty-service';
 import { StreamPermissions } from './stream-permissions';
+import { StreamCommands } from './stream-commands';
 import { HookListener } from '../hooks/hook-listener';
 import { IpcBroker } from '../ipc/broker';
 import { Channel } from '../../shared/ipc/capabilities';
@@ -18,7 +19,7 @@ import { assignAccent, detectProjectType } from './identity';
 import { EventFeed } from '../events/feed';
 import { planSessionStart } from './start-plan';
 import { PersistedSession } from '../workspace/store';
-import { SlashCommand } from '../../shared/slash-commands';
+import { commandsFromCli, SlashCommand } from '../../shared/slash-commands';
 
 export interface SessionIpcDeps {
   manager: SessionManager;
@@ -26,6 +27,9 @@ export interface SessionIpcDeps {
   /** Stream-transport permission router (P2-E18-07). Absent until a stream
    *  session can exist, which keeps every PTY-only wiring path unchanged. */
   streamPermissions?: StreamPermissions;
+  /** The CLI's own slash-command list, off the stream (P2-E18-09). Absent for
+   *  a PTY-only wiring, in which case the curated list is all there is. */
+  streamCommands?: StreamCommands;
   hooks: HookListener;
   transcripts: TranscriptWatcher;
   feed: EventFeed;
@@ -61,7 +65,8 @@ export interface SessionIpcDeps {
 }
 
 export function registerSessionIpc(deps: SessionIpcDeps): void {
-  const { manager, ptys, hooks, transcripts, log, broker, streamPermissions } = deps;
+  const { manager, ptys, hooks, transcripts, log, broker, streamPermissions, streamCommands } =
+    deps;
   // per-session live-feed unsubscribers (attached panes only)
   const feeds = new Map<string, () => void>();
   // one attach = one epoch, stamped on every chunk that attach streams. Global
@@ -417,11 +422,38 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   // composer slash-command autocomplete (E10-07): builtins + the session
   // folder's and user's own commands/skills. Scan errors fail open in the
   // scanner; an unknown live id just returns nothing.
-  broker.handle('sessions:slashCommands', (_e, liveId: string) => {
+  //
+  // In stream mode the CLI advertises its REAL list (P2-E18-09), so that
+  // becomes the set and the scan becomes a description-and-provenance lookup
+  // over it. The scan still runs either way: it is what knows that `/startup`
+  // is a project skill called "Load project context", which `system:init` —
+  // being names-only — cannot tell us.
+  //
+  // Three states, and the middle one is normal rather than exceptional: no
+  // stream list at all (a PTY session, or a stream session that has not sent
+  // its first prompt yet — the CLI emits nothing at spawn, S-11) falls back to
+  // the curated list; a stream list replaces it.
+  broker.handle('sessions:slashCommands', async (_e, liveId: string) => {
     if (typeof liveId !== 'string') return [];
     const rec = manager.get(liveId);
     if (!rec) return [];
-    return deps.slashCommands(rec.identity.folder, rec.identity.providerId);
+    // The scan fails open internally, but a rejection here would now throw away
+    // a CLI list we already hold — belt and braces, and P6 for free.
+    const known = await deps
+      .slashCommands(rec.identity.folder, rec.identity.providerId)
+      .catch((err) => {
+        log.warn('slash-command scan failed', { sessionId: liveId, error: String(err) });
+        return [] as SlashCommand[];
+      });
+    const cli = streamCommands?.commandsFor(liveId);
+    // An EMPTY advertised list falls back too, not just a missing one. The
+    // store keeps the two apart because they are different facts; here they
+    // deserve the same answer. The done-when is "falls back … rather than
+    // showing nothing", and a popup with nothing in it is nothing in it
+    // whichever fact produced it — while a real CLI always has builtins, so an
+    // empty list means something went wrong upstream far more often than it
+    // means this session genuinely has no commands.
+    return cli?.length ? commandsFromCli(cli, known) : known;
   });
 
   // repo/folder auto-group keys (E12-05): same key -> same emergent group.
@@ -492,6 +524,8 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       // nothing for a session hosted on any transport but the PTY.
       // an unanswered control request leaves the CLI waiting for ever
       streamPermissions?.forgetSession(liveId, 'session closed');
+      // the next session under this card gets its own list from its own CLI
+      streamCommands?.forgetSession(liveId);
       manager.remove(liveId);
       cardOfLive.delete(liveId);
     }

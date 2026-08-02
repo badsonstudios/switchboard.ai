@@ -79,3 +79,72 @@ export function mergeCommands(...lists: SlashCommand[][]): SlashCommand[] {
   }
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
+
+/**
+ * One command as the CLI itself advertises it (P2-E18-09).
+ *
+ * `description` is optional because the two payloads that carry commands do not
+ * agree on fidelity, and that difference is measured, not assumed:
+ *
+ * - `system:init.slash_commands` is an array of plain NAMES (S-10 probe C: 59
+ *   entries, joined with a comma).
+ * - `system:commands_changed.commands` is an array of OBJECTS carrying
+ *   `description`, `argumentHint` and `aliases` (read out of the shipped VS Code
+ *   extension, which does `latestCommands = e.commands` and then renders
+ *   `.description` / `.argumentHint` off each entry).
+ *
+ * The extension's richer list comes from the `initialize` control-request
+ * RESPONSE, which we do not send — so `init` is names-only for us by
+ * construction, not by accident.
+ */
+export interface CliCommand {
+  name: string;
+  description?: string;
+}
+
+/**
+ * What the composer should offer when the CLI has told us its real command set.
+ *
+ * The CLI's list is the SET — it knows about plugin commands, `--add-dir`
+ * roots, and its own version's builtins, none of which we can enumerate. Our
+ * own knowledge (the curated builtins + the `.claude/` scan) becomes a
+ * DESCRIPTION AND PROVENANCE lookup over that set.
+ *
+ * Consequences, both wanted:
+ * - a command we know but the CLI does not advertise DISAPPEARS. That is the
+ *   point: a stale curated entry is exactly what this item deletes.
+ * - a command the CLI advertises that we cannot classify still appears, tagged
+ *   `builtin` — "came with Claude Code, not from a file in your project", which
+ *   is what that badge means to a reader.
+ *
+ * A CLI-supplied description beats ours (it is ground truth for that version);
+ * ours fills in when the CLI gave only a name, which is the `init` case and
+ * therefore the common one.
+ */
+export function commandsFromCli(cli: CliCommand[], known: SlashCommand[]): SlashCommand[] {
+  const byName = new Map<string, SlashCommand>();
+  for (const k of known) byName.set(k.name.toLowerCase(), k);
+
+  const out = new Map<string, SlashCommand>();
+  for (const c of cli) {
+    const name = c.name.trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    // First wins. Duplicate names are REAL — the shipped extension counts them
+    // and, where a name occurs more than once, types the alias ending in
+    // `:<name>` instead, so two plugins can both offer `/review`. We do not
+    // carry `aliases`, so a duplicate collapses to one row here. Acceptable
+    // because the popup only helps you TYPE: the CLI resolves what it receives,
+    // exactly as it would if you had typed it yourself. Carrying aliases and
+    // mirroring that rule is the fix if it ever bites.
+    if (out.has(key)) continue;
+    const k = byName.get(key);
+    out.set(key, {
+      // the CLI's own spelling is what you type
+      name,
+      source: k?.source ?? 'builtin',
+      description: c.description ?? k?.description,
+    });
+  }
+  return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
+}

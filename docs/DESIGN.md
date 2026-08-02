@@ -108,10 +108,11 @@ user's `claude login` (Max subscription). The first two bullets are
 **alternative transports**, chosen per session (§6 amendment 2026-08-01); the
 transcript and hook channels ride alongside either:
 
-- **Interactive PTY** (the default transport): spawn `claude` in the session
-  folder. Full fidelity of the TUI: permission prompts, slash commands, plan
-  mode, ANSI rendering — and the affordances only a terminal has (Ctrl-R
-  history, vim mode, the `/resume` and `--from-pr` pickers).
+- **Interactive PTY** (the default transport, **and scheduled for removal** —
+  see the amendment note below): spawn `claude` in the session folder. Full
+  fidelity of the TUI: permission prompts, slash commands, plan mode, ANSI
+  rendering — and the affordances only a terminal has (Ctrl-R history, vim mode,
+  the `/resume` and `--from-pr` pickers).
 - **Duplex stream-json** (opt-in, per session; epic E18): the same CLI over
   `child_process` pipes with `--output-format stream-json --verbose
   --input-format stream-json`, plus a bidirectional control channel. What it
@@ -127,6 +128,24 @@ transcript and hook channels ride alongside either:
   request while its picker does not). E18-12 measures them; until it does, do
   not plan against them. What it costs is in the §6 amendment. The JSONL
   transcript is still written, so the channel below keeps working unchanged.
+
+> **Amendment 2026-08-02 — the PTY is a transitional transport, not a permanent
+> one.** The owner decided that Terminal mode is removed once Direct mode is
+> tested and working in real use: *"we're going to be dropping Terminal Mode
+> anyway once we get Direct Mode completely tested here and working."* The
+> per-session choice above is therefore a **migration mechanism**, not the end
+> state. Nothing is deleted until the condition is met, and PTY mode must keep
+> working the whole way — it is the fallback while Direct mode is under test.
+> Execution and the full list of what is lost: `docs/plans/05-transport-migration.md`,
+> E18-16. **This does not relax P7:** each terminal-only affordance is rebuilt
+> properly or dropped and said so. Screen-scraping stays rejected precedent (§5).
+>
+> ⚠ **Known consequence, measured 2026-08-02 (#156):** the transcript channel
+> below is **strictly poorer than the stream** for local slash commands —
+> `/usage` and friends write `system:local_command` and no `assistant` entry.
+> The terminal was silently covering that gap. Anything treating the transcript
+> as a faithful record of what the user SAW is relying on something that was
+> never quite true. Findings: `spike/findings/s-11-local-slash-commands.md`.
 - **Structured JSONL transcripts**: Claude Code writes per-session transcripts under
   `~/.claude/projects/<folder-slug>/`. Tail these for: current status, token/cost
   tallies, tool calls, files modified, subagent (sidechain) activity. Read-only; zero
