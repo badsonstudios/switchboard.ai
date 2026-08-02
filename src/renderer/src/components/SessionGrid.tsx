@@ -1918,6 +1918,11 @@ export function SessionGrid(props: {
           const workAreas = await window.switchboard.workAreas();
           const rescuedNow: RescuedPopout[] = [];
           const sane = sanitizePopoutLayout(saved, window.location.origin, workAreas, rescuedNow);
+          // How many popouts the saved layout asked for, before dockview tries
+          // to reopen them. Pairs with the main process's "popout geometry
+          // flushed" line to say which side of the quit lost one (#165).
+          const asked = (sane as { popoutGroups?: unknown[] })?.popoutGroups?.length ?? 0;
+          if (asked > 0) console.log(`[layout] restoring ${asked} popout(s)`);
           sessionStore.setRestoringLayout(true);
           try {
             api.fromJSON(sane as Parameters<DockviewApi['fromJSON']>[0]);
@@ -1948,8 +1953,13 @@ export function SessionGrid(props: {
           // card — resume-on-focus then brings that session back first
           const focused = uiGet<string | null>('focusedCardId', null);
           if (focused) api.getPanel(`session-${focused}`)?.focus();
-        } catch {
-          // fail-open: unusable layout JSON -> fresh grid, never a crash
+        } catch (err) {
+          // Fail-open: unusable layout JSON -> fresh grid, never a crash. But
+          // SILENT fail-open was indistinguishable from "the saved layout had
+          // nothing in it" — the two look identical from outside, and a restore
+          // that throws part-way loses every popout with it. Say so; the
+          // renderer console is forwarded into switchboard.log (#165).
+          console.error(`[layout] restore failed: ${String(err)}`);
         }
       }
       for (let i = api.panels.length; i < props.seedPanels; i++) {
