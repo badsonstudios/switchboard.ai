@@ -85,6 +85,24 @@ export class FakeStreamProtocol {
       return; // no result: the turn stays open until something interrupts it
     }
 
+    // The CLI's command set changing mid-session — a plugin installed, a
+    // command file added. Object-shaped, unlike `init`'s bare names: the shape
+    // is read out of the shipped extension bundle, which stores `e.commands`
+    // and renders `.name` / `.description` off each entry.
+    if (text === '!commands') {
+      this.emit({
+        type: 'system',
+        subtype: 'commands_changed',
+        commands: [
+          { name: 'clear', description: 'Clear conversation history' },
+          { name: 'just-installed', description: 'Arrived mid-session' },
+        ],
+      });
+      this.emitAssistantText('commands changed');
+      this.emitResult();
+      return;
+    }
+
     if (text.startsWith('!perm ')) {
       const target = text.slice(6).trim();
       const filePath = this.host.resolve(cwd, target);

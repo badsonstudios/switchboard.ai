@@ -82,6 +82,31 @@ describe('a plain turn (P2-E18-04)', () => {
     const init = out[0] as { slash_commands: string[]; session_id: string };
     expect(init.slash_commands).toContain('clear');
     expect(init.session_id).toBe(FAKE_SESSION_ID);
+    // NOT everything the adapter's curated list holds — `curated-only` is
+    // absent on purpose, so a test can tell "the CLI's list replaced ours" from
+    // "the two were merged". Without it the curated list is a strict subset of
+    // this one and both designs render the same popup.
+    expect(init.slash_commands).not.toContain('curated-only');
+  });
+});
+
+describe('commands_changed (P2-E18-09)', () => {
+  // Object-shaped, unlike init's bare names. Read out of the shipped VS Code
+  // extension — `latestCommands = e.commands`, then `.name` / `.description`
+  // off each entry — rather than guessed.
+  it('!commands emits an OBJECT-shaped list and finishes the turn', () => {
+    proto.handle(userMsg('!commands'));
+
+    const changed = out.find((m) => m.subtype === 'commands_changed') as {
+      type: string;
+      commands: Array<{ name: string; description?: string }>;
+    };
+    expect(changed.type).toBe('system');
+    expect(changed.commands).toContainEqual({
+      name: 'just-installed',
+      description: 'Arrived mid-session',
+    });
+    expect(types()[types().length - 1]).toBe('result:success');
   });
 });
 

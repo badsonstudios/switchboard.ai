@@ -11,6 +11,8 @@ import { registerSessionIpc, SessionIpcDeps } from './ipc';
 import { ProviderCapabilities } from '../extensibility/contributions';
 import { PersistedSession } from '../workspace/store';
 import { SessionIdentity } from './session-manager';
+import { StreamCommands } from './stream-commands';
+import { SlashCommand } from '../../shared/slash-commands';
 
 type Handler = (e: unknown, ...args: unknown[]) => unknown;
 
@@ -51,6 +53,11 @@ function harness(
     watchAccepts?: boolean;
     /** live session ids the manager should claim to know (P2-E18-08b) */
     liveIds?: string[];
+    /** what the `.claude/` scan + curated builtins return (P2-E18-09) */
+    known?: SlashCommand[];
+    /** the CLI's own list, off the stream (P2-E18-09) — the real class, so the
+     *  test exercises the real wiring rather than a stand-in for it */
+    streamCommands?: StreamCommands;
   } = {}
 ) {
   const created: Array<{
@@ -81,6 +88,7 @@ function harness(
       onStatusChange: () => {},
       onSessionExit: () => {},
       list: () => [],
+      remove: () => {},
       get: (id: string) => (opts.liveIds?.includes(id) ? { ...record, id } : undefined),
       create: (
         identity: SessionIdentity,
@@ -99,6 +107,7 @@ function harness(
     hooks: {
       onPermissionRequest: () => {},
       onPermissionResolved: () => {},
+      unregisterSession: () => {},
       buildHookSettings,
     },
     transcripts: {
@@ -109,8 +118,9 @@ function harness(
         watched.push({ sessionId, projectsRoot: s.projectsRoot });
         return watchAccepts;
       },
+      unwatch: () => {},
     },
-    feed: { onEvent: () => {}, ingest: () => {}, list: () => [] },
+    feed: { onEvent: () => {}, ingest: () => {}, list: () => [], forget: () => {} },
     log: { info: vi.fn(), warn, error: vi.fn(), debug: vi.fn() },
     getWindow: () => null,
     broker,
@@ -127,7 +137,8 @@ function harness(
     isRegisteredProvider: (id: string) => (opts.registered ?? ['generic']).includes(id),
     defaultProviderId: () => 'generic',
     repoRoot: async () => null,
-    slashCommands: async () => [],
+    slashCommands: async () => opts.known ?? [],
+    streamCommands: opts.streamCommands,
   } as unknown as SessionIpcDeps;
 
   registerSessionIpc(deps);
@@ -520,5 +531,122 @@ describe('starting a session preserves the card (#153 follow-up)', () => {
     expect(saved.id).toBe('fresh');
     expect(saved.transport).toBeUndefined();
     expect(saved.layoutSlot).toBe(0);
+  });
+});
+
+// P2-E18-09 — where the composer's command list comes from.
+//
+// Through the REAL handler and the REAL StreamCommands, because the whole item
+// is a wiring decision: which of two lists reaches the popup, and when.
+describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
+  let dir: string;
+  const curated: SlashCommand[] = [
+    { name: 'clear', source: 'builtin', description: 'Clear conversation history' },
+    { name: 'curated-only', source: 'builtin', description: 'Only in the curated list' },
+    { name: 'startup', source: 'project-skill', description: 'Load project context' },
+  ];
+  const init = (names: string[]): Record<string, unknown> => ({
+    type: 'system',
+    subtype: 'init',
+    slash_commands: names,
+  });
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-slash-'));
+  });
+  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  it('falls back to the curated list before the CLI has said anything', async () => {
+    // The NORMAL state of a fresh stream session, not an edge case: the CLI
+    // emits nothing at spawn (S-11), so `init` only lands after a first prompt.
+    const h = harness(undefined, dir, {
+      liveIds: ['live-1'],
+      known: curated,
+      streamCommands: new StreamCommands(),
+    });
+
+    const list = (await h.call('sessions:slashCommands', 'live-1')) as SlashCommand[];
+
+    expect(list.map((c) => c.name)).toEqual(['clear', 'curated-only', 'startup']);
+  });
+
+  it('uses the CLI list once it arrives, keeping our descriptions and badges', async () => {
+    const streamCommands = new StreamCommands();
+    const h = harness(undefined, dir, { liveIds: ['live-1'], known: curated, streamCommands });
+
+    streamCommands.offer('live-1', init(['clear', 'startup', 'cli-only']));
+    const list = (await h.call('sessions:slashCommands', 'live-1')) as SlashCommand[];
+
+    // `curated-only` is GONE — the CLI does not advertise it
+    expect(list.map((c) => c.name)).toEqual(['clear', 'cli-only', 'startup']);
+    // and what we know about the survivors survives with them
+    expect(list.find((c) => c.name === 'startup')).toEqual({
+      name: 'startup',
+      source: 'project-skill',
+      description: 'Load project context',
+    });
+    // a name we cannot classify still shows up — that is the point of asking
+    expect(list.find((c) => c.name === 'cli-only')!.source).toBe('builtin');
+  });
+
+  it('a session with no stream list is unaffected by another session that has one', async () => {
+    const streamCommands = new StreamCommands();
+    const h = harness(undefined, dir, {
+      liveIds: ['live-1', 'live-2'],
+      known: curated,
+      streamCommands,
+    });
+
+    streamCommands.offer('live-2', init(['cli-only']));
+
+    const pty = (await h.call('sessions:slashCommands', 'live-1')) as SlashCommand[];
+    const stream = (await h.call('sessions:slashCommands', 'live-2')) as SlashCommand[];
+    expect(pty.map((c) => c.name)).toContain('curated-only');
+    expect(stream.map((c) => c.name)).toEqual(['cli-only']);
+  });
+
+  // Same answer for both, and deliberately so: the store keeps "nothing has
+  // arrived" and "an empty list arrived" apart because they are different
+  // facts, but the done-when is "falls back … rather than showing nothing", and
+  // an empty popup is empty whichever fact produced it.
+  it('an EMPTY advertised list falls back too, not just a missing one', async () => {
+    const streamCommands = new StreamCommands();
+    const h = harness(undefined, dir, { liveIds: ['live-1'], known: curated, streamCommands });
+
+    streamCommands.offer('live-1', init([]));
+    const list = (await h.call('sessions:slashCommands', 'live-1')) as SlashCommand[];
+
+    expect(list.map((c) => c.name)).toEqual(['clear', 'curated-only', 'startup']);
+  });
+
+  // Nothing pinned this wiring: deleting the `forgetSession` call left every
+  // suite green. A live id is never reused, so the cost of the leak is small —
+  // but "small and untested" is how a leak becomes permanent.
+  it('drops a session list when its live session is dropped', async () => {
+    const streamCommands = new StreamCommands();
+    const h = harness(undefined, dir, { liveIds: ['live-1'], known: curated, streamCommands });
+    await h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 't' });
+    streamCommands.offer('live-1', init(['cli-only']));
+    expect(streamCommands.commandsFor('live-1')).not.toBeNull();
+
+    // the restart path, which is what actually churns live ids
+    await h.call('sessions:dropLive', 'card-1');
+
+    expect(streamCommands.commandsFor('live-1')).toBeNull();
+  });
+
+  it('an unknown live id returns nothing rather than a stray list', async () => {
+    const h = harness(undefined, dir, { liveIds: ['live-1'], known: curated });
+
+    expect(await h.call('sessions:slashCommands', 'nobody')).toEqual([]);
+    expect(await h.call('sessions:slashCommands', 42)).toEqual([]);
+  });
+
+  it('works with no StreamCommands wired at all — the PTY-only wiring', async () => {
+    const h = harness(undefined, dir, { liveIds: ['live-1'], known: curated });
+
+    const list = (await h.call('sessions:slashCommands', 'live-1')) as SlashCommand[];
+
+    expect(list.map((c) => c.name)).toEqual(['clear', 'curated-only', 'startup']);
   });
 });
