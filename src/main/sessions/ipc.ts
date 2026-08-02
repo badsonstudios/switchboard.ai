@@ -474,7 +474,15 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   broker.handle('sessions:slashCommands', async (_e, liveId: string) => {
     if (typeof liveId !== 'string') return [];
     const rec = manager.get(liveId);
-    if (!rec) return [];
+    if (!rec) {
+      // An empty answer renders an empty popup, which looks exactly like a popup
+      // that never opened — say which it was (#145). `warn`, not `debug`: debug
+      // is off unless SWITCHBOARD_DEBUG names this subsystem, which nothing in
+      // CI or a default install sets, so a debug line here would be written
+      // exactly never — and this is a should-not-happen, not routine chatter.
+      log.warn('slash commands requested for an unknown session', { sessionId: liveId });
+      return [];
+    }
     // The scan fails open internally, but a rejection here would now throw away
     // a CLI list we already hold — belt and braces, and P6 for free.
     const known = await deps

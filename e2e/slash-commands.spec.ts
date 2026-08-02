@@ -5,7 +5,7 @@
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
-import { launchApp, LaunchedApp, showTerminal, tempProjectFolder } from './fixtures/app';
+import { launchApp, LaunchedApp, retype, showTerminal, tempProjectFolder } from './fixtures/app';
 
 function findFile(root: string, name: string, depth = 6): string | null {
   if (depth < 0) return null;
@@ -72,7 +72,18 @@ function slugForCwd(cwd: string): string {
 
 test.describe('composer slash commands (E10-07)', () => {
   let a: LaunchedApp;
-  test.afterEach(async () => a?.cleanup());
+  test.afterEach(async () => {
+    // The app's own log lives inside the temp home, and cleanup() deletes it.
+    // The slash-command scan now SAYS when it fails open (#145) — which is no
+    // use at all if the only copy is removed before anyone can read it, so a
+    // failing test keeps it as an attachment (CI uploads test-results/).
+    const info = test.info();
+    if (a && info.status !== info.expectedStatus) {
+      const f = findFile(a.home, 'switchboard.log');
+      if (f) await info.attach('switchboard.log', { path: f });
+    }
+    await a?.cleanup();
+  });
 
   test('/ pops builtins + scanned project commands; arrows+Enter insert; submit reaches the PTY', async () => {
     const folder = tempProjectFolder();
@@ -96,10 +107,23 @@ test.describe('composer slash commands (E10-07)', () => {
     await box.press('Enter');
     await expect(box).toHaveValue('/compact ');
     await expect(w.getByText('Say hello nicely')).toHaveCount(0); // popup closed
+    // the caret lands AFTER the inserted command, so the next thing typed
+    // continues the prompt rather than landing at the start of it
+    await box.pressSequentially('x');
+    await expect(box).toHaveValue('/compact x');
+    await box.press('Backspace');
 
-    // typing filters the list down (prefix match on the new token)
-    await box.fill('');
-    await box.pressSequentially('/he');
+    // The popup's SECOND opening, in three steps that fail differently — the
+    // whole point (#145). Asserting only "/hello is visible" after typing '/he'
+    // cannot tell a popup that never opened from one that opened empty, and
+    // that ambiguity is what made this spec's CI failure un-diagnosable.
+    await retype(box, '/'); // keystrokes, never fill('') — see retype's note
+    await expect(box).toHaveValue('/'); // 1. the input path: the keystrokes landed
+    await expect(w.getByText('/clear', { exact: true })).toBeVisible(); // 2. the popup OPENED (a builtin)
+    await expect(w.getByText('/hello', { exact: true })).toBeVisible(); // 3. …and the project scan landed
+    await box.pressSequentially('he');
+    await expect(box).toHaveValue('/he');
+    // 4. and only now the actual subject: the list filters down to the match
     await expect(w.getByText('/clear', { exact: true })).toHaveCount(0);
     await expect(w.getByText('/hello', { exact: true })).toBeVisible();
     await box.press('Enter');
@@ -123,8 +147,8 @@ test.describe('composer slash commands (E10-07)', () => {
     await box.pressSequentially('look in c:/');
     await expect(w.getByText('/clear', { exact: true })).toHaveCount(0);
 
-    await box.fill('');
-    await box.pressSequentially('/');
+    await retype(box, '/');
+    await expect(box).toHaveValue('/');
     await expect(w.getByText('/clear', { exact: true })).toBeVisible();
     await box.press('Escape');
     await expect(w.getByText('/clear', { exact: true })).toHaveCount(0);
