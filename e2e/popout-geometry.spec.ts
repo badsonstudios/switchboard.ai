@@ -9,22 +9,59 @@
 // own move/resize events, so quitting immediately after a move is safe.
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
-import { launchApp, LaunchedApp, tempProjectFolder, workspaceJsonPath } from './fixtures/app';
+import {
+  findFile,
+  launchApp,
+  LaunchedApp,
+  registeredPopouts,
+  tempProjectFolder,
+  workspaceJsonPath,
+} from './fixtures/app';
 
-/** popout positions as they currently sit ON DISK */
-function persistedPopouts(home: string): Array<{ left: number; top: number }> {
+/** the popout groups as they currently sit ON DISK */
+function persistedPopoutGroups(home: string): Array<{ position?: { left: number; top: number } }> {
   const file = workspaceJsonPath(home);
   if (!fs.existsSync(file)) return [];
   const json = JSON.parse(fs.readFileSync(file, 'utf8'));
   const layout = json.layout ?? json.state?.layout;
-  return (layout?.popoutGroups ?? [])
-    .map((p: { position?: { left: number; top: number } }) => p.position)
-    .filter(Boolean);
+  return layout?.popoutGroups ?? [];
+}
+
+/** popout positions as they currently sit ON DISK */
+function persistedPopouts(home: string): Array<{ left: number; top: number }> {
+  return persistedPopoutGroups(home)
+    .map((p) => p.position)
+    .filter(Boolean) as Array<{ left: number; top: number }>;
+}
+
+/**
+ * A popout is only durable once dockview has REGISTERED it in the layout — the
+ * OS window appearing is not enough (see `registeredPopouts`). Every test here
+ * quits on purpose without settling, so each one has to wait for the thing that
+ * actually survives the quit, or it is racing the app on a busy machine (#165).
+ */
+async function waitForRegisteredPopouts(a: LaunchedApp, n: number): Promise<void> {
+  await expect
+    .poll(() => registeredPopouts(a), { timeout: 20_000 })
+    .toBe(n);
 }
 
 test.describe('popout geometry (#86)', () => {
   let a: LaunchedApp;
-  test.afterEach(async () => a?.cleanup());
+  test.afterEach(async () => {
+    // The app's log lives inside the temp home and cleanup() deletes it. Both
+    // launches append to the SAME file, so one artifact carries the whole story
+    // (#165): what the quit flushed, whether the save failed, how many popouts
+    // the relaunch was asked to restore, and whether each one opened. Useless if
+    // the only copy is gone before anyone reads it, so a failing test keeps it
+    // (CI uploads test-results/).
+    const info = test.info();
+    if (a && info.status !== info.expectedStatus) {
+      const f = findFile(a.home, 'switchboard.log');
+      if (f) await info.attach('switchboard.log', { path: f });
+    }
+    await a?.cleanup();
+  });
 
   test.skip(
     process.platform === 'linux',
@@ -40,6 +77,7 @@ test.describe('popout geometry (#86)', () => {
 
     await w.getByTitle('Pop out into its own window').click();
     await expect.poll(() => first.app.windows().length, { timeout: 15_000 }).toBe(2);
+    await waitForRegisteredPopouts(first, 1);
 
     // move it the way a user drags it somewhere else, then quit at once — NO
     // settling time, which is what made this fail before
@@ -99,6 +137,8 @@ test.describe('popout geometry (#86)', () => {
     await expect.poll(() => first.app.windows().length, { timeout: 15_000 }).toBe(2);
     await popOut.first().click();
     await expect.poll(() => first.app.windows().length, { timeout: 15_000 }).toBe(3);
+    // both windows exist; wait until both are in the layout that gets saved
+    await waitForRegisteredPopouts(first, 2);
 
     // park them far apart, tagged by the session each one hosts
     const placed = await first.app.evaluate(async ({ BrowserWindow }) => {
@@ -154,15 +194,35 @@ test.describe('popout geometry (#86)', () => {
     await expect(w.locator('nav [draggable="true"]')).toHaveCount(1, { timeout: 25_000 });
     await w.getByTitle('Pop out into its own window').click();
     await expect.poll(() => first.app.windows().length, { timeout: 15_000 }).toBe(2);
+    await waitForRegisteredPopouts(first, 1);
 
+    // Staged so every way this can go wrong fails DIFFERENTLY (#165), because
+    // "windows().length never reached 2" named none of them: the window never
+    // opened, or it opened but was never registered (both above); the resize
+    // didn't take (here); the quit didn't persist it, or the restore didn't
+    // reopen it (both below); or it came back mis-measured (last).
     const size = { x: 200, y: 200, width: 700, height: 560 };
-    await first.app.evaluate(async ({ BrowserWindow }, box) => {
-      BrowserWindow.getAllWindows()
-        .find((win) => win.webContents.getURL().includes('popout.html'))
-        ?.setBounds(box);
+    const applied = await first.app.evaluate(async ({ BrowserWindow }, box) => {
+      const popout = BrowserWindow.getAllWindows().find((win) =>
+        win.webContents.getURL().includes('popout.html')
+      );
+      if (!popout) return null;
+      popout.setBounds(box);
+      return popout.getBounds();
     }, size);
+    expect(applied, 'no popout window found to resize').not.toBeNull();
+    // If the window manager refused the size, the restore assertion below would
+    // blame the round-trip for something that never happened.
+    expect(Math.abs(applied!.width - size.width), 'the resize itself did not take')
+      .toBeLessThanOrEqual(20);
 
     await first.close();
+    // What survived the quit, before anything tries to restore it. A layout with
+    // no popout in it can only come back as one window, and that is a different
+    // bug from a restore that drops one.
+    expect(persistedPopoutGroups(first.home), 'the quit did not persist the popout')
+      .toHaveLength(1);
+
     a = await launchApp({ home: first.home });
     await expect.poll(() => a.app.windows().length, { timeout: 20_000 }).toBe(2);
     const restored = await a.app.evaluate(({ BrowserWindow }) => {
@@ -171,7 +231,7 @@ test.describe('popout geometry (#86)', () => {
       );
       return popout ? popout.getBounds() : null;
     });
-    expect(restored).not.toBeNull();
+    expect(restored, 'a second window opened but it is not the popout').not.toBeNull();
     // dockview stores the INNER size; restoring it as the OUTER size shaved a
     // frame off every launch. useContentSize makes the round-trip lossless.
     expect(Math.abs(restored!.width - size.width)).toBeLessThanOrEqual(20);

@@ -1,4 +1,7 @@
-// P1-E2-06 done-when check (local only — needs a logged-in claude CLI):
+// P1-E2-06 done-when check (LOCAL ONLY — needs a logged-in claude CLI and
+// SPENDS REAL SUBSCRIPTION TOKENS on the turn whose transcript it reads, so it
+// can never run in CI; recorded in .github/workflows/ci.yml and enforced by
+// src/main/check-scripts.test.ts — #182):
 // TranscriptWatcher binds a REAL session's transcript (real slug rules, real
 // schema) and live token totals appear. This is the check that would have
 // caught the case-sensitive-slug binding bug. Run: npm run check:transcripts
