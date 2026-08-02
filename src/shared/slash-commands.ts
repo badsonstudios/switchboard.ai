@@ -58,6 +58,31 @@ export function insertCommand(draft: string, caret: number, name: string): strin
 }
 
 /**
+ * Has the user finished typing this command, leaving nothing to complete?
+ *
+ * MEASURED BUG, #163 hand-test 2026-08-02. Dan: "`/usage` does not work, nor
+ * does `/agents`, `/model`, etc. It seems like NONE of the slash commands
+ * work." The CLI was innocent — every one of those returns renderable text over
+ * stream-json (probe `spike/s11/probe-140-slash-flags.cjs`, run against the
+ * PATH CLI with our exact argument list). The composer simply never sent them:
+ * the autocomplete popup claims Enter to CONFIRM a completion, so typing a
+ * command IN FULL and pressing Enter replaced `/usage` with `/usage ` and ran
+ * nothing. A second Enter was needed, and the first one looked like a no-op
+ * because the text it produced was the text already there.
+ *
+ * The rule: **when the token IS the command, there is nothing to complete and
+ * Enter means run it.** Partial tokens keep completing on Enter, and an
+ * explicit arrow-key choice still wins (the caller checks the highlighted entry
+ * against this, not the whole list).
+ *
+ * Case-insensitively, because the popup matches that way and `/Usage` is the
+ * same command a user meant to run.
+ */
+export function isCompleteCommand(token: string, name: string): boolean {
+  return token.toLowerCase() === name.toLowerCase();
+}
+
+/**
  * Merge discovery sources into one list, deduped by name. Precedence mirrors
  * the CLI: builtins are never shadowed; a project command beats a user
  * command of the same name; commands beat skills.

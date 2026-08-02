@@ -511,14 +511,26 @@ test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
       timeout: 25_000,
     });
 
+    // TYPED THE WAY A USER TYPES IT, and ONE Enter. This test used to press
+    // Escape first, to get the autocomplete popup out of the way — and that
+    // workaround is what let the real bug ship. Dan hand-tested PR #163 and
+    // found EVERY slash command dead in Direct mode: the popup claimed Enter to
+    // confirm a completion, so `/usage` + Enter became `/usage ` and ran
+    // nothing. A test that teaches itself the unnatural keystroke cannot catch
+    // the natural one failing.
     const box = w.getByPlaceholder(/Prompt this session/);
     await box.click();
-    await box.fill('/usage');
-    // The autocomplete popup is open — a leading `/` is what opens it — and it
-    // takes Enter to CONFIRM a completion rather than to send. Escape dismisses
-    // it, which is exactly what a user does when the command is already typed.
-    await box.press('Escape');
+    await box.pressSequentially('/usage');
+    // The popup really is OPEN and offering this exact command — asserted via
+    // its DESCRIPTION, because `/usage` matches the textarea's own value too
+    // and an ambiguous locator here would let the test pass with no popup at
+    // all, i.e. without ever reaching the code #163 broke.
+    await expect(w.getByText('Show subscription usage')).toBeVisible({ timeout: 15_000 });
+
     await box.press('Enter');
+
+    // ONE Enter sent it: the composer is empty, not sitting on `/usage `
+    await expect(box).toHaveValue('', { timeout: 15_000 });
 
     // the output, which the transcript-driven Feed dropped on the floor
     await expect(w.getByText(/LOCAL-OUTPUT for \/usage/)).toBeVisible({ timeout: 30_000 });

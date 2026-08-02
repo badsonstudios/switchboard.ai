@@ -41,16 +41,68 @@ function userMsg(text: string): Record<string, unknown> {
 const types = (): string[] =>
   out.map((m) => `${m.type}${m.subtype ? ':' + String(m.subtype) : ''}`);
 
+/**
+ * The assistant message carrying TEXT.
+ *
+ * `out.find(m => m.type === 'assistant')` is no longer that message. The real
+ * CLI sends ONE assistant message PER CONTENT BLOCK (measured 2026-08-02,
+ * `spike/s11/probe-140-slash-flags.cjs`), and the first of them carries the
+ * thinking block. Every test that reached for "the assistant message" was
+ * quietly relying on there being only one.
+ */
+const assistantText = (): string => {
+  for (const m of out) {
+    if (m.type !== 'assistant') continue;
+    const content = (m.message as { content?: Array<{ type?: string; text?: string }> })?.content;
+    const text = content?.find((c) => c.type === 'text')?.text;
+    if (typeof text === 'string') return text;
+  }
+  throw new Error('no assistant message carried text');
+};
+
 describe('a plain turn (P2-E18-04)', () => {
-  it('emits init -> deltas -> assistant -> result, in the order S-10 observed', () => {
+  // MEASURED, and deliberately NOT the tidy shape this test used to assert.
+  // Against the PATH CLI with our exact argument list, three turns running
+  // (`spike/s11/probe-140-slash-flags.cjs`, 2026-08-02):
+  //
+  //   message_start
+  //   content_block_start(0, thinking) -> delta -> ASSISTANT -> content_block_stop(0)
+  //   content_block_start(1, text)     -> delta -> ASSISTANT -> content_block_stop(1)
+  //   message_delta -> message_stop -> result
+  //
+  // One assistant message PER BLOCK, each arriving BEFORE its own
+  // content_block_stop. The old assertion — "every stream_event precedes the
+  // assistant message" — was the fake's convenience, not the CLI's behaviour,
+  // and a host built against it appends a duplicate of every block after the
+  // first.
+  it('interleaves one assistant message PER CONTENT BLOCK, mid-stream', () => {
     proto.handle(userMsg('hello'));
 
     const t = types();
     expect(t[0]).toBe('system:init');
     expect(t[t.length - 1]).toBe('result:success');
-    expect(t.filter((x) => x === 'stream_event').length).toBeGreaterThan(0);
-    // deltas come BEFORE the assembled message
-    expect(t.lastIndexOf('stream_event')).toBeLessThan(t.indexOf('assistant'));
+    // TWO assistant messages for one turn: the thinking block and the text
+    expect(t.filter((x) => x === 'assistant')).toHaveLength(2);
+    // and they are NOT all at the end — stream events follow the first one
+    expect(t.lastIndexOf('stream_event')).toBeGreaterThan(t.indexOf('assistant'));
+    // each carries exactly one content block, so every one of them reports
+    // content index 0 while the deltas were addressed 0 and 1
+    for (const m of out.filter((x) => x.type === 'assistant')) {
+      expect((m.message as { content: unknown[] }).content).toHaveLength(1);
+    }
+  });
+
+  it('addresses the two content blocks by DIFFERENT stream indices', () => {
+    proto.handle(userMsg('hello'));
+
+    const starts = out
+      .filter((m) => m.type === 'stream_event' && (m.event as { type: string }).type === 'content_block_start')
+      .map((m) => m.event as { index: number; content_block: { type: string } });
+
+    expect(starts.map((e) => [e.index, e.content_block.type])).toEqual([
+      [0, 'thinking'],
+      [1, 'text'],
+    ]);
   });
 
   it('the deltas concatenate to exactly the assistant text', () => {
@@ -63,14 +115,15 @@ describe('a plain turn (P2-E18-04)', () => {
     // stream_event at all.
     const deltas = out
       .filter(
-        (m) => m.type === 'stream_event' && (m.event as { type: string }).type === 'content_block_delta'
+        (m) =>
+          m.type === 'stream_event' &&
+          (m.event as { type: string }).type === 'content_block_delta' &&
+          (m.event as { delta: { type: string } }).delta.type === 'text_delta'
       )
       .map((m) => (m.event as { delta: { text: string } }).delta.text);
-    const assistant = out.find((m) => m.type === 'assistant') as {
-      message: { content: Array<{ text: string }> };
-    };
-    expect(deltas.join('')).toBe(assistant.message.content[0].text);
-    expect(assistant.message.content[0].text).toBe('FAKE-REPLY: hello');
+
+    expect(deltas.join('')).toBe(assistantText());
+    expect(assistantText()).toBe('FAKE-REPLY: hello');
   });
 
   // S-11 measured the real CLI emitting init on EVERY turn (4 turns -> 4
@@ -179,10 +232,8 @@ describe('the can_use_tool round trip (P2-E18-04)', () => {
 
     expect(writes).toEqual([]);
     expect(types()).toContain('result:success');
-    const assistant = out.find((m) => m.type === 'assistant') as {
-      message: { content: Array<{ text: string }> };
-    };
-    expect(assistant.message.content[0].text).toContain('denied');
+
+    expect(assistantText()).toContain('denied');
   });
 
   it('an answer to a request we never asked is ignored, not a crash', () => {
@@ -223,10 +274,8 @@ describe('the can_use_tool round trip (P2-E18-04)', () => {
       response: { subtype: 'success', request_id: req.request_id, response: { behavior: 'allow' } },
     });
 
-    const assistant = out.find((m) => m.type === 'assistant') as {
-      message: { content: Array<{ text: string }> };
-    };
-    expect(assistant.message.content[0].text).toContain('EACCES');
+
+    expect(assistantText()).toContain('EACCES');
     expect(types()).toContain('result:success');
   });
 

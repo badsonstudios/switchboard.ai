@@ -136,6 +136,60 @@ test.describe('composer slash commands (E10-07)', () => {
     await expect(w.getByText(/\/hello/).first()).toBeVisible({ timeout: 15_000 });
   });
 
+  // #163 hand-test, 2026-08-02. Dan, on the Direct-mode PR: "/usage does not
+  // work, nor does /agents, /model, etc. It seems like NONE of the slash
+  // commands work." The CLI was innocent — it answers every one of them with
+  // renderable text over stream-json (probe `spike/s11/probe-140-slash-flags.cjs`).
+  // The composer never sent them: the popup claimed Enter to CONFIRM, so typing
+  // a command IN FULL and pressing Enter replaced `/hello` with `/hello ` and
+  // ran nothing. The first Enter looked like a no-op because the text it
+  // produced was the text already on screen.
+  //
+  // Not transport-specific, and tested here on the PTY for that reason.
+  test('a command typed IN FULL submits on the first Enter (#163)', async () => {
+    const folder = tempProjectFolder();
+    seedProjectCommands(folder);
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.pressSequentially('/hello');
+    // The popup is OPEN and offering the exact command we just typed — asserted
+    // via its DESCRIPTION, because `/hello` matches the textarea's own value
+    // too, and an ambiguous locator would let this pass with no popup at all,
+    // i.e. without ever reaching the code #163 broke.
+    await expect(w.getByText('Say hello nicely')).toBeVisible({ timeout: 15_000 });
+
+    await box.press('Enter');
+
+    // ONE Enter sent it: the composer is empty, not sitting on `/hello `
+    await expect(box).toHaveValue('');
+    await showTerminal(w);
+    await expect(w.getByText(/\/hello/).first()).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('Tab still COMPLETES a fully typed command instead of sending it', async () => {
+    // the escape hatch for a command that takes arguments: Tab gives you the
+    // trailing space, Enter runs it. Enter-completes-then-Enter-sends is what
+    // #163 removed, and this is what replaced it.
+    const folder = tempProjectFolder();
+    seedProjectCommands(folder);
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.pressSequentially('/hello');
+    await expect(w.getByText('Say hello nicely')).toBeVisible({ timeout: 15_000 });
+
+    await box.press('Tab');
+
+    await expect(box).toHaveValue('/hello ');
+  });
+
   test('no popup when the slash is mid-sentence; Escape dismisses', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });

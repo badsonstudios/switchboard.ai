@@ -90,6 +90,74 @@ describe('token-by-token assistant text', () => {
     expect(emitted(1)).toMatchObject({ text: 'Hello world (revised)', streaming: false });
   });
 
+  // THE SHAPE THE REAL CLI ACTUALLY SENDS, measured 2026-08-02 against the PATH
+  // CLI with our exact argument list (`spike/s11/probe-140-slash-flags.cjs`,
+  // three turns, identical every time). One `assistant` message PER CONTENT
+  // BLOCK, each arriving mid-stream before its own `content_block_stop`, and
+  // each carrying a single-element `content` array — so EVERY one of them
+  // reports content index 0 while the deltas were addressed 0, 1, 2…
+  //
+  // A purely index-based reconcile lines up the first block and appends a
+  // duplicate of every block after it. The fake used to send one whole message
+  // at the end, which is why nothing caught this.
+  it('reconciles one assistant message PER CONTENT BLOCK, all reporting index 0', () => {
+    feed.offer(SID, ev({ type: 'message_start', message: { role: 'assistant', content: [] } }));
+    // block 0: thinking
+    feed.offer(SID, ev({ type: 'content_block_start', index: 0, content_block: { type: 'thinking' } }));
+    feed.offer(
+      SID,
+      ev({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'weighing it' } })
+    );
+    feed.offer(SID, assistant([{ type: 'thinking', thinking: 'weighing it up' }]));
+    feed.offer(SID, ev({ type: 'content_block_stop', index: 0 }));
+    // block 1: text — the assistant message for it ALSO reports content index 0
+    feed.offer(SID, ev({ type: 'content_block_start', index: 1, content_block: { type: 'text' } }));
+    feed.offer(SID, textDelta('the ans', 1));
+    feed.offer(SID, assistant([{ type: 'text', text: 'the answer' }]));
+    feed.offer(SID, ev({ type: 'content_block_stop', index: 1 }));
+    feed.offer(SID, ev({ type: 'message_stop' }));
+    feed.offer(SID, { type: 'result', subtype: 'success' });
+
+    // TWO blocks, not three: the second message superseded the streamed text
+    // block rather than appending a second copy of the reply
+    expect(kinds()).toEqual(['thinking', 'assistant']);
+    expect(texts()).toEqual(['weighing it up', 'the answer']);
+    expect(feed.blocks(SID).map((b) => b.seq)).toEqual([1, 2]);
+    expect(emitted(2)).toMatchObject({ text: 'the answer', streaming: false });
+  });
+
+  it('an empty thinking block (a bare signature) does not eat the reply', () => {
+    // Exactly what the probe saw: `{"type":"thinking","thinking":"","signature":"CAIS…"}`.
+    // The thinking block produces NO intent, so its assistant message claims
+    // nothing — and must not retire the text block that follows it.
+    feed.offer(SID, ev({ type: 'message_start', message: { role: 'assistant', content: [] } }));
+    feed.offer(SID, ev({ type: 'content_block_start', index: 0, content_block: { type: 'thinking' } }));
+    feed.offer(
+      SID,
+      ev({ type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'CAIS' } })
+    );
+    feed.offer(SID, assistant([{ type: 'thinking', thinking: '', signature: 'CAIS' }]));
+    feed.offer(SID, ev({ type: 'content_block_stop', index: 0 }));
+    feed.offer(SID, ev({ type: 'content_block_start', index: 1, content_block: { type: 'text' } }));
+    feed.offer(SID, textDelta('391', 1));
+    feed.offer(SID, assistant([{ type: 'text', text: '391' }]));
+    feed.offer(SID, { type: 'result', subtype: 'success' });
+
+    expect(texts().filter((t) => t === '391')).toHaveLength(1); // ONE copy
+    expect(feed.blocks(SID).filter((b) => b.kind === 'assistant')).toHaveLength(1);
+  });
+
+  // The other measured shape: a LOCAL slash command answers with a bare
+  // `system:init -> assistant -> result` and no stream events at all.
+  it('a turn with no stream events at all still renders (local slash commands)', () => {
+    feed.offer(SID, { type: 'system', subtype: 'init', session_id: CONV });
+    feed.offer(SID, assistant([{ type: 'text', text: 'Current model: Fable 5' }]));
+    feed.offer(SID, { type: 'result', subtype: 'success' });
+
+    expect(texts()).toEqual(['Current model: Fable 5']);
+    expect(emitted(1)).toMatchObject({ streaming: false });
+  });
+
   it('a content block that produced NO deltas still renders its text', () => {
     // Every delta of the block was a kind we filter (signature_delta), or the
     // CLI sent none. The block exists and is EMPTY until the message lands, so

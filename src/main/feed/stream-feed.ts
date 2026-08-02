@@ -219,9 +219,7 @@ export class StreamFeed {
       }
       // Only an assistant message can complete streamed deltas; a replayed
       // `user` message shares the index space with nothing.
-      const candidate =
-        isAssistant && intent.index !== undefined ? s.assembling.get(intent.index) : undefined;
-      const streamed = candidate && supersedes(candidate, intent.block.kind) ? candidate : undefined;
+      const streamed = isAssistant ? this.claim(s, intent.index, intent.block.kind) : undefined;
       const block = streamed
         ? // ALWAYS emitted, never conditionally: by now the block is usually
           // already `streaming: false` (content_block_stop got there first), and
@@ -235,16 +233,60 @@ export class StreamFeed {
             streaming: false,
           })
         : s.buffer.push({ ...intent.block, streaming: false }, false);
-      // Drop the reconciled index. `replace` hands back a NEW object, so an
-      // entry left pointing at the old one would be re-emitted by the
-      // end-of-message sweep below — overwriting the finished block in the
-      // renderer with the empty shell the deltas started from.
-      if (streamed) s.assembling.delete(intent.index as number);
       if (intent.toolUseId) s.buffer.remember(intent.toolUseId, block);
     }
-    // The message is complete: every block it named is final, and anything the
-    // deltas opened that it did NOT name was never going to be completed.
-    if (isAssistant) this.endMessage(s);
+    // Tokens are done for whatever this message named; anything still open is
+    // either a block a LATER message in the same turn will claim (the real
+    // CLI sends one message per content block — see `claim`) or an orphan.
+    // Either way it is no longer filling in, and either way it must stay in
+    // the map so a later message can still find it.
+    if (isAssistant) this.closeStreaming(s);
+  }
+
+  /**
+   * Find the streamed block this message content belongs to, and take it.
+   *
+   * INDEX FIRST, THEN KIND — and the fallback is not defensive padding, it is
+   * the case the real CLI actually produces. MEASURED 2026-08-02 against the
+   * PATH CLI with our exact argument list (`spike/s11/probe-140-slash-flags.cjs`),
+   * on three separate turns:
+   *
+   *   message_start
+   *   content_block_start(0, thinking) -> delta -> ASSISTANT -> content_block_stop(0)
+   *   content_block_start(1, text)     -> delta -> ASSISTANT -> content_block_stop(1)
+   *   message_delta -> message_stop -> result
+   *
+   * **One `assistant` message per CONTENT BLOCK, arriving mid-stream — before
+   * its own `content_block_stop`, not after `message_stop`.** And each carries a
+   * single-element `content` array, so EVERY one of them reports content index
+   * 0 while the stream events that built it were addressed 0, 1, 2…
+   *
+   * A purely index-based match therefore lines up only for the first block and
+   * appends a duplicate for every one after it. The fake did not show this
+   * because it sends all deltas and then one whole message — the same
+   * fake-is-kinder-than-reality blind spot as #153/#154/#139. The fake now
+   * reproduces the real shape.
+   *
+   * Taking the block OUT of the map is what makes the fallback safe: within one
+   * message each entry can be claimed once, and blocks are claimed in the order
+   * they were opened, which is the order the messages arrive in.
+   */
+  private claim(
+    s: StreamedSession,
+    index: number | undefined,
+    kind: FeedBlock['kind']
+  ): FeedBlock | undefined {
+    const exact = index !== undefined ? s.assembling.get(index) : undefined;
+    if (exact && supersedes(exact, kind)) {
+      s.assembling.delete(index as number);
+      return exact;
+    }
+    for (const [at, block] of s.assembling) {
+      if (!supersedes(block, kind)) continue;
+      s.assembling.delete(at);
+      return block;
+    }
+    return undefined;
   }
 
   /**
