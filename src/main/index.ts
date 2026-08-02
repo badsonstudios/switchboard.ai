@@ -27,6 +27,7 @@ import { installCspHeaders } from './csp';
 import { parsePopoutFeatures } from './popout-bounds';
 import { scanSlashCommands } from './capabilities/slash-commands';
 import { buildMenuTemplate } from './app-menu';
+import { installTerminalAccelerators, makeAcceleratorDeps } from './terminal-accelerators';
 import {
   Box,
   groupIdFromFrameName,
@@ -147,6 +148,37 @@ function confirmCloseWithBusySessions(win: BrowserWindow): boolean {
   });
   return choice === 0;
 }
+
+/**
+ * How a claimed chord (#90) gets from the browser process to the command
+ * registry. It always goes to the MAIN window, popout or not: a popout has no
+ * preload and runs no JS of its own — dockview adopts the group's DOM into it
+ * while the script keeps running in the opener — so the opener is the only
+ * place a command can be run at all. `fromPopout` tells the renderer where the
+ * keystroke came from, which is what decides whether running the command should
+ * pull the main window forward.
+ *
+ * `acceleratorReadyFor` is the webContents that has actually subscribed. Until
+ * it matches the live window, no chord is claimed at all and the keystroke goes
+ * where it always would — including for the whole of startup, and for ever if
+ * the preload bridge is missing.
+ */
+let acceleratorReadyFor: number | null = null;
+const acceleratorDeps = makeAcceleratorDeps({
+  platform: process.platform === 'darwin' ? 'darwin' : 'other',
+  renderer: () => {
+    const win = currentWindow;
+    if (!win || win.isDestroyed()) return { id: null, alive: false };
+    return { id: win.webContents.id, alive: !win.webContents.isCrashed() };
+  },
+  ready: () => acceleratorReadyFor,
+  send: (commandId, fromPopout) => {
+    if (!pushToRenderer) return false;
+    pushToRenderer(currentWindow, 'app:accelerator', { commandId, fromPopout });
+    return true;
+  },
+  onError: (err) => log.app.warn('terminal accelerator failed', { error: String(err) }),
+});
 
 function trackWindowGeometry(win: BrowserWindow): void {
   let lastNormalBounds = win.getNormalBounds();
@@ -309,6 +341,14 @@ function createWindow(): BrowserWindow {
   // changes at runtime. Phase 4 grants a plugin host its manifest's set here
   // instead (P2-E15-04).
   grantFirstParty?.(win);
+  // The two chords that must survive terminal focus (#90). Installed on the
+  // window's contents, so the claim ends at our own windows.
+  installTerminalAccelerators(win.webContents, acceleratorDeps(false));
+  // A navigating renderer has torn its listener down; nothing may be claimed
+  // again until the new one says it is listening.
+  win.webContents.on('did-start-loading', () => {
+    acceleratorReadyFor = null;
+  });
   trackWindowGeometry(win);
   win.on('close', (e) => {
     if (!confirmCloseWithBusySessions(win)) {
@@ -431,6 +471,11 @@ function createWindow(): BrowserWindow {
     if (!isPopoutUrl(details.url)) return;
     const entry = { win: child, groupId: groupIdFromFrameName(details.frameName) };
     popoutWindows.push(entry);
+    // A popped-out session is still a session: the palette and the attention
+    // jump have to work from its terminal too (#90, §5.8 — tearing a card off
+    // must not remove capability). The claim is per-window, so this window
+    // needs its own.
+    installTerminalAccelerators(child.webContents, acceleratorDeps(true));
     child.on('closed', () => {
       const i = popoutWindows.indexOf(entry);
       if (i >= 0) popoutWindows.splice(i, 1);
@@ -511,6 +556,11 @@ app
     // renderer-owned UI state (E12-08): focus, view tabs, prefs
     broker.handle('workspace:getUi', () => workspace.getUi());
     broker.on('workspace:setUi', (_e, ui: unknown) => workspace.setUi(ui));
+    // the renderer is listening for claimed chords (#90) — until this arrives,
+    // nothing is taken from the page
+    broker.on('app:acceleratorReady', (e) => {
+      acceleratorReadyFor = e.sender.id;
+    });
     // display work areas — for popout-position rescue on restore (E8-02)
     broker.handle('app:workAreas', () => screen.getAllDisplays().map((d) => d.workArea));
     // display reconnected (docking back at the desk) — the renderer may offer

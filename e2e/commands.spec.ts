@@ -82,7 +82,11 @@ test.describe('keyboard commands (E9-01)', () => {
     await expect(activeTab(w)).toContainText(second);
   });
 
-  test('the terminal swallows every binding — the CLI owns its keys', async () => {
+  // NOTE (#90): two chords — the palette and the attention jump — are now
+  // claimed in the BROWSER process, above the renderer, so they do work from a
+  // terminal. Nothing else is, which is what this test guards: Ctrl+1 and every
+  // other accelerator still belong to the CLI once focus is in an xterm.
+  test('the terminal swallows every OTHER binding — the CLI owns its keys', async () => {
     const { w, first, second } = await twoSessions();
     await w.keyboard.press(`${MOD}+2`);
     await expect(activeTab(w)).toContainText(second);
