@@ -51,6 +51,11 @@ export function AboutPanel(props: {
   // a chat message to whoever asked "which build?". Clipboard access can be
   // refused (it is a permission, and the popout path has bitten us before), so
   // the failure is swallowed — the same facts are on screen either way.
+  //
+  // Deliberately NOT translated, unlike everything rendered above it: this is a
+  // diagnostic payload aimed at whoever maintains the app, and a bug report
+  // that says "unbekannt" is harder to triage, not easier. §5.21 governs what
+  // the USER reads.
   const copy = (): void => {
     const lines = [
       `switchboard ${props.version}`,
