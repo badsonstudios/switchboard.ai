@@ -360,7 +360,21 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
           });
         }
       }
+      // SPREAD `prior` FIRST, then override only what this start actually
+      // decides. This used to rebuild the record field by field, and every
+      // PersistedSession field added afterwards had to be remembered here — so
+      // `transport` was silently dropped on EVERY session start, including the
+      // one at app launch, and the Direct-mode setting could not survive a
+      // relaunch (#153 follow-up, found by Dan).
+      //
+      // Same defect shape as `reason` vanishing from the approval queue earlier
+      // the same day: field-by-field copying makes a NEW field a decision,
+      // which is good, and a FORGOTTEN field silent, which is the cost. Spread
+      // then override pays that cost the other way round — a field is kept
+      // unless someone means to change it, and forgetting is visible rather
+      // than silent.
       deps.persist.upsert({
+        ...prior,
         id: opts.cardId,
         identity,
         layoutSlot: prior?.layoutSlot ?? 0,
@@ -368,10 +382,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         // session's onNativeSessionId will fill in the new one
         nativeSessionId: plan.resumeSessionId,
         suspendedAt: prior?.suspendedAt ?? '',
-        usage: prior?.usage,
-        model: prior?.model,
         autonomy,
-        taskLabel: prior?.taskLabel,
         // an existing card keeps its membership; a new card takes the caller's
         groupId: prior?.groupId ?? (typeof opts.groupId === 'string' ? opts.groupId : undefined),
       });

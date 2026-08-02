@@ -57,6 +57,25 @@ Branch `fix/153-transport-restart`. Gate green: lint + typecheck + **804 unit**
 >    renderer actually reads. The test that asserted the old ordering was
 >    asserting the bug; it now checks the thing that actually mattered (a
 >    listener firing during create sees a COMPLETE record).
+>
+> **A THIRD round, after Dan confirmed the `.claude` write WORKS by hand:** the
+> setting did not survive closing and reopening the **app**. Cause: the
+> create-time card write **rebuilt the persisted record field by field**, so
+> `transport` was dropped on EVERY session start — including the one at launch.
+> **Exactly the same defect shape as `reason` vanishing from the approval queue
+> hours earlier.** Now it spreads `prior` and overrides only what a start
+> actually decides, so a field is KEPT unless someone means to change it.
+> Revert-proofed, plus an e2e that relaunches the built app.
+> **The rule, twice earned in one day: field-by-field copying makes a NEW field
+> a decision (good) and a FORGOTTEN field silent (the cost). Spread-then-override
+> pays that cost the other way round.**
+>
+> ## ✅ THE EPIC'S PURPOSE IS CONFIRMED BY HAND (Dan, 2026-08-01)
+> Writing to a project's `.claude/` folder in Direct mode **popped ONE approval
+> in the session window; he approved it; the file was written.** No second
+> terminal prompt, no discarded answer. That is the 31 July bug, fixed and
+> verified by the person who reported it.
+>
 > Also filed from the same session: **#154** — stopping a running turn wedges
 > the session (no further prompts accepted; unreproduced, needs a repro first).
 Next after this: **#139 (P2-E18-09)** — slash commands from `system:init`.

@@ -257,6 +257,47 @@ test.describe('switching transport the way a user does (#153)', () => {
     await expect(w.getByRole('button', { name: /Open Terminal/i })).toHaveCount(0);
   });
 
+  // The path Dan took, and the one that was still broken after the restart
+  // button worked: he switched to Direct, used it successfully, closed the APP,
+  // reopened — and was back on Terminal.
+  //
+  // Cause: the create-time card write rebuilt the persisted record field by
+  // field, so `transport` was dropped on EVERY session start, including the one
+  // at launch. Same defect shape as `reason` vanishing from the approval queue
+  // earlier the same day. Must run against the BUILT app, like the theme
+  // relaunch test, because that is where the real persistence path lives.
+  test('the choice survives a relaunch of the whole app', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const first = a;
+    await expect(first.window.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    await first.window.getByRole('button', { name: '⋯' }).first().click();
+    await first.window.getByRole('button', { name: /switch to Direct/i }).click();
+    await first.window.getByRole('button', { name: /Restart session now/i }).click();
+    // it really is in Direct before we quit
+    await first.window.getByRole('button', { name: 'Terminal' }).first().click();
+    await expect(first.window.getByText('No terminal for this session')).toBeVisible({
+      timeout: 30_000,
+    });
+    await first.close();
+
+    // Same profile, fresh process — and deliberately NO seedFolder. Seeding
+    // again creates a SECOND card, which is what my first attempt did: two
+    // sessions, and the assertion landed on the wrong one.
+    a = await launchApp({ home: first.home, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    await expect(a.window.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    await a.window.getByRole('button', { name: 'Terminal' }).first().click();
+    await expect(a.window.getByText('No terminal for this session')).toBeVisible({
+      timeout: 30_000,
+    });
+  });
+
   test('the choice survives the restart it triggered', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
