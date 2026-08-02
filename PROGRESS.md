@@ -6,8 +6,18 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.** Next is **#139 (P2-E18-09)** — slash
-commands from `system:init`.
+**In progress:** **a UX fix on #149, found by Dan using it within minutes of
+the merge** — the transport toggle REFUSED while a session was live and told him
+to "stop this session first", which is a **dead end**: a live session has no
+stop control (`restartSelf` only drops an already-dead one), and it contradicted
+`setAutonomy` directly above it in the same menu, which has the IDENTICAL
+constraint and simply applies on the next spawn. Now it accepts, persists, and
+says *"Saved — takes effect when this session next starts."* Branch
+`fix/152-transport-switch-deadend`.
+**Lesson worth keeping: a refusal is only correct if the thing it tells you to
+do is possible.** I reasoned about the stored-answer-vs-running-process
+mismatch and never checked whether the user could act on the instruction.
+Next after this: **#139 (P2-E18-09)** — slash commands from `system:init`.
 **E18 IS 9 OF 11 DONE, ALL MERGED with 5 CI jobs green:** #131 → PR #141 ·
 #132 → PR #142 · #133 → PR #143 · #134 → PR #144 · #135 → PR #146 · #136 →
 PR #147 · #137 → PR #148 · #138 → PR #150 · **#149 → PR #151 (the first

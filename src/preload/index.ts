@@ -111,15 +111,15 @@ const api = {
     setAutonomy: (cardId: string, autonomy: string): Promise<void> =>
       ipcRenderer.invoke('sessions:setAutonomy', cardId, autonomy),
     /**
-     * Choose a card's transport (P2-E18-08b). Applies to the NEXT spawn — a
-     * running CLI cannot change how we talk to it, so this REFUSES while a
-     * session is live rather than storing an answer that disagrees with the
-     * process actually running.
+     * Choose a card's transport (P2-E18-08b). Applies to the NEXT spawn, like
+     * autonomy: the CLI cannot change either on a live session. `pending` is
+     * true when a session is running under this card right now, so the UI can
+     * say the change is queued rather than implying it took effect.
      */
     setTransport: (
       cardId: string,
       transport: 'pty' | 'stream'
-    ): Promise<{ ok: boolean; reason?: string }> =>
+    ): Promise<{ ok: boolean; reason?: string; pending?: boolean }> =>
       ipcRenderer.invoke('sessions:setTransport', cardId, transport),
     rename: (id: string, title: string): Promise<SessionRecordDto | undefined> =>
       ipcRenderer.invoke('sessions:rename', id, title),

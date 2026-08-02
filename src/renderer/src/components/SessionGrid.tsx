@@ -148,23 +148,19 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     setCardAutonomy(next);
     void window.switchboard.sessions.setAutonomy(cardId, next);
   };
-  // per-card transport (P2-E18-08b). Applies on the NEXT spawn — a running CLI
-  // cannot change how we talk to it — so main REFUSES while a session is live
-  // and we surface the refusal rather than swallowing it.
+  // per-card transport (P2-E18-08b). Applies on the NEXT spawn, exactly like
+  // autonomy above — the CLI cannot change either on a live session. It is
+  // ACCEPTED either way; when a session is running we say the change is queued
+  // rather than implying it took effect.
   const [cardTransport, setCardTransport] = React.useState<'pty' | 'stream'>('pty');
-  const [transportRefused, setTransportRefused] = React.useState(false);
+  const [transportPending, setTransportPending] = React.useState(false);
   const toggleTransport = (): void => {
     if (!cardId) return;
     const next = cardTransport === 'stream' ? 'pty' : 'stream';
     void window.switchboard.sessions.setTransport(cardId, next).then((r) => {
-      if (r.ok) {
-        setCardTransport(next);
-        setTransportRefused(false);
-      } else {
-        // say so: a click that silently does nothing teaches the user that the
-        // control is decorative
-        setTransportRefused(true);
-      }
+      if (!r.ok) return;
+      setCardTransport(next);
+      setTransportPending(!!r.pending);
     });
   };
   // held permissions awaiting decisions (E10-04) — a QUEUE, not a slot:
@@ -755,9 +751,9 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                               : 'grid.menuTransportPty'
                           )}
                         </button>
-                        {transportRefused && (
+                        {transportPending && (
                           <div style={{ padding: '2px 8px 6px', color: 'var(--muted)', fontSize: 10 }}>
-                            {t('grid.menuTransportBusy')}
+                            {t('grid.menuTransportPending')}
                           </div>
                         )}
                         <button

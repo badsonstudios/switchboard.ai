@@ -377,7 +377,7 @@ describe('per-card transport (P2-E18-08b)', () => {
 
     const res = await h.call('sessions:setTransport', CARD, 'stream');
 
-    expect(res).toEqual({ ok: true });
+    expect(res).toEqual({ ok: true, pending: false });
     expect(h.upserted.at(-1)?.transport).toBe('stream');
   });
 
@@ -389,16 +389,30 @@ describe('per-card transport (P2-E18-08b)', () => {
     expect(h.upserted.at(-1)?.transport).toBe('pty');
   });
 
-  it('REFUSES while a session is live, and says why', async () => {
+  // The first version REFUSED here, and it was wrong twice over — Dan hit both
+  // within minutes: it contradicted `setAutonomy` directly below it in the same
+  // menu, which has the IDENTICAL constraint and simply applies on next spawn,
+  // and it told the user to "stop this session first" when a live session has
+  // no stop control at all. A dead end dressed as a safety check.
+  it('ACCEPTS while a session is live, and reports the change as pending', async () => {
     const h = harness(undefined, dir, { prior, liveIds: ['live-1'] });
     await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
     h.upserted.length = 0;
 
     const res = await h.call('sessions:setTransport', CARD, 'stream');
 
-    expect(res).toEqual({ ok: false, reason: 'session-running' });
-    // and nothing was written: a refused change must not half-apply
-    expect(h.upserted.filter((s) => s.transport !== undefined)).toEqual([]);
+    // stored, so the NEXT start uses it...
+    expect(h.upserted.at(-1)?.transport).toBe('stream');
+    // ...and flagged, so the UI says so rather than implying it took effect
+    expect(res).toEqual({ ok: true, pending: true });
+  });
+
+  it('is NOT pending when no session is running', async () => {
+    const h = harness(undefined, dir, { prior });
+    expect(await h.call('sessions:setTransport', CARD, 'stream')).toEqual({
+      ok: true,
+      pending: false,
+    });
   });
 
   it('rejects a value that is not a transport', async () => {

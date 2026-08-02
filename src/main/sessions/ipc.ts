@@ -488,21 +488,35 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   // drop only the live session (restart): keep the record so it can respawn
   broker.handle('sessions:dropLive', (_e, cardId: string) => dropLiveForCard(cardId));
 
-  // per-card transport (P2-E18-08b). REFUSED while a session is live: a
-  // running CLI cannot change how we talk to it, and silently accepting the
-  // click would leave the card's stored answer disagreeing with the process
-  // actually running — the user would believe they had switched.
+  // per-card transport (P2-E18-08b). ACCEPTED always, applied on the NEXT
+  // spawn — exactly like `sessions:setAutonomy` directly below, which has the
+  // identical constraint (the CLI cannot change either on a live session).
+  //
+  // The first version REFUSED while a session was live. That was wrong twice
+  // over, and Dan hit both within minutes of it shipping: it contradicted the
+  // control immediately above it in the same menu, and it told the user to
+  // "stop this session first" when a LIVE session has no stop control at all —
+  // `restartSelf` only drops an already-dead one. A dead end dressed as a
+  // safety check.
+  //
+  // The concern that motivated the refusal — the card's stored answer
+  // disagreeing with the running process — is real, and it is answered by
+  // SAYING SO (`pending: true` -> "applies when this session restarts") rather
+  // than by refusing. Autonomy has carried exactly that trade since E10-05.
   broker.handle('sessions:setTransport', (_e, cardId: string, transport: string) => {
     if (typeof cardId !== 'string') return { ok: false, reason: 'unknown-card' };
     if (transport !== 'pty' && transport !== 'stream') return { ok: false, reason: 'bad-value' };
-    for (const [liveId, cid] of cardOfLive) {
-      if (cid === cardId && manager.get(liveId)) return { ok: false, reason: 'session-running' };
-    }
     const prior = deps.persist.list().find((s) => s.id === cardId);
     if (!prior) return { ok: false, reason: 'unknown-card' };
     deps.persist.upsert({ ...prior, transport });
-    log.info('card transport changed', { cardId, transport });
-    return { ok: true };
+    // is a session running under this card right now? then the change is
+    // PENDING, and the UI has to say that instead of implying it took effect
+    let pending = false;
+    for (const [liveId, cid] of cardOfLive) {
+      if (cid === cardId && manager.get(liveId)) pending = true;
+    }
+    log.info('card transport changed', { cardId, transport, pending });
+    return { ok: true, pending };
   });
 
   // per-card autonomy (E10-05): persists to the record; the CLI can't change
