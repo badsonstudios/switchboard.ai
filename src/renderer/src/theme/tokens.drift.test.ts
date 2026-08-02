@@ -175,6 +175,10 @@ const PAIRS: Array<[string, string, number]> = [
   ['--term', '--bg', 7],
   ['--muted', '--panel', 7],
   ['--faint', '--panel', 4.5],
+  // the urgency strip (E9-04) is the first surface to put secondary ink on
+  // --panel2, and it is a functional readout rather than chrome
+  ['--muted', '--panel2', 7],
+  ['--faint', '--panel2', 4.5],
   ['--border', '--panel', 3],
   ['--group-frame', '--bg', 3],
   ['--rail-divider', '--rail-card', 3],

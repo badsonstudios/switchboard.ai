@@ -30,6 +30,7 @@ import {
   prunePresentation,
   samePresentation,
 } from '../lib/presentation';
+import { markLit, pruneLit } from '../lib/urgency';
 
 /**
  * A snapshot. Every field is `readonly` deliberately: identity IS the change
@@ -49,6 +50,15 @@ export interface SessionState {
   readonly visited: ReadonlySet<number>;
   /** per-card view tab / ladder rung / dock slot (P2-E15-08) */
   readonly presentation: ReadonlyMap<string, CardPresentation>;
+  /**
+   * The delayed urgency reset (P2-E9-04, §5.8): card id -> the epoch ms at
+   * which its lamp stops being lit. Deliberately deadlines rather than a plain
+   * Set plus a timer — a deadline is a fact the render can read, so the timer
+   * only has to schedule a re-render and can never be the authority on what is
+   * lit. NOT persisted: "which session called you 1.5 seconds ago" is not a
+   * fact a relaunch can inherit.
+   */
+  readonly urgency: ReadonlyMap<string, number>;
 }
 
 const EMPTY: SessionState = {
@@ -59,6 +69,7 @@ const EMPTY: SessionState = {
   events: [],
   visited: new Set(),
   presentation: new Map(),
+  urgency: new Map(),
 };
 
 export class SessionStore {
@@ -227,6 +238,34 @@ export class SessionStore {
     if (!next) return;
     this.set({ presentation: next });
     this.persistPresentation(persistablePresentation(next));
+  }
+
+  // ── urgency strip (P2-E9-04) ────────────────────────────────────────────
+  // Part of `state`, like presentation and unlike the registries below: the
+  // strip RENDERS from it, and the attention jump writes it from a keydown
+  // handler that runs outside React's commit — the same synchronous-read
+  // requirement that made this a store in the first place.
+
+  /**
+   * The lamp for this card just took a jump: keep it lit for a beat so the user
+   * can see WHICH session called them after they arrive (§5.8's delayed urgency
+   * reset). Takes a CARD id — a live id churns on every resume, and a lamp that
+   * went dark because the session respawned would defeat the whole point.
+   *
+   * `now` is injectable so the rule is unit-testable without a fake clock.
+   */
+  markUrgency(cardId: string, now: number = Date.now()): void {
+    if (!cardId) return;
+    this.set({ urgency: markLit(this.state.urgency, cardId, now) });
+  }
+
+  /** The beat has passed — put the expired lamps out. A no-op write is skipped
+   *  entirely: the strip arms a timer per lit lamp, and a stray fire must not
+   *  re-render every card. */
+  expireUrgency(now: number = Date.now()): void {
+    const next = pruneLit(this.state.urgency, now);
+    if (!next) return;
+    this.set({ urgency: next });
   }
 
   // ── imperative registries ───────────────────────────────────────────────

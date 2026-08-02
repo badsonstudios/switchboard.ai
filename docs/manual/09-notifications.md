@@ -39,6 +39,46 @@ again and the marker moves down to the following one. Clicking an entry counts
 the same way, so the shortcut won't bounce you back to something you just
 opened. See [Keyboard & commands](06-keyboard.md) for the full walk-through.
 
+## The lamp strip
+
+Across the top of the window, under the title bar, there's a thin row of
+**lamps** — one per session, always there.
+
+Each lamp is a small dot plus the session's name, and the dot is colored by what
+that session is doing right now:
+
+| The lamp | It means |
+|---|---|
+| a hollow ring, name in grey | calm — working, idle, or suspended |
+| a **filled** dot, name in bold and tinted | it needs you |
+
+The filled-versus-hollow difference is deliberate: you can read the strip
+without relying on the color at all. At the right-hand end it totals things up
+— **"2 need you"**, or **"all calm"** when nothing is outstanding.
+
+**Click any lamp to jump to that session.** If you'd hidden its card, clicking
+the lamp brings it back to exactly where it was. If the session is in its own
+pop-out window, clicking the lamp raises that window rather than pulling the
+card back into the main one.
+
+The strip never goes away. Hide the sessions list, switch a card to its
+Terminal, take a card out of the workspace entirely — the lamps stay put. It's
+the one place that always shows you every session you have, so you never have to
+wonder whether something is out of sight and shouting.
+
+### The lamp that called you stays lit
+
+When you press **`Ctrl+Space`** to jump to whatever needs you next, you arrive
+at a session — but which one was it? By the time the screen has changed, the
+thing that told you is gone.
+
+So it isn't. The lamp you were just sent to gets a **ring around it for about a
+second and a half** after you land, then quietly fades out. Long enough to see
+where you were sent, short enough not to become part of the furniture.
+
+Nothing on the strip blinks or animates for attention. It's a readout, not an
+alarm.
+
 ## What you'll hear and see
 
 By default, when a session needs permission, needs input, finishes, or crashes:

@@ -25,6 +25,7 @@ import { bindingFor, dispatch, dispatchAccelerator, formatBinding, Platform } fr
 import { focusedElementIn } from './lib/focus-target';
 import { sessionStore } from './store/session-store';
 import { CommandPalette } from './components/CommandPalette';
+import { UrgencyStrip } from './components/UrgencyStrip';
 import {
   applyTabRows,
   forgetPopoutWindow,
@@ -99,6 +100,13 @@ export function App(): React.JSX.Element {
   // rather than by every component remembering to keep a ref in sync.
   const events = useSyncExternalStore(subscribeStore, () => sessionStore.getState().events);
   const visited = useSyncExternalStore(subscribeStore, () => sessionStore.getState().visited);
+  // The urgency strip (E9-04). It renders from RAIL ORDER, not the raw session
+  // list, so the Nth lamp is the Nth Ctrl+1..9 target — the derived value has a
+  // stable identity (recomputed only when sessions/groups change), which is
+  // what useSyncExternalStore requires.
+  const railFlat = useSyncExternalStore(subscribeStore, () => sessionStore.getRailOrder().flat);
+  const urgency = useSyncExternalStore(subscribeStore, () => sessionStore.getState().urgency);
+  const expireUrgency = React.useCallback(() => sessionStore.expireUrgency(), []);
   useEffect(() => {
     void loadUiState().then(() => {
       // before anything can write presentation state, and before the grid
@@ -302,6 +310,11 @@ export function App(): React.JSX.Element {
     // focusSession maps a live session id to its card itself, and passes any
     // id it doesn't recognise straight through
     focusSession(next.sessionId);
+    // §5.8's delayed urgency reset: keep the arrived-at lamp lit for a beat so
+    // you can still see WHICH session called you. Keyed by CARD id — the event
+    // carries the live id, which churns on every resume, and a lamp that went
+    // dark because the session respawned would defeat the whole point.
+    sessionStore.markUrgency(sessionStore.cardIdForLive(next.sessionId));
     // "Done." relaxes to "Ready" — you have now looked at it. Every other kind
     // is untouched by ack and leaves the queue only when actually answered,
     // which is exactly why the visited set above has to exist.
@@ -545,6 +558,17 @@ export function App(): React.JSX.Element {
         platform={platform}
       />
       {!preflightOk && <PreflightBanner />}
+      {/* Outside the rail (which toggles) and outside the grid (whose cards
+          hide, pop out and — with E9-07 — rearrange by layout mode): the only
+          place a strip can be "always visible" without every one of those
+          surfaces remembering to draw it. §5.8. */}
+      <UrgencyStrip
+        sessions={railFlat}
+        urgency={urgency}
+        activeCardId={activeCard}
+        onFocus={focusCard}
+        onExpire={expireUrgency}
+      />
       <div style={{ flex: 1, display: 'flex', minBlockSize: 0 }}>
         {!railHidden && (
           <SessionsRail

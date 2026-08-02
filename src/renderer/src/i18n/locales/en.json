@@ -61,6 +61,12 @@
     "glyphCrashed": "✕",
     "glyphIdle": "–"
   },
+  "urgency": {
+    "label": "Session lamps",
+    "lampTitle": "{title} — {state}",
+    "needYou": "{n, plural, one {# needs you} other {# need you}}",
+    "calm": "all calm"
+  },
   "grid": {
     "addCard": "+ session",
     "empty": "Add a session card to begin",
