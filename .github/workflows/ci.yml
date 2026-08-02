@@ -34,6 +34,27 @@ jobs:
       # once when #163 put a thinking block ahead of the text one. Both are the
       # spawn-and-protocol seam the unit tests deliberately cannot reach.
       - run: npm run check:fake-stream
+      # The remaining three check:* scripts are LOCAL-ONLY and deliberately have
+      # no job here (#182). Each drives the REAL `claude` CLI through a real
+      # model turn:
+      #   check:adapter     - two headless `-p` turns: plants a marker word,
+      #                       then reads it back through `--resume`
+      #   check:hooks       - a real interactive session in a PTY: trust dialog,
+      #                       a typed prompt, and a real Write tool call held at
+      #                       the PreToolUse hook
+      #   check:transcripts - a real `-p` turn, then parses the transcript the
+      #                       CLI itself wrote under ~/.claude/projects
+      # A runner has no subscription login, and giving it one would mean either
+      # an ANTHROPIC_API_KEY or spending Dan's subscription tokens on every PR -
+      # two hard constraints we do not cross (.claude/CLAUDE.md). Nor is there a
+      # login-free subset worth wiring: in all three the real model turn IS the
+      # thing under test, so what is left without it is already covered by the
+      # unit suite. All three were run by hand on Windows against claude 2.1.220
+      # for #182 and PASS, so this records a healthy decision, not a broken one.
+      # `src/main/check-scripts.test.ts` enforces this comment against
+      # package.json, so a NEW check script cannot land with neither a CI job
+      # nor a recorded reason - which is exactly how check:fake-stream rotted
+      # twice with nothing noticing (#164).
 
   e2e:
     name: e2e ${{ matrix.os }}
