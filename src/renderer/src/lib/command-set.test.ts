@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { buildCommands, CommandDeps } from './command-set';
 import { Command, CommandContext } from './commands';
+import { TERMINAL_ACCELERATORS } from '../../../shared/terminal-accelerators';
 import en from '../i18n/locales/en.json';
 
 function deps(): CommandDeps & { focusCard: ReturnType<typeof vi.fn> } {
@@ -140,9 +141,11 @@ describe('seed command set (E9-01)', () => {
     expect(jump.disabledReasonKey).toBe('commands.disabled.emptyQueue');
   });
 
-  it('the attention jump never fires while typing — the terminal owns Ctrl+Space', () => {
-    // Ctrl+Space is a real keystroke in a terminal (NUL); scope 'app' is the
-    // only correct answer here and a future edit to 'typing-ok' must fail
+  it('the attention jump never fires while typing — scope stays app', () => {
+    // Ctrl+Space is a real keystroke in a terminal (NUL), so scope 'app' is the
+    // only correct answer here and a future edit to 'typing-ok' must fail. #90
+    // did NOT change that: it claims the chord in the browser process instead,
+    // above the renderer, where nothing competes with the PTY.
     expect(byId(buildCommands(deps()), 'attention.next').scope).toBe('app');
   });
 
@@ -151,5 +154,20 @@ describe('seed command set (E9-01)', () => {
       .map((c) => c.binding)
       .filter(Boolean);
     expect(new Set(bound).size).toBe(bound.length);
+  });
+
+  // #90: the browser process matches these two chords itself, so its copy of
+  // the accelerator has to BE the registry's. If someone rebinds the palette
+  // and forgets the allowlist, the app would claim the old chord above the
+  // renderer and run the command on the new one — a hotkey that works
+  // everywhere except a terminal, which is the exact bug #90 fixed.
+  it('every terminal accelerator names a real command, with the same binding', () => {
+    const all = buildCommands(deps());
+    expect(TERMINAL_ACCELERATORS.length).toBeGreaterThan(0);
+    for (const a of TERMINAL_ACCELERATORS) {
+      const cmd = all.find((c) => c.id === a.commandId);
+      expect(cmd, `${a.commandId} is not a registered command`).toBeDefined();
+      expect(cmd!.binding, `${a.commandId} binding drifted`).toBe(a.binding);
+    }
   });
 });

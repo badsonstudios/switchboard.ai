@@ -5,6 +5,7 @@ import {
   CommandContext,
   classifyTarget,
   dispatch,
+  dispatchAccelerator,
   formatBinding,
   matchesBinding,
   parseBinding,
@@ -242,5 +243,84 @@ describe('dispatch (E9-01 scope rule)', () => {
     const b = cmd({ id: 'b' });
     expect(dispatch({ ...key('1', { ctrl: true }) }, [a, b], ctx, 'other')).toBe(a);
     expect(b.run).not.toHaveBeenCalled();
+  });
+});
+
+describe('dispatchAccelerator (#90 — claimed above the renderer)', () => {
+  /** an element inside an xterm surface, i.e. the case the whole item exists for */
+  const inTerminal = (): Element => {
+    const host = document.createElement('div');
+    host.className = 'xterm';
+    const el = document.createElement('textarea');
+    el.className = 'xterm-helper-textarea';
+    host.appendChild(el);
+    return el;
+  };
+
+  it('RUNS from inside a terminal — the key never reached the PTY to be stolen', () => {
+    const c = cmd({ id: 'palette.open', scope: 'typing-ok' });
+    expect(dispatchAccelerator('palette.open', [c], ctx, inTerminal())).toBe(c);
+    expect(c.run).toHaveBeenCalledOnce();
+  });
+
+  it("runs an 'app'-scope command in a terminal too (the attention jump)", () => {
+    const c = cmd({ id: 'attention.next', scope: 'app' });
+    expect(dispatchAccelerator('attention.next', [c], ctx, inTerminal())).toBe(c);
+  });
+
+  it('still stands down while you type in OUR OWN inputs (scope survives)', () => {
+    const c = cmd({ id: 'attention.next', scope: 'app' });
+    expect(dispatchAccelerator('attention.next', [c], ctx, document.createElement('textarea'))).toBeNull();
+    expect(c.run).not.toHaveBeenCalled();
+  });
+
+  it("...unless the command is 'typing-ok', like the palette", () => {
+    const c = cmd({ id: 'palette.open', scope: 'typing-ok' });
+    expect(dispatchAccelerator('palette.open', [c], ctx, document.createElement('textarea'))).toBe(c);
+  });
+
+  it('runs with no focused element at all', () => {
+    const c = cmd({ id: 'palette.open', scope: 'typing-ok' });
+    expect(dispatchAccelerator('palette.open', [c], ctx, null)).toBe(c);
+  });
+
+  it('runs the REGISTERED command — an id we do not register does nothing', () => {
+    const c = cmd({ id: 'palette.open' });
+    expect(dispatchAccelerator('something.else', [c], ctx, null)).toBeNull();
+    expect(c.run).not.toHaveBeenCalled();
+  });
+
+  it('respects enabled(): an empty queue is still a no-op', () => {
+    const c = cmd({ id: 'attention.next', enabled: (x) => x.attentionCount > 0 });
+    expect(dispatchAccelerator('attention.next', [c], ctx, inTerminal())).toBeNull();
+    expect(c.run).not.toHaveBeenCalled();
+    const withQueue = { ...ctx, attentionCount: 1 };
+    expect(dispatchAccelerator('attention.next', [c], withQueue, inTerminal())).toBe(c);
+  });
+
+  it('fails open: a throwing command is reported, never rethrown', () => {
+    const boom = new Error('nope');
+    const c = cmd({
+      id: 'palette.open',
+      run: () => {
+        throw boom;
+      },
+    });
+    const onError = vi.fn();
+    expect(() => dispatchAccelerator('palette.open', [c], ctx, null, onError)).not.toThrow();
+    expect(onError).toHaveBeenCalledWith(boom, c.id);
+  });
+
+  it('fails open when enabled() itself throws', () => {
+    const c = cmd({
+      id: 'palette.open',
+      enabled: () => {
+        throw new Error('nope');
+      },
+    });
+    const onError = vi.fn();
+    expect(dispatchAccelerator('palette.open', [c], ctx, null, onError)).toBeNull();
+    expect(c.run).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalled();
   });
 });
