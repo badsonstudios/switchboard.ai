@@ -58,6 +58,26 @@ export interface HandoffInputs {
    *  and without this the user sees "switchboard can't answer it for you" in
    *  the exact spot they just clicked Allow. */
   recentlyDecided: boolean;
+  /**
+   * Which transport hosts the session (P2 #153 follow-up).
+   *
+   * EVERY branch of this rule routes the user to the Terminal, and a stream
+   * session HAS no terminal — so in stream mode the bar is not merely
+   * unhelpful, it is false, and its button is dead. The `startingLong` branch
+   * is provably wrong there: S-10 measured that stream mode draws NO startup
+   * dialog at all, which is the entire premise of that message.
+   *
+   * Dan hit this within minutes of the transport becoming switchable: a freshly
+   * restarted Direct session showed "Claude is showing a start-up dialog …
+   * appear only in the terminal" over an [Open Terminal] button, next to a
+   * Terminal tab that correctly said there was no terminal. Two surfaces in one
+   * window contradicting each other.
+   *
+   * What stream mode's equivalent should say when the CLI keeps a decision is
+   * E18-11's question — it cannot be answered until the choosers are measured.
+   * Until then, silence beats sending someone to a place that does not exist.
+   */
+  transport?: 'pty' | 'stream';
 }
 
 /**
@@ -74,8 +94,11 @@ export function terminalHandoff({
   hasApproval,
   startingLong,
   recentlyDecided,
+  transport,
 }: HandoffInputs): TerminalHandoff | null {
   if (hasApproval || recentlyDecided) return null;
+  // No terminal to hand off TO. See the note on `transport`.
+  if (transport === 'stream') return null;
 
   if (status === 'needs-permission') {
     // The CLI is asking for permission in its own prompt. Either it kept the

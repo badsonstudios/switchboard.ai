@@ -33,13 +33,17 @@ explanation of *why* it's asking, which the normal mode never receives.
 ## Turning it on
 
 1. Open the **⋯** menu on the session's header.
-2. Click **Transport: Terminal** to switch it to **Transport: Direct (beta)**.
+2. Click **Transport: Terminal — switch to Direct (beta)**. The first half tells
+   you what the session is on now; the second half is what the click does.
+3. If the session is running, the menu says *"Saved. This session is still
+   running on the old one."* and offers **Restart session now**. Click it.
 
-That's it — the choice is saved immediately. If the session is currently
-running, the menu will tell you the change **takes effect the next time it
-starts**, because a session that's already talking to Claude can't switch
-mid-conversation. Close the session and open it again, or just carry on and it
-will come up in Direct mode next time.
+Restarting keeps the session card and its history — it just stops the CLI and
+starts it again in the new mode. If you'd rather not restart right now, leave
+it: the change is already saved and applies whenever the session next starts.
+
+**Don't close the card to force a restart.** Closing a card (the ✕) forgets it
+entirely, including this setting — use **Restart session now** instead.
 
 The choice is remembered per session, so a session you set to Direct stays that
 way. Every session starts on Terminal unless you change it. (This works the same
@@ -83,9 +87,9 @@ one bug above.
 
 - **The Terminal tab is empty and says there's no terminal.** That's correct
   for a Direct-mode session. Switch back via the ⋯ menu if you need it.
-- **You switched and nothing changed.** The change applies at the *next* start —
-  the menu says so when a session is running. Close the session and open it
-  again.
+- **You switched and nothing changed.** The change applies at the *next* start.
+  Use **Restart session now** in the same menu — closing the card instead will
+  forget the setting along with the card.
 
 See also: [04 — Approvals & autonomy](04-approvals-and-autonomy.md) ·
 [11 — Troubleshooting](11-troubleshooting.md)

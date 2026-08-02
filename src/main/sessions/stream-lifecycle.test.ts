@@ -202,18 +202,26 @@ describe('a stream session, end to end (P2-E18-05)', () => {
   // MEASURED (S-11): the CLI emits nothing between spawn and our first prompt,
   // so if readiness did not come from the spawn a session would sit on
   // 'starting' until the user typed.
-  it('becomes idle on spawn, with no message from the CLI at all', async () => {
+  it('becomes idle on spawn, with no message from the CLI at all', () => {
     const mgr = streamManager();
     const rec = mgr.create(identity);
-    expect(mgr.get(rec.id)!.status).toBe('starting');
-
-    await tick();
 
     expect(mgr.get(rec.id)!.status).toBe('idle');
     expect(changes[0].cause).toBe('transport-ready');
   });
 
-  it('a PTY session is NOT marked ready this way — it still waits for hooks', async () => {
+  // The RETURNED record must already say idle. The renderer learns a session's
+  // id from this response, so anything pushed before it lands is filtered out
+  // for an id nobody knows yet — that is exactly how a stream card sat on
+  // 'starting' for ever and grew a "start-up dialog" bar at 8s (#153
+  // follow-up). A deferred transition is unobservable to the only consumer that
+  // matters.
+  it('the RETURNED record already reports idle, not starting', () => {
+    const mgr = streamManager();
+    expect(mgr.create(identity).status).toBe('idle');
+  });
+
+  it('a PTY session is NOT marked ready this way — it still waits for hooks', () => {
     const sink = new LogSink({ dir });
     const mgr = new SessionManager(
       registryFor('pty'),
@@ -222,7 +230,6 @@ describe('a stream session, end to end (P2-E18-05)', () => {
       dir
     );
     const rec = mgr.create(identity);
-    await tick();
     // a TUI still has to boot, and can stop on a trust dialog: 'starting' is
     // the honest answer until SessionStart says otherwise
     expect(mgr.get(rec.id)!.status).toBe('starting');
@@ -311,15 +318,22 @@ describe('a stream session, end to end (P2-E18-05)', () => {
     expect(mgr.get(rec.id)!.status).toBe('crashed');
   });
 
-  // create() has not returned yet when the transport is wired, so a listener
-  // that calls back into the manager must not see a half-built session.
-  it('the ready transition lands AFTER create() returns', () => {
+  // This test used to assert the OPPOSITE — that the transition landed AFTER
+  // create() returned — which is what `setImmediate` bought and what broke the
+  // renderer (#153 follow-up). What actually matters is that a listener firing
+  // DURING create() sees a COMPLETE session, not that it fires late.
+  it('a listener firing during create() sees a complete record', () => {
     const mgr = streamManager();
-    let sawDuringCreate = false;
-    mgr.onStatusChange(() => {
-      sawDuringCreate = true;
+    let seen: { status: string; pid?: number } | undefined;
+    mgr.onStatusChange((c) => {
+      const r = mgr.get(c.sessionId);
+      seen = r && { status: r.status, pid: r.pid };
     });
-    mgr.create(identity);
-    expect(sawDuringCreate).toBe(false);
+
+    const rec = mgr.create(identity);
+
+    expect(seen).toBeTruthy();
+    expect(seen!.pid).toBe(1); // the record is in the map WITH its pid
+    expect(mgr.get(rec.id)!.status).toBe('idle');
   });
 });

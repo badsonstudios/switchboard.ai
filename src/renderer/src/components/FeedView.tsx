@@ -12,7 +12,7 @@ import type { BindingDiagnostics, BindingState } from '../../../shared/transcrip
 import { rendererRegistry } from '../extensibility/registry-instance';
 import { renderFeedBlock } from '../extensibility/feed-render';
 import { uiGet, uiSet } from '../lib/ui-state';
-import { submitPrompt } from '../lib/composer';
+import { interruptSession, submitPrompt } from '../lib/composer';
 import { filterCommands, insertCommand, SlashCommand, slashToken } from '../../../shared/slash-commands';
 
 export type { FeedBlockDto } from '../lib/feed';
@@ -138,6 +138,9 @@ export function FeedView(props: {
   } | null;
   /** more holds waiting behind this one (review P0#4) */
   approvalQueued?: number;
+  /** which transport hosts this session — the handoff bar must not point at a
+   *  terminal that does not exist (P2 #153 follow-up) */
+  transport?: 'pty' | 'stream';
   onDecide?: (decision: 'allow' | 'deny', allowAll?: boolean) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
@@ -185,6 +188,7 @@ export function FeedView(props: {
     // the working banner and a "still starting" handoff together.
     startingLong: props.status === 'starting' && startingLong,
     recentlyDecided: !!props.recentlyDecided,
+    transport: props.transport,
   });
 
   React.useEffect(() => {
@@ -917,7 +921,7 @@ function Composer({
       />
       {status === 'working' && (
         <button
-          onClick={() => window.switchboard.pty.input(sessionId, String.fromCharCode(27))}
+          onClick={() => void interruptSession(sessionId)}
           title={t('feedView.stop')}
           style={{
             background: 'color-mix(in srgb, var(--status-crashed) 14%, var(--panel))',

@@ -32,7 +32,15 @@ test.describe('a stream-json session (P2-E18-08a)', () => {
   // includes "the Feed renders a stream session's turn". Filed, not absorbed.
   test('runs a whole turn: prompt in, turn completes', async () => {
     const folder = tempProjectFolder();
-    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    a = await launchApp({
+      seedFolder: folder,
+      // TWO variables now, and the split matters: the first picks the
+      // dual-capable fake, the second ASKS it for stream. The fake used to
+      // return a stream recipe unconditionally, which meant nothing could
+      // exercise switching — and that is why #153 shipped (#153: the setting
+      // could never take effect and no test could have caught it).
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+    });
     const w = a.window;
 
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
@@ -53,7 +61,15 @@ test.describe('a stream-json session (P2-E18-08a)', () => {
 
   test('the .claude permission is asked ONCE and honoured', async () => {
     const folder = tempProjectFolder();
-    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    a = await launchApp({
+      seedFolder: folder,
+      // TWO variables now, and the split matters: the first picks the
+      // dual-capable fake, the second ASKS it for stream. The fake used to
+      // return a stream recipe unconditionally, which meant nothing could
+      // exercise switching — and that is why #153 shipped (#153: the setting
+      // could never take effect and no test could have caught it).
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+    });
     const w = a.window;
 
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
@@ -94,7 +110,15 @@ test.describe('the Feed renders a stream session (P2-E18-08b)', () => {
 
   test('a turn appears in the Session view via the existing transcript path', async () => {
     const folder = tempProjectFolder();
-    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    a = await launchApp({
+      seedFolder: folder,
+      // TWO variables now, and the split matters: the first picks the
+      // dual-capable fake, the second ASKS it for stream. The fake used to
+      // return a stream recipe unconditionally, which meant nothing could
+      // exercise switching — and that is why #153 shipped (#153: the setting
+      // could never take effect and no test could have caught it).
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+    });
     const w = a.window;
 
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
@@ -112,6 +136,46 @@ test.describe('the Feed renders a stream session (P2-E18-08b)', () => {
   });
 });
 
+// #154 — the stop button did nothing in Direct mode.
+//
+// It wrote Esc to the PTY unconditionally, and a stream session has no PTY, so
+// the write was a silent no-op. Dan reproduced it every time: submit a prompt,
+// click stop repeatedly, watch the turn run to completion anyway.
+test.describe('the stop button actually stops (#154)', () => {
+  let a: LaunchedApp;
+  test.afterEach(async () => a?.cleanup());
+
+  test('stopping a Direct-mode turn interrupts it', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({
+      seedFolder: folder,
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+    });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    // `!hang` starts a turn and never finishes it, which is the only way to
+    // hold a session in `working` — the one state the stop button renders in.
+    // `!perm` cannot serve: it moves the session to `needs-permission`, which
+    // is precisely why the first version of this test could not find the
+    // button at all.
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('!hang');
+    await box.press('Enter');
+    await expect(w.getByText(/working on it/)).toBeVisible({ timeout: 30_000 });
+
+    // by TITLE, not role-name: the button's content is the icon glyph, so its
+    // accessible name is the glyph, not the word "stop"
+    await w.getByTitle(/Stop Claude/i).first().click();
+
+    // the fake reports an interrupted turn rather than running on for ever
+    await expect(w.getByText('INTERRUPTED')).toBeVisible({ timeout: 30_000 });
+  });
+});
+
 // P2-E18-08b (#149) — the Terminal tab in a stream session.
 test.describe('the Terminal tab degrades honestly (P2-E18-08b)', () => {
   let a: LaunchedApp;
@@ -119,7 +183,15 @@ test.describe('the Terminal tab degrades honestly (P2-E18-08b)', () => {
 
   test('says there is no terminal instead of showing an empty black pane', async () => {
     const folder = tempProjectFolder();
-    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    a = await launchApp({
+      seedFolder: folder,
+      // TWO variables now, and the split matters: the first picks the
+      // dual-capable fake, the second ASKS it for stream. The fake used to
+      // return a stream recipe unconditionally, which meant nothing could
+      // exercise switching — and that is why #153 shipped (#153: the setting
+      // could never take effect and no test could have caught it).
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+    });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
       timeout: 25_000,
@@ -143,5 +215,146 @@ test.describe('the Terminal tab degrades honestly (P2-E18-08b)', () => {
     await w.getByRole('button', { name: 'Terminal' }).first().click();
 
     await expect(w.getByText('No terminal for this session')).toHaveCount(0);
+  });
+});
+
+// P2 #153 — THE PATH A PERSON TAKES.
+//
+// This is the test whose absence is the actual root cause of #153. Everything
+// was covered: setTransport was unit-tested for persistence and the pending
+// flag, and the stream e2e drove a full session end to end. But the e2e
+// launched with stream ALREADY selected by env, so nothing ever walked
+// set-it → restart → use-it — and the shipped feature could not take effect at
+// all, because the only route to a restart was the card's ✕, which deletes the
+// card record and the stored choice with it.
+//
+// The parts were each verified. The product did not work.
+test.describe('switching transport the way a user does (#153)', () => {
+  let a: LaunchedApp;
+  test.afterEach(async () => a?.cleanup());
+
+  test('set it in the menu, restart from the menu, and the session comes up in the new mode', async () => {
+    const folder = tempProjectFolder();
+    // the dual-capable fake, asked for NOTHING — so it starts on the PTY, which
+    // is what a real user's session does
+    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    // it starts on the terminal
+    await w.getByRole('button', { name: 'Terminal' }).first().click();
+    await expect(w.getByText('No terminal for this session')).toHaveCount(0);
+
+    // switch it — the label names the CURRENT mode and the action separately
+    await w.getByRole('button', { name: '⋯' }).first().click();
+    await w.getByRole('button', { name: /switch to Direct/i }).click();
+
+    // it is saved but NOT yet in effect, and it says so
+    await expect(w.getByText(/still running on the old one/i)).toBeVisible();
+
+    // the affordance that #153 was missing entirely
+    await w.getByRole('button', { name: /Restart session now/i }).click();
+
+    // and now it really is in the new mode
+    await w.getByRole('button', { name: 'Terminal' }).first().click();
+    await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 30_000 });
+  });
+
+  // Dan hit this within minutes of the switch working: a freshly restarted
+  // Direct session showed "Claude is showing a start-up dialog … appear only in
+  // the terminal" over an [Open Terminal] button — next to a Terminal tab that
+  // correctly said there was no terminal. Two surfaces in one window
+  // contradicting each other.
+  //
+  // TWO bugs behind it. The bar had no notion of transport, and every branch of
+  // it routes to a terminal a stream session does not have. And the session was
+  // genuinely stuck reporting `starting`, because transport-ready was deferred
+  // by a tick while the renderer learns the session id from a much slower IPC
+  // response — so the only status push it would ever get was filtered out for
+  // an id nobody knew yet.
+  test('a restarted Direct session does not offer a terminal it does not have', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    await w.getByRole('button', { name: '⋯' }).first().click();
+    await w.getByRole('button', { name: /switch to Direct/i }).click();
+    await w.getByRole('button', { name: /Restart session now/i }).click();
+
+    // the Terminal tab is honest about there being no terminal...
+    await w.getByRole('button', { name: 'Terminal' }).first().click();
+    await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 30_000 });
+
+    // ...and nothing else in the window contradicts it. The bar's grace period
+    // is 8s, so this has to outlast it to mean anything.
+    await w.waitForTimeout(10_000);
+    await expect(w.getByText(/start-up dialog/i)).toHaveCount(0);
+    await expect(w.getByRole('button', { name: /Open Terminal/i })).toHaveCount(0);
+  });
+
+  // The path Dan took, and the one that was still broken after the restart
+  // button worked: he switched to Direct, used it successfully, closed the APP,
+  // reopened — and was back on Terminal.
+  //
+  // Cause: the create-time card write rebuilt the persisted record field by
+  // field, so `transport` was dropped on EVERY session start, including the one
+  // at launch. Same defect shape as `reason` vanishing from the approval queue
+  // earlier the same day. Must run against the BUILT app, like the theme
+  // relaunch test, because that is where the real persistence path lives.
+  test('the choice survives a relaunch of the whole app', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const first = a;
+    await expect(first.window.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    await first.window.getByRole('button', { name: '⋯' }).first().click();
+    await first.window.getByRole('button', { name: /switch to Direct/i }).click();
+    await first.window.getByRole('button', { name: /Restart session now/i }).click();
+    // it really is in Direct before we quit
+    await first.window.getByRole('button', { name: 'Terminal' }).first().click();
+    await expect(first.window.getByText('No terminal for this session')).toBeVisible({
+      timeout: 30_000,
+    });
+    await first.close();
+
+    // Same profile, fresh process — and deliberately NO seedFolder. Seeding
+    // again creates a SECOND card, which is what my first attempt did: two
+    // sessions, and the assertion landed on the wrong one.
+    a = await launchApp({ home: first.home, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    await expect(a.window.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    await a.window.getByRole('button', { name: 'Terminal' }).first().click();
+    await expect(a.window.getByText('No terminal for this session')).toBeVisible({
+      timeout: 30_000,
+    });
+  });
+
+  test('the choice survives the restart it triggered', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    await w.getByRole('button', { name: '⋯' }).first().click();
+    await w.getByRole('button', { name: /switch to Direct/i }).click();
+    await w.getByRole('button', { name: /Restart session now/i }).click();
+    await expect(w.getByText(/still running on the old one/i)).toHaveCount(0);
+
+    // reopen the menu: it should now report Direct as the CURRENT mode
+    await w.getByRole('button', { name: '⋯' }).first().click();
+    await expect(w.getByRole('button', { name: /switch to Terminal/i })).toBeVisible({
+      timeout: 15_000,
+    });
   });
 });

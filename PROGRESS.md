@@ -6,17 +6,94 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **a UX fix on #149, found by Dan using it within minutes of
-the merge** — the transport toggle REFUSED while a session was live and told him
-to "stop this session first", which is a **dead end**: a live session has no
-stop control (`restartSelf` only drops an already-dead one), and it contradicted
-`setAutonomy` directly above it in the same menu, which has the IDENTICAL
-constraint and simply applies on the next spawn. Now it accepts, persists, and
-says *"Saved — takes effect when this session next starts."* Branch
-`fix/152-transport-switch-deadend`.
-**Lesson worth keeping: a refusal is only correct if the thing it tells you to
-do is possible.** I reasoned about the stored-answer-vs-running-process
-mismatch and never checked whether the user could act on the instruction.
+**In progress:** **#153 — the Direct-mode setting could NEVER take effect.**
+Branch `fix/153-transport-restart`. Gate green: lint + typecheck + **804 unit**
++ **105 e2e (+2)**. **#152 MERGED**, 5 CI jobs green.
+
+> ## ⚠ #153 IS THE MOST INSTRUCTIVE FAILURE OF THE EPIC — READ THIS
+> **Dan found it by using the feature. Every automated layer was green.**
+> The setting saved, said "takes effect on next start" — and **every route to a
+> next start destroyed it**: the only user-facing restart is the card's ✕, which
+> is `sessions:closeCard` → `persist.remove(cardId)`. The choice died with the
+> card. **A feature that could not work, shipped behind a full green suite.**
+> **Why no test caught it:** `setTransport` was unit-tested for persistence AND
+> the pending flag; the stream e2e drove a full session end to end. But **the
+> e2e launched with stream already selected by an env var**, so nothing ever
+> walked *set it → restart → use it*. The parts were each verified; the product
+> did not work.
+> **A second, compounding cause: the FAKE ignored the requested transport.** It
+> always returned a stream recipe, so no test could exercise SWITCHING even in
+> principle. **A fake that cannot say "no" to a request cannot test the
+> request.** It now honours `options.transport` exactly as the real adapter
+> does, and the stream specs pass `SWITCHBOARD_TRANSPORT=stream` to ASK.
+> **And I misread my own control while helping him test**, telling him
+> "Transport: Terminal" meant he was in Direct. It showed the CURRENT mode; in a
+> menu, entries read as commands. Now `Transport: {now} — switch to {next}`.
+> **Two more self-inflicted bugs found on the way, both from shell-passed
+> strings:** i18n here is **ICU (single-brace `{now}`)** and I wrote i18next's
+> `{{now}}`, which rendered the raw template; and earlier, `cat <<'EOF'` ate
+> backslashes in two e2e regexes. **Write TS and locale strings with
+> Write/Edit, never through a heredoc.**
+> **TWO MORE BUGS DAN FOUND ON THE NEXT TRY, both shipped by the same blind
+> spot — nothing had ever LOOKED at a running stream session:**
+> 1. **The terminal-handoff bar rendered in a mode with no terminal.** A freshly
+>    restarted Direct session showed *"Claude is showing a start-up dialog …
+>    appear only in the terminal"* over an **[Open Terminal]** button, right next
+>    to a Terminal tab correctly saying there is no terminal. Two surfaces in one
+>    window contradicting each other. `terminalHandoff` had no notion of
+>    transport and EVERY branch of it routes to a terminal. The `startingLong`
+>    branch is provably false there — S-10 measured that stream mode draws no
+>    startup dialog at all.
+> 2. **The session was genuinely stuck reporting `starting`** (the bar needs 8s
+>    of it). **My bug from #135:** `transport-ready` was deferred by
+>    `setImmediate` so `create()` would return first — but the renderer learns a
+>    session's id from the IPC RESPONSE, which is far slower than a tick, so the
+>    only `starting -> idle` push it would ever get was filtered out for an id
+>    nobody knew yet. `cardOfLive` is not populated until create returns either.
+>    **PTY sessions never showed it** because their first status change comes
+>    from a hook seconds later. **Stream readiness is IMMEDIATE, and immediate is
+>    exactly what a subscribe-then-push design cannot deliver.** Now applied
+>    synchronously, so the RETURNED record already says idle — which is what the
+>    renderer actually reads. The test that asserted the old ordering was
+>    asserting the bug; it now checks the thing that actually mattered (a
+>    listener firing during create sees a COMPLETE record).
+>
+> **A THIRD round, after Dan confirmed the `.claude` write WORKS by hand:** the
+> setting did not survive closing and reopening the **app**. Cause: the
+> create-time card write **rebuilt the persisted record field by field**, so
+> `transport` was dropped on EVERY session start — including the one at launch.
+> **Exactly the same defect shape as `reason` vanishing from the approval queue
+> hours earlier.** Now it spreads `prior` and overrides only what a start
+> actually decides, so a field is KEPT unless someone means to change it.
+> Revert-proofed, plus an e2e that relaunches the built app.
+> **The rule, twice earned in one day: field-by-field copying makes a NEW field
+> a decision (good) and a FORGOTTEN field silent (the cost). Spread-then-override
+> pays that cost the other way round.**
+>
+> ## ✅ THE EPIC'S PURPOSE IS CONFIRMED BY HAND (Dan, 2026-08-01)
+> Writing to a project's `.claude/` folder in Direct mode **popped ONE approval
+> in the session window; he approved it; the file was written.** No second
+> terminal prompt, no discarded answer. That is the 31 July bug, fixed and
+> verified by the person who reported it.
+>
+> **#154 FIXED — Dan gave a reliable repro: in Direct mode the Stop button did
+> NOTHING.** Cause: `onClick` wrote **Esc to the PTY**, and a stream session has
+> no PTY, so `ptys.get(id)?.write()` was a silent no-op and the turn ran to
+> completion. **THIRD instance of one class — a PTY-shaped affordance surviving
+> into a mode with no PTY** (the others: the Terminal tab, the hand-off bar).
+> Now sends an `interrupt` control request, with the shape **read out of the SDK
+> in the extension bundle, not guessed** (`interrupt()` there is
+> `request({subtype:'interrupt'})`, wrapped as `{type:'control_request',
+> request_id, request}`; the reply carries `still_queued`). Try-then-fall-back
+> like `submitPrompt`, so the renderer stays transport-ignorant.
+> **Scope note: this is a slice of E18-12, which is S-11-GATED.** What the CLI
+> actually DOES on interrupt is still unmeasured. It ships anyway because the
+> alternative was a dead button; the rest of E18-12 (`set_permission_mode`,
+> `set_model`, `rewind`) stays behind the gate.
+> The fake gained **`!hang`** — start a turn and never finish it — because
+> `working` is the only state the stop button renders in and nothing else could
+> hold a session there. The tooltip said **"(sends Esc)"**, which is false in
+> Direct mode; it now names the EFFECT, not the mechanism.
 Next after this: **#139 (P2-E18-09)** — slash commands from `system:init`.
 **E18 IS 9 OF 11 DONE, ALL MERGED with 5 CI jobs green:** #131 → PR #141 ·
 #132 → PR #142 · #133 → PR #143 · #134 → PR #144 · #135 → PR #146 · #136 →

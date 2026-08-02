@@ -40,6 +40,29 @@ export function userMessage(text: string): StreamUserMessage {
   };
 }
 
+/**
+ * Ask the CLI to interrupt the running turn (#154).
+ *
+ * Shape read out of the SDK inside the VS Code extension bundle, not guessed:
+ * `interrupt()` there is `this.request({subtype:'interrupt'})`, and `request()`
+ * wraps it as `{type:'control_request', request_id, request}`. The reply
+ * carries `still_queued` — messages the CLI had queued and did NOT discard.
+ *
+ * NOTE the honest limit: what the CLI actually DOES on interrupt is still
+ * unmeasured (S-11 probes 2-6 never ran; E18-12 owns that). This ships because
+ * the alternative was a dead button — the stop control wrote Esc to a PTY that
+ * a stream session does not have, so it did nothing at all.
+ */
+export interface StreamInterruptRequest {
+  type: 'control_request';
+  request_id: string;
+  request: { subtype: 'interrupt' };
+}
+
+export function interruptRequest(requestId: string): StreamInterruptRequest {
+  return { type: 'control_request', request_id: requestId, request: { subtype: 'interrupt' } };
+}
+
 /** A reply to a `can_use_tool` control request (P2-E18-07 sends these). */
 export interface StreamControlResponse {
   type: 'control_response';

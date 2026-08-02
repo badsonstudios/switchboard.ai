@@ -441,3 +441,84 @@ describe('per-card transport (P2-E18-08b)', () => {
     expect(h.created[0].transport).toBe('stream');
   });
 });
+
+// P2 #153 follow-up — starting a session must not FORGET the card.
+//
+// The create-time upsert rebuilt the record field by field, so every
+// PersistedSession field added later had to be remembered there. `transport`
+// was not, and it was therefore wiped on EVERY session start — including the
+// one at app launch, which is why Direct mode could not survive a relaunch.
+//
+// These tests are about the CLASS, not the one field: they assert that starting
+// a session preserves what the card already knew.
+describe('starting a session preserves the card (#153 follow-up)', () => {
+  const CARD = 'card-1';
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-keep-'));
+  });
+
+  function priorWith(over: Partial<PersistedSession>): PersistedSession {
+    return {
+      id: CARD,
+      identity: { title: 't', folder: dir, providerId: 'generic' },
+      layoutSlot: 3,
+      suspendedAt: '2026-01-01T00:00:00.000Z',
+      ...over,
+    } as PersistedSession;
+  }
+
+  it('keeps the transport across a session start — the relaunch case', async () => {
+    const h = harness(undefined, dir, { prior: priorWith({ transport: 'stream' }) });
+
+    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+
+    expect(h.upserted.at(-1)?.transport).toBe('stream');
+    // and it was actually USED for the spawn, not merely re-saved
+    expect(h.created[0].transport).toBe('stream');
+  });
+
+  it('keeps usage, model, task label and group membership too', async () => {
+    const h = harness(undefined, dir, {
+      prior: priorWith({
+        usage: { input: 1, output: 2, cacheRead: 3, cacheCreate: 4 },
+        model: 'claude-x',
+        taskLabel: 'refactor the thing',
+        groupId: 'group-9',
+      }),
+    });
+
+    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+
+    const saved = h.upserted.at(-1)!;
+    expect(saved.usage).toEqual({ input: 1, output: 2, cacheRead: 3, cacheCreate: 4 });
+    expect(saved.model).toBe('claude-x');
+    expect(saved.taskLabel).toBe('refactor the thing');
+    expect(saved.groupId).toBe('group-9');
+    expect(saved.layoutSlot).toBe(3);
+  });
+
+  // The one field a start DOES deliberately replace: a stale conversation id we
+  // just declined to resume must not be carried forward.
+  it('still replaces the native session id rather than carrying a stale one', async () => {
+    const h = harness(undefined, dir, {
+      prior: priorWith({ nativeSessionId: 'old-conversation' }),
+    });
+
+    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+
+    // no transcripts capability => no resume planned => the id is cleared
+    expect(h.upserted.at(-1)?.nativeSessionId).toBeUndefined();
+  });
+
+  it('a brand-new card with no prior still saves cleanly', async () => {
+    const h = harness(undefined, dir, {});
+
+    await h.call('sessions:create', { cardId: 'fresh', folder: dir, title: 't' });
+
+    const saved = h.upserted.at(-1)!;
+    expect(saved.id).toBe('fresh');
+    expect(saved.transport).toBeUndefined();
+    expect(saved.layoutSlot).toBe(0);
+  });
+});

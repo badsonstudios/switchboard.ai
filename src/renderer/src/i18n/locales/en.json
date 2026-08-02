@@ -104,10 +104,12 @@
     "restart": "Restart",
     "close": "Close",
     "cardTitle": "Session {n}",
-    "menuTransportPty": "Transport: Terminal",
-    "menuTransportStream": "Transport: Direct (beta)",
     "menuTransportHint": "Direct mode talks to Claude Code without a terminal, so permission requests appear in this window instead of escaping into it. Takes effect the next time this session starts.",
-    "menuTransportPending": "Saved — takes effect when this session next starts."
+    "menuTransportPending": "Saved. This session is still running on the old one.",
+    "transportPty": "Terminal",
+    "transportStream": "Direct (beta)",
+    "menuTransportSwitch": "Transport: {now} — switch to {next}",
+    "menuTransportRestart": "Restart session now"
   },
   "approval": {
     "title": "Allow {tool}?",
@@ -211,7 +213,7 @@
     "modelHint": "Model last seen in this session's transcript",
     "send": "Send to the session",
     "sendIcon": "↑",
-    "stop": "Stop Claude — interrupts the current turn (sends Esc)",
+    "stop": "Stop Claude — interrupts the current turn",
     "stopIcon": "■",
     "quiet": "quiet",
     "normal": "normal",
