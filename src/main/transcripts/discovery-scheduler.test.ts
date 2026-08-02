@@ -254,7 +254,20 @@ describe('DiscoverySchedule — the REAL fs.watch (no injected factory)', () => 
     } finally {
       s.stop();
     }
-  });
+    // 15s, because the wait above budgets 10 and vitest's default is FIVE.
+    //
+    // Without this the fix above could never work: the test was killed at 5s,
+    // so the "wait up to 10s" was a fiction and a slow macOS runner produced a
+    // TIMEOUT rather than this test's own assertion. That is what it did on
+    // #157's CI. The fixed sleep was correctly replaced by a wait-for-the-
+    // condition, and the replacement was then capped below its own budget by a
+    // default nobody looked at — the sibling at the end of this describe block
+    // got its `}, 20_000)` and this one did not.
+    //
+    // Rule for anything of this shape: a wait budget that exceeds the enclosing
+    // test timeout is not a generous wait, it is a shorter wait with a worse
+    // failure message.
+  }, 15_000);
 
   it('appends to a known file do not earn a sweep, on every platform', async () => {
     // Asserts the BEHAVIOUR, not the event count. The first version of this
