@@ -23,6 +23,7 @@ function noopDeps(): CommandDeps {
     openPalette: () => {},
     toggleTabRows: () => {},
     jumpToNextAttention: () => {},
+    openAbout: () => {},
   };
 }
 

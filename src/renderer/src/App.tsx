@@ -25,7 +25,9 @@ import { bindingFor, dispatch, dispatchAccelerator, formatBinding, Platform } fr
 import { focusedElementIn } from './lib/focus-target';
 import { sessionStore } from './store/session-store';
 import { CommandPalette } from './components/CommandPalette';
+import { AboutPanel } from './components/AboutPanel';
 import { UrgencyStrip } from './components/UrgencyStrip';
+import { buildIdentity } from '../../shared/build-identity';
 import {
   applyTabRows,
   forgetPopoutWindow,
@@ -39,6 +41,10 @@ import {
 // An inline arrow is a new function each render, and React unsubscribes and
 // resubscribes whenever `subscribe` changes — six times per render, forever.
 const subscribeStore = (cb: () => void): (() => void) => sessionStore.subscribe(cb);
+
+// Compiled in at build time and constant for the process lifetime (E15-15), so
+// it is read once at module scope rather than per render.
+const BUILD_IDENTITY = buildIdentity();
 
 // Control-room shell (P1-E3-01): titlebar / rail / grid / statusbar.
 // Terminals (E3-02), identity kit (E3-03), and live badges (E3-05) land next.
@@ -88,6 +94,8 @@ export function App(): React.JSX.Element {
   const [railHidden, setRailHidden] = useState(false);
   // command palette (E9-02) — deliberately NOT persisted: it opens on demand
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // About / build identity (E15-15) — same deal, on demand only
+  const [aboutOpen, setAboutOpen] = useState(false);
   // Attention events (E9-03). This subscription used to live inside
   // EventsPanel; it moved up here because the queue is the SINGLE ordering
   // authority — two independent subscriptions to events:changed could hand the
@@ -354,6 +362,7 @@ export function App(): React.JSX.Element {
             toggleTabRows();
           },
           jumpToNextAttention,
+          openAbout: () => setAboutOpen(true),
       }),
     [toggleRail, jumpToNextAttention], // other deps read live state through refs; grid.current is stable
   );
@@ -518,6 +527,8 @@ export function App(): React.JSX.Element {
     <div style={{ blockSize: '100vh', display: 'flex', flexDirection: 'column' }}>
       <TitleBar
         version={bridge.appVersion}
+        identity={BUILD_IDENTITY}
+        onOpenAbout={() => setAboutOpen(true)}
         pref={pref}
         themes={themes}
         onTheme={(p) => {
@@ -548,6 +559,13 @@ export function App(): React.JSX.Element {
         railBinding={railBindingLabel}
         onOpenPalette={() => setPaletteOpen(true)}
         paletteBinding={paletteBindingLabel}
+      />
+      <AboutPanel
+        open={aboutOpen}
+        onClose={() => setAboutOpen(false)}
+        version={bridge.appVersion}
+        identity={BUILD_IDENTITY}
+        platform={bridge.platform}
       />
       <CommandPalette
         open={paletteOpen}

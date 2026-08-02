@@ -16,6 +16,7 @@ function deps(): CommandDeps & { focusCard: ReturnType<typeof vi.fn> } {
     openPalette: vi.fn(),
     toggleTabRows: vi.fn(),
     jumpToNextAttention: vi.fn(),
+    openAbout: vi.fn(),
   } as CommandDeps & {
     focusCard: ReturnType<typeof vi.fn>;
     jumpToNextAttention: ReturnType<typeof vi.fn>;
