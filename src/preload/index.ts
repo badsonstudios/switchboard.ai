@@ -56,6 +56,22 @@ const api = {
     ipcRenderer.on('app:displaysChanged', h);
     return () => ipcRenderer.removeListener('app:displaysChanged', h);
   },
+  /**
+   * One of the two chords claimed above the renderer was pressed (#90) — in
+   * this window or in a popout, which runs no JS of its own. The payload names
+   * a command in the registry; the renderer runs it there.
+   */
+  onAccelerator: (
+    cb: (p: { commandId: string; fromPopout: boolean }) => void
+  ): (() => void) => {
+    const h = (_e: unknown, p: { commandId: string; fromPopout: boolean }): void => cb(p);
+    ipcRenderer.on('app:accelerator', h);
+    // Tell main someone is listening. Until this lands it claims no chord at
+    // all, so a keystroke is never taken from the page with nothing to act on
+    // it — the fail-open rule, at the one moment it is easy to break (#90).
+    ipcRenderer.send('app:acceleratorReady');
+    return () => ipcRenderer.removeListener('app:accelerator', h);
+  },
   /** a popout window was moved or resized — re-save the layout (#86) */
   onPopoutGeometryChanged: (cb: () => void): (() => void) => {
     const h = (): void => cb();

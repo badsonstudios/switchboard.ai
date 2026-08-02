@@ -21,7 +21,8 @@ import { initPresentation } from './lib/presentation-boot';
 import { boxOnAnyDisplay, RescuedPopout } from './lib/layout';
 import { rendererRegistry } from './extensibility/registry-instance';
 import { buildContributedCommands } from './extensibility/commands';
-import { bindingFor, dispatch, formatBinding, Platform } from './lib/commands';
+import { bindingFor, dispatch, dispatchAccelerator, formatBinding, Platform } from './lib/commands';
+import { focusedElementIn } from './lib/focus-target';
 import { sessionStore } from './store/session-store';
 import { CommandPalette } from './components/CommandPalette';
 import { UrgencyStrip } from './components/UrgencyStrip';
@@ -473,6 +474,43 @@ export function App(): React.JSX.Element {
       for (const [win, handler] of popoutKeys) win.removeEventListener('keydown', handler);
     };
   }, [commands, platform, commandContext]);
+
+  // ── the two chords claimed ABOVE the renderer (#90) ───────────────────────
+  // The palette and the attention jump have to work from inside a session
+  // terminal — §5.8's invariant is that capability never goes away, and from an
+  // xterm every accelerator is deaf by design (the CLI owns every key it sees).
+  // So the browser process claims exactly those two chords in
+  // before-input-event, where nothing competes with the PTY, and sends the
+  // COMMAND ID here. They therefore never arrive as a keydown at all; this is
+  // their only path in the running app, and it runs the same registered
+  // command the palette and the keyboard run.
+  useEffect(() => {
+    return bridge.onAccelerator?.(({ commandId, fromPopout }) => {
+      // while the palette owns the screen, nothing underneath it fires — the
+      // same guard the keydown dispatcher applies
+      if (paletteOpenRef.current) return;
+      // Only the popouts we know about are searched — the map is filled by the
+      // 'switchboard:popout-added' event, so a window that somehow missed it
+      // lands on the fallback and simply behaves as if nothing were focused.
+      const target = fromPopout
+        ? focusedElementIn(popoutKeysRef.current.keys(), document)
+        : document.activeElement;
+      raisedOtherWindowRef.current = false;
+      const ran = dispatchAccelerator(
+        commandId,
+        commands,
+        commandContext(),
+        target,
+        (err, id) => console.error(`[commands] ${id} failed`, err),
+      );
+      // Pressed in a popped-out window: what these commands show — the palette,
+      // the grid — is in THIS window, so bring it forward. Unless the command
+      // deliberately raised a different one (jumping to another popped-out
+      // session), which is the same exception the keydown bridge makes.
+      if (fromPopout && ran && !raisedOtherWindowRef.current) window.focus();
+    });
+    // eslint's exhaustive-deps plugin isn't installed; bridge is stable
+  }, [commands, commandContext]);
 
   if (!uiReady) return <div style={{ blockSize: '100vh' }} />; // one-frame gate while UI state loads
 
