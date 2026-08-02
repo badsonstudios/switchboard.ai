@@ -11,6 +11,22 @@ const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 const about = (w: Page) => w.getByRole('dialog', { name: 'About this build' });
 const field = (w: Page, name: string) => about(w).locator(`[data-about-field="${name}"]`);
+const stamp = (w: Page) =>
+  w.getByRole('button', { name: 'Version and build — click for details' });
+
+/**
+ * The shell is mounted and listening.
+ *
+ * `launchApp` resolves on `domcontentloaded`, which is BEFORE React has mounted
+ * — and App renders an empty div until its UI state loads, so no key handler
+ * exists yet and the #90 accelerator handshake has not happened either. A chord
+ * pressed in that window goes nowhere and the test then waits 30s for a palette
+ * that was never asked to open. Every other keyboard spec waits on a session
+ * card first; these launch with no session, so they wait on the title bar.
+ */
+async function shellReady(w: Page): Promise<void> {
+  await expect(stamp(w)).toBeVisible();
+}
 
 /** The OS window title, which the page's own <title> must not have overwritten. */
 async function windowTitle(a: LaunchedApp): Promise<string> {
@@ -24,14 +40,13 @@ test.describe('build identity (E15-15)', () => {
   test('the title bar carries a real commit stamp, one click from the full identity', async () => {
     a = await launchApp();
     const w = a.window;
+    await shellReady(w);
 
     // The stamp is a REAL short SHA, not the fail-open placeholder: this is the
     // single assertion that proves the define survived the renderer build.
-    const stamp = w.getByRole('button', { name: 'Version and build — click for details' });
-    await expect(stamp).toBeVisible();
-    await expect(stamp).toHaveText(/v\d+\.\d+\.\d+\s*[0-9a-f]{8}\*?/);
+    await expect(stamp(w)).toHaveText(/v\d+\.\d+\.\d+\s*[0-9a-f]{8}\*?/);
 
-    await stamp.click();
+    await stamp(w).click();
     await expect(about(w)).toBeVisible();
     await expect(field(w, 'commit')).toHaveText(/^[0-9a-f]{8}\*?$/);
     await expect(field(w, 'version')).toHaveText(/^\d+\.\d+\.\d+$/);
@@ -50,16 +65,23 @@ test.describe('build identity (E15-15)', () => {
   test('the palette reaches it too — capability never depends on finding the chrome', async () => {
     a = await launchApp();
     const w = a.window;
+    await shellReady(w);
     await w.keyboard.press(`${MOD}+Shift+P`);
     await w.getByPlaceholder('Type a command or a session name…').fill('build');
-    await w.getByText('About this build — version, commit, branch').click();
+    // By ROW ID, not by text: the palette splits a matched title into one
+    // element per character to bold the hits, so a text locator is at the mercy
+    // of how the fuzzy matcher happened to chop this particular title up.
+    const row = w.locator('[id="palette-row-help.about"]');
+    await expect(row).toContainText('About this build');
+    await row.click();
     await expect(about(w)).toBeVisible();
   });
 
   test('the window title reports the branch whenever this is not a clean main build', async () => {
     a = await launchApp();
     const w = a.window;
-    await w.getByRole('button', { name: 'Version and build — click for details' }).click();
+    await shellReady(w);
+    await stamp(w).click();
     const commit = (await field(w, 'commit').textContent())!.trim();
     const branch = (await field(w, 'branch').textContent())!.trim();
 
