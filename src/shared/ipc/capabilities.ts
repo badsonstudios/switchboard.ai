@@ -53,6 +53,9 @@ export type Capability = (typeof CAPABILITIES)[number];
  */
 export const CHANNEL_CAPABILITIES = {
   // --- inbound: renderer calls main -------------------------------------
+  // the renderer is listening for claimed chords (#90); until it says so, the
+  // browser process claims none of them
+  'app:acceleratorReady': 'app.window',
   'app:movePopout': 'app.window',
   'app:workAreas': 'app.window',
   'events:ack': 'events.write',
@@ -106,6 +109,9 @@ export const CHANNEL_CAPABILITIES = {
   // Phase-4 plugin would receive every session event regardless of what it
   // declared — and that is not a thing to discover once there is a plugin to
   // break.
+  // an allowlisted chord was claimed above the renderer (#90) — the browser
+  // process took the key and names the command it stands for
+  'app:accelerator': 'app.window',
   'app:displaysChanged': 'app.window',
   'app:popoutGeometryChanged': 'app.window',
   'events:changed': 'events.read',

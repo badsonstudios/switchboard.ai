@@ -74,8 +74,10 @@ export function buildCommands(deps: CommandDeps): Command[] {
     {
       // The one command that may fire while you're typing (E9-02): the palette
       // is the fail-open path to everything else, and Ctrl+Shift+P is not a
-      // text-editing key. It still NEVER fires inside a terminal — that rule
-      // doesn't bend for anyone; from there, the title-bar chip opens it.
+      // text-editing key. No KEYDOWN from a terminal ever runs it — that rule
+      // doesn't bend for anyone — but the chord itself does work from there,
+      // because the browser process claims it before the page sees it at all
+      // (#90, shared/terminal-accelerators.ts).
       id: 'palette.open',
       titleKey: 'commands.openPalette',
       categoryKey: CATEGORY_VIEW,
@@ -91,13 +93,12 @@ export function buildCommands(deps: CommandDeps): Command[] {
       // (NUL — emacs set-mark, and some CLIs' completion), and the hard rule
       // says the terminal owns every key it can see.
       //
-      // Note what that costs: from inside a session terminal NO accelerator
-      // fires, the palette's included (dispatch bails on `terminal` before it
-      // ever looks at scope), so the queue is mouse-only from there — the
-      // title-bar ▸ commands chip, or a click on an Events row. Reaching it by
-      // keyboard from inside an xterm needs an accelerator ABOVE the renderer
-      // (Electron before-input-event / globalShortcut), which is its own work
-      // item, not a scope change here.
+      // That used to mean the queue was mouse-only from a terminal. #90 fixed
+      // it WITHOUT touching this scope: Ctrl+Space is one of the two chords the
+      // browser process claims in before-input-event, so from a terminal the
+      // keystroke never reaches the page — and the command arrives here by id
+      // instead. The scope below still governs every other route to it, which
+      // is why it must stay 'app': the composer keeps its keys.
       //
       // macOS caveat: 'Mod' is Cmd there, and Cmd+Space is Spotlight — the OS
       // will usually win, so the hotkey quietly won't fire. It fails open (the

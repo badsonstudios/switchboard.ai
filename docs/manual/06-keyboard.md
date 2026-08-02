@@ -117,10 +117,31 @@ away from the text box first, and the shortcuts come back. The one exception is
 `Ctrl+Shift+P`, the command palette — it's how you reach everything else, and
 it isn't a key you'd ever mean as text.
 
-**The Terminal tab is absolute.** switchboard never intercepts a key there,
-ever, because that's the real Claude Code and it should get everything you
-press — shortcuts included, the command palette included. From the Terminal,
-reach the palette with the **▸ commands** button in the title bar.
+**The Terminal tab is the CLI's, with exactly two exceptions.** Everything you
+press in the Terminal goes to the real Claude Code — that's the point of it, and
+`Ctrl+1`, `Ctrl+B`, `Ctrl+W` and the rest all stand down there.
+
+The two exceptions are the ones you'd otherwise be stranded without:
+
+| Shortcut | Works in the Terminal |
+|---|---|
+| `Ctrl+Shift+P` | Open the command palette |
+| `Ctrl+Space` | Go to the next session that needs you |
+
+Both work from a popped-out session's terminal too. They were picked because
+Claude Code doesn't use either one — `Ctrl+Shift+P` never even reaches a
+terminal program, and `Ctrl+Space` is a keystroke Claude Code ignores — so
+nothing is being taken away from the session you're in. Everything else,
+including keys Claude Code does use like `Ctrl+R`, `Ctrl+C` and `Escape`, goes
+straight through untouched.
+
+The list is deliberately two long and isn't going to grow much: every shortcut
+switchboard claims here is one Claude Code can never receive again. The palette
+is on the list precisely so nothing else has to be — from it you can reach every
+command, including the ones with no shortcut of their own.
+
+The **▸ commands** button in the title bar still opens the palette with the
+mouse, from anywhere.
 
 ## Good to know
 
@@ -143,7 +164,8 @@ reach the palette with the **▸ commands** button in the title bar.
 
 - **A shortcut does nothing** — check where your cursor is. If it's in the
   prompt box or the Terminal, switchboard is deliberately staying out of the
-  way. Click on the session's header or a tab first.
+  way; click on the session's header or a tab first. The two that always work
+  are `Ctrl+Shift+P` and `Ctrl+Space`.
 - **`Ctrl+1` went to the wrong session** — the numbers follow the Sessions list
   from the top, including sessions nested inside groups (even collapsed ones),
   not the order the tabs happen to sit in.
@@ -151,7 +173,10 @@ reach the palette with the **▸ commands** button in the title bar.
   again, or click **▤ rail** in the title bar.
 - **You can't remember a shortcut** — you don't have to. Open the command
   palette and read them off the list.
-- **`Ctrl+Space` didn't move** — either nothing is waiting on you (check the
-  Events panel: if it's empty, there's nowhere to go), or your cursor is in the
-  Terminal or the prompt box, where switchboard keeps its hands off. From the
-  Terminal, click an Events row or use **▸ commands** in the title bar.
+- **`Ctrl+Space` didn't move** — most likely nothing is waiting on you: check
+  the Events panel, and if it's empty there's nowhere to go. It also stands down
+  while you're typing in the prompt box, so you don't get yanked away
+  mid-sentence — click out of the box first. It *does* work from the Terminal.
+- **A shortcut works in the Terminal but you expected it not to (or the other
+  way round)** — only `Ctrl+Shift+P` and `Ctrl+Space` work there. Everything
+  else belongs to Claude Code.

@@ -132,9 +132,16 @@ test.describe('attention queue (E9-03)', () => {
     await expect(eventRows(w)).toHaveCount(0);
   });
 
-  test('the TERMINAL owns Ctrl+Space — it is a real keystroke there (the hard rule)', async () => {
-    // the terminal branch of classifyTarget is the one NO scope can override,
-    // and it is a different code path from the text-input branch below
+  test('the RENDERER never claims Ctrl+Space in a terminal (the hard rule)', async () => {
+    // The terminal branch of classifyTarget is the one NO scope can override,
+    // and it is a different code path from the text-input branch below.
+    //
+    // #90 did not loosen it: the chord now works from a terminal because the
+    // BROWSER process claims it before the page ever sees it (covered in
+    // terminal-accelerators.spec.ts). Playwright injects over CDP, which never
+    // reaches before-input-event, so what this test drives is the renderer path
+    // alone — which must still stand down. If it ever starts jumping here, the
+    // hard rule has been bent instead of stepped over.
     const { w, titles } = await threeWaitingSessions();
     await w.keyboard.press(`${MOD}+1`);
     await expect(activeTab(w)).toContainText(titles.done);

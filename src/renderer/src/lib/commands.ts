@@ -11,14 +11,27 @@
 // CLI and owns every key it sees. Our own inputs (composer, rename fields) are
 // protected too, which is why every seed binding is scope 'app'.
 //
+// THE ONE EXCEPTION, and it is not an exception to the rule above: #90 claims
+// two chords in the BROWSER process (shared/terminal-accelerators.ts), where
+// they never compete with the PTY for a keystroke. Those keys never reach this
+// dispatcher — they arrive as a command id instead, through
+// `dispatchAccelerator` below, which runs the same registered command.
+//
 // Pure by construction (no React, no DOM globals beyond the event/element it is
 // handed) so the whole thing is unit-testable.
+
+// Parsing/formatting/matching an accelerator is shared with the browser process
+// now (#90) and lives in shared/accelerators.ts. Re-exported here because this
+// module is where the rest of the renderer looks for them, and because ONE
+// matcher for both processes is the whole point.
+export * from '../../../shared/accelerators';
+import { KeyLike, matchesBinding, Platform } from '../../../shared/accelerators';
 
 export type CommandScope =
   /** never fires while focus is in a text input or a terminal (the default) */
   | 'app'
-  /** may fire in OUR text inputs — still never in a terminal. Reserved for
-   *  E9-02's palette hotkey; no seed command uses it yet. */
+  /** may fire in OUR text inputs — still never from a keystroke a terminal
+   *  saw. The palette (E9-02) is the one command that uses it. */
   | 'typing-ok';
 
 export interface CommandContext {
@@ -50,108 +63,6 @@ export interface Command<Ctx extends CommandContext = CommandContext> {
   enabled?: (ctx: Ctx) => boolean;
   disabledReasonKey?: string;
   run: (ctx: Ctx) => void;
-}
-
-export type Platform = 'darwin' | 'other';
-
-/** Parsed accelerator. `key` is compared case-insensitively against
- *  KeyboardEvent.key, so 'Mod+Shift+P' matches the 'P' a shifted p produces. */
-export interface ParsedBinding {
-  mod: boolean;
-  shift: boolean;
-  alt: boolean;
-  /** lowercased, for matching */
-  key: string;
-  /** as written ('PageDown'), for display */
-  rawKey: string;
-}
-
-/**
- * 'Mod+Shift+P' -> {mod, shift, key:'p'}. `Mod` is Ctrl everywhere except
- * macOS, where it is Meta — one accelerator string, correct on all three OSes.
- */
-export function parseBinding(binding: string): ParsedBinding | null {
-  const parts = binding
-    .split('+')
-    .map((p) => p.trim())
-    .filter(Boolean);
-  if (parts.length === 0) return null;
-  const out: ParsedBinding = {
-    mod: false,
-    shift: false,
-    alt: false,
-    key: '',
-    rawKey: '',
-  };
-  for (const p of parts) {
-    const low = p.toLowerCase();
-    if (low === 'mod' || low === 'ctrl' || low === 'cmd') out.mod = true;
-    else if (low === 'shift') out.shift = true;
-    else if (low === 'alt') out.alt = true;
-    else {
-      if (out.key) return null; // two non-modifier tokens: a typo, not a binding
-      out.key = low;
-      out.rawKey = p;
-    }
-  }
-  return out.key ? out : null;
-}
-
-/**
- * Human label for an accelerator: 'Mod+Shift+P' -> 'Ctrl+Shift+P', or
- * '⌘⇧P' on macOS. Used by tooltips today and by the palette's binding
- * column (E9-02) — never store this, always derive it from the binding.
- */
-export function formatBinding(binding: string, platform: Platform): string {
-  const b = parseBinding(binding);
-  if (!b) return '';
-  const key = b.rawKey.length === 1 ? b.rawKey.toUpperCase() : b.rawKey;
-  // macOS convention orders the modifiers ⌃⌥⇧⌘, Command LAST: ⇧⌘P
-  if (platform === 'darwin') {
-    return `${b.alt ? '⌥' : ''}${b.shift ? '⇧' : ''}${b.mod ? '⌘' : ''}${key}`;
-  }
-  const parts = [b.mod && 'Ctrl', b.alt && 'Alt', b.shift && 'Shift', key].filter(Boolean);
-  return parts.join('+');
-}
-
-/** The subset of KeyboardEvent the matcher needs — keeps tests DOM-free. */
-export interface KeyLike {
-  key: string;
-  /** physical key ('Digit1', 'Backquote') — layout-independent */
-  code?: string;
-  ctrlKey: boolean;
-  metaKey: boolean;
-  shiftKey: boolean;
-  altKey: boolean;
-}
-
-/**
- * Physical-key equivalent for the accelerators where `key` is layout-dependent.
- * On AZERTY the top row's unshifted `key` is '&', 'é'…, and the backquote sits
- * elsewhere entirely — matching `code` too keeps Ctrl+1..9 and Ctrl+` working
- * on non-US layouts.
- */
-function codeFor(key: string): string | null {
-  if (/^[0-9]$/.test(key)) return `Digit${key}`;
-  if (key === '`') return 'Backquote';
-  // the spacebar reports key ' ' — a binding has to spell it 'Space' to be
-  // readable, so the physical code is the only thing that can match it
-  if (key === 'space') return 'Space';
-  return null;
-}
-
-export function matchesBinding(e: KeyLike, binding: string, platform: Platform): boolean {
-  const b = parseBinding(binding);
-  if (!b) return false;
-  const mod = platform === 'darwin' ? e.metaKey : e.ctrlKey;
-  // the non-Mod modifier must be OFF, else Ctrl+1 would also match Cmd+Ctrl+1
-  const otherMod = platform === 'darwin' ? e.ctrlKey : e.metaKey;
-  if (b.mod !== mod || otherMod) return false;
-  if (b.shift !== e.shiftKey) return false;
-  if (b.alt !== e.altKey) return false;
-  if (e.key.toLowerCase() === b.key) return true;
-  const code = codeFor(b.key);
-  return !!code && e.code === code;
 }
 
 /**
@@ -216,21 +127,74 @@ export function dispatch<Ctx extends CommandContext>(
     if (!cmd.binding) continue;
     if (typing && cmd.scope !== 'typing-ok') continue;
     if (!matchesBinding(e, cmd.binding, platform)) continue;
-    try {
-      if (cmd.enabled && !cmd.enabled(ctx)) return null; // matched but unavailable
-    } catch (err) {
-      onError?.(err, cmd.id);
-      return null;
-    }
+    if (!isAvailable(cmd, ctx, onError)) return null; // matched but unavailable
     e.preventDefault?.();
-    try {
-      cmd.run(ctx);
-    } catch (err) {
-      onError?.(err, cmd.id);
-    }
-    return cmd;
+    return runCommand(cmd, ctx, onError);
   }
   return null;
+}
+
+/**
+ * `enabled`, evaluated fail-open-ish: a predicate that THROWS is treated as
+ * "not available" rather than being allowed to escape into a key handler.
+ */
+function isAvailable<Ctx extends CommandContext>(
+  cmd: Command<Ctx>,
+  ctx: Ctx,
+  onError?: (err: unknown, commandId: string) => void,
+): boolean {
+  try {
+    return !cmd.enabled || cmd.enabled(ctx);
+  } catch (err) {
+    onError?.(err, cmd.id);
+    return false;
+  }
+}
+
+/** Run a command, swallowing its throw. The ONE place a command is invoked. */
+function runCommand<Ctx extends CommandContext>(
+  cmd: Command<Ctx>,
+  ctx: Ctx,
+  onError?: (err: unknown, commandId: string) => void,
+): Command<Ctx> {
+  try {
+    cmd.run(ctx);
+  } catch (err) {
+    onError?.(err, cmd.id);
+  }
+  return cmd;
+}
+
+/**
+ * Run a command claimed ABOVE the renderer (#90): the browser process matched
+ * one of the two allowlisted chords in `before-input-event` and sends us its
+ * id, because the keystroke itself was stopped before the page — and therefore
+ * before the PTY — could see it.
+ *
+ * NOT a second command path: it runs the same registered command, through the
+ * same enabled-check and the same fail-open guard as `dispatch`. What it does
+ * differently is the one thing the mechanism exists for — a TERMINAL target
+ * does not veto it. That is not a hole in the hard rule: the key was taken
+ * before the terminal ever had a claim on it, and only the two chords on the
+ * allowlist can arrive here at all.
+ *
+ * Everything else still applies. `target` is the element that had focus when
+ * the chord was pressed, and outside a terminal the ordinary scope rule holds —
+ * so a command that must not fire while you are typing still doesn't.
+ */
+export function dispatchAccelerator<Ctx extends CommandContext>(
+  commandId: string,
+  commands: Array<Command<Ctx>>,
+  ctx: Ctx,
+  target: Element | null,
+  onError?: (err: unknown, commandId: string) => void,
+): Command<Ctx> | null {
+  const cmd = commands.find((c) => c.id === commandId);
+  if (!cmd) return null; // an id we no longer register: nothing to run, never a throw
+  const { typing, terminal } = classifyTarget(target);
+  if (typing && !terminal && cmd.scope !== 'typing-ok') return null;
+  if (!isAvailable(cmd, ctx, onError)) return null;
+  return runCommand(cmd, ctx, onError);
 }
 
 /** the accelerator bound to a command id, or '' — for tooltips and the palette */
