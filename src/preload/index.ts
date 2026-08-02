@@ -144,6 +144,17 @@ const api = {
       ipcRenderer.on('sessions:status', h);
       return () => ipcRenderer.removeListener('sessions:status', h);
     },
+    /**
+     * A card gained or lost its live session (#170) — re-read `cards()`.
+     *
+     * Signal only: no payload, because the list is `cards()` and nothing else.
+     * Why this exists at all is in `main/sessions/ipc.ts`, above `bindLive`.
+     */
+    onCardsChanged: (cb: () => void): (() => void) => {
+      const h = (): void => cb();
+      ipcRenderer.on('sessions:cardsChanged', h);
+      return () => ipcRenderer.removeListener('sessions:cardsChanged', h);
+    },
     onUsage: (cb: (snap: unknown) => void): (() => void) => {
       const h = (_e: unknown, s: unknown) => cb(s);
       ipcRenderer.on('sessions:usage', h);

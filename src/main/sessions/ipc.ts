@@ -98,6 +98,50 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     deps.broker.send(deps.getWindow(), channel, payload);
   };
 
+  // ── the LIVE half of the `sessions:cards` join (#170) ────────────────────
+  //
+  // `sessions:cards` is a JOIN of two things that move for different reasons:
+  // the persisted card list, and the live session (if any) underneath it. A
+  // live session's own movements already push — `sessions:status` on a
+  // transition, `sessions:exited` on death — and the renderer refreshes the
+  // joined list from either. A card GAINING or LOSING its live session pushed
+  // nothing at all, and that is the whole of #170: after Resume the card has a
+  // brand-new live session, but no status has CHANGED yet, so the rail and the
+  // urgency strip went on reading the pre-resume `suspended` until some
+  // unrelated event happened to refresh the list. On a PTY session that first
+  // status change only arrives when the user submits a prompt — minutes, or
+  // never.
+  //
+  // So the binding is the event. Every mutation of `cardOfLive` goes through
+  // these two helpers rather than touching the Map directly, which is what
+  // stops a future call site from quietly reopening the same hole.
+  //
+  // This covers the LIVE half only, deliberately. The PERSISTED half —
+  // renaming a card, its task label, closing a suspended one — pushes nothing
+  // and does not need to: every one of those is renderer-initiated, and the
+  // caller refreshes at its own call site. A resume was neither, which is why
+  // it fell through the gap: its caller is the grid's lazy-spawn effect, which
+  // has no route to the rail's refresh.
+  //
+  // Signal-only, like `sessions:status`: the renderer re-reads `sessions:cards`
+  // (which is async — it resolves repo roots) rather than being handed a list.
+  // The invariant that makes that race-free is not merely that main is
+  // single-threaded — it is that there is NO `await` between this push and the
+  // last mutation of the handler that sent it, so the pull cannot be served
+  // until that handler has returned. `sessions:create` is synchronous
+  // throughout today. An await introduced between `bindLive` and the
+  // `persist.upsert` below it would reopen the window: the renderer would pull
+  // a live binding whose persisted card is not written yet, and a brand-new
+  // card would vanish from the list for a frame.
+  const cardsChanged = (): void => send('sessions:cardsChanged', undefined);
+  const bindLive = (liveId: string, cardId: string): void => {
+    cardOfLive.set(liveId, cardId);
+    cardsChanged();
+  };
+  const unbindLive = (liveId: string): void => {
+    if (cardOfLive.delete(liveId)) cardsChanged();
+  };
+
   manager.onStatusChange((change) => {
     send('sessions:status', change);
     deps.feed.ingest(change);
@@ -297,13 +341,21 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       // the hard way: `!== undefined` matched every live session and adopted
       // none of them). A crashed session keeps its record so the card can show
       // the overlay, and must never be adopted.
-      // a crashed session leaves its mapping behind; drop those on the way past
-      // so "the live session for this card" never depends on Map ordering
+      // A session whose RECORD is gone leaves a dangling mapping behind; drop
+      // those on the way past. A session that merely DIED keeps both — the
+      // record for the overlay, the mapping so a later `dropLive` can still
+      // find it and tear its hooks/transcripts/feed down. So a card that
+      // respawns over a dead session briefly holds two mappings, and the
+      // newest wins: `sessions:cards` builds `cardId -> liveId` by iterating
+      // this Map, whose iteration order is insertion order by spec, so the
+      // last binding written is the one that survives. Deterministic, not
+      // lucky — but it is an implicit rule, and unbinding the corpse here
+      // instead would trade it for a real leak (see #170's hand-off).
       for (const [liveId, cid] of [...cardOfLive]) {
         if (cid !== opts.cardId) continue;
         const running = manager.get(liveId);
         if (!running || running.exitCode !== null) {
-          if (!running) cardOfLive.delete(liveId);
+          if (!running) unbindLive(liveId);
           continue;
         }
         log.info('session already live for card, adopting', { sessionId: liveId, cardId: opts.cardId });
@@ -381,7 +433,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         // that cannot speak stream-json returns a PTY recipe we honour.
         transport: prior?.transport ?? deps.preferredTransport?.(),
       });
-      cardOfLive.set(record.id, opts.cardId);
+      bindLive(record.id, opts.cardId);
       // A provider with no transcripts is never watched at all — the session is
       // a terminal and nothing more, which is what §5.3 promises degrading
       // looks like. Otherwise pass the resumed conversation id, so the watcher
@@ -575,7 +627,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       // …and its own Feed blocks (P2-E18-10)
       deps.streamFeed?.forgetSession(liveId);
       manager.remove(liveId);
-      cardOfLive.delete(liveId);
+      unbindLive(liveId);
     }
   };
 

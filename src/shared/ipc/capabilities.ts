@@ -115,6 +115,8 @@ export const CHANNEL_CAPABILITIES = {
   'app:displaysChanged': 'app.window',
   'app:popoutGeometryChanged': 'app.window',
   'events:changed': 'events.read',
+  // a card gained or lost its live session — re-read `sessions:cards` (#170)
+  'sessions:cardsChanged': 'sessions.read',
   'sessions:exited': 'sessions.read',
   'sessions:feedBlock': 'transcripts.read',
   'sessions:feedReset': 'transcripts.read',

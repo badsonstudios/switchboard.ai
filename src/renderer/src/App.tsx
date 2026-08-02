@@ -254,9 +254,13 @@ export function App(): React.JSX.Element {
     void refreshSessions();
     const offStatus = bridge.sessions?.onStatus?.(() => void refreshSessions());
     const offExit = bridge.sessions?.onExited?.(() => void refreshSessions());
+    // …and when a card gains or loses its live session without any status
+    // having changed — a resume (#170). Same refresh, third trigger.
+    const offCards = bridge.sessions?.onCardsChanged?.(() => void refreshSessions());
     return () => {
       offStatus?.();
       offExit?.();
+      offCards?.();
     };
   }, [cards, refreshSessions]); // re-sync when the grid's cards change
 

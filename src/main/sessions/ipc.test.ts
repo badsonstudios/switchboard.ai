@@ -102,7 +102,13 @@ function harness(
       onNativeSessionId: () => {},
       onStatusChange: () => {},
       onSessionExit: () => {},
-      list: () => [],
+      // Driven by the same set `get` answers from, so a test cannot be told two
+      // different things about which sessions exist (#170 needs `list` — it is
+      // what the `sessions:cards` join reads). Note what this is NOT: a spawn
+      // log. These ids read live from the moment the harness is built, before
+      // any `sessions:create`, which is what lets a test assert the SUSPENDED
+      // reading first — the join is keyed off `cardOfLive`, not off this.
+      list: () => (opts.liveIds ?? []).map((id) => ({ ...record, id })),
       remove: () => {},
       get: (id: string) => (opts.liveIds?.includes(id) ? { ...record, id } : undefined),
       create: (
@@ -783,5 +789,82 @@ describe('a transcript reset never blanks a stream session (P2-E18-10)', () => {
     streamFeed.offer('live-1', { type: 'system', subtype: 'init', session_id: 'conv-2' });
 
     expect(feedResets(h)).toBe(1);
+  });
+});
+
+// #170 — resuming a suspended session never refreshed its status.
+//
+// `sessions:cards` is a JOIN: the persisted card, plus the live session under
+// it if there is one. The renderer re-reads that join when something PUSHES.
+// A live session's own movements do push (`sessions:status`, `sessions:exited`)
+// — the card gaining or losing its live session did not, so after Resume the
+// rail and the urgency strip went on reading the pre-resume `suspended`.
+//
+// These pin the binding as an event, at the source. Note what is NOT asserted:
+// nothing here reads a rail or a lamp, because the fix is not in either — both
+// render from this one list.
+describe('a card gaining or losing its live session announces itself (#170)', () => {
+  const CARD = 'card-1';
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-resume-'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const cardsPushes = (h: { pushed: Array<{ channel: string }> }): number =>
+    h.pushed.filter((p) => p.channel === 'sessions:cardsChanged').length;
+  const statusOf = async (h: { call: (c: string, ...a: unknown[]) => unknown }): Promise<string> => {
+    const cards = (await h.call('sessions:cards')) as Array<{ cardId: string; status: string }>;
+    return cards.find((c) => c.cardId === CARD)!.status;
+  };
+
+  /** a card persisted but not running — exactly what a suspend leaves behind */
+  const suspendedCard = (): PersistedSession => priorCard({ folder: dir, id: CARD });
+
+  it('the suspend -> resume round trip ends with a LIVE status, unprompted', async () => {
+    const h = harness(undefined, dir, { prior: suspendedCard(), liveIds: ['live-1'] });
+
+    // restored-but-not-yet-resumed: the join has no live half
+    expect(await statusOf(h)).toBe('suspended');
+
+    // resume-on-focus spawns (or --resumes) the session for the card
+    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+
+    // ...and SAID so, which is the whole bug: no status has changed yet, and on
+    // a PTY session the first one may be minutes away (it takes a submitted
+    // prompt), so this push is the only thing that can move the rail.
+    expect(cardsPushes(h)).toBe(1);
+    expect(await statusOf(h)).toBe('starting');
+  });
+
+  it('losing the live session announces itself too — suspend, then resume again', async () => {
+    const h = harness(undefined, dir, { prior: suspendedCard(), liveIds: ['live-1'] });
+    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+
+    // the popout window closed: keep the card, drop the session (E8-04)
+    await h.call('sessions:dropLive', CARD);
+    expect(cardsPushes(h)).toBe(2);
+    expect(await statusOf(h)).toBe('suspended');
+
+    // and back again — the round trip is repeatable, not a one-shot
+    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    expect(cardsPushes(h)).toBe(3);
+    expect(await statusOf(h)).toBe('starting');
+  });
+
+  it('adopting an already-live session says NOTHING — the binding did not move', async () => {
+    // revealing a hidden card re-mounts its panel over a session that is still
+    // running (P2-E15-08). That is not a change, and a push here would be a
+    // refresh for every reveal, for ever.
+    const h = harness(undefined, dir, { prior: suspendedCard(), liveIds: ['live-1'] });
+    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    const before = cardsPushes(h);
+
+    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+
+    expect(h.created).toHaveLength(1); // adopted, not spawned twice
+    expect(cardsPushes(h)).toBe(before);
   });
 });
