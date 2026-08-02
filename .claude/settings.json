@@ -39,10 +39,37 @@
       "Bash(date:*)",
       "Bash(jq:*)",
       "Bash(rg:*)",
-      "Bash(claude:*)"
+      "Bash(claude:*)",
+      "Bash(sed:*)",
+      "Bash(awk:*)",
+      "Bash(perl:*)",
+      "Bash(python:*)",
+      "Bash(xargs:*)",
+      "Bash(sleep:*)",
+      "Bash(tee:*)",
+      "PowerShell(git:*)",
+      "PowerShell(gh:*)",
+      "PowerShell(node:*)",
+      "PowerShell(npm:*)",
+      "PowerShell(npx:*)",
+      "PowerShell(Get-ChildItem:*)",
+      "PowerShell(Get-Content:*)",
+      "PowerShell(Get-Process:*)",
+      "PowerShell(Test-Path:*)"
     ],
     "deny": [],
-    "ask": []
+    "ask": [],
+    "additionalDirectories": [
+      "C:/Projects/Switchboard.ai",
+      "C:/Projects/sb-wt-1",
+      "C:/Projects/sb-wt-2",
+      "C:/Projects/sb-wt-3",
+      "C:/Projects/sb-wt-4",
+      "C:/Projects/sb-wt-5",
+      "C:/Projects/sb-wt-6",
+      "C:/Projects/plans",
+      "C:/tmp"
+    ]
   },
   "statusLine": {
     "type": "command",
