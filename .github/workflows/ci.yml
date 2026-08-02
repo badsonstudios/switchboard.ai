@@ -29,6 +29,11 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run check:pty
+      # Never ran anywhere until #164, which is why it rotted TWICE without a
+      # red build: once when #153 made the fake honour the requested transport,
+      # once when #163 put a thinking block ahead of the text one. Both are the
+      # spawn-and-protocol seam the unit tests deliberately cannot reach.
+      - run: npm run check:fake-stream
 
   e2e:
     name: e2e ${{ matrix.os }}
