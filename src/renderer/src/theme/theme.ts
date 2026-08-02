@@ -113,7 +113,7 @@ export function loadPreference(themes: readonly ThemeDefinition[]): ThemePrefere
  * API — so a value cannot escape into the stylesheet as syntax. VALUES are NOT
  * otherwise validated: the maps are bundled at build time today, so they are
  * trusted code, and what contains a hostile value (`url(https://…)` in a token
- * that lands in `background`) is the CSP in index.html, which is a different
+ * that lands in `background`) is the CSP in `shared/csp.ts`, which is a different
  * subsystem. Before a theme can arrive from a user or a plugin this needs a
  * value check of its own — `tokens.ts` already says which tokens are colors
  * and which are shadows, which is the hook for it.

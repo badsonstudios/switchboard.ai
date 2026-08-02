@@ -1,5 +1,43 @@
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
+import type { PluginOption } from 'vite';
 import react from '@vitejs/plugin-react';
+import { CSP_PROD_META } from './src/shared/csp';
+
+/**
+ * Put the prod CSP back into the BUILT html as a <meta> backstop (P2-E15-12).
+ *
+ * The policy normally arrives as a response header (src/shared/csp.ts). The one
+ * path a header cannot reach is main's emergency `loadFile()` fallback, used
+ * when the loopback static server fails to bind: `file://` responses are not
+ * interceptable by `webRequest`, so that window would run with no policy at
+ * all. `apply: 'build'` keeps the tag out of dev, where it would intersect with
+ * the (deliberately looser) dev header and re-break Vite's inline preamble —
+ * the exact accident this item removed.
+ *
+ * CSP_PROD_META, not CSP_PROD: a <meta> tag cannot carry `frame-ancestors` and
+ * Chromium logs an error when it sees one there — an error our renderer-console
+ * bridge would write into switchboard.log on every launch.
+ *
+ * `head-prepend` because a policy has to be the first thing parsed to govern
+ * what follows. It therefore sits ahead of <meta charset>, which is fine while
+ * the policy is a few hundred bytes (the encoding declaration must land inside
+ * the first 1024) — worth remembering if the policy ever grows a lot.
+ */
+function cspMetaBackstop(): PluginOption {
+  return {
+    name: 'switchboard:csp-meta-backstop',
+    apply: 'build',
+    transformIndexHtml() {
+      return [
+        {
+          tag: 'meta',
+          attrs: { 'http-equiv': 'Content-Security-Policy', content: CSP_PROD_META },
+          injectTo: 'head-prepend',
+        },
+      ];
+    },
+  };
+}
 
 export default defineConfig({
   main: {
@@ -27,7 +65,7 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
   },
   renderer: {
-    plugins: [react()],
+    plugins: [react(), cspMetaBackstop()],
     build: {
       rollupOptions: {
         input: {
