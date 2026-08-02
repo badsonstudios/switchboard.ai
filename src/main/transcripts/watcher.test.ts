@@ -591,18 +591,28 @@ describe('pre-existing transcripts are never adopted', () => {
 
 describe('per-session transcripts root (P2-E15-01)', () => {
   let rootB: string;
+  /**
+   * Extra watchers a test builds for itself. Registered here rather than
+   * stopped at the end of the test body, so a FAILING assertion still releases
+   * the handle — otherwise the rm below hits a live `fs.watch` and the EBUSY
+   * masks the real failure with a phantom one.
+   */
+  const extras: TranscriptWatcher[] = [];
 
   beforeEach(() => {
     rootB = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-tw-rootb-'));
   });
   afterEach(() => {
-    // Stop FIRST. These tests point the watcher at `rootB`, and discovery puts
-    // it under `fs.watch` — an open directory handle. Vitest runs the innermost
-    // `afterEach` before the outer one, so without this the rm here would race
-    // the outer `watcher.stop()` and throw EBUSY on Windows, which vitest
-    // reports as a failed FILE with zero failing tests (the #167 shape).
-    // `stop()` is idempotent, so the outer hook calling it again is fine.
+    // Stop FIRST. These tests point a watcher at `rootB`, and discovery puts it
+    // under `fs.watch` — an open directory handle, closed synchronously by
+    // `stop()`. Vitest runs the innermost `afterEach` before the outer one, so
+    // without this the rm here would race the outer `watcher.stop()` and throw
+    // EBUSY on Windows, which vitest reports as a failed FILE with zero failing
+    // tests (the #167 shape). `stop()` is idempotent, so the outer hook calling
+    // it again is fine.
     watcher.stop();
+    for (const w of extras) w.stop();
+    extras.length = 0;
     fs.rmSync(rootB, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });
 
@@ -641,6 +651,7 @@ describe('per-session transcripts root (P2-E15-01)', () => {
       pollMs: 25,
       widenAfterMs: 50, // widen almost immediately
     });
+    extras.push(w2); // stopped in teardown, on the failure path too
     const theirs = path.join(root, slugForCwd('C:/tmp/somewhere-else'));
     fs.mkdirSync(theirs, { recursive: true });
     fs.mkdirSync(path.join(rootB, slugForCwd(cwd)), { recursive: true });
@@ -651,7 +662,6 @@ describe('per-session transcripts root (P2-E15-01)', () => {
     await sleep(300);
 
     expect(w2.snapshot('s1')!.bound).toBe(false);
-    w2.stop();
   });
 
   it('a transcript already on disk under a non-default root is not adopted', async () => {
