@@ -6,9 +6,98 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E9 filed 2026-07-24 → #70–#80**; **E15 filed 2026-07-27 → #98–#111**;
 E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.** Next is **#139 (P2-E18-09)** — slash
-commands from `system:init` — then **#140** (Feed from typed messages), and
-that closes the filed E18 spine.
+**In progress:** **#139 (P2-E18-09) is BUILT and awaiting Dan's commit
+approval** (2026-08-02) — slash commands from `system:init`. Gate green: lint +
+typecheck + **840 unit (+26)** + **111 e2e (+3)**. Then **#140** (Feed from
+typed messages), and that closes the filed E18 spine.
+
+> # ▶ DECISION 2026-08-02 (Dan): **TERMINAL MODE IS BEING DROPPED.**
+> Verbatim in spirit: *"We're going to be dropping Terminal Mode anyway once we
+> get Direct Mode completely tested here and working."* Said while declining to
+> hand-test a change in Terminal mode — so it is also an instruction about where
+> testing effort goes.
+> **The condition is the only one and it is real: Direct mode tested and working
+> in real use.** Nothing is deleted before that, and **PTY mode must keep
+> working the whole way** — it is the fallback while Direct mode is under test.
+> **What changed in the plan** (`docs/plans/05-transport-migration.md`, decision
+> block at the top; DESIGN §5 amendment; manual `12-direct-mode.md`):
+> - **E18-16 stops being a decision and becomes an execution** — flip the
+>   default and delete the PTY stack. It used to ask *whether*.
+> - **E18-11 (the choosers) changes job the same way S-11 did.** It was a
+>   go/no-go — "if either chooser is CLI-kept, the terminal stays". It is now a
+>   SCOPING probe: a CLI-kept chooser is a gap to build for or accept, not a
+>   veto. Still worth running, and still before E18-16.
+> - **Terminal-mode regressions stop being blocking.** Worth knowing, not worth
+>   stopping for.
+> - **P7 is NOT relaxed.** Ctrl-R, vim mode and the `/resume`·`/rewind`·
+>   `--from-pr` pickers are rebuilt properly or dropped and SAID so.
+>   Screen-scraping stays rejected precedent. The terminal going away makes
+>   honesty mandatory, not faking permissible.
+
+> ## 🐛 NEW ISSUE #156 — `/usage` shows NOTHING in a Direct session (Dan, 2026-08-02)
+> **Measured, and the obvious diagnosis was WRONG.** The comfortable answer —
+> *"`/usage` is a TUI display the CLI keeps for itself, and P7 forbids faking
+> it"* — is false. The CLI emits it as a completely ordinary turn:
+> `system:init -> assistant -> result:success`, full text in the `assistant`
+> message. **Nothing is withheld.**
+> **The Feed reads the JSONL TRANSCRIPT, and the transcript disagrees with the
+> stream.** The same turn writes `user` + `user(isMeta)` + a **`system`** entry
+> (`subtype:"local_command"`, output in `content` wrapped in
+> `<local-command-stdout>`) and **no `assistant` entry at all**. We render
+> assistant/user/tool blocks, so the text is dropped.
+> **It is NOT a Direct-mode regression.** The Feed drops it in BOTH transports;
+> in Terminal mode the CLI also draws it in the terminal, so the gap was
+> invisible. **Direct mode did not break this — it removed the surface that was
+> hiding it.** Expect more of this shape as the terminal goes.
+> Why the rest worked: **`/startup` is a skill** (expands to a real prompt → real
+> assistant turn), **`/clear`** is handled by us, and **the done-sound played**
+> because `result` arrived — the completion signal and the content travel by
+> different routes and only one was broken.
+> **#140 (the next item) fixes it** by moving the Feed onto the stream; a note on
+> #140 says to ASSERT that rather than assume it. A smaller fix that helps both
+> transports today: render `system:local_command`, stripping the wrapper.
+> **First measured case where the transcript is strictly POORER than the stream,
+> not merely slower** — the migration's "the transcript stack survives untouched"
+> claim still holds, but it was never a faithful record of what the user SAW.
+> Probe `spike/s11/probe-local-commands.cjs` (NOT the planned probe 2 — that is
+> still plan mode, unstarted); findings
+> `spike/findings/s-11-local-slash-commands.md`.
+
+> ## #139 — the composer's command list now comes from the CLI in Direct mode
+> `CLAUDE_BUILTIN_COMMANDS` is 40 hand-curated builtins the file itself calls
+> "a maintenance chore". In Direct mode the CLI advertises the real set, so the
+> **CLI's list is the SET and our `.claude/` scan becomes a description-and-
+> provenance lookup over it** — `/startup` keeps its badge and its description,
+> a stale curated entry disappears, and a plugin command we could never
+> enumerate shows up.
+> **Contract READ, not guessed** (the standing rule, and it paid): the two
+> payloads disagree on fidelity. `system:init.slash_commands` is **bare
+> names**; `system:commands_changed.commands` is **objects** with
+> `description`/`argumentHint`/`aliases`. Both confirmed in the shipped
+> extension bundle. Its richer list actually comes from the **`initialize`
+> control-request RESPONSE**, which we do not send — so init being names-only
+> is by construction, not by accident. Noted as future work, not absorbed.
+> **The fake could not have caught a merge-vs-replace bug** and now can: its
+> fallback list was a strict SUBSET of what its `init` advertised, so both
+> designs rendered an identical popup. Added `curated-only`, absent from the
+> fake's `init` on purpose. **Third time this exact hole has been found in a
+> fake in three days** (#153's transport, #154's `!hang`, now this) — the
+> pattern is that a fake built to make the happy path work cannot express the
+> NEGATIVE half of a claim.
+> **Two behaviours inherent to the transport, not bugs:** a fresh Direct
+> session shows the fallback list **until its first prompt** (the CLI emits
+> nothing at spawn — S-11), and descriptions are thinner for builtins we do not
+> curate.
+> **Review found 5 should-fixes, all taken.** The two worth remembering: both
+> stream consumers had been coalesced into ONE `onStreamMessage` listener,
+> which defeats the manager's per-listener try/catch and would have let a throw
+> in the permission router silently freeze the command list for ever; and an
+> **empty** advertised list wiped the popup while a malformed one correctly kept
+> the prior — the fallback now covers both, since the done-when is "rather than
+> showing nothing" and an empty popup is empty either way.
+> **Every new test was revert-proofed by breaking the code and watching it
+> fail** — including the two the review asked for, one of which (`forgetSession`
+> wiring) could be deleted entirely with the whole suite still green.
 **#152 and #155 MERGED**, 5 CI jobs green on each. **#153 and #154 CLOSED.**
 Gate at merge: lint + typecheck + **814 unit** + **108 e2e**.
 

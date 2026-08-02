@@ -7,6 +7,13 @@ the second one is, why you might want it, and what you give up.
 into the terminal and ask you twice. It costs you the terminal itself. It's off
 by default and you switch it on per session.
 
+> **Where this is going.** Direct mode is intended to become the *only* mode.
+> Once it's been properly tested in real use, Terminal mode will be removed, not
+> kept as an option. Nothing is being taken away yet — Terminal mode is still the
+> default and still fully works — but if you're deciding where to invest your
+> habits, invest them here. The list under **What you give up** is the list of
+> things that will need a real replacement or an honest goodbye.
+
 ---
 
 ## The problem it solves
@@ -75,13 +82,29 @@ usage figures and file changes are unaffected.
 ## Why it's marked beta
 
 Some parts of Claude Code have no equivalent outside a terminal yet — plan-mode
-approval and multiple-choice questions are the two being looked at. Until those
-are settled, Direct mode is the right choice for a session where the `.claude`
-double-prompt annoys you, and the wrong one for a session where you rely on the
-terminal.
+approval and multiple-choice questions are the two being looked at. "Beta" means
+those are still being worked out, **not** that Direct mode is an experiment that
+might be withdrawn: it's the mode that's staying.
 
-If you're not sure, leave it on Terminal. Nothing is missing there except the
-one bug above.
+For now, Terminal mode remains the default and the safe fallback, and it's the
+right choice for a session where you actually rely on the terminal — Ctrl-R
+history, vim mode, or a command that opens its own picker. Use Direct mode
+everywhere else, and tell us what breaks: that feedback is the gate on removing
+Terminal mode.
+
+## Known gap: some commands show nothing
+
+Commands that Claude Code answers *itself* rather than by asking Claude —
+**`/usage`**, **`/cost`**, **`/context`** — currently produce no visible output
+in the Session view. The command does run; there's just nothing on screen.
+
+This isn't really a Direct-mode fault: the output has always been missing from
+the Session view, and in Terminal mode you'd see it in the Terminal tab instead.
+Direct mode removed the place it was hiding. It's being fixed as part of the
+next piece of work on the Session view.
+
+Commands that go to Claude — your own skills and project commands, anything that
+produces a reply — are unaffected, and so is `/clear`.
 
 ## If something looks wrong
 
