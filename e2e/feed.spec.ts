@@ -273,6 +273,74 @@ test.describe('Feed view (E12-06)', () => {
     ).toContainText('plan', { timeout: 20_000 });
   });
 
+  // #156, and the case that shipped with a UNIT test and no e2e — which is
+  // exactly the gap Dan's PR #163 re-test walked into. The transcript half of
+  // the local-slash-command fix was never proved through the renderer, so
+  // nothing in the suite could say whether the OUTPUT was on screen or merely
+  // in a data structure.
+  //
+  // The three entries below are copied from a REAL transcript
+  // (`~/.claude/projects/…`, read 2026-08-02), not invented: a `<local-command-caveat>`
+  // meta line, the `<command-name>` invocation, and the output as
+  // `system`/`subtype:"local_command"` wrapped in `<local-command-stdout>`.
+  // THERE IS NO `assistant` ENTRY — that absence is the whole bug.
+  test('a local slash command shows its OUTPUT, not just a collapsed echo (#156)', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
+    await expect(w.getByText('No conversation yet')).toBeVisible();
+
+    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
+    fs.mkdirSync(dir, { recursive: true });
+    const line = (o: Record<string, unknown>): string =>
+      JSON.stringify({
+        sessionId: 'native-e2e',
+        cwd: folder,
+        timestamp: new Date().toISOString(),
+        ...o,
+      }) + '\n';
+    fs.writeFileSync(
+      path.join(dir, 'native-e2e.jsonl'),
+      line({
+        type: 'user',
+        isMeta: true,
+        message: { role: 'user', content: '<local-command-caveat>Caveat</local-command-caveat>' },
+      }) +
+        line({
+          type: 'user',
+          message: {
+            role: 'user',
+            content:
+              '<command-name>/usage</command-name>\n            <command-message>usage</command-message>\n            <command-args></command-args>',
+          },
+        }) +
+        line({
+          type: 'system',
+          subtype: 'local_command',
+          level: 'info',
+          isMeta: false,
+          isSidechain: false,
+          content: '<local-command-stdout>Current session: 12% used · resets Aug 2</local-command-stdout>',
+        })
+    );
+
+    // THE OUTPUT IS ON SCREEN, WITH NO CLICK. Scoped to `.feed-md` — the
+    // assistant-prose renderer — so it can only pass by rendering as its own
+    // visible block. Matching loose page text would also have been satisfied by
+    // the text sitting inside the collapsed invocation pill, which is precisely
+    // the failure this test exists to distinguish.
+    const output = w.locator('.feed-md', { hasText: 'Current session: 12% used' });
+    await expect(output).toBeVisible({ timeout: 20_000 });
+
+    // …and the invocation still collapses to its command name, which is the
+    // existing treatment for a command echo (a skill invocation dumps its whole
+    // body here). The output is a SEPARATE block after it — no new UI, and
+    // nothing the user has to expand.
+    await expect(w.getByText('click to expand')).toBeVisible();
+    await expect(w.getByText('command-message')).toHaveCount(0); // boilerplate stays collapsed
+  });
+
   test('the composer drives the real CLI over the PTY (E10-02)', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });

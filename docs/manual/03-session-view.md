@@ -17,9 +17,17 @@ This is the conversation, rendered to be read rather than scrolled past:
   can expand separately.
 - **Thinking** collapses to "Thought for 4s" — expand if you care.
 - **Checklists** from Claude's own task tracking render as `[x]` / `[~]` / `[ ]`.
+- **Local commands** — `/usage`, `/cost`, `/context` and the like, which Claude
+  Code answers itself — print their output here too.
 
 The view stays pinned to the newest message, including when you switch back to
 a session you'd left. Scroll up freely; it won't yank you back.
+
+**In [Direct mode](12-direct-mode.md), replies stream in a word at a time**,
+with a small block cursor on the end while Claude is still writing. In Terminal
+mode the view waits for each finished message instead, so replies arrive in
+chunks a moment behind. The blocks themselves are identical either way — only
+how quickly they fill in differs.
 
 ## When the Session tab has nothing in it
 

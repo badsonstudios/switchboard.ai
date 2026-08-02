@@ -380,8 +380,30 @@ unmeasured and is E18-13, behind S-11.
 than in file-poll bursts; every existing Feed block type renders from the stream
 source; the transcript-driven path still renders PTY sessions unchanged (both
 sources, one renderer, one test matrix); a stream session that never receives a
-`result` does not leave a block open for ever.
+`result` does not leave a block open for ever; **a local slash command's output
+appears in the Session view** (#156 — the named case Dan added, evidence in
+`spike/findings/s-11-local-slash-commands.md`).
 *Depends on:* E18-08.
+
+**Shipped 2026-08-02**, then **reopened the same day by Dan's hand-test and
+fixed** — see `spike/findings/s-11-slash-commands-and-message-shape.md`. Two
+measured corrections: (1) the composer's autocomplete claimed **Enter**, so a
+slash command typed IN FULL was completed rather than sent and NONE of them ran,
+in either transport; (2) the real CLI emits **one `assistant` message per
+content block, mid-stream, each reporting content index 0**, so an
+index-only reconcile duplicated every block after the first. The fake sent the
+kinder shape and hid both. Original entry follows.
+
+**Shipped 2026-08-02.** Both sources now run the SAME derivation
+(`main/feed/blocks.ts` + `main/feed/buffer.ts`, extracted out of the watcher), so
+a block cannot look one way from a transcript and another from a stream. The
+stream source is `main/feed/stream-feed.ts`; a stream session's watch is created
+with `deriveFeed: false` so exactly one source is live per session. The adapter
+gained `--include-partial-messages`. **#156 was fixed on BOTH transports**: the
+stream delivers a local command as an ordinary `assistant` message, and the
+shared derivation now also renders the transcript's `system`/`local_command`
+entry with the `<local-command-stdout>` wrapper stripped — as an *assistant*
+block, deliberately, so one output cannot render two ways.
 
 ---
 

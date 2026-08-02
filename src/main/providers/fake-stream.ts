@@ -73,11 +73,19 @@ export const fakeStreamAdapter: ProviderAdapter = {
   // hole as #153, where the fake ignored the requested transport and made
   // switching untestable in principle. A fake that cannot say "no" cannot test
   // the request.
+  //
+  // `usage` is in the fallback ON PURPOSE (#163). Dan's report was that typing
+  // `/usage` as the FIRST thing in a Direct session did nothing — and the first
+  // thing in a session is exactly when the CLI has not spoken yet and the
+  // fallback is all there is. Without it in this list the popup never opens for
+  // `/usage`, Enter submits by the ordinary path, and the e2e passes without
+  // ever reaching the code that was broken.
   slashCommands(): SlashCommand[] {
     return [
       { name: 'clear', description: 'Clear conversation history', source: 'builtin' },
       { name: 'compact', description: 'Summarize the conversation', source: 'builtin' },
       { name: 'curated-only', description: 'Only in the curated list', source: 'builtin' },
+      { name: 'usage', description: 'Show subscription usage', source: 'builtin' },
     ];
   },
 

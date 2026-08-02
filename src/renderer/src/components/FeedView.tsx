@@ -13,7 +13,13 @@ import { rendererRegistry } from '../extensibility/registry-instance';
 import { renderFeedBlock } from '../extensibility/feed-render';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { interruptSession, submitPrompt } from '../lib/composer';
-import { filterCommands, insertCommand, SlashCommand, slashToken } from '../../../shared/slash-commands';
+import {
+  filterCommands,
+  insertCommand,
+  isCompleteCommand,
+  SlashCommand,
+  slashToken,
+} from '../../../shared/slash-commands';
 
 export type { FeedBlockDto } from '../lib/feed';
 
@@ -908,7 +914,19 @@ function Composer({
             }
             if (e.key === 'Enter' || e.key === 'Tab') {
               e.preventDefault();
-              pick(popup[Math.min(selected, popup.length - 1)].name);
+              const chosen = popup[Math.min(selected, popup.length - 1)];
+              // NOTHING LEFT TO COMPLETE -> Enter RUNS it (#163 hand-test).
+              // Typing `/usage` in full and pressing Enter used to "complete"
+              // it to `/usage ` and send nothing, which is indistinguishable
+              // from the app ignoring you — and is why Dan found every slash
+              // command dead in Direct mode. Tab still completes, so the
+              // trailing space is still one keystroke away when a command
+              // takes arguments.
+              if (e.key === 'Enter' && token !== null && isCompleteCommand(token, chosen.name)) {
+                submit();
+                return;
+              }
+              pick(chosen.name);
               return;
             }
             if (e.key === 'Escape') {

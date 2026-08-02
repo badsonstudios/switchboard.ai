@@ -10,7 +10,11 @@ autocomplete.
 Type **`/`** at the start of a line and a list appears:
 
 - **↑ / ↓** to move through it.
-- **Enter** or **Tab** to insert the highlighted command.
+- **Tab** to insert the highlighted command (and a space after it, ready for
+  arguments).
+- **Enter** to insert it too — *unless you've already typed the whole command*,
+  in which case Enter simply **sends** it. Typing `/usage` and pressing Enter
+  runs `/usage`; there's nothing left to complete.
 - **Esc** to dismiss.
 
 The list covers Claude Code's built-in commands *and* your own — project
@@ -19,7 +23,8 @@ personal ones. Each row is tagged with where it came from: **CLI**,
 **project**, **user**, or **skill**.
 
 A `/` typed mid-sentence is just a slash; the list only opens at the start of a
-line, and it never submits your prompt while it's open.
+line. While it's open it won't submit a *half-typed* command out from under
+you — only a complete one, which is what you asked for by typing it in full.
 
 ## Where the list comes from
 

@@ -311,6 +311,55 @@ describe('Feed block derivation (P2-E12-06 §5.10)', () => {
     const blocks = watcher.blocks('s1');
     expect(blocks.some((b) => b.sidechain && b.text === 'sub says hi')).toBe(true);
   });
+
+  // #156 / S-11. A LOCAL slash command (`/usage`, `/cost`, `/context`) writes
+  // NO assistant entry — the output arrives as `system:local_command` — so the
+  // Session view rendered nothing at all for one. This is the transcript half
+  // of the fix, which every PTY session gets too.
+  it('renders a local slash command\'s output, wrapper stripped (#156)', async () => {
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [
+      entry({ type: 'user', isMeta: true, message: { role: 'user', content: '<local-command-caveat>x</local-command-caveat>' } }),
+      entry({ type: 'user', message: { role: 'user', content: '<command-name>/usage</command-name>' } }),
+      entry({
+        type: 'system',
+        subtype: 'local_command',
+        level: 'info',
+        isMeta: false,
+        content: '<local-command-stdout>Current session: 2% used</local-command-stdout>',
+        message: undefined,
+      }),
+    ]);
+    await sleep(150);
+    const blocks = watcher.blocks('s1');
+    expect(blocks.map((b) => b.kind)).toEqual(['user', 'assistant']);
+    // the invocation, which the renderer collapses to a `/usage` pill…
+    expect(blocks[0].text).toBe('<command-name>/usage</command-name>');
+    // …and the output, which used to be dropped on the floor entirely
+    expect(blocks[1].text).toBe('Current session: 2% used');
+  });
+
+  // A stream session's Feed is built from typed messages (P2-E18-10). The
+  // watcher still binds, counts usage and learns the native id for it — it just
+  // must not ALSO derive blocks, or every one of them would render twice.
+  it('derives no blocks at all when the Feed has another source (deriveFeed: false)', async () => {
+    watcher.watch('s1', { cwd, deriveFeed: false });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    const seen: string[] = [];
+    const off = watcher.onBlock((_sid, b) => seen.push(b.kind));
+    writeLines(file, [
+      entry({ type: 'user', message: { role: 'user', content: 'do the thing' } }),
+      entry({ message: { content: [{ type: 'text', text: 'done' }] }, usage: undefined }),
+    ]);
+    await sleep(150);
+    off();
+    expect(seen).toEqual([]);
+    expect(watcher.blocks('s1')).toEqual([]);
+    // …and the rest of the watch is untouched: it still bound and read the file
+    expect(watcher.snapshot('s1')!.bound).toBe(true);
+    expect(watcher.snapshot('s1')!.lines).toBe(2);
+  });
 });
 
 describe('positive evidence required to claim (Dan 2026-07-22: summary-first files)', () => {

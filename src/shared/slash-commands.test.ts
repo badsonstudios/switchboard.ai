@@ -3,6 +3,7 @@ import {
   commandsFromCli,
   filterCommands,
   insertCommand,
+  isCompleteCommand,
   mergeCommands,
   SlashCommand,
   slashToken,
@@ -63,6 +64,35 @@ describe('insertCommand', () => {
   it('keeps whatever already follows the caret, without doubling a space', () => {
     expect(insertCommand('/cle the rest', 4, 'clear')).toBe('/clear the rest');
     expect(insertCommand('/clethe rest', 4, 'clear')).toBe('/clear the rest');
+  });
+});
+
+// #163 hand-test, 2026-08-02. Dan: "/usage does not work, nor does /agents,
+// /model, etc. It seems like NONE of the slash commands work" in Direct mode.
+// The CLI was innocent — every one of those returns renderable text over
+// stream-json. The composer never sent them: the popup claimed Enter to
+// CONFIRM a completion, so typing a command IN FULL and pressing Enter
+// replaced `/usage` with `/usage ` and ran nothing, which is indistinguishable
+// from being ignored.
+describe('isCompleteCommand (Enter runs it when there is nothing to complete)', () => {
+  it('a fully typed command is complete', () => {
+    expect(isCompleteCommand('usage', 'usage')).toBe(true);
+  });
+
+  it('a partial token is NOT — Enter still completes it', () => {
+    expect(isCompleteCommand('usa', 'usage')).toBe(false);
+    expect(isCompleteCommand('', 'usage')).toBe(false);
+  });
+
+  it('a token that merely CONTAINS the name is not complete either', () => {
+    // filterCommands matches on substring, so the popup can offer `/usage`
+    // for the token `usages` — which is not the same command
+    expect(isCompleteCommand('usages', 'usage')).toBe(false);
+  });
+
+  it('case-insensitive: /Usage is the command the user meant to run', () => {
+    expect(isCompleteCommand('Usage', 'usage')).toBe(true);
+    expect(isCompleteCommand('usage', 'Usage')).toBe(true);
   });
 });
 
