@@ -3,15 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <title>switchboard</title>
-    <!-- ORDERING DEPENDENCY: in dev, Vite injects the react-refresh inline
-         script BEFORE this meta tag, and meta CSP only governs content parsed
-         after it — that accident is why dev works with script-src 'self'.
-         If dev ever breaks with "can't detect preamble", this is why.
-         Revisit (header-based CSP from main) when IPC handlers land in E2. -->
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
-    />
+    <!-- No CSP <meta> here: the policy arrives as a RESPONSE HEADER, from the
+         loopback static server and from main's onHeadersReceived (P2-E15-12).
+         See src/shared/csp.ts. The build injects the prod policy back in as a
+         meta backstop for the file:// fallback path only. -->
   </head>
   <body>
     <div id="root"></div>

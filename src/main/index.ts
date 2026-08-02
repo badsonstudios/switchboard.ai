@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, screen, shell } from 'electron';
+import { app, BrowserWindow, Menu, screen, session, shell } from 'electron';
 import path from 'path';
 import { windowOptionsFrom, WindowState } from './window-state';
 import { WorkspaceStore, displayFingerprint } from './workspace/store';
@@ -23,6 +23,7 @@ import { Notifier } from './events/notifier';
 import { GitService } from './git/git-service';
 import { runPreflight } from './preflight';
 import { startStaticServer, StaticServer } from './static-server';
+import { installCspHeaders } from './csp';
 import { parsePopoutFeatures } from './popout-bounds';
 import { scanSlashCommands } from './capabilities/slash-commands';
 import { buildMenuTemplate } from './app-menu';
@@ -473,6 +474,17 @@ app
         log.app.error('static server failed; falling back to file://', { error: String(err) });
       }
     }
+    // Header-based CSP for every window in the default session — main and
+    // dockview's popout, dev server and loopback server alike (P2-E15-12,
+    // §5.29). Installed before the first window loads: a policy that arrives
+    // after the document has parsed is not a policy. The <meta> tag it replaces
+    // only ever worked in dev by accident of Vite's injection order.
+    installCspHeaders(
+      session.defaultSession,
+      rendererOrigin,
+      !!DEV_URL,
+      (err) => log.app.error('csp header listener failed', { error: String(err) })
+    );
     // The IPC choke point (P2-E15-04). Every channel registers through it, in
     // both directions; it refuses a call whose caller does not hold the
     // channel's capability. Created BEFORE any registration, and before the
