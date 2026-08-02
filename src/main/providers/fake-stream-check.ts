@@ -39,6 +39,31 @@ function waitFor(pred: () => boolean, ms: number, what: string): Promise<void> {
   });
 }
 
+/**
+ * The turn's reply text, from the first `assistant` message that CARRIES text.
+ *
+ * A turn emits one `assistant` message PER CONTENT BLOCK, not one per turn, and
+ * P2-E18-10 (#163) put a `thinking` block in front of the text one. So the
+ * first `assistant` message is now the thinking block, whose content has
+ * `.thinking` and no `.text` — and `find(m => m.type === 'assistant')` started
+ * reading `undefined` (#164). Search for the text block instead of quietly
+ * relying on there being only one, exactly as `fake-stream-protocol.test.ts`
+ * does; that unit test's helper stayed correct through the same change.
+ *
+ * Returns undefined when nothing carried text, so the check FAILS rather than
+ * throwing past the remaining assertions.
+ */
+function assistantText(): string | undefined {
+  for (const m of seen) {
+    if (m.type !== 'assistant') continue;
+    const content = (m.message as { content?: Array<{ type?: string; text?: string }> } | undefined)
+      ?.content;
+    const text = content?.find((c) => c.type === 'text')?.text;
+    if (typeof text === 'string') return text;
+  }
+  return undefined;
+}
+
 function userMsg(text: string): Record<string, unknown> {
   return {
     type: 'user',
@@ -50,9 +75,36 @@ function userMsg(text: string): Record<string, unknown> {
 
 async function main(): Promise<number> {
   // the REAL recipe, not a hand-built one — this is what the session manager
-  // would hand the transport
-  const recipe = fakeStreamAdapter.buildSpawn({ cwd: work, sessionId: 'check', stateDir: work });
+  // would hand the transport.
+  //
+  // `transport: 'stream'` is REQUIRED, not decorative. Since #153 the fake
+  // honours the requested transport instead of always returning a stream
+  // recipe, so omitting it asks for the adapter's default — the PTY recipe,
+  // i.e. `cmd.exe` on Windows and `sh` elsewhere. This check spawns over pipes,
+  // so that used to hand a bare shell a pipe full of NDJSON: cmd.exe echoed its
+  // banner into the parser and the run died 15 s later on "timed out waiting
+  // for the first result" (#164).
+  const recipe = fakeStreamAdapter.buildSpawn({
+    cwd: work,
+    sessionId: 'check',
+    stateDir: work,
+    transport: 'stream',
+  });
   check('adapter declares the stream transport', recipe.transport === 'stream');
+
+  // Fail FAST on a non-stream recipe. Spawning it anyway is what turned #164's
+  // one-line cause into a timeout and a wall of shell noise — the very first
+  // line of that run already said `FAIL adapter declares the stream transport`
+  // and 40 lines of banner buried it. A wrong recipe must fail as a wrong
+  // recipe, the same rule `fakeStreamCliPath()` follows for a wrong path.
+  if (recipe.transport !== 'stream') {
+    console.log(
+      `[fake-stream-check] FAIL: adapter returned a ${recipe.transport ?? 'pty'} recipe ` +
+        `(command: ${recipe.command}); refusing to drive stream-json over it`
+    );
+    fs.rmSync(work, { recursive: true, force: true });
+    return 1;
+  }
 
   const s = service.spawn({
     id: 'check',
@@ -70,10 +122,7 @@ async function main(): Promise<number> {
 
   check('system:init arrived', seen.some((m) => tag(m) === 'system:init'));
   check('token deltas arrived', seen.filter((m) => m.type === 'stream_event').length > 0);
-  const assistant = seen.find((m) => m.type === 'assistant') as
-    | { message: { content: Array<{ text: string }> } }
-    | undefined;
-  check('assistant text is the echo', assistant?.message.content[0].text === 'FAKE-REPLY: hello');
+  check('assistant text is the echo', assistantText() === 'FAKE-REPLY: hello');
   check('result:success arrived', seen.some((m) => tag(m) === 'result:success'));
   check('framing is intact', s.health.parseFailures === 0);
 
