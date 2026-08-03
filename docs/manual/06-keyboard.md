@@ -116,6 +116,46 @@ four that name a rung outright — **Expand session to its full card**,
 **Collapse session to a strip**, **Stack session with the tabbed sessions** and
 **Hide session (keeps it running)**.
 
+## Reading the conversation with the keyboard
+
+The conversation in the Session tab is full of things that open: command boxes,
+edit boxes, the **IN** and **OUT** sections inside a command box, folded
+thinking, and long prompts collapsed to one line. All of them work without the
+mouse.
+
+Press **`Tab`** until the conversation gets a highlight around it — from the
+prompt box, `Shift+Tab` a couple of times gets you there. A short reminder of
+these keys appears in the strip above the conversation while you're in it. Then:
+
+| Key | What it does |
+|---|---|
+| `↓` | Move to the next thing that opens |
+| `↑` | Move to the previous one |
+| `Home` | Jump to the first one in the conversation |
+| `End` | Jump to the last one |
+| `Enter` or `Space` | Open or close the one you're on |
+| `Esc` | Step back out to the conversation as a whole |
+| `Page Up` / `Page Down` | Scroll, as usual |
+
+Coming in from the top with `↓` starts you at the **beginning** of the
+conversation; coming in with `↑` starts you at the **end**, which is usually
+what you want — the newest activity is at the bottom.
+
+Whatever you're on is outlined, so you can always see where you are. Pressing
+`↓` on the very last one (or `↑` on the very first) scrolls instead of moving,
+rather than doing nothing.
+
+**The whole conversation is a single `Tab` stop**, on purpose. A long session
+has hundreds of boxes in it, and if each one took its own `Tab` press the prompt
+box underneath would be a hundred presses away. So `Tab` gets you *into* the
+conversation, the arrows move *within* it, and one more `Tab` takes you out to
+the prompt box.
+
+Screen readers are told the truth about all of this: each opener announces
+itself as a button and says whether it's currently open or closed, and reading
+the conversation with a screen reader's own navigation keys reaches every one of
+them regardless of `Tab`.
+
 ## Hiding the Sessions list
 
 `Ctrl+B` hides and shows the Sessions list on the left, for when you want the

@@ -261,6 +261,9 @@
     "workingStrip": "Claude is working",
     "expandHint": "click to expand",
     "collapsedIcon": "▸",
+    "expandedIcon": "▾",
+    "regionLabel": "Conversation",
+    "keyHint": "↑ ↓ move · Enter expands · Esc leaves",
     "slashSource": {
       "builtin": "CLI",
       "project-command": "project",
