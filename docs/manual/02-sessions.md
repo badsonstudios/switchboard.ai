@@ -53,6 +53,11 @@ the Session tab.
 A **suspended** session is one whose pop-out window you closed. The card stays,
 with a **Resume** button. Nothing is lost.
 
+Click **Resume** and the session comes back straight away — and so does the
+rest of the app's picture of it: its row in the Sessions list and its lamp in
+[the strip along the top](09-notifications.md#the-lamp-strip) both stop saying
+"suspended" the moment it restarts, without you clicking anything else.
+
 ## Restarting a dead session
 
 If a session ends or crashes, the card stays put and shows **Session ended**

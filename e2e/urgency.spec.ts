@@ -198,4 +198,39 @@ test.describe('urgency strip (E9-04)', () => {
       w.locator('nav [draggable="true"]', { hasText: title }).first()
     ).toHaveAttribute('data-session-status', 'idle');
   });
+
+  // #170 — the post-Resume half of the test above, which E9-04 deliberately
+  // left out because it did not pass: resuming produced no status CHANGE, so
+  // nothing refreshed the one `sessions:cards` list both of these read, and the
+  // card went on calling itself suspended indefinitely. The fake provider is
+  // the honest case — it posts no hooks, so nothing else comes along to refresh
+  // the list by accident, exactly like a real PTY session nobody has prompted.
+  test('resuming a suspended session refreshes the rail AND the strip (#170)', async () => {
+    skipPopoutOnLinux();
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const { app, window: w } = a;
+    const title = path.basename(folder);
+    const row = w.locator('nav [draggable="true"]', { hasText: title }).first();
+    await expect(lamp(w, title)).toBeVisible({ timeout: 25_000 });
+
+    // suspend it the way a user does: pop out, close the OS window (E8-04)
+    await w.getByTitle('Pop out into its own window').click();
+    await expect.poll(() => app.windows().length, { timeout: 15_000 }).toBe(2);
+    const popout = app.windows().find((x) => x !== w)!;
+    await popout.evaluate(() => window.close());
+    await expect.poll(() => app.windows().length, { timeout: 15_000 }).toBe(1);
+    await expect(lamp(w, title)).toHaveAttribute('data-suspended', 'true', { timeout: 15_000 });
+    await expect(row).toContainText('suspended', { timeout: 15_000 });
+
+    // ONE click, on the card's own Resume — and then nothing else. No refresh,
+    // no navigation, no second interaction: whatever moves next moved by
+    // itself, which is the entire done-when.
+    await w.getByRole('button', { name: 'Resume' }).click();
+
+    // both surfaces, because the bug was in neither of them: they read one
+    // list, and the list was what went stale
+    await expect(lamp(w, title)).toHaveAttribute('data-suspended', 'false', { timeout: 20_000 });
+    await expect(row).not.toContainText('suspended');
+  });
 });
