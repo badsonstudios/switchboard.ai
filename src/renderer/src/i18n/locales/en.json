@@ -14,7 +14,31 @@
     "rail": "▤ rail",
     "railHint": "Show or hide the sessions rail ({binding})",
     "palette": "▸ commands",
-    "paletteHint": "Show every command, with its shortcut ({binding})"
+    "paletteHint": "Show every command, with its shortcut ({binding})",
+    "buildLabel": "Version and build — click for details",
+    "buildHint": "Branch {branch} · built {builtAt} — click for the full build details"
+  },
+  "about": {
+    "title": "About this build",
+    "version": "Version",
+    "commit": "Commit",
+    "branch": "Branch",
+    "builtAt": "Built",
+    "buildAge": "Build age",
+    "platform": "Platform",
+    "detached": "detached",
+    "unknown": "unknown",
+    "ageValue": {
+      "now": "just now",
+      "minutes": "{n} min ago",
+      "hours": "{n} h ago",
+      "days": "{n} days ago"
+    },
+    "dirtyNote": "The working tree had uncommitted changes when this was built, so the commit above does not fully describe what you are running.",
+    "branchNote": "This is a build of {branch}, not of main.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "close": "Close"
   },
   "rail": {
     "eyebrow": "Sessions · {count}",
@@ -280,11 +304,13 @@
     "openPalette": "Show all commands",
     "goToSession": "Go to {title}",
     "jumpAttention": "Go to the next session that needs you",
+    "about": "About this build — version, commit, branch",
     "category": {
       "session": "Sessions",
       "view": "View",
       "goTo": "Go to",
-      "attention": "Attention"
+      "attention": "Attention",
+      "help": "Help"
     },
     "disabled": {
       "noSuchSession": "There is no session in that slot",

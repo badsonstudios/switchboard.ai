@@ -10,9 +10,14 @@ Each card has four tabs: **Session**, **Terminal**, **Changes**, and
 This is the conversation, rendered to be read rather than scrolled past:
 
 - **Your prompts** appear as tinted boxes.
-- **Claude's replies** are formatted text.
+- **Claude's replies** are formatted text, with no marker in the left margin —
+  they're the answer, not something that happened, so they sit clean.
+- **Anything Claude *did*** — running a command, editing a file, reading
+  something, updating its checklist — is a **bordered box** with a small dot in
+  the margin beside it. The boxes are what you scan for when you want to know
+  what a session has been up to.
 - **File edits** show the filename, a `+3 / -1 lines` summary, and the changed
-  lines in red and green. Click to collapse.
+  lines in red and green.
 - **Commands** show what was run and why, with **IN** and **OUT** sections you
   can expand separately.
 - **Thinking** collapses to "Thought for 4s" — expand if you care.
@@ -28,6 +33,23 @@ with a small block cursor on the end while Claude is still writing. In Terminal
 mode the view waits for each finished message instead, so replies arrive in
 chunks a moment behind. The blocks themselves are identical either way — only
 how quickly they fill in differs.
+
+### Expanding a box
+
+**Click anywhere on a box to open or close it.** You don't have to hit the
+title — the whole rectangle is the target. On a command box that shows you the
+full command and its full output in one click.
+
+Two things deliberately *don't* fold the box away:
+
+- The small **▸ IN** / **▸ OUT** arrows inside a command box, and the diff panes
+  inside an edit box. Those control just their own section, so you can open the
+  output without the command, or scroll a long diff in peace.
+- **Selecting text.** Dragging to highlight a file path or a line of output
+  leaves the box exactly as it was, so you can copy it without it disappearing.
+
+Checklist boxes have nothing to expand — they're already showing everything —
+so clicking one does nothing.
 
 ## When the Session tab has nothing in it
 
@@ -113,3 +135,5 @@ inside the Session view is planned, not built.
 
 - The Session tab is fully interactive; you never *have* to use the Terminal.
 - Very long prompts and skill payloads collapse to a summary — click to expand.
+- The boxes and the margin dots are drawn from your theme, so they stay legible
+  whichever one you're on.

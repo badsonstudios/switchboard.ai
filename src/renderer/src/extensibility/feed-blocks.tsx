@@ -21,6 +21,75 @@ import { FeedBlockRendererContribution, manifestFor } from './contributions';
 const STREAMING_CARET = '▌';
 
 /**
+ * Marks a subtree that owns its own clicks (#91). `ToolBox` walks up from the
+ * click target and stands down if it finds this, so an inner expander, a copy
+ * button or a scrollable pane can never also flip the whole box.
+ *
+ * An attribute rather than `stopPropagation()` on every inner handler: the rule
+ * then lives in ONE place and reads off the markup, instead of being a property
+ * of each handler that the next renderer has to remember to repeat.
+ */
+const NO_TOGGLE = { 'data-no-toggle': '' };
+
+/**
+ * The container a tool block lives in (#91, §5.10).
+ *
+ * Dan, 2026-07-26: a tool block was a dot plus some text, and "I'd like them
+ * enclosed in some sort of rectangular box to make them easy to see. That box,
+ * of course, is clickable so I can expand". So: a bordered, rounded surface
+ * that reads as one object in the conversation, and the WHOLE box is the
+ * expand target — not just the header line it used to be.
+ *
+ * `--panel2` on the feed's `--panel` background: a half-step lift that carries
+ * in both shipped themes (nordic #333a48 on #2b313d, daylight #f4f6f9 on white)
+ * with `--border` drawing the edge in either.
+ *
+ * EXPORTED because renderers are contributions and may live in any module
+ * (§5.23): a new tool renderer adopts the shipped container by wrapping in this
+ * rather than by re-deriving a border that drifts from everyone else's.
+ */
+export function ToolBox({
+  kind,
+  onToggle,
+  children,
+}: {
+  /** which renderer owns it — a test/debug hook, and the styling never varies */
+  kind: 'bash' | 'edit' | 'tool' | 'todos' | (string & {});
+  /** omitted when the block has nothing to expand (Todos): box, no toggle */
+  onToggle?: () => void;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  const click = onToggle
+    ? (e: React.MouseEvent<HTMLDivElement>): void => {
+        const target = e.target as Element | null;
+        if (target?.closest?.('[data-no-toggle]')) return;
+        // A drag that ended in a selection was a READ, not a click. Without
+        // this, selecting a file path out of a block collapses it on mouse-up
+        // and takes the thing you were reading off the screen.
+        const sel = e.currentTarget.ownerDocument.defaultView?.getSelection();
+        if (sel && !sel.isCollapsed && sel.toString().trim() !== '') return;
+        onToggle();
+      }
+    : undefined;
+  return (
+    <div
+      data-feed-box={kind}
+      onClick={click}
+      style={{
+        border: '1px solid var(--border)',
+        borderRadius: 8,
+        background: 'var(--panel2)',
+        padding: '5px 8px',
+        minInlineSize: 0,
+        cursor: onToggle ? 'pointer' : 'default',
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
  * Assistant prose. While it is STILL ARRIVING (P2-E18-10) it renders as plain
  * text with a caret on the end, and only becomes markdown once it is complete.
  *
@@ -56,23 +125,29 @@ function EditBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const added = (b.tool?.newString ?? '').split('\n').filter((l) => l.length > 0).length;
   const removed = (b.tool?.oldString ?? '').split('\n').filter((l) => l.length > 0).length;
   return (
-    <div style={{ fontSize: 11 }}>
-      <div onClick={() => setOpen(!open)} style={{ cursor: 'pointer', display: 'flex', gap: 6, alignItems: 'baseline' }}>
-        <span style={{ fontWeight: 700, color: 'var(--text)' }}>{b.tool?.name}</span>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minInlineSize: 0 }}>
-          {b.tool?.filePath ?? b.tool?.summary}
-        </span>
-      </div>
-      <div style={{ fontSize: 9.5, color: 'var(--faint)', marginBlock: 2 }}>
-        {t('feedView.editStats', { added, removed })}
-      </div>
-      {open && (
-        <div style={{ display: 'flex', gap: 4, maxBlockSize: 180, overflow: 'auto' }}>
-          {b.tool?.oldString && <pre style={editPane('var(--diff-removed-bg)')}>{b.tool.oldString}</pre>}
-          {b.tool?.newString && <pre style={editPane('var(--diff-added-bg)')}>{b.tool.newString}</pre>}
+    // the header no longer carries its own onClick — the BOX is the target now
+    // (#91), and leaving both would have toggled twice and cancelled out
+    <ToolBox kind="edit" onToggle={() => setOpen(!open)}>
+      <div style={{ fontSize: 11 }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+          <span style={{ fontWeight: 700, color: 'var(--text)' }}>{b.tool?.name}</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minInlineSize: 0 }}>
+            {b.tool?.filePath ?? b.tool?.summary}
+          </span>
         </div>
-      )}
-    </div>
+        <div style={{ fontSize: 9.5, color: 'var(--faint)', marginBlock: 2 }}>
+          {t('feedView.editStats', { added, removed })}
+        </div>
+        {open && (
+          // the diff is for READING: scrolling it and selecting out of it must
+          // not fold the block away underneath the pointer
+          <div {...NO_TOGGLE} style={{ display: 'flex', gap: 4, maxBlockSize: 180, overflow: 'auto' }}>
+            {b.tool?.oldString && <pre style={editPane('var(--diff-removed-bg)')}>{b.tool.oldString}</pre>}
+            {b.tool?.newString && <pre style={editPane('var(--diff-added-bg)')}>{b.tool.newString}</pre>}
+          </div>
+        )}
+      </div>
+    </ToolBox>
   );
 }
 
@@ -103,7 +178,9 @@ function BashBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
     open: boolean,
     toggle: () => void
   ): React.JSX.Element => (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', minInlineSize: 0 }}>
+    // IN and OUT stay INDEPENDENTLY expandable inside the box (#91) — so the
+    // section owns its clicks and the box stands down for them
+    <div {...NO_TOGGLE} style={{ display: 'flex', gap: 6, alignItems: 'baseline', minInlineSize: 0 }}>
       <span
         onClick={toggle}
         style={{ fontSize: 8.5, fontWeight: 700, color: 'var(--faint)', cursor: 'pointer', flexShrink: 0, inlineSize: 26 }}
@@ -129,16 +206,27 @@ function BashBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
       </pre>
     </div>
   );
+  // The box's own toggle (#91) is the COARSE one: Dan's ask was "click the box
+  // and see what the bash command is", so it opens both sections at once and a
+  // second click puts them both away. The per-section chevrons are still there
+  // for the finer moves.
+  const anyOpen = inOpen || outOpen;
+  const toggleAll = (): void => {
+    setInOpen(!anyOpen);
+    setOutOpen(!anyOpen);
+  };
   return (
-    <div style={{ fontSize: 11 }}>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', marginBlockEnd: 2 }}>
-        <span style={{ fontWeight: 700, color: 'var(--text)' }}>{b.tool?.name}</span>
-        <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>{b.tool?.description ?? ''}</span>
+    <ToolBox kind="bash" onToggle={toggleAll}>
+      <div style={{ fontSize: 11 }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', marginBlockEnd: 2 }}>
+          <span style={{ fontWeight: 700, color: 'var(--text)' }}>{b.tool?.name}</span>
+          <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>{b.tool?.description ?? ''}</span>
+        </div>
+        {section(t('feedView.in'), b.tool?.summary ?? '', inOpen, () => setInOpen(!inOpen))}
+        {b.tool?.out !== undefined &&
+          section(t('feedView.out'), b.tool.out, outOpen, () => setOutOpen(!outOpen))}
       </div>
-      {section(t('feedView.in'), b.tool?.summary ?? '', inOpen, () => setInOpen(!inOpen))}
-      {b.tool?.out !== undefined &&
-        section(t('feedView.out'), b.tool.out, outOpen, () => setOutOpen(!outOpen))}
-    </div>
+    </ToolBox>
   );
 }
 
@@ -146,69 +234,75 @@ function BashBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
 function TodosBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const { t } = useTranslation();
   return (
-    <div style={{ fontSize: 11 }}>
-      <div style={{ fontWeight: 700, color: 'var(--text)', marginBlockEnd: 2 }}>{t('feedView.updateTodos')}</div>
-      {(b.todos ?? []).map((td, i) => (
-        <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'baseline', color: 'var(--muted)' }}>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, flexShrink: 0, color: td.status === 'completed' ? 'var(--status-done)' : td.status === 'in_progress' ? 'var(--status-working)' : 'var(--faint)' }}>
-            {td.status === 'completed' ? t('feedView.todoDone') : td.status === 'in_progress' ? t('feedView.todoActive') : t('feedView.todoPending')}
-          </span>
-          <span style={{ minInlineSize: 0, textDecoration: td.status === 'completed' ? 'line-through' : 'none' }}>
-            {td.content}
-          </span>
-        </div>
-      ))}
-    </div>
+    // Boxed like every other tool block, but with NO toggle: a checklist is
+    // already shown in full, so there is no expansion to offer and a pointer
+    // cursor promising one would be a lie.
+    <ToolBox kind="todos">
+      <div style={{ fontSize: 11 }}>
+        <div style={{ fontWeight: 700, color: 'var(--text)', marginBlockEnd: 2 }}>{t('feedView.updateTodos')}</div>
+        {(b.todos ?? []).map((td, i) => (
+          <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'baseline', color: 'var(--muted)' }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, flexShrink: 0, color: td.status === 'completed' ? 'var(--status-done)' : td.status === 'in_progress' ? 'var(--status-working)' : 'var(--faint)' }}>
+              {td.status === 'completed' ? t('feedView.todoDone') : td.status === 'in_progress' ? t('feedView.todoActive') : t('feedView.todoPending')}
+            </span>
+            <span style={{ minInlineSize: 0, textDecoration: td.status === 'completed' ? 'line-through' : 'none' }}>
+              {td.content}
+            </span>
+          </div>
+        ))}
+      </div>
+    </ToolBox>
   );
 }
 
 function ToolRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const [open, setOpen] = React.useState(false);
   return (
-    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5 }}>
-      <div
-        onClick={() => b.tool?.detail && setOpen(!open)}
-        style={{
-          display: 'flex',
-          gap: 6,
-          alignItems: 'baseline',
-          cursor: b.tool?.detail ? 'pointer' : 'default',
-          color: 'var(--muted)',
-          padding: '1px 0',
-        }}
-      >
-        <span style={{ color: 'var(--faint)', fontSize: 8 }}>{open ? '▾' : '▸'}</span>
-        <span style={{ color: 'var(--status-working)', fontWeight: 600 }}>{b.tool?.name}</span>
-        <span
+    <ToolBox kind="tool" onToggle={b.tool?.detail ? () => setOpen(!open) : undefined}>
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5 }}>
+        <div
           style={{
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            minInlineSize: 0,
+            display: 'flex',
+            gap: 6,
+            alignItems: 'baseline',
+            color: 'var(--muted)',
+            padding: '1px 0',
           }}
         >
-          {b.tool?.summary}
-        </span>
+          <span style={{ color: 'var(--faint)', fontSize: 8 }}>{open ? '▾' : '▸'}</span>
+          <span style={{ color: 'var(--status-working)', fontWeight: 600 }}>{b.tool?.name}</span>
+          <span
+            style={{
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              minInlineSize: 0,
+            }}
+          >
+            {b.tool?.summary}
+          </span>
+        </div>
+        {open && b.tool?.detail && (
+          <pre
+            {...NO_TOGGLE}
+            style={{
+              margin: '2px 0 4px 14px',
+              padding: 6,
+              background: 'var(--panel)',
+              border: '1px solid var(--border)',
+              borderRadius: 4,
+              fontSize: 10,
+              maxBlockSize: 240,
+              overflow: 'auto',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all',
+            }}
+          >
+            {b.tool.detail}
+          </pre>
+        )}
       </div>
-      {open && b.tool?.detail && (
-        <pre
-          style={{
-            margin: '2px 0 4px 14px',
-            padding: 6,
-            background: 'var(--panel)',
-            border: '1px solid var(--border)',
-            borderRadius: 4,
-            fontSize: 10,
-            maxBlockSize: 240,
-            overflow: 'auto',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-all',
-          }}
-        >
-          {b.tool.detail}
-        </pre>
-      )}
-    </div>
+    </ToolBox>
   );
 }
 

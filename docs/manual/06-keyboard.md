@@ -109,9 +109,12 @@ it's a click that brings it back rather than a key; see
 [Organizing your workspace](07-workspace.md#getting-a-session-out-of-the-way).
 
 The rest live in the palette without a shortcut of their own: **Toggle Changes
-view**, and the four that name a rung outright — **Expand session to its full
-card**, **Collapse session to a strip**, **Stack session with the tabbed
-sessions** and **Hide session (keeps it running)**.
+view**; **About this build**, which tells you exactly which version you're
+running (see
+[Troubleshooting](11-troubleshooting.md#which-version-am-i-running)); and the
+four that name a rung outright — **Expand session to its full card**,
+**Collapse session to a strip**, **Stack session with the tabbed sessions** and
+**Hide session (keeps it running)**.
 
 ## Hiding the Sessions list
 

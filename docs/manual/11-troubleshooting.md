@@ -2,6 +2,54 @@
 
 > Status: draft
 
+## Which version am I running?
+
+**Before you chase any bug, check you're looking at the build you think you
+are.** It's the first thing to rule out, and it takes five seconds.
+
+At the top left of the window, next to the switchboard name, is the version and
+a short code — something like **`v0.1.0  a1b2c3d4`**. That code is the exact
+snapshot of the source this copy was built from. Click it and you get the full
+picture:
+
+| Field | What it tells you |
+|---|---|
+| **Version** | The release number. Changes when a new version ships. |
+| **Commit** | The exact source snapshot this was built from. |
+| **Branch** | Which line of development it came from. `main` is the normal one. |
+| **Built** | When this copy was built. |
+| **Build age** | How long ago that was — *"just now"*, *"3 h ago"*, *"4 days ago"*. |
+| **Platform** | Which operating system it's running on. |
+
+**Build age is the one that catches the usual mistake.** If you were told a fix
+just landed and this build is four days old, you're running an old copy — you
+haven't found a bug, you've found a stale build. Rebuild or reinstall and try
+again.
+
+**A star after the code (`a1b2c3d4*`)** means the copy was built from a working
+folder with unsaved edits in it, so the code shown doesn't completely describe
+what you're running. Normal while someone is developing; unexpected in a
+released copy.
+
+**If it says `unknown`** instead of a code, the build was made somewhere the
+source history wasn't available. Everything still works — the app just can't
+tell you where it came from.
+
+You can also reach this from the keyboard: press `Ctrl+Shift+P` and type
+*build*.
+
+**The window's own title bar helps too.** A normal release just says
+**switchboard**. Anything else — a test build, a development branch — adds the
+branch and code, so you can tell two copies apart from the taskbar without
+even opening them.
+
+Use **Copy** in the panel when you report a problem; it puts all of this on the
+clipboard in one go.
+
+<!-- screenshot: the About this build panel, showing a recent build -->
+
+## Sessions
+
 **A banner says the claude CLI wasn't found.**
 Install it and sign in, then restart switchboard:
 `npm install -g @anthropic-ai/claude-code`, then run `claude` once in a
