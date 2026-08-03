@@ -158,6 +158,43 @@ export interface TranscriptWatcherOptions {
   discovery?: Omit<DiscoveryScheduleOptions, 'log'>;
 }
 
+/**
+ * Read a byte range out of `file` with the descriptor closed on EVERY path —
+ * including the one where the read throws (#179).
+ *
+ * Both readers here used to `openSync` / `readSync` / `closeSync` inside one
+ * `try`, so a read that threw skipped the close and leaked the descriptor. On
+ * Windows an open handle PINS the file: the user's own transcript then can't be
+ * rotated or deleted (EBUSY) for the lifetime of the app. Fail-open means our
+ * failures cost the user nothing — that has to include their files, not just
+ * their session.
+ *
+ * Returns the number of bytes read, or `null` when the file could not be read
+ * at all (missing, locked, mid-rotation) — every caller treats that as "nothing
+ * to see yet" and tries again on the next tick.
+ */
+function readRange(file: string, buf: Buffer, position: number): number | null {
+  let fd: number | null = null;
+  try {
+    fd = fs.openSync(file, 'r');
+    return fs.readSync(fd, buf, 0, buf.length, position);
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // A throw out of `finally` REPLACES the value the body returned, so an
+        // unlucky close (EBADF, a descriptor the OS already reclaimed) would
+        // escape past the `catch` above and reach callers that are written to
+        // never see a throw. There is nothing useful to do about a failed close
+        // anyway — the descriptor is gone either way.
+      }
+    }
+  }
+}
+
 /** Path equality that tolerates case + separator differences on win32. */
 export function sameFolder(a: string, b: string): boolean {
   const norm = (p: string) => {
@@ -869,16 +906,10 @@ export class TranscriptWatcher {
   /** First cwd + sessionId found in the head of the file — summary/meta
    *  records on line 1 carry neither, so scan a handful of lines. */
   private readHead(full: string): { cwd?: string; sessionId?: string } | null {
-    let text: string;
-    try {
-      const fd = fs.openSync(full, 'r');
-      const buf = Buffer.alloc(262_144); // snapshot-sized first lines are real
-      const n = fs.readSync(fd, buf, 0, buf.length, 0);
-      fs.closeSync(fd);
-      text = buf.toString('utf8', 0, n);
-    } catch {
-      return null;
-    }
+    const buf = Buffer.alloc(262_144); // snapshot-sized first lines are real
+    const n = readRange(full, buf, 0);
+    if (n === null) return null;
+    const text = buf.toString('utf8', 0, n);
     const out: { cwd?: string; sessionId?: string } = {};
     for (const line of text.split('\n').slice(0, 25)) {
       if (!line.trim()) continue;
@@ -903,17 +934,16 @@ export class TranscriptWatcher {
       return;
     }
     if (st.size <= tail.offset) return;
-    let chunk: Buffer;
-    try {
-      const fd = fs.openSync(full, 'r');
-      chunk = Buffer.alloc(st.size - tail.offset);
-      fs.readSync(fd, chunk, 0, chunk.length, tail.offset);
-      fs.closeSync(fd);
-    } catch {
-      return;
-    }
-    tail.offset = st.size;
-    tail.buf += chunk.toString('utf8');
+    const chunk = Buffer.alloc(st.size - tail.offset);
+    const n = readRange(full, chunk, tail.offset);
+    if (n === null) return;
+    // Advance by what was actually READ, not by the size `stat` reported. They
+    // are the same for the normal full read; they differ if the file shrank
+    // between the stat and the read, and trusting `st.size` there would both
+    // append the untouched zero-fill of the buffer and skip past bytes we never
+    // saw.
+    tail.offset += n;
+    tail.buf += chunk.toString('utf8', 0, n);
     let nl: number;
     let touched = false;
     while ((nl = tail.buf.indexOf('\n')) >= 0) {

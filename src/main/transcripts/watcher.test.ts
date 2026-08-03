@@ -1241,3 +1241,99 @@ describe('discovery still works with no filesystem watch at all (P2-E15-11 fail-
     }
   });
 });
+
+describe('descriptor hygiene on the read error path (#179)', () => {
+  // Fail-open has a second half nobody wrote down until this bug: our failures
+  // must not cost the user their FILES either. A read that threw between
+  // `openSync` and `closeSync` used to leak the descriptor, and on Windows an
+  // open handle pins the transcript — the CLI's own rotation/delete then fails
+  // with EBUSY for as long as the app runs.
+
+  /** Instrument `fs` so every descriptor we take on a `.jsonl` is tracked and
+   *  every read of one throws. The caller MUST call `restore()` in a `finally`
+   *  — vitest is not configured to restore mocks between tests. */
+  function trapTranscriptReads() {
+    const realOpen = fs.openSync.bind(fs);
+    const realClose = fs.closeSync.bind(fs);
+    const realRead = fs.readSync.bind(fs) as (...args: unknown[]) => number;
+    const opened = new Map<number, string>();
+    const closed = new Set<number>();
+    vi.spyOn(fs, 'openSync').mockImplementation(((file: fs.PathLike, flags: never, mode: never) => {
+      const fd = realOpen(file, flags, mode);
+      if (String(file).endsWith('.jsonl')) opened.set(fd, String(file));
+      return fd;
+    }) as typeof fs.openSync);
+    vi.spyOn(fs, 'closeSync').mockImplementation((fd: number) => {
+      closed.add(fd);
+      realClose(fd);
+    });
+    vi.spyOn(fs, 'readSync').mockImplementation(((fd: number, ...rest: unknown[]) => {
+      if (opened.has(fd)) throw Object.assign(new Error('EIO: simulated read failure'), { code: 'EIO' });
+      return realRead(fd, ...rest);
+    }) as unknown as typeof fs.readSync);
+    return {
+      /** how many transcript descriptors were taken — 0 means the test proved
+       *  nothing, because the code path under test never ran */
+      get attempts(): number {
+        return opened.size;
+      },
+      get leaked(): string[] {
+        return [...opened].filter(([fd]) => !closed.has(fd)).map(([, file]) => file);
+      },
+      restore(): void {
+        vi.restoreAllMocks();
+      },
+    };
+  }
+
+  /** Wait for a condition instead of guessing a sleep: discovery runs on a
+   *  backoff ladder that reaches 2s while a session stays unbound, so a fixed
+   *  wait here would be a flake generator on a loaded machine. */
+  async function waitFor(cond: () => boolean, timeoutMs = 4000): Promise<void> {
+    const until = Date.now() + timeoutMs;
+    while (Date.now() < until) {
+      if (cond()) return;
+      await sleep(25);
+    }
+    expect(cond(), 'condition never became true').toBe(true);
+  }
+
+  it('closes the descriptor when the drain read throws, and recovers afterwards', async () => {
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [entry()]);
+    await waitFor(() => watcher.snapshot('s1')!.bound);
+    const before = watcher.snapshot('s1')!.lines;
+
+    const trap = trapTranscriptReads();
+    try {
+      writeLines(file, [entry({ message: { usage: { output_tokens: 3 } } })]);
+      await waitFor(() => trap.attempts > 0); // the drain really did run
+      await sleep(100); // ...and keep failing for a few more polls
+      expect(trap.leaked).toEqual([]); // every descriptor was handed back
+      expect(watcher.snapshot('s1')!.lines).toBe(before); // fail-open: no crash, nothing bogus ingested
+    } finally {
+      trap.restore();
+    }
+
+    // The failure was transient, and the offset never advanced past bytes we
+    // never read — so a later poll picks the append up.
+    await waitFor(() => watcher.snapshot('s1')!.lines > before);
+  });
+
+  it('closes the descriptor when the head read throws while judging a candidate', async () => {
+    const trap = trapTranscriptReads();
+    try {
+      watcher.watch('s1', { cwd });
+      writeLines(path.join(projectDir(), 'native-1.jsonl'), [entry()]);
+      await waitFor(() => trap.attempts > 0); // a candidate really was examined
+      expect(trap.leaked).toEqual([]);
+      expect(watcher.snapshot('s1')!.bound).toBe(false); // unreadable head = no evidence = no bind
+    } finally {
+      trap.restore();
+    }
+
+    // and the refusal is not sticky: once the reads work, it binds
+    await waitFor(() => watcher.snapshot('s1')!.bound);
+  });
+});
