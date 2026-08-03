@@ -11,7 +11,7 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { launchApp, LaunchedApp } from './fixtures/app';
+import { keepCardsVisible, launchApp, LaunchedApp } from './fixtures/app';
 
 function tempProjectFolder(): string {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-stream-e2e-'));
@@ -46,6 +46,7 @@ test.describe('a stream-json session (P2-E18-08a)', () => {
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
       timeout: 25_000,
     });
+    await keepCardsVisible(w);
 
     const box = w.getByPlaceholder(/Prompt this session/);
     await box.click();
@@ -75,6 +76,7 @@ test.describe('a stream-json session (P2-E18-08a)', () => {
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
       timeout: 25_000,
     });
+    await keepCardsVisible(w);
 
     const box = w.getByPlaceholder(/Prompt this session/);
     await box.click();
@@ -124,6 +126,7 @@ test.describe('the Feed renders a stream session (P2-E18-08b)', () => {
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
       timeout: 25_000,
     });
+    await keepCardsVisible(w);
 
     const box = w.getByPlaceholder(/Prompt this session/);
     await box.click();
@@ -161,6 +164,7 @@ test.describe('slash commands come from the CLI in Direct mode (P2-E18-09)', () 
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
       timeout: 25_000,
     });
+    await keepCardsVisible(w);
 
     // BEFORE any turn: the curated list, and this is the normal state rather
     // than a race. The CLI emits nothing at spawn (S-11 measured `init`
@@ -206,6 +210,7 @@ test.describe('slash commands come from the CLI in Direct mode (P2-E18-09)', () 
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
       timeout: 25_000,
     });
+    await keepCardsVisible(w);
 
     const box = w.getByPlaceholder(/Prompt this session/);
     await box.click();
@@ -230,6 +235,7 @@ test.describe('slash commands come from the CLI in Direct mode (P2-E18-09)', () 
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
       timeout: 25_000,
     });
+    await keepCardsVisible(w);
 
     const box = w.getByPlaceholder(/Prompt this session/);
     await box.click();
@@ -258,6 +264,7 @@ test.describe('the stop button actually stops (#154)', () => {
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
       timeout: 25_000,
     });
+    await keepCardsVisible(w);
 
     // `!hang` starts a turn and never finishes it, which is the only way to
     // hold a session in `working` — the one state the stop button renders in.
@@ -299,6 +306,7 @@ test.describe('the Terminal tab degrades honestly (P2-E18-08b)', () => {
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
       timeout: 25_000,
     });
+    await keepCardsVisible(w);
 
     await w.getByRole('button', { name: 'Terminal' }).first().click();
 
@@ -314,6 +322,7 @@ test.describe('the Terminal tab degrades honestly (P2-E18-08b)', () => {
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
       timeout: 25_000,
     });
+    await keepCardsVisible(w);
 
     await w.getByRole('button', { name: 'Terminal' }).first().click();
 
@@ -345,6 +354,7 @@ test.describe('switching transport the way a user does (#153)', () => {
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
       timeout: 25_000,
     });
+    await keepCardsVisible(w);
 
     // it starts on the terminal
     await w.getByRole('button', { name: 'Terminal' }).first().click();
@@ -384,6 +394,7 @@ test.describe('switching transport the way a user does (#153)', () => {
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
       timeout: 25_000,
     });
+    await keepCardsVisible(w);
 
     await w.getByRole('button', { name: '⋯' }).first().click();
     await w.getByRole('button', { name: /switch to Direct/i }).click();
@@ -448,6 +459,7 @@ test.describe('switching transport the way a user does (#153)', () => {
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
       timeout: 25_000,
     });
+    await keepCardsVisible(w);
 
     await w.getByRole('button', { name: '⋯' }).first().click();
     await w.getByRole('button', { name: /switch to Direct/i }).click();
@@ -481,6 +493,7 @@ test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
       timeout: 25_000,
     });
+    await keepCardsVisible(w);
 
     // `!partial` emits three text deltas and then stops: no `assistant`
     // message, no `result`, no transcript line. The only way this text can be
@@ -510,6 +523,7 @@ test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
       timeout: 25_000,
     });
+    await keepCardsVisible(w);
 
     // TYPED THE WAY A USER TYPES IT, and ONE Enter. This test used to press
     // Escape first, to get the autocomplete popup out of the way — and that
@@ -555,6 +569,7 @@ test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
       timeout: 25_000,
     });
+    await keepCardsVisible(w);
 
     const box = w.getByPlaceholder(/Prompt this session/);
     await box.click();

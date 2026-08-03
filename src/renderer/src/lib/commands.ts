@@ -40,6 +40,15 @@ export interface CommandContext {
   /** card id of the currently focused session card, if any */
   activeCardId: string | null;
   /**
+   * The persistent group the focused card belongs to, or null.
+   *
+   * Here rather than looked up inside a command because the palette and the
+   * dispatcher build this context at two different moments, and a command that
+   * resolved membership itself would be reading the store at a third — which is
+   * how an entry ends up enabled in the list and a no-op on the keyboard.
+   */
+  activeGroupId: string | null;
+  /**
    * How many sessions are waiting on a human right now (lib/queue). Required
    * rather than optional so every dispatch site has to pass the LIVE depth —
    * a stale or omitted count would grey out the jump hotkey while sessions

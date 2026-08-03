@@ -26,6 +26,14 @@ import { railOrder } from '../lib/groups';
 import { presentStatus, needCount, clampRailWidth, RAIL_WIDTH_DEFAULT } from '../lib/rail-view';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { getDraggedCard, setDraggedCard } from '../lib/drag-context';
+import {
+  cardOverride,
+  groupOverride,
+  POLICY_ORDER,
+  PolicyBook,
+  PresentationPolicy,
+  resolvePolicy,
+} from '../lib/presentation-policy';
 
 export type { RailSession, RailGroup } from '../model/types';
 
@@ -57,6 +65,17 @@ export function SessionsRail(props: {
   onOpenInGroup: (id: string) => void;
   /** move a session between groups / to ungrouped (E12-04, rail DnD) */
   onMoveToGroup: (cardId: string, groupId: string | null) => void;
+  /**
+   * §5.8's presentation policy and its overrides (E9-06).
+   *
+   * The rail is where the per-SESSION and per-GROUP overrides belong, because it
+   * is the only surface that lists both — the override sits next to the thing it
+   * overrides, while the global default is a titlebar chip.
+   */
+  policies: PolicyBook;
+  /** `undefined` clears the override and follows the default again */
+  onSetSessionPolicy: (cardId: string, policy: PresentationPolicy | undefined) => void;
+  onCycleGroupPolicy: (groupId: string) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [editing, setEditing] = React.useState<string | null>(null);
@@ -604,6 +623,31 @@ export function SessionsRail(props: {
                 marginInlineStart: 4,
               }}
             >
+              {/* §5.8's per-GROUP presentation override (E9-06). A cycle here,
+                  unlike the session menu: the button stays put, so one click
+                  per step is the cheapest gesture there is, and the tooltip
+                  always names the state it is currently in. */}
+              <button
+                className="rail-x"
+                data-group-policy={g.id}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  props.onCycleGroupPolicy(g.id);
+                }}
+                title={t('ladder.policyGroup', {
+                  policy: (() => {
+                    const own = groupOverride(props.policies, g.id);
+                    return own ? t(`policy.${own}`) : t('policy.groupDefault');
+                  })(),
+                })}
+                style={{
+                  fontSize: 10,
+                  // an override is a state worth seeing without hovering
+                  opacity: groupOverride(props.policies, g.id) ? 1 : 0.55,
+                }}
+              >
+                {t('ladder.policyGroupIcon')}
+              </button>
               <button
                 className="rail-x"
                 onClick={(e) => {
@@ -862,6 +906,69 @@ export function SessionsRail(props: {
               {t(key)}
             </div>
           ))}
+          {/* §5.8's per-SESSION presentation override (E9-06). Named values
+              rather than one cycling row: a menu closes when you click it, so a
+              cycle would cost a right-click per step — and the point of an
+              override is to say what you want, not to walk past it.
+              A labelled group, so the radio set reads as one choice to a screen
+              reader rather than four loose items after three commands. */}
+          <div role="group" aria-label={t('ladder.policyMenu')}>
+            <div
+              aria-hidden
+              style={{
+                marginBlockStart: 4,
+                paddingBlock: '4px 2px',
+                paddingInline: 9,
+                borderBlockStart: '1px solid var(--border)',
+                color: 'var(--faint)',
+                fontSize: 9.5,
+                textTransform: 'uppercase',
+                letterSpacing: 0.4,
+              }}
+            >
+              {t('ladder.policyMenu')}
+          </div>
+          {[undefined, ...POLICY_ORDER].map((policy) => {
+            const own = cardOverride(props.policies, menu.session.id);
+            const chosen = own === policy;
+            return (
+              <div
+                key={policy ?? 'default'}
+                role="menuitemradio"
+                aria-checked={chosen}
+                data-policy-item={policy ?? 'default'}
+                className="rail-menu-item"
+                onClick={() => {
+                  setMenu(null);
+                  props.onSetSessionPolicy(menu.session.id, policy);
+                }}
+                style={{
+                  padding: '5px 9px',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  color: 'var(--text)',
+                  whiteSpace: 'nowrap',
+                  fontWeight: chosen ? 700 : 400,
+                }}
+              >
+                {/* the tick keeps its column whether or not it is drawn, so the
+                    labels do not shuffle sideways as the choice moves */}
+                <span aria-hidden style={{ display: 'inline-block', inlineSize: 12 }}>
+                  {chosen ? '✓' : ''}
+                </span>
+                {policy
+                  ? t(`policy.${policy}`)
+                  : t('ladder.policyDefault', {
+                      // what following the default MEANS for this session right
+                      // now — which may be its group's override, not the global
+                      policy: t(
+                        `policy.${resolvePolicy({ ...props.policies, cards: {} }, menu.session.id, menu.session.groupId)}`
+                      ),
+                    })}
+              </div>
+            );
+          })}
+          </div>
         </div>
       )}
     </nav>

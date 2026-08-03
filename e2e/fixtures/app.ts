@@ -239,6 +239,39 @@ export async function showTerminal(window: Page): Promise<void> {
 }
 
 /**
+ * Set §5.8's global presentation policy from the titlebar chip (P2-E9-06).
+ *
+ * The chip CYCLES, so this walks it to the label rather than guessing a click
+ * count — which also means it keeps working if the default or the order changes.
+ */
+export async function setPresentationPolicy(window: Page, label: string): Promise<void> {
+  const chip = window.getByTestId('presentation-policy');
+  for (let i = 0; i < 4; i++) {
+    if ((await chip.innerText()).includes(label)) return;
+    await chip.click();
+  }
+  throw new Error(`the presentation-policy chip never reached "${label}"`);
+}
+
+/**
+ * Stop cards from folding away when a prompt is submitted (P2-E9-06).
+ *
+ * The DEFAULT policy is auto-collapse: submitting from the composer gives that
+ * card's dock slot back and leaves a row in the collapsed strip. That is the
+ * product behaviour, and `presentation-policy.spec.ts` is where it is asserted.
+ *
+ * Every OTHER spec that submits a prompt is testing the composer, the feed, the
+ * terminal or the stream transport, and for those a card that leaves the
+ * workspace half-way through is noise — it fails as "element was detached from
+ * the DOM", which says nothing about the thing under test. Call this after
+ * launching in any spec that submits a prompt and then keeps looking at the
+ * card.
+ */
+export async function keepCardsVisible(window: Page): Promise<void> {
+  await setPresentationPolicy(window, 'Keep visible');
+}
+
+/**
  * The workspace store inside a launched app's isolated home.
  *
  * Electron puts userData somewhere different on each OS, and hard-coding the

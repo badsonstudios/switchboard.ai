@@ -9,6 +9,7 @@
 import { Command, CommandContext } from './commands';
 import { PanelId } from '../extensibility/contributions';
 import type { Ladder } from './presentation';
+import { POLICY_ORDER, PresentationPolicy } from './presentation-policy';
 
 export interface CommandDeps {
   /** focus the session card with this card id */
@@ -27,6 +28,12 @@ export interface CommandDeps {
   setLadder: (cardId: string, rung: Ladder) => void;
   /** step a card one rung down (collapse) or up (expand) — E9-05 */
   stepLadder: (cardId: string, dir: 'down' | 'up') => void;
+  /** what happens to EVERY session's card when its prompt is submitted (E9-06) */
+  setGlobalPolicy: (policy: PresentationPolicy) => void;
+  /** override the global for ONE session; `undefined` follows the default again */
+  setSessionPolicy: (cardId: string, policy: PresentationPolicy | undefined) => void;
+  /** override the global for a whole persistent group (E9-06) */
+  setGroupPolicy: (groupId: string, policy: PresentationPolicy | undefined) => void;
   /** show/hide the sessions rail */
   toggleRail: () => void;
   /** open the command palette (E9-02) */
@@ -251,6 +258,81 @@ export function buildCommands(deps: CommandDeps): Command[] {
       disabledReasonKey: 'commands.disabled.noActiveSession',
       run: (ctx) => {
         if (ctx.activeCardId) deps.hideCard(ctx.activeCardId);
+      },
+    },
+    // ── §5.8's presentation POLICY (E9-06) ────────────────────────────────
+    //
+    // Named targets, not a cycle. A palette entry has to say what it will DO
+    // before you press Enter — "cycle the presentation policy" tells you only
+    // that something will change, and the mouse paths (the titlebar chip, the
+    // rail menus) are where cycling belongs.
+    //
+    // Generated from POLICY_ORDER rather than written out three times, so a
+    // fourth policy cannot ship with two of its three entries.
+    ...POLICY_ORDER.map(
+      (policy): Command => ({
+        id: `presentation.policy.${policy}`,
+        titleKey: `commands.policy.${policy}`,
+        categoryKey: CATEGORY_VIEW,
+        scope: 'app' as const, // palette-only: a preference, not a per-minute action
+        run: () => deps.setGlobalPolicy(policy),
+      })
+    ),
+    ...POLICY_ORDER.map(
+      (policy): Command => ({
+        id: `session.policy.${policy}`,
+        titleKey: `commands.sessionPolicy.${policy}`,
+        categoryKey: CATEGORY_SESSION,
+        scope: 'app' as const,
+        enabled: hasActive,
+        disabledReasonKey: 'commands.disabled.noActiveSession',
+        run: (ctx) => {
+          if (ctx.activeCardId) deps.setSessionPolicy(ctx.activeCardId, policy);
+        },
+      })
+    ),
+    {
+      // The way BACK from an override. "Follow the default" has to be a command
+      // of its own: without it the only route out of a per-session choice would
+      // be picking the value the default happens to have today, which stops
+      // being the default the moment the user changes it.
+      id: 'session.policy.default',
+      titleKey: 'commands.sessionPolicy.default',
+      categoryKey: CATEGORY_SESSION,
+      scope: 'app',
+      enabled: hasActive,
+      disabledReasonKey: 'commands.disabled.noActiveSession',
+      run: (ctx) => {
+        if (ctx.activeCardId) deps.setSessionPolicy(ctx.activeCardId, undefined);
+      },
+    },
+    // The GROUP level exists only as a button on the rail's group header, and
+    // `Ctrl+B` hides the rail. §5.8's invariant is that hiding chrome never
+    // removes capability, so it has to be here too — acting on the focused
+    // session's group, which is the only group the palette can name without
+    // inventing a group picker.
+    ...POLICY_ORDER.map(
+      (policy): Command => ({
+        id: `group.policy.${policy}`,
+        titleKey: `commands.groupPolicy.${policy}`,
+        categoryKey: CATEGORY_SESSION,
+        scope: 'app' as const,
+        enabled: (ctx) => ctx.activeGroupId !== null,
+        disabledReasonKey: 'commands.disabled.noActiveGroup',
+        run: (ctx) => {
+          if (ctx.activeGroupId) deps.setGroupPolicy(ctx.activeGroupId, policy);
+        },
+      })
+    ),
+    {
+      id: 'group.policy.default',
+      titleKey: 'commands.groupPolicy.default',
+      categoryKey: CATEGORY_SESSION,
+      scope: 'app',
+      enabled: (ctx) => ctx.activeGroupId !== null,
+      disabledReasonKey: 'commands.disabled.noActiveGroup',
+      run: (ctx) => {
+        if (ctx.activeGroupId) deps.setGroupPolicy(ctx.activeGroupId, undefined);
       },
     },
     {

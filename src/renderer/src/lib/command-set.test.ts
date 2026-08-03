@@ -3,6 +3,7 @@ import { buildCommands, CommandDeps } from './command-set';
 import { Command, CommandContext } from './commands';
 import { TERMINAL_ACCELERATORS } from '../../../shared/terminal-accelerators';
 import en from '../i18n/locales/en.json';
+import { POLICY_ORDER } from './presentation-policy';
 
 function deps(): CommandDeps & { focusCard: ReturnType<typeof vi.fn> } {
   return {
@@ -14,6 +15,9 @@ function deps(): CommandDeps & { focusCard: ReturnType<typeof vi.fn> } {
     hideCard: vi.fn(),
     setLadder: vi.fn(),
     stepLadder: vi.fn(),
+    setGlobalPolicy: vi.fn(),
+    setSessionPolicy: vi.fn(),
+    setGroupPolicy: vi.fn(),
     toggleRail: vi.fn(),
     openPalette: vi.fn(),
     toggleTabRows: vi.fn(),
@@ -30,9 +34,11 @@ const ctxWith = (
   ids: string[],
   active: string | null = null,
   attentionCount = 0,
+  activeGroupId: string | null = null,
 ): CommandContext => ({
   sessions: ids.map((id) => ({ id, title: id })),
   activeCardId: active,
+  activeGroupId,
   attentionCount,
 });
 
@@ -236,5 +242,76 @@ describe('seed command set (E9-01)', () => {
       expect(cmd, `${a.commandId} is not a registered command`).toBeDefined();
       expect(cmd!.binding, `${a.commandId} binding drifted`).toBe(a.binding);
     }
+  });
+
+  // ── presentation policy (E9-06, §5.8) ─────────────────────────────────────
+  describe('presentation policy', () => {
+    it('names every policy at both levels — the global and the active session', () => {
+      // generated from POLICY_ORDER, so a fourth policy cannot ship with two of
+      // its three entries; this asserts the generation actually happened
+      const cmds = buildCommands(deps());
+      for (const p of POLICY_ORDER) {
+        expect(byId(cmds, `presentation.policy.${p}`)).toBeDefined();
+        expect(byId(cmds, `session.policy.${p}`)).toBeDefined();
+      }
+      expect(byId(cmds, 'session.policy.default')).toBeDefined();
+    });
+
+    it('the global entries set the global, with no session needed', () => {
+      const d = deps();
+      const cmds = buildCommands(d);
+      byId(cmds, 'presentation.policy.auto-hide').run(ctxWith([], null));
+      expect(d.setGlobalPolicy).toHaveBeenCalledWith('auto-hide');
+      // a workspace-wide preference must not need a focused card
+      expect(byId(cmds, 'presentation.policy.auto-hide').enabled).toBeUndefined();
+    });
+
+    it('the session entries override the ACTIVE card, and "follow the default" clears it', () => {
+      const d = deps();
+      const cmds = buildCommands(d);
+      byId(cmds, 'session.policy.always-visible').run(ctxWith(['a', 'b'], 'b'));
+      expect(d.setSessionPolicy).toHaveBeenCalledWith('b', 'always-visible');
+      byId(cmds, 'session.policy.default').run(ctxWith(['a', 'b'], 'b'));
+      // undefined, not "whatever the default is today" — the default can change
+      expect(d.setSessionPolicy).toHaveBeenLastCalledWith('b', undefined);
+    });
+
+    it('the session entries are disabled with nothing focused', () => {
+      const cmds = buildCommands(deps());
+      for (const id of ['session.policy.auto-hide', 'session.policy.default']) {
+        expect(byId(cmds, id).enabled?.(ctxWith(['a'], null))).toBe(false);
+        expect(byId(cmds, id).disabledReasonKey).toBeTruthy();
+      }
+    });
+
+    it('the GROUP level is reachable from the palette — Ctrl+B hides the only button', () => {
+      // §5.8's invariant: hiding chrome never removes capability. The per-group
+      // override lives on the rail's group header, and the rail toggles.
+      const d = deps();
+      const cmds = buildCommands(d);
+      byId(cmds, 'group.policy.auto-hide').run(ctxWith(['a'], 'a', 0, 'g1'));
+      expect(d.setGroupPolicy).toHaveBeenCalledWith('g1', 'auto-hide');
+      byId(cmds, 'group.policy.default').run(ctxWith(['a'], 'a', 0, 'g1'));
+      expect(d.setGroupPolicy).toHaveBeenLastCalledWith('g1', undefined);
+    });
+
+    it('the group entries are disabled for an ungrouped session, not silently dead', () => {
+      const cmds = buildCommands(deps());
+      for (const p of [...POLICY_ORDER, 'default']) {
+        const c = byId(cmds, `group.policy.${p}`);
+        expect(c.enabled?.(ctxWith(['a'], 'a', 0, null)), p).toBe(false);
+        expect(c.enabled?.(ctxWith(['a'], 'a', 0, 'g1')), p).toBe(true);
+        expect(c.disabledReasonKey, p).toBeTruthy();
+      }
+    });
+
+    it('none of them claims a keybinding', () => {
+      // a preference is not a per-minute action; the chip and the rail menus are
+      // the everyday paths and the palette is the keyboard one
+      const cmds = buildCommands(deps());
+      for (const c of cmds.filter((c) => c.id.includes('policy'))) {
+        expect(c.binding, `${c.id} took a binding`).toBeUndefined();
+      }
+    });
   });
 });
