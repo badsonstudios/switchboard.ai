@@ -43,6 +43,22 @@ export function upsertBlock(blocks: FeedBlockDto[], b: FeedBlockDto, cap = 1000)
   return next.length > cap ? next.slice(-cap) : next;
 }
 
+/**
+ * Which blocks earn a timeline dot (#91, §5.10 "Block presentation").
+ *
+ * The dot marks an EVENT — something the session did or the user asked for.
+ * A plain assistant reply is not an event, it is the answer, and Dan put it
+ * plainly on 2026-07-26: "when you actually answer me and then are waiting for
+ * my next prompt, I shouldn't need the dot". There the dot is noise that also
+ * costs the prose its left margin.
+ *
+ * The GUTTER stays either way — the caller renders a spacer of the same size —
+ * so the column never jumps between a dotted block and an undotted one.
+ */
+export function showsTimelineDot(kind: FeedBlockDto['kind']): boolean {
+  return kind !== 'assistant';
+}
+
 export type Verbosity = 'quiet' | 'normal' | 'firehose';
 
 /** quiet = prose only · normal = prose + tools, no thinking · firehose = everything. */
