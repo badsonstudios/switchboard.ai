@@ -8,6 +8,7 @@
 // in the composer, renaming a session, or working in a terminal.
 import { Command, CommandContext } from './commands';
 import { PanelId } from '../extensibility/contributions';
+import type { Ladder } from './presentation';
 
 export interface CommandDeps {
   /** focus the session card with this card id */
@@ -22,6 +23,10 @@ export interface CommandDeps {
   popOutCard: (cardId: string) => void;
   /** take a card out of the workspace, keeping the session running (§5.8) */
   hideCard: (cardId: string) => void;
+  /** put a card on a named rung of §5.8's presentation ladder (E9-05) */
+  setLadder: (cardId: string, rung: Ladder) => void;
+  /** step a card one rung down (collapse) or up (expand) — E9-05 */
+  stepLadder: (cardId: string, dir: 'down' | 'up') => void;
   /** show/hide the sessions rail */
   toggleRail: () => void;
   /** open the command palette (E9-02) */
@@ -158,15 +163,90 @@ export function buildCommands(deps: CommandDeps): Command[] {
         if (ctx.activeCardId) deps.closeCard(ctx.activeCardId);
       },
     },
+    // ── §5.8's presentation ladder (E9-05) ────────────────────────────────
+    //
+    // Two BINDINGS that step, and four palette entries that jump straight to a
+    // rung. The pair is deliberate: stepping is the everyday gesture and gets
+    // the keys, while naming a rung is the thing you do once and would rather
+    // read off a list than count out in keystrokes.
+    //
+    // Every one of them acts on the ACTIVE card, which means a card with a
+    // dockview panel — so the only rung you cannot reach from here is "up, from
+    // a card that isn't in the workspace". That is not a gap: §5.8's OTHER
+    // reveal triggers cover it (click the collapsed row, the lamp, the rail row
+    // or the event), and the palette's own `go to session <name>` entries
+    // reveal a hidden card by name. Capability is never removed, which is the
+    // invariant this whole item is written against.
     {
-      // §5.8's presentation ladder, bottom rung. NOT a close: the session keeps
-      // running and the card keeps its record, its rail row, its lamp and its
-      // events — which is also why it needs no confirmation, unlike Mod+W.
-      // Clicking the session anywhere brings it back to the slot it left.
+      id: 'session.ladder.down',
+      titleKey: 'commands.ladderDown',
+      categoryKey: CATEGORY_VIEW,
+      binding: 'Mod+Shift+ArrowDown',
+      scope: 'app',
+      enabled: hasActive,
+      disabledReasonKey: 'commands.disabled.noActiveSession',
+      run: (ctx) => {
+        if (ctx.activeCardId) deps.stepLadder(ctx.activeCardId, 'down');
+      },
+    },
+    {
+      id: 'session.ladder.up',
+      titleKey: 'commands.ladderUp',
+      categoryKey: CATEGORY_VIEW,
+      binding: 'Mod+Shift+ArrowUp',
+      scope: 'app',
+      enabled: hasActive,
+      disabledReasonKey: 'commands.disabled.noActiveSession',
+      run: (ctx) => {
+        if (ctx.activeCardId) deps.stepLadder(ctx.activeCardId, 'up');
+      },
+    },
+    {
+      // The card gives its dock slot back and becomes a row in the collapsed
+      // strip — still running, one click from coming straight back.
+      id: 'session.collapse',
+      titleKey: 'commands.collapseSession',
+      categoryKey: CATEGORY_VIEW,
+      scope: 'app', // palette-only: the step bindings above are the key path
+      enabled: hasActive,
+      disabledReasonKey: 'commands.disabled.noActiveSession',
+      run: (ctx) => {
+        if (ctx.activeCardId) deps.setLadder(ctx.activeCardId, 'collapsed');
+      },
+    },
+    {
+      // Stacked with every other tabbed session in one group, so all of them
+      // together cost one slot.
+      id: 'session.tabbed',
+      titleKey: 'commands.tabSession',
+      categoryKey: CATEGORY_VIEW,
+      scope: 'app',
+      enabled: hasActive,
+      disabledReasonKey: 'commands.disabled.noActiveSession',
+      run: (ctx) => {
+        if (ctx.activeCardId) deps.setLadder(ctx.activeCardId, 'tabbed');
+      },
+    },
+    {
+      id: 'session.expand',
+      titleKey: 'commands.expandSession',
+      categoryKey: CATEGORY_VIEW,
+      scope: 'app',
+      enabled: hasActive,
+      disabledReasonKey: 'commands.disabled.noActiveSession',
+      run: (ctx) => {
+        if (ctx.activeCardId) deps.setLadder(ctx.activeCardId, 'expanded');
+      },
+    },
+    {
+      // The ladder's bottom rung. NOT a close: the session keeps running and the
+      // card keeps its record, its rail row, its lamp and its events — which is
+      // also why it needs no confirmation, unlike Mod+W. Clicking the session
+      // anywhere brings it back to the slot it left.
       id: 'session.hide',
       titleKey: 'commands.hideSession',
       categoryKey: CATEGORY_VIEW,
-      scope: 'app', // palette-only: E9-05 owns the ladder's bindings
+      scope: 'app',
       enabled: hasActive,
       disabledReasonKey: 'commands.disabled.noActiveSession',
       run: (ctx) => {

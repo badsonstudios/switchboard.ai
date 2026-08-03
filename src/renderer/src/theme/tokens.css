@@ -352,6 +352,81 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── the collapsed strip (P2-E9-05, §5.8's ladder) ─────────────────────────
+ * A collapsed session's row. Deliberately WIDER and squarer than an urgency
+ * lamp: a lamp is a readout of a session that is on screen somewhere, a row IS
+ * the session's only presence in the workspace, so it carries its name, its
+ * state in words, and a hit target you can find without aiming.
+ * No themeable tokens are introduced — every value below resolves to one the
+ * presets already declare (see tokens.drift.test.ts). */
+.collapsed-row {
+  --row-hue: var(--status-idle);
+  --row-ink: var(--muted);
+  --row-accent: var(--faint);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* never shrink, same call as the lamps: the name's `overflow: hidden` drives
+   * its automatic minimum size to zero, so a flexible row would squash to
+   * nothing long before the strip decided to scroll */
+  flex: 0 0 auto;
+  min-inline-size: 110px;
+  max-inline-size: 220px;
+  padding: 2px 8px 2px 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font: inherit;
+  font-size: 10.5px;
+  background: var(--chip);
+  color: var(--muted);
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    background 0.11s,
+    border-color 0.11s;
+}
+.collapsed-row:hover {
+  background: var(--rail-row-hover);
+  border-color: var(--row-hue);
+}
+.collapsed-row[data-needs-you='true'] {
+  background: color-mix(in srgb, var(--row-hue) 14%, transparent);
+  border-color: color-mix(in srgb, var(--row-hue) 55%, transparent);
+  color: var(--row-ink);
+  font-weight: 600;
+}
+.collapsed-row[data-needs-you='true']:hover {
+  background: color-mix(in srgb, var(--row-hue) 26%, transparent);
+}
+/* the identity accent, as a leading bar — the same 3px stripe the expanded
+ * card's header wears, so a session looks like itself at either rung */
+.collapsed-accent {
+  flex: 0 0 auto;
+  inline-size: 3px;
+  align-self: stretch;
+  min-block-size: 14px;
+  background: var(--row-accent);
+  margin-inline-end: 4px;
+}
+.collapsed-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* the state in words, not only in hue: legible before any color is read (§5.20) */
+.collapsed-state {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  padding-inline-start: 6px;
+  font-size: 9.5px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+.collapsed-row[data-needs-you='true'] .collapsed-state {
+  color: var(--row-ink);
+}
+
 /* 18x18 hit target grown with the BOX, never by enlarging the glyph */
 .rail-x {
   color: var(--rail-close);

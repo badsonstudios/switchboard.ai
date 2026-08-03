@@ -22,14 +22,13 @@ import { DEFAULT_PANEL_ID } from '../extensibility/contributions';
 import type { SlotRef } from './dock-slot';
 
 /**
- * §5.8's presentation ladder.
+ * §5.8's presentation ladder: `expanded → collapsed strip → tabbed → hidden`.
  *
- * All four rungs are modelled, persisted and round-tripped — but only
- * `expanded` and `hidden` have transitions today (hide from the palette,
- * reveal by clicking the session anywhere). `collapsed` (the slim status
- * strip) and `tabbed` are P2-E9-05's work and currently RENDER AS EXPANDED if
- * something sets them. Said plainly rather than implied: this item builds the
- * home, E9-05 moves in.
+ * This file is the ladder's HOME — the value, its persistence and its
+ * round-trip. What each rung MEANS, how you step between them and which events
+ * bring a session back up are lib/ladder's (P2-E15-08 built the home, P2-E9-05
+ * moved in); the dockview verbs that carry a card between rungs are
+ * SessionGrid's `setCardLadder`.
  */
 export type Ladder = 'expanded' | 'collapsed' | 'tabbed' | 'hidden';
 
