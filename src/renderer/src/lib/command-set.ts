@@ -30,11 +30,14 @@ export interface CommandDeps {
   toggleTabRows: () => void;
   /** jump to the next session waiting on a human (E9-03 attention queue) */
   jumpToNextAttention: () => void;
+  /** show the build identity — version, commit, branch, build age (E15-15) */
+  openAbout: () => void;
 }
 
 const CATEGORY_SESSION = 'commands.category.session';
 const CATEGORY_VIEW = 'commands.category.view';
 const CATEGORY_ATTENTION = 'commands.category.attention';
+const CATEGORY_HELP = 'commands.category.help';
 
 /** index of the focused card in rail order, or -1 */
 function activeIndex(ctx: CommandContext): number {
@@ -219,6 +222,19 @@ export function buildCommands(deps: CommandDeps): Command[] {
       categoryKey: CATEGORY_VIEW,
       scope: 'app', // palette-only: a preference, not a per-minute action
       run: () => deps.toggleTabRows(),
+    },
+    {
+      // The keyboard route to the build identity (E15-15). Palette-only and no
+      // binding: it is looked up once in a while, never in a hurry — but it has
+      // to be HERE, because the palette is the standing promise that everything
+      // the app can do is reachable without knowing where its chrome went
+      // (§5.8). Searching "version", "build" or "about" all land on it via the
+      // title text.
+      id: 'help.about',
+      titleKey: 'commands.about',
+      categoryKey: CATEGORY_HELP,
+      scope: 'app',
+      run: () => deps.openAbout(),
     },
   ];
 }

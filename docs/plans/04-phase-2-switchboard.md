@@ -475,7 +475,7 @@ Work items:
   "real-app" section; any regression against the harness numbers is either
   fixed or filed with a named owner.
 - **P2-E15-15 · App version + build identity — S (#172, added 2026-08-02 at
-  Dan's request).** During PR #163's hand-testing Dan twice tested a stale
+  Dan's request). SHIPPED 2026-08-02.** During PR #163's hand-testing Dan twice tested a stale
   `out/` build of main and read its old bugs as the PR failing — a full
   diagnostic cycle spent answering "which build is this?". Dan's direction:
   a version number visible in the app, moving with the code. Mechanism
@@ -489,7 +489,15 @@ Work items:
   time somewhere findable in ≤5s (About/status surface; title bar in
   non-main builds); a dirty working tree is marked; a hand-tester can
   confirm "am I running the branch I think I am?" without leaving the app;
-  `docs/manual/` mentions where to look. a second provider adapter could be written without touching
+  `docs/manual/` mentions where to look.
+  *Shipped as:* `src/build/git-identity.ts` asks git at config load,
+  `electron.vite.config.ts` `define`s the answer into all three targets,
+  `src/shared/build-identity.ts` reads and formats it for main (window title)
+  and the renderer (title-bar stamp → About panel, plus a palette command).
+  A build-age field was added beyond the spec — it is the field that actually
+  catches a stale `out/`.
+
+**E15 exit:** a second provider adapter could be written without touching
 `sessions/ipc.ts`; a new view tab or feed block renderer is a self-contained
 module; a theme is a JSON file and three of them ship; every IPC channel
 carries a declared capability with a live enforcement point; the renderer has

@@ -2,6 +2,28 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import type { PluginOption } from 'vite';
 import react from '@vitejs/plugin-react';
 import { CSP_PROD_META } from './src/shared/csp';
+import { describeIdentity, probeBuildIdentity } from './src/build/git-identity';
+
+/**
+ * Build identity (P2-E15-15) — git SHA + branch + dirty + build time, asked
+ * ONCE here and compiled into all three targets as `__SWITCHBOARD_BUILD__`.
+ *
+ * Once, at config load, deliberately: electron-vite evaluates this module a
+ * single time for main + preload + renderer, so all three carry the same
+ * timestamp and the same SHA. Probing per-target would let a slow build stamp
+ * three different times and make the About panel disagree with the window
+ * title.
+ *
+ * The `define` has to be repeated on each target because vite scopes it per
+ * build — a define on `renderer` alone would leave main's window title with a
+ * dangling identifier. See src/shared/build-identity.ts for why this is a
+ * stamp and not a committed counter.
+ */
+const BUILD_IDENTITY = probeBuildIdentity();
+// echoed so `npm run build` says on stdout what it just baked in — the fastest
+// possible confirmation that the bytes in out/ are the ones you meant
+console.log(`[switchboard] build identity: ${describeIdentity(BUILD_IDENTITY)}`);
+const buildDefine = { __SWITCHBOARD_BUILD__: JSON.stringify(BUILD_IDENTITY) };
 
 /**
  * Put the prod CSP back into the BUILT html as a <meta> backstop (P2-E15-12).
@@ -44,6 +66,7 @@ export default defineConfig({
     // native/runtime deps (node-pty) must stay external — bundling a native
     // module breaks it
     plugins: [externalizeDepsPlugin()],
+    define: buildDefine,
     build: {
       rollupOptions: {
         input: {
@@ -63,9 +86,11 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
+    define: buildDefine,
   },
   renderer: {
     plugins: [react(), cspMetaBackstop()],
+    define: buildDefine,
     build: {
       rollupOptions: {
         input: {

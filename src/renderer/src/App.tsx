@@ -25,7 +25,9 @@ import { bindingFor, dispatch, dispatchAccelerator, formatBinding, Platform } fr
 import { focusedElementIn } from './lib/focus-target';
 import { sessionStore } from './store/session-store';
 import { CommandPalette } from './components/CommandPalette';
+import { AboutPanel } from './components/AboutPanel';
 import { UrgencyStrip } from './components/UrgencyStrip';
+import { buildIdentity } from '../../shared/build-identity';
 import {
   applyTabRows,
   forgetPopoutWindow,
@@ -39,6 +41,10 @@ import {
 // An inline arrow is a new function each render, and React unsubscribes and
 // resubscribes whenever `subscribe` changes — six times per render, forever.
 const subscribeStore = (cb: () => void): (() => void) => sessionStore.subscribe(cb);
+
+// Compiled in at build time and constant for the process lifetime (E15-15), so
+// it is read once at module scope rather than per render.
+const BUILD_IDENTITY = buildIdentity();
 
 // Control-room shell (P1-E3-01): titlebar / rail / grid / statusbar.
 // Terminals (E3-02), identity kit (E3-03), and live badges (E3-05) land next.
@@ -88,6 +94,8 @@ export function App(): React.JSX.Element {
   const [railHidden, setRailHidden] = useState(false);
   // command palette (E9-02) — deliberately NOT persisted: it opens on demand
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // About / build identity (E15-15) — same deal, on demand only
+  const [aboutOpen, setAboutOpen] = useState(false);
   // Attention events (E9-03). This subscription used to live inside
   // EventsPanel; it moved up here because the queue is the SINGLE ordering
   // authority — two independent subscriptions to events:changed could hand the
@@ -284,11 +292,14 @@ export function App(): React.JSX.Element {
   // the store derives rail order from the same sessions+groups the rail
   // renders, so Ctrl+1..9 numbering and the eye can never disagree
   const railHiddenRef = React.useRef(railHidden);
-  // read by the dispatcher: an open modal swallows the app's accelerators
-  const paletteOpenRef = React.useRef(paletteOpen);
+  // Read by the dispatcher: an open modal swallows the app's accelerators.
+  // ANY modal, not just the palette (E15-15 added the About panel) — including
+  // the two chords the browser process claims before the page sees them, which
+  // would otherwise jump to a session hidden behind the dialog.
+  const modalOpenRef = React.useRef(false);
   useEffect(() => {
     railHiddenRef.current = railHidden;
-    paletteOpenRef.current = paletteOpen;
+    modalOpenRef.current = paletteOpen || aboutOpen;
   });
 
   // Set when a command deliberately raised a DIFFERENT OS window (jumping to a
@@ -354,6 +365,7 @@ export function App(): React.JSX.Element {
             toggleTabRows();
           },
           jumpToNextAttention,
+          openAbout: () => setAboutOpen(true),
       }),
     [toggleRail, jumpToNextAttention], // other deps read live state through refs; grid.current is stable
   );
@@ -384,9 +396,9 @@ export function App(): React.JSX.Element {
     // preventDefaults its own Enter, and mistaking that for a command would
     // yank this window in front of the one being typed in.
     const onKey = (e: KeyboardEvent): unknown => {
-      // while the palette owns the screen, nothing underneath it fires —
+      // while a modal owns the screen, nothing underneath it fires —
       // regardless of where focus ended up inside the modal
-      if (paletteOpenRef.current) return null;
+      if (modalOpenRef.current) return null;
       return dispatch(
         {
           key: e.key,
@@ -486,9 +498,9 @@ export function App(): React.JSX.Element {
   // command the palette and the keyboard run.
   useEffect(() => {
     return bridge.onAccelerator?.(({ commandId, fromPopout }) => {
-      // while the palette owns the screen, nothing underneath it fires — the
+      // while a modal owns the screen, nothing underneath it fires — the
       // same guard the keydown dispatcher applies
-      if (paletteOpenRef.current) return;
+      if (modalOpenRef.current) return;
       // Only the popouts we know about are searched — the map is filled by the
       // 'switchboard:popout-added' event, so a window that somehow missed it
       // lands on the fallback and simply behaves as if nothing were focused.
@@ -518,6 +530,8 @@ export function App(): React.JSX.Element {
     <div style={{ blockSize: '100vh', display: 'flex', flexDirection: 'column' }}>
       <TitleBar
         version={bridge.appVersion}
+        identity={BUILD_IDENTITY}
+        onOpenAbout={() => setAboutOpen(true)}
         pref={pref}
         themes={themes}
         onTheme={(p) => {
@@ -548,6 +562,13 @@ export function App(): React.JSX.Element {
         railBinding={railBindingLabel}
         onOpenPalette={() => setPaletteOpen(true)}
         paletteBinding={paletteBindingLabel}
+      />
+      <AboutPanel
+        open={aboutOpen}
+        onClose={() => setAboutOpen(false)}
+        version={bridge.appVersion}
+        identity={BUILD_IDENTITY}
+        platform={bridge.platform}
       />
       <CommandPalette
         open={paletteOpen}
