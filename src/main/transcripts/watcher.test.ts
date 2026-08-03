@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -29,7 +29,15 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => watcher.stop());
+afterEach(() => {
+  // Un-skippable backstop for the one test that fakes `Date` (#183). It has
+  // its own `finally`, but a frozen clock leaking into the rest of the file
+  // would break the wall-clock-deadline tests far from the cause, so the
+  // restore also lives somewhere no code path in a test body can miss. A
+  // no-op when timers were never faked, which is every other test here.
+  vi.useRealTimers();
+  watcher.stop();
+});
 
 function projectDir(): string {
   const d = path.join(root, slugForCwd(cwd));
@@ -441,30 +449,91 @@ describe('id known -> only id evidence binds (review P1 #6)', () => {
 });
 
 describe('cwd fallback when hooks never deliver an id (review P1 #8, fail-open)', () => {
+  // The deadline this test is about is read off the WALL CLOCK inside the
+  // watcher (`claim()`: `Date.now() - w.watchedSince < deadline`), but the
+  // "inside the deadline" assertion is reached after a real `await sleep()`.
+  // Those are two different clocks the moment the machine is busy: under CPU
+  // saturation the sleep overshoots, the poll catches up while it is still
+  // pending, and the assertion lands OUTSIDE the window it was written to
+  // probe — measured at 182ms against the 120ms deadline, failing with
+  // "expected true to be false" for a reason that has nothing to do with the
+  // rule under test (#183; seen by two independent workers under load).
+  //
+  // The fix is to stop racing: fake ONLY `Date`, so setTimeout, the poll and
+  // `fs.watch` all still run for real, and the clock the watcher measures its
+  // own deadline against becomes the test's to move rather than the machine's.
+  // The pre-deadline assertion is then unfalsifiable by load — no number of
+  // poll ticks can cross a deadline whose clock has not moved.
+  //
+  // What freezing `Date` DOES change, and why it is still sound: the discovery
+  // sweep ladder is on the same clock (`shouldSweep` compares `now` against
+  // `lastSweepAt`), so exactly ONE sweep happens in the frozen window instead
+  // of the ladder's several. That one is guaranteed and is all the test needs
+  // — `DiscoverySchedule.register()` marks a newly watched root dirty, and
+  // `dirty` short-circuits the ladder. The setup below (mkdir, write, both
+  // `watch()` calls) is synchronous, so that first sweep necessarily lands
+  // AFTER fileA exists. It is therefore not waiting on an `fs.watch` event
+  // either, which is what makes the frozen half deterministic rather than
+  // merely lucky.
   it('two same-cwd sessions bind best-effort after the deadline, one file each', async () => {
-    const w2 = new TranscriptWatcher({
-      projectsRoot: root,
-      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
-      pollMs: 25,
-      cwdBindFallbackMs: 120,
-    });
-    w2.watch('s1', { cwd });
-    w2.watch('s2', { cwd });
-    const fileA = path.join(projectDir(), 'native-A.jsonl');
-    writeLines(fileA, [entry({ sessionId: 'native-A' })]);
-    await sleep(60);
-    // inside the deadline the ambiguity rule still holds
-    expect(w2.snapshot('s1')!.bound).toBe(false);
-    expect(w2.snapshot('s2')!.bound).toBe(false);
-    await sleep(200); // past the deadline: best-effort binding proceeds
-    const fileB = path.join(projectDir(), 'native-B.jsonl');
-    writeLines(fileB, [entry({ sessionId: 'native-B' })]);
-    await sleep(150);
-    const bound = [w2.snapshot('s1')!, w2.snapshot('s2')!].filter((s) => s.bound);
-    expect(bound).toHaveLength(2);
-    // never the SAME file twice (claim skips files another session owns)
-    expect(new Set(bound.map((s) => s.nativeSessionId)).size).toBe(2);
-    w2.stop();
+    let w2: TranscriptWatcher | undefined;
+    try {
+      // Installed before `watch()`, which stamps `watchedSince` — the other
+      // half of the deadline subtraction. (The constructor reads no clock.)
+      vi.useFakeTimers({ toFake: ['Date'] }); // Date only — setTimeout stays real
+      w2 = new TranscriptWatcher({
+        projectsRoot: root,
+        log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
+        pollMs: 25,
+        cwdBindFallbackMs: 120,
+      });
+      w2.watch('s1', { cwd });
+      w2.watch('s2', { cwd });
+      const fileA = path.join(projectDir(), 'native-A.jsonl');
+      writeLines(fileA, [entry({ sessionId: 'native-A' })]);
+      // Deliberately longer than the 120ms deadline in real time: with the
+      // watcher's clock frozen this is now "let discovery run", not "stay
+      // inside the window". ~6 real poll ticks, one of which sweeps.
+      await sleep(150);
+      // inside the deadline the ambiguity rule still holds
+      expect(w2.snapshot('s1')!.bound).toBe(false);
+      expect(w2.snapshot('s2')!.bound).toBe(false);
+      // ...and it is a REFUSAL, not "discovery hasn't looked yet" — both
+      // sessions swept, found fileA, and declined it. `candidateSeen` is only
+      // ever set from a sweep that ran `claim()` and got `false` back, so with
+      // the elapsed deadline pinned at exactly 0 these two lines pin the
+      // refusal to the ambiguity branch and nothing else. Without them the
+      // frozen clock could buy a vacuous pass.
+      expect(w2.snapshot('s1')!.bindingDiag.candidateSeen).toBe(true);
+      expect(w2.snapshot('s2')!.bindingDiag.candidateSeen).toBe(true);
+
+      // Hand the clock back: real time is already past the 120ms deadline
+      // (a forward-only jump of ~150ms — well under `widenAfterMs` 10s and
+      // `bindGiveUpMs` 45s, so neither of those changes behaviour), and from
+      // here the test runs exactly as it always did. What remains is one
+      // monotone assertion and one load-INVARIANT one, so load has nothing
+      // left to break. It does still ride an `fs.watch` event to pick up
+      // fileB inside the last sleep — but that is unchanged by this fix and
+      // is the same shape as the sibling tests below.
+      vi.useRealTimers();
+      await sleep(200); // past the deadline: best-effort binding proceeds
+      const fileB = path.join(projectDir(), 'native-B.jsonl');
+      writeLines(fileB, [entry({ sessionId: 'native-B' })]);
+      await sleep(150);
+      const bound = [w2.snapshot('s1')!, w2.snapshot('s2')!].filter((s) => s.bound);
+      expect(bound).toHaveLength(2);
+      // never the SAME file twice (claim skips files another session owns)
+      expect(new Set(bound.map((s) => s.nativeSessionId)).size).toBe(2);
+    } finally {
+      // Both must survive a failed assertion: leaked fake timers would freeze
+      // `Date` for every test after this one — and the tests after this one
+      // are the OTHER wall-clock-deadline tests, so the damage would surface
+      // nowhere near its cause — and a leaked watcher keeps polling and holds
+      // an fs.watch on the root for the rest of the file's run. The clock goes
+      // back FIRST so that a throwing `stop()` cannot strand it.
+      vi.useRealTimers();
+      w2?.stop();
+    }
   });
 });
 
