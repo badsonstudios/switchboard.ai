@@ -10,6 +10,7 @@
 //     authority is hooks (E2-05)
 import fs from 'fs';
 import path from 'path';
+import { StringDecoder } from 'string_decoder';
 import { Logger } from '../log/logger';
 import { BindingDiagnostics, BindingState } from '../../shared/transcripts';
 import { FeedBlock, deriveIntents } from '../feed/blocks';
@@ -63,6 +64,35 @@ export interface TranscriptSnapshot {
 // same code.
 export type { FeedBlock };
 
+/**
+ * Where we are in one file we are tailing.
+ *
+ * The `StringDecoder` is PER TAIL and lives as long as the tail does (#194). A
+ * drain reads whatever bytes have arrived since the last tick, so a chunk
+ * boundary lands wherever the writer happened to flush — routinely in the
+ * MIDDLE of a multi-byte UTF-8 character. Decoding each chunk on its own
+ * (`chunk.toString('utf8')`) turns that character into replacement characters
+ * on both sides of the boundary: the JSON still parses, so nothing is counted
+ * as malformed, and the corruption lands silently in the user's Feed, a file
+ * path, or a tool argument. The decoder holds the partial sequence until the
+ * rest of it arrives on a later tick — the same job `stream-service.ts` gets
+ * from `setEncoding('utf8')` on the CLI's stdout, for the same reason.
+ *
+ * There is deliberately no `end()`/flush: a tail is only ever dropped when the
+ * bytes it was waiting for stopped being interesting (rebind, `/clear`,
+ * unwatch), and flushing would emit replacement characters for a character the
+ * writer was in the middle of — the exact garbage this exists to prevent.
+ */
+interface Tail {
+  offset: number;
+  buf: string;
+  dec: StringDecoder;
+}
+
+function newTail(): Tail {
+  return { offset: 0, buf: '', dec: new StringDecoder('utf8') };
+}
+
 interface WatchedSession {
   sessionId: string;
   cwd: string;
@@ -107,7 +137,7 @@ interface WatchedSession {
    *  folder that nobody can take" — turning our own abandoned history into
    *  permanent evidence that our transcript is missing (P2-E15-10). */
   abandoned: Set<string>;
-  tails: Map<string, { offset: number; buf: string }>;
+  tails: Map<string, Tail>;
   snap: TranscriptSnapshot;
   /** the Feed's own state — seq, cap, tool-result stitching (P2-E18-10) */
   feed: FeedBuffer;
@@ -760,7 +790,7 @@ export class TranscriptWatcher {
           if (this.known.get(w.projectsRoot)?.has(full) && !this.isOwnResumedFile(w, full)) continue;
           const evidence = this.isEvidence(w, full);
           if (this.claim(w, full)) {
-            w.tails.set(full, { offset: 0, buf: '' });
+            w.tails.set(full, newTail());
           } else if (evidence) {
             // A transcript appeared under OUR folder during OUR watch and we
             // could not take it. That is the storage-layout contract moving —
@@ -790,7 +820,7 @@ export class TranscriptWatcher {
         // recursive watch covers this directory too, so a subagent transcript
         // still shows up as fast as the filesystem can tell us about it.
         for (const full of this.subagentFiles(w)) {
-          if (!w.tails.has(full)) w.tails.set(full, { offset: 0, buf: '' });
+          if (!w.tails.has(full)) w.tails.set(full, newTail());
         }
       }
       // The tail drain is NEVER gated. It is the latency-critical path (it is
@@ -926,14 +956,35 @@ export class TranscriptWatcher {
     return out;
   }
 
-  private drain(w: WatchedSession, full: string, tail: { offset: number; buf: string }): void {
+  private drain(w: WatchedSession, full: string, tail: Tail): void {
     let st: fs.Stats;
     try {
       st = fs.statSync(full);
     } catch {
       return;
     }
-    if (st.size <= tail.offset) return;
+    if (st.size < tail.offset) {
+      // The file SHRANK — truncated or rewritten under us. Every byte the tail
+      // is holding describes content that no longer exists: a partial line in
+      // `buf` and, since #194, a half-decoded multi-byte character inside the
+      // decoder. Carrying either across would prepend garbage to whatever the
+      // writer puts there next, which is precisely the failure a per-tail
+      // decoder would otherwise introduce. So resync: resume from the file's
+      // new end with clean state. For the ordinary truncate-to-zero that means
+      // the rewritten file is read from the top on the following tick — where
+      // before this the tail simply stalled for ever, because `st.size <=
+      // tail.offset` stayed true no matter what was written afterwards.
+      //
+      // Only detectable when a tick actually OBSERVES the smaller size; a
+      // truncate-and-regrow that happens entirely between two polls is
+      // invisible here, and always was. Nothing about a JSONL transcript
+      // shrinks in normal operation — the CLI only appends.
+      tail.offset = st.size;
+      tail.buf = '';
+      tail.dec = new StringDecoder('utf8');
+      return;
+    }
+    if (st.size === tail.offset) return;
     const chunk = Buffer.alloc(st.size - tail.offset);
     const n = readRange(full, chunk, tail.offset);
     if (n === null) return;
@@ -943,7 +994,11 @@ export class TranscriptWatcher {
     // append the untouched zero-fill of the buffer and skip past bytes we never
     // saw.
     tail.offset += n;
-    tail.buf += chunk.toString('utf8', 0, n);
+    // Through the tail's own decoder, NOT `chunk.toString('utf8', 0, n)`: the
+    // trailing bytes of a character split across this boundary are held back
+    // and prepended to the next chunk instead of decoding to U+FFFD twice
+    // (#194). `subarray` is a view, so the normal full-read case costs nothing.
+    tail.buf += tail.dec.write(chunk.subarray(0, n));
     let nl: number;
     let touched = false;
     while ((nl = tail.buf.indexOf('\n')) >= 0) {
