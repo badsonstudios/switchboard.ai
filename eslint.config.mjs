@@ -108,10 +108,29 @@ export default tseslint.config(
   },
   {
     files: ['scripts/**/*.js'],
+    ignores: ['scripts/**/*.test.js'],
     languageOptions: {
       sourceType: 'commonjs',
-      globals: { require: 'readonly', module: 'readonly', process: 'readonly', __dirname: 'readonly', console: 'readonly' },
+      globals: {
+        require: 'readonly',
+        module: 'readonly',
+        process: 'readonly',
+        __dirname: 'readonly',
+        console: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+      },
     },
     rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
+  {
+    // vitest files under scripts/ are ESM (vite transforms them), unlike the
+    // CJS scripts they test — so they must not inherit the block above.
+    files: ['scripts/**/*.test.js'],
+    languageOptions: {
+      sourceType: 'module',
+      // `ignores` on the block above strips its globals too, so restate them
+      globals: { process: 'readonly', console: 'readonly' },
+    },
   }
 );
