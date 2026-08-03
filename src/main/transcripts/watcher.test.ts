@@ -56,6 +56,18 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/** Wait for a condition instead of guessing a sleep: discovery runs on a
+ *  backoff ladder that reaches 2s while a session stays unbound, so a fixed
+ *  wait would be a flake generator on a loaded machine. */
+async function waitFor(cond: () => boolean, timeoutMs = 4000): Promise<void> {
+  const until = Date.now() + timeoutMs;
+  while (Date.now() < until) {
+    if (cond()) return;
+    await sleep(25);
+  }
+  expect(cond(), 'condition never became true').toBe(true);
+}
+
 describe('conversationExists (gate for --resume, avoids crash on empty id)', () => {
   it('true only when the transcript file exists under the (case-insensitive) slug', () => {
     const cwd = 'C:/tmp/tw-project';
@@ -1286,18 +1298,6 @@ describe('descriptor hygiene on the read error path (#179)', () => {
     };
   }
 
-  /** Wait for a condition instead of guessing a sleep: discovery runs on a
-   *  backoff ladder that reaches 2s while a session stays unbound, so a fixed
-   *  wait here would be a flake generator on a loaded machine. */
-  async function waitFor(cond: () => boolean, timeoutMs = 4000): Promise<void> {
-    const until = Date.now() + timeoutMs;
-    while (Date.now() < until) {
-      if (cond()) return;
-      await sleep(25);
-    }
-    expect(cond(), 'condition never became true').toBe(true);
-  }
-
   it('closes the descriptor when the drain read throws, and recovers afterwards', async () => {
     watcher.watch('s1', { cwd });
     const file = path.join(projectDir(), 'native-1.jsonl');
@@ -1335,5 +1335,107 @@ describe('descriptor hygiene on the read error path (#179)', () => {
 
     // and the refusal is not sticky: once the reads work, it binds
     await waitFor(() => watcher.snapshot('s1')!.bound);
+  });
+});
+
+describe('multi-byte characters split across drain chunks (#194)', () => {
+  // A drain reads everything that landed since the last tick, so the chunk
+  // boundary falls wherever the CLI happened to flush — routinely in the MIDDLE
+  // of a multi-byte character, which any non-ASCII content produces: an emoji
+  // in a prompt, an accented path, a diff of a UTF-8 source file. Decoding each
+  // chunk on its own replaced the straddling character with U+FFFD on BOTH
+  // sides of the boundary, and because the line still parsed as JSON nothing
+  // was ever counted as malformed — the corruption went straight into the
+  // Feed / the file list / the tool arguments, silently.
+
+  /** Every UTF-8 CONTINUATION byte (10xxxxxx) in the line — each one is a byte
+   *  provably INSIDE a multi-byte character, so splitting there is a boundary
+   *  the old decode could not survive. Deterministic: the test never depends on
+   *  where a poll tick happens to fall. */
+  function insideChar(bytes: Buffer): number[] {
+    return [...bytes.keys()].filter((i) => (bytes[i]! & 0xc0) === 0x80);
+  }
+
+  /** A transcript line that carries a path through to `filesTouched`, which is
+   *  where a corrupted decode becomes visible from outside. */
+  const touching = (p: string) =>
+    entry({ message: { content: [{ type: 'tool_use', name: 'Write', input: { file_path: p } }] } });
+
+  /** Two-, three- AND four-byte sequences in one fixture (é / 日本語 / 😀 —
+   *  the last of which is also a surrogate pair on the JS side). `n` is
+   *  fixed-width on purpose: the byte offsets are computed once from a probe
+   *  line, so every path in the run must serialise to the same length. */
+  const unicodePath = (n: number) =>
+    `C:/tmp/tw-project/café-日本語-😀-${String(n).padStart(2, '0')}.txt`;
+
+  async function bound(file: string): Promise<void> {
+    watcher.watch('s1', { cwd });
+    writeLines(file, [entry()]);
+    await waitFor(() => watcher.snapshot('s1')!.bound && watcher.snapshot('s1')!.lines >= 1);
+  }
+
+  it('carries a partial character across drains instead of decoding it to U+FFFD', async () => {
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    await bound(file);
+
+    // EVERY inside-a-character boundary the fixture offers, not just the first
+    // one: that covers 2-, 3- and 4-byte sequences and every position within
+    // them, including the case where the decoder must hold three bytes back.
+    const probe = Buffer.from(touching(unicodePath(0)) + '\n', 'utf8');
+    const splits = insideChar(probe);
+    expect(splits.length).toBe(10); // é=1 + 日本語=6 + 😀=3 continuation bytes
+
+    for (const [n, at] of splits.entries()) {
+      const bytes = Buffer.from(touching(unicodePath(n)) + '\n', 'utf8');
+      const before = watcher.snapshot('s1')!.lines;
+      // A COMPLETE line in front of the half character, appended in ONE write.
+      // The drain reads to end-of-file in a single chunk, so the moment that
+      // line is ingested we know for certain the same chunk also contained the
+      // incomplete character — no sleeping and hoping the tick landed in the
+      // right place, and no risk of the test quietly degenerating into "both
+      // halves arrived together", which would prove nothing.
+      fs.appendFileSync(file, Buffer.concat([Buffer.from(entry() + '\n', 'utf8'), bytes.subarray(0, at)]));
+      await waitFor(() => watcher.snapshot('s1')!.lines === before + 1);
+
+      fs.appendFileSync(file, bytes.subarray(at));
+      await waitFor(() => watcher.snapshot('s1')!.lines === before + 2);
+    }
+
+    const snap = watcher.snapshot('s1')!;
+    for (const n of splits.keys()) expect(snap.filesTouched).toContain(unicodePath(n));
+    expect(snap.filesTouched.join('')).not.toContain('\uFFFD');
+    expect(snap.malformed).toBe(0);
+  });
+
+  it('drops the half character (and the partial line) when the file is truncated under us', async () => {
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    await bound(file);
+    const malformedBefore = watcher.snapshot('s1')!.malformed;
+
+    // Same trick: a complete line proves the chunk that reached the decoder
+    // also held the first half of the character on the end of it.
+    const orphan = Buffer.from(touching('C:/tmp/tw-project/ORPHAN-日本語.txt') + '\n', 'utf8');
+    const head = orphan.subarray(0, insideChar(orphan)[0]);
+    const marker = 'C:/tmp/tw-project/before-truncate.txt';
+    fs.appendFileSync(file, Buffer.concat([Buffer.from(touching(marker) + '\n', 'utf8'), head]));
+    await waitFor(() => watcher.snapshot('s1')!.filesTouched.includes(marker));
+
+    // The CLI rewrote the transcript. Give the poll a tick to SEE the smaller
+    // size before the file grows again — a truncate-and-regrow entirely between
+    // two ticks is invisible to any poller, so this is the one place the test
+    // has to wait rather than watch for a condition.
+    fs.truncateSync(file, 0);
+    await sleep(200); // 8 poll intervals at pollMs: 25
+
+    writeLines(file, [touching(unicodePath(0))]);
+    await waitFor(() => watcher.snapshot('s1')!.filesTouched.includes(unicodePath(0)));
+
+    const snap = watcher.snapshot('s1')!;
+    // The stale partial LINE was dropped: had it survived, it would have been
+    // glued to the front of the line above and the pair would have failed to
+    // parse (counted malformed) instead of yielding this path.
+    expect(snap.malformed).toBe(malformedBefore);
+    expect(snap.filesTouched.join('')).not.toContain('\uFFFD');
+    expect(snap.filesTouched.some((p) => p.includes('ORPHAN'))).toBe(false);
   });
 });
