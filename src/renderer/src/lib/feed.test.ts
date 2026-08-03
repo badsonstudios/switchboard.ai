@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { blockVisible, upsertBlock, FeedBlockDto } from './feed';
+import { blockVisible, showsTimelineDot, upsertBlock, FeedBlockDto } from './feed';
 
 const b = (kind: FeedBlockDto['kind'], sidechain = false): FeedBlockDto => ({
   seq: 1,
@@ -50,5 +50,20 @@ describe('blockVisible (E12-07 verbosity presets)', () => {
   it('firehose: everything', () => {
     expect(blockVisible(b('thinking'), 'firehose')).toBe(true);
     expect(blockVisible(b('tool', true), 'firehose')).toBe(true);
+  });
+});
+
+describe('showsTimelineDot (#91 — the dot marks an EVENT, not an answer)', () => {
+  it('assistant prose gets no dot', () => {
+    expect(showsTimelineDot('assistant')).toBe(false);
+  });
+
+  it('everything the session or the user DID keeps one', () => {
+    // Dan's rule, 2026-07-26: his prompts, tool calls and thinking are events;
+    // the reply he is reading while he decides what to type next is not.
+    expect(showsTimelineDot('user')).toBe(true);
+    expect(showsTimelineDot('tool')).toBe(true);
+    expect(showsTimelineDot('todos')).toBe(true);
+    expect(showsTimelineDot('thinking')).toBe(true);
   });
 });

@@ -37,6 +37,12 @@ import {
   resolvePopoutBounds,
 } from './popout-geometry';
 import { dialog } from 'electron';
+import { buildIdentity, isReleaseBuild, windowTitle } from '../shared/build-identity';
+
+/** Stamped in at build time (P2-E15-15); constant for the process lifetime. */
+const BUILD_IDENTITY = buildIdentity();
+/** The name the OS window carries when there is nothing unusual to report. */
+const APP_NAME = 'switchboard';
 
 // Safe-by-default for every window this app will ever open (§5.29 posture).
 app.enableSandbox();
@@ -327,6 +333,10 @@ function createWindow(): BrowserWindow {
     // processes can see. Not worth that today; recorded so the next person
     // knows the blocker moved.
     backgroundColor: '#242933',
+    // "Which build is this?" answerable from the TASKBAR, without focusing the
+    // window (P2-E15-15). A clean `main` build gets the bare app name; anything
+    // else — feature branch, dirty tree, detached, unknown provenance — says so.
+    title: windowTitle(APP_NAME, BUILD_IDENTITY),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: true,
@@ -338,6 +348,15 @@ function createWindow(): BrowserWindow {
         `--switchboard-seed-session=${process.env.SWITCHBOARD_SEED_SESSION ?? ''}`,
       ],
     },
+  });
+
+  // The document's <title> would otherwise land on top of the identity above
+  // the moment index.html parses — Electron mirrors the page title onto the
+  // window by default. Vetoing that is what makes the build suffix survive a
+  // load, and it costs nothing: our renderer never sets a title of its own.
+  // Scoped to THIS window; popouts keep dockview's page-driven titles.
+  win.on('page-title-updated', (e) => {
+    e.preventDefault();
   });
 
   if (state.isMaximized) win.maximize();
@@ -528,7 +547,18 @@ app
   .whenReady()
   .then(async () => {
     sink = new LogSink({ dir: logsDir() });
-    log.app.info('app ready', { version: app.getVersion(), platform: process.platform });
+    // The build stamp goes in the FIRST log line (P2-E15-15): when a bug report
+    // arrives as a log file, "which build produced this?" must be answerable
+    // from the top of it rather than inferred from what the code did.
+    log.app.info('app ready', {
+      version: app.getVersion(),
+      platform: process.platform,
+      commit: BUILD_IDENTITY.commit ?? 'unknown',
+      branch: BUILD_IDENTITY.branch ?? 'detached',
+      dirty: BUILD_IDENTITY.dirty,
+      builtAt: BUILD_IDENTITY.builtAt ?? 'unknown',
+      release: isReleaseBuild(BUILD_IDENTITY),
+    });
     // serve the packaged renderer over loopback http so dockview pop-out works
     if (!DEV_URL) {
       try {

@@ -16,9 +16,11 @@ function deps(): CommandDeps & { focusCard: ReturnType<typeof vi.fn> } {
     openPalette: vi.fn(),
     toggleTabRows: vi.fn(),
     jumpToNextAttention: vi.fn(),
+    openAbout: vi.fn(),
   } as CommandDeps & {
     focusCard: ReturnType<typeof vi.fn>;
     jumpToNextAttention: ReturnType<typeof vi.fn>;
+    openAbout: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -121,6 +123,17 @@ describe('seed command set (E9-01)', () => {
         expect(typeof lookup(key), `missing i18n key: ${key} (command ${c.id})`).toBe('string');
       }
     }
+  });
+
+  it('the build identity is reachable from the palette, with no key of its own (E15-15)', () => {
+    // §5.8: the palette is the map of what exists. "Which build is this?" is
+    // looked up rarely and never in a hurry, so it earns a row and not a chord.
+    const d = deps();
+    const about = byId(buildCommands(d), 'help.about');
+    expect(about.binding).toBeUndefined();
+    expect(about.scope).toBe('app');
+    about.run(ctxWith([]));
+    expect(d.openAbout).toHaveBeenCalledOnce();
   });
 
   it('binds the attention jump to Ctrl+Space and runs the walk (E9-03)', () => {

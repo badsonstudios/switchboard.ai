@@ -36,8 +36,11 @@ same result, no dialog.
 
 ## What you're looking at
 
-- **Title bar** (top) — app-wide switches: trust, the autonomy mode new
-  sessions start in, notifications, theme, language.
+- **Title bar** (top) — the version and build code on the left (click it to see
+  exactly which build you're running — see
+  [Troubleshooting](11-troubleshooting.md#which-version-am-i-running)), then
+  app-wide switches: trust, the autonomy mode new sessions start in,
+  notifications, theme, language.
 - **Sessions** (left) — every session you have open, with a colored status dot.
   Click one to jump to it.
 - **The grid** (middle) — the session cards themselves. Each has its own tabs:

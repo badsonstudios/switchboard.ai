@@ -10,6 +10,7 @@ import { listStatusBarItems } from '../extensibility/status-bar-items';
 import { ContributionBoundary } from '../extensibility/boundary';
 import { StatusBarContext } from '../extensibility/contributions';
 import { ThemeDefinition } from '../theme/theme';
+import { BuildIdentity, commitStamp } from '../../../shared/build-identity';
 
 const barStyle: React.CSSProperties = {
   background: 'var(--titlebar-bg)',
@@ -24,6 +25,10 @@ const barStyle: React.CSSProperties = {
 
 export function TitleBar(props: {
   version: string;
+  /** git stamp of the running build (P2-E15-15) */
+  identity: BuildIdentity;
+  /** open the About panel — the full build identity */
+  onOpenAbout: () => void;
   pref: ThemePreference;
   /** what the app resolved from — the picker must not offer a theme the
    *  resolver cannot find, or the chip lights on a theme nobody painted */
@@ -50,9 +55,11 @@ export function TitleBar(props: {
   return (
     <header style={barStyle}>
       <strong style={{ fontWeight: 600 }}>{t('app.title')}</strong>
-      <span style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)', fontSize: 10 }}>
-        {t('titlebar.version', { version: props.version })}
-      </span>
+      <BuildStamp
+        version={props.version}
+        identity={props.identity}
+        onOpenAbout={props.onOpenAbout}
+      />
       <span style={{ flex: 1 }} />
       <Chip
         selected={false}
@@ -93,6 +100,56 @@ export function TitleBar(props: {
         </Chip>
       ))}
     </header>
+  );
+}
+
+/**
+ * Version + commit, always on screen, one click from the whole story
+ * (P2-E15-15). It sits where the plain `v0.1.0` label used to, because the
+ * question it answers — "are these the bytes I think they are?" — has to be
+ * answerable in the first five seconds, before anyone starts diagnosing a bug
+ * that a rebuild would have removed.
+ *
+ * A button, not a label: the tooltip carries branch and build time for a hover,
+ * and the click opens the full panel. The `*` is a dirty working tree.
+ */
+function BuildStamp(props: {
+  version: string;
+  identity: BuildIdentity;
+  onOpenAbout: () => void;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  const stamp = commitStamp(props.identity);
+  return (
+    <button
+      onClick={props.onOpenAbout}
+      title={t('titlebar.buildHint', {
+        branch: props.identity.branch ?? t('about.detached'),
+        builtAt: props.identity.builtAt
+          ? new Date(props.identity.builtAt).toLocaleString()
+          : t('about.unknown'),
+      })}
+      aria-label={t('titlebar.buildLabel')}
+      style={{
+        background: 'transparent',
+        border: 'none',
+        padding: 0,
+        cursor: 'pointer',
+        color: 'var(--faint)',
+        fontFamily: 'var(--font-mono)',
+        fontSize: 10,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 5,
+      }}
+    >
+      <span>{t('titlebar.version', { version: props.version })}</span>
+      {/* raw git data, not a sentence — but "unknown" IS a word, so that one
+          path goes through i18n like everything else (§5.21) */}
+      <span style={{ color: props.identity.dirty ? 'var(--status-needs-input-ink)' : 'var(--faint)' }}>
+        {stamp ?? t('about.unknown')}
+      </span>
+    </button>
   );
 }
 

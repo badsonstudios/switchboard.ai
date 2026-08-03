@@ -341,6 +341,107 @@ test.describe('Feed view (E12-06)', () => {
     await expect(w.getByText('command-message')).toHaveCount(0); // boilerplate stays collapsed
   });
 
+  // #91, Dan's live feedback 2026-07-26. Two presentation rules that only the
+  // real window can settle: a tool block is a BOX whose whole body expands it,
+  // and a plain answer carries no timeline dot while keeping its left edge.
+  test('tool blocks are clickable boxes and prose has no dot (#91)', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
+
+    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
+    fs.mkdirSync(dir, { recursive: true });
+    const line = (o: Record<string, unknown>): string =>
+      JSON.stringify({ sessionId: 'native-box', cwd: folder, timestamp: new Date().toISOString(), ...o }) + '\n';
+    fs.writeFileSync(
+      path.join(dir, 'native-box.jsonl'),
+      line({ type: 'user', message: { role: 'user', content: 'BOX_PROMPT' } }) +
+        line({
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'text', text: 'BOX_PROSE answer' },
+              // two lines on purpose: a COLLAPSED section still shows its first
+              // line, so only a second one can tell open from shut
+              { type: 'tool_use', id: 'b1', name: 'Bash', input: { command: 'echo BOX_CMD\nBOX_CMD_LINE2', description: 'Box check' } },
+              { type: 'tool_use', name: 'Edit', input: { file_path: 'C:/tmp/box.ts', old_string: 'BOX_OLD', new_string: 'BOX_NEW' } },
+              { type: 'tool_use', name: 'Read', input: { file_path: 'C:/tmp/box.md' } },
+            ],
+          },
+        }) +
+        line({
+          type: 'user',
+          message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'b1', content: 'BOX_OUTPUT\nBOX_OUT_LINE2' }] },
+        })
+    );
+
+    // 1. every tool block is its own bordered container
+    await expect(w.locator('[data-feed-box="bash"]')).toBeVisible({ timeout: 20_000 });
+    await expect(w.locator('[data-feed-box="edit"]')).toBeVisible();
+    await expect(w.locator('[data-feed-box="tool"]')).toBeVisible(); // the Read row
+
+    // 2. the ANSWER has no dot; the prompt and the tool calls still do
+    await expect(w.locator('[data-feed-block="assistant"] [data-feed-dot]')).toHaveCount(0);
+    await expect(w.locator('[data-feed-block="user"] [data-feed-dot]').first()).toBeAttached();
+    await expect(w.locator('[data-feed-block="tool"] [data-feed-dot]').first()).toBeAttached();
+
+    // …and dropping the dot must not drop the GUTTER: prose starts on the same
+    // column as the boxes, or the conversation zig-zags down the page
+    const prose = await w.locator('.feed-md', { hasText: 'BOX_PROSE' }).boundingBox();
+    const box = await w.locator('[data-feed-box="edit"]').boundingBox();
+    expect(Math.abs(prose!.x - box!.x)).toBeLessThanOrEqual(1);
+
+    // 3. the BOX BODY expands, not just the header. The Edit block's stats
+    //    subtitle is box body by construction — it is neither the header line
+    //    nor an inner expander — so a click there proves the whole container is
+    //    the target.
+    await expect(w.getByText('BOX_NEW')).toBeVisible(); // Edit opens expanded
+    await w.getByText('+1 / -1 lines').click();
+    await expect(w.getByText('BOX_NEW')).toHaveCount(0);
+    await w.getByText('+1 / -1 lines').click();
+    await expect(w.getByText('BOX_NEW')).toBeVisible();
+
+    //    …and the Bash box opens from its PADDING, where there is nothing but
+    //    the container itself — Dan's ask in his own words: click the box and
+    //    see what the command was.
+    await expect(w.getByText('▸ IN')).toBeVisible();
+    await expect(w.getByText('▸ OUT')).toBeVisible();
+    await w.locator('[data-feed-box="bash"]').click({ position: { x: 3, y: 2 } });
+    await expect(w.getByText('▾ IN')).toBeVisible();
+    await expect(w.getByText('▾ OUT')).toBeVisible();
+    await expect(w.getByText('BOX_CMD_LINE2')).toBeVisible(); // the WHOLE command
+    await expect(w.getByText('BOX_OUT_LINE2')).toBeVisible();
+
+    // 4. an expander INSIDE the box owns its own click (it must not also flip
+    //    the box, or every fine-grained control would fight its container)
+    await w.locator('[data-feed-box="bash"]').click({ position: { x: 3, y: 2 } }); // close both
+    await expect(w.getByText('▸ IN')).toBeVisible();
+    await w.getByText('▸ IN').click();
+    await expect(w.getByText('▾ IN')).toBeVisible();
+    await expect(w.getByText('▸ OUT')).toBeVisible(); // OUT stayed shut
+
+    // 5. the container reads as a container in BOTH shipped themes — an edge
+    //    the same colour as its fill is not a box
+    const edges = (): Promise<{ border: string; fill: string }> =>
+      w.locator('[data-feed-box="edit"]').evaluate((el) => {
+        const s = getComputedStyle(el);
+        return { border: s.borderTopColor, fill: s.backgroundColor };
+      });
+    // pinned explicitly: the app boots on `system`, which follows the OS, so
+    // "whatever it started as" is not one of the two themes we mean to check
+    await w.getByRole('button', { name: 'nordic', exact: true }).click();
+    await expect(w.locator('html')).toHaveAttribute('data-theme-id', 'nordic');
+    const dark = await edges();
+    expect(dark.border).not.toBe(dark.fill);
+
+    await w.getByRole('button', { name: 'daylight', exact: true }).click();
+    await expect(w.locator('html')).toHaveAttribute('data-theme-id', 'daylight');
+    await expect.poll(async () => (await edges()).fill).not.toBe(dark.fill);
+    const light = await edges();
+    expect(light.border).not.toBe(light.fill);
+  });
+
   test('the composer drives the real CLI over the PTY (E10-02)', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });

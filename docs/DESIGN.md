@@ -541,7 +541,8 @@ Each session offers two synchronized views of the same underlying session:
 owner screenshot 2026-07-21).** The reference look: a clean timeline with a
 dot gutter, one block per event, everything collapsible. Block taxonomy:
 
-- **Assistant prose** — markdown, rendered clean (no chrome), timeline dot.
+- **Assistant prose** — markdown, rendered clean (no chrome), **no timeline
+  dot** (revised 2026-08-02, #91 — see "The dot marks an event" below).
 - **Thinking** — collapsed to a single "Thought for Ns" line (duration from
   timestamps); click expands.
 - **Edit/Write blocks** — header `Edit <file path>` + a "Added N lines /
@@ -557,6 +558,43 @@ dot gutter, one block per event, everything collapsible. Block taxonomy:
   argument), expand for the full input/result.
 - **TodoWrite** — renders as an "Update Todos" checklist block, not raw JSON.
 - **Subagent sidechains** — folded behind an agent header, indented.
+
+**Tool blocks are BOXES** *(added 2026-08-02, owner feedback 2026-07-26 — #91;
+v2 above specified the dot gutter and the per-type layouts and said nothing
+about a container, which is the gap this closes).*
+
+A Bash/Edit/Read/Todos block renders inside a **bordered, rounded container** —
+a half-step surface lift (`--panel2` on the feed's `--panel`) with a `--border`
+edge, in every theme. The point is scannability: Dan, after living in the view,
+asked for them "enclosed in some sort of rectangular box to make them easy to
+see", because a dot plus some text does not read as a *thing* in a wall of
+conversation.
+
+Rules the container carries:
+
+- **The whole box is the expand target**, not the header line it used to be —
+  "that box, of course, is clickable so I can expand and see what the bash
+  command is". For a Bash block the box toggle is the COARSE one (it opens IN
+  and OUT together); the per-section chevrons stay for the finer moves.
+- **Interactive children own their own clicks.** The existing expanders (Bash
+  IN/OUT, the Edit diff panes, and anything later: copy buttons, file links)
+  live inside the box and must never also flip it. Implemented as a marked
+  subtree the container stands down for, so the rule lives in one place rather
+  than in every child's handler.
+- **A drag that ends in a text selection is a read, not a click** — selecting a
+  path out of a block may not fold the block away underneath the pointer.
+- **A block with nothing to expand gets the box and no toggle** (Todos: a
+  checklist is already shown in full, and a pointer cursor promising an
+  expansion would be a lie).
+
+**The dot marks an EVENT, not an answer** *(added 2026-08-02, #91).* The
+timeline dot earns its place on things the session or the user *did* — user
+prompts, tool calls, thinking. A plain assistant reply is the answer, and Dan
+put it plainly: "when you actually answer me and then are waiting for my next
+prompt, I shouldn't need the dot". There it is noise, and it costs the prose its
+left margin. **The gutter is unconditional and the dot is not**: an undotted
+block still reserves the same column, so the left edge of prose stays flush with
+the boxed blocks and the conversation never zig-zags.
 
 Feed customization (the "pleasing to the eye" surface):
 - Themes: font family/size, color palette, spacing/density. Themes are CSS;
