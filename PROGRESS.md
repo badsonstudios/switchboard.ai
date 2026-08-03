@@ -5,27 +5,238 @@
 
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E18-01…10 ALL DONE 2026-08-02**; E15 done except #111 [held — real tokens];
-E9 at 4 of 11 — #70–#73 done, #74–#80 open; E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.** First /orchestrate run closed
-2026-08-02 — six items shipped in one day (see the run record below).
+E9 at 5 of 11 — #70–#74 done, #75–#80 open; E11/E13/E14 still outlines)
+**In progress:** **nothing mid-flight.** Orchestration run 2 CLOSED
+2026-08-03 — all 11 items merged (see the run record below).
 
-> # ▶▶ START HERE — NEXT IS **`/orchestrate`** (wave 2).
-> The first orchestration run (2026-08-02, record below) merged everything it
-> dispatched. The next run's queue analysis, pre-done:
-> - **#74 (P2-E9-05, presentation ladder, M)** — E9 track head now #73 is
->   merged. Dan accepted #73's two flagged calls (no strip off-switch;
->   Ctrl+Space-only lamp), so build on them.
-> - **#91 (Session view: box tool blocks, drop timeline dot)** — Feed track,
->   unblocked now #163 is merged. Different files than #74; can run parallel.
-> - **Small-fix pool for a third worker:** #172/P2-E15-15 (app version +
->   build identity — Dan wants it SOON, spec in plan §E15-15), #170 (resume
->   status refresh), #168 (read-only workspace UI notice), #167 (EBUSY
->   phantom), #165 (popout-geometry flake), #164 (check:fake-stream), #161
->   (Monaco diff e2e).
-> - **#111 (re-measure S-07) still HELD** — it spends real subscription
->   tokens; ask Dan before dispatching.
-> - E18-11…16 stay unfiled behind the S-11 probes; E9's tail past #80 and
+> # ▶▶ START HERE — run 2 is CLOSED; next is run 3 (`/orchestrate`) or
+> single items. Queue analysis for run 3, pre-done:
+> - **#75 (P2-E9-06, presentation policy + auto-minimize, S)** — E9 track
+>   head; #74 merged. NOTE: Dan merged #177 without commenting on its three
+>   flagged calls (collapsed-removes-panel; crashed-not-a-reveal-trigger;
+>   show-more-from-tabbed removes panel) — **confirm he accepts them before
+>   E9-06 builds on them.**
+> - **#174 (feed keyboard a11y)** — unblocked now #173 is merged. Feed track.
+> - **Pool:** #168 (read-only workspace UI notice), #179 (watcher fd leak,
+>   product), #180 (test temp-dir leaks), #185 (e2e AUTOCLOSE trap), #187
+>   (double cardOfLive binding hardening), #191 (diff pane syntax
+>   highlighting — needs a design call first).
+> - **#111 still HELD** (real tokens — ask Dan). **#129** needs milestone
+>   triage. E18-11…16 unfiled behind S-11 probes; E9 tail past #80 and
 >   E11/E13/E14 expansion need Dan (/pm scoping).
+
+> # 🎛 ORCHESTRATION RUN 2 — 2026-08-02→03, **CLOSED: ALL 11 ITEMS
+> MERGED.** 11 items across 4 dispatch waves. 7 internal PRs
+> orchestrator-merged on green CI (#178→#167, #181→#164, #184→#165,
+> #188→#182, #189→#183, #190→#161, #192→#176); 4 user-facing PRs
+> hand-tested + merged by Dan 2026-08-03 (#173→#91, #175→#172, #177→#74,
+> #186→#170). Main @ a65f1ea. 9 issues filed from worker discoveries
+> (#174 #176 #179 #180 #182 #183 #185 #187 #191) — 3 of them (#176 #182
+> #183) fixed within the same run. Unit suite 1013→1121, e2e 131→145.
+> Notables: check:fake-stream had TWO silent rots because it ran in no CI
+> job (now guarded by an enforced local-only-or-in-CI test);
+> the popout flake never reproduced but every silent save path is now
+> audible; PR #177 needed a live conflict resolution after Dan's #173/#175
+> merges (resumed worker, clean union, re-gated, re-merged same day).
+> Process fix folded into /orchestrate at source: stale-lock stealing now
+> requires process-evidence sampling, not clock age alone.
+> **Worktree pool:** sb-wt-1/2/3 parked clean, detached @ a65f1ea; all
+> feature branches deleted. Worker handoffs in
+> `.claude/work_files/orchestrator/<issue#>.md`.
+> Historical detail of the run below (kept as the log of record).
+> **Single-writer rule:** this file is written ONLY by the orchestrator
+> session. Workers report via handoff files in
+> `.claude/work_files/orchestrator/<issue#>.md` — those are the inputs; this
+> block is the output and the resume mechanism if the orchestrator dies.
+>
+> **Active workers** (issue → worktree → branch):
+> - ~~#74 P2-E9-05 presentation ladder + reveal contract~~ **WORKER DONE** —
+>   PR #177 marked ready, **IN DAN'S QUEUE** (user-facing). Gates: 1037 unit
+>   (+24) / 139 e2e +1 skip (+6), lock waited behind 91/172 legitimately.
+>   Ladder rungs: `collapsed` → new Collapsed strip; `tabbed` → one shared
+>   dockview group; reveal-on-attention restores the EXACT slot without
+>   stealing focus; `setLadder` is the seam E9-06/07 compose on. Self-review
+>   took 2 blockers (a ladder move rewrote PERSISTED session data via
+>   dockview group adoption; first-feed-list guard spent on the initial
+>   empty array) + 7 should-fixes. **Three calls flagged for Dan in the PR:**
+>   (1) `collapsed` removes the dockview panel rather than shrinking in
+>   place; (2) `crashed` is NOT a reveal trigger (§5.8 lists three); (3)
+>   DESIGN's ladder order makes "show more" from `tabbed` remove the panel —
+>   an E9-06/07 decision. Handoff: `.claude/work_files/orchestrator/74.md`.
+>   **E9 serial track HOLDS at #75** until Dan rules on the flagged calls.
+> - ~~#164 check:fake-stream broken on Windows~~ ✅ **PR #181 MERGED**
+>   (internal, tooling; re-greened 5/5 on post-#178 main; issue #164
+>   closed; branch deleted). Root cause: the check never
+>   requested the stream transport, so #153's honour-the-request change fed
+>   NDJSON to a PTY cmd.exe; fixing that unmasked a second rot (#163's
+>   per-block assistant messages broke the check's `.text` read) — and
+>   BOTH rotted silently because check:fake-stream ran in NO CI job. Now
+>   in CI beside check:pty, verified on all 3 OSes; fail-fast added on a
+>   non-stream recipe. #176 confirmed NOT shared plumbing (node-pty
+>   AttachConsole under ELECTRON_RUN_AS_NODE — route separately).
+>   Gates: 6/6 clean check runs, 1013 unit, e2e skipped locally per
+>   contract (diff loads nowhere; CI matrix green). Discoveries filed:
+>   **#182** (check:adapter/hooks/transcripts also absent from CI), **#183**
+>   (watcher.test.ts:457 load-sensitive unit flake). Handoff:
+>   `.claude/work_files/orchestrator/164.md`.
+> - ~~#170 resume never refreshes status (rail + strip)~~ **WORKER DONE** —
+>   PR #186 marked ready, **IN DAN'S QUEUE** (user-facing bugfix), CI
+>   running. Root cause fixed at source: `sessions:cards` is a join whose
+>   BINDING half (card gaining/losing its live session) never pushed — only
+>   status changes did, and a resume has no transition. All `cardOfLive`
+>   mutations now route through bindLive/unbindLive → `sessions:cardsChanged`
+>   → App's existing refresh. No presentation/dockview file touched (only
+>   App.tsx overlaps PR #177, different effect). Gates: 1016 unit / 132 e2e
+>   +1 skip; all 4 new tests mutation-checked. Manual: 02-sessions.md
+>   updated. Discovery filed: **#187** (double cardOfLive binding on
+>   crash-respawn — correct but implicit). Handoff:
+>   `.claude/work_files/orchestrator/170.md`.
+> - ~~#182 wire remaining check scripts into CI~~ ✅ **PR #188 MERGED**
+>   (internal; 5/5 green; issue #182 closed; main @ 982d646). All three
+>   checks (adapter/hooks/transcripts) are LOCAL-ONLY — each drives a real
+>   `claude` model turn, which CI can't do without violating the no-API-key
+>   constraint. Decision written in ci.yml AND enforced: new
+>   `check-scripts.test.ts` guard (+8 tests, mutation-tested 3 ways) fails
+>   the build if a future check:* script is neither in CI nor exempted with
+>   a reason. All three checks hand-verified PASS against claude 2.1.220 —
+>   no #164 repeat. testing.md stale guidance fixed. Handoff:
+>   `.claude/work_files/orchestrator/182.md`.
+> - ~~#176 check:pty AttachConsole noise on Windows~~ **WORKER DONE** — PR
+>   #192 (internal, tooling) **in the merge queue** behind #190. Root cause
+>   PROVEN: node-pty `kill()` forks its console-list agent then destroys
+>   the pseudoconsole on the next line — agent boots too late,
+>   AttachConsole dumps on inherited stderr; node-pty's own 5s fallback
+>   covers it. Not fixable at source without `useConptyDll` (production
+>   packaging change — follow-up, not here). Fix: buffering state-machine
+>   filter pinned to node-pty's exact source lines; first deviation prints
+>   the whole buffer verbatim; RAW_STDERR escape hatch. Loud-failure proven
+>   twice (incl. a genuine dump with the SAME SHAPE as the benign one —
+>   kept). Gates: 1068 unit (+37 filter/+8 runner tests), 13 consecutive
+>   clean check runs incl. 40-PTY under load. Two review rounds found 3
+>   real line-eating bugs + an unbounded counter — all fixed and pinned.
+>   Handoff: `.claude/work_files/orchestrator/176.md`. `sb-wt-1` idle —
+>   ALL WORKERS DONE.
+> - ~~#183 merge note~~ ✅ **PR #189 MERGED** (issue #183 closed; its flake
+>   was re-confirmed 3/3 on clean main by #176's CI run — merged first for
+>   exactly that reason).
+> - ✅ **PR #192 MERGED** (issue #176 closed; main @ ece5e61). **INTERNAL
+>   MERGE QUEUE DRAINED — 7 internal PRs merged this run** (#178 #181 #184
+>   #188 #189 #190 #192). Dan's four PRs bumped
+>   onto ece5e61 at ~21:45, re-greening in parallel — orchestrator
+>   confirms green, then pings Dan (dispatching FROZEN). Worktrees
+>   sb-wt-1/2/3 parked clean, detached @ ece5e61; merged local branches
+>   deleted.
+>   HELD still: #174 (behind unmerged #173), #179 (may be implicated by
+>   #183 in flight), #180 (watcher.test collides with #183 in flight),
+>   #129 (needs milestone triage).
+> - ~~#91 boxed tool blocks + no dot on prose~~ **WORKER DONE** — PR #173
+>   marked ready, **IN DAN'S QUEUE** (user-facing; orchestrator never merges
+>   it). Gates: 1015 unit (+2 files) / 132 e2e +1 skip, e2e under the lock.
+>   Tool blocks get a bordered `ToolBox` (whole box toggles; inner controls
+>   carry `data-no-toggle`; drag-select ≠ click); assistant prose loses the
+>   dot, keeps the 6px gutter. DESIGN.md §5.10 amended; manual updated. Two
+>   deliberate calls written into DESIGN: Todos boxed but non-toggling;
+>   thinking unboxed with dot. One unrelated flake seen once
+>   (popout-geometry:149 = known #165). Discovery filed as **#174** (feed
+>   has no keyboard path to expanders — a11y item). Handoff:
+>   `.claude/work_files/orchestrator/91.md`.
+> - ~~#167 EBUSY phantom (stream-service.test.ts afterAll)~~ ✅ **PR #178
+>   MERGED** (internal, test-only; all 5 jobs green; issue #167 closed;
+>   branch deleted; main @ 93eabe4).
+>   Root cause PROVEN: Windows children hold their cwd lock until
+>   reaped; bare spawn→kill→rmSync repro'd EBUSY 20/20, await-exit-first
+>   0/40. Fix: reapAll() awaits every exitCode in afterEach/afterAll +
+>   rmSync retry layer; same race fixed in watcher.test.ts. Gates: 20/20
+>   targeted / 3/3 full suites (1013 unit) / 131 e2e +1 skip under lock.
+>   Discoveries filed: **#179** (PRODUCT fd leak — watcher.ts:907 openSync
+>   with no finally pins a user's transcript for the app lifetime), **#180**
+>   (temp-dir leaks: stream.spec 502 dirs, watcher.test ~94/run). Handoff:
+>   `.claude/work_files/orchestrator/167.md`.
+> - ~~#161 Monaco diff pane e2e coverage~~ ✅ **PR #190 MERGED** (internal,
+>   e2e-only; re-greened 5/5 on post-#189 main; issue #161 closed). Key finding:
+>   the naive spec was VACUOUS — Monaco silently falls back to main-thread
+>   rendering when its worker dies, so a CSP regression leaves the tab
+>   looking perfect; the spec now asserts decorations AND the absence of
+>   Monaco's own worker-creation warning (proved by sabotage: only that
+>   line goes red). New spec 10/10 across two campaigns; full suite 133
+>   e2e +1 skip twice; zero leaked temp dirs. Dev-mode stretch skipped
+>   (not cheap — CSP_DEV stays uncovered, noted in #161 closure via PR).
+>   Discovery filed: **#191** (diff pane has NO syntax highlighting —
+>   one-line fix is a trap, needs a design call). Process fix applied at
+>   source: stale-lock rule in the /orchestrate skill now requires
+>   process-evidence sampling, not clock age alone (#183 held the lock 91
+>   min, live). Handoff: `.claude/work_files/orchestrator/161.md`.
+>   `sb-wt-2` idle — NO new dispatch (stopping-point agreement with Dan).
+>
+> **Dan's queue (user-facing PRs, hand-test lists in the PR bodies):**
+> - **PR #173** (#91, boxed tool blocks + no dot on prose) — ready, **all 5
+>   CI jobs GREEN**.
+> - **PR #175** (#172, app version + build identity) — ready, **all 5 CI
+>   jobs GREEN**.
+> - **PR #177** (#74, presentation ladder + reveal contract) — ready,
+>   **all 5 CI jobs GREEN**. Three flagged calls in the PR body need Dan's
+>   ruling before E9-06 dispatches.
+> - **PR #186** (#170, resume status refresh) — ready.
+> **AGREED WITH DAN 2026-08-02 (~19:30):** he waits for a clean stopping
+> point. Sequence: the three in-flight internal items (#161/#183/#176)
+> finish → orchestrator merges them → final bump + re-green of the four
+> queued PRs → **dispatching STOPS** and Dan is pinged to test. Suggested
+> merge order for Dan: **#175 first** (build stamp makes every later test
+> build self-identifying), then #173, #186, then #177 (three flagged calls
+> to rule on). All four PRs were bumped onto 982d646 at ~19:25; one more
+> bump follows the last internal merge.
+> - ~~#172 P2-E15-15 app version + build identity~~ **WORKER DONE** — PR
+>   #175 marked ready, **IN DAN'S QUEUE** (user-facing). Gates: 1040 unit
+>   (+27 files) / 134 e2e +1 skip / check:pty PASS; SHA verified in both
+>   bundles. Build stamps SHA+branch+dirty+time via electron-vite `define`
+>   (`src/build/git-identity.ts`, Node-only so child_process can't leak into
+>   the renderer); title-bar stamp → About panel + palette command +
+>   boot-log line + **build age** (the field that actually catches a stale
+>   `out/`). Self-review fixed two real defects pre-PR (Ctrl+Space could
+>   jump behind the About modal; panel click stranded focus, killing
+>   Escape). Manual: `11-troubleshooting.md`. Worker also repaired
+>   plan-file damage (#172's insertion had swallowed the `**E15 exit:**`
+>   lead-in). Discovery filed as **#176** (check:pty passes but prints an
+>   AttachConsole stack trace). #165 flake seen once here too, passed on
+>   re-run. Handoff: `.claude/work_files/orchestrator/172.md`.
+> - ~~#165 popout-geometry e2e flake under load~~ ✅ **PR #184 MERGED**
+>   (internal + observability; 5/5 green on post-#181 main; issue #165
+>   closed; branch deleted; main @ 748d3f2). Could NOT reproduce (30 loaded + 12
+>   saturated repeats green); ruled out registration-race and slow-relaunch
+>   by measurement. Real finding: every popout-losing path was SILENT —
+>   `WorkspaceStore.save()` swallowed all write errors (leading suspect:
+>   Windows tmp+rename losing to a scanner, EPERM/EBUSY — now warns, still
+>   fails open); SessionGrid restore + quit flush also made audible. A
+>   product "fix" was built then REVERTED (would lose real cards every quit
+>   to rescue a rare popout — reasoning in the PR). Spec: six failure modes
+>   fail by name, 18/18 clean + 4/4 under 32-burner saturation, attaches
+>   switchboard.log. Gates: 1015 unit / 131 e2e +1 skip. Discovery filed:
+>   **#185** (e2e never sets SWITCHBOARD_AUTOCLOSE — modal trap);
+>   watcher:457 corroboration added to #183. Handoff:
+>   `.claude/work_files/orchestrator/165.md`.
+> - ~~#183 watcher.test.ts:457 load-sensitive unit flake~~ **WORKER DONE**
+>   — PR #189 (internal, test-only) **in the merge queue**, CI running.
+>   Root cause MEASURED: the test asserts a negative inside a 120ms
+>   wall-clock deadline; under load its sleep(60) overshot to 182ms, the
+>   fail-open fallback bound as designed, assertion landed outside its own
+>   window. Repro'd deterministically (event-loop stall) AND at unfixed
+>   main under burners (5/7 failed). Fix is test-only: fake Date for the
+>   pre-deadline half, then hand the clock back; assertions strengthened
+>   (candidateSeen proves refusal, not not-looked-yet). 20/20 saturated,
+>   1023 unit, 131 e2e. Revert- and stall-proofed. **#179 NOT implicated;
+>   no product code changed.** Handoff:
+>   `.claude/work_files/orchestrator/183.md`. `sb-wt-3` idle — NO new
+>   dispatch (stopping-point agreement with Dan).
+>
+> **Merge queue:** empty. All three items are user-facing → PRs will be
+> marked ready and QUEUED FOR DAN, never merged by the orchestrator.
+> Rebase-after-every-merge rule applies if anything lands on main mid-run.
+>
+> **Next up after this wave:** small-fix pool #170 #168 #167 #165 #164 #161;
+> E9 serial track continues #75 (E9-06) after #74 lands; #129 (transcript
+> scan give-up) needs milestone triage. **#111 still HELD** (real tokens —
+> ask Dan). E18-11…16 unfiled behind S-11 probes; E9 tail past #80 and
+> E11/E13/E14 expansion need Dan (/pm scoping).
 
 > # 🎛 ORCHESTRATION RUN 1 — 2026-08-02, **CLOSED: ALL SIX ITEMS MERGED.**
 > 6 work items dispatched to parallel Opus workers, 6 on `main` same day:

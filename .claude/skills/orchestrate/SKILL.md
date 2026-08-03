@@ -113,8 +113,14 @@ The prompt must contain, concretely:
      atomically creating directory `C:\tmp\switchboard-e2e.lock` (mkdir
      fails if it exists → wait 60s and retry). Write your issue# into
      `owner.txt` inside it. Remove the directory when the run ends,
-     success or failure. A lock older than 45 minutes is stale — steal it
-     and say so. Lint, typecheck, and unit tests need no lock.
+     success or failure. A lock is stale ONLY if it is older than 45
+     minutes AND no electron process has been observed across a ~5-minute
+     sampling window (idle instants between spec files are normal — one
+     sample proves nothing); only then steal it, and say so. Legitimate
+     >45-minute holds are routine with three workers sharing the machine
+     (learned 2026-08-02: #183 held it 91 minutes, live, during a repeat
+     campaign — a clock-only rule would have corrupted two runs). Lint,
+     typecheck, and unit tests need no lock.
   4. Gate before push: lint + typecheck + unit green, e2e green under the
      lock. Review your own diff against `/review`'s standards (you are
      Opus; the review is yours) — fix Blockers/Should-fixes, ~3 rounds cap.
