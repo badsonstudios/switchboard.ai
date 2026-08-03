@@ -99,24 +99,66 @@ without asking.
 
 ## Getting a session out of the way
 
-A session you're not watching right now doesn't have to take up space. Open the
-command palette (`Ctrl+Shift+P`) and run **Hide session (keeps it running)**,
-and its card leaves the workspace.
+A session you're not watching right now doesn't have to take up space. Every
+session sits on a **ladder** with four rungs, and you can move it down a rung at
+a time as it needs less of your attention — and back up again in one click.
 
-**Hiding is not closing.** The session keeps working, its conversation is
-untouched, and it stays in the Sessions list on the left with its status
-indicator — so if it finishes or needs you, you'll still see it. The only thing
-that goes away is the card.
+| Rung | What you see | Space it takes |
+|---|---|---|
+| **Expanded** | the full card, where you put it | its own spot in the grid |
+| **Collapsed** | one slim row in the **Collapsed** strip near the top | almost none |
+| **Tabbed** | stacked as a tab with the other tabbed sessions | shares one spot |
+| **Hidden** | nothing but its row in the Sessions list | none at all |
 
-To bring it back, click it anywhere — its row in the Sessions list, its lamp in
+**None of these stops anything.** At every rung the session keeps working, its
+conversation is untouched, and it stays in the Sessions list on the left with
+its status indicator. Only the card changes. Closing a session is a completely
+separate thing — it's the **✕**, and it asks first.
+
+### Moving up and down
+
+- **Down a rung:** `Ctrl+Shift+↓`, or the **▁** button in the card's header
+  (which collapses it straight away).
+- **Up a rung:** `Ctrl+Shift+↑`.
+- **Straight to a rung:** open the command palette (`Ctrl+Shift+P`) and run
+  **Collapse session to a strip**, **Stack session with the tabbed sessions**,
+  **Expand session to its full card**, or **Hide session (keeps it running)**.
+
+The two shortcuts act on the session you're currently *in*, so they work from
+the **Expanded** and **Tabbed** rungs — the two where the session still has a
+card to be focused. Once a session is collapsed or hidden it isn't focused any
+more, so bring it back with a click (its row in the Collapsed strip, the
+Sessions list, or its lamp) and carry on from there. Nothing becomes
+unreachable: the palette can put any focused session on any rung by name.
+
+The **Collapsed** strip appears near the top of the window only when something
+is actually collapsed, and disappears again when nothing is. Each row shows the
+session's color, its name and what it's doing. Click a row to bring that session
+straight back.
+
+### Coming back
+
+Click a session anywhere and it returns: its row in the Sessions list, its row
+in the Collapsed strip, its lamp in
 [the strip along the top](09-notifications.md#the-lamp-strip), or its entry in
-Events. It returns to the exact spot it left: the same position among
+Events. It comes back to the **exact spot it left** — the same position among
 its neighbours, on the same view tab you had open, and if it was in its own
 window, back into one. If the layout around it has changed enough that its old
 spot no longer exists, it comes back into the main grid rather than nowhere.
 
-Hidden sessions stay hidden across restarts. And the **✕** on its row still
-works while it's hidden — that closes the session for real, and asks first.
+**A session that needs you comes back on its own.** If it asks permission, asks
+a question, or finishes while it's collapsed, tabbed or hidden, its card
+reappears in its old spot without you doing anything.
+
+It reappears *without stealing your place*. Whatever you were typing in stays
+focused — the returning card waits for you rather than grabbing the screen. Its
+lamp and the Events list are what tell you it's waiting.
+
+Where a session sits on the ladder is remembered across restarts: sessions come
+back collapsed, tabbed or hidden exactly as you left them. One thing
+deliberately doesn't carry over — sessions that were *already* waiting on you
+when you quit stay where you put them at the next launch, instead of the
+workspace unfolding itself the moment it opens.
 
 ## Rearranging cards
 
@@ -139,8 +181,8 @@ choice is remembered.
 ## Good to know
 
 - Everything in this page persists across restarts: layout, groups, collapse
-  state, the width of the sessions list, pop-out positions, which sessions are
-  hidden, each card's view tab, and focus.
+  state, the width of the sessions list, pop-out positions, where each session
+  sits on the ladder, each card's view tab, and focus.
 - The only thing that moves in the sessions list is the working ring. Nothing
   blinks or pulses — if something has caught your eye there, it's because a
   session genuinely changed state.

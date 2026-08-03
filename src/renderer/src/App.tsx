@@ -27,6 +27,8 @@ import { sessionStore } from './store/session-store';
 import { CommandPalette } from './components/CommandPalette';
 import { AboutPanel } from './components/AboutPanel';
 import { UrgencyStrip } from './components/UrgencyStrip';
+import { CollapsedStrip } from './components/CollapsedStrip';
+import { collapsedRows, revealTargets } from './lib/ladder';
 import { buildIdentity } from '../../shared/build-identity';
 import {
   applyTabRows,
@@ -115,6 +117,16 @@ export function App(): React.JSX.Element {
   const railFlat = useSyncExternalStore(subscribeStore, () => sessionStore.getRailOrder().flat);
   const urgency = useSyncExternalStore(subscribeStore, () => sessionStore.getState().urgency);
   const expireUrgency = React.useCallback(() => sessionStore.expireUrgency(), []);
+  // §5.8's ladder (E9-05). The strip renders from rail order for the reason the
+  // lamps do — a session must not be third in one list and first in another.
+  const presentation = useSyncExternalStore(
+    subscribeStore,
+    () => sessionStore.getState().presentation
+  );
+  const collapsed = React.useMemo(
+    () => collapsedRows(railFlat, (id) => presentation.get(id)?.ladder ?? 'expanded'),
+    [railFlat, presentation]
+  );
   useEffect(() => {
     void loadUiState().then(() => {
       // before anything can write presentation state, and before the grid
@@ -287,6 +299,50 @@ export function App(): React.JSX.Element {
     return off;
   }, []);
 
+  // ── reveal on needs-attention (E9-05, §5.8) ──────────────────────────────
+  //
+  // "Reveal triggers: needs-attention (permission / input / done) or user click
+  // anywhere." The click half has worked since E15-08 — every click path lands
+  // in GridController.focusSession, which reveals a card that has no panel.
+  // This is the other half: a session that is collapsed, tabbed or hidden comes
+  // BACK ON ITS OWN, into exactly the slot it left, the moment it needs a human.
+  //
+  // It deliberately does NOT take focus (revealCard's second argument). Showing
+  // and focusing are two questions in §5.8, and the second one belongs to
+  // E9-10's focus-stealing policy — a blocked session stealing the cursor out
+  // of the card you are typing in is exactly what that setting exists to stop.
+  //
+  // The rule itself is lib/ladder's `revealTargets`, unit-tested there; this
+  // effect is only the wiring, and the ref is what makes "have I acted on this
+  // event id" survive re-renders without being state nothing renders from.
+  const revealSeen = React.useRef<ReadonlySet<number>>(new Set());
+  const bootFeedSeeded = React.useRef(false);
+  useEffect(() => {
+    // Two things must be TRUE before this may act, and both are about not
+    // reacting to a list nobody sent:
+    //
+    //  • the feed has actually delivered. The store starts with an empty events
+    //    array, so this effect runs once before any IPC lands — spending the
+    //    "seed, don't act" pass on a list that was never a list, and letting the
+    //    first REAL one arrive looking like a burst of new events.
+    //  • the grid exists. Marking ids seen with nobody to reveal them would
+    //    retire the event for good, and that session would never come back for
+    //    it.
+    if (!sessionStore.hasFeed() || !grid.current) return;
+    const plan = revealTargets(events, revealSeen.current, {
+      cardIdFor: (liveId) => sessionStore.cardIdForLive(liveId),
+      rungOf: (cardId) => sessionStore.getPresentation(cardId).ladder,
+      // The first list is SEEDED, never acted on: at boot the feed hands over
+      // whatever was already waiting, and §5.25 says the workspace comes back
+      // as the user left it — a launch that instantly un-collapses every
+      // session that was blocked when you quit yesterday is not that.
+      act: bootFeedSeeded.current,
+    });
+    revealSeen.current = plan.seen;
+    bootFeedSeeded.current = true;
+    for (const cardId of plan.cardIds) grid.current?.revealCard(cardId, false);
+  }, [events]);
+
   // ── keyboard commands (E9-01) ────────────────────────────────────────────
   // One document-level listener owns every binding; lib/commands decides
   // whether a key is ours to take (never in a text input, NEVER in a terminal).
@@ -363,6 +419,8 @@ export function App(): React.JSX.Element {
           toggleCardView: (cardId, view) => grid.current?.toggleCardView(cardId, view),
           popOutCard: (cardId) => grid.current?.popOutCard(cardId),
           hideCard: (cardId) => grid.current?.hideCard(cardId),
+          setLadder: (cardId, rung) => grid.current?.setLadder(cardId, rung),
+          stepLadder: (cardId, dir) => grid.current?.stepLadder(cardId, dir),
           toggleRail,
           openPalette: () => setPaletteOpen(true),
           toggleTabRows: () => {
@@ -594,6 +652,10 @@ export function App(): React.JSX.Element {
         onFocus={focusCard}
         onExpire={expireUrgency}
       />
+      {/* §5.8's second rung. Outside the grid for the same reason the lamps
+          are — the grid is what a collapsed card has just left. Renders
+          nothing when nothing is collapsed. */}
+      <CollapsedStrip rows={collapsed} onExpand={(cardId) => focusCard(cardId)} />
       <div style={{ flex: 1, display: 'flex', minBlockSize: 0 }}>
         {!railHidden && (
           <SessionsRail

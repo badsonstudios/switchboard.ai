@@ -350,6 +350,33 @@ describe('SessionStore — presentation (P2-E15-08)', () => {
     expect(store.isHidden('card-A')).toBe(true);
     expect(persisted).toEqual([]); // it just READ the blob; writing it is a no-op at best
   });
+
+  it('says whether the FEED has spoken, separately from what it said', () => {
+    // E9-05's reveal-on-attention seeds itself from the first list and acts on
+    // every one after. The store starts with an empty events array, so without
+    // this flag that seeding pass is spent on a list nobody sent — and the first
+    // REAL list arrives looking like a burst of new events, unfolding every
+    // session that was blocked when you quit. `events.length` cannot answer it:
+    // "the feed has not spoken" and "the feed says nothing is waiting" are the
+    // same array.
+    expect(store.hasFeed()).toBe(false);
+    expect(store.getState().events).toEqual([]);
+    store.setEvents([]); // an EMPTY list is still the feed speaking
+    expect(store.hasFeed()).toBe(true);
+  });
+
+  it('tells our own panel moves from the user dragging a tab', () => {
+    // dockview fires the same events for both, and two listeners act on them —
+    // one adopts the new neighbours' persistent group, the other reads a popout
+    // leaving its window as a user close and suspends the session. A ladder
+    // change must do neither.
+    expect(store.isMoving('card-A')).toBe(false);
+    store.setMoving('card-A', true);
+    expect(store.isMoving('card-A')).toBe(true);
+    expect(store.isMoving('card-B')).toBe(false); // per card, like isHiding
+    store.setMoving('card-A', false);
+    expect(store.isMoving('card-A')).toBe(false);
+  });
 });
 
 describe("SessionStore — the urgency strip's delayed reset (P2-E9-04)", () => {

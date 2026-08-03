@@ -91,6 +91,8 @@ back to the first.
 | `Ctrl+W` | Close the focused session (asks first) |
 | ``Ctrl+` `` | Switch the focused session between its Session and Terminal views |
 | `Ctrl+Shift+O` | Pop the focused session out into its own window, or dock it back |
+| `Ctrl+Shift+↓` | Show less of the focused session — one rung down |
+| `Ctrl+Shift+↑` | Show more of the focused session — one rung up |
 | `Ctrl+Shift+P` | Open the command palette |
 | `Ctrl+Space` | Go to the next session that needs you |
 
@@ -100,14 +102,19 @@ its card — the same confirmation you get from the tab's **✕**.
 ``Ctrl+` `` is a toggle: press it once to look at the Terminal, press it again
 to go straight back to the Session view.
 
-A few more live in the palette without a shortcut of their own: **Toggle Changes
+`Ctrl+Shift+↓` and `Ctrl+Shift+↑` walk the focused session down and up the
+four-rung ladder — full card, slim row, tab, gone. None of them stops the
+session. They act on the session you're *in*, so once it's collapsed or hidden
+it's a click that brings it back rather than a key; see
+[Organizing your workspace](07-workspace.md#getting-a-session-out-of-the-way).
+
+The rest live in the palette without a shortcut of their own: **Toggle Changes
 view**; **About this build**, which tells you exactly which version you're
 running (see
-[Troubleshooting](11-troubleshooting.md#which-version-am-i-running)); and
-**Hide session (keeps it running)** — which takes the focused
-session's card out of the workspace without ending it. Click the session in the
-Sessions list to bring it back where it was; see
-[Organizing your workspace](07-workspace.md).
+[Troubleshooting](11-troubleshooting.md#which-version-am-i-running)); and the
+four that name a rung outright — **Expand session to its full card**,
+**Collapse session to a strip**, **Stack session with the tabbed sessions** and
+**Hide session (keeps it running)**.
 
 ## Hiding the Sessions list
 
