@@ -79,6 +79,12 @@ function isSafeExternalUrl(url: string): boolean {
   }
 }
 
+/** How many popout groups a serialized dockview layout carries. */
+function popoutGroupCount(layout: unknown): number {
+  const groups = (layout as { popoutGroups?: unknown } | null)?.popoutGroups;
+  return Array.isArray(groups) ? groups.length : 0;
+}
+
 /** dockview's popout window: our own same-origin popout.html. */
 function isPopoutUrl(url: string): boolean {
   try {
@@ -376,8 +382,22 @@ function createWindow(): BrowserWindow {
           };
         });
       if (live.length > 0) {
+        const stored = popoutGroupCount(workspace.getLayout());
         workspace.setLayout(patchPopoutPositions(workspace.getLayout(), live));
         workspace.save(); // the store debounces; nothing else will flush this
+        // The flush can only PATCH popout entries the renderer already sent us;
+        // it cannot invent one. dockview registers a popout when the child
+        // window finishes LOADING, so a quit that beats that registration
+        // persists a layout with no popout at all and the window does not come
+        // back. Silent before — and indistinguishable from "restore failed" in
+        // a log — so say which of the two happened (#165).
+        log.ui.info('popout geometry flushed', { live: live.length, stored });
+        if (stored < live.length) {
+          log.ui.warn('quit beat popout registration — popouts will not be restored', {
+            live: live.length,
+            stored,
+          });
+        }
       }
     } catch (err) {
       // geometry is a nicety; never let it block a close
@@ -550,7 +570,20 @@ app
       // authoritative popout geometry (#86). A renderer tearing down still
       // emits layout changes as dockview disposes, and those carry the stale
       // positions we just corrected — ignore them.
-      if (quitConfirmed) return;
+      // A layout the renderer sent just BEFORE the close can still be in flight
+      // and get dropped here — considered, and deliberately still dropped
+      // (#165). Taking it back would mean guessing "fresh" from "teardown
+      // remnant" by shape, and a remnant arrives mid-disposal: popouts still
+      // listed while grid panels have already gone. Persisting one of those
+      // would lose real cards on EVERY quit to save a popout only in the rare
+      // case of quitting in the same breath as tearing one off. Say when it
+      // happens instead — it was silent, and a dropped layout is one of the few
+      // ways a popout can fail to come back.
+      if (quitConfirmed) {
+        const dropped = popoutGroupCount(layout);
+        if (dropped > 0) log.ui.info('layout dropped after quit', { popouts: dropped });
+        return;
+      }
       workspace.setLayout(layout);
     });
     // renderer-owned UI state (E12-08): focus, view tabs, prefs

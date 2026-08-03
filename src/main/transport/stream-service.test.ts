@@ -7,15 +7,35 @@
 // The stand-in CLI is `process.execPath` running a generated script, so the
 // suite needs no `claude` login and no network — the same property the PTY
 // fake gives the e2e suite.
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { StreamService, StreamDiagnostic } from './stream-service';
+import {
+  StreamService,
+  StreamSession,
+  StreamSpawnOptions,
+  StreamDiagnostic,
+} from './stream-service';
 
 let dir: string;
 let svc: StreamService;
+/**
+ * EVERY child this file starts, tracked individually rather than via the
+ * services that own them. Two holes that closes: `beforeEach` throws the
+ * previous service away, so earlier tests' children would go unreaped; and
+ * `remove()` DELETES a session from its service's map while the child is still
+ * dying, so anything asking the service would not see it at all. See `reapAll`.
+ */
+const sessions: StreamSession[] = [];
 const diagnostics: StreamDiagnostic[] = [];
+
+/** `svc.spawn`, plus the bookkeeping teardown needs. Every spawn goes through it. */
+function spawnTracked(opts: StreamSpawnOptions): StreamSession {
+  const s = svc.spawn(opts); // throws on a duplicate id — nothing to track then
+  sessions.push(s);
+  return s;
+}
 
 /** Write a throwaway node script and return its path. */
 function script(body: string): string {
@@ -24,8 +44,8 @@ function script(body: string): string {
   return p;
 }
 
-function run(body: string, id = 'sess'): ReturnType<StreamService['spawn']> {
-  return svc.spawn({
+function run(body: string, id = 'sess'): StreamSession {
+  return spawnTracked({
     id,
     command: process.execPath,
     args: [script(body)],
@@ -56,15 +76,60 @@ function until(check: () => boolean, ms = 4_000): Promise<void> {
   });
 }
 
+/**
+ * Kill every child this file started and WAIT for the OS to finish reaping it.
+ *
+ * `kill()` only *asks*. On Windows a process holds a lock on its `cwd` — which
+ * for every session here is the temp `dir` — and that lock outlives the kill
+ * request by however long the kernel takes to tear the process down. An
+ * `rmSync` issued straight after therefore races it and throws EBUSY on the
+ * directory itself. Vitest attributes a hook throw to the FILE, so the suite
+ * reported "1 file failed" with ZERO failing tests: a phantom failure that
+ * reads as a broken test run and isn't one (#167). Reproduced 20/20 locally
+ * with a bare spawn-kill-rmSync loop; in this file it needed the children of
+ * the *last* test still dying, which is why it only showed up ~2 runs in 20.
+ *
+ * Waiting on `exitCode` is the real fix: it settles from the child's 'exit'
+ * event, which libuv raises off the process handle — i.e. once the process
+ * object is genuinely signalled and its handles, cwd lock included, are gone.
+ */
+async function reapAll(): Promise<void> {
+  for (const s of sessions) s.kill();
+  try {
+    // 5 s, and the headroom matters: vitest's default hook timeout is 10 s, so
+    // a 10 s wait here could only ever be cut short by vitest — reporting `Hook
+    // timed out` against the FILE, i.e. the very phantom this exists to remove,
+    // and the fail-open below would never run. Same trap `until` documents
+    // against test timeouts above. The hooks also ask for 20 s explicitly.
+    await until(() => sessions.every((s) => s.exitCode !== null), 5_000);
+  } catch {
+    // A straggler must not fail the file — the retrying rm is the net.
+  }
+  // Drop what is proven dead; anything still alive stays for the next reap.
+  // Also unpins the finished tests' rings, which hold up to ~1.2 MB of payload.
+  const alive = sessions.filter((s) => s.exitCode === null);
+  sessions.length = 0;
+  sessions.push(...alive);
+}
+
 beforeAll(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-stream-'));
 });
-afterAll(() => {
-  svc?.killAll();
-  fs.rmSync(dir, { recursive: true, force: true });
-});
+afterEach(async () => {
+  // Reap per test rather than only at the end, so a child never outlives the
+  // test that spawned it and the wait is over one test's worth of processes.
+  await reapAll();
+}, 20_000);
+afterAll(async () => {
+  await reapAll();
+  // Second layer, and the reason for the explicit options: even with every
+  // child reaped, a virus scanner or the search indexer can hold a transient
+  // handle on a file it just saw appear. `maxRetries` makes node retry on
+  // exactly the transient codes (EBUSY/EPERM/ENOTEMPTY/EMFILE/ENFILE) instead
+  // of throwing on the first one.
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+}, 20_000);
 beforeEach(() => {
-  svc?.killAll();
   svc = new StreamService();
   diagnostics.length = 0;
 });
@@ -229,7 +294,7 @@ describe('StreamService — a real child over real pipes (P2-E18-03)', () => {
   });
 
   it('a spawn failure settles instead of hanging for ever', async () => {
-    const s = svc.spawn({
+    const s = spawnTracked({
       id: 'nope',
       command: path.join(dir, 'definitely-not-an-executable'),
       args: [],
@@ -244,7 +309,7 @@ describe('StreamService — a real child over real pipes (P2-E18-03)', () => {
   });
 
   it('the ring keeps the most recent messages and reports what it dropped', async () => {
-    const s = svc.spawn({
+    const s = spawnTracked({
       id: 'ring',
       command: process.execPath,
       args: [script(`for (let i = 0; i < 50; i++) process.stdout.write(JSON.stringify({ i }) + '\\n');`)],
@@ -271,7 +336,7 @@ describe('concurrency — the shape the product actually runs (P2-E18-03)', () =
     const got = new Map<number, string[]>();
     for (let i = 0; i < N; i++) {
       got.set(i, []);
-      const s = svc.spawn({
+      const s = spawnTracked({
         id: `c${i}`,
         command: process.execPath,
         // a big payload per session, so the chunk boundaries are real and the
