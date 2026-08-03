@@ -12,10 +12,13 @@ E9 at 5 of 11 — #70–#74 done, #75–#80 open; E11/E13/E14 still outlines)
 > # ▶▶ START HERE — run 2 is CLOSED; next is run 3 (`/orchestrate`) or
 > single items. Queue analysis for run 3, pre-done:
 > - **#75 (P2-E9-06, presentation policy + auto-minimize, S)** — E9 track
->   head; #74 merged. NOTE: Dan merged #177 without commenting on its three
->   flagged calls (collapsed-removes-panel; crashed-not-a-reveal-trigger;
->   show-more-from-tabbed removes panel) — **confirm he accepts them before
->   E9-06 builds on them.**
+>   head, **fully unblocked**: Dan accepted #177's three flagged calls
+>   (collapsed-removes-panel; crashed-not-a-reveal-trigger;
+>   show-more-from-tabbed removes panel) on 2026-08-03 — build on them.
+> - **Dogfooding begins 2026-08-03:** Dan is using the app daily on his
+>   work laptop. Expect real-usage bug reports to arrive as issues; treat
+>   them as high-signal and triage them into runs promptly. His hand-
+>   testing of run-2 features continues in situ.
 > - **#174 (feed keyboard a11y)** — unblocked now #173 is merged. Feed track.
 > - **Pool:** #168 (read-only workspace UI notice), #179 (watcher fd leak,
 >   product), #180 (test temp-dir leaks), #185 (e2e AUTOCLOSE trap), #187
