@@ -167,6 +167,10 @@ export function App(): React.JSX.Element {
       setGroupPolicy(groupId, cycleOverride(groupOverride(sessionStore.getPolicies(), groupId))),
     [setGroupPolicy]
   );
+  // §5.8's layout mode (E9-07). In the store for the reason the ladder and the
+  // policy are: the chip renders from it AND the sweep reads it synchronously
+  // from a keydown handler, outside React's commit.
+  const layout = useSyncExternalStore(subscribeStore, () => sessionStore.getState().layout);
   useEffect(() => {
     void loadUiState().then(() => {
       // before anything can write presentation state, and before the grid
@@ -383,6 +387,23 @@ export function App(): React.JSX.Element {
     for (const cardId of plan.cardIds) grid.current?.revealCard(cardId, false);
   }, [events]);
 
+  // ── layout modes react to the workspace (E9-07, §5.8) ────────────────────
+  //
+  // A mode is not a one-off rearrangement: `queue` has to expand a session THE
+  // INSTANT it needs attention (the item's done-when, verbatim) and `focus` has
+  // to move its big card to whatever you click. Both are "something moved
+  // underneath the mode", which is exactly this effect — the sessions list (the
+  // status machine's output) and the focused card.
+  //
+  // It is a no-op unless a mode is actually enforcing (lib/layout-mode's
+  // `isEnforced`), and that is load-bearing: the DEFAULT mode is `grid`, whose
+  // plan is "every session gets a card", so a standing grid sweep would
+  // re-expand every card the user collapsed by hand on the next status change.
+  // Grid is applied when you switch INTO it and never again.
+  useEffect(() => {
+    grid.current?.applyLayout('react');
+  }, [layout, sessions, activeCard]);
+
   // ── keyboard commands (E9-01) ────────────────────────────────────────────
   // One document-level listener owns every binding; lib/commands decides
   // whether a key is ours to take (never in a text input, NEVER in a terminal).
@@ -413,6 +434,11 @@ export function App(): React.JSX.Element {
     return raised;
   }, []);
 
+
+  // The mouse path for the layout mode (E9-07) — the titlebar chip. It cycles
+  // rather than opening a picker, exactly as the presentation-policy chip does:
+  // three states, and the label always says which one you are on.
+  const cycleLayoutMode = React.useCallback(() => grid.current?.cycleLayoutMode(), []);
 
   const jumpToNextAttention = React.useCallback(() => {
     // synchronous read AND write: two presses in one frame advance two steps
@@ -464,6 +490,9 @@ export function App(): React.JSX.Element {
           setGlobalPolicy,
           setSessionPolicy,
           setGroupPolicy,
+          setLayoutMode: (mode) => grid.current?.setLayoutMode(mode),
+          cycleLayoutMode: () => grid.current?.cycleLayoutMode(),
+          toggleMaximize: (cardId) => grid.current?.toggleMaximize(cardId),
           toggleRail,
           openPalette: () => setPaletteOpen(true),
           toggleTabRows: () => {
@@ -479,6 +508,7 @@ export function App(): React.JSX.Element {
   const railBindingLabel = formatBinding(bindingFor(commands, 'view.rail'), platform);
   const paletteBindingLabel = formatBinding(bindingFor(commands, 'palette.open'), platform);
   const queueBindingLabel = formatBinding(bindingFor(commands, 'attention.next'), platform);
+  const layoutBindingLabel = formatBinding(bindingFor(commands, 'layout.cycleMode'), platform);
   // the palette reads the SAME context the dispatcher does, at open time
   // ONE builder for both readers (the palette at open time, the dispatcher at
   // keypress time). They used to construct this separately, which is how a
@@ -663,6 +693,10 @@ export function App(): React.JSX.Element {
         onCycleAutonomy={cycleAutonomy}
         presentationPolicy={policies.global}
         onCyclePresentationPolicy={cycleGlobalPolicy}
+        layoutMode={layout.mode}
+        layoutMaximized={layout.maximized !== null}
+        onCycleLayoutMode={cycleLayoutMode}
+        layoutBinding={layoutBindingLabel}
         autoTrust={autoTrust}
         onToggleTrust={() => {
           const next = !autoTrust;

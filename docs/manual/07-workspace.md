@@ -163,6 +163,84 @@ deliberately doesn't carry over — sessions that were *already* waiting on you
 when you quit stay where you put them at the next launch, instead of the
 workspace unfolding itself the moment it opens.
 
+## Arranging the whole workspace
+
+Moving one session down a rung is a decision about that session. A **layout
+mode** is a decision about all of them at once — one setting that says what the
+workspace should look like, and then puts every session where it belongs.
+
+| Layout | What you get |
+|---|---|
+| **Grid** | every session gets its own card *(default)* |
+| **Focus** | one big card — the session you're in — and everything else as a row in the Collapsed strip |
+| **Queue** | only the sessions that need you get a card; the rest are rows |
+
+Nothing is closed and nothing stops: a layout mode only moves sessions up and
+down the same four-rung ladder described above, so everything is still in the
+Sessions list, still running, and still one click from coming back.
+
+**Grid is the default, and it's the only one that leaves you alone.** Switch to
+Grid and every session gets a card back — but after that it stops interfering,
+so a session you collapse by hand stays collapsed. Focus and Queue are the two
+that keep arranging as things change.
+
+**Focus follows you.** The big card is whichever session you're in, so clicking
+another session — in the Sessions list, in the Collapsed strip, or on its lamp —
+hands the space to that one and folds the one you left. It's a composition of
+the same rungs, not a special full-screen mode, so everything else in this page
+keeps working exactly as it does in Grid.
+
+**Queue is inbox-zero for agents.** Only the sessions actually waiting on you
+keep a card, so with seven or eight agents running you're looking at your to-do
+list rather than a wall of tiles. A session's card appears the moment it asks
+permission, asks a question, or finishes — and folds away again once you've dealt
+with it and moved on.
+
+### Changing it
+
+- **With the mouse:** the **▦** chip in the title bar. Click to cycle
+  Grid → Focus → Queue; the label always says which one you're on.
+- **From the keyboard:** `Ctrl+Shift+L` cycles the same three.
+- **By name:** the command palette (`Ctrl+Shift+P`) has **Layout: Grid**,
+  **Layout: Focus** and **Layout: Queue**, so you can go straight to one.
+
+The mode is remembered across restarts, and the workspace comes back arranged
+the way you left it.
+
+### What a layout won't do
+
+Three kinds of session are never folded away, whatever the mode:
+
+- **A session that needs you.** If it's holding a permission, has asked a
+  question or has finished and you haven't looked yet, it keeps its card. This is
+  the same promise the rest of this page makes — a session that needs you always
+  comes back — and a layout mode isn't allowed to break it.
+- **The session you're in.** Even in Queue, the card you're actually looking at
+  stays. The workspace never empties out from under you.
+- **A session you've popped out into its own window.** Putting a session on a
+  second monitor is a stronger statement than a layout setting, and folding it
+  would close that window.
+
+A session you've already collapsed, tabbed or hidden by hand is also left where
+you put it — it's out of the way already, and a mode won't drag it half-way back.
+
+### Maximize
+
+Sometimes you just want one session, right now, without changing the mode.
+**Double-click a session's header** and it fills the workspace; everything else
+folds into the Collapsed strip. Double-click again — or press `Ctrl+Shift+M` —
+and the workspace goes back **exactly** as it was, including anything you'd
+hidden by hand before you maximized.
+
+Picking a layout mode while a session is maximized ends the maximize: you've
+just asked for a whole arrangement, so that's the one you get. And a maximize
+isn't a trap — clicking another session while one is maximized brings that one
+back as usual; the rest stay folded until you undo it.
+
+`Ctrl+Shift+M` is the one to use on a **suspended** session (one that came back
+with the app and hasn't been resumed yet): it has no header to double-click
+until it starts.
+
 ## Getting out of the way by itself
 
 Most of the time you don't move a session down the ladder because you decided
@@ -286,7 +364,7 @@ copy of the layout the newer version had.
 
 - Everything in this page persists across restarts: layout, groups, collapse
   state, the width of the sessions list, pop-out positions, where each session
-  sits on the ladder, each card's view tab, and focus.
+  sits on the ladder, the layout mode, each card's view tab, and focus.
 - The only thing that moves in the sessions list is the working ring. Nothing
   blinks or pulses — if something has caught your eye there, it's because a
   session genuinely changed state.

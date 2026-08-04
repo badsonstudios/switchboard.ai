@@ -829,6 +829,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     const epoch = ++ptyEpoch;
     const off = s.onData((d) => send(`pty:data:${id}`, { epoch, d } satisfies PtyChunk));
     feeds.set(id, off);
+    // a bare decode is safe here: RingBuffer guarantees its snapshot holds no
+    // partial CHARACTER at either end (#205), so there is no split for a
+    // StringDecoder to hold across — and nothing it could flush that wouldn't
+    // be the `U+FFFD` we are avoiding. Escape sequences are handled separately
+    // — once anything has been evicted the snapshot starts at a safe RESUME
+    // point (#211) instead of mid-sequence, so a replay doesn't open with
+    // residue like `38;5;10m`. One documented gap: a snapshot holding no ESC
+    // and no newline at all is left as it was.
     return { epoch, snapshot: s.scrollback.snapshot().toString('utf8') };
   });
 

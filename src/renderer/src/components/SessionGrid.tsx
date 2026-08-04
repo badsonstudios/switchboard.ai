@@ -31,6 +31,18 @@ import { Box, boxOnAnyDisplay, RescuedPopout, sanitizePopoutLayout, WorkArea } f
 import { captureSlot, openerRelative, placeAt } from '../lib/dock-slot';
 import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
 import { submitTarget } from '../lib/presentation-policy';
+import {
+  cycleMode,
+  isEnforced,
+  LayoutCard,
+  LayoutMode,
+  LayoutTrigger,
+  plan as layoutPlan,
+  snapshotRungs,
+  withMaximized,
+  withMode,
+  withoutMaximized,
+} from '../lib/layout-mode';
 import { presentStatus } from '../lib/rail-view';
 import type { Ladder } from '../lib/presentation';
 import { pickAdoptedGroupId } from '../lib/groups';
@@ -591,6 +603,24 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         <div style={{ flex: 1, minInlineSize: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
           {/* card header (.chead) — accent border, identity, status, window controls */}
           <div
+            data-testid="card-header"
+            title={t('layout.maximizeHint')}
+            /* §5.8's maximize, verbatim: "double-click a session header (or one
+               command) toggles maximize and restores the prior layout on
+               repeat". The command is the keyboard path — hiding chrome never
+               removes capability, and a double-click has none.
+               Anything in the header that owns its own clicks keeps them: the
+               task label is click-to-edit and the buttons act on one press, so
+               a second press there is not a request to rearrange the
+               workspace. Controls opt out by BEING one (a button, a field) or by
+               marking themselves — the marker is what covers the click-to-edit
+               task label, which is a plain span and would otherwise depend on
+               React having swapped its input in between the two clicks. */
+            onDoubleClick={(e) => {
+              const el = e.target as HTMLElement;
+              if (el.closest('button, input, textarea, select, [data-no-maximize]')) return;
+              if (cardId) toggleMaximizeCard(props.containerApi, cardId);
+            }}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -632,6 +662,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             {editingLabel ? (
               <input
                 autoFocus
+                data-no-maximize
                 defaultValue={taskLabel}
                 onBlur={(e) => {
                   const v = e.target.value.trim();
@@ -655,6 +686,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               />
             ) : (
               <span
+                data-no-maximize
                 onClick={() => setEditingLabel(true)}
                 title={t('grid.taskLabelHint')}
                 style={{
@@ -1281,18 +1313,41 @@ export function applySubmitPolicy(api: DockviewApi | null, cardId: string): void
   if (rung) setCardLadder(api, cardId, rung);
 }
 
-/** Put a card on a named rung. Safe on a card with no panel — that is the point. */
-export function setCardLadder(api: DockviewApi | null, cardId: string, rung: Ladder): void {
-  if (!api || !cardId) return;
+/**
+ * Put a card on a named rung, and RESOLVE WHEN IT IS THERE.
+ *
+ * The awaitable form exists for E9-07's layout sweep, which moves several cards
+ * in one pass: a card comes home to the dock slot it remembers, so two
+ * transitions running at once read that slot's group while the other is still
+ * creating (or destroying) it. `setCardLadder` below is the fire-and-forget
+ * entry point every single-card caller uses — one implementation, two doors.
+ *
+ * `focus` is false for a sweep: §5.8 makes showing and focusing two different
+ * questions, and a layout mode moving cards around must not also decide where
+ * the user is looking.
+ */
+export function moveCardToRung(
+  api: DockviewApi,
+  cardId: string,
+  rung: Ladder,
+  focus: boolean
+): Promise<void> {
   // A transition for this card is already in flight. Without this, a collapse
   // issued while a reveal is awaiting `sessions.cards()` would write its rung,
   // find no panel, return — and then the in-flight reveal would add the panel
   // and write `expanded` on top, silently discarding the user's command.
-  if (laddering.has(cardId)) return;
-  if (sessionStore.getPresentation(cardId).ladder === rung) return; // already there
-  if (rung === 'expanded') return void revealCardPanel(api, cardId, true);
-  if (rung === 'tabbed') return void toTabbed(api, cardId);
+  if (laddering.has(cardId)) return Promise.resolve();
+  if (sessionStore.getPresentation(cardId).ladder === rung) return Promise.resolve(); // already there
+  if (rung === 'expanded') return revealCardPanel(api, cardId, focus);
+  if (rung === 'tabbed') return toTabbed(api, cardId);
   removePanelKeepingSlot(api, cardId, rung);
+  return Promise.resolve();
+}
+
+/** Put a card on a named rung. Safe on a card with no panel — that is the point. */
+export function setCardLadder(api: DockviewApi | null, cardId: string, rung: Ladder): void {
+  if (!api || !cardId) return;
+  void moveCardToRung(api, cardId, rung, true);
 }
 
 /**
@@ -1310,6 +1365,169 @@ export function stepCardLadder(
   if (!api || !cardId) return;
   const cur = sessionStore.getPresentation(cardId).ladder;
   setCardLadder(api, cardId, dir === 'down' ? stepDown(cur) : stepUp(cur));
+}
+
+// ── §5.8's layout modes (P2-E9-07) ──────────────────────────────────────────
+//
+// A mode is a map of card -> rung applied through `setCardLadder`, exactly as
+// the ladder's header promised: there is no second layout engine here, and a
+// rung a mode put a card on is the same rung the palette puts it on. Every RULE
+// is in lib/layout-mode (pure, unit-tested); this is the dockview half.
+
+/**
+ * The cards a plan is computed over — rail order, current rung, and the two
+ * facts that exempt a card from being folded away.
+ *
+ * RAIL ORDER and not the panel list, for the reason the collapsed strip and the
+ * lamps use it: it is the numbering authority for Ctrl+1..9, and a card that is
+ * third in one list and first in another is how two surfaces disagree. It also
+ * includes cards with NO PANEL, which is the whole point — a mode has to be
+ * able to bring a hidden session back.
+ */
+function layoutCards(): LayoutCard[] {
+  return sessionStore.getRailOrder().flat.map((s) => {
+    const p = sessionStore.getPresentation(s.id);
+    return {
+      cardId: s.id,
+      ladder: p.ladder,
+      // the same vocabulary the rail rows, the lamps and the submit policy use
+      needsAttention: presentStatus(s.status).needsYou,
+      poppedOut: p.poppedOut,
+    };
+  });
+}
+
+/**
+ * A sweep in flight, and whether another was asked for while it ran.
+ *
+ * Module scope for the reason `laddering` is: a re-entrancy guard is not app
+ * state. Every move below awaits, and the reactive triggers arrive in bursts —
+ * a status change is one store write, and three sessions finishing inside a
+ * second is three. Without this, two sweeps would interleave their reveals and
+ * removals and the loser would be applying a plan computed against a workspace
+ * that no longer exists. Coalescing to ONE re-run is enough: the plan is
+ * recomputed from live state each time, so the last run always sees the truth.
+ */
+interface Sweep {
+  trigger: LayoutTrigger;
+  /** the un-maximize payload; queued WITH the trigger, because a queued sweep
+   *  that kept the trigger and dropped this would re-apply the mode instead of
+   *  putting the user's own prior arrangement back */
+  restore?: Readonly<Record<string, Ladder>>;
+}
+
+let sweeping = false;
+let resweep: Sweep | null = null;
+
+/**
+ * Has the grid finished coming up?
+ *
+ * A boot restore replays the arrangement the user quit with, rung by rung
+ * (E15-08 persists them), and most of it is `await`ed — so `isRestoringLayout`,
+ * which only spans the synchronous `fromJSON`, is not enough of a fence. A
+ * sweep landing inside that window would race `addPanel` against panels the
+ * restore is still placing. Nothing may sweep until the restore is done, and
+ * onReady sweeps ONCE at the end so a restored mode is applied deterministically
+ * rather than whenever the first session refresh happens to arrive.
+ */
+let gridReady = false;
+
+/**
+ * Put every session where the current layout mode wants it.
+ *
+ * `restore` is the un-maximize path: the rungs to put back, exactly (see
+ * lib/layout-mode's `plan`).
+ */
+export function applyLayout(
+  api: DockviewApi | null,
+  trigger: LayoutTrigger,
+  restore?: Readonly<Record<string, Ladder>>
+): void {
+  if (
+    !api ||
+    !gridReady ||
+    sessionStore.isTearingDown() ||
+    sessionStore.isRestoringLayout()
+  ) {
+    return;
+  }
+  if (sweeping) {
+    // a 'switch' outranks a queued 'react': the user asked for that one
+    if (trigger === 'switch' || !resweep) resweep = { trigger, ...(restore ? { restore } : {}) };
+    return;
+  }
+  // The cheap early-out, before building the card list: reactive triggers
+  // arrive on every status push (several a second while agents stream), and
+  // under the DEFAULT mode there is nothing for any of them to do.
+  if (trigger === 'react' && !restore && !isEnforced(sessionStore.getLayout())) return;
+  sweeping = true;
+  void (async () => {
+    try {
+      const moves = layoutPlan({
+        state: sessionStore.getLayout(),
+        cards: layoutCards(),
+        activeCardId: sessionStore.getState().activeCard,
+        trigger,
+        ...(restore ? { restore } : {}),
+      });
+      // Sequential ON PURPOSE, and awaited: a card comes home to the dock slot
+      // it remembers, and two reveals racing each other read that slot's group
+      // while the other one is still creating (or destroying) it. `toTabbed`
+      // and the reveal are the two async verbs, so both are awaited here even
+      // though `setCardLadder` itself fires and forgets.
+      for (const move of moves) {
+        // WITHOUT FOCUS: `focus` mode moves the big card to whatever you are
+        // already in, so grabbing focus would be the layout telling the user
+        // where to look. Single-card commands focus, because there the move IS
+        // the gesture.
+        await moveCardToRung(api, move.cardId, move.rung, false);
+        if (sessionStore.isTearingDown()) return;
+      }
+    } catch (err) {
+      // fail-open: a layout mode is a convenience, never a reason to throw out
+      // of an event handler and leave the workspace half-swept
+      console.error('[layout] sweep failed', err);
+    } finally {
+      sweeping = false;
+      const again = resweep;
+      resweep = null;
+      if (again) applyLayout(api, again.trigger, again.restore);
+    }
+  })();
+}
+
+/** Switch the workspace to a named layout mode (§5.8). */
+export function setLayoutMode(api: DockviewApi | null, mode: LayoutMode): void {
+  const cur = sessionStore.getLayout();
+  if (cur.mode === mode && !cur.maximized) return;
+  sessionStore.setLayout(withMode(mode));
+  applyLayout(api, 'switch');
+}
+
+/** Next mode in the cycle — the binding and the titlebar chip. */
+export function cycleLayoutMode(api: DockviewApi | null): void {
+  setLayoutMode(api, cycleMode(sessionStore.getLayout().mode));
+}
+
+/**
+ * §5.8's maximize: "double-clicking a session header toggles maximize and
+ * restores the prior layout on repeat".
+ *
+ * The restore is the SNAPSHOT taken on the way in, not a re-application of the
+ * current mode — a card the user had hidden before maximizing is hidden again
+ * afterwards, which is what "the prior layout" means.
+ */
+export function toggleMaximizeCard(api: DockviewApi | null, cardId: string): void {
+  if (!api || !cardId) return;
+  const cur = sessionStore.getLayout();
+  if (cur.maximized === cardId) {
+    const restore = cur.restore; // read BEFORE the edit forgets it
+    sessionStore.setLayout(withoutMaximized(cur));
+    applyLayout(api, 'switch', restore);
+    return;
+  }
+  sessionStore.setLayout(withMaximized(cur, cardId, snapshotRungs(layoutCards())));
+  applyLayout(api, 'switch');
 }
 
 /**
@@ -1598,6 +1816,20 @@ export interface GridController {
   setLadder: (cardId: string, rung: Ladder) => void;
   /** step the card one rung down (collapse) or up (expand) — the two bindings */
   stepLadder: (cardId: string, dir: 'down' | 'up') => void;
+  // ── §5.8's layout modes (P2-E9-07) ──────────────────────────────────────
+  /** put the workspace in a named mode — grid · focus · queue */
+  setLayoutMode: (mode: LayoutMode) => void;
+  /** next mode in the cycle (the titlebar chip and the binding) */
+  cycleLayoutMode: () => void;
+  /** blow one session up to fill the workspace, or put the prior layout back */
+  toggleMaximize: (cardId: string) => void;
+  /**
+   * Re-apply the mode after something moved underneath it — a session started
+   * needing a human, focus changed, a card arrived. A no-op unless a mode is
+   * actually holding the workspace in shape (lib/layout-mode's `isEnforced`),
+   * which is what keeps the default `grid` from undoing the ladder.
+   */
+  applyLayout: (trigger: LayoutTrigger) => void;
 }
 
 export function SessionGrid(props: {
@@ -1723,6 +1955,10 @@ export function SessionGrid(props: {
       revealCard: (cardId, focus) => void revealCard(cardId, focus ?? true),
       setLadder,
       stepLadder,
+      setLayoutMode: (mode) => setLayoutMode(apiRef.current, mode),
+      cycleLayoutMode: () => cycleLayoutMode(apiRef.current),
+      toggleMaximize: (cardId) => toggleMaximizeCard(apiRef.current, cardId),
+      applyLayout: (trigger) => applyLayout(apiRef.current, trigger),
       focusSession: (liveId) => {
         const cardId = sessionStore.cardIdForLive(liveId);
         const panel = apiRef.current?.getPanel(`session-${cardId}`);
@@ -1769,6 +2005,7 @@ export function SessionGrid(props: {
         // hand exactly what onDidRemovePanel would have done.
         sessionStore.forgetCardLiveIds(cardId);
         sessionStore.forgetPresentation(cardId);
+        sessionStore.forgetLayoutCard(cardId);
         void window.switchboard.sessions.closeCard(cardId);
       },
       toggleCardView: (cardId, view) => {
@@ -1873,6 +2110,11 @@ export function SessionGrid(props: {
     async (event: DockviewReadyEvent) => {
       const api = event.api;
       apiRef.current = api;
+      // A fresh grid is coming up: no layout sweep may run until its restore is
+      // finished (see gridReady). Reset rather than assume, so a remount — dev
+      // HMR today, anything else later — cannot start with the flag left true
+      // from the grid before it.
+      gridReady = false;
 
       // Own the theme outright (#84). dockview stamps its theme class on the
       // SHELL — an element we don't render — and defaults to `abyss`; that's
@@ -1967,92 +2209,122 @@ export function SessionGrid(props: {
         if (sessionStore.isHiding(m[1])) return;
         sessionStore.forgetCardLiveIds(m[1]);
         sessionStore.forgetPresentation(m[1]);
+        // ...including a maximize held for it: a stale one would leave the
+        // workspace blown up around nothing AND make the default mode start
+        // enforcing (E9-07, lib/layout-mode's isEnforced)
+        sessionStore.forgetLayoutCard(m[1]);
         void window.switchboard.sessions.closeCard(m[1]);
       });
 
-      const saved = await window.switchboard.workspace.getLayout();
-      if (saved) {
-        // Resolved BEFORE the restore's try/catch, not inside it: an await in
-        // there whose rejection is unrelated to the layout would abort the
-        // stale-panel cleanup and the focus restore, and report itself as
-        // "[layout] restore failed". `null` means "we do not know", which the
-        // prune below treats as "prune no groups".
-        const groupIds = await window.switchboard.groups
-          .list()
-          .then((gs) => gs.map((g) => g.id))
-          .catch(() => null);
-        try {
-          // popouts persist in the layout, but their stored url has last
-          // launch's (random) loopback port and their position may be on a
-          // now-missing monitor — fix both before restoring (E8-02)
-          const workAreas = await window.switchboard.workAreas();
-          const rescuedNow: RescuedPopout[] = [];
-          const sane = sanitizePopoutLayout(saved, window.location.origin, workAreas, rescuedNow);
-          // How many popouts the saved layout asked for, before dockview tries
-          // to reopen them. Pairs with the main process's "popout geometry
-          // flushed" line to say which side of the quit lost one (#165).
-          const asked = (sane as { popoutGroups?: unknown[] })?.popoutGroups?.length ?? 0;
-          if (asked > 0) console.log(`[layout] restoring ${asked} popout(s)`);
-          sessionStore.setRestoringLayout(true);
+      // FAIL-OPEN, and specifically: whatever happens in here, layout sweeps
+      // must end up armed. Two awaits below can reject — reading the saved
+      // workspace, and spawning the scripted-check seed session — and an early
+      // exit through either used to leave `gridReady` false for the life of the
+      // window, which silently turned the layout chip, all four palette entries
+      // and both bindings into no-ops. A layout mode is a convenience; it must
+      // never be able to fail QUIETLY (E9-07).
+      try {
+        const saved = await window.switchboard.workspace.getLayout();
+        if (saved) {
+          // Resolved BEFORE the restore's try/catch, not inside it: an await in
+          // there whose rejection is unrelated to the layout would abort the
+          // stale-panel cleanup and the focus restore, and report itself as
+          // "[layout] restore failed". `null` means "we do not know", which the
+          // prune below treats as "prune no groups".
+          const groupIds = await window.switchboard.groups
+            .list()
+            .then((gs) => gs.map((g) => g.id))
+            .catch(() => null);
           try {
-            api.fromJSON(sane as Parameters<DockviewApi['fromJSON']>[0]);
-          } finally {
-            sessionStore.setRestoringLayout(false);
+            // popouts persist in the layout, but their stored url has last
+            // launch's (random) loopback port and their position may be on a
+            // now-missing monitor — fix both before restoring (E8-02)
+            const workAreas = await window.switchboard.workAreas();
+            const rescuedNow: RescuedPopout[] = [];
+            const sane = sanitizePopoutLayout(saved, window.location.origin, workAreas, rescuedNow);
+            // How many popouts the saved layout asked for, before dockview tries
+            // to reopen them. Pairs with the main process's "popout geometry
+            // flushed" line to say which side of the quit lost one (#165).
+            const asked = (sane as { popoutGroups?: unknown[] })?.popoutGroups?.length ?? 0;
+            if (asked > 0) console.log(`[layout] restoring ${asked} popout(s)`);
+            sessionStore.setRestoringLayout(true);
+            try {
+              api.fromJSON(sane as Parameters<DockviewApi['fromJSON']>[0]);
+            } finally {
+              sessionStore.setRestoringLayout(false);
+            }
+            // stash what was rescued so the display-reconnect offer (E8-06) can
+            // put it back — appended, cleared only by an accepted restore
+            if (rescuedNow.length > 0) {
+              uiSet('rescuedPopouts', [...uiGet<RescuedPopout[]>('rescuedPopouts', []), ...rescuedNow]);
+            }
+            // keep restored session cards that still have a persisted record
+            // (they resume-on-focus); drop any panel with no record behind it.
+            // Diff panes are derived — always drop and let the user reopen.
+            const known = new Set(
+              (await window.switchboard.sessions.knownCards()).map((c) => c.cardId)
+            );
+            // presentation records outlive their panels by design (that is the
+            // point of hiding), so the only thing that can retire one is the card
+            // itself being gone — otherwise the blob grows for ever
+            sessionStore.prunePresentation(known);
+            // the presentation POLICY overrides (E9-06) are keyed the same way and
+            // outlive their cards the same way, so they are retired at the same
+            // moment. A FAILED group list keeps every group override rather than
+            // pruning against an empty set: "the IPC rejected" and "you have no
+            // groups" are the same value otherwise, and one of them would silently
+            // delete settings the user made.
+            sessionStore.prunePolicies(known, groupIds ?? Object.keys(sessionStore.getPolicies().groups));
+            // and E9-07's maximize, which names a card and snapshots every other
+            // card's rung: a maximize held for a session that has since been
+            // closed would keep the workspace blown up around nothing.
+            sessionStore.pruneLayout(known);
+            for (const p of [...api.panels]) {
+              const s = /^session-(.+)$/.exec(p.id);
+              const d = /^diff-/.exec(p.id);
+              if (d || (s && !known.has(s[1]))) api.removePanel(p);
+            }
+            // land the user exactly where they were (§5.25): refocus the saved
+            // card — resume-on-focus then brings that session back first
+            const focused = uiGet<string | null>('focusedCardId', null);
+            if (focused) api.getPanel(`session-${focused}`)?.focus();
+          } catch (err) {
+            // Fail-open: unusable layout JSON -> fresh grid, never a crash. But
+            // SILENT fail-open was indistinguishable from "the saved layout had
+            // nothing in it" — the two look identical from outside, and a restore
+            // that throws part-way loses every popout with it. Say so; the
+            // renderer console is forwarded into switchboard.log (#165).
+            console.error(`[layout] restore failed: ${String(err)}`);
           }
-          // stash what was rescued so the display-reconnect offer (E8-06) can
-          // put it back — appended, cleared only by an accepted restore
-          if (rescuedNow.length > 0) {
-            uiSet('rescuedPopouts', [...uiGet<RescuedPopout[]>('rescuedPopouts', []), ...rescuedNow]);
-          }
-          // keep restored session cards that still have a persisted record
-          // (they resume-on-focus); drop any panel with no record behind it.
-          // Diff panes are derived — always drop and let the user reopen.
-          const known = new Set(
-            (await window.switchboard.sessions.knownCards()).map((c) => c.cardId)
-          );
-          // presentation records outlive their panels by design (that is the
-          // point of hiding), so the only thing that can retire one is the card
-          // itself being gone — otherwise the blob grows for ever
-          sessionStore.prunePresentation(known);
-          // the presentation POLICY overrides (E9-06) are keyed the same way and
-          // outlive their cards the same way, so they are retired at the same
-          // moment. A FAILED group list keeps every group override rather than
-          // pruning against an empty set: "the IPC rejected" and "you have no
-          // groups" are the same value otherwise, and one of them would silently
-          // delete settings the user made.
-          sessionStore.prunePolicies(known, groupIds ?? Object.keys(sessionStore.getPolicies().groups));
-          for (const p of [...api.panels]) {
-            const s = /^session-(.+)$/.exec(p.id);
-            const d = /^diff-/.exec(p.id);
-            if (d || (s && !known.has(s[1]))) api.removePanel(p);
-          }
-          // land the user exactly where they were (§5.25): refocus the saved
-          // card — resume-on-focus then brings that session back first
-          const focused = uiGet<string | null>('focusedCardId', null);
-          if (focused) api.getPanel(`session-${focused}`)?.focus();
-        } catch (err) {
-          // Fail-open: unusable layout JSON -> fresh grid, never a crash. But
-          // SILENT fail-open was indistinguishable from "the saved layout had
-          // nothing in it" — the two look identical from outside, and a restore
-          // that throws part-way loses every popout with it. Say so; the
-          // renderer console is forwarded into switchboard.log (#165).
-          console.error(`[layout] restore failed: ${String(err)}`);
         }
+        for (let i = api.panels.length; i < props.seedPanels; i++) {
+          counter.current += 1;
+          api.addPanel({
+            id: `seed-${counter.current}`,
+            component: 'sessionCard',
+            title: t('grid.cardTitle', { n: i + 1 }),
+          });
+        }
+        // scripted-check seam: one REAL session without the folder dialog
+        const seedFolder = window.switchboard.seedSessionFolder;
+        if (seedFolder) {
+          await addSessionCard(seedFolder);
+        }
+        report();
+      } catch (err) {
+        // the renderer console is forwarded into switchboard.log (#165)
+        console.error(`[grid] bring-up failed: ${String(err)}`);
+      } finally {
+        // The grid is up and the restore is finished: layout sweeps may run
+        // (E9-07). One 'react' pass now applies a restored mode
+        // deterministically, instead of leaving it to whenever the first
+        // session refresh lands — 'react' and not 'switch' because the default
+        // mode's plan is "every session gets a card", and re-expanding at boot
+        // everything the user collapsed before quitting is the opposite of
+        // §5.25.
+        gridReady = true;
+        applyLayout(api, 'react');
       }
-      for (let i = api.panels.length; i < props.seedPanels; i++) {
-        counter.current += 1;
-        api.addPanel({
-          id: `seed-${counter.current}`,
-          component: 'sessionCard',
-          title: t('grid.cardTitle', { n: i + 1 }),
-        });
-      }
-      // scripted-check seam: one REAL session without the folder dialog
-      const seedFolder = window.switchboard.seedSessionFolder;
-      if (seedFolder) {
-        await addSessionCard(seedFolder);
-      }
-      report();
     },
     [] // onReady fires exactly once; props.seedPanels is read at that moment
   );

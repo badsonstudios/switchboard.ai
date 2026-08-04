@@ -14,10 +14,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import http from 'http';
-import os from 'os';
-import path from 'path';
 import { HookListener, PermissionRequest } from './hook-listener';
 import { LogSink, createLogger } from '../log/logger';
+import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 
 let dir: string;
 let listener: HookListener;
@@ -29,7 +28,7 @@ const CWD = process.platform === 'win32' ? 'C:/proj' : '/proj';
 const TARGET = process.platform === 'win32' ? 'C:/proj/src/x.ts' : '/proj/src/x.ts';
 
 beforeEach(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-shg-'));
+  dir = tempDir('sb-shg-');
   held = [];
   transport = 'pty';
   listener = new HookListener({
@@ -45,7 +44,16 @@ beforeEach(async () => {
   port = await listener.start();
 });
 
-afterEach(() => listener.stop());
+// Stop, THEN remove: the listener holds its stateDir open. In a `finally`, so a
+// `beforeEach` that threw before assigning `listener` cannot skip the cleanup
+// (#213 — the footgun PR #212 removed from watcher.test.ts).
+afterEach(() => {
+  try {
+    listener.stop();
+  } finally {
+    cleanupTempDirs();
+  }
+});
 
 /** Register a session and POST it a PreToolUse for a normally-gated write. */
 async function preToolUse(sessionId: string): Promise<string> {

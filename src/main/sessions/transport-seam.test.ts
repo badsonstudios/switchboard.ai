@@ -4,10 +4,8 @@
 // these are the ones that would fail if the seam were wired wrongly. They are
 // deliberately about routing and nothing else — there is still exactly one
 // transport implementation, and proving that is most of the point.
-import { describe, it, expect, beforeEach } from 'vitest';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { SessionManager } from './session-manager';
 import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { MainContributions, SpawnRecipe } from '../extensibility/contributions';
@@ -45,10 +43,11 @@ let dir: string;
 let pty: RecordingTransport;
 let stream: RecordingTransport;
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-seam-'));
+  dir = tempDir('sb-seam-');
   pty = new RecordingTransport();
   stream = new RecordingTransport();
 });
+afterEach(() => cleanupTempDirs()); // one per test, gone at the end of it (#213)
 
 function manager(recipe: Partial<SpawnRecipe>, withStream = false): SessionManager {
   const sink = new LogSink({ dir });

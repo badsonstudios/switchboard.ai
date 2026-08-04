@@ -6,10 +6,8 @@
 // of that exists here: a prompt is a struct, and a newline inside a JSON string
 // cannot be mistaken for a frame boundary. These tests are mostly about proving
 // that claim rather than trusting it.
-import { describe, it, expect, beforeEach } from 'vitest';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { SessionManager } from './session-manager';
 import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { MainContributions } from '../extensibility/contributions';
@@ -57,9 +55,10 @@ let dir: string;
 let stream: SendingTransport;
 
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-sp-'));
+  dir = tempDir('sb-sp-');
   stream = new SendingTransport();
 });
+afterEach(() => cleanupTempDirs()); // one per test, gone at the end of it (#213)
 
 function streamManager(): SessionManager {
   return new SessionManager(

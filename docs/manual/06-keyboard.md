@@ -93,6 +93,8 @@ back to the first.
 | `Ctrl+Shift+O` | Pop the focused session out into its own window, or dock it back |
 | `Ctrl+Shift+↓` | Show less of the focused session — one rung down |
 | `Ctrl+Shift+↑` | Show more of the focused session — one rung up |
+| `Ctrl+Shift+M` | Maximize the focused session, or put the layout back |
+| `Ctrl+Shift+L` | Switch the whole workspace to the next layout: Grid → Focus → Queue |
 | `Ctrl+Shift+P` | Open the command palette |
 | `Ctrl+Space` | Go to the next session that needs you |
 
@@ -107,6 +109,14 @@ four-rung ladder — full card, slim row, tab, gone. None of them stops the
 session. They act on the session you're *in*, so once it's collapsed or hidden
 it's a click that brings it back rather than a key; see
 [Organizing your workspace](07-workspace.md#getting-a-session-out-of-the-way).
+
+`Ctrl+Shift+M` blows the session you're in up to fill the workspace and folds
+everything else into the Collapsed strip; press it again — or double-click the
+card's header — and the workspace goes back exactly as it was.
+`Ctrl+Shift+L` cycles the three
+[layout modes](07-workspace.md#arranging-the-whole-workspace); the palette also
+lists each one by name (**Layout: Grid**, **Layout: Focus**, **Layout: Queue**)
+so you can go straight to one instead of cycling.
 
 The rest live in the palette without a shortcut of their own: **Toggle Changes
 view**; **About this build**, which tells you exactly which version you're

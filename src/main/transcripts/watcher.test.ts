@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -9,6 +9,72 @@ let root: string;
 let logDir: string;
 let cwd: string;
 let watcher: TranscriptWatcher;
+
+/**
+ * EVERY watcher this file starts — the shared one and the extras a test builds
+ * for itself (#180).
+ *
+ * Registered centrally rather than stopped at the end of a test body, so a
+ * FAILING assertion still releases the handle: a live watcher holds `fs.watch`
+ * on its root, and on Windows that open directory handle is exactly what makes
+ * the teardown rm fail with EBUSY — i.e. what turns a leak fix into a phantom
+ * failure. Tests keep their own `stop()` calls; `stop()` is idempotent, and
+ * stopping early is still the right thing when a test wants the watcher quiet
+ * before its last assertions.
+ */
+const extras: TranscriptWatcher[] = [];
+
+/** `new TranscriptWatcher(...)`, plus the bookkeeping teardown needs. Every
+ *  watcher in this file is built through it. */
+function makeWatcher(opts: ConstructorParameters<typeof TranscriptWatcher>[0]): TranscriptWatcher {
+  const w = new TranscriptWatcher(opts);
+  extras.push(w);
+  return w;
+}
+
+function stopExtras(): void {
+  for (const w of extras) {
+    try {
+      w.stop();
+    } catch {
+      /* teardown must never turn into a failure of its own */
+    }
+  }
+  extras.length = 0;
+}
+
+/** Dirs a teardown could not delete, waiting for the next attempt. */
+const stuck: string[] = [];
+
+/**
+ * Delete temp dirs, tolerating the Windows file-lock race — and never throwing.
+ *
+ * Both halves are load-bearing. `maxRetries` covers the ENOTEMPTY/EPERM path a
+ * scanner or indexer holding one file inside the tree produces — but NOT a lock
+ * on the directory itself: node's recursive rm only enters its retry loop after
+ * the not-empty recursion, so an `EBUSY` off the first `rmdir` is rethrown
+ * untouched. That one is covered by the REQUEUE instead: whatever will not go
+ * is tried again by the next teardown and by `afterAll`.
+ *
+ * And it never throws, because a throw from a vitest hook is attributed to the
+ * FILE — a failed file with zero failing tests, the #167 phantom. Fail-open
+ * applies to test infra too: a directory that will not go is a leak, not a
+ * broken run.
+ */
+function rmDirs(dirs: string[]): void {
+  for (const d of dirs) {
+    try {
+      fs.rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    } catch {
+      stuck.push(d);
+    }
+  }
+}
+
+/** Remove `dir`, and retry anything an earlier teardown left behind. */
+function removeTemp(dir: string): void {
+  rmDirs([...stuck.splice(0, stuck.length), dir]);
+}
 
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-tw-root-'));
@@ -22,7 +88,7 @@ beforeEach(() => {
   // re-dirtying the root for it.
   logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-tw-log-'));
   cwd = 'C:/tmp/tw-project';
-  watcher = new TranscriptWatcher({
+  watcher = makeWatcher({
     projectsRoot: root,
     log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
     pollMs: 25,
@@ -36,7 +102,21 @@ afterEach(() => {
   // restore also lives somewhere no code path in a test body can miss. A
   // no-op when timers were never faked, which is every other test here.
   vi.useRealTimers();
-  watcher.stop();
+  // Every watcher stopped — `watcher` included, it is registered like any other
+  // — BEFORE the rm, so no handle on `root` survives into it. Nothing here is
+  // allowed to throw on the way to the rm: that would leak the dirs AND report
+  // a failed file with no failing test (#167).
+  stopExtras();
+  // Both dirs were leaked outright until these two lines — MEASURED at 102
+  // orphaned directories per run (two per test) against an isolated `TEMP`, and
+  // 0 after — on a file that runs dozens of times a day on a dev machine (#180).
+  removeTemp(root);
+  removeTemp(logDir);
+});
+
+afterAll(() => {
+  // Last call for anything still locked when its own teardown ran.
+  rmDirs(stuck.splice(0, stuck.length));
 });
 
 function projectDir(): string {
@@ -385,7 +465,7 @@ describe('Feed block derivation (P2-E12-06 §5.10)', () => {
 describe('positive evidence required to claim (Dan 2026-07-22: summary-first files)', () => {
   it('a summary-first file (no cwd on line 1) is NOT claimed by a foreign-folder session', async () => {
     // widen quickly so the full-root scan definitely sees the foreign file
-    const w2 = new TranscriptWatcher({
+    const w2 = makeWatcher({
       projectsRoot: root,
       log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 25,
@@ -493,7 +573,7 @@ describe('cwd fallback when hooks never deliver an id (review P1 #8, fail-open)'
       // Installed before `watch()`, which stamps `watchedSince` — the other
       // half of the deadline subtraction. (The constructor reads no clock.)
       vi.useFakeTimers({ toFake: ['Date'] }); // Date only — setTimeout stays real
-      w2 = new TranscriptWatcher({
+      w2 = makeWatcher({
         projectsRoot: root,
         log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
         pollMs: 25,
@@ -631,7 +711,7 @@ describe('pre-existing transcripts are never adopted', () => {
   it('ignores files that existed before the watcher started', async () => {
     const file = path.join(projectDir(), 'old.jsonl');
     writeLines(file, [entry()]);
-    const w2 = new TranscriptWatcher({
+    const w2 = makeWatcher({
       projectsRoot: root,
       log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 25,
@@ -649,7 +729,7 @@ describe('pre-existing transcripts are never adopted', () => {
     writeLines(file, [
       entry({ sessionId: 'native-res', message: { content: [{ type: 'text', text: 'history line' }] } }),
     ]);
-    const w2 = new TranscriptWatcher({
+    const w2 = makeWatcher({
       projectsRoot: root,
       log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 25,
@@ -672,13 +752,6 @@ describe('pre-existing transcripts are never adopted', () => {
 
 describe('per-session transcripts root (P2-E15-01)', () => {
   let rootB: string;
-  /**
-   * Extra watchers a test builds for itself. Registered here rather than
-   * stopped at the end of the test body, so a FAILING assertion still releases
-   * the handle — otherwise the rm below hits a live `fs.watch` and the EBUSY
-   * masks the real failure with a phantom one.
-   */
-  const extras: TranscriptWatcher[] = [];
 
   beforeEach(() => {
     rootB = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-tw-rootb-'));
@@ -687,14 +760,13 @@ describe('per-session transcripts root (P2-E15-01)', () => {
     // Stop FIRST. These tests point a watcher at `rootB`, and discovery puts it
     // under `fs.watch` — an open directory handle, closed synchronously by
     // `stop()`. Vitest runs the innermost `afterEach` before the outer one, so
-    // without this the rm here would race the outer `watcher.stop()` and throw
+    // without this the rm here would race the outer teardown's stop and throw
     // EBUSY on Windows, which vitest reports as a failed FILE with zero failing
-    // tests (the #167 shape). `stop()` is idempotent, so the outer hook calling
-    // it again is fine.
-    watcher.stop();
-    for (const w of extras) w.stop();
-    extras.length = 0;
-    fs.rmSync(rootB, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    // tests (the #167 shape). `stop()` is idempotent, so the outer hook running
+    // it again is fine. (`extras` lives at file scope since #180 — EVERY watcher
+    // in the file is registered with it now, not just this block's.)
+    stopExtras();
+    removeTemp(rootB);
   });
 
   it('a session watches under ITS provider root, not the watcher default', async () => {
@@ -726,13 +798,12 @@ describe('per-session transcripts root (P2-E15-01)', () => {
   });
 
   it('the widened scan does not cross roots either', async () => {
-    const w2 = new TranscriptWatcher({
+    const w2 = makeWatcher({
       projectsRoot: root,
       log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 25,
       widenAfterMs: 50, // widen almost immediately
     });
-    extras.push(w2); // stopped in teardown, on the failure path too
     const theirs = path.join(root, slugForCwd('C:/tmp/somewhere-else'));
     fs.mkdirSync(theirs, { recursive: true });
     fs.mkdirSync(path.join(rootB, slugForCwd(cwd)), { recursive: true });
@@ -784,7 +855,7 @@ describe('binding state (P2-E15-10)', () => {
   it('a fresh session is awaiting-prompt and STAYS there — an unprompted session is not late', async () => {
     // The give-up deadline is 20ms here; a session nobody has prompted must
     // still never age into "couldn't bind", because nothing is wrong with it.
-    const w = new TranscriptWatcher({
+    const w = makeWatcher({
       projectsRoot: root,
       log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 10,
@@ -816,7 +887,7 @@ describe('binding state (P2-E15-10)', () => {
     // as evidence meant every card you had opened and not typed into turned
     // red 45 seconds later, which is the exact false alarm this item exists to
     // remove.
-    const w = new TranscriptWatcher({
+    const w = makeWatcher({
       projectsRoot: root,
       log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 10,
@@ -844,7 +915,7 @@ describe('binding state (P2-E15-10)', () => {
   });
 
   it('searching past the deadline becomes unbound, and says where it looked', async () => {
-    const w = new TranscriptWatcher({
+    const w = makeWatcher({
       projectsRoot: root,
       log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 10,
@@ -891,7 +962,7 @@ describe('binding state (P2-E15-10)', () => {
     // is HOW we got here), so carrying the ORIGINAL evidence timestamp would
     // declare the fresh search failed the instant it began, ten minutes into a
     // healthy session.
-    const w = new TranscriptWatcher({
+    const w = makeWatcher({
       projectsRoot: root,
       log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 10,
@@ -922,7 +993,7 @@ describe('binding state (P2-E15-10)', () => {
     // cleared session must give up its `conversationStarted` latch, AND the
     // conversation it just abandoned — which stays on disk, unclaimable by us
     // for ever — must stop counting as a transcript we failed to pick up.
-    const w = new TranscriptWatcher({
+    const w = makeWatcher({
       projectsRoot: root,
       log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 10,
@@ -1028,7 +1099,7 @@ describe('transcript schema drift (P2-E15-10, §5.26)', () => {
         base.warn(msg, fields);
       },
     };
-    const w = new TranscriptWatcher({ projectsRoot: root, log, pollMs: 20 });
+    const w = makeWatcher({ projectsRoot: root, log, pollMs: 20 });
     w.watch('s1', { cwd });
     const file = path.join(projectDir(), 'native-1.jsonl');
     const withUnknown = (n: number) =>
@@ -1182,7 +1253,7 @@ describe('discovery I/O is off the hot thread (P2-E15-11 / AR-P1-8)', () => {
     // taking the discovery branch and releases the sweeps it was hogging. And
     // the watch must be OFF, or real filesystem events keep re-dirtying the
     // root and hand out the extra opportunities that hide the starvation.
-    const w = new TranscriptWatcher({
+    const w = makeWatcher({
       projectsRoot: root,
       log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 25,
@@ -1213,7 +1284,7 @@ describe('discovery still works with no filesystem watch at all (P2-E15-11 fail-
   // network homes. The watch is an ACCELERATOR; every guarantee below is met by
   // the timed sweeps alone. If these fail, the feature is not shippable.
   function blindWatcher(over: Partial<ConstructorParameters<typeof TranscriptWatcher>[0]> = {}) {
-    return new TranscriptWatcher({
+    return makeWatcher({
       projectsRoot: root,
       log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 25,

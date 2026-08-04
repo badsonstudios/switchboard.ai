@@ -8,6 +8,7 @@ import {
   withGlobal,
   withGroup,
 } from '../lib/presentation-policy';
+import { DEFAULT_LAYOUT, withMaximized, withMode } from '../lib/layout-mode';
 
 // The done-when: "a unit test constructs a store, drives it, and asserts
 // derived rail order + queue order WITHOUT React." That was impossible before
@@ -231,6 +232,13 @@ describe('dockview lifecycle flags (written by the grid, read by the panel)', ()
   });
 });
 
+// #201 is unbounded GROWTH, and the map's size is the only direct witness to
+// it — a lookup samples one id at a time. Read through a cast rather than
+// adding production API that exists only for a test.
+function liveMapSize(store: SessionStore): number {
+  return (store as unknown as { liveToCard: Map<string, string> }).liveToCard.size;
+}
+
 describe('identity maps that used to be module globals', () => {
   let store: SessionStore;
   beforeEach(() => {
@@ -245,14 +253,40 @@ describe('identity maps that used to be module globals', () => {
     expect(store.cardIdForLive('card-B')).toBe('card-B');
   });
 
-  it('forgets every live id belonging to a closed card', () => {
+  it("forgets the closed card's live id, and only that card's", () => {
     store.mapLiveToCard('live-1', 'card-A');
-    store.mapLiveToCard('live-2', 'card-A'); // same card, after a resume
+    // a resume: this bind is itself what releases live-1 (#201, below), so by
+    // the close there is only ever one id to forget
+    store.mapLiveToCard('live-2', 'card-A');
     store.mapLiveToCard('live-3', 'card-B');
     store.forgetCardLiveIds('card-A');
-    expect(store.cardIdForLive('live-1')).toBe('live-1');
     expect(store.cardIdForLive('live-2')).toBe('live-2');
     expect(store.cardIdForLive('live-3')).toBe('card-B');
+  });
+
+  // #201 — the renderer mirror of #187/PR #199's reap. Main unbinds the dead
+  // session when a fresh one takes the card; this side used to keep the corpse.
+  it("drops the card's previous live id when a respawn rebinds it", () => {
+    store.mapLiveToCard('live-1', 'card-A');
+    store.mapLiveToCard('live-2', 'card-B');
+    store.mapLiveToCard('live-1b', 'card-A'); // card-A crashed and respawned
+
+    // the corpse passes through, exactly as an id the store never knew would
+    expect(store.cardIdForLive('live-1')).toBe('live-1');
+    expect(store.cardIdForLive('live-1b')).toBe('card-A');
+    // only THIS card's bindings are swept — the neighbour is untouched
+    expect(store.cardIdForLive('live-2')).toBe('card-B');
+  });
+
+  it('holds exactly one entry per card across repeated crash-respawn cycles', () => {
+    for (let i = 0; i < 4; i++) store.mapLiveToCard(`live-${i}`, 'card-A');
+    store.mapLiveToCard('other', 'card-B');
+    store.mapLiveToCard('live-3', 'card-A'); // the same pair again: a no-op
+    // the growth itself: three respawn cycles used to leave four entries for
+    // the one card, released only when the card was closed
+    expect(liveMapSize(store)).toBe(2);
+    expect(store.cardIdForLive('live-3')).toBe('card-A');
+    expect(store.cardIdForLive('other')).toBe('card-B');
   });
 
   it('allow-all is keyed by LIVE id, so a respawn prompts again', () => {
@@ -516,6 +550,61 @@ describe('SessionStore — presentation policy (P2-E9-06)', () => {
     expect(store.getPolicies().cards).toEqual({});
     expect(store.getPolicies().groups).toEqual({});
     expect(persisted.at(-1)).toBeNull();
+  });
+});
+
+describe('SessionStore — layout mode (P2-E9-07)', () => {
+  let store: SessionStore;
+  let persisted: Array<Record<string, unknown> | null>;
+  beforeEach(() => {
+    store = new SessionStore();
+    persisted = [];
+    store.setLayoutPersister((blob) => persisted.push(blob));
+  });
+
+  it('starts on grid — the default is the absence of a layout rule', () => {
+    expect(store.getLayout()).toEqual(DEFAULT_LAYOUT);
+    expect(persisted).toEqual([]);
+  });
+
+  it('init seeds the mode without writing it back', () => {
+    store.initLayout(withMode('queue'));
+    expect(store.getLayout().mode).toBe('queue');
+    expect(persisted).toEqual([]); // it just READ the blob
+  });
+
+  it('persists on change, and writes null once nothing differs from the default', () => {
+    store.setLayout(withMode('focus'));
+    expect(persisted.at(-1)).toEqual({ mode: 'focus' });
+    store.setLayout(withMode('grid'));
+    expect(persisted.at(-1)).toBeNull(); // forget the key entirely
+  });
+
+  it('the same state twice is not a write and not a re-render', () => {
+    const next = withMode('focus');
+    store.setLayout(next);
+    let notifications = 0;
+    store.subscribe(() => notifications++);
+    store.setLayout(next);
+    expect(notifications).toBe(0);
+    expect(persisted.length).toBe(1);
+  });
+
+  it('drops a maximize whose card has been closed', () => {
+    store.setLayout(withMaximized(DEFAULT_LAYOUT, 'card-A', { 'card-A': 'expanded' }));
+    store.pruneLayout(['card-B']);
+    expect(store.getLayout()).toEqual(DEFAULT_LAYOUT);
+    expect(persisted.at(-1)).toBeNull();
+  });
+
+  it('forgets a closed card at the moment it closes, not at the next boot', () => {
+    // a stale maximize makes the DEFAULT mode start enforcing, so this cannot
+    // wait for the boot prune — see lib/layout-mode's isEnforced
+    store.setLayout(withMaximized(DEFAULT_LAYOUT, 'card-A', { 'card-A': 'expanded' }));
+    store.forgetLayoutCard('card-B'); // an unrelated close: no write, no re-render
+    expect(store.getLayout().maximized).toBe('card-A');
+    store.forgetLayoutCard('card-A');
+    expect(store.getLayout()).toEqual(DEFAULT_LAYOUT);
   });
 });
 

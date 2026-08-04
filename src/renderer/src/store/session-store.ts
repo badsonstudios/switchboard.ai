@@ -39,6 +39,13 @@ import {
   prunePolicies,
   resolvePolicy,
 } from '../lib/presentation-policy';
+import {
+  DEFAULT_LAYOUT,
+  forgetLayoutCard,
+  LayoutState,
+  persistableLayout,
+  pruneLayout,
+} from '../lib/layout-mode';
 
 /**
  * A snapshot. Every field is `readonly` deliberately: identity IS the change
@@ -75,6 +82,13 @@ export interface SessionState {
    * is the same pair of requirements that put `presentation` here.
    */
   readonly policies: PolicyBook;
+  /**
+   * §5.8's layout mode + the maximize it can be holding (P2-E9-07). In `state`
+   * for the same pair of reasons `presentation` is: the titlebar chip and the
+   * palette RENDER from it, and the sweep that applies it runs from a keydown
+   * handler outside React's commit and has to read what is true now.
+   */
+  readonly layout: LayoutState;
 }
 
 const EMPTY: SessionState = {
@@ -87,6 +101,7 @@ const EMPTY: SessionState = {
   presentation: new Map(),
   urgency: new Map(),
   policies: DEFAULT_BOOK,
+  layout: DEFAULT_LAYOUT,
 };
 
 export class SessionStore {
@@ -331,6 +346,51 @@ export class SessionStore {
     this.persistPolicies(persistablePolicies(next));
   }
 
+  // ── layout mode (P2-E9-07) ──────────────────────────────────────────────
+  // Persistence is INJECTED, exactly as it is for presentation and policies
+  // above, and for the same reason: the store must not have the preload bridge
+  // on its dependency path (P2-E15-07).
+  private persistLayout: (blob: Record<string, unknown> | null) => void = () => {};
+
+  setLayoutPersister(fn: (blob: Record<string, unknown> | null) => void): void {
+    this.persistLayout = fn;
+  }
+
+  getLayout(): LayoutState {
+    return this.state.layout;
+  }
+
+  /** Seed from the ui blob at boot. Does not persist — it just read it. */
+  initLayout(layout: LayoutState): void {
+    this.set({ layout });
+  }
+
+  /** Replace the layout state (the pure edits live in lib/layout-mode). */
+  setLayout(layout: LayoutState): void {
+    if (layout === this.state.layout) return;
+    this.set({ layout });
+    this.persistLayout(persistableLayout(layout));
+  }
+
+  /** Forget a maximize (and its snapshot) whose card is gone. Called from the
+   *  same place `prunePresentation` is, and for the same reason. */
+  pruneLayout(knownCardIds: Iterable<string>): void {
+    this.writeLayout(pruneLayout(this.state.layout, knownCardIds));
+  }
+
+  /** The card is gone for good — retire its layout records at that moment
+   *  rather than waiting for the next boot's prune, exactly as
+   *  `forgetPresentation` does and at the same call sites. */
+  forgetLayoutCard(cardId: string): void {
+    this.writeLayout(forgetLayoutCard(this.state.layout, cardId));
+  }
+
+  private writeLayout(next: LayoutState | null): void {
+    if (!next) return; // nothing stale: no write, no re-render
+    this.set({ layout: next });
+    this.persistLayout(persistableLayout(next));
+  }
+
   // ── urgency strip (P2-E9-04) ────────────────────────────────────────────
   // Part of `state`, like presentation and unlike the registries below: the
   // strip RENDERS from it, and the attention jump writes it from a keydown
@@ -365,12 +425,36 @@ export class SessionStore {
   // useSyncExternalStore selector over any of it — it would never update.
   //
   // ── live-id ↔ card mapping ──────────────────────────────────────────────
+  /**
+   * Bind a live session to its card — and unbind whatever was bound to that
+   * card before, so the invariant is ONE live id per card.
+   *
+   * The sweep mirrors main's reap (#187 → PR #199): a crash-respawn gives the
+   * card a fresh live id, and without this the corpse's entry stayed for the
+   * rest of the run — one more per crash-respawn cycle, released only when the
+   * card is closed (`forgetCardLiveIds`). It is a forward map, so a leftover
+   * could not misroute anything; it was unbounded growth, plus a dead id that
+   * went on resolving to a live card long after main had stopped believing it.
+   *
+   * Sweeping here rather than at the call site is deliberate: `mapLiveToCard`
+   * is the only way a binding is created, so the invariant cannot be forgotten
+   * by a future second caller.
+   */
   mapLiveToCard(liveId: string, cardId: string): void {
+    // Through `forgetCardLiveIds` rather than a second loop, so "unbind this
+    // card" has ONE implementation. Re-binding the same pair drops and re-adds
+    // the entry — no reader sees insertion order, so that is a no-op, and a
+    // guard against it would be a branch no test could falsify.
+    this.forgetCardLiveIds(cardId);
     this.liveToCard.set(liveId, cardId);
   }
   cardIdForLive(liveId: string): string {
     return this.liveToCard.get(liveId) ?? liveId;
   }
+  /** Release the card's binding. Since `mapLiveToCard` sweeps, there is at most
+   *  one to find — but it is a FORWARD map, so finding it is still a scan.
+   *  Delete-while-iterating is safe on a Map: an entry removed before it is
+   *  reached is simply never visited. */
   forgetCardLiveIds(cardId: string): void {
     for (const [liveId, cid] of this.liveToCard) if (cid === cardId) this.liveToCard.delete(liveId);
   }
