@@ -101,6 +101,15 @@
     "policyGroup": "On submit, this group: {policy} — click to change",
     "policyGroupIcon": "⬍"
   },
+  "layout": {
+    "grid": "Grid",
+    "focus": "Focus",
+    "queue": "Queue",
+    "chip": "▦ {mode}",
+    "chipMaximized": "▦ {mode} · maximized",
+    "chipHint": "Layout: {mode}. Click to cycle Grid → Focus → Queue ({binding}).",
+    "maximizeHint": "Double-click to maximize this session; double-click again to put the layout back"
+  },
   "grid": {
     "addCard": "+ session",
     "empty": "Add a session card to begin",
@@ -308,6 +317,13 @@
     "expandSession": "Expand session to its full card",
     "ladderDown": "Show less of this session (collapse)",
     "ladderUp": "Show more of this session (expand)",
+    "layout": {
+      "grid": "Layout: Grid — every session gets a card",
+      "focus": "Layout: Focus — one big card, the rest as strips",
+      "queue": "Layout: Queue — only the sessions that need you"
+    },
+    "cycleLayout": "Layout: next mode (Grid → Focus → Queue)",
+    "maximize": "Maximize this session / put the layout back",
     "toggleTerminal": "Toggle Terminal view",
     "toggleChanges": "Toggle Changes view",
     "toggleRail": "Toggle the sessions rail",

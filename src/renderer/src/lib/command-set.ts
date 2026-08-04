@@ -10,6 +10,7 @@ import { Command, CommandContext } from './commands';
 import { PanelId } from '../extensibility/contributions';
 import type { Ladder } from './presentation';
 import { POLICY_ORDER, PresentationPolicy } from './presentation-policy';
+import { LAYOUT_MODES, LayoutMode } from './layout-mode';
 
 export interface CommandDeps {
   /** focus the session card with this card id */
@@ -34,6 +35,12 @@ export interface CommandDeps {
   setSessionPolicy: (cardId: string, policy: PresentationPolicy | undefined) => void;
   /** override the global for a whole persistent group (E9-06) */
   setGroupPolicy: (groupId: string, policy: PresentationPolicy | undefined) => void;
+  /** put the whole workspace in a named layout mode (E9-07) */
+  setLayoutMode: (mode: LayoutMode) => void;
+  /** next layout mode in the cycle — the one binding (E9-07) */
+  cycleLayoutMode: () => void;
+  /** blow one session up to fill the workspace, or put the prior layout back */
+  toggleMaximize: (cardId: string) => void;
   /** show/hide the sessions rail */
   toggleRail: () => void;
   /** open the command palette (E9-02) */
@@ -258,6 +265,50 @@ export function buildCommands(deps: CommandDeps): Command[] {
       disabledReasonKey: 'commands.disabled.noActiveSession',
       run: (ctx) => {
         if (ctx.activeCardId) deps.hideCard(ctx.activeCardId);
+      },
+    },
+    // ── §5.8's layout MODES (E9-07) ───────────────────────────────────────
+    //
+    // Three NAMED targets plus one cycle, and the split follows E9-06's:
+    // naming a mode is what belongs in a list you read, while cycling is the
+    // per-minute gesture and gets the key. The cycle entry is in the palette
+    // too — §5.8's invariant is that hiding chrome never removes capability,
+    // and the titlebar chip is chrome — but its title spells the ORDER out, so
+    // it still says what pressing Enter will do.
+    //
+    // Generated from LAYOUT_MODES rather than written out three times, so a
+    // fourth mode cannot ship with two of its three entries.
+    ...LAYOUT_MODES.map(
+      (mode): Command => ({
+        id: `layout.mode.${mode}`,
+        titleKey: `commands.layout.${mode}`,
+        categoryKey: CATEGORY_VIEW,
+        scope: 'app' as const, // palette-only: the cycle below is the key path
+        run: () => deps.setLayoutMode(mode),
+      })
+    ),
+    {
+      id: 'layout.cycleMode',
+      titleKey: 'commands.cycleLayout',
+      categoryKey: CATEGORY_VIEW,
+      binding: 'Mod+Shift+L',
+      scope: 'app',
+      run: () => deps.cycleLayoutMode(),
+    },
+    {
+      // §5.8: "double-click a session header (or ONE COMMAND) toggles maximize".
+      // This is that command — and it is the reason the double-click is allowed
+      // to be a double-click at all: the gesture has a keyboard equal, so no
+      // capability lives in the mouse alone.
+      id: 'session.maximize',
+      titleKey: 'commands.maximize',
+      categoryKey: CATEGORY_VIEW,
+      binding: 'Mod+Shift+M',
+      scope: 'app',
+      enabled: hasActive,
+      disabledReasonKey: 'commands.disabled.noActiveSession',
+      run: (ctx) => {
+        if (ctx.activeCardId) deps.toggleMaximize(ctx.activeCardId);
       },
     },
     // ── §5.8's presentation POLICY (E9-06) ────────────────────────────────

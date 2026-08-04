@@ -8,6 +8,7 @@
 import { sessionStore } from '../store/session-store';
 import { loadPresentation, persistablePresentation, PRESENTATION_KEY } from './presentation';
 import { loadPolicyBook, POLICY_KEY } from './presentation-policy';
+import { LAYOUT_KEY, loadLayout } from './layout-mode';
 import { uiAll, uiDelete, uiGet, uiSet } from './ui-state';
 
 export function initPresentation(): void {
@@ -26,6 +27,15 @@ export function initPresentation(): void {
   sessionStore.setPolicyPersister((blob) => {
     if (blob) uiSet(POLICY_KEY, blob);
     else uiDelete([POLICY_KEY]);
+  });
+  // §5.8's layout MODE (P2-E9-07) rides the same edge and is seeded in the same
+  // pass: the grid restores its cards from the saved dockview layout at boot,
+  // and a mode read after that would have the workspace briefly arranged one
+  // way and then swept into another in front of the user.
+  sessionStore.initLayout(loadLayout(uiGet<unknown>(LAYOUT_KEY, null)));
+  sessionStore.setLayoutPersister((blob) => {
+    if (blob) uiSet(LAYOUT_KEY, blob);
+    else uiDelete([LAYOUT_KEY]);
   });
   if (legacyKeys.length > 0) {
     // WRITE THE NEW HOME FIRST. initPresentation deliberately doesn't persist

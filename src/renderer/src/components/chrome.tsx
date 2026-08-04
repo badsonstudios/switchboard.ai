@@ -12,6 +12,7 @@ import { StatusBarContext } from '../extensibility/contributions';
 import { ThemeDefinition } from '../theme/theme';
 import { BuildIdentity, commitStamp } from '../../../shared/build-identity';
 import type { PresentationPolicy } from '../lib/presentation-policy';
+import type { LayoutMode } from '../lib/layout-mode';
 
 const barStyle: React.CSSProperties = {
   background: 'var(--titlebar-bg)',
@@ -44,6 +45,12 @@ export function TitleBar(props: {
   /** §5.8's presentation policy — what a submit does to the card (E9-06) */
   presentationPolicy: PresentationPolicy;
   onCyclePresentationPolicy: () => void;
+  /** §5.8's layout mode — how the whole workspace is arranged (E9-07) */
+  layoutMode: LayoutMode;
+  /** a session is blown up to fill the workspace right now (E9-07) */
+  layoutMaximized: boolean;
+  onCycleLayoutMode: () => void;
+  layoutBinding: string;
   autoTrust: boolean;
   onToggleTrust: () => void;
   /** sessions-rail visibility — the mouse path for the Ctrl+B command (E9-01) */
@@ -97,6 +104,27 @@ export function TitleBar(props: {
         testId="presentation-policy"
       >
         {t('policy.chip', { policy: t(`policy.${props.presentationPolicy}`) })}
+      </Chip>
+      {/* The LAYOUT MODE (E9-07, §5.8). Beside the policy chip because the two
+          answer neighbouring questions — that one is what happens to ONE card
+          when you submit, this one is how the WHOLE workspace is arranged — and
+          because "why is everything a strip all of a sudden?" has to be
+          answerable by looking up, not by reading a settings page. */}
+      <Chip
+        /* lit for a MAXIMIZE too, even in grid: the chip's job is to answer
+           "why is everything a strip all of a sudden?", and a maximize is one
+           of the two ways that happens */
+        selected={props.layoutMode !== 'grid' || props.layoutMaximized}
+        onClick={props.onCycleLayoutMode}
+        title={t('layout.chipHint', {
+          mode: t(`layout.${props.layoutMode}`),
+          binding: props.layoutBinding,
+        })}
+        testId="layout-mode"
+      >
+        {t(props.layoutMaximized ? 'layout.chipMaximized' : 'layout.chip', {
+          mode: t(`layout.${props.layoutMode}`),
+        })}
       </Chip>
       <Chip selected={props.notifEnabled} onClick={props.onToggleNotif}>
         {props.notifEnabled ? t('titlebar.notifOn') : t('titlebar.notifOff')}
