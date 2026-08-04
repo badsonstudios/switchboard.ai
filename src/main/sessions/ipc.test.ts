@@ -70,6 +70,15 @@ function harness(
     streamFeed?: StreamFeed;
     /** the transport the manager reports for a live session (P2-E18-10) */
     transport?: 'pty' | 'stream';
+    /** exit codes per session id — a session listed here is DEAD but still has
+     *  a record, which is exactly what a crash leaves behind (#187) */
+    exitCodes?: Record<string, number>;
+    /** the ids successive `manager.create` calls mint, in order. Defaults to
+     *  'live-1' for ever, which is what every pre-#187 test assumes. */
+    spawnIds?: string[];
+    /** make this session's teardown BLOW UP, to prove the spawn path fails open
+     *  rather than turning a teardown bug into an unstartable card (#187) */
+    throwOnUnwatch?: string;
   } = {}
 ) {
   const created: Array<{
@@ -97,6 +106,32 @@ function harness(
     transport: opts.transport ?? 'pty',
   };
 
+  // The session ids the manager knows about. Seeded from `liveIds`, then MOVED
+  // by the real handlers: `create` adds the id it mints and `remove` drops it,
+  // so a test can play a whole spawn -> crash -> respawn sequence rather than
+  // describing its end state (#187).
+  const knownIds = new Set(opts.liveIds ?? []);
+  const spawnIds = [...(opts.spawnIds ?? [])];
+  const exitCodeOf = (id: string): number | null => opts.exitCodes?.[id] ?? null;
+  const asRecord = (id: string): Record<string, unknown> => ({
+    ...record,
+    id,
+    exitCode: exitCodeOf(id),
+  });
+  /** every live session the IPC layer tore down, in order */
+  const removed: string[] = [];
+  const unwatched: string[] = [];
+  const unregistered: string[] = [];
+  const forgottenEvents: string[] = [];
+  /**
+   * ONE ordered log across the calls whose RELATIVE order is the behaviour —
+   * `watch` and `unwatch` above all. Separate arrays can each be right while
+   * the sequence they describe is wrong: the reap moving below
+   * `transcripts.watch` would leave two watchers briefly co-existing and every
+   * per-call assertion would still pass (#187 review).
+   */
+  const trace: string[] = [];
+
   const deps = {
     manager: {
       onNativeSessionId: () => {},
@@ -108,9 +143,12 @@ function harness(
       // log. These ids read live from the moment the harness is built, before
       // any `sessions:create`, which is what lets a test assert the SUSPENDED
       // reading first — the join is keyed off `cardOfLive`, not off this.
-      list: () => (opts.liveIds ?? []).map((id) => ({ ...record, id })),
-      remove: () => {},
-      get: (id: string) => (opts.liveIds?.includes(id) ? { ...record, id } : undefined),
+      list: () => [...knownIds].map(asRecord),
+      remove: (id: string) => {
+        removed.push(id);
+        knownIds.delete(id);
+      },
+      get: (id: string) => (knownIds.has(id) ? asRecord(id) : undefined),
       create: (
         identity: SessionIdentity,
         o: { settingsFor?: unknown; resumeSessionId?: string; transport?: string }
@@ -121,14 +159,16 @@ function harness(
           resumeSessionId: o?.resumeSessionId,
           transport: o?.transport,
         });
-        return { ...record, identity };
+        const id = spawnIds.shift() ?? record.id;
+        knownIds.add(id);
+        return { ...asRecord(id), identity };
       },
     },
     ptys: {},
     hooks: {
       onPermissionRequest: () => {},
       onPermissionResolved: () => {},
-      unregisterSession: () => {},
+      unregisterSession: (id: string) => unregistered.push(id),
       buildHookSettings,
     },
     transcripts: {
@@ -139,12 +179,22 @@ function harness(
       },
       watch: (sessionId: string, s: { projectsRoot?: string; deriveFeed?: boolean }) => {
         watched.push({ sessionId, projectsRoot: s.projectsRoot, deriveFeed: s.deriveFeed });
+        trace.push(`watch:${sessionId}`);
         return watchAccepts;
       },
       blocks: (id: string) => [{ seq: 1, kind: 'assistant', text: `transcript block for ${id}` }],
-      unwatch: () => {},
+      unwatch: (id: string) => {
+        if (id === opts.throwOnUnwatch) throw new Error('teardown exploded');
+        unwatched.push(id);
+        trace.push(`unwatch:${id}`);
+      },
     },
-    feed: { onEvent: () => {}, ingest: () => {}, list: () => [], forget: () => {} },
+    feed: {
+      onEvent: () => {},
+      ingest: () => {},
+      list: () => [],
+      forget: (id: string) => forgottenEvents.push(id),
+    },
     log: { info: vi.fn(), warn, error: vi.fn(), debug: vi.fn() },
     getWindow: () => null,
     broker,
@@ -167,7 +217,22 @@ function harness(
   } as unknown as SessionIpcDeps;
 
   registerSessionIpc(deps);
-  return { call, created, upserted, watched, buildHookSettings, warn, askedFor, pushed, resets };
+  return {
+    call,
+    created,
+    upserted,
+    watched,
+    buildHookSettings,
+    warn,
+    askedFor,
+    pushed,
+    resets,
+    trace,
+    removed,
+    unwatched,
+    unregistered,
+    forgottenEvents,
+  };
 }
 
 /** A persisted card, the way the workspace store hands it back. */
@@ -445,6 +510,27 @@ describe('per-card transport (P2-E18-08b)', () => {
     expect(h.upserted.at(-1)?.transport).toBe('stream');
     // ...and flagged, so the UI says so rather than implying it took effect
     expect(res).toEqual({ ok: true, pending: true });
+  });
+
+  // A CRASHED session keeps its record so the card can show the overlay, and
+  // "has a record" used to be the whole liveness test here — so after a crash
+  // the menu told the user their change was waiting on a process that had
+  // already died, and there was nothing they could do to make it apply (#187).
+  it('a CRASHED session is not something to be pending on', async () => {
+    const exitCodes: Record<string, number> = {};
+    const h = harness(undefined, dir, { prior, exitCodes });
+    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    expect(await h.call('sessions:setTransport', CARD, 'stream')).toEqual({
+      ok: true,
+      pending: true,
+    });
+
+    exitCodes['live-1'] = 1; // ...and the CLI dies
+
+    expect(await h.call('sessions:setTransport', CARD, 'pty')).toEqual({
+      ok: true,
+      pending: false,
+    });
   });
 
   it('is NOT pending when no session is running', async () => {
@@ -866,5 +952,205 @@ describe('a card gaining or losing its live session announces itself (#170)', ()
 
     expect(h.created).toHaveLength(1); // adopted, not spawned twice
     expect(cardsPushes(h)).toBe(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #187 — one `cardOfLive` binding per card, on the crash-respawn path too.
+//
+// A crashed session keeps its record (the card shows an overlay from it) and
+// used to keep its BINDING as well, because the binding is what `dropLive`
+// follows to tear its hooks/transcript/feed down — unbinding without that
+// teardown would have leaked all of it. So a card that respawned over a corpse
+// briefly held two bindings, and the newer one won only because `sessions:cards`
+// iterates the Map and the last write survives: true by spec, but unstated and
+// unpinned, and the dead session's transcript watch went on polling beside the
+// new one's until something dropped the card.
+//
+// Reaping the corpse — the full teardown, then the unbind — retires the rule
+// rather than documenting it. These pin the reap, and the invariant it buys.
+describe('a card respawning over a crashed session reaps it (#187)', () => {
+  const CARD = 'card-1';
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-reap-'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const card = (): PersistedSession => priorCard({ folder: dir, id: CARD });
+  const start = (h: { call: (c: string, ...a: unknown[]) => unknown }): unknown =>
+    h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+
+  /**
+   * Spawn, crash, reveal. The reveal is the second `sessions:create`: the
+   * panel's exited state is component-local, so remounting it re-arms the lazy
+   * spawn without going through `restartSelf`'s `dropLive` — which is precisely
+   * how a card reaches a second spawn with the first still bound.
+   */
+  const crashThenReveal = (): ReturnType<typeof harness> => {
+    const exitCodes: Record<string, number> = {};
+    const h = harness(undefined, dir, {
+      prior: card(),
+      spawnIds: ['live-1', 'live-2'],
+      exitCodes,
+    });
+    start(h);
+    exitCodes['live-1'] = 1; // the CLI dies
+    start(h);
+    return h;
+  };
+
+  it('tears the dead session down in full rather than leaving it bound', () => {
+    const h = crashThenReveal();
+
+    expect(h.created).toHaveLength(2); // a corpse is replaced, never adopted
+    // every registration taken out in the dead session's name goes with it —
+    // the transcript watch above all, which polls on until it is unwatched
+    expect(h.removed).toEqual(['live-1']);
+    expect(h.unwatched).toEqual(['live-1']);
+    expect(h.unregistered).toEqual(['live-1']);
+    expect(h.forgottenEvents).toEqual(['live-1']);
+  });
+
+  // THE ORDER IS THE FIX. Reaping after the new session is watched would leave
+  // two watchers on one card, briefly polling the same root and both writing
+  // usage against it — and every per-call assertion above would still pass,
+  // because they cannot see a sequence. Moving the reap below
+  // `transcripts.watch` is the mutation this is here to catch.
+  it('unwatches the dead session BEFORE watching the new one', () => {
+    const exitCodes: Record<string, number> = {};
+    const h = harness({ transcripts: { projectsRoot: () => '/root' } }, dir, {
+      prior: card(),
+      spawnIds: ['live-1', 'live-2'],
+      exitCodes,
+    });
+
+    start(h);
+    exitCodes['live-1'] = 1;
+    start(h);
+
+    expect(h.trace).toEqual(['watch:live-1', 'unwatch:live-1', 'watch:live-2']);
+  });
+
+  it('announces both halves of the swap — the loss and the gain', () => {
+    const h = crashThenReveal();
+
+    // three, not two: the first spawn's bind, then the reap's unbind, then the
+    // new bind. Both of the second pair are true statements, and neither can be
+    // read half-applied — the renderer's pull is async and `sessions:create` has
+    // no await in it, so the list it eventually reads is the settled one.
+    expect(h.pushed.filter((p) => p.channel === 'sessions:cardsChanged')).toHaveLength(3);
+  });
+
+  it('leaves the card holding exactly ONE binding — the new session', async () => {
+    const h = crashThenReveal();
+
+    const cards = (await h.call('sessions:cards')) as Array<{
+      cardId: string;
+      liveId?: string;
+      status: string;
+    }>;
+    const row = cards.find((c) => c.cardId === CARD)!;
+    expect(row.liveId).toBe('live-2');
+    expect(row.status).toBe('starting');
+
+    // and the count is the invariant itself. `dropLive` tears down every
+    // session bound to the card, so what it finds IS the binding count — one,
+    // because the corpse was already reaped when the new session was bound.
+    // Asserted as a delta rather than on the whole list: the corpse gets torn
+    // down either way in the end, and only the TIMING says which of the two
+    // designs is running.
+    const beforeDrop = h.removed.length;
+    await h.call('sessions:dropLive', CARD);
+    expect(h.removed.slice(beforeDrop)).toEqual(['live-2']);
+  });
+
+  it("takes the dead session's Feed blocks and CLI command list with it", () => {
+    // the reap is the SAME teardown `dropLive` runs, not a subset of it — so a
+    // stream session's blocks and its advertised slash commands go too, and the
+    // new session starts from nothing rather than inheriting a dead CLI's answers
+    const streamFeed = new StreamFeed();
+    const streamCommands = new StreamCommands();
+    const exitCodes: Record<string, number> = {};
+    const h = harness({ transcripts: { projectsRoot: () => '/root' } }, dir, {
+      prior: card(),
+      transport: 'stream',
+      spawnIds: ['live-1', 'live-2'],
+      exitCodes,
+      streamFeed,
+      streamCommands,
+    });
+    start(h);
+    streamFeed.offer('live-1', {
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'before the crash' }] },
+      parent_tool_use_id: null,
+    });
+    streamCommands.offer('live-1', {
+      type: 'system',
+      subtype: 'init',
+      slash_commands: ['cli-only'],
+    } as unknown as Record<string, unknown>);
+    expect(streamFeed.blocks('live-1')).toHaveLength(1);
+    expect(streamCommands.commandsFor('live-1')).not.toBeNull();
+
+    exitCodes['live-1'] = 1;
+    start(h);
+
+    expect(streamFeed.blocks('live-1')).toEqual([]);
+    expect(streamCommands.commandsFor('live-1')).toBeNull();
+  });
+
+  // P6. The teardown chain runs on the SPAWN path now, so a bug anywhere in it
+  // would come out of `sessions:create`; the renderer reads a rejection as
+  // "spawn failed" and paints the dead-session overlay. Clearing the last
+  // session away badly must never become "this card can never start again".
+  it('starts the new session even if reaping the old one throws', async () => {
+    const exitCodes: Record<string, number> = {};
+    const h = harness({ transcripts: { projectsRoot: () => '/root' } }, dir, {
+      prior: card(),
+      spawnIds: ['live-1', 'live-2'],
+      exitCodes,
+      throwOnUnwatch: 'live-1',
+    });
+    start(h);
+    exitCodes['live-1'] = 1;
+
+    const rec = start(h) as { id: string };
+
+    // a fresh session, NOT the corpse. The half-done reap left `live-1` bound
+    // and holding a record, so an adopt pass that tested for a record rather
+    // than for LIFE would hand the card a dead session with no way back — which
+    // is exactly what happened when this test was first written.
+    expect(rec.id).toBe('live-2');
+    expect(h.warn).toHaveBeenCalledWith(
+      'reaping a dead session failed; starting the new one anyway',
+      expect.objectContaining({ cardId: CARD, sessionId: 'live-1' })
+    );
+
+    // ...and the rail agrees. This is the ONLY state in which a card can still
+    // hold two bindings, so it is the one that proves the reverse lookup picks
+    // by liveness rather than by Map insertion order.
+    const cards = (await h.call('sessions:cards')) as Array<{ cardId: string; liveId?: string }>;
+    expect(cards.find((c) => c.cardId === CARD)?.liveId).toBe('live-2');
+  });
+
+  it('never reaps a session that is still RUNNING — that one is adopted', () => {
+    // the guard on the reap: hiding and revealing a healthy card must not kill
+    // the CLI underneath it (P2-E15-08), and the reap runs on the same line the
+    // adopt check does
+    const h = harness(undefined, dir, {
+      prior: card(),
+      spawnIds: ['live-1', 'live-2'],
+    });
+
+    start(h);
+    start(h);
+
+    expect(h.created).toHaveLength(1);
+    expect(h.removed).toEqual([]);
+    expect(h.unwatched).toEqual([]);
   });
 });

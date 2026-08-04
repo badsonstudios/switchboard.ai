@@ -638,6 +638,12 @@ app
       }
       workspace.setLayout(layout);
     });
+    // The file on disk came from a NEWER switchboard.ai, so the store loaded it
+    // read-only and will refuse every write this run (#110). That refusal was
+    // log-only, which is the silent half of a data-loss story — the renderer
+    // reads this to say so on screen instead (#168). Latched at load, so one
+    // read at boot is the whole answer; nothing pushes a change.
+    broker.handle('workspace:isReadOnly', () => workspace.isReadOnly());
     // renderer-owned UI state (E12-08): focus, view tabs, prefs
     broker.handle('workspace:getUi', () => workspace.getUi());
     broker.on('workspace:setUi', (_e, ui: unknown) => workspace.setUi(ui));

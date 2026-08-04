@@ -38,6 +38,11 @@ const api = {
     setLayout: (layout: unknown): void => ipcRenderer.send('workspace:setLayout', layout),
     getUi: (): Promise<unknown> => ipcRenderer.invoke('workspace:getUi'),
     setUi: (ui: unknown): void => ipcRenderer.send('workspace:setUi', ui),
+    /**
+     * The workspace file was written by a newer switchboard.ai, so nothing
+     * this run changes will be saved (#110/#168). Fixed at load — one read.
+     */
+    isReadOnly: (): Promise<boolean> => ipcRenderer.invoke('workspace:isReadOnly'),
   },
   /** display work areas, for popout-position rescue on restore (E8-02) */
   workAreas: (): Promise<Array<{ x: number; y: number; width: number; height: number }>> =>

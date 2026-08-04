@@ -18,7 +18,9 @@ name and task label, so you know what it is without decoding an ID.
   it.
 - When nothing is outstanding it says **Nothing needs you right now**.
 
-Closing a session clears its entries.
+Closing a session clears its entries. So does starting it again: a **crashed**
+entry goes as soon as a fresh session takes its place, whether you restarted it
+yourself or just came back to the card.
 
 ## The panel is a to-do list, in order
 

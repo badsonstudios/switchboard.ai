@@ -240,6 +240,30 @@ body {
   padding: 2px 6px;
 }
 
+/* Feed keyboard navigation (#174, §5.26). A keyboard path nobody can SEE is
+ * not a keyboard path, so both stops in the conversation draw a real ring:
+ * the region itself (the single tab stop) and whichever expander the arrow
+ * keys have moved to.
+ *
+ * `--status-working-ink` because it is the one accent tuned per theme for
+ * legibility rather than for dots — #58a6ff on nordic's panels, #1c62c9 on
+ * daylight's — so the ring clears WCAG 1.4.11's 3:1 against the box fill in
+ * both. `:focus-visible`, not `:focus`, so clicking a box never paints a ring
+ * the mouse user didn't ask for; Chromium keeps the flag set across the
+ * PROGRAMMATIC focus() an arrow key causes, which is what makes this show up
+ * for the roving navigation at all. */
+[data-feed-region]:focus-visible,
+[data-feed-expander]:focus-visible {
+  outline: 2px solid var(--status-working-ink);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+/* the region is a scroll container, not a control: no ring unless the keyboard
+ * put focus there */
+[data-feed-region] {
+  outline: none;
+}
+
 /* composer working pulse (P2-E10-05) */
 @keyframes sb-pulse {
   0%, 100% { opacity: 0.35; }

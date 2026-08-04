@@ -5,13 +5,7 @@
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
-import {
-  launchApp,
-  LaunchedApp,
-  retype,
-  showTerminal,
-  tempProjectFolder,
-} from './fixtures/app';
+import { launchApp, LaunchedApp, retype, showTerminal, tempProjectFolder } from './fixtures/app';
 
 function findFile(root: string, name: string, depth = 6): string | null {
   if (depth < 0) return null;

@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { FeedBlockDto } from '../lib/feed';
+import { FEED_EXPANDER_ATTR } from '../lib/feed-keys';
 import { FeedBlockRendererContribution, manifestFor } from './contributions';
 
 /** The "still typing" cue. A glyph, not copy — nothing here to translate. */
@@ -32,6 +33,72 @@ const STREAMING_CARET = '▌';
 const NO_TOGGLE = { 'data-no-toggle': '' };
 
 /**
+ * The one shape every expander in the feed takes (#174, §5.26).
+ *
+ * A REAL `<button aria-expanded>`, because that is the only honest answer for
+ * "this control shows and hides that content": screen readers announce its
+ * state, and Enter and Space come free from the platform. The boxes themselves
+ * stay plain containers — a `role="button"` on a box that CONTAINS the Bash
+ * IN/OUT buttons would be an ARIA lie, and that lie is what #174 was filed over.
+ *
+ * Two details carry weight:
+ *
+ *  - `tabIndex={-1}`: the conversation is ONE tab stop (FeedView's region) and
+ *    the arrow keys move between expanders inside it. A tab stop each would put
+ *    hundreds of presses between the user and the composer below. Screen-reader
+ *    button quick-nav is unaffected — tabindex does not touch the a11y tree.
+ *  - `data-no-toggle`: the button sits inside `ToolBox`, whose whole body is
+ *    also a mouse expand target. Without this the click would toggle twice and
+ *    cancel out.
+ */
+export function FeedExpander({
+  open,
+  onToggle,
+  controls,
+  style,
+  children,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  /** id(s) of the element(s) this shows and hides; omit while none is rendered */
+  controls?: string;
+  style?: React.CSSProperties;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      {...{ [FEED_EXPANDER_ATTR]: '' }}
+      {...NO_TOGGLE}
+      aria-expanded={open}
+      // Undefined while the content is not in the document — an aria-controls
+      // pointing at an id that does not exist sends a screen reader somewhere
+      // there is nothing, which is worse than saying nothing at all. The caller
+      // decides, because only it knows whether its region renders when shut.
+      aria-controls={controls}
+      tabIndex={-1}
+      onClick={onToggle}
+      style={{
+        // an unstyled button brings a whole OS look with it; this is a header
+        // line that happens to be operable, so it inherits everything
+        background: 'transparent',
+        border: 'none',
+        padding: 0,
+        margin: 0,
+        color: 'inherit',
+        font: 'inherit',
+        textAlign: 'start',
+        cursor: 'pointer',
+        minInlineSize: 0,
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
  * The container a tool block lives in (#91, §5.10).
  *
  * Dan, 2026-07-26: a tool block was a dot plus some text, and "I'd like them
@@ -47,6 +114,13 @@ const NO_TOGGLE = { 'data-no-toggle': '' };
  * EXPORTED because renderers are contributions and may live in any module
  * (§5.23): a new tool renderer adopts the shipped container by wrapping in this
  * rather than by re-deriving a border that drifts from everyone else's.
+ *
+ * The box stays a plain `div` with a click handler, and that is deliberate
+ * (#174): it is a MOUSE convenience that duplicates the block's header
+ * `FeedExpander`, not a control in its own right. A box carrying `role="button"`
+ * while containing the Bash IN/OUT buttons would be invalid ARIA — so a renderer
+ * that wraps in this MUST also give its block a `FeedExpander`, or it ships with
+ * no keyboard path at all.
  */
 export function ToolBox({
   kind,
@@ -122,26 +196,37 @@ function Markdown({ text, streaming }: { text: string; streaming?: boolean }): R
 function EditBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const { t } = useTranslation();
   const [open, setOpen] = React.useState(true);
+  const diffId = React.useId();
   const added = (b.tool?.newString ?? '').split('\n').filter((l) => l.length > 0).length;
   const removed = (b.tool?.oldString ?? '').split('\n').filter((l) => l.length > 0).length;
+  const toggle = (): void => setOpen(!open);
   return (
-    // the header no longer carries its own onClick — the BOX is the target now
-    // (#91), and leaving both would have toggled twice and cancelled out
-    <ToolBox kind="edit" onToggle={() => setOpen(!open)}>
+    // Both the box and the header toggle, and that is not the double-toggle
+    // #91 removed: the header is a `FeedExpander`, which is marked
+    // `data-no-toggle`, so the box stands down for a click that lands on it.
+    <ToolBox kind="edit" onToggle={toggle}>
       <div style={{ fontSize: 11 }}>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+        {/* the header IS the keyboard expander (#174): a real button whose
+            accessible name is already the thing you'd read out — "Edit
+            src/foo.ts" — so it needs no label of its own */}
+        <FeedExpander
+          open={open}
+          onToggle={toggle}
+          controls={open ? diffId : undefined}
+          style={{ display: 'flex', gap: 6, alignItems: 'baseline', inlineSize: '100%' }}
+        >
           <span style={{ fontWeight: 700, color: 'var(--text)' }}>{b.tool?.name}</span>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minInlineSize: 0 }}>
             {b.tool?.filePath ?? b.tool?.summary}
           </span>
-        </div>
+        </FeedExpander>
         <div style={{ fontSize: 9.5, color: 'var(--faint)', marginBlock: 2 }}>
           {t('feedView.editStats', { added, removed })}
         </div>
         {open && (
           // the diff is for READING: scrolling it and selecting out of it must
           // not fold the block away underneath the pointer
-          <div {...NO_TOGGLE} style={{ display: 'flex', gap: 4, maxBlockSize: 180, overflow: 'auto' }}>
+          <div id={diffId} {...NO_TOGGLE} style={{ display: 'flex', gap: 4, maxBlockSize: 180, overflow: 'auto' }}>
             {b.tool?.oldString && <pre style={editPane('var(--diff-removed-bg)')}>{b.tool.oldString}</pre>}
             {b.tool?.newString && <pre style={editPane('var(--diff-added-bg)')}>{b.tool.newString}</pre>}
           </div>
@@ -172,7 +257,11 @@ function BashBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const { t } = useTranslation();
   const [inOpen, setInOpen] = React.useState(false);
   const [outOpen, setOutOpen] = React.useState(false);
+  const ids = React.useId();
+  const inId = `${ids}in`;
+  const outId = `${ids}out`;
   const section = (
+    id: string,
     label: string,
     text: string,
     open: boolean,
@@ -181,13 +270,18 @@ function BashBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
     // IN and OUT stay INDEPENDENTLY expandable inside the box (#91) — so the
     // section owns its clicks and the box stands down for them
     <div {...NO_TOGGLE} style={{ display: 'flex', gap: 6, alignItems: 'baseline', minInlineSize: 0 }}>
-      <span
-        onClick={toggle}
-        style={{ fontSize: 8.5, fontWeight: 700, color: 'var(--faint)', cursor: 'pointer', flexShrink: 0, inlineSize: 26 }}
+      <FeedExpander
+        open={open}
+        onToggle={toggle}
+        // the <pre> is always rendered — collapsed it shows the first line —
+        // so the controlled element exists in both states
+        controls={id}
+        style={{ fontSize: 8.5, fontWeight: 700, color: 'var(--faint)', flexShrink: 0, inlineSize: 26 }}
       >
         {open ? '▾' : '▸'} {label}
-      </span>
+      </FeedExpander>
       <pre
+        id={id}
         onClick={toggle}
         style={{
           margin: 0,
@@ -215,16 +309,25 @@ function BashBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
     setInOpen(!anyOpen);
     setOutOpen(!anyOpen);
   };
+  const hasOut = b.tool?.out !== undefined;
   return (
     <ToolBox kind="bash" onToggle={toggleAll}>
       <div style={{ fontSize: 11 }}>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', marginBlockEnd: 2 }}>
+        {/* the COARSE expander (#174): same job the box body does for the
+            mouse, so it reports the same coarse state — open if either
+            section is, and it controls both */}
+        <FeedExpander
+          open={anyOpen}
+          onToggle={toggleAll}
+          controls={hasOut ? `${inId} ${outId}` : inId}
+          style={{ display: 'flex', gap: 6, alignItems: 'baseline', marginBlockEnd: 2, inlineSize: '100%' }}
+        >
           <span style={{ fontWeight: 700, color: 'var(--text)' }}>{b.tool?.name}</span>
           <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>{b.tool?.description ?? ''}</span>
-        </div>
-        {section(t('feedView.in'), b.tool?.summary ?? '', inOpen, () => setInOpen(!inOpen))}
-        {b.tool?.out !== undefined &&
-          section(t('feedView.out'), b.tool.out, outOpen, () => setOutOpen(!outOpen))}
+        </FeedExpander>
+        {section(inId, t('feedView.in'), b.tool?.summary ?? '', inOpen, () => setInOpen(!inOpen))}
+        {hasOut &&
+          section(outId, t('feedView.out'), b.tool?.out ?? '', outOpen, () => setOutOpen(!outOpen))}
       </div>
     </ToolBox>
   );
@@ -257,33 +360,53 @@ function TodosBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
 
 function ToolRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const [open, setOpen] = React.useState(false);
+  const detailId = React.useId();
+  const expandable = !!b.tool?.detail;
+  const toggle = (): void => setOpen(!open);
+  const headerStyle: React.CSSProperties = {
+    display: 'flex',
+    gap: 6,
+    alignItems: 'baseline',
+    color: 'var(--muted)',
+    padding: '1px 0',
+    inlineSize: '100%',
+  };
+  const header = (
+    <>
+      <span style={{ color: 'var(--faint)', fontSize: 8 }}>{open ? '▾' : '▸'}</span>
+      <span style={{ color: 'var(--status-working)', fontWeight: 600 }}>{b.tool?.name}</span>
+      <span
+        style={{
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          minInlineSize: 0,
+        }}
+      >
+        {b.tool?.summary}
+      </span>
+    </>
+  );
   return (
-    <ToolBox kind="tool" onToggle={b.tool?.detail ? () => setOpen(!open) : undefined}>
+    <ToolBox kind="tool" onToggle={expandable ? toggle : undefined}>
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5 }}>
-        <div
-          style={{
-            display: 'flex',
-            gap: 6,
-            alignItems: 'baseline',
-            color: 'var(--muted)',
-            padding: '1px 0',
-          }}
-        >
-          <span style={{ color: 'var(--faint)', fontSize: 8 }}>{open ? '▾' : '▸'}</span>
-          <span style={{ color: 'var(--status-working)', fontWeight: 600 }}>{b.tool?.name}</span>
-          <span
-            style={{
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              minInlineSize: 0,
-            }}
+        {/* a row with nothing to show stays a plain row: a button that toggles
+            nothing would be as much of a lie as the pointer cursor is (#91) */}
+        {expandable ? (
+          <FeedExpander
+            open={open}
+            onToggle={toggle}
+            controls={open ? detailId : undefined}
+            style={headerStyle}
           >
-            {b.tool?.summary}
-          </span>
-        </div>
+            {header}
+          </FeedExpander>
+        ) : (
+          <div style={headerStyle}>{header}</div>
+        )}
         {open && b.tool?.detail && (
           <pre
+            id={detailId}
             {...NO_TOGGLE}
             style={{
               margin: '2px 0 4px 14px',
@@ -309,16 +432,17 @@ function ToolRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
 function ThinkingRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
+  const textId = React.useId();
   const label = b.durationMs
     ? t('feedView.thoughtFor', { s: Math.max(1, Math.round(b.durationMs / 1000)) })
     : t('feedView.thinking');
   return (
     <div style={{ fontSize: 10.5, color: 'var(--faint)', fontStyle: 'italic' }}>
-      <span onClick={() => setOpen(!open)} style={{ cursor: 'pointer' }}>
+      <FeedExpander open={open} onToggle={() => setOpen(!open)} controls={open ? textId : undefined}>
         {open ? '▾' : '▸'} {label}
-      </span>
+      </FeedExpander>
       {open && (
-        <div style={{ whiteSpace: 'pre-wrap', margin: '2px 0 4px 14px', maxBlockSize: 240, overflow: 'auto' }}>
+        <div id={textId} style={{ whiteSpace: 'pre-wrap', margin: '2px 0 4px 14px', maxBlockSize: 240, overflow: 'auto' }}>
           {b.text}
         </div>
       )}
@@ -334,14 +458,14 @@ function ThinkingRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
 function UserPill({ text }: { text: string }): React.JSX.Element {
   const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
+  const bodyId = React.useId();
   // a skill / slash-command invocation carries a command-name tag
   const cmd = /<command-name>([^<]+)<\/command-name>/.exec(text)?.[1];
   const long = text.length > 500;
-  const collapsed = (cmd || long) && !open;
+  const expandable = !!(cmd || long);
   const label = cmd ?? `${text.slice(0, 160).split(String.fromCharCode(10))[0]}…`;
   return (
     <div
-      onClick={collapsed || open ? () => setOpen(!open) : undefined}
       style={{
         background: 'color-mix(in srgb, var(--status-needs-input) 10%, var(--panel2))',
         border: '1px solid color-mix(in srgb, var(--status-needs-input) 28%, transparent)',
@@ -350,19 +474,45 @@ function UserPill({ text }: { text: string }): React.JSX.Element {
         whiteSpace: 'pre-wrap',
         color: 'var(--text)',
         overflowWrap: 'break-word',
-        cursor: cmd || long ? 'pointer' : 'default',
       }}
     >
-      {collapsed ? (
-        <span style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
-          <span style={{ fontSize: 8, color: 'var(--faint)' }}>{t('feedView.collapsedIcon')}</span>
-          <span style={{ fontFamily: cmd ? 'var(--font-mono)' : 'var(--font-ui)', fontWeight: cmd ? 700 : 400 }}>
+      {/* The header line is the ONLY expand target now (#174). It used to be
+          the whole pill, in both states — which meant an expanded prompt
+          collapsed under the pointer the moment you tried to select a line out
+          of it, the same read-not-a-click bug the tool boxes already guard. */}
+      {expandable && (
+        <FeedExpander
+          open={open}
+          onToggle={() => setOpen(!open)}
+          controls={open ? bodyId : undefined}
+          style={{ display: 'flex', gap: 6, alignItems: 'baseline', inlineSize: '100%' }}
+        >
+          <span style={{ fontSize: 8, color: 'var(--faint)' }}>
+            {open ? t('feedView.expandedIcon') : t('feedView.collapsedIcon')}
+          </span>
+          <span
+            style={{
+              fontFamily: cmd ? 'var(--font-mono)' : 'var(--font-ui)',
+              fontWeight: cmd ? 700 : 400,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              minInlineSize: 0,
+            }}
+          >
             {label}
           </span>
-          <span style={{ fontSize: 9.5, color: 'var(--faint)' }}>{t('feedView.expandHint')}</span>
-        </span>
-      ) : (
-        text
+          {!open && (
+            <span style={{ fontSize: 9.5, color: 'var(--faint)', flexShrink: 0 }}>
+              {t('feedView.expandHint')}
+            </span>
+          )}
+        </FeedExpander>
+      )}
+      {(!expandable || open) && (
+        <div id={expandable ? bodyId : undefined} style={{ whiteSpace: 'pre-wrap' }}>
+          {text}
+        </div>
       )}
     </div>
   );

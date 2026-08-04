@@ -249,6 +249,39 @@ the tabs that don't fit go behind a **⌄ N** button at the right of the strip �
 click it for a list of the hidden ones, and click any entry to jump to it. Your
 choice is remembered.
 
+## When your workspace can't be saved
+
+Everything on this page is kept in one file, and switchboard writes it as you
+go. Occasionally it won't — and when that happens it says so in plain words
+across the top of the window, in a strip you can't dismiss: **nothing in this
+workspace will be saved**, because its file was written by a newer version of
+switchboard.
+
+This happens when you've gone **back to an older version of switchboard** after
+using a newer one: a newer version can put things in that file that an older one
+has never heard of. Rather than quietly rewriting it and deleting those, the
+older version reads what it recognizes, shows you your sessions, and then
+refuses to write the file at all.
+
+**What still works:** everything. Your sessions run normally, you can open new
+ones, rearrange cards, make groups — none of it is blocked.
+
+**What doesn't:** none of it survives. Not the layout, not new groups, not the
+sessions you opened, not settings like the theme. When you quit, the file on
+disk is exactly as it was, so the next launch brings back the workspace from
+before, not the one you just built. That's the trade the banner is warning you
+about: the file is safe, this session's work on it is not.
+
+**What to do:** go back to the newer version of switchboard, and the banner is
+gone — it saves again as normal.
+
+If you'd rather stay on the older version and are happy to lose that layout,
+close switchboard and move its `workspace.json` somewhere else — the next launch
+starts fresh, with an empty workspace it *can* save. On Windows it's in
+`%APPDATA%\switchboard`, on macOS `~/Library/Application Support/switchboard`,
+and on Linux `~/.config/switchboard`. Move it, don't delete it: it's the only
+copy of the layout the newer version had.
+
 ## Good to know
 
 - Everything in this page persists across restarts: layout, groups, collapse

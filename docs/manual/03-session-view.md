@@ -51,6 +51,13 @@ Two things deliberately *don't* fold the box away:
 Checklist boxes have nothing to expand — they're already showing everything —
 so clicking one does nothing.
 
+### …without the mouse
+
+Every box, every **IN** / **OUT** section and every folded prompt can be opened
+from the keyboard. `Tab` into the conversation, then `↑` and `↓` walk between
+the things that open, and `Enter` opens the one you're on. Full instructions:
+[Reading the conversation with the keyboard](06-keyboard.md#reading-the-conversation-with-the-keyboard).
+
 ## When the Session tab has nothing in it
 
 An empty Session tab is usually normal, so it tells you which kind of empty it
@@ -134,6 +141,9 @@ inside the Session view is planned, not built.
 ## Good to know
 
 - The Session tab is fully interactive; you never *have* to use the Terminal.
-- Very long prompts and skill payloads collapse to a summary — click to expand.
+- Very long prompts and skill payloads collapse to a summary — click the
+  summary line to expand it, and click it again to fold it back. Once it's
+  open, clicking the text itself does nothing, so you can select a line out of
+  it without it disappearing.
 - The boxes and the margin dots are drawn from your theme, so they stay legible
   whichever one you're on.

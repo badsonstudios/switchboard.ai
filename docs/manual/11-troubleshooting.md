@@ -126,6 +126,20 @@ Every session that needs permission, needs input, finishes, or crashes makes a
 sound. Check the Events panel on the right — it names the session. Silence
 everything with the 🔔 chip in the title bar.
 
+**A banner says nothing in this workspace will be saved.**
+You're running an older switchboard than the one that last saved this
+workspace, and it won't rewrite that file because doing so would delete what
+the newer version had put in it. Your sessions work normally; the layout you
+build now just won't come back. Go back to the newer version and it saves
+again — the full explanation, and the alternative if you'd rather stay put, is
+in [Organizing your workspace](07-workspace.md#when-your-workspace-cant-be-saved).
+
+**My layout didn't come back and there was no banner.**
+The layout is written when you quit, and a failed write is logged rather than
+shown. Check the log (below) for a line from `workspace` saying the save
+failed; on Windows an anti-virus or indexer holding the file for a moment is
+the usual cause, and relaunching is enough.
+
 **A pop-out window vanished after I unplugged a monitor.**
 It was rescued back onto a visible screen. Plug the monitor back in and Events
 will offer to restore the layout.
