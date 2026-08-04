@@ -67,6 +67,19 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.ELECTRON_NO_ATTACH_CONSOLE;
   delete env.NoDefaultCurrentDirectoryInExePath;
+  // A timed self-quit inherited from the shell would kill the app mid-test for
+  // reasons no failure message would ever mention. Same family as the landmines
+  // above: scrub it, and let a spec that wants it pass it in `opts.env`.
+  delete env.SWITCHBOARD_AUTOCLOSE;
+  // Teardown must never meet a modal (#185). Quitting with a session in
+  // `working` / `needs-input` / `needs-permission` raises the busy-sessions
+  // confirmation — a main-process `showMessageBoxSync`, which blocks the close
+  // path with no page for Playwright to click. Nothing reached a busy status
+  // before, so nothing hit it; the first spec that quits mid-work would have
+  // hung the whole suite. Set on every launch, deliberately BEFORE `opts.env`
+  // so the one spec that exercises the dialog can turn it back off by passing
+  // `SWITCHBOARD_NO_QUIT_CONFIRM: ''` (see quit-confirm.spec.ts).
+  env.SWITCHBOARD_NO_QUIT_CONFIRM = '1';
   if (opts.realClaude) {
     // Claude Code SKIPS writing conversation transcripts when it detects a
     // test environment (persistence guard found via GH research 2026-07-23;
@@ -139,8 +152,16 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
     throw err;
   }
 
+  // Captured HERE, at launch, not inside close(). `app.process()` throws
+  // ("Cannot read properties of undefined") once Playwright has torn its
+  // connection down, so reading it during teardown breaks any spec that closed
+  // the app itself — e.g. one timing the close to prove a modal is not blocking
+  // it (#185), whose afterEach then died on the way to deleting the home.
+  // Reading it eagerly also keeps the tree kill working in exactly that case,
+  // which a try/catch around the late read would have given up on.
+  const pid = app.process()?.pid;
+
   const close = async () => {
-    const pid = app.process()?.pid;
     // app.close() can hang if the process (or a popout child) is slow to exit;
     // race it with a timeout so one slow teardown never stalls the worker.
     try {
@@ -231,6 +252,24 @@ export async function registeredPopouts(a: LaunchedApp): Promise<number> {
     popoutGroups?: unknown;
   } | null;
   return Array.isArray(layout?.popoutGroups) ? layout.popoutGroups.length : 0;
+}
+
+/**
+ * Raw session statuses as MAIN holds them, keyed by card title.
+ *
+ * Not interchangeable with what the DOM shows. The presentation layer folds
+ * `starting` into the same `working` ramp the urgency lamp and the rail rows
+ * paint, so `data-status="working"` cannot tell "about to start" from
+ * "mid-task" — and only the second is in the busy set the quit confirmation
+ * asks about (#185). This reads `sessions.list()`: the same record list
+ * main's own `busySessions()` filters.
+ */
+export async function sessionStatuses(a: LaunchedApp): Promise<Map<string, string>> {
+  const records = (await a.window.evaluate(() => window.switchboard.sessions.list())) as Array<{
+    identity: { title: string };
+    status: string;
+  }>;
+  return new Map(records.map((r) => [r.identity.title, r.status]));
 }
 
 /** Switch to the Terminal tab (always present, last — 2026-07-22). */
