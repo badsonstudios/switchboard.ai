@@ -17,6 +17,47 @@
            as the main window: one dark frame for a light-theme user. */
         background: #242933;
       }
+
+      /* Room for the read-only notice (#208).
+         ------------------------------------
+         dockview adopts the group into ONE element it creates and positions
+         itself: `#dv-popout-window`, absolutely positioned at 0,0 and sized
+         100% x 100% by INLINE style. A notice added to this document would
+         therefore sit underneath it, invisible.
+
+         So when the renderer mounts the notice it marks the body, and these
+         rules turn the document into a column: the notice takes what it needs,
+         dockview's container takes the rest. `!important` is not decoration —
+         it is the only thing that outranks dockview's own inline styles, and
+         it keeps outranking them if dockview ever re-applies them.
+
+         Nothing is clipped by this: dockview watches that container with a
+         ResizeObserver created in the popout's own realm and re-lays its
+         gridview out from the container's client box, so shrinking it is a
+         size change like any other. MEASURED both ways — pinning the container
+         to 400px moved the group's own pixel width to 400 (not the window's
+         722), and the terminal re-fit 31 rows -> 28 when the notice appeared. */
+      body[data-sb-banner] {
+        /* !important here too: without the column the rules below mean nothing
+           and the notice ends up UNDER an opaque container — present in the
+           DOM, invisible on screen, which is the worst way for a warning to
+           fail */
+        display: flex !important;
+        flex-direction: column !important;
+      }
+
+      body[data-sb-banner] > [data-sb-banner-host] {
+        flex: 0 0 auto;
+      }
+
+      body[data-sb-banner] > #dv-popout-window {
+        position: relative !important;
+        flex: 1 1 0 !important;
+        min-block-size: 0 !important;
+        inline-size: auto !important;
+        block-size: auto !important;
+        inset: auto !important;
+      }
     </style>
   </head>
   <body>

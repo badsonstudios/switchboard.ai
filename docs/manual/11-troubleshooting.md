@@ -133,6 +133,8 @@ the newer version had put in it. Your sessions work normally; the layout you
 build now just won't come back. Go back to the newer version and it saves
 again — the full explanation, and the alternative if you'd rather stay put, is
 in [Organizing your workspace](07-workspace.md#when-your-workspace-cant-be-saved).
+Pop-out windows carry the same banner, so it's still in front of you when you
+work in one.
 
 **My layout didn't come back and there was no banner.**
 The layout is written when you quit, and a failed write is logged rather than

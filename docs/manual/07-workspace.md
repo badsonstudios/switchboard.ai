@@ -341,6 +341,11 @@ has never heard of. Rather than quietly rewriting it and deleting those, the
 older version reads what it recognizes, shows you your sessions, and then
 refuses to write the file at all.
 
+**Pop-out windows say it too.** A popped-out session is its own window, and it
+gets the same strip across its top. Spend the run in a pop-out and the warning
+is still in front of you, rather than back in a window you can't see. The
+session below it shrinks to make room; nothing in the card is covered up.
+
 **What still works:** everything. Your sessions run normally, you can open new
 ones, rearrange cards, make groups — none of it is blocked.
 

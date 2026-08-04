@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
+import { mountBannerHost, onPopoutWindows, unmountBannerHost } from '../lib/popout-banner-host';
 
 const banner: React.CSSProperties = {
   display: 'flex',
@@ -45,10 +47,13 @@ const banner: React.CSSProperties = {
  *   import and one line for it. Read-only-ness latches in `load()` and never
  *   changes for the process lifetime, so a single read at mount is the whole
  *   story — no subscription, no polling.
+ *
+ * #208 added the same notice to every POPPED-OUT window (see below): one call,
+ * one component, several places to draw it.
  */
 export function WorkspaceReadOnlyBanner(): React.JSX.Element {
-  const { t } = useTranslation();
   const [readOnly, setReadOnly] = useState(false);
+  const popouts = usePopoutWindows();
 
   useEffect(() => {
     let live = true;
@@ -68,11 +73,29 @@ export function WorkspaceReadOnlyBanner(): React.JSX.Element {
   }, []);
 
   return (
+    <>
+      <ReadOnlyNotice shown={readOnly} />
+      {/* the same notice, in every window the user might actually be looking
+          at (#208). Nothing extra is asked of main: one answer, drawn N times */}
+      {readOnly
+        ? popouts.map((p) => <PopoutReadOnlyNotice key={p.id} win={p.win} />)
+        : null}
+    </>
+  );
+}
+
+/**
+ * The strip itself. `shown` rather than an early `null` return so the live
+ * region is mounted from the start — see the note above.
+ */
+function ReadOnlyNotice({ shown }: { shown: boolean }): React.JSX.Element {
+  const { t } = useTranslation();
+  return (
     // polite, not assertive: by the time it has anything to say it is already
     // on screen, and it is not an interruption — it is the standing condition
     // of this whole run
-    <div role="status" style={readOnly ? banner : undefined}>
-      {readOnly ? (
+    <div role="status" style={shown ? banner : undefined}>
+      {shown ? (
         <>
           <strong>{t('workspace.readOnlyTitle')}</strong>
           <span>{t('workspace.readOnlyBody')}</span>
@@ -80,4 +103,86 @@ export function WorkspaceReadOnlyBanner(): React.JSX.Element {
       ) : null}
     </div>
   );
+}
+
+/**
+ * The notice inside one popped-out window (#208).
+ *
+ * A portal, not a second component tree: the popout is a different DOCUMENT but
+ * the same React tree, so the text, the styling and — crucially — the single
+ * `isReadOnly()` answer above are shared. The notice has no interactive parts,
+ * which is what makes a cross-document portal safe here (React's synthetic
+ * events are delegated to the tree's own root container, not this one).
+ *
+ * The host element is created in a layout effect rather than during render:
+ * mutating another document while rendering is exactly the kind of thing React
+ * 19's double-invoked renders punish. One extra tick before it paints; a popout
+ * window is a hundred milliseconds of its own opening anyway.
+ *
+ * The words then land on the NEXT commit, so the live region exists — empty —
+ * before it has anything to say. Same reason as the main window's (above): a
+ * `role="status"` that appears already holding its text is announced by almost
+ * nothing. In a popout it is always this case, because read-only-ness has long
+ * since latched by the time the window opens, so without the extra commit the
+ * notice would be silent in exactly the window the user is sitting in. The host
+ * is still mounted only when there IS something to say — a writable workspace
+ * must not have its popouts re-laid-out for a notice that never comes.
+ *
+ * The session below it shrinks rather than being covered or clipped: the notice
+ * takes its space from dockview's container (see popout.html), and dockview
+ * re-lays the popout's gridview out from that container's client box, not from
+ * the window's. MEASURED, because the initial layout DOES come from
+ * `window.innerHeight` and only a same-realm ResizeObserver corrects it: with
+ * the container pinned to 400px the group's own pixel width followed it to 400
+ * rather than staying at the window's 722, and the terminal re-fit from 31 rows
+ * to 28 the moment the notice appeared.
+ */
+function PopoutReadOnlyNotice({ win }: { win: Window }): React.JSX.Element | null {
+  const [host, setHost] = useState<HTMLElement | null>(null);
+  const [spoken, setSpoken] = useState(false);
+  useLayoutEffect(() => {
+    setHost(mountBannerHost(win));
+    return () => unmountBannerHost(win);
+  }, [win]);
+  // the commit AFTER the region exists — see the note above
+  useEffect(() => {
+    if (host) setSpoken(true);
+  }, [host]);
+  return host ? createPortal(<ReadOnlyNotice shown={spoken} />, host) : null;
+}
+
+/** popouts currently open, in the order they opened, each with a stable key */
+interface TrackedPopout {
+  id: number;
+  win: Window;
+}
+
+/** never reused, so React never mistakes a new popout for an old one */
+let popoutKeySeq = 0;
+
+/**
+ * Track the popout windows dockview has told us about.
+ *
+ * Tracked unconditionally, even when the workspace is writable: this costs an
+ * array push, and gating it on `readOnly` would mean the first popout could
+ * open in the gap before the IPC answer lands and never be noticed.
+ */
+function usePopoutWindows(): TrackedPopout[] {
+  const [popouts, setPopouts] = useState<TrackedPopout[]>([]);
+  useEffect(() => {
+    return onPopoutWindows({
+      added: (win) => {
+        // taken out here, not inside the updater: React re-runs updaters, and
+        // one that bumps a counter would be lying about being pure
+        const id = ++popoutKeySeq;
+        setPopouts((prev) =>
+          // dockview reuses a named window when the same group is popped out
+          // again; one entry per window, or the notice arrives twice
+          prev.some((p) => p.win === win) ? prev : [...prev, { id, win }]
+        );
+      },
+      removed: (win) => setPopouts((prev) => prev.filter((p) => p.win !== win)),
+    });
+  }, []);
+  return popouts;
 }
