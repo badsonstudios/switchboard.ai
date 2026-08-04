@@ -30,6 +30,8 @@ import type { BindingDiagnostics, BindingState } from '../../../shared/transcrip
 import { Box, boxOnAnyDisplay, RescuedPopout, sanitizePopoutLayout, WorkArea } from '../lib/layout';
 import { captureSlot, openerRelative, placeAt } from '../lib/dock-slot';
 import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
+import { submitTarget } from '../lib/presentation-policy';
+import { presentStatus } from '../lib/rail-view';
 import type { Ladder } from '../lib/presentation';
 import { pickAdoptedGroupId } from '../lib/groups';
 import { uiGet, uiSet } from '../lib/ui-state';
@@ -1251,6 +1253,34 @@ function removePanelKeepingSlot(api: DockviewApi, cardId: string, rung: Ladder):
   }
 }
 
+/**
+ * §5.8's auto-minimize on submit (P2-E9-06).
+ *
+ * The user just sent a prompt; the presentation policy says whether that card
+ * keeps the screen. Every rule about WHETHER to move is in `submitTarget`
+ * (pure, unit-tested); this function is only the dockview half.
+ *
+ * IT READS THE CARD AS IT IS NOW, which is why the caller defers the CALL and
+ * not the decision: three of the four rules describe the card at the moment we
+ * would move it, so a card popped out (or blocked) between the keystroke and
+ * this call must still be spared.
+ */
+export function applySubmitPolicy(api: DockviewApi | null, cardId: string): void {
+  if (!api || !cardId || sessionStore.isTearingDown()) return;
+  const p = sessionStore.getPresentation(cardId);
+  const rung = submitTarget({
+    policy: sessionStore.policyFor(cardId),
+    ladder: p.ladder,
+    poppedOut: p.poppedOut,
+    // the same vocabulary the rail rows and the lamps use, so "waiting on a
+    // human" cannot mean one thing here and another three feet to the left
+    needsHuman: presentStatus(
+      sessionStore.getState().sessions.find((s) => s.id === cardId)?.status
+    ).needsYou,
+  });
+  if (rung) setCardLadder(api, cardId, rung);
+}
+
 /** Put a card on a named rung. Safe on a card with no panel — that is the point. */
 export function setCardLadder(api: DockviewApi | null, cardId: string, rung: Ladder): void {
   if (!api || !cardId) return;
@@ -1637,6 +1667,37 @@ export function SessionGrid(props: {
     []
   );
 
+  // §5.8's auto-minimize on submit (P2-E9-06). Subscribed ONCE, here, rather
+  // than per card: the grid is the only thing that owns the dockview api, and a
+  // subscription per mounted panel would collapse a card that had already been
+  // collapsed by its neighbour's copy of the same listener.
+  React.useEffect(() => {
+    // DEFERRED BY A TICK, and that is not cosmetic: the notification arrives
+    // from inside the composer's own submit handler, which lives in the very
+    // panel we may be about to unmount. Acting synchronously would tear that
+    // panel out from under React while it is still dispatching the event and
+    // finishing its own state updates (clearing the draft, restoring the
+    // caret). A microtask is not enough — React flushes a discrete event's
+    // updates before macrotasks, not before microtasks.
+    //
+    // The timers are tracked so a teardown in that window cancels them rather
+    // than calling into a disposed dockview api.
+    const pending = new Set<ReturnType<typeof setTimeout>>();
+    const off = sessionStore.subscribePromptSubmit((liveId) => {
+      const cardId = sessionStore.cardIdForLive(liveId);
+      const timer = setTimeout(() => {
+        pending.delete(timer);
+        applySubmitPolicy(apiRef.current, cardId);
+      }, 0);
+      pending.add(timer);
+    });
+    return () => {
+      off();
+      for (const t of pending) clearTimeout(t);
+      pending.clear();
+    };
+  }, []);
+
   React.useEffect(() => {
     if (!props.controller) return;
     props.controller.current = {
@@ -1911,6 +1972,15 @@ export function SessionGrid(props: {
 
       const saved = await window.switchboard.workspace.getLayout();
       if (saved) {
+        // Resolved BEFORE the restore's try/catch, not inside it: an await in
+        // there whose rejection is unrelated to the layout would abort the
+        // stale-panel cleanup and the focus restore, and report itself as
+        // "[layout] restore failed". `null` means "we do not know", which the
+        // prune below treats as "prune no groups".
+        const groupIds = await window.switchboard.groups
+          .list()
+          .then((gs) => gs.map((g) => g.id))
+          .catch(() => null);
         try {
           // popouts persist in the layout, but their stored url has last
           // launch's (random) loopback port and their position may be on a
@@ -1944,6 +2014,13 @@ export function SessionGrid(props: {
           // point of hiding), so the only thing that can retire one is the card
           // itself being gone — otherwise the blob grows for ever
           sessionStore.prunePresentation(known);
+          // the presentation POLICY overrides (E9-06) are keyed the same way and
+          // outlive their cards the same way, so they are retired at the same
+          // moment. A FAILED group list keeps every group override rather than
+          // pruning against an empty set: "the IPC rejected" and "you have no
+          // groups" are the same value otherwise, and one of them would silently
+          // delete settings the user made.
+          sessionStore.prunePolicies(known, groupIds ?? Object.keys(sessionStore.getPolicies().groups));
           for (const p of [...api.panels]) {
             const s = /^session-(.+)$/.exec(p.id);
             const d = /^diff-/.exec(p.id);

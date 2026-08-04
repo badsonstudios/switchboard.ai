@@ -445,9 +445,14 @@ done | crashed`) fed by hooks + transcript events. The layout engine reacts to i
   (permission / input / done) or user click anywhere (sidebar, event, lamp).
   Reveal restores the session to exactly where it was (dock slot or its monitor).
 - **Presentation policy setting**: `always-visible | auto-collapse | auto-hide` —
-  global default + per-group and per-session overrides. DEFAULT is auto-collapse
-  (litmus: a new user watching their session vanish on first submit fails
-  intuitive-first); auto-hide is one toggle away for power users.
+  global default + per-group and per-session overrides. **DEFAULT is
+  always-visible** *(amended 2026-08-04, Dan, after dogfooding P2-E9-06 / PR
+  #198; the original default was auto-collapse)*: nothing minimizes unasked,
+  because under auto-collapse you cannot watch your first turn stream in the card
+  you submitted from — the same intuitive-first litmus the earlier parenthetical
+  applied to auto-hide, one rung higher. **auto-collapse and auto-hide are
+  opt-in**, one click of the titlebar chip away for the many-sessions workflow
+  they suit.
 - **Pinning is a protection contract** (research v2: VS Code + IntelliJ pinned-tab
   semantics): a pinned session sorts first in the rail, never scrolls out of view
   under overflow, and is exempt from EVERY bulk operation — bulk-close, idle

@@ -8,6 +8,7 @@ Everything lives as chips in the title bar. There's no settings window yet.
 |---|---|
 | **🔓 auto-trust / 🔒 ask trust** | Whether new folders are trusted automatically |
 | **🛡 ask / plan / auto-edit / full-auto** | The autonomy mode *new* sessions start at — click to cycle |
+| **⬍ Keep visible / Collapse on submit / Hide on submit** | What happens to a session's card when you send it a prompt — click to cycle. See below |
 | **🔔 on / 🔕 off** | All notifications |
 | **system · nordic · daylight · high contrast · soft contrast** | Theme — see below |
 | **en · pseudo** | Language. `pseudo` is a development aid that stretches every label to test the layout — you probably want `en` |
@@ -36,6 +37,20 @@ Themes are plain data files, so more can be added without changing the app. A
 way to write and import your own is planned, along with a screen for editing
 individual colors.
 
+## What a card does when you submit a prompt
+
+The **⬍** chip sets this for every session at once. The default, **Keep
+visible**, does nothing at all: the card stays put and you watch the turn come
+in. The other two are opt-in — **Collapse on submit** folds the card into the
+Collapsed strip the moment you send a prompt, **Hide on submit** takes it off the
+workspace entirely, and both bring it back when the session finishes or needs
+you, so the space goes to whatever you're actually looking at.
+
+Individual sessions and groups can disagree with the chip: right-click a session
+in the Sessions list, or use the **⬍** button on a group header. The full story,
+including what it deliberately won't do, is in
+[Organizing your workspace](07-workspace.md#getting-out-of-the-way-by-itself).
+
 ## Trusting folders
 
 Claude Code asks whether you trust a folder the first time it runs there. With
@@ -47,9 +62,10 @@ the Terminal tab each time.
 
 ## What's remembered
 
-Your theme, language, notification setting, autonomy default, layout, groups,
-sessions, per-session detail level, and window position all persist across
-restarts, stored on your machine.
+Your theme, language, notification setting, autonomy default, what cards do on
+submit (global, per group and per session), layout, groups, sessions,
+per-session detail level, and window position all persist across restarts,
+stored on your machine.
 
 ## Good to know
 

@@ -5,6 +5,8 @@
 // registers as a paste and never submits (S-03 finding, refound live
 // 2026-07-22). Escape bytes are built from char codes: no control bytes in
 // source files.
+import { sessionStore } from '../store/session-store';
+
 const ESC = String.fromCharCode(27);
 const CR = String.fromCharCode(13);
 const LF = String.fromCharCode(10);
@@ -27,6 +29,20 @@ export function writePromptToPty(sessionId: string, text: string): void {
  * user-facing one, this function does not change.
  */
 export async function submitPrompt(sessionId: string, text: string): Promise<void> {
+  // §5.8's auto-minimize hangs off THIS call and not off the composer component,
+  // because this function is already documented as "the one way renderer
+  // surfaces write a prompt into a session" — so a future second surface gets
+  // the behaviour for free instead of forgetting it.
+  //
+  // BEFORE the await, deliberately: the collapse is a response to the user's
+  // gesture and must not wait on an IPC round trip, nor depend on which
+  // transport ended up taking the prompt.
+  //
+  // `writePromptToPty` is NOT a submit point of its own. Its other caller is the
+  // ⋯ session-controls menu, which types slash commands like `/compact` — the
+  // workspace folding itself away because you clicked a menu item would be
+  // baffling, and §5.8 says "submitting a prompt", not "writing to the PTY".
+  sessionStore.notifyPromptSubmitted(sessionId);
   if (await window.switchboard.sessions.submitPrompt(sessionId, text)) return;
   writePromptToPty(sessionId, text);
 }

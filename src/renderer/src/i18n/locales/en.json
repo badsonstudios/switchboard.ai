@@ -95,7 +95,11 @@
     "stripLabel": "Collapsed",
     "rowTitle": "{title} — {state} — click to expand",
     "collapse": "Collapse this session to a strip",
-    "collapseIcon": "▁"
+    "collapseIcon": "▁",
+    "policyMenu": "On submit",
+    "policyDefault": "Follow the default ({policy})",
+    "policyGroup": "On submit, this group: {policy} — click to change",
+    "policyGroupIcon": "⬍"
   },
   "grid": {
     "addCard": "+ session",
@@ -323,7 +327,25 @@
       "noSuchSession": "There is no session in that slot",
       "noSessions": "No sessions are open",
       "noActiveSession": "No session is focused",
-      "emptyQueue": "Nothing is waiting on you"
+      "emptyQueue": "Nothing is waiting on you",
+      "noActiveGroup": "The focused session is not in a group"
+    },
+    "policy": {
+      "always-visible": "On submit: keep every session visible",
+      "auto-collapse": "On submit: collapse the session to a strip (default)",
+      "auto-hide": "On submit: hide the session"
+    },
+    "sessionPolicy": {
+      "always-visible": "This session on submit: keep it visible",
+      "auto-collapse": "This session on submit: collapse it to a strip",
+      "auto-hide": "This session on submit: hide it",
+      "default": "This session on submit: follow the default"
+    },
+    "groupPolicy": {
+      "always-visible": "This session's group on submit: keep cards visible",
+      "auto-collapse": "This session's group on submit: collapse cards to a strip",
+      "auto-hide": "This session's group on submit: hide cards",
+      "default": "This session's group on submit: follow the default"
     }
   },
   "palette": {
@@ -345,5 +367,13 @@
   "terminal": {
     "streamTitle": "No terminal for this session",
     "streamBody": "This session talks to Claude Code directly instead of through a terminal, so there is nothing to show here. In exchange, permission requests appear in this window — including the ones that used to escape into the terminal and ask you twice. Switch this session back to Terminal mode from the ⋯ menu if you need the terminal itself."
+  },
+  "policy": {
+    "always-visible": "Keep visible",
+    "auto-collapse": "Collapse on submit",
+    "auto-hide": "Hide on submit",
+    "chip": "⬍ {policy}",
+    "chipHint": "What happens to a session card when you submit a prompt: {policy}. Click to change.",
+    "groupDefault": "Follow the default"
   }
 }

@@ -577,6 +577,8 @@ Work items:
   *Done when:* submit collapses under the default and restores on done;
   auto-hide honors the E9-05 reveal contract; a per-session override beats the
   global; e2e.
+  **Amended 2026-08-04 (Dan, reviewing PR #198): the shipped default is
+  `always-visible`; auto-collapse and auto-hide are opt-in. See DESIGN §5.8.**
 - **P2-E9-07 · Layout modes grid · focus · queue + maximize toggle — M
   (§5.8).** ***(depends: P2-E15-08 / #105 — hard block.* Modes drive every card at
   once from the palette/queue; panel-local state can't be driven from outside

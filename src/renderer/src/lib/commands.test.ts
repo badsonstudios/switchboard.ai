@@ -19,7 +19,12 @@ const key = (k: string, mods: Partial<Record<'ctrl' | 'meta' | 'shift' | 'alt', 
   altKey: !!mods.alt,
 });
 
-const ctx: CommandContext = { sessions: [], activeCardId: null, attentionCount: 0 };
+const ctx: CommandContext = {
+  sessions: [],
+  activeCardId: null,
+  activeGroupId: null,
+  attentionCount: 0,
+};
 
 function cmd(over: Partial<Command> = {}): Command {
   return {

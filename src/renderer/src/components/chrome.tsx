@@ -11,6 +11,7 @@ import { ContributionBoundary } from '../extensibility/boundary';
 import { StatusBarContext } from '../extensibility/contributions';
 import { ThemeDefinition } from '../theme/theme';
 import { BuildIdentity, commitStamp } from '../../../shared/build-identity';
+import type { PresentationPolicy } from '../lib/presentation-policy';
 
 const barStyle: React.CSSProperties = {
   background: 'var(--titlebar-bg)',
@@ -40,6 +41,9 @@ export function TitleBar(props: {
   onToggleNotif: () => void;
   autonomy: string;
   onCycleAutonomy: () => void;
+  /** §5.8's presentation policy — what a submit does to the card (E9-06) */
+  presentationPolicy: PresentationPolicy;
+  onCyclePresentationPolicy: () => void;
   autoTrust: boolean;
   onToggleTrust: () => void;
   /** sessions-rail visibility — the mouse path for the Ctrl+B command (E9-01) */
@@ -80,6 +84,19 @@ export function TitleBar(props: {
       </Chip>
       <Chip selected={false} onClick={props.onCycleAutonomy}>
         {t(`autonomy.${props.autonomy}`)}
+      </Chip>
+      {/* The GLOBAL presentation policy (E9-06, §5.8). A chip and not a buried
+          setting because it changes what the workspace does on every prompt —
+          "where did my card go?" has to be answerable by looking, and this is
+          the answer. Per-session and per-group overrides live in the rail, next
+          to the thing they override. */}
+      <Chip
+        selected={false}
+        onClick={props.onCyclePresentationPolicy}
+        title={t('policy.chipHint', { policy: t(`policy.${props.presentationPolicy}`) })}
+        testId="presentation-policy"
+      >
+        {t('policy.chip', { policy: t(`policy.${props.presentationPolicy}`) })}
       </Chip>
       <Chip selected={props.notifEnabled} onClick={props.onToggleNotif}>
         {props.notifEnabled ? t('titlebar.notifOn') : t('titlebar.notifOff')}
@@ -187,11 +204,14 @@ export function Chip(props: {
   onClick: () => void;
   children: React.ReactNode;
   title?: string;
+  /** a stable e2e handle for a chip whose LABEL is the thing under test */
+  testId?: string;
 }): React.JSX.Element {
   return (
     <button
       onClick={props.onClick}
       title={props.title}
+      data-testid={props.testId}
       style={{
         background: props.selected ? 'var(--chip)' : 'transparent',
         color: 'var(--text)',

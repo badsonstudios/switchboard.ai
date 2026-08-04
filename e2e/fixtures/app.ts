@@ -278,6 +278,26 @@ export async function showTerminal(window: Page): Promise<void> {
 }
 
 /**
+ * Set §5.8's global presentation policy from the titlebar chip (P2-E9-06).
+ *
+ * The chip CYCLES, so this walks it to the label rather than guessing a click
+ * count — which also means it keeps working if the default or the order changes.
+ *
+ * The DEFAULT is `always-visible` (decision 2026-08-04): submitting a prompt
+ * moves nothing, so a spec that submits and then keeps looking at the card needs
+ * no setup at all. Opting IN to auto-collapse / auto-hide is what needs a click,
+ * and `presentation-policy.spec.ts` is where those are asserted.
+ */
+export async function setPresentationPolicy(window: Page, label: string): Promise<void> {
+  const chip = window.getByTestId('presentation-policy');
+  for (let i = 0; i < 4; i++) {
+    if ((await chip.innerText()).includes(label)) return;
+    await chip.click();
+  }
+  throw new Error(`the presentation-policy chip never reached "${label}"`);
+}
+
+/**
  * The workspace store inside a launched app's isolated home.
  *
  * Electron puts userData somewhere different on each OS, and hard-coding the

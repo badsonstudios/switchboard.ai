@@ -34,7 +34,8 @@ Each group header counts its own waiting sessions (**"2 need you"**, or
 for the whole workspace.
 
 Click a row to jump to that session. Double-click to rename it. Right-click for
-**Open changes**, **Rename** and **Close session**.
+**Open changes**, **Rename**, **Close session**, and
+[what this session does when you submit a prompt](#changing-it).
 
 Sessions that are suspended or not currently on screen still appear here — the
 list is the complete inventory.
@@ -57,6 +58,8 @@ a card with its own color and a **colored dot** beside its name.
   to sit alongside its new siblings.
 - **Remove a session:** drag it onto empty space in the list, outside any group.
 - **Start a session directly inside one:** click the **⊕** on the group header.
+- **Set what its sessions do on submit:** the **⬍** on the group header —
+  see [Getting out of the way by itself](#getting-out-of-the-way-by-itself).
 - **Delete:** the **✕** on the header. The sessions inside are kept — they just
   become ungrouped.
 
@@ -159,6 +162,74 @@ back collapsed, tabbed or hidden exactly as you left them. One thing
 deliberately doesn't carry over — sessions that were *already* waiting on you
 when you quit stay where you put them at the next launch, instead of the
 workspace unfolding itself the moment it opens.
+
+## Getting out of the way by itself
+
+Most of the time you don't move a session down the ladder because you decided
+to — you move it because you just gave it something to do and you're going to
+go look at something else. So switchboard can do that part for you, if you ask
+it to.
+
+**Out of the box it doesn't.** Send a prompt and the card stays exactly where it
+is, so you can watch the turn come in. Turn one of the other two settings on and
+sending a prompt gets that card out of your way by itself:
+
+| Setting | When you submit a prompt |
+|---|---|
+| **Keep visible** | nothing happens — the card stays exactly where it is *(default)* |
+| **Collapse on submit** | the card becomes a row in the Collapsed strip |
+| **Hide on submit** | the card leaves the workspace entirely |
+
+With either of those on, the session keeps running and **its card comes straight
+back to the spot it left** when it finishes, asks a question, or asks permission
+— the same reappearance described under *Coming back* above.
+
+**Collapse on submit** hands the space to the sessions you're still looking at
+while leaving a row you can see and click. **Hide on submit** is the tidiest and
+the least forgiving: the session vanishes from the workspace and lives only in
+the Sessions list, its lamp and Events — until it needs you, at which point it
+comes back like everything else. It suits running six or seven agents at once.
+**Keep visible** is the default because watching your first prompt actually run
+matters more than the space it takes.
+
+### Changing it
+
+- **For everything:** the **⬍** chip in the title bar. Click it to cycle through
+  the three; the label always says which one you're on.
+- **For one session:** right-click its row in the Sessions list. The **ON
+  SUBMIT** section at the bottom of the menu has all three, plus **Follow the
+  default** — which is how you go back to whatever the global setting is,
+  including after you change it later.
+- **For a group:** the **⬍** button on the group header cycles that group's
+  setting. It's dimmed while the group is just following the default. (Only on
+  groups *you* made — [automatic groups](#automatic-groups) have nothing to
+  configure, which is why they have no buttons at all.)
+- **From the keyboard:** the command palette (`Ctrl+Shift+P`) has all of them,
+  at all three levels — search for *on submit*. (The group entries act on
+  whichever session you're currently in, so they still work with the Sessions
+  list hidden.)
+
+The most specific setting wins: a session's own choice beats its group's, which
+beats the global one. All of it is remembered across restarts.
+
+### What it won't do
+
+- **It won't touch a session you've popped out into its own window.** Putting a
+  session on a second monitor is a stronger statement than a global default, and
+  closing that window on every prompt would be obnoxious. Collapse it by hand if
+  you want to.
+- **It won't push a session further down than it already is.** If a session is
+  already collapsed, submitting from it doesn't then hide it.
+- **It won't move a session that's waiting on you.** If a session is holding a
+  permission or has asked you a question, its card stays where it is when you
+  type at it — the one card that needs you is the one card this never takes
+  away.
+- **It only sees prompts you send from the composer.** If you type directly into
+  a session's Terminal tab, that's between you and the CLI — switchboard isn't
+  reading your keystrokes, so it can't know you submitted anything.
+- **It isn't triggered by the ⋯ menu.** Running `/compact` or `/clear` from the
+  session controls isn't "submitting a prompt", and the workspace folding away
+  because you picked a menu item would be baffling.
 
 ## Rearranging cards
 

@@ -30,6 +30,15 @@ import { UrgencyStrip } from './components/UrgencyStrip';
 import { CollapsedStrip } from './components/CollapsedStrip';
 import { WorkspaceReadOnlyBanner } from './components/WorkspaceReadOnlyBanner';
 import { collapsedRows, revealTargets } from './lib/ladder';
+import {
+  cycleGlobal,
+  cycleOverride,
+  groupOverride,
+  PresentationPolicy,
+  withCard,
+  withGlobal,
+  withGroup,
+} from './lib/presentation-policy';
 import { buildIdentity } from '../../shared/build-identity';
 import {
   applyTabRows,
@@ -127,6 +136,36 @@ export function App(): React.JSX.Element {
   const collapsed = React.useMemo(
     () => collapsedRows(railFlat, (id) => presentation.get(id)?.ladder ?? 'expanded'),
     [railFlat, presentation]
+  );
+  // §5.8's presentation policy (E9-06). Read from the store rather than App
+  // state, because the SUBMIT path reads it synchronously from outside React's
+  // commit — the same requirement that put the ladder there.
+  const policies = useSyncExternalStore(subscribeStore, () => sessionStore.getPolicies());
+  const setGlobalPolicy = React.useCallback(
+    (p: PresentationPolicy) => sessionStore.setPolicies(withGlobal(sessionStore.getPolicies(), p)),
+    []
+  );
+  const setSessionPolicy = React.useCallback(
+    (cardId: string, p: PresentationPolicy | undefined) =>
+      sessionStore.setPolicies(withCard(sessionStore.getPolicies(), cardId, p)),
+    []
+  );
+  const setGroupPolicy = React.useCallback(
+    (groupId: string, p: PresentationPolicy | undefined) =>
+      sessionStore.setPolicies(withGroup(sessionStore.getPolicies(), groupId, p)),
+    []
+  );
+  // The two CYCLES read-then-write on the store's own snapshot, never on the
+  // rendered `policies` — a click handler must act on what is true now, not on
+  // the last commit.
+  const cycleGlobalPolicy = React.useCallback(
+    () => setGlobalPolicy(cycleGlobal(sessionStore.getPolicies().global)),
+    [setGlobalPolicy]
+  );
+  const cycleGroupPolicy = React.useCallback(
+    (groupId: string) =>
+      setGroupPolicy(groupId, cycleOverride(groupOverride(sessionStore.getPolicies(), groupId))),
+    [setGroupPolicy]
   );
   useEffect(() => {
     void loadUiState().then(() => {
@@ -422,6 +461,9 @@ export function App(): React.JSX.Element {
           hideCard: (cardId) => grid.current?.hideCard(cardId),
           setLadder: (cardId, rung) => grid.current?.setLadder(cardId, rung),
           stepLadder: (cardId, dir) => grid.current?.stepLadder(cardId, dir),
+          setGlobalPolicy,
+          setSessionPolicy,
+          setGroupPolicy,
           toggleRail,
           openPalette: () => setPaletteOpen(true),
           toggleTabRows: () => {
@@ -430,7 +472,7 @@ export function App(): React.JSX.Element {
           jumpToNextAttention,
           openAbout: () => setAboutOpen(true),
       }),
-    [toggleRail, jumpToNextAttention], // other deps read live state through refs; grid.current is stable
+    [toggleRail, jumpToNextAttention, setGlobalPolicy, setSessionPolicy, setGroupPolicy], // other deps read live state through refs; grid.current is stable
   );
   // chips advertise their own binding, derived from the registry so a tooltip
   // can never drift from the key that actually works
@@ -441,16 +483,21 @@ export function App(): React.JSX.Element {
   // ONE builder for both readers (the palette at open time, the dispatcher at
   // keypress time). They used to construct this separately, which is how a
   // command ends up enabled in the palette and dead on the keyboard.
-  const commandContext = React.useCallback(
-    () => ({
-      // read from the store, not a ref: this runs on KEYDOWN, outside React's
-      // commit, so it has to see what is true now
+  const commandContext = React.useCallback(() => {
+    // read from the store, not a ref: this runs on KEYDOWN, outside React's
+    // commit, so it has to see what is true now
+    const activeCardId = grid.current?.activeCardId() ?? null;
+    return {
       sessions: sessionStore.getRailOrder().flat,
-      activeCardId: grid.current?.activeCardId() ?? null,
+      activeCardId,
+      // resolved HERE, once, so the palette's enabled state and the keyboard's
+      // both come from the same read (E9-06's group-level commands)
+      activeGroupId: activeCardId
+        ? (sessionStore.getState().sessions.find((s) => s.id === activeCardId)?.groupId ?? null)
+        : null,
       attentionCount: sessionStore.getQueue().length,
-    }),
-    [],
-  );
+    };
+  }, []);
   const focusCard = React.useCallback((cardId: string) => focusSession(cardId), [focusSession]);
   const popoutKeysRef = React.useRef(new Map<Window, (e: KeyboardEvent) => void>());
   useEffect(() => {
@@ -614,6 +661,8 @@ export function App(): React.JSX.Element {
         }}
         autonomy={autonomy}
         onCycleAutonomy={cycleAutonomy}
+        presentationPolicy={policies.global}
+        onCyclePresentationPolicy={cycleGlobalPolicy}
         autoTrust={autoTrust}
         onToggleTrust={() => {
           const next = !autoTrust;
@@ -684,6 +733,9 @@ export function App(): React.JSX.Element {
             onRecolorGroup={(id, color) => {
               void bridge.groups?.update?.(id, { color }).then(() => refreshGroups());
             }}
+            policies={policies}
+            onSetSessionPolicy={setSessionPolicy}
+            onCycleGroupPolicy={cycleGroupPolicy}
             onMoveToGroup={(cardId, gid) => {
               void bridge.groups?.setSessionGroup?.(cardId, gid).then(() => {
                 grid.current?.moveCardToGroup(cardId, gid);

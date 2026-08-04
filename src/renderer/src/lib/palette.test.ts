@@ -8,6 +8,7 @@ const ctx: CommandContext = {
     { id: 'card-b', title: 'switchboard' },
   ],
   activeCardId: 'card-a',
+  activeGroupId: null,
   attentionCount: 0,
 };
 

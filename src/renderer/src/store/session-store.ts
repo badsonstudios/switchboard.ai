@@ -31,6 +31,14 @@ import {
   samePresentation,
 } from '../lib/presentation';
 import { markLit, pruneLit } from '../lib/urgency';
+import {
+  DEFAULT_BOOK,
+  persistablePolicies,
+  PolicyBook,
+  PresentationPolicy,
+  prunePolicies,
+  resolvePolicy,
+} from '../lib/presentation-policy';
 
 /**
  * A snapshot. Every field is `readonly` deliberately: identity IS the change
@@ -59,6 +67,14 @@ export interface SessionState {
    * fact a relaunch can inherit.
    */
   readonly urgency: ReadonlyMap<string, number>;
+  /**
+   * §5.8's presentation policy (P2-E9-06): the global default plus the
+   * per-group and per-session overrides. In `state` and not a registry because
+   * surfaces RENDER from it — the titlebar chip, the rail's menus — while the
+   * submit path has to read it synchronously from outside React's commit, which
+   * is the same pair of requirements that put `presentation` here.
+   */
+  readonly policies: PolicyBook;
 }
 
 const EMPTY: SessionState = {
@@ -70,6 +86,7 @@ const EMPTY: SessionState = {
   visited: new Set(),
   presentation: new Map(),
   urgency: new Map(),
+  policies: DEFAULT_BOOK,
 };
 
 export class SessionStore {
@@ -260,6 +277,60 @@ export class SessionStore {
     this.persistPresentation(persistablePresentation(next));
   }
 
+  // ── presentation policy (P2-E9-06) ──────────────────────────────────────
+  // Persistence is INJECTED, exactly as it is for presentation above: the store
+  // writing to the ui blob directly would put the preload bridge on its
+  // dependency path, and the point of P2-E15-07 was a state layer testable on
+  // its own.
+  private persistPolicies: (blob: Record<string, unknown> | null) => void = () => {};
+
+  setPolicyPersister(fn: (blob: Record<string, unknown> | null) => void): void {
+    this.persistPolicies = fn;
+  }
+
+  getPolicies(): PolicyBook {
+    return this.state.policies;
+  }
+
+  /** Seed the book from the ui blob at boot. Does not persist — it just read it. */
+  initPolicies(book: PolicyBook): void {
+    this.set({ policies: book });
+  }
+
+  /** Replace the book (the pure edits live in lib/presentation-policy). */
+  setPolicies(book: PolicyBook): void {
+    if (book === this.state.policies) return;
+    this.set({ policies: book });
+    this.persistPolicies(persistablePolicies(book));
+  }
+
+  /**
+   * The policy governing this card, overrides resolved.
+   *
+   * The card's persistent GROUP is looked up here rather than passed in, so
+   * every caller — the submit path, the rail menu's tick, a future layout mode —
+   * gets the same answer without each one remembering that groups are a level.
+   * `sessions` is the rail's own list, which is where card membership lives; a
+   * card whose rail entry has not landed yet therefore resolves as ungrouped.
+   * Unreachable from the submit path (submitting needs a mounted card, which
+   * needs the list), but worth knowing before adding a second caller.
+   */
+  policyFor(cardId: string | undefined): PresentationPolicy {
+    const groupId = cardId
+      ? this.state.sessions.find((s) => s.id === cardId)?.groupId
+      : undefined;
+    return resolvePolicy(this.state.policies, cardId, groupId);
+  }
+
+  /** Forget overrides for cards and groups that no longer exist. Called from
+   *  the same place `prunePresentation` is, and for the same reason. */
+  prunePolicies(knownCardIds: Iterable<string>, knownGroupIds: Iterable<string>): void {
+    const next = prunePolicies(this.state.policies, knownCardIds, knownGroupIds);
+    if (!next) return;
+    this.set({ policies: next });
+    this.persistPolicies(persistablePolicies(next));
+  }
+
   // ── urgency strip (P2-E9-04) ────────────────────────────────────────────
   // Part of `state`, like presentation and unlike the registries below: the
   // strip RENDERS from it, and the attention jump writes it from a keydown
@@ -394,6 +465,38 @@ export class SessionStore {
     }
   }
 
+  // ── the user submitted a prompt (P2-E9-06) ──────────────────────────────
+  //
+  // §5.8's auto-minimize needs an event with two ends that cannot see each
+  // other: the composer, which lives inside a dockview panel, and the grid,
+  // which owns the dockview verbs that would remove that panel. Threading a
+  // callback down through the panel CONTRIBUTION contract would make every
+  // future panel carry a prop about layout policy; a notification here does not.
+  //
+  // Its own listener set rather than the general subscription, for the same
+  // reason membership has one: this means "something happened", not "state
+  // changed", and firing it from the render path would be a re-render per key.
+  //
+  // The payload is the LIVE session id — that is what the submit routes have —
+  // and the listener maps it to a card, exactly as the reveal path does.
+  private submitListeners = new Set<(liveSessionId: string) => void>();
+
+  subscribePromptSubmit(listener: (liveSessionId: string) => void): () => void {
+    this.submitListeners.add(listener);
+    return () => this.submitListeners.delete(listener);
+  }
+
+  /** A renderer surface just sent a prompt to this session (lib/composer). */
+  notifyPromptSubmitted(liveSessionId: string): void {
+    for (const l of this.submitListeners) {
+      try {
+        l(liveSessionId);
+      } catch (err) {
+        // fail-open: a presentation rule must never cost the user their prompt
+        console.error('[store] submit subscriber threw', err);
+      }
+    }
+  }
 }
 
 /** The app's store. One window, one store. */
