@@ -142,12 +142,34 @@ function positiveMs(raw: string | undefined): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
+/**
+ * Is a scripted quit in charge? Then nothing may be put in front of it.
+ *
+ * TWO vars, deliberately, because the old single one could not express what an
+ * automated run actually needs (#185):
+ *
+ * - `SWITCHBOARD_AUTOCLOSE=<seconds>` arms a TIMED self-quit (smoke checks).
+ *   It implies "don't prompt" — a quit nobody is watching must not stop at a
+ *   modal — but you cannot ask for the suppression alone without also arming
+ *   the timer, and the one value that would (`0`) reads as "off" to anyone
+ *   who sees it.
+ * - `SWITCHBOARD_NO_QUIT_CONFIRM=1` is the suppression BY ITSELF. This is what
+ *   a test harness wants: the app lives until the harness closes it, and the
+ *   close is never intercepted. The e2e fixtures set it on every launch.
+ *
+ * Both are dev/test-only escape hatches; neither is documented to users, and a
+ * real install has neither set, so the dialog behaves exactly as before.
+ */
+function scriptedQuit(): boolean {
+  return !!process.env.SWITCHBOARD_NO_QUIT_CONFIRM || !!process.env.SWITCHBOARD_AUTOCLOSE;
+}
+
 // Quit protection (P1-E6-02): intercept the WINDOW close — on Windows the X
 // destroys the sole window before before-quit, so guarding there strands
 // headless PTYs. Prompt here, then destroy + quit only on confirm.
 function confirmCloseWithBusySessions(win: BrowserWindow): boolean {
   if (quitConfirmed) return true;
-  if (process.env.SWITCHBOARD_AUTOCLOSE) return true; // scripted smoke: never block
+  if (scriptedQuit()) return true; // scripted smoke / e2e: never block
   const busy = busySessions();
   if (busy.length === 0) return true;
   const choice = dialog.showMessageBoxSync(win, {
