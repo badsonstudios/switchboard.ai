@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
+import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { SessionManager, PtyLike } from './session-manager';
 import { transition, SessionStatus } from './state-machine';
 import { ContributionRegistry } from '../../shared/extensibility/registry';
@@ -43,11 +43,14 @@ let dir: string;
 let ptys: FakePtys;
 let mgr: SessionManager;
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-sm-'));
+  dir = tempDir('sb-sm-');
   ptys = new FakePtys();
   const sink = new LogSink({ dir });
   mgr = new SessionManager(fakeRegistry(), ptys, createLogger(sink, 'sessions'), dir);
 });
+// One state dir per test, deleted at the end of it (#213). The ptys are fakes,
+// so nothing outlives the test to hold the folder open.
+afterEach(() => cleanupTempDirs());
 
 const identity = { title: 't', folder: 'C:/tmp/x', providerId: 'fake' };
 

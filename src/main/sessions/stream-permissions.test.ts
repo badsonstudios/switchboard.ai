@@ -3,10 +3,8 @@
 // The `.claude/` write that prompts the owner TWICE today is the acceptance
 // case, and it appears here twice over: once as the routing test, and once end
 // to end through the #134 fake, where the FILE actually gets written.
-import { describe, it, expect, beforeEach } from 'vitest';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { StreamPermissions } from './stream-permissions';
 import { PermissionRequest } from '../hooks/hook-listener';
 import { FakeStreamProtocol } from '../providers/fake-stream-protocol';
@@ -39,7 +37,7 @@ function canUseTool(requestId = 'req-1', filePath = 'C:/p/.claude/scripts/covera
 }
 
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-perm-'));
+  dir = tempDir('sb-perm-');
   sent = [];
   requests = [];
   resolved = [];
@@ -53,6 +51,7 @@ beforeEach(() => {
   perms.onPermissionRequest((r) => requests.push(r));
   perms.onPermissionResolved((id) => resolved.push(id));
 });
+afterEach(() => cleanupTempDirs()); // one per test, gone at the end of it (#213)
 
 describe('offering a request (P2-E18-07)', () => {
   it('turns can_use_tool into the SAME PermissionRequest the hook path emits', () => {

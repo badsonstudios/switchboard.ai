@@ -3,7 +3,13 @@ import type { Page } from '@playwright/test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { launchApp, LaunchedApp, workspaceJsonPath } from './fixtures/app';
+import {
+  launchApp,
+  LaunchedApp,
+  registerTempDir,
+  sweepTempDirs,
+  workspaceJsonPath,
+} from './fixtures/app';
 
 // the banner's lead line, verbatim from en.json
 const NOTICE = 'Nothing in this workspace will be saved.';
@@ -35,7 +41,11 @@ test.describe('a workspace file written by a newer version', () => {
   test('says so on screen, and leaves the file byte-identical', async () => {
     // Seed the home BEFORE the first launch: launchApp only creates the AppData
     // folders, never workspace.json, so the app's very first load reads ours.
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-'));
+    // Ours, not the fixture's — so hand it to the fixture's registry and let
+    // the sweep take it, with retries and a requeue if Electron is slow to let
+    // go. The bare `rmSync` this replaced could THROW out of the `finally`
+    // below and fail a test that had already passed (#213).
+    const home = registerTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-')));
     const wsPath = workspaceJsonPath(home);
     fs.mkdirSync(path.dirname(wsPath), { recursive: true });
     const future = JSON.stringify({ version: 99, sessions: [], groups: [] }, null, 2);
@@ -45,7 +55,7 @@ test.describe('a workspace file written by a newer version', () => {
       a = await launchApp({ home });
     } catch (err) {
       // the fixture only self-cleans a home it created — this one is ours
-      fs.rmSync(home, { recursive: true, force: true });
+      await sweepTempDirs();
       throw err;
     }
     // fail-open first: a future file must still BOOT (#110), not blank the app
@@ -62,7 +72,7 @@ test.describe('a workspace file written by a newer version', () => {
     try {
       expect(fs.readFileSync(wsPath, 'utf8')).toBe(future);
     } finally {
-      fs.rmSync(home, { recursive: true, force: true });
+      await sweepTempDirs();
     }
   });
 
