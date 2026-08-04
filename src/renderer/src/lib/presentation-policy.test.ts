@@ -21,9 +21,21 @@ import {
 const book = (patch: Partial<PolicyBook> = {}): PolicyBook => ({ ...DEFAULT_BOOK, ...patch });
 
 describe('presentation policy (E9-06, §5.8)', () => {
-  it('defaults to auto-collapse — §5.8 names it, and a new user must not watch a card vanish', () => {
-    expect(DEFAULT_POLICY).toBe('auto-collapse');
-    expect(resolvePolicy(DEFAULT_BOOK, 'card-A')).toBe('auto-collapse');
+  it('defaults to always-visible — nothing moves unless the user opted in', () => {
+    // §5.8 as amended 2026-08-04: a new user must be able to watch their first
+    // turn stream in the card they submitted from. auto-collapse and auto-hide
+    // are one click of the chip away.
+    expect(DEFAULT_POLICY).toBe('always-visible');
+    expect(resolvePolicy(DEFAULT_BOOK, 'card-A')).toBe('always-visible');
+    // ...and the default is a no-op at the one place it matters
+    expect(
+      submitTarget({
+        policy: DEFAULT_POLICY,
+        ladder: 'expanded',
+        poppedOut: false,
+        needsHuman: false,
+      })
+    ).toBeNull();
     // an untouched book writes NOTHING: a workspace nobody configured must not
     // accrete a settings record
     expect(persistablePolicies(DEFAULT_BOOK)).toBeNull();
@@ -157,7 +169,7 @@ describe('presentation policy (E9-06, §5.8)', () => {
     it('every edit returns a NEW book — identity is the store change signal', () => {
       const b = withGlobal(DEFAULT_BOOK, 'auto-hide');
       expect(b).not.toBe(DEFAULT_BOOK);
-      expect(DEFAULT_BOOK.global).toBe('auto-collapse'); // the original is untouched
+      expect(DEFAULT_BOOK.global).toBe('always-visible'); // the original is untouched
     });
   });
 

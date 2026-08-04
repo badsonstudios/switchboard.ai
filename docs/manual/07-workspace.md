@@ -58,7 +58,7 @@ a card with its own color and a **colored dot** beside its name.
   to sit alongside its new siblings.
 - **Remove a session:** drag it onto empty space in the list, outside any group.
 - **Start a session directly inside one:** click the **⊕** on the group header.
-- **Set what its sessions do on submit:** the **↓** on the group header —
+- **Set what its sessions do on submit:** the **⬍** on the group header —
   see [Getting out of the way by itself](#getting-out-of-the-way-by-itself).
 - **Delete:** the **✕** on the header. The sessions inside are kept — they just
   become ungrouped.
@@ -167,28 +167,30 @@ workspace unfolding itself the moment it opens.
 
 Most of the time you don't move a session down the ladder because you decided
 to — you move it because you just gave it something to do and you're going to
-go look at something else. So switchboard does that part for you.
+go look at something else. So switchboard can do that part for you, if you ask
+it to.
 
-**When you send a prompt from the composer, that session's card folds into the
-Collapsed strip.** The session is running; its row in the strip says so; the
-space it was using goes to the sessions you're still looking at. When it
-finishes, asks a question, or asks permission, **its card comes straight back to
-the spot it left** — the same reappearance described under *Coming back* above.
-
-That's the default. There are three settings:
+**Out of the box it doesn't.** Send a prompt and the card stays exactly where it
+is, so you can watch the turn come in. Turn one of the other two settings on and
+sending a prompt gets that card out of your way by itself:
 
 | Setting | When you submit a prompt |
 |---|---|
-| **Keep visible** | nothing happens — the card stays exactly where it is |
-| **Collapse on submit** | the card becomes a row in the Collapsed strip *(default)* |
+| **Keep visible** | nothing happens — the card stays exactly where it is *(default)* |
+| **Collapse on submit** | the card becomes a row in the Collapsed strip |
 | **Hide on submit** | the card leaves the workspace entirely |
 
-**Hide on submit** is the tidiest and the least forgiving: the session vanishes
-from the workspace and lives only in the Sessions list, its lamp and Events —
-until it needs you, at which point it comes back like everything else. It suits
-running six or seven agents at once. **Collapse on submit** is the default
-because a row you can see and click is a gentler thing to meet on your first day
-than a card that disappeared.
+With either of those on, the session keeps running and **its card comes straight
+back to the spot it left** when it finishes, asks a question, or asks permission
+— the same reappearance described under *Coming back* above.
+
+**Collapse on submit** hands the space to the sessions you're still looking at
+while leaving a row you can see and click. **Hide on submit** is the tidiest and
+the least forgiving: the session vanishes from the workspace and lives only in
+the Sessions list, its lamp and Events — until it needs you, at which point it
+comes back like everything else. It suits running six or seven agents at once.
+**Keep visible** is the default because watching your first prompt actually run
+matters more than the space it takes.
 
 ### Changing it
 

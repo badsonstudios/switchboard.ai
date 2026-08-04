@@ -5,7 +5,6 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import {
-  keepCardsVisible,
   launchApp,
   LaunchedApp,
   showTerminal,
@@ -453,7 +452,6 @@ test.describe('Feed view (E12-06)', () => {
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
-    await keepCardsVisible(w); // this test looks at the card AFTER submitting
 
     // type a prompt in the Session tab's composer and hit Enter — the fake
     // provider is a real shell, so the command actually executes

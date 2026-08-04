@@ -282,6 +282,11 @@ export async function showTerminal(window: Page): Promise<void> {
  *
  * The chip CYCLES, so this walks it to the label rather than guessing a click
  * count — which also means it keeps working if the default or the order changes.
+ *
+ * The DEFAULT is `always-visible` (decision 2026-08-04): submitting a prompt
+ * moves nothing, so a spec that submits and then keeps looking at the card needs
+ * no setup at all. Opting IN to auto-collapse / auto-hide is what needs a click,
+ * and `presentation-policy.spec.ts` is where those are asserted.
  */
 export async function setPresentationPolicy(window: Page, label: string): Promise<void> {
   const chip = window.getByTestId('presentation-policy');
@@ -290,24 +295,6 @@ export async function setPresentationPolicy(window: Page, label: string): Promis
     await chip.click();
   }
   throw new Error(`the presentation-policy chip never reached "${label}"`);
-}
-
-/**
- * Stop cards from folding away when a prompt is submitted (P2-E9-06).
- *
- * The DEFAULT policy is auto-collapse: submitting from the composer gives that
- * card's dock slot back and leaves a row in the collapsed strip. That is the
- * product behaviour, and `presentation-policy.spec.ts` is where it is asserted.
- *
- * Every OTHER spec that submits a prompt is testing the composer, the feed, the
- * terminal or the stream transport, and for those a card that leaves the
- * workspace half-way through is noise — it fails as "element was detached from
- * the DOM", which says nothing about the thing under test. Call this after
- * launching in any spec that submits a prompt and then keeps looking at the
- * card.
- */
-export async function keepCardsVisible(window: Page): Promise<void> {
-  await setPresentationPolicy(window, 'Keep visible');
 }
 
 /**

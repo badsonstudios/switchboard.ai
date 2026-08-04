@@ -7,16 +7,21 @@
 // altogether?
 //
 //   always-visible   nothing happens on submit; the card stays a card.
+//                    THE DEFAULT.
 //   auto-collapse    the card gives its dock slot back and becomes a row in the
-//                    collapsed strip. THE DEFAULT.
+//                    collapsed strip.
 //   auto-hide        the card leaves the workspace entirely — rail, lamp and
 //                    events only, exactly like `session.hide`.
 //
-// WHY auto-collapse IS THE DEFAULT (§5.8, verbatim): "DEFAULT is auto-collapse
-// (litmus: a new user watching their session vanish on first submit fails
-// intuitive-first); auto-hide is one toggle away for power users." Both of the
-// minimizing policies hand the screen back to the sessions that still need it;
-// only one of them leaves something on screen that says where the session went.
+// WHY always-visible IS THE DEFAULT (Dan, 2026-08-04, amending §5.8): the first
+// draft shipped auto-collapse, as §5.8 originally specified, and dogfooding it
+// settled the question — you cannot watch your own turn stream in the card you
+// submitted from, which is the very first thing a new user does. The litmus
+// parenthetical §5.8 wrote ("a new user watching their session vanish on first
+// submit fails intuitive-first") was about auto-hide vs auto-collapse; applied
+// one rung higher it rules out minimizing UNASKED at all. Both minimizing
+// policies still hand the screen back to the sessions that need it, and both are
+// one click of the titlebar chip away for the many-sessions workflow they suit.
 //
 // THE RESTORE HALF IS NOT HERE, and that is the point of doing this after
 // E9-05: §5.8 says a minimized session "restores automatically on Stop (done)
@@ -39,8 +44,9 @@ export const POLICY_ORDER: readonly PresentationPolicy[] = [
   'auto-hide',
 ];
 
-/** §5.8's stated default, and the value an untouched workspace resolves to. */
-export const DEFAULT_POLICY: PresentationPolicy = 'auto-collapse';
+/** The default, and the value an untouched workspace resolves to (§5.8 as
+ *  amended 2026-08-04: nothing moves unless the user opted in). */
+export const DEFAULT_POLICY: PresentationPolicy = 'always-visible';
 
 /**
  * The whole setting: one global default plus two override tables.

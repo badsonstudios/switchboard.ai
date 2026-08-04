@@ -39,13 +39,15 @@ individual colors.
 
 ## What a card does when you submit a prompt
 
-The **⬍** chip sets this for every session at once. The default,
-**Collapse on submit**, folds a card into the Collapsed strip the moment you
-send it a prompt and brings it back when the session finishes or needs you —
-so the space goes to whatever you're actually looking at.
+The **⬍** chip sets this for every session at once. The default, **Keep
+visible**, does nothing at all: the card stays put and you watch the turn come
+in. The other two are opt-in — **Collapse on submit** folds the card into the
+Collapsed strip the moment you send a prompt, **Hide on submit** takes it off the
+workspace entirely, and both bring it back when the session finishes or needs
+you, so the space goes to whatever you're actually looking at.
 
 Individual sessions and groups can disagree with the chip: right-click a session
-in the Sessions list, or use the **↓** button on a group header. The full story,
+in the Sessions list, or use the **⬍** button on a group header. The full story,
 including what it deliberately won't do, is in
 [Organizing your workspace](07-workspace.md#getting-out-of-the-way-by-itself).
 

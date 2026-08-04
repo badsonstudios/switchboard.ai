@@ -479,8 +479,8 @@ describe('SessionStore — presentation policy (P2-E9-06)', () => {
   });
 
   it('an unknown card gets the global — never a throw', () => {
-    expect(store.policyFor('nobody')).toBe('auto-collapse');
-    expect(store.policyFor(undefined)).toBe('auto-collapse');
+    expect(store.policyFor('nobody')).toBe('always-visible');
+    expect(store.policyFor(undefined)).toBe('always-visible');
   });
 
   it('init seeds the book without writing it back', () => {

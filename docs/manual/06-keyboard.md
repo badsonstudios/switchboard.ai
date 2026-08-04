@@ -116,10 +116,11 @@ four that name a rung outright — **Expand session to its full card**,
 **Collapse session to a strip**, **Stack session with the tabbed sessions** and
 **Hide session (keeps it running)**.
 
-Search the palette for **on submit** and you also get the seven entries that set
+Search the palette for **on submit** and you also get the eleven entries that set
 [what happens to a card when you send it a
 prompt](07-workspace.md#getting-out-of-the-way-by-itself) — three for every
-session at once, three for the one you're in, plus **follow the default**.
+session at once, and three plus **follow the default** for both the session
+you're in and its group.
 
 ## Hiding the Sessions list
 

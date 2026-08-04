@@ -6,7 +6,6 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import {
-  keepCardsVisible,
   launchApp,
   LaunchedApp,
   retype,
@@ -98,7 +97,6 @@ test.describe('composer slash commands (E10-07)', () => {
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
-    await keepCardsVisible(w); // this test keeps using the card after a submit
 
     const box = w.getByPlaceholder(/Prompt this session/);
     await box.click();
@@ -160,7 +158,6 @@ test.describe('composer slash commands (E10-07)', () => {
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
-    await keepCardsVisible(w); // this test keeps using the card after a submit
 
     const box = w.getByPlaceholder(/Prompt this session/);
     await box.click();
@@ -188,7 +185,6 @@ test.describe('composer slash commands (E10-07)', () => {
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
-    await keepCardsVisible(w); // this test keeps using the card after a submit
 
     const box = w.getByPlaceholder(/Prompt this session/);
     await box.click();
@@ -205,7 +201,6 @@ test.describe('composer slash commands (E10-07)', () => {
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
-    await keepCardsVisible(w); // this test keeps using the card after a submit
 
     const box = w.getByPlaceholder(/Prompt this session/);
     await box.click();
@@ -225,7 +220,6 @@ test.describe('composer slash commands (E10-07)', () => {
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
-    await keepCardsVisible(w); // this test keeps using the card after a submit
 
     // controls are LOCKED while 'starting' (§5.10 startup-dialog rule)
     await w.getByTitle('Session menu').click();
@@ -249,7 +243,6 @@ test.describe('composer slash commands (E10-07)', () => {
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
-    await keepCardsVisible(w); // this test keeps using the card after a submit
 
     // play the CLI: a bound conversation with visible content…
     const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));

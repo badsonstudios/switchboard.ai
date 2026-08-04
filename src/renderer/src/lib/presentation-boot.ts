@@ -16,8 +16,8 @@ export function initPresentation(): void {
   sessionStore.setPresentationPersister((blob) => uiSet(PRESENTATION_KEY, blob));
   // §5.8's presentation POLICY (P2-E9-06) rides the same edge, and must be
   // seeded in the same pass: a policy read before the blob has been loaded
-  // would answer "auto-collapse" for a user who chose otherwise, and the very
-  // first prompt they submitted would fold a card they asked to keep.
+  // would answer "always-visible" for a user who chose otherwise, and the very
+  // first prompt they submitted would leave a card where they asked it not to.
   //
   // `null` from persistablePolicies means "nothing worth writing" — an untouched
   // book must not put a record in the blob, exactly as an untouched card's
