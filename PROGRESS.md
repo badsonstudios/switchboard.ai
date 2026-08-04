@@ -5,14 +5,196 @@
 
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E18-01…10 ALL DONE 2026-08-02**; E15 done except #111 [held — real tokens];
-E9 at 5 of 11 — #70–#74 done, #75–#80 open; E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.** Orchestration run 3 CLOSED
-2026-08-03; its 4 user-facing PRs were merged 2026-08-04 on Dan's
-authorization after his default-decision was executed (addendum in the
-run record below). **Main @ 63f3d7e.** Unit 1192 / e2e 156+1 skip.
+E9 at **7 of 11** — #70–#76 done, #77–#80 open; E11/E13/E14 still outlines)
+**In progress:** **nothing mid-flight.** Orchestration run 4 CLOSED
+2026-08-04 and **FULLY MERGED same day** — 10 items: 7 internal +
+3 user-facing (Dan authorized the merge train without hand-testing;
+serial train #214 → #220 → #226, each bumped + re-greened; #226
+needed one conflict resolution — workspace-readonly.spec.ts, #226's
+structure adopting #228's temp-dir registry, verified by a local
+3/3 spec run before push). **Main @ c701f37.** Unit 1294 / e2e
+161+1 skip (from the merged branches' gate runs: 1227+46+5+16 /
+156+4+0+1).
 
-> # ▶▶ START HERE — all run-3 PRs are MERGED. Next is run 4
-> (`/orchestrate`) or single items.
+> # ▶▶ START HERE — run 4 fully merged; nothing open in flight.
+> Next: **`/orchestrate` run 5** — unblocked queue: #196 (feed
+> landmark titles), #197 (a11y sweep; fold #222 in if Dan agrees),
+> #215 (stale "(default)" string — trivial), #217 (runMoves seam),
+> #221 (status-pill contrast — #206's ink-token pattern), #224
+> (allowAllByLive growth — #223's sweep pattern), #219 (teardown
+> ordering), #227 (popout-registry consolidation), #229/#230 (test
+> hygiene), E9 tail #77–#80 (now unblocked: #76 merged; strictly
+> serial track). Collision note for run 5: #197+#221 both touch
+> SessionGrid-adjacent renderer chrome; E9 tail is serial with
+> itself and touches SessionGrid/store — pair carefully.
+> **Decisions Dan owes:** #200, #191, #129, #111, #207, #216,
+> E9-past-#80/E11/E13/E14 scoping.
+> **Dogfooding note:** all run-3 + run-4 features are now live on
+> main un-hand-tested (Dan's explicit call, 2026-08-04) — in-situ
+> use is the test; triage his bug reports promptly.
+
+> # 🎛 ORCHESTRATION RUN 4 — 2026-08-04, **CLOSED same day. 10
+> items: 7 internal merged, 3 in Dan's queue. 13 issues filed from
+> discoveries (#211 #213 #215 #216 #217 #219 #221 #222 #224 #227
+> #229 #230 + the flake-watch note), 3 of them (#211 #213 + #202's
+> gap) fixed same-run. Zero worker stalls, zero lock steals; CI
+> flaked twice (npm-ci ETIMEDOUT, macos fs.watch), both cleared on
+> re-run. Worktree pool parked clean/detached; Dan-PR branches
+> (76, 206, 208) kept locally.**
+> **Single-writer rule:** this file is written ONLY by the orchestrator
+> session. Workers report via handoff files in
+> `.claude/work_files/orchestrator/<issue#>.md`; those handoffs are the
+> inputs, this file is the output.
+>
+> **Queue (from run-3 close, all unblocked):** #76 #180 #196 #197 #201
+> #202 #205 #206 #208. Skipped — Dan owes decisions: #200 #191 #129
+> #111 #207. Collision tracks honored: #202+#205 = one serial ipc track
+> (#205 first); #196/#201 wait behind #76 (SessionGrid/store); #196 #206
+> #208 #197 renderer-chrome/a11y cluster staged in later waves; #180
+> alone in stream.spec/watcher.test.
+>
+> **Active workers** (issue → worktree → branch):
+> - ~~#76 P2-E9-07 layout modes~~ **WORKER DONE** — PR #214 marked
+>   ready, **IN DAN'S QUEUE** (user-facing). Grid/focus/queue as a
+>   pure card→rung plan (`lib/layout-mode.ts`) applied through
+>   E9-05's setCardLadder — no second layout engine. ▦ titlebar chip,
+>   palette, Ctrl+Shift+L cycle, Ctrl+Shift+M / header double-click
+>   maximize; ui-blob key `layoutMode`. Four demotion exemptions
+>   (needsHuman, active card, popped-out, already-demoted); grid not
+>   enforced between switches; a reactive pass never invents a big
+>   card. Review: 2 rounds, 15 findings all addressed (best: stale
+>   maximize made grid enforcing; gridReady happy-path-only = silent
+>   feature death). Gates: 1250 unit (+46) / 160 e2e +1 skip (+4),
+>   rebased onto fb3fe81. Manual: 07-workspace.md + 06-keyboard.md.
+>   Discoveries filed: **#215** (en.json still calls auto-collapse
+>   "(default)"), **#216** (suspended card has no header → no
+>   double-click maximize), **#217** (sweep loop unit-untestable —
+>   extract runMoves seam). Handoff:
+>   `.claude/work_files/orchestrator/76.md`.
+> - ~~#201 renderer liveToCard stale entry~~ ✅ **PR #223 MERGED**
+>   (internal; 5/5 green first try after bump; issue #201 closed;
+>   main @ da1fa42, unit baseline 1212).
+>   `mapLiveToCard` sweeps `forgetCardLiveIds(cardId)` before
+>   binding, mirroring main's #199 reap; **zero SessionGrid.tsx
+>   diff** (no #214 collision). All 5 readers traced safe. Gates:
+>   1206 unit (+2, mutation-checked) / 156 e2e +1 skip. Discovery
+>   filed: **#224** (`allowAllByLive` same growth shape, never
+>   released). Handoff: `.claude/work_files/orchestrator/201.md`.
+> - ~~#213 temp-leak suite-wide sweep~~ **WORKER DONE** — PR #228
+>   (internal, test-only) marked ready, **in the merge queue** (CI
+>   watched, auto-merge on green). New `src/test-temp-dirs.ts` +
+>   afterAll net in test-setup (all 76 files), 18 unit files
+>   converted, fixture gained pending-dir registry + liveApps guard +
+>   exit net + home sweep with retries; `tempProjectFolder()`
+>   signature unchanged (#208's spec unaffected). Leaks: unit 232→0
+>   (4 runs, isolated TEMP); e2e prefixes 0 new. Review blocker was
+>   real: store.test.ts's 500ms debounced save re-created the swept
+>   dir — teardown now flushes stores first. Gates: 1227 unit / 156
+>   e2e +1 skip on the rebased tree (= main baselines). Discoveries
+>   filed: **#229** (stream-recipe PATH entries), **#230** (launchApp
+>   failure path never killTrees). Flake watch +1: presentation-
+>   policy.spec.ts:154 25s launch timeout, once, passed twice after.
+>   Handoff: `.claude/work_files/orchestrator/213.md`.
+> - ~~#205 scrollback mid-char trim~~ ✅ **PR #210 MERGED** (internal;
+>   5/5 green; issue #205 closed; main @ fb3fe81, unit baseline now
+>   1204).
+>   RingBuffer oversized-chunk trim now steps to the next character
+>   start (bounded 3 bytes); deliberately NO StringDecoder — the split
+>   is one this class makes, a flush would emit the U+FFFD being
+>   removed (#203's lesson applied, not copied). ipc.test.ts untouched
+>   → #202 uncontended. Gates: 1204 unit (+12, proven to bite: 6/11
+>   cut offsets fail without the fix) / 156 e2e +1 skip, run twice.
+>   Discovery filed: **#211** (replay can open mid-ANSI-escape —
+>   eviction is UTF-8-aligned, not CSI-aligned). Handoff:
+>   `.claude/work_files/orchestrator/205.md`. Worktree sb-wt-2 free
+>   after merge (reserved for #202).
+> - ~~#180 test temp-dir leaks~~ ✅ **PR #212 MERGED** (internal,
+>   test-only; 5/5 green after one ubuntu npm-ci infra-flake rerun;
+>   issue #180 closed; main @ 8e7fd86).
+>   watcher.test: makeWatcher factory + registry so teardown survives
+>   failed tests; stream.spec: register-what-you-make + shared
+>   teardown, requeue for Windows locks. Leak proof: watcher 102→0
+>   dirs (isolated TEMP, incl. forced-failure path), stream 0 new
+>   across a full e2e. Gates: 1192 unit / 156 e2e +1 skip, e2e run
+>   twice. Measured correction documented: fs.rm maxRetries does NOT
+>   retry first-touch EBUSY — the requeue covers it. Discovery filed:
+>   **#213** (leak is suite-wide: sb-e2e-proj- 20,593 dirs from the
+>   shared fixture, sb-hooks- 11k, sb-ws- 7k, sb-e2e- app homes 2k —
+>   one sweep issue). Dan's ~100k existing orphans left untouched;
+>   one-line cleanup is in PR #212's body. Handoff:
+>   `.claude/work_files/orchestrator/180.md`.
+> - ~~#206 PreflightBanner light-theme contrast~~ **WORKER DONE** —
+>   PR #220 marked ready, **IN DAN'S QUEUE** (user-facing). Root
+>   cause: the banner's ink was `--bar`, which flips to #ffffff on
+>   daylight → white-on-amber. New layer-2 token
+>   `--status-needs-permission-ink-on-fill`; daylight 2.53→6.08:1,
+>   all other themes pixel-identical. Drift test now computes the
+>   real contrast ratio from what ships, in every theme,
+>   mutation-checked 3 ways. Gates: 1197 unit (+5) / 156 e2e +1
+>   skip, run twice. No manual page needed (no page describes its
+>   appearance). Discoveries filed: **#221** (status pills ≈2.2:1 on
+>   daylight — same class, worse, always on screen; after #214),
+>   **#222** (banner has no role="status" — screen-reader silent).
+>   Handoff: `.claude/work_files/orchestrator/206.md`.
+> - ~~#208 pop-out read-only banner~~ **WORKER DONE** — PR #226
+>   marked ready, **IN DAN'S QUEUE** (user-facing), rebased onto
+>   2960cf4 and gated there. `WorkspaceReadOnlyBanner` portals into
+>   every popped-out window via the existing
+>   `switchboard:popout-added/-removed` events — one isReadOnly()
+>   answer, one component, N draw sites; **zero lines in App.tsx /
+>   SessionGrid / tokens.css** (no #214/#220 collision). Dockview
+>   relayout under the banner measured, not assumed (group followed
+>   container to 400px; terminal re-fit 31→28 rows). Gates: 1243
+>   unit (+16, 4 mutations bite) / **157** e2e +1 skip (+1), suite
+>   run 3×. Discovery filed: **#227** (three popout-window
+>   registries → shared lib/popout-windows.ts). Flake watch:
+>   urgency.spec.ts:96 lamp-expiry flaked once locally, passed
+>   re-run. Handoff: `.claude/work_files/orchestrator/208.md`.
+> - ~~#202 ipc harness streamPermissions~~ ✅ **PR #218 MERGED**
+>   (internal, test-only; needed 2 flake-reruns — ubuntu npm-ci
+>   ETIMEDOUT-class, then the macos fs.watch flake noted below; main
+>   @ 068dec7, unit baseline 1210). The gap was real: deleting the
+>   production forget-call left all 1204 tests green before; 6 new
+>   whole-teardown tests, 4 mutations bite. Discovery filed: **#219**
+>   (tearDownLive fail-open ordering can strand a pending approval).
+>   Handoff: `.claude/work_files/orchestrator/202.md`.
+> - ~~#211 scrollback ANSI-escape residue~~ ✅ **PR #225 MERGED**
+>   (internal; 5/5 green; issue #211 closed; main @ 2960cf4, unit
+>   baseline 1227).
+>   `snapshot()` skips to the earliest safe anchor (first ESC, or
+>   past first LF) only when bytes were actually discarded; push()
+>   untouched, no VT parser. Documented bounded limits (raw LF in an
+>   OSC payload can still mid-resume; no-ESC-no-LF snapshots left
+>   alone). Gates: 1219 unit (+15, 7 bite) / 156 e2e +1 skip.
+>   Reviewer verified stray `ESC \` renders nothing in the shipped
+>   xterm bundle. No discovery worth filing (RingBuffer.clear() is
+>   test-only — noted, no issue). Handoff:
+>   `.claude/work_files/orchestrator/211.md`. sb-wt-2 **parked**
+>   detached @ 068dec7 (queue empty pending #214).
+>
+> **Merge queue (serial):** empty — all 5 internal PRs merged
+> (#210 #212 #218 #223 #225).
+> **Flake watch:** discovery-scheduler.test.ts "fires on a file
+> APPEARING" flaked once on macos (0 events/10s) during #218's runs;
+> a 2nd occurrence this run → file an issue (urgency.spec.ts:96
+> lamp-expiry also flaked once locally — same one-strike rule).
+> **Dan's queue (3):** **PR #214** (#76 layout modes, 9-step
+> hand-test list) · **PR #220** (#206 banner contrast — hand test:
+> daylight theme, read the banner) · **PR #226** (#208 pop-out
+> read-only banner — hand test: read-only workspace, pop a session
+> out, see the strip).
+> **Queue when a slot frees:** nothing unheld left — remaining items
+> are all **HELD behind PR #214's merge** (its diff spans
+> chrome.tsx, command-set.ts, en.json, session-store.ts,
+> SessionGrid.tsx): #196, #197, #215, #217, **#221**, #224, and the
+> E9 tail (#77–#80). #216 + #222 skipped this run (small
+> discretionary additions — Dan's triage; #222 folds naturally into
+> #197's sweep).
+> **Issues filed this run:** #211, #213, #215, #216, #217, #219,
+> #221, #222, #224.
+
+> (Run-4 detail entries above; handoffs in
+> `.claude/work_files/orchestrator/<issue#>.md`.)
 > **Dan's decision on PR #198's call #1 (2026-08-04): default is
 > `always-visible` ("Keep visible"); auto-collapse/auto-hide are opt-in.**
 > Executed on the PR pre-merge (flip + 22 pin deletions + DESIGN §5.8
