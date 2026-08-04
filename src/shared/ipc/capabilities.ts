@@ -101,6 +101,7 @@ export const CHANNEL_CAPABILITIES = {
   'transcripts:blocks': 'transcripts.read',
   'workspace:getLayout': 'workspace.read',
   'workspace:getUi': 'workspace.read',
+  'workspace:isReadOnly': 'workspace.read',
   'workspace:setLayout': 'workspace.write',
   'workspace:setUi': 'workspace.write',
 

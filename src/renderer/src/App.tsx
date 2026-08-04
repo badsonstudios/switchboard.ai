@@ -28,6 +28,7 @@ import { CommandPalette } from './components/CommandPalette';
 import { AboutPanel } from './components/AboutPanel';
 import { UrgencyStrip } from './components/UrgencyStrip';
 import { CollapsedStrip } from './components/CollapsedStrip';
+import { WorkspaceReadOnlyBanner } from './components/WorkspaceReadOnlyBanner';
 import { collapsedRows, revealTargets } from './lib/ladder';
 import { buildIdentity } from '../../shared/build-identity';
 import {
@@ -640,6 +641,9 @@ export function App(): React.JSX.Element {
         focusCard={focusCard}
         platform={platform}
       />
+      {/* shows nothing unless the workspace file is from a newer build and so
+          cannot be saved this run (#168) — it reads that itself */}
+      <WorkspaceReadOnlyBanner />
       {!preflightOk && <PreflightBanner />}
       {/* Outside the rail (which toggles) and outside the grid (whose cards
           hide, pop out and — with E9-07 — rearrange by layout mode): the only
