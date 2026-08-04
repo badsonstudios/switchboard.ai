@@ -7,31 +7,50 @@
 **E18-01…10 ALL DONE 2026-08-02**; E15 done except #111 [held — real tokens];
 E9 at 5 of 11 — #70–#74 done, #75–#80 open; E11/E13/E14 still outlines)
 **In progress:** **nothing mid-flight.** Orchestration run 3 CLOSED
-2026-08-03 — 7 items shipped: 3 internal PRs merged, 4 PRs in Dan's queue
-(see the run record below).
+2026-08-03; its 4 user-facing PRs were merged 2026-08-04 on Dan's
+authorization after his default-decision was executed (addendum in the
+run record below). **Main @ 63f3d7e.** Unit 1192 / e2e 156+1 skip.
 
-> # ▶▶ START HERE — run 3 is CLOSED. **Dan's queue (4 PRs, all green on
-> add72e2):** #195 (feed keyboard a11y), #198 (presentation policy — read
-> its call #1: is auto-collapse the right DEFAULT? 11 e2e specs say you
-> can't watch the turn you submit; one-line change if not), #199
-> (cardOfLive reap + 3 user-visible corrections), #204 (read-only
-> workspace banner). Combined hand-test list in each PR body; suggested
-> order #195 → #199 → #204 → #198 (198 last — biggest, and its default
-> question colors the rest).
-> **Decisions Dan owes** (blocking further dispatch): #200 (crashed
+> # ▶▶ START HERE — all run-3 PRs are MERGED. Next is run 4
+> (`/orchestrate`) or single items.
+> **Dan's decision on PR #198's call #1 (2026-08-04): default is
+> `always-visible` ("Keep visible"); auto-collapse/auto-hide are opt-in.**
+> Executed on the PR pre-merge (flip + 22 pin deletions + DESIGN §5.8
+> amendment + manual reframing); recorded in DESIGN.
+> **Run-4 queue, all unblocked now:** #180 (test temp-dir leaks), #196
+> (feed landmark titles), #201 (renderer liveToCard stale entry), #202
+> (streamPermissions harness gap), #205 (scrollback mid-char trim), #206
+> (PreflightBanner light-theme contrast), #208 (pop-outs never see the
+> read-only banner), #76 (P2-E9-07 layout modes — E9 track head; #75's
+> setLadder/policy seams are merged and stable). Collision notes: #180
+> alone touches stream.spec; #196+#206 both touch renderer chrome-ish
+> files (serialize or check); #201 touches session-store; #202+#205 both
+> touch ipc.ts/ipc.test.ts — ONE track, serialize.
+> **Decisions Dan owes** (not blocking the above): #200 (crashed
 > session's transcript watch — teardown-on-exit policy), #191 (diff-pane
-> syntax highlighting design), #129 (milestone triage), #111 (real
-> tokens), #207 (failed-write banner scope), E9 tail + E11/E13/E14
-> scoping. **Ready the moment Dan's PRs merge:** #180, #196, #201, #206
-> (behind #198) · #202, #205 (behind #199) · #208 (behind #204) · #76
-> =E9-07 (behind #198).
+> syntax highlighting design call), #129 (milestone triage), #111 (real
+> tokens — ask before dispatch), #207 (failed-write banner scope), E9
+> tail past #80 + E11/E13/E14 expansion (/pm scoping).
 > **PHILOSOPHY suggestion from #179's worker, for Dan:** fail-open has an
 > unwritten second half — "our failures must never cost the user their
 > FILES, not just their session." Worth a line in PHILOSOPHY/DESIGN.
+> **Dogfooding note:** Dan hand-tests the run-3 features in situ now that
+> they're merged — expect high-signal bug reports as issues; triage them
+> into run 4 promptly.
 
 > # 🎛 ORCHESTRATION RUN 3 — 2026-08-03, **CLOSED. 7 items: 3 internal
 > merged (#179→PR193, #194→PR203, #185→PR209), 4 in Dan's queue
-> (#174→PR195, #75→PR198, #187→PR199, #168→PR204).** Main @ add72e2.
+> (#174→PR195, #75→PR198, #187→PR199, #168→PR204).**
+> **ADDENDUM 2026-08-04:** Dan ruled call #1 → `always-visible` default;
+> a flip worker executed it on PR #198's branch (DEFAULT_POLICY flip, 22
+> redundant `keepCardsVisible` pins deleted incl. the helper, coverage
+> re-tested under explicit opt-in, one silently-vacuous relaunch test
+> caught & rewritten, DESIGN §5.8 amended, manual reframed; handoff
+> `orchestrator/75-default-flip.md`). Dan then authorized merging all 4
+> user-facing PRs; serial merge train ran #195 → #199 → #204 → #198
+> (each bumped + re-greened; #198 needed one conflict resolution —
+> 06-keyboard.md only, feed.spec dissolved to byte-identical). **All 7
+> run-3 items merged. Final main @ 63f3d7e**, unit 1192 / e2e 156+1.
 > Unit suite 1121→1159 (highest branch), e2e 145→151 (#198's branch).
 > 10 issues filed from discoveries (#194 #196 #197 #200 #201 #202 #205
 > #206 #207 #208), 1 of them (#194) fixed same-run. Notables: #185 found
