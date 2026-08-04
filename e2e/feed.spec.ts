@@ -442,6 +442,107 @@ test.describe('Feed view (E12-06)', () => {
     expect(light.border).not.toBe(light.fill);
   });
 
+  // #174. Every expander in the conversation used to be a div with an onClick:
+  // reachable with a mouse and with nothing else. This walks the whole keyboard
+  // path — into the conversation, between its expanders, open one, back out —
+  // and checks the semantics are honest while it does (real buttons carrying
+  // aria-expanded; no role="button" on a box that contains other buttons).
+  test('the conversation is reachable and operable by keyboard alone (#174)', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
+
+    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
+    fs.mkdirSync(dir, { recursive: true });
+    const line = (o: Record<string, unknown>): string =>
+      JSON.stringify({ sessionId: 'native-a11y', cwd: folder, timestamp: new Date().toISOString(), ...o }) + '\n';
+    fs.writeFileSync(
+      path.join(dir, 'native-a11y.jsonl'),
+      line({ type: 'user', message: { role: 'user', content: 'KEYS_PROMPT' } }) +
+        line({
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'text', text: 'KEYS_PROSE answer' },
+              { type: 'tool_use', id: 'k1', name: 'Bash', input: { command: 'echo KEYS_CMD\nKEYS_CMD_LINE2', description: 'Keys check' } },
+              { type: 'tool_use', name: 'Edit', input: { file_path: 'C:/tmp/keys.ts', old_string: 'KEYS_OLD', new_string: 'KEYS_NEW' } },
+              { type: 'tool_use', name: 'Read', input: { file_path: 'C:/tmp/keys.md' } },
+            ],
+          },
+        }) +
+        line({
+          type: 'user',
+          message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'k1', content: 'KEYS_OUTPUT' }] },
+        })
+    );
+    await expect(w.locator('[data-feed-box="bash"]')).toBeVisible({ timeout: 20_000 });
+
+    // 1. EVERY expander is a real <button aria-expanded>, and no box lies about
+    //    being one. The box contains the Bash IN/OUT buttons, so role="button"
+    //    on it would be invalid ARIA — that lie is the whole reason #174 exists.
+    const expanders = w.locator('[data-feed-expander]');
+    await expect(expanders).toHaveCount(5); // bash header + IN + OUT, edit header, Read row
+    for (const el of await expanders.all()) {
+      await expect(el).toHaveJSProperty('tagName', 'BUTTON');
+      await expect(el).toHaveAttribute('aria-expanded', /true|false/);
+    }
+    await expect(w.locator('[data-feed-box][role]')).toHaveCount(0);
+
+    const focused = (): Promise<{ region: boolean; expander: boolean; label: string; expanded: string | null; ring: string }> =>
+      w.evaluate(() => {
+        const el = document.activeElement as HTMLElement | null;
+        return {
+          region: !!el?.hasAttribute('data-feed-region'),
+          expander: !!el?.hasAttribute('data-feed-expander'),
+          label: (el?.textContent ?? '').trim().slice(0, 40),
+          expanded: el?.getAttribute('aria-expanded') ?? null,
+          ring: el ? getComputedStyle(el).outlineWidth : '',
+        };
+      });
+
+    // 2. the conversation is ONE tab stop, and it is reachable from the chrome
+    //    above it (the verbosity chips)
+    await w.getByRole('button', { name: 'normal', exact: true }).click();
+    await w.keyboard.press('Tab'); // -> firehose
+    await w.keyboard.press('Tab'); // -> the conversation region
+    expect((await focused()).region).toBe(true);
+    await expect(w.getByText('↑ ↓ move · Enter expands · Esc leaves')).toBeVisible();
+
+    // 3. Up enters at the BOTTOM of the transcript — the Read row, last block —
+    //    with a ring you can actually see
+    await w.keyboard.press('ArrowUp');
+    let f = await focused();
+    expect(f.expander).toBe(true);
+    expect(f.label).toContain('Read');
+    expect(f.expanded).toBe('false');
+    expect(f.ring).not.toBe('0px');
+
+    // 4. Enter operates it — the tool detail appears and the state is announced
+    await w.keyboard.press('Enter');
+    await expect(w.getByText(/file_path/)).toBeVisible();
+    expect((await focused()).expanded).toBe('true');
+
+    // 5. the arrows walk the whole set, including the expanders INSIDE the Bash
+    //    box that no box-level shortcut could ever reach on their own
+    await w.keyboard.press('Home'); // -> the first expander, the Bash header
+    expect((await focused()).label).toContain('Keys check');
+    await w.keyboard.press('ArrowDown'); // -> Bash IN
+    await w.keyboard.press('ArrowDown'); // -> Bash OUT
+    f = await focused();
+    expect(f.label).toContain('OUT');
+    await w.keyboard.press('Enter');
+    await expect(w.getByText('KEYS_OUTPUT', { exact: true }).last()).toBeVisible();
+    await expect(w.getByText('▸ IN')).toBeVisible(); // IN stayed shut — no coarse toggle
+
+    // 6. Escape hands focus back to the region, and one more Tab reaches the
+    //    composer: a conversation with hundreds of blocks must never bury it
+    await w.keyboard.press('Escape');
+    expect((await focused()).region).toBe(true);
+    await w.keyboard.press('Tab');
+    await expect(w.getByPlaceholder(/Prompt this session/)).toBeFocused();
+  });
+
   test('the composer drives the real CLI over the PTY (E10-02)', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });

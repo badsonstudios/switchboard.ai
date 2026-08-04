@@ -97,6 +97,15 @@ Two rules those points established, worth knowing before you add a fourth:
   which logs and renders nothing. The renderer has no other error boundary, so
   without this one bad contribution white-screens every session's terminal —
   the exact "our breakage blocks a session" outcome the constitution forbids.
+- **A feed block that can expand ships a `FeedExpander`** (#174). The `ToolBox`
+  container is a mouse convenience — its whole body toggles — and it is
+  deliberately not a control: a box that CONTAINS other buttons may not be one.
+  The keyboard and screen-reader path is the block's own header
+  [`FeedExpander`](../src/renderer/src/extensibility/feed-blocks.tsx), a real
+  `<button aria-expanded>` marked with `FEED_EXPANDER_ATTR`, which is what the
+  Session view's arrow-key navigation walks. A renderer that wraps in `ToolBox`
+  and skips the expander ships with no keyboard path at all — and nothing will
+  fail to tell you, which is why it is written down here.
 - **A panel is greyed, never hidden.** `PanelContribution` has `enabled` and
   deliberately no "hide me": §5.8 says the user can always see what exists. A
   tab that vanishes teaches them the app is unpredictable; a greyed one tells
