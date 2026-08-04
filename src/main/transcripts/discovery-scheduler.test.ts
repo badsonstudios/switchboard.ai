@@ -1,15 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { DiscoverySchedule, WatchHandle } from './discovery-scheduler';
 import { LogSink, createLogger } from '../log/logger';
+import { tempDir } from '../../test-temp-dirs';
 
 const ROOT = 'C:/fake/projects';
 
 // One sink for the file: these tests never assert on log output, and a
 // mkdtemp per call left an orphaned directory behind for every test.
-const LOG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-ds-log-'));
+// It lives for the whole FILE, so it is tracked and left to `test-setup.ts`'s
+// `afterAll` net rather than swept per test (#213).
+const LOG_DIR = tempDir('sb-ds-log-');
 function log() {
   return createLogger(new LogSink({ dir: LOG_DIR }), 'discovery');
 }
@@ -234,7 +236,9 @@ describe('DiscoverySchedule — the REAL fs.watch (no injected factory)', () => 
   // Everything above injects a factory, which left the only code that actually
   // runs in production with zero coverage — including the `rename`-only filter
   // that the module calls load-bearing.
-  const realRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-ds-real-'));
+  // Shared by every test in this block (each one registers a REAL `fs.watch` on
+  // it and stops it in its own `finally`), so it goes at `afterAll` too (#213).
+  const realRoot = tempDir('sb-ds-real-');
 
   it('fires on a file APPEARING', async () => {
     const s = new DiscoverySchedule({ log: log(), backoffMs: [10] });

@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { execFileSync } from 'child_process';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { GitService } from './git-service';
+import { tempDir } from '../../test-temp-dirs';
 
 let repo: string;
 let plain: string;
@@ -14,8 +14,11 @@ function sh(cwd: string, args: string[]): void {
 }
 
 beforeAll(() => {
-  repo = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-git-'));
-  plain = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-plain-'));
+  // Both live for the whole FILE — every test shares this one repo — so there
+  // is deliberately no `afterEach` sweep here (it would delete them under the
+  // remaining tests). `test-setup.ts`'s `afterAll` net takes them (#213).
+  repo = tempDir('sb-git-');
+  plain = tempDir('sb-plain-');
   sh(repo, ['init', '-b', 'main']);
   sh(repo, ['config', 'user.email', 'test@test']);
   sh(repo, ['config', 'user.name', 'test']);

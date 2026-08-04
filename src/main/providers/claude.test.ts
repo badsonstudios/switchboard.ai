@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
+import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import {
   claudeAdapter,
   resetCliPathCache,
@@ -11,9 +11,10 @@ import {
 
 let tmp: string;
 beforeEach(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-claude-'));
+  tmp = tempDir('sb-claude-');
   resetCliPathCache();
 });
+afterEach(() => cleanupTempDirs()); // one per test, gone at the end of it (#213)
 
 describe('scanPath (absolute CLI resolution, S-01 footgun)', () => {
   it('finds the CLI in a PATH dir', () => {

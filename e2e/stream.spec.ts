@@ -13,15 +13,76 @@ import os from 'os';
 import path from 'path';
 import { launchApp, LaunchedApp } from './fixtures/app';
 
+/** Project folders this file made, waiting to be deleted. See `teardown`. */
+const tempFolders: string[] = [];
+
 function tempProjectFolder(): string {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-stream-e2e-'));
+  tempFolders.push(d);
   fs.writeFileSync(path.join(d, 'README.md'), '# stream\n');
   return d;
 }
 
+/**
+ * Close the app, THEN delete the folders it was pointed at (#180).
+ *
+ * Order is the whole point. The session's child process has one of these
+ * folders as its cwd, and on Windows a running process holds a lock on its cwd
+ * — so an rm issued before the app is reaped is guaranteed to fail with EBUSY.
+ * `cleanup()` closes the app and kills the tree first; the kill only *asks*,
+ * though, so the rm can still land while the last child is dying.
+ *
+ * `maxRetries` is NOT the answer to that one, and it is worth writing down
+ * because it looks like it should be: node's recursive rm only enters its retry
+ * loop after the not-empty recursion, so an `EBUSY` off the very first `rmdir`
+ * — exactly what a still-held cwd produces — is rethrown untouched (measured on
+ * this machine, 0/4 retried). What actually makes this robust is the REQUEUE: a
+ * folder that will not go stays on the list and is tried again by the next
+ * test's teardown and by the file's `afterAll`, by which time its process is
+ * long gone. The retries are still worth asking for — they cover the
+ * ENOTEMPTY/EPERM path a scanner or indexer holding one file produces.
+ *
+ * And it never throws. A throw here would fail a test that has already passed;
+ * fail-open applies to test infra too, so a directory that will not go is a
+ * leak, not a broken run.
+ *
+ * The hooks hand the app over and clear their own `a` FIRST (the diff.spec.ts
+ * shape). A test that throws before assigning it otherwise leaves the PREVIOUS
+ * test's already-closed app in the variable, and closing it twice means
+ * `killTree` issuing `taskkill /T /F` against a dead pid — which Windows may
+ * have recycled onto something else entirely.
+ *
+ * Until this existed the file leaked one folder per test, for ever (502 counted
+ * in %TEMP% when #180 was filed, ~1,000 by the time it was fixed).
+ */
+async function teardown(app?: LaunchedApp): Promise<void> {
+  try {
+    await app?.cleanup();
+  } finally {
+    const pending = tempFolders.splice(0, tempFolders.length);
+    for (const d of pending) {
+      try {
+        // async: the ENOTEMPTY retry ladder sleeps ~5s, and a sync one would
+        // spend it blocking the worker inside Playwright's own hook budget
+        await fs.promises.rm(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      } catch {
+        tempFolders.push(d); // retried next time — see above
+      }
+    }
+  }
+}
+
+// The net for the last test's stragglers: by now every app in this file is
+// gone, so a folder that was merely late to unlock goes on this pass.
+test.afterAll(async () => teardown());
+
 test.describe('a stream-json session (P2-E18-08a)', () => {
-  let a: LaunchedApp;
-  test.afterEach(async () => a?.cleanup());
+  let a: LaunchedApp | undefined;
+  test.afterEach(async () => {
+    const launched = a;
+    a = undefined; // cleared BEFORE the close — see `teardown`
+    await teardown(launched);
+  });
 
   // Scoped to what E18-08a actually claims: the turn RUNS and COMPLETES.
   //
@@ -105,8 +166,12 @@ test.describe('a stream-json session (P2-E18-08a)', () => {
 // testable — and it proves the claim that made the migration incremental: the
 // transcript stack survives the transport change untouched.
 test.describe('the Feed renders a stream session (P2-E18-08b)', () => {
-  let a: LaunchedApp;
-  test.afterEach(async () => a?.cleanup());
+  let a: LaunchedApp | undefined;
+  test.afterEach(async () => {
+    const launched = a;
+    a = undefined; // cleared BEFORE the close — see `teardown`
+    await teardown(launched);
+  });
 
   test('a turn appears in the Session view via the existing transcript path', async () => {
     const folder = tempProjectFolder();
@@ -148,8 +213,12 @@ test.describe('the Feed renders a stream session (P2-E18-08b)', () => {
 // tell "the CLI's list replaced ours" from "the two were merged" — which the
 // old fake could not, its fallback being a strict subset of what it advertised.
 test.describe('slash commands come from the CLI in Direct mode (P2-E18-09)', () => {
-  let a: LaunchedApp;
-  test.afterEach(async () => a?.cleanup());
+  let a: LaunchedApp | undefined;
+  test.afterEach(async () => {
+    const launched = a;
+    a = undefined; // cleared BEFORE the close — see `teardown`
+    await teardown(launched);
+  });
 
   test('the curated list is a fallback, and the first turn replaces it', async () => {
     const folder = tempProjectFolder();
@@ -245,8 +314,12 @@ test.describe('slash commands come from the CLI in Direct mode (P2-E18-09)', () 
 // the write was a silent no-op. Dan reproduced it every time: submit a prompt,
 // click stop repeatedly, watch the turn run to completion anyway.
 test.describe('the stop button actually stops (#154)', () => {
-  let a: LaunchedApp;
-  test.afterEach(async () => a?.cleanup());
+  let a: LaunchedApp | undefined;
+  test.afterEach(async () => {
+    const launched = a;
+    a = undefined; // cleared BEFORE the close — see `teardown`
+    await teardown(launched);
+  });
 
   test('stopping a Direct-mode turn interrupts it', async () => {
     const folder = tempProjectFolder();
@@ -281,8 +354,12 @@ test.describe('the stop button actually stops (#154)', () => {
 
 // P2-E18-08b (#149) — the Terminal tab in a stream session.
 test.describe('the Terminal tab degrades honestly (P2-E18-08b)', () => {
-  let a: LaunchedApp;
-  test.afterEach(async () => a?.cleanup());
+  let a: LaunchedApp | undefined;
+  test.afterEach(async () => {
+    const launched = a;
+    a = undefined; // cleared BEFORE the close — see `teardown`
+    await teardown(launched);
+  });
 
   test('says there is no terminal instead of showing an empty black pane', async () => {
     const folder = tempProjectFolder();
@@ -333,8 +410,12 @@ test.describe('the Terminal tab degrades honestly (P2-E18-08b)', () => {
 //
 // The parts were each verified. The product did not work.
 test.describe('switching transport the way a user does (#153)', () => {
-  let a: LaunchedApp;
-  test.afterEach(async () => a?.cleanup());
+  let a: LaunchedApp | undefined;
+  test.afterEach(async () => {
+    const launched = a;
+    a = undefined; // cleared BEFORE the close — see `teardown`
+    await teardown(launched);
+  });
 
   test('set it in the menu, restart from the menu, and the session comes up in the new mode', async () => {
     const folder = tempProjectFolder();
@@ -468,8 +549,12 @@ test.describe('switching transport the way a user does (#153)', () => {
 // fake writes no JSONL line for either turn, exactly as the real CLI does not.
 // A test whose text could have come from either place would prove nothing.
 test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
-  let a: LaunchedApp;
-  test.afterEach(async () => a?.cleanup());
+  let a: LaunchedApp | undefined;
+  test.afterEach(async () => {
+    const launched = a;
+    a = undefined; // cleared BEFORE the close — see `teardown`
+    await teardown(launched);
+  });
 
   test('assistant text appears token by token, before the message is complete', async () => {
     const folder = tempProjectFolder();

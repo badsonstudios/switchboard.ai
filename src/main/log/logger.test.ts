@@ -1,14 +1,17 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import fs from 'fs';
-import os from 'os';
-import path from 'path';
 import { LogSink, createLogger } from './logger';
 import { redactValue, REDACTED } from './redact';
+import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 
 let dir: string;
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-log-'));
+  dir = tempDir('sb-log-');
 });
+// One directory per test, deleted at the end of that test (#213). `LogSink`
+// appends with `appendFileSync` and keeps no open handle, so nothing here is
+// holding the folder when the rm lands.
+afterEach(() => cleanupTempDirs());
 
 function lines(sink: LogSink): Array<Record<string, unknown>> {
   return fs

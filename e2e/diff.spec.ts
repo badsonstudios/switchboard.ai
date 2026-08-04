@@ -45,7 +45,7 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { launchApp, LaunchedApp } from './fixtures/app';
+import { launchApp, LaunchedApp, registerTempDir } from './fixtures/app';
 
 /** Committed at HEAD. Multi-line and non-empty — see the trap above. */
 const COMMITTED = [
@@ -80,14 +80,14 @@ const FILE = 'greeting.ts';
  * Local to this spec on purpose: it is the only one that needs a repo, and the
  * content above and the assertions below are one thought.
  *
- * Takes the tracking array rather than returning a path for the caller to
- * register, so the directory is owned for teardown from the line it exists
- * (#180 — specs leaking temp dirs). Registering it after the `git` calls would
- * leak the folder on any machine where they fail.
+ * Registered on the line it exists rather than by the caller once it is built
+ * (#180 — specs leaking temp dirs): registering after the `git` calls would
+ * leak the folder on any machine where they fail. As of #213 that registry is
+ * the fixture's own, so `cleanup()` sweeps it with the retries and the requeue
+ * this file's hand-rolled `rmSync` loop did not have.
  */
-function tempGitProject(track: string[]): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-git-'));
-  track.push(dir);
+function tempGitProject(): string {
+  const dir = registerTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-git-')));
   const git = (args: string[]): void => {
     execFileSync('git', args, { cwd: dir, stdio: 'ignore', windowsHide: true });
   };
@@ -129,21 +129,15 @@ async function tokenClasses(w: Page): Promise<string[]> {
 
 test.describe('Changes tab (Monaco diff pane)', () => {
   let a: LaunchedApp | undefined;
-  const projects: string[] = [];
 
   test.afterEach(async () => {
     const launched = a;
     a = undefined;
+    // `cleanup()` takes the app down FIRST and then sweeps the registered
+    // folders — the order this file's own rm loop existed to guarantee, since
+    // on Windows a live child holds handles into the folder and the rm throws
+    // EBUSY (#167). It also retries and requeues, which that loop did not (#213).
     await launched?.cleanup();
-    // the app is down first: on Windows a live child holds handles into the
-    // folder and rmSync throws EBUSY (#167)
-    while (projects.length) {
-      try {
-        fs.rmSync(projects.pop()!, { recursive: true, force: true });
-      } catch {
-        /* best-effort — never fail a green test on teardown */
-      }
-    }
   });
 
   /**
@@ -154,7 +148,7 @@ test.describe('Changes tab (Monaco diff pane)', () => {
    * — both happen when the tab opens, well after that, so nothing is missed.
    */
   async function openChanges(): Promise<{ w: Page; logged: string[] }> {
-    const folder = tempGitProject(projects);
+    const folder = tempGitProject();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
     // Everything the page said, from before the pane existed. The worker is
@@ -256,8 +250,7 @@ test.describe('Changes tab (Monaco diff pane)', () => {
   test('a folder that is not a repo says so instead of failing', async () => {
     // fail-open: the pane is opened from a rail row, so it has no say in what
     // folder it is handed
-    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-plain-'));
-    projects.push(folder);
+    const folder = registerTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-plain-')));
     fs.writeFileSync(path.join(folder, 'README.md'), '# e2e\n');
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
