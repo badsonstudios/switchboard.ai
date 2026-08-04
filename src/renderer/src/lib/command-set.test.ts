@@ -4,6 +4,7 @@ import { Command, CommandContext } from './commands';
 import { TERMINAL_ACCELERATORS } from '../../../shared/terminal-accelerators';
 import en from '../i18n/locales/en.json';
 import { POLICY_ORDER } from './presentation-policy';
+import { LAYOUT_MODES } from './layout-mode';
 
 function deps(): CommandDeps & { focusCard: ReturnType<typeof vi.fn> } {
   return {
@@ -18,6 +19,9 @@ function deps(): CommandDeps & { focusCard: ReturnType<typeof vi.fn> } {
     setGlobalPolicy: vi.fn(),
     setSessionPolicy: vi.fn(),
     setGroupPolicy: vi.fn(),
+    setLayoutMode: vi.fn(),
+    cycleLayoutMode: vi.fn(),
+    toggleMaximize: vi.fn(),
     toggleRail: vi.fn(),
     openPalette: vi.fn(),
     toggleTabRows: vi.fn(),
@@ -312,6 +316,63 @@ describe('seed command set (E9-01)', () => {
       for (const c of cmds.filter((c) => c.id.includes('policy'))) {
         expect(c.binding, `${c.id} took a binding`).toBeUndefined();
       }
+    });
+  });
+
+  describe('layout modes (E9-07)', () => {
+    it('names every mode in the palette, and none of the three takes a key', () => {
+      const cmds = buildCommands(deps());
+      for (const mode of LAYOUT_MODES) {
+        const c = byId(cmds, `layout.mode.${mode}`);
+        expect(c.binding, `${mode} took a binding`).toBeUndefined();
+        expect(c.scope).toBe('app');
+      }
+    });
+
+    it('each entry switches to the mode it names — never a cycle in disguise', () => {
+      const d = deps();
+      const cmds = buildCommands(d);
+      for (const mode of LAYOUT_MODES) {
+        byId(cmds, `layout.mode.${mode}`).run(ctxWith(['a'], 'a'));
+      }
+      expect((d.setLayoutMode as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).toEqual([
+        ...LAYOUT_MODES,
+      ]);
+      expect(d.cycleLayoutMode).not.toHaveBeenCalled();
+    });
+
+    it('the CYCLE is the one that gets a binding, and it needs no session', () => {
+      const d = deps();
+      const c = byId(buildCommands(d), 'layout.cycleMode');
+      expect(c.binding).toBe('Mod+Shift+L');
+      expect(c.enabled?.(ctxWith([]))).not.toBe(false);
+      c.run(ctxWith([]));
+      expect(d.cycleLayoutMode).toHaveBeenCalled();
+    });
+
+    it('maximize has a keyboard equal to the double-click, on the ACTIVE card', () => {
+      // §5.8: "double-click a session header (or one command)" — the invariant
+      // is that hiding chrome never removes capability, and a mouse gesture
+      // with no keyboard route would remove it outright
+      const d = deps();
+      const c = byId(buildCommands(d), 'session.maximize');
+      expect(c.binding).toBe('Mod+Shift+M');
+      c.run(ctxWith(['a', 'b'], 'b'));
+      expect(d.toggleMaximize).toHaveBeenCalledWith('b');
+    });
+
+    it('maximize is disabled — with a reason — when nothing is focused', () => {
+      const c = byId(buildCommands(deps()), 'session.maximize');
+      expect(c.enabled?.(ctxWith(['a'], null))).toBe(false);
+      expect(c.disabledReasonKey).toBeTruthy();
+    });
+
+    it('no layout command ever fires while the user is typing', () => {
+      const cmds = buildCommands(deps()).filter(
+        (c) => c.id.startsWith('layout.') || c.id === 'session.maximize'
+      );
+      expect(cmds.length).toBe(LAYOUT_MODES.length + 2);
+      for (const c of cmds) expect(c.scope, c.id).toBe('app');
     });
   });
 });

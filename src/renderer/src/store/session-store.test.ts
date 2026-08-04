@@ -8,6 +8,7 @@ import {
   withGlobal,
   withGroup,
 } from '../lib/presentation-policy';
+import { DEFAULT_LAYOUT, withMaximized, withMode } from '../lib/layout-mode';
 
 // The done-when: "a unit test constructs a store, drives it, and asserts
 // derived rail order + queue order WITHOUT React." That was impossible before
@@ -516,6 +517,61 @@ describe('SessionStore — presentation policy (P2-E9-06)', () => {
     expect(store.getPolicies().cards).toEqual({});
     expect(store.getPolicies().groups).toEqual({});
     expect(persisted.at(-1)).toBeNull();
+  });
+});
+
+describe('SessionStore — layout mode (P2-E9-07)', () => {
+  let store: SessionStore;
+  let persisted: Array<Record<string, unknown> | null>;
+  beforeEach(() => {
+    store = new SessionStore();
+    persisted = [];
+    store.setLayoutPersister((blob) => persisted.push(blob));
+  });
+
+  it('starts on grid — the default is the absence of a layout rule', () => {
+    expect(store.getLayout()).toEqual(DEFAULT_LAYOUT);
+    expect(persisted).toEqual([]);
+  });
+
+  it('init seeds the mode without writing it back', () => {
+    store.initLayout(withMode('queue'));
+    expect(store.getLayout().mode).toBe('queue');
+    expect(persisted).toEqual([]); // it just READ the blob
+  });
+
+  it('persists on change, and writes null once nothing differs from the default', () => {
+    store.setLayout(withMode('focus'));
+    expect(persisted.at(-1)).toEqual({ mode: 'focus' });
+    store.setLayout(withMode('grid'));
+    expect(persisted.at(-1)).toBeNull(); // forget the key entirely
+  });
+
+  it('the same state twice is not a write and not a re-render', () => {
+    const next = withMode('focus');
+    store.setLayout(next);
+    let notifications = 0;
+    store.subscribe(() => notifications++);
+    store.setLayout(next);
+    expect(notifications).toBe(0);
+    expect(persisted.length).toBe(1);
+  });
+
+  it('drops a maximize whose card has been closed', () => {
+    store.setLayout(withMaximized(DEFAULT_LAYOUT, 'card-A', { 'card-A': 'expanded' }));
+    store.pruneLayout(['card-B']);
+    expect(store.getLayout()).toEqual(DEFAULT_LAYOUT);
+    expect(persisted.at(-1)).toBeNull();
+  });
+
+  it('forgets a closed card at the moment it closes, not at the next boot', () => {
+    // a stale maximize makes the DEFAULT mode start enforcing, so this cannot
+    // wait for the boot prune — see lib/layout-mode's isEnforced
+    store.setLayout(withMaximized(DEFAULT_LAYOUT, 'card-A', { 'card-A': 'expanded' }));
+    store.forgetLayoutCard('card-B'); // an unrelated close: no write, no re-render
+    expect(store.getLayout().maximized).toBe('card-A');
+    store.forgetLayoutCard('card-A');
+    expect(store.getLayout()).toEqual(DEFAULT_LAYOUT);
   });
 });
 
