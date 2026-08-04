@@ -17,7 +17,8 @@
     "theme/tokens.ts.",
     "Ratios are asserted in tokens.drift.test.ts — body text >= 7:1 (WCAG AAA),",
     "secondary text >= 4.5:1, structural edges >= 3:1. Change a value here and",
-    "the test tells you if it still qualifies.",
+    "the test tells you if it still qualifies. Words written ON a status fill",
+    "(the preflight banner) are held to 4.5:1 in EVERY theme, this one included.",
     "KNOWN GAP: those pairs are ink-on-surface. Surface-vs-surface separation is",
     "NOT audited, and a theme cannot reach the derived layer-3 tokens at all —",
     "so the selected-row tint and the auto-group surface are nearly invisible",
@@ -64,6 +65,7 @@
   "--status-idle": "#c9c9c9",
   "--status-done": "#5ddc72",
   "--status-crashed": "#ff8a80",
+  "--status-needs-permission-ink-on-fill": "#000000",
 
   "--diff-added": "#5ddc72",
   "--diff-added-bg": "rgba(93, 220, 114, 0.25)",

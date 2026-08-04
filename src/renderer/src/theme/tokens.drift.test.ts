@@ -47,6 +47,13 @@ function declaredTokens(text: string): string[] {
   return [...text.matchAll(/^\s*(--[a-z0-9-]+)\s*:/gim)].map((m) => m[1]);
 }
 
+/** the same declarations, with their VALUES — what a theme inherits */
+function declaredValues(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const m of text.matchAll(/^\s*(--[a-z0-9-]+)\s*:\s*([^;]+);/gim)) out[m[1]] = m[2].trim();
+  return out;
+}
+
 const nordic = declaredTokens(block(":root,\n:root[data-theme='nordic']"));
 const daylight = declaredTokens(block(":root[data-theme='daylight']"));
 describe('themeable token list', () => {
@@ -215,3 +222,98 @@ describe.each(CONTRAST_THEMES)('%s is accessibility, not decoration', (id) => {
     expect(ratio(tokens[ink], tokens[surface])).toBeGreaterThanOrEqual(min);
   });
 });
+
+// --- Text on a FILLED surface, in EVERY shipped theme (#206) ----------------
+//
+// The bars above are a promise the two contrast themes make about themselves.
+// This one is different in kind: a legibility FLOOR that holds for nordic and
+// daylight too, because a banner nobody can read is not a "less accessible"
+// banner, it is a warning that did not arrive. It is what the drift test could
+// not catch before — the list of pairs was global, so a token that resolves to
+// white on one preset and near-black on another (which is exactly what `--bar`
+// does) sailed through: the preflight banner shipped at ~2.5:1 on daylight.
+//
+// Deliberately NOT the whole PAIRS list applied to all four themes: nordic and
+// daylight make no contrast CLAIM (daylight's --faint on --panel is 2.8:1 by
+// design, a hairline hint rather than text), and inventing that claim here
+// would be this test rewriting the design instead of guarding it.
+
+/** what a theme actually paints: its base preset, plus its own overrides */
+const preset: Record<string, Record<string, string>> = {
+  nordic: declaredValues(block(":root,\n:root[data-theme='nordic']")),
+  daylight: declaredValues(block(":root[data-theme='daylight']")),
+};
+const semanticDefaults = declaredValues(block(':root {\n  /* status machine'));
+function resolved(theme: (typeof builtinThemes)[number]): Record<string, string> {
+  return { ...semanticDefaults, ...preset[theme.base], ...theme.tokens };
+}
+
+/** the rules that fill with a color and write on it, and the floor each owes */
+const FILLED_RULES: Array<[string, number]> = [['.preflight-banner', 4.5]];
+
+/**
+ * The pair, read OUT OF THE STYLESHEET rather than named here.
+ *
+ * The rule in tokens.css is the thing that ships, so it is the thing measured:
+ * swap either var() back for a token that fails — `--bar`, the original bug —
+ * and this fails naming it, rather than passing because the tokens it was told
+ * to check are still fine and no longer used. Resolved INSIDE the test, not at
+ * module scope, so a renamed selector fails one case instead of taking the
+ * whole file's collection down with it.
+ *
+ * `background` and `color` must each be one `var()` — a shorthand or a
+ * `background-color:` is a legibility claim this cannot check, so it fails
+ * loudly rather than silently measuring nothing.
+ */
+function pair(selector: string): [ink: string, fill: string] {
+  // `${selector} {`, not `selector` — block() looks up by SUBSTRING, so a rule
+  // renamed to `.preflight-bannerZ` would still answer to `.preflight-banner`
+  // and this would happily measure a rule the component no longer matches
+  const rule = block(`${selector} {`);
+  const ref = (prop: string): string => {
+    const m = new RegExp(`^\\s*${prop}:\\s*var\\((--[a-z0-9-]+)\\)`, 'm').exec(rule);
+    expect(m, `${selector} must set ${prop} to one var() to be measured`).not.toBeNull();
+    return m![1];
+  };
+  return [ref('color'), ref('background')];
+}
+
+describe('a filled rule is a rule something applies', () => {
+  // The stylesheet half is measurable; the half that puts it on screen is a
+  // className in a component, and a class nobody applies is a banner rendering
+  // with no fill and `--text` ink — every assertion below still green. Scanned
+  // across the renderer rather than pinned to App.tsx: which file owns the
+  // banner is free to change, "somebody renders it" is not.
+  const tsx = (function read(dir: string): string[] {
+    return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) return read(p);
+      return e.name.endsWith('.tsx') ? [fs.readFileSync(p, 'utf8')] : [];
+    });
+  })(path.join(__dirname, '..'));
+
+  it.each(FILLED_RULES)('%s is applied by a component', (selector) => {
+    const cls = `className="${selector.slice(1)}"`;
+    expect(tsx.some((s) => s.includes(cls)), `nothing in the renderer renders ${cls}`).toBe(true);
+  });
+});
+
+describe.each(builtinThemes.map((t) => [t.id, t] as const))(
+  '%s: words on a filled surface',
+  (id, theme) => {
+    const tokens = resolved(theme);
+
+    it.each(FILLED_RULES)('%s clears %s:1', (selector, min) => {
+      const [ink, fill] = pair(selector);
+      for (const token of [ink, fill]) {
+        expect(tokens[token], `${id} ${token} must be #rrggbb to be measured`).toMatch(
+          /^#[0-9a-f]{6}$/i
+        );
+      }
+      expect(
+        ratio(tokens[ink], tokens[fill]),
+        `${id}: ${ink} on ${fill} (${tokens[ink]} on ${tokens[fill]})`
+      ).toBeGreaterThanOrEqual(min);
+    });
+  }
+);

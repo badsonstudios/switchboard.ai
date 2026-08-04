@@ -15,6 +15,12 @@
  *          readable on pure black), and P2-E15-05's theme/tokens.ts says which.
  * Layer 3: component tokens built on layers 1–2.
  *
+ * WHEN A LOOK BELONGS HERE rather than in an inline style: when inline style
+ * cannot express it (a :hover or :focus-visible rule an inline background would
+ * beat on specificity), OR when a token pair carries a CONTRAST PROMISE that
+ * tokens.drift.test.ts has to be able to read (#206 — the preflight banner).
+ * Everything else stays where the component is.
+ *
  * A THEME IS A TOKEN MAP (§5.20): the two `[data-theme]` blocks below are the
  * built-in presets and the BASE other themes build on; a theme's own overrides
  * arrive as inline custom properties on <html> (theme/theme.ts). Names are
@@ -127,6 +133,21 @@
   --status-done: #3fb950;
   --status-crashed: #f85149;
 
+  /* Ink for text sitting ON the needs-permission FILL, as opposed to
+     `--status-needs-permission-ink`, which is that status written on a panel.
+     A status hue is normally a dot, a ring or a hairline; the preflight banner
+     is the one surface that fills with one and puts words on top, so it is the
+     one that needs this. It is dark in every shipped theme because the hue is
+     light in every shipped theme — the ratio is asserted per theme in
+     tokens.drift.test.ts, which is what stops the next theme guessing.
+     Themeable (§5.20): the fill IS themeable, so a theme that repaints it to
+     something dark must be able to lift the ink with it — otherwise this fix
+     is a fix for today's four palettes only. Fix for #206: this used to be
+     `--bar`, which is #ffffff on daylight, i.e. white on orange at 2.5:1. The
+     value below is what `--bar` already resolved to on nordic, so the dark
+     themes render exactly as before and only the broken one moves. */
+  --status-needs-permission-ink-on-fill: #20252e;
+
   /* diff / syntax semantics */
   --diff-added: #3fb950;
   --diff-added-bg: rgba(63, 185, 80, 0.16);
@@ -179,6 +200,22 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-ui);
+}
+
+/* ---- Preflight banner (P1-E6-03, §5.25) -----------------------------------
+ * "claude wasn't found" — the app's only surface that fills OPAQUELY with a
+ * status hue and writes words on top of it, which is why it owns the only
+ * on-fill ink token. (Tinted fills with hue-colored text exist elsewhere — the
+ * grid's status pill — and are NOT audited by anything; see #206's hand-off.)
+ * The look lives here rather than inline (#206) so the pair a reader
+ * meets is a pair the drift test can measure: it reads the two var() names out
+ * of this rule and asserts the ratio in every shipped theme, so putting a
+ * different token back here fails the suite instead of shipping. */
+.preflight-banner {
+  background: var(--status-needs-permission);
+  color: var(--status-needs-permission-ink-on-fill);
+  font-size: 11px;
+  padding: 4px 12px;
 }
 
 /* Feed view markdown blocks (P2-E12-06, §5.10) — vars only, theme-safe */

@@ -101,6 +101,10 @@ export const TOKEN_GROUPS: readonly TokenGroup[] = [
       '--status-idle',
       '--status-done',
       '--status-crashed',
+      // ink for words written ON the needs-permission fill (the preflight
+      // banner) — themeable with the hue it sits on, because a theme that
+      // repaints the fill has to be able to lift the ink with it (#206)
+      '--status-needs-permission-ink-on-fill',
     ],
   },
   {
