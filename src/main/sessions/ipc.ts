@@ -829,6 +829,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     const epoch = ++ptyEpoch;
     const off = s.onData((d) => send(`pty:data:${id}`, { epoch, d } satisfies PtyChunk));
     feeds.set(id, off);
+    // a bare decode is safe here: RingBuffer guarantees its snapshot holds no
+    // partial CHARACTER at either end (#205), so there is no split for a
+    // StringDecoder to hold across — and nothing it could flush that wouldn't
+    // be the `U+FFFD` we are avoiding. Characters only: an evicted scrollback
+    // can still open mid-ANSI-sequence, which no UTF-8 alignment can fix.
     return { epoch, snapshot: s.scrollback.snapshot().toString('utf8') };
   });
 

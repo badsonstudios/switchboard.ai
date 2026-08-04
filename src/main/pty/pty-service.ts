@@ -54,6 +54,12 @@ export class PtySession {
     // listener exceptions are swallowed: a broken subscriber must never take
     // the PTY pump down (fail-open); callers own their error handling
     this.proc.onData((d) => {
+      // INVARIANT (#205): every chunk pushed here is WHOLE characters. node-pty
+      // decodes to a string for us (its `encoding` defaults to utf8), and we
+      // re-encode that string, so no chunk begins or ends mid-character —
+      // which is what lets RingBuffer drop whole chunks without splitting one,
+      // and lets `pty:attach` decode the snapshot with a bare `toString`.
+      // Feeding this raw socket bytes instead would reintroduce #205.
       this.scrollback.push(Buffer.from(d, 'utf8'));
       for (const l of this.dataListeners) {
         try {
