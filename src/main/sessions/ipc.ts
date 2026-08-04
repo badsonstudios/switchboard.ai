@@ -4,7 +4,7 @@
 // pane is attached, and a scrollback snapshot replay on attach.
 import { BrowserWindow, dialog } from 'electron';
 import fs from 'fs';
-import { SessionManager } from './session-manager';
+import { SessionManager, SessionRecord } from './session-manager';
 import { PtyService } from '../pty/pty-service';
 import { StreamPermissions } from './stream-permissions';
 import { StreamCommands } from './stream-commands';
@@ -133,13 +133,78 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   // `persist.upsert` below it would reopen the window: the renderer would pull
   // a live binding whose persisted card is not written yet, and a brand-new
   // card would vanish from the list for a frame.
+  //
+  // Since #187 a single `sessions:create` can push this TWICE — once losing the
+  // reaped session, once gaining its replacement — and `events:changed` rides
+  // the same handler (the reap forgets the dead session's event). Both are true
+  // statements about a state the renderer only gets to read once the handler
+  // has returned, so the rule above is what keeps the extra push harmless
+  // rather than a torn read.
   const cardsChanged = (): void => send('sessions:cardsChanged', undefined);
   const bindLive = (liveId: string, cardId: string): void => {
     cardOfLive.set(liveId, cardId);
     cardsChanged();
   };
+  // Exactly one caller, and it should stay that way: `tearDownLive`. Unbinding
+  // a session WITHOUT tearing it down orphans its hook registration, transcript
+  // watch and feed subscription with nothing left that can reach them — the
+  // leak #170 declined to take and #187 removed the need for.
   const unbindLive = (liveId: string): void => {
     if (cardOfLive.delete(liveId)) cardsChanged();
+  };
+
+  /**
+   * This session's record, but ONLY while its process is still up (#187).
+   *
+   * `exitCode === null` is the test — the field is `number | null` and a running
+   * session carries null, NOT undefined. A probe caught that the hard way:
+   * `!== undefined` matched every live session and adopted none of them.
+   *
+   * A dead session KEEPS its record, so "the manager knows it" is a different
+   * question, and answering that one instead is the mistake this pair exists to
+   * stop being rewritten — it was live in `sessions:setTransport` until #187,
+   * and rewriting it a third time in `sessions:create`'s adopt pass would have
+   * handed a card the corpse it had just failed to reap.
+   */
+  const runningRecord = (liveId: string): SessionRecord | undefined => {
+    const r = manager.get(liveId);
+    return r?.exitCode === null ? r : undefined;
+  };
+  const isRunning = (liveId: string): boolean => runningRecord(liveId) !== undefined;
+
+  /**
+   * Retire ONE live session completely: every subscription, registration and
+   * watch taken out in its name, then the record, then the binding (#187).
+   *
+   * This is the only way a binding is allowed to end. It used to be the body of
+   * `dropLiveForCard` and nothing else, which made "unbind" and "tear down" two
+   * separate things a call site could get half-right — and `sessions:create`
+   * did exactly that, deliberately leaving a crashed session bound rather than
+   * unbinding it without the teardown (see the reap loop there).
+   *
+   * Every step is a no-op for an id it does not know, so reaping a session
+   * whose record is already gone is safe rather than a special case.
+   */
+  const tearDownLive = (liveId: string): void => {
+    deps.feed.forget(liveId); // its event leaves the Events panel with it
+    feeds.get(liveId)?.();
+    feeds.delete(liveId);
+    hooks.unregisterSession(liveId);
+    transcripts.unwatch(liveId);
+    // an unanswered control request leaves the CLI waiting for ever
+    streamPermissions?.forgetSession(liveId, 'session closed');
+    // the next session under this card gets its own list from its own CLI
+    streamCommands?.forgetSession(liveId);
+    // …and its own Feed blocks (P2-E18-10)
+    deps.streamFeed?.forgetSession(liveId);
+    // marks the kill intentional BEFORE tearing the process down, mirroring
+    // kill(): otherwise onExit could see killRequested=false and report a
+    // spurious `crashed` for an ordinary suspend/restart (review nit).
+    // The transport teardown lives INSIDE remove() as of P2-E18-02 — this used
+    // to call `ptys.remove(liveId)` here, which silently tears down nothing for
+    // a session hosted on any transport but the PTY.
+    manager.remove(liveId);
+    unbindLive(liveId);
   };
 
   manager.onStatusChange((change) => {
@@ -331,33 +396,74 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
       const prior = deps.persist.list().find((s) => s.id === opts.cardId);
 
-      // ONE live session per card, always (P2-E15-08). A card's panel used to
-      // mount exactly once per live session, so create() could assume it was
-      // being asked to spawn; hiding a card unmounts it and revealing it mounts
-      // it again over a session that is still running. Spawning a second claude
-      // for one card would leave an orphan PTY nothing can reach.
-      // `exitCode === null` is the liveness test — the field is `number | null`
-      // and a running session carries null, NOT undefined (a probe caught that
-      // the hard way: `!== undefined` matched every live session and adopted
-      // none of them). A crashed session keeps its record so the card can show
-      // the overlay, and must never be adopted.
-      // A session whose RECORD is gone leaves a dangling mapping behind; drop
-      // those on the way past. A session that merely DIED keeps both — the
-      // record for the overlay, the mapping so a later `dropLive` can still
-      // find it and tear its hooks/transcripts/feed down. So a card that
-      // respawns over a dead session briefly holds two mappings, and the
-      // newest wins: `sessions:cards` builds `cardId -> liveId` by iterating
-      // this Map, whose iteration order is insertion order by spec, so the
-      // last binding written is the one that survives. Deterministic, not
-      // lucky — but it is an implicit rule, and unbinding the corpse here
-      // instead would trade it for a real leak (see #170's hand-off).
+      // ── what is already bound to this card? ──────────────────────────────
+      //
+      // ONE BINDING PER CARD (#187), and ONE LIVE SESSION per card (P2-E15-08).
+      // Two passes, because the two answers are independent and doing them in
+      // one made the first depend on the order of the Map: reap every dead
+      // binding, THEN adopt the survivor if there is one. A single pass that
+      // returns on the first running session would walk past a corpse sitting
+      // behind it and leave it bound — unreachable while the invariant holds,
+      // but this is the loop that ESTABLISHES the invariant, so it does not get
+      // to assume it (review, #187).
+      //
+      // Why a card can have a dead session bound at all: a crashed session keeps
+      // its record (the overlay reads it) and used to keep its binding, because
+      // the binding is what a later `dropLive` follows to tear its
+      // hooks/transcript/feed down — so dropping the binding alone would have
+      // leaked all of that, which is the one-word fix #170 was offered and
+      // declined. Reaping does the teardown, so there is nothing left to leak —
+      // and, with one binding per card, nothing for `sessions:cards`' reverse
+      // lookup to have to choose between. Having to choose WAS the old rule:
+      // iterate in insertion order, last write wins. Correct, but unstated and
+      // unpinned, which is what #187 was filed about.
+      //
+      // Revealing a card over a crashed session comes through here: the panel's
+      // exited state is component-local, so a remount re-arms the lazy spawn
+      // without going via `restartSelf`. It now ends in exactly the state the
+      // explicit restart path leaves behind — `dropLive` then `create` — rather
+      // than a near-miss of it with a dead session's transcript watch still
+      // polling alongside the new one's.
+      //
+      // Pass 1 — reap. Iterates a COPY: `tearDownLive` deletes as it goes, and
+      // on the spawn path that is not a place to be relying on the exact
+      // tolerances of Map iteration.
       for (const [liveId, cid] of [...cardOfLive]) {
-        if (cid !== opts.cardId) continue;
-        const running = manager.get(liveId);
-        if (!running || running.exitCode !== null) {
-          if (!running) unbindLive(liveId);
-          continue;
+        if (cid !== opts.cardId || isRunning(liveId)) continue;
+        // FAIL OPEN (P6). A throw anywhere in the teardown chain would come out
+        // of this handler, and the renderer reads a rejected `sessions:create`
+        // as "spawn failed" and paints the dead-session overlay — so a bug in
+        // tearing the LAST session down would become "this card can never start
+        // again". Starting with a half-reaped corpse behind us is strictly
+        // better than a card that cannot start. `SessionManager.remove` makes
+        // the same argument for its own transport teardown.
+        try {
+          tearDownLive(liveId);
+        } catch (err) {
+          log.warn('reaping a dead session failed; starting the new one anyway', {
+            cardId: opts.cardId,
+            sessionId: liveId,
+            error: String(err),
+          });
         }
+      }
+      // Pass 2 — adopt. A card's panel used to mount exactly once per live
+      // session, so create() could assume it was being asked to spawn; hiding a
+      // card unmounts it and revealing it mounts it again over a session that is
+      // still running, and spawning a second claude for one card would leave an
+      // orphan PTY nothing can reach.
+      //
+      // LIVENESS, not mere existence. Pass 1 normally leaves only running
+      // sessions bound — but it fails open, so a corpse whose teardown threw is
+      // still here, still holding a record. Adopting THAT would hand the card a
+      // dead session and no way back: the panel would show a live-looking
+      // adoption over a process that has already gone. Caught by the test that
+      // makes the teardown throw; it is exactly the "has a record" mistake this
+      // item fixed elsewhere, and it deserved to be made once, not three times.
+      for (const [liveId, cid] of cardOfLive) {
+        if (cid !== opts.cardId) continue;
+        const running = runningRecord(liveId);
+        if (!running) continue;
         log.info('session already live for card, adopting', { sessionId: liveId, cardId: opts.cardId });
         return {
           ...running,
@@ -577,6 +683,17 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   // running or 'suspended' if restored-but-not-yet-resumed (E7-05)
   broker.handle('sessions:cards', async () => {
     const live = manager.list();
+    // The reverse of `cardOfLive`, and no longer a tie-break: a card holds ONE
+    // binding since #187, because `sessions:create` reaps a dead session before
+    // binding the one that replaces it.
+    //
+    // The single exception is that the reap fails open, so a corpse whose
+    // teardown threw stays bound beside the live session. Last-wins still picks
+    // the right one there, and that is now provable rather than lucky:
+    // `bindLive` has exactly one call site, at the END of `sessions:create`, so
+    // a replacement is always inserted AFTER the corpse it replaces. What was
+    // wrong before #187 was not the outcome — it was that the outcome rested on
+    // an emergent property of a Map nobody had written down.
     const liveByCard = new Map<string, string>(); // cardId -> liveId
     for (const [liveId, cardId] of cardOfLive) liveByCard.set(cardId, liveId);
     return Promise.all(
@@ -605,30 +722,13 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   // any restored panel that has no record (truly gone)
   broker.handle('sessions:knownCards', () => deps.persist.list().map((s) => ({ cardId: s.id, identity: s.identity })));
 
-  // kill the live session(s) under a card, keeping the persisted record
+  // kill the live session under a card, keeping the persisted record. A card
+  // holds at most one binding since #187, so this loop is really a lookup — it
+  // stays a loop because that is the version that keeps working if the
+  // invariant is ever broken, and deleting the entry the iterator is standing
+  // on is well-defined.
   const dropLiveForCard = (cardId: string): void => {
-    for (const [liveId, cid] of cardOfLive) {
-      if (cid !== cardId) continue;
-      deps.feed.forget(liveId); // its event leaves the Events panel with it
-      feeds.get(liveId)?.();
-      feeds.delete(liveId);
-      hooks.unregisterSession(liveId);
-      transcripts.unwatch(liveId);
-      // marks the kill intentional BEFORE tearing the process down, mirroring
-      // kill()/restart(): otherwise onExit could see killRequested=false and
-      // report a spurious `crashed` for an ordinary suspend/restart (review nit).
-      // The transport teardown lives INSIDE remove() as of P2-E18-02 — this
-      // used to call `ptys.remove(liveId)` here, which silently tears down
-      // nothing for a session hosted on any transport but the PTY.
-      // an unanswered control request leaves the CLI waiting for ever
-      streamPermissions?.forgetSession(liveId, 'session closed');
-      // the next session under this card gets its own list from its own CLI
-      streamCommands?.forgetSession(liveId);
-      // …and its own Feed blocks (P2-E18-10)
-      deps.streamFeed?.forgetSession(liveId);
-      manager.remove(liveId);
-      unbindLive(liveId);
-    }
+    for (const [liveId, cid] of cardOfLive) if (cid === cardId) tearDownLive(liveId);
   };
 
   // close a card: kill its live session AND forget it (won't come back)
@@ -662,10 +762,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     if (!prior) return { ok: false, reason: 'unknown-card' };
     deps.persist.upsert({ ...prior, transport });
     // is a session running under this card right now? then the change is
-    // PENDING, and the UI has to say that instead of implying it took effect
+    // PENDING, and the UI has to say that instead of implying it took effect.
+    // This asked whether the manager HAD a record until #187 — and a crashed
+    // session keeps its record for the overlay, so after a crash the menu told
+    // the user their change was queued behind a process that no longer existed.
+    // Hence one shared `isRunning`, rather than a second spelling of it here.
     let pending = false;
     for (const [liveId, cid] of cardOfLive) {
-      if (cid === cardId && manager.get(liveId)) pending = true;
+      if (cid === cardId && isRunning(liveId)) pending = true;
     }
     log.info('card transport changed', { cardId, transport, pending });
     return { ok: true, pending };
