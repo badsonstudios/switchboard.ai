@@ -791,16 +791,8 @@ export function App(): React.JSX.Element {
 
 function PreflightBanner(): React.JSX.Element {
   const { t } = useTranslation();
-  return (
-    <div
-      style={{
-        background: 'var(--status-needs-permission)',
-        color: 'var(--bar)',
-        fontSize: 11,
-        padding: '4px 12px',
-      }}
-    >
-      {t('preflight.missingCli')}
-    </div>
-  );
+  // colors and metrics in tokens.css (#206): the fill/ink pair has a contrast
+  // floor to meet in every theme, and a pair the drift test can read out of a
+  // stylesheet rule is a pair it can hold to that floor
+  return <div className="preflight-banner">{t('preflight.missingCli')}</div>;
 }

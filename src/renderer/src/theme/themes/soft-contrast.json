@@ -56,6 +56,7 @@
   "--status-idle": "#b8bfc9",
   "--status-done": "#6fcf85",
   "--status-crashed": "#f08a83",
+  "--status-needs-permission-ink-on-fill": "#0b0d10",
 
   "--diff-added": "#6fcf85",
   "--diff-added-bg": "rgba(111, 207, 133, 0.2)",
