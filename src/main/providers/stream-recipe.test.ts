@@ -7,16 +7,16 @@
 // The flag list is S-10 §1, read out of the SDK's own argument builder inside
 // the VS Code extension bundle — NOT reconstructed from `--help`, whose claim
 // that these "only work with --print" is stale (S-10 probe A ran without it).
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { claudeAdapter, resetCliPathCache } from './claude';
+import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 
 let dir: string;
 
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-recipe-'));
+  dir = tempDir('sb-recipe-');
   resetCliPathCache();
   // a stand-in CLI on PATH, so the adapter can resolve something
   const bin = path.join(dir, 'bin');
@@ -25,6 +25,7 @@ beforeEach(() => {
   fs.writeFileSync(path.join(bin, name), '');
   process.env.PATH = `${bin}${path.delimiter}${process.env.PATH ?? ''}`;
 });
+afterEach(() => cleanupTempDirs()); // one per test, gone at the end of it (#213)
 
 function recipe(transport?: 'pty' | 'stream') {
   return claudeAdapter.buildSpawn({ cwd: dir, sessionId: 's1', stateDir: dir, transport });

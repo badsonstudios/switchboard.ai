@@ -1,7 +1,7 @@
 import fs, { promises as fsp } from 'fs';
-import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { SlashCommand } from '../../shared/slash-commands';
 import { scanSlashCommands } from './slash-commands';
 
@@ -25,11 +25,11 @@ async function scanByName(builtins: SlashCommand[] = []): Promise<Record<string,
 }
 
 beforeEach(() => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-slash-'));
+  root = tempDir('sb-slash-');
 });
-afterEach(() => {
-  fs.rmSync(root, { recursive: true, force: true });
-});
+// Was a bare `rmSync` — which cleaned up, but THREW on a lock race, and a throw
+// from a hook is reported as a failed file with no failing test (#213).
+afterEach(() => cleanupTempDirs());
 
 describe('scanSlashCommands', () => {
   it('returns just the builtins when nothing exists on disk', async () => {

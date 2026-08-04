@@ -1,14 +1,15 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { ensureFolderTrusted, projectKey } from './trust';
+import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 
 let cfgPath: string;
 beforeEach(() => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-trust-'));
+  const home = tempDir('sb-trust-');
   cfgPath = path.join(home, '.claude.json');
 });
+afterEach(() => cleanupTempDirs()); // one fake home per test, gone at the end of it (#213)
 
 function writeCfg(obj: unknown): void {
   fs.writeFileSync(cfgPath, JSON.stringify(obj));

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import http from 'http';
-import os from 'os';
 import path from 'path';
+import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import {
   HookListener,
   PermissionRequest,
@@ -20,7 +20,7 @@ let nativeIds: Array<{ sessionId: string; nativeId: string; cause?: 'clear' }>;
 let port: number;
 
 beforeEach(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-hooks-'));
+  dir = tempDir('sb-hooks-');
   applied = [];
   nativeIds = [];
   listener = new HookListener({
@@ -34,7 +34,22 @@ beforeEach(async () => {
   port = await listener.start();
 });
 
-afterEach(() => listener.stop());
+// The FILE-level teardown, so it runs LAST: vitest works `afterEach` hooks from
+// the innermost suite outwards, and the nested blocks below stop their own
+// listeners first. Every temp dir this file makes goes here, per test — a
+// listener holds its stateDir open, so the stop has to come before the rm
+// (#213). Both stateDirs of the nested blocks are per-test too, so nothing
+// still in use is ever swept.
+afterEach(() => {
+  // `finally`, not two statements: a `beforeEach` that threw before assigning
+  // `listener` would TypeError on the stop and skip the cleanup it is there to
+  // protect — the footgun PR #212 removed from watcher.test.ts.
+  try {
+    listener.stop();
+  } finally {
+    cleanupTempDirs();
+  }
+});
 
 function post(body: string, headers: Record<string, string>, host?: string): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -142,7 +157,7 @@ describe('PreToolUse hold + decision round-trip (P2-E10-03, §5.16)', () => {
     requests = [];
     heldApplied = [];
     held = new HookListener({
-      stateDir: fs.mkdtempSync(path.join(os.tmpdir(), 'sb-hold-')),
+      stateDir: tempDir('sb-hold-'),
       log: createLogger(new LogSink({ dir }), 'hooks'),
       manager: {
         apply: (sessionId, ev) => heldApplied.push({ sessionId, ev }),
@@ -318,7 +333,7 @@ describe('a hold needs somebody to ask: window liveness (P2-E15-09, AR-P1-7)', (
     livenessChecks = 0;
     livenessThrows = false;
     held = new HookListener({
-      stateDir: fs.mkdtempSync(path.join(os.tmpdir(), 'sb-live-')),
+      stateDir: tempDir('sb-live-'),
       log: createLogger(new LogSink({ dir }), 'hooks'),
       manager: {
         apply: (sessionId, ev) => heldApplied.push({ sessionId, ev }),

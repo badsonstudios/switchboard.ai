@@ -1,8 +1,6 @@
 // P2-E18-05 — session status and lifecycle from the stream.
-import { describe, it, expect, beforeEach } from 'vitest';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { SessionManager, StatusChange } from './session-manager';
 import { transition } from './state-machine';
 import { streamStatusEvent } from './stream-status';
@@ -180,10 +178,11 @@ let stream: MessageTransport;
 let changes: StatusChange[];
 
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-sl-'));
+  dir = tempDir('sb-sl-');
   stream = new MessageTransport();
   changes = [];
 });
+afterEach(() => cleanupTempDirs()); // one per test, gone at the end of it (#213)
 
 function streamManager(): SessionManager {
   const sink = new LogSink({ dir });

@@ -4,9 +4,7 @@
 // obeys them. Both are needed: a pure function nobody calls correctly is still
 // a Claude-shaped session start.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
+import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { registerSessionIpc, SessionIpcDeps } from './ipc';
 import { ProviderCapabilities } from '../extensibility/contributions';
 import { PersistedSession } from '../workspace/store';
@@ -308,11 +306,9 @@ describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
 
   beforeEach(() => {
     // a real directory: session creation reads it to detect the project type
-    folder = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-ipc-'));
+    folder = tempDir('sb-ipc-');
   });
-  afterEach(() => {
-    fs.rmSync(folder, { recursive: true, force: true });
-  });
+  afterEach(() => cleanupTempDirs());
 
   it('a provider declaring ZERO capabilities spawns a PTY-only session', () => {
     const h = harness(undefined, folder);
@@ -525,7 +521,7 @@ describe('per-card transport (P2-E18-08b)', () => {
   let prior: PersistedSession;
   beforeEach(() => {
     // a real directory: session creation reads it to detect the project type
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-tr-'));
+    dir = tempDir('sb-tr-');
     prior = {
       id: CARD,
       identity: { title: 't', folder: dir, providerId: 'generic' },
@@ -533,6 +529,7 @@ describe('per-card transport (P2-E18-08b)', () => {
       suspendedAt: '',
     };
   });
+  afterEach(() => cleanupTempDirs()); // this block had none — 8 dirs a run (#213)
 
   it('stores the choice on the card', async () => {
     const h = harness(undefined, dir, { prior });
@@ -638,8 +635,9 @@ describe('starting a session preserves the card (#153 follow-up)', () => {
   const CARD = 'card-1';
   let dir: string;
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-keep-'));
+    dir = tempDir('sb-keep-');
   });
+  afterEach(() => cleanupTempDirs()); // this block had none — 4 dirs a run (#213)
 
   function priorWith(over: Partial<PersistedSession>): PersistedSession {
     return {
@@ -724,9 +722,9 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
   });
 
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-slash-'));
+    dir = tempDir('sb-slash-');
   });
-  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => cleanupTempDirs());
 
   it('falls back to the curated list before the CLI has said anything', async () => {
     // The NORMAL state of a fresh stream session, not an edge case: the CLI
@@ -830,9 +828,9 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
 describe('the Feed has two sources and one channel (P2-E18-10)', () => {
   let dir: string;
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-ipc-feed-'));
+    dir = tempDir('sb-ipc-feed-');
   });
-  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => cleanupTempDirs());
 
   const caps = { transcripts: { projectsRoot: () => '/root' } };
 
@@ -899,9 +897,9 @@ describe('the Feed has two sources and one channel (P2-E18-10)', () => {
 describe('a transcript reset never blanks a stream session (P2-E18-10)', () => {
   let dir: string;
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-ipc-reset-'));
+    dir = tempDir('sb-ipc-reset-');
   });
-  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => cleanupTempDirs());
 
   const caps = { transcripts: { projectsRoot: () => '/root' } };
   const feedResets = (h: { pushed: Array<{ channel: string }> }): number =>
@@ -950,11 +948,9 @@ describe('a card gaining or losing its live session announces itself (#170)', ()
   const CARD = 'card-1';
   let dir: string;
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-resume-'));
+    dir = tempDir('sb-resume-');
   });
-  afterEach(() => {
-    fs.rmSync(dir, { recursive: true, force: true });
-  });
+  afterEach(() => cleanupTempDirs());
 
   const cardsPushes = (h: { pushed: Array<{ channel: string }> }): number =>
     h.pushed.filter((p) => p.channel === 'sessions:cardsChanged').length;
@@ -1030,11 +1026,9 @@ describe('a card respawning over a crashed session reaps it (#187)', () => {
   const CARD = 'card-1';
   let dir: string;
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-reap-'));
+    dir = tempDir('sb-reap-');
   });
-  afterEach(() => {
-    fs.rmSync(dir, { recursive: true, force: true });
-  });
+  afterEach(() => cleanupTempDirs());
 
   const card = (): PersistedSession => priorCard({ folder: dir, id: CARD });
   const start = (h: { call: (c: string, ...a: unknown[]) => unknown }): unknown =>
@@ -1235,11 +1229,9 @@ describe('a retired session takes its parked approvals with it (#202)', () => {
   const CARD = 'card-1';
   let dir: string;
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-perm-ipc-'));
+    dir = tempDir('sb-perm-ipc-');
   });
-  afterEach(() => {
-    fs.rmSync(dir, { recursive: true, force: true });
-  });
+  afterEach(() => cleanupTempDirs());
 
   const card = (): PersistedSession => priorCard({ folder: dir, id: CARD });
   const start = (h: { call: (c: string, ...a: unknown[]) => unknown }, cardId = CARD): unknown =>

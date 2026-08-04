@@ -30,6 +30,104 @@ const electronPath = require('electron') as string;
 
 const ROOT = path.resolve(__dirname, '..', '..');
 
+/* ---- temp directories ------------------------------------------------------
+ *
+ * Every folder this fixture makes — the isolated homes and the project folders
+ * `tempProjectFolder()` hands out — is registered here and deleted by
+ * `cleanup()`. Until #213 NEITHER was reliably removed: `tempProjectFolder()`
+ * had no teardown at all across its ~127 call sites (20,593 orphaned
+ * `sb-e2e-proj-*` directories counted in one developer's %TEMP%, still growing
+ * ~190 per full run), and the home's `rmSync` swallowed every failure without
+ * ever retrying (2,062 orphaned `sb-e2e-*` homes — Electron userData trees, so
+ * they dominate the disk cost).
+ *
+ * Register-what-you-make, rather than an rm at the end of a test, because the
+ * end of a test is exactly what a failing assertion skips.
+ */
+
+/** Made and not yet deleted. Per Playwright WORKER — module state, one process. */
+const pendingDirs = new Set<string>();
+
+/**
+ * Apps launched and not yet closed.
+ *
+ * The sweep waits for this to reach zero, and that guard is the reason it is
+ * safe to delete folders this app did not itself create: a live app has a
+ * session whose cwd IS one of these folders, and on Linux (no mandatory
+ * locking) an rm would quietly succeed and pull the ground out from under a
+ * running test. No spec in the suite currently holds two apps at once, so in
+ * practice this never defers anything — it is here so that the first one that
+ * does is not broken by this file.
+ */
+let liveApps = 0;
+
+/** Track a directory the caller made, so `cleanup()` will remove it. */
+export function registerTempDir(dir: string): string {
+  pendingDirs.add(dir);
+  return dir;
+}
+
+/**
+ * Delete every registered directory. Never throws; requeues what would not go.
+ *
+ * The requeue is the part that matters on Windows, and it is worth writing down
+ * because the obvious alternative does not work (measured for #180, PR #212):
+ * `maxRetries` does NOT cover a lock on the directory itself. Node's recursive
+ * rm only enters its retry loop after the not-empty recursion, so an `EBUSY`
+ * off the very first `rmdir` — precisely what a process still holding the
+ * folder as its cwd produces — is rethrown untouched. A folder that will not go
+ * therefore stays pending and is retried by the next `cleanup()`, by which time
+ * the process that held it is long gone. `maxRetries` still earns its place: it
+ * covers the ENOTEMPTY/EPERM path a scanner holding one file inside the tree
+ * produces.
+ *
+ * Async `fs.promises.rm`, not `rmSync`: that retry ladder sleeps ~5s, and a
+ * synchronous one would spend it blocking the worker inside Playwright's hook
+ * budget.
+ *
+ * And it never throws — a throw here would fail a test that has already passed.
+ * Fail-open applies to test infrastructure too: a directory that will not go is
+ * a housekeeping problem, not a broken run.
+ */
+export async function sweepTempDirs(): Promise<void> {
+  if (liveApps > 0) {
+    // Say so. A handle that is launched and never closed wedges this counter
+    // above zero for the rest of the worker, and every later sweep silently
+    // becomes a no-op — the whole run reverts to leaking with nothing in the
+    // log to say it did, which is precisely the invisible failure #213 exists
+    // to remove. One line beats a silent return.
+    if (pendingDirs.size > 0) {
+      console.warn(`[fixture] temp-dir sweep skipped: ${liveApps} app(s) still open`);
+    }
+    return;
+  }
+  for (const dir of [...pendingDirs]) {
+    try {
+      await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      pendingDirs.delete(dir);
+    } catch {
+      /* stays pending — the next cleanup() tries again */
+    }
+  }
+}
+
+// The last net, for everything no `cleanup()` got to: a folder requeued by the
+// FINAL cleanup of the run, anything registered while an app was still open,
+// and the whole pending set when Playwright discards a worker after a failure.
+// One listener per worker process — this module is loaded once. Synchronous by
+// necessity (nothing async runs during 'exit') and best-effort by design: at
+// this point every app in this worker is gone, so a folder that still will not
+// go is a leak nobody can do anything about.
+process.on('exit', () => {
+  for (const dir of pendingDirs) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
+    } catch {
+      /* best-effort */
+    }
+  }
+});
+
 export interface LaunchedApp {
   app: ElectronApplication;
   window: Page;
@@ -142,11 +240,15 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
       }
     }
     if (!opts.home) {
-      // the temp home is ours — remove it wholesale
+      // the temp home is ours — remove it wholesale, and put it on the pending
+      // list first so a half-started Electron still holding it is retried by
+      // the next cleanup() rather than leaked (#213)
+      registerTempDir(home);
       try {
         fs.rmSync(home, { recursive: true, force: true });
+        pendingDirs.delete(home);
       } catch {
-        /* best-effort */
+        /* best-effort — stays pending */
       }
     }
     throw err;
@@ -160,6 +262,9 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   // Reading it eagerly also keeps the tree kill working in exactly that case,
   // which a try/catch around the late read would have given up on.
   const pid = app.process()?.pid;
+
+  liveApps++;
+  let counted = true; // close() is called twice by any spec that also cleans up
 
   const close = async () => {
     // app.close() can hang if the process (or a popout child) is slow to exit;
@@ -175,6 +280,10 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
     // Always reap the whole tree afterwards: a popped-out window and node-pty
     // children can outlive app.close() and hold the Playwright worker open.
     killTree(pid);
+    if (counted) {
+      counted = false;
+      liveApps--;
+    }
   };
 
   return {
@@ -183,11 +292,17 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
     home,
     close,
     cleanup: async () => {
-      await close();
       try {
-        fs.rmSync(home, { recursive: true, force: true });
-      } catch {
-        /* best-effort */
+        await close();
+      } finally {
+        // Registered HERE and not at launch: `close()` deliberately keeps the
+        // home (relaunch/persistence specs reuse it), and a home on the pending
+        // list could be swept between the two launches. `cleanup()` is the call
+        // that means "done with this home" — the same moment the old `rmSync`
+        // fired. Deleted with retries and requeued if Windows still holds it,
+        // which the old one did neither of (#213).
+        registerTempDir(home);
+        await sweepTempDirs();
       }
     },
   };
@@ -315,9 +430,21 @@ export function workspaceJsonPath(home: string): string {
   return path.join(base, 'switchboard', 'workspace.json');
 }
 
-/** A throwaway folder to point a session at (git-repo optional). */
+/**
+ * A throwaway folder to point a session at (git-repo optional).
+ *
+ * Registered for deletion as of #213 — the next `cleanup()` removes it, and
+ * every spec that uses this calls `cleanup()` in its `afterEach`. Same
+ * signature, same return value: the ~127 call sites need no change.
+ *
+ * ONE constraint that came with that: call it inside a TEST (or a `beforeEach`),
+ * never in `beforeAll` or at module scope. A folder made once and shared by a
+ * whole file would be swept by the FIRST test's `cleanup()` and be missing for
+ * the second. No spec does this today; a spec that wants a shared fixture
+ * directory should make its own and not register it.
+ */
 export function tempProjectFolder(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-proj-'));
+  const dir = registerTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-proj-')));
   fs.writeFileSync(path.join(dir, 'README.md'), '# e2e\n');
   return dir;
 }
