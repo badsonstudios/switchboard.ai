@@ -6,6 +6,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { blockVisible, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
+import { feedKeyAction, FEED_EXPANDER_ATTR } from '../lib/feed-keys';
 import { emptyStateCopy } from '../lib/binding-copy';
 import { terminalHandoff, TerminalHandoff, toneToken } from '../lib/terminal-handoff';
 import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
@@ -348,6 +349,31 @@ export function FeedView(props: {
     return () => ro.disconnect();
   }, [pin, restore]);
 
+  // Keyboard path into the conversation (#174, §5.26 "keyboard-complete").
+  //
+  // The scroller is ONE tab stop — a labelled region — and the arrow keys move
+  // between the expanders inside it, which are real buttons carrying
+  // `data-feed-expander` (see `FeedExpander`). The list is read off the DOM at
+  // keystroke time rather than kept in state: the DOM already holds every
+  // expander in exactly the order the eye reads them, and blocks stream in and
+  // out constantly, so any registry we kept would be a second copy to get wrong.
+  const [inFeed, setInFeed] = React.useState(false);
+  const onFeedKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLDivElement>): void => {
+    markGesture();
+    const root = scroller.current;
+    if (!root) return;
+    const els = Array.from(root.querySelectorAll<HTMLElement>(`[${FEED_EXPANDER_ATTR}]`));
+    const active = root.ownerDocument.activeElement as HTMLElement | null;
+    const action = feedKeyAction(e.key, {
+      count: els.length,
+      current: active ? els.indexOf(active) : -1,
+    });
+    if (!action) return; // not ours: the button or the scroller gets it
+    e.preventDefault();
+    if (action.kind === 'exit') root.focus();
+    else els[action.index]?.focus();
+  }, [markGesture]);
+
   const visibleBlocks = blocks.filter((b) => blockVisible(b, verbosity));
   return (
     <div style={{ blockSize: '100%', display: 'flex', flexDirection: 'column', background: 'var(--card-bg)' }}>
@@ -361,7 +387,24 @@ export function FeedView(props: {
           borderBlockEnd: '1px solid var(--border)',
         }}
       >
-        <span style={{ flex: 1 }} />
+        {/* Only while the keyboard is actually IN the conversation: the arrow
+            keys are the one thing about this surface a user cannot see, and a
+            permanent legend would be clutter for the 99% of the time the
+            mouse is doing the work. */}
+        <span
+          style={{
+            flex: 1,
+            minInlineSize: 0,
+            fontSize: 9.5,
+            color: 'var(--faint)',
+            fontFamily: 'var(--font-ui)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {inFeed ? t('feedView.keyHint') : ''}
+        </span>
         {(['quiet', 'normal', 'firehose'] as const).map((v) => (
           <button
             key={v}
@@ -384,11 +427,24 @@ export function FeedView(props: {
       </div>
       <div
         ref={scroller}
+        // The conversation as a landmark with a name (#174) — and as the single
+        // tab stop that gets a keyboard user into it. It is deliberately NOT
+        // `role="log"`: an aria-live conversation would read every streamed
+        // token aloud over whatever the user was doing.
+        role="region"
+        aria-label={t('feedView.regionLabel')}
+        tabIndex={0}
+        data-feed-region=""
+        // `:focus-visible`, matching the ring: clicking a box also focuses this
+        // container, and a legend of arrow keys flickering in and out as the
+        // mouse works is noise. It appears for the people it is for.
+        onFocus={(e) => setInFeed(!!(e.target as HTMLElement).matches?.(':focus-visible'))}
+        onBlur={() => setInFeed(false)}
         onWheel={markGesture}
         onTouchStart={markGesture}
         onTouchMove={markGesture}
         onPointerDown={markGesture}
-        onKeyDown={markGesture}
+        onKeyDown={onFeedKeyDown}
         onScroll={() => {
           const el = scroller.current;
           // a hidden or mid-relayout panel reports clientHeight 0 and scrollTop

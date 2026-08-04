@@ -120,7 +120,13 @@ The prompt must contain, concretely:
      >45-minute holds are routine with three workers sharing the machine
      (learned 2026-08-02: #183 held it 91 minutes, live, during a repeat
      campaign — a clock-only rule would have corrupted two runs). Lint,
-     typecheck, and unit tests need no lock.
+     typecheck, and unit tests need no lock. **Wait for the lock IN-TURN
+     (a polling loop inside your own execution) — never by queueing a
+     background job and ending your turn: your background processes DIE
+     when your turn ends** (learned 2026-08-03, run 3: two workers went
+     silent waiting on "queued" e2e jobs that no longer existed, and one
+     orphaned job later re-acquired the lock as a zombie and burned a
+     full wasted suite run).
   4. Gate before push: lint + typecheck + unit green, e2e green under the
      lock. Review your own diff against `/review`'s standards (you are
      Opus; the review is yours) — fix Blockers/Should-fixes, ~3 rounds cap.

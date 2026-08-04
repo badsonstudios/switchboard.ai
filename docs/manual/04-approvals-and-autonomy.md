@@ -63,4 +63,8 @@ mode that *new* sessions start at; each session keeps its own after that.
   arise. The other case is any platform: if switchboard's display crashes, the
   sessions underneath it keep running and their approvals fall through the same
   way, rather than waiting on a screen that isn't there any more.
+- **A question can't outlive the session that asked it.** If a session dies
+  while an approval is on screen, the question dies with it — nothing is left
+  waiting on an answer that can no longer go anywhere. Starting the card again
+  clears the bar and begins fresh.
 - **full-auto** is shown in red as a reminder.

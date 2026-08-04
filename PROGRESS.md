@@ -6,27 +6,178 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E18-01…10 ALL DONE 2026-08-02**; E15 done except #111 [held — real tokens];
 E9 at 5 of 11 — #70–#74 done, #75–#80 open; E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.** Orchestration run 2 CLOSED
-2026-08-03 — all 11 items merged (see the run record below).
+**In progress:** **nothing mid-flight.** Orchestration run 3 CLOSED
+2026-08-03 — 7 items shipped: 3 internal PRs merged, 4 PRs in Dan's queue
+(see the run record below).
 
-> # ▶▶ START HERE — run 2 is CLOSED; next is run 3 (`/orchestrate`) or
-> single items. Queue analysis for run 3, pre-done:
-> - **#75 (P2-E9-06, presentation policy + auto-minimize, S)** — E9 track
->   head, **fully unblocked**: Dan accepted #177's three flagged calls
->   (collapsed-removes-panel; crashed-not-a-reveal-trigger;
->   show-more-from-tabbed removes panel) on 2026-08-03 — build on them.
-> - **Dogfooding begins 2026-08-03:** Dan is using the app daily on his
->   work laptop. Expect real-usage bug reports to arrive as issues; treat
->   them as high-signal and triage them into runs promptly. His hand-
->   testing of run-2 features continues in situ.
-> - **#174 (feed keyboard a11y)** — unblocked now #173 is merged. Feed track.
-> - **Pool:** #168 (read-only workspace UI notice), #179 (watcher fd leak,
->   product), #180 (test temp-dir leaks), #185 (e2e AUTOCLOSE trap), #187
->   (double cardOfLive binding hardening), #191 (diff pane syntax
->   highlighting — needs a design call first).
-> - **#111 still HELD** (real tokens — ask Dan). **#129** needs milestone
->   triage. E18-11…16 unfiled behind S-11 probes; E9 tail past #80 and
->   E11/E13/E14 expansion need Dan (/pm scoping).
+> # ▶▶ START HERE — run 3 is CLOSED. **Dan's queue (4 PRs, all green on
+> add72e2):** #195 (feed keyboard a11y), #198 (presentation policy — read
+> its call #1: is auto-collapse the right DEFAULT? 11 e2e specs say you
+> can't watch the turn you submit; one-line change if not), #199
+> (cardOfLive reap + 3 user-visible corrections), #204 (read-only
+> workspace banner). Combined hand-test list in each PR body; suggested
+> order #195 → #199 → #204 → #198 (198 last — biggest, and its default
+> question colors the rest).
+> **Decisions Dan owes** (blocking further dispatch): #200 (crashed
+> session's transcript watch — teardown-on-exit policy), #191 (diff-pane
+> syntax highlighting design), #129 (milestone triage), #111 (real
+> tokens), #207 (failed-write banner scope), E9 tail + E11/E13/E14
+> scoping. **Ready the moment Dan's PRs merge:** #180, #196, #201, #206
+> (behind #198) · #202, #205 (behind #199) · #208 (behind #204) · #76
+> =E9-07 (behind #198).
+> **PHILOSOPHY suggestion from #179's worker, for Dan:** fail-open has an
+> unwritten second half — "our failures must never cost the user their
+> FILES, not just their session." Worth a line in PHILOSOPHY/DESIGN.
+
+> # 🎛 ORCHESTRATION RUN 3 — 2026-08-03, **CLOSED. 7 items: 3 internal
+> merged (#179→PR193, #194→PR203, #185→PR209), 4 in Dan's queue
+> (#174→PR195, #75→PR198, #187→PR199, #168→PR204).** Main @ add72e2.
+> Unit suite 1121→1159 (highest branch), e2e 145→151 (#198's branch).
+> 10 issues filed from discoveries (#194 #196 #197 #200 #201 #202 #205
+> #206 #207 #208), 1 of them (#194) fixed same-run. Notables: #185 found
+> TWO latent e2e traps (unclickable native quit dialog; fixture pid read
+> after Playwright teardown); #75 measured its own default's cost (11
+> specs); #187's reviewer caught the worker re-making the exact
+> has-a-record bug the item fixes; process lesson recorded — WORKER
+> BACKGROUND POLLERS DIE WHEN THE AGENT'S TURN ENDS: waits must be
+> in-turn (cost two silent stalls + one zombie lock-cycle run; fold into
+> /orchestrate worker prompts at source).
+> **Worktree pool:** sb-wt-1/2/3 parked clean, detached @ add72e2; merged
+> branches deleted; the four Dan-PR branches kept locally.
+> **Single-writer rule:** this file is written ONLY by the orchestrator
+> session. Workers report via handoff files in
+> `.claude/work_files/orchestrator/<issue#>.md`.
+>
+> **Active workers** (issue → worktree → branch):
+> - ~~#185 e2e AUTOCLOSE trap~~ **WORKER DONE** — PR #209 (internal,
+>   test-infra) **in the merge queue**, CI running. Trap: the busy-quit
+>   confirm is a main-process `showMessageBoxSync` Playwright can't click.
+>   `SWITCHBOARD_AUTOCLOSE` was overloaded (timed self-quit + dialog
+>   suppression) → split out `SWITCHBOARD_NO_QUIT_CONFIRM=1`; shipped
+>   behavior byte-identical. Second latent trap found & fixed: fixture
+>   read `app.process()?.pid` after Playwright teardown → any
+>   self-closing spec died in afterEach; pid now captured eagerly (keeps
+>   tree-kill). Quit guard's FIRST coverage since P1-E6-02
+>   (quit-confirm.spec.ts: quit-mid-work completes; guard-on names the
+>   session, Cancel holds, Quit-anyway releases). Gates: 1128 unit /
+>   targeted 2/2 twice / full e2e 148+1 skip 0 fail. Worker lesson,
+>   recorded for future runs: backgrounded pollers die when the agent's
+>   turn ends — waits must be in-turn. Handoff:
+>   `.claude/work_files/orchestrator/185.md`.
+> - ~~#168 read-only workspace UI notice~~ **WORKER DONE** — PR #204
+>   marked ready, **IN DAN'S QUEUE** (user-facing). Persistent
+>   non-dismissible strip under the title bar from boot (banner not toast:
+>   the harm lands at quit, long after a toast fades); same slot as
+>   PreflightBanner; App.tsx footprint exactly one import + one render
+>   line; new `workspace:isReadOnly` channel, capability-tagged, no new
+>   authority. Gates: 1126 unit / 148 e2e +1 skip, 5/5 CI, 2 mutations
+>   caught. Review: 0 blockers, 3 should-fixes taken (copy understated
+>   the loss; race in negative e2e assertion; live region that never
+>   announced). Discoveries filed: **#206** (PreflightBanner ~2.3:1 light
+>   contrast), **#207** (FAILED write still log-only — same P9 shape),
+>   **#208** (pop-outs never see the banner). Handoff:
+>   `.claude/work_files/orchestrator/168.md`.
+> - ~~#194 drain StringDecoder~~ ✅ **PR #203 MERGED** (internal; 5/5
+>   green; issue #194 closed; main @ 9357428). Per-tail StringDecoder;
+>   deliberately no flush (flushing emits the U+FFFD it removes); bonus:
+>   watcher had NO truncation handling (shrink stalled a tail forever) —
+>   6-line resync branch added. Tests bite (verified by stashing the fix).
+>   Gates: 1128 unit / 146 e2e +1 skip. Discovery filed: **#205**
+>   (scrollback RingBuffer trims mid-character; after #199). Handoff:
+>   `.claude/work_files/orchestrator/194.md`.
+> - ~~#75 P2-E9-06 presentation policy + auto-minimize~~ **WORKER DONE** —
+>   PR #198 marked ready, **IN DAN'S QUEUE** (user-facing), bumped onto
+>   0a22101. Pure `lib/presentation-policy.ts` (session > group > global);
+>   submit seam = `submitPrompt` → store notify → SessionGrid applies via
+>   E9-05's `setCardLadder`; restore IS the E9-05 reveal contract (why
+>   auto-hide honors it by construction). Surfaces: titlebar ⬍ chip, rail
+>   session menu + group header, 11 palette commands. **Call #1 for Dan:**
+>   first e2e run failed 11 specs all shaped "submit then watch the card"
+>   — the honest measurement of auto-collapse-as-default; shipped as
+>   specified (§5.8), `always-visible` default is a one-line change.
+>   Self-review real find: auto-hide could bury a permission-holding
+>   session PERMANENTLY (revealTargets id already spent) — fixed with 4th
+>   exemption (`needsHuman`). Gates: 1159 unit (+35) / 151 e2e +1 skip.
+>   Discovery (report-only): revealTargets spends event ids for cards it
+>   skips — revisit in E9-10. Handoff:
+>   `.claude/work_files/orchestrator/75.md`.
+> - **#185 e2e AUTOCLOSE trap** → `sb-wt-2` → `feature/185-e2e-autoclose`
+>   (internal; e2e fixtures; dispatched after #174's worker finished)
+> - ~~#174 feed keyboard a11y~~ **WORKER DONE** — PR #195 marked ready,
+>   **IN DAN'S QUEUE** (user-facing). Shape: disclosure pattern — every
+>   expander is a real `<button aria-expanded>` (`FeedExpander`); the
+>   conversation is ONE tab stop (`role="region"`, ↑↓/Home/End/Esc roving
+>   over `tabindex="-1"` buttons) so the composer stays one Tab away; both
+>   rejected shapes (role=button on the box; roving over boxes) documented
+>   as ARIA lies. Covers Bash coarse+IN+OUT, Edit panes, generic tool,
+>   thinking, prompt pill. Rider fix: clicking an expanded prompt's TEXT no
+>   longer folds it (read-not-a-click). Incidental WCAG fix: feed scroller
+>   now keyboard-scrollable. DESIGN §5.10 gained the rule; manual updated.
+>   Gates: 1145 unit (+21) / 147 e2e +1 skip, lock waited ~12 min behind
+>   #179, nothing stolen. Discoveries filed: **#196** (duplicate
+>   "Conversation" landmarks across cards), **#197** (a11y sweep: rail/
+>   lamps/tab strip/Events rows are divs with onClick). Handoff:
+>   `.claude/work_files/orchestrator/174.md`.
+> - **#194 drain StringDecoder** → `sb-wt-3` →
+>   `feature/194-drain-stringdecoder` (internal; watcher decode fix;
+>   dispatched after #187's worker finished)
+> - ~~#187 cardOfLive binding hardening~~ **WORKER DONE** — PR #199 marked
+>   ready, **IN DAN'S QUEUE** (reclassified user-facing: three user-visible
+>   corrections + manual edits ride along). Took the REAP, not the pin:
+>   `tearDownLive` extracted from `dropLiveForCard`; `sessions:create`
+>   reaps non-running bindings in a two-pass reap-then-adopt that fails
+>   open (P6). Traced every `cardOfLive` read: the double binding itself
+>   never misrouted, but two neighbors were wrong and are fixed —
+>   `sessions:setTransport` said "pending" for a CRASHED session, and two
+>   live transcript watches could ping-pong a card's persisted usage.
+>   User-visible: stale crashed Events entry clears on respawn; stuck
+>   approval bar clears on reveal-after-crash-mid-approval; transport menu
+>   stops queueing behind a corpse. Review: 0 blockers, 4 should-fixes all
+>   taken (one caught the worker re-making the has-a-record mistake a
+>   third time). Gates: 1134 unit / 146 e2e +1 skip, mutation-checked 5
+>   ways. Lock: waited out #75's legitimate 54-min hold, no steal.
+>   Discoveries filed: **#200** (crashed session's watch keeps polling —
+>   needs onSessionExit decision), **#201** (renderer liveToCard stale
+>   entry per respawn; after #198), **#202** (streamPermissions absent
+>   from ipc harness; after #199). Handoff:
+>   `.claude/work_files/orchestrator/187.md`.
+> - ~~#179 transcript watcher fd leak~~ ✅ **PR #193 MERGED** (internal;
+>   5/5 green; issue #179 closed; branch deleted; main @ 0a22101). Both `drain` AND `readHead` leaked
+>   fds on the read-error path; both now route through a `readRange` helper
+>   closing in `finally`. Bonus: drain advanced offset by stat size, not
+>   bytes read (shrunk file → zero-fill garbage) — fixed. Product-wide fd
+>   audit: those two sites were the whole class. Tests proven to bite
+>   (fail without the fix). Gates: 1126 unit / 146 e2e +1 skip. Discovery
+>   filed: **#194** (UTF-8 char split across drain chunks → replacement
+>   chars; wants per-tail StringDecoder). Handoff:
+>   `.claude/work_files/orchestrator/179.md`.
+>
+> **Merge queue:** empty (PR #193 merged). Internal PRs merge on green CI;
+> user-facing PRs queue for Dan.
+> **Dan's queue (4):** **PR #195** (#174 feed a11y), **PR #198** (#75
+> presentation policy — read its call #1 first), **PR #199** (#187
+> hardening + 3 user-visible corrections), **PR #204** (#168 read-only
+> banner) — all ready for review, all bumped onto 9357428, test
+> checklists in the PR bodies.
+> **Dispatching is WINDING DOWN:** every remaining queue item is blocked
+> behind an unmerged Dan PR (#180/#196/#201/#206 behind #198; #202/#205
+> behind #199; #208 behind #204; #76=E9-07 behind #198), needs a Dan
+> decision (#200 onSessionExit teardown, #191 diff-pane design, #129
+> milestone triage, #111 real tokens, #207 scope), or is Dan-scoping
+> (E9 tail, E11/E13/E14). Once #185's PR lands (internal — orchestrator
+> merges on green), the run ends with the final report.
+> **Lock note:** leftover queued lock-cycle jobs from workers 185/187
+> briefly re-held the machine lock after their agents finished (19:30
+> hold, owner 187, 0 electron) — wasted cycles, self-releasing via EXIT
+> traps, no corruption. Watch that pattern in future runs.
+> Issues filed this run so far: #194 (fixed in-run), #196, #197, #200,
+> #201, #202, #205, #206, #207, #208.
+> **Held / needs Dan:** #111 (real tokens); #129 (milestone triage); #191
+> (diff-pane syntax highlighting — needs a design call); E9 tail past #80 +
+> E11/E13/E14 expansion (/pm scoping).
+> **Dogfooding note (2026-08-03):** Dan uses the app daily on his work
+> laptop — incoming real-usage issues are high-signal; triage into the run
+> promptly.
 
 > # 🎛 ORCHESTRATION RUN 2 — 2026-08-02→03, **CLOSED: ALL 11 ITEMS
 > MERGED.** 11 items across 4 dispatch waves. 7 internal PRs

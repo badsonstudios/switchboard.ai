@@ -587,6 +587,29 @@ Rules the container carries:
   checklist is already shown in full, and a pointer cursor promising an
   expansion would be a lie).
 
+**Every expander has a keyboard path, and the box is not it** *(added
+2026-08-03, #174 — the gap the boxes above opened).*
+
+The box being the mouse target does not make it the control. A box CONTAINS
+other interactive controls (Bash IN/OUT, and later copy buttons and file links),
+so it may not be a `button` — ARIA forbids it, and a `role="button"` there would
+be a lie a screen reader passes on to its user. The rule §5.26 already sets
+("keyboard-complete") is met like this instead:
+
+- **Each expander is a real `<button aria-expanded>`** — the block's header line
+  itself. Screen readers announce it and its state; Enter and Space come free
+  from the platform rather than from a handler of ours. The box keeps its
+  whole-body click as a MOUSE convenience that duplicates the header button.
+- **The conversation is one Tab stop** — a labelled `region` — and the arrow
+  keys move between the expanders inside it (`↑`/`↓`, `Home`/`End`, `Esc` to
+  step back out). A Tab stop per expander would put the composer, which sits
+  below the conversation, hundreds of presses out of reach in a real session.
+  This is the message-list shape (Slack, Discord), and it costs the expanders
+  nothing: `tabindex` does not touch the accessibility tree, so screen-reader
+  button navigation still reaches every one of them.
+- **Focus is visible at both stops** — the region and the focused expander each
+  draw a real ring, on `:focus-visible` so the mouse never paints one.
+
 **The dot marks an EVENT, not an answer** *(added 2026-08-02, #91).* The
 timeline dot earns its place on things the session or the user *did* — user
 prompts, tool calls, thinking. A plain assistant reply is the answer, and Dan
