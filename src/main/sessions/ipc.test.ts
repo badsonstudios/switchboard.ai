@@ -12,7 +12,9 @@ import { ProviderCapabilities } from '../extensibility/contributions';
 import { PersistedSession } from '../workspace/store';
 import { SessionIdentity } from './session-manager';
 import { StreamCommands } from './stream-commands';
+import { StreamPermissions } from './stream-permissions';
 import { StreamFeed } from '../feed/stream-feed';
+import { Logger } from '../log/logger';
 import { SlashCommand } from '../../shared/slash-commands';
 
 type Handler = (e: unknown, ...args: unknown[]) => unknown;
@@ -66,6 +68,10 @@ function harness(
     /** the CLI's own list, off the stream (P2-E18-09) — the real class, so the
      *  test exercises the real wiring rather than a stand-in for it */
     streamCommands?: StreamCommands;
+    /** the stream transport's approval router (P2-E18-07) — the real class too.
+     *  Absent from this harness until #202, which meant `tearDownLive`'s call to
+     *  it was a no-op in every test in this file. */
+    streamPermissions?: StreamPermissions;
     /** the Feed built from typed messages (P2-E18-10) — the real class, again */
     streamFeed?: StreamFeed;
     /** the transport the manager reports for a live session (P2-E18-10) */
@@ -168,6 +174,9 @@ function harness(
     hooks: {
       onPermissionRequest: () => {},
       onPermissionResolved: () => {},
+      // the hook half of `sessions:pendingPermissions` — always empty here, so
+      // what that channel replays is entirely the stream router's (#202)
+      pendingRequests: () => [],
       unregisterSession: (id: string) => unregistered.push(id),
       buildHookSettings,
     },
@@ -213,6 +222,7 @@ function harness(
     repoRoot: async () => null,
     slashCommands: async () => opts.known ?? [],
     streamCommands: opts.streamCommands,
+    streamPermissions: opts.streamPermissions,
     streamFeed: opts.streamFeed,
   } as unknown as SessionIpcDeps;
 
@@ -232,6 +242,53 @@ function harness(
     unwatched,
     unregistered,
     forgottenEvents,
+  };
+}
+
+/**
+ * The REAL approval router, wired to a fake transport so a test can read what
+ * the CLI was told (#202). Both halves of a teardown are visible through it: the
+ * parked request must be ANSWERED — dropping it silently leaves the CLI blocked
+ * for ever — and the renderer must be told the bar can go.
+ */
+function streamPerms(): {
+  perms: StreamPermissions;
+  /** every `control_response` the router pushed back down the stream */
+  sent: Array<{ sessionId: string; msg: Record<string, unknown> }>;
+} {
+  const sent: Array<{ sessionId: string; msg: Record<string, unknown> }> = [];
+  const perms = new StreamPermissions(
+    (sessionId, msg) => {
+      sent.push({ sessionId, msg: msg as Record<string, unknown> });
+      return true;
+    },
+    { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as unknown as Logger
+  );
+  return { perms, sent };
+}
+
+/** A `can_use_tool` control request, trimmed to the fields the router reads. */
+function canUseTool(requestId: string): Record<string, unknown> {
+  return {
+    type: 'control_request',
+    request_id: requestId,
+    request: {
+      subtype: 'can_use_tool',
+      tool_name: 'Write',
+      input: { file_path: 'src/app.ts', content: 'x' },
+    },
+  };
+}
+
+/** What the router sends the CLI when a session is torn down under it. */
+function autoDenial(requestId: string): Record<string, unknown> {
+  return {
+    type: 'control_response',
+    response: {
+      subtype: 'success',
+      request_id: requestId,
+      response: { behavior: 'deny', message: 'session closed' },
+    },
   };
 }
 
@@ -1152,5 +1209,153 @@ describe('a card respawning over a crashed session reaps it (#187)', () => {
     expect(h.created).toHaveLength(1);
     expect(h.removed).toEqual([]);
     expect(h.unwatched).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #202 — the third stream service `tearDownLive` retires.
+//
+// `streamFeed` and `streamCommands` were modelled in this harness; the approval
+// router was not wired in at all, so `tearDownLive`'s
+// `streamPermissions?.forgetSession(...)` ran against `undefined` in every test
+// in this file and deleting the line left the whole suite green. Found by the
+// #187 worker and its reviewer.
+//
+// It is the costliest of the three to leak, and the only one that is not merely
+// stale state: a `can_use_tool` request is a question the CLI is BLOCKED on, and
+// the renderer is showing an approval bar for it. Forgetting a session DENIES
+// what is outstanding rather than dropping it — a refused tool call the user can
+// ask for again, instead of a wedged session and a bar for a process that no
+// longer exists.
+//
+// So each test asserts the whole of a teardown, not just the forget: the router
+// has nothing pending, the CLI got its answer, and the renderer was told to take
+// the bar down.
+describe('a retired session takes its parked approvals with it (#202)', () => {
+  const CARD = 'card-1';
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-perm-ipc-'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const card = (): PersistedSession => priorCard({ folder: dir, id: CARD });
+  const start = (h: { call: (c: string, ...a: unknown[]) => unknown }, cardId = CARD): unknown =>
+    h.call('sessions:create', { cardId, folder: dir, title: 't' });
+  /** the request ids the renderer was told to stop showing */
+  const resolved = (h: { pushed: Array<{ channel: string; payload: unknown }> }): string[] =>
+    h.pushed
+      .filter((p) => p.channel === 'sessions:permissionResolved')
+      .map((p) => (p.payload as { requestId: string }).requestId);
+  const asked = (h: { pushed: Array<{ channel: string; payload: unknown }> }): unknown[] =>
+    h.pushed.filter((p) => p.channel === 'sessions:permissionRequest').map((p) => p.payload);
+
+  it('the restart path — dropLive answers the parked request and clears the bar', () => {
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
+    start(h);
+
+    perms.offer('live-1', canUseTool('req-1'));
+    // the router really is wired into this registration, tagged with the card
+    // the bar belongs to — without this the rest could pass against a router
+    // the IPC layer has never heard of
+    expect(asked(h)).toEqual([
+      expect.objectContaining({ requestId: 'stream:live-1:req-1', cardId: CARD, tool: 'Write' }),
+    ]);
+
+    h.call('sessions:dropLive', CARD);
+
+    expect(perms.pendingRequests()).toEqual([]);
+    expect(sent).toEqual([{ sessionId: 'live-1', msg: autoDenial('req-1') }]);
+    expect(resolved(h)).toEqual(['stream:live-1:req-1']);
+  });
+
+  // Same helper underneath (`dropLiveForCard`), so this is about the CHANNEL:
+  // closing a card is the one teardown the user cannot undo, and a version of
+  // `sessions:closeCard` that forgot the record without retiring the session
+  // would pass every test above.
+  it('the close path — closing the card does the same', () => {
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
+    start(h);
+    perms.offer('live-1', canUseTool('req-1'));
+
+    h.call('sessions:closeCard', CARD);
+
+    expect(perms.pendingRequests()).toEqual([]);
+    expect(sent).toEqual([{ sessionId: 'live-1', msg: autoDenial('req-1') }]);
+    expect(resolved(h)).toEqual(['stream:live-1:req-1']);
+  });
+
+  // The reap (#187) runs the SAME teardown, so this follows — but it is the path
+  // where the leak actually showed: a card whose CLI died mid-approval kept its
+  // bar, and the fresh session underneath had no idea what it was for.
+  it('the crash-respawn reap does too — the new session starts with no stale bar', () => {
+    const { perms, sent } = streamPerms();
+    const exitCodes: Record<string, number> = {};
+    const h = harness(undefined, dir, {
+      prior: card(),
+      spawnIds: ['live-1', 'live-2'],
+      exitCodes,
+      streamPermissions: perms,
+    });
+    start(h);
+    perms.offer('live-1', canUseTool('req-1'));
+    expect(perms.pendingRequests()).toHaveLength(1);
+
+    exitCodes['live-1'] = 1; // the CLI dies mid-approval
+    start(h); // revealing the card re-arms the lazy spawn
+
+    expect(perms.pendingRequests()).toEqual([]);
+    expect(sent).toEqual([{ sessionId: 'live-1', msg: autoDenial('req-1') }]);
+    expect(resolved(h)).toEqual(['stream:live-1:req-1']);
+  });
+
+  // The forget is per SESSION, and one router serves every card on the machine.
+  it("leaves every other session's question alone", () => {
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, {
+      prior: card(),
+      spawnIds: ['live-1', 'live-2'],
+      streamPermissions: perms,
+    });
+    start(h);
+    start(h, 'card-2');
+    perms.offer('live-1', canUseTool('req-1'));
+    perms.offer('live-2', canUseTool('req-2'));
+
+    h.call('sessions:dropLive', CARD);
+
+    expect(perms.pendingRequests().map((r) => r.requestId)).toEqual(['stream:live-2:req-2']);
+    expect(sent).toEqual([{ sessionId: 'live-1', msg: autoDenial('req-1') }]);
+    expect(resolved(h)).toEqual(['stream:live-1:req-1']);
+  });
+
+  // A push can be missed (the window was reloading, the panel had not mounted),
+  // so the renderer re-reads the outstanding list when it comes back. That
+  // replay is the second way a leaked request reaches the UI, and it would hand
+  // a fresh renderer a bar for a session that ended some time ago.
+  it('and the replay a remounting renderer reads no longer offers it', () => {
+    const { perms } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
+    start(h);
+    perms.offer('live-1', canUseTool('req-1'));
+    expect(h.call('sessions:pendingPermissions')).toEqual([
+      expect.objectContaining({ requestId: 'stream:live-1:req-1', cardId: CARD }),
+    ]);
+
+    h.call('sessions:dropLive', CARD);
+
+    expect(h.call('sessions:pendingPermissions')).toEqual([]);
+  });
+
+  it('the PTY-only wiring works with no StreamPermissions at all', () => {
+    const h = harness(undefined, dir, { prior: card() });
+    start(h);
+
+    expect(() => h.call('sessions:dropLive', CARD)).not.toThrow();
+    expect(h.call('sessions:pendingPermissions')).toEqual([]);
   });
 });
