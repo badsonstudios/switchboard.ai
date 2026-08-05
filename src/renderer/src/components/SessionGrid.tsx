@@ -31,6 +31,7 @@ import { Box, boxOnAnyDisplay, RescuedPopout, sanitizePopoutLayout, WorkArea } f
 import { captureSlot, openerRelative, placeAt } from '../lib/dock-slot';
 import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
 import { submitTarget } from '../lib/presentation-policy';
+import { createSweeper, SweepPort, SweepRequest } from '../lib/layout-sweep';
 import {
   cycleMode,
   isEnforced,
@@ -1501,26 +1502,17 @@ function layoutCards(): LayoutCard[] {
 }
 
 /**
- * A sweep in flight, and whether another was asked for while it ran.
+ * One sweep — the dockview grid it moves cards in, carried on the request.
  *
- * Module scope for the reason `laddering` is: a re-entrancy guard is not app
- * state. Every move below awaits, and the reactive triggers arrive in bursts —
- * a status change is one store write, and three sessions finishing inside a
- * second is three. Without this, two sweeps would interleave their reveals and
- * removals and the loser would be applying a plan computed against a workspace
- * that no longer exists. Coalescing to ONE re-run is enough: the plan is
- * recomputed from live state each time, so the last run always sees the truth.
+ * lib/layout-sweep owns the machine (one sweep at a time, at most one queued,
+ * moves in order, abort on teardown) and knows nothing about dockview, which is
+ * how that machine gets unit tests instead of only e2e ones. The api rides
+ * along rather than being read from module scope so a drained sweep provably
+ * runs against the grid it was asked for.
  */
-interface Sweep {
-  trigger: LayoutTrigger;
-  /** the un-maximize payload; queued WITH the trigger, because a queued sweep
-   *  that kept the trigger and dropped this would re-apply the mode instead of
-   *  putting the user's own prior arrangement back */
-  restore?: Readonly<Record<string, Ladder>>;
+interface LayoutSweep extends SweepRequest {
+  api: DockviewApi;
 }
-
-let sweeping = false;
-let resweep: Sweep | null = null;
 
 /**
  * Has the grid finished coming up?
@@ -1536,6 +1528,46 @@ let resweep: Sweep | null = null;
 let gridReady = false;
 
 /**
+ * The dockview half of the sweep: every effect lib/layout-sweep is not allowed
+ * to know about, in one object.
+ *
+ * Exported for `SessionGrid.test.tsx`, which asserts the two halves are wired
+ * to each other correctly — that `needed` really is "grid is not enforced on a
+ * reactive pass" and that `plan` really is computed over the rail order — none
+ * of which is reachable through `applyLayout` without a live grid.
+ */
+export const layoutSweepPort: SweepPort<LayoutSweep> = {
+  // `gridReady` is the fence a boot restore needs; the other two are the
+  // teardown and restore windows dockview must not be touched in.
+  ready: () => gridReady && !sessionStore.isTearingDown() && !sessionStore.isRestoringLayout(),
+
+  // The cheap early-out, before building the card list. GRID IS NOT ENFORCED ON
+  // `react` (lib/layout-mode's `LayoutTrigger` says why); an un-maximize always
+  // has work, because its whole payload is work.
+  needed: (req) => req.trigger !== 'react' || !!req.restore || isEnforced(sessionStore.getLayout()),
+
+  plan: (req) =>
+    layoutPlan({
+      state: sessionStore.getLayout(),
+      cards: layoutCards(),
+      activeCardId: sessionStore.getState().activeCard,
+      trigger: req.trigger,
+      ...(req.restore ? { restore: req.restore } : {}),
+    }),
+
+  // WITHOUT FOCUS: `focus` mode moves the big card to whatever you are already
+  // in, so grabbing focus would be the layout telling the user where to look.
+  // Single-card commands focus, because there the move IS the gesture.
+  applyMove: (move, req) => moveCardToRung(req.api, move.cardId, move.rung, false),
+
+  aborted: () => sessionStore.isTearingDown(),
+
+  onError: (err) => console.error('[layout] sweep failed', err),
+};
+
+const layoutSweeper = createSweeper(layoutSweepPort);
+
+/**
  * Put every session where the current layout mode wants it.
  *
  * `restore` is the un-maximize path: the rungs to put back, exactly (see
@@ -1546,57 +1578,10 @@ export function applyLayout(
   trigger: LayoutTrigger,
   restore?: Readonly<Record<string, Ladder>>
 ): void {
-  if (
-    !api ||
-    !gridReady ||
-    sessionStore.isTearingDown() ||
-    sessionStore.isRestoringLayout()
-  ) {
-    return;
-  }
-  if (sweeping) {
-    // a 'switch' outranks a queued 'react': the user asked for that one
-    if (trigger === 'switch' || !resweep) resweep = { trigger, ...(restore ? { restore } : {}) };
-    return;
-  }
-  // The cheap early-out, before building the card list: reactive triggers
-  // arrive on every status push (several a second while agents stream), and
-  // under the DEFAULT mode there is nothing for any of them to do.
-  if (trigger === 'react' && !restore && !isEnforced(sessionStore.getLayout())) return;
-  sweeping = true;
-  void (async () => {
-    try {
-      const moves = layoutPlan({
-        state: sessionStore.getLayout(),
-        cards: layoutCards(),
-        activeCardId: sessionStore.getState().activeCard,
-        trigger,
-        ...(restore ? { restore } : {}),
-      });
-      // Sequential ON PURPOSE, and awaited: a card comes home to the dock slot
-      // it remembers, and two reveals racing each other read that slot's group
-      // while the other one is still creating (or destroying) it. `toTabbed`
-      // and the reveal are the two async verbs, so both are awaited here even
-      // though `setCardLadder` itself fires and forgets.
-      for (const move of moves) {
-        // WITHOUT FOCUS: `focus` mode moves the big card to whatever you are
-        // already in, so grabbing focus would be the layout telling the user
-        // where to look. Single-card commands focus, because there the move IS
-        // the gesture.
-        await moveCardToRung(api, move.cardId, move.rung, false);
-        if (sessionStore.isTearingDown()) return;
-      }
-    } catch (err) {
-      // fail-open: a layout mode is a convenience, never a reason to throw out
-      // of an event handler and leave the workspace half-swept
-      console.error('[layout] sweep failed', err);
-    } finally {
-      sweeping = false;
-      const again = resweep;
-      resweep = null;
-      if (again) applyLayout(api, again.trigger, again.restore);
-    }
-  })();
+  if (!api) return;
+  // Nothing awaits a sweep: a click that changes the mode is done the moment
+  // the mode is written, and the cards catch up. The promise exists for tests.
+  void layoutSweeper.request({ api, trigger, ...(restore ? { restore } : {}) });
 }
 
 /** Switch the workspace to a named layout mode (§5.8). */
