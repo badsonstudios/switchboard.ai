@@ -238,6 +238,11 @@ describe('dockview lifecycle flags (written by the grid, read by the panel)', ()
 function liveMapSize(store: SessionStore): number {
   return (store as unknown as { liveToCard: Map<string, string> }).liveToCard.size;
 }
+// #224 is the same defect one registry over: the grant set was never released
+// at all, so its size is the witness for the same reason.
+function allowAllSize(store: SessionStore): number {
+  return (store as unknown as { allowAllByLive: Set<string> }).allowAllByLive.size;
+}
 
 describe('identity maps that used to be module globals', () => {
   let store: SessionStore;
@@ -293,6 +298,59 @@ describe('identity maps that used to be module globals', () => {
     store.setAllowAll('live-1');
     expect(store.isAllowAll('live-1')).toBe(true);
     expect(store.isAllowAll('live-2')).toBe(false); // the same card, respawned
+  });
+
+  // #224 — the grant is keyed by an ephemeral id and nothing dropped it, so it
+  // outlived the session, the card, and everything but the app run itself.
+  it("releases the closed card's allow-all grant, and only that card's", () => {
+    store.mapLiveToCard('live-1', 'card-A');
+    store.mapLiveToCard('live-2', 'card-B');
+    store.setAllowAll('live-1');
+    store.setAllowAll('live-2');
+
+    store.forgetCardLiveIds('card-A');
+
+    expect(store.isAllowAll('live-1')).toBe(false);
+    expect(store.isAllowAll('live-2')).toBe(true); // the neighbour is untouched
+    expect(allowAllSize(store)).toBe(1);
+  });
+
+  it("releases the corpse's grant when a respawn rebinds the card", () => {
+    store.mapLiveToCard('live-1', 'card-A');
+    store.setAllowAll('live-1');
+    store.mapLiveToCard('live-1b', 'card-A'); // card-A crashed and respawned
+
+    // the fresh session prompts again (it always did) — and the dead one's
+    // grant is gone rather than parked for the rest of the run
+    expect(store.isAllowAll('live-1b')).toBe(false);
+    expect(store.isAllowAll('live-1')).toBe(false);
+    expect(allowAllSize(store)).toBe(0);
+  });
+
+  it('holds at most one grant per card across repeated grant-respawn cycles', () => {
+    for (let i = 0; i < 4; i++) {
+      store.mapLiveToCard(`live-${i}`, 'card-A');
+      store.setAllowAll(`live-${i}`);
+    }
+    // the growth itself: four granted sessions on one card used to leave four
+    // entries, released by nothing at all
+    expect(allowAllSize(store)).toBe(1);
+    store.forgetCardLiveIds('card-A');
+    expect(allowAllSize(store)).toBe(0);
+  });
+
+  it('keeps the grant when the SAME live session is rebound to its card', () => {
+    // a remount over a still-running session: hide/reveal, a ladder move or a
+    // pop-out re-enters the lazy spawn, and `sessions:create` adopts the running
+    // session and returns its own id. Revoking there would make a granted
+    // session start prompting again mid-run.
+    store.mapLiveToCard('live-1', 'card-A');
+    store.setAllowAll('live-1');
+    store.mapLiveToCard('live-1', 'card-A');
+
+    expect(store.isAllowAll('live-1')).toBe(true);
+    expect(store.cardIdForLive('live-1')).toBe('card-A');
+    expect(liveMapSize(store)).toBe(1);
   });
 
   it('dock-back is a one-shot flag: taking it consumes it', () => {
