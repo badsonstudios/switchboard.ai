@@ -229,3 +229,99 @@ export function collapsedRows(
       };
     });
 }
+
+// ── idle aggregation (P2-E9-08) ─────────────────────────────────────────────
+//
+// §5.8, verbatim: "idle sessions collapse to compact rows; more than ~3 idle
+// aggregate into a single 'N idle sessions' row. Working / errored /
+// currently-focused sessions always keep their own row."
+//
+// WHERE THIS LIVES, and why it is not a second auto-collapse. The first half of
+// that bullet — idle sessions BECOMING compact rows — is already shipped: the
+// `collapsed` rung is the compact row (E9-05), and E9-07's focus and queue modes
+// are what put the sessions you are not watching onto it. A standing sweep that
+// collapsed idle cards on its own would contradict §5.8's own amended default
+// (`always-visible`, 2026-08-04: nothing minimizes unasked), so this item adds
+// no such sweep. It implements the SECOND half — what the strip does once it has
+// more idle rows in it than are worth reading one by one.
+//
+// The aggregate is a DISCLOSURE, not a rung: nothing moves on the ladder, no
+// session changes state, and each folded session is still in the rail, its lamp
+// and the events list. All the fold does is stop eight identical "idle" chips
+// from crowding out the two rows that are actually saying something.
+
+/**
+ * How many foldable rows it takes before they fold ("more than ~3").
+ *
+ * At three or fewer, listing them costs less than the click it takes to unfold
+ * them — the fold only pays for itself once the strip is longer than a glance.
+ */
+export const IDLE_FOLD_MIN = 4;
+
+/** One thing to draw in the strip: a session's row, or the aggregate standing
+ *  in for several of them. */
+export type StripItem =
+  | { kind: 'row'; row: CollapsedRow }
+  | { kind: 'fold'; rows: readonly CollapsedRow[] };
+
+/**
+ * May this row disappear into the aggregate?
+ *
+ * The three carve-outs are §5.8's, in its own order:
+ *
+ *   • WORKING is not idle. `token` is lib/rail-view's vocabulary, so 'starting'
+ *     reads as working here exactly as it does in the rail and on the lamps —
+ *     one rule, three surfaces, as it has been since E9-04.
+ *   • ERRORED is not idle, and neither is anything that NEEDS YOU. `crashed`,
+ *     `needs-permission`, `needs-input` and `done` all carry `needsYou`, and the
+ *     one row you are looking for is never the one we hide. (The `needsYou` test
+ *     is redundant against `token === 'idle'` today and deliberately kept: a
+ *     future status that reads idle but wants a human must not slip in behind a
+ *     token check.)
+ *   • THE FOCUSED SESSION keeps its own row. `activeCardId` is the same
+ *     authority lib/layout-mode exempts as "the card you are IN", so the strip
+ *     and the layout engine cannot disagree about which session that is. It is
+ *     belt-and-braces rather than the common case — a focused card normally has
+ *     a dockview panel and so is not in the strip at all — and it stays because
+ *     the strip must not silently depend on that invariant holding for every
+ *     future thing that drives rungs from outside a card.
+ */
+export function foldableRow(row: CollapsedRow, activeCardId: string | null): boolean {
+  return row.token === 'idle' && !row.needsYou && row.cardId !== activeCardId;
+}
+
+/**
+ * The strip's contents: rows in rail order, with the idle ones folded once
+ * there are enough of them.
+ *
+ * The aggregate takes the POSITION OF THE FIRST ROW IT SWALLOWS rather than
+ * being appended, so the rows that keep their place keep it: the strip is
+ * ordered by the rail (the numbering authority behind Ctrl+1..9), and a fold
+ * that shunted itself to one end would reorder everything around it.
+ *
+ * Pure, and it returns the folded rows rather than only their count — the view
+ * needs them to list on disclosure, and the alternative (handing back ids and
+ * making the component look them up again) is a second derivation of the same
+ * list.
+ */
+export function stripItems(
+  rows: readonly CollapsedRow[],
+  opts?: { activeCardId?: string | null }
+): StripItem[] {
+  const activeCardId = opts?.activeCardId ?? null;
+  const folded = rows.filter((r) => foldableRow(r, activeCardId));
+  if (folded.length < IDLE_FOLD_MIN) return rows.map((row) => ({ kind: 'row', row }));
+  const items: StripItem[] = [];
+  let placed = false;
+  for (const row of rows) {
+    if (foldableRow(row, activeCardId)) {
+      if (!placed) {
+        items.push({ kind: 'fold', rows: folded });
+        placed = true;
+      }
+      continue;
+    }
+    items.push({ kind: 'row', row });
+  }
+  return items;
+}

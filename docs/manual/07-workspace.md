@@ -139,6 +139,33 @@ is actually collapsed, and disappears again when nothing is. Each row shows the
 session's color, its name and what it's doing. Click a row to bring that session
 straight back.
 
+### When the strip fills up with idle sessions
+
+Collapse enough sessions and the strip stops being useful: eight rows all saying
+*idle* crowd out the one that says *Wants permission to run*. So once **four or
+more** of the collapsed sessions are idle, they fold together into a single row
+that just says **"5 idle sessions"**.
+
+Click that row to list them all, and click it again to fold them back up. It's
+only a way of drawing the strip — nothing moves, nothing stops, and every one of
+those sessions is still in the Sessions list on the left, still on its own row,
+still one click away.
+
+**Three kinds of session never get folded in:**
+
+- **anything that isn't idle** — working, crashed, or one you've popped out;
+- **anything waiting on you** — asked a question, wants permission, or finished
+  and you haven't looked. The row you're looking for is never the one that
+  disappears;
+- **the session you're in.**
+
+It all follows live status, so a session that starts working comes straight back
+out as its own row while the rest stay folded — and drops back in when it goes
+idle again. Below four idle sessions there's no fold at all; they're just rows.
+
+Whether the fold is open or closed isn't remembered between restarts — it's a
+"let me look at that for a second", not part of your layout.
+
 ### Coming back
 
 Click a session anywhere and it returns: its row in the Sessions list, its row

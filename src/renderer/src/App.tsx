@@ -745,7 +745,11 @@ export function App(): React.JSX.Element {
       {/* §5.8's second rung. Outside the grid for the same reason the lamps
           are — the grid is what a collapsed card has just left. Renders
           nothing when nothing is collapsed. */}
-      <CollapsedStrip rows={collapsed} onExpand={(cardId) => focusCard(cardId)} />
+      <CollapsedStrip
+        rows={collapsed}
+        activeCardId={activeCard}
+        onExpand={(cardId) => focusCard(cardId)}
+      />
       <div style={{ flex: 1, display: 'flex', minBlockSize: 0 }}>
         {!railHidden && (
           <SessionsRail
