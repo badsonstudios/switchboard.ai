@@ -172,6 +172,12 @@ itself as a button and says whether it's currently open or closed, and reading
 the conversation with a screen reader's own navigation keys reaches every one of
 them regardless of `Tab`.
 
+**Each conversation is named after its session.** With several cards on screen
+there are several conversations, so jumping between regions announces
+*"Conversation — my-project"* rather than four things all called
+"Conversation" — you can tell which session you've landed in without reading
+anything in it. Rename a session and its conversation is renamed with it.
+
 ## Working the rest of the window with the keyboard
 
 Everything outside the conversation works from the keyboard too — the Sessions

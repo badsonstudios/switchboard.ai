@@ -55,6 +55,7 @@ export const sessionPanels: PanelContribution[] = [
       <FeedView
         sessionId={ctx.sessionId}
         cardId={ctx.cardId}
+        title={ctx.title}
         visible={ctx.visible}
         status={ctx.status}
         binding={ctx.binding}

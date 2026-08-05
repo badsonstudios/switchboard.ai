@@ -183,7 +183,7 @@ test.describe('keyboard paths swept by #197', () => {
     const names = folders.map((f) => path.basename(f));
     await expect(w.getByText(names[0]).first()).toBeVisible({ timeout: 25_000 });
     await a.app.evaluate(({ dialog }, d) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [d] });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
     }, folders[1]);
     await w.getByRole('button', { name: '+ session' }).click();
     await expect(w.locator('[data-urgency-lamp]')).toHaveCount(2, { timeout: 25_000 });

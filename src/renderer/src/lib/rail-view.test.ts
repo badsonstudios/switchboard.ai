@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
   presentStatus,
+  statusVars,
   needCount,
   clampRailWidth,
   RAIL_WIDTH_DEFAULT,
   RAIL_WIDTH_MIN,
   RAIL_WIDTH_MAX,
+  type StatusToken,
 } from './rail-view';
 
 describe('presentStatus', () => {
@@ -46,6 +48,30 @@ describe('presentStatus', () => {
       expect(p.token, String(s)).toBe('idle');
       expect(p.spinner, String(s)).toBe(false);
     }
+  });
+});
+
+describe('statusVars', () => {
+  it('names the hue and the ink of a ramp position', () => {
+    expect(statusVars('crashed')).toEqual({
+      hue: 'var(--status-crashed)',
+      ink: 'var(--status-crashed-ink)',
+    });
+  });
+
+  it('never offers the raw hue as a text color', () => {
+    // the status pill's bug in one line (#221): the hue is for dots and tints,
+    // and the ink is the only one measured against what is behind the text
+    for (const s of ['working', 'needs-input', 'needs-permission', 'idle', 'done', 'crashed']) {
+      const v = statusVars(s as StatusToken);
+      expect(v.ink, s).toMatch(/-ink\)$/);
+      expect(v.ink, s).not.toBe(v.hue);
+    }
+  });
+
+  it('takes whatever presentStatus folded a raw status into', () => {
+    expect(statusVars(presentStatus('suspended').token).ink).toBe('var(--status-idle-ink)');
+    expect(statusVars(presentStatus('starting').token).ink).toBe('var(--status-working-ink)');
   });
 });
 

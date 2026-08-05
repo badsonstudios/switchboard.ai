@@ -157,7 +157,7 @@ test.describe('a session card', () => {
     await expect.poll(() => app.windows().length, { timeout: 15_000 }).toBe(2);
     // stub the native folder picker so "+ session" resolves to folder2
     await app.evaluate(({ dialog }, f) => {
-      dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [f] })) as typeof dialog.showOpenDialog;
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [f] });
     }, folder2);
     await window.getByRole('button', { name: '+ session' }).click();
     // the new card must appear in the MAIN window even though a popout was active

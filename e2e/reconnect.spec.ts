@@ -4,8 +4,13 @@
 // signal with a synthetic work-area list that "contains" the lost monitor.
 // Accepting re-pops the card; the offer itself is never automatic.
 import { test, expect } from '@playwright/test';
-import fs from 'fs';
-import { launchApp, LaunchedApp, tempProjectFolder, workspaceJsonPath } from './fixtures/app';
+import {
+  launchApp,
+  LaunchedApp,
+  readWorkspaceFile,
+  tempProjectFolder,
+  writeWorkspaceFile,
+} from './fixtures/app';
 
 // popout windows are flaky under xvfb — covered on Windows (+macOS locally),
 // same skip as session.spec's popout tests
@@ -32,12 +37,14 @@ test.describe('display reconnect offer (E8-06)', () => {
     await first.close();
 
     // 2. move the saved popout onto a "monitor" that no longer exists
-    const wsPath = workspaceJsonPath(first.home);
-    const ws = JSON.parse(fs.readFileSync(wsPath, 'utf8'));
+    const ws = readWorkspaceFile(first.home);
+    // NOT `persistedLayout(ws)`: "no popout was persisted" is the failure this
+    // test guards, and the labelled assertion below is its designated reporter.
+    // A throwing reader would pre-empt it with a fixture-level error instead.
     const pg = ws.layout?.popoutGroups?.[0];
     expect(pg, 'a popout group was persisted').toBeTruthy();
-    pg.position = { left: FAR.x + 100, top: FAR.y + 60, width: 800, height: 600 };
-    fs.writeFileSync(wsPath, JSON.stringify(ws));
+    pg!.position = { left: FAR.x + 100, top: FAR.y + 60, width: 800, height: 600 };
+    writeWorkspaceFile(first.home, ws);
 
     // 3. relaunch: the popout's position is rescued — it reopens near the
     //    main window (E8-02 semantics), NOT out at the lost display's spot

@@ -14,8 +14,14 @@
 //     PRIOR arrangement back rather than re-applying the mode.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
-import fs from 'fs';
-import { launchApp, LaunchedApp, tempProjectFolder, hookPoster, workspaceJsonPath } from './fixtures/app';
+import {
+  launchApp,
+  LaunchedApp,
+  tempProjectFolder,
+  hookPoster,
+  persistedUi,
+  readWorkspaceFile,
+} from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -49,7 +55,7 @@ async function palette(w: Page, title: string): Promise<void> {
 async function addSession(a: LaunchedApp): Promise<string> {
   const dir = tempProjectFolder();
   await a.app.evaluate(({ dialog }, d) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [d] });
+    dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
   }, dir);
   await a.window.getByRole('button', { name: '+ session' }).click();
   const name = path.basename(dir);
@@ -170,8 +176,7 @@ test.describe('layout modes (E9-07)', () => {
     await a.close();
 
     // the mode is in the ui blob, where the done-when says it lives
-    const blob = JSON.parse(fs.readFileSync(workspaceJsonPath(home), 'utf8'));
-    const ui = (blob.ui ?? blob.state?.ui) as { layoutMode?: { mode?: string } };
+    const ui = persistedUi(readWorkspaceFile(home));
     expect(ui.layoutMode?.mode).toBe('focus');
 
     a = await launchApp({ home });

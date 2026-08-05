@@ -45,6 +45,7 @@ import {
 } from '../lib/layout-mode';
 import { presentStatus } from '../lib/rail-view';
 import { tabStripAction } from '../lib/tabstrip-keys';
+import { StatusPill } from './StatusPill';
 import type { Ladder } from '../lib/presentation';
 import { pickAdoptedGroupId } from '../lib/groups';
 import { uiGet, uiSet } from '../lib/ui-state';
@@ -151,6 +152,15 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // hide-by-default lasted one day of dogfooding).
   const presentation = React.useSyncExternalStore(subscribeStore, () =>
     sessionStore.getPresentation(cardId)
+  );
+  // The session's CURRENT title, for panels that have to name themselves
+  // (#196 — the Session view's landmark). Read from the store rather than from
+  // `props.api.title`: dockview is told a panel's title once, when the card is
+  // created, and a rename from the rail goes to the main process and comes
+  // back through `setSessions` — so the panel api's copy is the title the card
+  // had at birth.
+  const cardTitle = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getCardTitle(cardId)
   );
   const view = presentation.view;
   const poppedOut = presentation.poppedOut;
@@ -569,6 +579,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const panelCtx: PanelContext = {
     sessionId: live?.id ?? '',
     cardId,
+    // The store's answer first; `props.api.title` only as the boot-order net
+    // (a card mounts before the first `setSessions` lands). Deliberately NOT
+    // falling through to `folder` after that: an absolute path is a poor thing
+    // to hear announced, and a panel with no title at all says the honest
+    // generic instead.
+    title: cardTitle ?? props.api.title,
     visible,
     folder,
     ...docTheme(),
@@ -757,7 +773,9 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 style={{
                   fontSize: 9.5,
                   fontFamily: 'var(--font-mono)',
-                  color: live.autonomy === 'full-auto' ? 'var(--status-crashed)' : 'var(--muted)',
+                  // -ink, not the raw hue: this is 9.5px TEXT on --panel2, where
+                  // the hue measures 3.1:1 on daylight (#221)
+                  color: live.autonomy === 'full-auto' ? 'var(--status-crashed-ink)' : 'var(--muted)',
                   border: '1px solid var(--border)',
                   borderRadius: 4,
                   paddingInline: 5,
@@ -767,7 +785,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 {t(`autonomy.${live.autonomy}`)}
               </span>
             )}
-            <span style={statusPillStyle(status)}>{t(`status.${status}`)}</span>
+            <StatusPill status={status} label={t(`status.${status}`)} />
             {/* §5.8's ladder, one rung down (P2-E9-05). A mouse gesture for the
                 thing the two bindings and the palette also do — the card gives
                 its slot back and becomes a row in the collapsed strip, still
@@ -955,6 +973,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               background: 'var(--panel2)',
             }}
           >
+
             {/* A REAL tablist (#197). Only the tabs are inside it — the plan
                 counter, the git chip and the usage strip share the strip's row
                 but are readouts, and a tablist that contained them would be
@@ -1014,15 +1033,19 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                   >
                     {t(p.titleKey)}
                     {badge !== null && (
-                      <span style={{ color: 'var(--status-needs-input)', marginInlineStart: 4 }}>{badge}</span>
+                      <span style={{ color: 'var(--status-needs-input-ink)', marginInlineStart: 4 }}>{badge}</span>
                     )}
                   </button>
                 );
               })}
             </div>
+
             <span style={{ flex: 1, minInlineSize: 8 }} />
             {plan && (
-              <span title={t('grid.planTitle')} style={{ color: 'var(--status-working)', fontSize: 10, fontFamily: 'var(--font-mono)' }}>
+              <span
+                title={t('grid.planTitle')}
+                style={{ color: 'var(--status-working-ink)', fontSize: 10, fontFamily: 'var(--font-mono)' }}
+              >
                 {t('grid.plan', { done: plan.completed, total: plan.total })}
               </span>
             )}
@@ -1143,33 +1166,6 @@ function menuConfirmBtn(primary: boolean): React.CSSProperties {
   };
 }
 
-// status pill colors mirror the rail's STATUS_TOKEN (chrome.tsx)
-const STATUS_COLOR: Record<string, string> = {
-  starting: 'var(--status-idle)',
-  working: 'var(--status-working)',
-  'needs-input': 'var(--status-needs-input)',
-  'needs-permission': 'var(--status-needs-permission)',
-  idle: 'var(--status-idle)',
-  done: 'var(--status-done)',
-  crashed: 'var(--status-crashed)',
-  suspended: 'var(--faint)',
-};
-function statusPillStyle(status: string): React.CSSProperties {
-  const c = STATUS_COLOR[status] ?? 'var(--faint)';
-  return {
-    fontSize: 9.5,
-    fontWeight: 600,
-    letterSpacing: 0.3,
-    color: c,
-    background: `color-mix(in srgb, ${c} 14%, transparent)`,
-    border: `1px solid color-mix(in srgb, ${c} 40%, transparent)`,
-    borderRadius: 4,
-    paddingInline: 6,
-    paddingBlock: 2,
-    fontFamily: 'var(--font-ui)',
-    whiteSpace: 'nowrap',
-  };
-}
 function vtabStyle(active: boolean, disabled: boolean, accent?: string): React.CSSProperties {
   const edge = accent ?? 'var(--status-working)';
   // The active tab has to read clearly at a glance across 7–8 cards: an accent
@@ -2447,7 +2443,7 @@ export function SessionGrid(props: {
         }}
       >
         {error && (
-          <span style={{ color: 'var(--status-crashed)', fontSize: 11, alignSelf: 'center' }}>
+          <span style={{ color: 'var(--status-crashed-ink)', fontSize: 11, alignSelf: 'center' }}>
             {error}
           </span>
         )}

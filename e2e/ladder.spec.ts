@@ -15,13 +15,16 @@
 // what reveals the card is the real status machine and not a mock.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
-import fs from 'fs';
 import {
   launchApp,
   LaunchedApp,
   tempProjectFolder,
   hookPoster,
-  workspaceJsonPath,
+  gridLeafViews,
+  persistedLayout,
+  persistedUi,
+  readWorkspaceFile,
+  writeWorkspaceFile,
 } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -48,7 +51,7 @@ async function palette(w: Page, title: string): Promise<void> {
 async function addSession(a: LaunchedApp): Promise<string> {
   const dir = tempProjectFolder();
   await a.app.evaluate(({ dialog }, d) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [d] });
+    dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
   }, dir);
   await a.window.getByRole('button', { name: '+ session' }).click();
   const name = path.basename(dir);
@@ -86,17 +89,16 @@ async function twoGroups(): Promise<LaunchedApp> {
   await first.window.waitForTimeout(1200); // let the layout reach disk
   await first.close();
 
-  const file = workspaceJsonPath(first.home);
-  const json = JSON.parse(fs.readFileSync(file, 'utf8'));
-  const layout = json.layout ?? json.state.layout;
-  const views: string[] = layout.grid.root.data[0].data.views;
+  const ws = readWorkspaceFile(first.home);
+  const layout = persistedLayout(ws);
+  const views = gridLeafViews(layout.grid.root.data[0]);
   expect(views.length, 'need two panels to split').toBe(2);
   const half = Math.floor(layout.grid.width / 2);
   layout.grid.root.data = [
     { type: 'leaf', data: { views: views.slice(0, 1), activeView: views[0], id: '1' }, size: half },
     { type: 'leaf', data: { views: views.slice(1), activeView: views[1], id: '2' }, size: half },
   ];
-  fs.writeFileSync(file, JSON.stringify(json));
+  writeWorkspaceFile(first.home, ws);
 
   const a = await launchApp({ home: first.home });
   await expect(a.window.locator('.dv-groupview')).toHaveCount(2, { timeout: 25_000 });
@@ -219,7 +221,7 @@ test.describe('presentation ladder (E9-05)', () => {
     // a second session, opened INSIDE the group (the E12-03 path)
     const dir = tempProjectFolder();
     await a.app.evaluate(({ dialog }, d) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [d] });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
     }, dir);
     await w.getByTitle('New session in this group').click();
     const member = path.basename(dir);
@@ -404,8 +406,7 @@ test.describe('presentation ladder (E9-05)', () => {
       cardId: string;
     }>;
     const idOf = (t: string): string => cards.find((c) => c.title === t)!.cardId;
-    const blob = JSON.parse(fs.readFileSync(workspaceJsonPath(home), 'utf8'));
-    const ui = (blob.ui ?? blob.state?.ui) as { presentation?: Record<string, { ladder?: string }> };
+    const ui = persistedUi(readWorkspaceFile(home));
     const pres = ui.presentation ?? {};
     expect(pres[idOf(tabbed)]?.ladder).toBe('tabbed');
     expect(pres[idOf(collapsed)]?.ladder).toBe('collapsed');

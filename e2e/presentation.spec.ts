@@ -32,7 +32,7 @@ async function hideActive(w: Page): Promise<void> {
 async function addSession(a: LaunchedApp): Promise<string> {
   const dir = tempProjectFolder();
   await a.app.evaluate(({ dialog }, d) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [d] });
+    dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
   }, dir);
   await a.window.getByRole('button', { name: '+ session' }).click();
   await expect(row(a.window, path.basename(dir))).toBeVisible({ timeout: 25_000 });

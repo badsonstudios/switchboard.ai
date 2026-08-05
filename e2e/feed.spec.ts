@@ -152,7 +152,7 @@ test.describe('Feed view (E12-06)', () => {
 
     // switch to another session, then come back
     await a.app.evaluate(({ dialog }, d) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [d] });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
     }, other);
     await w.getByRole('button', { name: '+ session' }).click();
     await expect(w.getByText(path.basename(other)).first()).toBeVisible({ timeout: 25_000 });
@@ -239,7 +239,7 @@ test.describe('Feed view (E12-06)', () => {
     await expect(w.getByText('TAIL_BLOCK_60')).toBeInViewport({ timeout: 15_000 });
 
     await a.app.evaluate(({ dialog }, d) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [d] });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
     }, other);
     await w.getByRole('button', { name: '+ session' }).click();
     await expect(w.getByText(path.basename(other)).first()).toBeVisible({ timeout: 25_000 });
@@ -541,6 +541,85 @@ test.describe('Feed view (E12-06)', () => {
     expect((await focused()).region).toBe(true);
     await w.keyboard.press('Tab');
     await expect(w.getByPlaceholder(/Prompt this session/)).toBeFocused();
+  });
+
+  // #196. #174 named the conversation landmark and gave every card the same
+  // name, so a screen-reader user with four cards open got four identical
+  // landmarks. The name now carries the session title — and the title it
+  // carries has to be the CURRENT one, which is the half a prop threaded from
+  // dockview's panel api would have got wrong: dockview is told a panel's
+  // title once, at creation, and never again.
+  test('the conversation landmark names its session, and follows a rename (#196)', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    const title = folder.split(/[\\/]/).pop()!;
+    // the RAIL row, not the card header: it is what the rename below acts on
+    await expect(w.locator('nav [draggable="true"]')).toHaveCount(1, { timeout: 25_000 });
+
+    // named by role and accessible name — the same lookup a screen reader's
+    // landmark list makes, rather than an attribute we happen to have written
+    await expect(w.getByRole('region', { name: `Conversation — ${title}` })).toBeVisible();
+
+    // rename from the rail: double-click the row, retype, Enter
+    await w.locator('nav [draggable="true"]').first().dblclick();
+    const field = w.locator('nav input');
+    await expect(field).toBeVisible();
+    await field.fill('renamed-session');
+    await field.press('Enter');
+
+    await expect(
+      w.getByRole('region', { name: 'Conversation — renamed-session' })
+    ).toBeVisible({ timeout: 10_000 });
+    await expect(w.getByRole('region', { name: `Conversation — ${title}` })).toHaveCount(0);
+  });
+
+  // A popped-out card is a first-class host (#226), and its landmark is the
+  // one that most needs a name: the window has no rail and no tab strip, so
+  // the region's name is the only thing in it that says which session it is.
+  // dockview ADOPTS the group's DOM into the new window rather than
+  // re-rendering it, so this is really asserting that nothing about the name
+  // depended on the main window — including the rename that arrives after the
+  // move.
+  test('a popped-out conversation keeps its named landmark (#196)', async () => {
+    test.skip(
+      process.platform === 'linux',
+      'popout opens a 2nd OS window — unreliable under headless xvfb'
+    );
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    const title = folder.split(/[\\/]/).pop()!;
+    await expect(w.locator('nav [draggable="true"]')).toHaveCount(1, { timeout: 25_000 });
+
+    await w.getByTitle('Pop out into its own window').click();
+    // by URL, not by "the other one": devtools or a rescued window would both
+    // satisfy `!== w` and neither hosts a session
+    await expect
+      .poll(() => a.app.windows().filter((p) => p.url().includes('popout.html')).length, {
+        timeout: 15_000,
+      })
+      .toBe(1);
+    const popout = a.app.windows().find((p) => p.url().includes('popout.html'))!;
+    await popout.waitForLoadState('domcontentloaded');
+
+    await expect(popout.getByRole('region', { name: `Conversation — ${title}` })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // renamed from the main window's rail, the popout's landmark follows
+    await w.locator('nav [draggable="true"]').first().dblclick();
+    const field = w.locator('nav input');
+    await expect(field).toBeVisible();
+    await field.fill('popped-and-renamed');
+    await field.press('Enter');
+    await expect(
+      popout.getByRole('region', { name: 'Conversation — popped-and-renamed' })
+    ).toBeVisible({ timeout: 15_000 });
+
+    // hand the second OS window back before teardown rather than leaving it to
+    // the tree-kill: a live popout has outlived cleanup on CI before
+    await popout.evaluate(() => window.close());
   });
 
   test('the composer drives the real CLI over the PTY (E10-02)', async () => {

@@ -15,20 +15,38 @@
 // a band of collapsed sessions with no collapsed sessions in it is just a bar
 // of dead chrome above the workspace.
 //
+// P2-E9-08 added the other half of §5.8's idle-collapse bullet: once more than
+// ~3 of these rows are idle they fold into a single expandable "N idle
+// sessions" row, so the strip keeps showing the sessions that are saying
+// something instead of a wall of identical idle chips.
+//
 // Ordering and status vocabulary are lib/ladder's and lib/rail-view's; this
-// file only paints.
+// file only paints — including WHICH rows fold, which is lib/ladder's
+// `stripItems`.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { CollapsedRow } from '../lib/ladder';
+import { CollapsedRow, stripItems } from '../lib/ladder';
 
 export function CollapsedStrip(props: {
   /** collapsed sessions, in rail order (lib/ladder collapsedRows) */
   rows: readonly CollapsedRow[];
+  /** the card the user is in — §5.8 never folds it away (P2-E9-08) */
+  activeCardId?: string | null;
   /** bring this session back to its slot (§5.8's reveal contract) */
   onExpand: (cardId: string) => void;
 }): React.JSX.Element | null {
   const { t } = useTranslation();
+  // §5.8's idle aggregation (P2-E9-08). The DISCLOSURE is deliberately local and
+  // deliberately not persisted: it is a "let me look at that for a second", not
+  // a workspace arrangement, and §5.25's promise to bring the workspace back as
+  // you left it is about where sessions ARE, not about which summary row you
+  // happened to have open when you quit.
+  const [showIdle, setShowIdle] = React.useState(false);
+  const items = React.useMemo(
+    () => stripItems(props.rows, { activeCardId: props.activeCardId ?? null }),
+    [props.rows, props.activeCardId]
+  );
   if (props.rows.length === 0) return null;
   return (
     <div
@@ -52,10 +70,65 @@ export function CollapsedStrip(props: {
       <span style={{ flex: '0 0 auto', fontSize: 10, color: 'var(--faint)', whiteSpace: 'nowrap' }}>
         {t('ladder.stripLabel')}
       </span>
-      {props.rows.map((r) => (
-        <Row key={r.cardId} row={r} onExpand={props.onExpand} t={t} />
-      ))}
+      {items.map((item) =>
+        item.kind === 'row' ? (
+          <Row key={item.row.cardId} row={item.row} onExpand={props.onExpand} t={t} />
+        ) : (
+          <React.Fragment key="idle-fold">
+            <IdleFold
+              count={item.rows.length}
+              open={showIdle}
+              onToggle={() => setShowIdle((o) => !o)}
+              t={t}
+            />
+            {/* Disclosed rows are ORDINARY rows, so a folded session is exactly
+                two gestures from being back on screen (§4's two-gesture rule):
+                open the fold, click the session. One gesture, if you go via the
+                rail — which lists it whether the fold is open or not. */}
+            {showIdle &&
+              item.rows.map((r) => (
+                <Row key={r.cardId} row={r} onExpand={props.onExpand} t={t} />
+              ))}
+          </React.Fragment>
+        )
+      )}
     </div>
+  );
+}
+
+/** §5.8's "N idle sessions" row (P2-E9-08) — a summary that opens, not a rung.
+ *  It wears the collapsed row's chrome so the strip reads as one list, and a
+ *  dashed edge so it is visibly a container rather than a session. */
+function IdleFold(props: {
+  count: number;
+  open: boolean;
+  onToggle: () => void;
+  t: TFunction;
+}): React.JSX.Element {
+  const { t } = props;
+  const label = props.open
+    ? t('ladder.idleFoldHide', { count: props.count })
+    : t('ladder.idleFoldShow', { count: props.count });
+  return (
+    <button
+      type="button"
+      className="collapsed-row idle-fold"
+      // the COUNT on the attribute, like the strip's other data-* facts: it is
+      // what the rule is about, and reading it out of the label would make the
+      // e2e depend on a translated string
+      data-idle-fold={props.count}
+      data-open={props.open}
+      aria-expanded={props.open}
+      title={label}
+      aria-label={label}
+      onClick={props.onToggle}
+    >
+      <span aria-hidden className="collapsed-accent" />
+      <span className="collapsed-name">{t('ladder.idleFold', { count: props.count })}</span>
+      <span aria-hidden className="collapsed-state">
+        {props.open ? t('ladder.idleFoldOpenIcon') : t('ladder.idleFoldIcon')}
+      </span>
+    </button>
   );
 }
 
