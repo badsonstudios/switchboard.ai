@@ -70,6 +70,9 @@
     "menuRename": "Rename…",
     "menuClose": "Close session",
     "menuLabel": "Actions for {title}",
+    "menuMove": "Move to group",
+    "movedTo": "{title} moved to {group}",
+    "movedOut": "{title} is no longer in a group",
     "rowLabel": "{title} — {state}",
     "rowDetail": "{detail}, {state}"
   },

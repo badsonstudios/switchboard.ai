@@ -210,6 +210,24 @@ it, `Enter` picks, and `Esc` closes it and puts you back on the row you started
 from. That menu is where **Open changes**, **Rename…** and **Close session**
 live, so renaming a session doesn't need a double-click.
 
+#### Moving a session into a group without dragging
+
+Keep walking that menu past **Close session** and you reach **Move to group** —
+every group you've made, then **Ungrouped**, with a tick beside the one the
+session is in now. `Enter` on any of them moves it, exactly as
+[dragging the row onto that group](07-workspace.md#groups) would;
+`Enter` on **Ungrouped** takes it out of its group, the same as dropping it on
+empty space.
+
+The move is read out when it happens — *"trading-app moved to Backend"* — and
+you're left standing on the row in its new home, ready to press `Shift+F10`
+again. If the group you moved it into happens to be folded shut, you land on
+that group's name instead, which tells you it's closed; `Enter` opens it.
+
+[Automatic groups](07-workspace.md#automatic-groups) aren't on the list. Their
+membership is worked out from the session's folder rather than chosen, so there
+is nothing there to pick — the same reason you can't drag a session into one.
+
 ### The lamp strip
 
 Each lamp along the top is a button: `Tab` reaches it, `Enter` jumps to that
