@@ -36,6 +36,24 @@ async function poll<T>(fn: () => T | null, timeoutMs = 20_000): Promise<T> {
   }
 }
 
+/**
+ * The hook listener's answer to a PreToolUse POST, as `hook-listener.ts` writes
+ * it. `hookSpecificOutput` is absent when the request was NOT held — which is
+ * itself something a test below asserts, so it is optional here.
+ */
+interface HookResponse {
+  hookSpecificOutput?: {
+    hookEventName: string;
+    permissionDecision: 'allow' | 'deny';
+    permissionDecisionReason: string;
+  };
+}
+
+/** `JSON.parse` hands back `any`; this is where that stops for this file. */
+function parseVerdict(body: string): HookResponse {
+  return JSON.parse(body) as HookResponse;
+}
+
 test.describe('inline approval bar (E10-04)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
@@ -73,18 +91,18 @@ test.describe('inline approval bar (E10-04)', () => {
     await expect(w.getByText('Allow Edit?')).toBeVisible({ timeout: 10_000 });
     await expect(w.getByText('new-one')).toBeVisible(); // new_string pane
     await w.getByRole('button', { name: 'Allow', exact: true }).click();
-    expect(JSON.parse(await p1).hookSpecificOutput.permissionDecision).toBe('allow');
+    expect(parseVerdict(await p1).hookSpecificOutput!.permissionDecision).toBe('allow');
     await expect(w.getByText('Allow Edit?')).toHaveCount(0);
 
     // 2. next request -> "Allow all (this session)"
     const p2 = preToolUse('two');
     await expect(w.getByText('Allow Edit?')).toBeVisible({ timeout: 10_000 });
     await w.getByRole('button', { name: 'Allow all (this session)' }).click();
-    expect(JSON.parse(await p2).hookSpecificOutput.permissionDecision).toBe('allow');
+    expect(parseVerdict(await p2).hookSpecificOutput!.permissionDecision).toBe('allow');
 
     // 3. third request auto-allows WITHOUT the bar ever appearing
     const p3 = preToolUse('three');
-    expect(JSON.parse(await p3).hookSpecificOutput.permissionDecision).toBe('allow');
+    expect(parseVerdict(await p3).hookSpecificOutput!.permissionDecision).toBe('allow');
     await expect(w.getByText('Allow Edit?')).toHaveCount(0);
   });
 
@@ -118,7 +136,7 @@ test.describe('inline approval bar (E10-04)', () => {
     await expect(w.getByText('Allow PowerShell?')).toBeVisible({ timeout: 10_000 });
     await expect(w.locator('[data-handoff]')).toHaveCount(0);
     await w.getByRole('button', { name: 'Allow', exact: true }).click();
-    expect(JSON.parse(await pending).hookSpecificOutput.permissionDecision).toBe('allow');
+    expect(parseVerdict(await pending).hookSpecificOutput!.permissionDecision).toBe('allow');
   });
 
   test('a hold surfaces the Session tab from Terminal, and rapid holds QUEUE (P0#4/#5)', async () => {
@@ -152,11 +170,11 @@ test.describe('inline approval bar (E10-04)', () => {
     await expect(w.getByText('Allow Edit?')).toBeVisible({ timeout: 10_000 });
     await expect(w.getByText('+1 more waiting')).toBeVisible();
     await w.getByRole('button', { name: 'Allow', exact: true }).click();
-    expect(JSON.parse(await p1).hookSpecificOutput.permissionDecision).toBe('allow');
+    expect(parseVerdict(await p1).hookSpecificOutput!.permissionDecision).toBe('allow');
     // the second request advances into the bar
     await expect(w.getByText('C:/two.ts')).toBeVisible({ timeout: 10_000 });
     await w.getByRole('button', { name: 'Deny' }).click();
-    expect(JSON.parse(await p2).hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(parseVerdict(await p2).hookSpecificOutput!.permissionDecision).toBe('deny');
     await expect(w.getByText('Allow Edit?')).toHaveCount(0);
   });
 
@@ -185,7 +203,7 @@ test.describe('inline approval bar (E10-04)', () => {
     await expect(w.getByText('Allow Bash?')).toBeVisible({ timeout: 10_000 });
     await expect(w.getByText('rm -rf /').first()).toBeVisible(); // command preview
     await w.getByRole('button', { name: 'Deny' }).click();
-    expect(JSON.parse(await pending).hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(parseVerdict(await pending).hookSpecificOutput!.permissionDecision).toBe('deny');
   });
 
   test('an interactive question flips the card to needs-input, not working (#92)', async () => {
@@ -219,7 +237,7 @@ test.describe('inline approval bar (E10-04)', () => {
     });
     // it must NOT be held — the answer lives in the CLI's own TUI, so parking
     // it behind our approval bar would leave nothing to click
-    expect(JSON.parse(verdict).hookSpecificOutput, 'the question was HELD').toBeUndefined();
+    expect(parseVerdict(verdict).hookSpecificOutput, 'the question was HELD').toBeUndefined();
     await expect(w.getByText('Allow AskUserQuestion?')).toHaveCount(0);
 
     // the shipped machinery does the rest: an Events entry saying it needs you
