@@ -21,8 +21,23 @@ export type RailStatusName =
   | 'crashed'
   | 'suspended';
 
-/** The six-way ramp the design paints. 'starting' and 'suspended' fold in. */
-export type StatusToken = 'working' | 'needs-input' | 'needs-permission' | 'idle' | 'done' | 'crashed';
+/**
+ * The six-way ramp the design paints. 'starting' and 'suspended' fold in.
+ *
+ * The VALUES are the definition and the type is derived from them, not the
+ * other way round: the contrast tests iterate this list, and a seventh position
+ * added to a hand-written union would type-check while silently going
+ * unmeasured (#221).
+ */
+export const STATUS_TOKENS = [
+  'working',
+  'needs-input',
+  'needs-permission',
+  'idle',
+  'done',
+  'crashed',
+] as const;
+export type StatusToken = (typeof STATUS_TOKENS)[number];
 
 export interface StatusPresentation {
   /** token stem: var(--status-<token>) is the hue, -ink the text color */
@@ -92,6 +107,23 @@ const PRESENTATION: Record<RailStatusName, StatusPresentation> = {
  *  our own blind spot must never invent an attention request (§4). */
 export function presentStatus(status?: string): StatusPresentation {
   return PRESENTATION[status as RailStatusName] ?? PRESENTATION.idle;
+}
+
+/**
+ * The two var() strings a status-colored surface paints with: the HUE (dots,
+ * rings, tints, edges) and the INK (the word itself, tuned per theme so it
+ * clears AA on the surface it lands on — #221).
+ *
+ * The pairing is a naming rule, not a table: `--status-<token>` and
+ * `--status-<token>-ink`. It is a function rather than a fourth copy of the
+ * same template literal so that the contrast tests can measure the pair a
+ * component actually paints instead of a pair copied into the test. The urgency
+ * lamp, the collapsed row and the rail row still spell it out inline and could
+ * adopt this as they are next touched; the grid's pill uses it because it is
+ * the one whose ratio is asserted.
+ */
+export function statusVars(token: StatusToken): { hue: string; ink: string } {
+  return { hue: `var(--status-${token})`, ink: `var(--status-${token}-ink)` };
 }
 
 /** How many of these sessions need a human — drives the group header summary

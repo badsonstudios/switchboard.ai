@@ -13,8 +13,15 @@
 // The single-group suite in tabs.spec.ts cannot see either: there is no clip
 // pressure on the outer edge it checks and no sash at all. Hence this file.
 import { test, expect } from '@playwright/test';
-import fs from 'fs';
-import { launchApp, LaunchedApp, tempProjectFolder, workspaceJsonPath } from './fixtures/app';
+import {
+  launchApp,
+  LaunchedApp,
+  tempProjectFolder,
+  gridLeafViews,
+  persistedLayout,
+  readWorkspaceFile,
+  writeWorkspaceFile,
+} from './fixtures/app';
 import { decodePng, rowLuminance } from './fixtures/png';
 
 /**
@@ -33,17 +40,16 @@ async function twoGroups(): Promise<LaunchedApp> {
   await first.window.waitForTimeout(1200); // let the layout reach disk
   await first.close();
 
-  const file = workspaceJsonPath(first.home);
-  const json = JSON.parse(fs.readFileSync(file, 'utf8'));
-  const layout = json.layout ?? json.state.layout;
-  const views: string[] = layout.grid.root.data[0].data.views;
+  const ws = readWorkspaceFile(first.home);
+  const layout = persistedLayout(ws);
+  const views = gridLeafViews(layout.grid.root.data[0]);
   expect(views.length, 'need at least two panels to split').toBeGreaterThan(1);
   const half = Math.floor(layout.grid.width / 2);
   layout.grid.root.data = [
     { type: 'leaf', data: { views: views.slice(0, 1), activeView: views[0], id: '1' }, size: half },
     { type: 'leaf', data: { views: views.slice(1), activeView: views[1], id: '2' }, size: half },
   ];
-  fs.writeFileSync(file, JSON.stringify(json));
+  writeWorkspaceFile(first.home, ws);
 
   const a = await launchApp({ home: first.home });
   await a.window.locator('.dv-groupview').first().waitFor({ timeout: 25_000 });

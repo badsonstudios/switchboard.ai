@@ -78,7 +78,7 @@ test.describe('persistent groups (E12)', () => {
 
     // stub the native folder picker — headless CI has no dialog
     await a.app.evaluate(({ dialog }, dir) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [dir] });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [dir] });
     }, folder);
 
     await w.getByTitle('New session in this group').click();
@@ -109,7 +109,7 @@ test.describe('persistent groups (E12)', () => {
 
     // second session in the SAME folder via the stubbed picker
     await a.app.evaluate(({ dialog }, dir) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [dir] });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [dir] });
     }, folder);
     await w.getByRole('button', { name: '+ session' }).click();
     await expect(w.locator('[data-group-kind="auto"]')).toBeVisible();

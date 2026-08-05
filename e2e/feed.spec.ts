@@ -152,7 +152,7 @@ test.describe('Feed view (E12-06)', () => {
 
     // switch to another session, then come back
     await a.app.evaluate(({ dialog }, d) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [d] });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
     }, other);
     await w.getByRole('button', { name: '+ session' }).click();
     await expect(w.getByText(path.basename(other)).first()).toBeVisible({ timeout: 25_000 });
@@ -239,7 +239,7 @@ test.describe('Feed view (E12-06)', () => {
     await expect(w.getByText('TAIL_BLOCK_60')).toBeInViewport({ timeout: 15_000 });
 
     await a.app.evaluate(({ dialog }, d) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [d] });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
     }, other);
     await w.getByRole('button', { name: '+ session' }).click();
     await expect(w.getByText(path.basename(other)).first()).toBeVisible({ timeout: 25_000 });

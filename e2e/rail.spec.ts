@@ -132,7 +132,7 @@ test.describe('sessions rail', () => {
     await expect(w.getByText(nameA).first()).toBeVisible({ timeout: 25_000 });
 
     await a.app.evaluate(({ dialog }, dir) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [dir] });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [dir] });
     }, folderB);
     await w.getByRole('button', { name: '+ session' }).click();
     await expect(w.getByText(nameB).first()).toBeVisible({ timeout: 25_000 });
@@ -170,7 +170,7 @@ test.describe('sessions rail', () => {
 
     // a second session in the SAME folder mints the auto-group
     await a.app.evaluate(({ dialog }, dir) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [dir] });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [dir] });
     }, shared);
     await w.getByRole('button', { name: '+ session' }).click();
     const auto = w.locator('[data-group-kind="auto"]');
@@ -179,7 +179,7 @@ test.describe('sessions rail', () => {
 
     // ...and a loose session in a different folder to drag at it
     await a.app.evaluate(({ dialog }, dir) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [dir] });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [dir] });
     }, other);
     await w.getByRole('button', { name: '+ session' }).click();
     const otherName = path.basename(other);
@@ -229,7 +229,10 @@ test.describe('sessions rail', () => {
         // itself. The opaque card underneath is also the conservative choice:
         // the tint only darkens it, which helps dark text.
         let bg = 'rgb(255, 255, 255)';
-        for (let n: HTMLElement | null = el; n; n = n.parentElement) {
+        // `Element`, not `HTMLElement`: Playwright hands the callback an
+        // `SVGElement | HTMLElement`, and only `Element` accepts both. Both
+        // `getComputedStyle` and `parentElement` are defined on it.
+        for (let n: Element | null = el; n; n = n.parentElement) {
           const c = getComputedStyle(n).backgroundColor;
           const parts = c.match(/[\d.]+/g);
           if (parts && (parts.length < 4 || Number(parts[3]) >= 0.99)) {
