@@ -27,6 +27,10 @@ import {
   tokensOfKind,
 } from './tokens';
 import { builtinThemes } from './builtin-themes';
+// the status ramp and the var() pair a component paints it with (#221): the
+// pill's ratio is measured for the pair the app really substitutes, not for one
+// spelled out again here
+import { statusVars, STATUS_TOKENS, type StatusToken } from '../lib/rail-view';
 
 const cssPath = path.join(__dirname, 'tokens.css');
 // normalized: git hands Windows checkouts CRLF, and a selector spanning two
@@ -248,8 +252,17 @@ function resolved(theme: (typeof builtinThemes)[number]): Record<string, string>
   return { ...semanticDefaults, ...preset[theme.base], ...theme.tokens };
 }
 
-/** the rules that fill with a color and write on it, and the floor each owes */
+/** the rules that fill OPAQUELY with a color and write on it, and the floor
+ *  each owes. Tinted fills are the same promise measured differently — see
+ *  "Text on a TINTED fill" below. */
 const FILLED_RULES: Array<[string, number]> = [['.preflight-banner', 4.5]];
+
+/** the rules whose background is a color-mix of a hue into a surface. Declared
+ *  up here with FILLED_RULES because the applied-by-a-component scan below
+ *  reads both — vitest collects describe() bodies lazily so a later const
+ *  happens to work, but a test file that only runs under one collector is a
+ *  trap rather than a test. */
+const TINTED_RULES: Array<[string, number]> = [['.status-pill', 4.5]];
 
 /**
  * The pair, read OUT OF THE STYLESHEET rather than named here.
@@ -296,7 +309,7 @@ describe('a filled rule is a rule something applies', () => {
     });
   })(path.join(__dirname, '..'));
 
-  it.each(FILLED_RULES)('%s is applied by a component', (selector) => {
+  it.each([...FILLED_RULES, ...TINTED_RULES])('%s is applied by a component', (selector) => {
     // the class name inside a className prop, quoted either way, among other
     // classes, and whether or not it is behind a condition: #222 made the
     // preflight banner's class conditional (`className={spoken ?
@@ -330,6 +343,146 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))(
         ratio(tokens[ink], tokens[fill]),
         `${id}: ${ink} on ${fill} (${tokens[ink]} on ${tokens[fill]})`
       ).toBeGreaterThanOrEqual(min);
+    });
+  }
+);
+
+// --- Text on a TINTED fill, in EVERY shipped theme (#221) -------------------
+//
+// The banner above fills opaquely, so its fill is a token and the pair is two
+// lookups. The grid's status pill is the harder half of the same promise: it
+// fills with 14% of a status hue over the card header, so the colour behind the
+// word EXISTS NOWHERE as a token — it has to be computed the way the browser
+// computes it, which is why #206 could report this defect but not measure it.
+//
+// It is the worst case in the app by size and by exposure: 9.5px, on every card
+// header, permanently. Before this it measured 1.7-2.6:1 on daylight (raw hue
+// on a tint of itself) and 3.0-4.5:1 on nordic.
+
+/** srgb mix, rounded to 8 bits — what the compositor actually paints */
+function mix(a: string, b: string, pct: number): string {
+  const ch = (hex: string): number[] => [0, 2, 4].map((i) => parseInt(hex.slice(1 + i, 3 + i), 16));
+  return (
+    '#' +
+    ch(a)
+      .map((v, i) => Math.round(v * pct + ch(b)[i] * (1 - pct)))
+      .map((v) => v.toString(16).padStart(2, '0'))
+      .join('')
+  );
+}
+
+/** a `<prop>: var(--x)` reference in a rule — the custom property, not a value */
+function refIn(rule: string, selector: string, prop: string, pattern: string): RegExpExecArray {
+  const m = new RegExp(`^\\s*${prop}:\\s*${pattern}`, 'm').exec(rule);
+  expect(m, `${selector} must set ${prop} to ${pattern} to be measured`).not.toBeNull();
+  return m!;
+}
+
+/**
+ * What one status's pill actually paints, read OUT OF THE STYLESHEET — same
+ * rule as `pair()` and for the same reason: the rule is what ships.
+ *
+ * The rule names two PLACEHOLDERS a component fills in, so which of them is the
+ * ink and which is the hue cannot be assumed — assuming it is what let the
+ * first cut of this test pass with `color: var(--pill-hue)`, i.e. with the
+ * exact bug #221 is about. The roles come from the rule's own DEFAULTS instead:
+ * they have to be ONE ramp position's ink and hue. Put the hue back in the
+ * `color` and one declaration would have to be both `--status-idle` and
+ * `--status-idle-ink`, so this fails before any ratio is computed. WHICH
+ * position the default is stays the rule's business — the pill's is idle
+ * because §4 says an unrecognised state reads as quiet rather than as an alarm,
+ * and presentStatus asserts that where it is decided (rail-view.test.ts).
+ *
+ * The component's half — which pair those placeholders actually receive — is
+ * the one thing this file cannot see, and is held by StatusPill.test.tsx.
+ */
+function tinted(
+  selector: string,
+  status: StatusToken
+): { ink: string; hue: string; pct: number; surface: string } {
+  const rule = block(`${selector} {`);
+  const inkVar = refIn(rule, selector, 'color', String.raw`var\((--[a-z0-9-]+)\)`)[1];
+  const bg = refIn(
+    rule,
+    selector,
+    'background',
+    String.raw`color-mix\(in srgb,\s*var\((--[a-z0-9-]+)\)\s*([\d.]+)%,\s*var\((--[a-z0-9-]+)\)\)`
+  );
+  const decl = declaredValues(rule);
+  const stem = STATUS_TOKENS.find(
+    (t) => decl[inkVar] === statusVars(t).ink && decl[bg[1]] === statusVars(t).hue
+  );
+  expect(
+    stem,
+    `${selector}: the color and the background must default to ONE ramp position's ink and ` +
+      `hue — got ${decl[inkVar]} and ${decl[bg[1]]}, which is not a pair`
+  ).toBeDefined();
+
+  const v = statusVars(status);
+  const name = (value: string): string => {
+    const m = /^var\((--[a-z0-9-]+)\)$/.exec(value);
+    expect(m, `statusVars must produce a bare var(), got ${value}`).not.toBeNull();
+    return m![1];
+  };
+  return { ink: name(v.ink), hue: name(v.hue), pct: Number(bg[2]) / 100, surface: bg[3] };
+}
+
+describe.each(builtinThemes.map((t) => [t.id, t] as const))(
+  '%s: words on a tinted fill',
+  (id, theme) => {
+    const tokens = resolved(theme);
+
+    for (const [selector, min] of TINTED_RULES) {
+      it.each(STATUS_TOKENS)(`${selector} clears ${min}:1 for %s`, (status) => {
+        const t = tinted(selector, status);
+        for (const token of [t.hue, t.ink, t.surface]) {
+          expect(tokens[token], `${id} ${token} must be #rrggbb to be measured`).toMatch(
+            /^#[0-9a-f]{6}$/i
+          );
+        }
+        const fill = mix(tokens[t.hue], tokens[t.surface], t.pct);
+        expect(
+          ratio(tokens[t.ink], fill),
+          `${id}: ${t.ink} on ${t.pct * 100}% ${t.hue} over ${t.surface} ` +
+            `(${tokens[t.ink]} on ${fill})`
+        ).toBeGreaterThanOrEqual(min);
+      });
+    }
+  }
+);
+
+// --- Status ink as PLAIN text, in EVERY shipped theme (#221) ----------------
+//
+// The same defect without the tint: the grid wrote the raw hue as 9.5-11px text
+// on the card header (--panel2, 1.8:1 for needs-input on daylight) and on the
+// workspace behind the cards (--bg). Those sites are inline styles rather than
+// a rule — the value they must NOT use again is the hue, and the floor below is
+// what makes the -ink they use instead a promise rather than a preference.
+// Not "every surface": every surface a status WORD lands on. --panel2 is the
+// card header and the vtab bar, --bg the workspace behind the cards, --panel
+// and --rail-row-hover the rail row at rest and under the pointer, --chip the
+// collapsed row. It is also what keeps the tinted assertion above honest — that
+// one has to be told which surface the pill sits on, and a floor that holds on
+// all five means a pill that moved has not silently lost its promise.
+const STATUS_TEXT_SURFACES = ['--panel2', '--bg', '--panel', '--rail-row-hover', '--chip'];
+
+describe.each(builtinThemes.map((t) => [t.id, t] as const))(
+  '%s: status ink as plain text',
+  (id, theme) => {
+    const tokens = resolved(theme);
+
+    it.each(
+      STATUS_TOKENS.flatMap((s) => STATUS_TEXT_SURFACES.map((f) => [`--status-${s}-ink`, f]))
+    )('%s on %s clears 4.5:1', (ink, surface) => {
+      for (const token of [ink, surface]) {
+        expect(tokens[token], `${id} ${token} must be #rrggbb to be measured`).toMatch(
+          /^#[0-9a-f]{6}$/i
+        );
+      }
+      expect(
+        ratio(tokens[ink], tokens[surface]),
+        `${id}: ${ink} on ${surface} (${tokens[ink]} on ${tokens[surface]})`
+      ).toBeGreaterThanOrEqual(4.5);
     });
   }
 );
