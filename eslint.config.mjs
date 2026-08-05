@@ -129,7 +129,10 @@ export default tseslint.config(
     },
   },
   {
-    files: ['scripts/**/*.js'],
+    // electron-builder.js sits at the root (the only place, and under the only
+    // name, electron-builder auto-discovers it) but is the same kind of file as
+    // these: plain CJS, run by node outside any bundler.
+    files: ['scripts/**/*.js', 'electron-builder.js'],
     ignores: ['scripts/**/*.test.js'],
     languageOptions: {
       sourceType: 'commonjs',
@@ -141,6 +144,7 @@ export default tseslint.config(
         console: 'readonly',
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
+        Buffer: 'readonly',
       },
     },
     rules: { '@typescript-eslint/no-require-imports': 'off' },
