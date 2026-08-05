@@ -46,12 +46,15 @@ import {
 } from '../lib/layout-mode';
 import { presentStatus } from '../lib/rail-view';
 import { tabStripAction } from '../lib/tabstrip-keys';
+import { cardHeaderTitle } from '../lib/card-title';
 import { StatusPill } from './StatusPill';
 import type { Ladder } from '../lib/presentation';
 import { pickAdoptedGroupId } from '../lib/groups';
+import { addPopoutWindow, removePopoutWindow } from '../lib/popout-windows';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { setDraggedCard } from '../lib/drag-context';
 import { writePromptToPty } from '../lib/composer';
+import { dropRetired } from '../lib/held-permissions';
 
 /** Subscribe helper for useSyncExternalStore — module-level so its identity is
  *  stable across renders (a fresh function resubscribes every commit). */
@@ -217,6 +220,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const controlsLocked = status === 'starting' || status === 'crashed' || exited !== null;
   const spawning = React.useRef(false);
   const folder = props.params?.folder;
+  // What the card CALLS itself, on screen (#250). The store's copy first, so a
+  // rename from the rail reaches the header — `props.api.title` alone is the
+  // name the card was born with. Chain and its empty-is-absent rule live in
+  // lib/card-title.
+  const headerTitle = cardHeaderTitle(cardTitle, props.api.title, folder);
 
   React.useEffect(() => {
     const d = props.api.onDidVisibilityChange((e) => setVisible(e.isVisible));
@@ -286,7 +294,25 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   React.useEffect(() => {
     if (!live) return;
     return window.switchboard.sessions.onExited((e) => {
-      if (e.sessionId === live.id) setExited({ code: e.code, crashed: e.crashed });
+      if (e.sessionId !== live.id) return;
+      setExited({ code: e.code, crashed: e.crashed });
+      // The THIRD way a session's held requests stop being answerable, and the
+      // one that reaches neither `forgetCardLiveIds` nor main's teardown (#239):
+      // a session that dies on its own keeps its binding and its record until
+      // the user restarts or closes the card. The exited overlay covers the
+      // review bar for the MOUSE only — the Allow / Allow all / Deny buttons
+      // stay mounted, tab-reachable and read out by a screen reader — so the
+      // click this issue exists to prevent is still one Tab away. The CLI
+      // process is gone, so nothing here can reach it: the honest thing is to
+      // stop offering the question.
+      //
+      // THIS IS THE UI HALF ONLY. Main does not release a self-exited session's
+      // holds — `unregisterSession` runs from `tearDownLive` and a plain exit
+      // never gets there — so the parked request and its timer live on in main
+      // until the 300s fail-open, and `sessions:pendingPermissions` goes on
+      // advertising it to any card that mounts meanwhile. Closing that belongs
+      // in main, next to `manager.onSessionExit`, and is not this change.
+      setPermQueue((prev) => dropRetired(prev, e.sessionId));
     });
   }, [live]);
 
@@ -421,6 +447,31 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     // setView identity is stable enough here; cardId is the real key (the
     // exhaustive-deps plugin isn't installed in this repo)
   }, [cardId]);
+  // A held request belongs to the LIVE session that raised it and dies with it
+  // (#239). Restart and the popout-close suspend both end the session while
+  // leaving this component MOUNTED with its queue intact, so when main's release
+  // is lost the next session's review bar opens holding the corpse's question:
+  // `Allow` decides a request that no longer exists, and `Allow all` writes a
+  // grant keyed by an id no map holds — #224's leak again, by user clicks.
+  //
+  // Main normally gets there first: tearing a session down releases what it is
+  // holding (`tearDownLive` → `unregisterSession` / `forgetSession`) and the
+  // resulting `permissionResolved` push is what usually empties this queue. This
+  // is the renderer's OWN guarantee, not a second copy of that one, because
+  // main's is explicitly best-effort — every step of `tearDownLive` is allowed
+  // to fail and be skipped, and `tearDownStep`'s docblock names this exact
+  // consequence: "a card showing a permission bar for a session that no longer
+  // exists" (#219). A queue whose only correction arrives from another process
+  // cannot repair itself when the correction is the thing that went missing.
+  //
+  // Local only — no `decidePermission` here. The request is already answered or
+  // already dead; sending a verdict for it would be a decision the user never
+  // made, aimed at a session that cannot receive it.
+  React.useEffect(() => {
+    return sessionStore.subscribeLiveRetired((liveId) => {
+      setPermQueue((prev) => dropRetired(prev, liveId));
+    });
+  }, []);
   const decide = (decision: 'allow' | 'deny', allowAll = false): void => {
     const head = permQueue[0];
     if (!head) return;
@@ -531,8 +582,17 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const restartSelf = (): void => {
     // drop the dead live session (keep the card record), then re-arm the lazy
     // spawn so the card respawns/resumes
-    if (cardId) void window.switchboard.sessions.dropLive(cardId);
-    if (live) sessionStore.forgetCardLiveIds(cardId ?? '');
+    //
+    // Both halves under ONE `if (cardId)` (#239). They used to disagree: main
+    // was told unconditionally while the renderer only unbound `if (live)`,
+    // which admits the state where main has torn the session down and this
+    // store still holds its binding, its grant and — since this issue — its
+    // queued holds. `forgetCardLiveIds` is idempotent, so the guard bought
+    // nothing, and `cardId ?? ''` was a sweep for a card that cannot exist.
+    if (cardId) {
+      void window.switchboard.sessions.dropLive(cardId);
+      sessionStore.forgetCardLiveIds(cardId);
+    }
     setExited(null);
     setLive(null);
     spawning.current = false;
@@ -722,7 +782,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 whiteSpace: 'nowrap',
               }}
             >
-              {props.api.title ?? folder}
+              {headerTitle}
             </span>
             {editingLabel ? (
               <input
@@ -1100,7 +1160,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         <div style={{ ...overlayBackdrop, position: 'relative', flex: 1 }}>{exitedOverlay}</div>
       ) : (
         <span style={{ margin: 'auto' }}>
-          {t('grid.resuming', { title: props.api.title ?? folder ?? '' })}
+          {t('grid.resuming', { title: headerTitle })}
         </span>
       )}
     </div>
@@ -2267,18 +2327,17 @@ export function SessionGrid(props: {
       });
       // E8 diagnostics: surface popout success/failure
       api.onDidOpenPopoutWindowFail?.(() => console.error('[popout] onDidOpenPopoutWindowFail'));
-      // publish popout windows so App can give them the keyboard dispatcher
-      // (E9-02) — their DOM lives in another OS window, their JS lives here
+      // Publish popout windows to the shared registry (#227): their DOM lives
+      // in another OS window, their JS lives here, and three features need to
+      // know which ones are open — the keyboard dispatcher (E9-02), the theme
+      // and tab-row flags (#84), the read-only notice (#208). dockview is the
+      // authority on which popouts exist; this is the one place that says so.
       api.onDidAddPopoutGroup?.((e: PopoutGroup) => {
         console.log('[popout] onDidAddPopoutGroup (opened OK)');
-        if (e.window) {
-          window.dispatchEvent(new CustomEvent('switchboard:popout-added', { detail: e.window }));
-        }
+        if (e.window) addPopoutWindow(e.window);
       });
       api.onDidRemovePopoutGroup?.((e: PopoutGroup) => {
-        if (e.window) {
-          window.dispatchEvent(new CustomEvent('switchboard:popout-removed', { detail: e.window }));
-        }
+        if (e.window) removePopoutWindow(e.window);
       });
       // window teardown must not be mistaken for the user closing cards
       window.addEventListener('beforeunload', () => {
