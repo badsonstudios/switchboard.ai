@@ -331,14 +331,47 @@ function priorCard(over: Partial<PersistedSession> & { folder: string }): Persis
   } as PersistedSession;
 }
 
+/**
+ * A fresh REAL directory per test — session creation reads it to detect the
+ * project type — plus the cleanup that goes with it. Every describe in this file
+ * carried its own copy of both, and two shipped without the `afterEach` and
+ * leaked a directory per test (#213); one definition makes that impossible.
+ *
+ * The block keeps its own `dir` variable, because the directory does not exist
+ * until `beforeEach` has run: this hands it back through `set` rather than
+ * returning it.
+ */
+function tempDirEach(prefix: string, set: (dir: string) => void): void {
+  beforeEach(() => set(tempDir(prefix)));
+  afterEach(() => cleanupTempDirs());
+}
+
+/**
+ * The two helpers a card-centric block works through: the persisted card, and
+ * the `sessions:create` the renderer sends when that card's panel mounts.
+ *
+ * Copied verbatim into the #187, #202 and #219 blocks — and under another name
+ * into #170's — because each closed over its OWN block's `dir` (#236). That
+ * directory is the only thing that varied, so it is what is parameterized: a
+ * GETTER, read when the helper is CALLED rather than when it is built, which is
+ * what lets one definition outlive the `beforeEach` that forced the copies.
+ */
+function cardHelpers(
+  dir: () => string,
+  cardId = 'card-1'
+): {
+  card: () => PersistedSession;
+  start: (h: { call: (c: string, ...a: unknown[]) => unknown }, id?: string) => unknown;
+} {
+  return {
+    card: () => priorCard({ folder: dir(), id: cardId }),
+    start: (h, id = cardId) => h.call('sessions:create', { cardId: id, folder: dir(), title: 't' }),
+  };
+}
+
 describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
   let folder: string;
-
-  beforeEach(() => {
-    // a real directory: session creation reads it to detect the project type
-    folder = tempDir('sb-ipc-');
-  });
-  afterEach(() => cleanupTempDirs());
+  tempDirEach('sb-ipc-', (d) => (folder = d));
 
   it('a provider declaring ZERO capabilities spawns a PTY-only session', () => {
     const h = harness(undefined, folder);
@@ -548,21 +581,11 @@ describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
 describe('per-card transport (P2-E18-08b)', () => {
   const CARD = 'card-1';
   let dir: string;
-  let prior: PersistedSession;
-  beforeEach(() => {
-    // a real directory: session creation reads it to detect the project type
-    dir = tempDir('sb-tr-');
-    prior = {
-      id: CARD,
-      identity: { title: 't', folder: dir, providerId: 'generic' },
-      layoutSlot: 0,
-      suspendedAt: '',
-    };
-  });
-  afterEach(() => cleanupTempDirs()); // this block had none — 8 dirs a run (#213)
+  tempDirEach('sb-tr-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir, CARD);
 
   it('stores the choice on the card', async () => {
-    const h = harness(undefined, dir, { prior });
+    const h = harness(undefined, dir, { prior: card() });
 
     const res = await h.call('sessions:setTransport', CARD, 'stream');
 
@@ -571,7 +594,7 @@ describe('per-card transport (P2-E18-08b)', () => {
   });
 
   it('switches back again', async () => {
-    const h = harness(undefined, dir, { prior: { ...prior, transport: 'stream' } });
+    const h = harness(undefined, dir, { prior: { ...card(), transport: 'stream' } });
 
     await h.call('sessions:setTransport', CARD, 'pty');
 
@@ -584,8 +607,8 @@ describe('per-card transport (P2-E18-08b)', () => {
   // and it told the user to "stop this session first" when a live session has
   // no stop control at all. A dead end dressed as a safety check.
   it('ACCEPTS while a session is live, and reports the change as pending', async () => {
-    const h = harness(undefined, dir, { prior, liveIds: ['live-1'] });
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    const h = harness(undefined, dir, { prior: card(), liveIds: ['live-1'] });
+    await start(h);
     h.upserted.length = 0;
 
     const res = await h.call('sessions:setTransport', CARD, 'stream');
@@ -602,8 +625,8 @@ describe('per-card transport (P2-E18-08b)', () => {
   // already died, and there was nothing they could do to make it apply (#187).
   it('a CRASHED session is not something to be pending on', async () => {
     const exitCodes: Record<string, number> = {};
-    const h = harness(undefined, dir, { prior, exitCodes });
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    const h = harness(undefined, dir, { prior: card(), exitCodes });
+    await start(h);
     expect(await h.call('sessions:setTransport', CARD, 'stream')).toEqual({
       ok: true,
       pending: true,
@@ -618,7 +641,7 @@ describe('per-card transport (P2-E18-08b)', () => {
   });
 
   it('is NOT pending when no session is running', async () => {
-    const h = harness(undefined, dir, { prior });
+    const h = harness(undefined, dir, { prior: card() });
     expect(await h.call('sessions:setTransport', CARD, 'stream')).toEqual({
       ok: true,
       pending: false,
@@ -626,7 +649,7 @@ describe('per-card transport (P2-E18-08b)', () => {
   });
 
   it('rejects a value that is not a transport', async () => {
-    const h = harness(undefined, dir, { prior });
+    const h = harness(undefined, dir, { prior: card() });
     expect(await h.call('sessions:setTransport', CARD, 'carrier-pigeon')).toEqual({
       ok: false,
       reason: 'bad-value',
@@ -644,9 +667,9 @@ describe('per-card transport (P2-E18-08b)', () => {
   // The card's stored choice must WIN over the env default, or the setting
   // would be decorative on a machine that has the escape hatch set.
   it("a new session asks for the CARD's transport", async () => {
-    const h = harness(undefined, dir, { prior: { ...prior, transport: 'stream' } });
+    const h = harness(undefined, dir, { prior: { ...card(), transport: 'stream' } });
 
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    await start(h);
 
     expect(h.created[0].transport).toBe('stream');
   });
@@ -664,10 +687,8 @@ describe('per-card transport (P2-E18-08b)', () => {
 describe('starting a session preserves the card (#153 follow-up)', () => {
   const CARD = 'card-1';
   let dir: string;
-  beforeEach(() => {
-    dir = tempDir('sb-keep-');
-  });
-  afterEach(() => cleanupTempDirs()); // this block had none — 4 dirs a run (#213)
+  tempDirEach('sb-keep-', (d) => (dir = d));
+  const { start } = cardHelpers(() => dir, CARD);
 
   function priorWith(over: Partial<PersistedSession>): PersistedSession {
     return {
@@ -682,7 +703,7 @@ describe('starting a session preserves the card (#153 follow-up)', () => {
   it('keeps the transport across a session start — the relaunch case', async () => {
     const h = harness(undefined, dir, { prior: priorWith({ transport: 'stream' }) });
 
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    await start(h);
 
     expect(h.upserted.at(-1)?.transport).toBe('stream');
     // and it was actually USED for the spawn, not merely re-saved
@@ -699,7 +720,7 @@ describe('starting a session preserves the card (#153 follow-up)', () => {
       }),
     });
 
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    await start(h);
 
     const saved = h.upserted.at(-1)!;
     expect(saved.usage).toEqual({ input: 1, output: 2, cacheRead: 3, cacheCreate: 4 });
@@ -716,7 +737,7 @@ describe('starting a session preserves the card (#153 follow-up)', () => {
       prior: priorWith({ nativeSessionId: 'old-conversation' }),
     });
 
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    await start(h);
 
     // no transcripts capability => no resume planned => the id is cleared
     expect(h.upserted.at(-1)?.nativeSessionId).toBeUndefined();
@@ -725,7 +746,7 @@ describe('starting a session preserves the card (#153 follow-up)', () => {
   it('a brand-new card with no prior still saves cleanly', async () => {
     const h = harness(undefined, dir, {});
 
-    await h.call('sessions:create', { cardId: 'fresh', folder: dir, title: 't' });
+    await start(h, 'fresh');
 
     const saved = h.upserted.at(-1)!;
     expect(saved.id).toBe('fresh');
@@ -740,6 +761,7 @@ describe('starting a session preserves the card (#153 follow-up)', () => {
 // is a wiring decision: which of two lists reaches the popup, and when.
 describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
   let dir: string;
+  tempDirEach('sb-slash-', (d) => (dir = d));
   const curated: SlashCommand[] = [
     { name: 'clear', source: 'builtin', description: 'Clear conversation history' },
     { name: 'curated-only', source: 'builtin', description: 'Only in the curated list' },
@@ -750,11 +772,6 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
     subtype: 'init',
     slash_commands: names,
   });
-
-  beforeEach(() => {
-    dir = tempDir('sb-slash-');
-  });
-  afterEach(() => cleanupTempDirs());
 
   it('falls back to the curated list before the CLI has said anything', async () => {
     // The NORMAL state of a fresh stream session, not an edge case: the CLI
@@ -857,10 +874,7 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
 // ONE source may be live for a given session or every block renders twice.
 describe('the Feed has two sources and one channel (P2-E18-10)', () => {
   let dir: string;
-  beforeEach(() => {
-    dir = tempDir('sb-ipc-feed-');
-  });
-  afterEach(() => cleanupTempDirs());
+  tempDirEach('sb-ipc-feed-', (d) => (dir = d));
 
   const caps = { transcripts: { projectsRoot: () => '/root' } };
 
@@ -926,10 +940,7 @@ describe('the Feed has two sources and one channel (P2-E18-10)', () => {
 // nothing would replay it. Found in review; nothing else pins it.
 describe('a transcript reset never blanks a stream session (P2-E18-10)', () => {
   let dir: string;
-  beforeEach(() => {
-    dir = tempDir('sb-ipc-reset-');
-  });
-  afterEach(() => cleanupTempDirs());
+  tempDirEach('sb-ipc-reset-', (d) => (dir = d));
 
   const caps = { transcripts: { projectsRoot: () => '/root' } };
   const feedResets = (h: { pushed: Array<{ channel: string }> }): number =>
@@ -977,10 +988,10 @@ describe('a transcript reset never blanks a stream session (P2-E18-10)', () => {
 describe('a card gaining or losing its live session announces itself (#170)', () => {
   const CARD = 'card-1';
   let dir: string;
-  beforeEach(() => {
-    dir = tempDir('sb-resume-');
-  });
-  afterEach(() => cleanupTempDirs());
+  tempDirEach('sb-resume-', (d) => (dir = d));
+  // `card()` is the suspended case here — a card persisted but not running,
+  // which is exactly what a suspend leaves behind.
+  const { card, start } = cardHelpers(() => dir, CARD);
 
   const cardsPushes = (h: { pushed: Array<{ channel: string }> }): number =>
     h.pushed.filter((p) => p.channel === 'sessions:cardsChanged').length;
@@ -989,17 +1000,14 @@ describe('a card gaining or losing its live session announces itself (#170)', ()
     return cards.find((c) => c.cardId === CARD)!.status;
   };
 
-  /** a card persisted but not running — exactly what a suspend leaves behind */
-  const suspendedCard = (): PersistedSession => priorCard({ folder: dir, id: CARD });
-
   it('the suspend -> resume round trip ends with a LIVE status, unprompted', async () => {
-    const h = harness(undefined, dir, { prior: suspendedCard(), liveIds: ['live-1'] });
+    const h = harness(undefined, dir, { prior: card(), liveIds: ['live-1'] });
 
     // restored-but-not-yet-resumed: the join has no live half
     expect(await statusOf(h)).toBe('suspended');
 
     // resume-on-focus spawns (or --resumes) the session for the card
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    await start(h);
 
     // ...and SAID so, which is the whole bug: no status has changed yet, and on
     // a PTY session the first one may be minutes away (it takes a submitted
@@ -1009,8 +1017,8 @@ describe('a card gaining or losing its live session announces itself (#170)', ()
   });
 
   it('losing the live session announces itself too — suspend, then resume again', async () => {
-    const h = harness(undefined, dir, { prior: suspendedCard(), liveIds: ['live-1'] });
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    const h = harness(undefined, dir, { prior: card(), liveIds: ['live-1'] });
+    await start(h);
 
     // the popout window closed: keep the card, drop the session (E8-04)
     await h.call('sessions:dropLive', CARD);
@@ -1018,7 +1026,7 @@ describe('a card gaining or losing its live session announces itself (#170)', ()
     expect(await statusOf(h)).toBe('suspended');
 
     // and back again — the round trip is repeatable, not a one-shot
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    await start(h);
     expect(cardsPushes(h)).toBe(3);
     expect(await statusOf(h)).toBe('starting');
   });
@@ -1027,11 +1035,11 @@ describe('a card gaining or losing its live session announces itself (#170)', ()
     // revealing a hidden card re-mounts its panel over a session that is still
     // running (P2-E15-08). That is not a change, and a push here would be a
     // refresh for every reveal, for ever.
-    const h = harness(undefined, dir, { prior: suspendedCard(), liveIds: ['live-1'] });
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    const h = harness(undefined, dir, { prior: card(), liveIds: ['live-1'] });
+    await start(h);
     const before = cardsPushes(h);
 
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    await start(h);
 
     expect(h.created).toHaveLength(1); // adopted, not spawned twice
     expect(cardsPushes(h)).toBe(before);
@@ -1055,14 +1063,8 @@ describe('a card gaining or losing its live session announces itself (#170)', ()
 describe('a card respawning over a crashed session reaps it (#187)', () => {
   const CARD = 'card-1';
   let dir: string;
-  beforeEach(() => {
-    dir = tempDir('sb-reap-');
-  });
-  afterEach(() => cleanupTempDirs());
-
-  const card = (): PersistedSession => priorCard({ folder: dir, id: CARD });
-  const start = (h: { call: (c: string, ...a: unknown[]) => unknown }): unknown =>
-    h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+  tempDirEach('sb-reap-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir, CARD);
 
   /**
    * Spawn, crash, reveal. The reveal is the second `sessions:create`: the
@@ -1263,14 +1265,8 @@ describe('a card respawning over a crashed session reaps it (#187)', () => {
 describe('a retired session takes its parked approvals with it (#202)', () => {
   const CARD = 'card-1';
   let dir: string;
-  beforeEach(() => {
-    dir = tempDir('sb-perm-ipc-');
-  });
-  afterEach(() => cleanupTempDirs());
-
-  const card = (): PersistedSession => priorCard({ folder: dir, id: CARD });
-  const start = (h: { call: (c: string, ...a: unknown[]) => unknown }, cardId = CARD): unknown =>
-    h.call('sessions:create', { cardId, folder: dir, title: 't' });
+  tempDirEach('sb-perm-ipc-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir, CARD);
 
   it('the restart path — dropLive answers the parked request and clears the bar', () => {
     const { perms, sent } = streamPerms();
@@ -1401,14 +1397,8 @@ describe('a retired session takes its parked approvals with it (#202)', () => {
 describe('a teardown step that throws releases the rest anyway (#219)', () => {
   const CARD = 'card-1';
   let dir: string;
-  beforeEach(() => {
-    dir = tempDir('sb-teardown-');
-  });
-  afterEach(() => cleanupTempDirs());
-
-  const card = (): PersistedSession => priorCard({ folder: dir, id: CARD });
-  const start = (h: { call: (c: string, ...a: unknown[]) => unknown }): unknown =>
-    h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+  tempDirEach('sb-teardown-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir, CARD);
 
   // The FIRST step of the teardown, on the path that has a fail-open catch over
   // it. Before #219 this one throw skipped all eight releases behind it.

@@ -107,6 +107,28 @@ export default tseslint.config(
     },
   },
   {
+    // e2e/ is the one tree on the TYPE-CHECKED preset (#245). The rest of the
+    // repo is on plain `recommended`; here the extra rules earn their keep,
+    // because a spec's assertion is only as good as the types under it — an
+    // `any` leaking out of a boundary (`JSON.parse` on the workspace file was
+    // the big one) makes `expect(x.foo).toBe(...)` compile no matter what `foo`
+    // is, and a spec that cannot fail to compile is not a spec.
+    //
+    // The glob is wider than what exists today ON PURPOSE: `tsconfig.e2e.json`
+    // includes `e2e/**/*`, so a future `.tsx`/`.mts` in here would typecheck and
+    // then silently drop back to the untyped tier if this only said `.ts`.
+    // `tsconfig.e2e.json` is the same project `npm run typecheck` uses, so lint
+    // and tsc see one program.
+    files: ['e2e/**/*.{ts,tsx,mts,cts}', 'playwright.config.ts'],
+    extends: [...tseslint.configs.recommendedTypeChecked],
+    languageOptions: {
+      parserOptions: {
+        project: './tsconfig.e2e.json',
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
+  {
     files: ['scripts/**/*.js'],
     ignores: ['scripts/**/*.test.js'],
     languageOptions: {
