@@ -96,12 +96,12 @@ async function armDialogRecorder(choice: 0 | 1): Promise<void> {
   await a.app.evaluate(({ dialog }, answer) => {
     const g = globalThis as Stash;
     g.__sbQuitPrompts = [];
-    dialog.showMessageBoxSync = ((...args: unknown[]) => {
+    dialog.showMessageBoxSync = (...args: unknown[]) => {
       // main calls the (window, options) overload; tolerate both
       const o = (args.length > 1 ? args[1] : args[0]) as { message?: string };
       g.__sbQuitPrompts!.push(String(o?.message ?? ''));
       return answer;
-    }) as unknown as typeof dialog.showMessageBoxSync;
+    };
   }, choice);
 }
 

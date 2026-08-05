@@ -18,14 +18,14 @@
 // back is the real status machine rather than a mock.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
-import fs from 'fs';
 import {
   launchApp,
   LaunchedApp,
   setPresentationPolicy,
   tempProjectFolder,
   hookPoster,
-  workspaceJsonPath,
+  persistedUi,
+  readWorkspaceFile,
 } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -44,7 +44,7 @@ const policyChip = (w: Page) => w.getByTestId('presentation-policy');
 async function addSession(a: LaunchedApp): Promise<string> {
   const dir = tempProjectFolder();
   await a.app.evaluate(({ dialog }, d) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [d] });
+    dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
   }, dir);
   await a.window.getByRole('button', { name: '+ session' }).click();
   const name = path.basename(dir);
@@ -203,7 +203,7 @@ test.describe('presentation policy (E9-06)', () => {
     await expect(w.getByText('New group')).toBeVisible();
     const dir = tempProjectFolder();
     await a.app.evaluate(({ dialog }, d) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [d] });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
     }, dir);
     await w.getByTitle('New session in this group').click();
     const member = path.basename(dir);
@@ -279,10 +279,7 @@ test.describe('presentation policy (E9-06)', () => {
     await a.close();
 
     // the setting is in the ui blob, which is where §5.25 says it lives
-    const blob = JSON.parse(fs.readFileSync(workspaceJsonPath(home), 'utf8'));
-    const ui = (blob.ui ?? blob.state?.ui) as {
-      presentationPolicy?: { global?: string; cards?: Record<string, string> };
-    };
+    const ui = persistedUi(readWorkspaceFile(home));
     expect(ui.presentationPolicy?.global).toBe('auto-collapse');
     expect(ui.presentationPolicy?.cards?.[overridden]).toBe('auto-hide');
 

@@ -13,7 +13,7 @@ async function addSessions(a: LaunchedApp, n: number): Promise<void> {
   for (let i = 0; i < n; i++) {
     const dir = tempProjectFolder();
     await a.app.evaluate(({ dialog }, d) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [d] });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
     }, dir);
     await w.getByRole('button', { name: '+ session' }).click();
     await expect(w.locator('nav [draggable="true"]')).toHaveCount(before + i + 1, {

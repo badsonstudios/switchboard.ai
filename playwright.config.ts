@@ -4,6 +4,11 @@ import { defineConfig } from '@playwright/test';
 // parallelize. Each test gets its own isolated app instance + temp home.
 export default defineConfig({
   testDir: './e2e',
+  // Specs only. Playwright's DEFAULT testMatch also picks up `*.test.ts`, and
+  // `e2e/fixtures/*.test.ts` is vitest's (the fixtures' own unit tests, #230) —
+  // without this it would try to run them as Electron specs and fail on the
+  // `vitest` import. The suite already names every spec `*.spec.ts`.
+  testMatch: '**/*.spec.ts',
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,

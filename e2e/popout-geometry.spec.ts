@@ -13,25 +13,31 @@ import {
   findFile,
   launchApp,
   LaunchedApp,
+  PersistedPopoutGroup,
+  readWorkspaceFile,
   registeredPopouts,
   tempProjectFolder,
   workspaceJsonPath,
 } from './fixtures/app';
 
-/** the popout groups as they currently sit ON DISK */
-function persistedPopoutGroups(home: string): Array<{ position?: { left: number; top: number } }> {
-  const file = workspaceJsonPath(home);
-  if (!fs.existsSync(file)) return [];
-  const json = JSON.parse(fs.readFileSync(file, 'utf8'));
-  const layout = json.layout ?? json.state?.layout;
-  return layout?.popoutGroups ?? [];
+/**
+ * The popout groups as they currently sit ON DISK.
+ *
+ * Deliberately NOT `persistedLayout()`: the callers poll this while the app is
+ * still coming up, so "no file / no layout yet" has to answer "none", never
+ * throw — a throw inside `expect.poll` fails the whole poll instead of retrying.
+ */
+function persistedPopoutGroups(home: string): PersistedPopoutGroup[] {
+  if (!fs.existsSync(workspaceJsonPath(home))) return [];
+  const ws = readWorkspaceFile(home);
+  return (ws.layout ?? ws.state?.layout)?.popoutGroups ?? [];
 }
 
 /** popout positions as they currently sit ON DISK */
 function persistedPopouts(home: string): Array<{ left: number; top: number }> {
   return persistedPopoutGroups(home)
     .map((p) => p.position)
-    .filter(Boolean) as Array<{ left: number; top: number }>;
+    .filter((pos) => pos != null);
 }
 
 /**
@@ -82,7 +88,7 @@ test.describe('popout geometry (#86)', () => {
     // move it the way a user drags it somewhere else, then quit at once — NO
     // settling time, which is what made this fail before
     const target = { x: 160, y: 240, width: 620, height: 500 };
-    const moved = await first.app.evaluate(async ({ BrowserWindow }, box) => {
+    const moved = await first.app.evaluate(({ BrowserWindow }, box) => {
       const popout = BrowserWindow.getAllWindows().find((win) =>
         win.webContents.getURL().includes('popout.html')
       );
@@ -126,7 +132,7 @@ test.describe('popout geometry (#86)', () => {
     const w = first.window;
     await expect(w.locator('nav [draggable="true"]')).toHaveCount(1, { timeout: 25_000 });
     await first.app.evaluate(({ dialog }, dir) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [dir] });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [dir] });
     }, folderB);
     await w.getByRole('button', { name: '+ session' }).click();
     await expect(w.locator('nav [draggable="true"]')).toHaveCount(2, { timeout: 25_000 });
@@ -155,7 +161,12 @@ test.describe('popout geometry (#86)', () => {
       return Promise.all(
         popouts.map(async (p) => ({
           bounds: p.getBounds(),
-          title: await p.webContents.executeJavaScript('document.body.innerText.slice(0, 400)'),
+          // Electron types `executeJavaScript` as `Promise<any>` (it cannot know
+          // what the snippet returns). `String()` NARROWS it at runtime, which a
+          // cast would only pretend to do — and the expression really is one.
+          title: String(
+            await p.webContents.executeJavaScript('document.body.innerText.slice(0, 400)')
+          ),
         }))
       );
     });
@@ -170,7 +181,10 @@ test.describe('popout geometry (#86)', () => {
           .filter((win) => win.webContents.getURL().includes('popout.html'))
           .map(async (p) => ({
             bounds: p.getBounds(),
-            title: await p.webContents.executeJavaScript('document.body.innerText.slice(0, 400)'),
+            // see the same call above: `executeJavaScript` is `Promise<any>`
+            title: String(
+              await p.webContents.executeJavaScript('document.body.innerText.slice(0, 400)')
+            ),
           }))
       )
     );
@@ -202,7 +216,7 @@ test.describe('popout geometry (#86)', () => {
     // didn't take (here); the quit didn't persist it, or the restore didn't
     // reopen it (both below); or it came back mis-measured (last).
     const size = { x: 200, y: 200, width: 700, height: 560 };
-    const applied = await first.app.evaluate(async ({ BrowserWindow }, box) => {
+    const applied = await first.app.evaluate(({ BrowserWindow }, box) => {
       const popout = BrowserWindow.getAllWindows().find((win) =>
         win.webContents.getURL().includes('popout.html')
       );

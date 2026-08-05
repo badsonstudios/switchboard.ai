@@ -59,6 +59,14 @@ numbers (latency, CPU, memory) where the item asks for them.
    - **Add an e2e test for every new user-facing surface.** If a feature can
      only be checked by looking at the window, it needs an e2e test — not a
      PROGRESS "[Dan eyeball]" note.
+   - **`e2e/` holds BOTH runners, split by extension (#230).** `*.spec.ts` is
+     Playwright (`playwright.config.ts` pins `testMatch` to it — its default
+     would swallow `*.test.ts` too); `*.test.ts` is **vitest**, and today means
+     the fixture's own unit tests (`e2e/fixtures/app.test.ts`, which mocks
+     Playwright's launcher to reach `launchApp`'s launch-FAILURE reaping — a
+     branch no spec can take on purpose). Both configs have to agree, so if you
+     ever move that line, move it in both. A vitest test named `*.spec.ts`, or a
+     spec named `*.test.ts`, is silently ignored by the runner you meant.
 
 **CI (GitHub Actions), every PR:** `build` job = lint + typecheck + unit +
 build + check:pty + check:fake-stream on Windows/macOS/Linux; `e2e` job =
@@ -74,6 +82,60 @@ everywhere else; CI stays fake-provider.
 npm run typecheck && npm test && npm run build && npm run e2e`. Skipping
 `typecheck` locally shipped 6 TS errors to CI on 2026-07-21 — electron-vite's
 build does not run tsc strict checks; only `npm run typecheck` does.
+
+**`npm run typecheck` is THREE tsc projects, and every TypeScript source file
+must be in one of them (#234):**
+
+| Project | Covers |
+|---|---|
+| `tsconfig.node.json` | `src/main`, `src/preload`, `src/shared`, `src/build`, `electron.vite.config.ts`, `vitest.config.ts`, `src/test-setup.ts` |
+| `tsconfig.web.json` | `src/renderer`, `src/shared`, `src/preload/index.ts` |
+| `tsconfig.e2e.json` | `e2e/**` (BOTH runners' files), `playwright.config.ts`, `src/renderer/src/env.d.ts` |
+
+(`scripts/**/*.js` is JavaScript and checked by no `tsc` — that would need
+`allowJs`. Its vitest tests are the safety net there.)
+
+A file in no project is checked by NOTHING — eslint's default preset is not
+type-aware, so a type error there reaches `main` silently. That was `e2e/`'s
+state until #234: switching it on surfaced **16 standing errors** — 14 from
+`Window.switchboard` being undeclared (13 `page.evaluate` bodies plus the
+implicit-`any` callback that followed), and 2 real ones (a closure that lost a
+narrowing, an `HTMLElement` annotation that could not hold Playwright's
+`SVGElement | HTMLElement`). Adding a new top-level source directory means
+adding it to a project (or adding a project and appending it to the `typecheck`
+script **and** `tsconfig.json`'s `references`). The e2e project pulls in
+`src/renderer/src/env.d.ts` for the `Window.switchboard` global, since every
+`page.evaluate` body is checked as renderer code; it also needs the `DOM` lib
+alongside `node` types for the same reason.
+
+**eslint has two tiers, and `e2e/` is the only tree on the upper one (#245).**
+Everything else gets `tseslint.configs.recommended`, which is NOT type-aware.
+`e2e/**/*.ts` and `playwright.config.ts` additionally extend
+`recommendedTypeChecked`, pointed at `tsconfig.e2e.json` — the same project
+`typecheck` uses, so lint and tsc see one program. A spec's assertion is only as
+good as the types under it: an `any` leaking out of a boundary makes
+`expect(x.foo).toBe(...)` compile no matter what `foo` is.
+
+Turning it on surfaced **83 errors across 21 files** (32
+`no-unsafe-member-access`, 29 `require-await`, 16 `no-unsafe-assignment`, 6
+stragglers), all fixed with **zero disables**. Two lessons worth keeping:
+
+- The `any` came from **`JSON.parse`**, not `page.evaluate` as #234 assumed —
+  six specs each re-describing a corner of `workspace.json` inline. It now has
+  one typed reader in `e2e/fixtures/app.ts` (`readWorkspaceFile` /
+  `persistedLayout` / `persistedUi` / `gridLeafViews`, plus the
+  `Persisted*` interfaces). Read the workspace file through those; do not
+  re-parse it in a spec. The one other `any` source is Electron's
+  `webContents.executeJavaScript`, typed `Promise<any>` and not generic —
+  narrow it at runtime (`String(...)`), don't cast.
+- 25 of the 29 `require-await` were the same stub,
+  `dialog.showOpenDialog = async () => ({...})`. Write
+  `() => Promise.resolve({...})`: identical at runtime, and `async` with no
+  `await` in it is a lie about the function.
+
+If a rule ever genuinely cannot be satisfied, an inline disable needs a comment
+saying why — `e2e/` currently has exactly one (`no-require-imports`, predating
+this), and `grep -rn "eslint-disable" e2e/` is the check.
 
 **Rules:**
 - Never report half-working code as done — record blockers in PROGRESS.md with

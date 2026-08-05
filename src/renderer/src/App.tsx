@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useSyncExternalStore } from 'react';
-import { useTranslation } from 'react-i18next';
 import {
   applyPreference,
   applyTheme,
@@ -29,6 +28,7 @@ import { AboutPanel } from './components/AboutPanel';
 import { UrgencyStrip } from './components/UrgencyStrip';
 import { CollapsedStrip } from './components/CollapsedStrip';
 import { WorkspaceReadOnlyBanner } from './components/WorkspaceReadOnlyBanner';
+import { PreflightBanner } from './components/PreflightBanner';
 import { collapsedRows, revealTargets } from './lib/ladder';
 import {
   cycleGlobal,
@@ -727,7 +727,10 @@ export function App(): React.JSX.Element {
       {/* shows nothing unless the workspace file is from a newer build and so
           cannot be saved this run (#168) — it reads that itself */}
       <WorkspaceReadOnlyBanner />
-      {!preflightOk && <PreflightBanner />}
+      {/* rendered unconditionally, and gated INSIDE: its live region has to
+          exist before the preflight answer lands or the warning is announced to
+          nobody (#222). Same reason as its sibling above. */}
+      <PreflightBanner shown={!preflightOk} />
       {/* Outside the rail (which toggles) and outside the grid (whose cards
           hide, pop out and — with E9-07 — rearrange by layout mode): the only
           place a strip can be "always visible" without every one of those
@@ -825,12 +828,4 @@ export function App(): React.JSX.Element {
       />
     </div>
   );
-}
-
-function PreflightBanner(): React.JSX.Element {
-  const { t } = useTranslation();
-  // colors and metrics in tokens.css (#206): the fill/ink pair has a contrast
-  // floor to meet in every theme, and a pair the drift test can read out of a
-  // stylesheet rule is a pair it can hold to that floor
-  return <div className="preflight-banner">{t('preflight.missingCli')}</div>;
 }

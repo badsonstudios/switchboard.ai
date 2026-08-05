@@ -353,7 +353,7 @@
     },
     "policy": {
       "always-visible": "On submit: keep every session visible",
-      "auto-collapse": "On submit: collapse the session to a strip (default)",
+      "auto-collapse": "On submit: collapse the session to a strip",
       "auto-hide": "On submit: hide the session"
     },
     "sessionPolicy": {
