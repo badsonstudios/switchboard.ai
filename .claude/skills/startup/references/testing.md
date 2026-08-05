@@ -54,8 +54,25 @@ numbers (latency, CPU, memory) where the item asks for them.
      pseudo-locale, autonomy), the card header (usage strip, git, plan chip),
      the live terminal (type a command → see output), pop-out (a second OS
      window opens), and the rail.
-   - `npm run e2e` builds first; `npm run e2e:only` skips the build;
-     `npm run e2e:headed` / `e2e:ui` for debugging.
+   - `npm run e2e` builds first; `npm run e2e:only` **does NOT** — it runs
+     against whatever is already in `out/`; `npm run e2e:headed` (builds) /
+     `e2e:ui` (does not) for debugging. **`e2e:only` is not "the full suite" —
+     it is the full suite against the LAST BUILD.**
+   - **The stale-bundle guard (#286).** `e2e:only` and `e2e:ui` run
+     `scripts/e2e-bundle-guard.js` first: it prints the build identity baked
+     into `out/main/index.js` (which SHA, which branch, how old) and **exits 1**
+     when any bundled source under `src/` — or `electron.vite.config.ts` /
+     `package.json` — is newer than `out/`. Editing a spec, a `*.test.ts` or a
+     doc does not trip it; those are not bundled. It exists because testing an
+     edit against the previous build fails in a way that reads exactly like a
+     logic bug, and did (#253, and P2-E15-15's original hand-test). Escape
+     hatch: `E2E_ALLOW_STALE=1` (warns, then runs; `$env:E2E_ALLOW_STALE=1` in
+     PowerShell). A missing `out/` fails regardless — there is nothing to test.
+   - **It compares mtimes, so any git operation that rewrites files — rebase,
+     `checkout`, `stash pop`, merge — trips it even when the content is
+     identical.** The answer is `npm run build`, not `E2E_ALLOW_STALE=1`. Never
+     bake the override into a runbook or a worker prompt: a guard that is always
+     overridden is a guard that is not there.
    - **Add an e2e test for every new user-facing surface.** If a feature can
      only be checked by looking at the window, it needs an e2e test — not a
      PROGRESS "[Dan eyeball]" note.
