@@ -6,7 +6,11 @@
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E18-01…10 ALL DONE 2026-08-02**; E15 done except #111 [held — real tokens];
 E9 at **7 of 11** — #70–#76 done, #77–#80 open; E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.** Orchestration run 4 CLOSED
+**In progress:** **🎛 ORCHESTRATION RUN 6 OPEN 2026-08-05** (block
+below) — E19 release/auto-update track (#257–#260, new) + SessionGrid
+track + CSS track. Run 5 CLOSED 2026-08-05: 14 items — 8 internal
+merged in-run, 6 user-facing merged same day by the Dan-authorized
+train. Run 4 CLOSED
 2026-08-04 and **FULLY MERGED same day** — 10 items: 7 internal +
 3 user-facing (Dan authorized the merge train without hand-testing;
 serial train #214 → #220 → #226, each bumped + re-greened; #226
@@ -16,19 +20,338 @@ structure adopting #228's temp-dir registry, verified by a local
 161+1 skip (from the merged branches' gate runs: 1227+46+5+16 /
 156+4+0+1).
 
-> # ▶▶ START HERE — run 4 fully merged; nothing open in flight.
-> Next: **`/orchestrate` run 5** — unblocked queue: #196 (feed
-> landmark titles), #197 (a11y sweep; fold #222 in if Dan agrees),
-> #215 (stale "(default)" string — trivial), #217 (runMoves seam),
-> #221 (status-pill contrast — #206's ink-token pattern), #224
-> (allowAllByLive growth — #223's sweep pattern), #219 (teardown
-> ordering), #227 (popout-registry consolidation), #229/#230 (test
-> hygiene), E9 tail #77–#80 (now unblocked: #76 merged; strictly
-> serial track). Collision note for run 5: #197+#221 both touch
-> SessionGrid-adjacent renderer chrome; E9 tail is serial with
-> itself and touches SessionGrid/store — pair carefully.
+> # ▶▶ START HERE — 🎛 RUN 5 CLOSED 2026-08-05. **14 items in ~9
+> hours: 8 internal MERGED (#230 #219 #229 #224 #234 #236 #235
+> #245, four of them filed mid-run from discoveries), 6 user-facing
+> in DAN'S QUEUE (#232 #240 #242 #243 #249 #252). 10 issues filed
+> from discoveries (#234 #235 #236 #239 #241 #245 #246 #250 #251
+> #253 + #255), 4 of them fixed same-run. Zero worker stalls, zero
+> lock steals, zero red pushes; one macOS fs.watch flake (known,
+> cleared on re-run) and one urgency.spec double-flake (promoted to
+> #251). Main @ 36488f2, unit baseline 1318 / e2e 161+1 skip; out/
+> REBUILT at 36488f2 and stamp verified — Dan can `npm start`.**
+> **Single-writer rule:** this file is written ONLY by the
+> orchestrator session. Workers report via handoff files in
+> `.claude/work_files/orchestrator/<issue#>.md`; those handoffs are
+> the inputs, this file is the output.
+>
+> **Merge train COMPLETE (2026-08-05, Dan-authorized):** all six
+> user-facing PRs merged in order #242 → #240 → #232 → #243 → #249
+> → #252, each bumped + re-greened; issues #215 #222 #77 #221 #196
+> #197 all closed. **Main @ 15eab97; out/ REBUILT, stamp 15eab977
+> verified in both bundles — Dan's `npm start` is current.**
+> Integration work the train needed (all verified locally before
+> push, all green on CI): 3× the same pre-#245 dialog-stub
+> require-await in new specs (#232, #252, + #243's theme.spec had
+> the #244-class Element-typing errors — same fixes those PRs
+> established); 2 real conflicts resolved — tokens.drift.test.ts
+> (#240's conditional-className regex matcher × #243's TINTED_RULES:
+> took both), SessionGrid view-tabs (#197's real tablist structure
+> × #243's ink token: kept the tablist, adopted the ink token) +
+> 06-keyboard.md (both sections kept, sequenced). **Unit baseline
+> on merged main: 1527** (measured locally on the final tree); e2e
+> baseline: next gate run re-measures (161+1 plus #232's +2,
+> #243's +1, #252's +3 — expect 167+1 skip; CI green on the exact
+> merged tree). **Dan: hand-test list in the run-5 final report.**
+> Newly unblocked by the train: #250 (one-liner), #246 (+
+> .collapsed-row joins TINTED_RULES in one line now), #78 (E9
+> pinning, seam noted on issue).
+>
+> **🎛 RUN 6 OPEN 2026-08-05 (this block is the resume mechanism —
+> a fresh orchestrator session starts here).** Single-writer rule:
+> this file is written ONLY by the orchestrator; workers report via
+> handoff files in `.claude/work_files/orchestrator/<issue#>.md` —
+> handoffs are the inputs, this file is the output.
+>
+> **#256 PLANNED first, per Dan's directive (done 2026-08-05):**
+> ClaudeMon dissected — it is C#/WinForms + Inno Setup with a
+> hand-rolled updater on a PUBLIC repo, so it contributes
+> architecture/policy, not portable code. Epic **E19** written into
+> `docs/plans/04-phase-2-switchboard.md` with 5 up-front decisions
+> (all veto-able in one comment on #256): feed = this private
+> repo's Releases with a locally-resolved token (credential store →
+> `gh auth token` → silently off; never embedded); hand-rolled
+> checker over electron-updater (electron-builder for packaging
+> only); Windows-only unsigned v1 (per-user NSIS = no UAC; in-app
+> download carries no Mark-of-the-Web = no SmartScreen); OQ #6 not
+> triggered (private dogfood; re-arms at public release); on a
+> private repo 404 = auth problem, never "up to date" (the
+> ClaudeMon trap). Items filed **#257 → #258 → #259 → #260,
+> strictly serial**; #256 stays open as the epic tracker.
+>
+> **Active workers (issue → worktree → branch, all Opus):**
+> - #257 E19-01 packaging → sb-wt-1 → feature/257-packaging
+> - #250 header-title one-liner → sb-wt-2 → feature/250-header-title
+> - #246 contrast sweep → sb-wt-3 → feature/246-contrast-sweep
+>
+> **Merge queue:** empty. **Dan's queue (run 6):** empty so far.
+>
+> **Run-6 queue behind the wave (collision tracks):** E19 serial
+> #257 → #258 → #259 → #260 · SessionGrid serial #250 → #239 →
+> #217 → #227 → #78 → #79 → #80 (#80 may slip to E14 — flag before
+> dispatch) · CSS serial #246 → #241 · tail candidates #251 (flake
+> forensics), #255 (measure first), #253 (keyboard drag-drop).
+> Parked on Dan's decisions: #200 #191 #129 #111 #207 #216.
+> **Decisions Dan owes (unchanged + new):** #200, #191, #129, #111,
+> #207, #216, E9-past-#80/E11/E13/E14 scoping; the nordic
+> status-ink shade (#243, veto-able in one comment); whether #222
+> should have folded into #197 (kept separate).
+>
+> **Worker pool (run 6):** sb-wt-1 → #257, sb-wt-2 → #250,
+> sb-wt-3 → #246 (dispatched 2026-08-05 from main @ 15eab97 +
+> the E19 scoping commit). Dan-PR branches from run 5 (77, 215,
+> 221, 222, 196, 197) kept locally.
+> - sb-wt-3 IDLE — next SessionGrid-cluster item (#197) waits for
+>   #196 to finish (cluster is serial); #235 reserved for sb-wt-2
+>
+> **Done this run:**
+> - ~~#245 e2e eslint typeChecked~~ ✅ **PR #254 MERGED** (internal;
+>   based on 139a221, 5/5 green first try; issue closed; main @
+>   36488f2). 83 errors → 0 with ZERO new disables and no any-casts.
+>   Finding that outlived the issue: the `any` was NOT page.evaluate
+>   (preload API types infer fine) — it was JSON.parse on
+>   workspace.json, six specs each re-describing it inline; now one
+>   typed reader in the fixture (`readWorkspaceFile` + Persisted*
+>   interfaces). 25/29 require-await were one dialog-stub line.
+>   Gates: 1318 unit / 161+1 skip ×2; lock waited ~26 min in-turn
+>   behind #197, no steal. Discovery filed: **#255** (src/ still
+>   untyped preset — measure first). Handoff:
+>   `.claude/work_files/orchestrator/245.md`.
+> - ~~#197 a11y sweep~~ **WORKER DONE — PR #252 ready, IN DAN'S
+>   QUEUE** (user-facing a11y, the run's biggest diff). #174's rule
+>   applied mechanically: real buttons on rail-row name blocks and
+>   Events rows (containers stay role-less — option-on-the-row
+>   would be an ARIA lie since rows CONTAIN buttons); group headers
+>   = disclosures with real aria-controls; view tabs = the one
+>   honest composite → tablist/tab/tabpanel, roving tabindex,
+>   manual activation; lamps already correct. Scope pull flagged +
+>   justified: rail context menu made walkable (focusable rows +
+>   Shift+F10 would have summoned a keyboard trap the sweep itself
+>   created). Review caught a REAL blocker: document.activeElement
+>   is the wrong document in a popout — fixed via ownerDocument.
+>   Gates: 1338 unit (+26, 2 new files) / 164+1 skip e2e (+3); lock
+>   first try, handed to #245 on release. Manual: 06-keyboard.md.
+>   **Merge-train note: 19 e2e call sites moved to
+>   getByRole('tab') — queue scanned, no queued PR clicks a view
+>   tab (closest: #243's theme buttons); the bump+re-green step
+>   self-detects any miss.** Discovery filed: **#253** (no keyboard
+>   path for group drag-drop; + dead .rail-row:hover CSS).
+>   CollapsedStrip verified already compliant. Handoff:
+>   `.claude/work_files/orchestrator/197.md`.
+> - ~~#235 killTree POSIX~~ ✅ **PR #248 MERGED** (internal,
+>   e2e-fixture; bumped onto 16515ec, 5/5 green; issue closed; main
+>   @ 139a221; unit baseline now 1318). Decision
+>   verified in installed playwright-core 1.61.1, not docs:
+>   launchProcess spawns `detached` on POSIX and reaps with
+>   `process.kill(-pid)` — so process-group kill, with bare-pid
+>   fallback (ESRCH = already dead is the common case). killTree
+>   exported with a platform arg so BOTH branches assert on every CI
+>   leg (each was unreachable on the other OS — how the bug
+>   survived). Landmine defused: test pids now 999_0xx; `fakeApp(1)`
+>   + POSIX killTree(1) = kill(-1) broadcast, one spy from a
+>   runner self-nuke. 14 fixture tests (+6), 3 mutations bite.
+>   Gates: 1318 unit (+6) / 161+1 skip e2e ×3; lock taken twice,
+>   re-acquired after review refactor, no steal. Discovery →
+>   **#251** filed: urgency.spec.ts flake, :96 SECOND strike +
+>   :45 new, load-sensitive class (flake watch promoted per the
+>   one-strike rule). Handoff:
+>   `.claude/work_files/orchestrator/235.md`.
+> - ~~#196 feed landmark titles~~ **WORKER DONE — PR #249 ready,
+>   IN DAN'S QUEUE** (user-facing a11y). Feed region label now
+>   "Conversation — {title}" (second ICU key, locale-reorderable);
+>   title threaded as PanelContext.title → panels.tsx → FeedView.
+>   The non-obvious call: title read from the session store via new
+>   `getCardTitle()` accessor, NOT `props.api.title` — dockview only
+>   learns a title at addPanel and nothing calls setTitle, so the
+>   api copy is birth-time stale and would fail the rename clause.
+>   Popouts covered by construction + proven by e2e (rename from
+>   main window, popout landmark follows). SessionGrid diff kept to
+>   2 hunks (~10 lines) away from #243's header block; CollapsedStrip
+>   /App untouched (#232 safe). Gates: 1317 unit (+5) / 163+1 skip
+>   e2e (+2); lock 3 acquisitions, waits behind #235, no steal.
+>   Manual: 06-keyboard.md; DESIGN §5.10 a11y bullet added.
+>   Discovery filed: **#250** (card HEADER still birth-time stale on
+>   rename — one line, deliberately after #243 lands). Handoff:
+>   `.claude/work_files/orchestrator/196.md`.
+> - ~~#236 ipc.test.ts harness consolidation~~ ✅ **PR #247 MERGED**
+>   (internal, test-only; bumped onto c99ca6d, 5/5 green; issue
+>   closed; main @ 16515ec). `cardHelpers(dir-getter, cardId)` at module level
+>   retires the copies in #187/#202/#219 + #170's `suspendedCard` +
+>   #218's inline `prior`; `tempDirEach` retires the
+>   beforeEach/afterEach pair from all ten blocks. 62 tests → 62,
+>   same names/assertions; ipc.ts byte-identical. Three mutation
+>   spot-checks bite identically to pre-refactor (incl. a #202-block
+>   one the dispatch didn't ask for). Unreachable-guard left exactly
+>   as #219 left it (converting the assertion = the one forbidden
+>   move). Gates: 1312 unit / 161+1 skip e2e at baseline; built
+>   before lock, ~10 min in-turn wait behind #221 then #234.
+>   Reported not fixed: priorCard's stray `folder` key; 13-option
+>   harness redesign; file-split decision. Handoff:
+>   `.claude/work_files/orchestrator/236.md`.
+> - ~~#221 status-pill contrast~~ **WORKER DONE — PR #243 ready,
+>   IN DAN'S QUEUE** (user-facing). Measured, not eyeballed: pills
+>   were 1.66–2.64:1 daylight / 2.99–4.49 nordic; now 4.59–5.23 /
+>   4.60–4.63, contrast themes byte-identical. Key finding:
+>   nordic's six `--status-*-ink` tokens were themselves below AA
+>   (ink==hue) — all six lightened in HSL to the minimum clearing
+>   4.5:1; **the one deliberate visual change, flagged as test item
+>   3 in the PR for Dan's one-comment veto.** Pill's private
+>   STATUS_COLOR table had drifted from the rail (starting read as
+>   idle, suspended used --faint) — deleted, pill now asks
+>   presentStatus; extracted `StatusPill.tsx`; 4 more raw-hue sites
+>   → -ink. Review blocker was real: the early test measured a pair
+>   it invented and passed WITH the bug — replaced by jsdom test +
+>   an e2e that measures what Chromium PAINTED, all 4 themes. 8
+>   mutations, 7 caught, survivor documented. Gates: 1459 unit at
+>   its base (+157) / 162+1 skip e2e (+1), CI 5/5 green (pre-#238
+>   base; bump at merge). One rail.spec drag-drop flake, passed
+>   isolated + full rerun. Discovery filed: **#246** (six more
+>   raw-hue sites below AA; .collapsed-row audit gated on #232).
+>   Handoff: `.claude/work_files/orchestrator/221.md`.
+> - ~~#234 tsconfig.e2e wiring~~ ✅ **PR #244 MERGED** (internal;
+>   5/5 green; issue closed; main @ c99ca6d — `npm run typecheck`
+>   now covers e2e/). `tsconfig.e2e.json`
+>   (ES2023 + DOM libs — evaluate bodies are browser code) wired
+>   into `npm run typecheck` + references; proved with a deliberate
+>   error (exit 2, file named). Issue's "3 errors" was an
+>   undercount: 16 project-wide — 14 `Window.switchboard` fixed by
+>   including the renderer's own env.d.ts (one declaration site,
+>   fails loud if it moves), 2 genuine type-level fixes (csp.spec
+>   closure narrowing, rail.spec SVGElement widening). Bonus:
+>   vitest.config.ts + src/test-setup.ts were in NO project (setup
+>   file referenced only as a string) — now covered, already clean.
+>   Gates: 1312 unit / 161+1 skip e2e ×2; lock waited ~6 min behind
+>   #215 in-turn. eslint left alone as instructed, measured instead:
+>   discovery filed **#245** (typeChecked preset = 83 errors/21
+>   files, mostly page.evaluate any). Handoff:
+>   `.claude/work_files/orchestrator/234.md`.
+> - ~~#215 stale "(default)" palette string~~ **WORKER DONE — PR
+>   #242 ready, IN DAN'S QUEUE** (user-facing, one line in en.json).
+>   Verified in code the shipped default is `always-visible`
+>   (presentation-policy.ts:49); dropped "(default)" rather than
+>   moving it — no sibling string labels a default and the palette
+>   already carries it dynamically via `commands.policyDefault`.
+>   Staleness sweep of every policy string: this was the only liar.
+>   Manual already correct (fixed when the amendment shipped). Gates
+>   all baseline: 1308 unit / 161+1 skip e2e; lock waited ~4 min
+>   behind #221 in-turn, and worker built BEFORE taking the lock +
+>   used e2e:only under it (lock held for playwright time only —
+>   good pattern, told to later workers). Nothing new discovered.
+>   Handoff: `.claude/work_files/orchestrator/215.md`.
+> - ~~#222 PreflightBanner role=status~~ **WORKER DONE — PR #240
+>   ready, IN DAN'S QUEUE** (user-facing a11y). Two covers, each
+>   filling the other's hole: App mounts the region unconditionally
+>   from frame 1, AND the component defers its words one commit —
+>   needed because App's tree sits behind `!uiReady` and a MISSING
+>   CLI is the fast preflight path, so the banner can genuinely
+>   mount with the warning already present (the silent case).
+>   Component extracted to `PreflightBanner.tsx` (App unmountable in
+>   jsdom); test asserts on the MutationObserver stream (region
+>   inserted first, words arrive later), which is what a screen
+>   reader actually watches; 4 mutations each caught. #206's drift
+>   guard widened to conditional className + narrowed to exclude
+>   test files. Popout host verified unaffected (boot-time banner,
+>   documented non-goal). Gates: 1310 unit at its base (+8) /
+>   161+1 skip e2e ×2; lock instant both times. Manual:
+>   11-troubleshooting.md. Discovery filed: **#241** (banner lacks
+>   flex-shrink:0). Handoff:
+>   `.claude/work_files/orchestrator/222.md`.
+> - ~~#224 allowAllByLive release~~ ✅ **PR #238 MERGED** (internal;
+>   bumped onto 1ac60a8, 5/5 green; issue closed; main @ b9a23de;
+>   unit baseline now 1312). `forgetCardLiveIds` now releases the grant
+>   with the binding; `mapLiveToCard` gained the same-pair guard
+>   #223 refused — the sweep made it load-bearing (pass-2 ADOPTION
+>   returns the same live id on every hide→reveal / dock-back, and
+>   without the guard the sweep would revoke a RUNNING session's
+>   allow-all). Both readers traced; all 4 forget callers end the
+>   session; hiding never reaches it. Renderer set was the only
+>   allow-all registry that never released (main's dies in
+>   unregisterSession). 4 new tests, mutation-checked (3 fail
+>   without the release, 1 without the guard). Gates: 1306 unit at
+>   its base (+4) / 161+1 skip e2e; lock first try. Discovery filed:
+>   **#239** (permQueue never pruned for dead sessions — review bar
+>   can hold prompts that go nowhere + same leak shape; includes the
+>   :519 `if (live)`/`?? ''` cleanup). Handoff:
+>   `.claude/work_files/orchestrator/224.md`.
+> - ~~#229 stream-recipe PATH leak~~ ✅ **PR #237 MERGED** (internal,
+>   test-only; bumped onto e3005cd, 5/5 green; issue closed; main @
+>   1ac60a8).
+>   PATH captured before the prepend, restored in afterEach; sweep
+>   found the SAME leak in `claude.test.ts` (`withCliOnPath` saved
+>   but never restored) — fixed; third env-mutation site
+>   (`stream-spawn.test.ts` ELECTRON_RUN_AS_NODE) already try/finally,
+>   untouched. Gates: 1302 unit / 161+1 skip e2e at baseline; lock
+>   first try, no contention. Nothing new discovered. Handoff:
+>   `.claude/work_files/orchestrator/229.md`.
+> - ~~#77 P2-E9-08 idle collapse~~ **WORKER DONE — PR #232 ready,
+>   IN DAN'S QUEUE** (user-facing). ≥4 idle collapsed-strip rows fold
+>   into one expandable "N idle sessions" row; derived from live
+>   status (pure `stripItems`/`foldableRow` in `lib/ladder.ts`);
+>   never folds working/attention/focused sessions; fold state is a
+>   glance, comes back closed on relaunch. NO automatic idle sweep —
+>   worker flagged (correctly) that §5.8's first clause is already
+>   shipped as E9-05's collapsed rung and a standing sweep would
+>   contradict the 2026-08-04 always-visible ruling; aggregation only,
+>   no DESIGN edit. Gates: 1307 unit (+13) / 163+1 skip e2e (+2), CI
+>   5/5 green (pre-#231 base; bump at merge time). Lock waited
+>   ~20 min in-turn, no steal. Manual: 07-workspace.md new section.
+>   Seam for #78 noted on the issue (pinned exempt from fold =
+>   one line in foldableRow). **#78 now BLOCKED behind #77's merge**
+>   (E9 serial). Handoff: `.claude/work_files/orchestrator/77.md`.
+> - ~~#219 tearDownLive ordering~~ ✅ **PR #233 MERGED** (internal;
+>   issue closed; main @ e3005cd; unit baseline now 1308. One macOS
+>   fs.watch flake on the rebased commit — the KNOWN run-4 flake,
+>   discovery-scheduler's real-fs.watch "file APPEARING" test, 0
+>   events in 10s; verified unrelated to the diff, cleared on
+>   re-run. Flake watch +1.) Design: per-step
+>   try/catch (`tearDownStep`) over reordering — mutation-proved
+>   (reorder-only design still fails 5/6 new tests). Found + fixed a
+>   second casualty: `closeCard`'s persist.remove was skipped on a
+>   teardown throw → closed cards resurrected on next boot;
+>   `dropLive` (Restart) had no catch either — fail-open moved into
+>   the shared function, reap's catch kept as backstop. 6 new tests
+>   (1300 unit pre-rebase) / 161+1 skip e2e ×2; lock waited ~22 min
+>   in-turn behind #230 then #77, nothing stolen. Report-only: #187's
+>   adopt-by-liveness guard now unreachable-by-construction (kept,
+>   comments updated). Discovery filed: **#236** (ipc.test.ts harness
+>   growth/duplication). Handoff:
+>   `.claude/work_files/orchestrator/219.md`.
+> - ~~#230 launchApp killTree~~ ✅ **PR #231 MERGED** (internal,
+>   test-only; 5/5 green first try; issue closed; main @ c1a84f0).
+>   Eager pid capture at `electron.launch()` return (#185 lesson one
+>   step earlier), kill-FIRST reap in the catch (an abandoned await
+>   skips the kill in exactly the wedged case), shared
+>   `gracefulClose()` with the `clearTimeout` the inline version
+>   lacked, lazy `electronPath` so `npm test` doesn't need the
+>   Electron download. New `e2e/fixtures/app.test.ts` (8 tests,
+>   mutation-checked: 5/8 red without the reap); runner split pinned
+>   (`*.spec.ts` playwright / `*.test.ts` vitest — verified 162/31
+>   unchanged), recorded in `startup/references/testing.md`. Gates:
+>   1302 unit (+8) / 161+1 skip e2e ×2. Lock: waited ~7 min behind
+>   #219, in-turn, never stolen. Discoveries filed: **#234** (e2e/
+>   typechecked by nothing — tsconfig.e2e.json), **#235** (killTree
+>   isn't a tree kill on POSIX). Handoff:
+>   `.claude/work_files/orchestrator/230.md`.
+>
+> **Merge queue (serial):** empty. Main @ 139a221.
+> **Dan's PR queue (6):** PR #232 (#77 idle collapse), PR #240
+> (#222 banner announce), PR #242 (#215 palette string), PR #243
+> (#221 pill contrast — carries the one deliberate visual change,
+> nordic status inks brightened to reach AA; veto-able in one
+> comment), PR #249 (#196 feed landmarks), PR #252 (#197 a11y
+> sweep) — all ready-for-review; test lists in the PR bodies.
+> Merge-train notes: #243/#232/#249/#252 share SessionGrid-adjacent
+> files — expect a conflict resolution or two, each PR bumps +
+> re-greens before merge; #252 moved 19 e2e call sites to
+> getByRole('tab') (queue scanned: no queued PR clicks a view tab,
+> and re-green self-detects any miss).
+> **Unit baseline now 1318** (main @ 139a221).
+> **Remaining unblocked, undispached:** SessionGrid cluster behind
+> #221: #196 → #217 → #197 → #227. #78–#80 blocked behind #77's
+> merge (Dan).
 > **Decisions Dan owes:** #200, #191, #129, #111, #207, #216,
-> E9-past-#80/E11/E13/E14 scoping.
+> E9-past-#80/E11/E13/E14 scoping, and whether #222 should have
+> been folded into #197 (run 5 kept them separate).
 > **Hand-test result (2026-08-04, post-merge):** Dan ran the
 > combined run-4 test list against a fresh build of e22e039 —
 > **everything passed.** One tooling lesson from the session, for

@@ -1059,6 +1059,136 @@ E17-02's fourth registrant rather than a promised one. **User doc:**
 
 ---
 
+## E19 — Release & auto-update (milestone: Phase 2; added 2026-08-05, owner request — issue #256)
+
+*Goal: dogfooding builds that update themselves. The app checks for a new
+release, shows a small "there's a new release" dialog with the release notes,
+and one click downloads, verifies, and installs it. Reference implementation:
+**ClaudeMon** (`C:\Projects\ClaudeMon`) — dissected 2026-08-05. It is C#/WinForms
++ Inno Setup, so it contributes **architecture and policy, not code**: the
+single-version-source → build → sha256 → `gh release create` pipeline with
+notes-required gating, the fail-open never-throws result contract, the
+Get / Ignore / Skip-this-version prompt policy, and the opt-in silent install
+with a pending-version handshake confirmed on next startup.*
+
+**The one hard problem, decided up front** (orchestrator, 2026-08-05 —
+veto-able in an issue comment, like the nordic-ink call): the repo is PRIVATE,
+and ClaudeMon's anonymous `releases/latest` check gets a **404 on a private
+repo — which its logic would misread as "no releases, you're up to date"
+forever.** Decisions:
+
+1. **Feed = this private repo's GitHub Releases; auth = a locally-resolved
+   token, never embedded.** Resolution order at runtime: OS credential store
+   (DESIGN.md §5.29's home for credentials) → `gh auth token` shell-out (zero
+   setup on Dan's machines) → **disabled, silently** (fail-open: no token means
+   no update checks, never an error dialog). ClaudeMon's own doctrine — "never
+   embed a token in the shipped app" — is the argument against the shortcut.
+   The alternative (a public releases-only repo) is rejected for v1: it makes a
+   private product's installers world-downloadable.
+2. **Hand-rolled checker over `electron-updater`.** electron-updater's private
+   GitHub story needs the same token anyway, drags in `latest.yml`/blockmap
+   machinery, and expects signed builds for its Windows flow; the ClaudeMon
+   contract is smaller, proven, and fits the repo's broker/service idioms.
+   electron-**builder** is still used for packaging (item 01) — just not its
+   update runtime.
+3. **Windows-only v1, unsigned.** Dogfooding is Windows. No code signing:
+   per-user NSIS install avoids UAC, and the in-app download dodges SmartScreen
+   because Mark-of-the-Web is applied by browsers, not raw HTTP clients
+   (ClaudeMon's measured trick). sha256 verification does the integrity work;
+   note it is TOFU — checksum and installer come from the same feed.
+4. **OQ #6 (the app-name check) is NOT triggered** — private dogfood releases,
+   not public distribution. It re-arms the day a release becomes public.
+5. **404 handling is the opposite of ClaudeMon's:** on a private repo, 404
+   means *missing/insufficient auth* and must be reported as such internally
+   (still silent to the user on automatic checks) — never "up to date".
+
+Work items:
+
+- **P2-E19-01 · Packaging: electron-builder + Windows installer + version and
+  changelog conventions — M.** *(no deps)* Add `electron-builder` (packaging
+  only): productName/appId, per-user one-click NSIS target, `asarUnpack` for
+  `node-pty` (the native dep is why this is not config-paste), a placeholder
+  `.ico`, `npm run package` producing
+  `dist/switchboard-Setup-<version>.exe`. Versioning: package.json semver stays
+  the single human-bumped source (per `src/shared/build-identity.ts`'s
+  documented split — semver = release number, git stamp = build identity);
+  add `CHANGELOG.md` (with a section for the first release) and a bump
+  convention. Known guardrails: `check-scripts.test.ts` asserts the ci.yml
+  comment against package.json scripts; reuse `scripts/ev.js`'s env-stripping
+  if spawning electron tooling.
+  *Done when:* `npm run package` on Windows produces an installer that installs
+  per-user **without UAC**, launches, and shows the right semver + git stamp in
+  About; installing over a running instance completes (upgrade path); a PTY
+  session starts in the packaged app (node-pty survived asar — this is the
+  assertion that matters); `dist/` stays gitignored.
+- **P2-E19-02 · Release publishing: tag-driven CI workflow + notes-required
+  gate — S.** *(depends: 01)* `.github/workflows/release.yml` on tag `v*` (+
+  `workflow_dispatch` for dry runs): windows-latest, `npm ci`, lint + typecheck
+  + unit gate, package, sha256 sidecar, create the GitHub Release on this repo
+  with notes extracted from `CHANGELOG.md`. ClaudeMon's two publish-script
+  rules carry over verbatim: **hard-fail if the version has no changelog
+  section** (an empty release is one the updater will offer to every user),
+  and roll never-published older sections into the notes. Tag must equal
+  package.json version or the workflow fails.
+  *Done when:* pushing a `v*` tag yields a release with installer + `.sha256` +
+  changelog-derived notes; a tag with no changelog section fails loudly; a
+  re-run on an existing release is idempotent, not a duplicate; the existing
+  5-job CI is untouched.
+- **P2-E19-03 · Update check + "new release" dialog with in-app notes — M.**
+  *(depends: 02)* Main service (the `preflight.ts` shape: one broker-handled
+  probe returning a plain result object): checks `releases/latest` with the
+  decided token resolution, result-record pattern, **nothing in the update path
+  throws**. Startup check + 24h timer + manual "Check for updates…" (palette,
+  menu, About panel). New capability pair in `CHANNEL_CAPABILITIES` (named for
+  what they DO, per the `environment.probe` precedent); preload namespace
+  `update: { check(), onStatus(cb) }`. Renderer dialog follows AboutPanel
+  (role=dialog, Escape/click-away, focus return, joins the `modalOpenRef`
+  latch): "There's a new release — vX" with **Update / Ignore / Skip this
+  version** and the **release notes rendered in-app** (the release body; E16's
+  shared markdown renderer). Skip is per-version; a manual check always
+  prompts, even for a skipped version. Settings toggle for auto-check
+  (default on). i18n for all renderer strings.
+  *Done when:* with a newer release published the dialog shows version + notes;
+  Skip suppresses exactly that version and a newer release prompts again; with
+  **no token the app behaves identically to today** (no dialog, no error, one
+  debug log line); automatic-check failures are silent, manual-check failure
+  shows a gentle non-error message; version compare handles `v`-prefix and
+  3-vs-4-part forms (unit-tested); the 404-means-auth case is distinguished
+  from "no releases" (unit-tested); user doc page in `docs/manual/`.
+- **P2-E19-04 · One-click download + verified install + post-update
+  handshake — M.** *(depends: 03)* Download the installer asset to temp over
+  authenticated HTTPS (GitHub private-asset download: `Accept:
+  application/octet-stream`, token on the API host **but never forwarded to
+  the signed redirect host**), determinate progress + cancel in the dialog,
+  verify against the `.sha256` sidecar — **mismatch deletes the file and never
+  executes it** (fallback: open the release page in the browser). Launch the
+  NSIS installer silently, quit the app, persist `pendingUpdateVersion`; next
+  startup compares it to the running version and surfaces "You're now on vX"
+  (event feed), or logs a warning on mismatch. Stale temp installers swept at
+  startup; re-entrancy guarded (a timer tick during a download must not
+  double-prompt); absolute-HTTPS-only for anything executed or opened.
+  *Done when:* Update on a real (draft) release downloads with progress,
+  verifies, silently installs, relaunches the new version, and the new run
+  confirms the handshake; a corrupted download is deleted, never executed, and
+  falls back to the browser path; cancel mid-download works and the persistent
+  "update available" affordance remains; every failure path is fail-open.
+
+**Not in scope:** macOS/Linux packaging (the release workflow's shape mirrors
+CI's matrix when they matter) · code signing / notarization · delta updates ·
+channels/prereleases beyond GitHub's own `latest` semantics (drafts stay the
+staging mechanism) · auto-install-without-asking (the dialog is the consent).
+
+**Sequencing:** strictly serial, 01 → 02 → 03 → 04 — each item's gate needs the
+previous item's artifact (02 packages 01's installer; 03 checks against 02's
+release; 04 installs what 03 found). **User doc:** the manual page arrives with
+03 and is extended by 04. PHILOSOPHY §4: this is orchestrator-owned app
+infrastructure, not an AI-session feature — the litmus items on session
+authority don't bite; fail-open and local-first are the binding constraints
+(the check talks to the release host and nothing else, and a dead feed never
+blocks a session).
+
+---
+
 **Embedded empirical spike (OQ #9 — carried from `03-later-phases.md` notes,
 restored 2026-07-21):** the merge-conflict endgame wants its 7–8-real-branches
 experiment once parallel worktree use is real. Schedule it when E11 makes
