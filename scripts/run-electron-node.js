@@ -16,6 +16,7 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const { createAttachConsoleFilter } = require('./pty-noise-filter');
+const { cleanEnv } = require('./clean-env');
 
 /** how long to wait after `exit` for a piped stderr to close before giving up */
 const STDERR_DRAIN_MS = 2000;
@@ -102,9 +103,9 @@ module.exports = { runFiltered };
 
 if (require.main === module) {
   const electron = require('electron'); // plain-node require -> path to binary
-  const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
-  delete env.ELECTRON_NO_ATTACH_CONSOLE;
-  delete env.NoDefaultCurrentDirectoryInExePath;
+  // the one caller that WANTS run-as-node: cleanEnv strips it, the override
+  // puts it back deliberately (scripts/clean-env.js)
+  const env = cleanEnv({ ELECTRON_RUN_AS_NODE: '1' });
 
   runFiltered(electron, process.argv.slice(2), {
     env,
