@@ -17,7 +17,19 @@ import fs from 'fs';
 import path from 'path';
 
 const root = process.cwd();
-const read = (f: string) => fs.readFileSync(path.join(root, f), 'utf8');
+
+/**
+ * Line endings NORMALISED, and that is not tidiness.
+ *
+ * The repo has no `.gitattributes`, and both this machine and GitHub's
+ * windows-latest runner check out with `core.autocrlf=true` — so every
+ * assertion below sees LF locally (these files were authored with LF and never
+ * re-checked-out) and CRLF on the Windows CI job. A regex with a literal `\n`,
+ * or a `$` that expects to sit against one, then passes here and fails only in
+ * CI. Verified rather than assumed: converting the workflow to CRLF reddens
+ * two of these tests without this line.
+ */
+const read = (f: string) => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
 
 const RELEASE = '.github/workflows/release.yml';
 const CI = '.github/workflows/ci.yml';
