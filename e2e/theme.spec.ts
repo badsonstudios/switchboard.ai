@@ -121,12 +121,12 @@ test.describe('themes (P2-E15-05)', () => {
         // measured against a surface the user never sees through it.
         let from = 'none';
         let bg = 'rgb(255, 255, 255)';
-        for (let n: HTMLElement | null = el; n; n = n.parentElement) {
+        for (let n: Element | null = el; n; n = n.parentElement) {
           const c = getComputedStyle(n).backgroundColor;
           const parts = c.match(/[\d.]+/g);
           if (parts && (parts.length < 4 || Number(parts[3]) >= 0.99)) {
             bg = c;
-            from = n === el ? 'pill' : (n.dataset.testid ?? n.className ?? 'ancestor');
+            from = n === el ? 'pill' : (n.getAttribute('data-testid') ?? n.className ?? 'ancestor');
             break;
           }
         }
