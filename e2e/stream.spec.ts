@@ -150,7 +150,7 @@ test.describe('a stream-json session (P2-E18-08a)', () => {
     // and the file is actually written: the answer was HONOURED, which is the
     // thing the hook path cannot do for `.claude/` (measured 2026-08-01)
     const target = path.join(folder, '.claude', 'scripts', 'coverage.sh');
-    await expect(async () => {
+    await expect(() => {
       expect(fs.existsSync(target)).toBe(true);
     }).toPass({ timeout: 20_000 });
 

@@ -108,12 +108,34 @@ script **and** `tsconfig.json`'s `references`). The e2e project pulls in
 `page.evaluate` body is checked as renderer code; it also needs the `DOM` lib
 alongside `node` types for the same reason.
 
-eslint over `e2e/` is deliberately still on the **repo-wide non**-type-checked
-preset (`tseslint.configs.recommended`, which is what every directory gets):
-switching `e2e/` to `recommendedTypeChecked` lights up 83 errors across 21 files
-— 32 `no-unsafe-member-access`, 29 `require-await`, 16 `no-unsafe-assignment`,
-the rest stragglers — nearly all of them `page.evaluate` returning `any`. That
-is its own item, not a typecheck wire-up's.
+**eslint has two tiers, and `e2e/` is the only tree on the upper one (#245).**
+Everything else gets `tseslint.configs.recommended`, which is NOT type-aware.
+`e2e/**/*.ts` and `playwright.config.ts` additionally extend
+`recommendedTypeChecked`, pointed at `tsconfig.e2e.json` — the same project
+`typecheck` uses, so lint and tsc see one program. A spec's assertion is only as
+good as the types under it: an `any` leaking out of a boundary makes
+`expect(x.foo).toBe(...)` compile no matter what `foo` is.
+
+Turning it on surfaced **83 errors across 21 files** (32
+`no-unsafe-member-access`, 29 `require-await`, 16 `no-unsafe-assignment`, 6
+stragglers), all fixed with **zero disables**. Two lessons worth keeping:
+
+- The `any` came from **`JSON.parse`**, not `page.evaluate` as #234 assumed —
+  six specs each re-describing a corner of `workspace.json` inline. It now has
+  one typed reader in `e2e/fixtures/app.ts` (`readWorkspaceFile` /
+  `persistedLayout` / `persistedUi` / `gridLeafViews`, plus the
+  `Persisted*` interfaces). Read the workspace file through those; do not
+  re-parse it in a spec. The one other `any` source is Electron's
+  `webContents.executeJavaScript`, typed `Promise<any>` and not generic —
+  narrow it at runtime (`String(...)`), don't cast.
+- 25 of the 29 `require-await` were the same stub,
+  `dialog.showOpenDialog = async () => ({...})`. Write
+  `() => Promise.resolve({...})`: identical at runtime, and `async` with no
+  `await` in it is a lie about the function.
+
+If a rule ever genuinely cannot be satisfied, an inline disable needs a comment
+saying why — `e2e/` currently has exactly one (`no-require-imports`, predating
+this), and `grep -rn "eslint-disable" e2e/` is the check.
 
 **Rules:**
 - Never report half-working code as done — record blockers in PROGRESS.md with

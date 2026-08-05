@@ -92,7 +92,7 @@ test.describe('command palette (E9-02)', () => {
     const w = a.window;
     await expect(w.getByText(path.basename(folderA)).first()).toBeVisible({ timeout: 25_000 });
     await a.app.evaluate(({ dialog }, dir) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [dir] });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [dir] });
     }, folderB);
 
     // create a session — palette only, no mouse
@@ -171,7 +171,7 @@ test.describe('command palette (E9-02)', () => {
     const w = a.window;
     await expect(w.getByText(path.basename(folderA)).first()).toBeVisible({ timeout: 25_000 });
     await a.app.evaluate(({ dialog }, dir) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [dir] });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [dir] });
     }, folderB);
     await w.getByRole('button', { name: '+ session' }).click();
     await expect(w.getByText(path.basename(folderB)).first()).toBeVisible({ timeout: 25_000 });
@@ -188,7 +188,7 @@ test.describe('command palette (E9-02)', () => {
     // keystrokes belong to the session the user just navigated to
     await w.keyboard.type('hello-a');
     const strayText = await w.evaluate(() =>
-      [...document.querySelectorAll('textarea')].map((el) => (el as HTMLTextAreaElement).value)
+      [...document.querySelectorAll('textarea')].map((el) => el.value)
     );
     expect(strayText.join('|')).not.toContain('hello-a');
   });

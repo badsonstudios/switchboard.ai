@@ -133,11 +133,13 @@ afterEach(() => {
 describe('launchApp — the launch-failure path (#230)', () => {
   it('killTrees the spawned process when the wiring after launch throws', async () => {
     const f = fakeApp(999_042);
-    f.handle.firstWindow.mockImplementation(async () => {
+    f.handle.firstWindow.mockImplementation(() => {
       // Playwright drops the connection on its way out — from here on
       // `process()` throws, so only a pid read EAGERLY still exists.
       f.detach();
-      throw new Error('firstWindow timed out');
+      // a REJECTED promise, not a synchronous throw: `firstWindow()` is awaited,
+      // and the two are not the same thing to a caller that stores it first.
+      return Promise.reject(new Error('firstWindow timed out'));
     });
     h.launch.mockResolvedValue(f.handle);
 
