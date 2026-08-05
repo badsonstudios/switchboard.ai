@@ -150,7 +150,7 @@
     "closeTab": "Close (ends the session)",
     "closeTabIcon": "✕",
     "closeConfirm": "Close \"{title}\"? This ends the session and removes the card.",
-    "closeAllConfirm": "Close {count, plural, one {# session} other {# sessions}}? This ends them and removes their cards. {spared, plural, =0 {} one {# pinned session is kept.} other {# pinned sessions are kept.}}",
+    "closeAllConfirm": "Close {count, plural, one {# session} other {# sessions}}? This ends them and removes their cards.{spared, plural, =0 {} one { # pinned session is kept.} other { # pinned sessions are kept.}}",
     "closeAllNothing": "Nothing to close — {count, plural, one {the # open session is pinned} other {all # open sessions are pinned}}.",
     "viewTerminal": "Terminal",
     "viewDiff": "Changes",

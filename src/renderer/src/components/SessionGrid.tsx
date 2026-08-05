@@ -31,7 +31,7 @@ import { Box, boxOnAnyDisplay, RescuedPopout, sanitizePopoutLayout, WorkArea } f
 import { captureSlot, openerRelative, placeAt } from '../lib/dock-slot';
 import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
 import { submitTarget } from '../lib/presentation-policy';
-import { closableCards } from '../lib/pinning';
+import { bulkClose } from '../lib/pinning';
 import { createSweeper, SweepPort, SweepRequest } from '../lib/layout-sweep';
 import {
   cycleMode,
@@ -2125,15 +2125,16 @@ export function SessionGrid(props: {
         retireCard(cardId);
       },
       closeAllCards: () => {
-        // RAIL ORDER, and through `closableCards` rather than a `filter` here:
-        // that function is §5.8's pinning exemption itself, and routing every
-        // bulk operation through it is what stops the next one — the eviction
-        // policy §5.8 anticipates — from having to remember the rule (E9-09).
-        const doomed = closableCards(
+        // RAIL ORDER, and the DECISION through lib/pinning's `bulkClose` rather
+        // than a `filter` here: that function is §5.8's pinning exemption
+        // itself, and routing every bulk operation through it is what stops the
+        // next one — the eviction policy §5.8 anticipates — from having to
+        // remember the rule. What is left in this function is only the dialogs
+        // and the loop, which is all a component should own (E9-09).
+        const { doomed, spared } = bulkClose(
           sessionStore.getRailOrder().flat.map((s) => s.id),
           sessionStore.getPins()
         );
-        const spared = sessionStore.getRailOrder().flat.length - doomed.length;
         if (doomed.length === 0) {
           // every session is pinned: say so rather than opening a confirm for
           // an empty list, which reads as the command being broken

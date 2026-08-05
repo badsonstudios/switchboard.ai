@@ -62,37 +62,52 @@ export function railOrder<T extends AutoGroupable>(
   /** §5.8's "a pinned session sorts first in the rail" (P2-E9-09) */
   pins: PinSet = NO_PINS
 ): RailOrderResult<T> {
-  // ONE pre-sort, and every bucket below inherits it. Pinned sessions rise to
-  // the front of their own bucket — the group they are in, the auto-group they
-  // formed, or the loose list — rather than being torn out to a leading section
-  // of their own. That is VS Code's semantics as well as the honest reading of
-  // "sorts first": pinning a tab moves it to the front of ITS editor group, not
-  // across groups. Hoisting out would empty the count on the group header the
-  // user deliberately put the session in, and would fight the stored group
-  // order that the rail's own reordering owns.
+  // §5.8's "a pinned session sorts first" is applied PER BUCKET, and applied
+  // LAST — after membership and after bucket order are both settled.
   //
-  // On a workspace with no persistent or emergent groups — the default, and by
-  // far the common shape — the loose list IS the rail, so a pinned session is
-  // literally first. One consequence falls out for free and is wanted: an
-  // auto-group containing a pinned session is itself computed earlier, because
-  // `computeAutoGroups` buckets in the order it is handed.
-  const ordered = sortPinnedFirst(sessions, pins);
+  // Per bucket, because a pinned session sorts to the front of the group it is
+  // in rather than being torn out into a leading section of its own. That is VS
+  // Code's semantics (pinning a tab moves it to the front of ITS editor group,
+  // never across groups) and it is the only reading that does not empty the
+  // count on the header the user deliberately filed the session under. On a
+  // workspace with no persistent or emergent groups — the default, and by far
+  // the common shape — the loose list IS the rail, so a pinned session is
+  // literally first.
+  //
+  // Applied LAST is the subtler half, and it is what keeps lib/pinning's
+  // promise honest: "pinning promotes, it never shuffles". Pre-sorting the
+  // INPUT would have been one line shorter and would have quietly hoisted whole
+  // auto-groups — `computeAutoGroups` buckets in the order it is handed, so
+  // pinning one member would lift its emergent group above another one and move
+  // strangers past each other. Nobody asked for that, and a rule with an
+  // exception nobody wrote down is how "sorts first" ends up meaning three
+  // different things. Membership and bucket order are computed from the
+  // sessions exactly as they arrived; the pin only reorders WITHIN a bucket.
   const grouped = new Map<string, T[]>();
   for (const g of groups) grouped.set(g.id, []);
   const ungrouped: T[] = [];
-  for (const s of ordered) {
+  for (const s of sessions) {
     if (s.groupId && grouped.has(s.groupId)) grouped.get(s.groupId)!.push(s);
     else ungrouped.push(s);
   }
   const auto = computeAutoGroups(ungrouped);
   const autoMemberIds = new Set(auto.flatMap((g) => g.memberIds));
   const byId = new Map(ungrouped.map((s) => [s.id, s]));
-  const orderedGroups = groups.map((g) => ({ id: g.id, members: grouped.get(g.id) ?? [] }));
+  const orderedGroups = groups.map((g) => ({
+    id: g.id,
+    members: sortPinnedFirst(grouped.get(g.id) ?? [], pins),
+  }));
   const orderedAuto = auto.map((ag) => ({
     key: ag.key,
-    members: ag.memberIds.map((id) => byId.get(id)).filter((s): s is T => !!s),
+    members: sortPinnedFirst(
+      ag.memberIds.map((id) => byId.get(id)).filter((s): s is T => !!s),
+      pins
+    ),
   }));
-  const loose = ungrouped.filter((s) => !autoMemberIds.has(s.id));
+  const loose = sortPinnedFirst(
+    ungrouped.filter((s) => !autoMemberIds.has(s.id)),
+    pins
+  );
   return {
     groups: orderedGroups,
     autoGroups: orderedAuto,

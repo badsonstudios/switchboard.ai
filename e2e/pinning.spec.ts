@@ -99,6 +99,11 @@ test.describe('pinning contract (E9-09)', () => {
 
   test('a pin taken by hand sorts the session first, and still does after a relaunch', async () => {
     const ws = await workspace(3);
+    // assigned IMMEDIATELY, and reassigned after the relaunch: `afterEach` is
+    // the only thing that kills the Electron process and deletes its temp home,
+    // so a failure before the second launch must still have something to clean
+    // up (#213).
+    a = ws.a;
     const first = ws.a;
     const w = first.window;
     const before = await railTitles(w);

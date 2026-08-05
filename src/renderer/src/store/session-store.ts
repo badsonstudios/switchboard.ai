@@ -46,7 +46,15 @@ import {
   persistableLayout,
   pruneLayout,
 } from '../lib/layout-mode';
-import { NO_PINS, persistablePins, PinSet, prunePins, withPin } from '../lib/pinning';
+import {
+  isPinned,
+  NO_PINS,
+  persistablePins,
+  PinSet,
+  prunePins,
+  togglePin,
+  withPin,
+} from '../lib/pinning';
 
 /**
  * A snapshot. Every field is `readonly` deliberately: identity IS the change
@@ -440,10 +448,11 @@ export class SessionStore {
     return this.state.pinned;
   }
 
-  /** Is this card pinned? The one reader every exemption goes through, so
-   *  "pinned" cannot mean one thing in the rail and another in a sweep. */
+  /** Is this card pinned? Delegated to lib/pinning rather than asking the Set
+   *  directly, so "pinned" has ONE definition — the exemptions all reach it
+   *  through here or through the same function. */
   isPinned(cardId: string | undefined): boolean {
-    return !!cardId && this.state.pinned.has(cardId);
+    return isPinned(this.state.pinned, cardId);
   }
 
   /** Seed from the ui blob at boot. Does not persist — it just read it. */
@@ -459,7 +468,7 @@ export class SessionStore {
   }
 
   togglePin(cardId: string): void {
-    this.setPinned(cardId, !this.isPinned(cardId));
+    this.writePins(togglePin(this.state.pinned, cardId));
   }
 
   /** The card is gone for good — retire its pin at that moment rather than

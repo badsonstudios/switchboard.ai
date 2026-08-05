@@ -5,6 +5,7 @@
 // auto-collapses on submit).
 import { describe, it, expect } from 'vitest';
 import {
+  bulkClose,
   closableCards,
   isPinned,
   loadPins,
@@ -91,6 +92,33 @@ describe('closableCards — the bulk-operation exemption', () => {
     // the close-all command says so rather than opening a confirm for an empty
     // list, which would read as the command being broken
     expect(closableCards(['a', 'b'], pins('a', 'b'))).toEqual([]);
+  });
+});
+
+describe('bulkClose — the whole answer a bulk operation needs', () => {
+  it('counts what it spares, so the caller does not walk the list twice', () => {
+    expect(bulkClose(['a', 'b', 'c', 'd'], pins('a', 'c'))).toEqual({
+      doomed: ['b', 'd'],
+      spared: 2,
+    });
+  });
+
+  it('nothing pinned: everything goes, nothing is spared', () => {
+    expect(bulkClose(['a', 'b'], NO_PINS)).toEqual({ doomed: ['a', 'b'], spared: 2 - 2 });
+  });
+
+  it('EVERYTHING pinned is the case worth naming — no work, and a count to say so', () => {
+    // the caller must SAY this rather than open a confirm over an empty list
+    expect(bulkClose(['a', 'b'], pins('a', 'b'))).toEqual({ doomed: [], spared: 2 });
+  });
+
+  it('an empty workspace is not the same shape as an all-pinned one', () => {
+    // both have nothing to close, but only one of them has something to say
+    expect(bulkClose([], NO_PINS)).toEqual({ doomed: [], spared: 0 });
+  });
+
+  it('a pin for a card that is not in the list changes nothing', () => {
+    expect(bulkClose(['a'], pins('gone'))).toEqual({ doomed: ['a'], spared: 0 });
   });
 });
 

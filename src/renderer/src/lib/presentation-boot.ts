@@ -38,11 +38,17 @@ export function initPresentation(): void {
     if (blob) uiSet(LAYOUT_KEY, blob);
     else uiDelete([LAYOUT_KEY]);
   });
-  // §5.8's PINNING contract (P2-E9-09) rides the same edge and must be seeded in
-  // the same pass, and this one earlier than the others would matter: rail order
-  // is derived from it, so a pin read after the first `setSessions` would paint
-  // the rail — and number Ctrl+1..9 — in the unpinned order first and reshuffle
-  // it in front of the user a moment later.
+  // §5.8's PINNING contract (P2-E9-09) rides the same edge and is seeded in the
+  // same pass. Seeding EARLY matters here in a way it does not for the three
+  // above: rail order is derived from the pins, so a pin that arrived after the
+  // first session list would paint the rail — and number Ctrl+1..9 — in the
+  // unpinned order and reshuffle it in front of the user a moment later.
+  //
+  // That is a nicety rather than the guarantee, and worth being honest about:
+  // this runs inside `loadUiState().then(...)` while the first session refresh
+  // is a separate effect, so nothing ORDERS the two. The actual guarantee is the
+  // store's derive — `set()` recomputes rail order on a `pinned` write as well
+  // as on a `sessions` one, so whichever lands second, the order is right.
   sessionStore.initPins(loadPins(uiGet<unknown>(PIN_KEY, null)));
   sessionStore.setPinPersister((blob) => {
     if (blob) uiSet(PIN_KEY, blob);

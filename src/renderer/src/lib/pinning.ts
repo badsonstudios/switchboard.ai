@@ -47,6 +47,23 @@
 // end to end: a pinned card that a mode collapses lands in the strip and keeps
 // its own row there, because the fold exemption is what protects position.
 //
+// ── WHAT IS NOT IMPLEMENTED: "NEVER SCROLLS OUT OF VIEW UNDER OVERFLOW" ─────
+//
+// §5.8 lists that alongside "sorts first", and this item does NOT deliver it.
+// Saying so here rather than leaving the clause unmentioned: the four
+// exemptions below are enumerated so carefully that silence about the fifth
+// clause would read as "handled", and the next person to touch pinning would
+// inherit a contract they believe is complete.
+//
+// The rail IS a scroll container (`.rail-scroll`, `overflow-y: auto`), so this
+// is not blocked on missing UI — it is a deliberate deferral. Sorting first
+// already puts a pinned session at the top of its bucket, which is where you
+// scroll to; making the row itself `position: sticky` so it survives being
+// scrolled PAST is a visual change with real design questions this item is not
+// the place to answer (what several pinned rows in different groups do to each
+// other, how a sticky row reads against the group header it would overlap,
+// what happens at the rail's minimum width). Sort-first is the honest half.
+//
 // ── THE AUTO-EVICTION SEAM ──────────────────────────────────────────────────
 //
 // §5.8 names "any future auto-eviction" among the bulk operations pinning is
@@ -65,9 +82,16 @@
  *  protect nothing. Same durable key as presentation, policy and layout. */
 export type PinSet = ReadonlySet<string>;
 
-/** Frozen and shared: the store's initial value must be ONE stable object, or
- *  every useSyncExternalStore snapshot over it re-renders forever. */
-export const NO_PINS: PinSet = Object.freeze(new Set<string>()) as PinSet;
+/**
+ * The empty set — SHARED, because the store's initial value must be ONE stable
+ * object or every useSyncExternalStore snapshot over it re-renders forever.
+ *
+ * `ReadonlySet` is the whole of the protection, and it is a compile-time one:
+ * `Object.freeze` does nothing to a Set's internal slots, so freezing this
+ * would only look like a guarantee. Every edit in this module returns a new
+ * set rather than touching one, which is what actually keeps it empty.
+ */
+export const NO_PINS: PinSet = new Set<string>();
 
 /** ui-blob key (§5.25: a pin survives relaunch). */
 export const PIN_KEY = 'pinned';
@@ -121,11 +145,11 @@ export function prunePins(pins: PinSet, knownCardIds: Iterable<string>): PinSet 
  * ones around it. A partition does that; `Array.prototype.sort` is stable in
  * every engine we ship on and would too, but it would also invite a comparator
  * that grows a second sort key later.
+ *
+ * Applied to ONE BUCKET at a time by its caller — see lib/groups' `railOrder`
+ * for why sorting the whole list up front would break the promise above.
  */
-export function sortPinnedFirst<T extends { id: string }>(
-  items: readonly T[],
-  pins: PinSet
-): readonly T[] {
+export function sortPinnedFirst<T extends { id: string }>(items: T[], pins: PinSet): T[] {
   // the common case is no pins at all: hand back the very same array so the
   // caller's identity checks (and React's) see nothing to do
   if (pins.size === 0 || !items.some((i) => pins.has(i.id))) return items;
@@ -147,6 +171,35 @@ export function sortPinnedFirst<T extends { id: string }>(
  */
 export function closableCards(cardIds: readonly string[], pins: PinSet): string[] {
   return cardIds.filter((id) => !pins.has(id));
+}
+
+/** What a bulk operation is about to do, and what it is sparing. */
+export interface BulkPlan {
+  /** the cards it may take, in the order it was given them */
+  doomed: string[];
+  /** how many it is leaving alone because they are pinned */
+  spared: number;
+}
+
+/**
+ * `closableCards` plus the number it spared — the whole ANSWER a bulk operation
+ * needs before it opens a dialog.
+ *
+ * A separate function because `spared` is the part a caller gets wrong: it is
+ * the count it has to put in front of the user ("closing 6, keeping 2"), and
+ * deriving it at the call site means a second walk of the same list and a second
+ * chance to walk the wrong one. `doomed.length === 0` with `spared > 0` is the
+ * case worth naming — every card is pinned, and the caller must SAY so rather
+ * than open a confirm over an empty list, which reads as the command being
+ * broken.
+ *
+ * It lives here and not in the component for the reason `runMoves` lives in
+ * lib/layout-sweep and not in SessionGrid: the decision is a rule, the dialog is
+ * an effect, and only one of the two can be a unit test.
+ */
+export function bulkClose(cardIds: readonly string[], pins: PinSet): BulkPlan {
+  const doomed = closableCards(cardIds, pins);
+  return { doomed, spared: cardIds.length - doomed.length };
 }
 
 // ── persistence ─────────────────────────────────────────────────────────────

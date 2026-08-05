@@ -1137,7 +1137,6 @@ export function SessionsRail(props: {
               key={key}
               type="button"
               role="menuitem"
-              data-menu-item={key}
               className="rail-menu-item"
               onClick={() => {
                 closeMenu(restoreFocus);
