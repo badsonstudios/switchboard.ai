@@ -30,6 +30,7 @@ import { CollapsedStrip } from './components/CollapsedStrip';
 import { WorkspaceReadOnlyBanner } from './components/WorkspaceReadOnlyBanner';
 import { PreflightBanner } from './components/PreflightBanner';
 import { collapsedRows, revealTargets } from './lib/ladder';
+import { GuardedRefresh, latestWins } from './lib/latest-wins';
 import {
   cycleGlobal,
   cycleOverride,
@@ -264,30 +265,52 @@ export function App(): React.JSX.Element {
     };
   }, []);
 
-  const refreshSessions = React.useCallback(async () => {
-    // card-keyed view: includes SUSPENDED cards (restored, not yet resumed)
-    const list = await bridge.sessions?.cards?.();
-    if (!list) return;
-    sessionStore.setSessions(
-      list.map((c) => ({
-        id: c.cardId,
-        title: c.title,
-        folder: c.folder,
-        accent: c.accent,
-        badge: c.badge,
-        status: c.status,
-        groupId: c.groupId,
-        autoKey: c.autoKey,
-        liveId: c.liveId,
-        taskLabel: c.taskLabel,
-      }))
-    );
-  }, []); // bridge is stable for the window's lifetime
+  // Both list refreshes are async round-trips with SEVERAL independent triggers
+  // (see the effects below), so two are routinely in flight at once — and the
+  // one that resolves last is not necessarily the one that was issued last.
+  // `latestWins` drops a response that a newer one has already overtaken;
+  // without it a stale snapshot can permanently overwrite a terminal status
+  // like `needs-permission`, and nothing ever arrives to heal it (#251). The
+  // events list at the bottom of this file guards the neighbouring case — a
+  // PUSH beating a `list()` still in flight — and keeps its own guard; this one
+  // is pull-vs-pull and the two are not interchangeable.
+  //
+  // Each guard is built by a `useState` INITIALIZER rather than a `useMemo`,
+  // because the guard's sequence counters are state and `useMemo` is a cache
+  // React is allowed to throw away — a discarded guard is no guard. React's
+  // contract for an initializer is exactly what is needed here: called once,
+  // and the value it returns is stable for the component's lifetime. That
+  // stability is also what keeps the dependency arrays below honest, as the
+  // `useCallback`s these replace did.
+  const [refreshSessions] = useState<GuardedRefresh>(() =>
+    // bridge is stable for the window's lifetime
+    latestWins(
+      // card-keyed view: includes SUSPENDED cards (restored, not yet resumed)
+      () => bridge.sessions?.cards?.(),
+      (list) =>
+        sessionStore.setSessions(
+          list.map((c) => ({
+            id: c.cardId,
+            title: c.title,
+            folder: c.folder,
+            accent: c.accent,
+            badge: c.badge,
+            status: c.status,
+            groupId: c.groupId,
+            autoKey: c.autoKey,
+            liveId: c.liveId,
+            taskLabel: c.taskLabel,
+          }))
+        )
+    )
+  );
 
-  const refreshGroups = React.useCallback(async () => {
-    const list = await bridge.groups?.list?.();
-    if (list) sessionStore.setGroups(list as RailGroup[]);
-  }, []); // bridge is stable
+  const [refreshGroups] = useState<GuardedRefresh>(() =>
+    latestWins(
+      () => bridge.groups?.list?.(),
+      (list) => sessionStore.setGroups(list as RailGroup[])
+    )
+  );
 
   useEffect(() => {
     void refreshGroups();
