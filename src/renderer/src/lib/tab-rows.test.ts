@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { applyTabRows, loadTabRows, syncDocumentFlags, toggleTabRows } from './tab-rows';
 import { loadUiState } from './ui-state';
+import { addPopoutWindow, removePopoutWindow, resetPopoutWindows } from './popout-windows';
 import { applyTheme, findTheme } from '../theme/theme';
 import { builtinThemes } from '../theme/builtin-themes';
 
@@ -71,6 +72,7 @@ describe('syncDocumentFlags (#84 + P2-E15-05)', () => {
   }
 
   beforeEach(() => {
+    resetPopoutWindows(); // module state, and this describe puts windows in it
     const root = document.documentElement;
     root.removeAttribute('style');
     delete root.dataset.themeId;
@@ -100,6 +102,25 @@ describe('syncDocumentFlags (#84 + P2-E15-05)', () => {
     applyTheme(findTheme(builtinThemes, 'daylight')!);
     syncDocumentFlags([win]);
     expect(root.style.getPropertyValue('--bg')).toBe('');
+    expect(root.dataset.theme).toBe('daylight');
+  });
+
+  it('reaches every open popout when called with no argument', () => {
+    // what a theme switch does (App has no list of its own to hand it): the
+    // default comes from the shared registry, so a popout that opened before
+    // the switch is not left on the old theme (#227)
+    const { window: win, root } = fakeWindow();
+    addPopoutWindow(win);
+    applyTheme(findTheme(builtinThemes, 'daylight')!);
+    applyTabRows('single');
+    syncDocumentFlags();
+    expect(root.dataset.theme).toBe('daylight');
+    expect(root.dataset.tabRows).toBe('single');
+
+    // and a window the registry has forgotten is no longer written to
+    removePopoutWindow(win);
+    applyTheme(findTheme(builtinThemes, 'high-contrast')!);
+    syncDocumentFlags();
     expect(root.dataset.theme).toBe('daylight');
   });
 

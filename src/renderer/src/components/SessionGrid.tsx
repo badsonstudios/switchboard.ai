@@ -49,6 +49,7 @@ import { tabStripAction } from '../lib/tabstrip-keys';
 import { StatusPill } from './StatusPill';
 import type { Ladder } from '../lib/presentation';
 import { pickAdoptedGroupId } from '../lib/groups';
+import { addPopoutWindow, removePopoutWindow } from '../lib/popout-windows';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { setDraggedCard } from '../lib/drag-context';
 import { writePromptToPty } from '../lib/composer';
@@ -2267,18 +2268,17 @@ export function SessionGrid(props: {
       });
       // E8 diagnostics: surface popout success/failure
       api.onDidOpenPopoutWindowFail?.(() => console.error('[popout] onDidOpenPopoutWindowFail'));
-      // publish popout windows so App can give them the keyboard dispatcher
-      // (E9-02) — their DOM lives in another OS window, their JS lives here
+      // Publish popout windows to the shared registry (#227): their DOM lives
+      // in another OS window, their JS lives here, and three features need to
+      // know which ones are open — the keyboard dispatcher (E9-02), the theme
+      // and tab-row flags (#84), the read-only notice (#208). dockview is the
+      // authority on which popouts exist; this is the one place that says so.
       api.onDidAddPopoutGroup?.((e: PopoutGroup) => {
         console.log('[popout] onDidAddPopoutGroup (opened OK)');
-        if (e.window) {
-          window.dispatchEvent(new CustomEvent('switchboard:popout-added', { detail: e.window }));
-        }
+        if (e.window) addPopoutWindow(e.window);
       });
       api.onDidRemovePopoutGroup?.((e: PopoutGroup) => {
-        if (e.window) {
-          window.dispatchEvent(new CustomEvent('switchboard:popout-removed', { detail: e.window }));
-        }
+        if (e.window) removePopoutWindow(e.window);
       });
       // window teardown must not be mistaken for the user closing cards
       window.addEventListener('beforeunload', () => {
