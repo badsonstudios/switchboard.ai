@@ -122,6 +122,9 @@ export class SessionStore {
   private readonly liveToCard = new Map<string, string>();
   // LIVE session ids granted "Allow all (this session)" — keyed by the
   // ephemeral id ON PURPOSE, so a respawn prompts again (review P0#2).
+  // Released with the binding that named the id (`forgetCardLiveIds`, #224):
+  // the key is ephemeral but nothing used to drop it, so a grant outlived its
+  // session — and its card — for the whole app run.
   private readonly allowAllByLive = new Set<string>();
   // Cards docking back via the pop-out BUTTON, as opposed to a bare window
   // close: the two look identical to dockview and mean opposite things (E8-04).
@@ -441,22 +444,51 @@ export class SessionStore {
    * by a future second caller.
    */
   mapLiveToCard(liveId: string, cardId: string): void {
+    // Re-binding the IDENTICAL pair happens on every remount over a still-
+    // running session (hide/reveal, a ladder move, a pop-out): `sessions:create`
+    // adopts the running session and hands back its own id (main's pass 2,
+    // #187). Since #224 the sweep below releases the grant too, so it must not
+    // run here — that would revoke a LIVE session's allow-all. By the
+    // one-live-id-per-card invariant this method establishes, the sweep would
+    // have found this entry and nothing else, so returning is equivalent for
+    // the map itself.
+    if (this.liveToCard.get(liveId) === cardId) return;
     // Through `forgetCardLiveIds` rather than a second loop, so "unbind this
-    // card" has ONE implementation. Re-binding the same pair drops and re-adds
-    // the entry — no reader sees insertion order, so that is a no-op, and a
-    // guard against it would be a branch no test could falsify.
+    // card" has ONE implementation — and so a respawn releases everything else
+    // keyed by the corpse's id, not just the binding.
     this.forgetCardLiveIds(cardId);
     this.liveToCard.set(liveId, cardId);
   }
   cardIdForLive(liveId: string): string {
     return this.liveToCard.get(liveId) ?? liveId;
   }
-  /** Release the card's binding. Since `mapLiveToCard` sweeps, there is at most
-   *  one to find — but it is a FORWARD map, so finding it is still a scan.
-   *  Delete-while-iterating is safe on a Map: an entry removed before it is
-   *  reached is simply never visited. */
+  /**
+   * Release the card's binding — and everything else keyed by the live id that
+   * binding named. Since `mapLiveToCard` sweeps, there is at most one to find —
+   * but it is a FORWARD map, so finding it is still a scan. Delete-while-
+   * iterating is safe on a Map: an entry removed before it is reached is simply
+   * never visited.
+   *
+   * This is the one place a BOUND live id stops being current, so it is where
+   * the per-live-id registries are released (#224). Every caller has already
+   * ended that session — card close, the dropLive suspend on a popout window
+   * close, restart, and the respawn sweep in `mapLiveToCard`. HIDING
+   * deliberately does not come through here (it keeps the record and the
+   * running session), so a hidden card keeps its grant — correct, since the
+   * session it was granted to is still running.
+   *
+   * "Bound" is the limit of the claim: nothing stops `setAllowAll` being handed
+   * an id this map never held, and such an entry is still released by nothing.
+   * The one path there — answering a permission the review bar kept queued
+   * after its session was already torn down — is a live-session bug in its own
+   * right, not something to paper over here.
+   */
   forgetCardLiveIds(cardId: string): void {
-    for (const [liveId, cid] of this.liveToCard) if (cid === cardId) this.liveToCard.delete(liveId);
+    for (const [liveId, cid] of this.liveToCard) {
+      if (cid !== cardId) continue;
+      this.liveToCard.delete(liveId);
+      this.allowAllByLive.delete(liveId);
+    }
   }
 
   // ── allow-all, keyed by LIVE id ─────────────────────────────────────────

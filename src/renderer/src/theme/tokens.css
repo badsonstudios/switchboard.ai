@@ -538,6 +538,23 @@ body {
 .collapsed-row[data-needs-you='true'] .collapsed-state {
   color: var(--row-ink);
 }
+/* the "N idle sessions" aggregate (P2-E9-08, §5.8). Same chrome as a row — it
+ * sits in the same list and opens into rows — with a DASHED edge, which is the
+ * one thing that says "this stands for several sessions" before any of them is
+ * on screen. No new token: it borrows the idle hue every folded row would have
+ * had. */
+.idle-fold {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--row-hue) 45%, var(--border));
+}
+.idle-fold .collapsed-name {
+  color: var(--muted);
+}
+/* while it is open the rows it swallowed are listed after it, so it reads as
+ * the heading of that run rather than as one more chip */
+.idle-fold[data-open='true'] {
+  background: var(--rail-row-hover);
+}
 
 /* 18x18 hit target grown with the BOX, never by enlarging the glyph */
 .rail-x {

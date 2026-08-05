@@ -83,6 +83,12 @@ function harness(
     /** make this session's teardown BLOW UP, to prove the spawn path fails open
      *  rather than turning a teardown bug into an unstartable card (#187) */
     throwOnUnwatch?: string;
+    /** the same, from the FIRST step of the teardown — `deps.feed.forget`. The
+     *  one that used to skip every release after it, the approval denial
+     *  included (#219). */
+    throwOnForgetEvent?: string;
+    /** and from the step immediately before the approval denial (#219) */
+    throwOnUnregister?: string;
   } = {}
 ) {
   const created: Array<{
@@ -127,6 +133,8 @@ function harness(
   const unwatched: string[] = [];
   const unregistered: string[] = [];
   const forgottenEvents: string[] = [];
+  /** every card id the workspace store was told to drop (`sessions:closeCard`) */
+  const removedCards: string[] = [];
   /**
    * ONE ordered log across the calls whose RELATIVE order is the behaviour —
    * `watch` and `unwatch` above all. Separate arrays can each be right while
@@ -175,7 +183,10 @@ function harness(
       // the hook half of `sessions:pendingPermissions` — always empty here, so
       // what that channel replays is entirely the stream router's (#202)
       pendingRequests: () => [],
-      unregisterSession: (id: string) => unregistered.push(id),
+      unregisterSession: (id: string) => {
+        if (id === opts.throwOnUnregister) throw new Error('unregister exploded');
+        unregistered.push(id);
+      },
       buildHookSettings,
     },
     transcripts: {
@@ -200,7 +211,10 @@ function harness(
       onEvent: () => {},
       ingest: () => {},
       list: () => [],
-      forget: (id: string) => forgottenEvents.push(id),
+      forget: (id: string) => {
+        if (id === opts.throwOnForgetEvent) throw new Error('forgetting the event exploded');
+        forgottenEvents.push(id);
+      },
     },
     log: { info: vi.fn(), warn, error: vi.fn(), debug: vi.fn() },
     getWindow: () => null,
@@ -209,7 +223,10 @@ function harness(
     persist: {
       list: () => (opts.prior ? [opts.prior] : []),
       upsert: (s: PersistedSession) => upserted.push(s),
-      remove: () => {},
+      // recorded since #219: `sessions:closeCard` runs this AFTER the teardown,
+      // so a teardown that threw used to skip it and the "closed" card came
+      // back on the next boot
+      remove: (cardId: string) => removedCards.push(cardId),
     },
     capabilitiesOf: (id: string) => {
       askedFor.push(id); // which provider was asked about is the wiring itself
@@ -240,6 +257,7 @@ function harness(
     unwatched,
     unregistered,
     forgottenEvents,
+    removedCards,
   };
 }
 
@@ -290,6 +308,18 @@ function autoDenial(requestId: string): Record<string, unknown> {
   };
 }
 
+/** the request ids the renderer was told to stop showing (#202) */
+function resolved(h: { pushed: Array<{ channel: string; payload: unknown }> }): string[] {
+  return h.pushed
+    .filter((p) => p.channel === 'sessions:permissionResolved')
+    .map((p) => (p.payload as { requestId: string }).requestId);
+}
+
+/** the approval bars the renderer was told to raise (#202) */
+function asked(h: { pushed: Array<{ channel: string; payload: unknown }> }): unknown[] {
+  return h.pushed.filter((p) => p.channel === 'sessions:permissionRequest').map((p) => p.payload);
+}
+
 /** A persisted card, the way the workspace store hands it back. */
 function priorCard(over: Partial<PersistedSession> & { folder: string }): PersistedSession {
   return {
@@ -301,14 +331,47 @@ function priorCard(over: Partial<PersistedSession> & { folder: string }): Persis
   } as PersistedSession;
 }
 
+/**
+ * A fresh REAL directory per test — session creation reads it to detect the
+ * project type — plus the cleanup that goes with it. Every describe in this file
+ * carried its own copy of both, and two shipped without the `afterEach` and
+ * leaked a directory per test (#213); one definition makes that impossible.
+ *
+ * The block keeps its own `dir` variable, because the directory does not exist
+ * until `beforeEach` has run: this hands it back through `set` rather than
+ * returning it.
+ */
+function tempDirEach(prefix: string, set: (dir: string) => void): void {
+  beforeEach(() => set(tempDir(prefix)));
+  afterEach(() => cleanupTempDirs());
+}
+
+/**
+ * The two helpers a card-centric block works through: the persisted card, and
+ * the `sessions:create` the renderer sends when that card's panel mounts.
+ *
+ * Copied verbatim into the #187, #202 and #219 blocks — and under another name
+ * into #170's — because each closed over its OWN block's `dir` (#236). That
+ * directory is the only thing that varied, so it is what is parameterized: a
+ * GETTER, read when the helper is CALLED rather than when it is built, which is
+ * what lets one definition outlive the `beforeEach` that forced the copies.
+ */
+function cardHelpers(
+  dir: () => string,
+  cardId = 'card-1'
+): {
+  card: () => PersistedSession;
+  start: (h: { call: (c: string, ...a: unknown[]) => unknown }, id?: string) => unknown;
+} {
+  return {
+    card: () => priorCard({ folder: dir(), id: cardId }),
+    start: (h, id = cardId) => h.call('sessions:create', { cardId: id, folder: dir(), title: 't' }),
+  };
+}
+
 describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
   let folder: string;
-
-  beforeEach(() => {
-    // a real directory: session creation reads it to detect the project type
-    folder = tempDir('sb-ipc-');
-  });
-  afterEach(() => cleanupTempDirs());
+  tempDirEach('sb-ipc-', (d) => (folder = d));
 
   it('a provider declaring ZERO capabilities spawns a PTY-only session', () => {
     const h = harness(undefined, folder);
@@ -518,21 +581,11 @@ describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
 describe('per-card transport (P2-E18-08b)', () => {
   const CARD = 'card-1';
   let dir: string;
-  let prior: PersistedSession;
-  beforeEach(() => {
-    // a real directory: session creation reads it to detect the project type
-    dir = tempDir('sb-tr-');
-    prior = {
-      id: CARD,
-      identity: { title: 't', folder: dir, providerId: 'generic' },
-      layoutSlot: 0,
-      suspendedAt: '',
-    };
-  });
-  afterEach(() => cleanupTempDirs()); // this block had none — 8 dirs a run (#213)
+  tempDirEach('sb-tr-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir, CARD);
 
   it('stores the choice on the card', async () => {
-    const h = harness(undefined, dir, { prior });
+    const h = harness(undefined, dir, { prior: card() });
 
     const res = await h.call('sessions:setTransport', CARD, 'stream');
 
@@ -541,7 +594,7 @@ describe('per-card transport (P2-E18-08b)', () => {
   });
 
   it('switches back again', async () => {
-    const h = harness(undefined, dir, { prior: { ...prior, transport: 'stream' } });
+    const h = harness(undefined, dir, { prior: { ...card(), transport: 'stream' } });
 
     await h.call('sessions:setTransport', CARD, 'pty');
 
@@ -554,8 +607,8 @@ describe('per-card transport (P2-E18-08b)', () => {
   // and it told the user to "stop this session first" when a live session has
   // no stop control at all. A dead end dressed as a safety check.
   it('ACCEPTS while a session is live, and reports the change as pending', async () => {
-    const h = harness(undefined, dir, { prior, liveIds: ['live-1'] });
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    const h = harness(undefined, dir, { prior: card(), liveIds: ['live-1'] });
+    await start(h);
     h.upserted.length = 0;
 
     const res = await h.call('sessions:setTransport', CARD, 'stream');
@@ -572,8 +625,8 @@ describe('per-card transport (P2-E18-08b)', () => {
   // already died, and there was nothing they could do to make it apply (#187).
   it('a CRASHED session is not something to be pending on', async () => {
     const exitCodes: Record<string, number> = {};
-    const h = harness(undefined, dir, { prior, exitCodes });
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    const h = harness(undefined, dir, { prior: card(), exitCodes });
+    await start(h);
     expect(await h.call('sessions:setTransport', CARD, 'stream')).toEqual({
       ok: true,
       pending: true,
@@ -588,7 +641,7 @@ describe('per-card transport (P2-E18-08b)', () => {
   });
 
   it('is NOT pending when no session is running', async () => {
-    const h = harness(undefined, dir, { prior });
+    const h = harness(undefined, dir, { prior: card() });
     expect(await h.call('sessions:setTransport', CARD, 'stream')).toEqual({
       ok: true,
       pending: false,
@@ -596,7 +649,7 @@ describe('per-card transport (P2-E18-08b)', () => {
   });
 
   it('rejects a value that is not a transport', async () => {
-    const h = harness(undefined, dir, { prior });
+    const h = harness(undefined, dir, { prior: card() });
     expect(await h.call('sessions:setTransport', CARD, 'carrier-pigeon')).toEqual({
       ok: false,
       reason: 'bad-value',
@@ -614,9 +667,9 @@ describe('per-card transport (P2-E18-08b)', () => {
   // The card's stored choice must WIN over the env default, or the setting
   // would be decorative on a machine that has the escape hatch set.
   it("a new session asks for the CARD's transport", async () => {
-    const h = harness(undefined, dir, { prior: { ...prior, transport: 'stream' } });
+    const h = harness(undefined, dir, { prior: { ...card(), transport: 'stream' } });
 
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    await start(h);
 
     expect(h.created[0].transport).toBe('stream');
   });
@@ -634,10 +687,8 @@ describe('per-card transport (P2-E18-08b)', () => {
 describe('starting a session preserves the card (#153 follow-up)', () => {
   const CARD = 'card-1';
   let dir: string;
-  beforeEach(() => {
-    dir = tempDir('sb-keep-');
-  });
-  afterEach(() => cleanupTempDirs()); // this block had none — 4 dirs a run (#213)
+  tempDirEach('sb-keep-', (d) => (dir = d));
+  const { start } = cardHelpers(() => dir, CARD);
 
   function priorWith(over: Partial<PersistedSession>): PersistedSession {
     return {
@@ -652,7 +703,7 @@ describe('starting a session preserves the card (#153 follow-up)', () => {
   it('keeps the transport across a session start — the relaunch case', async () => {
     const h = harness(undefined, dir, { prior: priorWith({ transport: 'stream' }) });
 
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    await start(h);
 
     expect(h.upserted.at(-1)?.transport).toBe('stream');
     // and it was actually USED for the spawn, not merely re-saved
@@ -669,7 +720,7 @@ describe('starting a session preserves the card (#153 follow-up)', () => {
       }),
     });
 
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    await start(h);
 
     const saved = h.upserted.at(-1)!;
     expect(saved.usage).toEqual({ input: 1, output: 2, cacheRead: 3, cacheCreate: 4 });
@@ -686,7 +737,7 @@ describe('starting a session preserves the card (#153 follow-up)', () => {
       prior: priorWith({ nativeSessionId: 'old-conversation' }),
     });
 
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    await start(h);
 
     // no transcripts capability => no resume planned => the id is cleared
     expect(h.upserted.at(-1)?.nativeSessionId).toBeUndefined();
@@ -695,7 +746,7 @@ describe('starting a session preserves the card (#153 follow-up)', () => {
   it('a brand-new card with no prior still saves cleanly', async () => {
     const h = harness(undefined, dir, {});
 
-    await h.call('sessions:create', { cardId: 'fresh', folder: dir, title: 't' });
+    await start(h, 'fresh');
 
     const saved = h.upserted.at(-1)!;
     expect(saved.id).toBe('fresh');
@@ -710,6 +761,7 @@ describe('starting a session preserves the card (#153 follow-up)', () => {
 // is a wiring decision: which of two lists reaches the popup, and when.
 describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
   let dir: string;
+  tempDirEach('sb-slash-', (d) => (dir = d));
   const curated: SlashCommand[] = [
     { name: 'clear', source: 'builtin', description: 'Clear conversation history' },
     { name: 'curated-only', source: 'builtin', description: 'Only in the curated list' },
@@ -720,11 +772,6 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
     subtype: 'init',
     slash_commands: names,
   });
-
-  beforeEach(() => {
-    dir = tempDir('sb-slash-');
-  });
-  afterEach(() => cleanupTempDirs());
 
   it('falls back to the curated list before the CLI has said anything', async () => {
     // The NORMAL state of a fresh stream session, not an edge case: the CLI
@@ -827,10 +874,7 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
 // ONE source may be live for a given session or every block renders twice.
 describe('the Feed has two sources and one channel (P2-E18-10)', () => {
   let dir: string;
-  beforeEach(() => {
-    dir = tempDir('sb-ipc-feed-');
-  });
-  afterEach(() => cleanupTempDirs());
+  tempDirEach('sb-ipc-feed-', (d) => (dir = d));
 
   const caps = { transcripts: { projectsRoot: () => '/root' } };
 
@@ -896,10 +940,7 @@ describe('the Feed has two sources and one channel (P2-E18-10)', () => {
 // nothing would replay it. Found in review; nothing else pins it.
 describe('a transcript reset never blanks a stream session (P2-E18-10)', () => {
   let dir: string;
-  beforeEach(() => {
-    dir = tempDir('sb-ipc-reset-');
-  });
-  afterEach(() => cleanupTempDirs());
+  tempDirEach('sb-ipc-reset-', (d) => (dir = d));
 
   const caps = { transcripts: { projectsRoot: () => '/root' } };
   const feedResets = (h: { pushed: Array<{ channel: string }> }): number =>
@@ -947,10 +988,10 @@ describe('a transcript reset never blanks a stream session (P2-E18-10)', () => {
 describe('a card gaining or losing its live session announces itself (#170)', () => {
   const CARD = 'card-1';
   let dir: string;
-  beforeEach(() => {
-    dir = tempDir('sb-resume-');
-  });
-  afterEach(() => cleanupTempDirs());
+  tempDirEach('sb-resume-', (d) => (dir = d));
+  // `card()` is the suspended case here — a card persisted but not running,
+  // which is exactly what a suspend leaves behind.
+  const { card, start } = cardHelpers(() => dir, CARD);
 
   const cardsPushes = (h: { pushed: Array<{ channel: string }> }): number =>
     h.pushed.filter((p) => p.channel === 'sessions:cardsChanged').length;
@@ -959,17 +1000,14 @@ describe('a card gaining or losing its live session announces itself (#170)', ()
     return cards.find((c) => c.cardId === CARD)!.status;
   };
 
-  /** a card persisted but not running — exactly what a suspend leaves behind */
-  const suspendedCard = (): PersistedSession => priorCard({ folder: dir, id: CARD });
-
   it('the suspend -> resume round trip ends with a LIVE status, unprompted', async () => {
-    const h = harness(undefined, dir, { prior: suspendedCard(), liveIds: ['live-1'] });
+    const h = harness(undefined, dir, { prior: card(), liveIds: ['live-1'] });
 
     // restored-but-not-yet-resumed: the join has no live half
     expect(await statusOf(h)).toBe('suspended');
 
     // resume-on-focus spawns (or --resumes) the session for the card
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    await start(h);
 
     // ...and SAID so, which is the whole bug: no status has changed yet, and on
     // a PTY session the first one may be minutes away (it takes a submitted
@@ -979,8 +1017,8 @@ describe('a card gaining or losing its live session announces itself (#170)', ()
   });
 
   it('losing the live session announces itself too — suspend, then resume again', async () => {
-    const h = harness(undefined, dir, { prior: suspendedCard(), liveIds: ['live-1'] });
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    const h = harness(undefined, dir, { prior: card(), liveIds: ['live-1'] });
+    await start(h);
 
     // the popout window closed: keep the card, drop the session (E8-04)
     await h.call('sessions:dropLive', CARD);
@@ -988,7 +1026,7 @@ describe('a card gaining or losing its live session announces itself (#170)', ()
     expect(await statusOf(h)).toBe('suspended');
 
     // and back again — the round trip is repeatable, not a one-shot
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    await start(h);
     expect(cardsPushes(h)).toBe(3);
     expect(await statusOf(h)).toBe('starting');
   });
@@ -997,11 +1035,11 @@ describe('a card gaining or losing its live session announces itself (#170)', ()
     // revealing a hidden card re-mounts its panel over a session that is still
     // running (P2-E15-08). That is not a change, and a push here would be a
     // refresh for every reveal, for ever.
-    const h = harness(undefined, dir, { prior: suspendedCard(), liveIds: ['live-1'] });
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    const h = harness(undefined, dir, { prior: card(), liveIds: ['live-1'] });
+    await start(h);
     const before = cardsPushes(h);
 
-    await h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+    await start(h);
 
     expect(h.created).toHaveLength(1); // adopted, not spawned twice
     expect(cardsPushes(h)).toBe(before);
@@ -1025,14 +1063,8 @@ describe('a card gaining or losing its live session announces itself (#170)', ()
 describe('a card respawning over a crashed session reaps it (#187)', () => {
   const CARD = 'card-1';
   let dir: string;
-  beforeEach(() => {
-    dir = tempDir('sb-reap-');
-  });
-  afterEach(() => cleanupTempDirs());
-
-  const card = (): PersistedSession => priorCard({ folder: dir, id: CARD });
-  const start = (h: { call: (c: string, ...a: unknown[]) => unknown }): unknown =>
-    h.call('sessions:create', { cardId: CARD, folder: dir, title: 't' });
+  tempDirEach('sb-reap-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir, CARD);
 
   /**
    * Spawn, crash, reveal. The reveal is the second `sessions:create`: the
@@ -1171,19 +1203,24 @@ describe('a card respawning over a crashed session reaps it (#187)', () => {
 
     const rec = start(h) as { id: string };
 
-    // a fresh session, NOT the corpse. The half-done reap left `live-1` bound
-    // and holding a record, so an adopt pass that tested for a record rather
-    // than for LIFE would hand the card a dead session with no way back — which
-    // is exactly what happened when this test was first written.
+    // a fresh session, NOT the corpse. The reap is where a teardown bug meets
+    // the spawn path, and a rejected `sessions:create` is the dead-session
+    // overlay — "this card can never start again".
     expect(rec.id).toBe('live-2');
+    // WHERE the fail-open lives moved in #219: `tearDownLive` isolates each
+    // step and no longer throws, so the reap's own catch does not fire and the
+    // warning names the step that failed instead of the reap that contained it.
+    // The outer catch stays as the backstop — see the comment at the reap.
     expect(h.warn).toHaveBeenCalledWith(
-      'reaping a dead session failed; starting the new one anyway',
-      expect.objectContaining({ cardId: CARD, sessionId: 'live-1' })
+      'a session teardown step failed; releasing the rest anyway',
+      expect.objectContaining({ sessionId: 'live-1', step: 'transcripts.unwatch' })
     );
 
-    // ...and the rail agrees. This is the ONLY state in which a card can still
-    // hold two bindings, so it is the one that proves the reverse lookup picks
-    // by liveness rather than by Map insertion order.
+    // ...and the rail agrees. Before #219 this was the one state in which a card
+    // could still hold two bindings (the throw skipped `unbindLive`), and it was
+    // the proof that the reverse lookup picks by liveness rather than by Map
+    // insertion order. The isolated teardown unbinds regardless, so the state is
+    // now unreachable and this is a backstop for the invariant, not a live path.
     const cards = (await h.call('sessions:cards')) as Array<{ cardId: string; liveId?: string }>;
     expect(cards.find((c) => c.cardId === CARD)?.liveId).toBe('live-2');
   });
@@ -1228,21 +1265,8 @@ describe('a card respawning over a crashed session reaps it (#187)', () => {
 describe('a retired session takes its parked approvals with it (#202)', () => {
   const CARD = 'card-1';
   let dir: string;
-  beforeEach(() => {
-    dir = tempDir('sb-perm-ipc-');
-  });
-  afterEach(() => cleanupTempDirs());
-
-  const card = (): PersistedSession => priorCard({ folder: dir, id: CARD });
-  const start = (h: { call: (c: string, ...a: unknown[]) => unknown }, cardId = CARD): unknown =>
-    h.call('sessions:create', { cardId, folder: dir, title: 't' });
-  /** the request ids the renderer was told to stop showing */
-  const resolved = (h: { pushed: Array<{ channel: string; payload: unknown }> }): string[] =>
-    h.pushed
-      .filter((p) => p.channel === 'sessions:permissionResolved')
-      .map((p) => (p.payload as { requestId: string }).requestId);
-  const asked = (h: { pushed: Array<{ channel: string; payload: unknown }> }): unknown[] =>
-    h.pushed.filter((p) => p.channel === 'sessions:permissionRequest').map((p) => p.payload);
+  tempDirEach('sb-perm-ipc-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir, CARD);
 
   it('the restart path — dropLive answers the parked request and clears the bar', () => {
     const { perms, sent } = streamPerms();
@@ -1349,5 +1373,195 @@ describe('a retired session takes its parked approvals with it (#202)', () => {
 
     expect(() => h.call('sessions:dropLive', CARD)).not.toThrow();
     expect(h.call('sessions:pendingPermissions')).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #219 — a teardown step that throws must not take the rest of the teardown
+// with it.
+//
+// `tearDownLive` was a straight line of independent releases, so the first one
+// to throw skipped every one after it. The reap's fail-open catch (#187) then
+// swallowed the throw and the respawn carried on, which is right — but the
+// releases that never ran were gone silently. The costliest sits in the middle
+// of the list: `streamPermissions.forgetSession` DENIES the `can_use_tool` the
+// CLI is blocked on and pushes `sessions:permissionResolved` so the bar comes
+// down. Skipping it leaves a card showing an approval bar for a session that no
+// longer exists, over a CLI parked on a question nothing will answer — the
+// exact leak #202 proved the teardown fixes, reintroduced by an unrelated
+// failure two lines earlier.
+//
+// The fix is per-step try/catch, not reordering: reordering makes no step safe,
+// it only re-picks which ones get skipped. These tests are the difference — each
+// blows a step up and asserts that everything AFTER it still happened.
+describe('a teardown step that throws releases the rest anyway (#219)', () => {
+  const CARD = 'card-1';
+  let dir: string;
+  tempDirEach('sb-teardown-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir, CARD);
+
+  // The FIRST step of the teardown, on the path that has a fail-open catch over
+  // it. Before #219 this one throw skipped all eight releases behind it.
+  it('a throw in the first step still denies the parked approval on the reap path', () => {
+    const { perms, sent } = streamPerms();
+    const exitCodes: Record<string, number> = {};
+    const h = harness(undefined, dir, {
+      prior: card(),
+      spawnIds: ['live-1', 'live-2'],
+      exitCodes,
+      streamPermissions: perms,
+      throwOnForgetEvent: 'live-1',
+    });
+    start(h);
+    perms.offer('live-1', canUseTool('req-1'));
+    expect(asked(h)).toHaveLength(1); // the bar really went up
+
+    exitCodes['live-1'] = 1; // the CLI dies mid-approval
+    const rec = start(h) as { id: string }; // revealing the card re-arms the spawn
+
+    // the two halves of the claim: the CLI got its answer, and the bar came down
+    expect(perms.pendingRequests()).toEqual([]);
+    expect(sent).toEqual([{ sessionId: 'live-1', msg: autoDenial('req-1') }]);
+    expect(resolved(h)).toEqual(['stream:live-1:req-1']);
+    // and every later step ran too — the record dropped, the binding released
+    expect(h.removed).toEqual(['live-1']);
+    expect(h.unwatched).toEqual(['live-1']);
+    expect(h.unregistered).toEqual(['live-1']);
+    // …with the spawn path still failing open (#187): the card starts
+    expect(rec.id).toBe('live-2');
+  });
+
+  // The step immediately BEFORE the denial, on a path that never had a catch at
+  // all — `sessions:dropLive` is the renderer's Restart, and a throw out of it
+  // reads as "restart failed" for a session that was in fact torn down.
+  it('a throw one step before the denial does not reach the renderer or the router', () => {
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, {
+      prior: card(),
+      streamPermissions: perms,
+      throwOnUnregister: 'live-1',
+    });
+    start(h);
+    perms.offer('live-1', canUseTool('req-1'));
+
+    expect(() => h.call('sessions:dropLive', CARD)).not.toThrow();
+
+    expect(perms.pendingRequests()).toEqual([]);
+    expect(sent).toEqual([{ sessionId: 'live-1', msg: autoDenial('req-1') }]);
+    expect(resolved(h)).toEqual(['stream:live-1:req-1']);
+    // the replay a remounting renderer reads is clean too — the second route a
+    // leaked request has to the UI (#202)
+    expect(h.call('sessions:pendingPermissions')).toEqual([]);
+  });
+
+  // `sessions:closeCard` does something AFTER the teardown: it forgets the
+  // persisted card. A throw out of `tearDownLive` skipped that, so the card the
+  // user closed came back on the next boot — a second casualty of the same hole,
+  // and the reason the fail-open belongs in the shared function rather than in
+  // the one caller that happened to have a catch.
+  it('closing a card still forgets it when a teardown step throws', () => {
+    const { perms, sent } = streamPerms();
+    const h = harness({ transcripts: { projectsRoot: () => '/root' } }, dir, {
+      prior: card(),
+      streamPermissions: perms,
+      throwOnUnwatch: 'live-1',
+    });
+    start(h);
+    perms.offer('live-1', canUseTool('req-1'));
+
+    h.call('sessions:closeCard', CARD);
+
+    expect(h.removedCards).toEqual([CARD]); // it does not come back on next boot
+    expect(sent).toEqual([{ sessionId: 'live-1', msg: autoDenial('req-1') }]);
+    expect(resolved(h)).toEqual(['stream:live-1:req-1']);
+  });
+
+  // No step depends on any other, so failing several is not a harder case than
+  // failing one — it is the proof that the isolation is per STEP and not a
+  // single catch that resumes at a fixed point.
+  it('three failing steps still leave a fully retired session', () => {
+    const { perms, sent } = streamPerms();
+    const streamFeed = new StreamFeed();
+    const streamCommands = new StreamCommands();
+    const h = harness({ transcripts: { projectsRoot: () => '/root' } }, dir, {
+      prior: card(),
+      transport: 'stream',
+      streamPermissions: perms,
+      streamFeed,
+      streamCommands,
+      throwOnForgetEvent: 'live-1',
+      throwOnUnregister: 'live-1',
+      throwOnUnwatch: 'live-1',
+    });
+    start(h);
+    perms.offer('live-1', canUseTool('req-1'));
+    streamFeed.offer('live-1', {
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'mid-approval' }] },
+      parent_tool_use_id: null,
+    });
+    streamCommands.offer('live-1', {
+      type: 'system',
+      subtype: 'init',
+      slash_commands: ['cli-only'],
+    } as unknown as Record<string, unknown>);
+
+    h.call('sessions:dropLive', CARD);
+
+    // every release downstream of the three failures
+    expect(perms.pendingRequests()).toEqual([]);
+    expect(sent).toEqual([{ sessionId: 'live-1', msg: autoDenial('req-1') }]);
+    expect(resolved(h)).toEqual(['stream:live-1:req-1']);
+    expect(streamFeed.blocks('live-1')).toEqual([]);
+    expect(streamCommands.commandsFor('live-1')).toBeNull();
+    expect(h.removed).toEqual(['live-1']);
+    // the binding too, which is what makes a half-reaped corpse unreachable
+    // rather than merely tolerated by the adopt pass (#187)
+    expect(h.pushed.filter((p) => p.channel === 'sessions:cardsChanged')).toHaveLength(2);
+  });
+
+  // A swallowed failure that says nothing is a worse bug than the one it hides,
+  // so the step NAME is part of the contract: it is what tells you which release
+  // was lost. The old reap-level catch could only say "the teardown threw".
+  it('names the step that failed, once per failure', () => {
+    const h = harness({ transcripts: { projectsRoot: () => '/root' } }, dir, {
+      prior: card(),
+      throwOnForgetEvent: 'live-1',
+      throwOnUnwatch: 'live-1',
+    });
+    start(h);
+
+    h.call('sessions:dropLive', CARD);
+
+    const steps = h.warn.mock.calls
+      .filter((c) => c[0] === 'a session teardown step failed; releasing the rest anyway')
+      .map((c) => (c[1] as { sessionId: string; step: string }).step);
+    expect(steps).toEqual(['feed.forget', 'transcripts.unwatch']);
+    // the rest of the payload is the diagnostic too: whose session, and what
+    // actually went wrong
+    expect(h.warn).toHaveBeenCalledWith(
+      'a session teardown step failed; releasing the rest anyway',
+      expect.objectContaining({
+        sessionId: 'live-1',
+        step: 'feed.forget',
+        error: expect.stringContaining('forgetting the event exploded'),
+      })
+    );
+  });
+
+  // ...and the isolation must be silent when nothing is wrong: a try/catch round
+  // every step is exactly the shape that starts logging on the happy path.
+  it('says nothing at all on a clean teardown', () => {
+    const { perms } = streamPerms();
+    const h = harness({ transcripts: { projectsRoot: () => '/root' } }, dir, {
+      prior: card(),
+      streamPermissions: perms,
+    });
+    start(h);
+    perms.offer('live-1', canUseTool('req-1'));
+
+    h.call('sessions:dropLive', CARD);
+
+    expect(h.warn).not.toHaveBeenCalled();
   });
 });

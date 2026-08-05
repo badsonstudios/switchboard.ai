@@ -8,7 +8,9 @@ import { describe, it, expect } from 'vitest';
 import type { AttentionEvent } from './queue';
 import {
   collapsedRows,
+  foldableRow,
   hasPanel,
+  IDLE_FOLD_MIN,
   LADDER_ORDER,
   revealTargets,
   REVEAL_KINDS,
@@ -16,7 +18,9 @@ import {
   slotIsLive,
   stepDown,
   stepUp,
+  stripItems,
 } from './ladder';
+import type { CollapsedRow, StripItem } from './ladder';
 import type { Ladder } from './presentation';
 import en from '../i18n/locales/en.json';
 
@@ -216,5 +220,120 @@ describe('collapsedRows', () => {
     expect(rows.find((r) => r.cardId === 'a')!.accent).toBe(ACCENT);
     // and omits it rather than inventing one — the CSS has the fallback
     expect(rows.find((r) => r.cardId === 'b')!.accent).toBeUndefined();
+  });
+});
+
+// ── idle aggregation (P2-E9-08) ─────────────────────────────────────────────
+//
+// §5.8: "more than ~3 idle aggregate into a single 'N idle sessions' row.
+// Working / errored / currently-focused sessions always keep their own row."
+// Every clause of that sentence is one test below, plus the two things the
+// done-when asks for that the sentence does not spell out: four folds, and a
+// status change takes the right session — and only that one — back out.
+
+describe('stripItems (idle aggregation)', () => {
+  /** a collapsed row for a session in `status`, described the way the strip is */
+  const rowOf = (cardId: string, status: string): CollapsedRow => {
+    const [only] = collapsedRows([{ id: cardId, title: cardId, status }], () => 'collapsed');
+    return only;
+  };
+  const idles = (n: number, from = 0): CollapsedRow[] =>
+    Array.from({ length: n }, (_, i) => rowOf(`idle${i + from}`, 'idle'));
+  /** what the strip would actually draw, as a flat description */
+  const shape = (items: StripItem[]): string[] =>
+    items.map((i) => (i.kind === 'row' ? i.row.cardId : `fold:${i.rows.length}`));
+
+  it('leaves three idle sessions alone — the fold has to earn its click', () => {
+    expect(IDLE_FOLD_MIN).toBe(4);
+    expect(shape(stripItems(idles(3)))).toEqual(['idle0', 'idle1', 'idle2']);
+  });
+
+  it('folds FOUR idle sessions into one row (the item, verbatim)', () => {
+    const items = stripItems(idles(4));
+    expect(shape(items)).toEqual(['fold:4']);
+    // the fold carries the rows themselves, in rail order — the strip lists
+    // them on disclosure rather than deriving the same list a second time
+    const fold = items[0];
+    expect(fold.kind).toBe('fold');
+    if (fold.kind !== 'fold') return;
+    expect(fold.rows.map((r) => r.cardId)).toEqual(['idle0', 'idle1', 'idle2', 'idle3']);
+  });
+
+  it('never swallows a session that is working, errored, or waiting on you', () => {
+    // one of each, so a status the fold should keep out cannot pass by being
+    // grouped with a status that is already handled
+    const rows = [
+      rowOf('working', 'working'),
+      rowOf('starting', 'starting'),
+      rowOf('crashed', 'crashed'),
+      rowOf('asking', 'needs-input'),
+      rowOf('held', 'needs-permission'),
+      rowOf('finished', 'done'),
+      ...idles(4),
+    ];
+    expect(shape(stripItems(rows))).toEqual([
+      'working',
+      'starting',
+      'crashed',
+      'asking',
+      'held',
+      'finished',
+      'fold:4',
+    ]);
+  });
+
+  it('never swallows the session you are IN', () => {
+    const rows = idles(4);
+    // four idle sessions, but one of them is the focused card: three are
+    // foldable, which is not enough, so nothing folds at all
+    expect(shape(stripItems(rows, { activeCardId: 'idle1' }))).toEqual([
+      'idle0',
+      'idle1',
+      'idle2',
+      'idle3',
+    ]);
+    // ...and with a fifth it folds around the focused one rather than over it
+    expect(shape(stripItems(idles(5), { activeCardId: 'idle1' }))).toEqual(['fold:4', 'idle1']);
+  });
+
+  it('pops the right one back out when its status changes, and keeps the rest folded', () => {
+    const before = idles(5);
+    expect(shape(stripItems(before))).toEqual(['fold:5']);
+    // idle2 starts working — that one row comes back, the other four stay folded
+    const after = before.map((r) => (r.cardId === 'idle2' ? rowOf('idle2', 'working') : r));
+    expect(shape(stripItems(after))).toEqual(['fold:4', 'idle2']);
+    // and when enough of them wake up, the fold dissolves rather than lingering
+    // as a summary of two things
+    const awake = after.map((r) =>
+      r.cardId === 'idle3' || r.cardId === 'idle4' ? rowOf(r.cardId, 'working') : r
+    );
+    expect(shape(stripItems(awake))).toEqual(['idle0', 'idle1', 'idle2', 'idle3', 'idle4']);
+  });
+
+  it('puts the fold where the first row it swallows was, keeping rail order', () => {
+    // the strip is ordered by the rail (the Ctrl+1..9 authority); a fold that
+    // shunted itself to one end would reorder everything around it
+    const rows = [
+      rowOf('held', 'needs-permission'),
+      ...idles(2),
+      rowOf('working', 'working'),
+      ...idles(2, 2),
+    ];
+    expect(shape(stripItems(rows))).toEqual(['held', 'fold:4', 'working']);
+  });
+
+  it('describes foldability from the row alone', () => {
+    // the predicate the view never re-derives — one rule, asserted directly
+    expect(foldableRow(rowOf('a', 'idle'), null)).toBe(true);
+    expect(foldableRow(rowOf('a', 'suspended'), null)).toBe(true); // idle by any reading
+    expect(foldableRow(rowOf('a', 'idle'), 'a')).toBe(false);
+    expect(foldableRow(rowOf('a', 'done'), null)).toBe(false);
+    // an UNKNOWN status reads as idle (rail-view fails open) — and a fold is a
+    // safe place for a session nothing is claiming about
+    expect(foldableRow(rowOf('a', 'no-such-status'), null)).toBe(true);
+  });
+
+  it('is a no-op on an empty strip', () => {
+    expect(stripItems([])).toEqual([]);
   });
 });

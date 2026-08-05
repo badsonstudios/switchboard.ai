@@ -27,7 +27,7 @@ test.describe('keyboard commands (E9-01)', () => {
     await expect(w.getByText(first).first()).toBeVisible({ timeout: 25_000 });
 
     await a.app.evaluate(({ dialog }, dir) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [dir] });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [dir] });
     }, folderB);
     await w.getByRole('button', { name: '+ session' }).click();
     await expect(w.getByText(second).first()).toBeVisible({ timeout: 25_000 });
@@ -171,7 +171,7 @@ test.describe('keyboard commands (E9-01)', () => {
     await expect(w.locator('nav [draggable="true"]')).toHaveCount(1);
 
     await a.app.evaluate(({ dialog }, dir) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [dir] });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [dir] });
     }, folderB);
     await w.keyboard.press(`${MOD}+N`);
     await expect(w.getByText(path.basename(folderB)).first()).toBeVisible({ timeout: 25_000 });

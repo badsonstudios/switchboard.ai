@@ -30,7 +30,7 @@ function skipPopoutOnLinux(): void {
 async function addSession(a: LaunchedApp): Promise<string> {
   const dir = tempProjectFolder();
   await a.app.evaluate(({ dialog }, d) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [d] });
+    dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
   }, dir);
   await a.window.getByRole('button', { name: '+ session' }).click();
   const name = path.basename(dir);
@@ -100,7 +100,7 @@ test.describe('urgency strip (E9-04)', () => {
     const names = folders.map((f) => path.basename(f));
     await expect(lamp(w, names[0])).toBeVisible({ timeout: 25_000 });
     await a.app.evaluate(({ dialog }, d) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [d] });
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
     }, folders[1]);
     await w.getByRole('button', { name: '+ session' }).click();
     await expect(lamps(w)).toHaveCount(2, { timeout: 25_000 });
