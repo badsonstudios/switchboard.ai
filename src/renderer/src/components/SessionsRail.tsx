@@ -19,6 +19,25 @@
 //     asking for. Calm sessions stay plain. The contrast is the point.
 //  3. The working ring is the ONLY animation. Blinking status dots were an
 //     explicit rejection.
+//
+// KEYBOARD & SCREEN READER (#197, §5.26), following #174's rule:
+//
+// A rail row CONTAINS controls — the ✕, and (on a group header) the recolor
+// dot and three action buttons. So neither `role="option"` nor a `<button>`
+// wrapper is available for the row itself: both take presentational children,
+// which is the same ARIA lie #174 was filed over. What every row gets instead
+// is a REAL button on the thing it is (`rail-row-open` over the name block,
+// `rail-head-toggle` over the group's NAME — the chevron beside it stays an
+// 8px decoration, and `aria-expanded` is the fact it was drawing), with the row div kept
+// as a plain, role-less mouse convenience that duplicates it. Enter and Space
+// then come from the platform, and the focus ring in tokens.css makes the
+// keyboard path visible.
+//
+// The right-click menu is part of that path, not an extra: `contextmenu` is
+// what the ContextMenu key and Shift+F10 fire, so a focusable row can already
+// summon it — which is exactly why the menu below is operable (roving arrows,
+// Escape, focus restored to the row) rather than a wall of divs a keyboard
+// could open and then be stuck inside.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailGroup, RailSession } from '../model/types';
@@ -44,6 +63,34 @@ const DND_TYPE = 'application/x-switchboard-card';
  *  compositing in CSS instead of hand-rolling rgba in TS (§5.20). */
 const tint = (color: string, pct: number): string =>
   `color-mix(in srgb, ${color} ${pct}%, transparent)`;
+
+/**
+ * A group key made safe to put in an `id` (#197). An auto-group's key is a
+ * FOLDER PATH — `auto:C:\Projects\x` — and an IDREF list is space-separated, so
+ * a raw key would break `aria-controls` on exactly the cards that have one.
+ * The escape is reversible (every non-token character becomes `_<hex>_`), so
+ * two different groups can never be handed the same id.
+ */
+const bodyKey = (key: string): string =>
+  key.replace(/[^A-Za-z0-9-]/g, (c) => `_${c.charCodeAt(0).toString(16)}_`);
+
+/** A context-menu row. Shared because the commands and the policy radios are
+ *  the same row in two roles, and they used to drift a property at a time. */
+const menuItemStyle: React.CSSProperties = {
+  display: 'block',
+  inlineSize: '100%',
+  padding: '5px 9px',
+  borderRadius: 4,
+  border: 'none',
+  // background deliberately NOT set here: `.rail-menu-item` owns it, so the
+  // hover and focus fills in tokens.css are not outranked by an inline value
+  cursor: 'pointer',
+  color: 'var(--text)',
+  whiteSpace: 'nowrap',
+  textAlign: 'start',
+  fontSize: 11,
+  fontFamily: 'var(--font-ui)',
+};
 
 export function SessionsRail(props: {
   sessions: readonly RailSession[];
@@ -88,6 +135,13 @@ export function SessionsRail(props: {
   const [menu, setMenu] = React.useState<{ session: RailSession; x: number; y: number } | null>(
     null
   );
+  const menuRef = React.useRef<HTMLDivElement | null>(null);
+  // where focus goes when the menu closes: the control that opened it. A ref
+  // rather than menu state, so closing can restore focus WITHOUT doing it from
+  // inside a setState updater — StrictMode invokes updaters twice, and an
+  // updater that moves focus is not a pure function (same call the rail already
+  // makes for the resize width).
+  const menuAnchor = React.useRef<HTMLElement | null>(null);
   // collapsed group ids — persisted UI state (E12-08; localStorage resets
   // per launch in packaged builds because the loopback origin's port churns)
   const [collapsed, setCollapsed] = React.useState<Set<string>>(
@@ -147,12 +201,21 @@ export function SessionsRail(props: {
     };
   }, []);
 
+  /** close the menu, and hand focus back to whatever opened it (#197) */
+  const closeMenu = React.useCallback((restoreFocus: boolean): void => {
+    setMenu(null);
+    if (restoreFocus) menuAnchor.current?.focus();
+  }, []);
+
   // dismiss the context menu on any click elsewhere, Escape, or a scroll
   React.useEffect(() => {
     if (!menu) return;
-    const close = (): void => setMenu(null);
+    const close = (): void => closeMenu(false);
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setMenu(null);
+      // Escape is the keyboard's way out, so it is also the one dismissal that
+      // owes the user their place back — a menu that closes into nowhere
+      // strands the keyboard at the top of the document
+      if (e.key === 'Escape') closeMenu(true);
     };
     window.addEventListener('pointerdown', close);
     window.addEventListener('keydown', onKey);
@@ -160,6 +223,14 @@ export function SessionsRail(props: {
       window.removeEventListener('pointerdown', close);
       window.removeEventListener('keydown', onKey);
     };
+  }, [menu, closeMenu]);
+
+  // A menu you can open with Shift+F10 and not walk is worse than no menu, so
+  // the first item takes focus as it opens. Layout effect, not an effect: the
+  // menu is `position: fixed` and focusing it after a paint would scroll-jump.
+  React.useLayoutEffect(() => {
+    if (!menu) return;
+    menuRef.current?.querySelector<HTMLElement>('[role^="menuitem"]')?.focus();
   }, [menu]);
 
   const sessionRow = (s: RailSession): React.JSX.Element => {
@@ -194,7 +265,18 @@ export function SessionsRail(props: {
         }}
         onContextMenu={(e) => {
           e.preventDefault();
-          setMenu({ session: s, x: e.clientX, y: e.clientY });
+          // Shift+F10 and the ContextMenu key fire this same event, which is
+          // what gives the menu a keyboard path at all — but they carry no
+          // pointer, and Chromium reports (0, 0) for it. Anchor to the row
+          // instead, or the menu opens in the window's top-left corner.
+          const kb = e.clientX === 0 && e.clientY === 0;
+          const box = e.currentTarget.getBoundingClientRect();
+          menuAnchor.current = (e.target as HTMLElement).closest<HTMLElement>('button');
+          setMenu({
+            session: s,
+            x: kb ? box.left + 12 : e.clientX,
+            y: kb ? box.bottom : e.clientY,
+          });
         }}
         style={{
           position: 'relative',
@@ -247,13 +329,53 @@ export function SessionsRail(props: {
           />
         ) : (
           <>
-            <div
+            {/* The row's real control (#197). It carries the whole name block
+                rather than just the title so the focus ring outlines what a
+                sighted user reads as "the row", and so the sub-label — which is
+                the ASK when the session needs you — is part of the accessible
+                name instead of loose text beside it. */}
+            <button
+              type="button"
+              className="rail-row-open"
+              data-rail-open={s.id}
+              // The state in words, because the only other place it appears is
+              // the status glyph, which is decorative to a screen reader. The
+              // detail is the row's OWN second line, and an `aria-label`
+              // replaces the contents outright — so it has to be folded in here
+              // or a task label would be readable to the eye and to nobody
+              // else. (Not when the session needs you: the second line IS the
+              // ask then, and the state already says it.)
+              aria-label={t('rail.rowLabel', {
+                title: s.title,
+                state:
+                  !p.needsYou && s.taskLabel
+                    ? t('rail.rowDetail', { detail: s.taskLabel, state: t(p.labelKey) })
+                    : t(p.labelKey),
+              })}
+              // "this is the session the grid is showing" — a fact about the
+              // rail's own list, which is what aria-current is for
+              aria-current={selected ? 'true' : undefined}
+              onClick={(e) => {
+                // the row div below already focuses on click; without this the
+                // mouse would run it twice
+                e.stopPropagation();
+                props.onFocus(s.id);
+              }}
               style={{
                 flex: 1,
                 minInlineSize: 0,
                 display: 'flex',
                 flexDirection: 'column',
+                alignItems: 'flex-start',
                 gap: 2,
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                margin: 0,
+                textAlign: 'start',
+                font: 'inherit',
+                color: 'inherit',
+                cursor: 'pointer',
               }}
             >
               <span
@@ -283,7 +405,7 @@ export function SessionsRail(props: {
               >
                 {p.needsYou ? t(p.labelKey) : (s.taskLabel ?? t(p.labelKey))}
               </span>
-            </div>
+            </button>
             <div
               style={{
                 display: 'flex',
@@ -306,9 +428,13 @@ export function SessionsRail(props: {
               >
                 {t('rail.closeSessionIcon')}
               </button>
+              {/* The glyph and the ring are DECORATION: `aria-label` on a
+                  role-less span is ignored by every screen reader anyway, and
+                  the state it was trying to announce is now in the row button's
+                  own name. `title` stays — that one is for the mouse. */}
               {p.spinner ? (
                 <span
-                  aria-label={t(p.labelKey)}
+                  aria-hidden
                   title={t(p.labelKey)}
                   style={{
                     inlineSize: 12,
@@ -322,7 +448,7 @@ export function SessionsRail(props: {
                 />
               ) : (
                 <span
-                  aria-label={t(p.labelKey)}
+                  aria-hidden
                   title={t(p.labelKey)}
                   style={{
                     inlineSize: 16,
@@ -386,6 +512,10 @@ export function SessionsRail(props: {
     // the other two already use theme tokens
     const ink = opts.kind === 'group' ? 'rail-group-ink' : undefined;
     const isDropTarget = dropTarget === opts.key;
+    // the disclosure's target (#197). `aria-controls` has to point at an
+    // element that EXISTS, so the body below is always rendered and merely
+    // `hidden` when collapsed — a dangling reference is worse than none.
+    const bodyId = `rail-body-${bodyKey(opts.key)}`;
     return (
       <div
         key={opts.key}
@@ -483,18 +613,27 @@ export function SessionsRail(props: {
           {opts.kind === 'group' && (
             // A group you made is a LABEL you applied, so it gets a dot, not a
             // folder — the folder is reserved for the cards that really are a
-            // folder on disk. The dot is also the recolor target.
-            <span
+            // folder on disk. The dot is also the recolor target, so it is a
+            // real button (#197) and not a span that only a mouse can reach.
+            <button
+              type="button"
+              className="rail-dot"
               onClick={(e) => {
-                if (!g || props.palette.length === 0) return;
+                // stopped FIRST, before the guard: a dot with nothing to cycle
+                // must be inert, not a second way to collapse the group —
+                // which is what a bubbled Enter on this button would be
                 e.stopPropagation();
+                if (!g || props.palette.length === 0) return;
                 const i = props.palette.indexOf(g.color);
                 props.onRecolorGroup(g.id, props.palette[(i + 1) % props.palette.length]);
               }}
               title={t('rail.recolorGroup')}
+              aria-label={t('rail.recolorGroup')}
               style={{
                 inlineSize: 9,
                 blockSize: 9,
+                padding: 0,
+                border: 'none',
                 borderRadius: '50%',
                 background: opts.color,
                 flexShrink: 0,
@@ -543,7 +682,23 @@ export function SessionsRail(props: {
               }}
             />
           ) : (
-            <span
+            // The header's real control (#197): the NAME, not the chevron. The
+            // chevron is 8px and stays decoration — its rotation is the same
+            // fact `aria-expanded` carries, and a focus ring around it would be
+            // a ring around nothing. Putting the disclosure on the name gives
+            // the button its accessible name for free and moves no pixels.
+            <button
+              type="button"
+              className={ink ? `rail-head-toggle ${ink}` : 'rail-head-toggle'}
+              data-rail-group-toggle={opts.key}
+              aria-expanded={!isCollapsed}
+              aria-controls={bodyId}
+              onClick={(e) => {
+                // the header div toggles too (the whole strip is a mouse
+                // target); without this a click here would toggle twice
+                e.stopPropagation();
+                toggleCollapsed(opts.key);
+              }}
               onDoubleClick={(e) => {
                 if (!g) return;
                 e.stopPropagation();
@@ -551,19 +706,25 @@ export function SessionsRail(props: {
                 setGroupDraft(g.name);
               }}
               title={g ? t('rail.renameGroup') : undefined}
-              className={ink}
               style={{
                 minInlineSize: 0,
                 fontSize: 11.5,
                 fontWeight: 600,
+                fontFamily: 'var(--font-ui)',
                 color: ink ? undefined : opts.color,
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                margin: 0,
+                textAlign: 'start',
+                cursor: 'pointer',
               }}
             >
               {opts.name}
-            </span>
+            </button>
           )}
           {opts.members.length > 0 && (
             <span
@@ -673,17 +834,18 @@ export function SessionsRail(props: {
             </span>
           )}
         </div>
-        {!isCollapsed && (
-          <div style={{ padding: 5 }}>
-            {opts.members.length === 0 && opts.showEmpty ? (
-              <div style={{ color: 'var(--faint)', fontSize: 10, padding: '4px 8px' }}>
-                {t('rail.groupEmpty')}
-              </div>
-            ) : (
-              opts.members.map(sessionRow)
-            )}
-          </div>
-        )}
+        {/* Always in the DOM so the header's `aria-controls` always resolves;
+            `hidden` (display:none) when collapsed, so nothing is rendered,
+            measured or focusable — the members themselves are still skipped. */}
+        <div id={bodyId} hidden={isCollapsed} style={{ padding: 5 }}>
+          {isCollapsed ? null : opts.members.length === 0 && opts.showEmpty ? (
+            <div style={{ color: 'var(--faint)', fontSize: 10, padding: '4px 8px' }}>
+              {t('rail.groupEmpty')}
+            </div>
+          ) : (
+            opts.members.map(sessionRow)
+          )}
+        </div>
       </div>
     );
   };
@@ -858,8 +1020,38 @@ export function SessionsRail(props: {
 
       {menu && (
         <div
+          ref={menuRef}
           role="menu"
+          aria-label={t('rail.menuLabel', { title: menu.session.title })}
           onPointerDown={(e) => e.stopPropagation()}
+          // The menu owns the arrows while it is open (#197). Every item is a
+          // real button, so Enter and Space are the platform's; all this adds is
+          // the walk between them, which is the one thing a menu has to have and
+          // that nothing else can supply.
+          onKeyDown={(e) => {
+            // Tab out of an open menu closes it (APG). Not prevented — focus
+            // carries on to whatever is next; what must not happen is the menu
+            // staying up with the keyboard somewhere else entirely.
+            if (e.key === 'Tab') {
+              closeMenu(false);
+              return;
+            }
+            const items = Array.from(
+              e.currentTarget.querySelectorAll<HTMLElement>('[role^="menuitem"]')
+            );
+            if (items.length === 0) return;
+            const at = items.indexOf(e.currentTarget.ownerDocument.activeElement as HTMLElement);
+            const go = (i: number): void => {
+              e.preventDefault();
+              // wrap: a context menu is a closed ring, and a Down that does
+              // nothing on the last item reads as a stuck key
+              items[(i + items.length) % items.length].focus();
+            };
+            if (e.key === 'ArrowDown') go(at + 1);
+            else if (e.key === 'ArrowUp') go(at <= 0 ? items.length - 1 : at - 1);
+            else if (e.key === 'Home') go(0);
+            else if (e.key === 'End') go(items.length - 1);
+          }}
           style={{
             position: 'fixed',
             insetInlineStart: menu.x,
@@ -874,37 +1066,38 @@ export function SessionsRail(props: {
             fontSize: 11,
           }}
         >
+          {/* [label, what it does, does it owe focus back?]. Only Rename and
+              Close move focus themselves — Rename autofocuses its field, and
+              Close is about to remove the row. "Open changes" just switches the
+              card's view, so without the restore a keyboard user who picked it
+              would be left standing at the top of the document. */}
           {(
             [
-              ['rail.menuDiff', () => props.onDiff(menu.session)],
+              ['rail.menuDiff', () => props.onDiff(menu.session), true],
               [
                 'rail.menuRename',
                 () => {
                   setEditing(menu.session.id);
                   setDraft(menu.session.title);
                 },
+                false,
               ],
-              ['rail.menuClose', () => props.onClose(menu.session.id)],
+              ['rail.menuClose', () => props.onClose(menu.session.id), false],
             ] as const
-          ).map(([key, run]) => (
-            <div
+          ).map(([key, run, restoreFocus]) => (
+            <button
               key={key}
+              type="button"
               role="menuitem"
               className="rail-menu-item"
               onClick={() => {
-                setMenu(null);
+                closeMenu(restoreFocus);
                 run();
               }}
-              style={{
-                padding: '5px 9px',
-                borderRadius: 4,
-                cursor: 'pointer',
-                color: 'var(--text)',
-                whiteSpace: 'nowrap',
-              }}
+              style={menuItemStyle}
             >
               {t(key)}
-            </div>
+            </button>
           ))}
           {/* §5.8's per-SESSION presentation override (E9-06). Named values
               rather than one cycling row: a menu closes when you click it, so a
@@ -927,47 +1120,43 @@ export function SessionsRail(props: {
               }}
             >
               {t('ladder.policyMenu')}
-          </div>
-          {[undefined, ...POLICY_ORDER].map((policy) => {
-            const own = cardOverride(props.policies, menu.session.id);
-            const chosen = own === policy;
-            return (
-              <div
-                key={policy ?? 'default'}
-                role="menuitemradio"
-                aria-checked={chosen}
-                data-policy-item={policy ?? 'default'}
-                className="rail-menu-item"
-                onClick={() => {
-                  setMenu(null);
-                  props.onSetSessionPolicy(menu.session.id, policy);
-                }}
-                style={{
-                  padding: '5px 9px',
-                  borderRadius: 4,
-                  cursor: 'pointer',
-                  color: 'var(--text)',
-                  whiteSpace: 'nowrap',
-                  fontWeight: chosen ? 700 : 400,
-                }}
-              >
-                {/* the tick keeps its column whether or not it is drawn, so the
-                    labels do not shuffle sideways as the choice moves */}
-                <span aria-hidden style={{ display: 'inline-block', inlineSize: 12 }}>
-                  {chosen ? '✓' : ''}
-                </span>
-                {policy
-                  ? t(`policy.${policy}`)
-                  : t('ladder.policyDefault', {
-                      // what following the default MEANS for this session right
-                      // now — which may be its group's override, not the global
-                      policy: t(
-                        `policy.${resolvePolicy({ ...props.policies, cards: {} }, menu.session.id, menu.session.groupId)}`
-                      ),
-                    })}
-              </div>
-            );
-          })}
+            </div>
+            {[undefined, ...POLICY_ORDER].map((policy) => {
+              const own = cardOverride(props.policies, menu.session.id);
+              const chosen = own === policy;
+              return (
+                <button
+                  key={policy ?? 'default'}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={chosen}
+                  data-policy-item={policy ?? 'default'}
+                  className="rail-menu-item"
+                  onClick={() => {
+                    // this one DOES restore: the choice is a property of the row,
+                    // and the row is still there afterwards
+                    closeMenu(true);
+                    props.onSetSessionPolicy(menu.session.id, policy);
+                  }}
+                  style={{ ...menuItemStyle, fontWeight: chosen ? 700 : 400 }}
+                >
+                  {/* the tick keeps its column whether or not it is drawn, so the
+                      labels do not shuffle sideways as the choice moves */}
+                  <span aria-hidden style={{ display: 'inline-block', inlineSize: 12 }}>
+                    {chosen ? '✓' : ''}
+                  </span>
+                  {policy
+                    ? t(`policy.${policy}`)
+                    : t('ladder.policyDefault', {
+                        // what following the default MEANS for this session right
+                        // now — which may be its group's override, not the global
+                        policy: t(
+                          `policy.${resolvePolicy({ ...props.policies, cards: {} }, menu.session.id, menu.session.groupId)}`
+                        ),
+                      })}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}

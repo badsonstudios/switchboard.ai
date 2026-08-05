@@ -1453,6 +1453,48 @@ Designed answer:
   surfaces; lamps/status encode SHAPE as well as color (colorblind-safe — never
   hue alone).
 
+  > **As built (#174 then #197, 2026-08-04) — the rule the app applies, so the
+  > next surface does not have to re-derive it.** "Keyboard-complete" was a
+  > commitment without a shape, and the renderer had drifted into the same
+  > defect on every interactive surface: a `div` with an `onClick`, no role, no
+  > accessible name, no way in from the keyboard. #174 fixed the Session feed
+  > and #197 swept the Sessions rail, the urgency lamps, the card's view tabs
+  > and the Events rows. Four rules came out of it:
+  >
+  > 1. **The control is a real `<button>`.** Enter, Space, focus and the
+  >    announcement all come from the platform, and none of them can be
+  >    forgotten by the next renderer.
+  > 2. **A container that holds controls stays role-less.** A rail row holds
+  >    its ✕, an Events row holds Dismiss, a tool box holds its IN/OUT
+  >    expanders — and `button`, `option` and `tab` all take *presentational
+  >    children*, so putting one of those roles on the container would hide the
+  >    controls inside it. The container keeps its click as a MOUSE convenience
+  >    that duplicates the button; it never becomes the only way in.
+  > 3. **Composite roles only where they are true.** The view tab strip really
+  >    does select one panel of several, so it is a real
+  >    `tablist`/`tab`/`tabpanel` — which then OBLIGES the roving tabindex and
+  >    the arrow keys, because that is what the role promises. Nothing else in
+  >    the sweep earned one, and plain buttons were shipped instead of a
+  >    `listbox` that would have had to lie about its children.
+  > 4. **Visible focus is part of the path.** One `:focus-visible` ring, in
+  >    `--status-working-ink` (theme-tuned, clears 1.4.11's 3:1 on both shipped
+  >    themes), never `:focus` — a ring painted on every mouse click trains
+  >    people to stop seeing it.
+  >
+  > Two consequences worth writing down. **Decoration is marked as
+  > decoration**: the rail's status glyph carried an `aria-label` on a
+  > role-less `span`, which no screen reader reads, so the state it was trying
+  > to announce now lives in the row button's own name and the glyph is
+  > `aria-hidden`. And **`aria-controls` must resolve** — the rail's group body
+  > is always in the DOM and merely `hidden` when collapsed, because a
+  > reference to an element that does not exist is worse than no reference.
+  >
+  > The one thing deliberately NOT unified: tab-stop budget. The feed is a
+  > single tab stop with arrows inside (#174) because a composer sits behind
+  > hundreds of expanders; the rail, the lamps and the Events panel each spend
+  > one or two stops per session, which is bounded by how many sessions a human
+  > runs and buys back the simplicity of ordinary buttons.
+
 ### 5.27 Mobile companion — fleet remote control
 
 Sessions are PC processes; Electron has no mobile target — and shouldn't. The

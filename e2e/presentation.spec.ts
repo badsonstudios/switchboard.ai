@@ -53,7 +53,7 @@ test.describe('presentation state (P2-E15-08)', () => {
 
     // put it on a NON-default tab: the default would pass even if the state
     // were lost entirely
-    await w.getByRole('button', { name: 'Terminal', exact: true }).click();
+    await w.getByRole('tab', { name: 'Terminal', exact: true }).click();
     await expect(w.locator('.xterm')).toBeVisible();
     expect(await liveCount(w)).toBe(1);
 
@@ -72,7 +72,7 @@ test.describe('presentation state (P2-E15-08)', () => {
 
     // the tab it was on, not the default
     await expect(w.locator('.xterm')).toBeVisible({ timeout: 25_000 });
-    await expect(w.getByRole('button', { name: 'Terminal', exact: true })).toHaveCSS(
+    await expect(w.getByRole('tab', { name: 'Terminal', exact: true })).toHaveCSS(
       'font-weight',
       '650'
     );
@@ -142,7 +142,7 @@ test.describe('presentation state (P2-E15-08)', () => {
     // two cards are mounted, so scope to the one on screen: `.first()` picks by
     // DOM order and would silently drive the OTHER card's tab strip
     await a.window
-      .getByRole('button', { name: 'Terminal', exact: true })
+      .getByRole('tab', { name: 'Terminal', exact: true })
       .filter({ visible: true })
       .click();
     await hideActive(a.window);

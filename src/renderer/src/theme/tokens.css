@@ -352,6 +352,40 @@ body {
   outline: none;
 }
 
+/* The rest of the app's keyboard path (#197, §5.26). #174 fixed the feed; this
+ * is the same ring on the four surfaces the sweep covered — rail rows and group
+ * headers, the urgency lamps, the view tabs (data-vtab, so dockview’s own tabs keep theirs), and the Events rows — plus the
+ * small controls that live inside them.
+ *
+ * Chromium already draws a default ring on a focused <button>, so this is not
+ * about creating one: it is about it being the SAME ring, in a color measured
+ * against our own panels rather than the UA's assumption about the background.
+ * `--status-working-ink` for the same reason #174 chose it — it is the accent
+ * tuned per theme for legibility, so it clears WCAG 1.4.11's 3:1 on nordic and
+ * on daylight alike.
+ *
+ * `:focus-visible`, never `:focus`: these are all things a mouse clicks
+ * constantly, and a ring painted on every click is noise that trains people to
+ * stop seeing it. */
+.rail-row-open:focus-visible,
+.rail-head-toggle:focus-visible,
+.rail-dot:focus-visible,
+.rail-x:focus-visible,
+.rail-menu-item:focus-visible,
+.rail-add-group:focus-visible,
+.urgency-lamp:focus-visible,
+.collapsed-row:focus-visible,
+.event-open:focus-visible,
+.event-dismiss:focus-visible,
+[data-vtab]:focus-visible {
+  /* outline only — deliberately NOT border-radius. Chromium's outline already
+   * follows whatever radius the element has, and these controls have five
+   * different ones (a 999px lamp, a round recolor dot, a tab rounded only at
+   * the top): setting a radius here would change their SHAPE on focus. */
+  outline: 2px solid var(--status-working-ink);
+  outline-offset: 1px;
+}
+
 /* composer working pulse (P2-E10-05) */
 @keyframes sb-pulse {
   0%, 100% { opacity: 0.35; }
@@ -597,7 +631,13 @@ body {
   background: var(--border);
   border-radius: 4px;
 }
-.rail-menu-item:hover {
+.rail-menu-item {
+  background: transparent;
+}
+/* the keyboard gets the same highlight the mouse does — an outline alone, on a
+ * row of identical rows, is a weaker "you are here" than the fill (#197) */
+.rail-menu-item:hover,
+.rail-menu-item:focus-visible {
   background: var(--rail-row-hover);
 }
 /* A group's color is DATA (user-picked from the stored palette). The design

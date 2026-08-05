@@ -178,6 +178,68 @@ there are several conversations, so jumping between regions announces
 "Conversation" — you can tell which session you've landed in without reading
 anything in it. Rename a session and its conversation is renamed with it.
 
+## Working the rest of the window with the keyboard
+
+Everything outside the conversation works from the keyboard too — the Sessions
+list, the lamp strip, the tabs across the top of a card, and the Events panel.
+`Tab` moves forward through them, `Shift+Tab` back, and whatever you're on is
+outlined so you can always see where you are. `Enter` or `Space` does what
+clicking would do.
+
+### The Sessions list
+
+`Tab` walks the list one control at a time, top to bottom:
+
+| What you're on | What the keys do |
+|---|---|
+| A group's name | `Enter` folds the group shut, `Enter` again opens it |
+| The colored dot beside it | `Enter` changes the group's color, one step per press |
+| A session's name | `Enter` brings that session up in the grid |
+| The **✕** at the end of a row | `Enter` ends the session (it asks first) |
+| **+ group** at the top | `Enter` makes a new group |
+
+A session row reads out as its name and its state together — *"trading-app —
+Wants permission to run"* — so you don't have to see the little status square
+to know what it's asking for. The session you're currently looking at is
+announced as the current one.
+
+The right-click menu on a row is on the keyboard too: with a session's name
+selected, press **`Shift+F10`** (or the **Menu** key, if your keyboard has one)
+and the same menu opens, with the first item already selected. `↑` and `↓` walk
+it, `Enter` picks, and `Esc` closes it and puts you back on the row you started
+from. That menu is where **Open changes**, **Rename…** and **Close session**
+live, so renaming a session doesn't need a double-click.
+
+### The lamp strip
+
+Each lamp along the top is a button: `Tab` reaches it, `Enter` jumps to that
+session. Every lamp says its session's name and state, and the one you're
+currently on is announced as the current one.
+
+### The tabs on a card
+
+**Session**, **Changes**, **History** and **Terminal** are a proper tab strip,
+which means one `Tab` press gets you to it and the arrows move inside it:
+
+| Key | What it does |
+|---|---|
+| `→` / `←` | Move to the next / previous tab (it wraps around) |
+| `Home` / `End` | First / last tab |
+| `Enter` or `Space` | Switch to the tab you're on |
+
+Moving with the arrows doesn't switch views — it only moves the highlight — so
+you can walk past **Changes** without making it load a diff you didn't want.
+Press `Enter` when you get to the one you mean.
+
+Tabs that aren't ready yet stay in the walk and announce themselves as
+unavailable, rather than being skipped as though they didn't exist.
+
+### The Events panel
+
+Each row is a button: `Enter` opens that session, exactly as clicking the row
+does, and counts as having visited it so `Ctrl+Space` won't send you straight
+back. One more `Tab` reaches that row's **Dismiss** button.
+
 ## Hiding the Sessions list
 
 `Ctrl+B` hides and shows the Sessions list on the left, for when you want the

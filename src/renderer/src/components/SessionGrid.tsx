@@ -44,6 +44,7 @@ import {
   withoutMaximized,
 } from '../lib/layout-mode';
 import { presentStatus } from '../lib/rail-view';
+import { tabStripAction } from '../lib/tabstrip-keys';
 import { StatusPill } from './StatusPill';
 import type { Ladder } from '../lib/presentation';
 import { pickAdoptedGroupId } from '../lib/groups';
@@ -132,6 +133,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const [plan, setPlan] = React.useState<{ total: number; completed: number; inProgress: number } | null>(null);
   const [taskLabel, setTaskLabel] = React.useState<string>('');
   const [editingLabel, setEditingLabel] = React.useState(false);
+  // which view tab the keyboard is on, when it is not the selected one (#197).
+  // `null` = focus is outside the strip, so the roving stop sits on the
+  // selection again.
+  const [tabFocus, setTabFocus] = React.useState<string | null>(null);
   const [status, setStatus] = React.useState<string>('starting');
   const cardId = props.params?.cardId;
   // PRESENTATION STATE LIVES IN THE STORE (P2-E15-08, AR-P1-5), not here.
@@ -598,12 +603,55 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     setView,
   };
   const panels = listPanels(rendererRegistry);
+  // ids for the tab <-> panel wiring (#197). `useId` because a workspace shows
+  // many cards at once and every one of them renders the same four tab names —
+  // hand-rolled ids would collide the moment a second card is open, and an
+  // `aria-controls` pointing at another card's panel is worse than none.
+  const tabsId = React.useId();
+  const tabId = (id: string): string => `${tabsId}tab-${id}`;
+  const tabPanelId = (id: string): string => `${tabsId}panel-${id}`;
   // The persisted view id may name a panel that no longer exists (an id from a
   // removed contribution, or a future one — both outlive a ui blob), or one
   // that is currently disabled (Changes on a card whose folder went away).
   // Either way, fall back to the first panel rather than rendering a blank
   // card with no tab highlighted and nothing to explain it.
   const active = panels.find((p) => p.id === view && panelEnabled(p, panelCtx)) ?? panels[0];
+
+  /**
+   * The tablist's arrow keys (#197). Focus moves; Enter/Space select — manual
+   * activation, because arrowing past Changes must not build a Monaco diff for
+   * a tab the user is only walking through (see lib/tabstrip-keys).
+   *
+   * The DOM is the list, exactly as the feed's navigation does it: the strip
+   * already holds every tab in the order the eye reads them, and a registry of
+   * our own would only be a second copy to get out of step with §5.23's
+   * contributions.
+   */
+  const onTabKeys = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    // `ownerDocument`, NOT the global `document`: a popped-out card portals this
+    // whole strip into another window, whose focus the main document knows
+    // nothing about. With the global, every arrow in a popout would compute
+    // `current = -1` and Enter would find no tab at all — while preventDefault
+    // had already eaten the button's own activation, leaving the popout's tabs
+    // strictly worse off than before the tablist existed.
+    const doc = e.currentTarget.ownerDocument;
+    const tabs = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]'));
+    const action = tabStripAction(e.key, {
+      count: tabs.length,
+      current: tabs.indexOf(doc.activeElement as HTMLElement),
+    });
+    if (!action) return;
+    e.preventDefault();
+    if (action.kind === 'focus') {
+      tabs[action.index].focus();
+      return;
+    }
+    const id = (doc.activeElement as HTMLElement | null)?.dataset.vtab;
+    const p = panels.find((x) => x.id === id);
+    // a "soon" tab is in the walk but has nothing to show yet
+    if (p && panelEnabled(p, panelCtx)) setView(p.id);
+  };
+
   return (
     <div
       style={{
@@ -925,31 +973,73 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               background: 'var(--panel2)',
             }}
           >
-            {panels.map((p) => {
-              const on = panelEnabled(p, panelCtx);
-              const badge = panelBadge(p, panelCtx);
-              const label = (
-                <>
-                  {t(p.titleKey)}
-                  {badge !== null && (
-                    <span style={{ color: 'var(--status-needs-input-ink)', marginInlineStart: 4 }}>
-                      {badge}
-                    </span>
-                  )}
-                </>
-              );
-              // a disabled panel still SHOWS — §5.8: you can always see what
-              // exists, even when it isn't ready
-              return on ? (
-                <button key={p.id} style={vtabStyle(active?.id === p.id, false, live.accent)} onClick={() => setView(p.id)}>
-                  {label}
-                </button>
-              ) : (
-                <span key={p.id} style={vtabStyle(false, true, live.accent)} title={t('grid.viewSoon')}>
-                  {label}
-                </span>
-              );
-            })}
+
+            {/* A REAL tablist (#197). Only the tabs are inside it — the plan
+                counter, the git chip and the usage strip share the strip's row
+                but are readouts, and a tablist that contained them would be
+                telling a screen reader they are tabs. */}
+            <div
+              role="tablist"
+              // dockview publishes a `tablist` of its own for the session cards,
+              // so "the tab strip" is ambiguous to a role query — the testid is
+              // how a spec names THIS one
+              data-testid="view-tabs"
+              aria-label={t('grid.viewTabs')}
+              onKeyDown={onTabKeys}
+              // the strip's own focus bookkeeping: the roving stop follows
+              // whichever tab the arrows put focus on, and goes back to the
+              // selected one the moment focus leaves the strip entirely
+              onFocus={(e) => setTabFocus((e.target as HTMLElement).dataset.vtab ?? null)}
+              onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setTabFocus(null);
+              }}
+              // a flex item does not shrink below its content unless told to;
+              // without this the tabs would push the git chip and the usage
+              // strip off a narrow card instead of crowding as they used to
+              style={{ display: 'flex', alignItems: 'flex-end', gap: 3, minInlineSize: 0 }}
+            >
+              {panels.map((p) => {
+                const on = panelEnabled(p, panelCtx);
+                const badge = panelBadge(p, panelCtx);
+                const selected = active?.id === p.id;
+                // a disabled panel still SHOWS — §5.8: you can always see what
+                // exists, even when it isn't ready. It stays a tab, and stays in
+                // the arrow-key walk, with `aria-disabled` rather than the
+                // `disabled` attribute: the whole point is that you can find out
+                // it exists, and `disabled` would take it out of the strip.
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    role="tab"
+                    id={tabId(p.id)}
+                    data-vtab={p.id}
+                    aria-selected={selected}
+                    aria-disabled={on ? undefined : true}
+                    // only tabs whose panel is actually in the DOM point at one:
+                    // a keepMounted panel is always there (merely hidden), the
+                    // rest mount only while selected, and an `aria-controls`
+                    // naming an element that does not exist is a dead end
+                    aria-controls={selected || p.keepMounted ? tabPanelId(p.id) : undefined}
+                    // The roving tab stop a tablist owes: one Tab reaches the
+                    // strip, arrows move inside it. It follows FOCUS, not
+                    // selection — with manual activation the two come apart the
+                    // moment you arrow anywhere, and a stop left behind on the
+                    // selected tab would lose your place on the way back in.
+                    tabIndex={(tabFocus ?? active?.id) === p.id ? 0 : -1}
+                    title={on ? undefined : t('grid.viewSoon')}
+                    style={vtabStyle(selected, !on, live.accent)}
+                    onClick={() => on && setView(p.id)}
+                  >
+                    {t(p.titleKey)}
+                    {badge !== null && (
+                      <span style={{ color: 'var(--status-needs-input-ink)', marginInlineStart: 4 }}>{badge}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
             <span style={{ flex: 1, minInlineSize: 8 }} />
             {plan && (
               <span
@@ -971,15 +1061,32 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               // a contributed panel that throws must cost that panel, not the
               // window — there is no other error boundary in the renderer
               p.keepMounted ? (
-                <div key={p.id} style={{ blockSize: '100%', display: active?.id === p.id ? 'block' : 'none' }}>
+                <div
+                  key={p.id}
+                  role="tabpanel"
+                  id={tabPanelId(p.id)}
+                  aria-labelledby={tabId(p.id)}
+                  style={{ blockSize: '100%', display: active?.id === p.id ? 'block' : 'none' }}
+                >
                   <ContributionBoundary id={p.manifest.id}>
                     {p.render({ ...panelCtx, visible: visible && active?.id === p.id })}
                   </ContributionBoundary>
                 </div>
               ) : active?.id === p.id ? (
-                <ContributionBoundary key={p.id} id={p.manifest.id}>
-                  {p.render({ ...panelCtx, visible })}
-                </ContributionBoundary>
+                // the mounted-only panels get the same wrapper, so the tab that
+                // named it has something to name (a ContributionBoundary is not
+                // an element and cannot carry the role)
+                <div
+                  key={p.id}
+                  role="tabpanel"
+                  id={tabPanelId(p.id)}
+                  aria-labelledby={tabId(p.id)}
+                  style={{ blockSize: '100%' }}
+                >
+                  <ContributionBoundary id={p.manifest.id}>
+                    {p.render({ ...panelCtx, visible })}
+                  </ContributionBoundary>
+                </div>
               ) : null
             )}
             {exitedOverlay && <div style={overlayBackdrop}>{exitedOverlay}</div>}
