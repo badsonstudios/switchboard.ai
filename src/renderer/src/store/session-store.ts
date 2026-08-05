@@ -495,17 +495,64 @@ export class SessionStore {
    * running session), so a hidden card keeps its grant — correct, since the
    * session it was granted to is still running.
    *
-   * "Bound" is the limit of the claim: nothing stops `setAllowAll` being handed
-   * an id this map never held, and such an entry is still released by nothing.
-   * The one path there — answering a permission the review bar kept queued
-   * after its session was already torn down — is a live-session bug in its own
-   * right, not something to paper over here.
+   * The registries this store owns are released HERE; the ones other surfaces
+   * own are told, via `subscribeLiveRetired` below (#239). #224 left that as a
+   * residual — `setAllowAll` could still be handed an id this map never held,
+   * because the review bar went on offering a torn-down session's question and
+   * "Allow all" answered it. The signal closes that for the teardowns which come
+   * through here, which is every renderer-side one; a session that dies on its
+   * own never reaches this method, and the grid drops its held requests off
+   * `sessions:exited` instead.
    */
   forgetCardLiveIds(cardId: string): void {
+    const retired: string[] = [];
     for (const [liveId, cid] of this.liveToCard) {
       if (cid !== cardId) continue;
       this.liveToCard.delete(liveId);
       this.allowAllByLive.delete(liveId);
+      retired.push(liveId);
+    }
+    // Batched, so the loop over `liveToCard` is finished before any subscriber
+    // can re-enter this store. (With the one-live-id-per-card invariant there
+    // is at most one id here, so nothing today can observe the difference —
+    // this is what keeps that from becoming a constraint on the invariant.)
+    for (const liveId of retired) this.notifyLiveRetired(liveId);
+  }
+
+  // ── a live session was retired (#239) ───────────────────────────────────
+  //
+  // The counterpart to the releases above, for state this store does NOT hold.
+  // The card's held-permission queue is React state inside `SessionGrid`, and
+  // it is keyed by live session id: Restart and the popout-close suspend both
+  // leave that component mounted with its queue intact, so the next session's
+  // review bar would open holding the corpse's question.
+  //
+  // A signal rather than a fifth Set here, because the queue is the grid's to
+  // own — and rather than a `live === null` check at the two call sites,
+  // because "this id is retired" and "I don't know this card's id yet" are
+  // different states and only the first one may drop a hold. A fresh mount's
+  // `pendingPermissions` replay CAN land before the spawn binds `live` (both
+  // are async and neither waits for the other), and those holds must survive —
+  // E10-04 review P0#3: a missed push must never park the CLI.
+  //
+  // Its own listener set, outside the notify path, for the same reason
+  // membership and prompt-submit have one: this means "something happened",
+  // not "state changed".
+  private liveRetiredListeners = new Set<(liveId: string) => void>();
+
+  subscribeLiveRetired(listener: (liveId: string) => void): () => void {
+    this.liveRetiredListeners.add(listener);
+    return () => this.liveRetiredListeners.delete(listener);
+  }
+
+  private notifyLiveRetired(liveId: string): void {
+    for (const l of this.liveRetiredListeners) {
+      try {
+        l(liveId);
+      } catch (err) {
+        // a broken subscriber costs itself, not the rest of the teardown
+        console.error('[store] live-retired subscriber threw', err);
+      }
     }
   }
 
