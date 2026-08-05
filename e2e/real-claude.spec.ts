@@ -34,7 +34,7 @@ test.describe('real claude end-to-end (opt-in)', () => {
     // under an isolated temp home (session-env/memory appear, transcript
     // doesn't), so Session-view block assertions are deferred until that's
     // understood — real-home usage writes transcripts normally.
-    await w.getByRole('button', { name: 'Terminal' }).click();
+    await w.getByRole('tab', { name: 'Terminal' }).click();
     await expect(w.getByText(/REAL_E2E_OK/).first()).toBeVisible({ timeout: 120_000 });
   });
 });

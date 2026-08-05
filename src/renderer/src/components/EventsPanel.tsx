@@ -15,6 +15,12 @@ import { panelOrder, nextInQueue } from '../lib/queue';
 
 export type { EventDto } from '../model/types';
 
+/** Space the status line leaves for the out-of-flow Dismiss button (#197).
+ *  Sized to the widest thing that button can hold, which is a translated word
+ *  rather than "Dismiss" (~61px) — generous on purpose, because the failure
+ *  mode is text running underneath a control. */
+const DISMISS_GUTTER = 64;
+
 const KIND_TOKEN: Record<EventDto['kind'], string> = {
   done: 'var(--status-done)',
   ready: 'var(--faint)',
@@ -42,6 +48,8 @@ export function EventsPanel(props: {
   onDismissOffer?: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
+  // the panel's heading doubles as the list's label — one "Events", not two
+  const eyebrowId = React.useId();
   const events = props.events;
   const ordered = panelOrder(events);
   // Where the hotkey will actually take you next — the same function the
@@ -71,6 +79,7 @@ export function EventsPanel(props: {
       }}
     >
       <div
+        id={eyebrowId}
         style={{
           fontSize: 9,
           letterSpacing: 1.3,
@@ -143,119 +152,169 @@ export function EventsPanel(props: {
       {events.length === 0 && !props.reconnectOffer && (
         <div style={{ color: 'var(--muted)', fontSize: 11 }}>{t('events.empty')}</div>
       )}
-      {ordered.map((e) => {
-        const s = byId.get(e.sessionId);
-        const isNext = e.id === head;
-        const reviewed = e.kind === 'ready';
-        return (
-          <div
-            key={e.id}
-            data-event-kind={e.kind}
-            data-next={isNext ? 'true' : undefined}
-            title={reviewed ? t('events.reviewed') : undefined}
-            onClick={() => {
-              props.onFocus(s?.id ?? e.sessionId);
-              // clicking IS visiting: the hotkey must not send you straight
-              // back to the row you just opened by hand (§5.8 — a click
-              // anywhere is a reveal trigger)
-              props.onVisit?.(e.id);
-              void window.switchboard.events.ack(e.sessionId); // Done. -> Ready
-            }}
-            style={{
-              position: 'relative',
-              background: 'var(--panel2)',
-              borderRadius: 'var(--radius-chip)',
-              padding: '6px 9px 6px 12px',
-              marginBlockEnd: 4,
-              cursor: 'pointer',
-              fontSize: 11,
-              // outline, not border: a ring that shifts the row's box would
-              // make the whole list jump every time the head changes
-              outline: isNext ? `1px solid ${KIND_TOKEN[e.kind]}` : undefined,
-              outlineOffset: -1,
-              // the reviewed tail is a log, not a to-do — it recedes, but it
-              // still has to be readable (Dan 2026-07-26: 0.65 was too dim)
-              opacity: reviewed ? 0.82 : 1,
-            }}
-          >
-            <span
+      {/* A real list, so the rows read as a set and their count is announced
+          (#197). Only the rows are inside it — the eyebrow, the hotkey hint and
+          the reconnect offer are not list items and would inflate that count. */}
+      <div role="list" aria-labelledby={eyebrowId}>
+        {ordered.map((e) => {
+          const s = byId.get(e.sessionId);
+          const isNext = e.id === head;
+          const reviewed = e.kind === 'ready';
+          const open = (): void => {
+            props.onFocus(s?.id ?? e.sessionId);
+            // clicking IS visiting: the hotkey must not send you straight back to
+            // the row you just opened by hand (§5.8 — a click anywhere is a
+            // reveal trigger). Pressing Enter on the row's button is the same act.
+            props.onVisit?.(e.id);
+            void window.switchboard.events.ack(e.sessionId); // Done. -> Ready
+          };
+          return (
+            <div
+              key={e.id}
+              role="listitem"
+              data-event-kind={e.kind}
+              data-next={isNext ? 'true' : undefined}
+              title={reviewed ? t('events.reviewed') : undefined}
+              onClick={open}
               style={{
-                position: 'absolute',
-                insetInlineStart: 0,
-                insetBlockStart: 0,
-                insetBlockEnd: 0,
-                inlineSize: 3,
-                background: s?.accent ?? 'var(--faint)',
-                borderRadius: 2,
+                position: 'relative',
+                background: 'var(--panel2)',
+                borderRadius: 'var(--radius-chip)',
+                padding: '6px 9px 6px 12px',
+                marginBlockEnd: 4,
+                cursor: 'pointer',
+                fontSize: 11,
+                // outline, not border: a ring that shifts the row's box would
+                // make the whole list jump every time the head changes
+                outline: isNext ? `1px solid ${KIND_TOKEN[e.kind]}` : undefined,
+                outlineOffset: -1,
+                // the reviewed tail is a log, not a to-do — it recedes, but it
+                // still has to be readable (Dan 2026-07-26: 0.65 was too dim)
+                opacity: reviewed ? 0.82 : 1,
               }}
-            />
-            <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+            >
               <span
                 style={{
-                  fontWeight: 600,
-                  color: 'var(--text)',
-                  flex: 1,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
+                  position: 'absolute',
+                  insetInlineStart: 0,
+                  insetBlockStart: 0,
+                  insetBlockEnd: 0,
+                  inlineSize: 3,
+                  background: s?.accent ?? 'var(--faint)',
+                  borderRadius: 2,
+                }}
+              />
+              {/* The row's real control (#197). Same call as #174's tool boxes:
+                  the row CONTAINS a button (Dismiss), so the row itself cannot BE
+                  one — a `button` takes presentational children, which would hide
+                  the dismiss from a screen reader. So the readable body is the
+                  button, the row div stays a role-less mouse convenience that
+                  duplicates it, and its accessible name is the whole event: which
+                  session, when, what it is doing, and what state it is in. */}
+              <button
+                type="button"
+                className="event-open"
+                data-event-open={e.id}
+                onClick={(ev) => {
+                  ev.stopPropagation(); // the row below would otherwise re-run it
+                  open();
+                }}
+                style={{
+                  display: 'block',
+                  inlineSize: '100%',
+                  textAlign: 'start',
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  margin: 0,
+                  font: 'inherit',
+                  fontSize: 11,
+                  color: 'inherit',
+                  cursor: 'pointer',
                 }}
               >
-                {s?.title ?? t('events.unknownSession')}
-              </span>
-              <span style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)', fontSize: 9 }}>
-                {new Date(e.at).toLocaleTimeString()}
-              </span>
-            </div>
-            {/* always rendered so every item is the SAME height (Dan round 4) */}
-            <div
-              style={{
-                color: 'var(--muted)',
-                fontSize: 10,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {s?.taskLabel ?? ' '}
-            </div>
-            {/* status on the left, dismiss on the right — the ✕ used to sit in
-                the top-right corner, right in the click path of the row you
-                were trying to OPEN (Dan 2026-07-26: make it a real button, put
-                it out of the way) */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'flex-end',
-                justifyContent: 'space-between',
-                gap: 6,
-                marginBlockStart: 1,
-              }}
-            >
-              <span style={{ color: KIND_TOKEN[e.kind], flex: 1, minInlineSize: 0 }}>
-                {t(`events.kind.${e.kind}`)}
-                {isNext && (
+                <span style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
                   <span
-                    title={t('events.nextUpHint')}
                     style={{
-                      marginInlineStart: 6,
-                      fontSize: 9,
-                      letterSpacing: 0.6,
-                      textTransform: 'uppercase',
-                      color: 'var(--faint)',
-                      fontFamily: 'var(--font-mono)',
+                      fontWeight: 600,
+                      color: 'var(--text)',
+                      flex: 1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
                     }}
                   >
-                    {t('events.nextUp')}
+                    {s?.title ?? t('events.unknownSession')}
                   </span>
-                )}
-              </span>
+                  <span style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)', fontSize: 9 }}>
+                    {new Date(e.at).toLocaleTimeString()}
+                  </span>
+                </span>
+                {/* always rendered so every item is the SAME height (Dan round 4) */}
+                <span
+                  style={{
+                    display: 'block',
+                    color: 'var(--muted)',
+                    fontSize: 10,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {s?.taskLabel ?? ' '}
+                </span>
+                {/* the status line reserves the corner Dismiss sits in, so a long
+                    status can never run underneath it */}
+                <span
+                  style={{
+                    display: 'block',
+                    color: KIND_TOKEN[e.kind],
+                    marginBlockStart: 1,
+                    // width AND height: Dismiss is out of flow now, so this
+                    // line is the only thing holding the row tall enough for
+                    // it. Without the min height its button rides up into the
+                    // task label above, which has no gutter of its own.
+                    paddingInlineEnd: DISMISS_GUTTER,
+                    minBlockSize: 16,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {t(`events.kind.${e.kind}`)}
+                  {isNext && (
+                    <span
+                      title={t('events.nextUpHint')}
+                      style={{
+                        marginInlineStart: 6,
+                        fontSize: 9,
+                        letterSpacing: 0.6,
+                        textTransform: 'uppercase',
+                        color: 'var(--faint)',
+                        fontFamily: 'var(--font-mono)',
+                      }}
+                    >
+                      {t('events.nextUp')}
+                    </span>
+                  )}
+                </span>
+              </button>
+              {/* Dismiss keeps the bottom-right corner it has always had — out of
+                  the click path of the row you are trying to OPEN (Dan
+                  2026-07-26) — but it is a SIBLING of the open button now:
+                  nested inside, it would have been unreachable by keyboard. */}
               <button
                 onClick={(ev) => {
                   ev.stopPropagation(); // dismiss, don't focus
                   void window.switchboard.events.dismiss(e.sessionId);
                 }}
+                type="button"
+                className="event-dismiss"
                 title={t('events.dismissHint')}
                 style={{
+                  position: 'absolute',
+                  insetBlockEnd: 6,
+                  insetInlineEnd: 9,
                   background: 'var(--chip)',
                   border: '1px solid var(--border)',
                   borderRadius: 'var(--radius-chip)',
@@ -265,15 +324,14 @@ export function EventsPanel(props: {
                   lineHeight: 1.4,
                   padding: '0 7px',
                   fontFamily: 'var(--font-ui)',
-                  flexShrink: 0,
                 }}
               >
                 {t('events.dismiss')}
               </button>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </aside>
   );
 }

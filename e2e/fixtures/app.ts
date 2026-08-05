@@ -456,7 +456,7 @@ export async function sessionStatuses(a: LaunchedApp): Promise<Map<string, strin
 
 /** Switch to the Terminal tab (always present, last — 2026-07-22). */
 export async function showTerminal(window: Page): Promise<void> {
-  await window.getByRole('button', { name: 'Terminal' }).click();
+  await window.getByRole('tab', { name: 'Terminal' }).click();
 }
 
 /**

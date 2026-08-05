@@ -169,15 +169,15 @@ test.describe('a session card', () => {
     a = await launchApp({ seedFolder: folder });
     const { window } = a;
     await expect(window.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-    await expect(window.getByRole('button', { name: 'Session', exact: true })).toBeVisible();
-    await expect(window.getByRole('button', { name: 'Changes' })).toBeVisible();
+    await expect(window.getByRole('tab', { name: 'Session', exact: true })).toBeVisible();
+    await expect(window.getByRole('tab', { name: 'Changes' })).toBeVisible();
     await expect(window.getByText('History', { exact: true })).toBeVisible(); // "soon" tab
-    await expect(window.getByRole('button', { name: 'Terminal' })).toBeVisible();
+    await expect(window.getByRole('tab', { name: 'Terminal' })).toBeVisible();
     // switching Terminal -> Changes -> Terminal leaves it usable
-    await window.getByRole('button', { name: 'Terminal' }).click();
+    await window.getByRole('tab', { name: 'Terminal' }).click();
     await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 10_000 });
-    await window.getByRole('button', { name: 'Changes' }).click();
-    await window.getByRole('button', { name: 'Terminal' }).click();
+    await window.getByRole('tab', { name: 'Changes' }).click();
+    await window.getByRole('tab', { name: 'Terminal' }).click();
     await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 10_000 });
   });
 });

@@ -68,7 +68,10 @@
     "resize": "Drag to resize the rail",
     "menuDiff": "Open changes",
     "menuRename": "Rename…",
-    "menuClose": "Close session"
+    "menuClose": "Close session",
+    "menuLabel": "Actions for {title}",
+    "rowLabel": "{title} — {state}",
+    "rowDetail": "{detail}, {state}"
   },
   "railStatus": {
     "starting": "starting…",
@@ -144,6 +147,7 @@
     "showTerminal": "Show Terminal",
     "hideTerminal": "Hide Terminal",
     "viewSoon": "Coming soon",
+    "viewTabs": "Views",
     "sessionEnded": "Session ended",
     "exitCrashed": "Exited unexpectedly (code {code})",
     "exitClean": "The session closed.",

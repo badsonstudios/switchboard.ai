@@ -145,7 +145,7 @@ test.describe('inline approval bar (E10-04)', () => {
       }).then((r) => r.text());
 
     // park the card on the TERMINAL tab, then hold twice in quick succession
-    await w.getByRole('button', { name: 'Terminal' }).click();
+    await w.getByRole('tab', { name: 'Terminal' }).click();
     const p1 = hold('C:/one.ts');
     const p2 = hold('C:/two.ts');
     // the Session tab auto-surfaces with the bar + queue badge

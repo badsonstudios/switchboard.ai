@@ -90,6 +90,11 @@ export function UrgencyStrip(props: {
       // NOT role="toolbar": that promises one tab stop with arrow-key
       // navigation, and the lamps are ordinary buttons. A group keeps each lamp
       // individually reachable and honest about what it is.
+      //
+      // #197's sweep left this alone on purpose. The lamps were already the
+      // shape the sweep exists to produce — real buttons, each with the rail's
+      // own words for its state — so all they were missing was a focus ring
+      // (tokens.css) and "you are here" (aria-current, below).
       role="group"
       aria-label={t('urgency.label')}
       style={{
@@ -168,6 +173,10 @@ function Lamp(props: {
       data-active={props.active}
       title={label}
       aria-label={label}
+      // "you are here" (#197). `data-active` already carried it for the eye and
+      // for the e2e assertions; aria-current is the same fact for a screen
+      // reader, which otherwise hears N identically-shaped buttons.
+      aria-current={props.active ? 'true' : undefined}
       onClick={() => props.onFocus(l.cardId)}
       // the two values the stylesheet cannot know statically. Everything else
       // about the lamp's look is in tokens.css, keyed off the attributes above

@@ -377,7 +377,7 @@ test.describe('the Terminal tab degrades honestly (P2-E18-08b)', () => {
       timeout: 25_000,
     });
 
-    await w.getByRole('button', { name: 'Terminal' }).first().click();
+    await w.getByRole('tab', { name: 'Terminal' }).first().click();
 
     await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 15_000 });
     // and it says what you GAIN, not only what is missing
@@ -392,7 +392,7 @@ test.describe('the Terminal tab degrades honestly (P2-E18-08b)', () => {
       timeout: 25_000,
     });
 
-    await w.getByRole('button', { name: 'Terminal' }).first().click();
+    await w.getByRole('tab', { name: 'Terminal' }).first().click();
 
     await expect(w.getByText('No terminal for this session')).toHaveCount(0);
   });
@@ -428,7 +428,7 @@ test.describe('switching transport the way a user does (#153)', () => {
     });
 
     // it starts on the terminal
-    await w.getByRole('button', { name: 'Terminal' }).first().click();
+    await w.getByRole('tab', { name: 'Terminal' }).first().click();
     await expect(w.getByText('No terminal for this session')).toHaveCount(0);
 
     // switch it — the label names the CURRENT mode and the action separately
@@ -442,7 +442,7 @@ test.describe('switching transport the way a user does (#153)', () => {
     await w.getByRole('button', { name: /Restart session now/i }).click();
 
     // and now it really is in the new mode
-    await w.getByRole('button', { name: 'Terminal' }).first().click();
+    await w.getByRole('tab', { name: 'Terminal' }).first().click();
     await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 30_000 });
   });
 
@@ -471,7 +471,7 @@ test.describe('switching transport the way a user does (#153)', () => {
     await w.getByRole('button', { name: /Restart session now/i }).click();
 
     // the Terminal tab is honest about there being no terminal...
-    await w.getByRole('button', { name: 'Terminal' }).first().click();
+    await w.getByRole('tab', { name: 'Terminal' }).first().click();
     await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 30_000 });
 
     // ...and nothing else in the window contradicts it. The bar's grace period
@@ -502,7 +502,7 @@ test.describe('switching transport the way a user does (#153)', () => {
     await first.window.getByRole('button', { name: /switch to Direct/i }).click();
     await first.window.getByRole('button', { name: /Restart session now/i }).click();
     // it really is in Direct before we quit
-    await first.window.getByRole('button', { name: 'Terminal' }).first().click();
+    await first.window.getByRole('tab', { name: 'Terminal' }).first().click();
     await expect(first.window.getByText('No terminal for this session')).toBeVisible({
       timeout: 30_000,
     });
@@ -516,7 +516,7 @@ test.describe('switching transport the way a user does (#153)', () => {
       timeout: 25_000,
     });
 
-    await a.window.getByRole('button', { name: 'Terminal' }).first().click();
+    await a.window.getByRole('tab', { name: 'Terminal' }).first().click();
     await expect(a.window.getByText('No terminal for this session')).toBeVisible({
       timeout: 30_000,
     });
