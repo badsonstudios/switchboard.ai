@@ -8,6 +8,7 @@
 // theme/dockview-tokens.css can switch on it and the popout windows (separate
 // documents that inherit the same stylesheet) behave identically.
 import { uiGet, uiSet } from './ui-state';
+import { openPopoutWindows } from './popout-windows';
 import { copyThemeOverlay } from '../theme/theme';
 
 export type TabRows = 'wrap' | 'single';
@@ -44,10 +45,11 @@ export function toggleTabRows(): TabRows {
  * app a nordic popout: the base right and every override missing, which looks
  * exactly like a theme that half-applied.
  *
- * Called when a popout opens and whenever any of it changes; `windows`
- * defaults to every popout dockview has told us about.
+ * Called when a popout opens and whenever any of it changes; `windows` defaults
+ * to every popout currently open, which is `lib/popout-windows`' answer and no
+ * longer a second list kept here (#227).
  */
-export function syncDocumentFlags(windows: Iterable<Window> = popoutWindows): void {
+export function syncDocumentFlags(windows: Iterable<Window> = openPopoutWindows()): void {
   const srcEl = document.documentElement;
   const src = srcEl.dataset;
   for (const win of windows) {
@@ -63,16 +65,4 @@ export function syncDocumentFlags(windows: Iterable<Window> = popoutWindows): vo
       /* window closed mid-iteration — fail open, it's cosmetic */
     }
   }
-}
-
-// popout windows currently open, so a later theme/mode change can reach them
-const popoutWindows = new Set<Window>();
-
-export function trackPopoutWindow(win: Window): void {
-  popoutWindows.add(win);
-  syncDocumentFlags([win]);
-}
-
-export function forgetPopoutWindow(win: Window): void {
-  popoutWindows.delete(win);
 }

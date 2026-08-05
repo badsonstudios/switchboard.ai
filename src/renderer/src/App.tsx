@@ -40,14 +40,8 @@ import {
   withGroup,
 } from './lib/presentation-policy';
 import { buildIdentity } from '../../shared/build-identity';
-import {
-  applyTabRows,
-  forgetPopoutWindow,
-  loadTabRows,
-  syncDocumentFlags,
-  toggleTabRows,
-  trackPopoutWindow,
-} from './lib/tab-rows';
+import { applyTabRows, loadTabRows, syncDocumentFlags, toggleTabRows } from './lib/tab-rows';
+import { openPopoutWindows, subscribePopoutWindows } from './lib/popout-windows';
 
 // One stable subscribe identity for every useSyncExternalStore call below.
 // An inline arrow is a new function each render, and React unsubscribes and
@@ -580,7 +574,9 @@ export function App(): React.JSX.Element {
     //
     // The window→handler map lives in a ref, not this closure: if the effect
     // ever re-runs (a new dep), popouts opened earlier must be re-attached,
-    // not silently deafened.
+    // not silently deafened. It maps a window to ITS handler and nothing more —
+    // which windows are open is `lib/popout-windows`' answer, not a second copy
+    // kept here (#227).
     const popoutKeys = popoutKeysRef.current;
     const attach = (win: Window): void => {
       if (popoutKeys.has(win)) return;
@@ -597,29 +593,33 @@ export function App(): React.JSX.Element {
       win.removeEventListener('keydown', handler);
       popoutKeys.delete(win);
     };
-    // re-attach anything opened before this (re-)run
-    for (const win of [...popoutKeys.keys()]) {
+    // Re-attach anything open before this (re-)run, from the REGISTRY rather
+    // than from our own leftovers — that is the authority on what exists, and
+    // this map is only "what I have a handler for". They can differ in one
+    // direction: a popout closed while this effect was torn down leaves a key
+    // behind that no `removed` will ever come for, so drop those first (dead
+    // Windows are inert, but they are still retained forever).
+    const open = new Set(openPopoutWindows());
+    for (const win of [...popoutKeys.keys()]) if (!open.has(win)) detach(win);
+    for (const win of open) {
       detach(win);
       attach(win);
     }
-    const onAdded = (e: Event): void => {
-      const win = (e as CustomEvent<Window>).detail;
-      attach(win);
-      // a popout is its own document: give it our theme + tab-row flags (#84)
-      trackPopoutWindow(win);
-    };
-    const onRemoved = (e: Event): void => {
-      const win = (e as CustomEvent<Window>).detail;
-      detach(win);
-      forgetPopoutWindow(win);
-    };
-    window.addEventListener('switchboard:popout-added', onAdded);
-    window.addEventListener('switchboard:popout-removed', onRemoved);
+    const offPopouts = subscribePopoutWindows({
+      added: (win) => {
+        attach(win); // no-op for a window re-announced with its handler intact
+        // a popout is its own document: give it our theme + tab-row flags (#84).
+        // Unconditionally, including on a re-announcement — a reused window is a
+        // fresh document with neither flag nor token overlay on it, and an
+        // unthemed popout is the failure this call exists to prevent.
+        syncDocumentFlags([win]);
+      },
+      removed: detach,
+    });
 
     return () => {
       window.removeEventListener('keydown', onKey);
-      window.removeEventListener('switchboard:popout-added', onAdded);
-      window.removeEventListener('switchboard:popout-removed', onRemoved);
+      offPopouts();
       // detach the LISTENERS but keep the window keys: a re-run re-attaches
       // them above with fresh handlers. (A popout closed during app teardown
       // may not fire its remove event — a dead Window in the map is inert.)
@@ -641,12 +641,11 @@ export function App(): React.JSX.Element {
       // while a modal owns the screen, nothing underneath it fires — the
       // same guard the keydown dispatcher applies
       if (modalOpenRef.current) return;
-      // Only the popouts we know about are searched — the map is filled by the
-      // 'switchboard:popout-added' event, so a window that somehow missed it
-      // lands on the fallback and simply behaves as if nothing were focused.
-      const target = fromPopout
-        ? focusedElementIn(popoutKeysRef.current.keys(), document)
-        : document.activeElement;
+      // Only the popouts we know about are searched — the registry is filled by
+      // SessionGrid from dockview's own event (#227), so a window that somehow
+      // missed it lands on the fallback and simply behaves as if nothing were
+      // focused.
+      const target = fromPopout ? focusedElementIn(openPopoutWindows(), document) : document.activeElement;
       raisedOtherWindowRef.current = false;
       const ran = dispatchAccelerator(
         commandId,
