@@ -59,6 +59,14 @@ numbers (latency, CPU, memory) where the item asks for them.
    - **Add an e2e test for every new user-facing surface.** If a feature can
      only be checked by looking at the window, it needs an e2e test — not a
      PROGRESS "[Dan eyeball]" note.
+   - **`e2e/` holds BOTH runners, split by extension (#230).** `*.spec.ts` is
+     Playwright (`playwright.config.ts` pins `testMatch` to it — its default
+     would swallow `*.test.ts` too); `*.test.ts` is **vitest**, and today means
+     the fixture's own unit tests (`e2e/fixtures/app.test.ts`, which mocks
+     Playwright's launcher to reach `launchApp`'s launch-FAILURE reaping — a
+     branch no spec can take on purpose). Both configs have to agree, so if you
+     ever move that line, move it in both. A vitest test named `*.spec.ts`, or a
+     spec named `*.test.ts`, is silently ignored by the runner you meant.
 
 **CI (GitHub Actions), every PR:** `build` job = lint + typecheck + unit +
 build + check:pty + check:fake-stream on Windows/macOS/Linux; `e2e` job =

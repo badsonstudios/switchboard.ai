@@ -24,9 +24,45 @@ function killTree(pid: number | undefined): void {
   }
 }
 
-// electron's main export is the path to its binary when require()d in Node
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const electronPath = require('electron') as string;
+/**
+ * `app.close()` bounded by a timeout, never throwing. `killTree` is the backstop
+ * for whatever it did not manage, so every failure here is survivable.
+ *
+ * Two callers, two budgets: 12s for a healthy teardown (it closes in well under
+ * a second; the headroom is for a slow popout child) and much less for a launch
+ * that has already failed.
+ *
+ * The timer is CLEARED on the winning path — a dangling 12s handle keeps Node's
+ * event loop alive that long after the race is decided, which on the last test
+ * of a worker is 12s of nothing.
+ *
+ * Not to be confused with `quit-confirm.spec.ts`'s own `closeWithin`, which
+ * reports whether a modal blocked the close and never kills anything.
+ */
+async function gracefulClose(app: ElectronApplication, budgetMs: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      app.close(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('close timeout')), budgetMs);
+      }),
+    ]);
+  } catch {
+    /* fall through to the tree kill */
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+// electron's main export is the path to its binary when require()d in Node.
+// LAZY: `app.test.ts` imports this module under vitest, where the binary is
+// neither needed nor necessarily downloaded — at module scope this throws
+// "Electron failed to install correctly" and takes the unit suite with it.
+function electronPath(): string {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require('electron') as string;
+}
 
 const ROOT = path.resolve(__dirname, '..', '..');
 
@@ -220,11 +256,58 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
 
   let app: ElectronApplication;
   let window: Page;
+  // The same handle as the CATCH sees it — where it is honestly optional,
+  // because the throw may have come from `launch()` itself.
+  let launched: ElectronApplication | undefined;
+  // Captured HERE, the instant `launch()` returns, and NOT inside `close()`.
+  // `app.process()` throws ("Cannot read properties of undefined") once
+  // Playwright has torn its connection down, so reading it during teardown
+  // breaks any spec that closed the app itself — e.g. one timing the close to
+  // prove a modal is not blocking it (#185), whose afterEach then died on the
+  // way to deleting the home. Reading it eagerly also keeps the tree kill
+  // working in exactly that case, which a try/catch around the late read would
+  // have given up on — and it is what lets the FAILURE path below kill a
+  // half-started Electron at all (#230): by the time `firstWindow()` has
+  // rejected, `app.process()` is exactly the thing that may no longer answer.
+  let pid: number | undefined;
   try {
-    app = await electron.launch({ executablePath: electronPath, args: [ROOT], cwd: ROOT, env });
+    launched = await electron.launch({
+      executablePath: electronPath(),
+      args: [ROOT],
+      cwd: ROOT,
+      env,
+    });
+    app = launched;
+    pid = app.process()?.pid;
     window = await app.firstWindow();
     await window.waitForLoadState('domcontentloaded');
   } catch (err) {
+    // #230: reap the half-started Electron before anything else in here.
+    //
+    // `electron.launch()` can succeed and `firstWindow()` still time out — a
+    // main process that came up far enough for Playwright to attach and then
+    // never opened a window. Nothing used to kill that process: no handle was
+    // returned, so no `close()`/`cleanup()` ever ran for it, and it outlived the
+    // whole suite holding its temp home open (one source of the un-deletable
+    // `sb-e2e-` orphans #213 counted).
+    //
+    // THE HAMMER GOES FIRST, unlike `close()`. Two reasons, both specific to
+    // failing here: an `await` on this path can be ABANDONED — a launch that
+    // throws usually fails the test, Playwright restarts the worker, and a
+    // teardown parked in `app.close()` when that happens never reaches the kill,
+    // in exactly the wedged-main-process case that burns the whole budget. And
+    // killing promptly keeps the pid-recycle window (`stream.spec.ts`) short
+    // rather than waiting out a graceful close that may already have reaped it.
+    // Killing before the `rmSync` below is also what lets that removal succeed
+    // on Windows, where the live process holds the folder open.
+    //
+    // The graceful half still runs, and is not redundant: it is the ONLY reaper
+    // when `app.process()` gave us no pid, and it lets Playwright drop its own
+    // driver-side registration rather than discover the death. A launch that
+    // failed inside `electron.launch()` itself leaves neither handle nor pid —
+    // Playwright reaps that one, it owns the spawn.
+    killTree(pid);
+    if (launched) await gracefulClose(launched, 5_000);
     // launch failed BEFORE a handle was returned — afterEach cleanup() never
     // runs, so scrub here or the copied real credentials outlive the test on
     // disk (review P1-test #17; credentials-never-in-files rule). While the
@@ -254,29 +337,13 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
     throw err;
   }
 
-  // Captured HERE, at launch, not inside close(). `app.process()` throws
-  // ("Cannot read properties of undefined") once Playwright has torn its
-  // connection down, so reading it during teardown breaks any spec that closed
-  // the app itself — e.g. one timing the close to prove a modal is not blocking
-  // it (#185), whose afterEach then died on the way to deleting the home.
-  // Reading it eagerly also keeps the tree kill working in exactly that case,
-  // which a try/catch around the late read would have given up on.
-  const pid = app.process()?.pid;
-
   liveApps++;
   let counted = true; // close() is called twice by any spec that also cleans up
 
   const close = async () => {
     // app.close() can hang if the process (or a popout child) is slow to exit;
     // race it with a timeout so one slow teardown never stalls the worker.
-    try {
-      await Promise.race([
-        app.close(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('close timeout')), 12_000)),
-      ]);
-    } catch {
-      /* fall through to the tree kill */
-    }
+    await gracefulClose(app, 12_000);
     // Always reap the whole tree afterwards: a popped-out window and node-pty
     // children can outlive app.close() and hold the Playwright worker open.
     killTree(pid);
