@@ -75,10 +75,13 @@ command palette). A 📌 appears on its row. The same gesture unpins it.
 
 A pinned session:
 
-- **sorts to the top** of the list, so it's always in the same place — and
-  because that list is what `Ctrl+1`…`Ctrl+9` counts against, it becomes
-  `Ctrl+1`. If the session is in a group, it sorts to the top *of that group* —
-  pinning doesn't pull it out of the group you filed it under.
+- **sorts to the top** of the list, so it's always in the same place. If the
+  session belongs to a group, it sorts to the top *of that group* — pinning
+  promotes it, it never pulls it out of the group you filed it under, and it
+  never reorders the sessions around it. On a workspace with no groups, which
+  is the usual one, that means the top of the list outright — and since the
+  list is what `Ctrl+1`…`Ctrl+9` counts against, your pinned session becomes
+  `Ctrl+1`.
 - **is never folded away.** When a pile of idle sessions collapses into a
   single "4 idle sessions" row, the pinned one keeps its own row.
 - **is never minimized behind your back.** If you've turned on
