@@ -10,11 +10,21 @@ import {
 } from './claude';
 
 let tmp: string;
+let origPath: string | undefined;
 beforeEach(() => {
   tmp = tempDir('sb-claude-');
+  origPath = process.env.PATH;
   resetCliPathCache();
 });
-afterEach(() => cleanupTempDirs()); // one per test, gone at the end of it (#213)
+afterEach(() => {
+  // Captured/restored for the whole file, not just the tests that call
+  // `withCliOnPath()` — the prepended dir is the temp dir deleted below, and a
+  // PATH entry pointing at a deleted directory has no business outliving the
+  // test that made it (#229).
+  if (origPath === undefined) delete process.env.PATH;
+  else process.env.PATH = origPath;
+  cleanupTempDirs(); // one per test, gone at the end of it (#213)
+});
 
 describe('scanPath (absolute CLI resolution, S-01 footgun)', () => {
   it('finds the CLI in a PATH dir', () => {
@@ -57,8 +67,7 @@ describe('claudeAdapter.buildSpawn', () => {
     const name = process.platform === 'win32' ? 'claude.cmd' : 'claude';
     const cli = path.join(tmp, name);
     fs.writeFileSync(cli, 'stub');
-    const orig = process.env.PATH;
-    process.env.PATH = tmp + path.delimiter + (orig ?? '');
+    process.env.PATH = tmp + path.delimiter + (process.env.PATH ?? '');
     return cli;
   }
 
