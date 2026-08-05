@@ -84,6 +84,64 @@ test.describe('themes (P2-E15-05)', () => {
     }
   });
 
+  test('the status pill is legible in every theme, as painted (#221)', async () => {
+    // The unit tests compute this mix from the files; only the real window can
+    // say what Chromium actually PAINTED. It matters here more than anywhere
+    // else the tokens are checked, because the pill's fill is a `color-mix` of
+    // a status hue into the card header — nothing in the token map holds that
+    // colour, and the two halves of the pair live in different files (the rule
+    // in tokens.css, the hue/ink it receives in StatusPill.tsx). This is also
+    // the only check that would notice the pill being moved onto some other
+    // surface, which would leave the computed promise measuring a fiction.
+    a = await launchApp({ seedFolder: tempProjectFolder() });
+    const w = a.window;
+    const pill = w.locator('.status-pill').first();
+    await expect(pill).toBeVisible({ timeout: 25_000 });
+
+    for (const [label, id] of THEMES) {
+      await w.getByRole('button', { name: label, exact: true }).click();
+      await expect(w.locator('html')).toHaveAttribute('data-theme-id', id);
+
+      const seen = await pill.evaluate((el) => {
+        const lum = (c: string): number => {
+          // rgb()/rgba() come back 0-255, but anything that went through
+          // color-mix() arrives as color(srgb r g b) in 0-1 floats. Reading the
+          // second as 0-255 scores every mixed colour as black — a false PASS
+          // for dark ink, which is exactly the case this test exists for.
+          const n = c.match(/[\d.]+/g)!.slice(0, 3).map(Number);
+          const [r, g, b] = c.startsWith('color(') ? n : n.map((v) => v / 255);
+          const f = (s: number): number =>
+            s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+          return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+        };
+        // the first OPAQUE background at or above the word. The pill's own fill
+        // is opaque by design (#221) so this should stop on the pill itself —
+        // reported back, because a walk that had to climb to the header would
+        // mean the fill went transparent again and the ratio below would be
+        // measured against a surface the user never sees through it.
+        let from = 'none';
+        let bg = 'rgb(255, 255, 255)';
+        for (let n: HTMLElement | null = el; n; n = n.parentElement) {
+          const c = getComputedStyle(n).backgroundColor;
+          const parts = c.match(/[\d.]+/g);
+          if (parts && (parts.length < 4 || Number(parts[3]) >= 0.99)) {
+            bg = c;
+            from = n === el ? 'pill' : (n.dataset.testid ?? n.className ?? 'ancestor');
+            break;
+          }
+        }
+        const [ink, fill] = [lum(getComputedStyle(el).color), lum(bg)];
+        return {
+          from,
+          ratio: (Math.max(ink, fill) + 0.05) / (Math.min(ink, fill) + 0.05),
+        };
+      });
+
+      expect(seen.from, `${id}: the pill's own fill must be what the word sits on`).toBe('pill');
+      expect(seen.ratio, `${id} status pill contrast`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
   test('the theme AND language survive a relaunch of the built app', async () => {
     // P2-E15-06, and it was a LIVE bug measured 2026-07-31: both prefs lived in
     // localStorage, and the packaged renderer is served from a random loopback

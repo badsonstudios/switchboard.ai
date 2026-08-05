@@ -63,13 +63,21 @@
 
   /* Status TEXT ink (design_handoff_sessions_rail). The --status-* hues below
      are tuned for dots and rings; 9.5px text needs its own value per theme.
-     On Nordic the bright hues already sit on a dark panel, so ink == hue. */
-  --status-working-ink: #58a6ff;
-  --status-needs-input-ink: #e3b341;
-  --status-needs-permission-ink: #f0883e;
-  --status-idle-ink: #8a92a0;
-  --status-done-ink: #3fb950;
-  --status-crashed-ink: #f85149;
+     These used to be ink == hue, on the reasoning that "the bright hues already
+     sit on a dark panel". Measured (#221), they did not: the raw hues are
+     3.9:1 (crashed) and 4.2:1 (idle) on the rail card, under AA before any
+     surface was tinted, and the grid's status pill writes them on a 14% tint of
+     themselves — a lighter fill again. Each value below is its hue lightened in
+     HSL (same hue, same saturation — crashed is still red) until it clears
+     4.5:1 on the LIGHTEST surface it is written on, which is that pill fill;
+     everywhere else it lands at 4.7-7.7:1, measured against all five surfaces
+     a status word lands on. tokens.drift.test.ts asserts every one of them. */
+  --status-working-ink: #81bcff;
+  --status-needs-input-ink: #e4b648;
+  --status-needs-permission-ink: #f4a56c;
+  --status-idle-ink: #b0b5bf;
+  --status-done-ink: #69cc77;
+  --status-crashed-ink: #fb938e;
 
   /* sessions rail surfaces */
   --rail-canvas: #242933;
@@ -103,7 +111,10 @@
   --scrim: rgba(20, 30, 50, 0.28);
 
   /* Darkened for >=4.5:1 on the white group card — the bright --status-* hues
-     fail that at 9.5px. The hue still drives dots, rings and glyph backplates. */
+     fail that at 9.5px. The hue still drives dots, rings and glyph backplates.
+     These already cleared the grid's tinted status pill (#221, 4.6-5.2:1) and
+     so are unchanged by it; the pill is the tightest of the two surfaces, which
+     is what the drift test now measures. */
   --status-working-ink: #1c62c9;
   --status-needs-input-ink: #8a5a06;
   --status-needs-permission-ink: #94500d;
@@ -205,8 +216,9 @@ body {
 /* ---- Preflight banner (P1-E6-03, §5.25) -----------------------------------
  * "claude wasn't found" — the app's only surface that fills OPAQUELY with a
  * status hue and writes words on top of it, which is why it owns the only
- * on-fill ink token. (Tinted fills with hue-colored text exist elsewhere — the
- * grid's status pill — and are NOT audited by anything; see #206's hand-off.)
+ * on-fill ink token. (Tinted fills with hue-colored text are a different case:
+ * the grid's status pill is audited as one since #221 — see .status-pill below
+ * — but it is the only one, and .collapsed-row is the same shape and is not.)
  * The look lives here rather than inline (#206) so the pair a reader
  * meets is a pair the drift test can measure: it reads the two var() names out
  * of this rule and asserts the ratio in every shipped theme, so putting a
@@ -216,6 +228,42 @@ body {
   color: var(--status-needs-permission-ink-on-fill);
   font-size: 11px;
   padding: 4px 12px;
+}
+
+/* ---- Grid status pill (§5.8) ----------------------------------------------
+ * The session card's state in words: the status hue as a 14% tint and a 40%
+ * border, with the word itself in that status's INK.
+ *
+ * The look lives here for the #206 reason — the pair carries a contrast promise
+ * and tokens.drift.test.ts has to be able to read it. It is the harder half of
+ * that job: the fill is a TINT, so no pair of tokens is the answer on its own,
+ * and the test computes the mix exactly as the browser does. The mix names
+ * --panel2 rather than fading to `transparent` (identical paint — a 14% mix
+ * with transparent composited over --panel2 IS this value) precisely so the
+ * surface the promise depends on is written down. THE PILL MUST STAY ON A
+ * --panel2 SURFACE: it is the card header's background, and moving the pill
+ * somewhere else without changing this line would leave the ratio a claim
+ * nothing checks.
+ *
+ * The hue/ink pair arrives as two custom properties (statusVars in
+ * lib/rail-view.ts), the same way the urgency lamp and the collapsed row take
+ * theirs — a status pill is one of six ramp positions, not eight hand-picked
+ * colors, and the defaults below are the fail-open one (§4: an unknown state
+ * reads as idle, never as an alarm). */
+.status-pill {
+  --pill-hue: var(--status-idle);
+  --pill-ink: var(--status-idle-ink);
+  color: var(--pill-ink);
+  background: color-mix(in srgb, var(--pill-hue) 14%, var(--panel2));
+  border: 1px solid color-mix(in srgb, var(--pill-hue) 40%, transparent);
+  font-family: var(--font-ui);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  border-radius: 4px;
+  padding-inline: 6px;
+  padding-block: 2px;
+  white-space: nowrap;
 }
 
 /* Feed view markdown blocks (P2-E12-06, §5.10) — vars only, theme-safe */
@@ -283,10 +331,13 @@ body {
  * keys have moved to.
  *
  * `--status-working-ink` because it is the one accent tuned per theme for
- * legibility rather than for dots — #58a6ff on nordic's panels, #1c62c9 on
- * daylight's — so the ring clears WCAG 1.4.11's 3:1 against the box fill in
- * both. `:focus-visible`, not `:focus`, so clicking a box never paints a ring
- * the mouse user didn't ask for; Chromium keeps the flag set across the
+ * legibility rather than for dots — so the ring clears WCAG 1.4.11's 3:1
+ * against the box fill in both presets. (The two literals this comment used to
+ * quote went stale the first time those inks were retuned, in #221; the values
+ * live in the preset blocks above and nowhere else.)
+ *
+ * `:focus-visible`, not `:focus`, so clicking a box never paints a ring the
+ * mouse user didn't ask for; Chromium keeps the flag set across the
  * PROGRAMMATIC focus() an arrow key causes, which is what makes this show up
  * for the roving navigation at all. */
 [data-feed-region]:focus-visible,
