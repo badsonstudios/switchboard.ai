@@ -27,6 +27,7 @@ import { installCspHeaders } from './csp';
 import { parsePopoutFeatures } from './popout-bounds';
 import { scanSlashCommands } from './capabilities/slash-commands';
 import { buildMenuTemplate } from './app-menu';
+import { UpdateService, FEED_ENV, isAllowedReleaseUrl } from './update/service';
 import { installTerminalAccelerators, makeAcceleratorDeps } from './terminal-accelerators';
 import {
   Box,
@@ -798,11 +799,75 @@ app
       // hooks are an accelerator, not the authority — start-failure degrades
       log.app.error('hook listener failed to start', { error: String(err) });
     });
+    // ── update checks (P2-E19-03, §E19) ──────────────────────────────────
+    //
+    // The ONE outbound network call this app makes, and the only host it may
+    // reach is the release feed. Everything about it is fail-open: no token
+    // means no checks (silently), a dead feed means a log line, and a check in
+    // flight at quit writes nothing.
+    const updates = new UpdateService({
+      currentVersion: app.getVersion(),
+      getPrefs: () => workspace.getUpdatePrefs(),
+      setPrefs: (patch) => workspace.setUpdatePrefs(patch),
+      // `currentWindow` is reassigned on macOS re-activate, so this reads it
+      // fresh — the convention every other push in this file follows.
+      push: (status) => pushToRenderer?.(currentWindow, 'update:status', status),
+      log: createLogger(sink, 'updates'),
+      // Dev/test only. A packaged build has no environment variable that can
+      // move its update feed (the P2-E15-10 rule for SWITCHBOARD_BIND_GIVEUP_MS).
+      feedOverride: app.isPackaged ? undefined : process.env[FEED_ENV],
+    });
+    updates.start();
+    broker.handle('update:check', (_e, opts: { manual?: boolean } = {}) =>
+      // `push: false` — this caller gets the answer as the return value, and
+      // pushing as well would open the dialog twice.
+      updates.check(opts?.manual === true, { push: false })
+    );
+    broker.handle('update:getPrefs', () => workspace.getUpdatePrefs());
+    broker.handle('update:setPrefs', (_e, p: { autoCheck?: boolean; skippedVersion?: string }) => {
+      // Narrowed by hand rather than passed through: `lastCheck` is the
+      // service's own bookkeeping and must not be settable from the renderer.
+      if (typeof p?.autoCheck === 'boolean') workspace.setUpdatePrefs({ autoCheck: p.autoCheck });
+      if (typeof p?.skippedVersion === 'string') updates.skip(p.skippedVersion);
+      return workspace.getUpdatePrefs();
+    });
+    broker.handle('update:openExternal', (_e, url: string) => {
+      // The strings that reach here came out of a release body we rendered, so
+      // the allowlist is tight and lives next to the checker (§5.29).
+      if (!isAllowedReleaseUrl(url)) {
+        log.app.warn('refused to open a link from the update dialog', { url: String(url).slice(0, 200) });
+        return false;
+      }
+      // `openExternal` REJECTS when the OS has no handler for the scheme. An
+      // unhandled rejection in main is an "A JavaScript error occurred" modal
+      // — the exact opposite of fail-open, from a button whose worst case
+      // should be "nothing happened".
+      void shell
+        .openExternal(url)
+        .catch((err: unknown) => log.app.warn('could not open the release page', { error: String(err) }));
+      return true;
+    });
+
     // own the menu BEFORE the first window: Electron's default one registers
     // Ctrl+W (closes the window and every session in it) and Ctrl+R (reloads
     // the renderer mid-session) in the browser process, ahead of the
     // renderer's command registry (E9-01)
-    Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate(process.platform)));
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate(
+        buildMenuTemplate(process.platform, {
+          // A menu click has no return path to the caller, so this one PUSHES
+          // — and swallows its own failure: `push` reaches `webContents.send`,
+          // which throws if the window died between the click and the answer,
+          // and an unhandled rejection in main is an error modal.
+          checkForUpdates: () =>
+            void updates
+              .check(true, { push: true })
+              .catch((err: unknown) =>
+                log.app.warn('menu update check failed', { error: String(err) })
+              ),
+        })
+      )
+    );
     snapshotPopoutBoxes(); // before the renderer can rewrite the layout (#86)
     createWindow(); // sets currentWindow; IPC/notifier read it via closure
     const feed = new EventFeed();
@@ -893,6 +958,7 @@ app
       streams.killAll();
       hooks.stop();
       transcripts.stop();
+      updates.stop(); // kills the daily timer; a check in flight becomes a no-op
       staticServer?.close();
       scheduleForcedExit();
     });

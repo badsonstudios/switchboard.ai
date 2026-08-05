@@ -38,7 +38,25 @@
     "branchNote": "This is a build of {branch}, not of main.",
     "copy": "Copy",
     "copied": "Copied",
-    "close": "Close"
+    "close": "Close",
+    "checkForUpdates": "Check for updates…",
+    "autoCheck": "Check for updates automatically"
+  },
+  "update": {
+    "availableTitle": "There's a new release — v{version}",
+    "runningVersion": "You are running {version}.",
+    "noNotes": "This release came with no notes.",
+    "update": "Update",
+    "ignore": "Ignore",
+    "skip": "Skip this version",
+    "close": "Close",
+    "upToDateTitle": "You are up to date",
+    "upToDateBody": "{version} is the newest release.",
+    "unavailableTitle": "Could not check for updates",
+    "unavailableBody": "Nothing is wrong with your app — it just could not reach the release list right now. Try again later.",
+    "unavailableNoToken": "Nothing is wrong with your app. This machine has no credentials for the release list, so switchboard.ai is not checking for new versions.",
+    "unavailableAuth": "Nothing is wrong with your app. The credentials on this machine cannot see the release list, so there is nothing to compare against.",
+    "unavailableRateLimit": "Nothing is wrong with your app — it has asked for the release list too many times just now. Try again in a little while."
   },
   "rail": {
     "eyebrow": "Sessions · {count}",
@@ -372,7 +390,8 @@
       "auto-collapse": "This session's group on submit: collapse cards to a strip",
       "auto-hide": "This session's group on submit: hide cards",
       "default": "This session's group on submit: follow the default"
-    }
+    },
+    "checkForUpdates": "Check for updates…"
   },
   "palette": {
     "label": "Command palette",

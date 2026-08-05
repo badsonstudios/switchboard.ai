@@ -22,6 +22,22 @@ export function AboutPanel(props: {
   version: string;
   identity: BuildIdentity;
   platform: string;
+  /**
+   * Update checking (P2-E19-03). Optional so the panel still renders in a test
+   * that only cares about build identity — and so a broken preload bridge
+   * costs the About panel nothing, which is the fail-open rule this whole
+   * feature is built on.
+   */
+  onCheckForUpdates?: () => void;
+  autoCheck?: boolean;
+  onToggleAutoCheck?: (on: boolean) => void;
+  /**
+   * Another modal is stacked ON TOP of this one (the update dialog, which is
+   * reachable from here). Two nested `aria-modal="true"` regions is a case
+   * screen readers handle inconsistently, so the panel underneath stops
+   * claiming to be the modal while it is not the one in front.
+   */
+  dialogAbove?: boolean;
 }): React.JSX.Element | null {
   const { t } = useTranslation();
   const [copied, setCopied] = React.useState(false);
@@ -108,7 +124,7 @@ export function AboutPanel(props: {
       <div
         ref={dialog}
         role="dialog"
-        aria-modal="true"
+        aria-modal={props.dialogAbove ? undefined : 'true'}
         aria-label={t('about.title')}
         // tabIndex, not a preventDefault on mousedown: clicking the panel's
         // body must not strand focus on <body>, or Escape would go dead the
@@ -196,6 +212,43 @@ export function AboutPanel(props: {
           <p style={{ margin: 0, padding: '0 14px 10px', fontSize: 11.5, color: 'var(--muted)' }}>
             {t('about.branchNote', { branch: props.identity.branch })}
           </p>
+        )}
+        {/* Update checking lives here because About is already the "which
+            build am I on?" surface, and "is there a newer one?" is the very
+            next question (P2-E19-03). The toggle sits beside the button rather
+            than in a settings screen that does not exist. */}
+        {props.onCheckForUpdates && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+              padding: '10px 14px',
+              borderBlockStart: '1px solid var(--border)',
+            }}
+          >
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 11.5,
+                color: 'var(--muted)',
+                cursor: props.onToggleAutoCheck ? 'pointer' : 'default',
+              }}
+            >
+              <input
+                type="checkbox"
+                data-about-field="autoCheck"
+                checked={props.autoCheck !== false}
+                disabled={!props.onToggleAutoCheck}
+                onChange={(e) => props.onToggleAutoCheck?.(e.target.checked)}
+              />
+              {t('about.autoCheck')}
+            </label>
+            <AboutButton onClick={props.onCheckForUpdates}>{t('about.checkForUpdates')}</AboutButton>
+          </div>
         )}
         <div
           style={{

@@ -238,6 +238,59 @@ describe('notification prefs merge-patch (review P1 #13)', () => {
   });
 });
 
+describe('update prefs (P2-E19-03)', () => {
+  it('defaults to auto-check ON with nothing skipped', () => {
+    const st = makeStore(file);
+    st.load();
+    expect(st.getUpdatePrefs()).toEqual({ autoCheck: true });
+  });
+
+  it('round-trips through the file, and merge-patches like the other prefs', () => {
+    const a = makeStore(file);
+    a.load();
+    a.setUpdatePrefs({ skippedVersion: '0.2.0' });
+    a.setUpdatePrefs({ lastCheck: '2026-08-05T10:00:00.000Z' }); // main's own bookkeeping
+    a.setUpdatePrefs({ autoCheck: false }); // the About-panel toggle's only shape
+    a.save();
+    const b = makeStore(file);
+    b.load();
+    expect(b.getUpdatePrefs()).toEqual({
+      autoCheck: false,
+      skippedVersion: '0.2.0',
+      lastCheck: '2026-08-05T10:00:00.000Z',
+    });
+  });
+
+  it('reads a hand-edited or hostile file tolerantly', () => {
+    // A `skippedVersion` of null must not become the string "null" and
+    // suppress a release nobody skipped.
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ version: 1, updates: { autoCheck: 'yes', skippedVersion: null, lastCheck: 7 } })
+    );
+    const st = makeStore(file);
+    st.load();
+    expect(st.getUpdatePrefs()).toEqual({ autoCheck: true });
+  });
+
+  it('a file written before this feature existed simply gets the defaults', () => {
+    fs.writeFileSync(file, JSON.stringify({ version: 1, sessions: [], autoTrust: false }));
+    const st = makeStore(file);
+    st.load();
+    expect(st.getUpdatePrefs()).toEqual({ autoCheck: true });
+    expect(st.getAutoTrust()).toBe(false); // …and nothing else moved
+  });
+
+  it('two stores do not share the defaults object', () => {
+    const a = makeStore(file);
+    a.load();
+    a.setUpdatePrefs({ skippedVersion: '9.9.9' });
+    const b = makeStore(path.join(dir, 'other.json'));
+    b.load();
+    expect(b.getUpdatePrefs()).toEqual({ autoCheck: true });
+  });
+});
+
 describe('ui blob (P2-E12-08 focus/view-tab state)', () => {
   it('round-trips opaque ui state', () => {
     const a = makeStore(file);

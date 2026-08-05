@@ -269,6 +269,13 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   // so the one spec that exercises the dialog can turn it back off by passing
   // `SWITCHBOARD_NO_QUIT_CONFIRM: ''` (see quit-confirm.spec.ts).
   env.SWITCHBOARD_NO_QUIT_CONFIRM = '1';
+  // No test may talk to the real release feed (P2-E19-03). `off` disables the
+  // update check entirely, so nothing in the suite makes a live call to
+  // github.com or reaches for this machine's real `gh` credentials — and no
+  // spec grows a surprise dialog the day a release exists. `update.spec.ts`
+  // overrides this with its own local stub feed; set BEFORE `opts.env`, like
+  // the quit-confirm line above, so it can.
+  env.SWITCHBOARD_UPDATE_FEED = 'off';
   if (opts.realClaude) {
     // Claude Code SKIPS writing conversation transcripts when it detects a
     // test environment (persistence guard found via GH research 2026-07-23;

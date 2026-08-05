@@ -25,6 +25,8 @@ import { focusedElementIn } from './lib/focus-target';
 import { sessionStore } from './store/session-store';
 import { CommandPalette } from './components/CommandPalette';
 import { AboutPanel } from './components/AboutPanel';
+import { UpdateDialog } from './components/UpdateDialog';
+import type { UpdateStatus } from '../../shared/update';
 import { UrgencyStrip } from './components/UrgencyStrip';
 import { CollapsedStrip } from './components/CollapsedStrip';
 import { WorkspaceReadOnlyBanner } from './components/WorkspaceReadOnlyBanner';
@@ -108,6 +110,19 @@ export function App(): React.JSX.Element {
   const [paletteOpen, setPaletteOpen] = useState(false);
   // About / build identity (E15-15) — same deal, on demand only
   const [aboutOpen, setAboutOpen] = useState(false);
+  // ── update checks (E19-03) ───────────────────────────────────────────────
+  // The dialog is driven by a STATUS, not by a boolean: main decides whether
+  // there is anything to show (`prompt`) because only main knows which version
+  // was skipped, and the renderer's job is to obey that decision.
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const [autoCheckUpdates, setAutoCheckUpdates] = useState(true);
+  // "Ignore" means NOT THIS RUN, and that is all it means — nothing is
+  // persisted, so a relaunch offers the release again. It lives in a ref
+  // rather than the store because it is deliberately not durable: "Skip this
+  // version" is the durable answer, and conflating the two would leave a user
+  // who clicked the soft option unable to find the release again.
+  const ignoredVersion = React.useRef<string | null>(null);
   // Attention events (E9-03). This subscription used to live inside
   // EventsPanel; it moved up here because the queue is the SINGLE ordering
   // authority — two independent subscriptions to events:changed could hand the
@@ -232,6 +247,55 @@ export function App(): React.JSX.Element {
     });
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, []);
+
+  // ── update checks (E19-03, §E19) ─────────────────────────────────────────
+  //
+  // Every route into the dialog lands here: the startup check below, the daily
+  // timer's push, the Help menu's push, and the three manual buttons. One
+  // decision function, so "when does this appear" has a single answer.
+  const applyUpdateStatus = React.useCallback((s: UpdateStatus | null | undefined) => {
+    if (!s?.result) return;
+    setUpdateStatus(s);
+    // A manual check always shows something — up to date and "couldn't check"
+    // included. An automatic one shows the dialog only when main says prompt,
+    // and not for a version dismissed with Ignore this run.
+    if (s.manual) return void setUpdateOpen(true);
+    if (!s.prompt) return;
+    if (s.result.latestVersion && s.result.latestVersion === ignoredVersion.current) return;
+    setUpdateOpen(true);
+  }, []);
+
+  useEffect(() => {
+    // The pushes: a check nobody in this window asked for (the daily timer, or
+    // the menu item, which has no return path to a caller).
+    const off = bridge.update?.onStatus?.((s) => applyUpdateStatus(s));
+    void bridge.update
+      ?.getPrefs?.()
+      .then((p) => setAutoCheckUpdates(p.autoCheck !== false))
+      .catch(() => {});
+    // THE STARTUP CHECK. Driven from here rather than from main's bootstrap
+    // for one reason: this is the first moment a window provably exists to
+    // receive the answer. A check fired at boot would race the window it wants
+    // to talk to and lose that race silently on a slow machine. Main
+    // coalesces repeats, so a second mount costs no second API call.
+    void bridge.update
+      ?.check?.({ manual: false })
+      .then((s) => applyUpdateStatus(s))
+      // fail-open, and this is the load-bearing one: a rejected update check
+      // must never reach the console as an unhandled rejection, let alone stop
+      // the shell from mounting
+      .catch(() => {});
+    return () => off?.();
+    // eslint's exhaustive-deps plugin isn't installed; bridge is stable
+  }, [applyUpdateStatus]);
+
+  const checkForUpdates = React.useCallback(() => {
+    void bridge.update
+      ?.check?.({ manual: true })
+      .then((s) => applyUpdateStatus(s))
+      .catch(() => {});
+    // eslint's exhaustive-deps plugin isn't installed; bridge is stable
+  }, [applyUpdateStatus]);
 
   const cycleAutonomy = (): void => {
     const order = ['ask', 'plan', 'auto-edit', 'full-auto'];
@@ -420,7 +484,7 @@ export function App(): React.JSX.Element {
   const modalOpenRef = React.useRef(false);
   useEffect(() => {
     railHiddenRef.current = railHidden;
-    modalOpenRef.current = paletteOpen || aboutOpen;
+    modalOpenRef.current = paletteOpen || aboutOpen || updateOpen;
   });
 
   // Set when a command deliberately raised a DIFFERENT OS window (jumping to a
@@ -500,8 +564,9 @@ export function App(): React.JSX.Element {
           },
           jumpToNextAttention,
           openAbout: () => setAboutOpen(true),
+          checkForUpdates,
       }),
-    [toggleRail, jumpToNextAttention, setGlobalPolicy, setSessionPolicy, setGroupPolicy], // other deps read live state through refs; grid.current is stable
+    [toggleRail, jumpToNextAttention, setGlobalPolicy, setSessionPolicy, setGroupPolicy, checkForUpdates], // other deps read live state through refs; grid.current is stable
   );
   // chips advertise their own binding, derived from the registry so a tooltip
   // can never drift from the key that actually works
@@ -715,6 +780,32 @@ export function App(): React.JSX.Element {
         version={bridge.appVersion}
         identity={BUILD_IDENTITY}
         platform={bridge.platform}
+        onCheckForUpdates={checkForUpdates}
+        autoCheck={autoCheckUpdates}
+        onToggleAutoCheck={(on) => {
+          setAutoCheckUpdates(on); // optimistic, so the tick moves at once…
+          void bridge.update
+            ?.setPrefs?.({ autoCheck: on })
+            // …then main's sanitized answer wins: it is the authority, and a
+            // refused write must not leave the box saying otherwise
+            .then((p) => setAutoCheckUpdates(p.autoCheck !== false))
+            .catch(() => {});
+        }}
+        // a second dialog is above this one: two stacked `aria-modal` regions
+        // is a thing screen readers disagree about, so only the top one claims it
+        dialogAbove={updateOpen}
+      />
+      <UpdateDialog
+        open={updateOpen}
+        status={updateStatus}
+        onClose={() => setUpdateOpen(false)}
+        onUpdate={(url) => void bridge.update?.openExternal?.(url)?.catch(() => {})}
+        onIgnore={(version) => {
+          ignoredVersion.current = version;
+        }}
+        onSkip={(version) =>
+          void bridge.update?.setPrefs?.({ skippedVersion: version })?.catch(() => {})
+        }
       />
       <CommandPalette
         open={paletteOpen}
