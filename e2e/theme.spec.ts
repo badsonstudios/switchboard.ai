@@ -243,14 +243,20 @@ test.describe('themes (P2-E15-05)', () => {
           const f = (s: number): number => (s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4);
           return 0.2126 * f(rgb[0]) + 0.7152 * f(rgb[1]) + 0.0722 * f(rgb[2]);
         };
-        const measure = (el: Element): number => {
+        const measure = (el: Element): { ratio: number; why: string } => {
           let alpha = 1;
           let bg = 'rgb(255, 255, 255)';
+          let from = 'nothing opaque';
           for (let n: Element | null = el; n; n = n.parentElement) {
             const s = getComputedStyle(n);
             const parts = s.backgroundColor.match(/[\d.]+/g);
             if (parts && (parts.length < 4 || Number(parts[3]) >= 0.99)) {
               bg = s.backgroundColor;
+              const cls = typeof n.className === 'string' ? n.className.trim() : '';
+              from =
+                n === el
+                  ? 'itself'
+                  : (n.getAttribute('data-testid') ?? (cls || n.tagName.toLowerCase()));
               break;
             }
             // an opacity between the word and its background is a contrast cut
@@ -262,7 +268,13 @@ test.describe('themes (P2-E15-05)', () => {
             (v, i) => v * alpha + back[i] * (1 - alpha)
           );
           const [a, b] = [lum(eff), lum(back)];
-          return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+          return {
+            ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05),
+            // a failure that does not say what it measured sends the next
+            // reader hunting for a surface by hand, which is how #221's six
+            // sites went unmeasured in the first place
+            why: `${getComputedStyle(el).color} at opacity ${alpha.toFixed(2)} on ${bg} (from ${from})`,
+          };
         };
         const cs = getComputedStyle(document.documentElement);
         const norm = (c: string): string => {
@@ -290,6 +302,41 @@ test.describe('themes (P2-E15-05)', () => {
           inks.add(ink);
           if (hue !== ink) hueNames.set(hue, '--status-' + s);
         }
+
+        // WHY A COLOUR VALUE IS NOT ALWAYS ENOUGH: four of the eight
+        // session-identity accents (§5.11) are byte-identical to a status hue
+        // — `--accent-amber` IS `--status-needs-input`, `--accent-blue` IS
+        // `--status-working` — and a session's accent is a raw hex from the
+        // main process (sessions/identity.ts), so on screen the card's identity
+        // badge is the same pixels as a needs-input word. Two answers, in this
+        // order: an element with an INLINE colour still names the token it was
+        // given, and a name cannot collide; only when there is no inline colour
+        // (a CSS rule, or an inherited one) does this fall back to matching by
+        // value, and there the accents are excluded. Read out of the
+        // stylesheet, not listed here, so a ninth accent needs no edit.
+        //
+        // MEASURED, not assumed (mutation-checked while writing this): reverting
+        // the tool block's inline colour to `var(--status-working)` fails here
+        // by name; reverting the CSS rule `.feed-md a` to the same hue does NOT,
+        // because `--status-working` and `--accent-blue` are the same pixels and
+        // this cannot tell them apart. That case belongs to the source scan in
+        // tokens.drift.test.ts, which reads names for every site in the tree.
+        const accents = new Set<string>();
+        for (const sheet of Array.from(document.styleSheets)) {
+          let rules: CSSRule[];
+          try {
+            rules = Array.from(sheet.cssRules);
+          } catch {
+            continue;
+          }
+          for (const rule of rules) {
+            const style = (rule as CSSStyleRule).style;
+            if (!style) continue;
+            for (const prop of Array.from(style)) {
+              if (prop.startsWith('--accent-')) accents.add(norm(style.getPropertyValue(prop)));
+            }
+          }
+        }
         const name = (el: Element): string =>
           el.tagName.toLowerCase() +
           (typeof el.className === 'string' && el.className.trim()
@@ -313,15 +360,24 @@ test.describe('themes (P2-E15-05)', () => {
           const box = el.getBoundingClientRect();
           const style = getComputedStyle(el);
           if (box.width === 0 || box.height === 0 || style.visibility === 'hidden') continue;
-          const colour = norm(style.color);
-          if (hueNames.has(colour)) {
-            hues.push(hueNames.get(colour) + ' as text on ' + name(el));
+          // the token this element was HANDED, when it was handed one
+          const named = /var\((--status-[a-z-]+)\)/.exec((el as HTMLElement).style?.color ?? '');
+          if (named && !named[1].endsWith('-ink')) {
+            hues.push(named[1] + ' as text on ' + name(el));
             continue;
           }
-          if (!inks.has(colour)) continue;
+          const colour = norm(style.color);
+          if (!named) {
+            if (accents.has(colour)) continue;
+            if (hueNames.has(colour)) {
+              hues.push(hueNames.get(colour) + ' as text on ' + name(el));
+              continue;
+            }
+            if (!inks.has(colour)) continue;
+          }
           inked++;
           const r = measure(el);
-          if (r < 4.5) dim.push(name(el) + ' = ' + r.toFixed(2) + ':1');
+          if (r.ratio < 4.5) dim.push(`${name(el)} = ${r.ratio.toFixed(2)}:1 — ${r.why}`);
         }
         return { hues, dim, inked, distinguishable: hueNames.size > 0 };
       }, ['working', 'needs-input', 'needs-permission', 'idle', 'done', 'crashed']);
