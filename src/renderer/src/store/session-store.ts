@@ -254,6 +254,24 @@ export class SessionStore {
     return (cardId ? this.state.presentation.get(cardId) : undefined) ?? DEFAULT_PRESENTATION;
   }
 
+  /**
+   * One card's CURRENT title, or undefined if nothing here knows it (#196).
+   *
+   * Here rather than as a `.find()` at each call site because a card's title is
+   * about to have more than one reader: it names the Session view's landmark,
+   * and `PanelContext.title` offers it to every other panel that has to say
+   * which session it belongs to.
+   *
+   * A `string | undefined` snapshot, so `useSyncExternalStore` settles it by
+   * value — this is the exception to the recompute-on-mutation rule the derived
+   * arrays above follow, which exists only because a fresh OBJECT per call
+   * loops React forever.
+   */
+  getCardTitle(cardId: string | undefined): string | undefined {
+    if (!cardId) return undefined;
+    return this.state.sessions.find((s) => s.id === cardId)?.title;
+  }
+
   /** Seed the map from the ui blob at boot. Does not persist — it just read it. */
   initPresentation(map: ReadonlyMap<string, CardPresentation>): void {
     this.set({ presentation: new Map(map) });

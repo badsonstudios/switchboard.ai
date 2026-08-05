@@ -104,6 +104,14 @@ export interface PanelContext {
   sessionId: string;
   /** durable key for per-card preferences */
   cardId?: string;
+  /**
+   * The session's title, as the card header shows it (#196). On the context
+   * rather than inside one panel because it describes the SESSION: any panel
+   * that names a landmark needs it, and several cards are visible at once, so
+   * a panel-level landmark with a fixed name is N identical entries in a
+   * screen reader's landmark list.
+   */
+  title?: string;
   /** is this panel the active tab in a visible card? */
   visible: boolean;
   /** the session's working folder; absent for a session with none */
