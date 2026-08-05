@@ -130,6 +130,17 @@ export function FeedView(props: {
   sessionId: string;
   /** durable key for per-card preferences (the live id churns on resume) */
   cardId?: string;
+  /**
+   * The session's title (#196). It NAMES the conversation landmark: several
+   * cards are visible at once, and a landmark called "Conversation" on every
+   * one of them leaves a screen-reader user with N identical entries in the
+   * landmark list and no way to tell which session they are about to read.
+   *
+   * Absent — or renamed to nothing, which the rail allows — falls back to the
+   * bare name. An honest generic beats a landmark called "undefined", and
+   * beats announcing a title the user has just deleted.
+   */
+  title?: string;
   visible: boolean;
   /** current session status — drives the working banner and the handoff bar */
   status?: string;
@@ -432,7 +443,13 @@ export function FeedView(props: {
         // `role="log"`: an aria-live conversation would read every streamed
         // token aloud over whatever the user was doing.
         role="region"
-        aria-label={t('feedView.regionLabel')}
+        // ...and the name says WHICH conversation (#196). Interpolated, not
+        // concatenated, so a locale is free to put the title first.
+        aria-label={
+          props.title
+            ? t('feedView.regionLabelNamed', { title: props.title })
+            : t('feedView.regionLabel')
+        }
         tabIndex={0}
         data-feed-region=""
         // `:focus-visible`, matching the ring: clicking a box also focuses this

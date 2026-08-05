@@ -614,6 +614,14 @@ be a lie a screen reader passes on to its user. The rule §5.26 already sets
   button navigation still reaches every one of them.
 - **Focus is visible at both stops** — the region and the focused expander each
   draw a real ring, on `:focus-visible` so the mouse never paints one.
+- **The region is named after its SESSION**, not after its kind *(added
+  2026-08-04, #196)*. A grid shows many cards at once, so a landmark called
+  "Conversation" on every one of them is N identical entries in a screen
+  reader's landmark list — enumerable and useless, which is the same failure as
+  having no name. The name interpolates the card's title ("Conversation —
+  acme-web") and tracks a rename, which means it reads the title from the
+  session store rather than from the panel host: dockview is told a panel's
+  title once, when the card is created.
 
 **The dot marks an EVENT, not an answer** *(added 2026-08-02, #91).* The
 timeline dot earns its place on things the session or the user *did* — user

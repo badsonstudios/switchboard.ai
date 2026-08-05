@@ -285,6 +285,7 @@
     "collapsedIcon": "▸",
     "expandedIcon": "▾",
     "regionLabel": "Conversation",
+    "regionLabelNamed": "Conversation — {title}",
     "keyHint": "↑ ↓ move · Enter expands · Esc leaves",
     "slashSource": {
       "builtin": "CLI",

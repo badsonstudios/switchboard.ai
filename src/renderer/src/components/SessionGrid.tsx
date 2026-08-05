@@ -148,6 +148,15 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const presentation = React.useSyncExternalStore(subscribeStore, () =>
     sessionStore.getPresentation(cardId)
   );
+  // The session's CURRENT title, for panels that have to name themselves
+  // (#196 — the Session view's landmark). Read from the store rather than from
+  // `props.api.title`: dockview is told a panel's title once, when the card is
+  // created, and a rename from the rail goes to the main process and comes
+  // back through `setSessions` — so the panel api's copy is the title the card
+  // had at birth.
+  const cardTitle = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getCardTitle(cardId)
+  );
   const view = presentation.view;
   const poppedOut = presentation.poppedOut;
   const suspended = presentation.suspended;
@@ -565,6 +574,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const panelCtx: PanelContext = {
     sessionId: live?.id ?? '',
     cardId,
+    // The store's answer first; `props.api.title` only as the boot-order net
+    // (a card mounts before the first `setSessions` lands). Deliberately NOT
+    // falling through to `folder` after that: an absolute path is a poor thing
+    // to hear announced, and a panel with no title at all says the honest
+    // generic instead.
+    title: cardTitle ?? props.api.title,
     visible,
     folder,
     ...docTheme(),
