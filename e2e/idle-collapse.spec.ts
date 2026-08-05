@@ -43,7 +43,7 @@ async function palette(w: Page, title: string): Promise<void> {
 async function addSession(a: LaunchedApp): Promise<string> {
   const dir = tempProjectFolder();
   await a.app.evaluate(({ dialog }, d) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [d] });
+    dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
   }, dir);
   await a.window.getByRole('button', { name: '+ session' }).click();
   const name = path.basename(dir);
