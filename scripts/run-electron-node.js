@@ -13,10 +13,20 @@
 // round-trips through this process's event loop and is line-buffered, so in a
 // combined log (CI) an error line can appear slightly later relative to stdout
 // than it used to. Nothing is lost — only the interleaving moves.
+//
+// #298 — it also GUARDS the bundle it is about to run. Every `check:*` script
+// execs an `out/main/*-check.js` straight out of a build nothing forced to
+// happen, which is #286's trap wearing a different hat: a check that fails
+// against last hour's bundle reads exactly like a regression in the code you
+// just wrote. The guard lives HERE rather than in five package.json entries for
+// the reason #182 exists — five wirings are five chances to forget, and the one
+// that gets forgotten is the one that rots. Adding a sixth check script gets
+// the guard for free; `src/main/check-scripts.test.ts` holds that door shut.
 const { spawn } = require('child_process');
 const path = require('path');
 const { createAttachConsoleFilter } = require('./pty-noise-filter');
 const { cleanEnv } = require('./clean-env');
+const { guardBundle } = require('./bundle-guard');
 
 /** how long to wait after `exit` for a piped stderr to close before giving up */
 const STDERR_DRAIN_MS = 2000;
@@ -99,21 +109,48 @@ function runFiltered(command, args, opts = {}) {
   });
 }
 
-module.exports = { runFiltered };
+/**
+ * Is `script` a build output, i.e. something the bundle guard can speak about?
+ *
+ * Only `out/` is guarded. This runner is general — pointed at a hand-written
+ * `.js` or a scratch file it must stay a plain runner, and a guard that fails
+ * because there is no `out/main/index.js` beside a file that never came from a
+ * build would be pure noise.
+ *
+ * @param {string} root project root
+ * @param {string|undefined} script argv[2], as typed
+ */
+function isBuildOutput(root, script) {
+  if (!script) return false;
+  const rel = path.relative(root, path.resolve(root, script)).replace(/\\/g, '/');
+  return rel === 'out' || rel.startsWith('out/');
+}
+
+module.exports = { runFiltered, isBuildOutput };
 
 if (require.main === module) {
-  const electron = require('electron'); // plain-node require -> path to binary
-  // the one caller that WANTS run-as-node: cleanEnv strips it, the override
-  // puts it back deliberately (scripts/clean-env.js)
-  const env = cleanEnv({ ELECTRON_RUN_AS_NODE: '1' });
+  // Root from __dirname, not cwd — the same reason bundle-guard.js does it.
+  const root = path.join(__dirname, '..');
+  const script = process.argv[2];
 
-  runFiltered(electron, process.argv.slice(2), {
-    env,
-    cwd: path.join(__dirname, '..'),
-    rawStderr: process.env.RUN_ELECTRON_NODE_RAW_STDERR === '1',
-  }).then((code) => {
-    // exitCode, not process.exit(): exiting here can truncate stderr when it is
-    // redirected to a file or a pipe. Nothing else holds the loop open.
-    process.exitCode = code;
-  });
+  // The guard prints its stamp BEFORE electron is spawned, so the verdict sits
+  // at the top of the log rather than under a check's own output (#298).
+  if (isBuildOutput(root, script) && !guardBundle(root, script, process.env)) {
+    process.exitCode = 1;
+  } else {
+    const electron = require('electron'); // plain-node require -> path to binary
+    // the one caller that WANTS run-as-node: cleanEnv strips it, the override
+    // puts it back deliberately (scripts/clean-env.js)
+    const env = cleanEnv({ ELECTRON_RUN_AS_NODE: '1' });
+
+    runFiltered(electron, process.argv.slice(2), {
+      env,
+      cwd: root,
+      rawStderr: process.env.RUN_ELECTRON_NODE_RAW_STDERR === '1',
+    }).then((code) => {
+      // exitCode, not process.exit(): exiting here can truncate stderr when it
+      // is redirected to a file or a pipe. Nothing else holds the loop open.
+      process.exitCode = code;
+    });
+  }
 }

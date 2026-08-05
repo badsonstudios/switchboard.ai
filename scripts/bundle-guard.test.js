@@ -1,8 +1,8 @@
-// #286 — tests for the stale-bundle guard.
+// #286 / #298 — tests for the stale-bundle guard.
 //
 // The guard's whole value is that it is RIGHT about staleness: a false "fresh"
 // hands back the debugging cycle it exists to save, and a false "stale" trains
-// people to type E2E_ALLOW_STALE=1 until it means nothing. Both directions are
+// people to type ALLOW_STALE_BUNDLE=1 until it means nothing. Both directions are
 // pinned here, on real files in a temp dir rather than a mocked fs, because
 // mtime comparison is exactly the thing a mock would let us get wrong.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -12,16 +12,23 @@ import os from 'os';
 import path from 'path';
 import {
   OVERRIDE_ENV,
+  LEGACY_OVERRIDE_ENV,
   isBundledSource,
   collectInputs,
   extractBakedIdentity,
   checkFreshness,
   formatReport,
+  provenanceLines,
+  currentBranch,
+  npmScriptFor,
+  targetFor,
+  guardBundle,
   ago,
   run,
-} from './e2e-bundle-guard.js';
+} from './bundle-guard.js';
+import { isBuildOutput } from './run-electron-node.js';
 
-const SCRIPT = path.join(process.cwd(), 'scripts', 'e2e-bundle-guard.js');
+const SCRIPT = path.join(process.cwd(), 'scripts', 'bundle-guard.js');
 
 /** A bundle the way electron-vite emits it once the define is substituted. */
 function bundleWith(id) {
@@ -323,6 +330,25 @@ describe('formatReport', () => {
     expect(text).toContain('...and 7 more');
   });
 
+  it('says nothing about provenance when the branches agree or either is unknown', () => {
+    expect(provenanceLines(identity, identity.branch)).toEqual([]);
+    expect(provenanceLines({ ...identity, branch: null }, 'main')).toEqual([]);
+    expect(provenanceLines(identity, null)).toEqual([]);
+    expect(provenanceLines(null, 'main')).toEqual([]);
+  });
+
+  it('flags a bundle built on another branch, and does NOT fail over it (#298)', () => {
+    // A hint, not proof: `npm run build` then `git checkout -b` leaves a bundle
+    // stamped with the old branch whose bytes are perfectly correct. Failing
+    // there would train people to type the override.
+    const { lines, failed } = formatReport(fresh, identity, { now, branch: 'main' });
+    const text = lines.join('\n');
+    expect(failed).toBe(false);
+    expect(text).toContain("built on 'feature/286-e2eonly-guard'");
+    expect(text).toContain("this checkout is on 'main'");
+    expect(text).toContain('another worktree');
+  });
+
   it('the override warns loudly and still passes', () => {
     const stale = {
       ...fresh,
@@ -391,6 +417,157 @@ describe('run', () => {
     const root = project({ sources: { 'src/main/index.ts': 'a' } });
     touch(root, 'src/main/index.ts', new Date());
     expect(run(root, { [OVERRIDE_ENV]: value }).failed).toBe(expectedFail);
+  });
+
+  it('still honours #286’s E2E_ALLOW_STALE spelling', () => {
+    // Renamed in #298 because four more callers made the `E2E_` prefix a lie.
+    // The old name keeps working so an exported shell variable does not quietly
+    // stop meaning anything.
+    const root = project({ sources: { 'src/main/index.ts': 'a' } });
+    touch(root, 'src/main/index.ts', new Date());
+    expect(run(root, { [LEGACY_OVERRIDE_ENV]: '1' }).failed).toBe(false);
+    expect(run(root, { [LEGACY_OVERRIDE_ENV]: '0' }).failed).toBe(true);
+  });
+});
+
+describe('currentBranch', () => {
+  it('never reports the literal "HEAD"', () => {
+    // The whole reason this is not `git rev-parse --abbrev-ref HEAD` alone:
+    // `actions/checkout` is detached, git answers "HEAD", and comparing a real
+    // branch name against that would cry mismatch on every single CI run.
+    expect(currentBranch(process.cwd(), {})).not.toBe('HEAD');
+  });
+
+  it('falls back to GitHub’s env exactly as the build did', () => {
+    // A cwd that cannot exist forces the git side to fail, which is what a
+    // detached CI checkout amounts to for this function.
+    const nowhere = path.join(os.tmpdir(), 'bundle-guard-no-such-dir');
+    expect(currentBranch(nowhere, { GITHUB_HEAD_REF: 'feature/x' })).toBe('feature/x');
+    expect(currentBranch(nowhere, { GITHUB_REF_NAME: 'main' })).toBe('main');
+    expect(currentBranch(nowhere, {})).toBeNull();
+  });
+
+  it('copies probeBuildIdentity’s `??` quirk on purpose, empty string and all', () => {
+    // GitHub sets GITHUB_HEAD_REF to the EMPTY STRING on non-PR events, and
+    // `'' ?? x` is `''`, so both sides answer null on a push build rather than
+    // falling through to GITHUB_REF_NAME. That is arguably a small bug in
+    // src/build/git-identity.ts - but it is THEIR bug, and reproducing it
+    // exactly is the point: the two must agree, or this guard invents a
+    // mismatch out of a disagreement about how to read an env var. Fix it in
+    // git-identity.ts first and this test is what tells you to follow.
+    const nowhere = path.join(os.tmpdir(), 'bundle-guard-no-such-dir');
+    expect(currentBranch(nowhere, { GITHUB_HEAD_REF: '', GITHUB_REF_NAME: 'main' })).toBeNull();
+  });
+});
+
+describe('check bundles (#298)', () => {
+  /** A project whose out/ also holds a check entry, wired in package.json. */
+  function checkProject(opts) {
+    const root = project(opts);
+    const past = new Date(Date.now() - 60_000);
+    const built = new Date(Date.now() - 30_000);
+    fs.writeFileSync(path.join(root, 'out', 'main', 'pty-check.js'), '// pty check');
+    fs.utimesSync(path.join(root, 'out', 'main', 'pty-check.js'), built, built);
+    fs.writeFileSync(
+      path.join(root, 'package.json'),
+      JSON.stringify({
+        scripts: { 'check:pty': 'node scripts/run-electron-node.js out/main/pty-check.js' },
+      })
+    );
+    fs.utimesSync(path.join(root, 'package.json'), past, past);
+    return root;
+  }
+
+  it('names the npm script by ASKING package.json, not by rewriting the filename', () => {
+    // `pty-check.js` -> `check:pty`, but `hook-check.js` -> `check:hookS`. A
+    // derived guess would print a command that does not exist, in the one
+    // message whose whole job is to be pasteable.
+    const cwd = process.cwd();
+    expect(npmScriptFor(cwd, 'out/main/pty-check.js')).toBe('check:pty');
+    expect(npmScriptFor(cwd, 'out/main/hook-check.js')).toBe('check:hooks');
+    expect(npmScriptFor(cwd, 'out/main/transcript-check.js')).toBe('check:transcripts');
+    expect(npmScriptFor(cwd, 'out/main/fake-stream-check.js')).toBe('check:fake-stream');
+    expect(npmScriptFor(cwd, 'out/main/nothing-runs-this.js')).toBeNull();
+  });
+
+  it('guards the bundle plus the identity-carrying main entry, and nothing else', () => {
+    const t = targetFor(process.cwd(), 'out/main/pty-check.js');
+    expect(t.artifacts).toEqual(['out/main/index.js', 'out/main/pty-check.js']);
+    expect(t.label).toBe('check:pty');
+    expect(t.command).toBe('npm run check:pty');
+  });
+
+  it('takes an absolute path or Windows separators', () => {
+    const cwd = process.cwd();
+    expect(targetFor(cwd, path.join(cwd, 'out', 'main', 'pty-check.js')).label).toBe('check:pty');
+    expect(targetFor(cwd, 'out\\main\\pty-check.js').label).toBe('check:pty');
+  });
+
+  it('falls back to the node invocation when no script runs the bundle', () => {
+    const t = targetFor(process.cwd(), 'out/main/mystery.js');
+    expect(t.label).toBe('out/main/mystery.js');
+    expect(t.command).toContain('run-electron-node.js out/main/mystery.js');
+  });
+
+  it('passes a fresh check bundle, stamping the script name', () => {
+    const root = checkProject({ sources: { 'src/main/pty/lifecycle-check.ts': 'a' } });
+    let out = '';
+    expect(guardBundle(root, 'out/main/pty-check.js', {}, (s) => (out += s))).toBe(true);
+    expect(out).toContain('check:pty — NO BUILD RAN');
+    expect(out).toContain('FRESH');
+  });
+
+  it('fails a stale check bundle with the CHECK command, not e2e’s', () => {
+    const root = checkProject({ sources: { 'src/main/pty/lifecycle-check.ts': 'a' } });
+    touch(root, 'src/main/pty/lifecycle-check.ts', new Date());
+    let out = '';
+    expect(guardBundle(root, 'out/main/pty-check.js', {}, (s) => (out += s))).toBe(false);
+    expect(out).toContain('STALE');
+    expect(out).toContain('npm run build && npm run check:pty');
+    expect(out).not.toContain('e2e:only');
+  });
+
+  it('fails when the check bundle itself was never built', () => {
+    const root = project({ sources: { 'src/a.ts': 'a' } }); // out/ has no *-check.js
+    let out = '';
+    expect(guardBundle(root, 'out/main/pty-check.js', {}, (s) => (out += s))).toBe(false);
+    expect(out).toContain('out/main/pty-check.js');
+    expect(out).toContain('npm run build');
+  });
+
+  it('ignores a half-built RENDERER, which no check script loads', () => {
+    // The false positive that would get this guard overridden within a week:
+    // `check:pty` does not care that out/renderer is behind. e2e:only does, and
+    // still says so on the very same project.
+    const root = checkProject({ sources: { 'src/renderer/App.tsx': 'a' } });
+    touch(root, 'out/renderer/index.html', new Date(Date.now() - 120_000));
+    expect(guardBundle(root, 'out/main/pty-check.js', {}, () => {})).toBe(true);
+    expect(run(root, {}).failed).toBe(true); // e2e:only, same project
+  });
+
+  it('is honoured by the same override', () => {
+    const root = checkProject({ sources: { 'src/main/pty/lifecycle-check.ts': 'a' } });
+    touch(root, 'src/main/pty/lifecycle-check.ts', new Date());
+    expect(guardBundle(root, 'out/main/pty-check.js', { [OVERRIDE_ENV]: '1' }, () => {})).toBe(true);
+  });
+});
+
+describe('isBuildOutput — which runs run-electron-node guards (#298)', () => {
+  const root = process.cwd();
+
+  it('recognises a bundle under out/, however it is spelled', () => {
+    expect(isBuildOutput(root, 'out/main/pty-check.js')).toBe(true);
+    expect(isBuildOutput(root, path.join(root, 'out', 'main', 'pty-check.js'))).toBe(true);
+    expect(isBuildOutput(root, 'out\\main\\pty-check.js')).toBe(true);
+  });
+
+  it('leaves anything that did not come from a build alone', () => {
+    // The runner is general. Pointed at a hand-written script it must stay a
+    // plain runner — failing because there is no out/main/index.js beside a
+    // file that never came from a build would be pure noise.
+    expect(isBuildOutput(root, 'scripts/some-scratch.js')).toBe(false);
+    expect(isBuildOutput(root, '../outside.js')).toBe(false);
+    expect(isBuildOutput(root, undefined)).toBe(false);
   });
 });
 
