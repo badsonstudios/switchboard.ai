@@ -24,6 +24,29 @@ module.exports = {
   productName: 'switchboard',
   copyright: 'Copyright © 2026 badsonstudios',
 
+  /**
+   * PACKAGING NEVER PUBLISHES. `null` is not "unset" — app-builder-lib's
+   * `getPublishConfigs` returns null the moment it sees an explicit null and
+   * stops before any provider is resolved, so no publisher is ever constructed,
+   * nothing is uploaded, and no `latest.yml`/`app-update.yml` is written.
+   * Releases are created by `gh release create` in `.github/workflows/release.yml`
+   * — the ONE place allowed to write to this repo (E19 decision 2: electron-
+   * builder packages, it does not update and it does not publish).
+   *
+   * Leaving it unset is not neutral, which is what #273 was: electron-builder 26
+   * escalates an unset publish policy to `onTagOrDraft` when it detects CI, then
+   * infers a GitHub provider from the origin URL in `.git/config` so it can write
+   * `latest.yml` — and schedules THAT for upload, dying with `GitHub Personal
+   * Access Token is not set` after a fully successful build, installer already on
+   * disk. Reproducing it needs all three (CI + resolvable repo + no token), which
+   * is why nobody saw it locally — and why it will not reproduce in a git
+   * WORKTREE either, where `.git` is a file and that config read simply fails.
+   * (electron-builder 27 drops the implicit behaviour; this line is correct either
+   * way, and `scripts/package.js` also passes `--publish never` so the escalation
+   * is never even attempted.)
+   */
+  publish: null,
+
   // `dist/` is gitignored (and stays that way — src/main/packaging.test.ts
   // asserts it). `out/` is electron-vite's, and the two must not collide.
   directories: {
