@@ -18,9 +18,17 @@ import {
   type TrackedPopout,
 } from './popout-windows';
 
-/** a stand-in popout: a distinct object, which is all identity here needs */
-function fakePopout(): Window {
-  return { document: document.implementation.createHTMLDocument('popout') } as unknown as Window;
+/**
+ * A stand-in popout: a distinct object, which is all identity here needs, plus
+ * the one property the registry asks it about. `closed` starts false the way a
+ * real freshly-opened window's does; a test kills one by setting it, which is
+ * exactly what the OS taking a window looks like from in here (#279).
+ */
+function fakePopout(): Window & { closed: boolean } {
+  return {
+    closed: false,
+    document: document.implementation.createHTMLDocument('popout'),
+  } as unknown as Window & { closed: boolean };
 }
 
 // Windows AND listeners: a subscriber left behind by a failed assertion would
@@ -245,5 +253,195 @@ describe('the popout registry: telling its consumers (issue 227)', () => {
     off();
     removePopoutWindow(win);
     expect(onChange).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the popout registry: windows that die without saying so (issue 279)', () => {
+  // dockview only reports what dockview DID. A window the OS takes never
+  // produces a remove event, so the registry has to ask the windows themselves
+  // — and the entries it drops have to look, to every consumer, exactly like an
+  // ordinary close, because that is what happened.
+  afterEach(() => {
+    resetPopoutWindows();
+    vi.useRealTimers();
+  });
+
+  it('drops a window found closed, and says so exactly as a normal close does', () => {
+    const removed = vi.fn();
+    const changed = vi.fn();
+    const dead = fakePopout();
+    const alive = fakePopout();
+    addPopoutWindow(dead);
+    addPopoutWindow(alive);
+    subscribePopoutWindows({ removed, changed });
+
+    dead.closed = true; // the OS took it; dockview never hears, so nor do we...
+    addPopoutWindow(fakePopout()); // ...until something walks the list
+
+    expect(removed).toHaveBeenCalledTimes(1);
+    expect(removed).toHaveBeenCalledWith(dead);
+    expect(changed).toHaveBeenCalledTimes(2); // the burial, then the new window
+    expect(openPopoutWindows()).not.toContain(dead);
+    expect(openPopoutWindows()).toContain(alive);
+  });
+
+  it('buries every window that died, not just the first', () => {
+    const first = fakePopout();
+    const second = fakePopout();
+    const survivor = fakePopout();
+    addPopoutWindow(first);
+    addPopoutWindow(second);
+    addPopoutWindow(survivor);
+    const removed = vi.fn();
+    subscribePopoutWindows({ removed });
+
+    first.closed = true;
+    second.closed = true;
+    removePopoutWindow(fakePopout()); // dockview reporting some other close
+
+    expect(removed.mock.calls.map((call) => call[0])).toEqual([first, second]);
+    expect(openPopoutWindows()).toEqual([survivor]);
+  });
+
+  it('has the window out of the registry before it tells anyone', () => {
+    // the contract the ordinary removal keeps, and the reason it exists: the
+    // theme sync re-reads the list from inside its own handler, and must not be
+    // handed the corpse
+    const dead = fakePopout();
+    addPopoutWindow(dead);
+    let seen: Window[] = [];
+    subscribePopoutWindows({ removed: () => (seen = openPopoutWindows()) });
+
+    dead.closed = true;
+    removePopoutWindow(fakePopout());
+
+    expect(seen).toEqual([]);
+  });
+
+  it('replaces the group of a window that died before it was popped out again', () => {
+    // the sequence this exists for: the OS takes the popout, dockview never
+    // says so, and the user's answer is to pop the same group out again — which
+    // opens a NEW window. Both registered would mean two read-only notices, one
+    // of them keyed to a document nobody can see.
+    const dead = fakePopout();
+    addPopoutWindow(dead);
+
+    dead.closed = true;
+    const replacement = fakePopout();
+    addPopoutWindow(replacement);
+
+    expect(openPopoutWindows()).toEqual([replacement]);
+  });
+
+  it('keeps a window dockview RE-ANNOUNCES — a repeat is not a death certificate', () => {
+    // dockview reuses a named window, and #227's contract for that repeat is
+    // exact: same entry, same id, `added` again (the reused document needs the
+    // theme re-copied), no `changed`. The sweep runs on that path now and must
+    // leave every part of it alone.
+    const win = fakePopout();
+    addPopoutWindow(win);
+    const id = getPopoutWindows()[0].id;
+    const listener = { added: vi.fn(), removed: vi.fn(), changed: vi.fn() };
+    subscribePopoutWindows(listener);
+
+    addPopoutWindow(win);
+
+    expect(getPopoutWindows()).toHaveLength(1);
+    expect(getPopoutWindows()[0].id).toBe(id);
+    expect(listener.added).toHaveBeenCalledWith(win);
+    expect(listener.removed).not.toHaveBeenCalled();
+    expect(listener.changed).not.toHaveBeenCalled();
+  });
+
+  it('keeps a window it cannot ask about', () => {
+    // evicting a LIVE popout costs it its keyboard and its theme; keeping a
+    // dead one costs an object. Only a window that says so in as many words goes.
+    const unreachable = {
+      get closed(): boolean {
+        throw new Error('detached');
+      },
+    } as unknown as Window;
+    addPopoutWindow(unreachable);
+    const removed = vi.fn();
+    subscribePopoutWindows({ removed });
+
+    addPopoutWindow(fakePopout()); // walks the list, asks, is refused an answer
+
+    expect(removed).not.toHaveBeenCalled();
+    // through a boolean on purpose: a matcher handed this object would inspect
+    // it, and being inspected is the very thing that throws
+    expect(openPopoutWindows().includes(unreachable)).toBe(true);
+  });
+
+  it('notices on its own, without waiting for the next popout', () => {
+    // the announcements are the cheap moments, but a user who kills their only
+    // popout and opens no other would never reach one
+    vi.useFakeTimers();
+    const dead = fakePopout();
+    addPopoutWindow(dead);
+    const removed = vi.fn();
+    subscribePopoutWindows({ removed });
+
+    dead.closed = true;
+    vi.advanceTimersByTime(5_000);
+
+    expect(removed).toHaveBeenCalledWith(dead);
+    expect(getPopoutWindows()).toEqual([]);
+  });
+
+  it('leaves the snapshot alone while every window is still open', () => {
+    // a sweep that found nothing must not be a re-render: useSyncExternalStore
+    // compares snapshots by reference, and this one ticks forever
+    vi.useFakeTimers();
+    addPopoutWindow(fakePopout());
+    const snapshot = getPopoutWindows();
+    const changed = vi.fn();
+    subscribePopoutChange(changed);
+
+    vi.advanceTimersByTime(5_000 * 20);
+
+    expect(getPopoutWindows()).toBe(snapshot);
+    expect(changed).not.toHaveBeenCalled();
+  });
+
+  it('runs no timer with nothing to sweep', () => {
+    // a wakeup asked of the OS on behalf of nobody — and most of a session has
+    // no popout open at all
+    vi.useFakeTimers();
+    expect(vi.getTimerCount()).toBe(0);
+    const first = fakePopout();
+    const second = fakePopout();
+
+    addPopoutWindow(first);
+    expect(vi.getTimerCount()).toBe(1);
+    addPopoutWindow(second);
+    expect(vi.getTimerCount()).toBe(1); // a second popout is not a second timer
+
+    removePopoutWindow(first);
+    expect(vi.getTimerCount()).toBe(1); // one still open
+    removePopoutWindow(second);
+    expect(vi.getTimerCount()).toBe(0);
+
+    addPopoutWindow(first); // and it comes back for the next one
+    expect(vi.getTimerCount()).toBe(1);
+    resetPopoutWindows();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('announces a dead window once, even when its remove event arrives too', () => {
+    // the window closed AND dockview noticed: the sweep gets there first (it
+    // runs before the removal), and the removal is then the no-op it already is
+    // for a window the registry does not have
+    const win = fakePopout();
+    addPopoutWindow(win);
+    const removed = vi.fn();
+    subscribePopoutWindows({ removed });
+
+    win.closed = true;
+    removePopoutWindow(win);
+
+    expect(removed).toHaveBeenCalledTimes(1);
+    expect(removed).toHaveBeenCalledWith(win);
+    expect(getPopoutWindows()).toEqual([]);
   });
 });
