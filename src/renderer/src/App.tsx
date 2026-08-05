@@ -590,8 +590,20 @@ export function App(): React.JSX.Element {
     const detach = (win: Window): void => {
       const handler = popoutKeys.get(win);
       if (!handler) return;
-      win.removeEventListener('keydown', handler);
+      // Forget it FIRST, then try to unhook. Since #279 this runs routinely for
+      // a window that is definitively closed — the registry now drops those
+      // itself, which is what sends them down here — and a dead Window is only
+      // ALMOST certainly still a working EventTarget. If it ever were not, doing
+      // these the other way round would keep the handler and the dead window in
+      // this map forever, which is precisely the leak #279 closed, and (in the
+      // loop below, outside any try) would abort the effect before it
+      // subscribes, leaving every popout deaf.
       popoutKeys.delete(win);
+      try {
+        win.removeEventListener('keydown', handler);
+      } catch {
+        /* nothing left to detach from — fail open, the listener died with it */
+      }
     };
     // Re-attach anything open before this (re-)run, from the REGISTRY rather
     // than from our own leftovers — that is the authority on what exists, and

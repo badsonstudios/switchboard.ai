@@ -101,8 +101,12 @@ const listeners = new Set<PopoutListener>();
  *
  * The timer exists only while at least one popout is open, which for most of
  * any session is never (see `syncSweepTimer`).
+ *
+ * Exported for the tests, which have to advance fake timers by exactly this:
+ * hard-coding it there would keep passing if this shrank and fail opaquely if
+ * it grew.
  */
-const LIVENESS_SWEEP_MS = 5_000;
+export const LIVENESS_SWEEP_MS = 5_000;
 let sweepTimer: ReturnType<typeof setInterval> | undefined;
 
 /**

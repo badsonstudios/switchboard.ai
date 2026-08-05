@@ -10,6 +10,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   addPopoutWindow,
   getPopoutWindows,
+  LIVENESS_SWEEP_MS,
   openPopoutWindows,
   removePopoutWindow,
   resetPopoutWindows,
@@ -309,13 +310,14 @@ describe('the popout registry: windows that die without saying so (issue 279)', 
     // handed the corpse
     const dead = fakePopout();
     addPopoutWindow(dead);
-    let seen: Window[] = [];
+    let seen: Window[] | undefined;
     subscribePopoutWindows({ removed: () => (seen = openPopoutWindows()) });
 
     dead.closed = true;
-    removePopoutWindow(fakePopout());
+    removePopoutWindow(fakePopout()); // dockview reporting some other close
 
-    expect(seen).toEqual([]);
+    expect(seen).toEqual([]); // told, and told AFTER the list was corrected —
+    expect(seen).toBeDefined(); // ...which an empty array alone would not prove
   });
 
   it('replaces the group of a window that died before it was popped out again', () => {
@@ -383,7 +385,7 @@ describe('the popout registry: windows that die without saying so (issue 279)', 
     subscribePopoutWindows({ removed });
 
     dead.closed = true;
-    vi.advanceTimersByTime(5_000);
+    vi.advanceTimersByTime(LIVENESS_SWEEP_MS);
 
     expect(removed).toHaveBeenCalledWith(dead);
     expect(getPopoutWindows()).toEqual([]);
@@ -398,7 +400,7 @@ describe('the popout registry: windows that die without saying so (issue 279)', 
     const changed = vi.fn();
     subscribePopoutChange(changed);
 
-    vi.advanceTimersByTime(5_000 * 20);
+    vi.advanceTimersByTime(LIVENESS_SWEEP_MS * 20);
 
     expect(getPopoutWindows()).toBe(snapshot);
     expect(changed).not.toHaveBeenCalled();
