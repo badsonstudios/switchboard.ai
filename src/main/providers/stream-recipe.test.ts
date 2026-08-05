@@ -14,6 +14,7 @@ import { claudeAdapter, resetCliPathCache } from './claude';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 
 let dir: string;
+let origPath: string | undefined;
 
 beforeEach(() => {
   dir = tempDir('sb-recipe-');
@@ -23,9 +24,19 @@ beforeEach(() => {
   fs.mkdirSync(bin, { recursive: true });
   const name = process.platform === 'win32' ? 'claude.cmd' : 'claude';
   fs.writeFileSync(path.join(bin, name), '');
+  origPath = process.env.PATH;
   process.env.PATH = `${bin}${path.delimiter}${process.env.PATH ?? ''}`;
 });
-afterEach(() => cleanupTempDirs()); // one per test, gone at the end of it (#213)
+afterEach(() => {
+  // PATH goes back however the test ended (#229). The `bin` we prepended is
+  // inside the temp dir deleted on the next line, so leaving it there would
+  // hand every later test in this process a PATH entry pointing at nothing —
+  // invisible state bleeding across files, the same shape as the leaked
+  // directories in #213.
+  if (origPath === undefined) delete process.env.PATH;
+  else process.env.PATH = origPath;
+  cleanupTempDirs(); // one per test, gone at the end of it (#213)
+});
 
 function recipe(transport?: 'pty' | 'stream') {
   return claudeAdapter.buildSpawn({ cwd: dir, sessionId: 's1', stateDir: dir, transport });
