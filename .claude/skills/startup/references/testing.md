@@ -83,6 +83,38 @@ npm run typecheck && npm test && npm run build && npm run e2e`. Skipping
 `typecheck` locally shipped 6 TS errors to CI on 2026-07-21 — electron-vite's
 build does not run tsc strict checks; only `npm run typecheck` does.
 
+**`npm run typecheck` is THREE tsc projects, and every TypeScript source file
+must be in one of them (#234):**
+
+| Project | Covers |
+|---|---|
+| `tsconfig.node.json` | `src/main`, `src/preload`, `src/shared`, `src/build`, `electron.vite.config.ts`, `vitest.config.ts`, `src/test-setup.ts` |
+| `tsconfig.web.json` | `src/renderer`, `src/shared`, `src/preload/index.ts` |
+| `tsconfig.e2e.json` | `e2e/**` (BOTH runners' files), `playwright.config.ts`, `src/renderer/src/env.d.ts` |
+
+(`scripts/**/*.js` is JavaScript and checked by no `tsc` — that would need
+`allowJs`. Its vitest tests are the safety net there.)
+
+A file in no project is checked by NOTHING — eslint's default preset is not
+type-aware, so a type error there reaches `main` silently. That was `e2e/`'s
+state until #234: switching it on surfaced **16 standing errors** — 14 from
+`Window.switchboard` being undeclared (13 `page.evaluate` bodies plus the
+implicit-`any` callback that followed), and 2 real ones (a closure that lost a
+narrowing, an `HTMLElement` annotation that could not hold Playwright's
+`SVGElement | HTMLElement`). Adding a new top-level source directory means
+adding it to a project (or adding a project and appending it to the `typecheck`
+script **and** `tsconfig.json`'s `references`). The e2e project pulls in
+`src/renderer/src/env.d.ts` for the `Window.switchboard` global, since every
+`page.evaluate` body is checked as renderer code; it also needs the `DOM` lib
+alongside `node` types for the same reason.
+
+eslint over `e2e/` is deliberately still on the **repo-wide non**-type-checked
+preset (`tseslint.configs.recommended`, which is what every directory gets):
+switching `e2e/` to `recommendedTypeChecked` lights up 83 errors across 21 files
+— 32 `no-unsafe-member-access`, 29 `require-await`, 16 `no-unsafe-assignment`,
+the rest stragglers — nearly all of them `page.evaluate` returning `any`. That
+is its own item, not a typecheck wire-up's.
+
 **Rules:**
 - Never report half-working code as done — record blockers in PROGRESS.md with
   failing output.

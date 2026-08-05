@@ -229,7 +229,10 @@ test.describe('sessions rail', () => {
         // itself. The opaque card underneath is also the conservative choice:
         // the tint only darkens it, which helps dark text.
         let bg = 'rgb(255, 255, 255)';
-        for (let n: HTMLElement | null = el; n; n = n.parentElement) {
+        // `Element`, not `HTMLElement`: Playwright hands the callback an
+        // `SVGElement | HTMLElement`, and only `Element` accepts both. Both
+        // `getComputedStyle` and `parentElement` are defined on it.
+        for (let n: Element | null = el; n; n = n.parentElement) {
           const c = getComputedStyle(n).backgroundColor;
           const parts = c.match(/[\d.]+/g);
           if (parts && (parts.length < 4 || Number(parts[3]) >= 0.99)) {

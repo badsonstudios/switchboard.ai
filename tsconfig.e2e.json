@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    // Specs run in Node, but every `page.evaluate` body is checked against the
+    // BROWSER globals, so this project needs both libs at once. One program
+    // cannot separate them, so know the two edges: inside an `evaluate` body
+    // `process`/`Buffer` typecheck and then blow up in the renderer at runtime,
+    // and Node's `setTimeout` overload shadows the DOM one (a timer id annotated
+    // `number` errors). Both are cheap to recognize, unlike having no check.
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"]
+  },
+  // `src/renderer/src/env.d.ts` is the renderer's `Window.switchboard`
+  // declaration, derived from the preload's own `SwitchboardApi`. Every
+  // `page.evaluate` body in a spec runs IN that renderer, so it wants exactly
+  // that global — pulled in rather than re-declared, so the two can never drift.
+  // It drags `src/preload` + a few `src/shared` files in transitively, which
+  // means those compile under a THIRD set of options (commonjs / node
+  // resolution). If one of them ever needs something only web's `bundler`
+  // resolution provides, the failure surfaces here — in the e2e project — which
+  // is confusing until you know why.
+  "include": ["e2e/**/*", "playwright.config.ts", "src/renderer/src/env.d.ts"]
+}
