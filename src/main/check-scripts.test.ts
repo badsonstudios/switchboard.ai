@@ -73,6 +73,22 @@ describe('check:* scripts are all accounted for (#182)', () => {
     ).toEqual([]);
   });
 
+  it('every check script runs its bundle through scripts/run-electron-node.js (#298)', () => {
+    // That runner is where the stale-bundle guard lives, and it is the ONLY
+    // place it lives - deliberately, because five package.json wirings are five
+    // chances to forget and the forgotten one is the one that rots (this file's
+    // whole reason for existing). A check that shells out to `electron` itself,
+    // or to plain `node`, would silently run an unguarded bundle.
+    const bypassing = checks.filter(
+      (c) => !/\bnode scripts\/run-electron-node\.js\s+out\//.test(scripts[c])
+    );
+    expect(
+      bypassing,
+      'these run an out/ bundle without the #298 guard - route them through ' +
+        'scripts/run-electron-node.js, or move the guard first'
+    ).toEqual([]);
+  });
+
   it('LOCAL_ONLY has no STALE entries', () => {
     // The other direction, as in broker.test.ts: an exemption left behind after
     // the script it excused was deleted or renamed reads like a decision and is

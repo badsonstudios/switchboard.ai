@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, Locator, Page } from '@playwright/test';
 import path from 'path';
 import { launchApp, LaunchedApp, showTerminal, tempProjectFolder } from './fixtures/app';
 
@@ -179,5 +179,76 @@ test.describe('a session card', () => {
     await window.getByRole('tab', { name: 'Changes' }).click();
     await window.getByRole('tab', { name: 'Terminal' }).click();
     await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 10_000 });
+  });
+
+  // #250. The header read dockview's `props.api.title`, and dockview is told a
+  // panel's title once, at `addPanel` — nothing in the tree ever calls
+  // `setTitle`. So the rail renamed, the record renamed, and the card went on
+  // announcing the name it was born with. The header now reads the session
+  // store, which is where the rename actually lands.
+  const cardHeaderIn = (p: Page): Locator => p.getByTestId('card-header').filter({ visible: true });
+
+  /** rename the one session from the rail, the way a user does */
+  async function renameFromRail(w: Page, to: string): Promise<void> {
+    await w.locator('nav .rail-row').first().dblclick();
+    const field = w.locator('nav .rail-row input');
+    await expect(field).toBeVisible();
+    await field.fill(to);
+    await field.press('Enter');
+  }
+
+  test('the card header follows a rename from the rail (#250)', async () => {
+    const folder = tempProjectFolder();
+    const name = path.basename(folder);
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    const header = cardHeaderIn(w);
+    await expect(header.getByText(name, { exact: true })).toBeVisible({ timeout: 25_000 });
+
+    await renameFromRail(w, 'renamed-card');
+
+    await expect(header.getByText('renamed-card', { exact: true })).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(header.getByText(name, { exact: true })).toHaveCount(0);
+  });
+
+  // A popout has no rail and no tab strip, so its header is the ONLY thing in
+  // the window that says which session it is — and the rename it has to follow
+  // arrives from a different OS window. dockview ADOPTS the group's DOM rather
+  // than re-rendering it, so this is really asserting nothing about the header
+  // depended on living in the main window.
+  test('a popped-out card header follows a rename too (#250)', async () => {
+    skipPopoutOnLinux();
+    const folder = tempProjectFolder();
+    const name = path.basename(folder);
+    a = await launchApp({ seedFolder: folder });
+    const { app } = a;
+    const w = a.window;
+    await expect(w.getByText(name).first()).toBeVisible({ timeout: 25_000 });
+
+    await w.getByTitle('Pop out into its own window').click();
+    // by URL, not by "the other one": devtools or a rescued window would both
+    // satisfy `!== window` and neither hosts a session
+    await expect
+      .poll(() => app.windows().filter((p) => p.url().includes('popout.html')).length, {
+        timeout: 15_000,
+      })
+      .toBe(1);
+    const popout = app.windows().find((p) => p.url().includes('popout.html'))!;
+    await popout.waitForLoadState('domcontentloaded');
+    const header = cardHeaderIn(popout);
+    await expect(header.getByText(name, { exact: true })).toBeVisible({ timeout: 15_000 });
+
+    await renameFromRail(w, 'popped-and-renamed');
+    await expect(header.getByText('popped-and-renamed', { exact: true })).toBeVisible({
+      timeout: 15_000,
+    });
+    // the adopted DOM must not end up carrying BOTH names
+    await expect(header.getByText(name, { exact: true })).toHaveCount(0);
+
+    // hand the second OS window back before teardown rather than leaving it to
+    // the tree-kill: a live popout has outlived cleanup on CI before
+    await popout.evaluate(() => window.close());
   });
 });

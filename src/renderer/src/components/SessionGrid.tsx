@@ -31,6 +31,7 @@ import { Box, boxOnAnyDisplay, RescuedPopout, sanitizePopoutLayout, WorkArea } f
 import { captureSlot, openerRelative, placeAt } from '../lib/dock-slot';
 import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
 import { submitTarget } from '../lib/presentation-policy';
+import { createSweeper, SweepPort, SweepRequest } from '../lib/layout-sweep';
 import {
   cycleMode,
   isEnforced,
@@ -45,9 +46,11 @@ import {
 } from '../lib/layout-mode';
 import { presentStatus } from '../lib/rail-view';
 import { tabStripAction } from '../lib/tabstrip-keys';
+import { cardHeaderTitle } from '../lib/card-title';
 import { StatusPill } from './StatusPill';
 import type { Ladder } from '../lib/presentation';
 import { pickAdoptedGroupId } from '../lib/groups';
+import { addPopoutWindow, removePopoutWindow } from '../lib/popout-windows';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { setDraggedCard } from '../lib/drag-context';
 import { writePromptToPty } from '../lib/composer';
@@ -217,6 +220,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const controlsLocked = status === 'starting' || status === 'crashed' || exited !== null;
   const spawning = React.useRef(false);
   const folder = props.params?.folder;
+  // What the card CALLS itself, on screen (#250). The store's copy first, so a
+  // rename from the rail reaches the header — `props.api.title` alone is the
+  // name the card was born with. Chain and its empty-is-absent rule live in
+  // lib/card-title.
+  const headerTitle = cardHeaderTitle(cardTitle, props.api.title, folder);
 
   React.useEffect(() => {
     const d = props.api.onDidVisibilityChange((e) => setVisible(e.isVisible));
@@ -774,7 +782,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 whiteSpace: 'nowrap',
               }}
             >
-              {props.api.title ?? folder}
+              {headerTitle}
             </span>
             {editingLabel ? (
               <input
@@ -1152,7 +1160,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         <div style={{ ...overlayBackdrop, position: 'relative', flex: 1 }}>{exitedOverlay}</div>
       ) : (
         <span style={{ margin: 'auto' }}>
-          {t('grid.resuming', { title: props.api.title ?? folder ?? '' })}
+          {t('grid.resuming', { title: headerTitle })}
         </span>
       )}
     </div>
@@ -1554,26 +1562,17 @@ function layoutCards(): LayoutCard[] {
 }
 
 /**
- * A sweep in flight, and whether another was asked for while it ran.
+ * One sweep — the dockview grid it moves cards in, carried on the request.
  *
- * Module scope for the reason `laddering` is: a re-entrancy guard is not app
- * state. Every move below awaits, and the reactive triggers arrive in bursts —
- * a status change is one store write, and three sessions finishing inside a
- * second is three. Without this, two sweeps would interleave their reveals and
- * removals and the loser would be applying a plan computed against a workspace
- * that no longer exists. Coalescing to ONE re-run is enough: the plan is
- * recomputed from live state each time, so the last run always sees the truth.
+ * lib/layout-sweep owns the machine (one sweep at a time, at most one queued,
+ * moves in order, abort on teardown) and knows nothing about dockview, which is
+ * how that machine gets unit tests instead of only e2e ones. The api rides
+ * along rather than being read from module scope so a drained sweep provably
+ * runs against the grid it was asked for.
  */
-interface Sweep {
-  trigger: LayoutTrigger;
-  /** the un-maximize payload; queued WITH the trigger, because a queued sweep
-   *  that kept the trigger and dropped this would re-apply the mode instead of
-   *  putting the user's own prior arrangement back */
-  restore?: Readonly<Record<string, Ladder>>;
+interface LayoutSweep extends SweepRequest {
+  api: DockviewApi;
 }
-
-let sweeping = false;
-let resweep: Sweep | null = null;
 
 /**
  * Has the grid finished coming up?
@@ -1589,6 +1588,46 @@ let resweep: Sweep | null = null;
 let gridReady = false;
 
 /**
+ * The dockview half of the sweep: every effect lib/layout-sweep is not allowed
+ * to know about, in one object.
+ *
+ * Exported for `SessionGrid.test.tsx`, which asserts the two halves are wired
+ * to each other correctly — that `needed` really is "grid is not enforced on a
+ * reactive pass" and that `plan` really is computed over the rail order — none
+ * of which is reachable through `applyLayout` without a live grid.
+ */
+export const layoutSweepPort: SweepPort<LayoutSweep> = {
+  // `gridReady` is the fence a boot restore needs; the other two are the
+  // teardown and restore windows dockview must not be touched in.
+  ready: () => gridReady && !sessionStore.isTearingDown() && !sessionStore.isRestoringLayout(),
+
+  // The cheap early-out, before building the card list. GRID IS NOT ENFORCED ON
+  // `react` (lib/layout-mode's `LayoutTrigger` says why); an un-maximize always
+  // has work, because its whole payload is work.
+  needed: (req) => req.trigger !== 'react' || !!req.restore || isEnforced(sessionStore.getLayout()),
+
+  plan: (req) =>
+    layoutPlan({
+      state: sessionStore.getLayout(),
+      cards: layoutCards(),
+      activeCardId: sessionStore.getState().activeCard,
+      trigger: req.trigger,
+      ...(req.restore ? { restore: req.restore } : {}),
+    }),
+
+  // WITHOUT FOCUS: `focus` mode moves the big card to whatever you are already
+  // in, so grabbing focus would be the layout telling the user where to look.
+  // Single-card commands focus, because there the move IS the gesture.
+  applyMove: (move, req) => moveCardToRung(req.api, move.cardId, move.rung, false),
+
+  aborted: () => sessionStore.isTearingDown(),
+
+  onError: (err) => console.error('[layout] sweep failed', err),
+};
+
+const layoutSweeper = createSweeper(layoutSweepPort);
+
+/**
  * Put every session where the current layout mode wants it.
  *
  * `restore` is the un-maximize path: the rungs to put back, exactly (see
@@ -1599,57 +1638,10 @@ export function applyLayout(
   trigger: LayoutTrigger,
   restore?: Readonly<Record<string, Ladder>>
 ): void {
-  if (
-    !api ||
-    !gridReady ||
-    sessionStore.isTearingDown() ||
-    sessionStore.isRestoringLayout()
-  ) {
-    return;
-  }
-  if (sweeping) {
-    // a 'switch' outranks a queued 'react': the user asked for that one
-    if (trigger === 'switch' || !resweep) resweep = { trigger, ...(restore ? { restore } : {}) };
-    return;
-  }
-  // The cheap early-out, before building the card list: reactive triggers
-  // arrive on every status push (several a second while agents stream), and
-  // under the DEFAULT mode there is nothing for any of them to do.
-  if (trigger === 'react' && !restore && !isEnforced(sessionStore.getLayout())) return;
-  sweeping = true;
-  void (async () => {
-    try {
-      const moves = layoutPlan({
-        state: sessionStore.getLayout(),
-        cards: layoutCards(),
-        activeCardId: sessionStore.getState().activeCard,
-        trigger,
-        ...(restore ? { restore } : {}),
-      });
-      // Sequential ON PURPOSE, and awaited: a card comes home to the dock slot
-      // it remembers, and two reveals racing each other read that slot's group
-      // while the other one is still creating (or destroying) it. `toTabbed`
-      // and the reveal are the two async verbs, so both are awaited here even
-      // though `setCardLadder` itself fires and forgets.
-      for (const move of moves) {
-        // WITHOUT FOCUS: `focus` mode moves the big card to whatever you are
-        // already in, so grabbing focus would be the layout telling the user
-        // where to look. Single-card commands focus, because there the move IS
-        // the gesture.
-        await moveCardToRung(api, move.cardId, move.rung, false);
-        if (sessionStore.isTearingDown()) return;
-      }
-    } catch (err) {
-      // fail-open: a layout mode is a convenience, never a reason to throw out
-      // of an event handler and leave the workspace half-swept
-      console.error('[layout] sweep failed', err);
-    } finally {
-      sweeping = false;
-      const again = resweep;
-      resweep = null;
-      if (again) applyLayout(api, again.trigger, again.restore);
-    }
-  })();
+  if (!api) return;
+  // Nothing awaits a sweep: a click that changes the mode is done the moment
+  // the mode is written, and the cards catch up. The promise exists for tests.
+  void layoutSweeper.request({ api, trigger, ...(restore ? { restore } : {}) });
 }
 
 /** Switch the workspace to a named layout mode (§5.8). */
@@ -2335,18 +2327,17 @@ export function SessionGrid(props: {
       });
       // E8 diagnostics: surface popout success/failure
       api.onDidOpenPopoutWindowFail?.(() => console.error('[popout] onDidOpenPopoutWindowFail'));
-      // publish popout windows so App can give them the keyboard dispatcher
-      // (E9-02) — their DOM lives in another OS window, their JS lives here
+      // Publish popout windows to the shared registry (#227): their DOM lives
+      // in another OS window, their JS lives here, and three features need to
+      // know which ones are open — the keyboard dispatcher (E9-02), the theme
+      // and tab-row flags (#84), the read-only notice (#208). dockview is the
+      // authority on which popouts exist; this is the one place that says so.
       api.onDidAddPopoutGroup?.((e: PopoutGroup) => {
         console.log('[popout] onDidAddPopoutGroup (opened OK)');
-        if (e.window) {
-          window.dispatchEvent(new CustomEvent('switchboard:popout-added', { detail: e.window }));
-        }
+        if (e.window) addPopoutWindow(e.window);
       });
       api.onDidRemovePopoutGroup?.((e: PopoutGroup) => {
-        if (e.window) {
-          window.dispatchEvent(new CustomEvent('switchboard:popout-removed', { detail: e.window }));
-        }
+        if (e.window) removePopoutWindow(e.window);
       });
       // window teardown must not be mistaken for the user closing cards
       window.addEventListener('beforeunload', () => {

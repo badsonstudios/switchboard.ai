@@ -270,6 +270,10 @@ export class HookListener {
 
   async start(): Promise<number> {
     this.forwarderPath = writeForwarder(this.opts.stateDir);
+    // Last run's token files are dead weight the moment this process starts —
+    // take them now (#282). AFTER writeForwarder, which is what guarantees
+    // stateDir exists on a first run.
+    this.sweepOrphanTokens();
     // The forwarder needs a Node runtime. `node` on PATH is NOT guaranteed
     // (claude.exe native installs bundle their own); fall back to our own
     // Electron binary in run-as-node mode. Hooks run under a POSIX shell on
@@ -297,6 +301,11 @@ export class HookListener {
     this.server?.close();
     this.server?.closeAllConnections?.();
     this.server = null;
+    // Clearing the map is enough — every token file is dead the moment this
+    // returns, and the next `start()` sweeps them (#282). Deliberately NOT a
+    // sweep here: quit is a path we may not finish (`scheduleForcedExit`), so
+    // cleanup that only runs on a graceful shutdown is cleanup that does not
+    // run.
     this.tokens.clear();
   }
 
@@ -432,8 +441,99 @@ export class HookListener {
     }
     this.allowAllSessions.delete(sessionId); // "this session" ends here
     this.noWindowWarned.delete(sessionId); // a respawn warns again if still blind
+    // The file follows the map entry (#282). It is dead the moment the token
+    // leaves `this.tokens` — nothing can authenticate with it again — and this
+    // is its LAST mention: a self-exited card the user never touches again gets
+    // no teardown after this, so anything not cleaned here lingers for the
+    // app's lifetime, one file per session ever started.
+    //
+    // Only OUR file. `stateDir/<sessionId>/` and the `settings.json` in it
+    // (`providers/claude.ts`) are still nobody's job to remove and still
+    // accumulate — this closes one leak, not the directory's.
+    this.removeTokenFile(sessionId);
     // a session closed mid-hold must not leave the CLI hanging (fail-open)
     for (const [id, p] of this.pending) if (p.sessionId === sessionId) this.release(id);
+  }
+
+  /**
+   * Best-effort removal of one session's token file — fail-open (P6): our disk
+   * hygiene never throws into a teardown step and never blocks a session.
+   * Returns whether a file was actually there to remove.
+   */
+  private removeTokenFile(sessionId: string): boolean {
+    try {
+      fs.unlinkSync(path.join(this.opts.stateDir, sessionId, 'hook-token'));
+      return true;
+    } catch (err) {
+      // ENOENT is the ORDINARY case, not a fault, and must stay quiet: a
+      // session torn down before `buildHookSettings` ever ran — or one on a
+      // provider without the hooks capability — has no file, and warning on
+      // every such close would be pure noise. (It gets commoner still once
+      // PR #281 lands: that makes the teardown path unregister twice on every
+      // close of a running session, and the second pass finds nothing.)
+      // Anything else — a file locked by a scanner, a permission change — is
+      // worth one line and nothing more.
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        this.opts.log.warn('could not remove hook token file', {
+          sessionId,
+          error: String(err),
+        });
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Drop every `hook-token` left behind by a previous run (#282).
+   *
+   * Safe WITHIN THIS PROCESS, and only because it runs at start: tokens live
+   * in `this.tokens`, which is memory. We cannot authenticate a file we did not
+   * write, so every token on disk at this moment is dead weight to us. Nothing
+   * in-process can race it either — this is synchronous and runs before the
+   * first `await` in `start()`, and in `src/main` a session only ever registers
+   * via `buildHookSettings`, which throws until `start()` has set the port.
+   *
+   * What it is NOT safe against, stated plainly because the app does not
+   * prevent it: a SECOND app instance. `stateDir` is a fixed path under
+   * `userData` and there is no `requestSingleInstanceLock` anywhere, so a
+   * second instance starting would delete the first's LIVE token files — the
+   * forwarder re-reads the file on every hook — and the first instance's
+   * sessions would go quietly hook-blind (every hook 401s; status, native-id
+   * binding and holds stop). Fail-open holds (nothing blocks, nothing crashes)
+   * but the symptom is only a log full of `hook request rejected`. An mtime
+   * guard does not help: a concurrent instance's tokens are precisely the ones
+   * written before we booted. The real fix is a single-instance lock, which is
+   * its own issue and not this one.
+   *
+   * Scoped to the one filename we own. The same per-session directory also
+   * holds `settings.json` (`providers/claude.ts`) and stateDir's root holds the
+   * generated forwarder; neither is touched, and directories are left alone.
+   *
+   * Sync, like everything else `start()` does, and one unlink attempt per
+   * session directory ever created. Nothing removes those directories, so that
+   * set grows for the life of the install — fine at hundreds, worth revisiting
+   * if the directory leak is ever closed by pruning rather than by never
+   * creating them.
+   */
+  private sweepOrphanTokens(): void {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(this.opts.stateDir, { withFileTypes: true });
+    } catch (err) {
+      // Defence, not an expected path: `writeForwarder` just created this
+      // directory, so only something outside us (permissions, EMFILE) gets
+      // here. Fail-open regardless — the listener coming up outranks tidiness.
+      this.opts.log.warn('could not scan state dir for orphaned hook tokens', {
+        error: String(err),
+      });
+      return;
+    }
+    let swept = 0;
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      if (this.removeTokenFile(e.name)) swept++;
+    }
+    if (swept > 0) this.opts.log.info('swept orphaned hook tokens', { count: swept });
   }
 
   /**

@@ -17,6 +17,7 @@ import i18next from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import en from '../i18n/locales/en.json';
 import { WorkspaceReadOnlyBanner } from './WorkspaceReadOnlyBanner';
+import { addPopoutWindow, removePopoutWindow, resetPopoutWindows } from '../lib/popout-windows';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -34,10 +35,11 @@ function openPopout(): Window {
   return win;
 }
 
-/** what SessionGrid publishes when dockview opens or closes a popout */
+/** what SessionGrid tells the shared registry when dockview opens/closes a popout */
 async function announce(kind: 'added' | 'removed', win: Window): Promise<void> {
   await act(async () => {
-    window.dispatchEvent(new CustomEvent(`switchboard:popout-${kind}`, { detail: win }));
+    if (kind === 'added') addPopoutWindow(win);
+    else removePopoutWindow(win);
   });
 }
 
@@ -74,6 +76,7 @@ describe('the read-only notice in a popped-out window (issue 208)', () => {
   beforeEach(async () => {
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
     document.body.innerHTML = '';
+    resetPopoutWindows(); // module state; outlives a test
     if (!i18next.isInitialized) {
       await i18next.use(initReactI18next).init({
         lng: 'en',
@@ -89,6 +92,7 @@ describe('the read-only notice in a popped-out window (issue 208)', () => {
       root = null;
       await act(async () => r.unmount());
     }
+    resetPopoutWindows(); // after the unmount, so nothing is subscribed to hear it
   });
 
   it('says the same thing there as it does in the main window', async () => {
