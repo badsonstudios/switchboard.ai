@@ -48,6 +48,14 @@ clipboard in one go.
 
 <!-- screenshot: the About this build panel, showing a recent build -->
 
+## I launched switchboard and no new window appeared
+
+That's the intended behaviour: only one copy runs at a time, and launching it
+again brings the copy you already have forward — unminimizing it if it was
+minimized. If nothing at all seems to happen, the window is most likely on
+another monitor or another desktop/workspace; check there before assuming the
+launch failed.
+
 ## Sessions
 
 **A banner says the claude CLI wasn't found.**
