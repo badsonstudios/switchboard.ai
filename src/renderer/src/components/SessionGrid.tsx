@@ -1895,6 +1895,16 @@ export interface GridController {
    *  focusing are two questions. */
   revealCard: (cardId: string, focus?: boolean) => void;
   /**
+   * Is this card's panel ON SCREEN right now (E9-10)?
+   *
+   * dockview's answer, not a rung: an `expanded` card can still be the
+   * unselected tab of a stack. §5.8's focus-stealing policy turns on the word
+   * "visible", and the only honest reading of it is "the user can see it",
+   * which is a question only the dock can answer — except for a popped-out
+   * card, where dockview cannot know and the window is asked instead.
+   */
+  isCardOnScreen: (cardId: string) => boolean;
+  /**
    * Put a card on a named rung of §5.8's ladder (P2-E9-05).
    *
    * The general form of hide/reveal, and the seam E9-06's presentation policy
@@ -2042,6 +2052,33 @@ export function SessionGrid(props: {
       },
       hideCard,
       revealCard: (cardId, focus) => void revealCard(cardId, focus ?? true),
+      isCardOnScreen: (cardId) => {
+        const panel = apiRef.current?.getPanel(`session-${cardId}`);
+        // No panel at all (collapsed, tabbed-away, hidden) is trivially not on
+        // screen. `api.isVisible` is false for the unselected tabs of a group,
+        // which is exactly the distinction the policy needs and the one a rung
+        // cannot make.
+        if (!panel) return false;
+        const loc = panel.group.api.location;
+        // A POPPED-OUT panel is where dockview's answer stops being the user's.
+        // `isVisible` stays true for the active tab of a popout group whatever
+        // that OS window is doing — behind this one, minimised, on another
+        // virtual desktop — because dockview has no way to know. Taking it at
+        // face value would let `smart`, the DEFAULT, raise a whole other window
+        // over whatever the user is looking at, which is the loudest thing the
+        // app can do and precisely what this setting exists to gate. So the
+        // popout answers for itself: on screen means it already has focus, in
+        // which case focusing it is a no-op and nothing is stolen.
+        if (loc.type === 'popout') {
+          try {
+            return loc.getWindow()?.document.hasFocus() ?? false;
+          } catch {
+            // a window torn down between the lookup and the read: not on screen
+            return false;
+          }
+        }
+        return panel.api.isVisible;
+      },
       setLadder,
       stepLadder,
       setLayoutMode: (mode) => setLayoutMode(apiRef.current, mode),
@@ -2367,6 +2404,9 @@ export function SessionGrid(props: {
             // card's rung: a maximize held for a session that has since been
             // closed would keep the workspace blown up around nothing.
             sessionStore.pruneLayout(known);
+            // E9-10's per-session focus overrides are card-keyed and outlive
+            // their cards exactly as the presentation overrides above do.
+            sessionStore.pruneFocusPolicies(known);
             for (const p of [...api.panels]) {
               const s = /^session-(.+)$/.exec(p.id);
               const d = /^diff-/.exec(p.id);

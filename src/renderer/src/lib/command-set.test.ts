@@ -19,6 +19,8 @@ function deps(): CommandDeps & { focusCard: ReturnType<typeof vi.fn> } {
     setGlobalPolicy: vi.fn(),
     setSessionPolicy: vi.fn(),
     setGroupPolicy: vi.fn(),
+    setGlobalFocusPolicy: vi.fn(),
+    setSessionFocusPolicy: vi.fn(),
     setLayoutMode: vi.fn(),
     cycleLayoutMode: vi.fn(),
     toggleMaximize: vi.fn(),

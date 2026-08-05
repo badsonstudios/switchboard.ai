@@ -24,6 +24,8 @@ function noopDeps(): CommandDeps {
     setGlobalPolicy: () => {},
     setSessionPolicy: () => {},
     setGroupPolicy: () => {},
+    setGlobalFocusPolicy: () => {},
+    setSessionFocusPolicy: () => {},
     setLayoutMode: () => {},
     cycleLayoutMode: () => {},
     toggleMaximize: () => {},

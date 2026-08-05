@@ -9,6 +9,7 @@ import {
   withGroup,
 } from '../lib/presentation-policy';
 import { DEFAULT_LAYOUT, withMaximized, withMode } from '../lib/layout-mode';
+import { DEFAULT_FOCUS_BOOK, withFocusCard, withFocusGlobal } from '../lib/focus-policy';
 
 // The done-when: "a unit test constructs a store, drives it, and asserts
 // derived rail order + queue order WITHOUT React." That was impossible before
@@ -608,6 +609,85 @@ describe('SessionStore — presentation policy (P2-E9-06)', () => {
     expect(store.getPolicies().cards).toEqual({});
     expect(store.getPolicies().groups).toEqual({});
     expect(persisted.at(-1)).toBeNull();
+  });
+});
+
+describe('SessionStore — focus-stealing policy (P2-E9-10)', () => {
+  let store: SessionStore;
+  let persisted: Array<Record<string, unknown> | null>;
+  beforeEach(() => {
+    store = new SessionStore();
+    persisted = [];
+    store.setFocusPolicyPersister((blob) => persisted.push(blob));
+  });
+
+  it('resolves global then per-session, and never throws for an unknown card', () => {
+    store.setFocusPolicies(withFocusCard(withFocusGlobal(DEFAULT_FOCUS_BOOK, 'urgent'), 'card-A', 'focus'));
+    expect(store.focusPolicyFor('card-A')).toBe('focus');
+    expect(store.focusPolicyFor('card-B')).toBe('urgent');
+    expect(store.focusPolicyFor(undefined)).toBe('urgent');
+  });
+
+  it('init seeds the book without writing it back', () => {
+    store.initFocusPolicies(withFocusGlobal(DEFAULT_FOCUS_BOOK, 'none'));
+    expect(store.getFocusPolicies().global).toBe('none');
+    expect(persisted).toEqual([]); // it just READ the blob
+  });
+
+  it('persists on change, and writes null once nothing differs from the default', () => {
+    store.setFocusPolicies(withFocusCard(DEFAULT_FOCUS_BOOK, 'card-A', 'urgent'));
+    expect(persisted.at(-1)).toEqual({ cards: { 'card-A': 'urgent' } });
+    store.setFocusPolicies(withFocusCard(store.getFocusPolicies(), 'card-A', undefined));
+    expect(persisted.at(-1)).toBeNull();
+  });
+
+  it('prunes overrides for cards that are gone', () => {
+    store.setFocusPolicies(withFocusCard(DEFAULT_FOCUS_BOOK, 'card-A', 'none'));
+    store.pruneFocusPolicies(['card-B']);
+    expect(store.getFocusPolicies().cards).toEqual({});
+    expect(persisted.at(-1)).toBeNull();
+  });
+
+  it('`none` takes a session off the queue — and off the walk', () => {
+    // the one place `none` bites. Ctrl+Space, the count that enables it and the
+    // panel's next-up highlight all read this list, so silencing it once here
+    // is what keeps the three of them agreeing.
+    store.setEvents([event(1, 'loud', 'needs-permission'), event(2, 'quiet', 'needs-permission')]);
+    expect(store.getQueue().map((e) => e.sessionId)).toEqual(['loud', 'quiet']);
+    store.setFocusPolicies(withFocusCard(DEFAULT_FOCUS_BOOK, 'quiet', 'none'));
+    expect(store.getQueue().map((e) => e.sessionId)).toEqual(['loud']);
+    // the walk visits `loud` and then WRAPS to it, rather than handing over the
+    // silenced session on the second press
+    expect(store.advanceQueue()?.sessionId).toBe('loud');
+    expect(store.advanceQueue()?.sessionId).toBe('loud');
+  });
+
+  it('re-derives the queue the MOMENT the policy changes, not at the next push', () => {
+    store.setEvents([event(1, 'a', 'done')]);
+    expect(store.getQueue().length).toBe(1);
+    store.setFocusPolicies(withFocusGlobal(DEFAULT_FOCUS_BOOK, 'none'));
+    expect(store.getQueue()).toEqual([]);
+    // ...and back again, without the feed saying anything
+    store.setFocusPolicies(withFocusGlobal(store.getFocusPolicies(), 'smart'));
+    expect(store.getQueue().length).toBe(1);
+  });
+
+  it('silences by CARD, through the live-id mapping', () => {
+    // events carry the live id and the override is card-keyed; getting this
+    // backwards would silence nothing and do it quietly
+    store.mapLiveToCard('live-9', 'card-A');
+    store.setEvents([event(1, 'live-9', 'done')]);
+    store.setFocusPolicies(withFocusCard(DEFAULT_FOCUS_BOOK, 'card-A', 'none'));
+    expect(store.getQueue()).toEqual([]);
+  });
+
+  it('leaves the LOG alone — the panel still lists a silenced session', () => {
+    // §5.12: the feed is the log, the queue is the to-do list. `none` takes a
+    // session off the list, not out of the history.
+    store.setEvents([event(1, 'quiet', 'needs-permission')]);
+    store.setFocusPolicies(withFocusGlobal(DEFAULT_FOCUS_BOOK, 'none'));
+    expect(store.getState().events.length).toBe(1);
+    expect(store.getAttentionEvents()).toEqual([]);
   });
 });
 

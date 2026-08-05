@@ -51,6 +51,16 @@ in the Sessions list, or use the **⬍** button on a group header. The full stor
 including what it deliberately won't do, is in
 [Organizing your workspace](07-workspace.md#getting-out-of-the-way-by-itself).
 
+## What a session may do when it needs you
+
+The other half of the same question, and it isn't a chip — it lives in the
+command palette (`Ctrl+Shift+P`, search for *needs you*) and in the right-click
+menu of a session's row. Four settings: **always jump to it**, **jump only if
+its card is on screen** (the default), **never jump — just light its lamp**, and
+**never jump, skip the queue**. (None of them touches sound or the taskbar
+flash — that's the **🔔** switch above.) The full story is in
+[Organizing your workspace](07-workspace.md#when-a-session-interrupts-you).
+
 ## Trusting folders
 
 Claude Code asks whether you trust a folder the first time it runs there. With
@@ -63,9 +73,9 @@ the Terminal tab each time.
 ## What's remembered
 
 Your theme, language, notification setting, autonomy default, what cards do on
-submit (global, per group and per session), layout, groups, sessions,
-per-session detail level, and window position all persist across restarts,
-stored on your machine.
+submit (global, per group and per session), what a session may do when it needs
+you (global and per session), layout, groups, sessions, per-session detail
+level, and window position all persist across restarts, stored on your machine.
 
 ## Good to know
 

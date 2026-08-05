@@ -106,6 +106,8 @@
     "idleFoldOpenIcon": "▾",
     "policyMenu": "On submit",
     "policyDefault": "Follow the default ({policy})",
+    "focusMenu": "When it needs you",
+    "focusDefault": "Follow the default ({policy})",
     "policyGroup": "On submit, this group: {policy} — click to change",
     "policyGroupIcon": "⬍"
   },
@@ -372,6 +374,19 @@
       "auto-collapse": "This session's group on submit: collapse cards to a strip",
       "auto-hide": "This session's group on submit: hide cards",
       "default": "This session's group on submit: follow the default"
+    },
+    "focusPolicy": {
+      "focus": "When any session needs you: always jump to it",
+      "smart": "When any session needs you: jump if its card is on screen",
+      "urgent": "When any session needs you: never jump, just light its lamp",
+      "none": "When any session needs you: never jump, and keep it out of the queue"
+    },
+    "sessionFocusPolicy": {
+      "focus": "This session when it needs you: always jump to it",
+      "smart": "This session when it needs you: jump if its card is on screen",
+      "urgent": "This session when it needs you: never jump, just light its lamp",
+      "none": "This session when it needs you: never jump, and keep it out of the queue",
+      "default": "This session when it needs you: follow the default"
     }
   },
   "palette": {
@@ -401,5 +416,11 @@
     "chip": "⬍ {policy}",
     "chipHint": "What happens to a session card when you submit a prompt: {policy}. Click to change.",
     "groupDefault": "Follow the default"
+  },
+  "focusPolicy": {
+    "focus": "Always jump to it",
+    "smart": "Jump if it's on screen",
+    "urgent": "Never jump, just the lamp",
+    "none": "Never jump, skip the queue"
   }
 }

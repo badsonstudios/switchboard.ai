@@ -10,6 +10,7 @@ import { Command, CommandContext } from './commands';
 import { PanelId } from '../extensibility/contributions';
 import type { Ladder } from './presentation';
 import { POLICY_ORDER, PresentationPolicy } from './presentation-policy';
+import { FOCUS_POLICY_ORDER, FocusPolicy } from './focus-policy';
 import { LAYOUT_MODES, LayoutMode } from './layout-mode';
 
 export interface CommandDeps {
@@ -35,6 +36,10 @@ export interface CommandDeps {
   setSessionPolicy: (cardId: string, policy: PresentationPolicy | undefined) => void;
   /** override the global for a whole persistent group (E9-06) */
   setGroupPolicy: (groupId: string, policy: PresentationPolicy | undefined) => void;
+  /** what a session that finishes or needs you may do to the screen (E9-10) */
+  setGlobalFocusPolicy: (policy: FocusPolicy) => void;
+  /** override the focus policy for ONE session; `undefined` follows the default */
+  setSessionFocusPolicy: (cardId: string, policy: FocusPolicy | undefined) => void;
   /** put the whole workspace in a named layout mode (E9-07) */
   setLayoutMode: (mode: LayoutMode) => void;
   /** next layout mode in the cycle — the one binding (E9-07) */
@@ -384,6 +389,50 @@ export function buildCommands(deps: CommandDeps): Command[] {
       disabledReasonKey: 'commands.disabled.noActiveGroup',
       run: (ctx) => {
         if (ctx.activeGroupId) deps.setGroupPolicy(ctx.activeGroupId, undefined);
+      },
+    },
+    // ── §5.8's FOCUS-STEALING policy (E9-10) ──────────────────────────────
+    //
+    // Named targets and no cycle, for E9-06's reason: a palette entry has to
+    // say what it will DO before you press Enter. No binding either — this is a
+    // preference you set once, and the four modes would want four of them.
+    //
+    // The GLOBAL entries sit in the Attention category rather than View: this
+    // setting is about what an attention event is allowed to do, and it is the
+    // neighbour of Ctrl+Space, not of the layout modes.
+    ...FOCUS_POLICY_ORDER.map(
+      (policy): Command => ({
+        id: `attention.focusPolicy.${policy}`,
+        titleKey: `commands.focusPolicy.${policy}`,
+        categoryKey: CATEGORY_ATTENTION,
+        scope: 'app' as const,
+        run: () => deps.setGlobalFocusPolicy(policy),
+      })
+    ),
+    ...FOCUS_POLICY_ORDER.map(
+      (policy): Command => ({
+        id: `session.focusPolicy.${policy}`,
+        titleKey: `commands.sessionFocusPolicy.${policy}`,
+        categoryKey: CATEGORY_ATTENTION,
+        scope: 'app' as const,
+        enabled: hasActive,
+        disabledReasonKey: 'commands.disabled.noActiveSession',
+        run: (ctx) => {
+          if (ctx.activeCardId) deps.setSessionFocusPolicy(ctx.activeCardId, policy);
+        },
+      })
+    ),
+    {
+      // The way BACK from a per-session override — see session.policy.default
+      // for why picking today's default value is not the same thing.
+      id: 'session.focusPolicy.default',
+      titleKey: 'commands.sessionFocusPolicy.default',
+      categoryKey: CATEGORY_ATTENTION,
+      scope: 'app',
+      enabled: hasActive,
+      disabledReasonKey: 'commands.disabled.noActiveSession',
+      run: (ctx) => {
+        if (ctx.activeCardId) deps.setSessionFocusPolicy(ctx.activeCardId, undefined);
       },
     },
     {
