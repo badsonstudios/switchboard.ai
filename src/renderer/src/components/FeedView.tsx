@@ -1095,8 +1095,8 @@ function Composer({
             border: '1px solid var(--border)',
             borderRadius: 'var(--radius-chip)',
             // the feed's copy of the grid's autonomy chip, which #221 fixed and
-            // this one was missed by (#246): 10px text, raw hue, 1.95:1 on
-            // daylight's --panel
+            // this one was missed by (#246): 10px text in the raw crashed hue,
+            // 3.35:1 on daylight's --panel and 3.89:1 on nordic's
             color: autonomy === 'full-auto' ? 'var(--status-crashed-ink)' : 'var(--muted)',
             fontSize: 10,
             fontFamily: 'var(--font-ui)',

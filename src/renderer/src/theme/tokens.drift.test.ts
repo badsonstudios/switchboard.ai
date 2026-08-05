@@ -570,15 +570,59 @@ describe('a status hue is never spent on words', () => {
    * pill's border, the collapsed row's, the stop button's), and folding those
    * in would make this test demand a redesign rather than guard a promise.
    *
-   * The value ends at the first `,` or `;`, so an object property stops before
-   * the next one. A ternary contains neither and is captured whole, which is
-   * how both arms of the feed's todo marker are seen.
+   * The value ends at the first `,` or `;` AT PAREN DEPTH ZERO, so an object
+   * property stops before the next one while a `color-mix(in srgb, …)` — whose
+   * first comma is three characters in — is kept whole. A ternary contains
+   * neither and is captured entire, which is how both arms of the feed's todo
+   * marker are seen.
+   *
+   * KNOWN BLIND SPOT: a value wrapped onto the following line. `[^\n]*` stops
+   * at the newline, and there is no formatter in this repo to produce one, so
+   * it takes a human writing `color:\n  …` — but it would pass silently.
    */
   const colorValues = (src: string): string[] =>
-    [...src.matchAll(/(?:^|[\s{(,;])color:\s*([^\n]*)/g)].map((m) => m[1].split(/[;,]/)[0]);
+    [...src.matchAll(/(?:^|[\s{(,;])color:\s*([^\n]*)/g)].map((m) => {
+      let depth = 0;
+      for (let i = 0; i < m[1].length; i++) {
+        const c = m[1][i];
+        if (c === '(') depth++;
+        else if (c === ')') depth--;
+        else if ((c === ',' || c === ';') && depth <= 0) return m[1].slice(0, i);
+      }
+      return m[1];
+    });
+
+  /**
+   * The values of every `const NAME: … = { … }` map in a file, keyed by NAME.
+   *
+   * ONE HOP OF INDIRECTION, and it is here because a real site hid behind
+   * exactly one: `EventsPanel.tsx` wrote `color: KIND_TOKEN[e.kind]` over a map
+   * whose values were raw hues, so the scan above saw the literal text
+   * `KIND_TOKEN[e.kind]` and passed — while the panel painted every event's
+   * state in a colour measuring 1.80:1 on daylight. A table of colours is the
+   * natural shape for this and the natural place for the bug to hide (it is
+   * also how the grid's pill held its own drifted table until #221), so a
+   * `color` that names an identifier is followed to that identifier's map.
+   *
+   * Deliberately one hop and same-file only: two would need a module graph,
+   * and the point is to close the shape that has actually bitten twice, not to
+   * write a type checker.
+   */
+  const mapValues = (src: string): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (const m of src.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)[^=\n]*=\s*\{([^}]*)\}/g)) {
+      out[m[1]] = m[2];
+    }
+    return out;
+  };
 
   it.each(sources)('%s writes no word in a raw status hue', (_name, src) => {
+    const maps = mapValues(src);
     const offenders = colorValues(src)
+      .flatMap((v) => {
+        const hop = /^([A-Za-z_$][\w$]*)\s*\[/.exec(v.trim());
+        return hop && maps[hop[1]] !== undefined ? [v, `${v} -> ${maps[hop[1]]}`] : [v];
+      })
       .filter((v) => STATUS_TOKENS.some((t) => v.includes(`var(--status-${t})`)))
       .map((v) => v.trim());
     expect(
@@ -603,5 +647,14 @@ describe('a status hue is never spent on words', () => {
     );
     expect(colorValues('  border-color: var(--status-crashed);\n')).toEqual([]);
     expect(colorValues("  borderColor: 'var(--status-crashed)',\n")).toEqual([]);
+    // a value whose own commas are inside parens survives the cut — before
+    // this, `color: color-mix(in srgb, <hue> …)` was truncated at "in srgb"
+    // and the hue behind it was never looked at
+    expect(colorValues('  color: color-mix(in srgb, var(--status-done) 60%, transparent);\n')[0])
+      .toContain('var(--status-done)');
+    // and the hop the events panel hid behind is followed
+    expect(
+      mapValues("const T: Record<string, string> = {\n  a: 'var(--status-done)',\n};\n").T
+    ).toContain('var(--status-done)');
   });
 });

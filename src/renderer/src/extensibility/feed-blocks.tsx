@@ -351,7 +351,8 @@ function TodosBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
         {(b.todos ?? []).map((td, i) => (
           <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'baseline', color: 'var(--muted)' }}>
             {/* -ink on both arms (#246): a checklist marker is 10px TEXT on the
-                tool box's --panel2, where the raw hues measure 1.80-3.41:1 */}
+                tool box's --panel2, where the two raw hues it uses measure
+                2.33-2.35:1 on daylight and 4.49-4.52:1 on nordic */}
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, flexShrink: 0, color: td.status === 'completed' ? 'var(--status-done-ink)' : td.status === 'in_progress' ? 'var(--status-working-ink)' : 'var(--faint)' }}>
               {td.status === 'completed' ? t('feedView.todoDone') : td.status === 'in_progress' ? t('feedView.todoActive') : t('feedView.todoPending')}
             </span>
@@ -383,7 +384,8 @@ function ToolRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
       <span style={{ color: 'var(--faint)', fontSize: 8 }}>{open ? '▾' : '▸'}</span>
       {/* the tool's NAME — the header of every tool block in the feed, and the
           most-repeated status-coloured word in the app after the pill. -ink
-          because the hue is 1.80:1 on daylight's tool box (#246). */}
+          because the hue is 2.33:1 on daylight's tool box and 4.52:1 on
+          nordic's; the ink is 5.47:1 and 5.75:1 (#246). */}
       <span style={{ color: 'var(--status-working-ink)', fontWeight: 600 }}>{b.tool?.name}</span>
       <span
         style={{
