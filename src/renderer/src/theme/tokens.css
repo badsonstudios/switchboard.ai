@@ -219,7 +219,13 @@ body {
  * on-fill ink token. (Tinted fills with hue-colored text are a different case,
  * measured as a mix rather than as a token pair: the grid's status pill since
  * #221, the collapsed strip's needing row — at rest AND on hover — since #246.
- * The urgency lamp is the same shape and is still NOT audited; see #246.)
+ * THE URGENCY LAMP IS THE SAME SHAPE AND IS STILL NOT AUDITED: measured while
+ * doing the row, `[data-needs-you]` at 12% clears (4.67:1 worst case) but
+ * `[data-lit]` at 22% is 3.93:1 on nordic and 4.26:1 on daylight, and its
+ * 26% hover is worse — and its lit-but-not-needing state writes `--muted`
+ * rather than a status ink, so it is not the same one-number fix. Left for its
+ * own issue rather than smuggled into a contrast sweep; #246's hand-off carries
+ * the numbers.)
  * The look lives here rather than inline (#206) so the pair a reader
  * meets is a pair the drift test can measure: it reads the two var() names out
  * of this rule and asserts the ratio in every shipped theme, so putting a
@@ -558,7 +564,14 @@ body {
  * (the strip's own background is `--panel`, CollapsedStrip.tsx), and naming it
  * is what lets tokens.drift.test.ts compute the colour the word actually lands
  * on. THE STRIP MUST STAY ON A --panel SURFACE, or these two ratios measure a
- * fiction.
+ * fiction — asserted in CollapsedStrip.test.tsx, because a capitalised comment
+ * is not a guard. Identical AT REST; the 0.11s background transition now
+ * interpolates between two opaque colours rather than through a premultiplied
+ * alpha, which nobody will see and which is not worth the word "bit-identical".
+ *
+ * `.collapsed-state` (the state in words, below) inherits `--row-ink` on this
+ * same fill, so its ratio is the one measured here — it is not a second entry
+ * in TINTED_RULES because it would be the same two numbers.
  *
  * The hover tint was 26% and is 20%. 26% put the ramp at 4.03:1 on nordic and
  * 4.39:1 on daylight — under AA, on hover, in the app's two default themes.
@@ -574,6 +587,12 @@ body {
 }
 .collapsed-row[data-needs-you='true']:hover {
   background: color-mix(in srgb, var(--row-hue) 20%, var(--panel));
+  /* a no-op on screen — the rule above already sets it, and this is the same
+   * value. It is here so the ratio for THIS fill is measurable: the drift test
+   * reads the ink and the background out of one rule, and a hover state whose
+   * ink has to be inferred from somewhere else is a hover state nothing checks.
+   * Delete it and the suite fails asking for a `color` rather than going
+   * quiet, which is the point. */
   color: var(--row-ink);
 }
 /* the identity accent, as a leading bar — the same 3px stripe the expanded
