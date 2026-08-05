@@ -310,8 +310,18 @@ export async function launchSecondInstance(
   env.SWITCHBOARD_FAKE_PROVIDER = '1';
   applyIsolatedPaths(env, home);
 
+  // `--no-sandbox` on Linux, because that is what every OTHER app in this suite
+  // is launched with and this one has to match: Playwright unshifts the flag
+  // itself for Electron on linux unless `chromiumSandbox` was asked for
+  // (playwright-core 1.61.1 `lib/coreBundle.js`, in `launch()` — read in the
+  // installed copy). Without it, CI's Electron aborts before it runs a line of
+  // our JS: "The SUID sandbox helper binary was found, but is not configured
+  // correctly", because nothing in the workflow chowns `chrome-sandbox` to
+  // root. That abort is not this app refusing to start twice, but it looks
+  // exactly like one from the exit code.
+  const args = process.platform === 'linux' ? ['--no-sandbox', ROOT] : [ROOT];
   const started = Date.now();
-  const child = spawn(electronPath(), [ROOT], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(electronPath(), args, { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let stderr = '';
   child.stderr?.on('data', (b: Buffer) => {
     stderr += b.toString();
