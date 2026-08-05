@@ -193,6 +193,11 @@ On each worker completion notification:
 1. Shipped: one line per item, merged vs awaiting-Dan.
 2. **Dan's queue:** user-facing PRs to review + the combined, ordered
    hand-test list (his time is the scarcest resource — batch it).
+   **Before handing over the list: `npm run build` in the MAIN checkout
+   and verify the baked stamp matches HEAD** (learned 2026-08-04, run 4:
+   `npm start` is preview — it builds nothing, and workers build only in
+   their worktrees, so the main checkout's `out/` is always stale after
+   a run; Dan's first test step is confirming the About-panel stamp).
 3. Blocked/skipped: why, and the exact question or action Dan owes.
 4. Issues filed mid-run. 5. Worktree pool state. 6. Recommended next step.
 
