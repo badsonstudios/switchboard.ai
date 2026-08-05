@@ -1,0 +1,161 @@
+# P2-E19-02 — publish a release when a `v*` tag is pushed.
+#
+# Separate from ci.yml on purpose. CI runs on every PR across three OSes and
+# must stay fast and permission-less; this runs a handful of times a year, on
+# Windows only, and is the ONE workflow in the repo allowed to write to the
+# repository. Merging them would give every PR build a token it does not need.
+#
+# The decisions live in `scripts/release-notes.js` and `scripts/sha256-sidecar.js`,
+# which have unit tests — tag-vs-version, the notes-required gate, the rollup of
+# never-published versions, and the checksum format. What is left here is
+# plumbing, which is the point: shell inside YAML is debugged by pushing tags.
+#
+#   tag push        -> gate, build, package, checksum, CREATE THE RELEASE
+#   workflow_dispatch -> everything except the release; artifacts land on the
+#                        workflow run so the whole path can be exercised without
+#                        publishing anything.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build and assemble notes, but do not create a release'
+        type: boolean
+        default: true
+
+# Read-only by default; `release` re-grants itself `contents: write` and is the
+# only job that gets it.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  # Never cancel a run that may be halfway through creating a release.
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build ${{ github.ref_name }}
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.notes.outputs.version }}
+      tag: ${{ steps.notes.outputs.tag }}
+      installer: ${{ steps.notes.outputs.installer }}
+    steps:
+      # A real release can only ever come from a tag. Dispatching with
+      # dry_run:false from a branch would otherwise skip the release job in
+      # silence and look like a success.
+      #
+      # `github.event.inputs`, NOT `inputs`: the raw event payload is always
+      # STRINGS, so `== 'false'` means exactly one thing. `inputs.dry_run` is
+      # typed-or-string depending on how the run was started, and GitHub's `==`
+      # casts a non-numeric string to NaN — so `inputs.dry_run == false` is
+      # quietly false for a string 'false', and the release nobody asked for is
+      # one careless inversion away.
+      - name: A real release needs a tag ref
+        if: ${{ github.event.inputs.dry_run == 'false' && !startsWith(github.ref, 'refs/tags/v') }}
+        shell: bash
+        run: |
+          echo "::error::dry_run:false is only allowed on a v* tag ref; ${{ github.ref }} is not one."
+          echo "Push the tag (the workflow runs itself), or dispatch with --ref v<version>."
+          exit 1
+
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # FIRST, before npm ci and before the ~2 minutes of packaging: a tag that
+      # disagrees with package.json, or a version with no changelog section,
+      # fails here in seconds. The script needs no dependencies.
+      - name: Release gate + notes
+        id: notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-notes.js --ref "${{ github.ref }}" --out release-notes.md
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      # Builds `out/` first (scripts/package.js), so the installer always
+      # carries the git identity of this tag.
+      - run: npm run package
+
+      # E19-04 refuses to install an asset it cannot verify, so a release
+      # without this file is a release nothing can auto-update to.
+      - name: Checksum sidecar
+        shell: bash
+        run: node scripts/sha256-sidecar.js "dist/${{ steps.notes.outputs.installer }}"
+
+      # upload-artifact roots an artifact at the LEAST COMMON ANCESTOR of its
+      # paths — with the notes at the repo root, that is the workspace, so the
+      # installer arrives in the release job still under `dist/`. The download
+      # side spells those paths out; do not "tidy" one without the other.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ steps.notes.outputs.tag }}
+          path: |
+            dist/${{ steps.notes.outputs.installer }}
+            dist/${{ steps.notes.outputs.installer }}.sha256
+            release-notes.md
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: publish ${{ needs.build.outputs.tag }}
+    needs: build
+    # A tag push always publishes. A dispatch only does so with dry_run
+    # explicitly false — and the build job has already refused that from
+    # anything but a tag ref, so this can never create a tag of its own.
+    # Anything else (including a dispatch that never materialised the input)
+    # falls through to "do not publish", which is the direction to be wrong in.
+    if: ${{ github.event_name == 'push' || github.event.inputs.dry_run == 'false' }}
+    # No checkout, no build — just gh. Linux is faster and bash is native.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-${{ needs.build.outputs.tag }}
+          path: artifacts
+
+      - name: Create or update the release
+        shell: bash
+        working-directory: artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.build.outputs.tag }}
+          INSTALLER: ${{ needs.build.outputs.installer }}
+        run: |
+          set -euo pipefail
+          # Fail here, with the tree printed, rather than inside gh: the way
+          # this breaks is the artifact layout moving under someone's feet.
+          for f in "release-notes.md" "dist/$INSTALLER" "dist/$INSTALLER.sha256"; do
+            if [ ! -f "$f" ]; then
+              find . -type f | sed 's/^/  /'
+              echo "::error::expected $f in the build artifact; layout above."
+              exit 1
+            fi
+          done
+          # Idempotency: a re-run means the first attempt failed somewhere,
+          # quite possibly between creating the release and uploading its
+          # assets. Converge on the same single release rather than erroring or
+          # duplicating — --clobber replaces assets of the same name.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::notice::$TAG already exists — updating notes and re-uploading assets."
+            gh release edit "$TAG" --title "$TAG" --notes-file release-notes.md
+            gh release upload "$TAG" "dist/$INSTALLER" "dist/$INSTALLER.sha256" --clobber
+          else
+            gh release create "$TAG" --title "$TAG" --notes-file release-notes.md \
+              "dist/$INSTALLER" "dist/$INSTALLER.sha256"
+          fi
+          gh release view "$TAG" --json url,assets \
+            --jq '"published \(.url)\nassets: \([.assets[].name] | join(", "))"'
