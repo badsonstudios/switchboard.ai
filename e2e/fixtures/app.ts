@@ -5,22 +5,77 @@ import { _electron as electron, ElectronApplication, Locator, Page } from '@play
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import { execFileSync, spawnSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
-// Kill an entire process tree. A popped-out Electron window is a child process
-// and node-pty spawns its own children; app.process().kill() only reaps the
-// main pid, leaving grandchildren that keep the Playwright worker alive (the
-// "Worker teardown timeout" seen on CI). Take out the whole tree.
-function killTree(pid: number | undefined): void {
+/**
+ * Kill an entire process tree.
+ *
+ * A popped-out Electron window is a child process and node-pty spawns its own
+ * children; `app.process().kill()` only reaps the main pid, leaving
+ * grandchildren that keep the Playwright worker alive (the "Worker teardown
+ * timeout" seen on CI). Take out the whole tree — on BOTH platforms, which
+ * until #235 this said but only Windows did:
+ *
+ * - **win32:** `taskkill /T` walks the child table. A real tree kill, unchanged.
+ * - **POSIX:** a NEGATIVE pid signals the whole process GROUP, where plain
+ *   `kill -9 <pid>` reached only the leader and left every child behind.
+ *
+ * The group kill works because the pid we hold is a group LEADER, and that is
+ * not our doing: `_electron.launch()` exposes no spawn options at all (no
+ * `detached`, no `stdio` — see its `LaunchOptions`), so we could not ask for one
+ * even if we wanted to. Playwright asks for us. Its `launchProcess()` spawns
+ * with `detached: process.platform !== 'win32'`, commented in its own source as
+ * "makes child process a leader of a new process group, making it possible to
+ * kill child process tree with `.kill(-pid)`", and reaps with exactly
+ * `process.kill(-pid, 'SIGKILL')` / `taskkill /pid X /T /F` — i.e. this function
+ * is now the same two calls Playwright itself would make on the handle it gave
+ * us. (playwright-core 1.61.1, `lib/coreBundle.js`; verified in the installed
+ * copy, not from memory.)
+ *
+ * `process.kill` rather than spawning `/bin/kill`: no subprocess per teardown
+ * (~160 specs' worth), no dependency on a binary being on PATH, and no shell
+ * quoting to get the leading `-` past.
+ *
+ * The bare-pid FALLBACK catches ESRCH from the group kill, and note which case
+ * that mostly is: `close()` calls this AFTER `gracefulClose()`, so the usual
+ * teardown has already reaped the tree and "no such group" and "already dead"
+ * are the same errno to us. The fallback costs one no-op syscall there. What it
+ * BUYS is the other reading: if Playwright ever drops `detached`, `-pid` would
+ * name nothing and a single-call version would silently reap NOTHING — strictly
+ * worse than the bug this replaces. The fallback makes the old behaviour the
+ * floor. It is errno-blind on purpose (EPERM lands there too); fail-open test
+ * infra should not be parsing errnos to decide whether to try harder.
+ *
+ * Never throws: by the time teardown runs the tree is usually already gone, and
+ * a throw here would fail a test that has already passed.
+ *
+ * Exported for `app.test.ts`, which asserts BOTH branches on EVERY CI leg —
+ * hence `platform` as an argument, the `launchSpec()` shape and #127's lesson:
+ * read the ambient platform inside and the win32 case passes vacuously on the
+ * ubuntu runner, and the POSIX case on the Windows one, which is precisely how
+ * this function's POSIX half stayed wrong from the day it was written.
+ */
+export function killTree(
+  pid: number | undefined,
+  platform: NodeJS.Platform = process.platform
+): void {
   if (!pid) return;
-  try {
-    if (process.platform === 'win32') {
+  if (platform === 'win32') {
+    try {
       execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
-    } else {
-      spawnSync('kill', ['-9', String(pid)], { stdio: 'ignore' });
+    } catch {
+      /* already gone */
     }
+    return;
+  }
+  try {
+    process.kill(-pid, 'SIGKILL');
   } catch {
-    /* already gone */
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      /* already gone */
+    }
   }
 }
 
