@@ -9,10 +9,9 @@
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { cleanEnv } = require('./clean-env');
 
-const env = { ...process.env };
-delete env.NoDefaultCurrentDirectoryInExePath;
-delete env.ELECTRON_RUN_AS_NODE;
+const env = cleanEnv();
 
 function rebuild() {
   return spawnSync('npx', ['electron-rebuild', '-f', '-w', 'node-pty'], {

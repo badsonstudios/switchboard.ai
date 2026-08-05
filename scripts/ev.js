@@ -1,16 +1,11 @@
-// Launch electron-vite with a cleaned environment. Running from inside an
-// Electron-hosted terminal (VS Code, a hosted Claude Code session — i.e. how
-// this project dogfoods itself) leaks env vars that break Electron children:
-// ELECTRON_RUN_AS_NODE turns our app into plain Node, and
-// NoDefaultCurrentDirectoryInExePath breaks native-module gyp builds.
-// Spike 01 findings (s-01-pty-host.md) — this is the day-one mitigation.
+// Launch electron-vite with a cleaned environment — see scripts/clean-env.js
+// for which variables and why (S-01 findings, s-01-pty-host.md). This is the
+// day-one mitigation for a project that dogfoods itself.
 const { spawnSync } = require('child_process');
 const path = require('path');
+const { cleanEnv } = require('./clean-env');
 
-const env = { ...process.env };
-delete env.ELECTRON_RUN_AS_NODE;
-delete env.ELECTRON_NO_ATTACH_CONSOLE;
-delete env.NoDefaultCurrentDirectoryInExePath;
+const env = cleanEnv();
 
 const bin = path.join(
   __dirname, '..', 'node_modules', '.bin',
