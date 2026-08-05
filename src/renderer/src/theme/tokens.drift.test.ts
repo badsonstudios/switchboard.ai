@@ -284,17 +284,33 @@ describe('a filled rule is a rule something applies', () => {
   // with no fill and `--text` ink — every assertion below still green. Scanned
   // across the renderer rather than pinned to App.tsx: which file owns the
   // banner is free to change, "somebody renders it" is not.
+  // Components only: a `.test.tsx` asserting on the class is the test agreeing
+  // with itself, and the matcher below is loose enough to be fooled by one.
   const tsx = (function read(dir: string): string[] {
     return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
       const p = path.join(dir, e.name);
       if (e.isDirectory()) return read(p);
-      return e.name.endsWith('.tsx') ? [fs.readFileSync(p, 'utf8')] : [];
+      return e.name.endsWith('.tsx') && !e.name.endsWith('.test.tsx')
+        ? [fs.readFileSync(p, 'utf8')]
+        : [];
     });
   })(path.join(__dirname, '..'));
 
   it.each(FILLED_RULES)('%s is applied by a component', (selector) => {
-    const cls = `className="${selector.slice(1)}"`;
-    expect(tsx.some((s) => s.includes(cls)), `nothing in the renderer renders ${cls}`).toBe(true);
+    // the class name inside a className prop, quoted either way, among other
+    // classes, and whether or not it is behind a condition: #222 made the
+    // preflight banner's class conditional (`className={spoken ?
+    // 'preflight-banner' : undefined}`) so its live region could stay mounted
+    // while the fill comes and goes, and a guard that only knew the literal
+    // `className="…"` form would have called that "nobody renders it".
+    // One line at a time — a className expression wrapped over several is not
+    // matched, and would fail with the message below rather than silently.
+    const name = selector.slice(1);
+    const applied = new RegExp(`className=\\{?[^}\\n]*['"\`][^'"\`\\n]*\\b${name}\\b`);
+    expect(
+      tsx.some((s) => applied.test(s)),
+      `nothing in the renderer puts ${name} in a className`
+    ).toBe(true);
   });
 });
 

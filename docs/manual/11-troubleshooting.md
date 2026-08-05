@@ -55,6 +55,11 @@ Install it and sign in, then restart switchboard:
 `npm install -g @anthropic-ai/claude-code`, then run `claude` once in a
 terminal. New sessions stay disabled until it's found.
 
+If you use a screen reader, you don't have to go looking for that banner: the
+check runs a moment after the window opens, and the message is read out as soon
+as it appears. It's the only warning that explains why nothing will start, so
+it announces itself rather than waiting to be found.
+
 **A session sits on "starting" and won't finish.**
 Some Claude Code start-up prompts — trust dialogs, the "resume from summary"
 picker on a very long conversation — appear only in the terminal, where
