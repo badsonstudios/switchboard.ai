@@ -46,6 +46,7 @@ import {
 } from '../lib/layout-mode';
 import { presentStatus } from '../lib/rail-view';
 import { tabStripAction } from '../lib/tabstrip-keys';
+import { cardHeaderTitle } from '../lib/card-title';
 import { StatusPill } from './StatusPill';
 import type { Ladder } from '../lib/presentation';
 import { pickAdoptedGroupId } from '../lib/groups';
@@ -218,6 +219,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const controlsLocked = status === 'starting' || status === 'crashed' || exited !== null;
   const spawning = React.useRef(false);
   const folder = props.params?.folder;
+  // What the card CALLS itself, on screen (#250). The store's copy first, so a
+  // rename from the rail reaches the header — `props.api.title` alone is the
+  // name the card was born with. Chain and its empty-is-absent rule live in
+  // lib/card-title.
+  const headerTitle = cardHeaderTitle(cardTitle, props.api.title, folder);
 
   React.useEffect(() => {
     const d = props.api.onDidVisibilityChange((e) => setVisible(e.isVisible));
@@ -723,7 +729,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 whiteSpace: 'nowrap',
               }}
             >
-              {props.api.title ?? folder}
+              {headerTitle}
             </span>
             {editingLabel ? (
               <input
@@ -1101,7 +1107,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         <div style={{ ...overlayBackdrop, position: 'relative', flex: 1 }}>{exitedOverlay}</div>
       ) : (
         <span style={{ margin: 'auto' }}>
-          {t('grid.resuming', { title: props.api.title ?? folder ?? '' })}
+          {t('grid.resuming', { title: headerTitle })}
         </span>
       )}
     </div>
