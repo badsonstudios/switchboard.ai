@@ -41,6 +41,17 @@ const css = fs.readFileSync(cssPath, 'utf8').replace(/\r\n/g, '\n');
 function block(selector: string): string {
   const start = css.indexOf(selector);
   expect(start, `selector not found in tokens.css: ${selector}`).toBeGreaterThan(-1);
+  // ...and found ONCE. This is a substring lookup, so a selector that also
+  // appears inside a grouped selector list resolves to whichever comes first in
+  // the file and every ratio below it measures a rule the browser applies to
+  // something else — silently. `.urgency-lamp[data-lit='true'] {` was one edit
+  // away from being exactly that (#267), which is why the group in tokens.css
+  // leads with it.
+  expect(
+    css.split(selector).length - 1,
+    `selector matches more than one rule in tokens.css — reword the lookup or the ` +
+      `grouped selector it collides with: ${selector}`
+  ).toBe(1);
   const open = css.indexOf('{', start);
   const close = css.indexOf('\n}', open);
   return css.slice(open, close);
@@ -484,5 +495,237 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))(
         `${id}: ${ink} on ${surface} (${tokens[ink]} on ${tokens[surface]})`
       ).toBeGreaterThanOrEqual(4.5);
     });
+  }
+);
+
+// --- The urgency lamp's STATE MODEL, in EVERY shipped theme (#267) ----------
+//
+// The pill above is one rule with one fill. The lamp is a state MATRIX, and
+// that is why it shipped below AA while every rule around it was being audited:
+// four surfaces (the strip at rest, the hover wash, the "you are here" chip,
+// and a wash of the lamp's own hue) crossed with the ink each of them owes —
+// and the colour for the lit state was never written by the lit rule at all. It
+// fell out of whichever rule won the cascade, which was the base rule's
+// `--muted`, a token tuned against the flat strip. Over the old 22% wash that
+// measured 2.97-3.67:1 on nordic, and 2.77:1 under the pointer at 26%.
+//
+// So the assertions below are deliberately about the MODEL and not only about
+// the numbers. A state that paints a wash must name the lamp's HUE placeholder
+// and write its INK placeholder — which is which comes from the base rule's own
+// defaults, so swapping them fails before a ratio is computed — and every state
+// on a flat surface must name an ink that clears that surface. The lamp's name
+// is TEXT (the session title at 10px), so the floor is 4.5:1 in every state;
+// the dot and the lit ring are the only graphical objects here and neither
+// carries a word.
+//
+// `tinted()` above cannot read any of this: it wants one rule that declares its
+// own placeholders, and the lamp declares them once on `.urgency-lamp` while
+// the washes live on the state rules. #246 (PR #265) generalises `tinted()`
+// with a `defaults` selector for the same reason — once both have landed, this
+// reader and that one should become one.
+
+/** the rules, spelled exactly as tokens.css groups them — `block()` looks up by
+ *  substring, so a regrouped selector fails loudly instead of measuring a rule
+ *  the browser no longer applies */
+const LAMP_BASE = '.urgency-lamp';
+const LAMP_ACTIVE = ".urgency-lamp[data-active='true']";
+const LAMP_HOVER = '.urgency-lamp:hover';
+const LAMP_LIT = ".urgency-lamp[data-lit='true']";
+const LAMP_SIGNAL = ".urgency-lamp[data-lit='true'],\n.urgency-lamp[data-needs-you='true']";
+const LAMP_SIGNAL_HOVER =
+  ".urgency-lamp[data-needs-you='true']:hover,\n.urgency-lamp[data-lit='true']:hover";
+
+/** the surface the strip paints behind every lamp. Named here because it lives
+ *  in a component's inline style rather than in this file — UrgencyStrip.test's
+ *  "the strip stays on --panel2" is the half that keeps it true. */
+const LAMP_SURFACE = '--panel2';
+
+/** a `<prop>: var(--x)` a rule declares, as the token name */
+function lampRef(selector: string, prop: string): string {
+  return refIn(block(`${selector} {`), selector, prop, String.raw`var\((--[a-z0-9-]+)\)`)[1];
+}
+
+/** which of the lamp's two placeholders is the hue and which is the ink — from
+ *  the BASE rule's own defaults, never from a name spelled here. They have to
+ *  be ONE ramp position's pair, so a state rule that writes the hue into
+ *  `color` cannot satisfy both. */
+function lampPlaceholders(): { hue: string; ink: string } {
+  const decl = declaredValues(block(`${LAMP_BASE} {`));
+  const named = (value: string): string | undefined =>
+    Object.keys(decl).find((k) => decl[k] === value);
+  for (const token of STATUS_TOKENS) {
+    const v = statusVars(token);
+    const [hue, ink] = [named(v.hue), named(v.ink)];
+    if (hue && ink) return { hue, ink };
+  }
+  expect(
+    undefined,
+    `${LAMP_BASE} must default its two placeholders to ONE ramp position's hue and ink — ` +
+      `got ${JSON.stringify(decl)}`
+  ).toBeDefined();
+  throw new Error('unreachable');
+}
+
+/** what one state rule washes over the strip */
+function lampWash(selector: string): { hue: string; pct: number; surface: string } {
+  const m = refIn(
+    block(`${selector} {`),
+    selector,
+    'background',
+    String.raw`color-mix\(in srgb,\s*var\((--[a-z0-9-]+)\)\s*([\d.]+)%,\s*var\((--[a-z0-9-]+)\)\)`
+  );
+  return { hue: m[1], pct: Number(m[2]) / 100, surface: m[3] };
+}
+
+/** [what the state is, the rule its ink comes from, the rule its surface comes
+ *  from — or the surface itself]. Thunks, so a renamed selector fails the one
+ *  case that reads it rather than taking the file's collection down. The pairs
+ *  are the cascade the browser runs: `:hover` changes the background and leaves
+ *  the colour wherever the state rules put it. */
+const LAMP_FLAT: Array<[state: string, ink: () => string, surface: () => string]> = [
+  ['at rest, on the strip', () => lampRef(LAMP_BASE, 'color'), () => LAMP_SURFACE],
+  [
+    'at rest, under the pointer',
+    () => lampRef(LAMP_BASE, 'color'),
+    () => lampRef(LAMP_HOVER, 'background'),
+  ],
+  ['"you are here"', () => lampRef(LAMP_ACTIVE, 'color'), () => lampRef(LAMP_ACTIVE, 'background')],
+  [
+    '"you are here", under the pointer',
+    () => lampRef(LAMP_ACTIVE, 'color'),
+    () => lampRef(LAMP_HOVER, 'background'),
+  ],
+];
+
+/** [what the state is, the rule that paints the wash, the rule its ink comes
+ *  from] — the deeper hover wash inherits the signal rule's colour, which is
+ *  the cascade and therefore what is measured. */
+const LAMP_WASHES: Array<[state: string, wash: string, inkFrom: string]> = [
+  ['a lamp carrying a signal', LAMP_SIGNAL, LAMP_SIGNAL],
+  ['a lamp carrying a signal, under the pointer', LAMP_SIGNAL_HOVER, LAMP_SIGNAL],
+];
+
+// `issue 267`, not `#267`: the no-raw-hex ESLint rule reads a `#` followed by
+// three hex digits in a string literal as a colour, which is the convention the
+// other renderer tests already follow.
+describe('the urgency lamp writes an ink, never a repurposed one (issue 267)', () => {
+  it('washes the placeholder the base rule calls the HUE', () => {
+    const roles = lampPlaceholders();
+    for (const [state, wash] of LAMP_WASHES) {
+      expect(lampWash(wash).hue, `${state} must wash the lamp's hue`).toBe(roles.hue);
+    }
+  });
+
+  it('writes the placeholder the base rule calls the INK on the wash', () => {
+    // #267 verbatim: a wash whose colour is left to the cascade, which hands it
+    // the base rule's `--muted`. Naming the ink is the fix, and this is the
+    // assertion that fails if it is ever taken back out.
+    expect(lampRef(LAMP_SIGNAL, 'color')).toBe(lampPlaceholders().ink);
+  });
+
+  it('lets no LATER rule write a colour over that ink', () => {
+    // The rules below the wash are (0,2,0) and (0,3,0) and every one of them is
+    // source-later, so a `color` in any of them wins for a washed lamp — which
+    // is #267's shape exactly, and neither the ratios below nor the flat cases
+    // would see it: they read the rule they are told to read. The deep hover
+    // wash and the lit ring must therefore declare a background and a border
+    // and nothing else about the text.
+    for (const selector of [LAMP_SIGNAL_HOVER, LAMP_LIT, LAMP_HOVER]) {
+      expect(
+        /^\s*color:/m.test(block(`${selector} {`)),
+        `${selector} comes after the wash rule, so a color: here silently replaces its ink`
+      ).toBe(false);
+    }
+  });
+
+  it('washes over the surface the strip actually paints', () => {
+    // a wash mixed into `transparent`, or into some other panel, leaves every
+    // ratio below measuring a colour nobody sees
+    for (const [state, wash] of LAMP_WASHES) {
+      expect(lampWash(wash).surface, `${state} must mix into ${LAMP_SURFACE}`).toBe(LAMP_SURFACE);
+    }
+  });
+
+  it('puts those rules where the comment says they are', () => {
+    // the test above is only true because of SOURCE ORDER — every rule here is
+    // (0,2,0) but for the hover pair, so the file's order is the cascade. Move
+    // the wash above `[data-active]` and the "you are here" ink would start
+    // winning for a washed lamp; move it below the hover rule and a hovered
+    // needing lamp would lose its wash. Neither shows up in a ratio.
+    const at = (selector: string): number => css.indexOf(`${selector} {`);
+    expect(at(LAMP_ACTIVE), 'the wash must override "you are here"').toBeLessThan(at(LAMP_SIGNAL));
+    for (const selector of [LAMP_SIGNAL_HOVER, LAMP_LIT, LAMP_HOVER]) {
+      expect(at(LAMP_SIGNAL), `${selector} must come after the wash`).toBeLessThan(at(selector));
+    }
+  });
+
+  it('draws the lit ring in the ink, not the raw hue', () => {
+    // the ring is now the WHOLE of "you were just sent here" — the wash no
+    // longer differs — so it is a graphical object carrying meaning, and 1.4.11
+    // asks 3:1 of it. In the raw hue it was 1.80:1 against the strip on
+    // daylight; the ratios are asserted per theme below.
+    const roles = lampPlaceholders();
+    expect(lampRef(LAMP_LIT, 'border-color')).toBe(roles.ink);
+  });
+
+  it('keeps the hover wash deeper than the one it deepens', () => {
+    // otherwise "hover" is a rule that paints the state the lamp already had —
+    // the failure mode of pulling both numbers down to the same ceiling
+    expect(lampWash(LAMP_SIGNAL_HOVER).pct).toBeGreaterThan(lampWash(LAMP_SIGNAL).pct);
+  });
+});
+
+describe.each(builtinThemes.map((t) => [t.id, t] as const))(
+  '%s: every urgency lamp state is legible',
+  (id, theme) => {
+    const tokens = resolved(theme);
+    const hex = (token: string): string => {
+      expect(tokens[token], `${id} ${token} must be #rrggbb to be measured`).toMatch(
+        /^#[0-9a-f]{6}$/i
+      );
+      return tokens[token];
+    };
+
+    it.each(LAMP_FLAT)('%s clears 4.5:1', (_state, ink, surface) => {
+      const [i, s] = [ink(), surface()];
+      expect(
+        ratio(hex(i), hex(s)),
+        `${id}: ${i} on ${s} (${tokens[i]} on ${tokens[s]})`
+      ).toBeGreaterThanOrEqual(4.5);
+    });
+
+    for (const [state, wash, inkFrom] of LAMP_WASHES) {
+      it.each(STATUS_TOKENS)(`${state} clears 4.5:1 for %s`, (status) => {
+        const w = lampWash(wash);
+        // the wash is measured with the colour the CASCADE gives it, and that
+        // colour has to be the lamp's ink placeholder — the roles check above
+        // says which one that is, and this says this rule still uses it
+        expect(lampRef(inkFrom, 'color'), 'the wash must be read with the ink it writes').toBe(
+          lampPlaceholders().ink
+        );
+        // the PAIR the component substitutes, not the placeholders: the rule's
+        // defaults are idle's, and idle is not the position that fails
+        const name = (value: string): string => {
+          const m = /^var\((--[a-z0-9-]+)\)$/.exec(value);
+          expect(m, `statusVars must produce a bare var(), got ${value}`).not.toBeNull();
+          return m![1];
+        };
+        const v = statusVars(status);
+        const [ink, hue] = [name(v.ink), name(v.hue)];
+        const fill = mix(hex(hue), hex(w.surface), w.pct);
+        expect(
+          ratio(hex(ink), fill),
+          `${id}: ${ink} on ${w.pct * 100}% ${hue} over ${w.surface} (${tokens[ink]} on ${fill})`
+        ).toBeGreaterThanOrEqual(4.5);
+        // The lit RING is drawn in this same ink (asserted above) around this
+        // same fill, and it is a graphical object rather than text: 1.4.11's
+        // 3:1. Its inside edge is the ratio just measured, so what is left to
+        // check is its OUTSIDE edge, against the strip.
+        expect(
+          ratio(hex(ink), hex(w.surface)),
+          `${id}: the lit ring (${ink}) against ${w.surface}`
+        ).toBeGreaterThanOrEqual(3);
+      });
+    }
   }
 );

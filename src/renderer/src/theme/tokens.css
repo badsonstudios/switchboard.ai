@@ -425,10 +425,59 @@ body {
  * The lit ring is the delayed urgency reset made visible; it FADES out rather
  * than snapping off, because the strip is on screen permanently and an abrupt
  * change reads as a new event. Nothing here blinks: the rail's blinking status
- * dot was an explicit rejection, and this bar is always in view. */
+ * dot was an explicit rejection, and this bar is always in view.
+ *
+ * ── THE INK, AND THE CEILING ON THE WASH (#267, #243's ink system) ─────────
+ * The lamp's name is TEXT — the session's title at 10px — so every state owes
+ * it WCAG 4.5:1, not 1.4.11's 3:1. Only the dot and the lit ring are graphical
+ * objects; the words are words. Two rules decide the ink and there is nothing
+ * else to decide:
+ *
+ *   • on a FLAT surface the lamp writes the token tuned for that surface —
+ *     `--muted` at rest and on hover (4.55:1 on nordic, its worst), `--text`
+ *     for "you are here", because `--muted` on `--chip` is 4.10:1 on nordic
+ *     and full-strength ink is what that state means anyway (8.44:1). A lamp
+ *     that is "here" AND carrying a signal takes the wash rule's ink instead —
+ *     that rule is source-later and wins both declarations;
+ *   • on a WASH OF ITS OWN HUE it writes THAT HUE'S INK. Keeping `--muted`
+ *     there is the whole of #267: `--muted` is tuned against the strip's flat
+ *     `--panel2`, and over the old 22% lit wash it measured 2.97-3.67:1 on
+ *     nordic, 2.77:1 under the pointer at 26%. The ink is the one colour in
+ *     the ramp tuned to be READ (#243), and it is why the lit rule no longer
+ *     leaves its colour to whichever rule happened to win the cascade.
+ *
+ * The wash has a MEASURED CEILING. Over `--panel2`, 15% of a status hue is the
+ * deepest wash all six inks still clear 4.5:1 on all four themes — 4.53:1 worst
+ * case (nordic/working) in 8-bit, 4.52:1 in the float domain the browser hands
+ * back; 16% is 4.46:1. That is why the two numbers below are 12% and 15% and
+ * not the 22% and 26% they were: there is only room for ONE wash plus a hover
+ * step, so "lit" is told apart from "needs you" by its RING and not by a deeper
+ * wash. `var(--panel2)` rather than `transparent` for the same reason
+ * `.status-pill` names its surface: the colour the promise depends on has to be
+ * computable. Identical at rest (a mix with `transparent` composited over
+ * `--panel2` IS a mix with `--panel2`); only the 0.11s transition interpolates
+ * differently.
+ *
+ * THE RING IS INK TOO, and for the same reason one step down: making it the
+ * only thing that separates "lit" from "needs you" makes it load-bearing, and
+ * as a graphical object it owes 1.4.11's 3:1. In the raw hue it did not have
+ * it — 1.80:1 against the strip on daylight, 1.68:1 against its own wash — so
+ * the state §5.8 exists to make findable was the one you could not find on the
+ * light theme. In the ink it is 5.21:1 outside and 4.53:1 inside, worst case.
+ * The DOT keeps the raw hue deliberately: it is the shared status ramp the rail
+ * and the grid paint too, so it is not this lamp's to move (its numbers are the
+ * 1.80-3.10:1 above, and they are a defect of the ramp, reported not fixed).
+ *
+ * Measured from these rules by tokens.drift.test.ts, and as Chromium actually
+ * paints them by e2e/urgency.spec.ts. The half neither can see — which pair
+ * each lamp receives — is UrgencyStrip.test.tsx's. */
 .urgency-lamp {
   --lamp-hue: var(--status-idle);
-  --lamp-ink: var(--muted);
+  /* the idle INK, not `--muted`: these two defaults are where the drift test
+   * reads which placeholder holds which role, and one declaration cannot be
+   * both a hue and an ink. Zero-pixel — the component sets both inline on
+   * every lamp it renders, so nothing in the app reaches this fallback. */
+  --lamp-ink: var(--status-idle-ink);
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -453,26 +502,50 @@ body {
     background 0.11s,
     border-color 0.35s;
 }
+/* "you are here". `--text` rather than the inherited `--muted`, which measures
+ * 4.10:1 on nordic's `--chip` — and the one lamp whose card is on screen is
+ * the one state that has a reason to be emphatic. */
 .urgency-lamp[data-active='true'] {
   background: var(--chip);
   border-color: var(--border);
+  color: var(--text);
+}
+/* A lamp CARRYING A SIGNAL — the last jump landed here, or a human is needed —
+ * washes its own hue over the strip and reads in that hue's ink. ONE wash for
+ * both, because the ceiling above leaves room for only one: what tells them
+ * apart is the ring and the weight below, neither of which costs contrast.
+ *
+ * `[data-lit]` LEADS THE LIST so that the lit selector followed by an opening
+ * brace occurs exactly once in this file — tokens.drift.test.ts looks rules up
+ * by their selector text, and a text matching two rules would silently measure
+ * the wrong one. (Selector lists are unordered to the browser, so this costs
+ * nothing.) The needing selector below is the one that is ambiguous now, and
+ * `block()` fails loudly rather than guessing if anything ever asks for it —
+ * which is also why this paragraph describes those two strings instead of
+ * quoting them. */
+.urgency-lamp[data-lit='true'],
+.urgency-lamp[data-needs-you='true'] {
+  background: color-mix(in srgb, var(--lamp-hue) 12%, var(--panel2));
+  color: var(--lamp-ink);
 }
 .urgency-lamp[data-needs-you='true'] {
-  background: color-mix(in srgb, var(--lamp-hue) 12%, transparent);
-  color: var(--lamp-ink);
   font-weight: 600;
 }
+/* The ring IS "you were just sent here", and since the wash no longer differs
+ * it is the WHOLE of that signal — so it is the ink, not the hue: see the
+ * header. It fades in over 0.35s (the transition on the base rule) because an
+ * abrupt edge on a permanent strip reads as a new event. */
 .urgency-lamp[data-lit='true'] {
-  background: color-mix(in srgb, var(--lamp-hue) 22%, transparent);
-  border-color: var(--lamp-hue);
+  border-color: var(--lamp-ink);
 }
 .urgency-lamp:hover {
   background: var(--rail-row-hover);
 }
-/* a lamp that already carries a signal keeps it on hover */
+/* a lamp that already carries a signal keeps it on hover, one step deeper —
+ * the deepest wash the strip has, and the one the ceiling is measured at */
 .urgency-lamp[data-needs-you='true']:hover,
 .urgency-lamp[data-lit='true']:hover {
-  background: color-mix(in srgb, var(--lamp-hue) 26%, transparent);
+  background: color-mix(in srgb, var(--lamp-hue) 15%, var(--panel2));
 }
 /* calm = hollow ring, needy = filled: legible before any color is read, which
  * is also what keeps the strip working for color-blind users (§5.20) */
