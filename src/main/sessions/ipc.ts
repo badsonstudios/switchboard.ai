@@ -209,6 +209,61 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   };
 
   /**
+   * Release everything one live session is HOLDING ON BEHALF OF THE USER: its
+   * hook registration — and with it every parked `PreToolUse` HTTP response and
+   * its 300s timer — plus every outstanding stream `can_use_tool`.
+   *
+   * Extracted out of `tearDownLive` for #271, because these two steps are the
+   * only ones a session that **exits on its own** needs, and they were the only
+   * ones it never got. A plain self-exit reaches no teardown at all: nothing
+   * closes the card, nothing restarts it, so `tearDownLive` is never called and
+   * main went on holding a question for a CLI that had already died — and went
+   * on advertising it through `sessions:pendingPermissions` to any card that
+   * mounted afterwards. `unregisterSession`'s own comment ("a session closed
+   * mid-hold must not leave the CLI hanging (fail-open)") is exactly the
+   * guarantee that path skipped.
+   *
+   * The rest of `tearDownLive` deliberately stays out of here. An exited session
+   * KEEPS its record and its binding (#187): the reap in `sessions:create`
+   * adopts or retires the corpse, the "Session ended" overlay reads it, and
+   * unbinding on exit would take the card's live half away underneath both.
+   * This releases what is held; it does not retire the session.
+   *
+   * **Idempotent, and it has to be.** The restart paths run BOTH: `tearDownLive`
+   * calls this, and then `manager.remove` kills the process, whose exit reaches
+   * the listener below — so on every Restart and every card close of a RUNNING
+   * session this runs twice. The second pass is a no-op whenever it lands, which
+   * is the only claim worth making: `remove()` sends a SIGNAL, so in production
+   * the exit arrives on a later turn of the loop, not inside the teardown. (The
+   * comment on `SessionManager.remove` says "synchronously"; it is describing
+   * `apply()`'s ordering, and it is an overstatement about the transports — both
+   * `PtyService.remove` and `StreamService.remove` end at `kill()`.) Both
+   * releases underneath are sweeps over a per-session map that delete before
+   * they notify, so the second pass matches nothing: no second denial down the
+   * stream, no second `sessions:permissionResolved`. Pinned by a test, because
+   * "no double-release" is a property of those two implementations and not of
+   * this function.
+   *
+   * `why` is the reason recorded in the auto-denial: the router logs it and
+   * offers it to the transport as the CLI's deny message. On the SELF-EXIT path
+   * nobody is left to read it — a dead session's `send` is a documented no-op —
+   * and that is the argument for releasing rather than holding, not a reason to
+   * be vague. The two callers say different and true things so the log can tell
+   * a session the user closed from one that died.
+   */
+  const releaseHeldPermissions = (liveId: string, why: string): void => {
+    // …which parks a `PreToolUse` HTTP response per held request. Its release
+    // deliberately does NOT `apply('permission-resolved')` the way `decide()`
+    // does (see `HookListener.release`): a status transition here would walk a
+    // `needs-permission` session to `working` a beat before its exit lands.
+    tearDownStep(liveId, 'hooks.unregisterSession', () => hooks.unregisterSession(liveId));
+    // an unanswered control request leaves the CLI waiting for ever
+    tearDownStep(liveId, 'streamPermissions.forgetSession', () =>
+      streamPermissions?.forgetSession(liveId, why)
+    );
+  };
+
+  /**
    * Retire ONE live session completely: every subscription, registration and
    * watch taken out in its name, then the record, then the binding (#187).
    *
@@ -240,12 +295,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     // Map.delete cannot throw, and it is deliberately OUTSIDE the step above: a
     // subscriber that blows up on the way out still gets its handle dropped.
     feeds.delete(liveId);
-    tearDownStep(liveId, 'hooks.unregisterSession', () => hooks.unregisterSession(liveId));
+    // the two held-permission releases, shared with the self-exit path (#271).
+    // They sit adjacent now rather than side-by-side with `transcripts.unwatch`
+    // between them; no step here depends on any other (see `tearDownStep`), so
+    // the move is free — and `hooks.unregisterSession` is still the step
+    // immediately before the stream denial, which is what #219's second test
+    // blows up on purpose.
+    releaseHeldPermissions(liveId, 'session closed');
     tearDownStep(liveId, 'transcripts.unwatch', () => transcripts.unwatch(liveId));
-    // an unanswered control request leaves the CLI waiting for ever
-    tearDownStep(liveId, 'streamPermissions.forgetSession', () =>
-      streamPermissions?.forgetSession(liveId, 'session closed')
-    );
     // the next session under this card gets its own list from its own CLI
     tearDownStep(liveId, 'streamCommands.forgetSession', () =>
       streamCommands?.forgetSession(liveId)
@@ -276,7 +333,29 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   // one event per session, latest state wins (Dan 2026-07-22) — push the
   // whole list on ANY change (adds, replacements, and pure removals)
   deps.feed.onEvent(() => send('events:changed', deps.feed.list()));
-  manager.onSessionExit((e) => send('sessions:exited', e));
+  // A session's death is the last honest moment to answer anything it left the
+  // user holding (#271). The release comes FIRST and cannot throw — every step
+  // inside it is isolated — so the `sessions:exited` push behind it is
+  // unconditional, and neither half can cost the other.
+  //
+  // The order is not arbitrary. `permissionResolved` is what takes the approval
+  // bar down and `sessions:exited` is what raises the "Session ended" overlay,
+  // so releasing first means the bar is already gone when the overlay lands.
+  // The reverse would paint an approval bar onto an ended card for a frame.
+  //
+  // 'session exited' rather than `tearDownLive`'s 'session closed': the two are
+  // different events and the log is where the difference is read. On THIS path
+  // nothing downstream ever sees the string — a dead session's transport
+  // refuses the write — which is the point: there is nobody left to answer, so
+  // the hold must go.
+  //
+  // NOT the whole teardown. See `releaseHeldPermissions`: an exited session
+  // keeps its record, its transcript watch and its Events entry, and the reap in
+  // `sessions:create` decides what becomes of the corpse.
+  manager.onSessionExit((e) => {
+    releaseHeldPermissions(e.sessionId, 'session exited');
+    send('sessions:exited', e);
+  });
   transcripts.onUpdate((snap) => {
     send('sessions:usage', snap);
     // A snapshot that has ingested nothing has nothing to SAY about usage, and

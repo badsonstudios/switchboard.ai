@@ -89,6 +89,12 @@ function harness(
     throwOnForgetEvent?: string;
     /** and from the step immediately before the approval denial (#219) */
     throwOnUnregister?: string;
+    /** hook-transport permission requests the listener is holding, by session
+     *  (#271). The fake models the ONE behaviour under test — `pendingRequests`
+     *  is what `sessions:pendingPermissions` replays, and `unregisterSession`
+     *  is what empties it — so the hook half of that channel is assertable
+     *  instead of being a constant `[]`. */
+    hookPending?: Array<{ requestId: string; sessionId: string }>;
   } = {}
 ) {
   const created: Array<{
@@ -121,6 +127,19 @@ function harness(
   // so a test can play a whole spawn -> crash -> respawn sequence rather than
   // describing its end state (#187).
   const knownIds = new Set(opts.liveIds ?? []);
+  /** the IPC layer's `manager.onSessionExit` subscriber, so a test can kill a
+   *  session the way the transport does — the self-exit path (#271) */
+  const exitListeners: Array<(e: { sessionId: string; code: number; crashed: boolean }) => void> =
+    [];
+  /** ids whose process has already died — a corpse's transport does not fire
+   *  `onExit` a second time when the manager later removes it */
+  const alreadyExited = new Set<string>();
+  const fireExit = (sessionId: string, code = 0): void => {
+    alreadyExited.add(sessionId);
+    for (const l of exitListeners) l({ sessionId, code, crashed: code !== 0 });
+  };
+  /** the hook listener's held requests, keyed the way the real one holds them */
+  const hookPending = [...(opts.hookPending ?? [])];
   const spawnIds = [...(opts.spawnIds ?? [])];
   const exitCodeOf = (id: string): number | null => opts.exitCodes?.[id] ?? null;
   const asRecord = (id: string): Record<string, unknown> => ({
@@ -148,7 +167,9 @@ function harness(
     manager: {
       onNativeSessionId: () => {},
       onStatusChange: () => {},
-      onSessionExit: () => {},
+      onSessionExit: (l: (e: { sessionId: string; code: number; crashed: boolean }) => void) => {
+        exitListeners.push(l);
+      },
       // Driven by the same set `get` answers from, so a test cannot be told two
       // different things about which sessions exist (#170 needs `list` — it is
       // what the `sessions:cards` join reads). Note what this is NOT: a spawn
@@ -158,7 +179,27 @@ function harness(
       list: () => [...knownIds].map(asRecord),
       remove: (id: string) => {
         removed.push(id);
-        knownIds.delete(id);
+        // Modelled after the real `SessionManager.remove` (#271): it drops the
+        // record and then tears the transport down, and the exit listeners fire
+        // either way because they live in the onExit closure and never consult
+        // the map. Without this the fake silently made every teardown a
+        // single-release path, which is the one shape a "no double-release"
+        // claim must not be tested against.
+        //
+        // Only for a session that is still RUNNING, which is the same condition
+        // reality applies: a crashed session's onExit fired when it crashed, and
+        // killing an already-dead process fires nothing. Reaping a corpse
+        // (#187) must not synthesise a second exit it would never get.
+        //
+        // DELIBERATELY NOT FAITHFUL ON TIMING, and the harsher of the two. Both
+        // transports' `remove()` end at `kill()` — a signal — so in production
+        // the exit lands on a LATER turn of the loop, after `tearDownLive` has
+        // returned and `unbindLive` has run. Here it lands in the middle of the
+        // teardown, which is a stricter test of idempotency and a WRONG model of
+        // push ordering: do not read `sessions:exited`-vs-`cardsChanged` order
+        // out of this fake.
+        const wasLive = knownIds.delete(id);
+        if (wasLive && !alreadyExited.has(id) && exitCodeOf(id) === null) fireExit(id, 0);
       },
       get: (id: string) => (knownIds.has(id) ? asRecord(id) : undefined),
       create: (
@@ -180,12 +221,23 @@ function harness(
     hooks: {
       onPermissionRequest: () => {},
       onPermissionResolved: () => {},
-      // the hook half of `sessions:pendingPermissions` — always empty here, so
-      // what that channel replays is entirely the stream router's (#202)
-      pendingRequests: () => [],
+      // the hook half of `sessions:pendingPermissions`. Empty unless a test
+      // seeds `hookPending` (#271); until then what that channel replays is
+      // entirely the stream router's (#202).
+      pendingRequests: () => [...hookPending],
       unregisterSession: (id: string) => {
         if (id === opts.throwOnUnregister) throw new Error('unregister exploded');
         unregistered.push(id);
+        // A RESTATEMENT of what `HookListener.unregisterSession` does to its
+        // held requests ("a session closed mid-hold must not leave the CLI
+        // hanging (fail-open)") — so a test can read the hook half of
+        // `sessions:pendingPermissions` rather than a constant. It is not
+        // evidence about that implementation: if the real sweep stopped
+        // releasing holds, only `hook-listener.test.ts` would catch it. What
+        // these tests pin is that the exit path CALLS it.
+        for (let i = hookPending.length - 1; i >= 0; i--) {
+          if (hookPending[i].sessionId === id) hookPending.splice(i, 1);
+        }
       },
       buildHookSettings,
     },
@@ -258,6 +310,9 @@ function harness(
     unregistered,
     forgottenEvents,
     removedCards,
+    /** kill a live session the way its transport does — no teardown, no card
+     *  close, nothing but the process going away (#271) */
+    fireExit,
   };
 }
 
@@ -296,14 +351,20 @@ function canUseTool(requestId: string): Record<string, unknown> {
   };
 }
 
-/** What the router sends the CLI when a session is torn down under it. */
-function autoDenial(requestId: string): Record<string, unknown> {
+/**
+ * What the router sends the CLI when a session is torn down under it.
+ *
+ * The message is parameterized since #271: a session the USER closed and a
+ * session that died on its own say different and true things, and that string
+ * is what the CLI prints.
+ */
+function autoDenial(requestId: string, why = 'session closed'): Record<string, unknown> {
   return {
     type: 'control_response',
     response: {
       subtype: 'success',
       request_id: requestId,
-      response: { behavior: 'deny', message: 'session closed' },
+      response: { behavior: 'deny', message: why },
     },
   };
 }
@@ -1562,6 +1623,241 @@ describe('a teardown step that throws releases the rest anyway (#219)', () => {
 
     h.call('sessions:dropLive', CARD);
 
+    expect(h.warn).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #271 — a session that dies ON ITS OWN was the one path that released nothing.
+//
+// `manager.onSessionExit` did exactly one thing: push `sessions:exited`. Every
+// release lives in `tearDownLive`, and a plain self-exit reaches it only if
+// something ELSE happens afterwards — the user closes the card, hits Restart, or
+// reveals it so the reap runs. Until then main went on holding the CLI's parked
+// `PreToolUse` HTTP response and its 300s timer, went on holding an unanswered
+// `can_use_tool`, and went on ADVERTISING both through
+// `sessions:pendingPermissions` to any card that mounted meanwhile.
+//
+// Nobody was left to answer either question: the process is gone, so the parked
+// response has no reader and the control_response has nowhere to go. That is
+// precisely why they must be released rather than kept — a hold that cannot be
+// resolved is a leak with a UI attached, and `unregisterSession`'s own comment
+// ("a session closed mid-hold must not leave the CLI hanging") is the guarantee
+// this path skipped.
+//
+// The harness change these tests rest on is in `manager.remove`: the real one
+// tears the transport down, which fires `onExit` synchronously, so the restart
+// paths run BOTH releases. That is what makes idempotency a requirement here and
+// not a nicety.
+describe('a session that exits on its own releases what it was holding (#271)', () => {
+  const CARD = 'card-1';
+  let dir: string;
+  tempDirEach('sb-selfexit-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir, CARD);
+
+  /** the exits the renderer was told about — the push that was already there */
+  const exits = (h: { pushed: Array<{ channel: string; payload: unknown }> }): unknown[] =>
+    h.pushed.filter((p) => p.channel === 'sessions:exited').map((p) => p.payload);
+
+  it('answers the parked stream request and takes the bar down', () => {
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
+    start(h);
+    perms.offer('live-1', canUseTool('req-1'));
+    expect(asked(h)).toHaveLength(1); // the bar really went up
+
+    h.fireExit('live-1', 1); // the CLI dies mid-approval. Nothing else happens.
+
+    expect(perms.pendingRequests()).toEqual([]);
+    // "exited", not "closed": the two are different events and the log is where
+    // the difference is read. This harness's `SendToSession` has no dead-child
+    // gate, so what the assertion pins is the reason the router RECORDED — the
+    // real transport refuses the write, which is exactly why the hold must go.
+    expect(sent).toEqual([{ sessionId: 'live-1', msg: autoDenial('req-1', 'session exited') }]);
+    expect(resolved(h)).toEqual(['stream:live-1:req-1']);
+    // …and the push that was already there still happens, behind the release
+    expect(exits(h)).toEqual([{ sessionId: 'live-1', code: 1, crashed: true }]);
+  });
+
+  it('drops the hook registration, which releases the parked HTTP response', () => {
+    const h = harness(undefined, dir, {
+      prior: card(),
+      hookPending: [{ requestId: 'hook-1', sessionId: 'live-1' }],
+    });
+    start(h);
+
+    h.fireExit('live-1', 0);
+
+    // `unregisterSession` is where the parked response, its 300s timer and the
+    // session's token all go — see `hook-listener.test.ts`, which pins that it
+    // releases in-flight holds fail-open. Here the claim is that the exit path
+    // CALLS it, which is the half that was missing.
+    expect(h.unregistered).toEqual(['live-1']);
+  });
+
+  // THE REMOUNT RACE, and the reason the fix belongs in main. A card's approval
+  // effect runs whether or not the card is visible, while its spawn effect
+  // early-returns when it is not — so a renderer that remounts into a background
+  // tab replays `sessions:pendingPermissions` with no live id bound and nothing
+  // that could later prune what it takes. The renderer cannot close that hole
+  // without a set of retired ids that grows for ever. Main simply stops saying
+  // the request exists.
+  it('stops advertising it to a renderer that remounts afterwards', () => {
+    const { perms } = streamPerms();
+    const h = harness(undefined, dir, {
+      prior: card(),
+      streamPermissions: perms,
+      hookPending: [{ requestId: 'hook-1', sessionId: 'live-1' }],
+    });
+    start(h);
+    perms.offer('live-1', canUseTool('req-1'));
+    // BOTH transports are in that replay, so both have to stop being in it
+    expect(h.call('sessions:pendingPermissions')).toEqual([
+      expect.objectContaining({ requestId: 'hook-1', cardId: CARD }),
+      expect.objectContaining({ requestId: 'stream:live-1:req-1', cardId: CARD }),
+    ]);
+
+    h.fireExit('live-1', 1);
+
+    expect(h.call('sessions:pendingPermissions')).toEqual([]);
+  });
+
+  // One router and one hook listener serve every card on the machine, so the
+  // sweep being per-session is not a detail — the opposite bug would answer a
+  // question the user is still looking at, on a card that is perfectly alive.
+  it("leaves a living session's question alone", () => {
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, {
+      prior: card(),
+      spawnIds: ['live-1', 'live-2'],
+      streamPermissions: perms,
+      hookPending: [
+        { requestId: 'hook-1', sessionId: 'live-1' },
+        { requestId: 'hook-2', sessionId: 'live-2' },
+      ],
+    });
+    start(h);
+    start(h, 'card-2');
+    perms.offer('live-1', canUseTool('req-1'));
+    perms.offer('live-2', canUseTool('req-2'));
+
+    h.fireExit('live-1', 1);
+
+    expect(perms.pendingRequests().map((r) => r.requestId)).toEqual(['stream:live-2:req-2']);
+    expect(sent).toEqual([{ sessionId: 'live-1', msg: autoDenial('req-1', 'session exited') }]);
+    expect(resolved(h)).toEqual(['stream:live-1:req-1']);
+    expect(
+      (h.call('sessions:pendingPermissions') as Array<{ requestId: string }>).map(
+        (r) => r.requestId
+      )
+    ).toEqual(['hook-2', 'stream:live-2:req-2']);
+  });
+
+  // The release is NOT a teardown, deliberately. An exited session keeps its
+  // record and its card binding (#187): the reap in `sessions:create` decides
+  // what happens to the corpse, and unbinding here would take the card's live
+  // half away underneath it. A version of this fix that called `tearDownLive`
+  // would pass every test above and break that.
+  it('does not retire the session — the corpse stays bound for the reap', () => {
+    const h = harness({ transcripts: { projectsRoot: () => '/root' } }, dir, { prior: card() });
+    start(h);
+    const bindings = h.pushed.filter((p) => p.channel === 'sessions:cardsChanged').length;
+
+    h.fireExit('live-1', 1);
+
+    expect(h.removed).toEqual([]);
+    expect(h.unwatched).toEqual([]);
+    expect(h.forgottenEvents).toEqual([]);
+    expect(h.pushed.filter((p) => p.channel === 'sessions:cardsChanged')).toHaveLength(bindings);
+  });
+
+  // IDEMPOTENCY, in the order the restart paths actually produce it: Restart
+  // runs `tearDownLive`, whose `manager.remove` fires this very listener before
+  // it returns. So the release runs twice on every Restart and every card close
+  // of a RUNNING session, and a second denial down the stream — or a second
+  // `sessions:permissionResolved` for a request id already resolved — would be a
+  // regression shipped by the fix itself.
+  it('releases exactly once when Restart tears the session down under it', () => {
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
+    start(h);
+    perms.offer('live-1', canUseTool('req-1'));
+
+    h.call('sessions:dropLive', CARD);
+
+    expect(sent).toHaveLength(1);
+    expect(resolved(h)).toEqual(['stream:live-1:req-1']);
+    // the teardown's own call and the exit listener's — both really did run
+    expect(h.unregistered).toEqual(['live-1', 'live-1']);
+  });
+
+  // …and in the other order: the session died first, then the card was revealed
+  // and the reap tore the corpse down. The second pass has nothing left to find.
+  it('releases exactly once when the reap follows the exit', () => {
+    const { perms, sent } = streamPerms();
+    const exitCodes: Record<string, number> = {};
+    const h = harness(undefined, dir, {
+      prior: card(),
+      spawnIds: ['live-1', 'live-2'],
+      exitCodes,
+      streamPermissions: perms,
+    });
+    start(h);
+    perms.offer('live-1', canUseTool('req-1'));
+
+    exitCodes['live-1'] = 1;
+    h.fireExit('live-1', 1); // the CLI dies mid-approval — released here
+    start(h); // revealing the card re-arms the spawn, which reaps live-1
+
+    expect(sent).toEqual([{ sessionId: 'live-1', msg: autoDenial('req-1', 'session exited') }]);
+    expect(resolved(h)).toEqual(['stream:live-1:req-1']);
+  });
+
+  // Fail-open (P6) on the new path too. The two releases are independent, and a
+  // throw out of the first one is the exact shape #219 closed for the teardown:
+  // it would skip the denial the CLI is blocked on, and skip the exit push with
+  // it. (`SessionManager` wraps each exit listener in its own try/catch, so a
+  // throw would not reach the other subscribers — the blast radius is this
+  // handler, which is quite enough: the renderer would never hear the session
+  // ended.) The warn naming the step is the other half: a swallowed failure that
+  // says nothing is worse than the one it hides.
+  it('a throwing unregister still denies the stream request and still reports the exit', () => {
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, {
+      prior: card(),
+      streamPermissions: perms,
+      throwOnUnregister: 'live-1',
+    });
+    start(h);
+    perms.offer('live-1', canUseTool('req-1'));
+
+    expect(() => h.fireExit('live-1', 1)).not.toThrow();
+
+    expect(perms.pendingRequests()).toEqual([]);
+    expect(sent).toEqual([{ sessionId: 'live-1', msg: autoDenial('req-1', 'session exited') }]);
+    expect(exits(h)).toEqual([{ sessionId: 'live-1', code: 1, crashed: true }]);
+    // and it says which release was lost, rather than swallowing it
+    expect(h.warn).toHaveBeenCalledWith(
+      'a session teardown step failed; releasing the rest anyway',
+      expect.objectContaining({ sessionId: 'live-1', step: 'hooks.unregisterSession' })
+    );
+  });
+
+  // The PTY-only wiring has no router to call, so the hook release is the whole
+  // of it — asserted here rather than only the absence of a throw, which every
+  // `tearDownStep` guarantees for free and would make this vacuous.
+  it('the PTY-only wiring releases its hook half with no StreamPermissions at all', () => {
+    const h = harness(undefined, dir, {
+      prior: card(),
+      hookPending: [{ requestId: 'hook-1', sessionId: 'live-1' }],
+    });
+    start(h);
+
+    expect(() => h.fireExit('live-1', 1)).not.toThrow();
+
+    expect(h.unregistered).toEqual(['live-1']);
+    expect(h.call('sessions:pendingPermissions')).toEqual([]);
+    // …and the optional-chained router is a no-op, not a logged failure
     expect(h.warn).not.toHaveBeenCalled();
   });
 });
