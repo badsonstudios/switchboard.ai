@@ -5,22 +5,77 @@ import { _electron as electron, ElectronApplication, Locator, Page } from '@play
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import { execFileSync, spawnSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
-// Kill an entire process tree. A popped-out Electron window is a child process
-// and node-pty spawns its own children; app.process().kill() only reaps the
-// main pid, leaving grandchildren that keep the Playwright worker alive (the
-// "Worker teardown timeout" seen on CI). Take out the whole tree.
-function killTree(pid: number | undefined): void {
+/**
+ * Kill an entire process tree.
+ *
+ * A popped-out Electron window is a child process and node-pty spawns its own
+ * children; `app.process().kill()` only reaps the main pid, leaving
+ * grandchildren that keep the Playwright worker alive (the "Worker teardown
+ * timeout" seen on CI). Take out the whole tree — on BOTH platforms, which
+ * until #235 this said but only Windows did:
+ *
+ * - **win32:** `taskkill /T` walks the child table. A real tree kill, unchanged.
+ * - **POSIX:** a NEGATIVE pid signals the whole process GROUP, where plain
+ *   `kill -9 <pid>` reached only the leader and left every child behind.
+ *
+ * The group kill works because the pid we hold is a group LEADER, and that is
+ * not our doing: `_electron.launch()` exposes no spawn options at all (no
+ * `detached`, no `stdio` — see its `LaunchOptions`), so we could not ask for one
+ * even if we wanted to. Playwright asks for us. Its `launchProcess()` spawns
+ * with `detached: process.platform !== 'win32'`, commented in its own source as
+ * "makes child process a leader of a new process group, making it possible to
+ * kill child process tree with `.kill(-pid)`", and reaps with exactly
+ * `process.kill(-pid, 'SIGKILL')` / `taskkill /pid X /T /F` — i.e. this function
+ * is now the same two calls Playwright itself would make on the handle it gave
+ * us. (playwright-core 1.61.1, `lib/coreBundle.js`; verified in the installed
+ * copy, not from memory.)
+ *
+ * `process.kill` rather than spawning `/bin/kill`: no subprocess per teardown
+ * (~160 specs' worth), no dependency on a binary being on PATH, and no shell
+ * quoting to get the leading `-` past.
+ *
+ * The bare-pid FALLBACK catches ESRCH from the group kill, and note which case
+ * that mostly is: `close()` calls this AFTER `gracefulClose()`, so the usual
+ * teardown has already reaped the tree and "no such group" and "already dead"
+ * are the same errno to us. The fallback costs one no-op syscall there. What it
+ * BUYS is the other reading: if Playwright ever drops `detached`, `-pid` would
+ * name nothing and a single-call version would silently reap NOTHING — strictly
+ * worse than the bug this replaces. The fallback makes the old behaviour the
+ * floor. It is errno-blind on purpose (EPERM lands there too); fail-open test
+ * infra should not be parsing errnos to decide whether to try harder.
+ *
+ * Never throws: by the time teardown runs the tree is usually already gone, and
+ * a throw here would fail a test that has already passed.
+ *
+ * Exported for `app.test.ts`, which asserts BOTH branches on EVERY CI leg —
+ * hence `platform` as an argument, the `launchSpec()` shape and #127's lesson:
+ * read the ambient platform inside and the win32 case passes vacuously on the
+ * ubuntu runner, and the POSIX case on the Windows one, which is precisely how
+ * this function's POSIX half stayed wrong from the day it was written.
+ */
+export function killTree(
+  pid: number | undefined,
+  platform: NodeJS.Platform = process.platform
+): void {
   if (!pid) return;
-  try {
-    if (process.platform === 'win32') {
+  if (platform === 'win32') {
+    try {
       execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
-    } else {
-      spawnSync('kill', ['-9', String(pid)], { stdio: 'ignore' });
+    } catch {
+      /* already gone */
     }
+    return;
+  }
+  try {
+    process.kill(-pid, 'SIGKILL');
   } catch {
-    /* already gone */
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      /* already gone */
+    }
   }
 }
 
@@ -495,6 +550,109 @@ export function workspaceJsonPath(home: string): string {
         ? path.join(home, 'Library', 'Application Support')
         : path.join(home, '.config');
   return path.join(base, 'switchboard', 'workspace.json');
+}
+
+/* ---- the workspace file, as the specs read it ------------------------------
+ *
+ * Main treats `layout` and `ui` as OPAQUE blobs — literally `unknown` in
+ * `workspace/store.ts`, because they belong to the renderer and main only
+ * round-trips them. So there is no shared type to import, and these interfaces
+ * are the SPECS' own view of the bytes on disk. That is the right place for
+ * them: asserting that shape from the outside is what these tests are for.
+ *
+ * They are structural SUBSETS on purpose — every field a spec has ever reached
+ * for, and nothing else. A field that appears in the file but not here is not a
+ * bug; a field here that the app stops writing breaks a spec, which is the
+ * point.
+ *
+ * Why they exist at all: `JSON.parse` returns `any`, and #245 put `e2e/` on the
+ * type-checked eslint preset, where an `any` spreading through a spec is an
+ * error. It has to stop somewhere. It stops HERE, in one assertion, instead of
+ * in the six specs that used to each re-describe a corner of this file inline.
+ */
+
+/** A serialized dockview grid node — children on a branch, panels on a leaf. */
+export type PersistedGridNode = PersistedGridBranch | PersistedGridLeaf;
+
+export interface PersistedGridBranch {
+  type: 'branch';
+  size?: number;
+  data: PersistedGridNode[];
+}
+
+export interface PersistedGridLeaf {
+  type: 'leaf';
+  size?: number;
+  data: { views: string[]; activeView?: string; id?: string };
+}
+
+export interface PersistedLayout {
+  /** dockview wraps even a single panel, so the ROOT is always a branch */
+  grid: { width: number; height?: number; orientation?: string; root: PersistedGridBranch };
+  popoutGroups?: PersistedPopoutGroup[];
+}
+
+export interface PersistedPopoutGroup {
+  position?: { left: number; top: number; width?: number; height?: number } | null;
+}
+
+export interface PersistedUi {
+  layoutMode?: { mode?: string };
+  presentation?: Record<string, { ladder?: string }>;
+  presentationPolicy?: { global?: string; cards?: Record<string, string> };
+}
+
+/**
+ * The whole file. `layout`/`ui` sit at the top level; `state` is the older
+ * nesting, and the specs have always tolerated both by writing `x ?? state?.x`.
+ */
+export interface PersistedWorkspaceFile {
+  layout?: PersistedLayout;
+  ui?: PersistedUi;
+  state?: { layout?: PersistedLayout; ui?: PersistedUi };
+}
+
+/** The workspace file for a launched app's home, parsed. */
+export function readWorkspaceFile(home: string): PersistedWorkspaceFile {
+  return JSON.parse(fs.readFileSync(workspaceJsonPath(home), 'utf8')) as PersistedWorkspaceFile;
+}
+
+/** Write a (usually doctored) workspace file back, for the relaunch to read. */
+export function writeWorkspaceFile(home: string, ws: PersistedWorkspaceFile): void {
+  fs.writeFileSync(workspaceJsonPath(home), JSON.stringify(ws));
+}
+
+/**
+ * The persisted layout, from whichever nesting this file uses.
+ *
+ * Throws when there is none, which is what the callers already did one line
+ * later — `json.layout ?? json.state.layout` then `.grid` gave a TypeError, so
+ * this only changes the message, never whether the test passes.
+ */
+export function persistedLayout(ws: PersistedWorkspaceFile): PersistedLayout {
+  const layout = ws.layout ?? ws.state?.layout;
+  if (!layout) throw new Error('the workspace file has no layout');
+  return layout;
+}
+
+/** The persisted UI blob, from whichever nesting this file uses. See above. */
+export function persistedUi(ws: PersistedWorkspaceFile): PersistedUi {
+  const ui = ws.ui ?? ws.state?.ui;
+  if (!ui) throw new Error('the workspace file has no ui blob');
+  return ui;
+}
+
+/**
+ * The panel ids a serialized grid LEAF holds.
+ *
+ * The node is a discriminated union — `data` is child nodes on a branch and the
+ * panel record on a leaf — so `node.data.views` does not typecheck on an
+ * arbitrary node. Untyped, the specs read it anyway and got `undefined` (then a
+ * TypeError on the next line) whenever the tree was not the shape assumed.
+ */
+export function gridLeafViews(node: PersistedGridNode): string[] {
+  if (node.type !== 'leaf') throw new Error(`expected a grid leaf, got a ${node.type}`);
+  return node.data.views;
 }
 
 /**

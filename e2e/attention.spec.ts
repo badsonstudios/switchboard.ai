@@ -39,7 +39,7 @@ test.describe('attention queue (E9-03)', () => {
 
     for (const folder of folders.slice(1)) {
       await a.app.evaluate(({ dialog }, dir) => {
-        dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [dir] });
+        dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [dir] });
       }, folder);
       await w.getByRole('button', { name: '+ session' }).click();
       await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });

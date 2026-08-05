@@ -101,13 +101,16 @@ test.describe('CSP is header-based (#109)', () => {
 
     test('gets the same policy as a header', async () => {
       a = await launchApp({ seedFolder: tempProjectFolder() });
-      const w = a.window;
+      // `app` is bound here because the poll below is a CLOSURE: the narrowing
+      // that `a = await launchApp()` gives the outer `LaunchedApp | undefined`
+      // does not survive into a nested function.
+      const { app, window: w } = a;
       await expect(w.locator('nav [draggable="true"]')).toHaveCount(1, { timeout: 25_000 });
 
       await w.getByTitle('Pop out into its own window').click();
-      await expect.poll(() => a.app.windows().length, { timeout: 15_000 }).toBe(2);
+      await expect.poll(() => app.windows().length, { timeout: 15_000 }).toBe(2);
 
-      const popout = a.app.windows().find((p) => p.url().includes('popout.html'));
+      const popout = app.windows().find((p) => p.url().includes('popout.html'));
       expect(popout, 'no popout page found').toBeTruthy();
       expect(await servedPolicy(popout!)).toBe(CSP_PROD);
       expect(await inlineScriptBlocked(popout!), 'inline script ran in the popout').toBe(true);

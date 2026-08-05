@@ -173,6 +173,42 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   const isRunning = (liveId: string): boolean => runningRecord(liveId) !== undefined;
 
   /**
+   * One teardown step, isolated (#219).
+   *
+   * The steps below are INDEPENDENT releases — different services, no shared
+   * state, no ordering requirement between them. A straight-line body made them
+   * dependent anyway: the first one to throw skipped every step after it. That
+   * is the opposite of what each step is for, and it is not hypothetical
+   * insulation — the step most expensive to skip sits in the middle of the list
+   * (`streamPermissions.forgetSession`, which DENIES the approval the CLI is
+   * blocked on and takes the renderer's bar down with it). A throw two lines
+   * above it in `hooks.unregisterSession` would leave a card showing a
+   * permission bar for a session that no longer exists, with a CLI parked on a
+   * question nothing will ever answer.
+   *
+   * So each step gets its own try/catch, and a failure is a logged nuisance
+   * rather than an abort. The alternative on the table in #219 — reordering so
+   * the user-visible releases run first — was rejected: it does not make any
+   * step safe, it only re-picks which steps get skipped, and it would leave the
+   * SAME hole one refactor away from moving back.
+   *
+   * The step NAME goes in the log. The old fail-open catch at the reap site
+   * (see `sessions:create`) could only say "the teardown threw"; this says which
+   * release was lost, which is the whole diagnostic.
+   */
+  const tearDownStep = (liveId: string, name: string, run: () => void): void => {
+    try {
+      run();
+    } catch (err) {
+      log.warn('a session teardown step failed; releasing the rest anyway', {
+        sessionId: liveId,
+        step: name,
+        error: String(err),
+      });
+    }
+  };
+
+  /**
    * Retire ONE live session completely: every subscription, registration and
    * watch taken out in its name, then the record, then the binding (#187).
    *
@@ -184,27 +220,46 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
    *
    * Every step is a no-op for an id it does not know, so reaping a session
    * whose record is already gone is safe rather than a special case.
+   *
+   * **It does not throw** (#219). Every step is isolated, and the whole list
+   * runs whatever any one of them does — see `tearDownStep`. That is what makes
+   * it safe on the three paths that call it, only ONE of which ever had a catch
+   * of its own: the reap inside `sessions:create` fails open (#187), but
+   * `sessions:closeCard` goes on to `persist.remove` (a throw here used to
+   * resurrect the closed card on the next boot) and `sessions:dropLive` answers
+   * the renderer's Restart (a throw here used to read as "restart failed" for a
+   * session that had in fact been torn down). Fail-open belongs in the function
+   * every one of them shares, not in one caller out of three.
    */
   const tearDownLive = (liveId: string): void => {
-    deps.feed.forget(liveId); // its event leaves the Events panel with it
-    feeds.get(liveId)?.();
+    // its event leaves the Events panel with it
+    tearDownStep(liveId, 'feed.forget', () => deps.feed.forget(liveId));
+    // `feeds` is the PTY live-feed unsubscriber from `pty:attach`, not the
+    // Events feed above it — two different things one line apart
+    tearDownStep(liveId, 'pty.detach', () => feeds.get(liveId)?.());
+    // Map.delete cannot throw, and it is deliberately OUTSIDE the step above: a
+    // subscriber that blows up on the way out still gets its handle dropped.
     feeds.delete(liveId);
-    hooks.unregisterSession(liveId);
-    transcripts.unwatch(liveId);
+    tearDownStep(liveId, 'hooks.unregisterSession', () => hooks.unregisterSession(liveId));
+    tearDownStep(liveId, 'transcripts.unwatch', () => transcripts.unwatch(liveId));
     // an unanswered control request leaves the CLI waiting for ever
-    streamPermissions?.forgetSession(liveId, 'session closed');
+    tearDownStep(liveId, 'streamPermissions.forgetSession', () =>
+      streamPermissions?.forgetSession(liveId, 'session closed')
+    );
     // the next session under this card gets its own list from its own CLI
-    streamCommands?.forgetSession(liveId);
+    tearDownStep(liveId, 'streamCommands.forgetSession', () =>
+      streamCommands?.forgetSession(liveId)
+    );
     // …and its own Feed blocks (P2-E18-10)
-    deps.streamFeed?.forgetSession(liveId);
+    tearDownStep(liveId, 'streamFeed.forgetSession', () => deps.streamFeed?.forgetSession(liveId));
     // marks the kill intentional BEFORE tearing the process down, mirroring
     // kill(): otherwise onExit could see killRequested=false and report a
     // spurious `crashed` for an ordinary suspend/restart (review nit).
     // The transport teardown lives INSIDE remove() as of P2-E18-02 — this used
     // to call `ptys.remove(liveId)` here, which silently tears down nothing for
     // a session hosted on any transport but the PTY.
-    manager.remove(liveId);
-    unbindLive(liveId);
+    tearDownStep(liveId, 'manager.remove', () => manager.remove(liveId));
+    tearDownStep(liveId, 'unbindLive', () => unbindLive(liveId));
   };
 
   manager.onStatusChange((change) => {
@@ -437,6 +492,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         // again". Starting with a half-reaped corpse behind us is strictly
         // better than a card that cannot start. `SessionManager.remove` makes
         // the same argument for its own transport teardown.
+        //
+        // Since #219 the guarantee lives INSIDE `tearDownLive`, which isolates
+        // every step and cannot throw — a stronger promise than this catch ever
+        // made, because it also covers the steps this one used to skip. The
+        // catch stays as the outer backstop: it is six lines, it is the boundary
+        // the P6 argument is actually about, and without it the spawn path's
+        // fail-open behaviour would rest entirely on the internal discipline of
+        // a function edited somewhere else. It is not expected to fire.
         try {
           tearDownLive(liveId);
         } catch (err) {
@@ -453,13 +516,18 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       // still running, and spawning a second claude for one card would leave an
       // orphan PTY nothing can reach.
       //
-      // LIVENESS, not mere existence. Pass 1 normally leaves only running
-      // sessions bound — but it fails open, so a corpse whose teardown threw is
-      // still here, still holding a record. Adopting THAT would hand the card a
-      // dead session and no way back: the panel would show a live-looking
-      // adoption over a process that has already gone. Caught by the test that
-      // makes the teardown throw; it is exactly the "has a record" mistake this
-      // item fixed elsewhere, and it deserved to be made once, not three times.
+      // LIVENESS, not mere existence. A dead session KEEPS its record, so
+      // adopting on "the manager knows it" would hand the card a corpse and no
+      // way back: the panel would show a live-looking adoption over a process
+      // that has already gone. It is exactly the "has a record" mistake #187
+      // fixed elsewhere, and it deserved to be made once, not three times.
+      //
+      // Pass 1 used to be able to leave one behind: it fails open, and before
+      // #219 a teardown that threw halfway skipped its own `unbindLive`, so the
+      // corpse was still bound when this loop ran. `tearDownLive` now unbinds
+      // whatever else fails, which makes that state unreachable rather than
+      // merely handled — so this guard is now the backstop for the invariant
+      // rather than a check some live path still trips.
       for (const [liveId, cid] of cardOfLive) {
         if (cid !== opts.cardId) continue;
         const running = runningRecord(liveId);
