@@ -29,9 +29,16 @@ structure adopting #228's temp-dir registry, verified by a local
 > itself and touches SessionGrid/store — pair carefully.
 > **Decisions Dan owes:** #200, #191, #129, #111, #207, #216,
 > E9-past-#80/E11/E13/E14 scoping.
-> **Dogfooding note:** all run-3 + run-4 features are now live on
-> main un-hand-tested (Dan's explicit call, 2026-08-04) — in-situ
-> use is the test; triage his bug reports promptly.
+> **Hand-test result (2026-08-04, post-merge):** Dan ran the
+> combined run-4 test list against a fresh build of e22e039 —
+> **everything passed.** One tooling lesson from the session, for
+> every future hand-test handoff: `npm start` is PREVIEW — it runs
+> the last-built `out/` and builds nothing, and worker builds happen
+> in worktrees, so the main checkout's `out/` is always stale after
+> an orchestration run. **Run `npm run build` (or have the
+> orchestrator do it) before handing Dan a test list**, and have him
+> confirm the About-panel stamp first. The missing-chip false alarm
+> this cost is exactly what the build stamp exists to catch.
 
 > # 🎛 ORCHESTRATION RUN 4 — 2026-08-04, **CLOSED same day. 10
 > items: 7 internal merged, 3 in Dan's queue. 13 issues filed from
