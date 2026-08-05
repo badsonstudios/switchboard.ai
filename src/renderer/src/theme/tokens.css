@@ -226,6 +226,13 @@ body {
 .preflight-banner {
   background: var(--status-needs-permission);
   color: var(--status-needs-permission-ink-on-fill);
+  /* The window is a 100vh flex COLUMN whose main area is `flex: 1` with a
+   * basis of 0, so every pixel of negative free space in a short window lands
+   * on the auto-basis children above it — this strip among them. Without this
+   * line the warning that says why nothing will start is the thing that gets
+   * squeezed (#241). Its sibling notice has carried the same guard inline
+   * since #168; tokens.drift.test.ts is what keeps this one here. */
+  flex-shrink: 0;
   font-size: 11px;
   padding: 4px 12px;
 }
