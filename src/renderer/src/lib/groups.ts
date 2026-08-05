@@ -1,3 +1,5 @@
+import { NO_PINS, PinSet, sortPinnedFirst } from './pinning';
+
 // Membership adoption rule for grid drags (P2-E12-04): when a session panel
 // lands in a dockview group, it adopts the persistent group of the panels
 // already there — first sibling with a membership wins; an all-ungrouped
@@ -56,12 +58,29 @@ export interface RailOrderResult<T> {
 
 export function railOrder<T extends AutoGroupable>(
   sessions: readonly T[],
-  groups: ReadonlyArray<{ id: string }>
+  groups: ReadonlyArray<{ id: string }>,
+  /** §5.8's "a pinned session sorts first in the rail" (P2-E9-09) */
+  pins: PinSet = NO_PINS
 ): RailOrderResult<T> {
+  // ONE pre-sort, and every bucket below inherits it. Pinned sessions rise to
+  // the front of their own bucket — the group they are in, the auto-group they
+  // formed, or the loose list — rather than being torn out to a leading section
+  // of their own. That is VS Code's semantics as well as the honest reading of
+  // "sorts first": pinning a tab moves it to the front of ITS editor group, not
+  // across groups. Hoisting out would empty the count on the group header the
+  // user deliberately put the session in, and would fight the stored group
+  // order that the rail's own reordering owns.
+  //
+  // On a workspace with no persistent or emergent groups — the default, and by
+  // far the common shape — the loose list IS the rail, so a pinned session is
+  // literally first. One consequence falls out for free and is wanted: an
+  // auto-group containing a pinned session is itself computed earlier, because
+  // `computeAutoGroups` buckets in the order it is handed.
+  const ordered = sortPinnedFirst(sessions, pins);
   const grouped = new Map<string, T[]>();
   for (const g of groups) grouped.set(g.id, []);
   const ungrouped: T[] = [];
-  for (const s of sessions) {
+  for (const s of ordered) {
     if (s.groupId && grouped.has(s.groupId)) grouped.get(s.groupId)!.push(s);
     else ungrouped.push(s);
   }

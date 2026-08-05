@@ -88,3 +88,51 @@ describe('pickAdoptedGroupId (E12-04 grid-drag adoption)', () => {
     expect(pickAdoptedGroupId('x', ['ghost', 'c'], cards)).toBe('g2');
   });
 });
+
+describe('railOrder — §5.8 sorts a pinned session first (E9-09)', () => {
+  it('a pinned loose session leads the rail, and Ctrl+1..9 with it', () => {
+    // the default shape: no persistent or emergent groups, so the loose list IS
+    // the rail and "sorts first" is literal
+    const r = railOrder([{ id: 'a' }, { id: 'b' }, { id: 'c' }], [], new Set(['c']));
+    expect(r.loose.map((s) => s.id)).toEqual(['c', 'a', 'b']);
+    expect(r.flat.map((s) => s.id)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('a pinned GROUP member leads its own group, and stays in it', () => {
+    // VS Code's semantics: pinning moves a tab to the front of ITS editor
+    // group, never out of it. Hoisting would empty the count on the header the
+    // user deliberately filed the session under.
+    const r = railOrder(
+      [
+        { id: 'a', groupId: 'g1' },
+        { id: 'b', groupId: 'g1' },
+        { id: 'c' },
+      ],
+      [{ id: 'g1' }],
+      new Set(['b'])
+    );
+    expect(r.groups).toEqual([{ id: 'g1', members: [{ id: 'b', groupId: 'g1' }, { id: 'a', groupId: 'g1' }] }]);
+    expect(r.flat.map((s) => s.id)).toEqual(['b', 'a', 'c']);
+  });
+
+  it('an auto-group holding a pinned session is itself computed first', () => {
+    const r = railOrder(
+      [
+        { id: 'a', autoKey: 'c:/one' },
+        { id: 'b', autoKey: 'c:/one' },
+        { id: 'c', autoKey: 'c:/two' },
+        { id: 'd', autoKey: 'c:/two' },
+      ],
+      [],
+      new Set(['d'])
+    );
+    expect(r.autoGroups.map((g) => g.key)).toEqual(['c:/two', 'c:/one']);
+    expect(r.flat.map((s) => s.id)).toEqual(['d', 'c', 'a', 'b']);
+  });
+
+  it('no pins means the order nobody asked to change', () => {
+    const sessions = [{ id: 'a' }, { id: 'b' }];
+    expect(railOrder(sessions, []).flat.map((s) => s.id)).toEqual(['a', 'b']);
+    expect(railOrder(sessions, [], new Set(['zz'])).flat.map((s) => s.id)).toEqual(['a', 'b']);
+  });
+});

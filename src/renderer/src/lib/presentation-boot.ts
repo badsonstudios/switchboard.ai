@@ -9,6 +9,7 @@ import { sessionStore } from '../store/session-store';
 import { loadPresentation, persistablePresentation, PRESENTATION_KEY } from './presentation';
 import { loadPolicyBook, POLICY_KEY } from './presentation-policy';
 import { LAYOUT_KEY, loadLayout } from './layout-mode';
+import { loadPins, PIN_KEY } from './pinning';
 import { uiAll, uiDelete, uiGet, uiSet } from './ui-state';
 
 export function initPresentation(): void {
@@ -36,6 +37,16 @@ export function initPresentation(): void {
   sessionStore.setLayoutPersister((blob) => {
     if (blob) uiSet(LAYOUT_KEY, blob);
     else uiDelete([LAYOUT_KEY]);
+  });
+  // §5.8's PINNING contract (P2-E9-09) rides the same edge and must be seeded in
+  // the same pass, and this one earlier than the others would matter: rail order
+  // is derived from it, so a pin read after the first `setSessions` would paint
+  // the rail — and number Ctrl+1..9 — in the unpinned order first and reshuffle
+  // it in front of the user a moment later.
+  sessionStore.initPins(loadPins(uiGet<unknown>(PIN_KEY, null)));
+  sessionStore.setPinPersister((blob) => {
+    if (blob) uiSet(PIN_KEY, blob);
+    else uiDelete([PIN_KEY]);
   });
   if (legacyKeys.length > 0) {
     // WRITE THE NEW HOME FIRST. initPresentation deliberately doesn't persist

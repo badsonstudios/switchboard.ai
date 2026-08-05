@@ -82,6 +82,8 @@ describe('presentation policy (E9-06, §5.8)', () => {
       poppedOut = false,
       needsHuman = false
     ) => submitTarget({ policy, ladder, poppedOut, needsHuman });
+    /** the card nothing is wrong with: expanded, docked, not blocked */
+    const base = { ladder: 'expanded' as const, poppedOut: false, needsHuman: false };
 
     it('auto-collapse collapses and auto-hide hides', () => {
       expect(at('auto-collapse')).toBe('collapsed');
@@ -121,6 +123,18 @@ describe('presentation policy (E9-06, §5.8)', () => {
       // ...and it is the ONLY thing that changed: the same card, not blocked,
       // still folds away
       expect(at('auto-collapse', 'expanded', false, false)).toBe('collapsed');
+    });
+
+    it('a PINNED card is left alone — §5.8 names this sweep by name (E9-09)', () => {
+      // "exempt from EVERY bulk operation — ... auto-collapse sweeps ...".
+      // This is the one thing in the app that moves a card down the ladder
+      // without the user asking for THAT card to move.
+      expect(submitTarget({ ...base, policy: 'auto-collapse', pinned: true })).toBeNull();
+      expect(submitTarget({ ...base, policy: 'auto-hide', pinned: true })).toBeNull();
+      // ...and only that: the same card unpinned still folds away, and an
+      // omitted flag means unpinned (every existing caller is unmoved)
+      expect(submitTarget({ ...base, policy: 'auto-collapse', pinned: false })).toBe('collapsed');
+      expect(submitTarget({ ...base, policy: 'auto-collapse' })).toBe('collapsed');
     });
   });
 

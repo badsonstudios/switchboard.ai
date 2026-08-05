@@ -11,6 +11,8 @@ function deps(): CommandDeps & { focusCard: ReturnType<typeof vi.fn> } {
     focusCard: vi.fn(),
     newSession: vi.fn(),
     closeCard: vi.fn(),
+    closeAllCards: vi.fn(),
+    togglePin: vi.fn(),
     toggleCardView: vi.fn(),
     popOutCard: vi.fn(),
     hideCard: vi.fn(),

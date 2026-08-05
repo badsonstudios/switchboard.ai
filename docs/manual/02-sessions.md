@@ -64,11 +64,47 @@ If a session ends or crashes, the card stays put and shows **Session ended**
 with two buttons: **Restart** starts it again in the same folder, **Close**
 removes the card. Nothing vanishes on its own.
 
+## Pinning a session you always want to find
+
+Some sessions are the ones you keep coming back to all day. Pin one and
+switchboard stops letting anything shuffle it out from under you.
+
+Right-click a session in the Sessions list and choose **Pin session** (or press
+**`Ctrl+Alt+P`** while you're in it, or find **Pin / unpin session** in the
+command palette). A 📌 appears on its row. The same gesture unpins it.
+
+A pinned session:
+
+- **sorts to the top** of the list, so it's always in the same place — and
+  because that list is what `Ctrl+1`…`Ctrl+9` counts against, it becomes
+  `Ctrl+1`. If the session is in a group, it sorts to the top *of that group* —
+  pinning doesn't pull it out of the group you filed it under.
+- **is never folded away.** When a pile of idle sessions collapses into a
+  single "4 idle sessions" row, the pinned one keeps its own row.
+- **is never minimized behind your back.** If you've turned on
+  [auto-collapse or auto-hide](07-workspace.md), a pinned session ignores it
+  and stays put when you send a prompt.
+- **survives Close all sessions.** See below.
+
+Pinning is *protection*, not a size. It doesn't force the session to stay big:
+you can still collapse it, tab it, hide it, or let a layout mode fold it into a
+strip. What pinning promises is that it will still be there, and still where
+you left it in the list.
+
 ## Closing a session
 
 Click the **✕** on the card's tab. Because this ends the session *and* forgets
 it, switchboard asks you to confirm first. A closed session does not come back
 next launch.
+
+### Closing all of them at once
+
+The command palette has **Close all sessions (keeps pinned ones)**. It asks
+once — not once per session — and tells you how many it's about to close and
+how many pinned ones it's keeping. Pinned sessions are left running.
+
+There's deliberately no shortcut for it: closing everything is not something
+you should be able to do by mistyping a chord.
 
 ## Good to know
 

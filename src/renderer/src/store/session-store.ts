@@ -46,6 +46,7 @@ import {
   persistableLayout,
   pruneLayout,
 } from '../lib/layout-mode';
+import { NO_PINS, persistablePins, PinSet, prunePins, withPin } from '../lib/pinning';
 
 /**
  * A snapshot. Every field is `readonly` deliberately: identity IS the change
@@ -89,6 +90,15 @@ export interface SessionState {
    * handler outside React's commit and has to read what is true now.
    */
   readonly layout: LayoutState;
+  /**
+   * §5.8's pinning contract (P2-E9-09): the pinned CARD ids.
+   *
+   * In `state` rather than one of the imperative registries below because rail
+   * order is DERIVED from it — a pinned session sorts first — and derived values
+   * here are recomputed on mutation. It is read synchronously by the submit
+   * sweep and by close-all as well, both of which run outside React's commit.
+   */
+  readonly pinned: PinSet;
 }
 
 const EMPTY: SessionState = {
@@ -102,6 +112,7 @@ const EMPTY: SessionState = {
   urgency: new Map(),
   policies: DEFAULT_BOOK,
   layout: DEFAULT_LAYOUT,
+  pinned: NO_PINS,
 };
 
 export class SessionStore {
@@ -167,8 +178,11 @@ export class SessionStore {
     this.state = { ...this.state, ...patch };
     // KEY presence, not truthiness: `setEvents([])` must still recompute, and
     // a future optional-param setter must not silently skip the derive
-    if ('sessions' in patch || 'groups' in patch) {
-      this.derivedRail = railOrder(this.state.sessions, this.state.groups);
+    // `pinned` is in the condition because a pinned session sorts first (E9-09):
+    // rail order is a function of all three, and a pin that did not re-derive it
+    // would leave the rail, Ctrl+1..9 and both strips reading last order.
+    if ('sessions' in patch || 'groups' in patch || 'pinned' in patch) {
+      this.derivedRail = railOrder(this.state.sessions, this.state.groups, this.state.pinned);
     }
     if ('events' in patch) {
       this.derivedQueue = attentionQueue(this.state.events);
@@ -410,6 +424,62 @@ export class SessionStore {
     if (!next) return; // nothing stale: no write, no re-render
     this.set({ layout: next });
     this.persistLayout(persistableLayout(next));
+  }
+
+  // ── pinning (P2-E9-09) ──────────────────────────────────────────────────
+  // Persistence is INJECTED, exactly as it is for presentation, policies and
+  // layout above, and for the same reason: the store must not have the preload
+  // bridge on its dependency path (P2-E15-07). The rules are lib/pinning's.
+  private persistPins: (blob: string[] | null) => void = () => {};
+
+  setPinPersister(fn: (blob: string[] | null) => void): void {
+    this.persistPins = fn;
+  }
+
+  getPins(): PinSet {
+    return this.state.pinned;
+  }
+
+  /** Is this card pinned? The one reader every exemption goes through, so
+   *  "pinned" cannot mean one thing in the rail and another in a sweep. */
+  isPinned(cardId: string | undefined): boolean {
+    return !!cardId && this.state.pinned.has(cardId);
+  }
+
+  /** Seed from the ui blob at boot. Does not persist — it just read it. */
+  initPins(pins: PinSet): void {
+    this.set({ pinned: pins });
+  }
+
+  /** Pin or unpin one card — §5.8's one gesture, both ways. A no-op is skipped
+   *  entirely: `withPin` hands the same set back, and re-deriving rail order
+   *  over it would re-render every row for nothing. */
+  setPinned(cardId: string, pinned: boolean): void {
+    this.writePins(withPin(this.state.pinned, cardId, pinned));
+  }
+
+  togglePin(cardId: string): void {
+    this.setPinned(cardId, !this.isPinned(cardId));
+  }
+
+  /** The card is gone for good — retire its pin at that moment rather than
+   *  waiting for the next boot's prune, exactly as `forgetPresentation` does
+   *  and at the same call sites. */
+  forgetPin(cardId: string): void {
+    this.setPinned(cardId, false);
+  }
+
+  /** Forget pins for cards that no longer exist. Called from the same place
+   *  `prunePresentation` is, and for the same reason. */
+  prunePins(knownCardIds: Iterable<string>): void {
+    const next = prunePins(this.state.pinned, knownCardIds);
+    if (next) this.writePins(next);
+  }
+
+  private writePins(next: PinSet): void {
+    if (next === this.state.pinned) return;
+    this.set({ pinned: next });
+    this.persistPins(persistablePins(next));
   }
 
   // ── urgency strip (P2-E9-04) ────────────────────────────────────────────

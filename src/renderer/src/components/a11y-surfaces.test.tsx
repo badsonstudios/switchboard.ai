@@ -70,6 +70,8 @@ async function mountRail(selectedId: string | null = 'c1'): Promise<HTMLElement>
       onDeleteGroup={noop}
       onOpenInGroup={noop}
       onMoveToGroup={noop}
+      pinned={new Set()}
+      onTogglePin={noop}
       onSetSessionPolicy={noop}
       onCycleGroupPolicy={noop}
     />
