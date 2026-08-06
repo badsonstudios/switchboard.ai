@@ -12,14 +12,10 @@
 // last.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
 import { FeedBlockDto } from '../lib/feed';
 import { FEED_EXPANDER_ATTR } from '../lib/feed-keys';
 import { FeedBlockRendererContribution, manifestFor } from './contributions';
-
-/** The "still typing" cue. A glyph, not copy — nothing here to translate. */
-const STREAMING_CARET = '▌';
+import { Markdown } from '../lib/markdown';
 
 /**
  * Marks a subtree that owns its own clicks (#91). `ToolBox` walks up from the
@@ -163,39 +159,9 @@ export function ToolBox({
   );
 }
 
-/**
- * Assistant prose. While it is STILL ARRIVING (P2-E18-10) it renders as plain
- * text with a caret on the end, and only becomes markdown once it is complete.
- *
- * Two reasons, and both matter:
- *
- *  - Half a document is not a document. A code fence, list or table that is
- *    mid-write parses as something else entirely, so a streamed reply would
- *    reflow and re-style itself on almost every token.
- *  - Cost. `useMemo` is keyed on the text, so parsing per token means parsing
- *    the WHOLE reply once per token — quadratic in the length of the answer, on
- *    the renderer thread, times every session streaming at once.
- */
-function Markdown({ text, streaming }: { text: string; streaming?: boolean }): React.JSX.Element {
-  const html = React.useMemo(
-    () => (streaming ? '' : DOMPurify.sanitize(marked.parse(text, { async: false }) as string)),
-    [text, streaming]
-  );
-  if (streaming) {
-    return (
-      <div className="feed-md" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>
-        {text}
-        {/* -ink, and no opacity (#246). The caret is the only thing on screen
-            saying the answer is still arriving, so it is information, not
-            decoration. It was the raw hue at 0.8 opacity — 2.08:1 on daylight,
-            and the opacity is a second contrast cut that nothing measures,
-            which is why it goes rather than being tuned. */}
-        <span style={{ color: 'var(--status-working-ink)' }}>{STREAMING_CARET}</span>
-      </div>
-    );
-  }
-  return <div className="feed-md" dangerouslySetInnerHTML={{ __html: html }} />;
-}
+// `Markdown` and `STREAMING_CARET` used to live here; they moved to
+// `lib/markdown.tsx` when the update dialog (P2-E19-03) became the second
+// caller — one `marked` + DOMPurify pipeline, one sanitizer configuration.
 
 /** Edit/Write block (E10-06): header + added/removed subtitle + shaded panes. */
 function EditBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {

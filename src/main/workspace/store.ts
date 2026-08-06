@@ -15,6 +15,7 @@ import { Rectangle } from 'electron';
 import { Logger } from '../log/logger';
 import { SessionIdentity } from '../sessions/session-manager';
 import { WindowState, mergeState, isOnAnyDisplay } from '../window-state';
+import { UpdatePrefs } from '../../shared/update';
 
 export interface PersistedSession {
   id: string;
@@ -82,6 +83,14 @@ export interface WorkspaceState {
   notifications: NotificationPrefsState;
   /** auto-trust a folder on session open (picking a folder = trusting it) */
   autoTrust: boolean;
+  /**
+   * Update-check preferences (P2-E19-03). A top-level TYPED field rather than
+   * a key in the opaque `ui` blob, because MAIN is the reader: the daily timer
+   * and the skip decision run with no renderer involved, and the renderer
+   * rewrites `ui` wholesale — which would clobber a `lastCheck` main had just
+   * written.
+   */
+  updates: UpdatePrefs;
 }
 
 /** The schema version this build writes. Bump it and add a MIGRATIONS entry. */
@@ -136,6 +145,7 @@ const EMPTY: WorkspaceState = {
   ui: null,
   notifications: { enabled: true, osToasts: false },
   autoTrust: true,
+  updates: { autoCheck: true },
 };
 
 /** Stable identity for a display arrangement (§7). */
@@ -148,7 +158,13 @@ export function displayFingerprint(workAreas: Rectangle[]): string {
 
 /** A fresh empty state — never the shared `EMPTY`, whose arrays are mutable. */
 function emptyState(): WorkspaceState {
-  return { ...EMPTY, sessions: [], groups: [], notifications: { ...EMPTY.notifications } };
+  return {
+    ...EMPTY,
+    sessions: [],
+    groups: [],
+    notifications: { ...EMPTY.notifications },
+    updates: { ...EMPTY.updates },
+  };
 }
 
 export class WorkspaceStore {
@@ -204,6 +220,7 @@ export class WorkspaceStore {
         ui: raw.ui ?? null,
         notifications: sanitizeNotifications(raw.notifications),
         autoTrust: raw.autoTrust !== false, // default on
+        updates: sanitizeUpdates(raw.updates),
       };
     } catch (err) {
       // corrupt/missing: back the corpse aside (post-mortem material), start fresh
@@ -304,6 +321,16 @@ export class WorkspaceStore {
     this.saveSoon();
   }
 
+  getUpdatePrefs(): UpdatePrefs {
+    return { ...this.state.updates };
+  }
+
+  /** Merge-patch, for the reason the notification prefs are (review P1 #13). */
+  setUpdatePrefs(p: Partial<UpdatePrefs>): void {
+    this.state.updates = sanitizeUpdates({ ...this.state.updates, ...p });
+    this.saveSoon();
+  }
+
   getAutoTrust(): boolean {
     return this.state.autoTrust;
   }
@@ -393,6 +420,29 @@ function sanitizeNotifications(n: unknown): NotificationPrefsState {
     osToasts: x.osToasts === true, // default OFF
     ...(typeof x.quietStart === 'string' ? { quietStart: x.quietStart } : {}),
     ...(typeof x.quietEnd === 'string' ? { quietEnd: x.quietEnd } : {}),
+  };
+}
+
+/**
+ * Update prefs, read tolerantly (P2-E19-03).
+ *
+ * `autoCheck` defaults ON, the same "!== false" shape as `autoTrust`. The two
+ * string fields are dropped unless they really are non-empty strings: a
+ * `skippedVersion` of `null` from a hand-edited file must not become the string
+ * "null" and quietly suppress a release nobody skipped.
+ */
+function sanitizeUpdates(u: unknown): UpdatePrefs {
+  if (typeof u !== 'object' || u === null) return { autoCheck: true };
+  const x = u as Partial<UpdatePrefs>;
+  return {
+    autoCheck: x.autoCheck !== false,
+    // Bounded: the value arrives over IPC from the renderer, and every other
+    // sanitizer in this file refuses to write something arbitrary to disk. A
+    // version string is never anywhere near this long.
+    ...(typeof x.skippedVersion === 'string' && x.skippedVersion
+      ? { skippedVersion: x.skippedVersion.slice(0, 64) }
+      : {}),
+    ...(typeof x.lastCheck === 'string' && x.lastCheck ? { lastCheck: x.lastCheck } : {}),
   };
 }
 

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { SlashCommand } from '../shared/slash-commands';
 import type { PtyAttachment, PtyChunk } from '../shared/ipc/pty';
 import type { BindingSnapshot } from '../shared/transcripts';
+import type { UpdatePrefs, UpdateStatus } from '../shared/update';
 
 const versionArg = process.argv.find((a) => a.startsWith('--switchboard-version='));
 const seedArg = process.argv.find((a) => a.startsWith('--switchboard-seed-panels='));
@@ -254,6 +255,27 @@ const api = {
       configPresent: boolean;
       ok: boolean;
     }> => ipcRenderer.invoke('preflight:check'),
+  },
+  /**
+   * Update checks (P2-E19-03). `check` runs one and RESOLVES with the answer;
+   * `onStatus` hears the ones nobody in this window asked for — the daily
+   * timer, and the Help ▸ Check for Updates… menu item.
+   */
+  update: {
+    check: (opts: { manual?: boolean } = {}): Promise<UpdateStatus> =>
+      ipcRenderer.invoke('update:check', opts),
+    onStatus: (cb: (s: UpdateStatus) => void): (() => void) => {
+      const h = (_e: unknown, s: UpdateStatus): void => cb(s);
+      ipcRenderer.on('update:status', h);
+      return () => ipcRenderer.removeListener('update:status', h);
+    },
+    getPrefs: (): Promise<UpdatePrefs> => ipcRenderer.invoke('update:getPrefs'),
+    /** merge-patch; `lastCheck` is main's own bookkeeping and is not settable */
+    setPrefs: (p: { autoCheck?: boolean; skippedVersion?: string }): Promise<UpdatePrefs> =>
+      ipcRenderer.invoke('update:setPrefs', p),
+    /** resolves FALSE for anything that is not an https GitHub URL */
+    openExternal: (url: string): Promise<boolean> =>
+      ipcRenderer.invoke('update:openExternal', url),
   },
   git: {
     status: (folder: string): Promise<unknown> => ipcRenderer.invoke('git:status', folder),

@@ -36,6 +36,7 @@ function noopDeps(): CommandDeps {
     toggleTabRows: () => {},
     jumpToNextAttention: () => {},
     openAbout: () => {},
+    checkForUpdates: () => {},
   };
 }
 

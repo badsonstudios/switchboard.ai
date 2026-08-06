@@ -42,6 +42,17 @@ export const CAPABILITIES = [
   'dialog.open', // a NATIVE file dialog. Deliberately its own capability:
   // holding "sessions" must not imply the power to put an
   // OS dialog in front of the user.
+  'update.check', // contacts the RELEASE HOST over the network and reads a
+  // locally-resolved credential to do it (P2-E19-03). Named
+  // for what it does, per `environment.probe`: this is the
+  // only capability in the app that makes an outbound
+  // request to the internet, and hiding that under
+  // "settings.read" would be exactly the mislabelling that
+  // precedent exists to prevent.
+  'shell.openExternal', // hands a URL to the user's BROWSER. Its own capability
+  // for the `dialog.open` reason — putting something in
+  // front of the user, outside the app, is a power in its
+  // own right and is not implied by anything else.
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -98,6 +109,13 @@ export const CHANNEL_CAPABILITIES = {
   'settings:getAutoTrust': 'settings.read',
   'settings:setAutoTrust': 'settings.write',
   'transcripts:binding': 'transcripts.read',
+  'update:check': 'update.check',
+  'update:getPrefs': 'settings.read',
+  'update:openExternal': 'shell.openExternal',
+  // "Skip this version" and the auto-check toggle are ordinary preferences —
+  // they persist in the workspace store next to the notification prefs, and
+  // deserve no capability of their own.
+  'update:setPrefs': 'settings.write',
   'transcripts:blocks': 'transcripts.read',
   'workspace:getLayout': 'workspace.read',
   'workspace:getUi': 'workspace.read',
@@ -125,6 +143,9 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:permissionResolved': 'sessions.read',
   'sessions:status': 'sessions.read',
   'sessions:usage': 'sessions.read',
+  // a check the renderer did not ask for (the daily timer, or the menu item)
+  // finished — the renderer decides whether that becomes a dialog
+  'update:status': 'update.check',
 } as const satisfies Record<string, Capability>;
 
 /**

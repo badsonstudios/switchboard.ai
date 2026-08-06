@@ -60,6 +60,8 @@ export interface CommandDeps {
   jumpToNextAttention: () => void;
   /** show the build identity — version, commit, branch, build age (E15-15) */
   openAbout: () => void;
+  /** ask the release host whether there is a newer build (E19-03) */
+  checkForUpdates: () => void;
 }
 
 const CATEGORY_SESSION = 'commands.category.session';
@@ -534,6 +536,17 @@ export function buildCommands(deps: CommandDeps): Command[] {
       categoryKey: CATEGORY_HELP,
       scope: 'app',
       run: () => deps.openAbout(),
+    },
+    {
+      // The keyboard route to the update check (E19-03). Palette-only and
+      // unbound for the same reasons as About — and here for the same reason
+      // too: the menu item is easy to miss, and §5.8 says the palette is where
+      // everything the app can do is reachable.
+      id: 'help.checkForUpdates',
+      titleKey: 'commands.checkForUpdates',
+      categoryKey: CATEGORY_HELP,
+      scope: 'app',
+      run: () => deps.checkForUpdates(),
     },
   ];
 }

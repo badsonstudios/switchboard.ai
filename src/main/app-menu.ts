@@ -21,7 +21,22 @@ import type { MenuItemConstructorOptions } from 'electron';
 /** accelerators the renderer's command registry owns — never claim these */
 export const RESERVED_ACCELERATORS = ['CommandOrControl+W', 'CommandOrControl+R'];
 
-export function buildMenuTemplate(platform: NodeJS.Platform): MenuItemConstructorOptions[] {
+/**
+ * Things the menu can ask the app to do.
+ *
+ * Optional, so the template stays pure data a test can build for any platform
+ * without wiring. A menu item whose callback is absent is simply not added —
+ * better a shorter Help menu than one with a dead entry in it.
+ */
+export interface MenuActions {
+  /** manual "Check for updates…" (P2-E19-03) */
+  checkForUpdates?: () => void;
+}
+
+export function buildMenuTemplate(
+  platform: NodeJS.Platform,
+  actions: MenuActions = {}
+): MenuItemConstructorOptions[] {
   const isMac = platform === 'darwin';
   const template: MenuItemConstructorOptions[] = [];
 
@@ -54,6 +69,22 @@ export function buildMenuTemplate(platform: NodeJS.Platform): MenuItemConstructo
         [{ role: 'minimize' }, { role: 'zoom' }, { type: 'separator' }, { role: 'front' }]
       : [{ role: 'minimize' }],
   });
+
+  // Help exists for exactly one thing so far: the manual update check
+  // (P2-E19-03). It is in the menu as well as the palette and the About panel
+  // because the menu is where every desktop app has put it for thirty years,
+  // and §5.8's promise is that capability is never out of reach — a user who
+  // has never opened the palette still has to be able to ask.
+  //
+  // NO accelerator: the registry owns keys, and this is a once-in-a-while
+  // action (`app-menu.test.ts` asserts the menu claims none of the two the
+  // renderer needs).
+  if (actions.checkForUpdates) {
+    template.push({
+      label: 'Help',
+      submenu: [{ label: 'Check for Updates…', click: () => actions.checkForUpdates?.() }],
+    });
+  }
 
   return template;
 }
