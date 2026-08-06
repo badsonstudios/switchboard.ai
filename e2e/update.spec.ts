@@ -71,6 +71,9 @@ class StubFeed {
   sidecarDigest: string | null = null;
   /** stall the installer body forever, so a cancel has something to cancel */
   stall = false;
+  /** see `holdBody()` */
+  private gate: Promise<void> | null = null;
+  private openGate: (() => void) | null = null;
 
   async start(): Promise<void> {
     const server = http.createServer((req, res) => {
@@ -79,10 +82,20 @@ class StubFeed {
           'content-type': 'application/octet-stream',
           'content-length': String(this.installer.length),
         });
-        // One byte, then silence: the renderer gets a moving bar and the test
-        // gets a download that is genuinely in flight when it presses Cancel.
-        res.write(this.installer.subarray(0, 1));
-        if (!this.stall) res.end(this.installer.subarray(1));
+        // HALF the body, then a pause: the renderer gets a determinate bar
+        // sitting at an exact 50%, and the test gets a download that is
+        // genuinely in flight when it presses Cancel or looks at the bar.
+        const half = Math.floor(this.installer.length / 2);
+        res.write(this.installer.subarray(0, half));
+        if (this.stall) return; // ...and never the rest; only a cancel ends it
+        const finish = (): void => {
+          res.end(this.installer.subarray(half));
+        };
+        // `holdBody()` decides WHEN the second half lands. Resolving the gate
+        // before the request arrives is fine — the promise is already settled,
+        // so `finish` runs on the next tick and the body simply is not held.
+        if (this.gate) void this.gate.then(finish);
+        else finish();
         return;
       }
       if (req.url?.startsWith('/assets/sidecar')) {
@@ -110,12 +123,41 @@ class StubFeed {
     ];
   }
 
+  /**
+   * Hold the installer body open, half-served, until `releaseBody()`.
+   *
+   * Without this the download, the checksum fetch and the hand-over all land
+   * inside a millisecond or two against a loopback stub serving 24 bytes — the
+   * `downloading` phase is real but far too brief to observe, and CI proved it
+   * by racing past the progress bar before the first poll could see it. The
+   * pause belongs to the TEST, not to the product: nothing here weakens what
+   * the bar has to be, it only keeps it on screen long enough to be checked.
+   */
+  holdBody(): void {
+    this.gate = new Promise<void>((resolve) => {
+      this.openGate = resolve;
+    });
+  }
+
+  /** Let a held body finish. Safe to call twice, or never. */
+  releaseBody(): void {
+    const open = this.openGate;
+    this.openGate = null;
+    open?.();
+  }
+
   /** Idempotent: one test deliberately kills the feed mid-test. */
   async stop(): Promise<void> {
     const server = this.server;
     this.server = null;
+    // A held or stalled body would keep `close()` waiting on a live socket for
+    // the rest of the run if the test that opened it failed before releasing.
+    this.releaseBody();
     if (!server) return;
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      server.closeAllConnections();
+    });
   }
 }
 
@@ -369,6 +411,9 @@ test.describe('one-click download + verified install (E19-04)', () => {
 
   test('Update downloads with progress, verifies, and hands over to the installer', async () => {
     feed.body = [release('v9.9.9', 'notes', feed.assets())];
+    // The download does not get to finish until this test says so — see
+    // `holdBody`. Half the installer, and then it waits.
+    feed.holdBody();
     a = await launch();
     const w = a.window;
     const home = a.home;
@@ -376,10 +421,19 @@ test.describe('one-click download + verified install (E19-04)', () => {
     await expect(dialog(w)).toBeVisible();
 
     await dialog(w).getByRole('button', { name: 'Update' }).click();
+    await expect(dialog(w)).toHaveAttribute('data-update-phase', 'downloading');
     // A REAL progress element, so what the user sees is a determinate bar and
-    // not a spinner pretending to know something.
-    await expect(dialog(w).locator('[data-update-field="bar"]')).toBeVisible();
-    // ...and it ends at the handover, having passed through verification.
+    // not a spinner pretending to know something: a `<progress>` out of 100
+    // carrying an actual `value` attribute — and the value is the bytes, not
+    // decoration. Half the body is on the wire, so it reads exactly 50.
+    const bar = dialog(w).locator('[data-update-field="bar"]');
+    await expect(bar).toBeVisible();
+    await expect(bar).toHaveJSProperty('max', 100);
+    await expect(bar).toHaveAttribute('value', '50');
+    await expect(dialog(w).locator('[data-update-field="progress"]')).toContainText('50%');
+
+    feed.releaseBody(); // ...and now let the rest of the bytes through.
+    // It ends at the handover, having passed through verification.
     await expect(dialog(w)).toHaveAttribute('data-update-phase', 'launching', { timeout: 20_000 });
 
     // The verified installer is on disk, in the directory main owns.
