@@ -8,8 +8,9 @@
  * exists for. It is kept only for the frames between a card mounting and the
  * first `setSessions` landing, when the store has no answer yet.
  *
- * EMPTY COUNTS AS ABSENT: the rail commits an empty draft unguarded and main
- * only length-caps it, so `''` is a legal session title and a header that
+ * EMPTY COUNTS AS ABSENT. A blank title can no longer be MADE — #294 rejects
+ * one at the rail's field and again in main's `sessions:renameCard` — but a
+ * workspace written before that fix can still hold one, and a header that
  * rendered it would leave the card with no visible identity. The conversation
  * landmark (#196) stops one rung earlier and announces the bare "Conversation"
  * rather than the folder — a path is a poor thing to hear read aloud, which is

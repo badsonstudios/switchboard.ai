@@ -33,7 +33,8 @@ Each group header counts its own waiting sessions (**"2 need you"**, or
 **"calm"** when none are), and the bar at the bottom of the list totals them
 for the whole workspace.
 
-Click a row to jump to that session. Double-click to rename it. Right-click for
+Click a row to jump to that session. Double-click to rename it — `Esc`, or Enter
+on an empty box, leaves the name alone. Right-click for
 **Open changes**, **Rename**, **Pin session**, **Close session**, and
 [what this session does when you submit a prompt](#changing-it).
 
