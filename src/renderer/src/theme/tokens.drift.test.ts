@@ -33,8 +33,9 @@ import { builtinThemes } from './builtin-themes';
 import { statusVars, STATUS_TOKENS, type StatusToken } from '../lib/rail-view';
 
 const cssPath = path.join(__dirname, 'tokens.css');
-// normalized: git hands Windows checkouts CRLF, and a selector spanning two
-// lines would never match
+// normalized: a selector spanning two lines would never match against CRLF.
+// `.gitattributes` pins checkouts to LF (#280); this stays as cheap insurance
+// for a working copy that predates it.
 const css = fs.readFileSync(cssPath, 'utf8').replace(/\r\n/g, '\n');
 
 /** the text of one `<selector> { … }` block, by the selector's exact text */
