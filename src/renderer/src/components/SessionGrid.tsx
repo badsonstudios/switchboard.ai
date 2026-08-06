@@ -46,6 +46,7 @@ import {
 } from '../lib/layout-mode';
 import { presentStatus } from '../lib/rail-view';
 import { tabStripAction } from '../lib/tabstrip-keys';
+import { cardHeaderTitle } from '../lib/card-title';
 import { StatusPill } from './StatusPill';
 import type { Ladder } from '../lib/presentation';
 import { pickAdoptedGroupId } from '../lib/groups';
@@ -53,6 +54,7 @@ import { addPopoutWindow, removePopoutWindow } from '../lib/popout-windows';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { setDraggedCard } from '../lib/drag-context';
 import { writePromptToPty } from '../lib/composer';
+import { dropRetired } from '../lib/held-permissions';
 
 /** Subscribe helper for useSyncExternalStore — module-level so its identity is
  *  stable across renders (a fresh function resubscribes every commit). */
@@ -83,19 +85,36 @@ interface Live {
   transport?: 'pty' | 'stream';
 }
 
-function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element {
+export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element {
   const { t } = useTranslation();
+  const cardId = props.params?.cardId;
+  // What the TAB calls the session, on screen and in its close confirmation
+  // (#264) — the store's copy first, exactly as the card header does it.
+  // dockview is told a panel's title once, at `addPanel`, and nothing in the
+  // tree ever calls `setTitle`, so `props.api.title` is the name the tab was
+  // born with: a rename from the rail reaches the record, the rail and the
+  // header, and stops at this strip.
+  //
+  // A DERIVED tab (diff) carries no cardId, so the store has no answer for it
+  // and its dockview title still wins — which is right: nobody renames a diff.
+  const storeTitle = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getCardTitle(cardId)
+  );
+  const title = cardHeaderTitle(
+    storeTitle,
+    props.api.title || props.params?.title,
+    props.params?.folder
+  );
   return (
     <div style={{ paddingInline: 8, display: 'flex', alignItems: 'center', gap: 4, blockSize: '100%' }}>
-      <IdentityChip title={props.api.title ?? props.params?.title ?? ''} compact />
+      <IdentityChip title={title} compact />
       <button
         onClick={(e) => {
           // close the tab: for a session card this ends the session AND
           // forgets the record (onDidRemovePanel -> closeCard) — so it
           // CONFIRMS first (Dan 2026-07-22); derived tabs (diff) just close
           e.stopPropagation();
-          if (props.params?.cardId) {
-            const title = props.api.title ?? props.params?.title ?? '';
+          if (cardId) {
             if (!window.confirm(t('grid.closeConfirm', { title }))) return;
           }
           props.api.close();
@@ -218,6 +237,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const controlsLocked = status === 'starting' || status === 'crashed' || exited !== null;
   const spawning = React.useRef(false);
   const folder = props.params?.folder;
+  // What the card CALLS itself, on screen (#250). The store's copy first, so a
+  // rename from the rail reaches the header — `props.api.title` alone is the
+  // name the card was born with. Chain and its empty-is-absent rule live in
+  // lib/card-title.
+  const headerTitle = cardHeaderTitle(cardTitle, props.api.title, folder);
 
   React.useEffect(() => {
     const d = props.api.onDidVisibilityChange((e) => setVisible(e.isVisible));
@@ -287,7 +311,25 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   React.useEffect(() => {
     if (!live) return;
     return window.switchboard.sessions.onExited((e) => {
-      if (e.sessionId === live.id) setExited({ code: e.code, crashed: e.crashed });
+      if (e.sessionId !== live.id) return;
+      setExited({ code: e.code, crashed: e.crashed });
+      // The THIRD way a session's held requests stop being answerable, and the
+      // one that reaches neither `forgetCardLiveIds` nor main's teardown (#239):
+      // a session that dies on its own keeps its binding and its record until
+      // the user restarts or closes the card. The exited overlay covers the
+      // review bar for the MOUSE only — the Allow / Allow all / Deny buttons
+      // stay mounted, tab-reachable and read out by a screen reader — so the
+      // click this issue exists to prevent is still one Tab away. The CLI
+      // process is gone, so nothing here can reach it: the honest thing is to
+      // stop offering the question.
+      //
+      // THIS IS THE UI HALF ONLY. Main does not release a self-exited session's
+      // holds — `unregisterSession` runs from `tearDownLive` and a plain exit
+      // never gets there — so the parked request and its timer live on in main
+      // until the 300s fail-open, and `sessions:pendingPermissions` goes on
+      // advertising it to any card that mounts meanwhile. Closing that belongs
+      // in main, next to `manager.onSessionExit`, and is not this change.
+      setPermQueue((prev) => dropRetired(prev, e.sessionId));
     });
   }, [live]);
 
@@ -422,6 +464,31 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     // setView identity is stable enough here; cardId is the real key (the
     // exhaustive-deps plugin isn't installed in this repo)
   }, [cardId]);
+  // A held request belongs to the LIVE session that raised it and dies with it
+  // (#239). Restart and the popout-close suspend both end the session while
+  // leaving this component MOUNTED with its queue intact, so when main's release
+  // is lost the next session's review bar opens holding the corpse's question:
+  // `Allow` decides a request that no longer exists, and `Allow all` writes a
+  // grant keyed by an id no map holds — #224's leak again, by user clicks.
+  //
+  // Main normally gets there first: tearing a session down releases what it is
+  // holding (`tearDownLive` → `unregisterSession` / `forgetSession`) and the
+  // resulting `permissionResolved` push is what usually empties this queue. This
+  // is the renderer's OWN guarantee, not a second copy of that one, because
+  // main's is explicitly best-effort — every step of `tearDownLive` is allowed
+  // to fail and be skipped, and `tearDownStep`'s docblock names this exact
+  // consequence: "a card showing a permission bar for a session that no longer
+  // exists" (#219). A queue whose only correction arrives from another process
+  // cannot repair itself when the correction is the thing that went missing.
+  //
+  // Local only — no `decidePermission` here. The request is already answered or
+  // already dead; sending a verdict for it would be a decision the user never
+  // made, aimed at a session that cannot receive it.
+  React.useEffect(() => {
+    return sessionStore.subscribeLiveRetired((liveId) => {
+      setPermQueue((prev) => dropRetired(prev, liveId));
+    });
+  }, []);
   const decide = (decision: 'allow' | 'deny', allowAll = false): void => {
     const head = permQueue[0];
     if (!head) return;
@@ -532,8 +599,17 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const restartSelf = (): void => {
     // drop the dead live session (keep the card record), then re-arm the lazy
     // spawn so the card respawns/resumes
-    if (cardId) void window.switchboard.sessions.dropLive(cardId);
-    if (live) sessionStore.forgetCardLiveIds(cardId ?? '');
+    //
+    // Both halves under ONE `if (cardId)` (#239). They used to disagree: main
+    // was told unconditionally while the renderer only unbound `if (live)`,
+    // which admits the state where main has torn the session down and this
+    // store still holds its binding, its grant and — since this issue — its
+    // queued holds. `forgetCardLiveIds` is idempotent, so the guard bought
+    // nothing, and `cardId ?? ''` was a sweep for a card that cannot exist.
+    if (cardId) {
+      void window.switchboard.sessions.dropLive(cardId);
+      sessionStore.forgetCardLiveIds(cardId);
+    }
     setExited(null);
     setLive(null);
     spawning.current = false;
@@ -723,7 +799,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 whiteSpace: 'nowrap',
               }}
             >
-              {props.api.title ?? folder}
+              {headerTitle}
             </span>
             {editingLabel ? (
               <input
@@ -1101,7 +1177,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         <div style={{ ...overlayBackdrop, position: 'relative', flex: 1 }}>{exitedOverlay}</div>
       ) : (
         <span style={{ margin: 'auto' }}>
-          {t('grid.resuming', { title: props.api.title ?? folder ?? '' })}
+          {t('grid.resuming', { title: headerTitle })}
         </span>
       )}
     </div>
@@ -2081,8 +2157,15 @@ export function SessionGrid(props: {
         const panel = api?.getPanel(`session-${cardId}`);
         // same contract as the tab ✕ (Dan 2026-07-22): confirm, because this
         // ends the session and forgets the record
-        const title =
-          panel?.title ?? sessionStore.getState().sessions.find((s) => s.id === cardId)?.title ?? '';
+        // store FIRST (#264): the panel's title is dockview's birth-time copy
+        // and is always set, so asking it first meant a renamed session was
+        // confirmed away under its old name — the record was only ever reached
+        // for a HIDDEN card, which has no panel.
+        const title = cardHeaderTitle(
+          sessionStore.getCardTitle(cardId),
+          panel?.title,
+          (panel?.params as CardParams | undefined)?.folder
+        );
         if (!window.confirm(t('grid.closeConfirm', { title }))) return;
         if (api && panel) {
           api.removePanel(panel); // onDidRemovePanel -> closeCard

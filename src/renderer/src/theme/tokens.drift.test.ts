@@ -658,3 +658,35 @@ describe('a status hue is never spent on words', () => {
     ).toContain('var(--status-done)');
   });
 });
+
+// --- A notice keeps its height in a short window (#241) ---------------------
+//
+// Not contrast, but the same shape of promise: a rule in tokens.css carries a
+// guarantee the app depends on, and nothing outside this file can see it.
+//
+// The window is a 100vh flex COLUMN (App.tsx) whose main area is `flex: 1`
+// with a basis of 0. Every pixel of negative free space therefore lands on the
+// AUTO-basis children above it — the always-visible notices — so a notice
+// without a shrink guard is the first thing a short window takes space from.
+// `WorkspaceReadOnlyBanner` has said exactly this inline since #168;
+// `.preflight-banner` had not (#241), which made the "claude wasn't found"
+// warning the one that got squeezed in the very case where both are up.
+//
+// Read out of the stylesheet because nothing else can reach it: jsdom loads no
+// CSS, and no e2e fixture can make preflight fail (that needs the built app
+// launched with `claude` off PATH). The rule's text is the only witness there
+// is, so a deletion has to fail here or it fails nowhere.
+const NO_SHRINK_RULES = ['.preflight-banner'];
+
+describe('an always-visible notice keeps its height', () => {
+  // the longhand specifically: `flex: 0 0 auto` would paint the same, but this
+  // is a one-line promise and a shorthand is where it goes to be lost inside a
+  // later edit that only meant to change the basis
+  it.each(NO_SHRINK_RULES)('%s declares flex-shrink: 0', (selector) => {
+    expect(
+      block(`${selector} {`),
+      `${selector} must declare flex-shrink: 0 — without it a short window ` +
+        `squeezes the notice instead of the content below it`
+    ).toMatch(/^\s*flex-shrink:\s*0\s*;/m);
+  });
+});
