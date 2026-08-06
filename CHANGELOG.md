@@ -38,7 +38,7 @@ someone tags.
 
 ---
 
-## 0.1.0 — unreleased
+## 0.1.0 — 2026-08-05
 
 The first packaged build. This section describes what the app *is*, not what
 changed — there is no earlier release to differ from.
@@ -55,6 +55,12 @@ changed — there is no earlier release to differ from.
 - Slash commands, a command palette, and full keyboard operation with
   screen-reader support.
 - Selectable themes, including a high-contrast one.
+- Session pinning (a pinned session sorts first and bulk actions skip it) and
+  a focus-stealing policy that decides whether a session that needs you may
+  jump to the front.
+- The app checks for new releases once a day and offers the update in a small
+  dialog with the release notes; checking is fail-open — no credentials or no
+  network simply means no check, never an error.
 
 ### Internal
 
