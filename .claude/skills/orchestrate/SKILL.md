@@ -156,13 +156,37 @@ On each worker completion notification:
    and move on to other tracks; if other tracks depend on it, stop the run
    and report. Use `SendMessage` to continue a worker whose question you can
    answer from the docs.
-3. **Merge queue (serial, one at a time):**
-   - **Internal PR:** wait for green CI (5 jobs), then squash-merge
+3. **Merge queue:**
+   - **Internal PR:** wait for green CI, then squash-merge
      (`gh pr merge --squash`), confirm the issue closed, delete the branch.
+     If main moved under it, bump (`update-branch`) and re-green first —
+     internals merge as they finish, so this stays rare.
    - **User-facing PR:** mark ready-for-review, add it to Dan's queue in the
      orchestration block with its test checklist. **Do not merge.**
-   - After ANY merge to main, the next PR in the queue rebases onto fresh
-     `main` and CI re-runs before it can merge. Idle worktrees rebase too.
+   - **The batch merge is a TRAIN BRANCH, not a serial bump chain (Dan,
+     2026-08-06 — run 6's serial train burned ~17 full CI runs / ~5 hours
+     re-verifying already-green PRs).** When Dan authorizes the queue:
+     1. `git fetch origin main` FRESH — run 6 lost an hour to an integration
+        merge built on a stale local `origin/main` ref. Fetch before EVERY
+        integration merge, not once per session.
+     2. `git checkout -b train/<yyyy-mm-dd> origin/main` in the main checkout.
+     3. Merge each queued feature branch in the report's suggested order.
+        Resolve conflicts and the flagged semantic integrations in one
+        sitting; verify each with targeted unit tests, and **read the counts
+        line (`Tests  N passed`), never the output tail** — run 6 pushed red
+        once off a truncated-tail misread.
+     4. Run the FULL local gate once on the train tree (lint, typecheck,
+        unit, e2e under the machine lock).
+     5. Push, open one PR titled `train: <date> — #a #b #c …` whose body
+        lists every contained PR and `Closes #<issue>` line. ONE CI run.
+     6. On green: **merge commit, not squash** (`gh pr merge --merge`) — the
+        contained branches' commits reaching main is what flips every
+        member PR to "merged" and fires its issue closes. The per-PR-squash
+        history is deliberately given up here (Dan accepted the trade).
+     7. Delete the feature branches; verify every member PR shows merged
+        and every issue closed. If the one CI run fails, fix ON the train
+        branch and re-run — still one lane, not N.
+   - Idle worktrees rebase onto fresh main after the train lands.
 4. **Dispatch the next unblocked issue** into the freed worktree. Re-run the
    queue analysis — merges change what is unblocked.
 5. Between notifications, schedule a fallback wakeup (20–30 min) so a hung
