@@ -200,6 +200,19 @@ On each worker completion notification:
    a run; Dan's first test step is confirming the About-panel stamp).
 3. Blocked/skipped: why, and the exact question or action Dan owes.
 4. Issues filed mid-run. 5. Worktree pool state. 6. Recommended next step.
+7. **Plain-English summary (added 2026-08-05, Dan's request): end EVERY
+   run's final report with a section titled "In plain English" —** a short
+   narrative (a few paragraphs, not a table) that a person who read none of
+   the run's PRs, issues, or jargon can follow. Rules: describe what the
+   *app* now does differently, not what the *code* looks like ("the app can
+   now install its own updates", not "electron-builder config landed");
+   no issue/PR numbers except in parentheses where genuinely helpful; no
+   internal codenames (worktrees, gates, locks, CI) unless the sentence is
+   *about* them; group by theme, not by chronology; and say plainly what
+   still doesn't work or waits on Dan. Write it LAST, after the technical
+   sections, so it summarizes the real outcome — and if the run ends early
+   (blocker, rate limits), the section still appears and says what got done
+   and what didn't.
 
 ## Notes
 

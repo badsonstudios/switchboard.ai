@@ -216,9 +216,14 @@ body {
 /* ---- Preflight banner (P1-E6-03, §5.25) -----------------------------------
  * "claude wasn't found" — the app's only surface that fills OPAQUELY with a
  * status hue and writes words on top of it, which is why it owns the only
- * on-fill ink token. (Tinted fills with hue-colored text are a different case:
- * the grid's status pill is audited as one since #221 — see .status-pill below
- * — but it is the only one, and .collapsed-row is the same shape and is not.)
+ * on-fill ink token. (Tinted fills with hue-colored text are a different case,
+ * measured as a mix rather than as a token pair: the grid's status pill since
+ * #221, the collapsed strip's needing row — at rest AND on hover — since #246.
+ * The urgency lamp was the same shape and is audited since #267: every lamp
+ * wash names its hue's ink, the washes sit at 12%/15% (15% is the measured
+ * ceiling over --panel2 for the #243 inks), and the lit state no longer
+ * borrows `--muted` — the drift test asserts the state MODEL and the ratios
+ * in every shipped theme.)
  * The look lives here rather than inline (#206) so the pair a reader
  * meets is a pair the drift test can measure: it reads the two var() names out
  * of this rule and asserts the ratio in every shipped theme, so putting a
@@ -226,6 +231,13 @@ body {
 .preflight-banner {
   background: var(--status-needs-permission);
   color: var(--status-needs-permission-ink-on-fill);
+  /* The window is a 100vh flex COLUMN whose main area is `flex: 1` with a
+   * basis of 0, so every pixel of negative free space in a short window lands
+   * on the auto-basis children above it — this strip among them. Without this
+   * line the warning that says why nothing will start is the thing that gets
+   * squeezed (#241). Its sibling notice has carried the same guard inline
+   * since #168; tokens.drift.test.ts is what keeps this one here. */
+  flex-shrink: 0;
   font-size: 11px;
   padding: 4px 12px;
 }
@@ -306,8 +318,15 @@ body {
   font-size: 12.5px;
   margin: 8px 0 4px;
 }
+/* -ink, not the hue (#246). A link in rendered assistant prose is body text
+ * with a colour, and the hue measured 2.53:1 on daylight's --panel — the worst
+ * of the six sites #221 reported and could not fix inside its own diff. It is
+ * the working INK rather than `--link` because `--link` is that same raw hue in
+ * all four themes and has no ink of its own — it is spent on edges and sashes
+ * (dockview-tokens.css), never on words, so switching to it would relabel the
+ * bug rather than fix it. */
 .feed-md a {
-  color: var(--status-working);
+  color: var(--status-working-ink);
 }
 .feed-md blockquote {
   border-inline-start: 2px solid var(--border);
@@ -580,8 +599,15 @@ body {
  * No themeable tokens are introduced — every value below resolves to one the
  * presets already declare (see tokens.drift.test.ts). */
 .collapsed-row {
+  /* ONE ramp position's hue and ink, as the status pill's defaults are (#246).
+   * `--row-ink` used to default to `--muted`, which is not a status colour at
+   * all — the row's base `color` below is `--muted` directly, and `--row-ink`
+   * is only ever read by the `[data-needs-you]` rule, which every Row fills in
+   * from `presentStatus`, so nothing on screen moves. What it buys is that the
+   * contrast test can tell which of the two placeholders is the INK from the
+   * rule alone, which is the check that stops the pair being swapped back. */
   --row-hue: var(--status-idle);
-  --row-ink: var(--muted);
+  --row-ink: var(--status-idle-ink);
   --row-accent: var(--faint);
   display: inline-flex;
   align-items: center;
@@ -609,14 +635,43 @@ body {
   background: var(--rail-row-hover);
   border-color: var(--row-hue);
 }
+/* A needing row is the status pill's shape a second time (#246): the state's
+ * INK on a tint of that state's own hue, at 10.5px. Both fills below name
+ * `--panel` instead of fading to `transparent` for the reason .status-pill
+ * does — a 14% mix with `transparent` composited over the strip IS this value
+ * (the strip's own background is `--panel`, CollapsedStrip.tsx), and naming it
+ * is what lets tokens.drift.test.ts compute the colour the word actually lands
+ * on. THE STRIP MUST STAY ON A --panel SURFACE, or these two ratios measure a
+ * fiction — asserted in CollapsedStrip.test.tsx, because a capitalised comment
+ * is not a guard. Identical AT REST; the 0.11s background transition now
+ * interpolates between two opaque colours rather than through a premultiplied
+ * alpha, which nobody will see and which is not worth the word "bit-identical".
+ *
+ * `.collapsed-state` (the state in words, below) inherits `--row-ink` on this
+ * same fill, so its ratio is the one measured here — it is not a second entry
+ * in TINTED_RULES because it would be the same two numbers.
+ *
+ * The hover tint was 26% and is 20%. 26% put the ramp at 4.03:1 on nordic and
+ * 4.39:1 on daylight — under AA, on hover, in the app's two default themes.
+ * The ceiling over `--panel` for the ink family #221 shipped is 21%; 20% is one
+ * step inside it and lands at 4.59:1 worst case. Lightening the inks further
+ * was the alternative and was declined: they are tuned to the pill and moving
+ * them repaints the rail, the lamps and the grid to fix a hover state. */
 .collapsed-row[data-needs-you='true'] {
-  background: color-mix(in srgb, var(--row-hue) 14%, transparent);
+  background: color-mix(in srgb, var(--row-hue) 14%, var(--panel));
   border-color: color-mix(in srgb, var(--row-hue) 55%, transparent);
   color: var(--row-ink);
   font-weight: 600;
 }
 .collapsed-row[data-needs-you='true']:hover {
-  background: color-mix(in srgb, var(--row-hue) 26%, transparent);
+  background: color-mix(in srgb, var(--row-hue) 20%, var(--panel));
+  /* a no-op on screen — the rule above already sets it, and this is the same
+   * value. It is here so the ratio for THIS fill is measurable: the drift test
+   * reads the ink and the background out of one rule, and a hover state whose
+   * ink has to be inferred from somewhere else is a hover state nothing checks.
+   * Delete it and the suite fails asking for a `color` rather than going
+   * quiet, which is the point. */
+  color: var(--row-ink);
 }
 /* the identity accent, as a leading bar — the same 3px stripe the expanded
  * card's header wears, so a session looks like itself at either rung */

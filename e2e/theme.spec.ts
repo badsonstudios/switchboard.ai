@@ -5,7 +5,12 @@
 // resolves is a token map that does nothing), and that the paint reaches a
 // popped-out window, which is a separate document with its own <html>.
 import { test, expect, Page } from '@playwright/test';
+import fs from 'fs';
+import path from 'path';
 import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
+// the ramp itself, not a copy of it: a seventh status added to the app would
+// otherwise drop out of the sweep in silence (#246)
+import { STATUS_TOKENS } from '../src/renderer/src/lib/rail-view';
 
 /** the RESOLVED value of a custom property on a document root */
 function token(page: Page, name: string): Promise<string> {
@@ -14,6 +19,202 @@ function token(page: Page, name: string): Promise<string> {
     name
   );
 }
+
+/** what one pass over the window found */
+interface Audit {
+  words: Word[];
+  /** does THIS theme give any status an ink different from its hue? The two
+   *  contrast themes do not, so there the hue half of the sweep is vacuous —
+   *  reported rather than assumed, so nobody has to exempt a theme by name. */
+  distinguishable: boolean;
+}
+
+/** one visible word, and what the window really painted it against */
+interface Word {
+  /** tag, classes and the first characters of the text — enough to go look */
+  what: string;
+  /** the element whose background the word ends up sitting on */
+  from: string;
+  ratio: number;
+  /** the raw status token, when the word is painted in a HUE rather than an ink */
+  hue: string | null;
+  /** color, opacity and backdrop as measured — a failure has to be actionable */
+  why: string;
+}
+
+/**
+ * Every status-coloured word in the RUNNING WINDOW, and its real ratio.
+ *
+ * ONE implementation, serialized into the page (it closes over nothing), used
+ * both by the pill's assertion and by the whole-window sweep — a second copy of
+ * contrast arithmetic is a second chance to be subtly wrong about the thing
+ * this file exists to be right about. It cannot be injected once and shared:
+ * the renderer runs under a strict CSP (csp.spec.ts) with no `unsafe-eval`, so
+ * a helper cannot be reconstituted inside the page.
+ *
+ * Three things it does that reading the token files cannot:
+ *  • it COMPOSITES the whole stack — every translucent background between the
+ *    word and the first opaque one, in order. Skipping to the first opaque
+ *    ancestor and measuring against that is optimistic: the rail's needy row is
+ *    a 10% tint over `--rail-card`, and ignoring the tint reports ~1 point more
+ *    contrast than is on screen. This is the exact mistake `.collapsed-row` was
+ *    rewritten to make computable, so the harness had better not make it.
+ *  • it folds in every `opacity`, INCLUDING the one on the element that
+ *    supplies the background — group opacity does not preserve contrast, it
+ *    fades the text and the fill toward whatever is behind BOTH of them (the
+ *    events panel's reviewed rows are `--panel2` at 0.82, and that is where the
+ *    difference shows).
+ *  • it reads the token NAME off an inline style where there is one, which is
+ *    the only way to tell `--status-working` from `--accent-blue` — the same
+ *    pixels, different meanings (see the sweep below).
+ */
+const auditWords = (opts: { ramp: string[]; only?: string }): Audit => {
+  // rgb()/rgba() come back 0-255, but anything that went through color-mix()
+  // arrives as color(srgb r g b) in 0-1 floats. Reading the second as 0-255
+  // scores every mixed colour as black — a false PASS for dark ink, which is
+  // exactly the case this exists for. Returns [r, g, b, a], all 0-1.
+  const rgba = (c: string): number[] => {
+    const n = (c.match(/[\d.]+/g) ?? ['0', '0', '0', '0']).map(Number);
+    const [r, g, b] = c.startsWith('color(') ? n : n.slice(0, 3).map((v) => v / 255);
+    return [r, g, b, n.length > 3 ? n[3] : 1];
+  };
+  const over = (top: number[], alpha: number, under: number[]): number[] =>
+    under.map((u, i) => top[i] * alpha + u * (1 - alpha));
+  const lum = (c: number[]): number => {
+    const f = (s: number): number => (s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+  };
+  const named = (el: Element): string =>
+    el.tagName.toLowerCase() +
+    (typeof el.className === 'string' && el.className.trim()
+      ? '.' + el.className.trim().split(/\s+/).join('.')
+      : '') +
+    ' "' +
+    (el.textContent ?? '').trim().slice(0, 30) +
+    '"';
+
+  const cs = getComputedStyle(document.documentElement);
+  const norm = (c: string): string => {
+    const t = c.trim();
+    if (t.startsWith('#')) {
+      const h = t.slice(1);
+      const p =
+        h.length === 3 ? [...h].map((x) => x + x) : [h.slice(0, 2), h.slice(2, 4), h.slice(4, 6)];
+      return p.map((x) => parseInt(x, 16)).join(',');
+    }
+    return rgba(t)
+      .slice(0, 3)
+      .map((v) => Math.round(v * 255))
+      .join(',');
+  };
+  // a hue is only DISTINGUISHABLE from its ink where the theme gives them
+  // different values; where they are equal there is no defect to find
+  const hueNames = new Map<string, string>();
+  const inks = new Set<string>();
+  for (const s of opts.ramp) {
+    const hue = norm(cs.getPropertyValue('--status-' + s));
+    const ink = norm(cs.getPropertyValue('--status-' + s + '-ink'));
+    inks.add(ink);
+    if (hue !== ink) hueNames.set(hue, '--status-' + s);
+  }
+  // §5.11 SESSION ACCENTS, read out of the stylesheet so a ninth needs no edit.
+  //
+  // Four of the eight are byte-identical to a status hue — `--accent-amber` IS
+  // `--status-needs-input`, `--accent-blue` IS `--status-working` — and a
+  // session's accent arrives as a raw hex from the main process
+  // (sessions/identity.ts), so a card's identity badge is the same pixels as a
+  // needs-input word with no name attached to tell them apart. Where there is
+  // no inline colour to read a name off, such a word is SKIPPED ENTIRELY,
+  // ratio included: an accent has no ink family at all and today's badge is
+  // 3.41:1 on nordic, which is a real defect but a different one (#246's
+  // hand-off) and not something this sweep should hold a contrast PR hostage
+  // to. The trade is measured, not assumed: reverting the tool block's inline
+  // colour to `var(--status-working)` still fails here by name, while
+  // reverting the CSS rule `.feed-md a` to the same hue does not — that case
+  // belongs to the source scan in tokens.drift.test.ts, which reads names for
+  // every site in the tree and never has to guess.
+  const accents = new Set<string>();
+  for (const sheet of Array.from(document.styleSheets)) {
+    let rules: CSSRule[];
+    try {
+      rules = Array.from(sheet.cssRules);
+    } catch {
+      continue;
+    }
+    for (const rule of rules) {
+      const style = (rule as CSSStyleRule).style;
+      if (!style) continue;
+      for (const prop of Array.from(style)) {
+        if (prop.startsWith('--accent-')) accents.add(norm(style.getPropertyValue(prop)));
+      }
+    }
+  }
+
+  const out: Word[] = [];
+  for (const el of Array.from(document.querySelectorAll(opts.only ?? '*'))) {
+    // WORDS only: an element with no text node of its own paints none, and
+    // every child would otherwise be counted again for its parent's inherited
+    // colour
+    const words = Array.from(el.childNodes).some(
+      (n) => n.nodeType === 3 && (n.textContent ?? '').trim() !== ''
+    );
+    if (!words) continue;
+    const box = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    if (box.width === 0 || box.height === 0 || style.visibility === 'hidden') continue;
+
+    // the token this element was HANDED, when it was handed one. A name cannot
+    // collide; a colour value can.
+    const token = /var\((--status-[a-z-]+)\)/.exec((el as HTMLElement).style?.color ?? '');
+    const colour = norm(style.color);
+    let hue: string | null = token && !token[1].endsWith('-ink') ? token[1] : null;
+    if (!opts.only && !token) {
+      if (accents.has(colour)) continue;
+      hue = hueNames.get(colour) ?? null;
+      if (!hue && !inks.has(colour)) continue;
+    }
+
+    // the stack, innermost first, then composited outermost-in so that every
+    // translucent layer and every group opacity lands in the right order
+    const stack: Array<{ el: Element; bg: number[]; op: number }> = [];
+    for (let n: Element | null = el; n; n = n.parentElement) {
+      const s = getComputedStyle(n);
+      stack.push({ el: n, bg: rgba(s.backgroundColor), op: Number(s.opacity) });
+    }
+    let cumulative = 1;
+    let surface = [1, 1, 1]; // the canvas behind the document
+    let from = 'nothing opaque';
+    for (let i = stack.length - 1; i >= 0; i--) {
+      cumulative *= stack[i].op;
+      const alpha = stack[i].bg[3] * cumulative;
+      if (alpha > 0) surface = over(stack[i].bg, alpha, surface);
+      // the LAST layer that covers what is behind it is the one a reader would
+      // name as "what this word is on"
+      if (alpha >= 0.99) {
+        from =
+          i === 0
+            ? 'self'
+            : (stack[i].el.getAttribute('data-testid') ??
+              (typeof stack[i].el.className === 'string' && stack[i].el.className.trim()
+                ? stack[i].el.className.trim()
+                : stack[i].el.tagName.toLowerCase()));
+      }
+    }
+    const ink = rgba(style.color);
+    const text = over(ink, ink[3] * cumulative, surface);
+    const [a, b] = [lum(text), lum(surface)];
+    out.push({
+      what: named(el),
+      from,
+      hue,
+      ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05),
+      why: `${style.color} at opacity ${cumulative.toFixed(2)} on rgb(${surface
+        .map((v) => Math.round(v * 255))
+        .join(',')}) (from ${from})`,
+    });
+  }
+  return { words: out, distinguishable: hueNames.size > 0 };
+};
 
 /** [picker label, the id it paints] — the shipped set, as a user meets it. */
 const THEMES: Array<[string, string]> = [
@@ -102,44 +303,113 @@ test.describe('themes (P2-E15-05)', () => {
       await w.getByRole('button', { name: label, exact: true }).click();
       await expect(w.locator('html')).toHaveAttribute('data-theme-id', id);
 
-      const seen = await pill.evaluate((el) => {
-        const lum = (c: string): number => {
-          // rgb()/rgba() come back 0-255, but anything that went through
-          // color-mix() arrives as color(srgb r g b) in 0-1 floats. Reading the
-          // second as 0-255 scores every mixed colour as black — a false PASS
-          // for dark ink, which is exactly the case this test exists for.
-          const n = c.match(/[\d.]+/g)!.slice(0, 3).map(Number);
-          const [r, g, b] = c.startsWith('color(') ? n : n.map((v) => v / 255);
-          const f = (s: number): number =>
-            s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-          return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
-        };
-        // the first OPAQUE background at or above the word. The pill's own fill
-        // is opaque by design (#221) so this should stop on the pill itself —
-        // reported back, because a walk that had to climb to the header would
-        // mean the fill went transparent again and the ratio below would be
-        // measured against a surface the user never sees through it.
-        let from = 'none';
-        let bg = 'rgb(255, 255, 255)';
-        for (let n: Element | null = el; n; n = n.parentElement) {
-          const c = getComputedStyle(n).backgroundColor;
-          const parts = c.match(/[\d.]+/g);
-          if (parts && (parts.length < 4 || Number(parts[3]) >= 0.99)) {
-            bg = c;
-            from = n === el ? 'pill' : (n.getAttribute('data-testid') ?? n.className ?? 'ancestor');
-            break;
-          }
-        }
-        const [ink, fill] = [lum(getComputedStyle(el).color), lum(bg)];
-        return {
-          from,
-          ratio: (Math.max(ink, fill) + 0.05) / (Math.min(ink, fill) + 0.05),
-        };
-      });
-
-      expect(seen.from, `${id}: the pill's own fill must be what the word sits on`).toBe('pill');
-      expect(seen.ratio, `${id} status pill contrast`).toBeGreaterThanOrEqual(4.5);
+      const seen = await w.evaluate(auditWords, { ramp: [...STATUS_TOKENS], only: '.status-pill' });
+      expect(seen.words.length, `${id}: no pill was measured`).toBeGreaterThan(0);
+      for (const word of seen.words) {
+        // the pill's own fill is opaque by design (#221), so the composite
+        // should end on the pill itself — a stack that had to reach the header
+        // would mean the fill went transparent again, and the ratio would be
+        // measured against a surface the user never sees through it
+        expect(word.from, `${id}: the pill's own fill must be what the word sits on`).toBe('self');
+        expect(word.hue, `${id}: the pill must paint its ink, never its hue`).toBeNull();
+        expect(word.ratio, `${id} status pill contrast — ${word.why}`).toBeGreaterThanOrEqual(4.5);
+      }
     }
+  });
+
+  test('no word on screen is painted in a raw status hue (#246)', async () => {
+    // #221 fixed the status pill and reported six more sites of the same
+    // defect: a status hue used as a TEXT colour. This is the painted answer
+    // to all of them at once — no selector list, so it cannot go stale and it
+    // finds sites nobody wrote down. It asks two questions of every visible
+    // word in the real window, in every shipped theme:
+    //   1. is its colour a raw --status-<x>? (only askable where the theme's
+    //      ink and hue DIFFER — the two contrast themes set ink == hue, so
+    //      there is nothing to tell apart and nothing to catch);
+    //   2. if its colour is a status INK, does it clear 4.5:1 against what is
+    //      actually behind it, opacity included?
+    // The feed is loaded first because five of the six sites are in it, and it
+    // is where the surfaces are tinted rather than flat.
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    // the CLI's part, as feed.spec.ts plays it: a link in rendered prose
+    // (.feed-md a), a tool block header (the tool's name), and a checklist —
+    // three of the sites, on screen, at their real sizes
+    const dir = path.join(a.home, '.claude', 'projects', folder.replace(/[\\/:. ]/g, '-'));
+    fs.mkdirSync(dir, { recursive: true });
+    const line = (o: Record<string, unknown>): string =>
+      JSON.stringify({
+        sessionId: 'native-contrast',
+        cwd: folder,
+        timestamp: new Date().toISOString(),
+        ...o,
+      }) + '\n';
+    fs.writeFileSync(
+      path.join(dir, 'native-contrast.jsonl'),
+      line({ type: 'user', message: { role: 'user', content: 'read the docs' } }) +
+        line({
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'text', text: 'see [the manual](https://example.invalid/manual)' },
+              { type: 'tool_use', name: 'Read', input: { file_path: 'C:/tmp/x.md' } },
+              {
+                type: 'tool_use',
+                name: 'TodoWrite',
+                input: {
+                  todos: [
+                    { content: 'first step', status: 'completed' },
+                    { content: 'second step', status: 'in_progress' },
+                  ],
+                },
+              },
+            ],
+          },
+        })
+    );
+    await expect(w.locator('.feed-md a')).toBeVisible({ timeout: 25_000 });
+    await expect(w.getByText('first step')).toBeVisible();
+
+    const distinguishable = new Set<string>();
+    for (const [label, id] of THEMES) {
+      await w.getByRole('button', { name: label, exact: true }).click();
+      await expect(w.locator('html')).toHaveAttribute('data-theme-id', id);
+
+      const seen = await w.evaluate(auditWords, { ramp: [...STATUS_TOKENS] });
+
+      const hues = seen.words.filter((x) => x.hue).map((x) => `${x.hue} on ${x.what}`);
+      expect(hues, `${id}: a status HUE is being used as a text colour`).toEqual([]);
+      const dim = seen.words
+        .filter((x) => x.ratio < 4.5)
+        .map((x) => `${x.what} = ${x.ratio.toFixed(2)}:1 — ${x.why}`);
+      expect(dim, `${id}: status-inked words below 4.5:1 as painted`).toEqual([]);
+
+      // The sweep's own guard, and it is not a formality: a walk that matched
+      // nothing passes both assertions above without looking at a single word,
+      // and that is exactly what a broken filter or a fixture that stopped
+      // rendering the feed would look like. Named sites, not a count, so a
+      // sweep that quietly stops reaching the feed fails instead of shrinking.
+      const measured = seen.words.map((x) => x.what).join(' | ');
+      for (const site of ['.status-pill', 'a "the manual"', '"Read"', '"[x]"']) {
+        expect(measured, `${id}: ${site} was not among the words measured`).toContain(site);
+      }
+      if (seen.distinguishable) distinguishable.add(id);
+    }
+
+    // The hue half of this test is only ASKABLE where a theme gives a status
+    // its own ink — high contrast and soft contrast set ink == hue, so there is
+    // nothing to tell apart in either. Derived from the themes rather than
+    // exempted by name (a renamed theme would otherwise fail for a non-defect),
+    // and asserted once at the end so that a change making ink == hue
+    // EVERYWHERE could not silently turn the whole check into a no-op.
+    expect(distinguishable.size, 'no theme distinguishes a status ink from its hue').toBeGreaterThan(
+      0
+    );
   });
 
   test('the theme AND language survive a relaunch of the built app', async () => {

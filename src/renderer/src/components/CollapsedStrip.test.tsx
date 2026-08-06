@@ -131,4 +131,23 @@ describe('the collapsed strip folds idle sessions (E9-08)', () => {
     await mount([]);
     expect(document.body.querySelector('[data-testid="collapsed-strip"]')).toBeNull();
   });
+
+  it('keeps the strip on --panel, which a needing row’s contrast is measured against', async () => {
+    // #246. `.collapsed-row[data-needs-you='true']` fills with `color-mix(…
+    // var(--row-hue) 14%, var(--panel))`, and tokens.drift.test.ts computes the
+    // ratio of the state's ink against exactly that. The `--panel` in the rule
+    // is only true because THIS container paints it — the row's own fill is
+    // translucent, so what is behind it is what the word really sits on. Move
+    // the strip onto `--chip` or `--bar` and every one of those 48 assertions
+    // goes on passing while measuring a surface that is no longer there.
+    //
+    // tokens.css says so in capitals; a capitalised comment is not a guard.
+    await mount([rowOf('a', 'needs-input')]);
+    const strip = document.body.querySelector<HTMLElement>('[data-testid="collapsed-strip"]');
+    expect(strip, 'no strip to check').not.toBeNull();
+    expect(
+      strip!.style.background,
+      'the collapsed strip must stay on --panel, or the needing row’s measured contrast is a fiction'
+    ).toBe('var(--panel)');
+  });
 });

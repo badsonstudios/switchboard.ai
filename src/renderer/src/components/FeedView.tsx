@@ -713,7 +713,10 @@ function ApprovalBar({
       }}
     >
       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBlockEnd: 6 }}>
-        <span style={{ fontWeight: 700, color: 'var(--status-needs-permission)' }}>
+        {/* -ink, not the hue: the title sits on the bar's own 8% tint of that
+            same hue, where the hue measures 2.19:1 on daylight and 4.04:1 on
+            nordic. The ink lands at 5.08-8.00:1 across the four themes (#246). */}
+        <span style={{ fontWeight: 700, color: 'var(--status-needs-permission-ink)' }}>
           {t('approval.title', { tool: approval.tool })}
         </span>
         {queued > 0 && (
@@ -1045,8 +1048,12 @@ function Composer({
           onClick={() => void interruptSession(sessionId)}
           title={t('feedView.stop')}
           style={{
+            // the same tinted-fill shape as the status pill (#221): the glyph
+            // is TEXT on a 14% wash of its own hue, which measured 2.84:1 on
+            // daylight and 3.37:1 on nordic. The ink clears 5.21:1 everywhere.
+            // The border keeps the hue — an edge is not a word (#246).
             background: 'color-mix(in srgb, var(--status-crashed) 14%, var(--panel))',
-            color: 'var(--status-crashed)',
+            color: 'var(--status-crashed-ink)',
             border: '1px solid var(--status-crashed)',
             borderRadius: 8,
             inlineSize: 30,
@@ -1087,7 +1094,10 @@ function Composer({
             background: 'transparent',
             border: '1px solid var(--border)',
             borderRadius: 'var(--radius-chip)',
-            color: autonomy === 'full-auto' ? 'var(--status-crashed)' : 'var(--muted)',
+            // the feed's copy of the grid's autonomy chip, which #221 fixed and
+            // this one was missed by (#246): 10px text in the raw crashed hue,
+            // 3.35:1 on daylight's --panel and 3.89:1 on nordic's
+            color: autonomy === 'full-auto' ? 'var(--status-crashed-ink)' : 'var(--muted)',
             fontSize: 10,
             fontFamily: 'var(--font-ui)',
             padding: '1px 8px',

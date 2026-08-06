@@ -749,6 +749,15 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
 
   // joined view for the rail: every persisted card, with its live status if
   // running or 'suspended' if restored-but-not-yet-resumed (E7-05)
+  //
+  // KEEP THE SNAPSHOT SYNCHRONOUS. The renderer drops a `cards` response that a
+  // later-issued one has already overtaken (#251, lib/latest-wins), and that
+  // guard is only meaningful because "issued later" implies "read later" —
+  // which holds only while `manager.list()`, `deps.persist.list()` and every
+  // `rec.status` below are read in the tick the invoke arrives. The single
+  // `await` is `autoKeyFor`, and it is evaluated AFTER `status` in the object
+  // literal. Hoist any resolution above those reads and the renderer's ordering
+  // guard silently degrades to a coin flip, with every test still green.
   broker.handle('sessions:cards', async () => {
     const live = manager.list();
     // The reverse of `cardOfLive`, and no longer a tie-break: a card holds ONE

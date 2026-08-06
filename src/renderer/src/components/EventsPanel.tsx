@@ -21,12 +21,36 @@ export type { EventDto } from '../model/types';
  *  mode is text running underneath a control. */
 const DISMISS_GUTTER = 64;
 
-const KIND_TOKEN: Record<EventDto['kind'], string> = {
+/**
+ * An event kind's colour, TWICE — because a ring and a word are not the same
+ * job (#246, the rule #221 established).
+ *
+ * `--status-<x>` is tuned to be seen as a dot, a ring or a tint; only
+ * `--status-<x>-ink` is tuned against what is behind a WORD. One map served
+ * both here, so the row's status line was painted in the raw hue: 1.80:1 for
+ * needs-input on daylight's `--panel2`, 2.34-3.10:1 for the rest, and
+ * 3.41-4.49:1 on nordic. The ring keeps the hue (an edge is held to 3:1, and
+ * it clears that); the word takes the ink and lands at 5.25-12.36:1.
+ *
+ * `ready` has no ramp position and stays `--faint` in both — it is the only
+ * kind that is not a status, and `--faint` is deliberately a hint rather than
+ * text. Left alone rather than quietly promoted: see #246's hand-off, along
+ * with this row's `opacity: 0.82`, which dims EVERY colour on a reviewed row
+ * and is the reason those still miss 4.5:1 even with the ink.
+ */
+const KIND_HUE: Record<EventDto['kind'], string> = {
   done: 'var(--status-done)',
   ready: 'var(--faint)',
   'needs-input': 'var(--status-needs-input)',
   'needs-permission': 'var(--status-needs-permission)',
   crashed: 'var(--status-crashed)',
+};
+const KIND_INK: Record<EventDto['kind'], string> = {
+  done: 'var(--status-done-ink)',
+  ready: 'var(--faint)',
+  'needs-input': 'var(--status-needs-input-ink)',
+  'needs-permission': 'var(--status-needs-permission-ink)',
+  crashed: 'var(--status-crashed-ink)',
 };
 
 export function EventsPanel(props: {
@@ -186,7 +210,7 @@ export function EventsPanel(props: {
                 fontSize: 11,
                 // outline, not border: a ring that shifts the row's box would
                 // make the whole list jump every time the head changes
-                outline: isNext ? `1px solid ${KIND_TOKEN[e.kind]}` : undefined,
+                outline: isNext ? `1px solid ${KIND_HUE[e.kind]}` : undefined,
                 outlineOffset: -1,
                 // the reviewed tail is a log, not a to-do — it recedes, but it
                 // still has to be readable (Dan 2026-07-26: 0.65 was too dim)
@@ -268,7 +292,7 @@ export function EventsPanel(props: {
                 <span
                   style={{
                     display: 'block',
-                    color: KIND_TOKEN[e.kind],
+                    color: KIND_INK[e.kind],
                     marginBlockStart: 1,
                     // width AND height: Dismiss is out of flow now, so this
                     // line is the only thing holding the row tall enough for

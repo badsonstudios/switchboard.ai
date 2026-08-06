@@ -25,6 +25,18 @@ numbers (latency, CPU, memory) where the item asks for them.
    | `check:hooks` (hook-driven status) | local only | a real interactive session + a real Write tool call — **spends tokens** |
    | `check:transcripts` (usage extraction) | local only | a real `-p` turn, then parses the CLI's own transcript — **spends tokens** |
 
+   **All five guard their bundle (#298).** A check script execs
+   `out/main/<name>-check.js` directly and never builds, so it had #286's trap
+   exactly: a check failing against last hour's bundle reads like a regression
+   in the code you just wrote. They all run through
+   `scripts/run-electron-node.js`, which calls the bundle guard (below) before
+   it spawns anything under `out/` — one wiring, so a sixth check script gets it
+   free and `check-scripts.test.ts` fails if one ever bypasses the runner. It
+   guards **that check's bundle plus `out/main/index.js`** (where the build
+   identity is baked), NOT the renderer — a half-built renderer is nothing to
+   `check:pty`. **Run `npm run build` first**, or the check refuses with the
+   command to paste.
+
    The three local-only ones can never be wired in: a runner has no
    subscription login, and the only ways to give it one (an API key, or
    spending Dan's tokens per PR) are hard constraints we do not cross. Re-run
@@ -58,21 +70,31 @@ numbers (latency, CPU, memory) where the item asks for them.
      against whatever is already in `out/`; `npm run e2e:headed` (builds) /
      `e2e:ui` (does not) for debugging. **`e2e:only` is not "the full suite" —
      it is the full suite against the LAST BUILD.**
-   - **The stale-bundle guard (#286).** `e2e:only` and `e2e:ui` run
-     `scripts/e2e-bundle-guard.js` first: it prints the build identity baked
-     into `out/main/index.js` (which SHA, which branch, how old) and **exits 1**
-     when any bundled source under `src/` — or `electron.vite.config.ts` /
-     `package.json` — is newer than `out/`. Editing a spec, a `*.test.ts` or a
-     doc does not trip it; those are not bundled. It exists because testing an
-     edit against the previous build fails in a way that reads exactly like a
-     logic bug, and did (#253, and P2-E15-15's original hand-test). Escape
-     hatch: `E2E_ALLOW_STALE=1` (warns, then runs; `$env:E2E_ALLOW_STALE=1` in
-     PowerShell). A missing `out/` fails regardless — there is nothing to test.
+   - **The stale-bundle guard (#286, extended #298).**
+     `scripts/bundle-guard.js` runs ahead of everything that executes `out/`
+     without building it — `e2e:only`, `e2e:ui`, and all five `check:*`. It
+     prints the build identity baked into `out/main/index.js` (which SHA, which
+     branch, how old) and **exits 1** when any bundled source under `src/` — or
+     `electron.vite.config.ts` / `package.json` / `package-lock.json` — is newer
+     than `out/`. Editing a spec, a `*.test.ts` or a doc does not trip it; those
+     are not bundled. It exists because testing an edit against the previous
+     build fails in a way that reads exactly like a logic bug, and did (#253,
+     and P2-E15-15's original hand-test). Escape hatch:
+     `ALLOW_STALE_BUNDLE=1` (warns, then runs; `$env:ALLOW_STALE_BUNDLE=1` in
+     PowerShell — #286's `E2E_ALLOW_STALE` still works). A missing `out/` fails
+     regardless — there is nothing to test. **The failure message names the
+     command you actually typed**, so it stays pasteable.
+   - **It also flags a FOREIGN `out/` (#298)** — baked branch vs. the branch of
+     the checkout, resolved the same way `probeBuildIdentity()` resolves it
+     (including GitHub's env fallback, so CI's detached HEAD does not
+     false-positive). That one is a printed **NOTE, never a failure**: mtimes
+     are proof, a branch name is a hint, and `npm run build` then `git checkout
+     -b` leaves a correctly-built bundle stamped with the old branch.
    - **It compares mtimes, so any git operation that rewrites files — rebase,
      `checkout`, `stash pop`, merge — trips it even when the content is
-     identical.** The answer is `npm run build`, not `E2E_ALLOW_STALE=1`. Never
-     bake the override into a runbook or a worker prompt: a guard that is always
-     overridden is a guard that is not there.
+     identical.** The answer is `npm run build`, not `ALLOW_STALE_BUNDLE=1`.
+     Never bake the override into a runbook or a worker prompt: a guard that is
+     always overridden is a guard that is not there.
    - **Add an e2e test for every new user-facing surface.** If a feature can
      only be checked by looking at the window, it needs an e2e test — not a
      PROGRESS "[Dan eyeball]" note.
