@@ -279,7 +279,17 @@ describe('sessions rail rows (issue 197)', () => {
     );
     expect(named).toEqual([en.rail.menuMove, en.ladder.policyMenu, en.ladder.focusMenu]);
 
-    for (const group of menu.querySelectorAll<HTMLElement>('[role="group"]')) {
+    // The OverrideGroup assertions below are about OVERRIDE semantics —
+    // default-first, default-checked — which the move-to-group set does not
+    // share (its checked member is wherever the session IS, and a one-group
+    // workspace legitimately offers just two destinations). That set has its
+    // own describe (#253); this loop holds the two override sets to their
+    // contract.
+    const overrideGroups = Array.from(
+      menu.querySelectorAll<HTMLElement>('[role="group"]')
+    ).filter((g) => g.getAttribute('aria-label') !== en.rail.menuMove);
+    expect(overrideGroups).toHaveLength(2);
+    for (const group of overrideGroups) {
       const radios = Array.from(group.querySelectorAll<HTMLElement>('[role="menuitemradio"]'));
       // every value plus "follow the default", which must be reachable by the
       // same gesture that left it
