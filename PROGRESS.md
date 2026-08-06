@@ -8,7 +8,8 @@
 E9: #70–#77 done, **#78/#79 in Dan's queue** (PRs #287/#301), #80 held on a
 scoping call; **E19 release/auto-update NEW 2026-08-05** — 01/02 merged, 03
 in Dan's queue, 04 held on #276's merge; E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.** 🎉 **RELEASE v0.1.0 CUT
+**In progress:** **🎛 RUN 7 ACTIVE (started 2026-08-06, /orchestrate)** —
+orchestration block below. Before run 7: 🎉 **RELEASE v0.1.0 CUT
 2026-08-06** — the run-6 merge train (13 PRs) is FULLY MERGED
 (Dan-authorized, serial bump+re-green, 5 real conflict sets + 3
 semantic integrations resolved), tag v0.1.0 pushed, the release
@@ -29,7 +30,276 @@ structure adopting #228's temp-dir registry, verified by a local
 161+1 skip (from the merged branches' gate runs: 1227+46+5+16 /
 156+4+0+1).
 
-> # ▶▶ START HERE — 🎛 RUN 6 CLOSED 2026-08-05. **22 items in ~9.5
+> # ▶▶ START HERE — 🎛 RUN 7 CLOSED 2026-08-06 (~5.5 h). **10 items:
+> 3 internal MERGED (#280→#304, #284→#317, #300→#316*), 5 user-facing
+> PRs in DAN'S QUEUE (#305 #307 #308 #309 #318), #255 measured-only
+> (161 errors, decisions on the issue), plus Dan's LIVE mid-run bug
+> (#310) diagnosed→filed→fixed same run. 9 issues filed from
+> discoveries (#306 #311–#315 #319 #320 + #310 itself), 1 fixed
+> same-run. *Residual mechanics: GitHub's LINUX RUNNER POOL was
+> starved all afternoon (12+ zero-step cancellations across every PR,
+> up to 51 min queued; ZERO real Linux failures) — #316 merges and
+> the last ubuntu lanes re-green on the watchdog wakeups; every
+> Windows lane and every completed ubuntu lane is green. Main @
+> fd47f7c, out/ REBUILT + stamp verified both bundles — `npm start`
+> is current. Full hand-test batch + suggested train order
+> (#305→#307→#308→#318→#309, stream.spec keep-both) in the run-7
+> final report. One worker casualty: Dan's mid-run interrupt stopped
+> the #261-A/#260/#294 agents — ALL after their handoffs; zero work
+> lost; the #310 scope-expansion bounced and ran as its own worker.
+> Zero lock steals, zero red pushes, zero rate-limit warnings.**
+>
+> **Single-writer rule:** this file is written ONLY by the orchestrator
+> session. Workers report via handoff files in
+> `.claude/work_files/orchestrator/<issue#>.md`; handoffs are the inputs,
+> this file is the output. If this session dies, a fresh /orchestrate
+> session resumes from THIS block.
+>
+> **Queue (run-7, as dispatched):** #280 (renormalize, SOLO —
+> zero-open-PR window, internal) → then parallel: #260 (E19-04, UF),
+> #274 (banner shrink-guards, UF), #294 (title hygiene pair, UF) →
+> backfill: #261 part A (superseded mid-run by Dan's #310 diagnosis),
+> #284 (urgency clock seam, internal), #300 (git-identity ??→||,
+> internal), #255 (eslint type-checked MEASURE, internal), + #310
+> (Dan's live bug, inserted) + one #309-CI-fix follow-up. Held/
+> decisions: #80 #111 #268 #269 #290 #292 #295 #216 #207 #200 #191
+> #129 #256(epic); NEW decisions this run: #255 tranches, prettier
+> adopt/drop (#280 finding), E19-04 acceptance (v0.1.1 vs draft
+> recipe), #320 lamp beat. #261 closes at train time citing #308 +
+> #318 + #313/#319.
+>
+> **Active workers: NONE — all work complete, run in CI-settle
+> close-out.** Queue EMPTY. Worktrees idle+clean (parked refs:
+> sb-wt-1 feature/260-update-install + feature/300-…, sb-wt-2
+> feature/310-… + 274/261 refs, sb-wt-3 detached). Main checkout
+> REBUILT at fd47f7c, stamp verified in both bundles. Remaining
+> mechanics: queued ubuntu CI lanes (runner starvation all
+> afternoon) on #307 #308 #309 #316 #318 → then MERGE #316
+> (internal, no code failures anywhere). Train-conflict watch:
+> #308×#310 (stream.spec.ts — both append at the end,
+> self-contained, keep-both; train order #308 first). #274×#284
+> conflict MOOT (#317 test-side only, merged).
+>
+> ✅ **#309 CI-fix pushed (903892c on feature/260-update-install,
+> PR updates in place).** Root cause: TEST race, not product — the
+> stub's 24-byte installer ran downloading→verifying→launching in
+> ~ms, and the dialog correctly unmounts the bar at launching, so
+> CI's first poll missed it (the live-v0.1.0 probe had already
+> proven real determinate progress on a 104 MB download). Fix: the
+> test owns the wire — stub sends half the body, holds until
+> releaseBody(); assertion STRENGTHENED (real <progress max=100>,
+> value exactly 50, label "50%" — proves byte-tracking, not
+> existence). 13/13 green repeats; full gate 2304 unit / 194+1 e2e.
+> Windows lanes green on the push run; ubuntu lanes queued (infra).
+> Handoff appended to 260.md.
+>
+> **#255 MEASURED, no PR (stays open on Dan's decisions).**
+> Headline: switching src/ to recommendedTypeChecked = **161
+> errors / 53 files / 10 rules — 126 in tests, only 35 in shipping
+> code** (tranches: shared+build+preload 1, main-prod 24,
+> renderer-prod 11, main-tests 52, renderer-tests 73). Zero parse
+> errors, type program verified live. Two findings: (1) 49 of 79
+> require-await hits are RTL's `await act(async …)` idiom — worker
+> TESTED the naive strip (43/43 still green = silent effect-flush
+> regression), so the test tranche can't hit zero-disable honestly
+> without a scoped rule-off; (2) **no-base-to-string ×13 is a real
+> latent bug class**: `String(<unknown off CLI JSON> ?? '')` at the
+> untrusted-stream boundary renders `[object Object]` into the
+> feed/approval card (FeedView.tsx:737, stream-permissions.ts:70
+> user-facing) — the strongest argument FOR the switch; B-tranche
+> is correctness, not lint hygiene. 3 decisions queued for Dan in
+> the issue comment on #255. Branch has zero commits; worktree
+> pristine. Handoff: 255.md.
+>
+> **#310 → PR #318 READY, IN DAN'S QUEUE** (user-facing; Dan's
+> live allow-all banner bug — points 2+3 of his diagnosis verified
+> and fixed). StreamPermissions.decide() now applies
+> permission-resolved (required ctor collaborator, compiler-found
+> call sites); SessionGrid's auto-allow opens the recentlyDecided
+> suppression window (review also fixed: it was a boolean whose 2s
+> timer never re-armed — now a counter). One deliberate divergence:
+> forgetSession() does NOT apply (mirrors the hook path; ipc.ts
+> names the hazard; reviewer agreed). The e2e nearly had no teeth —
+> with plain !perm the fake answers same-tick and the spec passed
+> with both fixes reverted; worker added !permhang to the fake (ask,
+> run tool, say nothing) and it now fails on revert. Gate: 2238
+> unit / 189+1 e2e ×2 runs. PTY pinned unchanged. No manual changes
+> owed. **Point 4 confirmed WORSE than filed → #319 filed**
+> (stream holds: no timeout/liveness/releaseHeld — closed window
+> parks the CLI FOREVER; plus stream allow-all should be answered
+> server-side). **Dan: the BEEP + Events entry per gated call in
+> allow-all Direct sessions SURVIVES #318** — that's #319 part (b),
+> not a miss in this PR. #261 disposition at train time: close it
+> citing #308 (part A) + #318 (mechanics) + #313/#319 (remainder).
+> Handoff: 310.md.
+>
+> **CI infra note (ongoing):** second sweep 13:0x — five more
+> failures ALL infra (one Set-up-job, four 0-step starvation
+> cancels; #307's ubuntu unit lane now on attempt 5). Reruns
+> triggered for #316/#307/#308. Zero real code failures beyond
+> #309's update.spec race (fix worker active). Third sweep ~13:50:
+> lanes flipping green across the board; #309's newer run had its
+> Windows e2e PASS (race is timing-dependent — determinism fix
+> still correct) and one more ubuntu starvation cancel (rerun
+> blocked while the run's last lane finishes; the fix worker's
+> push supersedes it anyway).
+>
+> ✅ **#284 → PR #317 MERGED 2026-08-06** (internal; main @
+> fd47f7c; issue closed; CI 4/4 green pre-merge). Entirely
+> TEST-SIDE (+201/−19, zero product files → #274 train conflict
+> moot). e2e: withStoppedClock pins the renderer's Date.now for
+> the jump assertions. Unit: 5 new fake-timer tests for the
+> strip's untested half of the beat (incl. the clock-skew re-arm
+> branch). Determinism proven by CONTROLLED EXPERIMENT, not green
+> repeats: 5s stall between jump and assertion — clock stopped
+> passes, clock running reproduces the issue's exact signature.
+> Gate: 2221 unit / urgency ×6 42 passed / 188+1 e2e. Discovery →
+> **#320 filed** (the REAL product weakness, deliberately unfixed:
+> the 1.5s lit beat runs from keypress, not paint — slow machine =
+> no lit lamp; §5.8 design call, → Dan's decision list). Worker
+> process note worth keeping: `read -t N` under Git Bash does NOT
+> block (instant EOF — lock polls silently shrink); use
+> `perl -e 'select(undef,undef,undef,N)'`. Handoff: 284.md.
+>
+> ✅ **#300 → PR #316 DONE — bumped onto fd47f7c (main moved; repo
+> requires up-to-date branches; auto-merge not enabled repo-side),
+> re-CI in flight, watchdog merges on green** (internal).
+> `??`→`||` on BOTH sides of the mirror (git-identity.ts +
+> bundle-guard.js); the #298 mirrored-literal pin replaced by a
+> test that IMPORTS probeBuildIdentity into bundle-guard.test.js
+> and asserts agreement across 7 env shapes (revert-proven: 2 red).
+> Sibling audit: no third copy of the fallback repo-wide. Gate:
+> 2218 unit / 188+1 e2e first-try. Nice property: this PR's own
+> merge is the test — the resulting push build of main should stamp
+> "on main", not "on detached". Handoff: 300.md.
+>
+> **⚠ CI infra is flaky today (2026-08-06 afternoon):** repeated
+> runner starvation (jobs cancelled at 15m with 0 steps, no runner
+> assigned — #307 ×3 attempts, #309 ×3 jobs) and "Set up job"
+> failures (#308 ×3 jobs). Reruns triggered; only ONE real code
+> failure found under the noise: #309's new update.spec.ts:370
+> progress-bar visibility race on CI Windows (bar likely unmounts
+> before the first expect poll on a fast loopback download — both
+> attempts, 193 others passed). Follow-up worker dispatched on the
+> #260 branch to root-cause and fix without weakening the
+> determinate-bar assertion.
+>
+> **DAN INTERJECTED MID-RUN (2026-08-06):** hit the Direct-mode
+> handoff-banner bug LIVE (allow-all session, banner flashes ~5s on
+> every permission ask) and sent a 4-point code-level diagnosis from
+> another session. Filed as **#310** (companion to #261): (2)
+> StreamPermissions.decide() never applies permission-resolved —
+> status lingers until the next stream message; (3) allow-all
+> auto-answer leaves hasApproval=false during needs-permission =
+> the banner's render condition; (4) stream allow-all is
+> renderer-only — window-dead case = possibly a parked CLI
+> (verify-and-report, split later). Point (1) = #261-A, already
+> fixed in PR #308. Worker dispatched on 2+3, 4 as writeup. NOTE:
+> Dan's interrupt STOPPED the #261-A agent post-handoff (work
+> complete, nothing lost); its scope-expansion message bounced,
+> hence the separate #310 worker.
+>
+> **Merge queue:** empty. **Dan's queue (4 PRs):** #305 (#274,
+> 4/4 green) · #307 (#294, 2 unit-lane jobs were CANCELLED by a
+> GitHub runner-starvation hiccup at attempt 2 — steps:[], runner_id
+> 0; e2e lanes green; rerun triggered, NOT a code failure) · #308
+> (#261-A, CI running) · #309 (#260, CI running). Plus a
+> non-blocking QUESTION from #260's worker: the E19-04 done-when
+> needs a real installed update to fully prove; drafts are invisible
+> to releases/latest and the worker rightly refused to publish. Dan:
+> either cut v0.1.1 as the acceptance step or ask for the
+> draft+dev-override recipe (details in 260.md handoff §Question).
+>
+> **#294 → PR #307 READY, IN DAN'S QUEUE** (user-facing). Header
+> name span now ellipsises (header overflowed its card by a
+> measured 1170px before, 0 after); empty/whitespace renames
+> rejected at BOTH the rail field (edit ends, old name stands —
+> Escape's idiom) and `sessions:renameCard` in main (the seam that
+> made `''` truly impossible; review-found, the more important
+> half). +9 unit (2225), +1 e2e (189+1), mutation-proofed all three
+> guards. Manual: 02-sessions.md + 07-workspace.md. Discovery →
+> **#311 filed** (GROUP rename has the identical defect ~380 lines
+> below, worse: empty name ≈ unrenameable group). Handoff: 294.md.
+>
+> **#261-A → PR #308 READY, IN DAN'S QUEUE** (user-facing; Part A
+> of #261 — issue stays open pending part-B disposition, now filed
+> as #313). The one-line fix (transport threaded into FeedView in
+> the feed contribution) + the layered tests Dan asked for: unit
+> table over all three handoff branches × three transports, a
+> WIRING test at the panels.tsx boundary (mutation-verified: drop
+> the prop → red), and an e2e that drives a real Direct session to
+> needs-permission and asserts bar+button absent while the Terminal
+> tab says "No terminal". Part-B writeup (criterion 6, code-reading
+> only): the false-alarm mechanism is the hook Notification
+> /permission/i arm at state-machine.ts:176 — the E18-07 stream
+> guard already suppresses the HOLD one layer down but not the
+> STATUS; recommendation = producer-side suppression in
+> hook-listener; **filed as #313** with the fake-stream testability
+> gap and the Dan-decision live-probe pairing (hook-listener.ts:633).
+> Dropped-prop audit of all of src/: 2 real hits → **#312 filed**
+> (IdentityChip accent/badge dead app-wide + preload permission-DTO
+> typing fold-in), 1 latent noted, 1 fixed in-PR (PanelContext.
+> approval.reason, type-only). Gates: 2226 unit / 189+1 e2e, 3
+> mutation checks. Manual: 03-session-view.md + 11-troubleshooting.md
+> transport-qualified. Handoff: 261.md.
+>
+> **#260 → PR #309 READY, IN DAN'S QUEUE** (user-facing; E19-04,
+> the last E19 item). Update button now downloads with determinate
+> progress + working cancel, verifies against the .sha256 sidecar
+> (mismatch = delete + never execute + browser fallback), silently
+> installs per-user, quits; next startup confirms "You're now on
+> vX" in the events panel via persisted pendingUpdateVersion.
+> Escape/click-away leaves a dismissible "ready to install" notice;
+> Ignore/Skip don't (they're answers). Security posture from the
+> review: token gated by HOST (api.github.com only, never the 302
+> redirect target), update:install takes NO renderer arguments,
+> sidecar read against a hard cap. Read-only probe against the LIVE
+> v0.1.0 release proved the real network+verify contract (103.8 MB
+> through the real 302, token dropped, checksum matched, flipped
+> byte caught); no release/tag/draft created, no installer executed,
+> machine untouched (still on v0.1.0). Gates: 2304 unit (+88) /
+> 194+1 e2e. Two real defects caught by e2e in-flight (stalled-body
+> cancel; a test opening real browser tabs) — both fixed + pinned.
+> Manual: 13-updates.md extended. Discoveries → **#314 filed**
+> (EventsPanel reconnect offer has no aria-live) + **#315 filed**
+> (withdrawn-release race message). QUESTION for Dan above. Handoff:
+> 260.md.
+>
+> **#274 → PR #305 READY, IN DAN'S QUEUE** (user-facing class;
+> 2026-08-06). Audit of App's 100vh column: TitleBar, StatusBar,
+> UrgencyStrip, CollapsedStrip had NO shrink guard; read-only
+> banner's was unpinned. Landed flexShrink:0 on all + the real
+> point: `always-visible-notices.test.ts`, ONE roster naming every
+> always-visible bar + an App.tsx scan that fails when a new shell
+> child is in neither roster nor stated exemption (#241's
+> .preflight-banner pin folded in — two lists would recreate the
+> bug). 9 mutations verified. Gate: 2226 unit (+10) / 188+1 e2e.
+> Scope call flagged: TitleBar/StatusBar included ("notice" doesn't
+> obviously cover them; reverting is 2 roster rows + 1 line). No
+> manual page — no observable change at ordinary window heights.
+> Discoveries: **#306 filed** (popout banner guard unreachable by
+> the roster, unpinned); chrome.tsx:222 long-line → folded into the
+> standing prettier decision. Handoff:
+> `.claude/work_files/orchestrator/274.md`.
+>
+> ✅ **#280 → PR #304 MERGED 2026-08-06** (internal; main @ 134868c;
+> issue closed; 4/4 CI green first try, incl. both windows jobs).
+> `.gitattributes` (`* text=auto eol=lf` + binary/`.cmd` carve-outs).
+> **Headline: the renormalize was a NO-OP** — every tracked blob was
+> already LF in the object store (zero CR bytes verified); the defect
+> was checkout-side only, so the quiet-window constraint never
+> applied and no branch can inherit phantom conflicts. Final diff: 4
+> files (.gitattributes + 3 comment-only edits). Gate: 2216 unit /
+> 188+1 skip e2e. **Discovery → Dan's decision list: the issue's
+> prettier premise was WRONG** — prettier isn't a dependency at all
+> (`lint` = `eslint .`); making `prettier --check` pass would mean
+> ADOPTING prettier and reformatting ~400 files (style, not line
+> endings). Decide: adopt or drop. **Flake watch (strike 1):**
+> focus-state.spec.ts:38 failed once in the gate, green isolated +
+> full re-run; fixed `waitForTimeout(900)` — the #145 class; second
+> strike promotes. Handoff: `.claude/work_files/orchestrator/280.md`.
+>
+> **(history) 🎛 RUN 6 CLOSED 2026-08-05.** **22 items in ~9.5
 > hours: 9 internal MERGED (#257 #258 #217 #273 #227 #282 #279
 > #286 #298 — four of them filed mid-run from discoveries), 13
 > user-facing PRs in DAN'S QUEUE (#263 #265 #270 #272 #276 #281
