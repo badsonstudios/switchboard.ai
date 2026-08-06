@@ -28,6 +28,13 @@
 // Nothing here DECIDES anything: dockview remains the authority, this is its
 // bookkeeping. And nothing here may throw into the caller — a popout that fails
 // to be registered would be a session the keyboard cannot reach.
+//
+// With one exception, which is why the registry is worth having (#279): dockview
+// only reports what dockview DID. A popout the OS took — killed from the task
+// bar's close, lost with a crashed child window — never produces a remove event,
+// and the entry would be retained for the life of the app. Every one of the
+// three old lists had that hole; there is one place to close it now, so the
+// registry also asks the windows themselves whether they are still there.
 
 /**
  * One open popout window, with a key React can hold onto.
@@ -53,7 +60,11 @@ export interface PopoutListener {
    * `changed`'s question, not this one.
    */
   added?: (win: Window) => void;
-  /** a window we knew about closed or was docked back */
+  /**
+   * a window we knew about closed or was docked back — or was found already
+   * closed by the liveness sweep (#279). Deliberately indistinguishable: the
+   * window is gone either way, and only the messenger differs.
+   */
   removed?: (win: Window) => void;
   /**
    * membership actually changed — the `useSyncExternalStore` shape, for
@@ -73,7 +84,39 @@ let seq = 0;
 let tracked: readonly TrackedPopout[] = Object.freeze([]);
 const listeners = new Set<PopoutListener>();
 
-/** every popout currently open, in the order they opened */
+/**
+ * How often the registry checks that the windows it holds are still open (#279).
+ *
+ * dockview is the authority on which popouts exist, but it only knows what it
+ * did — a window the OS took (killed, or closed during a crash) never produces
+ * a remove event, and the entry would otherwise be retained forever. So the
+ * registry also asks the windows themselves.
+ *
+ * Five seconds because the answer is one boolean read per open popout and there
+ * are never more than a handful, while the cost of asking LATE is nothing a
+ * user can see: every consumer of a dead window already fails open (the theme
+ * copy catches, the keyboard handler goes to an inert EventTarget, the notice
+ * portals into a document nobody is looking at). This is a janitor, not a
+ * watchdog — so it must never be the reason a frame is late.
+ *
+ * The timer exists only while at least one popout is open, which for most of
+ * any session is never (see `syncSweepTimer`).
+ *
+ * Exported for the tests, which have to advance fake timers by exactly this:
+ * hard-coding it there would keep passing if this shrank and fail opaquely if
+ * it grew.
+ */
+export const LIVENESS_SWEEP_MS = 5_000;
+let sweepTimer: ReturnType<typeof setInterval> | undefined;
+
+/**
+ * every popout currently open, in the order they opened
+ *
+ * Deliberately does NOT sweep: this is `useSyncExternalStore`'s `getSnapshot`,
+ * which must be pure — a read that could drop an entry and notify would change
+ * the store from inside React's own read of it. The sweep runs at the honest
+ * moments instead (`addPopoutWindow`, `removePopoutWindow`, the interval).
+ */
 export function getPopoutWindows(): readonly TrackedPopout[] {
   return tracked;
 }
@@ -98,8 +141,22 @@ export function openPopoutWindows(): Window[] {
  */
 export function addPopoutWindow(win: Window): void {
   if (!win) return; // dockview's event can carry no window; fail open, ignore it
+  // Before anything else, bury the dead (#279). A popout the OS took never
+  // fired a remove event, and an announcement is the cheapest honest moment to
+  // notice: the list is about to be walked anyway. It matters here in
+  // particular because "pop the same group out again" is exactly how a user
+  // follows up a window that vanished — the stale entry and its replacement
+  // would otherwise sit in the registry side by side.
+  //
+  // The window being announced is taken on dockview's word rather than tested:
+  // it is the authority on what it just opened, and if it somehow hands us one
+  // that is already gone, the interval collects it.
+  sweepClosedWindows();
   const known = tracked.some((p) => p.win === win);
-  if (!known) tracked = freeze([...tracked, { id: ++seq, win }]);
+  if (!known) {
+    tracked = freeze([...tracked, { id: ++seq, win }]);
+    syncSweepTimer();
+  }
   notify('added', win, !known);
 }
 
@@ -112,9 +169,16 @@ export function addPopoutWindow(win: Window): void {
  */
 export function removePopoutWindow(win: Window): void {
   if (!win) return;
+  // The other honest moment (#279): one popout going is when others are most
+  // likely to have gone too (a quit, a crash, a user closing a stack of them),
+  // and this walks the list regardless. If `win` itself is the one that died
+  // silently, the sweep announces it here and the removal below is the no-op it
+  // already is for an unknown window — so consumers hear about it exactly once.
+  sweepClosedWindows();
   const next = tracked.filter((p) => p.win !== win);
   if (next.length === tracked.length) return;
   tracked = freeze(next);
+  syncSweepTimer();
   notify('removed', win, true);
 }
 
@@ -141,6 +205,63 @@ export function subscribePopoutWindows(listener: PopoutListener): () => void {
  */
 export function subscribePopoutChange(onChange: () => void): () => void {
   return subscribePopoutWindows({ changed: onChange });
+}
+
+/**
+ * Drop every window that closed without dockview saying so (#279).
+ *
+ * Consumers hear exactly what a normal close gives them — `removed` with the
+ * window, then `changed` — because as far as they are concerned it IS a normal
+ * close; the only difference is who noticed. Membership is updated before any
+ * of them is told, the same order `removePopoutWindow` keeps, since the theme
+ * sync reads the registry from inside its own handler.
+ */
+function sweepClosedWindows(): void {
+  // One pass, one `closed` read per entry: whatever the answer is, it is the
+  // answer used for BOTH the list we keep and the news we send. Asking twice
+  // could drop a window without telling anyone (or the reverse) if it died
+  // between the two questions.
+  const live: TrackedPopout[] = [];
+  const dead: TrackedPopout[] = [];
+  for (const p of tracked) (isGone(p.win) ? dead : live).push(p);
+  if (!dead.length) return; // the normal case: no new snapshot, so no re-render
+  tracked = freeze(live);
+  syncSweepTimer();
+  for (const p of dead) notify('removed', p.win, true);
+}
+
+/** has this window gone without telling us? */
+function isGone(win: Window): boolean {
+  try {
+    return win.closed === true;
+  } catch {
+    // A window we cannot even ask about stays: evicting a LIVE popout costs it
+    // its keyboard and its theme, while keeping a dead one costs an object. So
+    // only a window that says so in as many words is dropped — anything else
+    // leaves the registry exactly as it was before this sweep existed.
+    return false;
+  }
+}
+
+/**
+ * The timer runs exactly while there is something to sweep.
+ *
+ * Not a module-load side effect and not an app-lifetime interval: most of any
+ * session has no popout open at all, and a timer with nothing to look at is a
+ * wakeup we would be asking the OS for on behalf of nobody.
+ */
+function syncSweepTimer(): void {
+  const wanted = tracked.length > 0;
+  if (wanted === (sweepTimer !== undefined)) return;
+  if (wanted) {
+    sweepTimer = setInterval(sweepClosedWindows, LIVENESS_SWEEP_MS);
+    // bookkeeping must never be the reason a process stays alive (this module
+    // is imported by node-environment unit tests too)
+    (sweepTimer as { unref?: () => void }).unref?.();
+  } else {
+    clearInterval(sweepTimer);
+    sweepTimer = undefined;
+  }
 }
 
 function notify(kind: 'added' | 'removed', win: Window, membershipChanged: boolean): void {
@@ -189,4 +310,5 @@ function freeze(next: TrackedPopout[]): readonly TrackedPopout[] {
 export function resetPopoutWindows(): void {
   tracked = freeze([]);
   listeners.clear();
+  syncSweepTimer(); // and nothing ticking: an interval outlives the test too
 }

@@ -41,6 +41,17 @@ const css = fs.readFileSync(cssPath, 'utf8').replace(/\r\n/g, '\n');
 function block(selector: string): string {
   const start = css.indexOf(selector);
   expect(start, `selector not found in tokens.css: ${selector}`).toBeGreaterThan(-1);
+  // ...and found ONCE. This is a substring lookup, so a selector that also
+  // appears inside a grouped selector list resolves to whichever comes first in
+  // the file and every ratio below it measures a rule the browser applies to
+  // something else — silently. `.urgency-lamp[data-lit='true'] {` was one edit
+  // away from being exactly that (#267), which is why the group in tokens.css
+  // leads with it.
+  expect(
+    css.split(selector).length - 1,
+    `selector matches more than one rule in tokens.css — reword the lookup or the ` +
+      `grouped selector it collides with: ${selector}`
+  ).toBe(1);
   const open = css.indexOf('{', start);
   const close = css.indexOf('\n}', open);
   return css.slice(open, close);
@@ -257,12 +268,45 @@ function resolved(theme: (typeof builtinThemes)[number]): Record<string, string>
  *  "Text on a TINTED fill" below. */
 const FILLED_RULES: Array<[string, number]> = [['.preflight-banner', 4.5]];
 
-/** the rules whose background is a color-mix of a hue into a surface. Declared
- *  up here with FILLED_RULES because the applied-by-a-component scan below
- *  reads both — vitest collects describe() bodies lazily so a later const
- *  happens to work, but a test file that only runs under one collector is a
- *  trap rather than a test. */
-const TINTED_RULES: Array<[string, number]> = [['.status-pill', 4.5]];
+/**
+ * The rules whose background is a color-mix of a hue into a surface. Declared
+ * up here with FILLED_RULES because the applied-by-a-component scan below
+ * reads both — vitest collects describe() bodies lazily so a later const
+ * happens to work, but a test file that only runs under one collector is a
+ * trap rather than a test.
+ *
+ * `defaults` names the rule that declares the two placeholders, for the rules
+ * that do not declare them themselves: the collapsed row's tint lives on a
+ * `[data-needs-you]` variant while `--row-hue` / `--row-ink` are set once on
+ * the base rule, which is where the ink-vs-hue roles have to be read from.
+ */
+interface TintedRule {
+  /** the rule's own selector, exactly as tokens.css spells it */
+  selector: string;
+  /** the ratio it owes */
+  min: number;
+  /** where `--*-hue` / `--*-ink` are declared, if not in `selector` itself */
+  defaults?: string;
+}
+const TINTED_RULES: TintedRule[] = [
+  { selector: '.status-pill', min: 4.5 },
+  // #246: the same shape as the pill and unaudited until now. Two rules, not
+  // one — a row under the pointer is a different fill, and it was the one
+  // below AA (26% put nordic at 4.03:1).
+  { selector: ".collapsed-row[data-needs-you='true']", min: 4.5, defaults: '.collapsed-row' },
+  {
+    selector: ".collapsed-row[data-needs-you='true']:hover",
+    min: 4.5,
+    defaults: '.collapsed-row',
+  },
+];
+
+/** the class a tinted/filled selector is applied by — `.a[data-b]:hover` → `a` */
+function classOf(selector: string): string {
+  const m = /^\.([a-z0-9-]+)/.exec(selector);
+  expect(m, `${selector} must start with a class to be found in a component`).not.toBeNull();
+  return m![1];
+}
 
 /**
  * The pair, read OUT OF THE STYLESHEET rather than named here.
@@ -309,7 +353,10 @@ describe('a filled rule is a rule something applies', () => {
     });
   })(path.join(__dirname, '..'));
 
-  it.each([...FILLED_RULES, ...TINTED_RULES])('%s is applied by a component', (selector) => {
+  it.each([
+    ...FILLED_RULES.map(([s]) => s),
+    ...TINTED_RULES.map((r) => r.selector),
+  ])('%s is applied by a component', (selector) => {
     // the class name inside a className prop, quoted either way, among other
     // classes, and whether or not it is behind a condition: #222 made the
     // preflight banner's class conditional (`className={spoken ?
@@ -318,7 +365,10 @@ describe('a filled rule is a rule something applies', () => {
     // `className="…"` form would have called that "nobody renders it".
     // One line at a time — a className expression wrapped over several is not
     // matched, and would fail with the message below rather than silently.
-    const name = selector.slice(1);
+    // the CLASS, not the whole selector: a tinted rule may be a variant
+    // (`.collapsed-row[data-needs-you='true']:hover`) and what a component
+    // writes in a className is only the stem (#246)
+    const name = classOf(selector);
     const applied = new RegExp(`className=\\{?[^}\\n]*['"\`][^'"\`\\n]*\\b${name}\\b`);
     expect(
       tsx.some((s) => applied.test(s)),
@@ -397,7 +447,7 @@ function refIn(rule: string, selector: string, prop: string, pattern: string): R
  * the one thing this file cannot see, and is held by StatusPill.test.tsx.
  */
 function tinted(
-  selector: string,
+  { selector, defaults }: TintedRule,
   status: StatusToken
 ): { ink: string; hue: string; pct: number; surface: string } {
   const rule = block(`${selector} {`);
@@ -408,7 +458,10 @@ function tinted(
     'background',
     String.raw`color-mix\(in srgb,\s*var\((--[a-z0-9-]+)\)\s*([\d.]+)%,\s*var\((--[a-z0-9-]+)\)\)`
   );
-  const decl = declaredValues(rule);
+  // the defaults may live on the base rule the variant refines — but they are
+  // still READ, never named here, so a swapped pair fails exactly as it does
+  // for a rule that declares its own (#246)
+  const decl = declaredValues(defaults ? block(`${defaults} {`) : rule);
   const stem = STATUS_TOKENS.find(
     (t) => decl[inkVar] === statusVars(t).ink && decl[bg[1]] === statusVars(t).hue
   );
@@ -432,9 +485,10 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))(
   (id, theme) => {
     const tokens = resolved(theme);
 
-    for (const [selector, min] of TINTED_RULES) {
+    for (const spec of TINTED_RULES) {
+      const { selector, min } = spec;
       it.each(STATUS_TOKENS)(`${selector} clears ${min}:1 for %s`, (status) => {
-        const t = tinted(selector, status);
+        const t = tinted(spec, status);
         for (const token of [t.hue, t.ink, t.surface]) {
           expect(tokens[token], `${id} ${token} must be #rrggbb to be measured`).toMatch(
             /^#[0-9a-f]{6}$/i
@@ -486,3 +540,396 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))(
     });
   }
 );
+
+// --- The urgency lamp's STATE MODEL, in EVERY shipped theme (#267) ----------
+//
+// The pill above is one rule with one fill. The lamp is a state MATRIX, and
+// that is why it shipped below AA while every rule around it was being audited:
+// four surfaces (the strip at rest, the hover wash, the "you are here" chip,
+// and a wash of the lamp's own hue) crossed with the ink each of them owes —
+// and the colour for the lit state was never written by the lit rule at all. It
+// fell out of whichever rule won the cascade, which was the base rule's
+// `--muted`, a token tuned against the flat strip. Over the old 22% wash that
+// measured 2.97-3.67:1 on nordic, and 2.77:1 under the pointer at 26%.
+//
+// So the assertions below are deliberately about the MODEL and not only about
+// the numbers. A state that paints a wash must name the lamp's HUE placeholder
+// and write its INK placeholder — which is which comes from the base rule's own
+// defaults, so swapping them fails before a ratio is computed — and every state
+// on a flat surface must name an ink that clears that surface. The lamp's name
+// is TEXT (the session title at 10px), so the floor is 4.5:1 in every state;
+// the dot and the lit ring are the only graphical objects here and neither
+// carries a word.
+//
+// `tinted()` above cannot read any of this: it wants one rule that declares its
+// own placeholders, and the lamp declares them once on `.urgency-lamp` while
+// the washes live on the state rules. #246 (PR #265) generalises `tinted()`
+// with a `defaults` selector for the same reason — once both have landed, this
+// reader and that one should become one.
+
+/** the rules, spelled exactly as tokens.css groups them — `block()` looks up by
+ *  substring, so a regrouped selector fails loudly instead of measuring a rule
+ *  the browser no longer applies */
+const LAMP_BASE = '.urgency-lamp';
+const LAMP_ACTIVE = ".urgency-lamp[data-active='true']";
+const LAMP_HOVER = '.urgency-lamp:hover';
+const LAMP_LIT = ".urgency-lamp[data-lit='true']";
+const LAMP_SIGNAL = ".urgency-lamp[data-lit='true'],\n.urgency-lamp[data-needs-you='true']";
+const LAMP_SIGNAL_HOVER =
+  ".urgency-lamp[data-needs-you='true']:hover,\n.urgency-lamp[data-lit='true']:hover";
+
+/** the surface the strip paints behind every lamp. Named here because it lives
+ *  in a component's inline style rather than in this file — UrgencyStrip.test's
+ *  "the strip stays on --panel2" is the half that keeps it true. */
+const LAMP_SURFACE = '--panel2';
+
+/** a `<prop>: var(--x)` a rule declares, as the token name */
+function lampRef(selector: string, prop: string): string {
+  return refIn(block(`${selector} {`), selector, prop, String.raw`var\((--[a-z0-9-]+)\)`)[1];
+}
+
+/** which of the lamp's two placeholders is the hue and which is the ink — from
+ *  the BASE rule's own defaults, never from a name spelled here. They have to
+ *  be ONE ramp position's pair, so a state rule that writes the hue into
+ *  `color` cannot satisfy both. */
+function lampPlaceholders(): { hue: string; ink: string } {
+  const decl = declaredValues(block(`${LAMP_BASE} {`));
+  const named = (value: string): string | undefined =>
+    Object.keys(decl).find((k) => decl[k] === value);
+  for (const token of STATUS_TOKENS) {
+    const v = statusVars(token);
+    const [hue, ink] = [named(v.hue), named(v.ink)];
+    if (hue && ink) return { hue, ink };
+  }
+  expect(
+    undefined,
+    `${LAMP_BASE} must default its two placeholders to ONE ramp position's hue and ink — ` +
+      `got ${JSON.stringify(decl)}`
+  ).toBeDefined();
+  throw new Error('unreachable');
+}
+
+/** what one state rule washes over the strip */
+function lampWash(selector: string): { hue: string; pct: number; surface: string } {
+  const m = refIn(
+    block(`${selector} {`),
+    selector,
+    'background',
+    String.raw`color-mix\(in srgb,\s*var\((--[a-z0-9-]+)\)\s*([\d.]+)%,\s*var\((--[a-z0-9-]+)\)\)`
+  );
+  return { hue: m[1], pct: Number(m[2]) / 100, surface: m[3] };
+}
+
+/** [what the state is, the rule its ink comes from, the rule its surface comes
+ *  from — or the surface itself]. Thunks, so a renamed selector fails the one
+ *  case that reads it rather than taking the file's collection down. The pairs
+ *  are the cascade the browser runs: `:hover` changes the background and leaves
+ *  the colour wherever the state rules put it. */
+const LAMP_FLAT: Array<[state: string, ink: () => string, surface: () => string]> = [
+  ['at rest, on the strip', () => lampRef(LAMP_BASE, 'color'), () => LAMP_SURFACE],
+  [
+    'at rest, under the pointer',
+    () => lampRef(LAMP_BASE, 'color'),
+    () => lampRef(LAMP_HOVER, 'background'),
+  ],
+  ['"you are here"', () => lampRef(LAMP_ACTIVE, 'color'), () => lampRef(LAMP_ACTIVE, 'background')],
+  [
+    '"you are here", under the pointer',
+    () => lampRef(LAMP_ACTIVE, 'color'),
+    () => lampRef(LAMP_HOVER, 'background'),
+  ],
+];
+
+/** [what the state is, the rule that paints the wash, the rule its ink comes
+ *  from] — the deeper hover wash inherits the signal rule's colour, which is
+ *  the cascade and therefore what is measured. */
+const LAMP_WASHES: Array<[state: string, wash: string, inkFrom: string]> = [
+  ['a lamp carrying a signal', LAMP_SIGNAL, LAMP_SIGNAL],
+  ['a lamp carrying a signal, under the pointer', LAMP_SIGNAL_HOVER, LAMP_SIGNAL],
+];
+
+// `issue 267`, not `#267`: the no-raw-hex ESLint rule reads a `#` followed by
+// three hex digits in a string literal as a colour, which is the convention the
+// other renderer tests already follow.
+describe('the urgency lamp writes an ink, never a repurposed one (issue 267)', () => {
+  it('washes the placeholder the base rule calls the HUE', () => {
+    const roles = lampPlaceholders();
+    for (const [state, wash] of LAMP_WASHES) {
+      expect(lampWash(wash).hue, `${state} must wash the lamp's hue`).toBe(roles.hue);
+    }
+  });
+
+  it('writes the placeholder the base rule calls the INK on the wash', () => {
+    // #267 verbatim: a wash whose colour is left to the cascade, which hands it
+    // the base rule's `--muted`. Naming the ink is the fix, and this is the
+    // assertion that fails if it is ever taken back out.
+    expect(lampRef(LAMP_SIGNAL, 'color')).toBe(lampPlaceholders().ink);
+  });
+
+  it('lets no LATER rule write a colour over that ink', () => {
+    // The rules below the wash are (0,2,0) and (0,3,0) and every one of them is
+    // source-later, so a `color` in any of them wins for a washed lamp — which
+    // is #267's shape exactly, and neither the ratios below nor the flat cases
+    // would see it: they read the rule they are told to read. The deep hover
+    // wash and the lit ring must therefore declare a background and a border
+    // and nothing else about the text.
+    for (const selector of [LAMP_SIGNAL_HOVER, LAMP_LIT, LAMP_HOVER]) {
+      expect(
+        /^\s*color:/m.test(block(`${selector} {`)),
+        `${selector} comes after the wash rule, so a color: here silently replaces its ink`
+      ).toBe(false);
+    }
+  });
+
+  it('washes over the surface the strip actually paints', () => {
+    // a wash mixed into `transparent`, or into some other panel, leaves every
+    // ratio below measuring a colour nobody sees
+    for (const [state, wash] of LAMP_WASHES) {
+      expect(lampWash(wash).surface, `${state} must mix into ${LAMP_SURFACE}`).toBe(LAMP_SURFACE);
+    }
+  });
+
+  it('puts those rules where the comment says they are', () => {
+    // the test above is only true because of SOURCE ORDER — every rule here is
+    // (0,2,0) but for the hover pair, so the file's order is the cascade. Move
+    // the wash above `[data-active]` and the "you are here" ink would start
+    // winning for a washed lamp; move it below the hover rule and a hovered
+    // needing lamp would lose its wash. Neither shows up in a ratio.
+    const at = (selector: string): number => css.indexOf(`${selector} {`);
+    expect(at(LAMP_ACTIVE), 'the wash must override "you are here"').toBeLessThan(at(LAMP_SIGNAL));
+    for (const selector of [LAMP_SIGNAL_HOVER, LAMP_LIT, LAMP_HOVER]) {
+      expect(at(LAMP_SIGNAL), `${selector} must come after the wash`).toBeLessThan(at(selector));
+    }
+  });
+
+  it('draws the lit ring in the ink, not the raw hue', () => {
+    // the ring is now the WHOLE of "you were just sent here" — the wash no
+    // longer differs — so it is a graphical object carrying meaning, and 1.4.11
+    // asks 3:1 of it. In the raw hue it was 1.80:1 against the strip on
+    // daylight; the ratios are asserted per theme below.
+    const roles = lampPlaceholders();
+    expect(lampRef(LAMP_LIT, 'border-color')).toBe(roles.ink);
+  });
+
+  it('keeps the hover wash deeper than the one it deepens', () => {
+    // otherwise "hover" is a rule that paints the state the lamp already had —
+    // the failure mode of pulling both numbers down to the same ceiling
+    expect(lampWash(LAMP_SIGNAL_HOVER).pct).toBeGreaterThan(lampWash(LAMP_SIGNAL).pct);
+  });
+});
+
+describe.each(builtinThemes.map((t) => [t.id, t] as const))(
+  '%s: every urgency lamp state is legible',
+  (id, theme) => {
+    const tokens = resolved(theme);
+    const hex = (token: string): string => {
+      expect(tokens[token], `${id} ${token} must be #rrggbb to be measured`).toMatch(
+        /^#[0-9a-f]{6}$/i
+      );
+      return tokens[token];
+    };
+
+    it.each(LAMP_FLAT)('%s clears 4.5:1', (_state, ink, surface) => {
+      const [i, s] = [ink(), surface()];
+      expect(
+        ratio(hex(i), hex(s)),
+        `${id}: ${i} on ${s} (${tokens[i]} on ${tokens[s]})`
+      ).toBeGreaterThanOrEqual(4.5);
+    });
+
+    for (const [state, wash, inkFrom] of LAMP_WASHES) {
+      it.each(STATUS_TOKENS)(`${state} clears 4.5:1 for %s`, (status) => {
+        const w = lampWash(wash);
+        // the wash is measured with the colour the CASCADE gives it, and that
+        // colour has to be the lamp's ink placeholder — the roles check above
+        // says which one that is, and this says this rule still uses it
+        expect(lampRef(inkFrom, 'color'), 'the wash must be read with the ink it writes').toBe(
+          lampPlaceholders().ink
+        );
+        // the PAIR the component substitutes, not the placeholders: the rule's
+        // defaults are idle's, and idle is not the position that fails
+        const name = (value: string): string => {
+          const m = /^var\((--[a-z0-9-]+)\)$/.exec(value);
+          expect(m, `statusVars must produce a bare var(), got ${value}`).not.toBeNull();
+          return m![1];
+        };
+        const v = statusVars(status);
+        const [ink, hue] = [name(v.ink), name(v.hue)];
+        const fill = mix(hex(hue), hex(w.surface), w.pct);
+        expect(
+          ratio(hex(ink), fill),
+          `${id}: ${ink} on ${w.pct * 100}% ${hue} over ${w.surface} (${tokens[ink]} on ${fill})`
+        ).toBeGreaterThanOrEqual(4.5);
+        // The lit RING is drawn in this same ink (asserted above) around this
+        // same fill, and it is a graphical object rather than text: 1.4.11's
+        // 3:1. Its inside edge is the ratio just measured, so what is left to
+        // check is its OUTSIDE edge, against the strip.
+        expect(
+          ratio(hex(ink), hex(w.surface)),
+          `${id}: the lit ring (${ink}) against ${w.surface}`
+        ).toBeGreaterThanOrEqual(3);
+      });
+    }
+  }
+);
+
+// --- No raw status hue is ever a TEXT colour, anywhere (#246) ---------------
+//
+// The floor above says the INK is readable. This says the ink is what gets
+// used, and it is the assertion #221's hand-off asked for: it fixed one site
+// and reported six more of exactly the same shape — a dirty-file count, an
+// approval title, a stop glyph, a streaming caret, a tool name, a link in
+// rendered prose — none of which any test could see, because they are inline
+// styles and a lone CSS rule rather than a measurable pair. Two more of the
+// same defect (the feed's todo markers and its autonomy chip) were found by
+// writing this, which is the argument for it: six known sites are a list, and
+// a list goes stale the next time somebody reaches for a status colour.
+//
+// The rule it encodes is the whole of §5.20's status vocabulary in one line:
+// `--status-<x>` is for dots, rings, tints and edges; `--status-<x>-ink` is
+// the only one of the pair tuned against what is BEHIND a word. Reaching for
+// the hue in a `color` is the bug, in every theme at once, whatever the
+// surface — so this needs no surface to check and cannot go stale.
+describe('a status hue is never spent on words', () => {
+  /** every file that can paint: the stylesheets and the renderer's own code */
+  const sources = (function read(dir: string): Array<[string, string]> {
+    return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e): Array<[string, string]> => {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) return read(p);
+      // tests are excluded: one of them names a status hue as a GROUP colour
+      // (an identity, not a status) and would be a permanent false positive
+      const src = /\.(css|tsx?)$/.test(e.name) && !/\.test\.tsx?$/.test(e.name);
+      return src ? [[path.relative(path.join(__dirname, '..'), p), fs.readFileSync(p, 'utf8')]] : [];
+    });
+  })(path.join(__dirname, '..'));
+
+  /**
+   * The value of every `color:` in a file — the CSS declaration and the React
+   * inline-style property, which are the same three characters.
+   *
+   * `borderColor` / `background-color` / `caret-color` are NOT matched: the
+   * capital C fails a case-sensitive match and the hyphen fails the boundary,
+   * which is deliberate — an EDGE painted in a status hue is the design (the
+   * pill's border, the collapsed row's, the stop button's), and folding those
+   * in would make this test demand a redesign rather than guard a promise.
+   *
+   * The value ends at the first `,` or `;` AT PAREN DEPTH ZERO, so an object
+   * property stops before the next one while a `color-mix(in srgb, …)` — whose
+   * first comma is three characters in — is kept whole. A ternary contains
+   * neither and is captured entire, which is how both arms of the feed's todo
+   * marker are seen.
+   *
+   * KNOWN BLIND SPOT: a value wrapped onto the following line. `[^\n]*` stops
+   * at the newline, and there is no formatter in this repo to produce one, so
+   * it takes a human writing `color:\n  …` — but it would pass silently.
+   */
+  const colorValues = (src: string): string[] =>
+    [...src.matchAll(/(?:^|[\s{(,;])color:\s*([^\n]*)/g)].map((m) => {
+      let depth = 0;
+      for (let i = 0; i < m[1].length; i++) {
+        const c = m[1][i];
+        if (c === '(') depth++;
+        else if (c === ')') depth--;
+        else if ((c === ',' || c === ';') && depth <= 0) return m[1].slice(0, i);
+      }
+      return m[1];
+    });
+
+  /**
+   * The values of every `const NAME: … = { … }` map in a file, keyed by NAME.
+   *
+   * ONE HOP OF INDIRECTION, and it is here because a real site hid behind
+   * exactly one: `EventsPanel.tsx` wrote `color: KIND_TOKEN[e.kind]` over a map
+   * whose values were raw hues, so the scan above saw the literal text
+   * `KIND_TOKEN[e.kind]` and passed — while the panel painted every event's
+   * state in a colour measuring 1.80:1 on daylight. A table of colours is the
+   * natural shape for this and the natural place for the bug to hide (it is
+   * also how the grid's pill held its own drifted table until #221), so a
+   * `color` that names an identifier is followed to that identifier's map.
+   *
+   * Deliberately one hop and same-file only: two would need a module graph,
+   * and the point is to close the shape that has actually bitten twice, not to
+   * write a type checker.
+   */
+  const mapValues = (src: string): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (const m of src.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)[^=\n]*=\s*\{([^}]*)\}/g)) {
+      out[m[1]] = m[2];
+    }
+    return out;
+  };
+
+  it.each(sources)('%s writes no word in a raw status hue', (_name, src) => {
+    const maps = mapValues(src);
+    const offenders = colorValues(src)
+      .flatMap((v) => {
+        const hop = /^([A-Za-z_$][\w$]*)\s*\[/.exec(v.trim());
+        return hop && maps[hop[1]] !== undefined ? [v, `${v} -> ${maps[hop[1]]}`] : [v];
+      })
+      .filter((v) => STATUS_TOKENS.some((t) => v.includes(`var(--status-${t})`)))
+      .map((v) => v.trim());
+    expect(
+      offenders,
+      // no `#nnn` in the message: the no-raw-hex lint rule reads an issue
+      // number as a three-digit colour, which is a funny way to fail a
+      // contrast test and a real one
+      'use var(--status-<x>-ink) for text — the hue is for dots, rings, tints and edges'
+    ).toEqual([]);
+  });
+
+  it('sees the defect it is named for', () => {
+    // the guard's own guard: an empty scan (a regex that matches nothing, a
+    // file walk that finds no files) passes every case above, silently
+    expect(sources.length).toBeGreaterThan(20);
+    expect(colorValues("  color: 'var(--status-crashed)',\n")).toEqual([
+      "'var(--status-crashed)'",
+    ]);
+    // and does not flag the fix, an edge, or a nested property
+    expect(colorValues('  color: var(--status-crashed-ink);\n')[0]).not.toContain(
+      'var(--status-crashed)'
+    );
+    expect(colorValues('  border-color: var(--status-crashed);\n')).toEqual([]);
+    expect(colorValues("  borderColor: 'var(--status-crashed)',\n")).toEqual([]);
+    // a value whose own commas are inside parens survives the cut — before
+    // this, `color: color-mix(in srgb, <hue> …)` was truncated at "in srgb"
+    // and the hue behind it was never looked at
+    expect(colorValues('  color: color-mix(in srgb, var(--status-done) 60%, transparent);\n')[0])
+      .toContain('var(--status-done)');
+    // and the hop the events panel hid behind is followed
+    expect(
+      mapValues("const T: Record<string, string> = {\n  a: 'var(--status-done)',\n};\n").T
+    ).toContain('var(--status-done)');
+  });
+});
+
+// --- A notice keeps its height in a short window (#241) ---------------------
+//
+// Not contrast, but the same shape of promise: a rule in tokens.css carries a
+// guarantee the app depends on, and nothing outside this file can see it.
+//
+// The window is a 100vh flex COLUMN (App.tsx) whose main area is `flex: 1`
+// with a basis of 0. Every pixel of negative free space therefore lands on the
+// AUTO-basis children above it — the always-visible notices — so a notice
+// without a shrink guard is the first thing a short window takes space from.
+// `WorkspaceReadOnlyBanner` has said exactly this inline since #168;
+// `.preflight-banner` had not (#241), which made the "claude wasn't found"
+// warning the one that got squeezed in the very case where both are up.
+//
+// Read out of the stylesheet because nothing else can reach it: jsdom loads no
+// CSS, and no e2e fixture can make preflight fail (that needs the built app
+// launched with `claude` off PATH). The rule's text is the only witness there
+// is, so a deletion has to fail here or it fails nowhere.
+const NO_SHRINK_RULES = ['.preflight-banner'];
+
+describe('an always-visible notice keeps its height', () => {
+  // the longhand specifically: `flex: 0 0 auto` would paint the same, but this
+  // is a one-line promise and a shorthand is where it goes to be lost inside a
+  // later edit that only meant to change the basis
+  it.each(NO_SHRINK_RULES)('%s declares flex-shrink: 0', (selector) => {
+    expect(
+      block(`${selector} {`),
+      `${selector} must declare flex-shrink: 0 — without it a short window ` +
+        `squeezes the notice instead of the content below it`
+    ).toMatch(/^\s*flex-shrink:\s*0\s*;/m);
+  });
+});
