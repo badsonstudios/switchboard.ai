@@ -3,8 +3,8 @@
 // window. Its look in a real popout is covered by e2e; what unit tests can hold
 // is the contract this module makes with another document: exactly one host, in the right place,
 // removed again afterwards, and never throwing at a window that has closed.
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { mountBannerHost, onPopoutWindows, unmountBannerHost } from './popout-banner-host';
+import { describe, it, expect } from 'vitest';
+import { mountBannerHost, unmountBannerHost } from './popout-banner-host';
 
 /** a stand-in popout: its own document, as a real popout has */
 function fakePopout(): Window {
@@ -68,40 +68,5 @@ describe('the read-only notice host in a popout (issue 208)', () => {
   });
 });
 
-describe('learning that a popout came or went (issue 208)', () => {
-  beforeEach(() => {
-    document.body.innerHTML = '';
-  });
-
-  it('reports the window SessionGrid publishes, both ways', () => {
-    const added = vi.fn();
-    const removed = vi.fn();
-    const off = onPopoutWindows({ added, removed });
-    const win = fakePopout();
-
-    window.dispatchEvent(new CustomEvent('switchboard:popout-added', { detail: win }));
-    expect(added).toHaveBeenCalledWith(win);
-
-    window.dispatchEvent(new CustomEvent('switchboard:popout-removed', { detail: win }));
-    expect(removed).toHaveBeenCalledWith(win);
-    off();
-  });
-
-  it('ignores an event with no window on it', () => {
-    const added = vi.fn();
-    const off = onPopoutWindows({ added, removed: vi.fn() });
-    window.dispatchEvent(new CustomEvent('switchboard:popout-added', { detail: null }));
-    expect(added).not.toHaveBeenCalled();
-    off();
-  });
-
-  it('stops listening when told to', () => {
-    const added = vi.fn();
-    const removed = vi.fn();
-    onPopoutWindows({ added, removed })();
-    window.dispatchEvent(new CustomEvent('switchboard:popout-added', { detail: fakePopout() }));
-    window.dispatchEvent(new CustomEvent('switchboard:popout-removed', { detail: fakePopout() }));
-    expect(added).not.toHaveBeenCalled();
-    expect(removed).not.toHaveBeenCalled();
-  });
-});
+// Learning that a popout came or went moved to `lib/popout-windows` (#227) —
+// one registry for all three consumers, and its tests live next to it.

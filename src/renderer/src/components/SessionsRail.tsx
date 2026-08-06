@@ -38,6 +38,14 @@
 // summon it — which is exactly why the menu below is operable (roving arrows,
 // Escape, focus restored to the row) rather than a wall of divs a keyboard
 // could open and then be stuck inside.
+//
+// It is also where the sweep's ONE remaining gap was closed (#253). Moving a
+// session between groups was drag-only — an interaction with no keyboard
+// equivalent at all, which is WCAG 2.1.1 for the whole feature and not a
+// labelling detail. The fix is a `Move to group` radio set in that same menu:
+// one choice out of a known set, walked by the arrows already here, committing
+// through the SAME `onMoveToGroup` prop the drop handler calls. See the section
+// near the bottom of this file for why it is radios and not a submenu.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailGroup, RailSession } from '../model/types';
@@ -53,6 +61,13 @@ import {
   PresentationPolicy,
   resolvePolicy,
 } from '../lib/presentation-policy';
+import {
+  FOCUS_POLICY_ORDER,
+  FocusBook,
+  FocusPolicy,
+  focusOverride,
+  resolveFocusPolicy,
+} from '../lib/focus-policy';
 
 export type { RailSession, RailGroup } from '../model/types';
 
@@ -92,6 +107,108 @@ const menuItemStyle: React.CSSProperties = {
   fontFamily: 'var(--font-ui)',
 };
 
+/** The eyebrow over a group of menu rows. Shared for the same reason the row
+ *  style is: there are two of these sections now (#253) and a heading that
+ *  drifts a property from its neighbour reads as an accident. */
+const menuSectionStyle: React.CSSProperties = {
+  marginBlockStart: 4,
+  paddingBlock: '4px 2px',
+  paddingInline: 9,
+  borderBlockStart: '1px solid var(--border)',
+  color: 'var(--faint)',
+  fontSize: 9.5,
+  textTransform: 'uppercase',
+  letterSpacing: 0.4,
+};
+
+/** A live region that must be INVISIBLE rather than absent (#253). Inline, like
+ *  the rest of this file — the rail keeps its look in the component and only
+ *  the states CSS can express (hover, the working ring) in the stylesheet. */
+const srOnly: React.CSSProperties = {
+  position: 'absolute',
+  inlineSize: 1,
+  blockSize: 1,
+  margin: -1,
+  padding: 0,
+  overflow: 'hidden',
+  clipPath: 'inset(50%)',
+  whiteSpace: 'nowrap',
+};
+
+/**
+ * One per-session OVERRIDE choice in the rail's context menu: a labelled radio
+ * set of named values, with "follow the default" as its first and always-present
+ * member.
+ *
+ * Shared by E9-06's presentation policy and E9-10's focus-stealing policy —
+ * they are the same widget asking about two different settings, and writing the
+ * second one out again is how the two would have drifted an aria attribute at a
+ * time. Named values rather than one cycling row, because a menu closes when
+ * you click it: a cycle would cost a right-click per step, and the point of an
+ * override is to SAY what you want, not to walk past it.
+ *
+ * "Follow the default" is `undefined`, never the value the default happens to
+ * hold today — otherwise leaving an override would silently pin the session to
+ * whatever the global said at that moment.
+ */
+function OverrideGroup<T extends string>(props: {
+  /** the group's heading, and its accessible name */
+  label: string;
+  values: readonly T[];
+  /** this session's own override, or undefined for "follow the default" */
+  own: T | undefined;
+  /** the e2e handle, e.g. `data-policy-item`; the value is the mode or 'default' */
+  itemAttr: string;
+  itemStyle: React.CSSProperties;
+  labelOf: (value: T) => string;
+  /** already composed, because what "the default" resolves to differs per
+   *  setting (the presentation policy has a group level in between) */
+  defaultLabel: string;
+  onPick: (value: T | undefined) => void;
+}): React.JSX.Element {
+  return (
+    <div role="group" aria-label={props.label}>
+      <div
+        aria-hidden
+        style={{
+          marginBlockStart: 4,
+          paddingBlock: '4px 2px',
+          paddingInline: 9,
+          borderBlockStart: '1px solid var(--border)',
+          color: 'var(--faint)',
+          fontSize: 9.5,
+          textTransform: 'uppercase',
+          letterSpacing: 0.4,
+        }}
+      >
+        {props.label}
+      </div>
+      {[undefined, ...props.values].map((value) => {
+        const chosen = props.own === value;
+        return (
+          <button
+            key={value ?? 'default'}
+            type="button"
+            role="menuitemradio"
+            aria-checked={chosen}
+            {...{ [props.itemAttr]: value ?? 'default' }}
+            className="rail-menu-item"
+            onClick={() => props.onPick(value)}
+            style={{ ...props.itemStyle, fontWeight: chosen ? 700 : 400 }}
+          >
+            {/* the tick keeps its column whether or not it is drawn, so the
+                labels do not shuffle sideways as the choice moves */}
+            <span aria-hidden style={{ display: 'inline-block', inlineSize: 12 }}>
+              {chosen ? '✓' : ''}
+            </span>
+            {value ? props.labelOf(value) : props.defaultLabel}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function SessionsRail(props: {
   sessions: readonly RailSession[];
   groups: readonly RailGroup[];
@@ -123,6 +240,26 @@ export function SessionsRail(props: {
   /** `undefined` clears the override and follows the default again */
   onSetSessionPolicy: (cardId: string, policy: PresentationPolicy | undefined) => void;
   onCycleGroupPolicy: (groupId: string) => void;
+  /**
+   * §5.8's focus-stealing policy and its per-session overrides (E9-10).
+   *
+   * Here for the reason the presentation override is: the override belongs
+   * beside the row it governs. There is no group level — §5.8 specifies "a
+   * global setting with per-session override" for this one, and no more.
+   */
+  focusPolicies: FocusBook;
+  /** `undefined` clears the override and follows the default again */
+  onSetSessionFocusPolicy: (cardId: string, policy: FocusPolicy | undefined) => void;
+  /**
+   * §5.8's pinning contract (E9-09) — the pinned CARD ids.
+   *
+   * The rail is where pinning belongs for the reason the policy overrides are
+   * here: it is the surface the guarantee is ABOUT ("sorts first in the rail"),
+   * so the control and its effect are one place apart.
+   */
+  pinned: ReadonlySet<string>;
+  /** pin or unpin one session — one gesture, both ways (§5.8) */
+  onTogglePin: (cardId: string) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [editing, setEditing] = React.useState<string | null>(null);
@@ -158,6 +295,25 @@ export function SessionsRail(props: {
   // rather than a read inside a setState updater: StrictMode invokes updaters
   // twice, and an updater that writes to disk is not a pure function.
   const widthRef = React.useRef(width);
+  // The rail's own element, so the effects below query WITHIN it and from ITS
+  // document. #197's blocker was a `document.activeElement` read that answered
+  // for the wrong window; a container ref makes that class of bug unavailable.
+  const navRef = React.useRef<HTMLElement | null>(null);
+  // #253: what the last keyboard-driven move should say, once it has actually
+  // happened. Empty until then — the region itself is always in the DOM.
+  const [moveSaid, setMoveSaid] = React.useState('');
+  // A move the MENU started, held until the store agrees it landed. It cannot
+  // be finished synchronously: `onMoveToGroup` is a round trip through IPC, and
+  // the row is re-parented into a different group card when the answer comes
+  // back — so the button this menu was opened from is a detached node by then,
+  // and focusing it would strand the keyboard on <body>.
+  const pendingMove = React.useRef<{
+    cardId: string;
+    to: string | null;
+    /** the destination card's key, for when the row itself can't take focus */
+    destKey: string;
+    said: string;
+  } | null>(null);
 
   const toggleCollapsed = (id: string): void => {
     setCollapsed((prev) => {
@@ -233,12 +389,63 @@ export function SessionsRail(props: {
     menuRef.current?.querySelector<HTMLElement>('[role^="menuitem"]')?.focus();
   }, [menu]);
 
+  /**
+   * Finish a keyboard move once the store says it happened (#253) — announce
+   * it, and put the keyboard back on the row in its new home.
+   *
+   * Both halves have to wait for the props, not for the click:
+   *
+   * - the WORDS would otherwise be a claim about a round trip that hadn't
+   *   returned yet, and a live region that lies is worse than a silent one;
+   * - the FOCUS would land on the row where it used to be, and be thrown to
+   *   <body> a moment later when React re-parents it into the new card.
+   *
+   * Values are compared, not events counted: the condition is "the session is
+   * where I asked it to go", which is also true if something else moved it
+   * there first — in which case there is nothing left to do anyway.
+   */
+  React.useEffect(() => {
+    const p = pendingMove.current;
+    const nav = navRef.current;
+    if (!p || !nav) return;
+    const s = props.sessions.find((x) => x.id === p.cardId);
+    // the row is gone (the session ended mid-move): drop the whole errand
+    if (!s) {
+      pendingMove.current = null;
+      return;
+    }
+    if ((s.groupId ?? null) !== p.to) return; // hasn't landed yet
+    pendingMove.current = null;
+    setMoveSaid(p.said);
+
+    // Don't yank focus from wherever the user has since gone under their own
+    // steam — a restore is owed only to the keyboard that started this.
+    const doc = nav.ownerDocument;
+    const active = doc.activeElement as HTMLElement | null;
+    if (active && active !== doc.body && !nav.contains(active)) return;
+
+    // Attribute selectors, not string interpolation: a card id is not ours to
+    // assume is CSS-safe, and `CSS.escape` is a lot of ceremony for one lookup.
+    const at = (attr: string, value: string): HTMLElement | null =>
+      Array.from(nav.querySelectorAll<HTMLElement>(`[${attr}]`)).find(
+        (el) => el.getAttribute(attr) === value
+      ) ?? null;
+    const row = at('data-rail-open', p.cardId);
+    // A collapsed destination hides the row, and focus() on a display:none
+    // element does nothing at all — so land on the group it went into instead.
+    // Better than expanding the group behind the user's back: `aria-expanded`
+    // on the header they arrive at already says the rest of the story.
+    const target = row && !row.closest('[hidden]') ? row : at('data-rail-group-toggle', p.destKey);
+    target?.focus();
+  }, [props.sessions]);
+
   const sessionRow = (s: RailSession): React.JSX.Element => {
     const p = presentStatus(s.status);
     const hue = `var(--status-${p.token})`;
     const ink = `var(--status-${p.token}-ink)`;
     const accent = s.accent ?? 'var(--faint)';
     const selected = s.id === props.selectedId;
+    const isPinned = props.pinned.has(s.id);
     // a needy session outranks selection: the attention tint is the signal the
     // whole panel exists to carry
     const rowTint = p.needsYou ? tint(hue, 10) : selected ? tint(accent, 10) : 'transparent';
@@ -247,12 +454,18 @@ export function SessionsRail(props: {
       <div
         key={s.id}
         className="rail-row"
-        // the semantic (does a human have to act) and the CSS concern (does
-        // this row already own its background, so hover must not repaint it)
-        // are separate things — a merely SELECTED row is tinted but not needy
+        // `data-needs-you` is the SEMANTIC one — does a human have to act —
+        // and is read by the specs. Its old companion `data-tinted` went with
+        // the dead hover rule it existed for (#253): its only reader was
+        // `.rail-row[data-tinted='true']:hover`, the exception that kept a
+        // needy row's tint from being repainted. No hover rule, nothing to
+        // except it from.
         data-needs-you={p.needsYou}
-        data-tinted={p.needsYou || selected}
         data-session-status={p.token}
+        // §5.8's pinning contract (E9-09). An attribute rather than only a
+        // glyph: the protection is a fact about the row that the e2e suite has
+        // to be able to read, and styling may want it later.
+        data-pinned={isPinned}
         draggable
         onDragStart={(e) => {
           e.dataTransfer.setData(DND_TYPE, s.id);
@@ -345,7 +558,7 @@ export function SessionsRail(props: {
               // or a task label would be readable to the eye and to nobody
               // else. (Not when the session needs you: the second line IS the
               // ask then, and the state already says it.)
-              aria-label={t('rail.rowLabel', {
+              aria-label={t(isPinned ? 'rail.rowLabelPinned' : 'rail.rowLabel', {
                 title: s.title,
                 state:
                   !p.needsYou && s.taskLabel
@@ -406,6 +619,22 @@ export function SessionsRail(props: {
                 {p.needsYou ? t(p.labelKey) : (s.taskLabel ?? t(p.labelKey))}
               </span>
             </button>
+            {/* §5.8's pin (E9-09), on the row itself. AFTER the name block and
+                not before it: a marker in front of the title would indent the
+                pinned row's name away from every other row's, so the one row
+                you pinned is the one that no longer lines up. Decoration to a
+                screen reader — the fact is folded into the row button's own
+                accessible name above, where it is read as part of "this
+                session" rather than as a loose glyph beside it. */}
+            {isPinned && (
+              <span
+                aria-hidden
+                title={t('rail.pinnedHint')}
+                style={{ fontSize: 9, lineHeight: 1, flexShrink: 0, color: 'var(--muted)' }}
+              >
+                {t('rail.pinIcon')}
+              </span>
+            )}
             <div
               style={{
                 display: 'flex',
@@ -852,7 +1081,9 @@ export function SessionsRail(props: {
 
   // one ordering function for the rail AND for Ctrl+1..9 (E9-01): persistent
   // groups and their members, then emergent auto-groups (E12-05), then loose
-  const order = railOrder(props.sessions, props.groups);
+  // `props.pinned` and not a second sort here: §5.8's "sorts first" is one rule,
+  // and the store derives the SAME call for Ctrl+1..9 and both strips (E9-09).
+  const order = railOrder(props.sessions, props.groups, props.pinned);
   const grouped = new Map(order.groups.map((g) => [g.id, g.members]));
   const totalNeed = needCount(props.sessions);
   // The Ungrouped bucket only earns a header when there is something to
@@ -861,6 +1092,7 @@ export function SessionsRail(props: {
 
   return (
     <nav
+      ref={navRef}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes(DND_TYPE) || getDraggedCard()) e.preventDefault();
       }}
@@ -1000,6 +1232,16 @@ export function SessionsRail(props: {
         )}
       </div>
 
+      {/* A move made from the keyboard is otherwise SILENT: the row simply
+          appears under a different card, which is a fact carried entirely by
+          the screen. Rendered unconditionally and empty, so the region exists
+          before its words do — one that is inserted already holding its text is
+          announced by almost nothing (#222, #168; the same trick, same reason).
+          Polite by definition, which is right: the user asked for this. */}
+      <div role="status" style={srOnly}>
+        {moveSaid}
+      </div>
+
       <div
         className="rail-resize"
         data-dragging={dragging}
@@ -1070,7 +1312,17 @@ export function SessionsRail(props: {
               Close move focus themselves — Rename autofocuses its field, and
               Close is about to remove the row. "Open changes" just switches the
               card's view, so without the restore a keyboard user who picked it
-              would be left standing at the top of the document. */}
+              would be left standing at the top of the document.
+
+              §5.8's PIN (E9-09) is one of these rather than a checkbox item,
+              and sits between Rename and Close: its LABEL says which way it
+              will go, which is the same rule the palette follows ("an entry has
+              to say what it will DO"), and it is what VS Code's own pinned-tab
+              menu does. A `menuitemcheckbox` with a tick column would be the
+              only item in this list carrying one, indenting its label away from
+              the other three for a state the label already spells out. It
+              restores focus: the row is still there afterwards, and it is
+              exactly the row whose pin you just changed. */}
           {(
             [
               ['rail.menuDiff', () => props.onDiff(menu.session), true],
@@ -1081,6 +1333,11 @@ export function SessionsRail(props: {
                   setDraft(menu.session.title);
                 },
                 false,
+              ],
+              [
+                props.pinned.has(menu.session.id) ? 'rail.menuUnpin' : 'rail.menuPin',
+                () => props.onTogglePin(menu.session.id),
+                true,
               ],
               ['rail.menuClose', () => props.onClose(menu.session.id), false],
             ] as const
@@ -1099,65 +1356,141 @@ export function SessionsRail(props: {
               {t(key)}
             </button>
           ))}
+          {/* #253 — the keyboard's way to do what only a drag could do.
+              A session's group was reachable by dragging its row onto a group
+              card and no other way, so the whole interaction failed WCAG 2.1.1
+              — the one gap #197's sweep left, because it needed an interaction,
+              not a label.
+
+              RADIOS, not a "Move to group ▸" submenu: membership is exactly one
+              choice out of a known set, which is what `menuitemradio` means and
+              what the presentation set below already looks like. It also costs
+              no new keyboard mode — the arrow walk on the menu selects
+              `[role^="menuitem"]`, so these join the ring for free, where a
+              submenu would have meant a second focus context to get right, and
+              a menu you can open but not leave is the trap this sweep exists
+              to avoid.
+
+              This is NOT a parallel mechanism: it calls `onMoveToGroup`, the
+              same prop the drop handler calls, and repeats the drop's guard
+              that a move to where you already are is a no-op rather than a
+              round trip through IPC and a grid reshuffle.
+
+              AUTO-GROUPS are deliberately absent. Their membership is computed
+              from the session's folder, so an entry for one would be a command
+              that does nothing — and refusing to advertise that is exactly why
+              the drop handler declines them. A session sitting in an auto-group
+              shows as "Ungrouped" here, which is the truth this list is about:
+              it is in no group you made. */}
+          {props.groups.length > 0 && (
+            <div role="group" aria-label={t('rail.menuMove')}>
+              <div aria-hidden style={menuSectionStyle}>
+                {t('rail.menuMove')}
+              </div>
+              {[
+                ...props.groups.map((g) => [g.id, g.name] as const),
+                // the trailing bucket, last for the same reason it is last in
+                // the rail itself: it is an absence, not a thing
+                [null, t('rail.ungrouped')] as const,
+              ].map(([gid, label]) => {
+                // read membership LIVE, exactly as the drop handler does: the
+                // menu's session is a snapshot from when it opened, and a card
+                // dragged in another window while it stands open would leave
+                // the tick pointing at a group the session has already left
+                const from = props.sessions.find((s) => s.id === menu.session.id)?.groupId ?? null;
+                const here = from === gid;
+                return (
+                  <button
+                    key={gid ?? 'ungrouped'}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={here}
+                    data-move-item={gid ?? 'ungrouped'}
+                    className="rail-menu-item"
+                    onClick={() => {
+                      if (here) {
+                        // already there: close, and give the row its focus back
+                        closeMenu(true);
+                        return;
+                      }
+                      pendingMove.current = {
+                        cardId: menu.session.id,
+                        to: gid,
+                        destKey: gid ?? 'ungrouped',
+                        said: gid
+                          ? t('rail.movedTo', { title: menu.session.title, group: label })
+                          : t('rail.movedOut', { title: menu.session.title }),
+                      };
+                      // Restore focus NOW as well as when it lands: this puts
+                      // the keyboard on the row it is about to move rather than
+                      // on <body> for the length of the round trip — and if the
+                      // move never lands, that is still where it should be.
+                      closeMenu(true);
+                      props.onMoveToGroup(menu.session.id, gid);
+                    }}
+                    style={{ ...menuItemStyle, fontWeight: here ? 700 : 400 }}
+                  >
+                    {/* the tick keeps its column whether or not it is drawn */}
+                    <span aria-hidden style={{ display: 'inline-block', inlineSize: 12 }}>
+                      {here ? '✓' : ''}
+                    </span>
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {/* §5.8's per-SESSION presentation override (E9-06). Named values
               rather than one cycling row: a menu closes when you click it, so a
               cycle would cost a right-click per step — and the point of an
               override is to say what you want, not to walk past it.
               A labelled group, so the radio set reads as one choice to a screen
               reader rather than four loose items after three commands. */}
-          <div role="group" aria-label={t('ladder.policyMenu')}>
-            <div
-              aria-hidden
-              style={{
-                marginBlockStart: 4,
-                paddingBlock: '4px 2px',
-                paddingInline: 9,
-                borderBlockStart: '1px solid var(--border)',
-                color: 'var(--faint)',
-                fontSize: 9.5,
-                textTransform: 'uppercase',
-                letterSpacing: 0.4,
-              }}
-            >
-              {t('ladder.policyMenu')}
-            </div>
-            {[undefined, ...POLICY_ORDER].map((policy) => {
-              const own = cardOverride(props.policies, menu.session.id);
-              const chosen = own === policy;
-              return (
-                <button
-                  key={policy ?? 'default'}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={chosen}
-                  data-policy-item={policy ?? 'default'}
-                  className="rail-menu-item"
-                  onClick={() => {
-                    // this one DOES restore: the choice is a property of the row,
-                    // and the row is still there afterwards
-                    closeMenu(true);
-                    props.onSetSessionPolicy(menu.session.id, policy);
-                  }}
-                  style={{ ...menuItemStyle, fontWeight: chosen ? 700 : 400 }}
-                >
-                  {/* the tick keeps its column whether or not it is drawn, so the
-                      labels do not shuffle sideways as the choice moves */}
-                  <span aria-hidden style={{ display: 'inline-block', inlineSize: 12 }}>
-                    {chosen ? '✓' : ''}
-                  </span>
-                  {policy
-                    ? t(`policy.${policy}`)
-                    : t('ladder.policyDefault', {
-                        // what following the default MEANS for this session right
-                        // now — which may be its group's override, not the global
-                        policy: t(
-                          `policy.${resolvePolicy({ ...props.policies, cards: {} }, menu.session.id, menu.session.groupId)}`
-                        ),
-                      })}
-                </button>
-              );
+          <OverrideGroup
+            label={t('ladder.policyMenu')}
+            values={POLICY_ORDER}
+            own={cardOverride(props.policies, menu.session.id)}
+            itemAttr="data-policy-item"
+            itemStyle={menuItemStyle}
+            labelOf={(policy) => t(`policy.${policy}`)}
+            defaultLabel={t('ladder.policyDefault', {
+              // what following the default MEANS for this session right now —
+              // which may be its group's override, not the global
+              policy: t(
+                `policy.${resolvePolicy({ ...props.policies, cards: {} }, menu.session.id, menu.session.groupId)}`
+              ),
             })}
-          </div>
+            onPick={(policy) => {
+              // this one DOES restore focus: the choice is a property of the
+              // row, and the row is still there afterwards
+              closeMenu(true);
+              props.onSetSessionPolicy(menu.session.id, policy);
+            }}
+          />
+          {/* §5.8's per-SESSION FOCUS-STEALING override (E9-10) — the same
+              widget, one question later: that group says what happens when YOU
+              submit, this one says what happens when the SESSION calls. They
+              are neighbours because "this session is allowed to interrupt me"
+              and "this session gets out of my way" are the two halves of how
+              loud one session is, and nobody should have to look in two places
+              for them. */}
+          <OverrideGroup
+            label={t('ladder.focusMenu')}
+            values={FOCUS_POLICY_ORDER}
+            own={focusOverride(props.focusPolicies, menu.session.id)}
+            itemAttr="data-focus-item"
+            itemStyle={menuItemStyle}
+            labelOf={(policy) => t(`focusPolicy.${policy}`)}
+            defaultLabel={t('ladder.focusDefault', {
+              policy: t(
+                `focusPolicy.${resolveFocusPolicy({ ...props.focusPolicies, cards: {} }, menu.session.id)}`
+              ),
+            })}
+            onPick={(policy) => {
+              closeMenu(true);
+              props.onSetSessionFocusPolicy(menu.session.id, policy);
+            }}
+          />
         </div>
       )}
     </nav>

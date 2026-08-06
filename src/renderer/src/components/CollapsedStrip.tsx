@@ -150,6 +150,7 @@ function Row(props: {
       data-collapsed-row={r.cardId}
       data-status={r.token}
       data-needs-you={r.needsYou}
+      data-pinned={!!r.pinned}
       title={label}
       aria-label={label}
       onClick={() => props.onExpand(r.cardId)}
@@ -163,6 +164,16 @@ function Row(props: {
       }
     >
       <span aria-hidden className="collapsed-accent" />
+      {/* §5.8's pin (E9-09). Worth drawing HERE and not only in the rail: a
+          pinned row is the one row that visibly refused to fold in with the
+          other idle ones, and without the mark the strip shows an exception
+          with nothing saying why. Decorative — the button's own `aria-label`
+          already carries the row's whole name. */}
+      {r.pinned && (
+        <span aria-hidden className="collapsed-pin">
+          {props.t('rail.pinIcon')}
+        </span>
+      )}
       <span className="collapsed-name">{r.title}</span>
       <span className="collapsed-state">{props.t(r.labelKey)}</span>
     </button>

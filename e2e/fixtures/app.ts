@@ -5,7 +5,7 @@ import { _electron as electron, ElectronApplication, Locator, Page } from '@play
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 
 /**
  * Kill an entire process tree.
@@ -245,13 +245,107 @@ export interface LaunchOptions {
   realClaude?: boolean;
 }
 
+/**
+ * Point every path the app derives from the profile at `home`, creating the
+ * two Windows profile directories the app expects to already exist.
+ *
+ * Extracted from `launchApp` so a SECOND process can be aimed at the same
+ * userData (`launchSecondInstance`) — the single-instance lock is scoped to
+ * that directory, so a spec about the lock is only testing anything if both
+ * processes resolve it identically. One definition, no drift.
+ */
+export function applyIsolatedPaths(env: Record<string, string>, home: string): void {
+  env.HOME = home;
+  env.USERPROFILE = home;
+  env.APPDATA = path.join(home, 'AppData', 'Roaming');
+  env.LOCALAPPDATA = path.join(home, 'AppData', 'Local');
+  fs.mkdirSync(env.APPDATA, { recursive: true });
+  fs.mkdirSync(env.LOCALAPPDATA, { recursive: true });
+  // Linux: Electron resolves userData via XDG, NOT $HOME — without these the
+  // whole CI worker shares one real profile and state leaks across tests
+  // (caught by E12's fresh-profile assertions)
+  env.XDG_CONFIG_HOME = path.join(home, '.config');
+  env.XDG_CACHE_HOME = path.join(home, '.cache');
+  env.XDG_DATA_HOME = path.join(home, '.local', 'share');
+}
+
+export interface SecondInstanceResult {
+  /** exit code, or null if it had to be killed */
+  code: number | null;
+  /** how long it took to exit, ms */
+  ms: number;
+  /** true if it outlived the budget and was killed */
+  timedOut: boolean;
+  stderr: string;
+}
+
+/**
+ * Launch a SECOND app process on an existing home and wait for it to exit
+ * (#289). What a user does when they double-click the icon again.
+ *
+ * NOT `launchApp`: Playwright's `_electron.launch()` attaches a debugging
+ * connection and then waits for a window, so a process that correctly refuses
+ * to open one looks to it like a failed launch — a 30s timeout and an exception
+ * instead of the exit code this needs to assert.
+ *
+ * The env is built the same way `launchApp` builds it (same isolation, same
+ * landmine scrub) so both processes resolve the SAME userData. If that ever
+ * drifts, the second process takes its own lock, becomes a primary, and never
+ * exits — the spec fails on the budget rather than passing vacuously.
+ *
+ * Deliberately NOT counted in `liveApps`: this resolves only once the process
+ * is gone (killed, at the latest), so it cannot be alive while a temp-dir sweep
+ * runs — every caller has awaited it by then.
+ */
+export async function launchSecondInstance(
+  home: string,
+  budgetMs = 20_000
+): Promise<SecondInstanceResult> {
+  const env = { ...process.env } as Record<string, string>;
+  delete env.ELECTRON_RUN_AS_NODE; // would run the main script as plain node — no lock, no app
+  delete env.ELECTRON_NO_ATTACH_CONSOLE;
+  delete env.NoDefaultCurrentDirectoryInExePath;
+  delete env.SWITCHBOARD_AUTOCLOSE;
+  env.SWITCHBOARD_NO_QUIT_CONFIRM = '1';
+  env.SWITCHBOARD_FAKE_PROVIDER = '1';
+  applyIsolatedPaths(env, home);
+
+  // `--no-sandbox` on Linux, because that is what every OTHER app in this suite
+  // is launched with and this one has to match: Playwright unshifts the flag
+  // itself for Electron on linux unless `chromiumSandbox` was asked for
+  // (playwright-core 1.61.1 `lib/coreBundle.js`, in `launch()` — read in the
+  // installed copy). Without it, CI's Electron aborts before it runs a line of
+  // our JS: "The SUID sandbox helper binary was found, but is not configured
+  // correctly", because nothing in the workflow chowns `chrome-sandbox` to
+  // root. That abort is not this app refusing to start twice, but it looks
+  // exactly like one from the exit code.
+  const args = process.platform === 'linux' ? ['--no-sandbox', ROOT] : [ROOT];
+  const started = Date.now();
+  const child = spawn(electronPath(), args, { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  let stderr = '';
+  child.stderr?.on('data', (b: Buffer) => {
+    stderr += b.toString();
+  });
+  child.stdout?.resume(); // drain: a full pipe would block the child
+
+  return await new Promise<SecondInstanceResult>((resolve) => {
+    const done = (code: number | null, timedOut: boolean): void => {
+      clearTimeout(timer);
+      resolve({ code, ms: Date.now() - started, timedOut, stderr });
+    };
+    const timer = setTimeout(() => {
+      // it did not leave on its own — reap the tree so the temp home can still
+      // be deleted, and let the caller assert on `timedOut`
+      killTree(child.pid);
+      done(null, true);
+    }, budgetMs);
+    child.on('exit', (code) => done(code, false));
+    child.on('error', () => done(null, false)); // spawn failed; `code: null` fails the spec
+  });
+}
+
 export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> {
   const home = opts.home ?? fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-'));
-  const appData = path.join(home, 'AppData', 'Roaming');
-  const localAppData = path.join(home, 'AppData', 'Local');
-  fs.mkdirSync(appData, { recursive: true });
-  fs.mkdirSync(localAppData, { recursive: true });
-
   const env: Record<string, string> = { ...process.env } as Record<string, string>;
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.ELECTRON_NO_ATTACH_CONSOLE;
@@ -295,17 +389,7 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   } else {
     env.SWITCHBOARD_FAKE_PROVIDER = '1';
   }
-  // isolate every path the app derives from the profile
-  env.HOME = home;
-  env.USERPROFILE = home;
-  env.APPDATA = appData;
-  env.LOCALAPPDATA = localAppData;
-  // Linux: Electron resolves userData via XDG, NOT $HOME — without these the
-  // whole CI worker shares one real profile and state leaks across tests
-  // (caught by E12's fresh-profile assertions)
-  env.XDG_CONFIG_HOME = path.join(home, '.config');
-  env.XDG_CACHE_HOME = path.join(home, '.cache');
-  env.XDG_DATA_HOME = path.join(home, '.local', 'share');
+  applyIsolatedPaths(env, home);
   if (opts.seedFolder) env.SWITCHBOARD_SEED_SESSION = opts.seedFolder;
   Object.assign(env, opts.env);
 
@@ -600,6 +684,8 @@ export interface PersistedUi {
   layoutMode?: { mode?: string };
   presentation?: Record<string, { ladder?: string }>;
   presentationPolicy?: { global?: string; cards?: Record<string, string> };
+  /** §5.8's focus-stealing policy (P2-E9-10) — global + per-session overrides */
+  focusPolicy?: { global?: string; cards?: Record<string, string> };
 }
 
 /**
@@ -745,9 +831,12 @@ export async function hookPoster(
     const f = findFile(a.home, 'switchboard.log');
     return f && fs.readFileSync(f, 'utf8').includes('hook listener up') ? f : null;
   });
-  const port = Number(
-    /"msg":"hook listener up".*?"port":(\d+)/.exec(fs.readFileSync(logFile, 'utf8'))![1]
-  );
+  // The LAST listener, not the first. The log is appended to across launches
+  // and a spec that relaunches into the same home (twoGroups, every persistence
+  // test) leaves a dead port at the top of the file — posting to it fails with
+  // ECONNREFUSED and looks like a product bug rather than a stale read.
+  const ports = [...fs.readFileSync(logFile, 'utf8').matchAll(/"msg":"hook listener up".*?"port":(\d+)/g)];
+  const port = Number(ports[ports.length - 1][1]);
   const tokens = await poll(() => {
     const t = findTokens(a.home);
     return t.size >= expectSessions ? t : null;

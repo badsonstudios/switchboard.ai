@@ -94,12 +94,20 @@ back to the first.
 | `Ctrl+Shift+↓` | Show less of the focused session — one rung down |
 | `Ctrl+Shift+↑` | Show more of the focused session — one rung up |
 | `Ctrl+Shift+M` | Maximize the focused session, or put the layout back |
+| `Ctrl+Alt+P` | Pin or unpin the focused session |
 | `Ctrl+Shift+L` | Switch the whole workspace to the next layout: Grid → Focus → Queue |
 | `Ctrl+Shift+P` | Open the command palette |
 | `Ctrl+Space` | Go to the next session that needs you |
 
 `Ctrl+W` asks before it closes, because closing a session ends it and removes
 its card — the same confirmation you get from the tab's **✕**.
+
+`Ctrl+Alt+P` pins the session you're in. A pinned session sorts to the top of
+the Sessions list, keeps its own row when idle sessions fold together, is never
+minimized behind your back, and is skipped by **Close all sessions** — see
+[Pinning a session](02-sessions.md#pinning-a-session-you-always-want-to-find).
+It does not force the session to stay expanded; you can still collapse, tab or
+hide it yourself.
 
 ``Ctrl+` `` is a toggle: press it once to look at the Terminal, press it again
 to go straight back to the Session view.
@@ -131,6 +139,11 @@ Search the palette for **on submit** and you also get the eleven entries that se
 prompt](07-workspace.md#getting-out-of-the-way-by-itself) — three for every
 session at once, and three plus **follow the default** for both the session
 you're in and its group.
+
+Search for **needs you** and you get the nine that set [what a session may do
+when it wants your attention](07-workspace.md#when-a-session-interrupts-you) —
+four for every session at once, and four plus **follow the default** for the
+session you're in.
 
 ## Reading the conversation with the keyboard
 
@@ -207,8 +220,29 @@ The right-click menu on a row is on the keyboard too: with a session's name
 selected, press **`Shift+F10`** (or the **Menu** key, if your keyboard has one)
 and the same menu opens, with the first item already selected. `↑` and `↓` walk
 it, `Enter` picks, and `Esc` closes it and puts you back on the row you started
-from. That menu is where **Open changes**, **Rename…** and **Close session**
-live, so renaming a session doesn't need a double-click.
+from. That menu is where **Open changes**, **Rename…**, **Pin session** and
+**Close session** live, so renaming or pinning a session doesn't need a
+double-click. Below them are two labelled groups of radio items — **ON
+SUBMIT** and **WHEN IT NEEDS YOU** — which read out as one choice each rather
+than as eight loose commands.
+
+#### Moving a session into a group without dragging
+
+Keep walking that menu past **Close session** and you reach **Move to group** —
+every group you've made, then **Ungrouped**, with a tick beside the one the
+session is in now. `Enter` on any of them moves it, exactly as
+[dragging the row onto that group](07-workspace.md#groups) would;
+`Enter` on **Ungrouped** takes it out of its group, the same as dropping it on
+empty space.
+
+The move is read out when it happens — *"trading-app moved to Backend"* — and
+you're left standing on the row in its new home, ready to press `Shift+F10`
+again. If the group you moved it into happens to be folded shut, you land on
+that group's name instead, which tells you it's closed; `Enter` opens it.
+
+[Automatic groups](07-workspace.md#automatic-groups) aren't on the list. Their
+membership is worked out from the session's folder rather than chosen, so there
+is nothing there to pick — the same reason you can't drag a session into one.
 
 ### The lamp strip
 
