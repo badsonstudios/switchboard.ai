@@ -29,6 +29,7 @@
 import { UpdateCheckResult, UpdateFailureReason } from '../../shared/update';
 import { isNewerVersion, normalizeVersion, parseVersion } from './version';
 import { resolveUpdateToken, TokenSource } from './token';
+import { pickInstallerAsset } from './install';
 
 /**
  * The feed. Hard-coded rather than read from package.json's `repository`,
@@ -56,6 +57,8 @@ interface GithubRelease {
   draft?: unknown;
   prerelease?: unknown;
   published_at?: unknown;
+  /** E19-04: the installer and its `.sha256`, when the release has both */
+  assets?: unknown;
 }
 
 export interface CheckDeps {
@@ -77,6 +80,8 @@ export interface CheckDeps {
   now?: () => Date;
   /** debug/warn only; the update path never reports itself to the user */
   log?: (msg: string, meta?: Record<string, unknown>) => void;
+  /** which platform's installer to look for (E19-04). Defaults to the real one. */
+  platform?: NodeJS.Platform;
 }
 
 function fail(
@@ -191,6 +196,10 @@ function decide(
   if (!isNewerVersion(latestVersion, currentVersion)) {
     return { ok: true, state: 'up-to-date', currentVersion, latestVersion, checkedAt };
   }
+  // E19-04. Optional by design: a release with no verifiable installer is
+  // still an offer — the dialog just falls back to opening its page in the
+  // browser, which is exactly what E19-03 shipped.
+  const download = pickInstallerAsset(best.assets, deps.platform) ?? undefined;
   return {
     ok: true,
     state: 'available',
@@ -200,6 +209,7 @@ function decide(
     url: typeof best.html_url === 'string' ? best.html_url : undefined,
     publishedAt: typeof best.published_at === 'string' ? best.published_at : undefined,
     checkedAt,
+    ...(download ? { download } : {}),
   };
 }
 

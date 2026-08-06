@@ -49,6 +49,12 @@ export const CAPABILITIES = [
   // request to the internet, and hiding that under
   // "settings.read" would be exactly the mislabelling that
   // precedent exists to prevent.
+  'update.install', // DOWNLOADS AN EXECUTABLE AND RUNS IT (P2-E19-04). The
+  // sharpest capability in the app, and deliberately not
+  // folded into `update.check`: reading a version number and
+  // replacing the binary on disk are not the same power, and
+  // a contribution that wants the first must not silently
+  // acquire the second.
   'shell.openExternal', // hands a URL to the user's BROWSER. Its own capability
   // for the `dialog.open` reason — putting something in
   // front of the user, outside the app, is a power in its
@@ -109,8 +115,13 @@ export const CHANNEL_CAPABILITIES = {
   'settings:getAutoTrust': 'settings.read',
   'settings:setAutoTrust': 'settings.write',
   'transcripts:binding': 'transcripts.read',
+  'update:cancelInstall': 'update.install',
   'update:check': 'update.check',
   'update:getPrefs': 'settings.read',
+  // The one-shot "you're now on vX" the previous run left behind. A READ of a
+  // preference, not an install — it can no more start one than `getPrefs` can.
+  'update:handshake': 'settings.read',
+  'update:install': 'update.install',
   'update:openExternal': 'shell.openExternal',
   // "Skip this version" and the auto-check toggle are ordinary preferences —
   // they persist in the workspace store next to the notification prefs, and
@@ -143,6 +154,9 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:permissionResolved': 'sessions.read',
   'sessions:status': 'sessions.read',
   'sessions:usage': 'sessions.read',
+  // how far the download/verify/install has got (E19-04). Same capability as
+  // starting one: a window that may not install may not watch one either.
+  'update:installStatus': 'update.install',
   // a check the renderer did not ask for (the daily timer, or the menu item)
   // finished — the renderer decides whether that becomes a dialog
   'update:status': 'update.check',

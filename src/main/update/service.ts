@@ -59,6 +59,15 @@ export interface UpdateServiceDeps {
   };
   /** `process.env[FEED_ENV]` in a non-packaged build; undefined otherwise */
   feedOverride?: string;
+  /**
+   * A download/verify/install is in flight (E19-04).
+   *
+   * The item's own words: "a timer tick during a download must not
+   * double-prompt". The tick still RUNS — the check is cheap and `lastCheck`
+   * should stay honest — it just never turns into a dialog on top of the
+   * progress bar the user is already watching.
+   */
+  installBusy?: () => boolean;
   /** test seam */
   checkImpl?: (deps: CheckDeps) => Promise<UpdateCheckResult>;
   now?: () => number;
@@ -153,6 +162,18 @@ export class UpdateService {
     return status;
   }
 
+  /**
+   * The last answer this service produced, whatever it was.
+   *
+   * E19-04's install handler reads it instead of taking a release from the
+   * renderer: what gets downloaded and EXECUTED is decided by the process that
+   * did the checking. A window that has been open for a day and a release that
+   * was withdrawn an hour ago disagree — and this is the side that is right.
+   */
+  lastResult(): UpdateCheckResult | null {
+    return this.last?.result ?? null;
+  }
+
   /** "Skip this version" — persisted, and only ever suppresses AUTO prompts. */
   skip(version: string): UpdatePrefs {
     if (typeof version === 'string' && version.trim()) {
@@ -236,7 +257,12 @@ export class UpdateService {
   }
 
   private statusOf(result: UpdateCheckResult, manual: boolean, prefs: UpdatePrefs): UpdateStatus {
-    return { result, manual, prompt: shouldPrompt(result, prefs, manual) };
+    // The re-entrancy guard (E19-04). An AUTOMATIC check that lands mid-install
+    // is silent; a manual one still answers, because the person who pressed the
+    // button is entitled to be told what is going on — and what they will see
+    // is the install already in progress, not a second offer.
+    const busy = manual ? false : this.deps.installBusy?.() === true;
+    return { result, manual, prompt: !busy && shouldPrompt(result, prefs, manual) };
   }
 }
 
