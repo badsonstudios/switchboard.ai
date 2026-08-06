@@ -11,7 +11,7 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { launchApp, LaunchedApp } from './fixtures/app';
+import { hookPoster, launchApp, LaunchedApp } from './fixtures/app';
 
 /** Project folders this file made, waiting to be deleted. See `teardown`. */
 const tempFolders: string[] = [];
@@ -479,6 +479,60 @@ test.describe('switching transport the way a user does (#153)', () => {
     await w.waitForTimeout(10_000);
     await expect(w.getByText(/start-up dialog/i)).toHaveCount(0);
     await expect(w.getByRole('button', { name: /Open Terminal/i })).toHaveCount(0);
+  });
+
+  // #261 — the SAME contradiction, on the branch Dan actually reported, and the
+  // reason the test above was not enough.
+  //
+  // That one drives only `startingLong`, and that branch stopped firing once
+  // transport-ready was fixed: the session no longer sits on `starting`, so
+  // there is nothing to suppress and the assertion passes for the wrong reason.
+  // It would have stayed green through the entire life of this bug — and did.
+  //
+  // So this one drives the branch by hand. A `Notification` from the CLI's own
+  // debounced nudge is exactly what put the bar on screen in the live incident:
+  // no PreToolUse, therefore no hold, therefore no approval bar to outrank it.
+  // On a PTY session that is the #125 case and the bar is CORRECT (asserted in
+  // approval.spec.ts). Here there is no terminal to send anyone to.
+  test('a Direct session in needs-permission offers no bar and no dead button (#261)', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({
+      seedFolder: folder,
+      // Start in Direct rather than switching + restarting: the transport is
+      // the subject of the test, not the path taken to it, and a restart moves
+      // the live session id out from under `hookPoster`.
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+    });
+    const w = a.window;
+    const title = folder.split(/[\\/]/).pop()!;
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+
+    // it really is Direct — otherwise everything below is a PTY test that
+    // happens to pass
+    await w.getByRole('tab', { name: 'Terminal' }).first().click();
+    await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 30_000 });
+    await w.getByRole('tab', { name: 'Session', exact: true }).first().click();
+
+    const post = await hookPoster(a);
+    await post(title, {
+      hook_event_name: 'Notification',
+      notification_type: 'permission_prompt',
+      message: 'Claude needs your permission to use Write',
+    });
+
+    // The session REALLY reached the state — without this the two absence
+    // assertions below prove only that nothing happened, which is the exact
+    // failure mode of the test above.
+    await expect(w.locator('nav .rail-row[data-session-status="needs-permission"]')).toHaveCount(1, {
+      timeout: 15_000,
+    });
+
+    // ...and the Session tab stays silent rather than pointing at a terminal
+    // that does not exist. `data-handoff` is the bar itself; the button is what
+    // the user would have clicked to nowhere.
+    await expect(w.locator('[data-handoff]')).toHaveCount(0);
+    await expect(w.getByRole('button', { name: /Open Terminal/i })).toHaveCount(0);
+    await expect(w.getByText(/asking permission in the terminal/i)).toHaveCount(0);
   });
 
   // The path Dan took, and the one that was still broken after the restart
