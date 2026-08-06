@@ -15,7 +15,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        # macOS runs on pushes to main only (Dan, 2026-08-06): across runs 1-6
+        # its only unique signal was the known fs.watch flake, and as a
+        # REQUIRED PR check it cost a re-run per sighting. Post-merge coverage
+        # keeps the OS honest without gating every PR on it. Branch
+        # protection's required checks list matches the PR-event matrix (4).
+        os: ${{ github.event_name == 'push' && fromJSON('["windows-latest", "ubuntu-latest", "macos-latest"]') || fromJSON('["windows-latest", "ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
