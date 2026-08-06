@@ -140,6 +140,11 @@ prompt](07-workspace.md#getting-out-of-the-way-by-itself) — three for every
 session at once, and three plus **follow the default** for both the session
 you're in and its group.
 
+Search for **needs you** and you get the nine that set [what a session may do
+when it wants your attention](07-workspace.md#when-a-session-interrupts-you) —
+four for every session at once, and four plus **follow the default** for the
+session you're in.
+
 ## Reading the conversation with the keyboard
 
 The conversation in the Session tab is full of things that open: command boxes,
@@ -217,7 +222,9 @@ and the same menu opens, with the first item already selected. `↑` and `↓` w
 it, `Enter` picks, and `Esc` closes it and puts you back on the row you started
 from. That menu is where **Open changes**, **Rename…**, **Pin session** and
 **Close session** live, so renaming or pinning a session doesn't need a
-double-click.
+double-click. Below them are two labelled groups of radio items — **ON
+SUBMIT** and **WHEN IT NEEDS YOU** — which read out as one choice each rather
+than as eight loose commands.
 
 ### The lamp strip
 

@@ -40,6 +40,12 @@ import {
   withGlobal,
   withGroup,
 } from './lib/presentation-policy';
+import {
+  attentionResponse,
+  FocusPolicy,
+  withFocusCard,
+  withFocusGlobal,
+} from './lib/focus-policy';
 import { buildIdentity } from '../../shared/build-identity';
 import { applyTabRows, loadTabRows, syncDocumentFlags, toggleTabRows } from './lib/tab-rows';
 import { openPopoutWindows, subscribePopoutWindows } from './lib/popout-windows';
@@ -115,6 +121,12 @@ export function App(): React.JSX.Element {
   // rather than by every component remembering to keep a ref in sync.
   const events = useSyncExternalStore(subscribeStore, () => sessionStore.getState().events);
   const visited = useSyncExternalStore(subscribeStore, () => sessionStore.getState().visited);
+  // The same list minus the sessions silenced by E9-10's `none` — what the
+  // panel's next-up highlight has to be computed from, or it would point at a
+  // row Ctrl+Space will skip. The panel still LISTS them: the feed is the log.
+  const attentionFeed = useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getAttentionEvents()
+  );
   // The urgency strip (E9-04). It renders from RAIL ORDER, not the raw session
   // list, so the Nth lamp is the Nth Ctrl+1..9 target — the derived value has a
   // stable identity (recomputed only when sessions/groups change), which is
@@ -172,6 +184,22 @@ export function App(): React.JSX.Element {
     (groupId: string) =>
       setGroupPolicy(groupId, cycleOverride(groupOverride(sessionStore.getPolicies(), groupId))),
     [setGroupPolicy]
+  );
+  // §5.8's focus-stealing policy (E9-10). Read from the store for the reason
+  // the presentation policy is: the reveal effect below resolves it per event,
+  // and the rail menu renders the tick from the same book.
+  const focusPolicies = useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getFocusPolicies()
+  );
+  const setGlobalFocusPolicy = React.useCallback(
+    (p: FocusPolicy) =>
+      sessionStore.setFocusPolicies(withFocusGlobal(sessionStore.getFocusPolicies(), p)),
+    []
+  );
+  const setSessionFocusPolicy = React.useCallback(
+    (cardId: string, p: FocusPolicy | undefined) =>
+      sessionStore.setFocusPolicies(withFocusCard(sessionStore.getFocusPolicies(), cardId, p)),
+    []
   );
   // §5.8's layout mode (E9-07). In the store for the reason the ladder and the
   // policy are: the chip renders from it AND the sweep reads it synchronously
@@ -371,7 +399,7 @@ export function App(): React.JSX.Element {
     return off;
   }, []);
 
-  // ── reveal on needs-attention (E9-05, §5.8) ──────────────────────────────
+  // ── reveal (and focus) on needs-attention (E9-05 + E9-10, §5.8) ──────────
   //
   // "Reveal triggers: needs-attention (permission / input / done) or user click
   // anywhere." The click half has worked since E15-08 — every click path lands
@@ -379,14 +407,16 @@ export function App(): React.JSX.Element {
   // This is the other half: a session that is collapsed, tabbed or hidden comes
   // BACK ON ITS OWN, into exactly the slot it left, the moment it needs a human.
   //
-  // It deliberately does NOT take focus (revealCard's second argument). Showing
-  // and focusing are two questions in §5.8, and the second one belongs to
-  // E9-10's focus-stealing policy — a blocked session stealing the cursor out
-  // of the card you are typing in is exactly what that setting exists to stop.
+  // E9-05 shipped this taking focus from nobody, ever, and left the second
+  // question — MAY it take the cursor? — to E9-10's focus-stealing policy. That
+  // policy now answers it per session (lib/focus-policy), and its answer is
+  // also what decides whether the reveal happens at all: `urgent` and `none`
+  // leave the workspace alone entirely.
   //
-  // The rule itself is lib/ladder's `revealTargets`, unit-tested there; this
-  // effect is only the wiring, and the ref is what makes "have I acted on this
-  // event id" survive re-renders without being state nothing renders from.
+  // Both rules are pure and unit-tested (lib/focus-policy's `attentionResponse`
+  // decides, lib/ladder's `revealTargets` walks the feed); this effect is only
+  // the wiring, and the ref is what makes "have I acted on this event id"
+  // survive re-renders without being state nothing renders from.
   const revealSeen = React.useRef<ReadonlySet<number>>(new Set());
   const bootFeedSeeded = React.useRef(false);
   useEffect(() => {
@@ -403,16 +433,42 @@ export function App(): React.JSX.Element {
     if (!sessionStore.hasFeed() || !grid.current) return;
     const plan = revealTargets(events, revealSeen.current, {
       cardIdFor: (liveId) => sessionStore.cardIdForLive(liveId),
-      rungOf: (cardId) => sessionStore.getPresentation(cardId).ladder,
+      // dockview's answer, not the rung's: §5.8's `smart` turns on the word
+      // "visible", and an `expanded` card can still be an unselected tab.
+      onScreen: (cardId) => grid.current?.isCardOnScreen(cardId) ?? false,
       // The first list is SEEDED, never acted on: at boot the feed hands over
       // whatever was already waiting, and §5.25 says the workspace comes back
       // as the user left it — a launch that instantly un-collapses every
       // session that was blocked when you quit yesterday is not that.
       act: bootFeedSeeded.current,
+      // Read from the STORE, not from the rendered `focusPolicies`: this effect
+      // runs on the events identity change, and a policy set in the same commit
+      // must not be one render stale when a session calls.
+      respond: (cardId, onScreen) =>
+        attentionResponse(sessionStore.focusPolicyFor(cardId), { visible: onScreen }),
     });
     revealSeen.current = plan.seen;
     bootFeedSeeded.current = true;
-    for (const cardId of plan.cardIds) grid.current?.revealCard(cardId, false);
+    // Two verbs, because they are two different things to a card that is
+    // already on screen: placing it would move a panel for nothing (and would
+    // drag a tabbed card out of its stack), while focusing it is the whole of
+    // what `smart` does for a card you can see. The two lists are DISJOINT by
+    // construction — revealTargets only lists a card for placing when it is off
+    // screen — so the guard below is a statement of that, not a de-duplication.
+    //
+    // ORDER WITHIN ONE BATCH is deliberately not defined: if a single feed push
+    // brought two sessions that both may focus, the last one to land wins, and
+    // which that is depends on `revealCard` being async while `focusSession` is
+    // not. Two sessions calling in the same frame is a coin toss either way, and
+    // inventing a tie-break here would only make the coin look loaded.
+    const placing = new Set(plan.cardIds);
+    const focusing = new Set(plan.focusIds);
+    for (const cardId of plan.cardIds) grid.current?.revealCard(cardId, focusing.has(cardId));
+    for (const cardId of plan.focusIds) {
+      // through App's own wrapper, not grid's: it records that a DIFFERENT OS
+      // window was raised, which the popout key bridge below has to know
+      if (!placing.has(cardId)) focusSession(cardId);
+    }
   }, [events]);
 
   // ── layout modes react to the workspace (E9-07, §5.8) ────────────────────
@@ -520,6 +576,8 @@ export function App(): React.JSX.Element {
           setGlobalPolicy,
           setSessionPolicy,
           setGroupPolicy,
+          setGlobalFocusPolicy,
+          setSessionFocusPolicy,
           setLayoutMode: (mode) => grid.current?.setLayoutMode(mode),
           cycleLayoutMode: () => grid.current?.cycleLayoutMode(),
           toggleMaximize: (cardId) => grid.current?.toggleMaximize(cardId),
@@ -531,7 +589,16 @@ export function App(): React.JSX.Element {
           jumpToNextAttention,
           openAbout: () => setAboutOpen(true),
       }),
-    [toggleRail, jumpToNextAttention, setGlobalPolicy, setSessionPolicy, setGroupPolicy, togglePin], // other deps read live state through refs; grid.current is stable
+    [
+      toggleRail,
+      jumpToNextAttention,
+      setGlobalPolicy,
+      setSessionPolicy,
+      setGroupPolicy,
+      setGlobalFocusPolicy,
+      setSessionFocusPolicy,
+      togglePin,
+    ], // other deps read live state through refs; grid.current is stable
   );
   // chips advertise their own binding, derived from the registry so a tooltip
   // can never drift from the key that actually works
@@ -826,6 +893,8 @@ export function App(): React.JSX.Element {
             onTogglePin={togglePin}
             onSetSessionPolicy={setSessionPolicy}
             onCycleGroupPolicy={cycleGroupPolicy}
+            focusPolicies={focusPolicies}
+            onSetSessionFocusPolicy={setSessionFocusPolicy}
             onMoveToGroup={(cardId, gid) => {
               void bridge.groups?.setSessionGroup?.(cardId, gid).then(() => {
                 grid.current?.moveCardToGroup(cardId, gid);
@@ -856,6 +925,7 @@ export function App(): React.JSX.Element {
         <EventsPanel
           sessions={sessions}
           events={events}
+          queueEvents={attentionFeed}
           visited={visited}
           queueBinding={queueBindingLabel}
           onFocus={(id) => focusSession(id)}

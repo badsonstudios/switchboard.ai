@@ -8,6 +8,7 @@
 import { sessionStore } from '../store/session-store';
 import { loadPresentation, persistablePresentation, PRESENTATION_KEY } from './presentation';
 import { loadPolicyBook, POLICY_KEY } from './presentation-policy';
+import { FOCUS_POLICY_KEY, loadFocusBook } from './focus-policy';
 import { LAYOUT_KEY, loadLayout } from './layout-mode';
 import { loadPins, PIN_KEY } from './pinning';
 import { uiAll, uiDelete, uiGet, uiSet } from './ui-state';
@@ -28,6 +29,16 @@ export function initPresentation(): void {
   sessionStore.setPolicyPersister((blob) => {
     if (blob) uiSet(POLICY_KEY, blob);
     else uiDelete([POLICY_KEY]);
+  });
+  // §5.8's FOCUS-STEALING policy (P2-E9-10) rides the same edge, and must be
+  // seeded in the same pass for the sharper version of the same reason: a
+  // policy read before the blob has loaded answers `smart` for a user who chose
+  // `urgent`, and the very first session to finish would take the cursor out of
+  // whatever they were typing in — the one thing that setting exists to stop.
+  sessionStore.initFocusPolicies(loadFocusBook(uiGet<unknown>(FOCUS_POLICY_KEY, null)));
+  sessionStore.setFocusPolicyPersister((blob) => {
+    if (blob) uiSet(FOCUS_POLICY_KEY, blob);
+    else uiDelete([FOCUS_POLICY_KEY]);
   });
   // §5.8's layout MODE (P2-E9-07) rides the same edge and is seeded in the same
   // pass: the grid restores its cards from the saved dockview layout at boot,

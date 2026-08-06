@@ -47,6 +47,15 @@ import {
   pruneLayout,
 } from '../lib/layout-mode';
 import {
+  attentionEvents,
+  DEFAULT_FOCUS_BOOK,
+  FocusBook,
+  FocusPolicy,
+  persistableFocusPolicies,
+  pruneFocusPolicies,
+  resolveFocusPolicy,
+} from '../lib/focus-policy';
+import {
   isPinned,
   NO_PINS,
   persistablePins,
@@ -92,6 +101,13 @@ export interface SessionState {
    */
   readonly policies: PolicyBook;
   /**
+   * §5.8's focus-stealing policy (P2-E9-10): the global setting plus the
+   * per-session overrides. In `state` for the same pair of reasons `policies`
+   * is — the rail menu RENDERS from it, and the reveal-on-attention effect
+   * reads it while deciding what an incoming event may do.
+   */
+  readonly focusPolicies: FocusBook;
+  /**
    * §5.8's layout mode + the maximize it can be holding (P2-E9-07). In `state`
    * for the same pair of reasons `presentation` is: the titlebar chip and the
    * palette RENDER from it, and the sweep that applies it runs from a keydown
@@ -119,6 +135,7 @@ const EMPTY: SessionState = {
   presentation: new Map(),
   urgency: new Map(),
   policies: DEFAULT_BOOK,
+  focusPolicies: DEFAULT_FOCUS_BOOK,
   layout: DEFAULT_LAYOUT,
   pinned: NO_PINS,
 };
@@ -133,6 +150,12 @@ export class SessionStore {
   // stored value with a stable reference, not a computation.
   private derivedRail: RailOrderResult<RailSession> = railOrder<RailSession>([], []);
   private derivedQueue: EventDto[] = [];
+  // The feed minus the sessions whose focus policy is `none` (P2-E9-10) — the
+  // list every queue reader works from. Kept beside the ordered queue because
+  // `advanceQueue` and the visited-set prune need the UNORDERED subset, and
+  // recomputing the filter at each of those call sites is how two of them end
+  // up disagreeing about which sessions are silenced.
+  private derivedAttention: readonly EventDto[] = [];
 
   // ── live session id -> stable card id ───────────────────────────────────
   // The rail tracks LIVE sessions; cards are the durable unit. A live id
@@ -177,9 +200,17 @@ export class SessionStore {
     return this.derivedRail;
   }
 
-  /** The attention queue, in priority order (E9-03). */
+  /** The attention queue, in priority order (E9-03), minus the sessions whose
+   *  focus policy silenced them (E9-10). */
   getQueue(): EventDto[] {
     return this.derivedQueue;
+  }
+
+  /** The feed events the queue may see — the log minus the `none` sessions
+   *  (E9-10). What the Events panel highlights its next-up row from, so the
+   *  highlight and Ctrl+Space cannot point at different rows. */
+  getAttentionEvents(): readonly EventDto[] {
+    return this.derivedAttention;
   }
 
   private set(patch: Partial<SessionState>): void {
@@ -192,9 +223,11 @@ export class SessionStore {
     if ('sessions' in patch || 'groups' in patch || 'pinned' in patch) {
       this.derivedRail = railOrder(this.state.sessions, this.state.groups, this.state.pinned);
     }
-    if ('events' in patch) {
-      this.derivedQueue = attentionQueue(this.state.events);
-    }
+    // The queue is derived from the SILENCED-FILTERED feed (P2-E9-10), so it
+    // has to be recomputed when the focus book changes as well as when events
+    // do: setting a session to `none` must take it off the to-do list the same
+    // moment, not at the next event push.
+    if ('events' in patch || 'focusPolicies' in patch) this.rederiveAttention();
     for (const l of this.listeners) {
       try {
         l();
@@ -203,6 +236,24 @@ export class SessionStore {
         console.error('[store] subscriber threw', err);
       }
     }
+  }
+
+  /**
+   * Recompute the filtered feed and the queue over it (P2-E9-10).
+   *
+   * THREE inputs, not two: the events, the focus book, and `liveToCard` — the
+   * filter is applied per CARD, and events carry the live id. The first two live
+   * in `state` and arrive through `set()`; the third is a registry deliberately
+   * outside the notify path, which is why binding a live id calls this by hand.
+   * Without that call a session bound AFTER its first event landed (a spawn that
+   * crashes or finishes before `sessions:create` resolves) would sit in the
+   * queue unfiltered until the next feed push.
+   */
+  private rederiveAttention(): void {
+    this.derivedAttention = attentionEvents(this.state.events, (liveId) =>
+      this.focusPolicyFor(this.cardIdForLive(liveId))
+    );
+    this.derivedQueue = attentionQueue(this.derivedAttention);
   }
 
   setCards(cards: string[]): void {
@@ -237,7 +288,7 @@ export class SessionStore {
 
   /** Mark an event visited by the walk, so the panel's cursor tracks it. */
   visit(eventId: number): void {
-    this.set({ visited: withVisit(this.state.visited, this.state.events, eventId) });
+    this.set({ visited: withVisit(this.state.visited, this.derivedAttention, eventId) });
   }
 
   /**
@@ -249,7 +300,7 @@ export class SessionStore {
    * same session. That is the entire reason this is a store and not useState.
    */
   advanceQueue(): EventDto | null {
-    const { next, visited } = nextInQueue(this.state.events, this.state.visited);
+    const { next, visited } = nextInQueue(this.derivedAttention, this.state.visited);
     // an empty queue is a no-op: nextInQueue still hands back a fresh Set, and
     // storing it would re-render the whole App on every dead press
     if (!next && visited.size === 0 && this.state.visited.size === 0) return null;
@@ -387,6 +438,46 @@ export class SessionStore {
     if (!next) return;
     this.set({ policies: next });
     this.persistPolicies(persistablePolicies(next));
+  }
+
+  // ── focus-stealing policy (P2-E9-10) ────────────────────────────────────
+  // Same shape as the presentation policy above, and injected persistence for
+  // the same reason. One level fewer (global + per-session, no groups) because
+  // §5.8 specifies exactly that for this setting.
+  private persistFocusPolicies: (blob: Record<string, unknown> | null) => void = () => {};
+
+  setFocusPolicyPersister(fn: (blob: Record<string, unknown> | null) => void): void {
+    this.persistFocusPolicies = fn;
+  }
+
+  getFocusPolicies(): FocusBook {
+    return this.state.focusPolicies;
+  }
+
+  /** Seed the book from the ui blob at boot. Does not persist — it just read it. */
+  initFocusPolicies(book: FocusBook): void {
+    this.set({ focusPolicies: book });
+  }
+
+  /** Replace the book (the pure edits live in lib/focus-policy). */
+  setFocusPolicies(book: FocusBook): void {
+    if (book === this.state.focusPolicies) return;
+    this.set({ focusPolicies: book });
+    this.persistFocusPolicies(persistableFocusPolicies(book));
+  }
+
+  /** The focus policy governing this card, its override resolved. */
+  focusPolicyFor(cardId: string | undefined): FocusPolicy {
+    return resolveFocusPolicy(this.state.focusPolicies, cardId);
+  }
+
+  /** Forget overrides for cards that no longer exist. Called from the same
+   *  place `prunePresentation` is, and for the same reason. */
+  pruneFocusPolicies(knownCardIds: Iterable<string>): void {
+    const next = pruneFocusPolicies(this.state.focusPolicies, knownCardIds);
+    if (!next) return;
+    this.set({ focusPolicies: next });
+    this.persistFocusPolicies(persistableFocusPolicies(next));
   }
 
   // ── layout mode (P2-E9-07) ──────────────────────────────────────────────
@@ -555,6 +646,8 @@ export class SessionStore {
     // keyed by the corpse's id, not just the binding.
     this.forgetCardLiveIds(cardId);
     this.liveToCard.set(liveId, cardId);
+    // the silenced-feed filter is keyed by card and reads this map (E9-10)
+    this.rederiveAttention();
   }
   cardIdForLive(liveId: string): string {
     return this.liveToCard.get(liveId) ?? liveId;
@@ -633,6 +726,7 @@ export class SessionStore {
         console.error('[store] live-retired subscriber threw', err);
       }
     }
+    this.rederiveAttention(); // same reason as mapLiveToCard's (E9-10)
   }
 
   // ── allow-all, keyed by LIVE id ─────────────────────────────────────────

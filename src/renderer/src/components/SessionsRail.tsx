@@ -53,6 +53,13 @@ import {
   PresentationPolicy,
   resolvePolicy,
 } from '../lib/presentation-policy';
+import {
+  FOCUS_POLICY_ORDER,
+  FocusBook,
+  FocusPolicy,
+  focusOverride,
+  resolveFocusPolicy,
+} from '../lib/focus-policy';
 
 export type { RailSession, RailGroup } from '../model/types';
 
@@ -92,6 +99,80 @@ const menuItemStyle: React.CSSProperties = {
   fontFamily: 'var(--font-ui)',
 };
 
+/**
+ * One per-session OVERRIDE choice in the rail's context menu: a labelled radio
+ * set of named values, with "follow the default" as its first and always-present
+ * member.
+ *
+ * Shared by E9-06's presentation policy and E9-10's focus-stealing policy —
+ * they are the same widget asking about two different settings, and writing the
+ * second one out again is how the two would have drifted an aria attribute at a
+ * time. Named values rather than one cycling row, because a menu closes when
+ * you click it: a cycle would cost a right-click per step, and the point of an
+ * override is to SAY what you want, not to walk past it.
+ *
+ * "Follow the default" is `undefined`, never the value the default happens to
+ * hold today — otherwise leaving an override would silently pin the session to
+ * whatever the global said at that moment.
+ */
+function OverrideGroup<T extends string>(props: {
+  /** the group's heading, and its accessible name */
+  label: string;
+  values: readonly T[];
+  /** this session's own override, or undefined for "follow the default" */
+  own: T | undefined;
+  /** the e2e handle, e.g. `data-policy-item`; the value is the mode or 'default' */
+  itemAttr: string;
+  itemStyle: React.CSSProperties;
+  labelOf: (value: T) => string;
+  /** already composed, because what "the default" resolves to differs per
+   *  setting (the presentation policy has a group level in between) */
+  defaultLabel: string;
+  onPick: (value: T | undefined) => void;
+}): React.JSX.Element {
+  return (
+    <div role="group" aria-label={props.label}>
+      <div
+        aria-hidden
+        style={{
+          marginBlockStart: 4,
+          paddingBlock: '4px 2px',
+          paddingInline: 9,
+          borderBlockStart: '1px solid var(--border)',
+          color: 'var(--faint)',
+          fontSize: 9.5,
+          textTransform: 'uppercase',
+          letterSpacing: 0.4,
+        }}
+      >
+        {props.label}
+      </div>
+      {[undefined, ...props.values].map((value) => {
+        const chosen = props.own === value;
+        return (
+          <button
+            key={value ?? 'default'}
+            type="button"
+            role="menuitemradio"
+            aria-checked={chosen}
+            {...{ [props.itemAttr]: value ?? 'default' }}
+            className="rail-menu-item"
+            onClick={() => props.onPick(value)}
+            style={{ ...props.itemStyle, fontWeight: chosen ? 700 : 400 }}
+          >
+            {/* the tick keeps its column whether or not it is drawn, so the
+                labels do not shuffle sideways as the choice moves */}
+            <span aria-hidden style={{ display: 'inline-block', inlineSize: 12 }}>
+              {chosen ? '✓' : ''}
+            </span>
+            {value ? props.labelOf(value) : props.defaultLabel}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function SessionsRail(props: {
   sessions: readonly RailSession[];
   groups: readonly RailGroup[];
@@ -123,6 +204,16 @@ export function SessionsRail(props: {
   /** `undefined` clears the override and follows the default again */
   onSetSessionPolicy: (cardId: string, policy: PresentationPolicy | undefined) => void;
   onCycleGroupPolicy: (groupId: string) => void;
+  /**
+   * §5.8's focus-stealing policy and its per-session overrides (E9-10).
+   *
+   * Here for the reason the presentation override is: the override belongs
+   * beside the row it governs. There is no group level — §5.8 specifies "a
+   * global setting with per-session override" for this one, and no more.
+   */
+  focusPolicies: FocusBook;
+  /** `undefined` clears the override and follows the default again */
+  onSetSessionFocusPolicy: (cardId: string, policy: FocusPolicy | undefined) => void;
   /**
    * §5.8's pinning contract (E9-09) — the pinned CARD ids.
    *
@@ -1153,59 +1244,51 @@ export function SessionsRail(props: {
               override is to say what you want, not to walk past it.
               A labelled group, so the radio set reads as one choice to a screen
               reader rather than four loose items after three commands. */}
-          <div role="group" aria-label={t('ladder.policyMenu')}>
-            <div
-              aria-hidden
-              style={{
-                marginBlockStart: 4,
-                paddingBlock: '4px 2px',
-                paddingInline: 9,
-                borderBlockStart: '1px solid var(--border)',
-                color: 'var(--faint)',
-                fontSize: 9.5,
-                textTransform: 'uppercase',
-                letterSpacing: 0.4,
-              }}
-            >
-              {t('ladder.policyMenu')}
-            </div>
-            {[undefined, ...POLICY_ORDER].map((policy) => {
-              const own = cardOverride(props.policies, menu.session.id);
-              const chosen = own === policy;
-              return (
-                <button
-                  key={policy ?? 'default'}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={chosen}
-                  data-policy-item={policy ?? 'default'}
-                  className="rail-menu-item"
-                  onClick={() => {
-                    // this one DOES restore: the choice is a property of the row,
-                    // and the row is still there afterwards
-                    closeMenu(true);
-                    props.onSetSessionPolicy(menu.session.id, policy);
-                  }}
-                  style={{ ...menuItemStyle, fontWeight: chosen ? 700 : 400 }}
-                >
-                  {/* the tick keeps its column whether or not it is drawn, so the
-                      labels do not shuffle sideways as the choice moves */}
-                  <span aria-hidden style={{ display: 'inline-block', inlineSize: 12 }}>
-                    {chosen ? '✓' : ''}
-                  </span>
-                  {policy
-                    ? t(`policy.${policy}`)
-                    : t('ladder.policyDefault', {
-                        // what following the default MEANS for this session right
-                        // now — which may be its group's override, not the global
-                        policy: t(
-                          `policy.${resolvePolicy({ ...props.policies, cards: {} }, menu.session.id, menu.session.groupId)}`
-                        ),
-                      })}
-                </button>
-              );
+          <OverrideGroup
+            label={t('ladder.policyMenu')}
+            values={POLICY_ORDER}
+            own={cardOverride(props.policies, menu.session.id)}
+            itemAttr="data-policy-item"
+            itemStyle={menuItemStyle}
+            labelOf={(policy) => t(`policy.${policy}`)}
+            defaultLabel={t('ladder.policyDefault', {
+              // what following the default MEANS for this session right now —
+              // which may be its group's override, not the global
+              policy: t(
+                `policy.${resolvePolicy({ ...props.policies, cards: {} }, menu.session.id, menu.session.groupId)}`
+              ),
             })}
-          </div>
+            onPick={(policy) => {
+              // this one DOES restore focus: the choice is a property of the
+              // row, and the row is still there afterwards
+              closeMenu(true);
+              props.onSetSessionPolicy(menu.session.id, policy);
+            }}
+          />
+          {/* §5.8's per-SESSION FOCUS-STEALING override (E9-10) — the same
+              widget, one question later: that group says what happens when YOU
+              submit, this one says what happens when the SESSION calls. They
+              are neighbours because "this session is allowed to interrupt me"
+              and "this session gets out of my way" are the two halves of how
+              loud one session is, and nobody should have to look in two places
+              for them. */}
+          <OverrideGroup
+            label={t('ladder.focusMenu')}
+            values={FOCUS_POLICY_ORDER}
+            own={focusOverride(props.focusPolicies, menu.session.id)}
+            itemAttr="data-focus-item"
+            itemStyle={menuItemStyle}
+            labelOf={(policy) => t(`focusPolicy.${policy}`)}
+            defaultLabel={t('ladder.focusDefault', {
+              policy: t(
+                `focusPolicy.${resolveFocusPolicy({ ...props.focusPolicies, cards: {} }, menu.session.id)}`
+              ),
+            })}
+            onPick={(policy) => {
+              closeMenu(true);
+              props.onSetSessionFocusPolicy(menu.session.id, policy);
+            }}
+          />
         </div>
       )}
     </nav>

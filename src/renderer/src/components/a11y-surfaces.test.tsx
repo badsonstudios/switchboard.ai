@@ -23,6 +23,7 @@ import { SessionsRail } from './SessionsRail';
 import { EventsPanel } from './EventsPanel';
 import { UrgencyStrip } from './UrgencyStrip';
 import { DEFAULT_BOOK } from '../lib/presentation-policy';
+import { DEFAULT_FOCUS_BOOK } from '../lib/focus-policy';
 import { uiDelete } from '../lib/ui-state';
 import { RailGroup, RailSession, EventDto } from '../model/types';
 
@@ -60,6 +61,7 @@ async function mountRail(selectedId: string | null = 'c1'): Promise<HTMLElement>
       selectedId={selectedId}
       palette={['var(--status-working)', 'var(--status-crashed)']}
       policies={DEFAULT_BOOK}
+      focusPolicies={DEFAULT_FOCUS_BOOK}
       onRename={noop}
       onFocus={noop}
       onDiff={noop}
@@ -73,6 +75,7 @@ async function mountRail(selectedId: string | null = 'c1'): Promise<HTMLElement>
       pinned={new Set()}
       onTogglePin={noop}
       onSetSessionPolicy={noop}
+      onSetSessionFocusPolicy={noop}
       onCycleGroupPolicy={noop}
     />
   );
@@ -91,6 +94,7 @@ async function mountEvents(): Promise<HTMLElement> {
         { ...sessions[2], liveId: 'live-3' },
       ]}
       events={events}
+      queueEvents={events}
       visited={new Set<number>()}
       onFocus={noop}
       onVisit={noop}
@@ -246,6 +250,36 @@ describe('sessions rail rows (issue 197)', () => {
     expect(document.activeElement).toBe(items[0]);
   });
 
+  it("reads each override set as ONE choice, not as loose commands", async () => {
+    // The menu carries two settings now (E9-06's "on submit" and E9-10's "when
+    // it needs you"), both drawn by the same `OverrideGroup`. What that widget
+    // is FOR is the grouping: nine radio items after three commands, with no
+    // labelled groups, reads as twelve unrelated things.
+    const host = await mountRail();
+    const row = host.querySelector<HTMLElement>('.rail-row')!;
+    await act(async () => {
+      row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    });
+    const menu = document.querySelector<HTMLElement>('[role="menu"]')!;
+    const named = Array.from(menu.querySelectorAll<HTMLElement>('[role="group"]')).map((g) =>
+      g.getAttribute('aria-label')
+    );
+    expect(named).toEqual([en.ladder.policyMenu, en.ladder.focusMenu]);
+
+    for (const group of menu.querySelectorAll<HTMLElement>('[role="group"]')) {
+      const radios = Array.from(group.querySelectorAll<HTMLElement>('[role="menuitemradio"]'));
+      // every value plus "follow the default", which must be reachable by the
+      // same gesture that left it
+      expect(radios.length).toBeGreaterThan(2);
+      // EXACTLY one is checked, and with no override set it is the default —
+      // a set with none checked, or two, is a radio set that lies
+      const checked = radios.filter((r) => r.getAttribute('aria-checked') === 'true');
+      expect(checked).toHaveLength(1);
+      expect(checked[0]).toBe(radios[0]);
+      expect(radios[0].dataset.policyItem ?? radios[0].dataset.focusItem).toBe('default');
+    }
+  });
+
   it('walks the menu with the arrows and wraps at both ends', async () => {
     const host = await mountRail();
     const row = host.querySelector<HTMLElement>('.rail-row')!;
@@ -332,6 +366,7 @@ describe('events panel rows (issue 197)', () => {
       <EventsPanel
         sessions={[{ ...sessions[0], liveId: 'live-1' }]}
         events={[events[0]]}
+        queueEvents={[events[0]]}
         visited={new Set<number>()}
         onFocus={(id) => focused.push(id)}
         onVisit={(id) => visited.push(id)}
