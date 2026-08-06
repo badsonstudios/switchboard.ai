@@ -11,7 +11,9 @@ const banner: React.CSSProperties = {
   columnGap: 6,
   // the window is a 100vh flex column whose main area has basis 0, so every
   // pixel of negative free space lands on the auto-basis children: without
-  // this, a short window clips the one notice that must not be missed
+  // this, a short window clips the one notice that must not be missed.
+  // Deleting it used to be green (#274); always-visible-notices.test.ts is
+  // what keeps it here now.
   flexShrink: 0,
   background: 'var(--panel2)',
   // the only decoration — an accent edge in the "wants something from you"

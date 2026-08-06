@@ -22,6 +22,14 @@ const barStyle: React.CSSProperties = {
   gap: 10,
   paddingInline: 12,
   fontSize: 12,
+  // Never give up height (#274). The window is a 100vh flex COLUMN whose main
+  // area is `flex: 1` with a basis of 0, so every pixel of negative free space
+  // in a short window lands on the auto-basis children — these two bars among
+  // them. `minBlockSize` below floors the damage but is not the promise: it is
+  // a number that happens to sit where today's text does, and it says nothing
+  // about intent. This line is the promise, and always-visible-notices.test.ts
+  // is what keeps it here.
+  flexShrink: 0,
   minBlockSize: 34,
 };
 
