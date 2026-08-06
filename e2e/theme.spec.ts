@@ -159,6 +159,21 @@ const auditWords = (opts: { ramp: string[]; only?: string }): Audit => {
       (n) => n.nodeType === 3 && (n.textContent ?? '').trim() !== ''
     );
     if (!words) continue;
+    // …and WORDS means letters or digits. A lone glyph (the rail's ✕, a ⌄
+    // disclosure) is an icon that happens to be a character: it belongs to
+    // 1.4.11's 3:1 for graphical objects, exactly like the lamp's dot and
+    // ring, not to a text sweep. Without this, a chrome token that happens to
+    // share bytes with a status hue flags a defect that is not there —
+    // nordic's --rail-close IS the shared --status-idle value, and the ✕ wore
+    // it honestly for months while this sweep sampled mid-`transition: color`
+    // and read the previous theme's value instead (caught on CI 2026-08-05,
+    // which is also why transitions are now disabled before sampling: the
+    // green was luck, in both directions).
+    const ownText = Array.from(el.childNodes)
+      .filter((n) => n.nodeType === 3)
+      .map((n) => n.textContent ?? '')
+      .join('');
+    if (!/[\p{L}\p{N}]/u.test(ownText)) continue;
     const box = el.getBoundingClientRect();
     const style = getComputedStyle(el);
     if (box.width === 0 || box.height === 0 || style.visibility === 'hidden') continue;
@@ -374,6 +389,17 @@ test.describe('themes (P2-E15-05)', () => {
     );
     await expect(w.locator('.feed-md a')).toBeVisible({ timeout: 25_000 });
     await expect(w.getByText('first step')).toBeVisible();
+
+    // Colours are sampled the instant the theme attribute lands, and several
+    // controls transition `color` over ~0.1s (.rail-x, .collapsed-row …). A
+    // sample taken mid-transition reads the OLD theme's value — and nordic's
+    // --rail-close is byte-equal to the shared --status-idle, so on a slow
+    // runner the rail's ✕ flags as "a hue on words" while daylight is active
+    // (caught on CI, 2026-08-05). This sweep measures END states; transitions
+    // are animation, not intent, so they are off for the sampling.
+    await w.addStyleTag({
+      content: '*, *::before, *::after { transition: none !important; }',
+    });
 
     const distinguishable = new Set<string>();
     for (const [label, id] of THEMES) {
