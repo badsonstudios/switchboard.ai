@@ -8,9 +8,16 @@
 E9: #70–#77 done, **#78/#79 in Dan's queue** (PRs #287/#301), #80 held on a
 scoping call; **E19 release/auto-update NEW 2026-08-05** — 01/02 merged, 03
 in Dan's queue, 04 held on #276's merge; E11/E13/E14 still outlines)
-**In progress:** **nothing mid-flight.** 🎛 Orchestration run 6 CLOSED
-2026-08-05 (block below): 22 items — 9 internal merged, 13 user-facing
-in DAN'S QUEUE. Run 5 CLOSED 2026-08-05: 14 items — 8 internal merged
+**In progress:** **nothing mid-flight.** 🎉 **RELEASE v0.1.0 CUT
+2026-08-06** — the run-6 merge train (13 PRs) is FULLY MERGED
+(Dan-authorized, serial bump+re-green, 5 real conflict sets + 3
+semantic integrations resolved), tag v0.1.0 pushed, the release
+workflow's FIRST REAL RUN succeeded (release live with installer +
+sha256 + changelog notes), and **switchboard 0.1.0 is INSTALLED
+per-user on Dan's machine at the tagged tree** (stamp 7890d2b in
+both bundles). Zero open PRs. 🎛 Run 6 CLOSED 2026-08-05 (block
+below): 22 items — 9 internal merged in-run, 13 user-facing merged
+by the train. Run 5 CLOSED 2026-08-05: 14 items — 8 internal merged
 in-run, 6 user-facing merged same day by the Dan-authorized train.
 Run 4 CLOSED
 2026-08-04 and **FULLY MERGED same day** — 10 items: 7 internal +
@@ -88,19 +95,51 @@ structure adopting #228's temp-dir registry, verified by a local
 > `.claude/work_files/orchestrator/<issue#>.md` — handoffs are the
 > inputs, this file is the output.
 >
-> **Suggested merge-train order (integration notes are in the
-> per-item entries + PR comments):** #263 → #270 → #283 → #293
-> (dedupe: #263+#293 carry byte-identical `lib/card-title.ts` —
-> keep one) → #272 → #265 → #302 (replace #265's "lamp still not
-> audited" tokens.css paragraph when both are in) → #287 → #301
-> (one guaranteed trivial conflict: SessionsRail props ~:123;
-> their 11 shared files are otherwise additive) → #285 → #296 →
-> #276. #281 in any slot — but its bump must fix the ipc.test.ts
-> comment that re-introduces the "fires onExit synchronously"
-> claim #288 killed. After the train: push tag v0.1.0 (first
-> release), then run 7 opens with #260 (E19-04) + #274 + the
-> quiet-moment pair #280 (.gitattributes renormalize — do it
-> FIRST while zero PRs are open) and #255.
+> **Merge train COMPLETE (2026-08-05→06, Dan-authorized):** all
+> 13 merged in order #263 → #270 → #283 → #293 → #272 → #265 →
+> #302 → #287 → #301 → #285 → #296 → #281 → #276; issues #250
+> #239 #251 #264 #241 #246 #267 #78 #79 #253 #289 #271 #259 all
+> closed. Integration the train needed (all verified locally
+> before push): 5 real conflict sets resolved (tokens.drift EOF
+> ×2 incl. a 3-way, SessionGrid closeCard [#264's store-first
+> title × #78's retireCard], the 6-file #287×#301 set, the
+> 3-file #276 set) + 3 semantic integrations (tokens.css lamp
+> paragraph now states the audited truth; #281's ipc.test.ts
+> comment corrected per #288; #246's caret ink fix PORTED into
+> lib/markdown.tsx — the Markdown move predated the fix, so the
+> raw hue would have ridden back in). One REAL find: the #246
+> painted sweep was green BY LUCK both ways — it sampled
+> mid-`transition: color` and read the previous theme's values;
+> now transitions are off during sampling and letterless glyphs
+> (✕, ⌄) are excluded from a WORDS test (nordic's --rail-close is
+> byte-equal to --status-idle — a value coincidence, not a
+> defect). One process slip: one red push (a truncated-output
+> misread called a failing a11y test green) — caught on the next
+> explicit-counts run, fixed in 10 min; counts line, not tail,
+> from now on. Residual noted: transport-seam.test.ts:152 still
+> carries the pre-#281 onExit-synchronicity overstatement
+> (pre-existing, #228-era) — fold into the next hygiene item.
+>
+> **🎉 v0.1.0 CUT AND INSTALLED (2026-08-06):** changelog date
+> stamped + pinning/focus/update-checker notes added (7890d2b);
+> tag v0.1.0 pushed; release workflow run 31069819383 SUCCESS —
+> the FIRST REAL RUN of the E19 pipeline: gate → package →
+> sha256 → `gh release create` with changelog notes, all green.
+> Release is LIVE (not draft): switchboard-Setup-0.1.0.exe
+> (~104 MB) + .sha256. Local `npm run package` at the same
+> commit produced the installer Dan's machine got: silent
+> per-user install exit 0, stamp 7890d2b verified inside the
+> installed app.asar (both bundles). out/ in the main checkout
+> is also at 7890d2b — `npm start` and the Start-menu app agree.
+> **The dogfood loop is closed pending #260:** the installed
+> app's checker (gh-token path on this machine) now sees v0.1.0
+> as current; the NEXT release will pop the dialog for real.
+>
+> **Run 7 queue:** #280 .gitattributes renormalize FIRST (zero
+> open PRs right now — the one perfect moment) → #260 (E19-04,
+> now unblocked: #276 merged + a real release exists) → #274 →
+> #294 → #284 → #300 → #255 (measure). Dan's decision list
+> unchanged (block below).
 >
 > **Decisions Dan owes (run-6 additions):** the 5 E19 decisions
 > on #256 (veto window); **#80** — build now or slip to E14
