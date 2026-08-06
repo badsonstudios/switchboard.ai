@@ -13,7 +13,7 @@
 //      strip paints `--panel2`; move the strip onto some other surface and
 //      every ratio the drift test computes becomes a fiction while staying
 //      perfectly green. Same guard, and the same reason, as CollapsedStrip's.
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import i18next from 'i18next';
@@ -23,6 +23,7 @@ import en from '../i18n/locales/en.json';
 import { UrgencyStrip } from './UrgencyStrip';
 import { RailSession } from '../model/types';
 import { presentStatus, STATUS_TOKENS } from '../lib/rail-view';
+import { URGENCY_LINGER_MS } from '../lib/urgency';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -35,9 +36,13 @@ declare global {
 let roots: Root[] = [];
 const noop = (): void => {};
 
-/** one session in whatever status is under test, and the lamp it produces */
-async function mountLamp(status: string): Promise<HTMLElement> {
-  const sessions: RailSession[] = [{ id: 'c1', title: 'switchboard', status }];
+/** Mount the real strip over whatever sessions and beats a test needs, and hand
+ *  back the host so a test can read any lamp by card id. */
+async function mountStrip(opts: {
+  sessions: RailSession[];
+  urgency?: ReadonlyMap<string, number>;
+  onExpire?: () => void;
+}): Promise<HTMLElement> {
   const host = document.createElement('div');
   document.body.appendChild(host);
   const root = createRoot(host);
@@ -45,14 +50,20 @@ async function mountLamp(status: string): Promise<HTMLElement> {
   await act(async () => {
     root.render(
       <UrgencyStrip
-        sessions={sessions}
-        urgency={new Map<string, number>()}
-        activeCardId="c1"
+        sessions={opts.sessions}
+        urgency={opts.urgency ?? new Map<string, number>()}
+        activeCardId={opts.sessions[0]?.id ?? null}
         onFocus={noop}
-        onExpire={noop}
+        onExpire={opts.onExpire ?? noop}
       />
     );
   });
+  return host;
+}
+
+/** one session in whatever status is under test, and the lamp it produces */
+async function mountLamp(status: string): Promise<HTMLElement> {
+  const host = await mountStrip({ sessions: [{ id: 'c1', title: 'switchboard', status }] });
   return host.querySelector<HTMLElement>('[data-urgency-lamp]')!;
 }
 
@@ -148,5 +159,108 @@ describe('the strip is the surface a lamp’s wash is measured against', () => {
       expect(n.style.background, 'a layer between the strip and the lamp paints').toBe('');
       expect(n.style.backgroundColor).toBe('');
     }
+  });
+});
+
+// --- #284: the lit beat, on a clock the test owns --------------------------
+//
+// `data-lit` was measured in exactly one place — e2e/urgency.spec.ts's "stays
+// lit after a jump" — and measured there against the WALL CLOCK: the beat is
+// ~1.5s and `lit` is computed from `Date.now()` at render time, so a render
+// delayed past the deadline never paints it and no amount of Playwright
+// retrying can observe what was never painted. The measured margin on an idle
+// box was ~10x; under load it is a flake, and one that would present exactly
+// like the renderer race #251 spent a forensics pass distinguishing.
+//
+// lib/urgency's rules are already pure and already unit-tested (urgency.test.ts
+// owns `isLit` / `markLit` / `pruneLit` / `nextLitExpiry`). What had NO
+// coverage at all is this component's half — that it hands the pure rule the
+// clock, paints the answer, and arms the one timer that puts the lamp out — and
+// that half is precisely what the e2e was standing in for. On fake timers it
+// costs no wall time and cannot flake, so the e2e is left to prove only the
+// wiring a unit test genuinely cannot reach.
+// NOTE: the issue number stays out of the describe STRING on purpose — the
+// renderer's raw-colour lint matches `#` followed by 3-8 hex digits, and `#284`
+// is three of them. It reads a bug reference as a hex colour. Comments are not
+// literals, so this one is fine where it is.
+describe('the lit beat, on a clock the test owns (issue 284)', () => {
+  /** a fixed instant; every deadline below is written relative to it, so the
+   *  beat is arithmetic rather than something the test waits out */
+  const T = 1_700_000_000_000;
+  const two: RailSession[] = [
+    { id: 'c1', title: 'alpha', status: 'idle' },
+    { id: 'c2', title: 'beta', status: 'idle' },
+  ];
+  const litOf = (host: HTMLElement, cardId: string): string | null =>
+    host.querySelector(`[data-urgency-lamp="${cardId}"]`)!.getAttribute('data-lit');
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(T);
+  });
+  // registered after the file's unmount hook, so it runs BEFORE it: the roots
+  // are torn down on real timers, the way every other test in this file does it
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('paints the lamp whose beat is still running, and only that one', async () => {
+    const host = await mountStrip({ sessions: two, urgency: new Map([['c1', T + 1]]) });
+    expect(litOf(host, 'c1')).toBe('true');
+    expect(litOf(host, 'c2')).toBe('false');
+  });
+
+  it('treats a deadline of exactly now as run out', async () => {
+    // `isLit` is strictly `>`, and the timer below is armed to fire 1ms PAST
+    // the deadline for the same reason: the render and the timer have to agree
+    // on the boundary, or a lamp can be painted lit with no timer left to put
+    // it out
+    const host = await mountStrip({ sessions: two, urgency: new Map([['c1', T]]) });
+    expect(litOf(host, 'c1')).toBe('false');
+  });
+
+  it('asks the OS for nothing when no lamp is lit', async () => {
+    // the strip promises a single timer armed at a deadline rather than a poll,
+    // and most of a session has no lit lamp at all
+    await mountStrip({ sessions: two });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('arms ONE timer, at the soonest deadline, and fires only past it', async () => {
+    const onExpire = vi.fn();
+    await mountStrip({
+      sessions: two,
+      urgency: new Map([
+        ['c1', T + URGENCY_LINGER_MS],
+        ['c2', T + 400],
+      ]),
+      onExpire,
+    });
+    expect(vi.getTimerCount(), 'one timer for the whole strip, not one per lamp').toBe(1);
+
+    await act(async () => void vi.advanceTimersByTime(400));
+    expect(onExpire, 'firing ON the deadline would prune nothing').not.toHaveBeenCalled();
+
+    await act(async () => void vi.advanceTimersByTime(1));
+    expect(onExpire).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-arms when the prune changes nothing, instead of leaving a lamp lit forever', async () => {
+    // The clock-skew branch the effect documents and nothing measured: the
+    // deadlines are WALL clock and setTimeout counts on a monotonic one, so a
+    // step backwards fires the timer early, prunes nothing, publishes nothing —
+    // and a strip that armed once would have no timer left. `onExpire` here is
+    // the honest stand-in for that: it is called, and it changes nothing.
+    const onExpire = vi.fn();
+    await mountStrip({ sessions: two, urgency: new Map([['c1', T + 100]]), onExpire });
+
+    await act(async () => void vi.advanceTimersByTime(101));
+    expect(onExpire).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount(), 'the chain must not end with the lamp still lit').toBe(1);
+
+    // the re-arm floor is 20ms, so the retry costs a wakeup per 21ms rather
+    // than a 1ms spin, and it keeps retrying until the wall clock catches up
+    await act(async () => void vi.advanceTimersByTime(21));
+    expect(onExpire).toHaveBeenCalledTimes(2);
   });
 });

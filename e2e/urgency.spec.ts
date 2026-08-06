@@ -30,6 +30,67 @@ function skipPopoutOnLinux(): void {
   test.skip(process.platform === 'linux', 'popout windows are unreliable under xvfb');
 }
 
+/** where the freeze below parks the real clock while it is stopped */
+interface ClockStash {
+  __realDateNow?: () => number;
+}
+
+/**
+ * Run `body` with the RENDERER's wall clock STOPPED (#284).
+ *
+ * The urgency lamp's `data-lit` is a ~1.5s transient computed from `Date.now()`
+ * at RENDER time: `markUrgency` stamps `now + URGENCY_LINGER_MS` and the render
+ * compares the map against a fresh reading. A render delayed past that deadline
+ * therefore never paints the lamp lit AT ALL, and no amount of Playwright
+ * retrying can observe a state that was never painted — an assertion whose
+ * budget is wall-clock rather than the deadline every other `expect` here gets.
+ * Measured margin on an idle box is ~10x; under three parallel e2e workers it
+ * is a flake, and one that would present exactly like the renderer race #251
+ * spent a forensics pass distinguishing. This makes the beat last as long as
+ * the block does.
+ *
+ * With the clock stopped, `markUrgency` stamps `frozen + 1500` and every render
+ * reads the same `frozen`, so the lamp is unconditionally lit — and the expiry
+ * timer, which runs on the REAL monotonic clock, prunes nothing when it fires
+ * (`frozen + 1500 > frozen`) and re-arms instead of ending the chain. So the
+ * attribute is stable for as long as we need rather than merely likely.
+ *
+ * Nothing about the jump is faked: the keypress, the queue, the store write,
+ * the component and the paint are all the shipped article — only the reading of
+ * the clock they consult is pinned, and only for the length of this block. It
+ * is the renderer's OWN `Date.now` (`page.evaluate` runs in the page's main
+ * world), and the only other renderer code that reads it is FeedView's
+ * scroll-gesture heuristic, which this spec never touches.
+ */
+async function withStoppedClock(w: Page, body: () => Promise<void>): Promise<void> {
+  await w.evaluate(() => {
+    const stash = window as unknown as ClockStash;
+    const real = Date.now;
+    stash.__realDateNow = real;
+    const frozen = real();
+    Date.now = () => frozen;
+  });
+  try {
+    await body();
+  } finally {
+    // Always, so a failed assertion inside the block cannot leave the page's
+    // clock stopped for whatever the test does afterwards — and NEVER throwing,
+    // for the same reason killTree doesn't: this runs on the failure path, and
+    // an evaluate against a page that has closed or crashed would replace the
+    // assertion error that actually explains the failure with "Target page
+    // closed". Restoring is best-effort; the app is torn down per-test anyway.
+    try {
+      await w.evaluate(() => {
+        const stash = window as unknown as ClockStash;
+        if (stash.__realDateNow) Date.now = stash.__realDateNow;
+        delete stash.__realDateNow;
+      });
+    } catch {
+      /* the page is gone; its clock went with it */
+    }
+  }
+}
+
 /** open one more session, in its own folder (so nothing auto-groups) */
 async function addSession(a: LaunchedApp): Promise<string> {
   const dir = tempProjectFolder();
@@ -123,17 +184,24 @@ test.describe('urgency strip (E9-04)', () => {
     await expect(activeTab(w)).toContainText(names[0]);
     await expect(lamp(w, names[1])).toHaveAttribute('data-lit', 'false');
 
-    await w.keyboard.press(`${MOD}+Space`);
-    // the lit assertion goes FIRST and deliberately: it is the one with a
-    // deadline (the beat is ~1.5s), so anything checked ahead of it is time
-    // spent inside the window this test is trying to observe
-    await expect(lamp(w, names[1])).toHaveAttribute('data-lit', 'true');
-    // ...and only the one you were sent to
-    await expect(lamp(w, names[0])).toHaveAttribute('data-lit', 'false');
-    // the jump did land where the lamp says it did
-    await expect(activeTab(w)).toContainText(names[1]);
+    // The jump and everything it lights up, with the page's clock stopped, so
+    // the beat cannot expire out from under the assertions (#284 — see
+    // withStoppedClock). These three used to be racing a 1.5s wall clock, which
+    // is why the lit one had to go first; the order is kept because it still
+    // reads best, but nothing now depends on it.
+    await withStoppedClock(w, async () => {
+      await w.keyboard.press(`${MOD}+Space`);
+      await expect(lamp(w, names[1])).toHaveAttribute('data-lit', 'true');
+      // ...and only the one you were sent to
+      await expect(lamp(w, names[0])).toHaveAttribute('data-lit', 'false');
+      // the jump did land where the lamp says it did
+      await expect(activeTab(w)).toContainText(names[1]);
+    });
 
-    // then it puts itself out — no click, no second key, just the beat passing
+    // Clock running again: it puts itself out — no click, no second key, just
+    // the beat passing. This is now a transition that was WATCHED rather than
+    // merely found: the assertion above proved the lamp was lit, so a lamp that
+    // never lit can no longer satisfy this one on arrival.
     await expect(lamp(w, names[1])).toHaveAttribute('data-lit', 'false', { timeout: 6_000 });
     // the status itself is untouched by the beat: it is still blocked
     await expect(lamp(w, names[1])).toHaveAttribute('data-status', 'needs-permission');
