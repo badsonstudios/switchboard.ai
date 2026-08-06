@@ -136,9 +136,9 @@ export function FeedView(props: {
    * one of them leaves a screen-reader user with N identical entries in the
    * landmark list and no way to tell which session they are about to read.
    *
-   * Absent — or renamed to nothing, which the rail allows — falls back to the
-   * bare name. An honest generic beats a landmark called "undefined", and
-   * beats announcing a title the user has just deleted.
+   * Absent — or empty, which a workspace written before #294 can still hold —
+   * falls back to the bare name. An honest generic beats a landmark called
+   * "undefined", and beats announcing a title that is not there.
    */
   title?: string;
   visible: boolean;

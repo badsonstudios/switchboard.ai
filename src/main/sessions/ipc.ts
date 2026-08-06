@@ -951,7 +951,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   // persisted title and the live session if one is running
   broker.handle('sessions:renameCard', (_e, cardId: string, title: string) => {
     if (typeof cardId !== 'string' || typeof title !== 'string') return;
-    const clean = title.slice(0, 120);
+    // A BLANK NAME IS NOT A RENAME (#294), and this is the half of that rule
+    // that survives a restart. `manager.rename` already refuses one — but only
+    // for the LIVE record, so an empty title reaching here still went into the
+    // persisted store, where every reader downstream had to defend against it.
+    // The guard belongs on both sides of the boundary anyway: the rail's is
+    // what makes the field behave, this is what makes `''` impossible.
+    const clean = title.trim().slice(0, 120);
+    if (!clean) return;
     const prior = deps.persist.list().find((s) => s.id === cardId);
     if (prior) deps.persist.upsert({ ...prior, identity: { ...prior.identity, title: clean } });
     for (const [liveId, cid] of cardOfLive) if (cid === cardId) manager.rename(liveId, clean);

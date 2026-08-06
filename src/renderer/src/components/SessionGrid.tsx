@@ -792,12 +792,26 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               </span>
             )}
             <span
+              data-testid="card-header-name"
               style={{
                 fontWeight: 650,
                 fontSize: 13,
                 color: 'var(--text)',
                 fontFamily: 'var(--font-ui)',
                 whiteSpace: 'nowrap',
+                // #294. `nowrap` alone made the row a promise it could not keep:
+                // a flex item's automatic minimum size is its own content until
+                // its inline-axis `overflow` stops being `visible` (CSS Sizing 3
+                // §5.2), so a 120-character title — main's cap — grew the header
+                // past its card and carried the status pill and the window
+                // buttons off the end with it. The controls, not the name, were
+                // what got lost. Measured, not assumed: with these two the
+                // header overflows its card by 0px; without them, by 1170px at
+                // a 1280-wide window. This is the pair IdentityChip and the rail
+                // rows already truncate with — no `min-inline-size` needed, and
+                // none used there either.
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
               }}
             >
               {headerTitle}

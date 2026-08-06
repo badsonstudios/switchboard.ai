@@ -21,7 +21,14 @@ adds a number to the name so you can tell them apart.
 ## Naming and labelling
 
 - **Rename:** double-click the session's row in the left-hand list, type, press
-  Enter.
+  Enter. `Esc` leaves the name as it was. So does pressing Enter on an empty
+  field — a session always has a name, so clearing the box is treated as
+  "never mind" rather than as a new, blank name. Spaces at either end are
+  trimmed off.
+- **Very long names** are shortened with an `…` in the card's header, the same
+  way they already were in the sessions list, so the status pill and the window
+  buttons beside the name stay where you left them. Double-click the row to see
+  the whole name in the rename box.
 - **Task label:** click **+ task label** in the card header to note what this
   session is *for* ("fix the login bug"). It shows up in the sessions list and
   in Events, which is what makes a wall of sessions readable.
