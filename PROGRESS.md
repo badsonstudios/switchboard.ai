@@ -135,6 +135,22 @@ structure adopting #228's temp-dir registry, verified by a local
 > app's checker (gh-token path on this machine) now sees v0.1.0
 > as current; the NEXT release will pop the dialog for real.
 >
+> **Process decisions (Dan, 2026-08-06, both LIVE):**
+> 1. **Batch merges use a TRAIN BRANCH** — one integration
+>    branch, one local gate, ONE CI run, merge commit (auto-
+>    closes member PRs). Encoded in /orchestrate; per-PR squash
+>    tidiness deliberately traded away (run 6's serial train
+>    burned ~17 CI runs / ~5 h re-verifying green PRs).
+> 2. **macOS CI job runs on main pushes only** (PR #303, main @
+>    ad3d336) — its lone unique PR signal was the fs.watch
+>    flake. Required checks trimmed to the 4 PR-event jobs in
+>    BOTH layers: classic branch protection AND ruleset 19646817
+>    ("main: green CI required to merge") — the ruleset was the
+>    hidden second gate that blocked the first merge attempt;
+>    remember it whenever required checks change.
+>    release-workflow.test.ts's matrix pin now holds both halves
+>    of the conditional.
+>
 > **Run 7 queue:** #280 .gitattributes renormalize FIRST (zero
 > open PRs right now — the one perfect moment) → #260 (E19-04,
 > now unblocked: #276 merged + a real release exists) → #274 →
