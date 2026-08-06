@@ -1646,9 +1646,11 @@ describe('a teardown step that throws releases the rest anyway (#219)', () => {
 // this path skipped.
 //
 // The harness change these tests rest on is in `manager.remove`: the real one
-// tears the transport down, which fires `onExit` synchronously, so the restart
-// paths run BOTH releases. That is what makes idempotency a requirement here and
-// not a nicety.
+// tears the transport down and `onExit` follows from the process actually
+// dying — both transports end at `kill()`, a signal, NOT a synchronous
+// callback (#288 corrected the same overstatement in session-manager.ts) —
+// so the restart paths run BOTH releases, eventually and in either order.
+// That is what makes idempotency a requirement here and not a nicety.
 describe('a session that exits on its own releases what it was holding (#271)', () => {
   const CARD = 'card-1';
   let dir: string;
