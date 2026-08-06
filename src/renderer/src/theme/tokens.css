@@ -412,22 +412,24 @@ body {
 }
 
 /* ---- Sessions rail (design_handoff_sessions_rail) -------------------------
- * Hover and the working ring are the only things the rail can't express as
- * inline style. The ring is the rail's ONLY animation — the blinking status
- * dot was an explicit rejection, so nothing else here moves. */
+ * The working ring is the rail's ONLY animation — the blinking status dot was
+ * an explicit rejection, so nothing else here moves.
+ *
+ * There is no `.rail-row:hover` rule, and there deliberately isn't one (#253).
+ * Every row carries an INLINE background — its attention tint, its selection
+ * tint, or `transparent` — and an inline value outranks any stylesheet rule, so
+ * the hover fill this file used to declare has painted nothing since the tint
+ * went inline. Two rules and their `[data-tinted]` exception were removed
+ * rather than left as decoration that reads like behaviour. Bringing row hover
+ * back means moving the tint out of the component first; `--rail-row-hover` is
+ * still the token for it, and is what the menu, lamp and strip rules below use.
+ * `transition` and `cursor` stay: both work on an inline background. */
 @keyframes sb-spin {
   to { transform: rotate(360deg); }
 }
 .rail-row {
   transition: background 0.11s;
   cursor: pointer;
-}
-.rail-row:hover {
-  background: var(--rail-row-hover);
-}
-/* a selected or attention-tinted row keeps its own tint on hover */
-.rail-row[data-tinted='true']:hover {
-  background: inherit;
 }
 .rail-head {
   cursor: pointer;

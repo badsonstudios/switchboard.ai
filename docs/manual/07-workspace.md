@@ -61,6 +61,10 @@ a card with its own color and a **colored dot** beside its name.
   up in the group's color to show where the session will land. Its window moves
   to sit alongside its new siblings.
 - **Remove a session:** drag it onto empty space in the list, outside any group.
+- **Without dragging:** right-click a session row (or press `Shift+F10` on it)
+  and pick a group under **Move to group** — the same list, plus **Ungrouped**
+  to take it out. See
+  [Moving a session into a group without dragging](06-keyboard.md#moving-a-session-into-a-group-without-dragging).
 - **Start a session directly inside one:** click the **⊕** on the group header.
 - **Set what its sessions do on submit:** the **⬍** on the group header —
   see [Getting out of the way by itself](#getting-out-of-the-way-by-itself).

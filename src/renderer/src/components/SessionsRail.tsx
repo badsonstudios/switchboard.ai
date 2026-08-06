@@ -38,6 +38,14 @@
 // summon it — which is exactly why the menu below is operable (roving arrows,
 // Escape, focus restored to the row) rather than a wall of divs a keyboard
 // could open and then be stuck inside.
+//
+// It is also where the sweep's ONE remaining gap was closed (#253). Moving a
+// session between groups was drag-only — an interaction with no keyboard
+// equivalent at all, which is WCAG 2.1.1 for the whole feature and not a
+// labelling detail. The fix is a `Move to group` radio set in that same menu:
+// one choice out of a known set, walked by the arrows already here, committing
+// through the SAME `onMoveToGroup` prop the drop handler calls. See the section
+// near the bottom of this file for why it is radios and not a submenu.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailGroup, RailSession } from '../model/types';
@@ -97,6 +105,34 @@ const menuItemStyle: React.CSSProperties = {
   textAlign: 'start',
   fontSize: 11,
   fontFamily: 'var(--font-ui)',
+};
+
+/** The eyebrow over a group of menu rows. Shared for the same reason the row
+ *  style is: there are two of these sections now (#253) and a heading that
+ *  drifts a property from its neighbour reads as an accident. */
+const menuSectionStyle: React.CSSProperties = {
+  marginBlockStart: 4,
+  paddingBlock: '4px 2px',
+  paddingInline: 9,
+  borderBlockStart: '1px solid var(--border)',
+  color: 'var(--faint)',
+  fontSize: 9.5,
+  textTransform: 'uppercase',
+  letterSpacing: 0.4,
+};
+
+/** A live region that must be INVISIBLE rather than absent (#253). Inline, like
+ *  the rest of this file — the rail keeps its look in the component and only
+ *  the states CSS can express (hover, the working ring) in the stylesheet. */
+const srOnly: React.CSSProperties = {
+  position: 'absolute',
+  inlineSize: 1,
+  blockSize: 1,
+  margin: -1,
+  padding: 0,
+  overflow: 'hidden',
+  clipPath: 'inset(50%)',
+  whiteSpace: 'nowrap',
 };
 
 /**
@@ -259,6 +295,25 @@ export function SessionsRail(props: {
   // rather than a read inside a setState updater: StrictMode invokes updaters
   // twice, and an updater that writes to disk is not a pure function.
   const widthRef = React.useRef(width);
+  // The rail's own element, so the effects below query WITHIN it and from ITS
+  // document. #197's blocker was a `document.activeElement` read that answered
+  // for the wrong window; a container ref makes that class of bug unavailable.
+  const navRef = React.useRef<HTMLElement | null>(null);
+  // #253: what the last keyboard-driven move should say, once it has actually
+  // happened. Empty until then — the region itself is always in the DOM.
+  const [moveSaid, setMoveSaid] = React.useState('');
+  // A move the MENU started, held until the store agrees it landed. It cannot
+  // be finished synchronously: `onMoveToGroup` is a round trip through IPC, and
+  // the row is re-parented into a different group card when the answer comes
+  // back — so the button this menu was opened from is a detached node by then,
+  // and focusing it would strand the keyboard on <body>.
+  const pendingMove = React.useRef<{
+    cardId: string;
+    to: string | null;
+    /** the destination card's key, for when the row itself can't take focus */
+    destKey: string;
+    said: string;
+  } | null>(null);
 
   const toggleCollapsed = (id: string): void => {
     setCollapsed((prev) => {
@@ -334,6 +389,56 @@ export function SessionsRail(props: {
     menuRef.current?.querySelector<HTMLElement>('[role^="menuitem"]')?.focus();
   }, [menu]);
 
+  /**
+   * Finish a keyboard move once the store says it happened (#253) — announce
+   * it, and put the keyboard back on the row in its new home.
+   *
+   * Both halves have to wait for the props, not for the click:
+   *
+   * - the WORDS would otherwise be a claim about a round trip that hadn't
+   *   returned yet, and a live region that lies is worse than a silent one;
+   * - the FOCUS would land on the row where it used to be, and be thrown to
+   *   <body> a moment later when React re-parents it into the new card.
+   *
+   * Values are compared, not events counted: the condition is "the session is
+   * where I asked it to go", which is also true if something else moved it
+   * there first — in which case there is nothing left to do anyway.
+   */
+  React.useEffect(() => {
+    const p = pendingMove.current;
+    const nav = navRef.current;
+    if (!p || !nav) return;
+    const s = props.sessions.find((x) => x.id === p.cardId);
+    // the row is gone (the session ended mid-move): drop the whole errand
+    if (!s) {
+      pendingMove.current = null;
+      return;
+    }
+    if ((s.groupId ?? null) !== p.to) return; // hasn't landed yet
+    pendingMove.current = null;
+    setMoveSaid(p.said);
+
+    // Don't yank focus from wherever the user has since gone under their own
+    // steam — a restore is owed only to the keyboard that started this.
+    const doc = nav.ownerDocument;
+    const active = doc.activeElement as HTMLElement | null;
+    if (active && active !== doc.body && !nav.contains(active)) return;
+
+    // Attribute selectors, not string interpolation: a card id is not ours to
+    // assume is CSS-safe, and `CSS.escape` is a lot of ceremony for one lookup.
+    const at = (attr: string, value: string): HTMLElement | null =>
+      Array.from(nav.querySelectorAll<HTMLElement>(`[${attr}]`)).find(
+        (el) => el.getAttribute(attr) === value
+      ) ?? null;
+    const row = at('data-rail-open', p.cardId);
+    // A collapsed destination hides the row, and focus() on a display:none
+    // element does nothing at all — so land on the group it went into instead.
+    // Better than expanding the group behind the user's back: `aria-expanded`
+    // on the header they arrive at already says the rest of the story.
+    const target = row && !row.closest('[hidden]') ? row : at('data-rail-group-toggle', p.destKey);
+    target?.focus();
+  }, [props.sessions]);
+
   const sessionRow = (s: RailSession): React.JSX.Element => {
     const p = presentStatus(s.status);
     const hue = `var(--status-${p.token})`;
@@ -349,11 +454,13 @@ export function SessionsRail(props: {
       <div
         key={s.id}
         className="rail-row"
-        // the semantic (does a human have to act) and the CSS concern (does
-        // this row already own its background, so hover must not repaint it)
-        // are separate things — a merely SELECTED row is tinted but not needy
+        // `data-needs-you` is the SEMANTIC one — does a human have to act —
+        // and is read by the specs. Its old companion `data-tinted` went with
+        // the dead hover rule it existed for (#253): its only reader was
+        // `.rail-row[data-tinted='true']:hover`, the exception that kept a
+        // needy row's tint from being repainted. No hover rule, nothing to
+        // except it from.
         data-needs-you={p.needsYou}
-        data-tinted={p.needsYou || selected}
         data-session-status={p.token}
         // §5.8's pinning contract (E9-09). An attribute rather than only a
         // glyph: the protection is a fact about the row that the e2e suite has
@@ -985,6 +1092,7 @@ export function SessionsRail(props: {
 
   return (
     <nav
+      ref={navRef}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes(DND_TYPE) || getDraggedCard()) e.preventDefault();
       }}
@@ -1124,6 +1232,16 @@ export function SessionsRail(props: {
         )}
       </div>
 
+      {/* A move made from the keyboard is otherwise SILENT: the row simply
+          appears under a different card, which is a fact carried entirely by
+          the screen. Rendered unconditionally and empty, so the region exists
+          before its words do — one that is inserted already holding its text is
+          announced by almost nothing (#222, #168; the same trick, same reason).
+          Polite by definition, which is right: the user asked for this. */}
+      <div role="status" style={srOnly}>
+        {moveSaid}
+      </div>
+
       <div
         className="rail-resize"
         data-dragging={dragging}
@@ -1238,6 +1356,90 @@ export function SessionsRail(props: {
               {t(key)}
             </button>
           ))}
+          {/* #253 — the keyboard's way to do what only a drag could do.
+              A session's group was reachable by dragging its row onto a group
+              card and no other way, so the whole interaction failed WCAG 2.1.1
+              — the one gap #197's sweep left, because it needed an interaction,
+              not a label.
+
+              RADIOS, not a "Move to group ▸" submenu: membership is exactly one
+              choice out of a known set, which is what `menuitemradio` means and
+              what the presentation set below already looks like. It also costs
+              no new keyboard mode — the arrow walk on the menu selects
+              `[role^="menuitem"]`, so these join the ring for free, where a
+              submenu would have meant a second focus context to get right, and
+              a menu you can open but not leave is the trap this sweep exists
+              to avoid.
+
+              This is NOT a parallel mechanism: it calls `onMoveToGroup`, the
+              same prop the drop handler calls, and repeats the drop's guard
+              that a move to where you already are is a no-op rather than a
+              round trip through IPC and a grid reshuffle.
+
+              AUTO-GROUPS are deliberately absent. Their membership is computed
+              from the session's folder, so an entry for one would be a command
+              that does nothing — and refusing to advertise that is exactly why
+              the drop handler declines them. A session sitting in an auto-group
+              shows as "Ungrouped" here, which is the truth this list is about:
+              it is in no group you made. */}
+          {props.groups.length > 0 && (
+            <div role="group" aria-label={t('rail.menuMove')}>
+              <div aria-hidden style={menuSectionStyle}>
+                {t('rail.menuMove')}
+              </div>
+              {[
+                ...props.groups.map((g) => [g.id, g.name] as const),
+                // the trailing bucket, last for the same reason it is last in
+                // the rail itself: it is an absence, not a thing
+                [null, t('rail.ungrouped')] as const,
+              ].map(([gid, label]) => {
+                // read membership LIVE, exactly as the drop handler does: the
+                // menu's session is a snapshot from when it opened, and a card
+                // dragged in another window while it stands open would leave
+                // the tick pointing at a group the session has already left
+                const from = props.sessions.find((s) => s.id === menu.session.id)?.groupId ?? null;
+                const here = from === gid;
+                return (
+                  <button
+                    key={gid ?? 'ungrouped'}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={here}
+                    data-move-item={gid ?? 'ungrouped'}
+                    className="rail-menu-item"
+                    onClick={() => {
+                      if (here) {
+                        // already there: close, and give the row its focus back
+                        closeMenu(true);
+                        return;
+                      }
+                      pendingMove.current = {
+                        cardId: menu.session.id,
+                        to: gid,
+                        destKey: gid ?? 'ungrouped',
+                        said: gid
+                          ? t('rail.movedTo', { title: menu.session.title, group: label })
+                          : t('rail.movedOut', { title: menu.session.title }),
+                      };
+                      // Restore focus NOW as well as when it lands: this puts
+                      // the keyboard on the row it is about to move rather than
+                      // on <body> for the length of the round trip — and if the
+                      // move never lands, that is still where it should be.
+                      closeMenu(true);
+                      props.onMoveToGroup(menu.session.id, gid);
+                    }}
+                    style={{ ...menuItemStyle, fontWeight: here ? 700 : 400 }}
+                  >
+                    {/* the tick keeps its column whether or not it is drawn */}
+                    <span aria-hidden style={{ display: 'inline-block', inlineSize: 12 }}>
+                      {here ? '✓' : ''}
+                    </span>
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {/* §5.8's per-SESSION presentation override (E9-06). Named values
               rather than one cycling row: a menu closes when you click it, so a
               cycle would cost a right-click per step — and the point of an
