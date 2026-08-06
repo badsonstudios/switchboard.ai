@@ -493,17 +493,18 @@ export class HookListener {
    * first `await` in `start()`, and in `src/main` a session only ever registers
    * via `buildHookSettings`, which throws until `start()` has set the port.
    *
-   * What it is NOT safe against, stated plainly because the app does not
-   * prevent it: a SECOND app instance. `stateDir` is a fixed path under
-   * `userData` and there is no `requestSingleInstanceLock` anywhere, so a
-   * second instance starting would delete the first's LIVE token files — the
-   * forwarder re-reads the file on every hook — and the first instance's
-   * sessions would go quietly hook-blind (every hook 401s; status, native-id
-   * binding and holds stop). Fail-open holds (nothing blocks, nothing crashes)
-   * but the symptom is only a log full of `hook request rejected`. An mtime
-   * guard does not help: a concurrent instance's tokens are precisely the ones
-   * written before we booted. The real fix is a single-instance lock, which is
-   * its own issue and not this one.
+   * What made it safe ACROSS processes is somewhere else, and on purpose:
+   * `src/main/index.ts` takes `app.requestSingleInstanceLock()` as the first
+   * statement of the bootstrap, so a second instance quits before it reaches
+   * this class (#289). Without that, the sweep is a live grenade — `stateDir`
+   * is a fixed path under `userData`, so a second instance starting would
+   * delete the FIRST's live token files (the forwarder re-reads the file on
+   * every hook) and the first instance's sessions would go quietly hook-blind:
+   * every hook 401s, status, native-id binding and holds all stop, and the only
+   * symptom is a log full of `hook request rejected`. No guard here can replace
+   * the lock — an mtime cutoff in particular does not, because a concurrent
+   * instance's live tokens are precisely the ones written before we booted.
+   * If the lock is ever removed, this sweep has to go with it.
    *
    * Scoped to the one filename we own. The same per-session directory also
    * holds `settings.json` (`providers/claude.ts`) and stateDir's root holds the
