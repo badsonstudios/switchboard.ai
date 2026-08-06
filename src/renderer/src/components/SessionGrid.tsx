@@ -85,19 +85,36 @@ interface Live {
   transport?: 'pty' | 'stream';
 }
 
-function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element {
+export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element {
   const { t } = useTranslation();
+  const cardId = props.params?.cardId;
+  // What the TAB calls the session, on screen and in its close confirmation
+  // (#264) — the store's copy first, exactly as the card header does it.
+  // dockview is told a panel's title once, at `addPanel`, and nothing in the
+  // tree ever calls `setTitle`, so `props.api.title` is the name the tab was
+  // born with: a rename from the rail reaches the record, the rail and the
+  // header, and stops at this strip.
+  //
+  // A DERIVED tab (diff) carries no cardId, so the store has no answer for it
+  // and its dockview title still wins — which is right: nobody renames a diff.
+  const storeTitle = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getCardTitle(cardId)
+  );
+  const title = cardHeaderTitle(
+    storeTitle,
+    props.api.title || props.params?.title,
+    props.params?.folder
+  );
   return (
     <div style={{ paddingInline: 8, display: 'flex', alignItems: 'center', gap: 4, blockSize: '100%' }}>
-      <IdentityChip title={props.api.title ?? props.params?.title ?? ''} compact />
+      <IdentityChip title={title} compact />
       <button
         onClick={(e) => {
           // close the tab: for a session card this ends the session AND
           // forgets the record (onDidRemovePanel -> closeCard) — so it
           // CONFIRMS first (Dan 2026-07-22); derived tabs (diff) just close
           e.stopPropagation();
-          if (props.params?.cardId) {
-            const title = props.api.title ?? props.params?.title ?? '';
+          if (cardId) {
             if (!window.confirm(t('grid.closeConfirm', { title }))) return;
           }
           props.api.close();
@@ -2140,8 +2157,15 @@ export function SessionGrid(props: {
         const panel = api?.getPanel(`session-${cardId}`);
         // same contract as the tab ✕ (Dan 2026-07-22): confirm, because this
         // ends the session and forgets the record
-        const title =
-          panel?.title ?? sessionStore.getState().sessions.find((s) => s.id === cardId)?.title ?? '';
+        // store FIRST (#264): the panel's title is dockview's birth-time copy
+        // and is always set, so asking it first meant a renamed session was
+        // confirmed away under its old name — the record was only ever reached
+        // for a HIDDEN card, which has no panel.
+        const title = cardHeaderTitle(
+          sessionStore.getCardTitle(cardId),
+          panel?.title,
+          (panel?.params as CardParams | undefined)?.folder
+        );
         if (!window.confirm(t('grid.closeConfirm', { title }))) return;
         if (api && panel) {
           api.removePanel(panel); // onDidRemovePanel -> closeCard
