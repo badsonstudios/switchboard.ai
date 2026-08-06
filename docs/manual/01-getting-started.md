@@ -55,6 +55,11 @@ same result, no dialog.
 ## Good to know
 
 - Your sessions, layout, and window position come back when you reopen the app.
+- **Only one copy runs at a time.** Launch switchboard again — from the icon,
+  the taskbar, wherever — and the window you already have comes forward instead
+  of a second copy opening. That's on purpose: two copies would share the same
+  saved sessions and quietly tread on each other. Everything already running
+  keeps running; nothing restarts.
 - Nothing leaves your machine. There's no cloud sync, no telemetry, no login.
 - If switchboard itself breaks, your sessions keep running — you can always
   drop into the **Terminal** tab and work exactly as you would without it.

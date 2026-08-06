@@ -1,7 +1,8 @@
-import React, { useEffect, useLayoutEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { mountBannerHost, onPopoutWindows, unmountBannerHost } from '../lib/popout-banner-host';
+import { mountBannerHost, unmountBannerHost } from '../lib/popout-banner-host';
+import { getPopoutWindows, subscribePopoutChange } from '../lib/popout-windows';
 
 const banner: React.CSSProperties = {
   display: 'flex',
@@ -53,7 +54,13 @@ const banner: React.CSSProperties = {
  */
 export function WorkspaceReadOnlyBanner(): React.JSX.Element {
   const [readOnly, setReadOnly] = useState(false);
-  const popouts = usePopoutWindows();
+  // The popouts currently open, read straight from the shared registry (#227)
+  // rather than mirrored into state here. Read UNCONDITIONALLY, whether or not
+  // the workspace turns out to be read-only: `isReadOnly()` is an IPC
+  // round-trip and at boot a restored popout can open inside it, so a list that
+  // only started filling once the answer landed would never hear about the one
+  // window the user restored on purpose.
+  const popouts = useSyncExternalStore(subscribePopoutChange, getPopoutWindows);
 
   useEffect(() => {
     let live = true;
@@ -149,40 +156,4 @@ function PopoutReadOnlyNotice({ win }: { win: Window }): React.JSX.Element | nul
     if (host) setSpoken(true);
   }, [host]);
   return host ? createPortal(<ReadOnlyNotice shown={spoken} />, host) : null;
-}
-
-/** popouts currently open, in the order they opened, each with a stable key */
-interface TrackedPopout {
-  id: number;
-  win: Window;
-}
-
-/** never reused, so React never mistakes a new popout for an old one */
-let popoutKeySeq = 0;
-
-/**
- * Track the popout windows dockview has told us about.
- *
- * Tracked unconditionally, even when the workspace is writable: this costs an
- * array push, and gating it on `readOnly` would mean the first popout could
- * open in the gap before the IPC answer lands and never be noticed.
- */
-function usePopoutWindows(): TrackedPopout[] {
-  const [popouts, setPopouts] = useState<TrackedPopout[]>([]);
-  useEffect(() => {
-    return onPopoutWindows({
-      added: (win) => {
-        // taken out here, not inside the updater: React re-runs updaters, and
-        // one that bumps a counter would be lying about being pure
-        const id = ++popoutKeySeq;
-        setPopouts((prev) =>
-          // dockview reuses a named window when the same group is popped out
-          // again; one entry per window, or the notice arrives twice
-          prev.some((p) => p.win === win) ? prev : [...prev, { id, win }]
-        );
-      },
-      removed: (win) => setPopouts((prev) => prev.filter((p) => p.win !== win)),
-    });
-  }, []);
-  return popouts;
 }

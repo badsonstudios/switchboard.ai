@@ -87,8 +87,16 @@
     "menuDiff": "Open changes",
     "menuRename": "Rename…",
     "menuClose": "Close session",
+    "menuPin": "Pin session",
+    "menuUnpin": "Unpin session",
     "menuLabel": "Actions for {title}",
+    "menuMove": "Move to group",
+    "movedTo": "{title} moved to {group}",
+    "movedOut": "{title} is no longer in a group",
+    "pinIcon": "📌",
+    "pinnedHint": "Pinned — sorts first, and bulk actions skip it",
     "rowLabel": "{title} — {state}",
+    "rowLabelPinned": "{title} — pinned, {state}",
     "rowDetail": "{detail}, {state}"
   },
   "railStatus": {
@@ -124,6 +132,8 @@
     "idleFoldOpenIcon": "▾",
     "policyMenu": "On submit",
     "policyDefault": "Follow the default ({policy})",
+    "focusMenu": "When it needs you",
+    "focusDefault": "Follow the default ({policy})",
     "policyGroup": "On submit, this group: {policy} — click to change",
     "policyGroupIcon": "⬍"
   },
@@ -163,6 +173,8 @@
     "closeTab": "Close (ends the session)",
     "closeTabIcon": "✕",
     "closeConfirm": "Close \"{title}\"? This ends the session and removes the card.",
+    "closeAllConfirm": "Close {count, plural, one {# session} other {# sessions}}? This ends them and removes their cards.{spared, plural, =0 {} one { # pinned session is kept.} other { # pinned sessions are kept.}}",
+    "closeAllNothing": "Nothing to close — {count, plural, one {the # open session is pinned} other {all # open sessions are pinned}}.",
     "viewTerminal": "Terminal",
     "viewDiff": "Changes",
     "viewSession": "Session",
@@ -338,6 +350,8 @@
     "prevSession": "Previous session",
     "newSession": "New session…",
     "closeSession": "Close session",
+    "closeAllSessions": "Close all sessions (keeps pinned ones)",
+    "togglePin": "Pin / unpin session",
     "popOut": "Pop out / dock in session",
     "hideSession": "Hide session (keeps it running)",
     "collapseSession": "Collapse session to a strip",
@@ -391,7 +405,20 @@
       "auto-hide": "This session's group on submit: hide cards",
       "default": "This session's group on submit: follow the default"
     },
-    "checkForUpdates": "Check for updates…"
+    "checkForUpdates": "Check for updates…",
+    "focusPolicy": {
+      "focus": "When any session needs you: always jump to it",
+      "smart": "When any session needs you: jump if its card is on screen",
+      "urgent": "When any session needs you: never jump, just light its lamp",
+      "none": "When any session needs you: never jump, and keep it out of the queue"
+    },
+    "sessionFocusPolicy": {
+      "focus": "This session when it needs you: always jump to it",
+      "smart": "This session when it needs you: jump if its card is on screen",
+      "urgent": "This session when it needs you: never jump, just light its lamp",
+      "none": "This session when it needs you: never jump, and keep it out of the queue",
+      "default": "This session when it needs you: follow the default"
+    }
   },
   "palette": {
     "label": "Command palette",
@@ -420,5 +447,11 @@
     "chip": "⬍ {policy}",
     "chipHint": "What happens to a session card when you submit a prompt: {policy}. Click to change.",
     "groupDefault": "Follow the default"
+  },
+  "focusPolicy": {
+    "focus": "Always jump to it",
+    "smart": "Jump if it's on screen",
+    "urgent": "Never jump, just the lamp",
+    "none": "Never jump, skip the queue"
   }
 }

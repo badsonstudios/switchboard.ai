@@ -39,6 +39,69 @@ import {
 } from './popout-geometry';
 import { dialog } from 'electron';
 import { buildIdentity, isReleaseBuild, windowTitle } from '../shared/build-identity';
+import { acquireInstanceLock, focusRunningWindow, sleepSync } from './single-instance';
+
+/* ---- ONE switchboard per user profile (#289) -------------------------------
+ *
+ * FIRST, deliberately — above every other statement in this file, because the
+ * only thing that makes the lock worth having is that it is taken before
+ * anything touches `userData`. Nothing below this point may move above it, and
+ * `single-instance.test.ts` pins that textually.
+ *
+ * What a second instance does WITHOUT the lock is not "two windows, mildly
+ * confusing": both instances derive the same fixed `stateDir` from `userData`,
+ * so the newcomer's startup sweep deletes the first instance's LIVE hook token
+ * files (#282). The first app keeps running and looks fine, but every hook the
+ * CLI fires at it now 401s — no status flips, no native-id binding, no
+ * permission holds — and the only symptom is a log full of `hook request
+ * rejected`. Fail-open becomes fail-BLIND. The workspace store is the same
+ * story with a slower fuse: two processes with the same `workspace.json` open,
+ * last writer wins, layouts and session records silently lost on quit.
+ *
+ * The lock is scoped to the userData directory (Chromium's ProcessSingleton),
+ * which is why the e2e fixture's per-test isolated homes each get their own and
+ * the suite is unaffected — see `e2e/single-instance.spec.ts`.
+ */
+const isPrimaryInstance = acquireInstanceLock({
+  tryLock: () => app.requestSingleInstanceLock(),
+  sleep: sleepSync,
+  // `process.env` and not the `DEV_URL` const below: this runs during module
+  // evaluation, where that const is still in its temporal dead zone. Same
+  // variable, and it is set by exactly one thing — electron-vite's dev server —
+  // which is exactly the case that needs the retry (see acquireInstanceLock).
+  retryForMs: process.env.ELECTRON_RENDERER_URL ? 3_000 : 0,
+});
+if (!isPrimaryInstance) {
+  // `requestSingleInstanceLock()` has ALREADY told the primary we are here (the
+  // notification is part of taking the lock, not of quitting), so there is
+  // nothing left to do but leave — before a log file is opened, before the
+  // workspace store is read, before the hook listener sweeps anything.
+  // Pre-message-loop, Electron's `quit()` exits the process outright; the guard
+  // at the top of `whenReady` below is the belt to this pair of braces.
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    try {
+      // The window is the answer 99% of the time. `currentWindow` is set by
+      // createWindow() and nulled when it closes, so this is also the "still
+      // booting" case — null until the first window exists.
+      if (focusRunningWindow(currentWindow)) {
+        if (sink) log.app.info('second launch focused the running window');
+        return;
+      }
+      // No window to raise. On macOS the app survives its last window and only
+      // `activate` reopens one — a second launch is the other way a user asks
+      // for that, and doing nothing would look like a dead app. Guarded on
+      // `isReady` because createWindow() needs the workspace store, which the
+      // bootstrap has not built yet if a second launch races our own startup.
+      if (app.isReady() && BrowserWindow.getAllWindows().length === 0) createWindow();
+    } catch (err) {
+      // A second launch must never be able to take the running app down. The
+      // log line is best-effort too: `sink` does not exist until `whenReady`.
+      if (sink) log.app.warn('second-instance handling failed', { error: String(err) });
+    }
+  });
+}
 
 /** Stamped in at build time (P2-E15-15); constant for the process lifetime. */
 const BUILD_IDENTITY = buildIdentity();
@@ -569,6 +632,14 @@ function createWindow(): BrowserWindow {
 app
   .whenReady()
   .then(async () => {
+    // A losing instance must not reach ONE line of this: the very next
+    // statement creates a log file under `userData`, and everything after it
+    // reads or writes state the running instance owns (#289). Belt to the
+    // `app.quit()` above — which, called before the message loop starts, exits
+    // the process outright, so in practice this is never reached. It is here
+    // because "in practice" is doing a lot of work in that sentence, and the
+    // cost of being wrong is the silent hook-blinding this item exists to fix.
+    if (!isPrimaryInstance) return;
     sink = new LogSink({ dir: logsDir() });
     // The build stamp goes in the FIRST log line (P2-E15-15): when a bug report
     // arrives as a log file, "which build produced this?" must be answerable

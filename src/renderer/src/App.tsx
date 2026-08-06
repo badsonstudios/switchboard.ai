@@ -32,6 +32,7 @@ import { CollapsedStrip } from './components/CollapsedStrip';
 import { WorkspaceReadOnlyBanner } from './components/WorkspaceReadOnlyBanner';
 import { PreflightBanner } from './components/PreflightBanner';
 import { collapsedRows, revealTargets } from './lib/ladder';
+import { GuardedRefresh, latestWins } from './lib/latest-wins';
 import {
   cycleGlobal,
   cycleOverride,
@@ -41,15 +42,15 @@ import {
   withGlobal,
   withGroup,
 } from './lib/presentation-policy';
-import { buildIdentity } from '../../shared/build-identity';
 import {
-  applyTabRows,
-  forgetPopoutWindow,
-  loadTabRows,
-  syncDocumentFlags,
-  toggleTabRows,
-  trackPopoutWindow,
-} from './lib/tab-rows';
+  attentionResponse,
+  FocusPolicy,
+  withFocusCard,
+  withFocusGlobal,
+} from './lib/focus-policy';
+import { buildIdentity } from '../../shared/build-identity';
+import { applyTabRows, loadTabRows, syncDocumentFlags, toggleTabRows } from './lib/tab-rows';
+import { openPopoutWindows, subscribePopoutWindows } from './lib/popout-windows';
 
 // One stable subscribe identity for every useSyncExternalStore call below.
 // An inline arrow is a new function each render, and React unsubscribes and
@@ -135,6 +136,12 @@ export function App(): React.JSX.Element {
   // rather than by every component remembering to keep a ref in sync.
   const events = useSyncExternalStore(subscribeStore, () => sessionStore.getState().events);
   const visited = useSyncExternalStore(subscribeStore, () => sessionStore.getState().visited);
+  // The same list minus the sessions silenced by E9-10's `none` — what the
+  // panel's next-up highlight has to be computed from, or it would point at a
+  // row Ctrl+Space will skip. The panel still LISTS them: the feed is the log.
+  const attentionFeed = useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getAttentionEvents()
+  );
   // The urgency strip (E9-04). It renders from RAIL ORDER, not the raw session
   // list, so the Nth lamp is the Nth Ctrl+1..9 target — the derived value has a
   // stable identity (recomputed only when sessions/groups change), which is
@@ -148,9 +155,20 @@ export function App(): React.JSX.Element {
     subscribeStore,
     () => sessionStore.getState().presentation
   );
+  // §5.8's pinning contract (E9-09). From the store for the reason the ladder
+  // and the policy are: the rail RENDERS from it, rail order is DERIVED from it,
+  // and the submit sweep + close-all read it synchronously outside React's
+  // commit.
+  const pinned = useSyncExternalStore(subscribeStore, () => sessionStore.getPins());
+  const togglePin = React.useCallback((cardId: string) => sessionStore.togglePin(cardId), []);
   const collapsed = React.useMemo(
-    () => collapsedRows(railFlat, (id) => presentation.get(id)?.ladder ?? 'expanded'),
-    [railFlat, presentation]
+    () =>
+      collapsedRows(
+        railFlat,
+        (id) => presentation.get(id)?.ladder ?? 'expanded',
+        (id) => pinned.has(id)
+      ),
+    [railFlat, presentation, pinned]
   );
   // §5.8's presentation policy (E9-06). Read from the store rather than App
   // state, because the SUBMIT path reads it synchronously from outside React's
@@ -181,6 +199,22 @@ export function App(): React.JSX.Element {
     (groupId: string) =>
       setGroupPolicy(groupId, cycleOverride(groupOverride(sessionStore.getPolicies(), groupId))),
     [setGroupPolicy]
+  );
+  // §5.8's focus-stealing policy (E9-10). Read from the store for the reason
+  // the presentation policy is: the reveal effect below resolves it per event,
+  // and the rail menu renders the tick from the same book.
+  const focusPolicies = useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getFocusPolicies()
+  );
+  const setGlobalFocusPolicy = React.useCallback(
+    (p: FocusPolicy) =>
+      sessionStore.setFocusPolicies(withFocusGlobal(sessionStore.getFocusPolicies(), p)),
+    []
+  );
+  const setSessionFocusPolicy = React.useCallback(
+    (cardId: string, p: FocusPolicy | undefined) =>
+      sessionStore.setFocusPolicies(withFocusCard(sessionStore.getFocusPolicies(), cardId, p)),
+    []
   );
   // §5.8's layout mode (E9-07). In the store for the reason the ladder and the
   // policy are: the chip renders from it AND the sweep reads it synchronously
@@ -328,30 +362,52 @@ export function App(): React.JSX.Element {
     };
   }, []);
 
-  const refreshSessions = React.useCallback(async () => {
-    // card-keyed view: includes SUSPENDED cards (restored, not yet resumed)
-    const list = await bridge.sessions?.cards?.();
-    if (!list) return;
-    sessionStore.setSessions(
-      list.map((c) => ({
-        id: c.cardId,
-        title: c.title,
-        folder: c.folder,
-        accent: c.accent,
-        badge: c.badge,
-        status: c.status,
-        groupId: c.groupId,
-        autoKey: c.autoKey,
-        liveId: c.liveId,
-        taskLabel: c.taskLabel,
-      }))
-    );
-  }, []); // bridge is stable for the window's lifetime
+  // Both list refreshes are async round-trips with SEVERAL independent triggers
+  // (see the effects below), so two are routinely in flight at once — and the
+  // one that resolves last is not necessarily the one that was issued last.
+  // `latestWins` drops a response that a newer one has already overtaken;
+  // without it a stale snapshot can permanently overwrite a terminal status
+  // like `needs-permission`, and nothing ever arrives to heal it (#251). The
+  // events list at the bottom of this file guards the neighbouring case — a
+  // PUSH beating a `list()` still in flight — and keeps its own guard; this one
+  // is pull-vs-pull and the two are not interchangeable.
+  //
+  // Each guard is built by a `useState` INITIALIZER rather than a `useMemo`,
+  // because the guard's sequence counters are state and `useMemo` is a cache
+  // React is allowed to throw away — a discarded guard is no guard. React's
+  // contract for an initializer is exactly what is needed here: called once,
+  // and the value it returns is stable for the component's lifetime. That
+  // stability is also what keeps the dependency arrays below honest, as the
+  // `useCallback`s these replace did.
+  const [refreshSessions] = useState<GuardedRefresh>(() =>
+    // bridge is stable for the window's lifetime
+    latestWins(
+      // card-keyed view: includes SUSPENDED cards (restored, not yet resumed)
+      () => bridge.sessions?.cards?.(),
+      (list) =>
+        sessionStore.setSessions(
+          list.map((c) => ({
+            id: c.cardId,
+            title: c.title,
+            folder: c.folder,
+            accent: c.accent,
+            badge: c.badge,
+            status: c.status,
+            groupId: c.groupId,
+            autoKey: c.autoKey,
+            liveId: c.liveId,
+            taskLabel: c.taskLabel,
+          }))
+        )
+    )
+  );
 
-  const refreshGroups = React.useCallback(async () => {
-    const list = await bridge.groups?.list?.();
-    if (list) sessionStore.setGroups(list as RailGroup[]);
-  }, []); // bridge is stable
+  const [refreshGroups] = useState<GuardedRefresh>(() =>
+    latestWins(
+      () => bridge.groups?.list?.(),
+      (list) => sessionStore.setGroups(list as RailGroup[])
+    )
+  );
 
   useEffect(() => {
     void refreshGroups();
@@ -407,7 +463,7 @@ export function App(): React.JSX.Element {
     return off;
   }, []);
 
-  // ── reveal on needs-attention (E9-05, §5.8) ──────────────────────────────
+  // ── reveal (and focus) on needs-attention (E9-05 + E9-10, §5.8) ──────────
   //
   // "Reveal triggers: needs-attention (permission / input / done) or user click
   // anywhere." The click half has worked since E15-08 — every click path lands
@@ -415,14 +471,16 @@ export function App(): React.JSX.Element {
   // This is the other half: a session that is collapsed, tabbed or hidden comes
   // BACK ON ITS OWN, into exactly the slot it left, the moment it needs a human.
   //
-  // It deliberately does NOT take focus (revealCard's second argument). Showing
-  // and focusing are two questions in §5.8, and the second one belongs to
-  // E9-10's focus-stealing policy — a blocked session stealing the cursor out
-  // of the card you are typing in is exactly what that setting exists to stop.
+  // E9-05 shipped this taking focus from nobody, ever, and left the second
+  // question — MAY it take the cursor? — to E9-10's focus-stealing policy. That
+  // policy now answers it per session (lib/focus-policy), and its answer is
+  // also what decides whether the reveal happens at all: `urgent` and `none`
+  // leave the workspace alone entirely.
   //
-  // The rule itself is lib/ladder's `revealTargets`, unit-tested there; this
-  // effect is only the wiring, and the ref is what makes "have I acted on this
-  // event id" survive re-renders without being state nothing renders from.
+  // Both rules are pure and unit-tested (lib/focus-policy's `attentionResponse`
+  // decides, lib/ladder's `revealTargets` walks the feed); this effect is only
+  // the wiring, and the ref is what makes "have I acted on this event id"
+  // survive re-renders without being state nothing renders from.
   const revealSeen = React.useRef<ReadonlySet<number>>(new Set());
   const bootFeedSeeded = React.useRef(false);
   useEffect(() => {
@@ -439,16 +497,42 @@ export function App(): React.JSX.Element {
     if (!sessionStore.hasFeed() || !grid.current) return;
     const plan = revealTargets(events, revealSeen.current, {
       cardIdFor: (liveId) => sessionStore.cardIdForLive(liveId),
-      rungOf: (cardId) => sessionStore.getPresentation(cardId).ladder,
+      // dockview's answer, not the rung's: §5.8's `smart` turns on the word
+      // "visible", and an `expanded` card can still be an unselected tab.
+      onScreen: (cardId) => grid.current?.isCardOnScreen(cardId) ?? false,
       // The first list is SEEDED, never acted on: at boot the feed hands over
       // whatever was already waiting, and §5.25 says the workspace comes back
       // as the user left it — a launch that instantly un-collapses every
       // session that was blocked when you quit yesterday is not that.
       act: bootFeedSeeded.current,
+      // Read from the STORE, not from the rendered `focusPolicies`: this effect
+      // runs on the events identity change, and a policy set in the same commit
+      // must not be one render stale when a session calls.
+      respond: (cardId, onScreen) =>
+        attentionResponse(sessionStore.focusPolicyFor(cardId), { visible: onScreen }),
     });
     revealSeen.current = plan.seen;
     bootFeedSeeded.current = true;
-    for (const cardId of plan.cardIds) grid.current?.revealCard(cardId, false);
+    // Two verbs, because they are two different things to a card that is
+    // already on screen: placing it would move a panel for nothing (and would
+    // drag a tabbed card out of its stack), while focusing it is the whole of
+    // what `smart` does for a card you can see. The two lists are DISJOINT by
+    // construction — revealTargets only lists a card for placing when it is off
+    // screen — so the guard below is a statement of that, not a de-duplication.
+    //
+    // ORDER WITHIN ONE BATCH is deliberately not defined: if a single feed push
+    // brought two sessions that both may focus, the last one to land wins, and
+    // which that is depends on `revealCard` being async while `focusSession` is
+    // not. Two sessions calling in the same frame is a coin toss either way, and
+    // inventing a tie-break here would only make the coin look loaded.
+    const placing = new Set(plan.cardIds);
+    const focusing = new Set(plan.focusIds);
+    for (const cardId of plan.cardIds) grid.current?.revealCard(cardId, focusing.has(cardId));
+    for (const cardId of plan.focusIds) {
+      // through App's own wrapper, not grid's: it records that a DIFFERENT OS
+      // window was raised, which the popout key bridge below has to know
+      if (!placing.has(cardId)) focusSession(cardId);
+    }
   }, [events]);
 
   // ── layout modes react to the workspace (E9-07, §5.8) ────────────────────
@@ -546,6 +630,8 @@ export function App(): React.JSX.Element {
             });
           },
           closeCard: (cardId) => grid.current?.closeCard(cardId),
+          closeAllCards: () => grid.current?.closeAllCards(),
+          togglePin,
           toggleCardView: (cardId, view) => grid.current?.toggleCardView(cardId, view),
           popOutCard: (cardId) => grid.current?.popOutCard(cardId),
           hideCard: (cardId) => grid.current?.hideCard(cardId),
@@ -554,6 +640,8 @@ export function App(): React.JSX.Element {
           setGlobalPolicy,
           setSessionPolicy,
           setGroupPolicy,
+          setGlobalFocusPolicy,
+          setSessionFocusPolicy,
           setLayoutMode: (mode) => grid.current?.setLayoutMode(mode),
           cycleLayoutMode: () => grid.current?.cycleLayoutMode(),
           toggleMaximize: (cardId) => grid.current?.toggleMaximize(cardId),
@@ -566,7 +654,17 @@ export function App(): React.JSX.Element {
           openAbout: () => setAboutOpen(true),
           checkForUpdates,
       }),
-    [toggleRail, jumpToNextAttention, setGlobalPolicy, setSessionPolicy, setGroupPolicy, checkForUpdates], // other deps read live state through refs; grid.current is stable
+    [
+      toggleRail,
+      jumpToNextAttention,
+      setGlobalPolicy,
+      setSessionPolicy,
+      setGroupPolicy,
+      setGlobalFocusPolicy,
+      setSessionFocusPolicy,
+      togglePin,
+      checkForUpdates,
+    ], // other deps read live state through refs; grid.current is stable
   );
   // chips advertise their own binding, derived from the registry so a tooltip
   // can never drift from the key that actually works
@@ -645,7 +743,9 @@ export function App(): React.JSX.Element {
     //
     // The window→handler map lives in a ref, not this closure: if the effect
     // ever re-runs (a new dep), popouts opened earlier must be re-attached,
-    // not silently deafened.
+    // not silently deafened. It maps a window to ITS handler and nothing more —
+    // which windows are open is `lib/popout-windows`' answer, not a second copy
+    // kept here (#227).
     const popoutKeys = popoutKeysRef.current;
     const attach = (win: Window): void => {
       if (popoutKeys.has(win)) return;
@@ -659,32 +759,48 @@ export function App(): React.JSX.Element {
     const detach = (win: Window): void => {
       const handler = popoutKeys.get(win);
       if (!handler) return;
-      win.removeEventListener('keydown', handler);
+      // Forget it FIRST, then try to unhook. Since #279 this runs routinely for
+      // a window that is definitively closed — the registry now drops those
+      // itself, which is what sends them down here — and a dead Window is only
+      // ALMOST certainly still a working EventTarget. If it ever were not, doing
+      // these the other way round would keep the handler and the dead window in
+      // this map forever, which is precisely the leak #279 closed, and (in the
+      // loop below, outside any try) would abort the effect before it
+      // subscribes, leaving every popout deaf.
       popoutKeys.delete(win);
+      try {
+        win.removeEventListener('keydown', handler);
+      } catch {
+        /* nothing left to detach from — fail open, the listener died with it */
+      }
     };
-    // re-attach anything opened before this (re-)run
-    for (const win of [...popoutKeys.keys()]) {
+    // Re-attach anything open before this (re-)run, from the REGISTRY rather
+    // than from our own leftovers — that is the authority on what exists, and
+    // this map is only "what I have a handler for". They can differ in one
+    // direction: a popout closed while this effect was torn down leaves a key
+    // behind that no `removed` will ever come for, so drop those first (dead
+    // Windows are inert, but they are still retained forever).
+    const open = new Set(openPopoutWindows());
+    for (const win of [...popoutKeys.keys()]) if (!open.has(win)) detach(win);
+    for (const win of open) {
       detach(win);
       attach(win);
     }
-    const onAdded = (e: Event): void => {
-      const win = (e as CustomEvent<Window>).detail;
-      attach(win);
-      // a popout is its own document: give it our theme + tab-row flags (#84)
-      trackPopoutWindow(win);
-    };
-    const onRemoved = (e: Event): void => {
-      const win = (e as CustomEvent<Window>).detail;
-      detach(win);
-      forgetPopoutWindow(win);
-    };
-    window.addEventListener('switchboard:popout-added', onAdded);
-    window.addEventListener('switchboard:popout-removed', onRemoved);
+    const offPopouts = subscribePopoutWindows({
+      added: (win) => {
+        attach(win); // no-op for a window re-announced with its handler intact
+        // a popout is its own document: give it our theme + tab-row flags (#84).
+        // Unconditionally, including on a re-announcement — a reused window is a
+        // fresh document with neither flag nor token overlay on it, and an
+        // unthemed popout is the failure this call exists to prevent.
+        syncDocumentFlags([win]);
+      },
+      removed: detach,
+    });
 
     return () => {
       window.removeEventListener('keydown', onKey);
-      window.removeEventListener('switchboard:popout-added', onAdded);
-      window.removeEventListener('switchboard:popout-removed', onRemoved);
+      offPopouts();
       // detach the LISTENERS but keep the window keys: a re-run re-attaches
       // them above with fresh handlers. (A popout closed during app teardown
       // may not fire its remove event — a dead Window in the map is inert.)
@@ -706,12 +822,11 @@ export function App(): React.JSX.Element {
       // while a modal owns the screen, nothing underneath it fires — the
       // same guard the keydown dispatcher applies
       if (modalOpenRef.current) return;
-      // Only the popouts we know about are searched — the map is filled by the
-      // 'switchboard:popout-added' event, so a window that somehow missed it
-      // lands on the fallback and simply behaves as if nothing were focused.
-      const target = fromPopout
-        ? focusedElementIn(popoutKeysRef.current.keys(), document)
-        : document.activeElement;
+      // Only the popouts we know about are searched — the registry is filled by
+      // SessionGrid from dockview's own event (#227), so a window that somehow
+      // missed it lands on the fallback and simply behaves as if nothing were
+      // focused.
+      const target = fromPopout ? focusedElementIn(openPopoutWindows(), document) : document.activeElement;
       raisedOtherWindowRef.current = false;
       const ran = dispatchAccelerator(
         commandId,
@@ -866,8 +981,12 @@ export function App(): React.JSX.Element {
               void bridge.groups?.update?.(id, { color }).then(() => refreshGroups());
             }}
             policies={policies}
+            pinned={pinned}
+            onTogglePin={togglePin}
             onSetSessionPolicy={setSessionPolicy}
             onCycleGroupPolicy={cycleGroupPolicy}
+            focusPolicies={focusPolicies}
+            onSetSessionFocusPolicy={setSessionFocusPolicy}
             onMoveToGroup={(cardId, gid) => {
               void bridge.groups?.setSessionGroup?.(cardId, gid).then(() => {
                 grid.current?.moveCardToGroup(cardId, gid);
@@ -898,6 +1017,7 @@ export function App(): React.JSX.Element {
         <EventsPanel
           sessions={sessions}
           events={events}
+          queueEvents={attentionFeed}
           visited={visited}
           queueBinding={queueBindingLabel}
           onFocus={(id) => focusSession(id)}

@@ -7,9 +7,10 @@
 // was told nothing at all. That is the exact failure #168 exists to prevent.
 //
 // This module owns only the DOM plumbing: WHERE the notice goes in that other
-// document, and WHEN we learn a popout came or went. The notice itself, and the
-// one call that decides whether there is anything to say, stay in
-// WorkspaceReadOnlyBanner.tsx — there is still a single source of truth.
+// document. WHICH popouts exist is `lib/popout-windows`' answer (#227), and the
+// notice itself — with the one call that decides whether there is anything to
+// say — stays in WorkspaceReadOnlyBanner.tsx. There is still a single source of
+// truth for each of the three.
 //
 // Everything here is fail-open by construction: a popout window can be closed
 // (or navigating) between the event and our reaching into it, and touching a
@@ -70,41 +71,4 @@ export function unmountBannerHost(win: Window): void {
   } catch {
     /* the window is already gone — which is the state we wanted */
   }
-}
-
-/**
- * Subscribe to popouts opening and closing.
- *
- * SessionGrid already republishes dockview's `onDidAddPopoutGroup` /
- * `onDidRemovePopoutGroup` as window events carrying the popout's `Window` —
- * that is how App gives each popout the keyboard dispatcher and the theme
- * flags. Listening to the same events keeps this feature out of everyone else's
- * files, and dockview stays the authority on which windows exist — nobody here
- * decides anything, they only listen.
- *
- * That does make three separate lists of the same windows (App's keyboard map,
- * tab-rows' theme set, and now the banner's), each with its own subscription.
- * Not worth a refactor for one notice; worth one for whoever adds the fourth —
- * a shared `lib/popout-windows.ts` is the obvious shape.
- *
- * Returns the unsubscribe.
- */
-export function onPopoutWindows(handlers: {
-  added: (win: Window) => void;
-  removed: (win: Window) => void;
-}): () => void {
-  const onAdded = (e: Event): void => {
-    const win = (e as CustomEvent<Window>).detail;
-    if (win) handlers.added(win);
-  };
-  const onRemoved = (e: Event): void => {
-    const win = (e as CustomEvent<Window>).detail;
-    if (win) handlers.removed(win);
-  };
-  window.addEventListener('switchboard:popout-added', onAdded);
-  window.addEventListener('switchboard:popout-removed', onRemoved);
-  return () => {
-    window.removeEventListener('switchboard:popout-added', onAdded);
-    window.removeEventListener('switchboard:popout-removed', onRemoved);
-  };
 }

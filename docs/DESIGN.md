@@ -1494,6 +1494,21 @@ Designed answer:
   > hundreds of expanders; the rail, the lamps and the Events panel each spend
   > one or two stops per session, which is bounded by how many sessions a human
   > runs and buys back the simplicity of ordinary buttons.
+  >
+  > **A fifth rule, added by #253 (2026-08-05):** *a drag is never the only way
+  > to do something.* The sweep above made every CONTROL reachable and left one
+  > INTERACTION that wasn't — a session's group could only be changed by
+  > dragging its row onto a group card, which fails 2.1.1 for the whole feature
+  > no matter how well-labelled the row is. The keyboard equivalent belongs in
+  > the surface's existing menu, as a `menuitemradio` set when the drag picks
+  > one destination out of a known list, and it must (a) call the SAME state
+  > change the drop calls — never a parallel path that can drift — (b) say what
+  > happened in a live region, because a drop is confirmed by the eye and
+  > nothing else, and (c) restore focus AFTER the change lands, since the moved
+  > element is re-parented and the node the menu was opened from is detached by
+  > then. Destinations the drop refuses (auto-groups, whose membership is
+  > computed) are absent from the menu for the same reason they refuse drops:
+  > an offer that does nothing wastes more time than a missing one.
 
 ### 5.27 Mobile companion — fleet remote control
 

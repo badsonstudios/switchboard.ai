@@ -31,6 +31,8 @@ import { Box, boxOnAnyDisplay, RescuedPopout, sanitizePopoutLayout, WorkArea } f
 import { captureSlot, openerRelative, placeAt } from '../lib/dock-slot';
 import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
 import { submitTarget } from '../lib/presentation-policy';
+import { bulkClose } from '../lib/pinning';
+import { createSweeper, SweepPort, SweepRequest } from '../lib/layout-sweep';
 import {
   cycleMode,
   isEnforced,
@@ -45,12 +47,15 @@ import {
 } from '../lib/layout-mode';
 import { presentStatus } from '../lib/rail-view';
 import { tabStripAction } from '../lib/tabstrip-keys';
+import { cardHeaderTitle } from '../lib/card-title';
 import { StatusPill } from './StatusPill';
 import type { Ladder } from '../lib/presentation';
 import { pickAdoptedGroupId } from '../lib/groups';
+import { addPopoutWindow, removePopoutWindow } from '../lib/popout-windows';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { setDraggedCard } from '../lib/drag-context';
 import { writePromptToPty } from '../lib/composer';
+import { dropRetired } from '../lib/held-permissions';
 
 /** Subscribe helper for useSyncExternalStore — module-level so its identity is
  *  stable across renders (a fresh function resubscribes every commit). */
@@ -81,19 +86,36 @@ interface Live {
   transport?: 'pty' | 'stream';
 }
 
-function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element {
+export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element {
   const { t } = useTranslation();
+  const cardId = props.params?.cardId;
+  // What the TAB calls the session, on screen and in its close confirmation
+  // (#264) — the store's copy first, exactly as the card header does it.
+  // dockview is told a panel's title once, at `addPanel`, and nothing in the
+  // tree ever calls `setTitle`, so `props.api.title` is the name the tab was
+  // born with: a rename from the rail reaches the record, the rail and the
+  // header, and stops at this strip.
+  //
+  // A DERIVED tab (diff) carries no cardId, so the store has no answer for it
+  // and its dockview title still wins — which is right: nobody renames a diff.
+  const storeTitle = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getCardTitle(cardId)
+  );
+  const title = cardHeaderTitle(
+    storeTitle,
+    props.api.title || props.params?.title,
+    props.params?.folder
+  );
   return (
     <div style={{ paddingInline: 8, display: 'flex', alignItems: 'center', gap: 4, blockSize: '100%' }}>
-      <IdentityChip title={props.api.title ?? props.params?.title ?? ''} compact />
+      <IdentityChip title={title} compact />
       <button
         onClick={(e) => {
           // close the tab: for a session card this ends the session AND
           // forgets the record (onDidRemovePanel -> closeCard) — so it
           // CONFIRMS first (Dan 2026-07-22); derived tabs (diff) just close
           e.stopPropagation();
-          if (props.params?.cardId) {
-            const title = props.api.title ?? props.params?.title ?? '';
+          if (cardId) {
             if (!window.confirm(t('grid.closeConfirm', { title }))) return;
           }
           props.api.close();
@@ -216,6 +238,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const controlsLocked = status === 'starting' || status === 'crashed' || exited !== null;
   const spawning = React.useRef(false);
   const folder = props.params?.folder;
+  // What the card CALLS itself, on screen (#250). The store's copy first, so a
+  // rename from the rail reaches the header — `props.api.title` alone is the
+  // name the card was born with. Chain and its empty-is-absent rule live in
+  // lib/card-title.
+  const headerTitle = cardHeaderTitle(cardTitle, props.api.title, folder);
 
   React.useEffect(() => {
     const d = props.api.onDidVisibilityChange((e) => setVisible(e.isVisible));
@@ -285,7 +312,25 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   React.useEffect(() => {
     if (!live) return;
     return window.switchboard.sessions.onExited((e) => {
-      if (e.sessionId === live.id) setExited({ code: e.code, crashed: e.crashed });
+      if (e.sessionId !== live.id) return;
+      setExited({ code: e.code, crashed: e.crashed });
+      // The THIRD way a session's held requests stop being answerable, and the
+      // one that reaches neither `forgetCardLiveIds` nor main's teardown (#239):
+      // a session that dies on its own keeps its binding and its record until
+      // the user restarts or closes the card. The exited overlay covers the
+      // review bar for the MOUSE only — the Allow / Allow all / Deny buttons
+      // stay mounted, tab-reachable and read out by a screen reader — so the
+      // click this issue exists to prevent is still one Tab away. The CLI
+      // process is gone, so nothing here can reach it: the honest thing is to
+      // stop offering the question.
+      //
+      // THIS IS THE UI HALF ONLY. Main does not release a self-exited session's
+      // holds — `unregisterSession` runs from `tearDownLive` and a plain exit
+      // never gets there — so the parked request and its timer live on in main
+      // until the 300s fail-open, and `sessions:pendingPermissions` goes on
+      // advertising it to any card that mounts meanwhile. Closing that belongs
+      // in main, next to `manager.onSessionExit`, and is not this change.
+      setPermQueue((prev) => dropRetired(prev, e.sessionId));
     });
   }, [live]);
 
@@ -420,6 +465,31 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     // setView identity is stable enough here; cardId is the real key (the
     // exhaustive-deps plugin isn't installed in this repo)
   }, [cardId]);
+  // A held request belongs to the LIVE session that raised it and dies with it
+  // (#239). Restart and the popout-close suspend both end the session while
+  // leaving this component MOUNTED with its queue intact, so when main's release
+  // is lost the next session's review bar opens holding the corpse's question:
+  // `Allow` decides a request that no longer exists, and `Allow all` writes a
+  // grant keyed by an id no map holds — #224's leak again, by user clicks.
+  //
+  // Main normally gets there first: tearing a session down releases what it is
+  // holding (`tearDownLive` → `unregisterSession` / `forgetSession`) and the
+  // resulting `permissionResolved` push is what usually empties this queue. This
+  // is the renderer's OWN guarantee, not a second copy of that one, because
+  // main's is explicitly best-effort — every step of `tearDownLive` is allowed
+  // to fail and be skipped, and `tearDownStep`'s docblock names this exact
+  // consequence: "a card showing a permission bar for a session that no longer
+  // exists" (#219). A queue whose only correction arrives from another process
+  // cannot repair itself when the correction is the thing that went missing.
+  //
+  // Local only — no `decidePermission` here. The request is already answered or
+  // already dead; sending a verdict for it would be a decision the user never
+  // made, aimed at a session that cannot receive it.
+  React.useEffect(() => {
+    return sessionStore.subscribeLiveRetired((liveId) => {
+      setPermQueue((prev) => dropRetired(prev, liveId));
+    });
+  }, []);
   const decide = (decision: 'allow' | 'deny', allowAll = false): void => {
     const head = permQueue[0];
     if (!head) return;
@@ -530,8 +600,17 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const restartSelf = (): void => {
     // drop the dead live session (keep the card record), then re-arm the lazy
     // spawn so the card respawns/resumes
-    if (cardId) void window.switchboard.sessions.dropLive(cardId);
-    if (live) sessionStore.forgetCardLiveIds(cardId ?? '');
+    //
+    // Both halves under ONE `if (cardId)` (#239). They used to disagree: main
+    // was told unconditionally while the renderer only unbound `if (live)`,
+    // which admits the state where main has torn the session down and this
+    // store still holds its binding, its grant and — since this issue — its
+    // queued holds. `forgetCardLiveIds` is idempotent, so the guard bought
+    // nothing, and `cardId ?? ''` was a sweep for a card that cannot exist.
+    if (cardId) {
+      void window.switchboard.sessions.dropLive(cardId);
+      sessionStore.forgetCardLiveIds(cardId);
+    }
     setExited(null);
     setLive(null);
     spawning.current = false;
@@ -721,7 +800,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 whiteSpace: 'nowrap',
               }}
             >
-              {props.api.title ?? folder}
+              {headerTitle}
             </span>
             {editingLabel ? (
               <input
@@ -1099,7 +1178,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         <div style={{ ...overlayBackdrop, position: 'relative', flex: 1 }}>{exitedOverlay}</div>
       ) : (
         <span style={{ margin: 'auto' }}>
-          {t('grid.resuming', { title: props.api.title ?? folder ?? '' })}
+          {t('grid.resuming', { title: headerTitle })}
         </span>
       )}
     </div>
@@ -1412,6 +1491,9 @@ export function applySubmitPolicy(api: DockviewApi | null, cardId: string): void
     needsHuman: presentStatus(
       sessionStore.getState().sessions.find((s) => s.id === cardId)?.status
     ).needsYou,
+    // §5.8's pinning contract (E9-09): this is the "auto-collapse sweep" it
+    // names, and a pinned card sits it out
+    pinned: sessionStore.isPinned(cardId),
   });
   if (rung) setCardLadder(api, cardId, rung);
 }
@@ -1501,26 +1583,17 @@ function layoutCards(): LayoutCard[] {
 }
 
 /**
- * A sweep in flight, and whether another was asked for while it ran.
+ * One sweep — the dockview grid it moves cards in, carried on the request.
  *
- * Module scope for the reason `laddering` is: a re-entrancy guard is not app
- * state. Every move below awaits, and the reactive triggers arrive in bursts —
- * a status change is one store write, and three sessions finishing inside a
- * second is three. Without this, two sweeps would interleave their reveals and
- * removals and the loser would be applying a plan computed against a workspace
- * that no longer exists. Coalescing to ONE re-run is enough: the plan is
- * recomputed from live state each time, so the last run always sees the truth.
+ * lib/layout-sweep owns the machine (one sweep at a time, at most one queued,
+ * moves in order, abort on teardown) and knows nothing about dockview, which is
+ * how that machine gets unit tests instead of only e2e ones. The api rides
+ * along rather than being read from module scope so a drained sweep provably
+ * runs against the grid it was asked for.
  */
-interface Sweep {
-  trigger: LayoutTrigger;
-  /** the un-maximize payload; queued WITH the trigger, because a queued sweep
-   *  that kept the trigger and dropped this would re-apply the mode instead of
-   *  putting the user's own prior arrangement back */
-  restore?: Readonly<Record<string, Ladder>>;
+interface LayoutSweep extends SweepRequest {
+  api: DockviewApi;
 }
-
-let sweeping = false;
-let resweep: Sweep | null = null;
 
 /**
  * Has the grid finished coming up?
@@ -1536,6 +1609,46 @@ let resweep: Sweep | null = null;
 let gridReady = false;
 
 /**
+ * The dockview half of the sweep: every effect lib/layout-sweep is not allowed
+ * to know about, in one object.
+ *
+ * Exported for `SessionGrid.test.tsx`, which asserts the two halves are wired
+ * to each other correctly — that `needed` really is "grid is not enforced on a
+ * reactive pass" and that `plan` really is computed over the rail order — none
+ * of which is reachable through `applyLayout` without a live grid.
+ */
+export const layoutSweepPort: SweepPort<LayoutSweep> = {
+  // `gridReady` is the fence a boot restore needs; the other two are the
+  // teardown and restore windows dockview must not be touched in.
+  ready: () => gridReady && !sessionStore.isTearingDown() && !sessionStore.isRestoringLayout(),
+
+  // The cheap early-out, before building the card list. GRID IS NOT ENFORCED ON
+  // `react` (lib/layout-mode's `LayoutTrigger` says why); an un-maximize always
+  // has work, because its whole payload is work.
+  needed: (req) => req.trigger !== 'react' || !!req.restore || isEnforced(sessionStore.getLayout()),
+
+  plan: (req) =>
+    layoutPlan({
+      state: sessionStore.getLayout(),
+      cards: layoutCards(),
+      activeCardId: sessionStore.getState().activeCard,
+      trigger: req.trigger,
+      ...(req.restore ? { restore: req.restore } : {}),
+    }),
+
+  // WITHOUT FOCUS: `focus` mode moves the big card to whatever you are already
+  // in, so grabbing focus would be the layout telling the user where to look.
+  // Single-card commands focus, because there the move IS the gesture.
+  applyMove: (move, req) => moveCardToRung(req.api, move.cardId, move.rung, false),
+
+  aborted: () => sessionStore.isTearingDown(),
+
+  onError: (err) => console.error('[layout] sweep failed', err),
+};
+
+const layoutSweeper = createSweeper(layoutSweepPort);
+
+/**
  * Put every session where the current layout mode wants it.
  *
  * `restore` is the un-maximize path: the rungs to put back, exactly (see
@@ -1546,57 +1659,10 @@ export function applyLayout(
   trigger: LayoutTrigger,
   restore?: Readonly<Record<string, Ladder>>
 ): void {
-  if (
-    !api ||
-    !gridReady ||
-    sessionStore.isTearingDown() ||
-    sessionStore.isRestoringLayout()
-  ) {
-    return;
-  }
-  if (sweeping) {
-    // a 'switch' outranks a queued 'react': the user asked for that one
-    if (trigger === 'switch' || !resweep) resweep = { trigger, ...(restore ? { restore } : {}) };
-    return;
-  }
-  // The cheap early-out, before building the card list: reactive triggers
-  // arrive on every status push (several a second while agents stream), and
-  // under the DEFAULT mode there is nothing for any of them to do.
-  if (trigger === 'react' && !restore && !isEnforced(sessionStore.getLayout())) return;
-  sweeping = true;
-  void (async () => {
-    try {
-      const moves = layoutPlan({
-        state: sessionStore.getLayout(),
-        cards: layoutCards(),
-        activeCardId: sessionStore.getState().activeCard,
-        trigger,
-        ...(restore ? { restore } : {}),
-      });
-      // Sequential ON PURPOSE, and awaited: a card comes home to the dock slot
-      // it remembers, and two reveals racing each other read that slot's group
-      // while the other one is still creating (or destroying) it. `toTabbed`
-      // and the reveal are the two async verbs, so both are awaited here even
-      // though `setCardLadder` itself fires and forgets.
-      for (const move of moves) {
-        // WITHOUT FOCUS: `focus` mode moves the big card to whatever you are
-        // already in, so grabbing focus would be the layout telling the user
-        // where to look. Single-card commands focus, because there the move IS
-        // the gesture.
-        await moveCardToRung(api, move.cardId, move.rung, false);
-        if (sessionStore.isTearingDown()) return;
-      }
-    } catch (err) {
-      // fail-open: a layout mode is a convenience, never a reason to throw out
-      // of an event handler and leave the workspace half-swept
-      console.error('[layout] sweep failed', err);
-    } finally {
-      sweeping = false;
-      const again = resweep;
-      resweep = null;
-      if (again) applyLayout(api, again.trigger, again.restore);
-    }
-  })();
+  if (!api) return;
+  // Nothing awaits a sweep: a click that changes the mode is done the moment
+  // the mode is written, and the cards catch up. The promise exists for tests.
+  void layoutSweeper.request({ api, trigger, ...(restore ? { restore } : {}) });
 }
 
 /** Switch the workspace to a named layout mode (§5.8). */
@@ -1896,6 +1962,9 @@ export interface GridController {
   activeCardId: () => string | null;
   /** close a card the way the tab ✕ does — including its confirm (E9-01) */
   closeCard: (cardId: string) => void;
+  /** close EVERY session at once, sparing the pinned ones (§5.8's pinning
+   *  contract, E9-09). One confirm for the lot, not one per card. */
+  closeAllCards: () => void;
   /** switch a card's active view tab; 'terminal' toggles back to the Session
    *  view when the Terminal is already showing (E9-01) */
   toggleCardView: (cardId: string, view: PanelId) => void;
@@ -1908,6 +1977,16 @@ export interface GridController {
    *  for an ATTENTION reveal — see revealCard's own note on why showing and
    *  focusing are two questions. */
   revealCard: (cardId: string, focus?: boolean) => void;
+  /**
+   * Is this card's panel ON SCREEN right now (E9-10)?
+   *
+   * dockview's answer, not a rung: an `expanded` card can still be the
+   * unselected tab of a stack. §5.8's focus-stealing policy turns on the word
+   * "visible", and the only honest reading of it is "the user can see it",
+   * which is a question only the dock can answer — except for a popped-out
+   * card, where dockview cannot know and the window is asked instead.
+   */
+  isCardOnScreen: (cardId: string) => boolean;
   /**
    * Put a card on a named rung of §5.8's ladder (P2-E9-05).
    *
@@ -2002,6 +2081,37 @@ export function SessionGrid(props: {
     []
   );
 
+  /**
+   * End one session and forget every record keyed by its card — WITHOUT asking.
+   *
+   * The confirm belongs to the GESTURE, not to this: `closeCard` asks about one
+   * card, `closeAllCards` asks once about the lot, and both then do exactly the
+   * same thing per card. Extracted at E9-09 because the second caller made the
+   * duplication a correctness problem rather than a tidiness one — the by-hand
+   * branch is a hand-written copy of what `onDidRemovePanel` does, and two
+   * copies of that list is how a new per-card record (a pin, say) ends up
+   * retired on one close path and leaked on the other.
+   *
+   * A card WITH a panel is closed by removing it, because dockview's
+   * `onDidRemovePanel` runs the same forgets; a HIDDEN card has no panel to
+   * remove (§5.8's invariant: hiding chrome never removes capability, so
+   * closing has to work on a card that isn't in the workspace) and is done by
+   * hand here.
+   */
+  const retireCard = useCallback((cardId: string) => {
+    const api = apiRef.current;
+    const panel = api?.getPanel(`session-${cardId}`);
+    if (api && panel) {
+      api.removePanel(panel); // onDidRemovePanel -> the forgets below
+      return;
+    }
+    sessionStore.forgetCardLiveIds(cardId);
+    sessionStore.forgetPresentation(cardId);
+    sessionStore.forgetLayoutCard(cardId);
+    sessionStore.forgetPin(cardId);
+    void window.switchboard.sessions.closeCard(cardId);
+  }, []);
+
   // §5.8's auto-minimize on submit (P2-E9-06). Subscribed ONCE, here, rather
   // than per card: the grid is the only thing that owns the dockview api, and a
   // subscription per mounted panel would collapse a card that had already been
@@ -2056,6 +2166,33 @@ export function SessionGrid(props: {
       },
       hideCard,
       revealCard: (cardId, focus) => void revealCard(cardId, focus ?? true),
+      isCardOnScreen: (cardId) => {
+        const panel = apiRef.current?.getPanel(`session-${cardId}`);
+        // No panel at all (collapsed, tabbed-away, hidden) is trivially not on
+        // screen. `api.isVisible` is false for the unselected tabs of a group,
+        // which is exactly the distinction the policy needs and the one a rung
+        // cannot make.
+        if (!panel) return false;
+        const loc = panel.group.api.location;
+        // A POPPED-OUT panel is where dockview's answer stops being the user's.
+        // `isVisible` stays true for the active tab of a popout group whatever
+        // that OS window is doing — behind this one, minimised, on another
+        // virtual desktop — because dockview has no way to know. Taking it at
+        // face value would let `smart`, the DEFAULT, raise a whole other window
+        // over whatever the user is looking at, which is the loudest thing the
+        // app can do and precisely what this setting exists to gate. So the
+        // popout answers for itself: on screen means it already has focus, in
+        // which case focusing it is a no-op and nothing is stolen.
+        if (loc.type === 'popout') {
+          try {
+            return loc.getWindow()?.document.hasFocus() ?? false;
+          } catch {
+            // a window torn down between the lookup and the read: not on screen
+            return false;
+          }
+        }
+        return panel.api.isVisible;
+      },
       setLadder,
       stepLadder,
       setLayoutMode: (mode) => setLayoutMode(apiRef.current, mode),
@@ -2091,25 +2228,42 @@ export function SessionGrid(props: {
         return m ? m[1] : null;
       },
       closeCard: (cardId) => {
-        const api = apiRef.current;
-        const panel = api?.getPanel(`session-${cardId}`);
+        const panel = apiRef.current?.getPanel(`session-${cardId}`);
         // same contract as the tab ✕ (Dan 2026-07-22): confirm, because this
         // ends the session and forgets the record
-        const title =
-          panel?.title ?? sessionStore.getState().sessions.find((s) => s.id === cardId)?.title ?? '';
+        // store FIRST (#264): the panel's title is dockview's birth-time copy
+        // and is always set, so asking it first meant a renamed session was
+        // confirmed away under its old name — the record was only ever reached
+        // for a HIDDEN card, which has no panel.
+        const title = cardHeaderTitle(
+          sessionStore.getCardTitle(cardId),
+          panel?.title,
+          (panel?.params as CardParams | undefined)?.folder
+        );
         if (!window.confirm(t('grid.closeConfirm', { title }))) return;
-        if (api && panel) {
-          api.removePanel(panel); // onDidRemovePanel -> closeCard
+        // the confirm belongs to the gesture; retireCard (E9-09) does what
+        // main's inline removePanel/by-hand branch did, for both call sites
+        retireCard(cardId);
+      },
+      closeAllCards: () => {
+        // RAIL ORDER, and the DECISION through lib/pinning's `bulkClose` rather
+        // than a `filter` here: that function is §5.8's pinning exemption
+        // itself, and routing every bulk operation through it is what stops the
+        // next one — the eviction policy §5.8 anticipates — from having to
+        // remember the rule. What is left in this function is only the dialogs
+        // and the loop, which is all a component should own (E9-09).
+        const { doomed, spared } = bulkClose(
+          sessionStore.getRailOrder().flat.map((s) => s.id),
+          sessionStore.getPins()
+        );
+        if (doomed.length === 0) {
+          // every session is pinned: say so rather than opening a confirm for
+          // an empty list, which reads as the command being broken
+          window.alert(t('grid.closeAllNothing', { count: spared }));
           return;
         }
-        // A HIDDEN card has no panel, and its ✕ is right there in the rail.
-        // §5.8's invariant is that hiding chrome never removes capability, so
-        // closing has to work on a card that isn't in the workspace — do by
-        // hand exactly what onDidRemovePanel would have done.
-        sessionStore.forgetCardLiveIds(cardId);
-        sessionStore.forgetPresentation(cardId);
-        sessionStore.forgetLayoutCard(cardId);
-        void window.switchboard.sessions.closeCard(cardId);
+        if (!window.confirm(t('grid.closeAllConfirm', { count: doomed.length, spared }))) return;
+        for (const cardId of doomed) retireCard(cardId);
       },
       toggleCardView: (cardId, view) => {
         // straight at the store: this used to go through a handle the card
@@ -2282,18 +2436,17 @@ export function SessionGrid(props: {
       });
       // E8 diagnostics: surface popout success/failure
       api.onDidOpenPopoutWindowFail?.(() => console.error('[popout] onDidOpenPopoutWindowFail'));
-      // publish popout windows so App can give them the keyboard dispatcher
-      // (E9-02) — their DOM lives in another OS window, their JS lives here
+      // Publish popout windows to the shared registry (#227): their DOM lives
+      // in another OS window, their JS lives here, and three features need to
+      // know which ones are open — the keyboard dispatcher (E9-02), the theme
+      // and tab-row flags (#84), the read-only notice (#208). dockview is the
+      // authority on which popouts exist; this is the one place that says so.
       api.onDidAddPopoutGroup?.((e: PopoutGroup) => {
         console.log('[popout] onDidAddPopoutGroup (opened OK)');
-        if (e.window) {
-          window.dispatchEvent(new CustomEvent('switchboard:popout-added', { detail: e.window }));
-        }
+        if (e.window) addPopoutWindow(e.window);
       });
       api.onDidRemovePopoutGroup?.((e: PopoutGroup) => {
-        if (e.window) {
-          window.dispatchEvent(new CustomEvent('switchboard:popout-removed', { detail: e.window }));
-        }
+        if (e.window) removePopoutWindow(e.window);
       });
       // window teardown must not be mistaken for the user closing cards
       window.addEventListener('beforeunload', () => {
@@ -2316,6 +2469,9 @@ export function SessionGrid(props: {
         // workspace blown up around nothing AND make the default mode start
         // enforcing (E9-07, lib/layout-mode's isEnforced)
         sessionStore.forgetLayoutCard(m[1]);
+        // ...and its pin (E9-09), which would otherwise keep protecting — and
+        // sorting first — a card that no longer exists
+        sessionStore.forgetPin(m[1]);
         void window.switchboard.sessions.closeCard(m[1]);
       });
 
@@ -2382,6 +2538,12 @@ export function SessionGrid(props: {
             // card's rung: a maximize held for a session that has since been
             // closed would keep the workspace blown up around nothing.
             sessionStore.pruneLayout(known);
+            // E9-10's per-session focus overrides are card-keyed and outlive
+            // their cards exactly as the presentation overrides above do.
+            sessionStore.pruneFocusPolicies(known);
+            // and E9-09's pins, keyed the same way and outliving their cards
+            // the same way.
+            sessionStore.prunePins(known);
             for (const p of [...api.panels]) {
               const s = /^session-(.+)$/.exec(p.id);
               const d = /^diff-/.exec(p.id);

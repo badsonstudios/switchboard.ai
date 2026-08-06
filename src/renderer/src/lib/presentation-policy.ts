@@ -137,8 +137,14 @@ export function groupOverride(book: PolicyBook, groupId: string): PresentationPo
  *    hold mints no more. The one card that needs a human is the one card
  *    auto-minimize must never take away.
  *
- * TODO(P2-E9-09): pinning is a fifth exemption. §5.8's pinning contract names
- * "auto-collapse sweeps" explicitly, and this is the sweep.
+ *  • A PINNED card is left alone (E9-09). §5.8's pinning contract names
+ *    "auto-collapse sweeps" among the bulk operations a pinned session is
+ *    exempt from, and THIS IS THAT SWEEP: it is the one thing in the app that
+ *    moves a card down the ladder without the user asking for that card to
+ *    move. It does not make pinning mean always-expanded — collapse, tab and
+ *    hide all still work by hand, and a layout mode still arranges a pinned
+ *    card like any other (see lib/pinning's header for why that is the same
+ *    rule and not an exception to it).
  */
 export function submitTarget(opts: {
   policy: PresentationPolicy;
@@ -147,11 +153,14 @@ export function submitTarget(opts: {
   poppedOut: boolean;
   /** the session is blocked on a person right now (lib/rail-view's needsYou) */
   needsHuman: boolean;
+  /** §5.8's pinning contract (E9-09) */
+  pinned?: boolean;
 }): Ladder | null {
   if (opts.policy === 'always-visible') return null;
   if (opts.ladder !== 'expanded') return null;
   if (opts.poppedOut) return null;
   if (opts.needsHuman) return null;
+  if (opts.pinned) return null;
   return opts.policy === 'auto-hide' ? 'hidden' : 'collapsed';
 }
 

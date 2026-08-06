@@ -10,6 +10,7 @@ import { Command, CommandContext } from './commands';
 import { PanelId } from '../extensibility/contributions';
 import type { Ladder } from './presentation';
 import { POLICY_ORDER, PresentationPolicy } from './presentation-policy';
+import { FOCUS_POLICY_ORDER, FocusPolicy } from './focus-policy';
 import { LAYOUT_MODES, LayoutMode } from './layout-mode';
 
 export interface CommandDeps {
@@ -19,6 +20,10 @@ export interface CommandDeps {
   newSession: () => void;
   /** close a card (asks for confirmation — it forgets the record) */
   closeCard: (cardId: string) => void;
+  /** close every session at once, except the pinned ones (E9-09 bulk-close) */
+  closeAllCards: () => void;
+  /** pin or unpin a session — §5.8's protection contract (E9-09) */
+  togglePin: (cardId: string) => void;
   /** switch a card's view tab; the same view twice returns to the Session view */
   toggleCardView: (cardId: string, view: PanelId) => void;
   /** pop a card out to its own window, or dock it back in */
@@ -35,6 +40,10 @@ export interface CommandDeps {
   setSessionPolicy: (cardId: string, policy: PresentationPolicy | undefined) => void;
   /** override the global for a whole persistent group (E9-06) */
   setGroupPolicy: (groupId: string, policy: PresentationPolicy | undefined) => void;
+  /** what a session that finishes or needs you may do to the screen (E9-10) */
+  setGlobalFocusPolicy: (policy: FocusPolicy) => void;
+  /** override the focus policy for ONE session; `undefined` follows the default */
+  setSessionFocusPolicy: (cardId: string, policy: FocusPolicy | undefined) => void;
   /** put the whole workspace in a named layout mode (E9-07) */
   setLayoutMode: (mode: LayoutMode) => void;
   /** next layout mode in the cycle — the one binding (E9-07) */
@@ -178,6 +187,39 @@ export function buildCommands(deps: CommandDeps): Command[] {
       run: (ctx) => {
         if (ctx.activeCardId) deps.closeCard(ctx.activeCardId);
       },
+    },
+    // ── §5.8's PINNING contract (E9-09) ───────────────────────────────────
+    //
+    // ONE command and one binding, not a pin/unpin pair: §5.8 says "pin/unpin
+    // is ONE gesture", and a pair would also have to fight over which of them
+    // owns the chord (the contribution builder dedupes by binding, so the
+    // second would silently lose it). The named-targets split the ladder and
+    // the policies use is for choices with three or four values; a boolean has
+    // one control, exactly as `view.rail` and `view.terminal` do.
+    {
+      id: 'session.pin',
+      titleKey: 'commands.togglePin',
+      categoryKey: CATEGORY_SESSION,
+      binding: 'Mod+Alt+P',
+      scope: 'app',
+      enabled: hasActive,
+      disabledReasonKey: 'commands.disabled.noActiveSession',
+      run: (ctx) => {
+        if (ctx.activeCardId) deps.togglePin(ctx.activeCardId);
+      },
+    },
+    {
+      // The bulk operation pinning exists to be exempt from (§5.8). Palette-only
+      // and deliberately WITHOUT a binding: closing every session at once is not
+      // something anyone should be able to do by mistyping a chord, and the
+      // title has to be read to be found. It confirms once, not once per card.
+      id: 'session.closeAll',
+      titleKey: 'commands.closeAllSessions',
+      categoryKey: CATEGORY_SESSION,
+      scope: 'app',
+      enabled: (ctx) => ctx.sessions.length > 0,
+      disabledReasonKey: 'commands.disabled.noSessions',
+      run: () => deps.closeAllCards(),
     },
     // ── §5.8's presentation ladder (E9-05) ────────────────────────────────
     //
@@ -386,6 +428,50 @@ export function buildCommands(deps: CommandDeps): Command[] {
       disabledReasonKey: 'commands.disabled.noActiveGroup',
       run: (ctx) => {
         if (ctx.activeGroupId) deps.setGroupPolicy(ctx.activeGroupId, undefined);
+      },
+    },
+    // ── §5.8's FOCUS-STEALING policy (E9-10) ──────────────────────────────
+    //
+    // Named targets and no cycle, for E9-06's reason: a palette entry has to
+    // say what it will DO before you press Enter. No binding either — this is a
+    // preference you set once, and the four modes would want four of them.
+    //
+    // The GLOBAL entries sit in the Attention category rather than View: this
+    // setting is about what an attention event is allowed to do, and it is the
+    // neighbour of Ctrl+Space, not of the layout modes.
+    ...FOCUS_POLICY_ORDER.map(
+      (policy): Command => ({
+        id: `attention.focusPolicy.${policy}`,
+        titleKey: `commands.focusPolicy.${policy}`,
+        categoryKey: CATEGORY_ATTENTION,
+        scope: 'app' as const,
+        run: () => deps.setGlobalFocusPolicy(policy),
+      })
+    ),
+    ...FOCUS_POLICY_ORDER.map(
+      (policy): Command => ({
+        id: `session.focusPolicy.${policy}`,
+        titleKey: `commands.sessionFocusPolicy.${policy}`,
+        categoryKey: CATEGORY_ATTENTION,
+        scope: 'app' as const,
+        enabled: hasActive,
+        disabledReasonKey: 'commands.disabled.noActiveSession',
+        run: (ctx) => {
+          if (ctx.activeCardId) deps.setSessionFocusPolicy(ctx.activeCardId, policy);
+        },
+      })
+    ),
+    {
+      // The way BACK from a per-session override — see session.policy.default
+      // for why picking today's default value is not the same thing.
+      id: 'session.focusPolicy.default',
+      titleKey: 'commands.sessionFocusPolicy.default',
+      categoryKey: CATEGORY_ATTENTION,
+      scope: 'app',
+      enabled: hasActive,
+      disabledReasonKey: 'commands.disabled.noActiveSession',
+      run: (ctx) => {
+        if (ctx.activeCardId) deps.setSessionFocusPolicy(ctx.activeCardId, undefined);
       },
     },
     {

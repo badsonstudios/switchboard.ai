@@ -46,6 +46,19 @@ async function tabUntil(w: Page, selector: string, max = 12): Promise<number> {
   throw new Error(`Tab never reached ${selector} in ${max} presses`);
 }
 
+/** the same, for a menu's own arrow ring — proves the walk, not just the DOM */
+async function arrowUntil(w: Page, selector: string, max = 10): Promise<number> {
+  for (let i = 1; i <= max; i++) {
+    await w.keyboard.press('ArrowDown');
+    const hit = await w.evaluate(
+      (sel) => !!(document.activeElement as HTMLElement | null)?.matches(sel),
+      selector
+    );
+    if (hit) return i;
+  }
+  throw new Error(`ArrowDown never reached ${selector} in ${max} presses`);
+}
+
 test.describe('keyboard paths swept by #197', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
@@ -105,6 +118,62 @@ test.describe('keyboard paths swept by #197', () => {
     expect((await focused(w)).label).toBe('Rename…');
     await w.keyboard.press('Escape');
     await expect(w.locator('[role="menu"]')).toHaveCount(0);
+    expect((await focused(w)).cls).toBe('rail-row-open');
+  });
+
+  test('a session changes group from the keyboard, and says so (#253)', async () => {
+    // The one interaction #197's sweep could not reach: a session's group was
+    // reachable by dragging its row onto a group card and NO other way, which
+    // fails WCAG 2.1.1 for the whole feature. The unit tests hold the shape of
+    // the menu; what only a real window proves is that the keys arrive, that
+    // the membership really lands in the store, and that the keyboard is not
+    // dropped on <body> when the row is re-parented under the answer.
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    const title = path.basename(folder);
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+
+    await w.getByTitle('Create a persistent group').click();
+    await expect(w.getByText('empty', { exact: true })).toBeVisible();
+
+    // stand on the session's row and summon its menu the keyboard's way
+    await tabUntil(w, '[data-rail-open]');
+    expect((await focused(w)).label).toContain(title);
+    await w.keyboard.press('Shift+F10');
+    await expect(w.locator('[role="menu"]')).toBeVisible();
+
+    // the move choices are in the SAME arrow ring as the commands above them —
+    // no second keyboard mode, which is how menus grow traps
+    await arrowUntil(w, '[data-move-item]:not([data-move-item="ungrouped"])');
+    const f = await focused(w);
+    expect(f.role).toBe('menuitemradio');
+    expect(f.label).toContain('New group');
+    expect(f.ring).not.toBe('0px');
+
+    await w.keyboard.press('Enter');
+    // it landed in the store: the group is no longer empty
+    await expect(w.locator('[role="menu"]')).toHaveCount(0);
+    await expect(w.getByText('empty', { exact: true })).toHaveCount(0);
+    // ...it was said out loud...
+    await expect(w.locator('nav [role="status"]')).toHaveText(`${title} moved to New group`);
+    // ...and the keyboard is on the row where it now lives, not on <body>
+    expect((await focused(w)).cls).toBe('rail-row-open');
+    expect(
+      await w.evaluate(() =>
+        document.activeElement?.closest('[data-group-card]')?.getAttribute('data-group-card')
+      )
+    ).not.toBe('ungrouped');
+
+    // and back out again — the keyboard equivalent of a drop on the rail
+    await w.keyboard.press('Shift+F10');
+    await arrowUntil(w, '[data-move-item="ungrouped"]');
+    expect((await focused(w)).label).toContain('Ungrouped');
+    await w.keyboard.press('Enter');
+    await expect(w.getByText('empty', { exact: true })).toBeVisible();
+    await expect(w.locator('nav [role="status"]')).toHaveText(
+      `${title} is no longer in a group`
+    );
     expect((await focused(w)).cls).toBe('rail-row-open');
   });
 

@@ -53,7 +53,12 @@ export function Markdown({
     return (
       <div className={className} style={{ whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>
         {text}
-        <span style={{ color: 'var(--status-working)', opacity: 0.8 }}>{STREAMING_CARET}</span>
+        {/* -ink, and no opacity (#246, ported here when the move landed after
+            that fix): the caret is the only thing on screen saying the answer
+            is still arriving, so it is information, not decoration. The raw
+            hue at 0.8 opacity measured 2.08:1 on daylight, and the opacity is
+            a second contrast cut nothing measures — it goes, not gets tuned. */}
+        <span style={{ color: 'var(--status-working-ink)' }}>{STREAMING_CARET}</span>
       </div>
     );
   }
