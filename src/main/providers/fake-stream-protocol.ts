@@ -37,7 +37,10 @@ export interface FakeStreamHost {
 export const FAKE_SESSION_ID = '00000000-fake-4000-8000-000000000000';
 
 export class FakeStreamProtocol {
-  private readonly pending = new Map<string, { toolName: string; input: Record<string, unknown> }>();
+  private readonly pending = new Map<
+    string,
+    { toolName: string; input: Record<string, unknown>; hang?: boolean }
+  >();
   private requestSeq = 0;
 
   constructor(
@@ -187,6 +190,26 @@ export class FakeStreamProtocol {
       return;
     }
 
+    // Ask, then DO the tool and say nothing — the state a real gated call spends
+    // most of its life in (#310).
+    //
+    // `!perm` answers and replies in the same tick, which makes the fake kinder
+    // than the real thing in the one dimension #310 is about: a real tool takes
+    // SECONDS to run, and for all of them the CLI is silent. That silence is the
+    // bug's whole habitat — `needs-permission` used to be left standing until
+    // the next `assistant` message, so a fake that speaks instantly hides it
+    // (the same "a fake missing something the real thing does" argument the
+    // transcript and `--replay-user-messages` notes make above).
+    //
+    // Deliberately never finishes the turn, in the shape of `!hang`: the point
+    // is the window between the answer and the CLI speaking again, so ending it
+    // at all would just reintroduce a race about how long the window is.
+    if (text.startsWith('!permhang ')) {
+      const filePath = this.host.resolve(cwd, text.slice(10).trim());
+      this.askPermission('Write', { file_path: filePath, content: 'echo hi\n' }, true);
+      return;
+    }
+
     if (text.startsWith('!perm ')) {
       const target = text.slice(6).trim();
       const filePath = this.host.resolve(cwd, target);
@@ -232,24 +255,32 @@ export class FakeStreamProtocol {
 
     const inner = (r?.response ?? {}) as Record<string, unknown>;
     const filePath = String(req.input.file_path ?? '');
+    let said = '';
     if (inner.behavior === 'allow') {
       try {
         // Actually perform it, so a test can assert the FILE rather than our
         // narration — the same thing S-10 probe B checked.
         this.host.writeFile(filePath, String(req.input.content ?? ''));
-        this.emitAssistantText(`wrote ${filePath}`);
+        said = `wrote ${filePath}`;
       } catch (e) {
-        this.emitAssistantText(`failed to write ${filePath}: ${String(e)}`);
+        said = `failed to write ${filePath}: ${String(e)}`;
       }
     } else {
-      this.emitAssistantText(`denied write to ${filePath}`);
+      said = `denied write to ${filePath}`;
     }
+    // A `!permhang` request stops here, whatever happened: the tool has run and
+    // the CLI has gone quiet, which is the state a host must survive without
+    // claiming a question is still outstanding (#310). The file is the
+    // observable; the silence is the test. The guard sits OUTSIDE the branches
+    // so a failed write cannot break the silence it was asked for.
+    if (req.hang) return;
+    this.emitAssistantText(said);
     this.emitResult();
   }
 
-  private askPermission(toolName: string, input: Record<string, unknown>): void {
+  private askPermission(toolName: string, input: Record<string, unknown>, hang = false): void {
     const request_id = `fake-req-${++this.requestSeq}`;
-    this.pending.set(request_id, { toolName, input });
+    this.pending.set(request_id, { toolName, input, hang });
     // Shape copied verbatim from S-10 probe B's captured control_request,
     // including `decision_reason_type: 'safetyCheck'` and the suggestion —
     // those are exactly what P2-E18-07 has to render.

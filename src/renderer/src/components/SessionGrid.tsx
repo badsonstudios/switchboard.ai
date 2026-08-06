@@ -55,7 +55,13 @@ import { addPopoutWindow, removePopoutWindow } from '../lib/popout-windows';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { setDraggedCard } from '../lib/drag-context';
 import { writePromptToPty } from '../lib/composer';
-import { dropRetired } from '../lib/held-permissions';
+import {
+  dropRetired,
+  enqueueHeld,
+  HeldPermission,
+  IncomingPermission,
+  intakePermission,
+} from '../lib/held-permissions';
 
 /** Subscribe helper for useSyncExternalStore — module-level so its identity is
  *  stable across renders (a fresh function resubscribes every commit). */
@@ -218,17 +224,27 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   };
   // held permissions awaiting decisions (E10-04) — a QUEUE, not a slot:
   // parallel tool calls each hold their own request (review P0#4)
-  const [permQueue, setPermQueue] = React.useState<
-    Array<{
-      requestId: string;
-      sessionId: string;
-      tool: string;
-      input: Record<string, unknown>;
-      /** the CLI's own prose for WHY (P2-E18-07) — stream transport only */
-      reason?: string;
-    }>
-  >([]);
+  // The entry shape moved to `lib/held-permissions` with the rules that build
+  // and prune it (#310), so the queue and its reducers cannot drift apart.
+  const [permQueue, setPermQueue] = React.useState<HeldPermission[]>([]);
   const perm = permQueue[0] ?? null;
+  // "an answer just went out" — the window that keeps the terminal-handoff bar
+  // off the screen while the resolution makes its IPC round trip. Declared HERE,
+  // above both of its writers: the intake effect (auto-allow, #310) opens it too,
+  // and a setter read before its own `useState` line is a hazard nobody should
+  // have to reason about. Its timer and its clear live with `decide`.
+  //
+  // A COUNTER, not a boolean, and #310 is why. Setting a boolean that is already
+  // `true` is a React bail-out: no re-render, no effect re-run, so the 2s timer
+  // keeps its ORIGINAL deadline. That was survivable while only the manual
+  // Allow/Deny path opened the window — two clicks inside two seconds are rare —
+  // but an allow-all session opens it on EVERY gated call, so back-to-back is
+  // the normal case there, and the second call would have inherited whatever was
+  // left of the first one's window. A counter always changes, so the effect
+  // always re-arms.
+  const [decidedSeq, setDecidedSeq] = React.useState(0);
+  const recentlyDecided = decidedSeq > 0;
+  const noteDecided = (): void => setDecidedSeq((n) => n + 1);
   // ⋯ session-controls menu (E10-07, §5.17): GUI sugar that TYPES the real
   // slash command into the PTY — the CLI stays the source of truth
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -417,40 +433,20 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // it surfaces the Session tab whatever tab is active (review P0#5).
   React.useEffect(() => {
     if (!cardId) return;
-    const enqueue = (r: {
-      requestId: string;
-      sessionId: string;
-      cardId?: string;
-      tool: string;
-      input: Record<string, unknown>;
-      /** stream transport only (P2-E18-07): the CLI's own prose for WHY */
-      reason?: string;
-    }): void => {
-      if (r.cardId !== cardId) return;
-      if (sessionStore.isAllowAll(r.sessionId)) {
-        void window.switchboard.sessions.decidePermission(r.requestId, 'allow');
-        return;
-      }
-      setPermQueue((prev) =>
-        prev.some((p) => p.requestId === r.requestId)
-          ? prev
-          : [
-              ...prev,
-              {
-                requestId: r.requestId,
-                sessionId: r.sessionId,
-                tool: r.tool,
-                input: r.input,
-                // Field-by-field, so a new field is a DECISION rather than a
-                // silent pass-through — but that also means forgetting one is
-                // silent. `reason` was dropped exactly this way and only the
-                // e2e caught it; the unit tests all passed.
-                reason: r.reason,
-              },
-            ]
-      );
-      setView(DEFAULT_PANEL_ID);
-    };
+    // The RULE (and, since #310, the whole handler's wiring) lives in
+    // `lib/held-permissions`; this is the adapter that hands it the card's
+    // ports. See `intakePermission` for why the allow-all branch suppresses the
+    // handoff bar on its way out.
+    const enqueue = (r: IncomingPermission): void =>
+      intakePermission(r, cardId, {
+        isAllowAll: (sessionId) => sessionStore.isAllowAll(sessionId),
+        decide: (requestId, decision) => {
+          void window.switchboard.sessions.decidePermission(requestId, decision);
+        },
+        queue: (req) => setPermQueue((prev) => enqueueHeld(prev, req)),
+        surface: () => setView(DEFAULT_PANEL_ID),
+        suppressHandoff: () => noteDecided(),
+      });
     const offReq = window.switchboard.sessions.onPermissionRequest(enqueue);
     const offRes = window.switchboard.sessions.onPermissionResolved((r) => {
       setPermQueue((prev) => prev.filter((p) => p.requestId !== r.requestId));
@@ -508,17 +504,20 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     // flashes "switchboard can't answer it for you" where the button was
     // (#125 review). The window is generous on purpose: it costs nothing if
     // the status beats it, and a stale bar is worse than a late one.
-    setRecentlyDecided(true);
+    noteDecided();
   };
-  const [recentlyDecided, setRecentlyDecided] = React.useState(false);
+  // Keyed on the COUNTER, not on the boolean: every answer re-arms the full 2s
+  // (see the declaration). The cleanup cancels the previous deadline first, so
+  // consecutive answers never leave a stray timer that could close the window
+  // early on the one after it.
   React.useEffect(() => {
-    if (!recentlyDecided) return;
-    const id = setTimeout(() => setRecentlyDecided(false), 2_000);
+    if (decidedSeq === 0) return;
+    const id = setTimeout(() => setDecidedSeq(0), 2_000);
     return () => clearTimeout(id);
-  }, [recentlyDecided]);
+  }, [decidedSeq]);
   // a new hold means the round trip finished and the next question is live
   React.useEffect(() => {
-    if (perm) setRecentlyDecided(false);
+    if (perm) setDecidedSeq(0);
   }, [perm]);
 
   // membership follows the panel when the user drags it between dockview

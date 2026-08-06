@@ -803,6 +803,9 @@ app
     // session's transport, which only the manager can reach.
     const streamPermissions = new StreamPermissions(
       (sessionId, msg) => manager.sendToTransport(sessionId, msg),
+      // …and the answer ends `needs-permission` immediately, rather than when
+      // the CLI next speaks (#310). Same collaborator the hook path gets.
+      (sessionId, ev) => manager.apply(sessionId, ev),
       createLogger(sink, 'permissions')
     );
     manager.onStreamMessage((sessionId, msg) => streamPermissions.offer(sessionId, msg));
