@@ -219,9 +219,19 @@ describe('a re-run converges instead of duplicating (idempotency)', () => {
 });
 
 describe('CI is untouched (P2-E19-02 done-when)', () => {
-  it('still declares its two matrices, five jobs in total', () => {
+  it('still declares its two matrices — 4 jobs on PRs, 5 on main pushes', () => {
+    // The build matrix became conditional on 2026-08-06 (Dan's call): macOS
+    // runs on pushes to main only — across runs 1-6 its lone unique PR-gate
+    // signal was the known fs.watch flake, at a full re-run per sighting.
+    // This pin holds BOTH halves of the conditional, so dropping an OS from
+    // either event, or reordering the ternary, fails here rather than
+    // silently shrinking coverage.
     const ci = read(CI);
-    expect(ci).toContain('os: [windows-latest, ubuntu-latest, macos-latest]');
+    expect(ci).toContain(
+      'os: ${{ github.event_name == \'push\' && ' +
+        'fromJSON(\'["windows-latest", "ubuntu-latest", "macos-latest"]\') || ' +
+        'fromJSON(\'["windows-latest", "ubuntu-latest"]\') }}'
+    );
     expect(ci).toContain('os: [windows-latest, ubuntu-latest]');
   });
 
