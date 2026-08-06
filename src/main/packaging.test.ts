@@ -126,6 +126,28 @@ describe('packaging config (P2-E19-01)', () => {
     expect(config.linux).toBeUndefined();
   });
 
+  it('never publishes anything, anywhere (#273)', () => {
+    // `null`, NOT absent. app-builder-lib's getPublishConfigs returns null the
+    // moment it sees an explicit null and stops before resolving a provider.
+    // With the key missing, electron-builder 26 escalates an unset policy to
+    // `onTagOrDraft` on CI detection, infers a github provider from the git
+    // remote to write update info, and kills a fully-successful build with
+    // "GitHub Personal Access Token is not set" — which is exactly what
+    // release.yml's first dry run did. Releases are made by `gh release create`
+    // in the release job and by nothing else (E19 decision 2).
+    expect('publish' in config, `${CONFIG_FILE} must set publish explicitly`).toBe(true);
+    expect(config.publish).toBeNull();
+  });
+
+  it('says so at the invocation site too, so CI never escalates the policy', () => {
+    // Belt and braces, and the thing electron-builder's own warning asks for:
+    // with `--publish never` the implicit-publishing branch is never taken at
+    // all, so the CI log stops claiming publishing was triggered. The
+    // pass-through args follow it, so `npm run package -- --dir` still works.
+    const script = read('scripts/package.js').replace(/\s+/g, ' ');
+    expect(script).toContain("'--publish', 'never', ...process.argv.slice(2)");
+  });
+
   it('writes to dist/, and dist/ is gitignored', () => {
     const dirs = config.directories as { output: string };
     expect(dirs.output).toBe('dist');

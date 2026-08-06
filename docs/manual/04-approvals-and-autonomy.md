@@ -25,6 +25,12 @@ If several requests pile up, they queue: the bar shows **+2 more waiting** and
 advances as you answer. The card surfaces its Session tab automatically when a
 request arrives, even if you were looking at the Terminal.
 
+A request belongs to the session that asked it. If that session ends — you hit
+**Restart**, you close a popped-out window and it suspends, or it exits on its
+own — anything still waiting in its bar goes with it. There is nothing left to
+answer, so switchboard drops the question rather than showing it to whatever
+runs on the card next.
+
 ## Autonomy modes
 
 Each session runs at one of four levels. Click the shield chip under the prompt

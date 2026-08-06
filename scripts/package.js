@@ -46,4 +46,17 @@ const binDir = path.join(root, 'node_modules', '.bin');
 const ext = process.platform === 'win32' ? '.cmd' : '';
 
 run(path.join(binDir, `electron-vite${ext}`), ['build']);
-run(path.join(binDir, `electron-builder${ext}`), process.argv.slice(2));
+
+// `--publish never`, explicitly, every time — the flag electron-builder 26 asks
+// for by name when it detects CI and quietly escalates an unset policy to
+// `onTagOrDraft` (#273: a green Windows build died on "GitHub Personal Access
+// Token is not set" after the installer was already written). electron-builder.js
+// also sets `publish: null`, which is the belt to this pair of braces: the config
+// makes a publisher impossible to construct, the flag stops the escalation from
+// being attempted, and the log stops saying publishing was triggered when it was
+// not. Publishing is `gh release create` in .github/workflows/release.yml, never
+// this — so this is deliberately not overridable: the pass-through args follow it
+// (`npm run package -- --dir` still works), but a second `--publish` would only
+// give yargs an array for a `choices` option, and the config would refuse to
+// resolve a publisher regardless.
+run(path.join(binDir, `electron-builder${ext}`), ['--publish', 'never', ...process.argv.slice(2)]);

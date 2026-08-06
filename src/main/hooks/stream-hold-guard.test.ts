@@ -119,7 +119,13 @@ describe('a stream session is never held on a hook (P2-E18-07)', () => {
   // app before this epic) behaves exactly as before.
   it('an absent transportFor behaves as PTY', async () => {
     const other = new HookListener({
-      stateDir: dir,
+      // Its OWN stateDir, not the outer listener's (#282): `start()` now sweeps
+      // orphaned `hook-token` files, so two listeners sharing a directory means
+      // the second one starting revokes the first one's live tokens. Harmless
+      // today only because nothing is registered in `dir` at this point — add a
+      // `preToolUse()` above this and the 401 that follows would look like
+      // anything but a sweep.
+      stateDir: tempDir('sb-shg-other-'),
       log: createLogger(new LogSink({ dir }), 'hooks'),
       manager: { apply: () => {}, setNativeSessionId: () => {} },
       autonomyFor: () => 'ask',
