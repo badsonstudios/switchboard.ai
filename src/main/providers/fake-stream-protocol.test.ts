@@ -236,6 +236,44 @@ describe('the can_use_tool round trip (P2-E18-04)', () => {
     expect(assistantText()).toContain('denied');
   });
 
+  // #310 — the silence between an answer and the CLI speaking again.
+  //
+  // `!perm` replies in the same tick, which is the one way the fake is kinder
+  // than the real CLI: a real tool takes seconds to run and the CLI says
+  // nothing for all of them. `!permhang` reproduces that, so a host can be
+  // asked what it claims about a session whose question has been ANSWERED and
+  // whose tool has not finished.
+  it('!permhang performs the write and then says nothing at all', () => {
+    proto.handle(userMsg('!permhang .claude/slow.sh'));
+    const req = out.find((m) => m.type === 'control_request') as { request_id: string };
+    expect(req).toBeTruthy();
+    out.length = 0;
+
+    proto.handle({
+      type: 'control_response',
+      response: { subtype: 'success', request_id: req.request_id, response: { behavior: 'allow' } },
+    });
+
+    // the tool RAN — that is the observable a test waits on
+    expect(writes).toEqual([{ path: '/work/.claude/slow.sh', content: 'echo hi\n' }]);
+    // …and the CLI has gone quiet: no narration, no result, no turn end
+    expect(out).toEqual([]);
+  });
+
+  it('!permhang denied is just as quiet, and writes nothing', () => {
+    proto.handle(userMsg('!permhang .claude/slow.sh'));
+    const req = out.find((m) => m.type === 'control_request') as { request_id: string };
+    out.length = 0;
+
+    proto.handle({
+      type: 'control_response',
+      response: { subtype: 'success', request_id: req.request_id, response: { behavior: 'deny' } },
+    });
+
+    expect(writes).toEqual([]);
+    expect(out).toEqual([]);
+  });
+
   it('an answer to a request we never asked is ignored, not a crash', () => {
     expect(() =>
       proto.handle({

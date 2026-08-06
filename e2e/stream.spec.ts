@@ -710,3 +710,127 @@ test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
     await expect(w.getByText(/FAKE-REPLY: remember this prompt/)).toHaveCount(1);
   });
 });
+
+// #310 — an allow-all Direct session runs gated tools with NO handoff banner.
+//
+// Dan, dogfooding 2026-08-06: a Direct session with "Allow all (this session)"
+// on grew "Claude is asking permission in the terminal", over an [Open Terminal]
+// button, above the composer, on EVERY gated call — for about five seconds each
+// time, in a transport that has no terminal. Two causes, both fixed here:
+// `StreamPermissions.decide` never applied `permission-resolved` (so the status
+// only left `needs-permission` when the CLI next spoke, i.e. after the tool had
+// run), and the renderer's auto-allow branch answered without opening the
+// `recentlyDecided` window the manual Allow/Deny path opens.
+//
+// AN INDEPENDENT GUARD, deliberately. The transport prop that would let
+// `terminalHandoff` short-circuit on `transport === 'stream'` is #261's fix and
+// is NOT on this branch — `panels.tsx` still does not forward `ctx.transport`
+// to `<FeedView>`. So everything asserted below is carried by the status and
+// suppression fixes alone. It keeps its value after #261 lands: that fix hides
+// the bar, this one proves the state underneath it is not wrong.
+//
+// IT USES `!permhang`, AND THAT IS THE WHOLE TEST. Measured while writing it:
+// with both fixes reverted and a plain `!perm`, this spec still PASSED — the
+// fake answers and replies in the same tick, so the buggy `needs-permission`
+// window never survived a task boundary and there was nothing to catch. The bug
+// lives in the seconds a REAL tool spends running while the CLI says nothing,
+// and `!permhang` is that silence, modelled: the fake performs the write and
+// then emits nothing at all. Under the old code the card stays in
+// `needs-permission` for ever there; under this one it is `working` the instant
+// the answer is sent. Re-verified by reverting both fixes: this then fails with
+// one counted frame, and the bar is still on screen when the test ends.
+//
+// It is the STATUS fix this pins, measured the same way: restoring
+// `StreamPermissions.decide`'s `permission-resolved` alone makes it pass again,
+// because against the fake the IPC round trip is too short for a frame to land
+// in between. The renderer's `suppressHandoff` covers that round trip — a
+// loaded machine, a busy renderer — and is pinned where it can be asserted
+// without a race, in `lib/held-permissions.test.ts`.
+//
+// A MutationObserver rather than a poll so the count is of DOM CHANGES, not of
+// samples — a bar that came and went between two 100ms probes would be invisible
+// to a poll and is not to this. It is not infinitely fine either, and it should
+// not be read as if it were: observer callbacks are batched at the microtask
+// checkpoint, so a node added AND removed inside one batch leaves nothing for
+// `innerText` to find. That is the limit, and it is comfortably below the thing
+// under test — the hold and its resolution arrive on separate IPC messages, and
+// reverting the fixes does make this fail.
+test.describe('allow-all in Direct mode never hands off to a terminal (#310)', () => {
+  let a: LaunchedApp | undefined;
+  test.afterEach(async () => {
+    const launched = a;
+    a = undefined; // cleared BEFORE the close — see `teardown`
+    await teardown(launched);
+  });
+
+  /** the handoff bar's headline, verbatim from `i18n/locales/en.json` */
+  const HANDOFF = /Claude is asking permission in the terminal/i;
+
+  test('a gated tool runs end to end with the handoff bar never rendered', async () => {
+    // Two full turns plus a deliberate 3s sit in the silence, against a 60s
+    // default. Comfortable on this machine (~25s) and not on a cold runner,
+    // where a timeout would cost two runs under `retries: 1`.
+    test.setTimeout(90_000);
+    const folder = tempProjectFolder();
+    a = await launchApp({
+      seedFolder: folder,
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+    });
+    const w = a.window;
+
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+
+    // 1. the first gated call is answered by hand — this is what turns allow-all
+    //    on, and it is the only bar the user should ever see in this test.
+    await box.click();
+    await box.fill('!perm .claude/scripts/one.sh');
+    await box.press('Enter');
+    await expect(w.getByText(/sensitive file/)).toBeVisible({ timeout: 30_000 });
+    await w.getByRole('button', { name: 'Allow all (this session)' }).click();
+    await expect(() => {
+      expect(fs.existsSync(path.join(folder, '.claude', 'scripts', 'one.sh'))).toBe(true);
+    }).toPass({ timeout: 20_000 });
+
+    // 2. start counting commits that contain the bar. Installed AFTER the manual
+    //    answer so the count is about the AUTO-allow path and nothing else.
+    await w.evaluate((pattern) => {
+      const win = window as unknown as { __sbHandoffFrames?: number };
+      win.__sbHandoffFrames = 0;
+      const re = new RegExp(pattern, 'i');
+      const look = (): void => {
+        if (re.test(document.body.innerText ?? '')) win.__sbHandoffFrames!++;
+      };
+      new MutationObserver(look).observe(document.body, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+      look(); // the state it starts in counts too
+    }, HANDOFF.source);
+
+    // 3. a second gated call, answered by the allow-all path with no bar, no
+    //    queue and no user click — and then a tool that RUNS while the CLI
+    //    stays silent, which is where the five seconds used to go.
+    await box.click();
+    await box.fill('!permhang .claude/scripts/two.sh');
+    await box.press('Enter');
+    await expect(() => {
+      expect(fs.existsSync(path.join(folder, '.claude', 'scripts', 'two.sh'))).toBe(true);
+    }).toPass({ timeout: 30_000 });
+    // The file proves the answer was delivered. Now sit in the silence: nothing
+    // further will ever arrive on this turn, so this is the whole window the old
+    // code spent advertising a question that had already been answered.
+    await w.waitForTimeout(3_000);
+
+    // 4. the whole point: not once, not for a frame.
+    const frames = await w.evaluate(
+      () => (window as unknown as { __sbHandoffFrames?: number }).__sbHandoffFrames ?? -1
+    );
+    expect(frames, 'the terminal-handoff bar rendered during an auto-allowed tool call').toBe(0);
+    await expect(w.getByText(HANDOFF)).toHaveCount(0);
+  });
+});

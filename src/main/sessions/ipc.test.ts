@@ -333,6 +333,10 @@ function streamPerms(): {
       sent.push({ sessionId, msg: msg as Record<string, unknown> });
       return true;
     },
+    // #310's third collaborator. These tests are about the RELEASE half, which
+    // deliberately applies nothing (see `forgetSession`), so a no-op here is
+    // the honest stand-in — `stream-permissions.test.ts` owns the assertions.
+    () => {},
     { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as unknown as Logger
   );
   return { perms, sent };

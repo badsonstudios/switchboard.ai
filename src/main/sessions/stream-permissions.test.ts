@@ -6,6 +6,8 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { StreamPermissions } from './stream-permissions';
+import { SessionEvent, transition } from './state-machine';
+import { streamStatusEvent } from './stream-status';
 import { PermissionRequest } from '../hooks/hook-listener';
 import { FakeStreamProtocol } from '../providers/fake-stream-protocol';
 import { LogSink, createLogger } from '../log/logger';
@@ -14,6 +16,8 @@ let dir: string;
 let sent: Array<{ sessionId: string; msg: Record<string, unknown> }>;
 let requests: PermissionRequest[];
 let resolved: string[];
+/** every `SessionManager.apply` the router made — #310's whole subject */
+let applied: Array<{ sessionId: string; ev: SessionEvent }>;
 let perms: StreamPermissions;
 
 /** The exact payload S-10 probe B captured off the real CLI. */
@@ -41,11 +45,13 @@ beforeEach(() => {
   sent = [];
   requests = [];
   resolved = [];
+  applied = [];
   perms = new StreamPermissions(
     (sessionId, msg) => {
       sent.push({ sessionId, msg: msg as Record<string, unknown> });
       return true;
     },
+    (sessionId, ev) => applied.push({ sessionId, ev }),
     createLogger(new LogSink({ dir }), 'perm')
   );
   perms.onPermissionRequest((r) => requests.push(r));
@@ -234,6 +240,7 @@ describe('the .claude/ case, end to end against the fake (P2-E18-07)', () => {
         proto.handle(msg as Record<string, unknown>);
         return true;
       },
+      () => {},
       createLogger(new LogSink({ dir }), 'perm')
     );
     let asked: PermissionRequest | undefined;
@@ -275,6 +282,7 @@ describe('the .claude/ case, end to end against the fake (P2-E18-07)', () => {
         proto.handle(msg as Record<string, unknown>);
         return true;
       },
+      () => {},
       createLogger(new LogSink({ dir }), 'perm')
     );
     let asked: PermissionRequest | undefined;
@@ -322,5 +330,78 @@ describe('the two channels do not both ask (P2-E18-07)', () => {
     perms.offer('s1', canUseTool('r', 'C:/proj/.claude/settings.json'));
     expect(requests).toHaveLength(1);
     expect(requests[0].reasonType).toBe('safetyCheck');
+  });
+});
+
+// #310 — the answer ends `needs-permission`. Nothing else does, in time.
+//
+// The hook path has applied `permission-resolved` on every decision since
+// E2-05. The stream path never did, and the gap is not academic: the ONLY other
+// thing that leaves `needs-permission` in stream mode is the next
+// `assistant`/`stream_event` off the CLI, and the CLI does not speak again until
+// the tool it just asked about has RUN. Dan measured the consequence live —
+// ~5s of "Claude is asking permission in the terminal" per gated call, in a
+// transport with no terminal.
+//
+// These run the state machine for real rather than asserting on the recorded
+// `apply` call alone, because "the router called apply" is not the claim; "the
+// card stops saying needs-permission" is.
+describe('a decision resolves the status, without waiting for the CLI (#310)', () => {
+  it('applies permission-resolved to the deciding session', () => {
+    perms.offer('s1', canUseTool());
+    perms.decide('stream:s1:req-1', 'allow');
+
+    expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved' } }]);
+  });
+
+  it('walks needs-permission back to working with NO further stream message', () => {
+    // 1. the CLI asks: this is what put the card in needs-permission — the
+    //    same message, through the same mapper `SessionManager` uses
+    const asking = canUseTool();
+    expect(transition('working', streamStatusEvent(asking)!).status).toBe('needs-permission');
+    perms.offer('s1', asking);
+
+    // 2. the user answers. Nothing else arrives — no assistant, no
+    //    stream_event, no result. The stream is silent, as it is in reality
+    //    until the tool has run.
+    perms.decide('stream:s1:req-1', 'allow');
+
+    // 3. and the card is already out of needs-permission
+    expect(applied).toHaveLength(1);
+    expect(transition('needs-permission', applied[0].ev).status).toBe('working');
+  });
+
+  it('a denial resolves the status too — a refused tool is not a pending question', () => {
+    perms.offer('s1', canUseTool());
+    perms.decide('stream:s1:req-1', 'deny', 'no');
+
+    expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved' } }]);
+  });
+
+  it('an id it does not own moves nobody', () => {
+    expect(perms.decide('hook-request-42', 'allow')).toBe(false);
+    expect(applied).toEqual([]);
+  });
+
+  it('deciding twice applies once', () => {
+    perms.offer('s1', canUseTool());
+    perms.decide('stream:s1:req-1', 'allow');
+    perms.decide('stream:s1:req-1', 'allow');
+    expect(applied).toHaveLength(1);
+  });
+
+  // The deliberate NON-mirror, and it mirrors the hook path exactly:
+  // `HookListener.release` does not apply either. Both callers of
+  // `forgetSession` are teardowns (`ipc.ts` -> `releaseHeldPermissions`), and a
+  // transition there would walk a dying session to `working` a beat before its
+  // exit lands — see that function's own comment. The CLI still gets its
+  // answer; only the badge stays put.
+  it('a teardown answers the CLI but does NOT walk a dying session to working', () => {
+    perms.offer('s1', canUseTool());
+    perms.forgetSession('s1', 'session closed');
+
+    expect(sent).toHaveLength(1); // the CLI is released
+    expect(resolved).toEqual(['stream:s1:req-1']); // the bar comes down
+    expect(applied).toEqual([]); // and the status is left alone
   });
 });
