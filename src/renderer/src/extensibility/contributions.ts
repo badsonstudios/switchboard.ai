@@ -146,7 +146,24 @@ export interface PanelContext {
   recentlyDecided?: boolean;
   /** count of changed files, for a tab badge */
   changed: number;
-  approval?: { requestId: string; tool: string; input: Record<string, unknown> } | null;
+  /**
+   * The held request, if the CLI delegated one to us.
+   *
+   * `reason` found by #261's dropped-prop audit: the Session panel's consumer
+   * declares it and `ApprovalBar` RENDERS it — it is the stream transport's
+   * whole "the CLI tells you why" payoff (P2-E18-07) — but this context, the
+   * seam a contributed panel is written against, did not. It survives at
+   * runtime only because SessionGrid assigns a variable here, so excess-property
+   * checking never fires; a panel written against this type could not reach it.
+   * Same shape as the bug this audit came from, one level up.
+   */
+  approval?: {
+    requestId: string;
+    tool: string;
+    input: Record<string, unknown>;
+    /** the CLI's own prose for WHY — stream transport only */
+    reason?: string;
+  } | null;
   approvalQueued?: number;
   onDecide?: (decision: 'allow' | 'deny', allowAll?: boolean) => void;
   onCycleAutonomy?: () => void;

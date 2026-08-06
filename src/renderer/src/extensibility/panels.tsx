@@ -65,6 +65,15 @@ export const sessionPanels: PanelContribution[] = [
         model={ctx.model}
         approval={ctx.approval}
         approvalQueued={ctx.approvalQueued}
+        // #261: the handoff bar routes the user to the Terminal in EVERY
+        // branch, and a stream session has none — so without this the bar is
+        // not merely unhelpful, it is false and its button is dead. The guard
+        // has lived in `terminalHandoff` since #153's follow-up; it was dead
+        // code the whole time because this render site never threaded the
+        // context through. The sibling Terminal panel below reads the same
+        // `ctx.transport` and got it right, which is how two surfaces in one
+        // window came to contradict each other.
+        transport={ctx.transport}
         onDecide={ctx.onDecide}
         onCycleAutonomy={ctx.onCycleAutonomy}
         onJumpToTerminal={() => ctx.setView('terminal')}

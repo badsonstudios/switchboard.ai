@@ -75,10 +75,13 @@ switchboard can't see them. After about eight seconds the Session tab shows a
 bar across the bottom: **"Claude is showing a start-up dialog."** Click **Open
 Terminal**, answer the prompt there, and the session carries on normally.
 
+This one is **Terminal mode only** — a [Direct mode](12-direct-mode.md) session
+draws no start-up dialog and has no terminal, so it never shows that bar.
+
 **Claude asked me in the Terminal instead of in the card.**
-That's the deliberate fallback, and the Session tab tells you when it happens —
-a coloured bar along the bottom with an **Open Terminal** button, in the same
-place the Allow/Deny bar appears.
+That's the deliberate fallback in the default **Terminal mode**, and the Session
+tab tells you when it happens — a coloured bar along the bottom with an **Open
+Terminal** button, in the same place the Allow/Deny bar appears.
 
 Two different things can put it there. Usually switchboard simply couldn't get
 the question in front of you and handed it back rather than answering on your
@@ -92,6 +95,13 @@ the Terminal; choosing the "…for this session" option stops it repeating until
 that session ends.
 
 Either way, **nothing gets auto-approved.**
+
+None of this applies to a session on [Direct mode](12-direct-mode.md). That mode
+exists to stop permissions escaping into a terminal in the first place: Claude
+hands the decision to switchboard properly and you answer it in the card. There
+is no terminal to be sent to, so no bar and no **Open Terminal** button ever
+appear — switchboard stays quiet rather than offering a button that goes
+nowhere.
 
 **The Session tab is empty but the Terminal is working.**
 The tab itself tells you which case you're in — read what it says before doing
