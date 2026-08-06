@@ -600,6 +600,8 @@ export interface PersistedUi {
   layoutMode?: { mode?: string };
   presentation?: Record<string, { ladder?: string }>;
   presentationPolicy?: { global?: string; cards?: Record<string, string> };
+  /** §5.8's focus-stealing policy (P2-E9-10) — global + per-session overrides */
+  focusPolicy?: { global?: string; cards?: Record<string, string> };
 }
 
 /**
@@ -745,9 +747,12 @@ export async function hookPoster(
     const f = findFile(a.home, 'switchboard.log');
     return f && fs.readFileSync(f, 'utf8').includes('hook listener up') ? f : null;
   });
-  const port = Number(
-    /"msg":"hook listener up".*?"port":(\d+)/.exec(fs.readFileSync(logFile, 'utf8'))![1]
-  );
+  // The LAST listener, not the first. The log is appended to across launches
+  // and a spec that relaunches into the same home (twoGroups, every persistence
+  // test) leaves a dead port at the top of the file — posting to it fails with
+  // ECONNREFUSED and looks like a product bug rather than a stale read.
+  const ports = [...fs.readFileSync(logFile, 'utf8').matchAll(/"msg":"hook listener up".*?"port":(\d+)/g)];
+  const port = Number(ports[ports.length - 1][1]);
   const tokens = await poll(() => {
     const t = findTokens(a.home);
     return t.size >= expectSessions ? t : null;

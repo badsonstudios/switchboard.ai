@@ -34,8 +34,12 @@ Each group header counts its own waiting sessions (**"2 need you"**, or
 for the whole workspace.
 
 Click a row to jump to that session. Double-click to rename it. Right-click for
-**Open changes**, **Rename**, **Close session**, and
+**Open changes**, **Rename**, **Pin session**, **Close session**, and
 [what this session does when you submit a prompt](#changing-it).
+
+A **pinned** session (📌) sorts to the top of the list — of its group, if it is
+in one — and is skipped by everything that acts on sessions in bulk. See
+[Pinning a session](02-sessions.md#pinning-a-session-you-always-want-to-find).
 
 Sessions that are suspended or not currently on screen still appear here — the
 list is the complete inventory.
@@ -186,7 +190,9 @@ reappears in its old spot without you doing anything.
 
 It reappears *without stealing your place*. Whatever you were typing in stays
 focused — the returning card waits for you rather than grabbing the screen. Its
-lamp and the Events list are what tell you it's waiting.
+lamp and the Events list are what tell you it's waiting. (If you'd rather it
+*did* jump you straight there — or rather it didn't reappear at all — that's a
+setting: see [When a session interrupts you](#when-a-session-interrupts-you).)
 
 Where a session sits on the ladder is remembered across restarts: sessions come
 back collapsed, tabbed or hidden exactly as you left them. One thing
@@ -339,6 +345,60 @@ beats the global one. All of it is remembered across restarts.
 - **It isn't triggered by the ⋯ menu.** Running `/compact` or `/clear` from the
   session controls isn't "submitting a prompt", and the workspace folding away
   because you picked a menu item would be baffling.
+
+## When a session interrupts you
+
+That setting is about what happens when *you* send a prompt. This one is the
+other direction: what a session is allowed to do to your screen when **it**
+finishes, asks a question, or asks permission.
+
+There are four settings, from loudest to quietest:
+
+| Setting | When a session needs you |
+|---|---|
+| **Always jump to it** | its card comes back if it isn't in the workspace, and you're taken straight to it |
+| **Jump if it's on screen** | you're taken to it *only* when you can already see its card. Otherwise your cursor stays where it is *(default)* |
+| **Never jump, just the lamp** | nothing on screen moves at all. Its lamp lights and it joins the Events list, and that's the whole of it |
+| **Never jump, skip the queue** | as above, and it doesn't join the queue either: `Ctrl+Space` never stops there and it's never marked *next* |
+
+**Jump if it's on screen** is the default, and it's the one that reads as
+"sensible": if two sessions are side by side and the one you aren't typing in
+finishes, moving over to it costs you nothing. It's careful about what "on
+screen" means — a card sitting behind another card's tab doesn't count, and
+neither does one in a pop-out window you aren't currently in.
+
+What happens to a card you *can't* see depends on where it is. Collapsed,
+hidden or stacked as a tabbed session, it **comes back to its spot** — that's
+[the reveal described above](#coming-back), and it happens without taking your
+cursor. Merely sitting behind another card's tab, nothing moves at all: it's
+already in the workspace, and flipping the tab you're working in would be the
+very interruption this setting exists to avoid. Either way its lamp lights.
+
+**Never jump** is the setting for a long build you want to hear about but never
+be dragged to — and it stops the card reappearing as well, so the workspace
+stays exactly as you arranged it. **Always jump** is its opposite: useful when
+you're watching one thing and want to be pulled to whatever calls next.
+
+**Never jump, skip the queue** goes one further and takes the session off the
+to-do list entirely — worth knowing that a session on it can hold a permission
+indefinitely without ever showing up under `Ctrl+Space`. Its row in the Sessions
+list and its lamp still show what it's doing; nothing routes you there. It is
+**not** a mute button: sounds, the taskbar flash and OS toasts are the separate
+**🔔** notification switch in the title bar, not this setting.
+
+### Changing it
+
+- **For everything:** the command palette (`Ctrl+Shift+P`) — search for *needs
+  you*. All four are there. (No title-bar chip for this one: unlike the **⬍**
+  chip, its default is what the app has always done, so there's nothing to
+  explain at a glance.)
+- **For one session:** right-click its row in the Sessions list. The **WHEN IT
+  NEEDS YOU** section at the bottom of the menu has all four, plus **Follow the
+  default** — which is how you go back to the global setting, including after
+  you change it later.
+
+A session's own choice beats the global one, and both are remembered across
+restarts. There's no group level for this one.
 
 ## Rearranging cards
 

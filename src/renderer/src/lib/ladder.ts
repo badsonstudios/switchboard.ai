@@ -44,6 +44,7 @@ import type { Ladder } from './presentation';
 import type { RailSession } from '../model/types';
 import { presentStatus, StatusToken } from './rail-view';
 import type { AttentionEvent } from './queue';
+import { type AttentionResponse, revealsCard, takesFocus } from './focus-policy';
 
 /** Top (most screen) to bottom (none). The order IS the ladder. */
 export const LADDER_ORDER: readonly Ladder[] = ['expanded', 'collapsed', 'tabbed', 'hidden'];
@@ -106,8 +107,14 @@ export function slotIsLive(rung: Ladder): boolean {
  * parenthetical. `crashed` is NOT among them and that is deliberate rather than
  * an oversight: §5.8 enumerates three, a crashed session is not waiting on an
  * answer, and it still reaches you through the attention queue, its lamp and
- * the events list. Widening this is E9-10's call (focus-stealing policy), not
- * a quiet decision to make here.
+ * the events list.
+ *
+ * E9-10 was named here as the item that would decide whether to widen it, and
+ * it decided NOT to. The focus-stealing policy governs what a session that
+ * "finishes or needs attention" may do — §5.8's own words, and the same three
+ * kinds. A crash is neither; it is a session that has stopped, and pulling the
+ * screen (or the cursor) to a dead terminal ahead of two live ones waiting on
+ * an answer would invert the queue's own priority order.
  */
 export const REVEAL_KINDS: readonly AttentionEvent['kind'][] = [
   'needs-permission',
@@ -130,6 +137,13 @@ export interface RevealEvent {
 export interface RevealPlan {
   /** cards to bring back to `expanded`, in event order */
   cardIds: string[];
+  /**
+   * Cards the focus-stealing policy lets take the cursor, in event order
+   * (P2-E9-10). NOT a subset of `cardIds`: a card that is already on screen is
+   * focused without being placed, which is the whole of what `smart` does for a
+   * card you can see.
+   */
+  focusIds: string[];
   /** the event ids now accounted for — carry this forward */
   seen: ReadonlySet<number>;
 }
@@ -158,23 +172,53 @@ export function revealTargets(
   opts: {
     /** live session id -> durable card id */
     cardIdFor: (sessionId: string) => string;
-    /** the card's current rung */
-    rungOf: (cardId: string) => Ladder;
+    /**
+     * Is this card's panel actually ON SCREEN right now?
+     *
+     * dockview's truth, not a rung: a card can be `expanded` and still be the
+     * unselected tab of a stack, showing nothing but its label. This used to be
+     * `rungOf` and a `=== 'expanded'` test, which got both halves subtly wrong —
+     * it would have re-placed a panel that was merely behind a tab, and it made
+     * "visible" (E9-10's word) mean something the user cannot see.
+     */
+    onScreen: (cardId: string) => boolean;
     /** false for the first list after boot: seed `seen`, reveal nothing */
     act: boolean;
+    /**
+     * §5.8's focus-stealing policy for this card (P2-E9-10) — what its owner
+     * said an attention event may do to the workspace.
+     *
+     * REQUIRED, and deliberately not defaulted. A default would be the one
+     * thing this module must not own: which of four settings a user is on. A
+     * new call site that forgot it would get someone's preference by accident,
+     * which is precisely the "answered by accident" §5.8 wrote this item to
+     * stop. lib/focus-policy's `attentionResponse` is the answer; nothing here
+     * knows how it was reached.
+     */
+    respond: (cardId: string, onScreen: boolean) => AttentionResponse;
   }
 ): RevealPlan {
   const live = new Set<number>();
   const cardIds: string[] = [];
+  const focusIds: string[] = [];
   for (const e of events) {
     live.add(e.id);
     if (!opts.act) continue;
     if (seen.has(e.id)) continue;
     if (!REVEAL_KINDS.includes(e.kind)) continue;
     const cardId = opts.cardIdFor(e.sessionId);
-    // already at the top of the ladder: nothing to reveal, and re-placing a
-    // panel that is on screen would yank focus for no reason
-    if (!cardId || opts.rungOf(cardId) === 'expanded') continue;
+    if (!cardId) continue;
+    const onScreen = opts.onScreen(cardId);
+    const response = opts.respond(cardId, onScreen);
+    // `mark` and `ignore` change nothing about the workspace — the lamp and the
+    // queue are the whole of their answer, and neither is ours to place here.
+    if (!revealsCard(response)) continue;
+    if (takesFocus(response) && !focusIds.includes(cardId)) focusIds.push(cardId);
+    // A card you can already see has nothing to place, whatever rung it is on.
+    // Placing it anyway would be a move for nothing at best — and at worst it
+    // would drag a `tabbed` card out of the stack it was deliberately put in,
+    // which is a rearrangement of the workspace, not a focus.
+    if (onScreen) continue;
     if (!cardIds.includes(cardId)) cardIds.push(cardId);
   }
   // prune first, then admit: an id that is no longer in the feed must be
@@ -182,7 +226,7 @@ export function revealTargets(
   const next = new Set<number>();
   for (const id of seen) if (live.has(id)) next.add(id);
   for (const id of live) next.add(id);
-  return { cardIds, seen: next };
+  return { cardIds, focusIds, seen: next };
 }
 
 // ── the collapsed strip ─────────────────────────────────────────────────────
@@ -198,6 +242,8 @@ export interface CollapsedRow {
   labelKey: string;
   /** the session's identity color, for the row's leading bar */
   accent?: string;
+  /** §5.8's pinning contract (E9-09): this row never folds into the aggregate */
+  pinned?: boolean;
 }
 
 /**
@@ -213,7 +259,11 @@ export interface CollapsedRow {
  */
 export function collapsedRows(
   sessions: readonly RailSession[],
-  rungOf: (cardId: string) => Ladder
+  rungOf: (cardId: string) => Ladder,
+  /** §5.8's pinning contract (E9-09) — carried on the row so `foldableRow`
+   *  stays a function of the row alone, exactly as the other three carve-outs
+   *  are. Defaults to "nothing is pinned" so every existing caller is unmoved. */
+  pinnedOf: (cardId: string) => boolean = () => false
 ): CollapsedRow[] {
   return sessions
     .filter((s) => showsRow(rungOf(s.id)))
@@ -226,6 +276,7 @@ export function collapsedRows(
         needsYou: p.needsYou,
         labelKey: p.labelKey,
         ...(s.accent ? { accent: s.accent } : {}),
+        ...(pinnedOf(s.id) ? { pinned: true } : {}),
       };
     });
 }
@@ -267,7 +318,7 @@ export type StripItem =
 /**
  * May this row disappear into the aggregate?
  *
- * The three carve-outs are §5.8's, in its own order:
+ * The four carve-outs are §5.8's, in its own order:
  *
  *   • WORKING is not idle. `token` is lib/rail-view's vocabulary, so 'starting'
  *     reads as working here exactly as it does in the rail and on the lamps —
@@ -285,9 +336,18 @@ export type StripItem =
  *     a dockview panel and so is not in the strip at all — and it stays because
  *     the strip must not silently depend on that invariant holding for every
  *     future thing that drives rungs from outside a card.
+ *   • A PINNED SESSION never folds (E9-09). §5.8's pinning contract names idle
+ *     aggregation among the bulk operations a pinned session is exempt from,
+ *     and this is that operation — the fold is precisely the thing that takes a
+ *     session's position in the list away, which is what pinning protects. Note
+ *     it does NOT keep the session expanded: a pinned card a layout mode
+ *     collapsed is still a strip row, it just stays a row OF ITS OWN. That is
+ *     "protects existence and position, not size", in one line.
  */
 export function foldableRow(row: CollapsedRow, activeCardId: string | null): boolean {
-  return row.token === 'idle' && !row.needsYou && row.cardId !== activeCardId;
+  return (
+    row.token === 'idle' && !row.needsYou && !row.pinned && row.cardId !== activeCardId
+  );
 }
 
 /**

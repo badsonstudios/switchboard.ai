@@ -6,6 +6,7 @@
 // functions precisely so these can be tests rather than e2e guesses.
 import { describe, it, expect } from 'vitest';
 import type { AttentionEvent } from './queue';
+import type { AttentionResponse } from './focus-policy';
 import {
   collapsedRows,
   foldableRow,
@@ -21,7 +22,6 @@ import {
   stripItems,
 } from './ladder';
 import type { CollapsedRow, StripItem } from './ladder';
-import type { Ladder } from './presentation';
 import en from '../i18n/locales/en.json';
 
 describe('the ladder itself', () => {
@@ -83,12 +83,23 @@ const ev = (id: number, sessionId: string, kind: AttentionEvent['kind']) => ({
   kind,
 });
 
-/** the default wiring: live id == card id, and every card is hidden */
-function opts(rungs: Record<string, Ladder> = {}, act = true) {
+/**
+ * The default wiring: live id == card id, and every card is hidden.
+ *
+ * `respond` defaults to the REVEAL-ONLY answer — put a card back if it isn't on
+ * screen, and never take focus — because the tests below are about the ladder's
+ * walk over the feed (the kind filter, the seen set, the live→card mapping,
+ * de-duplication), not about which of E9-10's four settings the user is on.
+ * The policy's own interaction is the last block in this describe, where the
+ * response is passed explicitly, and the four-way rule itself is
+ * lib/focus-policy's test.
+ */
+function opts(onScreen: Record<string, boolean> = {}, act = true) {
   return {
     cardIdFor: (s: string) => s,
-    rungOf: (c: string) => rungs[c] ?? ('hidden' as Ladder),
+    onScreen: (c: string) => onScreen[c] ?? false,
     act,
+    respond: (_c: string, on: boolean): AttentionResponse => (on ? 'mark' : 'reveal'),
   };
 }
 
@@ -108,17 +119,19 @@ describe('revealTargets (§5.8 reveal triggers)', () => {
     expect(revealTargets(events, new Set(), opts()).cardIds).toEqual(['a', 'b', 'c']);
   });
 
-  it('leaves an already-expanded card alone', () => {
-    // re-placing a panel that is on screen would move it for no reason
+  it('leaves a card that is already on screen alone', () => {
+    // re-placing a panel you can already see would move it for no reason — and
+    // would drag a tabbed card out of the stack it was put in
     const events = [ev(1, 'a', 'needs-permission'), ev(2, 'b', 'needs-permission')];
-    const plan = revealTargets(events, new Set(), opts({ a: 'expanded' }));
+    const plan = revealTargets(events, new Set(), opts({ a: true }));
     expect(plan.cardIds).toEqual(['b']);
   });
 
-  it('reveals a collapsed and a tabbed card, not only a hidden one', () => {
-    // every rung below the top is "not where you can work in it"
+  it('places every card you cannot see, whatever is keeping it off screen', () => {
+    // collapsed, stacked behind another tab, hidden — "not where you can work
+    // in it" is one answer, and dockview gives it
     const events = [ev(1, 'a', 'done'), ev(2, 'b', 'done'), ev(3, 'c', 'done')];
-    const plan = revealTargets(events, new Set(), opts({ a: 'collapsed', b: 'tabbed', c: 'hidden' }));
+    const plan = revealTargets(events, new Set(), opts({ a: false, b: false, c: false }));
     expect(plan.cardIds).toEqual(['a', 'b', 'c']);
   });
 
@@ -162,8 +175,9 @@ describe('revealTargets (§5.8 reveal triggers)', () => {
     // events carry the LIVE id, which churns on every resume; the ladder is
     // keyed by card. Getting this backwards would reveal nothing, silently.
     const plan = revealTargets([ev(1, 'live-9', 'done')], new Set(), {
+      ...opts(),
       cardIdFor: (s) => (s === 'live-9' ? 'card-A' : s),
-      rungOf: () => 'hidden',
+      onScreen: () => false,
       act: true,
     });
     expect(plan.cardIds).toEqual(['card-A']);
@@ -172,6 +186,72 @@ describe('revealTargets (§5.8 reveal triggers)', () => {
   it('names a card once even when it has two queued events', () => {
     const events = [ev(1, 'a', 'needs-permission'), ev(2, 'a', 'needs-input')];
     expect(revealTargets(events, new Set(), opts()).cardIds).toEqual(['a']);
+  });
+
+  // ── the focus-stealing policy's half (P2-E9-10) ──────────────────────────
+  //
+  // What the four settings MEAN is lib/focus-policy's test; this is the wiring
+  // — that the walk asks per card, and that each of the four answers reaches
+  // the workspace as the right pair of (place it, focus it).
+
+  it('an off-screen card that focuses is placed AND focused, in one call', () => {
+    const events = [ev(1, 'a', 'done')];
+    const plan = revealTargets(events, new Set(), {
+      ...opts({ a: false }),
+      respond: () => 'focus',
+    });
+    expect(plan.cardIds).toEqual(['a']);
+    expect(plan.focusIds).toEqual(['a']);
+  });
+
+  it('an ON-SCREEN card is focused WITHOUT being placed', () => {
+    // the whole of what `smart` does for a card you can see. Placing it too
+    // would move a panel for nothing, and for a tabbed card it would pull it
+    // out of its stack — a rearrangement, not a focus.
+    const events = [ev(1, 'a', 'done')];
+    const visible = { a: true };
+    const focusing = revealTargets(events, new Set(), {
+      ...opts(visible),
+      respond: () => 'focus',
+    });
+    expect(focusing.cardIds).toEqual([]);
+    expect(focusing.focusIds).toEqual(['a']);
+    // and `reveal` on a card you can see is a no-op on both counts
+    const revealing = revealTargets(events, new Set(), {
+      ...opts(visible),
+      respond: () => 'reveal',
+    });
+    expect(revealing.cardIds).toEqual([]);
+    expect(revealing.focusIds).toEqual([]);
+  });
+
+  it('leaves the workspace untouched under `mark` and `ignore`', () => {
+    const events = [ev(1, 'a', 'needs-permission'), ev(2, 'b', 'done')];
+    for (const response of ['mark', 'ignore'] as const) {
+      const plan = revealTargets(events, new Set(), { ...opts(), respond: () => response });
+      expect(plan.cardIds).toEqual([]);
+      expect(plan.focusIds).toEqual([]);
+      // ...and the events are still ACCOUNTED FOR. A silenced session whose
+      // ids were left unseen would fight the setting the moment its policy
+      // changed, revealing a backlog the user never asked to see.
+      expect([...plan.seen].sort()).toEqual([1, 2]);
+    }
+  });
+
+  it('asks per card, so two sessions can be on different settings', () => {
+    const events = [ev(1, 'loud', 'done'), ev(2, 'quiet', 'done')];
+    const plan = revealTargets(events, new Set(), {
+      ...opts(),
+      respond: (cardId) => (cardId === 'loud' ? 'focus' : 'mark'),
+    });
+    expect(plan.cardIds).toEqual(['loud']);
+    expect(plan.focusIds).toEqual(['loud']);
+  });
+
+  it('names a focusing card once even with two queued events', () => {
+    const events = [ev(1, 'a', 'needs-permission'), ev(2, 'a', 'needs-input')];
+    const plan = revealTargets(events, new Set(), { ...opts(), respond: () => 'focus' });
+    expect(plan.focusIds).toEqual(['a']);
   });
 });
 
@@ -335,5 +415,49 @@ describe('stripItems (idle aggregation)', () => {
 
   it('is a no-op on an empty strip', () => {
     expect(stripItems([])).toEqual([]);
+  });
+
+  // ── §5.8's pinning contract (E9-09) ───────────────────────────────────────
+  //
+  // "exempt from EVERY bulk operation — ... idle aggregation ...". The fold is
+  // the operation that takes a session's PLACE IN THE LIST away, which is
+  // exactly what pinning protects — and note the pinned row is still a strip
+  // row, i.e. still collapsed: "protects existence and position, not size".
+
+  /** the same row, but pinned — built through collapsedRows so the flag travels
+   *  the real path rather than being pasted onto the object */
+  const pinnedRowOf = (cardId: string, status: string): CollapsedRow => {
+    const [only] = collapsedRows(
+      [{ id: cardId, title: cardId, status }],
+      () => 'collapsed',
+      () => true
+    );
+    return only;
+  };
+
+  it('a pinned IDLE row never folds', () => {
+    expect(pinnedRowOf('a', 'idle').pinned).toBe(true);
+    expect(foldableRow(pinnedRowOf('a', 'idle'), null)).toBe(false);
+    // ...and the flag is absent, not false, on an unpinned row: a card at the
+    // default must not accrete a property
+    expect(rowOf('a', 'idle').pinned).toBeUndefined();
+  });
+
+  it('keeps its own row while the rest of the idle sessions fold around it', () => {
+    const rows = [pinnedRowOf('pinned', 'idle'), ...idles(4)];
+    expect(shape(stripItems(rows))).toEqual(['pinned', 'fold:4']);
+  });
+
+  it('a pin can drop the fold below the threshold, which is the point', () => {
+    // four idle rows fold; pin one and only three are foldable, so the strip
+    // lists all four again rather than hiding three behind a summary
+    const rows = [pinnedRowOf('pinned', 'idle'), ...idles(3)];
+    expect(shape(stripItems(rows))).toEqual(['pinned', 'idle0', 'idle1', 'idle2']);
+  });
+
+  it('collapsedRows defaults to nothing pinned, so every existing caller is unmoved', () => {
+    const rows = collapsedRows([{ id: 'a', title: 'a', status: 'idle' }], () => 'collapsed');
+    expect(rows[0].pinned).toBeUndefined();
+    expect(foldableRow(rows[0], null)).toBe(true);
   });
 });

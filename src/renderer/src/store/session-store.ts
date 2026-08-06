@@ -46,6 +46,24 @@ import {
   persistableLayout,
   pruneLayout,
 } from '../lib/layout-mode';
+import {
+  attentionEvents,
+  DEFAULT_FOCUS_BOOK,
+  FocusBook,
+  FocusPolicy,
+  persistableFocusPolicies,
+  pruneFocusPolicies,
+  resolveFocusPolicy,
+} from '../lib/focus-policy';
+import {
+  isPinned,
+  NO_PINS,
+  persistablePins,
+  PinSet,
+  prunePins,
+  togglePin,
+  withPin,
+} from '../lib/pinning';
 
 /**
  * A snapshot. Every field is `readonly` deliberately: identity IS the change
@@ -83,12 +101,28 @@ export interface SessionState {
    */
   readonly policies: PolicyBook;
   /**
+   * §5.8's focus-stealing policy (P2-E9-10): the global setting plus the
+   * per-session overrides. In `state` for the same pair of reasons `policies`
+   * is — the rail menu RENDERS from it, and the reveal-on-attention effect
+   * reads it while deciding what an incoming event may do.
+   */
+  readonly focusPolicies: FocusBook;
+  /**
    * §5.8's layout mode + the maximize it can be holding (P2-E9-07). In `state`
    * for the same pair of reasons `presentation` is: the titlebar chip and the
    * palette RENDER from it, and the sweep that applies it runs from a keydown
    * handler outside React's commit and has to read what is true now.
    */
   readonly layout: LayoutState;
+  /**
+   * §5.8's pinning contract (P2-E9-09): the pinned CARD ids.
+   *
+   * In `state` rather than one of the imperative registries below because rail
+   * order is DERIVED from it — a pinned session sorts first — and derived values
+   * here are recomputed on mutation. It is read synchronously by the submit
+   * sweep and by close-all as well, both of which run outside React's commit.
+   */
+  readonly pinned: PinSet;
 }
 
 const EMPTY: SessionState = {
@@ -101,7 +135,9 @@ const EMPTY: SessionState = {
   presentation: new Map(),
   urgency: new Map(),
   policies: DEFAULT_BOOK,
+  focusPolicies: DEFAULT_FOCUS_BOOK,
   layout: DEFAULT_LAYOUT,
+  pinned: NO_PINS,
 };
 
 export class SessionStore {
@@ -114,6 +150,12 @@ export class SessionStore {
   // stored value with a stable reference, not a computation.
   private derivedRail: RailOrderResult<RailSession> = railOrder<RailSession>([], []);
   private derivedQueue: EventDto[] = [];
+  // The feed minus the sessions whose focus policy is `none` (P2-E9-10) — the
+  // list every queue reader works from. Kept beside the ordered queue because
+  // `advanceQueue` and the visited-set prune need the UNORDERED subset, and
+  // recomputing the filter at each of those call sites is how two of them end
+  // up disagreeing about which sessions are silenced.
+  private derivedAttention: readonly EventDto[] = [];
 
   // ── live session id -> stable card id ───────────────────────────────────
   // The rail tracks LIVE sessions; cards are the durable unit. A live id
@@ -158,21 +200,34 @@ export class SessionStore {
     return this.derivedRail;
   }
 
-  /** The attention queue, in priority order (E9-03). */
+  /** The attention queue, in priority order (E9-03), minus the sessions whose
+   *  focus policy silenced them (E9-10). */
   getQueue(): EventDto[] {
     return this.derivedQueue;
+  }
+
+  /** The feed events the queue may see — the log minus the `none` sessions
+   *  (E9-10). What the Events panel highlights its next-up row from, so the
+   *  highlight and Ctrl+Space cannot point at different rows. */
+  getAttentionEvents(): readonly EventDto[] {
+    return this.derivedAttention;
   }
 
   private set(patch: Partial<SessionState>): void {
     this.state = { ...this.state, ...patch };
     // KEY presence, not truthiness: `setEvents([])` must still recompute, and
     // a future optional-param setter must not silently skip the derive
-    if ('sessions' in patch || 'groups' in patch) {
-      this.derivedRail = railOrder(this.state.sessions, this.state.groups);
+    // `pinned` is in the condition because a pinned session sorts first (E9-09):
+    // rail order is a function of all three, and a pin that did not re-derive it
+    // would leave the rail, Ctrl+1..9 and both strips reading last order.
+    if ('sessions' in patch || 'groups' in patch || 'pinned' in patch) {
+      this.derivedRail = railOrder(this.state.sessions, this.state.groups, this.state.pinned);
     }
-    if ('events' in patch) {
-      this.derivedQueue = attentionQueue(this.state.events);
-    }
+    // The queue is derived from the SILENCED-FILTERED feed (P2-E9-10), so it
+    // has to be recomputed when the focus book changes as well as when events
+    // do: setting a session to `none` must take it off the to-do list the same
+    // moment, not at the next event push.
+    if ('events' in patch || 'focusPolicies' in patch) this.rederiveAttention();
     for (const l of this.listeners) {
       try {
         l();
@@ -181,6 +236,24 @@ export class SessionStore {
         console.error('[store] subscriber threw', err);
       }
     }
+  }
+
+  /**
+   * Recompute the filtered feed and the queue over it (P2-E9-10).
+   *
+   * THREE inputs, not two: the events, the focus book, and `liveToCard` — the
+   * filter is applied per CARD, and events carry the live id. The first two live
+   * in `state` and arrive through `set()`; the third is a registry deliberately
+   * outside the notify path, which is why binding a live id calls this by hand.
+   * Without that call a session bound AFTER its first event landed (a spawn that
+   * crashes or finishes before `sessions:create` resolves) would sit in the
+   * queue unfiltered until the next feed push.
+   */
+  private rederiveAttention(): void {
+    this.derivedAttention = attentionEvents(this.state.events, (liveId) =>
+      this.focusPolicyFor(this.cardIdForLive(liveId))
+    );
+    this.derivedQueue = attentionQueue(this.derivedAttention);
   }
 
   setCards(cards: string[]): void {
@@ -215,7 +288,7 @@ export class SessionStore {
 
   /** Mark an event visited by the walk, so the panel's cursor tracks it. */
   visit(eventId: number): void {
-    this.set({ visited: withVisit(this.state.visited, this.state.events, eventId) });
+    this.set({ visited: withVisit(this.state.visited, this.derivedAttention, eventId) });
   }
 
   /**
@@ -227,7 +300,7 @@ export class SessionStore {
    * same session. That is the entire reason this is a store and not useState.
    */
   advanceQueue(): EventDto | null {
-    const { next, visited } = nextInQueue(this.state.events, this.state.visited);
+    const { next, visited } = nextInQueue(this.derivedAttention, this.state.visited);
     // an empty queue is a no-op: nextInQueue still hands back a fresh Set, and
     // storing it would re-render the whole App on every dead press
     if (!next && visited.size === 0 && this.state.visited.size === 0) return null;
@@ -367,6 +440,46 @@ export class SessionStore {
     this.persistPolicies(persistablePolicies(next));
   }
 
+  // ── focus-stealing policy (P2-E9-10) ────────────────────────────────────
+  // Same shape as the presentation policy above, and injected persistence for
+  // the same reason. One level fewer (global + per-session, no groups) because
+  // §5.8 specifies exactly that for this setting.
+  private persistFocusPolicies: (blob: Record<string, unknown> | null) => void = () => {};
+
+  setFocusPolicyPersister(fn: (blob: Record<string, unknown> | null) => void): void {
+    this.persistFocusPolicies = fn;
+  }
+
+  getFocusPolicies(): FocusBook {
+    return this.state.focusPolicies;
+  }
+
+  /** Seed the book from the ui blob at boot. Does not persist — it just read it. */
+  initFocusPolicies(book: FocusBook): void {
+    this.set({ focusPolicies: book });
+  }
+
+  /** Replace the book (the pure edits live in lib/focus-policy). */
+  setFocusPolicies(book: FocusBook): void {
+    if (book === this.state.focusPolicies) return;
+    this.set({ focusPolicies: book });
+    this.persistFocusPolicies(persistableFocusPolicies(book));
+  }
+
+  /** The focus policy governing this card, its override resolved. */
+  focusPolicyFor(cardId: string | undefined): FocusPolicy {
+    return resolveFocusPolicy(this.state.focusPolicies, cardId);
+  }
+
+  /** Forget overrides for cards that no longer exist. Called from the same
+   *  place `prunePresentation` is, and for the same reason. */
+  pruneFocusPolicies(knownCardIds: Iterable<string>): void {
+    const next = pruneFocusPolicies(this.state.focusPolicies, knownCardIds);
+    if (!next) return;
+    this.set({ focusPolicies: next });
+    this.persistFocusPolicies(persistableFocusPolicies(next));
+  }
+
   // ── layout mode (P2-E9-07) ──────────────────────────────────────────────
   // Persistence is INJECTED, exactly as it is for presentation and policies
   // above, and for the same reason: the store must not have the preload bridge
@@ -410,6 +523,63 @@ export class SessionStore {
     if (!next) return; // nothing stale: no write, no re-render
     this.set({ layout: next });
     this.persistLayout(persistableLayout(next));
+  }
+
+  // ── pinning (P2-E9-09) ──────────────────────────────────────────────────
+  // Persistence is INJECTED, exactly as it is for presentation, policies and
+  // layout above, and for the same reason: the store must not have the preload
+  // bridge on its dependency path (P2-E15-07). The rules are lib/pinning's.
+  private persistPins: (blob: string[] | null) => void = () => {};
+
+  setPinPersister(fn: (blob: string[] | null) => void): void {
+    this.persistPins = fn;
+  }
+
+  getPins(): PinSet {
+    return this.state.pinned;
+  }
+
+  /** Is this card pinned? Delegated to lib/pinning rather than asking the Set
+   *  directly, so "pinned" has ONE definition — the exemptions all reach it
+   *  through here or through the same function. */
+  isPinned(cardId: string | undefined): boolean {
+    return isPinned(this.state.pinned, cardId);
+  }
+
+  /** Seed from the ui blob at boot. Does not persist — it just read it. */
+  initPins(pins: PinSet): void {
+    this.set({ pinned: pins });
+  }
+
+  /** Pin or unpin one card — §5.8's one gesture, both ways. A no-op is skipped
+   *  entirely: `withPin` hands the same set back, and re-deriving rail order
+   *  over it would re-render every row for nothing. */
+  setPinned(cardId: string, pinned: boolean): void {
+    this.writePins(withPin(this.state.pinned, cardId, pinned));
+  }
+
+  togglePin(cardId: string): void {
+    this.writePins(togglePin(this.state.pinned, cardId));
+  }
+
+  /** The card is gone for good — retire its pin at that moment rather than
+   *  waiting for the next boot's prune, exactly as `forgetPresentation` does
+   *  and at the same call sites. */
+  forgetPin(cardId: string): void {
+    this.setPinned(cardId, false);
+  }
+
+  /** Forget pins for cards that no longer exist. Called from the same place
+   *  `prunePresentation` is, and for the same reason. */
+  prunePins(knownCardIds: Iterable<string>): void {
+    const next = prunePins(this.state.pinned, knownCardIds);
+    if (next) this.writePins(next);
+  }
+
+  private writePins(next: PinSet): void {
+    if (next === this.state.pinned) return;
+    this.set({ pinned: next });
+    this.persistPins(persistablePins(next));
   }
 
   // ── urgency strip (P2-E9-04) ────────────────────────────────────────────
@@ -476,6 +646,8 @@ export class SessionStore {
     // keyed by the corpse's id, not just the binding.
     this.forgetCardLiveIds(cardId);
     this.liveToCard.set(liveId, cardId);
+    // the silenced-feed filter is keyed by card and reads this map (E9-10)
+    this.rederiveAttention();
   }
   cardIdForLive(liveId: string): string {
     return this.liveToCard.get(liveId) ?? liveId;
@@ -495,18 +667,66 @@ export class SessionStore {
    * running session), so a hidden card keeps its grant — correct, since the
    * session it was granted to is still running.
    *
-   * "Bound" is the limit of the claim: nothing stops `setAllowAll` being handed
-   * an id this map never held, and such an entry is still released by nothing.
-   * The one path there — answering a permission the review bar kept queued
-   * after its session was already torn down — is a live-session bug in its own
-   * right, not something to paper over here.
+   * The registries this store owns are released HERE; the ones other surfaces
+   * own are told, via `subscribeLiveRetired` below (#239). #224 left that as a
+   * residual — `setAllowAll` could still be handed an id this map never held,
+   * because the review bar went on offering a torn-down session's question and
+   * "Allow all" answered it. The signal closes that for the teardowns which come
+   * through here, which is every renderer-side one; a session that dies on its
+   * own never reaches this method, and the grid drops its held requests off
+   * `sessions:exited` instead.
    */
   forgetCardLiveIds(cardId: string): void {
+    const retired: string[] = [];
     for (const [liveId, cid] of this.liveToCard) {
       if (cid !== cardId) continue;
       this.liveToCard.delete(liveId);
       this.allowAllByLive.delete(liveId);
+      retired.push(liveId);
     }
+    // Batched, so the loop over `liveToCard` is finished before any subscriber
+    // can re-enter this store. (With the one-live-id-per-card invariant there
+    // is at most one id here, so nothing today can observe the difference —
+    // this is what keeps that from becoming a constraint on the invariant.)
+    for (const liveId of retired) this.notifyLiveRetired(liveId);
+  }
+
+  // ── a live session was retired (#239) ───────────────────────────────────
+  //
+  // The counterpart to the releases above, for state this store does NOT hold.
+  // The card's held-permission queue is React state inside `SessionGrid`, and
+  // it is keyed by live session id: Restart and the popout-close suspend both
+  // leave that component mounted with its queue intact, so the next session's
+  // review bar would open holding the corpse's question.
+  //
+  // A signal rather than a fifth Set here, because the queue is the grid's to
+  // own — and rather than a `live === null` check at the two call sites,
+  // because "this id is retired" and "I don't know this card's id yet" are
+  // different states and only the first one may drop a hold. A fresh mount's
+  // `pendingPermissions` replay CAN land before the spawn binds `live` (both
+  // are async and neither waits for the other), and those holds must survive —
+  // E10-04 review P0#3: a missed push must never park the CLI.
+  //
+  // Its own listener set, outside the notify path, for the same reason
+  // membership and prompt-submit have one: this means "something happened",
+  // not "state changed".
+  private liveRetiredListeners = new Set<(liveId: string) => void>();
+
+  subscribeLiveRetired(listener: (liveId: string) => void): () => void {
+    this.liveRetiredListeners.add(listener);
+    return () => this.liveRetiredListeners.delete(listener);
+  }
+
+  private notifyLiveRetired(liveId: string): void {
+    for (const l of this.liveRetiredListeners) {
+      try {
+        l(liveId);
+      } catch (err) {
+        // a broken subscriber costs itself, not the rest of the teardown
+        console.error('[store] live-retired subscriber threw', err);
+      }
+    }
+    this.rederiveAttention(); // same reason as mapLiveToCard's (E9-10)
   }
 
   // ── allow-all, keyed by LIVE id ─────────────────────────────────────────

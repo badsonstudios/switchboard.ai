@@ -25,7 +25,12 @@ export function GitContext(props: { status: GitStatusDto | null }): React.JSX.El
         {t('git.branch', { branch: s.branch ?? '?' })}
       </span>
       {changed > 0 && (
-        <span style={{ color: 'var(--status-needs-input)' }}>{t('git.changed', { n: changed })}</span>
+        // -ink, never the raw hue: this is the dirty-file count as TEXT on the
+        // card header, and the hue measured 1.80:1 there on daylight (#246,
+        // the same defect #221 fixed one line up in the same header)
+        <span style={{ color: 'var(--status-needs-input-ink)' }}>
+          {t('git.changed', { n: changed })}
+        </span>
       )}
       {!!s.ahead && <span style={{ color: 'var(--faint)' }}>{t('git.ahead', { n: s.ahead })}</span>}
     </span>

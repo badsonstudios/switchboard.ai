@@ -216,9 +216,14 @@ body {
 /* ---- Preflight banner (P1-E6-03, §5.25) -----------------------------------
  * "claude wasn't found" — the app's only surface that fills OPAQUELY with a
  * status hue and writes words on top of it, which is why it owns the only
- * on-fill ink token. (Tinted fills with hue-colored text are a different case:
- * the grid's status pill is audited as one since #221 — see .status-pill below
- * — but it is the only one, and .collapsed-row is the same shape and is not.)
+ * on-fill ink token. (Tinted fills with hue-colored text are a different case,
+ * measured as a mix rather than as a token pair: the grid's status pill since
+ * #221, the collapsed strip's needing row — at rest AND on hover — since #246.
+ * The urgency lamp was the same shape and is audited since #267: every lamp
+ * wash names its hue's ink, the washes sit at 12%/15% (15% is the measured
+ * ceiling over --panel2 for the #243 inks), and the lit state no longer
+ * borrows `--muted` — the drift test asserts the state MODEL and the ratios
+ * in every shipped theme.)
  * The look lives here rather than inline (#206) so the pair a reader
  * meets is a pair the drift test can measure: it reads the two var() names out
  * of this rule and asserts the ratio in every shipped theme, so putting a
@@ -226,6 +231,13 @@ body {
 .preflight-banner {
   background: var(--status-needs-permission);
   color: var(--status-needs-permission-ink-on-fill);
+  /* The window is a 100vh flex COLUMN whose main area is `flex: 1` with a
+   * basis of 0, so every pixel of negative free space in a short window lands
+   * on the auto-basis children above it — this strip among them. Without this
+   * line the warning that says why nothing will start is the thing that gets
+   * squeezed (#241). Its sibling notice has carried the same guard inline
+   * since #168; tokens.drift.test.ts is what keeps this one here. */
+  flex-shrink: 0;
   font-size: 11px;
   padding: 4px 12px;
 }
@@ -306,8 +318,15 @@ body {
   font-size: 12.5px;
   margin: 8px 0 4px;
 }
+/* -ink, not the hue (#246). A link in rendered assistant prose is body text
+ * with a colour, and the hue measured 2.53:1 on daylight's --panel — the worst
+ * of the six sites #221 reported and could not fix inside its own diff. It is
+ * the working INK rather than `--link` because `--link` is that same raw hue in
+ * all four themes and has no ink of its own — it is spent on edges and sashes
+ * (dockview-tokens.css), never on words, so switching to it would relabel the
+ * bug rather than fix it. */
 .feed-md a {
-  color: var(--status-working);
+  color: var(--status-working-ink);
 }
 .feed-md blockquote {
   border-inline-start: 2px solid var(--border);
@@ -427,10 +446,59 @@ body {
  * The lit ring is the delayed urgency reset made visible; it FADES out rather
  * than snapping off, because the strip is on screen permanently and an abrupt
  * change reads as a new event. Nothing here blinks: the rail's blinking status
- * dot was an explicit rejection, and this bar is always in view. */
+ * dot was an explicit rejection, and this bar is always in view.
+ *
+ * ── THE INK, AND THE CEILING ON THE WASH (#267, #243's ink system) ─────────
+ * The lamp's name is TEXT — the session's title at 10px — so every state owes
+ * it WCAG 4.5:1, not 1.4.11's 3:1. Only the dot and the lit ring are graphical
+ * objects; the words are words. Two rules decide the ink and there is nothing
+ * else to decide:
+ *
+ *   • on a FLAT surface the lamp writes the token tuned for that surface —
+ *     `--muted` at rest and on hover (4.55:1 on nordic, its worst), `--text`
+ *     for "you are here", because `--muted` on `--chip` is 4.10:1 on nordic
+ *     and full-strength ink is what that state means anyway (8.44:1). A lamp
+ *     that is "here" AND carrying a signal takes the wash rule's ink instead —
+ *     that rule is source-later and wins both declarations;
+ *   • on a WASH OF ITS OWN HUE it writes THAT HUE'S INK. Keeping `--muted`
+ *     there is the whole of #267: `--muted` is tuned against the strip's flat
+ *     `--panel2`, and over the old 22% lit wash it measured 2.97-3.67:1 on
+ *     nordic, 2.77:1 under the pointer at 26%. The ink is the one colour in
+ *     the ramp tuned to be READ (#243), and it is why the lit rule no longer
+ *     leaves its colour to whichever rule happened to win the cascade.
+ *
+ * The wash has a MEASURED CEILING. Over `--panel2`, 15% of a status hue is the
+ * deepest wash all six inks still clear 4.5:1 on all four themes — 4.53:1 worst
+ * case (nordic/working) in 8-bit, 4.52:1 in the float domain the browser hands
+ * back; 16% is 4.46:1. That is why the two numbers below are 12% and 15% and
+ * not the 22% and 26% they were: there is only room for ONE wash plus a hover
+ * step, so "lit" is told apart from "needs you" by its RING and not by a deeper
+ * wash. `var(--panel2)` rather than `transparent` for the same reason
+ * `.status-pill` names its surface: the colour the promise depends on has to be
+ * computable. Identical at rest (a mix with `transparent` composited over
+ * `--panel2` IS a mix with `--panel2`); only the 0.11s transition interpolates
+ * differently.
+ *
+ * THE RING IS INK TOO, and for the same reason one step down: making it the
+ * only thing that separates "lit" from "needs you" makes it load-bearing, and
+ * as a graphical object it owes 1.4.11's 3:1. In the raw hue it did not have
+ * it — 1.80:1 against the strip on daylight, 1.68:1 against its own wash — so
+ * the state §5.8 exists to make findable was the one you could not find on the
+ * light theme. In the ink it is 5.21:1 outside and 4.53:1 inside, worst case.
+ * The DOT keeps the raw hue deliberately: it is the shared status ramp the rail
+ * and the grid paint too, so it is not this lamp's to move (its numbers are the
+ * 1.80-3.10:1 above, and they are a defect of the ramp, reported not fixed).
+ *
+ * Measured from these rules by tokens.drift.test.ts, and as Chromium actually
+ * paints them by e2e/urgency.spec.ts. The half neither can see — which pair
+ * each lamp receives — is UrgencyStrip.test.tsx's. */
 .urgency-lamp {
   --lamp-hue: var(--status-idle);
-  --lamp-ink: var(--muted);
+  /* the idle INK, not `--muted`: these two defaults are where the drift test
+   * reads which placeholder holds which role, and one declaration cannot be
+   * both a hue and an ink. Zero-pixel — the component sets both inline on
+   * every lamp it renders, so nothing in the app reaches this fallback. */
+  --lamp-ink: var(--status-idle-ink);
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -455,26 +523,50 @@ body {
     background 0.11s,
     border-color 0.35s;
 }
+/* "you are here". `--text` rather than the inherited `--muted`, which measures
+ * 4.10:1 on nordic's `--chip` — and the one lamp whose card is on screen is
+ * the one state that has a reason to be emphatic. */
 .urgency-lamp[data-active='true'] {
   background: var(--chip);
   border-color: var(--border);
+  color: var(--text);
+}
+/* A lamp CARRYING A SIGNAL — the last jump landed here, or a human is needed —
+ * washes its own hue over the strip and reads in that hue's ink. ONE wash for
+ * both, because the ceiling above leaves room for only one: what tells them
+ * apart is the ring and the weight below, neither of which costs contrast.
+ *
+ * `[data-lit]` LEADS THE LIST so that the lit selector followed by an opening
+ * brace occurs exactly once in this file — tokens.drift.test.ts looks rules up
+ * by their selector text, and a text matching two rules would silently measure
+ * the wrong one. (Selector lists are unordered to the browser, so this costs
+ * nothing.) The needing selector below is the one that is ambiguous now, and
+ * `block()` fails loudly rather than guessing if anything ever asks for it —
+ * which is also why this paragraph describes those two strings instead of
+ * quoting them. */
+.urgency-lamp[data-lit='true'],
+.urgency-lamp[data-needs-you='true'] {
+  background: color-mix(in srgb, var(--lamp-hue) 12%, var(--panel2));
+  color: var(--lamp-ink);
 }
 .urgency-lamp[data-needs-you='true'] {
-  background: color-mix(in srgb, var(--lamp-hue) 12%, transparent);
-  color: var(--lamp-ink);
   font-weight: 600;
 }
+/* The ring IS "you were just sent here", and since the wash no longer differs
+ * it is the WHOLE of that signal — so it is the ink, not the hue: see the
+ * header. It fades in over 0.35s (the transition on the base rule) because an
+ * abrupt edge on a permanent strip reads as a new event. */
 .urgency-lamp[data-lit='true'] {
-  background: color-mix(in srgb, var(--lamp-hue) 22%, transparent);
-  border-color: var(--lamp-hue);
+  border-color: var(--lamp-ink);
 }
 .urgency-lamp:hover {
   background: var(--rail-row-hover);
 }
-/* a lamp that already carries a signal keeps it on hover */
+/* a lamp that already carries a signal keeps it on hover, one step deeper —
+ * the deepest wash the strip has, and the one the ceiling is measured at */
 .urgency-lamp[data-needs-you='true']:hover,
 .urgency-lamp[data-lit='true']:hover {
-  background: color-mix(in srgb, var(--lamp-hue) 26%, transparent);
+  background: color-mix(in srgb, var(--lamp-hue) 15%, var(--panel2));
 }
 /* calm = hollow ring, needy = filled: legible before any color is read, which
  * is also what keeps the strip working for color-blind users (§5.20) */
@@ -509,8 +601,15 @@ body {
  * No themeable tokens are introduced — every value below resolves to one the
  * presets already declare (see tokens.drift.test.ts). */
 .collapsed-row {
+  /* ONE ramp position's hue and ink, as the status pill's defaults are (#246).
+   * `--row-ink` used to default to `--muted`, which is not a status colour at
+   * all — the row's base `color` below is `--muted` directly, and `--row-ink`
+   * is only ever read by the `[data-needs-you]` rule, which every Row fills in
+   * from `presentStatus`, so nothing on screen moves. What it buys is that the
+   * contrast test can tell which of the two placeholders is the INK from the
+   * rule alone, which is the check that stops the pair being swapped back. */
   --row-hue: var(--status-idle);
-  --row-ink: var(--muted);
+  --row-ink: var(--status-idle-ink);
   --row-accent: var(--faint);
   display: inline-flex;
   align-items: center;
@@ -538,14 +637,43 @@ body {
   background: var(--rail-row-hover);
   border-color: var(--row-hue);
 }
+/* A needing row is the status pill's shape a second time (#246): the state's
+ * INK on a tint of that state's own hue, at 10.5px. Both fills below name
+ * `--panel` instead of fading to `transparent` for the reason .status-pill
+ * does — a 14% mix with `transparent` composited over the strip IS this value
+ * (the strip's own background is `--panel`, CollapsedStrip.tsx), and naming it
+ * is what lets tokens.drift.test.ts compute the colour the word actually lands
+ * on. THE STRIP MUST STAY ON A --panel SURFACE, or these two ratios measure a
+ * fiction — asserted in CollapsedStrip.test.tsx, because a capitalised comment
+ * is not a guard. Identical AT REST; the 0.11s background transition now
+ * interpolates between two opaque colours rather than through a premultiplied
+ * alpha, which nobody will see and which is not worth the word "bit-identical".
+ *
+ * `.collapsed-state` (the state in words, below) inherits `--row-ink` on this
+ * same fill, so its ratio is the one measured here — it is not a second entry
+ * in TINTED_RULES because it would be the same two numbers.
+ *
+ * The hover tint was 26% and is 20%. 26% put the ramp at 4.03:1 on nordic and
+ * 4.39:1 on daylight — under AA, on hover, in the app's two default themes.
+ * The ceiling over `--panel` for the ink family #221 shipped is 21%; 20% is one
+ * step inside it and lands at 4.59:1 worst case. Lightening the inks further
+ * was the alternative and was declined: they are tuned to the pill and moving
+ * them repaints the rail, the lamps and the grid to fix a hover state. */
 .collapsed-row[data-needs-you='true'] {
-  background: color-mix(in srgb, var(--row-hue) 14%, transparent);
+  background: color-mix(in srgb, var(--row-hue) 14%, var(--panel));
   border-color: color-mix(in srgb, var(--row-hue) 55%, transparent);
   color: var(--row-ink);
   font-weight: 600;
 }
 .collapsed-row[data-needs-you='true']:hover {
-  background: color-mix(in srgb, var(--row-hue) 26%, transparent);
+  background: color-mix(in srgb, var(--row-hue) 20%, var(--panel));
+  /* a no-op on screen — the rule above already sets it, and this is the same
+   * value. It is here so the ratio for THIS fill is measurable: the drift test
+   * reads the ink and the background out of one rule, and a hover state whose
+   * ink has to be inferred from somewhere else is a hover state nothing checks.
+   * Delete it and the suite fails asking for a `color` rather than going
+   * quiet, which is the point. */
+  color: var(--row-ink);
 }
 /* the identity accent, as a leading bar — the same 3px stripe the expanded
  * card's header wears, so a session looks like itself at either rung */
@@ -556,6 +684,14 @@ body {
   min-block-size: 14px;
   background: var(--row-accent);
   margin-inline-end: 4px;
+}
+/* §5.8's pin (P2-E9-09) — why this row did not fold in with the other idle
+ * ones. Small and quiet: it explains an exception, it does not announce one. */
+.collapsed-pin {
+  flex: 0 0 auto;
+  font-size: 8.5px;
+  line-height: 1;
+  margin-inline-end: 3px;
 }
 .collapsed-name {
   overflow: hidden;

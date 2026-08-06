@@ -274,8 +274,13 @@ export class SessionManager {
     if (!r) return;
     r.killRequested = true;
     // The record is deleted BEFORE the teardown, deliberately, preserving the
-    // order the IPC layer used: a transport's remove() fires onExit
-    // synchronously, and apply() drops events for sessions it no longer knows.
+    // order the IPC layer used: the exit lands on the transport's onExit, and
+    // apply() drops events for sessions it no longer knows. (NOT synchronously,
+    // as this comment used to claim — both transports' remove() end at kill(),
+    // a signal, so the exit arrives on a later turn of the loop, and for an
+    // already-dead process it arrived before this call. The ordering argument
+    // below holds in every one of those cases, which is why it survived the
+    // correction in #271.)
     // Reverse these two and closing a card pushes a starting->exited transition
     // into history and notifies every status listener about a session the user
     // just closed. (The exit LISTENERS fire either way — they live in the
