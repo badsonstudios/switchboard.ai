@@ -82,6 +82,29 @@ describe('probeBuildIdentity (P2-E15-15)', () => {
     expect(id.branch).toBeNull();
   });
 
+  it('#300 — a push build reads GITHUB_REF_NAME past the empty GITHUB_HEAD_REF', () => {
+    // The bug this pins: GitHub DEFINES GITHUB_HEAD_REF on every event and sets
+    // it to '' when the event has no head ref (push, schedule, dispatch).
+    // Under the old `??` chain '' won, and every build of main stamped itself
+    // "detached" with the answer sitting in the next variable along.
+    const detached = { ...CLEAN, 'rev-parse --abbrev-ref HEAD': 'HEAD\n' };
+    expect(
+      probeBuildIdentity({
+        run: fakeGit(detached),
+        now,
+        env: { GITHUB_HEAD_REF: '', GITHUB_REF_NAME: 'main' },
+      }).branch
+    ).toBe('main');
+    // a tag push: REF_NAME is the tag, and it is still better than "detached"
+    expect(
+      probeBuildIdentity({
+        run: fakeGit(detached),
+        now,
+        env: { GITHUB_HEAD_REF: '', GITHUB_REF_NAME: 'v0.1.0' },
+      }).branch
+    ).toBe('v0.1.0');
+  });
+
   it('fails OPEN when git is missing entirely — the build must still succeed', () => {
     const id = probeBuildIdentity({
       run: () => {

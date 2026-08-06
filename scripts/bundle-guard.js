@@ -333,12 +333,15 @@ function describeBundle(id, now) {
  * "HEAD" and cry mismatch on every PR. Asking the environment the way the
  * BUILD asked it means CI compares like with like and stays quiet.
  *
- * The `??` chain is copied verbatim, empty string and all: GitHub sets
- * `GITHUB_HEAD_REF` to `''` on non-PR events and `'' ?? x` is `''`, so both
- * sides answer null on a push build instead of reaching `GITHUB_REF_NAME`.
- * Arguably a small bug in git-identity.ts — but it is THAT file's to fix, and
- * mirroring it is the point. Two different readings of one env var would make
- * this guard invent a mismatch that does not exist.
+ * The fallback chain is `||`, not `??`, and it must stay whatever
+ * `probeBuildIdentity()` uses. #298 shipped this as a verbatim `??` copy of a
+ * bug — GitHub sets `GITHUB_HEAD_REF` to `''` on non-PR events and `'' ?? x` is
+ * `''`, so both sides answered null on a push build instead of reaching
+ * `GITHUB_REF_NAME` — on the grounds that agreeing wrongly beats disagreeing.
+ * #300 fixed both sides at once. The agreement is what matters: two different
+ * readings of one env var would make this guard invent a mismatch that does not
+ * exist, so `bundle-guard.test.js` cross-checks the two functions directly
+ * rather than trusting two copies of a comment to stay in step.
  *
  * Never throws, and returns null for "don't know" (no git, no repo, a genuinely
  * detached local checkout) — unknown is not a mismatch.
@@ -359,7 +362,7 @@ function currentBranch(root, env) {
   } catch {
     // no git, no repo — the env fallback is the only answer left
   }
-  return (env.GITHUB_HEAD_REF ?? env.GITHUB_REF_NAME ?? null) || null;
+  return env.GITHUB_HEAD_REF || env.GITHUB_REF_NAME || null;
 }
 
 const RULE = '─'.repeat(72);
