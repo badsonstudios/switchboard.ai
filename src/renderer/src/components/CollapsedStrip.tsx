@@ -61,6 +61,10 @@ export function CollapsedStrip(props: {
         gap: 6,
         paddingInline: 8,
         paddingBlock: 3,
+        // never give up height (#274), same call as the urgency strip's. The
+        // 24px floor below is not a substitute: it is a number that happens to
+        // sit near today's row height, and a larger UI font walks past it
+        flexShrink: 0,
         minBlockSize: 24,
         overflowX: 'auto',
         background: 'var(--panel)',
