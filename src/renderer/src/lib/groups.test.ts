@@ -88,3 +88,74 @@ describe('pickAdoptedGroupId (E12-04 grid-drag adoption)', () => {
     expect(pickAdoptedGroupId('x', ['ghost', 'c'], cards)).toBe('g2');
   });
 });
+
+describe('railOrder — §5.8 sorts a pinned session first (E9-09)', () => {
+  it('a pinned loose session leads the rail, and Ctrl+1..9 with it', () => {
+    // the default shape: no persistent or emergent groups, so the loose list IS
+    // the rail and "sorts first" is literal
+    const r = railOrder([{ id: 'a' }, { id: 'b' }, { id: 'c' }], [], new Set(['c']));
+    expect(r.loose.map((s) => s.id)).toEqual(['c', 'a', 'b']);
+    expect(r.flat.map((s) => s.id)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('a pinned GROUP member leads its own group, and stays in it', () => {
+    // VS Code's semantics: pinning moves a tab to the front of ITS editor
+    // group, never out of it. Hoisting would empty the count on the header the
+    // user deliberately filed the session under.
+    const r = railOrder(
+      [
+        { id: 'a', groupId: 'g1' },
+        { id: 'b', groupId: 'g1' },
+        { id: 'c' },
+      ],
+      [{ id: 'g1' }],
+      new Set(['b'])
+    );
+    expect(r.groups).toEqual([{ id: 'g1', members: [{ id: 'b', groupId: 'g1' }, { id: 'a', groupId: 'g1' }] }]);
+    expect(r.flat.map((s) => s.id)).toEqual(['b', 'a', 'c']);
+  });
+
+  it('promotes WITHIN an auto-group without moving the auto-group itself', () => {
+    // the invariant lib/pinning states and this is where it would be easiest to
+    // break: pre-sorting railOrder's INPUT would hoist the whole `c:/two`
+    // bucket above `c:/one` — moving unpinned a, b and c relative to each
+    // other, which nobody asked for. Membership and bucket order come from the
+    // sessions as they arrived; the pin reorders inside one bucket only.
+    const r = railOrder(
+      [
+        { id: 'a', autoKey: 'c:/one' },
+        { id: 'b', autoKey: 'c:/one' },
+        { id: 'c', autoKey: 'c:/two' },
+        { id: 'd', autoKey: 'c:/two' },
+      ],
+      [],
+      new Set(['d'])
+    );
+    expect(r.autoGroups.map((g) => g.key)).toEqual(['c:/one', 'c:/two']);
+    expect(r.autoGroups[1].members.map((s) => s.id)).toEqual(['d', 'c']);
+    expect(r.flat.map((s) => s.id)).toEqual(['a', 'b', 'd', 'c']);
+  });
+
+  it('does not move a session between buckets, only within one', () => {
+    // a pinned GROUP member stays in its group even though that leaves it below
+    // the loose sessions in `flat` — the group is a thing the user built, and
+    // emptying its header count to hoist one row would cost more than it buys
+    const r = railOrder(
+      [
+        { id: 'loose' },
+        { id: 'a', groupId: 'g1' },
+        { id: 'b', groupId: 'g1' },
+      ],
+      [{ id: 'g1' }],
+      new Set(['b'])
+    );
+    expect(r.groups[0].members.map((s) => s.id)).toEqual(['b', 'a']);
+    expect(r.loose.map((s) => s.id)).toEqual(['loose']);
+  });
+
+  it('no pins means the order nobody asked to change', () => {
+    const sessions = [{ id: 'a' }, { id: 'b' }];
+    expect(railOrder(sessions, []).flat.map((s) => s.id)).toEqual(['a', 'b']);
+    expect(railOrder(sessions, [], new Set(['zz'])).flat.map((s) => s.id)).toEqual(['a', 'b']);
+  });
+});

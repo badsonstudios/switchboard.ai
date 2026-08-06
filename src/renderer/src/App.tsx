@@ -128,9 +128,20 @@ export function App(): React.JSX.Element {
     subscribeStore,
     () => sessionStore.getState().presentation
   );
+  // §5.8's pinning contract (E9-09). From the store for the reason the ladder
+  // and the policy are: the rail RENDERS from it, rail order is DERIVED from it,
+  // and the submit sweep + close-all read it synchronously outside React's
+  // commit.
+  const pinned = useSyncExternalStore(subscribeStore, () => sessionStore.getPins());
+  const togglePin = React.useCallback((cardId: string) => sessionStore.togglePin(cardId), []);
   const collapsed = React.useMemo(
-    () => collapsedRows(railFlat, (id) => presentation.get(id)?.ladder ?? 'expanded'),
-    [railFlat, presentation]
+    () =>
+      collapsedRows(
+        railFlat,
+        (id) => presentation.get(id)?.ladder ?? 'expanded',
+        (id) => pinned.has(id)
+      ),
+    [railFlat, presentation, pinned]
   );
   // §5.8's presentation policy (E9-06). Read from the store rather than App
   // state, because the SUBMIT path reads it synchronously from outside React's
@@ -499,6 +510,8 @@ export function App(): React.JSX.Element {
             });
           },
           closeCard: (cardId) => grid.current?.closeCard(cardId),
+          closeAllCards: () => grid.current?.closeAllCards(),
+          togglePin,
           toggleCardView: (cardId, view) => grid.current?.toggleCardView(cardId, view),
           popOutCard: (cardId) => grid.current?.popOutCard(cardId),
           hideCard: (cardId) => grid.current?.hideCard(cardId),
@@ -518,7 +531,7 @@ export function App(): React.JSX.Element {
           jumpToNextAttention,
           openAbout: () => setAboutOpen(true),
       }),
-    [toggleRail, jumpToNextAttention, setGlobalPolicy, setSessionPolicy, setGroupPolicy], // other deps read live state through refs; grid.current is stable
+    [toggleRail, jumpToNextAttention, setGlobalPolicy, setSessionPolicy, setGroupPolicy, togglePin], // other deps read live state through refs; grid.current is stable
   );
   // chips advertise their own binding, derived from the registry so a tooltip
   // can never drift from the key that actually works
@@ -809,6 +822,8 @@ export function App(): React.JSX.Element {
               void bridge.groups?.update?.(id, { color }).then(() => refreshGroups());
             }}
             policies={policies}
+            pinned={pinned}
+            onTogglePin={togglePin}
             onSetSessionPolicy={setSessionPolicy}
             onCycleGroupPolicy={cycleGroupPolicy}
             onMoveToGroup={(cardId, gid) => {

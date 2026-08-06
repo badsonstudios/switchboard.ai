@@ -16,6 +16,7 @@ import {
   withoutMaximized,
 } from './layout-mode';
 import type { Ladder } from './presentation';
+import { showsRow } from './ladder';
 
 /** a card at the default rung, needing nothing, in the main window */
 function card(cardId: string, over: Partial<LayoutCard> = {}): LayoutCard {
@@ -364,5 +365,64 @@ describe('layout modes (E9-07, §5.8)', () => {
         loadLayout({ mode: 'grid', maximized: 'a', restore: { a: 'nowhere', b: 'tabbed' } }).restore
       ).toEqual({ b: 'tabbed' });
     });
+  });
+});
+
+// ── the invariant §5.8's pinning contract leans on (P2-E9-09) ───────────────
+//
+// E9-09 deliberately does NOT exempt a pinned card from a layout mode: a mode
+// changes a card's RUNG, and §5.8 says pinning protects "existence and
+// position, not size". That decision is only safe because a mode can never put
+// a card somewhere it stops being LISTED — every demotion lands on `collapsed`,
+// which shows a row in the strip, where lib/ladder's fold exemption keeps a
+// pinned session a row of its own.
+//
+// Nothing enforced that. Add a fourth mode that wants `tabbed` or `hidden` and
+// a pinned session would silently vanish from the strip with every existing
+// test still green. This is that enforcement, asserted over the rungs `plan`
+// can actually emit rather than over a list someone has to remember to update.
+describe('a layout mode never hides a card outright (the E9-09 load-bearing invariant)', () => {
+  it('every rung plan() can emit is one that still shows the session somewhere', () => {
+    const cards = [
+      card('a'),
+      card('b', { needsAttention: true }),
+      card('c', { ladder: 'collapsed' }),
+      card('d', { poppedOut: true }),
+      card('e', { ladder: 'hidden' }),
+    ];
+    const emitted = new Set<Ladder>();
+    for (const mode of ['grid', 'focus', 'queue'] as const) {
+      for (const trigger of ['switch', 'react'] as const) {
+        for (const active of [null, 'a', 'c', 'e']) {
+          for (const maximized of [null, 'a', 'b']) {
+            const s = state({ mode, maximized, restore: {} });
+            for (const m of plan({ state: s, cards, activeCardId: active, trigger })) {
+              emitted.add(m.rung);
+            }
+          }
+        }
+      }
+    }
+    // it has to have DONE something, or the loop above proves nothing
+    expect(emitted.size).toBeGreaterThan(0);
+    for (const rung of emitted) {
+      // `expanded` keeps its card; `collapsed` keeps a strip row (showsRow).
+      // Anything else — `tabbed`, `hidden` — takes the session out of the one
+      // list pinning promises to keep it in.
+      expect(rung === 'expanded' || showsRow(rung)).toBe(true);
+    }
+  });
+
+  it('...and a RESTORE may still put a card back on any rung, because the user put it there', () => {
+    // the exemption is about what a MODE does unasked; an un-maximize replaying
+    // the user's own prior arrangement is not that, and must stay exact
+    const back = plan({
+      state: state({ maximized: 'a', restore: { b: 'hidden' } }),
+      cards: [card('a'), card('b')],
+      activeCardId: 'a',
+      trigger: 'switch',
+      restore: { b: 'hidden' },
+    });
+    expect(back).toContainEqual({ cardId: 'b', rung: 'hidden' });
   });
 });

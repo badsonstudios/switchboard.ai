@@ -31,6 +31,7 @@ import { Box, boxOnAnyDisplay, RescuedPopout, sanitizePopoutLayout, WorkArea } f
 import { captureSlot, openerRelative, placeAt } from '../lib/dock-slot';
 import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
 import { submitTarget } from '../lib/presentation-policy';
+import { bulkClose } from '../lib/pinning';
 import { createSweeper, SweepPort, SweepRequest } from '../lib/layout-sweep';
 import {
   cycleMode,
@@ -1490,6 +1491,9 @@ export function applySubmitPolicy(api: DockviewApi | null, cardId: string): void
     needsHuman: presentStatus(
       sessionStore.getState().sessions.find((s) => s.id === cardId)?.status
     ).needsYou,
+    // §5.8's pinning contract (E9-09): this is the "auto-collapse sweep" it
+    // names, and a pinned card sits it out
+    pinned: sessionStore.isPinned(cardId),
   });
   if (rung) setCardLadder(api, cardId, rung);
 }
@@ -1958,6 +1962,9 @@ export interface GridController {
   activeCardId: () => string | null;
   /** close a card the way the tab ✕ does — including its confirm (E9-01) */
   closeCard: (cardId: string) => void;
+  /** close EVERY session at once, sparing the pinned ones (§5.8's pinning
+   *  contract, E9-09). One confirm for the lot, not one per card. */
+  closeAllCards: () => void;
   /** switch a card's active view tab; 'terminal' toggles back to the Session
    *  view when the Terminal is already showing (E9-01) */
   toggleCardView: (cardId: string, view: PanelId) => void;
@@ -2064,6 +2071,37 @@ export function SessionGrid(props: {
     []
   );
 
+  /**
+   * End one session and forget every record keyed by its card — WITHOUT asking.
+   *
+   * The confirm belongs to the GESTURE, not to this: `closeCard` asks about one
+   * card, `closeAllCards` asks once about the lot, and both then do exactly the
+   * same thing per card. Extracted at E9-09 because the second caller made the
+   * duplication a correctness problem rather than a tidiness one — the by-hand
+   * branch is a hand-written copy of what `onDidRemovePanel` does, and two
+   * copies of that list is how a new per-card record (a pin, say) ends up
+   * retired on one close path and leaked on the other.
+   *
+   * A card WITH a panel is closed by removing it, because dockview's
+   * `onDidRemovePanel` runs the same forgets; a HIDDEN card has no panel to
+   * remove (§5.8's invariant: hiding chrome never removes capability, so
+   * closing has to work on a card that isn't in the workspace) and is done by
+   * hand here.
+   */
+  const retireCard = useCallback((cardId: string) => {
+    const api = apiRef.current;
+    const panel = api?.getPanel(`session-${cardId}`);
+    if (api && panel) {
+      api.removePanel(panel); // onDidRemovePanel -> the forgets below
+      return;
+    }
+    sessionStore.forgetCardLiveIds(cardId);
+    sessionStore.forgetPresentation(cardId);
+    sessionStore.forgetLayoutCard(cardId);
+    sessionStore.forgetPin(cardId);
+    void window.switchboard.sessions.closeCard(cardId);
+  }, []);
+
   // §5.8's auto-minimize on submit (P2-E9-06). Subscribed ONCE, here, rather
   // than per card: the grid is the only thing that owns the dockview api, and a
   // subscription per mounted panel would collapse a card that had already been
@@ -2153,8 +2191,7 @@ export function SessionGrid(props: {
         return m ? m[1] : null;
       },
       closeCard: (cardId) => {
-        const api = apiRef.current;
-        const panel = api?.getPanel(`session-${cardId}`);
+        const panel = apiRef.current?.getPanel(`session-${cardId}`);
         // same contract as the tab ✕ (Dan 2026-07-22): confirm, because this
         // ends the session and forgets the record
         // store FIRST (#264): the panel's title is dockview's birth-time copy
@@ -2167,18 +2204,29 @@ export function SessionGrid(props: {
           (panel?.params as CardParams | undefined)?.folder
         );
         if (!window.confirm(t('grid.closeConfirm', { title }))) return;
-        if (api && panel) {
-          api.removePanel(panel); // onDidRemovePanel -> closeCard
+        // the confirm belongs to the gesture; retireCard (E9-09) does what
+        // main's inline removePanel/by-hand branch did, for both call sites
+        retireCard(cardId);
+      },
+      closeAllCards: () => {
+        // RAIL ORDER, and the DECISION through lib/pinning's `bulkClose` rather
+        // than a `filter` here: that function is §5.8's pinning exemption
+        // itself, and routing every bulk operation through it is what stops the
+        // next one — the eviction policy §5.8 anticipates — from having to
+        // remember the rule. What is left in this function is only the dialogs
+        // and the loop, which is all a component should own (E9-09).
+        const { doomed, spared } = bulkClose(
+          sessionStore.getRailOrder().flat.map((s) => s.id),
+          sessionStore.getPins()
+        );
+        if (doomed.length === 0) {
+          // every session is pinned: say so rather than opening a confirm for
+          // an empty list, which reads as the command being broken
+          window.alert(t('grid.closeAllNothing', { count: spared }));
           return;
         }
-        // A HIDDEN card has no panel, and its ✕ is right there in the rail.
-        // §5.8's invariant is that hiding chrome never removes capability, so
-        // closing has to work on a card that isn't in the workspace — do by
-        // hand exactly what onDidRemovePanel would have done.
-        sessionStore.forgetCardLiveIds(cardId);
-        sessionStore.forgetPresentation(cardId);
-        sessionStore.forgetLayoutCard(cardId);
-        void window.switchboard.sessions.closeCard(cardId);
+        if (!window.confirm(t('grid.closeAllConfirm', { count: doomed.length, spared }))) return;
+        for (const cardId of doomed) retireCard(cardId);
       },
       toggleCardView: (cardId, view) => {
         // straight at the store: this used to go through a handle the card
@@ -2384,6 +2432,9 @@ export function SessionGrid(props: {
         // workspace blown up around nothing AND make the default mode start
         // enforcing (E9-07, lib/layout-mode's isEnforced)
         sessionStore.forgetLayoutCard(m[1]);
+        // ...and its pin (E9-09), which would otherwise keep protecting — and
+        // sorting first — a card that no longer exists
+        sessionStore.forgetPin(m[1]);
         void window.switchboard.sessions.closeCard(m[1]);
       });
 
@@ -2450,6 +2501,9 @@ export function SessionGrid(props: {
             // card's rung: a maximize held for a session that has since been
             // closed would keep the workspace blown up around nothing.
             sessionStore.pruneLayout(known);
+            // and E9-09's pins, keyed the same way and outliving their cards
+            // the same way.
+            sessionStore.prunePins(known);
             for (const p of [...api.panels]) {
               const s = /^session-(.+)$/.exec(p.id);
               const d = /^diff-/.exec(p.id);

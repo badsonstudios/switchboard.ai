@@ -686,6 +686,76 @@ describe('SessionStore — the prompt-submit signal (P2-E9-06)', () => {
   });
 });
 
+describe('SessionStore — pinning (P2-E9-09)', () => {
+  let store: SessionStore;
+  let persisted: Array<string[] | null>;
+  beforeEach(() => {
+    store = new SessionStore();
+    persisted = [];
+    store.setPinPersister((blob) => persisted.push(blob));
+  });
+
+  it('starts with nothing pinned and nothing written', () => {
+    expect(store.getPins().size).toBe(0);
+    expect(store.isPinned('a')).toBe(false);
+    expect(persisted).toEqual([]);
+  });
+
+  it('init seeds the pins without writing them back', () => {
+    store.initPins(new Set(['a']));
+    expect(store.isPinned('a')).toBe(true);
+    expect(persisted).toEqual([]); // it just READ the blob
+  });
+
+  it('persists on change, and writes null once nothing is pinned', () => {
+    store.togglePin('a');
+    expect(persisted.at(-1)).toEqual(['a']);
+    store.togglePin('a');
+    expect(persisted.at(-1)).toBeNull(); // forget the key entirely
+  });
+
+  it('a no-op pin is not a write and not a re-render', () => {
+    store.setPinned('a', true);
+    let notifications = 0;
+    store.subscribe(() => notifications++);
+    store.setPinned('a', true);
+    expect(notifications).toBe(0);
+    expect(persisted.length).toBe(1);
+  });
+
+  it('§5.8: a pinned session sorts first in DERIVED rail order', () => {
+    // the whole reason pinning is in `state` and not an imperative registry
+    store.setSessions([session('a'), session('b'), session('c')]);
+    expect(store.getRailOrder().flat.map((s) => s.id)).toEqual(['a', 'b', 'c']);
+    store.togglePin('c');
+    expect(store.getRailOrder().flat.map((s) => s.id)).toEqual(['c', 'a', 'b']);
+    // ...and unpinning puts the rail back rather than leaving it re-sorted
+    store.togglePin('c');
+    expect(store.getRailOrder().flat.map((s) => s.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('a session list that arrives AFTER the pin is still ordered by it', () => {
+    // the boot order: presentation-boot seeds pins before the first session push
+    store.initPins(new Set(['b']));
+    store.setSessions([session('a'), session('b')]);
+    expect(store.getRailOrder().flat.map((s) => s.id)).toEqual(['b', 'a']);
+  });
+
+  it('forgets a closed card at the moment it closes, and prunes the rest at boot', () => {
+    store.setPinned('a', true);
+    store.setPinned('b', true);
+    store.forgetPin('c'); // an unrelated close: no write, no re-render
+    expect(persisted.length).toBe(2);
+    store.forgetPin('a');
+    expect(store.isPinned('a')).toBe(false);
+    store.prunePins(['b']);
+    expect(persisted.length).toBe(3); // nothing stale: no fourth write
+    store.prunePins([]);
+    expect(store.getPins().size).toBe(0);
+    expect(persisted.at(-1)).toBeNull();
+  });
+});
+
 // #239 — the residual #224 named. The grid's held-permission queue is React
 // state keyed by LIVE session id, and Restart / the popout-close suspend end
 // the session with that component still mounted. The store is the only place

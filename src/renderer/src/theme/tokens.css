@@ -683,6 +683,14 @@ body {
   background: var(--row-accent);
   margin-inline-end: 4px;
 }
+/* §5.8's pin (P2-E9-09) — why this row did not fold in with the other idle
+ * ones. Small and quiet: it explains an exception, it does not announce one. */
+.collapsed-pin {
+  flex: 0 0 auto;
+  font-size: 8.5px;
+  line-height: 1;
+  margin-inline-end: 3px;
+}
 .collapsed-name {
   overflow: hidden;
   text-overflow: ellipsis;
