@@ -27,6 +27,11 @@ import {
   run,
 } from './bundle-guard.js';
 import { isBuildOutput } from './run-electron-node.js';
+// #300 — the build-time half of the same question. Imported so the two
+// implementations are compared directly instead of via mirrored comments; see
+// the `currentBranch` agreement test below. Test-only, and the one place these
+// two corners of the tree meet.
+import { probeBuildIdentity } from '../src/build/git-identity';
 
 const SCRIPT = path.join(process.cwd(), 'scripts', 'bundle-guard.js');
 
@@ -447,16 +452,49 @@ describe('currentBranch', () => {
     expect(currentBranch(nowhere, {})).toBeNull();
   });
 
-  it('copies probeBuildIdentity’s `??` quirk on purpose, empty string and all', () => {
-    // GitHub sets GITHUB_HEAD_REF to the EMPTY STRING on non-PR events, and
-    // `'' ?? x` is `''`, so both sides answer null on a push build rather than
-    // falling through to GITHUB_REF_NAME. That is arguably a small bug in
-    // src/build/git-identity.ts - but it is THEIR bug, and reproducing it
-    // exactly is the point: the two must agree, or this guard invents a
-    // mismatch out of a disagreement about how to read an env var. Fix it in
-    // git-identity.ts first and this test is what tells you to follow.
+  it('#300 — an empty GITHUB_HEAD_REF falls through to GITHUB_REF_NAME', () => {
+    // GitHub DEFINES GITHUB_HEAD_REF on every event and sets it to '' when the
+    // event has no head ref (push, schedule, dispatch). #298 shipped this as a
+    // verbatim `??` copy of git-identity.ts, empty string and all, so that the
+    // two could not disagree; #300 fixed both at once. Empty and absent mean
+    // the same thing here, so `||` is the operator that belongs.
     const nowhere = path.join(os.tmpdir(), 'bundle-guard-no-such-dir');
-    expect(currentBranch(nowhere, { GITHUB_HEAD_REF: '', GITHUB_REF_NAME: 'main' })).toBeNull();
+    expect(currentBranch(nowhere, { GITHUB_HEAD_REF: '', GITHUB_REF_NAME: 'main' })).toBe('main');
+    expect(currentBranch(nowhere, { GITHUB_HEAD_REF: '', GITHUB_REF_NAME: '' })).toBeNull();
+  });
+
+  it('answers identically to probeBuildIdentity for every env shape', () => {
+    // The real pin, and the reason #298's mirrored COMMENT was not enough: this
+    // guard's provenance NOTE compares the branch baked into the bundle (by
+    // probeBuildIdentity, at build time) against the branch of the checkout (by
+    // currentBranch, now). Any disagreement about how to read one env var makes
+    // it invent a mismatch that does not exist. Two copies of a rule drift;
+    // calling both functions does not. Touch either fallback chain alone and
+    // this goes red.
+    const nowhere = path.join(os.tmpdir(), 'bundle-guard-no-such-dir');
+    // detached HEAD is what BOTH sides see on CI: actions/checkout lands on a
+    // commit, so git has no branch name and only the environment does.
+    const detachedGit = (args) => {
+      const key = args.join(' ');
+      if (key === 'rev-parse --short=8 HEAD') return 'a1b2c3d4\n';
+      if (key === 'rev-parse --abbrev-ref HEAD') return 'HEAD\n';
+      if (key === 'status --porcelain') return '';
+      throw new Error(`unexpected git: ${key}`);
+    };
+
+    const envs = [
+      {},
+      { GITHUB_HEAD_REF: 'feature/300' },
+      { GITHUB_REF_NAME: 'main' },
+      { GITHUB_HEAD_REF: '', GITHUB_REF_NAME: 'main' }, // push event — #300
+      { GITHUB_HEAD_REF: '', GITHUB_REF_NAME: '' }, // no CI at all
+      { GITHUB_HEAD_REF: 'feature/300', GITHUB_REF_NAME: '300/merge' }, // pull_request
+      { GITHUB_HEAD_REF: undefined, GITHUB_REF_NAME: 'main' },
+    ];
+    for (const env of envs) {
+      const baked = probeBuildIdentity({ run: detachedGit, env }).branch;
+      expect({ env, branch: currentBranch(nowhere, env) }).toEqual({ env, branch: baked });
+    }
   });
 });
 

@@ -67,6 +67,15 @@ export interface ProbeOptions {
  * `GITHUB_HEAD_REF` on a pull_request build (the source branch), `GITHUB_REF_NAME`
  * elsewhere. Local detached checkouts — a worktree parked on a SHA — still
  * report null, which is honest and is rendered as "detached".
+ *
+ * The fallback chain is `||`, NOT `??`, and that is the whole of #300: GitHub
+ * defines `GITHUB_HEAD_REF` on *every* event and sets it to the EMPTY STRING on
+ * the ones that have no head ref (push, schedule, workflow_dispatch). `'' ?? x`
+ * is `''`, so a `??` chain stops at the empty string and every push build —
+ * including every build of `main` — stamped itself "detached" while
+ * `GITHUB_REF_NAME` sat right there holding the answer. An absent variable and
+ * an empty one mean the same thing here ("GitHub has no head ref for you"), so
+ * the operator that treats them the same is the correct one.
  */
 export function probeBuildIdentity(opts: ProbeOptions = {}): BuildIdentity {
   const now = opts.now ?? ((): Date => new Date());
@@ -83,7 +92,7 @@ export function probeBuildIdentity(opts: ProbeOptions = {}): BuildIdentity {
 
   const head = ask(run, ['rev-parse', '--abbrev-ref', 'HEAD']);
   const branch =
-    head && head !== 'HEAD' ? head : (env.GITHUB_HEAD_REF ?? env.GITHUB_REF_NAME ?? null) || null;
+    head && head !== 'HEAD' ? head : env.GITHUB_HEAD_REF || env.GITHUB_REF_NAME || null;
 
   // `--porcelain` is silent on a clean tree and already excludes .gitignore'd
   // paths, so `out/` and `node_modules/` never make a build look dirty.
