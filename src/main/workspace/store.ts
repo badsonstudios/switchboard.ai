@@ -443,6 +443,12 @@ function sanitizeUpdates(u: unknown): UpdatePrefs {
       ? { skippedVersion: x.skippedVersion.slice(0, 64) }
       : {}),
     ...(typeof x.lastCheck === 'string' && x.lastCheck ? { lastCheck: x.lastCheck } : {}),
+    // E19-04's handshake. Bounded like `skippedVersion`, and an empty string
+    // drops the key entirely — that is how `resolveHandshake` clears it, so
+    // "cleared" has to mean absent on disk rather than a lingering `""`.
+    ...(typeof x.pendingUpdateVersion === 'string' && x.pendingUpdateVersion
+      ? { pendingUpdateVersion: x.pendingUpdateVersion.slice(0, 64) }
+      : {}),
   };
 }
 

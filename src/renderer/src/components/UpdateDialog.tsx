@@ -17,7 +17,7 @@
 // unless there is genuinely something to offer (the item's done-when).
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import type { UpdateStatus } from '../../../shared/update';
+import type { UpdateInstallStatus, UpdateStatus } from '../../../shared/update';
 import { Markdown } from '../lib/markdown';
 
 /**
@@ -46,6 +46,36 @@ function unavailableKey(reason: UpdateStatus['result']['reason']): string {
   }
 }
 
+/**
+ * Which "that didn't install" sentence to show (E19-04).
+ *
+ * Same register as the check failures above and for the same reason: nothing
+ * here has cost the user anything. The one that is genuinely different is
+ * `checksum` — it is the only case where something went wrong rather than
+ * merely not working, and the message says so plainly without alarming anyone,
+ * because the outcome (deleted, never run) is the SAFE one.
+ */
+function installFailureKey(reason: UpdateInstallStatus['reason']): string {
+  switch (reason) {
+    case 'checksum':
+      return 'update.failedChecksum';
+    case 'no-asset':
+      return 'update.failedNoAsset';
+    case 'unsupported':
+      return 'update.failedUnsupported';
+    case 'no-token':
+      return 'update.failedNoToken';
+    case 'auth':
+      return 'update.failedAuth';
+    case 'disk':
+      return 'update.failedDisk';
+    case 'launch':
+      return 'update.failedLaunch';
+    default:
+      return 'update.failedNetwork';
+  }
+}
+
 /** Swallow a click on an anchor inside the notes and hand its href to main. */
 function interceptLink(open: (url: string) => void) {
   return (e: React.MouseEvent): void => {
@@ -60,12 +90,22 @@ export function UpdateDialog(props: {
   open: boolean;
   status: UpdateStatus | null;
   onClose: () => void;
-  /** open the release page in the browser (E19-04 replaces this with a download) */
-  onUpdate: (url: string) => void;
+  /**
+   * Take the offer. With a verifiable installer on the release this downloads
+   * and installs; without one it opens the release page (E19-04). The DIALOG
+   * does not know which — App decides, because main is the side that knows
+   * whether the release has an asset it will run.
+   */
+  onUpdate: () => void;
+  /** open a URL in the browser: the fallback button, and links in the notes */
+  onOpenUrl: (url: string) => void;
   /** not this run — nothing persisted */
   onIgnore: (version: string) => void;
   /** not this version, ever — persisted in the workspace */
   onSkip: (version: string) => void;
+  /** how far the download/verify/install has got, when one is happening (E19-04) */
+  install?: UpdateInstallStatus | null;
+  onCancelInstall?: () => void;
 }): React.JSX.Element | null {
   const { t } = useTranslation();
   const returnFocusTo = React.useRef<HTMLElement | null>(null);
@@ -83,21 +123,34 @@ export function UpdateDialog(props: {
   const version = result.latestVersion ?? '';
   const available = result.state === 'available' && !!version;
 
+  const install = props.install ?? null;
+  // The three phases that OWN the dialog: while any of them is true the offer
+  // is no longer a question, so the three buttons are gone and Escape does not
+  // close (see the handler below) — dismissing a window mid-download would
+  // leave a 120 MB transfer running with nothing on screen to stop it.
+  const busy =
+    install?.phase === 'downloading' ||
+    install?.phase === 'verifying' ||
+    install?.phase === 'launching';
+  const failed = install?.phase === 'failed';
+
   const close = (): void => {
     props.onClose();
     const el = returnFocusTo.current;
     requestAnimationFrame(() => el?.focus?.());
   };
 
-  const title = available
-    ? t('update.availableTitle', { version })
-    : result.state === 'up-to-date'
-      ? t('update.upToDateTitle')
-      : t('update.unavailableTitle');
+  const title = failed
+    ? t('update.installFailedTitle')
+    : available
+      ? t('update.availableTitle', { version })
+      : result.state === 'up-to-date'
+        ? t('update.upToDateTitle')
+        : t('update.unavailableTitle');
 
   return (
     <div
-      onMouseDown={close} // click-away, same as About and the palette
+      onMouseDown={busy ? undefined : close} // click-away, same as About and the palette
       style={{
         position: 'fixed',
         inset: 0,
@@ -117,6 +170,10 @@ export function UpdateDialog(props: {
         aria-modal="true"
         aria-label={title}
         data-update-state={result.state}
+        // The install's own state, so the e2e suite can wait on a PHASE rather
+        // than on a sentence (E19-04). Absent when nothing is installing.
+        data-update-phase={install?.phase}
+        data-update-reason={install?.reason}
         // focusable CONTAINER, for the reason AboutPanel documents: clicking
         // the body must not strand focus on <body> and kill Escape, and the
         // release notes are text someone may want to select.
@@ -126,7 +183,10 @@ export function UpdateDialog(props: {
           e.stopPropagation(); // the dialog owns its keys while open
           if (e.key === 'Escape') {
             e.preventDefault();
-            close();
+            // Not while a download is running: the only way out of that is
+            // Cancel, which actually stops it. Escape here would hide the
+            // transfer rather than end it.
+            if (!busy) close();
           }
         }}
         style={{
@@ -156,7 +216,16 @@ export function UpdateDialog(props: {
           {title}
         </div>
 
-        {available ? (
+        {busy ? (
+          <InstallProgress status={install as UpdateInstallStatus} />
+        ) : failed ? (
+          <p
+            data-update-field="message"
+            style={{ margin: 0, padding: '14px', fontSize: 12.5, color: 'var(--muted)' }}
+          >
+            {t(installFailureKey(install?.reason))}
+          </p>
+        ) : available ? (
           <>
             <p
               data-update-field="from"
@@ -177,8 +246,8 @@ export function UpdateDialog(props: {
               // middle-click would otherwise miss this handler entirely and
               // fall through to main's much broader any-http(s) window-open
               // rule.
-              onClick={interceptLink(props.onUpdate)}
-              onAuxClick={interceptLink(props.onUpdate)}
+              onClick={interceptLink(props.onOpenUrl)}
+              onAuxClick={interceptLink(props.onOpenUrl)}
             >
               {result.notes ? (
                 <Markdown text={result.notes} />
@@ -209,7 +278,35 @@ export function UpdateDialog(props: {
             borderBlockStart: '1px solid var(--border)',
           }}
         >
-          {available ? (
+          {busy ? (
+            // ONE button while a transfer is running, and it is the one that
+            // stops it. `launching` has nothing left to cancel — the installer
+            // is already the OS's problem — so the row is simply empty there.
+            install?.phase === 'launching' ? null : (
+              <UpdateButton onClick={() => props.onCancelInstall?.()}>
+                {t('update.cancel')}
+              </UpdateButton>
+            )
+          ) : failed ? (
+            <>
+              {/* THE FALLBACK. Whatever went wrong — a checksum that did not
+                  match most of all — the user is one click from the same
+                  release page E19-03 sent them to, which is where they were
+                  before one-click updates existed. */}
+              {result.url && (
+                <UpdateButton
+                  primary
+                  onClick={() => {
+                    props.onOpenUrl(result.url as string);
+                    close();
+                  }}
+                >
+                  {t('update.openReleasePage')}
+                </UpdateButton>
+              )}
+              <UpdateButton onClick={close}>{t('update.close')}</UpdateButton>
+            </>
+          ) : available ? (
             <>
               <UpdateButton
                 onClick={() => {
@@ -227,13 +324,11 @@ export function UpdateDialog(props: {
               >
                 {t('update.ignore')}
               </UpdateButton>
-              <UpdateButton
-                primary
-                onClick={() => {
-                  if (result.url) props.onUpdate(result.url);
-                  close();
-                }}
-              >
+              {/* Does NOT close: with an installer to fetch, this dialog
+                  becomes the progress bar. App keeps it open until the install
+                  reaches a terminal phase, and the browser fallback closes it
+                  itself (there is nothing left to watch). */}
+              <UpdateButton primary onClick={() => props.onUpdate()}>
                 {t('update.update')}
               </UpdateButton>
             </>
@@ -242,6 +337,58 @@ export function UpdateDialog(props: {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The download's own face (E19-04).
+ *
+ * A real `<progress>`, not a div with a width: it is announced as a progress
+ * bar, it carries its own value, and it degrades to indeterminate by simply
+ * having no `value` — which is exactly the case when the feed did not send a
+ * Content-Length. Reproducing any of that by hand would be worse in every
+ * theme and every screen reader.
+ *
+ * `aria-live="polite"` on the LABEL rather than the bar: a percentage read out
+ * on every tick is unusable, but the three phase changes (downloading →
+ * checking → installing) are the whole story and are worth hearing.
+ */
+function InstallProgress(props: { status: UpdateInstallStatus }): React.JSX.Element {
+  const { t } = useTranslation();
+  const { phase, received, total, version } = props.status;
+  const determinate = phase === 'downloading' && total > 0;
+  const percent = determinate ? Math.min(100, Math.round((received / total) * 100)) : 0;
+  const label =
+    phase === 'verifying'
+      ? t('update.verifying')
+      : phase === 'launching'
+        ? t('update.launching')
+        : determinate
+          ? t('update.downloadingPercent', { version, percent })
+          : t('update.downloading', { version });
+
+  return (
+    <div style={{ padding: '14px' }}>
+      <p
+        data-update-field="progress"
+        aria-live="polite"
+        style={{ margin: '0 0 10px', fontSize: 12.5, color: 'var(--text)' }}
+      >
+        {label}
+      </p>
+      {phase !== 'launching' && (
+        <progress
+          data-update-field="bar"
+          // Undefined, not 0: an omitted `value` is what makes it
+          // indeterminate, and 0 would render a permanently empty bar during
+          // the verify pass.
+          value={determinate ? percent : undefined}
+          max={100}
+          aria-label={label}
+          style={{ inlineSize: '100%', blockSize: 6 }}
+        />
+      )}
     </div>
   );
 }

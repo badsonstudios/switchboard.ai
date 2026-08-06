@@ -10,12 +10,23 @@
 // fixture, so nothing else in the run grows a surprise dialog the day a real
 // release exists.
 import { test, expect, Page } from '@playwright/test';
+import crypto from 'crypto';
 import http from 'http';
 import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { AddressInfo } from 'net';
 import { launchApp, LaunchedApp, poll, workspaceJsonPath } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+/** The name `electron-builder.js` produces, which is what the picker looks for. */
+const INSTALLER_NAME = 'switchboard-Setup-9.9.9.exe';
+/** What `app.getVersion()` answers in an unpackaged run — the handshake's other half. */
+const APP_VERSION = (
+  JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as {
+    version: string;
+  }
+).version;
 
 const dialog = (w: Page) => w.locator('[role="dialog"][data-update-state]');
 const stamp = (w: Page) =>
@@ -27,7 +38,7 @@ async function shellReady(w: Page): Promise<void> {
 }
 
 /** One GitHub-shaped release. */
-function release(tag: string, body: string): Record<string, unknown> {
+function release(tag: string, body: string, assets?: unknown[]): Record<string, unknown> {
   return {
     tag_name: tag,
     name: tag,
@@ -36,18 +47,51 @@ function release(tag: string, body: string): Record<string, unknown> {
     draft: false,
     prerelease: false,
     published_at: '2026-08-05T10:00:00Z',
+    ...(assets ? { assets } : {}),
   };
 }
 
-/** The stub feed. `serve` is swapped between launches to change the answer. */
+/**
+ * The stub feed. `serve` is swapped between launches to change the answer.
+ *
+ * E19-04 gave it two more routes: `/assets/installer` and `/assets/sidecar`,
+ * so the download → verify → install path can be driven end to end without
+ * publishing a release to test against. `download.ts` only reaches a loopback
+ * http host because the feed override is set (and a packaged build cannot set
+ * it) — that seam is exactly what makes this possible.
+ */
 class StubFeed {
   private server: http.Server | null = null;
   url = '';
   hits = 0;
   body: unknown = [];
+  /** the bytes served as the "installer" */
+  installer = Buffer.from('a pretend NSIS installer');
+  /** what the sidecar says. Set to a wrong digest to corrupt the download. */
+  sidecarDigest: string | null = null;
+  /** stall the installer body forever, so a cancel has something to cancel */
+  stall = false;
 
   async start(): Promise<void> {
-    const server = http.createServer((_req, res) => {
+    const server = http.createServer((req, res) => {
+      if (req.url?.startsWith('/assets/installer')) {
+        res.writeHead(200, {
+          'content-type': 'application/octet-stream',
+          'content-length': String(this.installer.length),
+        });
+        // One byte, then silence: the renderer gets a moving bar and the test
+        // gets a download that is genuinely in flight when it presses Cancel.
+        res.write(this.installer.subarray(0, 1));
+        if (!this.stall) res.end(this.installer.subarray(1));
+        return;
+      }
+      if (req.url?.startsWith('/assets/sidecar')) {
+        const digest =
+          this.sidecarDigest ?? crypto.createHash('sha256').update(this.installer).digest('hex');
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        res.end(`${digest}  ${INSTALLER_NAME}\n`);
+        return;
+      }
       this.hits++;
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify(this.body));
@@ -55,6 +99,15 @@ class StubFeed {
     this.server = server;
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     this.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/releases`;
+  }
+
+  /** The two assets a release needs before E19-04 will install it. */
+  assets(): unknown[] {
+    const origin = this.url.replace(/\/releases$/, '');
+    return [
+      { name: INSTALLER_NAME, url: `${origin}/assets/installer`, size: this.installer.length },
+      { name: `${INSTALLER_NAME}.sha256`, url: `${origin}/assets/sidecar`, size: 78 },
+    ];
   }
 
   /** Idempotent: one test deliberately kills the feed mid-test. */
@@ -71,6 +124,7 @@ interface UpdatesOnDisk {
   autoCheck?: boolean;
   skippedVersion?: string;
   lastCheck?: string;
+  pendingUpdateVersion?: string;
 }
 function updatePrefs(home: string): UpdatesOnDisk | null {
   try {
@@ -261,5 +315,185 @@ test.describe('update check (E19-03)', () => {
     // banner's, for one), and this is a claim about THIS box.
     await expect(dialog(w).locator('[role="alert"]')).toHaveCount(0);
     await expect(dialog(w)).toHaveAttribute('role', 'dialog');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P2-E19-04: the download -> verify -> install path, end to end.
+//
+// **Windows-only, and that is the feature, not the test.** E19 decision 3
+// packages an NSIS installer and nothing else; on any other platform the check
+// deliberately offers no `download` at all and the browser fallback is the
+// whole answer (unit-tested in `install.test.ts`).
+//
+// Nothing here publishes a release, and nothing here runs an installer:
+//   - the feed and both assets are the local stub above;
+//   - `SWITCHBOARD_UPDATE_NO_LAUNCH` (a non-packaged-build seam, like the feed
+//     override itself) stops main spawning the .exe and quitting, so
+//     `launching` becomes an observable terminal phase instead of the suite
+//     losing its window.
+// ---------------------------------------------------------------------------
+test.describe('one-click download + verified install (E19-04)', () => {
+  test.skip(process.platform !== 'win32', 'the installer, and this path, are Windows-only');
+
+  let feed: StubFeed;
+  let a: LaunchedApp | undefined;
+  let temp: string;
+
+  test.beforeEach(async () => {
+    feed = new StubFeed();
+    await feed.start();
+    // Our own temp: the staged installer is asserted on, and a suite that
+    // swept the machine's real temp directory would be a rude thing to run.
+    temp = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-temp-'));
+  });
+  test.afterEach(async () => {
+    await a?.cleanup();
+    a = undefined;
+    await feed.stop();
+    fs.rmSync(temp, { recursive: true, force: true });
+  });
+
+  const launch = (home?: string): Promise<LaunchedApp> =>
+    launchApp({
+      home,
+      env: {
+        SWITCHBOARD_UPDATE_FEED: feed.url,
+        SWITCHBOARD_UPDATE_NO_LAUNCH: '1',
+        TEMP: temp,
+        TMP: temp,
+      },
+    });
+
+  const staged = (): string => path.join(temp, 'switchboard-updates', INSTALLER_NAME);
+
+  test('Update downloads with progress, verifies, and hands over to the installer', async () => {
+    feed.body = [release('v9.9.9', 'notes', feed.assets())];
+    a = await launch();
+    const w = a.window;
+    const home = a.home;
+    await shellReady(w);
+    await expect(dialog(w)).toBeVisible();
+
+    await dialog(w).getByRole('button', { name: 'Update' }).click();
+    // A REAL progress element, so what the user sees is a determinate bar and
+    // not a spinner pretending to know something.
+    await expect(dialog(w).locator('[data-update-field="bar"]')).toBeVisible();
+    // ...and it ends at the handover, having passed through verification.
+    await expect(dialog(w)).toHaveAttribute('data-update-phase', 'launching', { timeout: 20_000 });
+
+    // The verified installer is on disk, in the directory main owns.
+    expect(fs.existsSync(staged())).toBe(true);
+    expect(fs.readFileSync(staged())).toEqual(feed.installer);
+    // ...and the handshake is armed BEFORE the handover, because after it there
+    // is no process left to arm it.
+    await poll(() => (updatePrefs(home)?.pendingUpdateVersion === '9.9.9' ? true : null));
+  });
+
+  test('the next run confirms the handshake and says which version you are on', async () => {
+    // The other half, driven the only way it can be driven without actually
+    // replacing the running build: a pending version that matches what IS
+    // running is exactly the state the installer's relaunch produces.
+    feed.body = [];
+    a = await launch();
+    const home = a.home;
+    await shellReady(a.window);
+    await checkCompleted(a);
+    await a.close();
+
+    const file = workspaceJsonPath(home);
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+      updates?: Record<string, unknown>;
+    };
+    saved.updates = { ...saved.updates, pendingUpdateVersion: APP_VERSION };
+    fs.writeFileSync(file, JSON.stringify(saved));
+
+    a = await launch(home);
+    await shellReady(a.window);
+    const notice = a.window.locator('[data-events-notice="installed"]');
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText(APP_VERSION);
+    // Consumed: the flag is cleared on read, so it cannot congratulate forever.
+    await poll(() => (updatePrefs(home)?.pendingUpdateVersion ? null : true));
+    await notice.getByRole('button', { name: 'Got it' }).click();
+    await expect(notice).toHaveCount(0);
+  });
+
+  test('a mismatched checksum is DELETED, never run, and falls back to the browser', async () => {
+    // The done-when's second clause. The stub vouches for bytes it did not
+    // send, which is what a corrupted download looks like from in here.
+    feed.sidecarDigest = 'f'.repeat(64);
+    feed.body = [release('v9.9.9', 'notes', feed.assets())];
+    a = await launch();
+    const w = a.window;
+    await shellReady(w);
+    await dialog(w).getByRole('button', { name: 'Update' }).click();
+
+    await expect(dialog(w)).toHaveAttribute('data-update-phase', 'failed', { timeout: 20_000 });
+    await expect(dialog(w)).toHaveAttribute('data-update-reason', 'checksum');
+    await expect(dialog(w)).toContainText('deleted and nothing was run');
+    // Gone from disk, not kept "in case it was a fluke".
+    expect(fs.existsSync(staged())).toBe(false);
+    // ...and the way out is the same release page E19-03 offered.
+    await expect(dialog(w).getByRole('button', { name: 'Open the release page' })).toBeVisible();
+    expect(updatePrefs(a.home)?.pendingUpdateVersion).toBeUndefined();
+  });
+
+  test('Cancel mid-download stops it, and the offer is still there afterwards', async () => {
+    feed.stall = true; // the body never finishes; only a cancel ends it
+    feed.body = [release('v9.9.9', 'notes', feed.assets())];
+    a = await launch();
+    const w = a.window;
+    await shellReady(w);
+    await dialog(w).getByRole('button', { name: 'Update' }).click();
+    await expect(dialog(w)).toHaveAttribute('data-update-phase', 'downloading');
+
+    await dialog(w).getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog(w)).toHaveAttribute('data-update-phase', 'cancelled', { timeout: 20_000 });
+    // The offer is intact: all three answers are back, and nothing was staged.
+    for (const label of ['Update', 'Ignore', 'Skip this version']) {
+      await expect(dialog(w).getByRole('button', { name: label })).toBeVisible();
+    }
+    expect(fs.existsSync(staged())).toBe(false);
+
+    // ...and closing the dialog without answering leaves the affordance standing.
+    await w.keyboard.press('Escape');
+    await expect(dialog(w)).toHaveCount(0);
+    const notice = w.locator('[data-events-notice="available"]');
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText('9.9.9');
+    await notice.getByRole('button', { name: 'Update' }).click();
+    await expect(dialog(w)).toBeVisible();
+  });
+
+  test('a release with no sidecar takes the browser path — it never downloads', async () => {
+    // A release built before the sidecar existed. E19-03's behaviour, intact:
+    // Update hands off to the browser and the dialog closes.
+    //
+    // The release deliberately has NO `html_url`, so this stops one step short
+    // of actually launching a browser: a suite that opened a real tab on every
+    // run would be an unpleasant thing to leave behind, and `openExternal`'s
+    // own allowlist is covered in `service.test.ts`. What is proved here is the
+    // branch — no download, no staged file, dialog closed.
+    const noUrl = release('v9.9.9', 'notes', [feed.assets()[0]]);
+    delete noUrl.html_url;
+    feed.body = [noUrl];
+    a = await launch();
+    const w = a.window;
+    await shellReady(w);
+    await dialog(w).getByRole('button', { name: 'Update' }).click();
+    await expect(dialog(w)).toHaveCount(0);
+    expect(fs.existsSync(staged())).toBe(false);
+  });
+
+  test('stale installers are swept at startup', async () => {
+    // ~120 MB each in real life. One left by a crash is a bill nobody agreed to.
+    const dir = path.join(temp, 'switchboard-updates');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'switchboard-Setup-0.0.1.exe'), 'stale');
+    feed.body = [];
+    a = await launch();
+    await shellReady(a.window);
+    await poll(() => (fs.readdirSync(dir).length === 0 ? true : null));
   });
 });

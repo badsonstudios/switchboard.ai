@@ -2,7 +2,12 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { SlashCommand } from '../shared/slash-commands';
 import type { PtyAttachment, PtyChunk } from '../shared/ipc/pty';
 import type { BindingSnapshot } from '../shared/transcripts';
-import type { UpdatePrefs, UpdateStatus } from '../shared/update';
+import type {
+  UpdateHandshake,
+  UpdateInstallStatus,
+  UpdatePrefs,
+  UpdateStatus,
+} from '../shared/update';
 
 const versionArg = process.argv.find((a) => a.startsWith('--switchboard-version='));
 const seedArg = process.argv.find((a) => a.startsWith('--switchboard-seed-panels='));
@@ -276,6 +281,29 @@ const api = {
     /** resolves FALSE for anything that is not an https GitHub URL */
     openExternal: (url: string): Promise<boolean> =>
       ipcRenderer.invoke('update:openExternal', url),
+    /**
+     * Download, verify and install the release main last offered (E19-04).
+     *
+     * Takes NO arguments on purpose. The renderer does not choose what gets
+     * downloaded or executed — main installs the release it found itself, and
+     * a URL crossing this bridge would be a URL the renderer could choose.
+     *
+     * Resolves with the terminal status; progress arrives on `onInstallStatus`.
+     */
+    install: (): Promise<UpdateInstallStatus> => ipcRenderer.invoke('update:install'),
+    /** stop the download in flight; a no-op when there is none */
+    cancelInstall: (): Promise<void> => ipcRenderer.invoke('update:cancelInstall'),
+    onInstallStatus: (cb: (s: UpdateInstallStatus) => void): (() => void) => {
+      const h = (_e: unknown, s: UpdateInstallStatus): void => cb(s);
+      ipcRenderer.on('update:installStatus', h);
+      return () => ipcRenderer.removeListener('update:installStatus', h);
+    },
+    /**
+     * The previous run installed something — what happened? Null on an
+     * ordinary launch. Main clears the flag at startup, so this answers the
+     * same for every window and for every call within one run.
+     */
+    handshake: (): Promise<UpdateHandshake | null> => ipcRenderer.invoke('update:handshake'),
   },
   git: {
     status: (folder: string): Promise<unknown> => ipcRenderer.invoke('git:status', folder),

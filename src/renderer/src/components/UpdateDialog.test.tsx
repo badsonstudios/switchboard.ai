@@ -18,7 +18,7 @@ import { initReactI18next } from 'react-i18next';
 import ICU from 'i18next-icu';
 import en from '../i18n/locales/en.json';
 import { UpdateDialog } from './UpdateDialog';
-import type { UpdateStatus } from '../../../shared/update';
+import type { UpdateInstallStatus, UpdateStatus } from '../../../shared/update';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -30,8 +30,10 @@ let host: HTMLElement;
 const handlers = {
   onClose: vi.fn(),
   onUpdate: vi.fn(),
+  onOpenUrl: vi.fn(),
   onIgnore: vi.fn(),
   onSkip: vi.fn(),
+  onCancelInstall: vi.fn(),
 };
 
 function status(over: Partial<UpdateStatus['result']> = {}, manual = false): UpdateStatus {
@@ -51,10 +53,25 @@ function status(over: Partial<UpdateStatus['result']> = {}, manual = false): Upd
   };
 }
 
-async function render(open: boolean, s: UpdateStatus | null): Promise<void> {
+async function render(
+  open: boolean,
+  s: UpdateStatus | null,
+  install: UpdateInstallStatus | null = null
+): Promise<void> {
   await act(async () => {
-    root!.render(<UpdateDialog open={open} status={s} {...handlers} />);
+    root!.render(<UpdateDialog open={open} status={s} install={install} {...handlers} />);
   });
+}
+
+/** One install-progress record (E19-04). */
+function progress(over: Partial<UpdateInstallStatus> = {}): UpdateInstallStatus {
+  return {
+    phase: 'downloading',
+    version: '0.2.0',
+    received: 0,
+    total: 0,
+    ...over,
+  };
 }
 
 const dialog = (): HTMLElement | null => host.querySelector<HTMLElement>('[role="dialog"]');
@@ -126,13 +143,14 @@ describe('the new-release dialog', () => {
     expect(host.textContent).toContain(en.update.noNotes);
   });
 
-  it('Update hands the RELEASE URL out and closes', async () => {
+  it('Update asks App to start the update, and does NOT close by itself', async () => {
+    // E19-04 changed this: the dialog no longer knows whether the answer is a
+    // download or a browser tab, and it stays open because with an installer to
+    // fetch it IS the progress bar.
     await render(true, status());
     await click(button(en.update.update));
-    expect(handlers.onUpdate).toHaveBeenCalledWith(
-      'https://github.com/badsonstudios/switchboard.ai/releases/tag/v0.2.0'
-    );
-    expect(handlers.onClose).toHaveBeenCalled();
+    expect(handlers.onUpdate).toHaveBeenCalled();
+    expect(handlers.onClose).not.toHaveBeenCalled();
   });
 
   it('Skip reports the VERSION (it is persisted per-version), Ignore does not persist', async () => {
@@ -158,7 +176,7 @@ describe('the new-release dialog', () => {
       link.dispatchEvent(event);
     });
     expect(event.defaultPrevented).toBe(true);
-    expect(handlers.onUpdate).toHaveBeenCalledWith('https://github.com/x/y/pull/1');
+    expect(handlers.onOpenUrl).toHaveBeenCalledWith('https://github.com/x/y/pull/1');
   });
 
   it('a MIDDLE-click on a note link is intercepted too', async () => {
@@ -172,7 +190,7 @@ describe('the new-release dialog', () => {
       link.dispatchEvent(event);
     });
     expect(event.defaultPrevented).toBe(true);
-    expect(handlers.onUpdate).toHaveBeenCalledWith('https://github.com/x/y/pull/1');
+    expect(handlers.onOpenUrl).toHaveBeenCalledWith('https://github.com/x/y/pull/1');
   });
 });
 
@@ -233,6 +251,109 @@ describe('the two faces a MANUAL check can produce', () => {
       expect(text.toLowerCase()).not.toContain('error');
       expect(text).toContain('Nothing is wrong with your app');
     }
+  });
+});
+
+describe('the install faces (E19-04)', () => {
+  it('a download replaces the three answers with a determinate bar and a Cancel', async () => {
+    await render(true, status(), progress({ received: 25, total: 100 }));
+    expect(dialog()?.getAttribute('data-update-phase')).toBe('downloading');
+    const bar = host.querySelector<HTMLProgressElement>('[data-update-field="bar"]')!;
+    expect(bar.value).toBe(25);
+    expect(bar.max).toBe(100);
+    expect(host.querySelector('[data-update-field="progress"]')?.textContent).toContain('25');
+    // The offer is no longer a question while the answer is being fetched.
+    for (const label of [en.update.update, en.update.ignore, en.update.skip]) {
+      expect(() => button(label), label).toThrow();
+    }
+    await click(button(en.update.cancel));
+    expect(handlers.onCancelInstall).toHaveBeenCalled();
+  });
+
+  it('a feed with no Content-Length gets an INDETERMINATE bar, not an empty one', async () => {
+    await render(true, status(), progress({ received: 4096, total: 0 }));
+    const bar = host.querySelector<HTMLProgressElement>('[data-update-field="bar"]')!;
+    // jsdom reports 0 for an absent value; the attribute is the honest check.
+    expect(bar.hasAttribute('value')).toBe(false);
+  });
+
+  it('verifying says so, and keeps the Cancel', async () => {
+    await render(true, status(), progress({ phase: 'verifying', received: 100, total: 100 }));
+    expect(host.querySelector('[data-update-field="progress"]')?.textContent).toBe(
+      en.update.verifying
+    );
+    expect(button(en.update.cancel)).toBeTruthy();
+  });
+
+  it('launching has NOTHING left to cancel — no bar, no buttons', async () => {
+    await render(true, status(), progress({ phase: 'launching', received: 100, total: 100 }));
+    expect(host.querySelector('[data-update-field="bar"]')).toBeNull();
+    expect(() => button(en.update.cancel)).toThrow();
+  });
+
+  it('cannot be dismissed mid-download — Escape and click-away are inert', async () => {
+    // Hiding a 120 MB transfer is not stopping it. Cancel is the only way out.
+    await render(true, status(), progress({ received: 1, total: 100 }));
+    await act(async () => {
+      dialog()!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      );
+    });
+    await act(async () => {
+      (dialog()!.parentElement as HTMLElement).dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true })
+      );
+    });
+    expect(handlers.onClose).not.toHaveBeenCalled();
+  });
+
+  it('a CHECKSUM mismatch says what happened and offers the browser instead', async () => {
+    // The done-when's second clause, at the surface: deleted, never executed,
+    // and the user is one click from the release page.
+    await render(true, status(), progress({ phase: 'failed', reason: 'checksum' }));
+    expect(dialog()?.getAttribute('data-update-reason')).toBe('checksum');
+    expect(dialog()?.getAttribute('aria-label')).toBe(en.update.installFailedTitle);
+    expect(host.querySelector('[data-update-field="message"]')?.textContent).toBe(
+      en.update.failedChecksum
+    );
+    await click(button(en.update.openReleasePage));
+    expect(handlers.onOpenUrl).toHaveBeenCalledWith(
+      'https://github.com/badsonstudios/switchboard.ai/releases/tag/v0.2.0'
+    );
+    expect(handlers.onClose).toHaveBeenCalled();
+  });
+
+  it('every failure reason gets its OWN sentence, and none of them blames the user', async () => {
+    const cases: Array<[UpdateInstallStatus['reason'], string]> = [
+      ['checksum', en.update.failedChecksum],
+      ['no-asset', en.update.failedNoAsset],
+      ['unsupported', en.update.failedUnsupported],
+      ['no-token', en.update.failedNoToken],
+      ['auth', en.update.failedAuth],
+      ['disk', en.update.failedDisk],
+      ['launch', en.update.failedLaunch],
+      ['network', en.update.failedNetwork],
+    ];
+    for (const [reason, expected] of cases) {
+      await render(true, status(), progress({ phase: 'failed', reason }));
+      expect(host.querySelector('[data-update-field="message"]')?.textContent, reason).toBe(
+        expected
+      );
+    }
+    // Distinct sentences, not one message wearing eight hats.
+    expect(new Set(cases.map(([, text]) => text)).size).toBe(cases.length);
+    // A failed install has cost the user nothing — it stays a dialog, never an alert.
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('a CANCELLED install puts the original offer back, untouched', async () => {
+    // The done-when: "cancel mid-download works and the update-available
+    // affordance remains". Here that is the three buttons coming back.
+    await render(true, status(), progress({ phase: 'cancelled', received: 40, total: 100 }));
+    for (const label of [en.update.update, en.update.ignore, en.update.skip]) {
+      expect(button(label), label).toBeTruthy();
+    }
+    expect(host.querySelector('[data-update-field="bar"]')).toBeNull();
   });
 });
 

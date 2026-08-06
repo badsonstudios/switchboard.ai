@@ -28,6 +28,9 @@ import { parsePopoutFeatures } from './popout-bounds';
 import { scanSlashCommands } from './capabilities/slash-commands';
 import { buildMenuTemplate } from './app-menu';
 import { UpdateService, FEED_ENV, isAllowedReleaseUrl } from './update/service';
+import { UpdateInstaller, UPDATE_DIR_NAME, resolveHandshake } from './update/install';
+import { launchInstaller } from './update/installer';
+import type { UpdateHandshake, UpdateInstallStatus } from '../shared/update';
 import { installTerminalAccelerators, makeAcceleratorDeps } from './terminal-accelerators';
 import {
   Box,
@@ -876,6 +879,87 @@ app
     // reach is the release feed. Everything about it is fail-open: no token
     // means no checks (silently), a dead feed means a log line, and a check in
     // flight at quit writes nothing.
+    const feedOverride = app.isPackaged ? undefined : process.env[FEED_ENV];
+    // `off` is a switch, not a feed. Only a URL widens what the installer is
+    // allowed to talk to (see `allowLoopback` below).
+    const feedUrlOverride = feedOverride && feedOverride.trim() !== 'off' ? feedOverride : undefined;
+    const updateLog = createLogger(sink, 'updates');
+    // ── the post-update handshake (E19-04) ───────────────────────────────
+    //
+    // FIRST, before anything else in this block: it reads and clears a flag the
+    // PREVIOUS run wrote just before it quit, and it is the only evidence that
+    // the install went through — the process that could have reported it is the
+    // one that was replaced. Held in a local for the renderer to collect when
+    // it mounts.
+    //
+    // Wrapped, like the provider-adapter probe above and for the same reason:
+    // this runs inside the bootstrap's promise chain, whose `.catch` exits the
+    // process. Nothing in the update path is allowed to be the thing that stops
+    // the app from starting.
+    let handshake: UpdateHandshake | null = null;
+    try {
+      handshake = resolveHandshake({
+        currentVersion: app.getVersion(),
+        getPrefs: () => workspace.getUpdatePrefs(),
+        setPrefs: (patch) => workspace.setUpdatePrefs(patch),
+        log: updateLog,
+      });
+    } catch (err) {
+      log.app.warn('the post-update handshake could not be resolved', { error: String(err) });
+    }
+    // The download/verify/install half (E19-04). Constructed before the
+    // service, which asks it whether an install is running before it prompts.
+    // One definition: the directory we stage into is also the ONLY directory
+    // `launchInstaller` will execute from, and two spellings of it would make
+    // that containment check a coincidence rather than a guarantee.
+    const updateDir = path.join(app.getPath('temp'), UPDATE_DIR_NAME);
+    const installer = new UpdateInstaller({
+      currentVersion: app.getVersion(),
+      updateDir,
+      getPrefs: () => workspace.getUpdatePrefs(),
+      setPrefs: (patch) => workspace.setUpdatePrefs(patch),
+      push: (status) => pushToRenderer?.(currentWindow, 'update:installStatus', status),
+      log: updateLog,
+      // A stub feed serves its assets over http on loopback and wants no
+      // credentials. Both are gated on a feed override that names a URL —
+      // `off` disables checks entirely and must not quietly widen what the
+      // downloader will talk to. A packaged build can set neither, so the
+      // shipped app downloads over https from the API host only, with a
+      // locally-resolved token, exactly as §E19 requires.
+      allowLoopback: !!feedUrlOverride,
+      skipToken: !!feedUrlOverride,
+      quitAndRun: (file) => {
+        // An update is a quit, so it asks the same question the X button asks
+        // — a mid-task session deserves the same warning either way. Answering
+        // "cancel" here means nothing is executed at all (`install.ts` rolls
+        // the pending version back), which is why the confirmation comes
+        // BEFORE the spawn and not after it.
+        const win = currentWindow;
+        if (win && !win.isDestroyed() && !confirmCloseWithBusySessions(win)) return 'declined';
+        // The e2e seam. Non-packaged builds only, like every other one: the
+        // suite drives this path end to end and must not actually run an
+        // installer or take the app down mid-suite.
+        if (!app.isPackaged && process.env.SWITCHBOARD_UPDATE_NO_LAUNCH) {
+          updateLog.info('install launch suppressed by the test seam', { file });
+          return 'quit';
+        }
+        // FLUSH, before anything can replace this process. `setUpdatePrefs`
+        // debounces by 500ms, and the pending version is the whole handshake:
+        // relying on some other subsystem's close handler to get it to disk
+        // would make the feature's core deliverable depend on an unrelated
+        // refactor never happening.
+        workspace.save();
+        if (!launchInstaller(file, { updateDir })) return 'failed';
+        quitConfirmed = true;
+        app.quit();
+        return 'quit';
+      },
+    });
+    // Stale installers are ~120 MB each. Nothing can be downloading yet — this
+    // runs before the first window — so the sweep is unconditional.
+    void installer
+      .sweep()
+      .catch((err: unknown) => log.app.warn('the installer sweep failed', { error: String(err) }));
     const updates = new UpdateService({
       currentVersion: app.getVersion(),
       getPrefs: () => workspace.getUpdatePrefs(),
@@ -883,10 +967,11 @@ app
       // `currentWindow` is reassigned on macOS re-activate, so this reads it
       // fresh — the convention every other push in this file follows.
       push: (status) => pushToRenderer?.(currentWindow, 'update:status', status),
-      log: createLogger(sink, 'updates'),
+      log: updateLog,
       // Dev/test only. A packaged build has no environment variable that can
       // move its update feed (the P2-E15-10 rule for SWITCHBOARD_BIND_GIVEUP_MS).
-      feedOverride: app.isPackaged ? undefined : process.env[FEED_ENV],
+      feedOverride,
+      installBusy: () => installer.busy(),
     });
     updates.start();
     broker.handle('update:check', (_e, opts: { manual?: boolean } = {}) =>
@@ -894,6 +979,33 @@ app
       // pushing as well would open the dialog twice.
       updates.check(opts?.manual === true, { push: false })
     );
+    // ── the install (E19-04) ─────────────────────────────────────────────
+    //
+    // No arguments: main installs the release IT found. The renderer asking
+    // "install this URL" would be the renderer choosing what gets executed, and
+    // the whole capability is built the other way round.
+    broker.handle('update:install', async (): Promise<UpdateInstallStatus> => {
+      const offered = updates.lastResult();
+      if (!offered || offered.state !== 'available') {
+        // The renderer's dialog is showing something main no longer believes —
+        // a window left open across a release being withdrawn. Answer honestly
+        // rather than downloading whatever was last cached.
+        updateLog.warn('an install was requested with no release on offer');
+        return { phase: 'failed', version: '', received: 0, total: 0, reason: 'no-asset' };
+      }
+      return installer.install(offered);
+    });
+    broker.handle('update:cancelInstall', () => {
+      installer.cancel();
+    });
+    broker.handle('update:handshake', () => {
+      // ONE-SHOT. A second window (macOS re-activate, a reopened popout) is not
+      // a second update, and being congratulated twice for one install reads as
+      // a bug in the thing whose whole job is to be trustworthy about versions.
+      const answer = handshake;
+      handshake = null;
+      return answer;
+    });
     broker.handle('update:getPrefs', () => workspace.getUpdatePrefs());
     broker.handle('update:setPrefs', (_e, p: { autoCheck?: boolean; skippedVersion?: string }) => {
       // Narrowed by hand rather than passed through: `lastCheck` is the

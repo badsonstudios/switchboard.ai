@@ -34,6 +34,7 @@ function harness(
     results?: UpdateCheckResult[];
     feedOverride?: string;
     now?: () => number;
+    installBusy?: () => boolean;
   } = {}
 ) {
   let prefs: UpdatePrefs = { autoCheck: true, ...opts.prefs };
@@ -50,6 +51,7 @@ function harness(
     push: (s) => pushed.push(s),
     log,
     feedOverride: opts.feedOverride,
+    installBusy: opts.installBusy,
     checkImpl,
     now: opts.now,
   });
@@ -339,5 +341,52 @@ describe('isAllowedReleaseUrl (what may reach the user\'s browser)', () => {
     ]) {
       expect(isAllowedReleaseUrl(bad), String(bad)).toBe(false);
     }
+  });
+});
+
+describe('the re-entrancy guard (E19-04)', () => {
+  it('an AUTOMATIC check mid-install does not prompt — no dialog over the progress bar', async () => {
+    // The item's words: "a timer tick during a download must not double-prompt".
+    // The check still RUNS, and `lastCheck` still moves; it just stays quiet.
+    const h = harness({ installBusy: () => true });
+    const status = await h.service.check(false);
+    expect(status.result.state).toBe('available');
+    expect(status.prompt).toBe(false);
+    expect(h.prefsNow().lastCheck).toBeTruthy();
+  });
+
+  it('a MANUAL check mid-install still answers — the button is not a decoration', async () => {
+    const h = harness({ installBusy: () => true });
+    expect((await h.service.check(true)).prompt).toBe(true);
+  });
+
+  it('with nothing installing, an automatic check prompts as it always did', async () => {
+    const h = harness({ installBusy: () => false });
+    expect((await h.service.check(false)).prompt).toBe(true);
+  });
+});
+
+describe('lastResult — what the install handler installs (E19-04)', () => {
+  it('is null until a check has completed', () => {
+    expect(harness().service.lastResult()).toBeNull();
+  });
+
+  it('is MAIN’s answer, not the renderer’s — the install never takes a URL from a window', async () => {
+    const h = harness({ results: [result({ latestVersion: '0.2.0' })] });
+    await h.service.check(true);
+    expect(h.service.lastResult()?.latestVersion).toBe('0.2.0');
+  });
+
+  it('tracks the latest answer, so a withdrawn release stops being installable', async () => {
+    const h = harness({
+      results: [result(), result({ state: 'up-to-date', latestVersion: undefined })],
+      now: (() => {
+        let t = 0;
+        return () => (t += AUTO_COALESCE_MS + 1);
+      })(),
+    });
+    await h.service.check(false);
+    await h.service.check(false);
+    expect(h.service.lastResult()?.state).toBe('up-to-date');
   });
 });
