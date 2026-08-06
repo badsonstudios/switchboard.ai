@@ -1,0 +1,69 @@
+# Line endings — one canonical form everywhere.
+#
+# WHY THIS FILE EXISTS. Without it, Git falls back to each clone's
+# `core.autocrlf`. On Windows that is `true`, so the working copy is CRLF while
+# the repository itself stores LF. The bytes on disk then differ from the bytes
+# in the object store, and only on some machines — which is the worst shape a
+# bug can have. It cost us real time twice:
+#
+#   * #258 — assertions that read `.github/workflows/*.yml` byte-for-byte passed
+#     on every developer machine and on Linux CI, and went red only on the
+#     `windows-latest` runner, because there and only there the file was CRLF.
+#   * #227 — `prettier --check` failed on files nobody had touched, because
+#     Prettier's default `endOfLine: "lf"` compared against a CRLF working copy.
+#
+# `text=auto` normalises to LF on the way into the repository; `eol=lf` pins the
+# checkout to LF as well, overriding `core.autocrlf` on every platform. Together
+# they mean the file on disk and the blob in the object store are the same bytes
+# on Windows, macOS and Linux.
+
+* text=auto eol=lf
+
+# Shell scripts must never be CRLF: `/bin/sh` reads the trailing CR as part of
+# the command and fails with errors like `\r: command not found`. Covered by the
+# rule above, stated explicitly so a future Windows-flavoured exception cannot
+# quietly swallow it.
+*.sh text eol=lf
+
+# Windows batch files are the one deliberate exception. cmd.exe is the only
+# consumer and CRLF is its native convention. Stored as LF, checked out as CRLF.
+# Safe for the class this file closes: Prettier has no parser for these, so they
+# are never checked.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files — never converted, never diffed as text. `text=auto` already
+# detects these by content, but naming them makes the intent explicit and
+# removes any chance of a heuristic misfire corrupting one.
+
+# images
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.bmp  binary
+*.ico  binary
+*.icns binary
+
+# fonts
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+*.eot   binary
+
+# archives
+*.zip binary
+*.gz  binary
+*.tgz binary
+*.7z  binary
+
+# compiled / packaged output
+*.exe   binary
+*.dll   binary
+*.node  binary
+*.asar  binary
+*.so    binary
+*.dylib binary
+*.pdf   binary

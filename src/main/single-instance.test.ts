@@ -157,7 +157,7 @@ describe('the single-instance lock comes first (#289)', () => {
     // the hook listener's start() sweeps every hook-token under stateDir (#282)
     ['the hook listener is built', 'new HookListener('],
     ['the session state dir is derived', "path.join(app.getPath('userData'), 'sessions')"],
-    // (a regex: the call is line-wrapped, and the working copy is CRLF)
+    // (a regex: the call is line-wrapped, so `\s*` spans the break)
     ['the app becomes ready', /app\s*\.whenReady\(\)/],
   ])('is taken before %s', (_what: string, marker: string | RegExp) => {
     expect(lock()).toBeLessThan(at(marker));
