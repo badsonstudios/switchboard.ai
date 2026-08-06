@@ -257,12 +257,45 @@ function resolved(theme: (typeof builtinThemes)[number]): Record<string, string>
  *  "Text on a TINTED fill" below. */
 const FILLED_RULES: Array<[string, number]> = [['.preflight-banner', 4.5]];
 
-/** the rules whose background is a color-mix of a hue into a surface. Declared
- *  up here with FILLED_RULES because the applied-by-a-component scan below
- *  reads both — vitest collects describe() bodies lazily so a later const
- *  happens to work, but a test file that only runs under one collector is a
- *  trap rather than a test. */
-const TINTED_RULES: Array<[string, number]> = [['.status-pill', 4.5]];
+/**
+ * The rules whose background is a color-mix of a hue into a surface. Declared
+ * up here with FILLED_RULES because the applied-by-a-component scan below
+ * reads both — vitest collects describe() bodies lazily so a later const
+ * happens to work, but a test file that only runs under one collector is a
+ * trap rather than a test.
+ *
+ * `defaults` names the rule that declares the two placeholders, for the rules
+ * that do not declare them themselves: the collapsed row's tint lives on a
+ * `[data-needs-you]` variant while `--row-hue` / `--row-ink` are set once on
+ * the base rule, which is where the ink-vs-hue roles have to be read from.
+ */
+interface TintedRule {
+  /** the rule's own selector, exactly as tokens.css spells it */
+  selector: string;
+  /** the ratio it owes */
+  min: number;
+  /** where `--*-hue` / `--*-ink` are declared, if not in `selector` itself */
+  defaults?: string;
+}
+const TINTED_RULES: TintedRule[] = [
+  { selector: '.status-pill', min: 4.5 },
+  // #246: the same shape as the pill and unaudited until now. Two rules, not
+  // one — a row under the pointer is a different fill, and it was the one
+  // below AA (26% put nordic at 4.03:1).
+  { selector: ".collapsed-row[data-needs-you='true']", min: 4.5, defaults: '.collapsed-row' },
+  {
+    selector: ".collapsed-row[data-needs-you='true']:hover",
+    min: 4.5,
+    defaults: '.collapsed-row',
+  },
+];
+
+/** the class a tinted/filled selector is applied by — `.a[data-b]:hover` → `a` */
+function classOf(selector: string): string {
+  const m = /^\.([a-z0-9-]+)/.exec(selector);
+  expect(m, `${selector} must start with a class to be found in a component`).not.toBeNull();
+  return m![1];
+}
 
 /**
  * The pair, read OUT OF THE STYLESHEET rather than named here.
@@ -309,7 +342,10 @@ describe('a filled rule is a rule something applies', () => {
     });
   })(path.join(__dirname, '..'));
 
-  it.each([...FILLED_RULES, ...TINTED_RULES])('%s is applied by a component', (selector) => {
+  it.each([
+    ...FILLED_RULES.map(([s]) => s),
+    ...TINTED_RULES.map((r) => r.selector),
+  ])('%s is applied by a component', (selector) => {
     // the class name inside a className prop, quoted either way, among other
     // classes, and whether or not it is behind a condition: #222 made the
     // preflight banner's class conditional (`className={spoken ?
@@ -318,7 +354,10 @@ describe('a filled rule is a rule something applies', () => {
     // `className="…"` form would have called that "nobody renders it".
     // One line at a time — a className expression wrapped over several is not
     // matched, and would fail with the message below rather than silently.
-    const name = selector.slice(1);
+    // the CLASS, not the whole selector: a tinted rule may be a variant
+    // (`.collapsed-row[data-needs-you='true']:hover`) and what a component
+    // writes in a className is only the stem (#246)
+    const name = classOf(selector);
     const applied = new RegExp(`className=\\{?[^}\\n]*['"\`][^'"\`\\n]*\\b${name}\\b`);
     expect(
       tsx.some((s) => applied.test(s)),
@@ -397,7 +436,7 @@ function refIn(rule: string, selector: string, prop: string, pattern: string): R
  * the one thing this file cannot see, and is held by StatusPill.test.tsx.
  */
 function tinted(
-  selector: string,
+  { selector, defaults }: TintedRule,
   status: StatusToken
 ): { ink: string; hue: string; pct: number; surface: string } {
   const rule = block(`${selector} {`);
@@ -408,7 +447,10 @@ function tinted(
     'background',
     String.raw`color-mix\(in srgb,\s*var\((--[a-z0-9-]+)\)\s*([\d.]+)%,\s*var\((--[a-z0-9-]+)\)\)`
   );
-  const decl = declaredValues(rule);
+  // the defaults may live on the base rule the variant refines — but they are
+  // still READ, never named here, so a swapped pair fails exactly as it does
+  // for a rule that declares its own (#246)
+  const decl = declaredValues(defaults ? block(`${defaults} {`) : rule);
   const stem = STATUS_TOKENS.find(
     (t) => decl[inkVar] === statusVars(t).ink && decl[bg[1]] === statusVars(t).hue
   );
@@ -432,9 +474,10 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))(
   (id, theme) => {
     const tokens = resolved(theme);
 
-    for (const [selector, min] of TINTED_RULES) {
+    for (const spec of TINTED_RULES) {
+      const { selector, min } = spec;
       it.each(STATUS_TOKENS)(`${selector} clears ${min}:1 for %s`, (status) => {
-        const t = tinted(selector, status);
+        const t = tinted(spec, status);
         for (const token of [t.hue, t.ink, t.surface]) {
           expect(tokens[token], `${id} ${token} must be #rrggbb to be measured`).toMatch(
             /^#[0-9a-f]{6}$/i
@@ -486,6 +529,135 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))(
     });
   }
 );
+
+// --- No raw status hue is ever a TEXT colour, anywhere (#246) ---------------
+//
+// The floor above says the INK is readable. This says the ink is what gets
+// used, and it is the assertion #221's hand-off asked for: it fixed one site
+// and reported six more of exactly the same shape — a dirty-file count, an
+// approval title, a stop glyph, a streaming caret, a tool name, a link in
+// rendered prose — none of which any test could see, because they are inline
+// styles and a lone CSS rule rather than a measurable pair. Two more of the
+// same defect (the feed's todo markers and its autonomy chip) were found by
+// writing this, which is the argument for it: six known sites are a list, and
+// a list goes stale the next time somebody reaches for a status colour.
+//
+// The rule it encodes is the whole of §5.20's status vocabulary in one line:
+// `--status-<x>` is for dots, rings, tints and edges; `--status-<x>-ink` is
+// the only one of the pair tuned against what is BEHIND a word. Reaching for
+// the hue in a `color` is the bug, in every theme at once, whatever the
+// surface — so this needs no surface to check and cannot go stale.
+describe('a status hue is never spent on words', () => {
+  /** every file that can paint: the stylesheets and the renderer's own code */
+  const sources = (function read(dir: string): Array<[string, string]> {
+    return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e): Array<[string, string]> => {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) return read(p);
+      // tests are excluded: one of them names a status hue as a GROUP colour
+      // (an identity, not a status) and would be a permanent false positive
+      const src = /\.(css|tsx?)$/.test(e.name) && !/\.test\.tsx?$/.test(e.name);
+      return src ? [[path.relative(path.join(__dirname, '..'), p), fs.readFileSync(p, 'utf8')]] : [];
+    });
+  })(path.join(__dirname, '..'));
+
+  /**
+   * The value of every `color:` in a file — the CSS declaration and the React
+   * inline-style property, which are the same three characters.
+   *
+   * `borderColor` / `background-color` / `caret-color` are NOT matched: the
+   * capital C fails a case-sensitive match and the hyphen fails the boundary,
+   * which is deliberate — an EDGE painted in a status hue is the design (the
+   * pill's border, the collapsed row's, the stop button's), and folding those
+   * in would make this test demand a redesign rather than guard a promise.
+   *
+   * The value ends at the first `,` or `;` AT PAREN DEPTH ZERO, so an object
+   * property stops before the next one while a `color-mix(in srgb, …)` — whose
+   * first comma is three characters in — is kept whole. A ternary contains
+   * neither and is captured entire, which is how both arms of the feed's todo
+   * marker are seen.
+   *
+   * KNOWN BLIND SPOT: a value wrapped onto the following line. `[^\n]*` stops
+   * at the newline, and there is no formatter in this repo to produce one, so
+   * it takes a human writing `color:\n  …` — but it would pass silently.
+   */
+  const colorValues = (src: string): string[] =>
+    [...src.matchAll(/(?:^|[\s{(,;])color:\s*([^\n]*)/g)].map((m) => {
+      let depth = 0;
+      for (let i = 0; i < m[1].length; i++) {
+        const c = m[1][i];
+        if (c === '(') depth++;
+        else if (c === ')') depth--;
+        else if ((c === ',' || c === ';') && depth <= 0) return m[1].slice(0, i);
+      }
+      return m[1];
+    });
+
+  /**
+   * The values of every `const NAME: … = { … }` map in a file, keyed by NAME.
+   *
+   * ONE HOP OF INDIRECTION, and it is here because a real site hid behind
+   * exactly one: `EventsPanel.tsx` wrote `color: KIND_TOKEN[e.kind]` over a map
+   * whose values were raw hues, so the scan above saw the literal text
+   * `KIND_TOKEN[e.kind]` and passed — while the panel painted every event's
+   * state in a colour measuring 1.80:1 on daylight. A table of colours is the
+   * natural shape for this and the natural place for the bug to hide (it is
+   * also how the grid's pill held its own drifted table until #221), so a
+   * `color` that names an identifier is followed to that identifier's map.
+   *
+   * Deliberately one hop and same-file only: two would need a module graph,
+   * and the point is to close the shape that has actually bitten twice, not to
+   * write a type checker.
+   */
+  const mapValues = (src: string): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (const m of src.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)[^=\n]*=\s*\{([^}]*)\}/g)) {
+      out[m[1]] = m[2];
+    }
+    return out;
+  };
+
+  it.each(sources)('%s writes no word in a raw status hue', (_name, src) => {
+    const maps = mapValues(src);
+    const offenders = colorValues(src)
+      .flatMap((v) => {
+        const hop = /^([A-Za-z_$][\w$]*)\s*\[/.exec(v.trim());
+        return hop && maps[hop[1]] !== undefined ? [v, `${v} -> ${maps[hop[1]]}`] : [v];
+      })
+      .filter((v) => STATUS_TOKENS.some((t) => v.includes(`var(--status-${t})`)))
+      .map((v) => v.trim());
+    expect(
+      offenders,
+      // no `#nnn` in the message: the no-raw-hex lint rule reads an issue
+      // number as a three-digit colour, which is a funny way to fail a
+      // contrast test and a real one
+      'use var(--status-<x>-ink) for text — the hue is for dots, rings, tints and edges'
+    ).toEqual([]);
+  });
+
+  it('sees the defect it is named for', () => {
+    // the guard's own guard: an empty scan (a regex that matches nothing, a
+    // file walk that finds no files) passes every case above, silently
+    expect(sources.length).toBeGreaterThan(20);
+    expect(colorValues("  color: 'var(--status-crashed)',\n")).toEqual([
+      "'var(--status-crashed)'",
+    ]);
+    // and does not flag the fix, an edge, or a nested property
+    expect(colorValues('  color: var(--status-crashed-ink);\n')[0]).not.toContain(
+      'var(--status-crashed)'
+    );
+    expect(colorValues('  border-color: var(--status-crashed);\n')).toEqual([]);
+    expect(colorValues("  borderColor: 'var(--status-crashed)',\n")).toEqual([]);
+    // a value whose own commas are inside parens survives the cut — before
+    // this, `color: color-mix(in srgb, <hue> …)` was truncated at "in srgb"
+    // and the hue behind it was never looked at
+    expect(colorValues('  color: color-mix(in srgb, var(--status-done) 60%, transparent);\n')[0])
+      .toContain('var(--status-done)');
+    // and the hop the events panel hid behind is followed
+    expect(
+      mapValues("const T: Record<string, string> = {\n  a: 'var(--status-done)',\n};\n").T
+    ).toContain('var(--status-done)');
+  });
+});
 
 // --- A notice keeps its height in a short window (#241) ---------------------
 //

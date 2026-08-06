@@ -185,7 +185,12 @@ function Markdown({ text, streaming }: { text: string; streaming?: boolean }): R
     return (
       <div className="feed-md" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>
         {text}
-        <span style={{ color: 'var(--status-working)', opacity: 0.8 }}>{STREAMING_CARET}</span>
+        {/* -ink, and no opacity (#246). The caret is the only thing on screen
+            saying the answer is still arriving, so it is information, not
+            decoration. It was the raw hue at 0.8 opacity — 2.08:1 on daylight,
+            and the opacity is a second contrast cut that nothing measures,
+            which is why it goes rather than being tuned. */}
+        <span style={{ color: 'var(--status-working-ink)' }}>{STREAMING_CARET}</span>
       </div>
     );
   }
@@ -345,7 +350,10 @@ function TodosBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
         <div style={{ fontWeight: 700, color: 'var(--text)', marginBlockEnd: 2 }}>{t('feedView.updateTodos')}</div>
         {(b.todos ?? []).map((td, i) => (
           <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'baseline', color: 'var(--muted)' }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, flexShrink: 0, color: td.status === 'completed' ? 'var(--status-done)' : td.status === 'in_progress' ? 'var(--status-working)' : 'var(--faint)' }}>
+            {/* -ink on both arms (#246): a checklist marker is 10px TEXT on the
+                tool box's --panel2, where the two raw hues it uses measure
+                2.33-2.35:1 on daylight and 4.49-4.52:1 on nordic */}
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, flexShrink: 0, color: td.status === 'completed' ? 'var(--status-done-ink)' : td.status === 'in_progress' ? 'var(--status-working-ink)' : 'var(--faint)' }}>
               {td.status === 'completed' ? t('feedView.todoDone') : td.status === 'in_progress' ? t('feedView.todoActive') : t('feedView.todoPending')}
             </span>
             <span style={{ minInlineSize: 0, textDecoration: td.status === 'completed' ? 'line-through' : 'none' }}>
@@ -374,7 +382,11 @@ function ToolRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const header = (
     <>
       <span style={{ color: 'var(--faint)', fontSize: 8 }}>{open ? '▾' : '▸'}</span>
-      <span style={{ color: 'var(--status-working)', fontWeight: 600 }}>{b.tool?.name}</span>
+      {/* the tool's NAME — the header of every tool block in the feed, and the
+          most-repeated status-coloured word in the app after the pill. -ink
+          because the hue is 2.33:1 on daylight's tool box and 4.52:1 on
+          nordic's; the ink is 5.47:1 and 5.75:1 (#246). */}
+      <span style={{ color: 'var(--status-working-ink)', fontWeight: 600 }}>{b.tool?.name}</span>
       <span
         style={{
           overflow: 'hidden',
