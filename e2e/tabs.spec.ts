@@ -2,6 +2,7 @@
 // and (by default) tabs that wrap onto another row instead of hiding behind a
 // dropdown. A session host must not bury the sessions.
 import { test, expect, Page } from '@playwright/test';
+import path from 'path';
 import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -298,5 +299,29 @@ test.describe('tab strip (#84)', () => {
     expect(shape).not.toBeNull();
     expect(shape!.gap).toBeGreaterThan(0); // Dan: "a tiny little space"
     expect(parseFloat(shape!.radius)).toBeGreaterThan(0); // ...and curved corners
+  });
+
+  // #264. dockview is told a panel's title once, at `addPanel`, and nothing in
+  // the tree calls `setTitle` — so the strip kept announcing the name the
+  // session was born with while the rail, the record and the card header had
+  // all moved on. The tab now reads the session store, like everything else
+  // that has to say which session it is.
+  test('the tab follows a rename from the rail (#264)', async () => {
+    const folder = tempProjectFolder();
+    const name = path.basename(folder);
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    const strip = w.locator('.dv-tabs-container');
+    await expect(strip.getByText(name, { exact: true })).toBeVisible({ timeout: 25_000 });
+
+    // rename the one session from the rail, the way a user does
+    await w.locator('nav .rail-row').first().dblclick();
+    const field = w.locator('nav .rail-row input');
+    await expect(field).toBeVisible();
+    await field.fill('renamed-tab');
+    await field.press('Enter');
+
+    await expect(strip.getByText('renamed-tab', { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(strip.getByText(name, { exact: true })).toHaveCount(0);
   });
 });

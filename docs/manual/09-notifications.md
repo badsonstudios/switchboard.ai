@@ -41,6 +41,14 @@ again and the marker moves down to the following one. Clicking an entry counts
 the same way, so the shortcut won't bounce you back to something you just
 opened. See [Keyboard & commands](06-keyboard.md) for the full walk-through.
 
+### A session you've told to stay quiet
+
+If you've set a session's interrupt setting to **Never jump, skip the queue**
+([Organizing your workspace](07-workspace.md#when-a-session-interrupts-you)),
+its entries still appear in this panel — the panel is the log — but it is never
+marked **next** and `Ctrl+Space` walks straight past it. That's the difference
+between the log and the to-do list.
+
 ## The lamp strip
 
 Across the top of the window, under the title bar, there's a thin row of

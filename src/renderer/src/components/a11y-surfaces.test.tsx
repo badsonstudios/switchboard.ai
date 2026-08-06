@@ -23,6 +23,7 @@ import { SessionsRail } from './SessionsRail';
 import { EventsPanel } from './EventsPanel';
 import { UrgencyStrip } from './UrgencyStrip';
 import { DEFAULT_BOOK } from '../lib/presentation-policy';
+import { DEFAULT_FOCUS_BOOK } from '../lib/focus-policy';
 import { uiDelete } from '../lib/ui-state';
 import { RailGroup, RailSession, EventDto } from '../model/types';
 
@@ -52,14 +53,23 @@ const sessions: RailSession[] = [
 ];
 const groups: RailGroup[] = [{ id: 'g1', name: 'Work', color: 'var(--status-working)' }];
 
-async function mountRail(selectedId: string | null = 'c1'): Promise<HTMLElement> {
-  return mount(
+/** the rail with the shared fixture, overridable where a test needs it to be */
+function rail(
+  over: {
+    sessions?: RailSession[];
+    groups?: RailGroup[];
+    selectedId?: string | null;
+    onMoveToGroup?: (cardId: string, groupId: string | null) => void;
+  } = {}
+): React.JSX.Element {
+  return (
     <SessionsRail
-      sessions={sessions}
-      groups={groups}
-      selectedId={selectedId}
+      sessions={over.sessions ?? sessions}
+      groups={over.groups ?? groups}
+      selectedId={'selectedId' in over ? (over.selectedId ?? null) : 'c1'}
       palette={['var(--status-working)', 'var(--status-crashed)']}
       policies={DEFAULT_BOOK}
+      focusPolicies={DEFAULT_FOCUS_BOOK}
       onRename={noop}
       onFocus={noop}
       onDiff={noop}
@@ -69,11 +79,18 @@ async function mountRail(selectedId: string | null = 'c1'): Promise<HTMLElement>
       onRecolorGroup={noop}
       onDeleteGroup={noop}
       onOpenInGroup={noop}
-      onMoveToGroup={noop}
+      onMoveToGroup={over.onMoveToGroup ?? noop}
+      pinned={new Set()}
+      onTogglePin={noop}
       onSetSessionPolicy={noop}
+      onSetSessionFocusPolicy={noop}
       onCycleGroupPolicy={noop}
     />
   );
+}
+
+async function mountRail(selectedId: string | null = 'c1'): Promise<HTMLElement> {
+  return mount(rail({ selectedId }));
 }
 
 const events: EventDto[] = [
@@ -89,6 +106,7 @@ async function mountEvents(): Promise<HTMLElement> {
         { ...sessions[2], liveId: 'live-3' },
       ]}
       events={events}
+      queueEvents={events}
       visited={new Set<number>()}
       onFocus={noop}
       onVisit={noop}
@@ -244,6 +262,47 @@ describe('sessions rail rows (issue 197)', () => {
     expect(document.activeElement).toBe(items[0]);
   });
 
+  it("reads each override set as ONE choice, not as loose commands", async () => {
+    // The menu carries three grouped choices now — #253's "move to group",
+    // E9-06's "on submit" and E9-10's "when it needs you" (the latter two
+    // drawn by the same `OverrideGroup`). What the grouping is FOR: a dozen
+    // radio items after three commands, with no labelled groups, reads as
+    // fifteen unrelated things.
+    const host = await mountRail();
+    const row = host.querySelector<HTMLElement>('.rail-row')!;
+    await act(async () => {
+      row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    });
+    const menu = document.querySelector<HTMLElement>('[role="menu"]')!;
+    const named = Array.from(menu.querySelectorAll<HTMLElement>('[role="group"]')).map((g) =>
+      g.getAttribute('aria-label')
+    );
+    expect(named).toEqual([en.rail.menuMove, en.ladder.policyMenu, en.ladder.focusMenu]);
+
+    // The OverrideGroup assertions below are about OVERRIDE semantics —
+    // default-first, default-checked — which the move-to-group set does not
+    // share (its checked member is wherever the session IS, and a one-group
+    // workspace legitimately offers just two destinations). That set has its
+    // own describe (#253); this loop holds the two override sets to their
+    // contract.
+    const overrideGroups = Array.from(
+      menu.querySelectorAll<HTMLElement>('[role="group"]')
+    ).filter((g) => g.getAttribute('aria-label') !== en.rail.menuMove);
+    expect(overrideGroups).toHaveLength(2);
+    for (const group of overrideGroups) {
+      const radios = Array.from(group.querySelectorAll<HTMLElement>('[role="menuitemradio"]'));
+      // every value plus "follow the default", which must be reachable by the
+      // same gesture that left it
+      expect(radios.length).toBeGreaterThan(2);
+      // EXACTLY one is checked, and with no override set it is the default —
+      // a set with none checked, or two, is a radio set that lies
+      const checked = radios.filter((r) => r.getAttribute('aria-checked') === 'true');
+      expect(checked).toHaveLength(1);
+      expect(checked[0]).toBe(radios[0]);
+      expect(radios[0].dataset.policyItem ?? radios[0].dataset.focusItem).toBe('default');
+    }
+  });
+
   it('walks the menu with the arrows and wraps at both ends', async () => {
     const host = await mountRail();
     const row = host.querySelector<HTMLElement>('.rail-row')!;
@@ -284,6 +343,172 @@ describe('sessions rail rows (issue 197)', () => {
     });
     expect(document.querySelector('[role="menu"]')).toBeNull();
     expect(document.activeElement).toBe(opener);
+  });
+});
+
+describe('moving a session between groups from the keyboard (issue 253)', () => {
+  /** open the row's menu the way Shift+F10 does — from the row's own button, so
+   *  the menu records an anchor to hand focus back to */
+  async function openMenuOn(host: HTMLElement, index: number): Promise<HTMLElement> {
+    const opener = Array.from(host.querySelectorAll<HTMLElement>('[data-rail-open]'))[index];
+    opener.focus();
+    await act(async () => {
+      opener.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    });
+    return opener;
+  }
+
+  const moveItems = (): HTMLElement[] =>
+    Array.from(document.querySelectorAll<HTMLElement>('[data-move-item]'));
+
+  it('offers every group you made plus Ungrouped, as one labelled radio set', async () => {
+    const host = await mountRail();
+    await openMenuOn(host, 2); // "loose one"
+
+    const items = moveItems();
+    expect(items.map((i) => i.getAttribute('data-move-item'))).toEqual(['g1', 'ungrouped']);
+    for (const i of items) {
+      expect(i.tagName).toBe('BUTTON'); // Enter and Space from the platform
+      expect(i.getAttribute('role')).toBe('menuitemradio');
+    }
+    // one choice, announced as one choice — not two loose commands after the
+    // three above them
+    const set = items[0].closest('[role="group"]')!;
+    expect(set.getAttribute('aria-label')).toBe(en.rail.menuMove);
+    // and they are inside the ring the menu's arrows already walk
+    const walked = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menu"] [role^="menuitem"]')
+    );
+    for (const i of items) expect(walked).toContain(i);
+  });
+
+  it('checks the group the session is actually in', async () => {
+    const host = await mountRail();
+    await openMenuOn(host, 0); // "switchboard", in g1
+    expect(moveItems().map((i) => i.getAttribute('aria-checked'))).toEqual(['true', 'false']);
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    });
+    await openMenuOn(host, 2); // "loose one", in nothing
+    expect(moveItems().map((i) => i.getAttribute('aria-checked'))).toEqual(['false', 'true']);
+  });
+
+  it('commits through the same call the drop handler makes', async () => {
+    const moves: Array<[string, string | null]> = [];
+    const host = await mount(rail({ onMoveToGroup: (c, g) => moves.push([c, g]) }));
+    await openMenuOn(host, 2);
+
+    await act(async () => moveItems()[0].click()); // what Enter on a button does
+    expect(moves).toEqual([['c3', 'g1']]);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it('sends a session to Ungrouped, which is what a drop on the rail does', async () => {
+    const moves: Array<[string, string | null]> = [];
+    const host = await mount(rail({ onMoveToGroup: (c, g) => moves.push([c, g]) }));
+    await openMenuOn(host, 0); // "switchboard", in g1
+
+    await act(async () => moveItems()[1].click());
+    expect(moves).toEqual([['c1', null]]);
+  });
+
+  it('treats "move it where it already is" as a no-op, not a round trip', async () => {
+    // the drop handler has exactly this guard; a keyboard path that skipped it
+    // would push an identical membership through IPC and reshuffle the grid
+    const moves: Array<[string, string | null]> = [];
+    const host = await mount(rail({ onMoveToGroup: (c, g) => moves.push([c, g]) }));
+    const opener = await openMenuOn(host, 0);
+
+    await act(async () => moveItems()[0].click()); // already in g1
+    expect(moves).toEqual([]);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(document.activeElement).toBe(opener); // and it costs you your place
+  });
+
+  it('leaves the section out entirely when there is nowhere to move to', async () => {
+    const host = await mount(rail({ groups: [], sessions: [sessions[2]] }));
+    await openMenuOn(host, 0);
+    expect(moveItems()).toHaveLength(0);
+    // the rest of the menu is untouched
+    expect(
+      document.querySelectorAll('[role="menu"] [role^="menuitem"]').length
+    ).toBeGreaterThan(3);
+  });
+
+  it('never offers an automatic group — its membership is not a choice', async () => {
+    // two sessions in one folder cluster on their own (E12-05). Advertising one
+    // as a destination would be a command that does nothing, which is exactly
+    // what the drop handler refuses to do.
+    const folder = 'C:/Projects/shared';
+    const host = await mount(
+      rail({
+        sessions: [
+          ...sessions,
+          { id: 'c4', title: 'twin a', status: 'idle', folder },
+          { id: 'c5', title: 'twin b', status: 'idle', folder },
+        ],
+      })
+    );
+    expect(host.querySelector('[data-group-kind="auto"]')).not.toBeNull();
+    await openMenuOn(host, 2);
+    expect(moveItems().map((i) => i.getAttribute('data-move-item'))).toEqual(['g1', 'ungrouped']);
+  });
+
+  it('carries a live region from the first frame, empty until something moves', async () => {
+    // one that is INSERTED already holding its text is announced by almost
+    // nothing (#222) — so the region has to pre-date the words
+    const host = await mountRail();
+    const live = host.querySelector<HTMLElement>('[role="status"]');
+    expect(live).not.toBeNull();
+    expect(live!.textContent).toBe('');
+  });
+
+  it('announces the move and puts the keyboard back on the row once it lands', async () => {
+    // The move is a round trip: React re-parents the row into the destination
+    // card when the answer arrives, so the button the menu was opened from is a
+    // detached node by then and focusing IT would strand the keyboard on <body>.
+    const host = await mount(rail());
+    const opener = await openMenuOn(host, 2); // "loose one"
+    await act(async () => moveItems()[0].click()); // -> Work
+
+    // nothing claimed yet: the store hasn't answered
+    expect(host.querySelector('[role="status"]')!.textContent).toBe('');
+
+    // the answer lands as new props, and the row is now inside the group
+    await act(async () => {
+      root!.render(
+        rail({ sessions: [sessions[0], sessions[1], { ...sessions[2], groupId: 'g1' }] })
+      );
+    });
+
+    expect(host.querySelector('[role="status"]')!.textContent).toBe('loose one moved to Work');
+    const landed = Array.from(host.querySelectorAll<HTMLElement>('[data-rail-open]')).find(
+      (r) => r.getAttribute('data-rail-open') === 'c3'
+    )!;
+    expect(landed).not.toBe(opener); // it really is a different element
+    expect(document.activeElement).toBe(landed);
+  });
+
+  it('lands on the destination group when that group is collapsed', async () => {
+    // focus() on a display:none element does nothing at all, so a row that
+    // moved into a folded group would leave the keyboard nowhere
+    const host = await mount(rail());
+    const toggle = host.querySelector<HTMLElement>('[data-rail-group-toggle]')!;
+    await act(async () => toggle.click()); // fold "Work"
+    await openMenuOn(host, 0); // the only row left on screen is "loose one"
+
+    await act(async () => moveItems()[0].click());
+    await act(async () => {
+      root!.render(
+        rail({ sessions: [sessions[0], sessions[1], { ...sessions[2], groupId: 'g1' }] })
+      );
+    });
+
+    expect(host.querySelector('[role="status"]')!.textContent).toBe('loose one moved to Work');
+    const dest = host.querySelector<HTMLElement>('[data-rail-group-toggle]')!;
+    expect(document.activeElement).toBe(dest);
+    expect(dest.getAttribute('aria-expanded')).toBe('false'); // and says why
   });
 });
 
@@ -330,6 +555,7 @@ describe('events panel rows (issue 197)', () => {
       <EventsPanel
         sessions={[{ ...sessions[0], liveId: 'live-1' }]}
         events={[events[0]]}
+        queueEvents={[events[0]]}
         visited={new Set<number>()}
         onFocus={(id) => focused.push(id)}
         onVisit={(id) => visited.push(id)}
