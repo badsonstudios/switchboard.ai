@@ -10,7 +10,7 @@ import {
   isOutsideCwd,
   shouldHoldPermission,
 } from './hook-listener';
-import { LogSink, createLogger } from '../log/logger';
+import { LogSink, createLogger, Logger, LogFields } from '../log/logger';
 import { SessionEvent } from '../sessions/state-machine';
 
 let dir: string;
@@ -702,5 +702,188 @@ describe('buildHookSettings', () => {
     }
     expect(fs.existsSync(path.join(dir, 'hook-forwarder.cjs'))).toBe(true);
     expect(fs.existsSync(path.join(dir, 's9', 'hook-token'))).toBe(true);
+  });
+});
+
+describe('hook-token files follow their session (#282)', () => {
+  // Listeners in this block own their stateDir so the sweep under test can
+  // never see another test's leavings — and are stopped HERE, before the
+  // file-level `cleanupTempDirs()` removes the directory out from under them.
+  let own: HookListener | null;
+  let logged: Array<{ level: string; msg: string; fields?: LogFields }>;
+
+  /** A Logger that keeps what it was told, so "fail-open" is assertable as
+   *  "warned and carried on" rather than merely "did not throw". */
+  function capturingLog(): Logger {
+    const at =
+      (level: string) =>
+      (msg: string, fields?: LogFields): void => {
+        logged.push({ level, msg, fields });
+      };
+    const l: Logger = {
+      debug: at('debug'),
+      info: at('info'),
+      warn: at('warn'),
+      error: at('error'),
+      child: () => l,
+    };
+    return l;
+  }
+
+  function listenerOn(stateDir: string): HookListener {
+    return new HookListener({
+      stateDir,
+      log: capturingLog(),
+      manager: { apply: () => {}, setNativeSessionId: () => {} },
+    });
+  }
+
+  /** POST to a listener on its own port, resolving with the RESPONSE BODY —
+   *  which for a held PreToolUse is the verdict the CLI applies. */
+  function postTo(p: number, body: string, token: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          host: '127.0.0.1',
+          port: p,
+          path: '/hook',
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-switchboard-token': token },
+        },
+        (res) => {
+          let out = '';
+          res.on('data', (d) => (out += d));
+          res.on('end', () => resolve(out));
+        }
+      );
+      req.on('error', reject);
+      req.end(body);
+    });
+  }
+
+  /** Warnings this block is about — `start()` may also warn about node not
+   *  being on PATH, which is nothing to do with tokens. */
+  const tokenWarnings = (): typeof logged =>
+    logged.filter((l) => l.level === 'warn' && /token/.test(l.msg));
+
+  beforeEach(() => {
+    logged = [];
+    own = null;
+  });
+
+  afterEach(() => {
+    own?.stop();
+  });
+
+  it('unregisterSession deletes the token file, not just the map entry', () => {
+    const { tokenPath } = listener.registerSession('s-gone');
+    expect(fs.existsSync(tokenPath)).toBe(true);
+    listener.unregisterSession('s-gone');
+    expect(fs.existsSync(tokenPath)).toBe(false);
+    // the DIRECTORY is not ours to remove — `settings.json` lives there too
+    expect(fs.existsSync(path.join(dir, 's-gone'))).toBe(true);
+  });
+
+  it('a session that never got a token unregisters quietly', () => {
+    own = listenerOn(tempDir('sb-token-'));
+    // no directory, no file: a session torn down before `buildHookSettings`
+    // ever ran, or one on a provider with no hooks capability. Not a fault, so
+    // it says nothing — and it gets commoner once PR #281 makes the teardown
+    // path unregister twice.
+    expect(() => own!.unregisterSession('never-registered')).not.toThrow();
+    expect(tokenWarnings()).toEqual([]);
+  });
+
+  it('a token file that will not delete is logged and swallowed', () => {
+    own = listenerOn(tempDir('sb-token-'));
+    const { tokenPath } = own.registerSession('s-stuck');
+    // Fail the unlink the same way on every platform: put a DIRECTORY where the
+    // file was (EISDIR on POSIX, EPERM on win32) — the closest stand-in for the
+    // Windows case that actually happens, a scanner holding the handle.
+    fs.rmSync(tokenPath);
+    fs.mkdirSync(tokenPath);
+    expect(() => own!.unregisterSession('s-stuck')).not.toThrow();
+    expect(tokenWarnings()).toHaveLength(1);
+    expect(tokenWarnings()[0].fields?.sessionId).toBe('s-stuck');
+  });
+
+  it('...and a parked hold is still released — the step AFTER the removal', async () => {
+    // The removal is not the last thing `unregisterSession` does: the fail-open
+    // hold release is. Asserting the token is revoked would prove nothing (the
+    // map is emptied BEFORE the removal, so it survives a throw); this is the
+    // half a throw would actually skip, and skipping it parks the CLI for the
+    // full hold with nobody left to answer.
+    const stateDir = tempDir('sb-token-');
+    own = new HookListener({
+      stateDir,
+      log: capturingLog(),
+      manager: { apply: () => {}, setNativeSessionId: () => {} },
+      autonomyFor: () => 'ask',
+      holdTimeoutMs: 30_000, // long enough that a timeout can't fake the pass
+    });
+    own.onPermissionRequest(() => {}); // without a subscriber nothing is held
+    const heldPort = await own.start();
+    const { tokenPath } = own.registerSession('s-stuck');
+    const token = fs.readFileSync(tokenPath, 'utf8').trim();
+    const inFlight = postTo(
+      heldPort,
+      JSON.stringify({
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Edit',
+        tool_input: { file_path: 'C:/x.ts', old_string: 'a', new_string: 'b' },
+      }),
+      token
+    );
+    await new Promise((r) => setTimeout(r, 100));
+    expect(own.pendingRequests()).toHaveLength(1);
+
+    fs.rmSync(tokenPath);
+    fs.mkdirSync(tokenPath); // the unlink will now throw
+    own.unregisterSession('s-stuck');
+
+    expect(own.pendingRequests()).toEqual([]);
+    expect(await inFlight).toBe('{}'); // fail-open: the CLI runs its own prompt
+  });
+
+  it('start() sweeps the tokens a previous run left behind', async () => {
+    const stateDir = tempDir('sb-token-');
+    for (const id of ['s-old-1', 's-old-2']) {
+      fs.mkdirSync(path.join(stateDir, id), { recursive: true });
+      fs.writeFileSync(path.join(stateDir, id, 'hook-token'), 'deadbeefdeadbeef');
+    }
+    own = listenerOn(stateDir);
+    await own.start();
+    // Dead weight by definition: the token map is memory, so a file this
+    // process did not write can never authenticate again.
+    expect(fs.existsSync(path.join(stateDir, 's-old-1', 'hook-token'))).toBe(false);
+    expect(fs.existsSync(path.join(stateDir, 's-old-2', 'hook-token'))).toBe(false);
+    const swept = logged.find((l) => l.msg === 'swept orphaned hook tokens');
+    expect(swept?.fields?.count).toBe(2);
+  });
+
+  it('the sweep takes hook-token files and NOTHING else', async () => {
+    const stateDir = tempDir('sb-token-');
+    fs.mkdirSync(path.join(stateDir, 's-old'), { recursive: true });
+    fs.writeFileSync(path.join(stateDir, 's-old', 'hook-token'), 'deadbeef');
+    fs.writeFileSync(path.join(stateDir, 's-old', 'settings.json'), '{}'); // providers/claude.ts
+    fs.writeFileSync(path.join(stateDir, 's-old', 'notes.txt'), 'x');
+    fs.mkdirSync(path.join(stateDir, 's-empty'));
+    fs.writeFileSync(path.join(stateDir, 'loose-file'), 'x');
+    own = listenerOn(stateDir);
+    await own.start();
+    expect(fs.existsSync(path.join(stateDir, 's-old', 'hook-token'))).toBe(false);
+    expect(fs.existsSync(path.join(stateDir, 's-old', 'settings.json'))).toBe(true);
+    expect(fs.existsSync(path.join(stateDir, 's-old', 'notes.txt'))).toBe(true);
+    expect(fs.existsSync(path.join(stateDir, 's-old'))).toBe(true); // dirs stay
+    expect(fs.existsSync(path.join(stateDir, 's-empty'))).toBe(true);
+    expect(fs.existsSync(path.join(stateDir, 'loose-file'))).toBe(true);
+    expect(fs.existsSync(path.join(stateDir, 'hook-forwarder.cjs'))).toBe(true);
+  });
+
+  it('a first run has nothing to sweep and says nothing about it', async () => {
+    own = listenerOn(tempDir('sb-token-'));
+    expect(await own.start()).toBeGreaterThan(0);
+    expect(tokenWarnings()).toEqual([]);
+    expect(logged.some((l) => l.msg === 'swept orphaned hook tokens')).toBe(false);
   });
 });

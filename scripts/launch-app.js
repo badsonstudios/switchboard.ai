@@ -3,12 +3,10 @@
 // path (electron '.'), not the dev server.
 const { spawnSync } = require('child_process');
 const path = require('path');
+const { cleanEnv } = require('./clean-env');
 
 const electron = require('electron'); // plain-node require -> path to binary
-const env = { ...process.env };
-delete env.ELECTRON_RUN_AS_NODE;
-delete env.ELECTRON_NO_ATTACH_CONSOLE;
-delete env.NoDefaultCurrentDirectoryInExePath;
+const env = cleanEnv();
 
 const r = spawnSync(electron, ['.'], {
   stdio: 'inherit',
