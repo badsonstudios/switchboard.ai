@@ -416,4 +416,48 @@ describe('stripItems (idle aggregation)', () => {
   it('is a no-op on an empty strip', () => {
     expect(stripItems([])).toEqual([]);
   });
+
+  // ── §5.8's pinning contract (E9-09) ───────────────────────────────────────
+  //
+  // "exempt from EVERY bulk operation — ... idle aggregation ...". The fold is
+  // the operation that takes a session's PLACE IN THE LIST away, which is
+  // exactly what pinning protects — and note the pinned row is still a strip
+  // row, i.e. still collapsed: "protects existence and position, not size".
+
+  /** the same row, but pinned — built through collapsedRows so the flag travels
+   *  the real path rather than being pasted onto the object */
+  const pinnedRowOf = (cardId: string, status: string): CollapsedRow => {
+    const [only] = collapsedRows(
+      [{ id: cardId, title: cardId, status }],
+      () => 'collapsed',
+      () => true
+    );
+    return only;
+  };
+
+  it('a pinned IDLE row never folds', () => {
+    expect(pinnedRowOf('a', 'idle').pinned).toBe(true);
+    expect(foldableRow(pinnedRowOf('a', 'idle'), null)).toBe(false);
+    // ...and the flag is absent, not false, on an unpinned row: a card at the
+    // default must not accrete a property
+    expect(rowOf('a', 'idle').pinned).toBeUndefined();
+  });
+
+  it('keeps its own row while the rest of the idle sessions fold around it', () => {
+    const rows = [pinnedRowOf('pinned', 'idle'), ...idles(4)];
+    expect(shape(stripItems(rows))).toEqual(['pinned', 'fold:4']);
+  });
+
+  it('a pin can drop the fold below the threshold, which is the point', () => {
+    // four idle rows fold; pin one and only three are foldable, so the strip
+    // lists all four again rather than hiding three behind a summary
+    const rows = [pinnedRowOf('pinned', 'idle'), ...idles(3)];
+    expect(shape(stripItems(rows))).toEqual(['pinned', 'idle0', 'idle1', 'idle2']);
+  });
+
+  it('collapsedRows defaults to nothing pinned, so every existing caller is unmoved', () => {
+    const rows = collapsedRows([{ id: 'a', title: 'a', status: 'idle' }], () => 'collapsed');
+    expect(rows[0].pinned).toBeUndefined();
+    expect(foldableRow(rows[0], null)).toBe(true);
+  });
 });

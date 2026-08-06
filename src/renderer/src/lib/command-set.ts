@@ -20,6 +20,10 @@ export interface CommandDeps {
   newSession: () => void;
   /** close a card (asks for confirmation — it forgets the record) */
   closeCard: (cardId: string) => void;
+  /** close every session at once, except the pinned ones (E9-09 bulk-close) */
+  closeAllCards: () => void;
+  /** pin or unpin a session — §5.8's protection contract (E9-09) */
+  togglePin: (cardId: string) => void;
   /** switch a card's view tab; the same view twice returns to the Session view */
   toggleCardView: (cardId: string, view: PanelId) => void;
   /** pop a card out to its own window, or dock it back in */
@@ -181,6 +185,39 @@ export function buildCommands(deps: CommandDeps): Command[] {
       run: (ctx) => {
         if (ctx.activeCardId) deps.closeCard(ctx.activeCardId);
       },
+    },
+    // ── §5.8's PINNING contract (E9-09) ───────────────────────────────────
+    //
+    // ONE command and one binding, not a pin/unpin pair: §5.8 says "pin/unpin
+    // is ONE gesture", and a pair would also have to fight over which of them
+    // owns the chord (the contribution builder dedupes by binding, so the
+    // second would silently lose it). The named-targets split the ladder and
+    // the policies use is for choices with three or four values; a boolean has
+    // one control, exactly as `view.rail` and `view.terminal` do.
+    {
+      id: 'session.pin',
+      titleKey: 'commands.togglePin',
+      categoryKey: CATEGORY_SESSION,
+      binding: 'Mod+Alt+P',
+      scope: 'app',
+      enabled: hasActive,
+      disabledReasonKey: 'commands.disabled.noActiveSession',
+      run: (ctx) => {
+        if (ctx.activeCardId) deps.togglePin(ctx.activeCardId);
+      },
+    },
+    {
+      // The bulk operation pinning exists to be exempt from (§5.8). Palette-only
+      // and deliberately WITHOUT a binding: closing every session at once is not
+      // something anyone should be able to do by mistyping a chord, and the
+      // title has to be read to be found. It confirms once, not once per card.
+      id: 'session.closeAll',
+      titleKey: 'commands.closeAllSessions',
+      categoryKey: CATEGORY_SESSION,
+      scope: 'app',
+      enabled: (ctx) => ctx.sessions.length > 0,
+      disabledReasonKey: 'commands.disabled.noSessions',
+      run: () => deps.closeAllCards(),
     },
     // ── §5.8's presentation ladder (E9-05) ────────────────────────────────
     //

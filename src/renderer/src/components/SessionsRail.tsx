@@ -214,6 +214,16 @@ export function SessionsRail(props: {
   focusPolicies: FocusBook;
   /** `undefined` clears the override and follows the default again */
   onSetSessionFocusPolicy: (cardId: string, policy: FocusPolicy | undefined) => void;
+  /**
+   * §5.8's pinning contract (E9-09) — the pinned CARD ids.
+   *
+   * The rail is where pinning belongs for the reason the policy overrides are
+   * here: it is the surface the guarantee is ABOUT ("sorts first in the rail"),
+   * so the control and its effect are one place apart.
+   */
+  pinned: ReadonlySet<string>;
+  /** pin or unpin one session — one gesture, both ways (§5.8) */
+  onTogglePin: (cardId: string) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [editing, setEditing] = React.useState<string | null>(null);
@@ -330,6 +340,7 @@ export function SessionsRail(props: {
     const ink = `var(--status-${p.token}-ink)`;
     const accent = s.accent ?? 'var(--faint)';
     const selected = s.id === props.selectedId;
+    const isPinned = props.pinned.has(s.id);
     // a needy session outranks selection: the attention tint is the signal the
     // whole panel exists to carry
     const rowTint = p.needsYou ? tint(hue, 10) : selected ? tint(accent, 10) : 'transparent';
@@ -344,6 +355,10 @@ export function SessionsRail(props: {
         data-needs-you={p.needsYou}
         data-tinted={p.needsYou || selected}
         data-session-status={p.token}
+        // §5.8's pinning contract (E9-09). An attribute rather than only a
+        // glyph: the protection is a fact about the row that the e2e suite has
+        // to be able to read, and styling may want it later.
+        data-pinned={isPinned}
         draggable
         onDragStart={(e) => {
           e.dataTransfer.setData(DND_TYPE, s.id);
@@ -436,7 +451,7 @@ export function SessionsRail(props: {
               // or a task label would be readable to the eye and to nobody
               // else. (Not when the session needs you: the second line IS the
               // ask then, and the state already says it.)
-              aria-label={t('rail.rowLabel', {
+              aria-label={t(isPinned ? 'rail.rowLabelPinned' : 'rail.rowLabel', {
                 title: s.title,
                 state:
                   !p.needsYou && s.taskLabel
@@ -497,6 +512,22 @@ export function SessionsRail(props: {
                 {p.needsYou ? t(p.labelKey) : (s.taskLabel ?? t(p.labelKey))}
               </span>
             </button>
+            {/* §5.8's pin (E9-09), on the row itself. AFTER the name block and
+                not before it: a marker in front of the title would indent the
+                pinned row's name away from every other row's, so the one row
+                you pinned is the one that no longer lines up. Decoration to a
+                screen reader — the fact is folded into the row button's own
+                accessible name above, where it is read as part of "this
+                session" rather than as a loose glyph beside it. */}
+            {isPinned && (
+              <span
+                aria-hidden
+                title={t('rail.pinnedHint')}
+                style={{ fontSize: 9, lineHeight: 1, flexShrink: 0, color: 'var(--muted)' }}
+              >
+                {t('rail.pinIcon')}
+              </span>
+            )}
             <div
               style={{
                 display: 'flex',
@@ -943,7 +974,9 @@ export function SessionsRail(props: {
 
   // one ordering function for the rail AND for Ctrl+1..9 (E9-01): persistent
   // groups and their members, then emergent auto-groups (E12-05), then loose
-  const order = railOrder(props.sessions, props.groups);
+  // `props.pinned` and not a second sort here: §5.8's "sorts first" is one rule,
+  // and the store derives the SAME call for Ctrl+1..9 and both strips (E9-09).
+  const order = railOrder(props.sessions, props.groups, props.pinned);
   const grouped = new Map(order.groups.map((g) => [g.id, g.members]));
   const totalNeed = needCount(props.sessions);
   // The Ungrouped bucket only earns a header when there is something to
@@ -1161,7 +1194,17 @@ export function SessionsRail(props: {
               Close move focus themselves — Rename autofocuses its field, and
               Close is about to remove the row. "Open changes" just switches the
               card's view, so without the restore a keyboard user who picked it
-              would be left standing at the top of the document. */}
+              would be left standing at the top of the document.
+
+              §5.8's PIN (E9-09) is one of these rather than a checkbox item,
+              and sits between Rename and Close: its LABEL says which way it
+              will go, which is the same rule the palette follows ("an entry has
+              to say what it will DO"), and it is what VS Code's own pinned-tab
+              menu does. A `menuitemcheckbox` with a tick column would be the
+              only item in this list carrying one, indenting its label away from
+              the other three for a state the label already spells out. It
+              restores focus: the row is still there afterwards, and it is
+              exactly the row whose pin you just changed. */}
           {(
             [
               ['rail.menuDiff', () => props.onDiff(menu.session), true],
@@ -1172,6 +1215,11 @@ export function SessionsRail(props: {
                   setDraft(menu.session.title);
                 },
                 false,
+              ],
+              [
+                props.pinned.has(menu.session.id) ? 'rail.menuUnpin' : 'rail.menuPin',
+                () => props.onTogglePin(menu.session.id),
+                true,
               ],
               ['rail.menuClose', () => props.onClose(menu.session.id), false],
             ] as const

@@ -11,6 +11,8 @@ function deps(): CommandDeps & { focusCard: ReturnType<typeof vi.fn> } {
     focusCard: vi.fn(),
     newSession: vi.fn(),
     closeCard: vi.fn(),
+    closeAllCards: vi.fn(),
+    togglePin: vi.fn(),
     toggleCardView: vi.fn(),
     popOutCard: vi.fn(),
     hideCard: vi.fn(),
@@ -89,7 +91,7 @@ describe('seed command set (E9-01)', () => {
   it('card commands are disabled with no focused session', () => {
     const cmds = buildCommands(deps());
     const empty = ctxWith(['a'], null);
-    for (const id of ['session.close', 'session.popOut', 'view.terminal']) {
+    for (const id of ['session.close', 'session.popOut', 'view.terminal', 'session.pin']) {
       expect(byId(cmds, id).enabled?.(empty)).toBe(false);
     }
     expect(byId(cmds, 'session.close').enabled?.(ctxWith(['a'], 'a'))).toBe(true);
@@ -99,6 +101,33 @@ describe('seed command set (E9-01)', () => {
     const d = deps();
     byId(buildCommands(d), 'session.close').run(ctxWith(['a'], 'a'));
     expect(d.closeCard).toHaveBeenCalledWith('a');
+  });
+
+  // ── §5.8's PINNING contract (E9-09) ────────────────────────────
+
+  it('pin is ONE command on the ACTIVE card, not a pin/unpin pair', () => {
+    // §5.8: "pin/unpin is one gesture". A pair would also have to fight over
+    // the chord — the contribution builder dedupes by binding, so the second
+    // would silently lose it.
+    const d = deps();
+    const cmds = buildCommands(d);
+    expect(cmds.filter((c) => c.id.startsWith('session.pin')).length).toBe(1);
+    expect(byId(cmds, 'session.pin').binding).toBe('Mod+Alt+P');
+    byId(cmds, 'session.pin').run(ctxWith(['a', 'b'], 'b'));
+    expect(d.togglePin).toHaveBeenCalledWith('b');
+  });
+
+  it('close-all routes to the bulk closer and has NO binding', () => {
+    // closing every session at once must not be reachable by mistyping a chord
+    const d = deps();
+    const cmds = buildCommands(d);
+    expect(byId(cmds, 'session.closeAll').binding).toBeUndefined();
+    byId(cmds, 'session.closeAll').run(ctxWith(['a', 'b'], 'a'));
+    expect(d.closeAllCards).toHaveBeenCalledTimes(1);
+    // ...and it is the WORKSPACE it acts on, so it needs sessions rather than a
+    // focused one — the opposite precondition from every other card command
+    expect(byId(cmds, 'session.closeAll').enabled?.(ctxWith(['a'], null))).toBe(true);
+    expect(byId(cmds, 'session.closeAll').enabled?.(ctxWith([], null))).toBe(false);
   });
 
   // ── §5.8's presentation ladder (E9-05) ──────────────────────────────────

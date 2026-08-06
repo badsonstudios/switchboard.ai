@@ -10,6 +10,7 @@ import {
 } from '../lib/presentation-policy';
 import { DEFAULT_LAYOUT, withMaximized, withMode } from '../lib/layout-mode';
 import { DEFAULT_FOCUS_BOOK, withFocusCard, withFocusGlobal } from '../lib/focus-policy';
+import { dropRetired } from '../lib/held-permissions';
 
 // The done-when: "a unit test constructs a store, drives it, and asserts
 // derived rail order + queue order WITHOUT React." That was impossible before
@@ -762,5 +763,197 @@ describe('SessionStore — the prompt-submit signal (P2-E9-06)', () => {
     off2();
     store.notifyPromptSubmitted('live-8');
     expect(seen).toEqual(['live-7']); // unsubscribed
+  });
+});
+
+describe('SessionStore — pinning (P2-E9-09)', () => {
+  let store: SessionStore;
+  let persisted: Array<string[] | null>;
+  beforeEach(() => {
+    store = new SessionStore();
+    persisted = [];
+    store.setPinPersister((blob) => persisted.push(blob));
+  });
+
+  it('starts with nothing pinned and nothing written', () => {
+    expect(store.getPins().size).toBe(0);
+    expect(store.isPinned('a')).toBe(false);
+    expect(persisted).toEqual([]);
+  });
+
+  it('init seeds the pins without writing them back', () => {
+    store.initPins(new Set(['a']));
+    expect(store.isPinned('a')).toBe(true);
+    expect(persisted).toEqual([]); // it just READ the blob
+  });
+
+  it('persists on change, and writes null once nothing is pinned', () => {
+    store.togglePin('a');
+    expect(persisted.at(-1)).toEqual(['a']);
+    store.togglePin('a');
+    expect(persisted.at(-1)).toBeNull(); // forget the key entirely
+  });
+
+  it('a no-op pin is not a write and not a re-render', () => {
+    store.setPinned('a', true);
+    let notifications = 0;
+    store.subscribe(() => notifications++);
+    store.setPinned('a', true);
+    expect(notifications).toBe(0);
+    expect(persisted.length).toBe(1);
+  });
+
+  it('§5.8: a pinned session sorts first in DERIVED rail order', () => {
+    // the whole reason pinning is in `state` and not an imperative registry
+    store.setSessions([session('a'), session('b'), session('c')]);
+    expect(store.getRailOrder().flat.map((s) => s.id)).toEqual(['a', 'b', 'c']);
+    store.togglePin('c');
+    expect(store.getRailOrder().flat.map((s) => s.id)).toEqual(['c', 'a', 'b']);
+    // ...and unpinning puts the rail back rather than leaving it re-sorted
+    store.togglePin('c');
+    expect(store.getRailOrder().flat.map((s) => s.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('a session list that arrives AFTER the pin is still ordered by it', () => {
+    // the boot order: presentation-boot seeds pins before the first session push
+    store.initPins(new Set(['b']));
+    store.setSessions([session('a'), session('b')]);
+    expect(store.getRailOrder().flat.map((s) => s.id)).toEqual(['b', 'a']);
+  });
+
+  it('forgets a closed card at the moment it closes, and prunes the rest at boot', () => {
+    store.setPinned('a', true);
+    store.setPinned('b', true);
+    store.forgetPin('c'); // an unrelated close: no write, no re-render
+    expect(persisted.length).toBe(2);
+    store.forgetPin('a');
+    expect(store.isPinned('a')).toBe(false);
+    store.prunePins(['b']);
+    expect(persisted.length).toBe(3); // nothing stale: no fourth write
+    store.prunePins([]);
+    expect(store.getPins().size).toBe(0);
+    expect(persisted.at(-1)).toBeNull();
+  });
+});
+
+// #239 — the residual #224 named. The grid's held-permission queue is React
+// state keyed by LIVE session id, and Restart / the popout-close suspend end
+// the session with that component still mounted. The store is the only place
+// that knows a live id has stopped being current, so it is the place that says
+// so.
+// (the issue number stays in the comment above: a `#nnn` inside a string
+// literal trips the raw-hex-colour lint rule)
+describe('SessionStore — the live-retired signal', () => {
+  let store: SessionStore;
+  beforeEach(() => {
+    store = new SessionStore();
+  });
+
+  it('names the retired live id when a teardown unbinds its card', () => {
+    const retired: string[] = [];
+    store.subscribeLiveRetired((id) => retired.push(id));
+    store.mapLiveToCard('live-1', 'card-A');
+    store.mapLiveToCard('live-2', 'card-B');
+
+    store.forgetCardLiveIds('card-A'); // Restart, or the popout-close suspend
+
+    expect(retired).toEqual(['live-1']); // and NOT the neighbour's live session
+  });
+
+  it('names the corpse when a respawn rebinds the card, not the newcomer', () => {
+    const retired: string[] = [];
+    store.subscribeLiveRetired((id) => retired.push(id));
+    store.mapLiveToCard('live-1', 'card-A');
+    store.mapLiveToCard('live-1b', 'card-A'); // card-A crashed and respawned
+
+    expect(retired).toEqual(['live-1']);
+  });
+
+  it('says nothing when the SAME live session is rebound to its card', () => {
+    // The other half of #224's same-pair guard, and the reason this signal is
+    // not "live went null": a remount over a STILL-RUNNING session re-enters
+    // the lazy spawn and `sessions:create` hands back the id it already had.
+    // Announcing a retirement there would take a live session's held prompt out
+    // of the review bar with the CLI still blocked on it.
+    const retired: string[] = [];
+    store.subscribeLiveRetired((id) => retired.push(id));
+    store.mapLiveToCard('live-1', 'card-A');
+    store.mapLiveToCard('live-1', 'card-A');
+
+    expect(retired).toEqual([]);
+  });
+
+  it('says nothing for a card that has no live session bound', () => {
+    const retired: string[] = [];
+    store.subscribeLiveRetired((id) => retired.push(id));
+    store.forgetCardLiveIds('card-A'); // idempotent, and silent
+    expect(retired).toEqual([]);
+  });
+
+  it('hands the subscriber a fully released id: unbound AND ungranted', () => {
+    // the grid's subscriber runs synchronously inside forgetCardLiveIds, so
+    // what it can read of this store while it runs is part of the contract.
+    // (The batching itself is unobservable today — one live id per card means
+    // one notify per sweep — so this pins the guarantee, not the mechanism.)
+    store.mapLiveToCard('live-1', 'card-A');
+    store.setAllowAll('live-1');
+    let lookupDuringNotify: string | null = null;
+    let grantedDuringNotify: boolean | null = null;
+    store.subscribeLiveRetired((id) => {
+      lookupDuringNotify = store.cardIdForLive(id);
+      grantedDuringNotify = store.isAllowAll(id);
+    });
+
+    store.forgetCardLiveIds('card-A');
+
+    // a STILL-BOUND id would answer 'card-A' here; an unbound one falls through
+    expect(lookupDuringNotify).not.toBe('card-A');
+    expect(lookupDuringNotify).toBe('live-1');
+    expect(grantedDuringNotify).toBe(false); // and the grant is already gone
+  });
+
+  it('delivers to every listener, one that throws costs only itself, and off() stops it', () => {
+    const seen: string[] = [];
+    const off1 = store.subscribeLiveRetired(() => {
+      throw new Error('boom');
+    });
+    const off2 = store.subscribeLiveRetired((id) => seen.push(id));
+    store.mapLiveToCard('live-1', 'card-A');
+    store.forgetCardLiveIds('card-A');
+    expect(seen).toEqual(['live-1']);
+
+    off1();
+    off2();
+    store.mapLiveToCard('live-2', 'card-A');
+    store.forgetCardLiveIds('card-A');
+    expect(seen).toEqual(['live-1']); // unsubscribed
+  });
+
+  // The two halves joined: this store's signal and the REAL rule the grid's
+  // effect applies (`lib/held-permissions`, tested on its own next door).
+  // SessionGrid has no test file, so the effect is the one uncovered link —
+  // this is as close to the user-visible property as a unit test reaches.
+  it("drops a torn-down session's held prompts from the review bar, and keeps a live card's", () => {
+    let queue = [
+      { requestId: 'perm-1', sessionId: 'live-A' },
+      { requestId: 'perm-2', sessionId: 'live-A' },
+      { requestId: 'perm-3', sessionId: 'live-B' },
+    ];
+    store.subscribeLiveRetired((liveId) => {
+      queue = dropRetired(queue, liveId);
+    });
+    store.mapLiveToCard('live-A', 'card-A');
+    store.mapLiveToCard('live-B', 'card-B');
+    store.setAllowAll('live-A'); // the user had already granted the dead session
+
+    store.mapLiveToCard('live-A2', 'card-A'); // card-A restarted
+
+    // both of the dead session's questions leave the bar; the other card's
+    // stays, because its session is still blocked on it
+    expect(queue).toEqual([{ requestId: 'perm-3', sessionId: 'live-B' }]);
+    // the grant went with the binding (#224), so a hold that HAD stayed in the
+    // bar would have re-granted an id in no map — which is the leak, and the
+    // reason the two releases have to happen together
+    expect(store.isAllowAll('live-A')).toBe(false);
   });
 });

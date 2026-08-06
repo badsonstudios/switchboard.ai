@@ -34,8 +34,12 @@ Each group header counts its own waiting sessions (**"2 need you"**, or
 for the whole workspace.
 
 Click a row to jump to that session. Double-click to rename it. Right-click for
-**Open changes**, **Rename**, **Close session**, and
+**Open changes**, **Rename**, **Pin session**, **Close session**, and
 [what this session does when you submit a prompt](#changing-it).
+
+A **pinned** session (📌) sorts to the top of the list — of its group, if it is
+in one — and is skipped by everything that acts on sessions in bulk. See
+[Pinning a session](02-sessions.md#pinning-a-session-you-always-want-to-find).
 
 Sessions that are suspended or not currently on screen still appear here — the
 list is the complete inventory.

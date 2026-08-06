@@ -242,6 +242,8 @@ export interface CollapsedRow {
   labelKey: string;
   /** the session's identity color, for the row's leading bar */
   accent?: string;
+  /** §5.8's pinning contract (E9-09): this row never folds into the aggregate */
+  pinned?: boolean;
 }
 
 /**
@@ -257,7 +259,11 @@ export interface CollapsedRow {
  */
 export function collapsedRows(
   sessions: readonly RailSession[],
-  rungOf: (cardId: string) => Ladder
+  rungOf: (cardId: string) => Ladder,
+  /** §5.8's pinning contract (E9-09) — carried on the row so `foldableRow`
+   *  stays a function of the row alone, exactly as the other three carve-outs
+   *  are. Defaults to "nothing is pinned" so every existing caller is unmoved. */
+  pinnedOf: (cardId: string) => boolean = () => false
 ): CollapsedRow[] {
   return sessions
     .filter((s) => showsRow(rungOf(s.id)))
@@ -270,6 +276,7 @@ export function collapsedRows(
         needsYou: p.needsYou,
         labelKey: p.labelKey,
         ...(s.accent ? { accent: s.accent } : {}),
+        ...(pinnedOf(s.id) ? { pinned: true } : {}),
       };
     });
 }
@@ -311,7 +318,7 @@ export type StripItem =
 /**
  * May this row disappear into the aggregate?
  *
- * The three carve-outs are §5.8's, in its own order:
+ * The four carve-outs are §5.8's, in its own order:
  *
  *   • WORKING is not idle. `token` is lib/rail-view's vocabulary, so 'starting'
  *     reads as working here exactly as it does in the rail and on the lamps —
@@ -329,9 +336,18 @@ export type StripItem =
  *     a dockview panel and so is not in the strip at all — and it stays because
  *     the strip must not silently depend on that invariant holding for every
  *     future thing that drives rungs from outside a card.
+ *   • A PINNED SESSION never folds (E9-09). §5.8's pinning contract names idle
+ *     aggregation among the bulk operations a pinned session is exempt from,
+ *     and this is that operation — the fold is precisely the thing that takes a
+ *     session's position in the list away, which is what pinning protects. Note
+ *     it does NOT keep the session expanded: a pinned card a layout mode
+ *     collapsed is still a strip row, it just stays a row OF ITS OWN. That is
+ *     "protects existence and position, not size", in one line.
  */
 export function foldableRow(row: CollapsedRow, activeCardId: string | null): boolean {
-  return row.token === 'idle' && !row.needsYou && row.cardId !== activeCardId;
+  return (
+    row.token === 'idle' && !row.needsYou && !row.pinned && row.cardId !== activeCardId
+  );
 }
 
 /**

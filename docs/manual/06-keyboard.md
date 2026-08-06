@@ -94,12 +94,20 @@ back to the first.
 | `Ctrl+Shift+↓` | Show less of the focused session — one rung down |
 | `Ctrl+Shift+↑` | Show more of the focused session — one rung up |
 | `Ctrl+Shift+M` | Maximize the focused session, or put the layout back |
+| `Ctrl+Alt+P` | Pin or unpin the focused session |
 | `Ctrl+Shift+L` | Switch the whole workspace to the next layout: Grid → Focus → Queue |
 | `Ctrl+Shift+P` | Open the command palette |
 | `Ctrl+Space` | Go to the next session that needs you |
 
 `Ctrl+W` asks before it closes, because closing a session ends it and removes
 its card — the same confirmation you get from the tab's **✕**.
+
+`Ctrl+Alt+P` pins the session you're in. A pinned session sorts to the top of
+the Sessions list, keeps its own row when idle sessions fold together, is never
+minimized behind your back, and is skipped by **Close all sessions** — see
+[Pinning a session](02-sessions.md#pinning-a-session-you-always-want-to-find).
+It does not force the session to stay expanded; you can still collapse, tab or
+hide it yourself.
 
 ``Ctrl+` `` is a toggle: press it once to look at the Terminal, press it again
 to go straight back to the Session view.
@@ -212,10 +220,11 @@ The right-click menu on a row is on the keyboard too: with a session's name
 selected, press **`Shift+F10`** (or the **Menu** key, if your keyboard has one)
 and the same menu opens, with the first item already selected. `↑` and `↓` walk
 it, `Enter` picks, and `Esc` closes it and puts you back on the row you started
-from. That menu is where **Open changes**, **Rename…** and **Close session**
-live, so renaming a session doesn't need a double-click. Below them are two
-labelled groups of radio items — **ON SUBMIT** and **WHEN IT NEEDS YOU** — which
-read out as one choice each rather than as eight loose commands.
+from. That menu is where **Open changes**, **Rename…**, **Pin session** and
+**Close session** live, so renaming or pinning a session doesn't need a
+double-click. Below them are two labelled groups of radio items — **ON
+SUBMIT** and **WHEN IT NEEDS YOU** — which read out as one choice each rather
+than as eight loose commands.
 
 ### The lamp strip
 
