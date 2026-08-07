@@ -250,3 +250,144 @@ describe('the roster covers the shell column', () => {
     }
   });
 });
+
+// --- The popped-out document ------------------------------------------------
+//
+// A popped-out group is its OWN document, and #168's read-only notice follows
+// the user there (#208). The mechanism above repeats there exactly: popout.html
+// turns the body into a flex column, dockview's adopted container takes
+// `flex: 1 1 0` — basis zero again, absorbs nothing — so a short popout window
+// squeezes the notice instead. The guard is present and has been since #208,
+// and until now nothing checked it: the roster's own defect class, one document
+// over. That is what #306 is.
+//
+// It gets its own roster instead of a row in NOTICES because entries there are
+// keyed by the name App.tsx renders them under, and this element has no such
+// name: lib/popout-banner-host creates it at runtime, in a document App never
+// sees. Same shape, same anchor-and-terminator witness, separate scan.
+const POPOUT = read('../popout.html');
+
+/** Both spellings of the same promise. popout.html writes the shorthand, and
+ *  this does not ask it to change: that rule is one of a PAIR — this element
+ *  takes what it needs, `#dv-popout-window` under it takes the rest with
+ *  `flex: 1 1 0` — and the pair reads as a pair only while both are spelled
+ *  alike. The longhand is accepted too, so normalizing it later is a choice and
+ *  not a test failure. What neither spelling permits is a shrink factor other
+ *  than zero, which is the entire point. `!important` is optional because the
+ *  neighbouring rules need it and this one may yet. */
+const POPOUT_GUARD =
+  /^\s*(?:flex-shrink:\s*0|flex:\s*(?:none|0\s+0(?:\s+[^\s;!]+)?))\s*(?:!important)?\s*;/m;
+
+type PopoutNotice = {
+  /** the selector popout.html writes the rule under, minus the body prefix —
+   *  both the anchor for the style block and the key the scan classifies by */
+  selector: string;
+  /** what is lost when it shrinks — the reason it is on the roster */
+  why: string;
+};
+
+/** Every always-visible child of the popout's body column. Issue numbers stay
+ *  out of these strings and in the comments: they are hex-colour-shaped and the
+ *  renderer's no-raw-hex lint rule cannot tell the difference inside a string
+ *  literal. */
+const POPOUT_NOTICES: readonly PopoutNotice[] = [
+  {
+    selector: '[data-sb-banner-host]',
+    // #208 put it there; #168 is the warning it carries
+    why: 'the only warning that nothing done this run will be saved, in a window a user can spend the whole run inside',
+  },
+];
+
+/** The column's other children, and why none of them is a notice. */
+const POPOUT_NOT_A_NOTICE: Readonly<Record<string, string>> = {
+  '#dv-popout-window':
+    "dockview's adopted container — `flex: 1 1 0`, a basis of 0. It is the thing that is SUPPOSED to give way here, exactly as the workspace div is in the main window",
+};
+
+/** the child rules of the popout's body column, read off the one `<style>`
+ *  block. Indentation-anchored for the same fail-loud reason the App scan is —
+ *  and guarded the same way, by a test that the scan still finds them. */
+const popoutColumnRules = [...POPOUT.matchAll(/^ {6}body\[data-sb-banner\] > ([^{]+?) \{/gm)].map(
+  (m) => m[1]
+);
+
+describe("the popout window's notice keeps its height", () => {
+  it.each(POPOUT_NOTICES)('$selector declares the shrink guard', (n) => {
+    expect(
+      styleBlock(POPOUT, 'popout.html', `body[data-sb-banner] > ${n.selector} {`, '\n      }'),
+      `the popout's ${n.selector} rule must hold its shrink factor at 0 — ` +
+        `without it a short popout window squeezes it instead of dockview's ` +
+        `container below, and what is lost is ${n.why}`
+    ).toMatch(POPOUT_GUARD);
+  });
+
+  // Without the column the guard is inert: `flex-*` on a child of a non-flex
+  // body means nothing, and worse, #208's comment records what actually
+  // happens then — the notice lands UNDER dockview's opaque container, present
+  // in the DOM and invisible on screen. A green test over a dead declaration is
+  // the one outcome this file exists to prevent.
+  it('the popout body is still the flex column that makes the guard mean anything', () => {
+    const column = styleBlock(POPOUT, 'popout.html', 'body[data-sb-banner] {', '\n      }');
+    expect(
+      column,
+      'popout.html no longer makes the body a flex column, so every shrink ' +
+        'guard below it is inert and the notice renders underneath dockview'
+    ).toMatch(/^\s*display:\s*flex\s*!important\s*;/m);
+    expect(column, 'the popout body column is no longer a COLUMN').toMatch(
+      /^\s*flex-direction:\s*column\s*!important\s*;/m
+    );
+  });
+
+  // The rule is written against two attributes the renderer sets from its own
+  // constants, in a different file, in a different document. Nothing but this
+  // makes the two agree — rename either side alone and the selector matches
+  // nothing, which looks exactly like a guard and does exactly nothing.
+  it('the guarded rule selects the element the renderer actually inserts', () => {
+    const host = read('lib/popout-banner-host.ts');
+    const hostAttr = /const HOST_ATTR = '([^']+)'/.exec(host)?.[1];
+    const bodyAttr = /const BODY_ATTR = '([^']+)'/.exec(host)?.[1];
+    expect(
+      hostAttr && bodyAttr,
+      'HOST_ATTR / BODY_ATTR could not be read out of lib/popout-banner-host.ts — ' +
+        'they were renamed or restructured, and until this reader is fixed the ' +
+        'check below cannot tell whether the CSS still matches them'
+    ).toBeTruthy();
+    expect(
+      POPOUT,
+      `popout.html does not select the attributes the renderer sets ` +
+        `(body ${bodyAttr}, host ${hostAttr}) — one side was renamed without the ` +
+        `other, so the rule matches nothing and the notice has no guard at all`
+    ).toContain(`body[${bodyAttr}] > [${hostAttr}] {`);
+  });
+});
+
+describe("the roster covers the popout's body column", () => {
+  // Exact, not a lower bound like the App scan's: this doubles as the check
+  // that nothing on either list has been DELETED from popout.html, which is
+  // what 'every rostered notice is still rendered by the shell' does upstairs.
+  // Classify a new rule and this stays green on its own; it only speaks up when
+  // the two sides actually disagree.
+  it('still finds the popout column', () => {
+    expect(
+      popoutColumnRules,
+      'the scan of popout.html found a different number of child rules than the ' +
+        'roster and the exemptions describe — either the <style> block was ' +
+        'reformatted so the scan no longer reads it (and nothing below means ' +
+        'anything until that is fixed), or a rule listed here no longer exists'
+    ).toHaveLength(POPOUT_NOTICES.length + Object.keys(POPOUT_NOT_A_NOTICE).length);
+  });
+
+  it('every child of the popout column is rostered or a stated exemption', () => {
+    const known = new Set([
+      ...POPOUT_NOTICES.map((n) => n.selector),
+      ...Object.keys(POPOUT_NOT_A_NOTICE),
+    ]);
+    expect(
+      popoutColumnRules.filter((s) => !known.has(s)),
+      'a new child rule was added to the popout body column and classified ' +
+        'nowhere. If the element is always visible it needs a shrink guard and ' +
+        'a POPOUT_NOTICES entry; if it is the container that should give way, ' +
+        'say so in POPOUT_NOT_A_NOTICE with the reason'
+    ).toEqual([]);
+  });
+});

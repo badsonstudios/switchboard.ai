@@ -1061,6 +1061,15 @@ export function App(): React.JSX.Element {
         activeCardId={activeCard}
         onExpand={(cardId) => focusCard(cardId)}
       />
+      {/* The one child of this column that is MEANT to give. `flex: 1` is
+          `flex: 1 1 0%` — a basis of ZERO — and a flex container shares out
+          negative free space in proportion to each item's shrink factor times
+          its basis, so this absorbs NOTHING: in a window too short for the
+          stack, every missing pixel comes off the auto-basis bars above and
+          below instead. That is the intent (the workspace is what should be
+          squeezed), and it is also why every one of those bars has to opt out
+          by hand with `flexShrink: 0`. always-visible-notices.test.ts rosters
+          them; this is the line that makes the roster necessary. */}
       <div style={{ flex: 1, display: 'flex', minBlockSize: 0 }}>
         {!railHidden && (
           <SessionsRail
