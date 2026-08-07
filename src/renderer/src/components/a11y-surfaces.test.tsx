@@ -9,6 +9,11 @@
 // quietly turning a control back into a div, so the assertions below go through
 // the real components and read the contract off the DOM.
 //
+// The events panel's two NOTICES (#314) are here for the same reason under a
+// different defect: not a control that lost its role, but a message that arrives
+// with nobody told about it. Same file because it is the same question — what
+// does this DOM actually promise a screen reader.
+//
 // The tab strip is the one surface not here: it lives inside SessionGrid, whose
 // tree is a live dockview, so its semantics are covered by `tabstrip-keys` (the
 // decisions) and by e2e (the roles and the walk, in a real window).
@@ -567,6 +572,74 @@ describe('events panel rows (issue 197)', () => {
 
     expect(focused).toEqual(['c1']);
     expect(visited).toEqual([1]);
+  });
+});
+
+describe('events panel notices (issue 314)', () => {
+  // Neither notice is reached by navigating anywhere: both are pushed into a
+  // panel already on screen, long after mount — the update one when a dialog
+  // closes or a handshake resolves, the reconnect one when a monitor comes
+  // back. Without a live region a screen-reader user is simply never told.
+  // #260 gave the update notice the pair and left the older reconnect offer
+  // alone; #314 closes that gap, so this block reads the contract off BOTH and
+  // keeps them one idiom rather than two.
+  const live = (host: HTMLElement): HTMLElement[] =>
+    Array.from(host.querySelectorAll<HTMLElement>('[role="status"]'));
+
+  it('announces the reconnect offer, on the message rather than the buttons', async () => {
+    const host = await mount(
+      <EventsPanel
+        sessions={[]}
+        events={[]}
+        queueEvents={[]}
+        visited={new Set<number>()}
+        onFocus={noop}
+        onVisit={noop}
+        queueBinding="Ctrl+Space"
+        reconnectOffer
+        onRestoreLayout={noop}
+        onDismissOffer={noop}
+      />
+    );
+    const regions = live(host);
+    expect(regions).toHaveLength(1);
+    const [region] = regions;
+    expect(region.getAttribute('aria-live')).toBe('polite');
+    // the OFFER, not the controls: a region wrapping the buttons would read
+    // "Restore Not now" every time the box changed
+    expect(region.textContent).toBe(en.events.reconnectOffer);
+    expect(region.querySelector('button')).toBeNull();
+  });
+
+  for (const kind of ['installed', 'available'] as const) {
+    it(`gives the ${kind} update notice the same pair`, async () => {
+      const host = await mount(
+        <EventsPanel
+          sessions={[]}
+          events={[]}
+          queueEvents={[]}
+          visited={new Set<number>()}
+          onFocus={noop}
+          onVisit={noop}
+          queueBinding="Ctrl+Space"
+          updateNotice={{ kind, version: '0.2.0' }}
+          onUpdateNow={noop}
+          onDismissUpdateNotice={noop}
+        />
+      );
+      const regions = live(host);
+      expect(regions).toHaveLength(1);
+      expect(regions[0].getAttribute('aria-live')).toBe('polite');
+      expect(regions[0].textContent).toContain('0.2.0');
+      expect(regions[0].querySelector('button')).toBeNull();
+    });
+  }
+
+  it('says nothing when there is nothing to say', async () => {
+    // a live region that is always mounted and always empty is noise waiting
+    // to happen; these are conditional, and that is the point
+    const host = await mountEvents();
+    expect(live(host)).toHaveLength(0);
   });
 });
 

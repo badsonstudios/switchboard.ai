@@ -28,7 +28,7 @@ import { parsePopoutFeatures } from './popout-bounds';
 import { scanSlashCommands } from './capabilities/slash-commands';
 import { buildMenuTemplate } from './app-menu';
 import { UpdateService, FEED_ENV, isAllowedReleaseUrl } from './update/service';
-import { UpdateInstaller, UPDATE_DIR_NAME, resolveHandshake } from './update/install';
+import { UpdateInstaller, UPDATE_DIR_NAME, resolveHandshake, resolveOffer } from './update/install';
 import { launchInstaller } from './update/installer';
 import type { UpdateHandshake, UpdateInstallStatus } from '../shared/update';
 import { installTerminalAccelerators, makeAcceleratorDeps } from './terminal-accelerators';
@@ -802,6 +802,18 @@ app
     const manager = new SessionManager(registry, ptys, createLogger(sink, 'sessions'), stateDir, {
       stream: streams,
     });
+    // Is there anyone to ask? A destroyed window or a crashed renderer means no
+    // (P2-E15-09). A RELOADING renderer is neither, so the pending-holds replay
+    // path still gets its chance — that case must not regress.
+    //
+    // ONE expression, shared by both permission channels (#319). They ask the
+    // same question and must not be able to answer it differently: two copies
+    // that drifted would mean one channel failing open while the other parked
+    // the CLI, which is the exact bug #319 exists to close.
+    const hasLiveWindow = (): boolean => {
+      const w = currentWindow;
+      return !!w && !w.isDestroyed() && !w.webContents.isCrashed();
+    };
     // can_use_tool -> the approval bar (P2-E18-07). Answers go back on the same
     // session's transport, which only the manager can reach.
     const streamPermissions = new StreamPermissions(
@@ -809,9 +821,18 @@ app
       // …and the answer ends `needs-permission` immediately, rather than when
       // the CLI next speaks (#310). Same collaborator the hook path gets.
       (sessionId, ev) => manager.apply(sessionId, ev),
-      createLogger(sink, 'permissions')
+      createLogger(sink, 'permissions'),
+      // …and it fails open like a hook hold does (#319). Without these a closed
+      // window parked a `can_use_tool` for EVER — no timeout, no liveness gate,
+      // and nothing to release what was already held.
+      { hasLiveWindow }
     );
     manager.onStreamMessage((sessionId, msg) => streamPermissions.offer(sessionId, msg));
+    // "Allow all (this session)" means no hold, no needs-permission event and
+    // no beep — including in Direct mode (#319). The router answers the call;
+    // only the pump can stop the status that rings the bell. See
+    // `setPermissionHoldSuppressor`.
+    manager.setPermissionHoldSuppressor((sessionId) => streamPermissions.isAllowAll(sessionId));
     // the CLI's own slash-command list, off the same stream (P2-E18-09).
     //
     // A SEPARATE subscription, not a second call inside the one above: the
@@ -841,15 +862,29 @@ app
       cwdFor: (id) => manager.get(id)?.identity.folder,
       // a stream session's permissions ride can_use_tool, never a held hook
       transportFor: (id) => manager.get(id)?.transport,
-      // Is there anyone to ask? A destroyed window or a crashed renderer means
-      // no (P2-E15-09). A RELOADING renderer is neither, so the pending-holds
-      // replay path still gets its chance — that case must not regress.
-      hasLiveWindow: () => {
-        const w = currentWindow;
-        return !!w && !w.isDestroyed() && !w.webContents.isCrashed();
-      },
+      // shared with the stream channel — see its declaration above
+      hasLiveWindow,
     });
-    onRendererLost = (reason) => hooks.releaseHeld(reason);
+    // BOTH channels, always (#319). The hook path has failed open on a lost
+    // renderer since P2-E15-09; the stream path had no equivalent at all, so a
+    // closed window left its `can_use_tool` parked with no deadline behind it.
+    //
+    // Isolated from each other on purpose: this runs while the window is going
+    // away, both halves answer somebody who is BLOCKED, and a throw out of the
+    // first one must not be why the second never ran. Same argument as
+    // `tearDownStep`'s in sessions/ipc.ts.
+    onRendererLost = (reason) => {
+      for (const [what, release] of [
+        ['hooks', () => hooks.releaseHeld(reason)],
+        ['stream', () => streamPermissions.releaseHeld(reason)],
+      ] as const) {
+        try {
+          release();
+        } catch (err) {
+          log.app.error('releasing held permissions failed', { channel: what, error: String(err) });
+        }
+      }
+    };
     // Only the DEFAULT provider's root, and only as a seed for "files that were
     // already on disk before we started" — every session brings the root its own
     // provider declared (P2-E15-01). Undefined when the default provider has no
@@ -989,14 +1024,20 @@ app
     // the whole capability is built the other way round.
     broker.handle('update:install', async (): Promise<UpdateInstallStatus> => {
       const offered = updates.lastResult();
-      if (!offered || offered.state !== 'available') {
-        // The renderer's dialog is showing something main no longer believes —
-        // a window left open across a release being withdrawn. Answer honestly
-        // rather than downloading whatever was last cached.
-        updateLog.warn('an install was requested with no release on offer');
-        return { phase: 'failed', version: '', received: 0, total: 0, reason: 'no-asset' };
+      // The renderer's dialog is showing something main no longer believes — a
+      // window left open across a release being withdrawn (#315). Answer
+      // honestly, and with the RIGHT reason: `no-offer` says the offer is gone,
+      // where the `no-asset` this used to return blamed the release's files.
+      const decision = resolveOffer(offered);
+      if (!decision.ok) {
+        updateLog.warn('an install was requested with no release on offer', {
+          // The distinction the UI does not carry, kept where it is useful.
+          state: offered?.state ?? 'never-checked',
+          reason: offered?.reason,
+        });
+        return decision.status;
       }
-      return installer.install(offered);
+      return installer.install(decision.offer);
     });
     broker.handle('update:cancelInstall', () => {
       installer.cancel();

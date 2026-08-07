@@ -61,6 +61,12 @@ function installFailureKey(reason: UpdateInstallStatus['reason']): string {
       return 'update.failedChecksum';
     case 'no-asset':
       return 'update.failedNoAsset';
+    // Its own sentence, and the reason #315 exists: this box can outlive the
+    // release it is describing, and saying "no installer we can verify" about a
+    // release that is simply GONE is an accurate outcome with the wrong cause
+    // attached — it sends the user to a page that may not be there either.
+    case 'no-offer':
+      return 'update.failedNoOffer';
     case 'unsupported':
       return 'update.failedUnsupported';
     case 'no-token':

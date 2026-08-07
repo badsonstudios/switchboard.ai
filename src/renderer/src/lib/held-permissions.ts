@@ -15,6 +15,7 @@
 // triggers share it — the store's live-retired signal (a renderer-side
 // teardown) and the session's own exit — and they must not be able to disagree
 // about what "belongs to that session" means.
+import type { PermissionRequestDto } from '../../../shared/ipc/permissions';
 
 /**
  * Drop everything the retired session raised, and nothing else.
@@ -35,17 +36,15 @@ export function dropRetired<T extends { sessionId: string }>(queue: T[], retired
   return next.length === queue.length ? queue : next;
 }
 
-/** One inbound `sessions:permissionRequest`, as the card receives it. */
-export interface IncomingPermission {
-  requestId: string;
-  sessionId: string;
-  /** which card the request belongs to; main routes, the card filters */
-  cardId?: string;
-  tool: string;
-  input: Record<string, unknown>;
-  /** stream transport only (P2-E18-07): the CLI's own prose for WHY */
-  reason?: string;
-}
+/**
+ * One inbound `sessions:permissionRequest`, as the card receives it.
+ *
+ * The wire shape itself, not a hand-copy of it (#312). It used to re-declare
+ * four of the DTO's fields and agreed with preload only because the same fields
+ * had been typed twice; both copies were missing `reasonType`, `displayName` and
+ * `suggestions`, which main has been sending since P2-E18-07.
+ */
+export type IncomingPermission = PermissionRequestDto;
 
 /** One entry in the card's review queue. */
 export interface HeldPermission {
@@ -65,6 +64,12 @@ export interface HeldPermission {
  * that also means forgetting one is silent. `reason` was dropped exactly this
  * way once: every unit test passed and only an e2e caught it. This is the last
  * piece of the intake that a test could not reach (#310).
+ *
+ * The three fields the DTO gained in #312 — `reasonType`, `displayName`,
+ * `suggestions` — are DECIDED here and deliberately not queued: nothing in the
+ * review bar renders them today, and copying a field forward "for later" is how
+ * a queue entry stops describing what the UI actually shows. They are one line
+ * away the day a bar wants them, and now the type says they exist.
  *
  * Returns the SAME array on a duplicate, for `dropRetired`'s reason: a redelivery
  * (main's mount replay racing its own push) must not cost a re-render.

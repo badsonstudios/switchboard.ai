@@ -336,3 +336,102 @@ describe('a stream session, end to end (P2-E18-05)', () => {
     expect(mgr.get(rec.id)!.status).toBe('idle');
   });
 });
+
+// #319 — "Allow all (this session)" has to mean it in Direct mode too.
+//
+// `HookListener.setAllowAll`'s docblock has promised "no hold, no
+// needs-permission event, and no beep" since P2. Direct mode honoured none of
+// it: `streamStatusEvent` maps every `can_use_tool` to `permission-held`, this
+// pump applies it, and `apply` fans it out to `feed.ingest` -> ATTENTION ->
+// `shell.beep()` + taskbar flash + an Events row. Per gated call, in a session
+// the user had explicitly told us to stop asking about.
+//
+// The suppression cannot live in `StreamPermissions`, which is where the
+// allow-all verdict is actually given: the status is applied on the line ABOVE
+// the fan-out that reaches the router, so by then the bell has rung. The only
+// place that can suppress a hold is the place that applies it — which is what
+// these tests pin.
+describe('allow-all suppresses the hold at the status apply (#319)', () => {
+  const canUseTool = {
+    type: 'control_request',
+    request_id: 'req-1',
+    request: { subtype: 'can_use_tool', tool_name: 'Write' },
+  };
+
+  it('an allow-all session never enters needs-permission, and raises no change', async () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity);
+    await tick();
+    mgr.apply(rec.id, { kind: 'prompt-sent' });
+    mgr.setPermissionHoldSuppressor((id) => id === rec.id);
+    changes.length = 0;
+
+    stream.emit(rec.id, canUseTool);
+
+    // The status is the thing the beep hangs off (`onStatusChange` ->
+    // `feed.ingest` -> ATTENTION), so no change IS "no beep and no Events row".
+    expect(mgr.get(rec.id)!.status).toBe('working');
+    expect(changes).toEqual([]);
+  });
+
+  it('suppression is per SESSION — the card next to it still asks', async () => {
+    const mgr = streamManager();
+    const quiet = mgr.create(identity);
+    const asking = mgr.create(identity);
+    await tick();
+    mgr.apply(quiet.id, { kind: 'prompt-sent' });
+    mgr.apply(asking.id, { kind: 'prompt-sent' });
+    mgr.setPermissionHoldSuppressor((id) => id === quiet.id);
+
+    stream.emit(quiet.id, canUseTool);
+    stream.emit(asking.id, canUseTool);
+
+    expect(mgr.get(quiet.id)!.status).toBe('working');
+    expect(mgr.get(asking.id)!.status).toBe('needs-permission');
+  });
+
+  // The narrowest claim in the file, and the one worth a test of its own: a
+  // predicate that suppressed anything else would silently stop an allow-all
+  // session reporting that it is working, that its turn ended, or that it died.
+  it('suppresses permission-held and NOTHING else', async () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity);
+    await tick();
+    mgr.setPermissionHoldSuppressor(() => true);
+    changes.length = 0;
+
+    stream.emit(rec.id, { type: 'assistant' });
+    stream.emit(rec.id, canUseTool); // the only one dropped
+    stream.emit(rec.id, { type: 'result', subtype: 'success' });
+
+    expect(changes.map((c) => `${c.from}->${c.to}`)).toEqual(['idle->working', 'working->done']);
+  });
+
+  // "I can't tell" must fall back to the HONEST status, not to silence. A
+  // suppressed hold that nobody is answering leaves the card reading `working`
+  // while the CLI sits blocked on a question — strictly worse than a beep.
+  it('a suppressor that throws holds the session anyway', async () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity);
+    await tick();
+    mgr.apply(rec.id, { kind: 'prompt-sent' });
+    mgr.setPermissionHoldSuppressor(() => {
+      throw new Error('the allow-all set exploded');
+    });
+
+    expect(() => stream.emit(rec.id, canUseTool)).not.toThrow();
+    expect(mgr.get(rec.id)!.status).toBe('needs-permission');
+  });
+
+  // and with nothing wired at all — every existing host, and every test above
+  it('no suppressor means the pre-#319 behaviour, unchanged', async () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity);
+    await tick();
+    mgr.apply(rec.id, { kind: 'prompt-sent' });
+
+    stream.emit(rec.id, canUseTool);
+
+    expect(mgr.get(rec.id)!.status).toBe('needs-permission');
+  });
+});

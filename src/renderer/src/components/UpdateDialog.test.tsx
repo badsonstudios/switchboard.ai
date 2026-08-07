@@ -327,6 +327,10 @@ describe('the install faces (E19-04)', () => {
     const cases: Array<[UpdateInstallStatus['reason'], string]> = [
       ['checksum', en.update.failedChecksum],
       ['no-asset', en.update.failedNoAsset],
+      // #315: the release is GONE, which is a different fact from "the release
+      // has no installer we can verify" — the Set below is what holds them
+      // apart, because reporting the first as the second was the whole defect.
+      ['no-offer', en.update.failedNoOffer],
       ['unsupported', en.update.failedUnsupported],
       ['no-token', en.update.failedNoToken],
       ['auth', en.update.failedAuth],

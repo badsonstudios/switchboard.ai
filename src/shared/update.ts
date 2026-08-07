@@ -121,6 +121,22 @@ export type UpdateInstallFailure =
   | 'unsupported'
   /** the release has no installer + sidecar pair to work from */
   | 'no-asset'
+  /**
+   * **There is no release on offer any more** (#315).
+   *
+   * The dialog is a picture of an answer main gave earlier; main is the side
+   * that decides what gets installed (`service.ts`'s `lastResult`). A window
+   * left open across a release being withdrawn — or superseded, or across a
+   * later check that could not reach the feed — presses Update on something
+   * main no longer stands behind, and it is refused.
+   *
+   * Distinct from `no-asset` on purpose, and that distinction is the whole
+   * point of this reason existing: "we looked at that release and it has no
+   * installer we can verify" and "that release is not on offer any more" are
+   * different facts, and reporting the second as the first sent the user
+   * hunting for an installer on a page that may not be there.
+   */
+  | 'no-offer'
   /** no token could be resolved locally, and the asset is private */
   | 'no-token'
   /** the asset host refused the credentials we have */

@@ -119,9 +119,28 @@ thinking and checklists all look and behave exactly the same in either mode.
 
 - **The Terminal tab is empty and says there's no terminal.** That's correct
   for a Direct-mode session. Switch back via the ⋯ menu if you need it.
+- **A card said it needed permission and there was nothing to answer.** Fixed.
+  In Direct mode every real permission request arrives with an **Allow / Deny**
+  bar attached to it, so the amber "needs permission" badge is now only ever
+  shown when there is a question on screen waiting for you. Claude Code also
+  sends a slower, vaguer nudge of its own a few seconds behind — sometimes after
+  you'd already answered — and switchboard used to believe it. In Direct mode it
+  no longer does.
 - **You switched and nothing changed.** The change applies at the *next* start.
   Use **Restart session now** in the same menu — closing the card instead will
   forget the setting along with the card.
+- **Claude says a request was declined and you never saw it.** Nobody could be
+  asked — the window was closed or its display crashed while the session kept
+  running, or the question sat unanswered for five minutes. In Direct mode there
+  is no terminal prompt behind switchboard to catch it, so declining is the only
+  answer that doesn't leave the session stuck for ever. Tell Claude to carry on
+  and it will ask again. See
+  [Approvals & autonomy](04-approvals-and-autonomy.md#good-to-know).
+- **You want a session to keep working while you're away.** Turn on **Allow all
+  (this session)** before you leave. In Direct mode that's answered inside
+  switchboard rather than on screen, so gated calls go through with the window
+  closed — and with no beep and no taskbar flash while you're at the keyboard
+  either.
 
 See also: [04 — Approvals & autonomy](04-approvals-and-autonomy.md) ·
 [11 — Troubleshooting](11-troubleshooting.md)

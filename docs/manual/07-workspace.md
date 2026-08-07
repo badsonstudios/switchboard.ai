@@ -54,7 +54,10 @@ Groups are folders for sessions, and they stay put even when empty. Each one is
 a card with its own color and a **colored dot** beside its name.
 
 - **Make one:** click **+ group**.
-- **Rename:** double-click its name.
+- **Rename:** double-click its name. The same rules as a session's name: `Esc`
+  leaves it alone, and so does pressing Enter on an empty box — a group always
+  has a name, so clearing it counts as "never mind" rather than as a new, blank
+  one. Spaces at either end are trimmed off.
 - **Recolor:** click its colored dot to cycle through the palette.
 - **Collapse:** click the header.
 - **Add sessions:** drag a session row **anywhere onto the group card** — the
@@ -108,6 +111,12 @@ switchboard rescues any windows that were on it rather than losing them
 off-screen — and when that monitor comes back, Events offers a one-click
 **Restore** to put the layout back the way it was. It never moves your windows
 without asking.
+
+If you use a screen reader, you don't have to keep checking Events for that
+offer: a monitor coming back is something the app notices, not you, so the
+offer reads itself out as soon as it appears. It waits for a pause rather than
+interrupting — nothing has moved, and the offer keeps standing until you
+answer it.
 
 ## Getting a session out of the way
 

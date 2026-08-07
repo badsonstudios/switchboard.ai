@@ -52,6 +52,12 @@ the events panel on the right, so you can come back to it without hunting for
 the menu. **Ignore** and **Skip** don't — those are answers, and re-asking in
 the corner would be nagging.
 
+If you use a screen reader, you don't have to keep checking Events for that
+note: it arrives long after the window opened, so it reads itself out as soon
+as it appears. It waits for a pause rather than interrupting — an update is
+news, not an alarm. The **"You're now on v0.3.0"** note after an install
+announces itself the same way.
+
 ## What happens when you press Update
 
 Four steps, all in the app, all of them visible:
@@ -95,6 +101,28 @@ Every other thing that can go wrong — no network, no credentials, a release
 without an installer, Windows refusing to start it — ends the same way: a plain
 sentence saying what happened, and the release page one click away. Nothing is
 half-installed, and nothing is left behind.
+
+## If the release goes away while the box is open
+
+The box can outlive the release it's describing. If you leave switchboard.ai
+running for a day with a release on offer and that release is withdrawn or
+replaced in the meantime, the next daily check notices — but the box already on
+your screen is a picture of the *old* answer.
+
+Press **Update** on one of those and nothing is downloaded. You get a plain
+sentence saying **that release is no longer on offer** — and one
+**Check for updates…** shows you what's actually available now.
+
+The same sentence covers the quieter version of this: if the last check
+couldn't reach the release list at all — you went offline, the laptop slept —
+switchboard.ai stops standing behind the release it found yesterday rather than
+downloading it on the strength of a stale answer. That's why the message says
+"withdrawn, replaced, or could not be confirmed" instead of picking one.
+
+That's deliberately a different message from *"this release has no installer
+this app can verify"*, which means something else entirely: the release is
+there, it just doesn't ship a file switchboard.ai can check before running.
+One tells you to look again; the other tells you to get the file yourself.
 
 ## Housekeeping
 

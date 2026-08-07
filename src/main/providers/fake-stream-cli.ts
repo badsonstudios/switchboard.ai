@@ -13,9 +13,59 @@
 // run under `electron --run-as-node`, exactly like the four done-when checks.
 import fs from 'fs';
 import path from 'path';
+import { spawnSync } from 'child_process';
 import { FakeStreamProtocol, FAKE_SESSION_ID } from './fake-stream-protocol';
 import { slugForCwd } from '../transcripts/paths';
 import { claudeProjectsRoot } from './claude';
+
+/**
+ * Run one hook the way the real CLI runs it (#313).
+ *
+ * The settings file we were spawned with is the SAME file the real CLI reads —
+ * `HookListener.buildHookSettings` wrote it, and its `command` is
+ * `node <forwarder> <port> <tokenPath>`. So running that command with the hook
+ * JSON on stdin is not a simulation of the hook channel: it IS the hook
+ * channel, port, token, forwarder and all. Anything less would be a fake of a
+ * fake, and the one thing #313 turns on is what the listener does with a real
+ * POST from a real stream session.
+ *
+ * Synchronous, so the protocol can promise that a `!notify` has been delivered
+ * and INGESTED before the next stream message goes out (the listener ends the
+ * response before `ingest`, but in the same tick, so the forwarder cannot exit
+ * first). Fail-open throughout: a fake that cannot fire a hook is still a
+ * usable fake for everything else, and it must not take the session down.
+ */
+function fireHook(payload: Record<string, unknown>): void {
+  const event = String(payload.hook_event_name ?? '');
+  try {
+    const i = process.argv.indexOf('--settings');
+    if (i < 0 || !process.argv[i + 1]) return;
+    const settings = JSON.parse(fs.readFileSync(process.argv[i + 1], 'utf8')) as {
+      hooks?: Record<string, Array<{ hooks?: Array<{ command?: unknown }> }>>;
+    };
+    const command = settings.hooks?.[event]?.[0]?.hooks?.[0]?.command;
+    if (typeof command !== 'string' || !command) return;
+    // `VAR=value prog …` prefixes are lifted into the environment rather than
+    // handed to the shell. The REAL CLI runs hooks under a POSIX shell even on
+    // Windows (the S-02 finding `HookListener.start` writes down), and that is
+    // what lets it emit `ELECTRON_RUN_AS_NODE=1 "<app>"` as its fallback when
+    // node is not on PATH. `spawnSync(shell: true)` here gets cmd.exe, which
+    // would read that as a program called `ELECTRON_RUN_AS_NODE=1`. Splitting
+    // it off is the difference between the fallback working and the fake going
+    // silently deaf on a machine without node.
+    const env = { ...process.env };
+    let line = command;
+    for (let m = /^(\w+)=(\S*)\s+/.exec(line); m; m = /^(\w+)=(\S*)\s+/.exec(line)) {
+      env[m[1]] = m[2];
+      line = line.slice(m[0].length);
+    }
+    // `shell: true` because what remains is still a command LINE — quoted
+    // absolute paths and positional arguments — exactly as the CLI runs it.
+    spawnSync(line, { shell: true, env, input: JSON.stringify(payload), timeout: 10_000 });
+  } catch {
+    /* fail open — see the docblock */
+  }
+}
 
 const proto = new FakeStreamProtocol(
   {
@@ -41,6 +91,7 @@ const proto = new FakeStreamProtocol(
         // fake for everything else
       }
     },
+    fireHook,
   },
   (m) => process.stdout.write(JSON.stringify(m) + '\n')
 );

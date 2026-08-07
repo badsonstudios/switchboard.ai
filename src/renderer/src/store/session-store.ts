@@ -345,6 +345,32 @@ export class SessionStore {
     return this.state.sessions.find((s) => s.id === cardId)?.title;
   }
 
+  /**
+   * One card's accent colour, or undefined if this card has none (#312).
+   *
+   * Here for `getCardTitle`'s reason, and read by the tab strip: §5.11 says a
+   * session's identity renders IDENTICALLY everywhere it appears, and the card
+   * TAB was the one place that painted a grey dot for every session while the
+   * card header — the same component, further down the same file — drew that
+   * session's real accent on its border.
+   *
+   * Deliberately NOT one `getCardIdentity()` returning `{accent, badge}`: a
+   * fresh object per call re-renders `useSyncExternalStore` forever. Two scalar
+   * snapshots settle by value, which is the same exception `getCardTitle`
+   * documents above.
+   */
+  getCardAccent(cardId: string | undefined): string | undefined {
+    if (!cardId) return undefined;
+    return this.state.sessions.find((s) => s.id === cardId)?.accent;
+  }
+
+  /** One card's language badge, or undefined. `getCardAccent`'s twin, and split
+   *  from it for the reason documented there. */
+  getCardBadge(cardId: string | undefined): string | undefined {
+    if (!cardId) return undefined;
+    return this.state.sessions.find((s) => s.id === cardId)?.badge;
+  }
+
   /** Seed the map from the ui blob at boot. Does not persist — it just read it. */
   initPresentation(map: ReadonlyMap<string, CardPresentation>): void {
     this.set({ presentation: new Map(map) });

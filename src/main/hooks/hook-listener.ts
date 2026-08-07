@@ -10,6 +10,7 @@ import http from 'http';
 import { randomBytes } from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import type { PermissionRequest } from '../../shared/ipc/permissions';
 
 function findNodeOnPath(): string | null {
   const names = process.platform === 'win32' ? ['node.exe'] : ['node'];
@@ -27,6 +28,7 @@ function findNodeOnPath(): string | null {
 }
 import { Logger } from '../log/logger';
 import { SessionManager } from '../sessions/session-manager';
+import { SessionEvent, isPermissionNotification } from '../sessions/state-machine';
 import {
   SHELLISH,
   MUTATING,
@@ -67,36 +69,14 @@ export interface HookListenerOptions {
   transportFor?: (sessionId: string) => 'pty' | 'stream' | undefined;
 }
 
-/**
- * An in-flight permission request (E10-03).
- *
- * ONE shape for both transports (P2-E18-07): a held `PreToolUse` hook, or a
- * `can_use_tool` control request over stream-json. The approval bar must not
- * care which — the user is answering the same question either way, and a second
- * request type would mean a second bar to keep in step with the first.
- *
- * The optional fields exist only on the stream path, because the hook payload
- * simply does not carry them. That asymmetry is the entire argument for the
- * migration, so it is worth seeing in the type: the CLI tells the
- * permission-prompt channel WHY it is asking and what would satisfy it, and
- * tells a hook nothing.
- */
-export interface PermissionRequest {
-  requestId: string;
-  sessionId: string;
-  tool: string;
-  input: Record<string, unknown>;
-  /** Where it came from. Absent = hook (every pre-E18 request). */
-  source?: 'hook' | 'stream';
-  /** Human-readable prose from the CLI — renderable, and we did not write it. */
-  reason?: string;
-  /** e.g. 'safetyCheck' — the `.claude/` guard that started this epic. */
-  reasonType?: string;
-  /** The CLI's own label for the tool, when it differs from `tool`. */
-  displayName?: string;
-  /** Remedies the CLI suggests, e.g. switch this session to acceptEdits. */
-  suggestions?: Array<Record<string, unknown>>;
-}
+// The in-flight permission request (E10-03) now lives in
+// `shared/ipc/permissions`, with its documentation, and is re-exported here
+// because that is where every existing caller already imports it from. It moved
+// because it is a BOUNDARY type — preload and the renderer describe the same
+// object over IPC — and the three hand-kept copies had already drifted: main
+// learned `reasonType`, `displayName` and `suggestions` from the stream
+// transport and neither of the other two ever heard about it (#312).
+export type { PermissionRequest } from '../../shared/ipc/permissions';
 
 /**
  * Hold policy (P2-E10-03, §5.16): hold ONLY calls the CLI itself would prompt
@@ -737,7 +717,7 @@ export class HookListener {
       );
     }
     this.opts.log.debug('hook event', { sessionId, event });
-    this.opts.manager.apply(sessionId, {
+    const ev: SessionEvent = {
       kind: 'hook',
       event,
       notificationType: typeof e.notification_type === 'string' ? e.notification_type : undefined,
@@ -745,7 +725,48 @@ export class HookListener {
       tool: typeof e.tool_name === 'string' ? e.tool_name : undefined,
       // SessionStart carries source ('compact' fires mid-turn, review P1 #11)
       source: typeof e.source === 'string' ? e.source : undefined,
-    });
+    };
+    // A STREAM session's permissions belong to the control channel, not here
+    // (#313) — the same ruling as the hold guard in `maybeHold`, applied to the
+    // other half of the same problem.
+    //
+    // P2-E18-07 stopped a stream session's PreToolUse being HELD, so there is
+    // no second approval bar. It said nothing about the STATUS, and
+    // `Notification` is the path that reaches it: `state-machine`'s Notification
+    // arm transitions to `needs-permission` on a regex over the CLI's DEBOUNCED
+    // nudge, with no evidence that anything is held and no way to know it is on
+    // a transport that has a better signal. On stream, every real permission
+    // arrives as `can_use_tool` and is mapped exactly (`stream-status.ts`), so a
+    // Notification-driven `needs-permission` is at best a duplicate of a status
+    // we already set — and at worst a FALSE ALARM, the debounced nudge landing
+    // after the request was answered and dragging a working card back to
+    // "needs permission" with nothing held and no bar to answer.
+    //
+    // Suppressed at the PRODUCER rather than in `transition()`, deliberately:
+    // the state machine is a pure function that has never had to know about
+    // transports, and teaching it would mean threading `transport` through
+    // every `SessionEvent` producer to serve one arm. This listener already
+    // knows (`transportFor` has been plumbed since P2-E18-07).
+    //
+    // DROPPING the event is exactly equivalent to not transitioning on it:
+    // `SessionManager.apply` does nothing with a hook event but run it through
+    // `transition`, and a permission-classified blob can only reach the two
+    // `/permission/i` arms — the `needs-input` one already stays. Nothing else
+    // in the payload is consumed on this path (`session_id` was applied above,
+    // before this guard).
+    //
+    // UNMEASURED, as at `maybeHold`: nobody has confirmed whether the real CLI
+    // fires Notification hooks at all under `--permission-prompt-tool stdio`.
+    // The guard is correct either way — if hooks are silent it costs nothing —
+    // but it is a guard, not a finding.
+    if (isPermissionNotification(ev) && this.opts.transportFor?.(sessionId) === 'stream') {
+      this.opts.log.debug('Notification not applied: stream session, permissions ride can_use_tool', {
+        sessionId,
+        notificationType: ev.notificationType,
+      });
+      return;
+    }
+    this.opts.manager.apply(sessionId, ev);
   }
 }
 

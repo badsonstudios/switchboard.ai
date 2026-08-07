@@ -347,6 +347,61 @@ function failureOf(err: unknown): UpdateInstallFailure {
 }
 
 /**
+ * The stale-offer guard (#315): may main act on the offer it is holding?
+ *
+ * One condition, one place, and a shape the caller can narrow — the refusal
+ * and the release it refuses must never be able to drift apart.
+ *
+ * ── why this exists ────────────────────────────────────────────────────────
+ *
+ * The dialog on screen is a PICTURE of an answer main gave earlier, and main is
+ * the side that decides what gets downloaded and executed (`update:install`
+ * takes no arguments at all). Those two can disagree: a window open across a
+ * release being withdrawn, superseded, or across a later check that never
+ * reached the feed. E19-04 refused the press correctly but reported it as
+ * `no-asset` — "this release has no installer this app can verify" — which is
+ * an accurate outcome attached to the wrong cause, and sends the user to a
+ * release page that may no longer exist.
+ *
+ * ── why a REASON rather than a re-check ────────────────────────────────────
+ *
+ * Re-checking on the press would install whatever the feed answers NOW, which
+ * is not necessarily the release whose notes the user just read and agreed to —
+ * consent is to a version, not to "the newest thing". (And re-checking when the
+ * dialog is REOPENED closes only part of the window: a withdrawal can land
+ * between the reopen and the press, so this reason would still be needed.) The
+ * honest move is to say the offer is gone and let the user ask again.
+ *
+ * ONE reason for every shape of "not on offer" — withdrawn, superseded, or a
+ * later check that failed — because the user's next move is the same in all of
+ * them and the UI cannot usefully carry the difference. The sentence it maps to
+ * therefore names all three rather than guessing between them; the distinction
+ * is kept where it is actually useful, in the log line's `state`.
+ *
+ * Pure, and exported, so the branch is unit-testable without an Electron app —
+ * `index.ts` is the one file the suite cannot import.
+ */
+export function resolveOffer(
+  offered: UpdateCheckResult | null
+): { ok: true; offer: UpdateCheckResult } | { ok: false; status: UpdateInstallStatus } {
+  if (offered && offered.state === 'available') return { ok: true, offer: offered };
+  return {
+    ok: false,
+    status: {
+      phase: 'failed',
+      // Deliberately EMPTY rather than `offered?.latestVersion`: on an
+      // `up-to-date` result that field is whatever is newest now, which is not
+      // the release the user pressed Update on. There is no version being
+      // installed, and claiming one would be a second small lie.
+      version: '',
+      received: 0,
+      total: 0,
+      reason: 'no-offer',
+    },
+  };
+}
+
+/**
  * The post-update handshake, run once at startup. A pure decision plus one
  * write, so it can be unit-tested without an app.
  *
