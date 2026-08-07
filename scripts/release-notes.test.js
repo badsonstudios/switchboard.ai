@@ -119,8 +119,13 @@ describe('CHANGELOG parsing', () => {
     const section = extractSection(real, version);
     expect(section, `CHANGELOG.md has no section for ${version}`).not.toBeNull();
     expect(section.trim().length).toBeGreaterThan(0);
-    // the prose preamble has `## ` headings of its own; they must not parse
-    expect(listVersions(real)).toEqual([version]);
+    // the prose preamble has `## ` headings of its own; they must not parse —
+    // every parsed entry must be a bare semver. Older sections are permanent
+    // history (this bit on the 0.1.1 tag: the original `toEqual([version])`
+    // assumed a one-section changelog, true only for the first release ever).
+    const versions = listVersions(real);
+    expect(versions[0], 'newest section must be the current version').toBe(version);
+    for (const v of versions) expect(v).toMatch(/^\d+\.\d+\.\d+$/);
   });
 });
 
