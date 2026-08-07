@@ -2,9 +2,46 @@
 // CRUD over the WorkspaceStore's group records + session membership. All
 // renderer input is validated here (§5.29) — ids are minted in the main
 // process, never accepted from the renderer on create.
+//
+// HOW THIS SEAM SAYS NO (#326). It refuses by RESOLVING `null` and writing a
+// line to the log, never by throwing. That is a deliberate choice over the
+// alternative (leave the throws, add `.catch()` at the three call sites in
+// App.tsx), and the reasoning is worth keeping because it decides how the NEXT
+// caller behaves:
+//
+//   * A `.catch()` policy is safe by CONVENTION — it makes today's callers
+//     safe and leaves tomorrow's (a context-menu rename, a §5.23 contribution,
+//     `SessionGrid`'s own `setSessionGroup` call) safe only if whoever writes
+//     them remembers. A result shape is safe by CONSTRUCTION: there is nothing
+//     to remember, because there is nothing to reject.
+//   * It is the house shape, and this file was already half-way into it —
+//     `groups:update` has always declared `PersistedGroup | null` and always
+//     returned `null` for a non-string or unknown id. Only the VALIDATION
+//     branches threw, so the throws were the outlier inside this one file.
+//     Elsewhere: `sessions:setTransport` answers `{ ok, reason }`,
+//     `sessions:submitPrompt` and `sessions:interrupt` answer `false`.
+//   * `null` is data, so the renderer can react to it (re-read the store, and
+//     the field it just edited reverts to the truth). A rejection is not data;
+//     the most a `.catch(log)` at the call site could do is stop the crash.
+//   * A renderer-wide `unhandledrejection` handler would ALSO have stopped the
+//     crash — and would have made #311's `pageerror` assertion in
+//     `e2e/groups.spec.ts` vacuous by swallowing exactly what it watches for.
+//     Rejected for that reason.
+//
+// What this does NOT change: the store still never sees a blank name, an
+// untrimmed name, an over-long name, an off-format color or an unknown notify
+// scope. Refusing is still refusing; it just no longer detonates in the caller.
+// `group-ipc.test.ts` holds both halves — the refusal AND the log line.
+//
+// Residual, stated so nobody reads this as "groups can no longer reject": the
+// broker (`ipc/broker.ts`) throws `refused: <channel>` for ANY channel whose
+// caller lacks the capability, so no per-family shape can make a renderer
+// rejection impossible in principle. Unreachable today (our one renderer holds
+// every capability); a real question when Phase-4 plugins arrive.
 import { randomUUID } from 'crypto';
 import { PersistedGroup, WorkspaceStore } from './store';
 import { IpcBroker } from '../ipc/broker';
+import { LogFields, Logger } from '../log/logger';
 
 const NAME_MAX = 60;
 const SCOPES: ReadonlyArray<PersistedGroup['notifyScope']> = ['all', 'important', 'muted'];
@@ -45,14 +82,27 @@ function cleanName(n: unknown): string | null {
   return t.length > 0 ? t : null;
 }
 
-export function registerGroupIpc(store: WorkspaceStore, broker: IpcBroker): void {
+export function registerGroupIpc(store: WorkspaceStore, broker: IpcBroker, log: Logger): void {
+  /**
+   * Say no: `null` to the caller, one line in the log.
+   *
+   * The log line is the whole reason a result shape is not a silent swallow —
+   * the seam still says out loud that it refused and why, in the one place
+   * that knows why. Tests assert on it (#326 done-when 2).
+   */
+  const refuse = (channel: string, reason: string, fields: LogFields = {}): null => {
+    log.warn(`${channel} refused: ${reason}`, fields);
+    return null;
+  };
+
   broker.handle('groups:list', () => store.listGroups());
   broker.handle('groups:palette', () => [...GROUP_PALETTE]);
 
   broker.handle('groups:create', (_e, opts: { name: string; color?: string }) => {
     const name = cleanName(opts?.name);
-    if (!name) throw new Error('group needs a name');
-    if (opts?.color !== undefined && !isColor(opts.color)) throw new Error('color must be #rrggbb');
+    if (!name) return refuse('groups:create', 'a group needs a non-empty name');
+    if (opts?.color !== undefined && !isColor(opts.color))
+      return refuse('groups:create', 'color must be #rrggbb');
     const color = opts?.color ?? GROUP_PALETTE[store.listGroups().length % GROUP_PALETTE.length];
     const group: PersistedGroup = { id: randomUUID(), name, color };
     store.upsertGroup(group);
@@ -61,22 +111,28 @@ export function registerGroupIpc(store: WorkspaceStore, broker: IpcBroker): void
 
   broker.handle('groups:update',
     (_e, id: string, patch: { name?: string; color?: string; notifyScope?: string }) => {
-      if (typeof id !== 'string') return null;
+      if (typeof id !== 'string') return refuse('groups:update', 'id must be a string');
       const prior = store.listGroups().find((g) => g.id === id);
-      if (!prior) return null;
+      // Not an error to shout about: a group deleted in another window while
+      // this edit was open lands here, and there is nothing to fix.
+      if (!prior) {
+        log.debug('groups:update for an unknown group — ignored', { groupId: id });
+        return null;
+      }
       const next: PersistedGroup = { ...prior };
       if (patch?.name !== undefined) {
         const name = cleanName(patch.name);
-        if (!name) throw new Error('group name must be non-empty');
+        if (!name) return refuse('groups:update', 'group name must be non-empty', { groupId: id });
         next.name = name;
       }
       if (patch?.color !== undefined) {
-        if (!isColor(patch.color)) throw new Error('color must be #rrggbb');
+        if (!isColor(patch.color))
+          return refuse('groups:update', 'color must be #rrggbb', { groupId: id });
         next.color = patch.color;
       }
       if (patch?.notifyScope !== undefined) {
         if (!SCOPES.includes(patch.notifyScope as PersistedGroup['notifyScope']))
-          throw new Error('bad notifyScope');
+          return refuse('groups:update', 'unknown notifyScope', { groupId: id });
         next.notifyScope = patch.notifyScope as PersistedGroup['notifyScope'];
       }
       store.upsertGroup(next);
@@ -85,13 +141,22 @@ export function registerGroupIpc(store: WorkspaceStore, broker: IpcBroker): void
   );
 
   broker.handle('groups:delete', (_e, id: string) => {
-    if (typeof id !== 'string') return;
+    if (typeof id !== 'string') {
+      refuse('groups:delete', 'id must be a string');
+      return;
+    }
     store.removeGroup(id);
   });
 
   broker.handle('groups:setSessionGroup', (_e, cardId: string, groupId: string | null) => {
-    if (typeof cardId !== 'string') return;
-    if (groupId !== null && typeof groupId !== 'string') return;
+    if (typeof cardId !== 'string') {
+      refuse('groups:setSessionGroup', 'cardId must be a string');
+      return;
+    }
+    if (groupId !== null && typeof groupId !== 'string') {
+      refuse('groups:setSessionGroup', 'groupId must be a string or null', { cardId });
+      return;
+    }
     store.setSessionGroup(cardId, groupId);
   });
 }

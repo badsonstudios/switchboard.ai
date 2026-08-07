@@ -211,12 +211,25 @@ const api = {
       return () => ipcRenderer.removeListener('sessions:exited', h);
     },
   },
+  /**
+   * Persistent groups (E12). These do NOT reject on bad input (#326): a
+   * mutation that main refuses RESOLVES `null`, having logged why, so a caller
+   * that forgets a `.catch()` — which is every caller in this app — cannot turn
+   * an ordinary UI gesture into an unhandled renderer rejection. `null` means
+   * "nothing changed"; re-read `list()` and show the truth. Why this shape and
+   * not a `.catch()` policy: `main/workspace/group-ipc.ts`, top of file.
+   */
   groups: {
     list: (): Promise<Array<{ id: string; name: string; color: string; notifyScope?: string }>> =>
       ipcRenderer.invoke('groups:list'),
     palette: (): Promise<string[]> => ipcRenderer.invoke('groups:palette'),
-    create: (opts: { name: string; color?: string }): Promise<{ id: string; name: string; color: string }> =>
+    /** resolves NULL when the name is blank or the color is not #rrggbb */
+    create: (opts: {
+      name: string;
+      color?: string;
+    }): Promise<{ id: string; name: string; color: string } | null> =>
       ipcRenderer.invoke('groups:create', opts),
+    /** resolves NULL for an unknown group or a patch main refuses */
     update: (
       id: string,
       patch: { name?: string; color?: string; notifyScope?: string }
