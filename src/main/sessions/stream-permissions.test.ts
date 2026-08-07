@@ -405,3 +405,282 @@ describe('a decision resolves the status, without waiting for the CLI (#310)', (
     expect(applied).toEqual([]); // and the status is left alone
   });
 });
+
+// #319 — a stream hold has to fail open, and it never did.
+//
+// The hook path has had three defences since P2-E15-09: a 300s deadline, a
+// `hasLiveWindow` gate before parking, and a `releaseHeld` wired to the window
+// closing and to the renderer dying. This router had NONE of them. Its only
+// exit was `forgetSession`, reached solely from a closed card or a session's own
+// exit — so a `can_use_tool` offered to a window that was then closed sat there
+// FOR EVER. Not 300 seconds. For ever: the CLI is blocked on our answer and on
+// nothing else, and a stream `control_request` has no TUI prompt waiting behind
+// it the way a held `PreToolUse` does.
+//
+// Which is also why every one of these resolves to DENY rather than to silence.
+// The hook path's fail-open is "say nothing, the CLI's own prompt takes over";
+// there is no such fallback here, so "no opinion" is not one of the things this
+// channel can say. A refused tool call is recoverable — ask again — and a wedged
+// session is not.
+describe('failing open when nobody can answer (#319)', () => {
+  /** the router under test, built with the two knobs the app now wires */
+  function router(opts: {
+    hasLiveWindow?: () => boolean;
+    holdTimeoutMs?: number;
+  }): StreamPermissions {
+    const p = new StreamPermissions(
+      (sessionId, msg) => {
+        sent.push({ sessionId, msg: msg as Record<string, unknown> });
+        return true;
+      },
+      (sessionId, ev) => applied.push({ sessionId, ev }),
+      createLogger(new LogSink({ dir }), 'perm'),
+      opts
+    );
+    p.onPermissionRequest((r) => requests.push(r));
+    p.onPermissionResolved((id) => resolved.push(id));
+    return p;
+  }
+
+  /** what the CLI was told, unwrapped from the control_response envelope */
+  function behaviourOf(i = 0): Record<string, unknown> {
+    const msg = sent[i].msg as { response?: { response?: Record<string, unknown> } };
+    return msg.response?.response ?? {};
+  }
+
+  describe('the window is gone', () => {
+    it('denies at once rather than offering a question nobody can see', () => {
+      const p = router({ hasLiveWindow: () => false });
+
+      p.offer('s1', canUseTool());
+
+      expect(requests).toEqual([]); // nothing was pushed at a dead renderer
+      expect(p.pendingRequests()).toEqual([]); // and nothing is parked
+      expect(sent).toHaveLength(1);
+      expect(behaviourOf().behavior).toBe('deny');
+      // and the message reaches the MODEL, not a log — see `unavailable`. It
+      // has to rule out "a sandbox is blocking me", which is what makes an agent
+      // route around a denial with a second tool instead of accepting it.
+      expect(String(behaviourOf().message)).toMatch(/not a sandbox restriction/i);
+      expect(String(behaviourOf().message)).toMatch(/nobody available to review/i);
+    });
+
+    // The card the user comes back to must not claim to be holding a question
+    // that was answered while they were away. This is the half `forgetSession`
+    // deliberately skips, and the difference is that this session is ALIVE.
+    it('ends needs-permission, because the session carries on without us', () => {
+      const p = router({ hasLiveWindow: () => false });
+
+      p.offer('s1', canUseTool());
+
+      expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved' } }]);
+      expect(transition('needs-permission', applied[0].ev).status).toBe('working');
+    });
+
+    // "I can't tell" must never resolve to "park the CLI" — the hook path's
+    // rule, and the same reason: the cost of being wrong is asymmetric.
+    it('a liveness check that THROWS counts as no window', () => {
+      const p = router({
+        hasLiveWindow: () => {
+          throw new Error('window handle exploded');
+        },
+      });
+
+      expect(() => p.offer('s1', canUseTool())).not.toThrow();
+      expect(behaviourOf().behavior).toBe('deny');
+      expect(requests).toEqual([]);
+    });
+
+    it('a live window still gets asked, exactly as before', () => {
+      const p = router({ hasLiveWindow: () => true });
+
+      p.offer('s1', canUseTool());
+
+      expect(requests).toHaveLength(1);
+      expect(p.pendingRequests()).toHaveLength(1);
+      expect(sent).toEqual([]); // nothing answered on the user's behalf
+    });
+
+    // every call site that predates #319, and every unit test in this file
+    it('no provider at all means assume yes', () => {
+      const p = router({});
+      p.offer('s1', canUseTool());
+      expect(requests).toHaveLength(1);
+    });
+  });
+
+  describe('the deadline', () => {
+    it('answers a question the user never got to, and says so', async () => {
+      const p = router({ holdTimeoutMs: 20 });
+      p.offer('s1', canUseTool());
+      expect(p.pendingRequests()).toHaveLength(1);
+
+      await new Promise((r) => setTimeout(r, 60));
+
+      expect(p.pendingRequests()).toEqual([]);
+      expect(behaviourOf().behavior).toBe('deny');
+      // The message reaches the MODEL, not a log — the lesson `HookListener`'s
+      // `verdict` records. It has to rule out "a sandbox is blocking me", which
+      // is what makes an agent route around a denial instead of accepting it.
+      expect(String(behaviourOf().message)).toMatch(/not a sandbox restriction/i);
+      expect(resolved).toEqual(['stream:s1:req-1']); // the bar comes down too
+      expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved' } }]);
+    });
+
+    it('a decision cancels it — no second answer arrives later', async () => {
+      const p = router({ holdTimeoutMs: 20 });
+      p.offer('s1', canUseTool());
+      p.decide('stream:s1:req-1', 'allow');
+
+      await new Promise((r) => setTimeout(r, 60));
+
+      expect(sent).toHaveLength(1); // the user's allow, and only that
+      expect(behaviourOf().behavior).toBe('allow');
+      expect(resolved).toEqual(['stream:s1:req-1']);
+    });
+
+    it('a teardown cancels it too', async () => {
+      const p = router({ holdTimeoutMs: 20 });
+      p.offer('s1', canUseTool());
+      p.forgetSession('s1', 'session closed');
+
+      await new Promise((r) => setTimeout(r, 60));
+
+      expect(sent).toHaveLength(1);
+      expect(applied).toEqual([]); // still a teardown: the badge is left alone
+    });
+  });
+
+  describe('the renderer went away with questions already parked', () => {
+    // The `hasLiveWindow` gate only helps calls that arrive AFTER the window
+    // dies. This is the other half, and without it the deadline is the only
+    // thing left between the user and a five-minute wedge.
+    it('releaseHeld denies everything outstanding, across every session', () => {
+      const p = router({});
+      p.offer('s1', canUseTool('a'));
+      p.offer('s2', canUseTool('b'));
+
+      p.releaseHeld('main window closed');
+
+      expect(p.pendingRequests()).toEqual([]);
+      expect(sent.map((s) => s.sessionId)).toEqual(['s1', 's2']);
+      expect(behaviourOf(0).behavior).toBe('deny');
+      expect(behaviourOf(1).behavior).toBe('deny');
+      expect(resolved).toEqual(['stream:s1:a', 'stream:s2:b']);
+    });
+
+    // Both sessions are still RUNNING — only the window went. Leaving them on
+    // needs-permission means the user reopens to two cards claiming to hold
+    // questions that were answered without them.
+    it('and resolves both statuses, unlike a teardown', () => {
+      const p = router({});
+      p.offer('s1', canUseTool('a'));
+      p.offer('s2', canUseTool('b'));
+
+      p.releaseHeld('renderer gone: crashed');
+
+      expect(applied).toEqual([
+        { sessionId: 's1', ev: { kind: 'permission-resolved' } },
+        { sessionId: 's2', ev: { kind: 'permission-resolved' } },
+      ]);
+    });
+
+    it('with nothing parked it is a silent no-op', () => {
+      const p = router({});
+      expect(() => p.releaseHeld('main window closed')).not.toThrow();
+      expect(sent).toEqual([]);
+      expect(applied).toEqual([]);
+    });
+  });
+});
+
+// #319 — "Allow all (this session)" answered at the SERVER, for Direct too.
+//
+// It was renderer-only: `sessions:allowAllSession` told `HookListener` alone,
+// and `HookListener.maybeHold` returns 'pass' for a stream session BEFORE it
+// ever consults its allow-all set. So main knew nothing, every gated call still
+// had to reach a live window, and a Direct session with no window could not run
+// a gated tool at all — it parked (see the fail-open tests above).
+//
+// The renderer's auto-allow branch still exists and still works; it is now the
+// backstop for requests already in flight when the user clicked, not the
+// mechanism.
+describe('allow-all is answered at the server (#319)', () => {
+  it('answers allow with the CLI own input, and asks nobody', () => {
+    perms.setAllowAll('s1');
+    perms.offer('s1', canUseTool());
+
+    expect(requests).toEqual([]); // no push, so no bar and no beep
+    expect(perms.pendingRequests()).toEqual([]); // and nothing held
+    expect(sent).toHaveLength(1);
+    const msg = sent[0].msg as { response?: { response?: Record<string, unknown> } };
+    expect(msg.response?.response).toMatchObject({
+      behavior: 'allow',
+      // echoed back untouched: it is the CLI's own input and editing it would
+      // be reimplementing a decision (P7)
+      updatedInput: { file_path: 'C:/p/.claude/scripts/coverage.sh', content: 'echo hi\n' },
+    });
+  });
+
+  // The exact mirror of the hook path, and the reason the suppressor in
+  // `SessionManager` is load-bearing rather than a belt to this brace: an
+  // allow-all call touches the status machine NOT AT ALL. `maybeHold` returns
+  // 'answered' and its caller applies nothing, because a question that was
+  // never asked has no answer to record.
+  //
+  // Resolving here instead would look like free insurance and is not: this
+  // session can be in `needs-permission` for a reason unrelated to this call —
+  // a request offered before the grant and still queued in the card, or a
+  // `Notification` hook on a mixed session — and walking it to `working` is
+  // #310 pointed the other way.
+  it('touches the status machine not at all', () => {
+    perms.setAllowAll('s1');
+    perms.offer('s1', canUseTool());
+
+    expect(applied).toEqual([]);
+  });
+
+  it('is per session — the card next to it still asks', () => {
+    perms.setAllowAll('s1');
+
+    perms.offer('s1', canUseTool('a'));
+    perms.offer('s2', canUseTool('b'));
+
+    expect(requests.map((r) => r.sessionId)).toEqual(['s2']);
+  });
+
+  // A grant belongs to the LIVE session it was given to. `HookListener`'s
+  // semantics, and the renderer's (`sessionStore.allowAllByLive`): a respawn
+  // gets a new id and asks again, which is what stops #224's leak.
+  it('a teardown ends the grant — the next session asks again', () => {
+    perms.setAllowAll('s1');
+    perms.forgetSession('s1', 'session closed');
+    expect(perms.isAllowAll('s1')).toBe(false);
+
+    perms.offer('s1', canUseTool());
+
+    expect(requests).toHaveLength(1);
+  });
+
+  // A session with no window CAN now run a gated tool — the headline of (b),
+  // and the interaction between the two halves of this issue. Checked in this
+  // order because the reverse (liveness first) would turn every allow-all
+  // verdict into a denial the moment the user closed the window.
+  it('needs no renderer at all: allow-all beats the liveness gate', () => {
+    const p = new StreamPermissions(
+      (sessionId, msg) => {
+        sent.push({ sessionId, msg: msg as Record<string, unknown> });
+        return true;
+      },
+      (sessionId, ev) => applied.push({ sessionId, ev }),
+      createLogger(new LogSink({ dir }), 'perm'),
+      { hasLiveWindow: () => false }
+    );
+    p.setAllowAll('s1');
+
+    p.offer('s1', canUseTool());
+
+    const msg = sent[0].msg as { response?: { response?: Record<string, unknown> } };
+    expect(msg.response?.response).toMatchObject({ behavior: 'allow' });
+  });
+});

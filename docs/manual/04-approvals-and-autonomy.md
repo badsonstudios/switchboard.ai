@@ -14,8 +14,12 @@ it wants to do — the command, or the before-and-after of a file edit.
 Three buttons:
 
 - **Allow** — this one time.
-- **Allow all (this session)** — stop asking for this session. Resets when the
-  session restarts.
+- **Allow all (this session)** — stop asking for this session. It means it:
+  from that click on, switchboard answers for you the moment Claude asks.
+  Nothing appears on screen, nothing beeps, the taskbar doesn't flash, and no
+  entry lands in the Events panel. It also keeps working with the window
+  minimised or closed — the answer is given inside switchboard, not by the part
+  of it you can see. Resets when the session restarts.
 - **Deny** — refuse. Claude is told you made the call deliberately, and that it
   should stop rather than look for another way round. It won't retry the same
   thing or reach for a different tool to get there anyway — it comes back and
@@ -56,19 +60,31 @@ mode that *new* sessions start at; each session keeps its own after that.
 - **Plan mode never asks in-app, on purpose.** Approving in switchboard would
   override Claude Code's own plan-mode write block, so plan sessions are left
   entirely to the CLI's enforcement.
-- **Nothing is ever auto-approved by switchboard.** If it can't ask you — the
-  app is closing, something broke, you didn't answer in time — the question
-  falls through to Claude Code's own prompt in the **Terminal** tab. You may
-  have to look there, but you'll never find something approved behind your back.
-- **If switchboard can't reach you, it stops asking.** Two cases. On **macOS**,
-  closing the window leaves your sessions running in the background — with no
-  window to show an approval in, anything already waiting and anything that
-  comes up afterwards goes straight to Claude Code's own prompt in the
-  terminal. Reopen the window and approvals come back to the card. On
-  **Windows and Linux** closing the window quits switchboard, so this doesn't
-  arise. The other case is any platform: if switchboard's display crashes, the
-  sessions underneath it keep running and their approvals fall through the same
-  way, rather than waiting on a screen that isn't there any more.
+- **Nothing is ever auto-approved by switchboard.** The only thing that answers
+  *allow* without showing you the question is **Allow all (this session)**, and
+  that is you having answered it in advance. Everything else, if it can't reach
+  you, is handled by one of the two rules below — and neither of them says yes.
+- **If switchboard can't reach you, it stops asking.** When does that happen?
+  On **macOS**, closing the window leaves your sessions running in the
+  background. On any platform, switchboard's display can crash while the
+  sessions underneath it keep running. (On **Windows and Linux** closing the
+  window quits switchboard, so only the crash case applies.) There is also a
+  **five-minute limit** on any single question: one left unanswered that long
+  counts as unreachable too.
+
+  What happens next depends on which mode the session is in:
+
+  - **Terminal mode** — the question falls through to Claude Code's own prompt
+    in the **Terminal** tab, and is waiting for you there. Reopen the window and
+    new approvals come back to the card.
+  - **[Direct mode](12-direct-mode.md)** — there is no terminal prompt behind
+    it. Claude Code is waiting on switchboard and on nothing else, so leaving
+    the question unanswered would leave the session stuck for ever. Switchboard
+    **declines** it instead, and tells Claude plainly that nobody was available
+    rather than that it was blocked — so it stops and asks again rather than
+    hunting for a way round. You'll see it come back as a normal request the
+    next time you're there. If you want a session to keep going while you're
+    away, turn on **Allow all (this session)** before you leave.
 - **A question can't outlive the session that asked it.** If a session dies
   while an approval is on screen, the question dies with it — nothing is left
   waiting on an answer that can no longer go anywhere. Starting the card again

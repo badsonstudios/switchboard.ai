@@ -103,6 +103,20 @@ is no terminal to be sent to, so no bar and no **Open Terminal** button ever
 appear — switchboard stays quiet rather than offering a button that goes
 nowhere.
 
+**A Direct-mode session says a request was declined and I never saw it.**
+Because nobody could be asked. In Direct mode there is no second prompt behind
+switchboard — Claude Code is waiting on this app and on nothing else — so a
+question that can't be put in front of you is declined rather than left hanging,
+which would wedge the session for good. Three things cause it: the window was
+closed or its display crashed while the session kept running, or the question
+went five minutes unanswered.
+
+The message Claude gets says it was nobody being available, not a restriction,
+so it stops and asks again rather than looking for another route. Just tell it
+to carry on. To keep a session moving while you're away, turn on **Allow all
+(this session)** before you go — that answers at the source and needs no window
+at all.
+
 **The Session tab is empty but the Terminal is working.**
 The tab itself tells you which case you're in — read what it says before doing
 anything:
