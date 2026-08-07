@@ -206,7 +206,18 @@ export class WorkspaceStore {
       // below is reset in the `catch` on purpose: if the sanitizer ever chokes
       // on a future file, staying read-only is the safe half of the failure.)
       const raw = (MIGRATIONS[fileVersion] ?? passthrough)(obj) as Partial<WorkspaceState>;
-      const groups = Array.isArray(raw.groups) ? raw.groups.filter(isSaneGroup) : [];
+      const groups = (Array.isArray(raw.groups) ? raw.groups.filter(isSaneGroup) : []).map((g) => {
+        const repaired = repairGroupName(g);
+        // identity compare: the repair hands BACK the same object when the
+        // name was fine, so a new one means it stepped in
+        if (repaired !== g)
+          this.log?.warn('a group in the workspace file had a blank name — using a placeholder', {
+            file: this.file,
+            groupId: g.id,
+            name: PLACEHOLDER_GROUP_NAME,
+          });
+        return repaired;
+      });
       const groupIds = new Set(groups.map((g) => g.id));
       this.state = {
         version: CURRENT_VERSION,
@@ -410,6 +421,38 @@ function isSaneSession(s: unknown): s is PersistedSession {
 function isSaneGroup(g: unknown): g is PersistedGroup {
   const x = g as Partial<PersistedGroup>;
   return typeof x?.id === 'string' && typeof x?.name === 'string' && typeof x?.color === 'string';
+}
+
+/**
+ * Stand-in name for a group that arrived nameless (#327). Hardcoded English
+ * like the rest of main (see `app-menu.ts`) — i18n lives in the renderer, and
+ * this is DATA on its way into the store, not a rendered label.
+ */
+export const PLACEHOLDER_GROUP_NAME = 'Untitled group';
+
+/**
+ * Give a blank-named group a name on the way in (#327).
+ *
+ * `groups:create` and `groups:update` have always refused an empty name, so
+ * this cannot come from the app — but a hand-edited or half-written
+ * `workspace.json` can still carry `name: ""`, and the group's name IS its
+ * button in the sessions rail: blank renders zero-width, and double-click to
+ * rename lands on nothing. The invariant "no group has a blank name" has to
+ * hold on the way in too, not only on the write paths.
+ *
+ * REPAIR, not reject. Dropping the group would take its membership with it —
+ * every session inside it silently degrades to ungrouped (see the dangling-id
+ * mapping in `load`) — so one bad field would cost the user real structure.
+ * Fail-open (P6): the same call this file makes for a bad window rectangle or
+ * a nonsense notification pref, which are sanitized rather than fatal.
+ *
+ * Only a BLANK name is touched. Padding is left exactly as written: the write
+ * path trims, but a name with spaces around it still renders and still has
+ * something to grab, and rewriting a user's file beyond the defect is not this
+ * function's business.
+ */
+function repairGroupName(g: PersistedGroup): PersistedGroup {
+  return g.name.trim().length > 0 ? g : { ...g, name: PLACEHOLDER_GROUP_NAME };
 }
 
 function sanitizeNotifications(n: unknown): NotificationPrefsState {
