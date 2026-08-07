@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { SlashCommand } from '../shared/slash-commands';
 import type { PtyAttachment, PtyChunk } from '../shared/ipc/pty';
 import type { BindingSnapshot } from '../shared/transcripts';
+import type { PermissionRequestDto } from '../shared/ipc/permissions';
 import type {
   UpdateHandshake,
   UpdateInstallStatus,
@@ -171,25 +172,8 @@ const api = {
       ipcRenderer.on('sessions:usage', h);
       return () => ipcRenderer.removeListener('sessions:usage', h);
     },
-    onPermissionRequest: (
-      cb: (r: {
-        requestId: string;
-        sessionId: string;
-        cardId?: string;
-        tool: string;
-        input: Record<string, unknown>;
-      }) => void
-    ): (() => void) => {
-      const h = (
-        _e: unknown,
-        r: {
-          requestId: string;
-          sessionId: string;
-          cardId?: string;
-          tool: string;
-          input: Record<string, unknown>;
-        }
-      ) => cb(r);
+    onPermissionRequest: (cb: (r: PermissionRequestDto) => void): (() => void) => {
+      const h = (_e: unknown, r: PermissionRequestDto) => cb(r);
       ipcRenderer.on('sessions:permissionRequest', h);
       return () => ipcRenderer.removeListener('sessions:permissionRequest', h);
     },
@@ -214,15 +198,8 @@ const api = {
     /** future gated calls for this LIVE session answer 'allow' in main (P2 #19) */
     allowAllSession: (liveId: string): Promise<void> =>
       ipcRenderer.invoke('sessions:allowAllSession', liveId),
-    pendingPermissions: (): Promise<
-      Array<{
-        requestId: string;
-        sessionId: string;
-        cardId?: string;
-        tool: string;
-        input: Record<string, unknown>;
-      }>
-    > => ipcRenderer.invoke('sessions:pendingPermissions'),
+    pendingPermissions: (): Promise<PermissionRequestDto[]> =>
+      ipcRenderer.invoke('sessions:pendingPermissions'),
     onPermissionResolved: (cb: (r: { requestId: string }) => void): (() => void) => {
       const h = (_e: unknown, r: { requestId: string }) => cb(r);
       ipcRenderer.on('sessions:permissionResolved', h);

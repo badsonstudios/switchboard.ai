@@ -32,8 +32,19 @@ adds a number to the name so you can tell them apart.
 - **Task label:** click **+ task label** in the card header to note what this
   session is *for* ("fix the login bug"). It shows up in the sessions list and
   in Events, which is what makes a wall of sessions readable.
-- Each session also gets a color stripe and a short badge automatically, so you
-  can recognize it without reading.
+- Each session also gets a color and a short badge automatically, so you can
+  recognize it without reading. The color is the stripe down the left edge of
+  the card header, the dot in the sessions list — and the dot on the card's own
+  **tab**. The badge is a two- or three-letter note of what the project is
+  written in (`TS`, `PY`, `RS`), and it sits next to the name in those same
+  places. Both are picked for you when the session starts and stay the same for
+  that session, including across restarts, so "the orange one" keeps meaning the
+  same session all day.
+
+  With several cards docked side by side, the tabs are usually all you can see
+  of the ones you are not looking at — so the color and badge there are what let
+  you pick the right tab without reading every name. A session that has not been
+  given a color yet shows a plain grey dot.
 
 ## Status at a glance
 
