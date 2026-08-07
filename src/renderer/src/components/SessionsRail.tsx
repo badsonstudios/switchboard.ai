@@ -908,9 +908,28 @@ export function SessionsRail(props: {
               onClick={(e) => e.stopPropagation()}
               onChange={(e) => setGroupDraft(e.target.value)}
               onBlur={() => setEditingGroup(null)}
+              /* A BLANK NAME IS NOT A RENAME (#311) — the same rule the session
+                 field 380 lines above got in #294, in the same idiom, because
+                 two sibling fields in one file drifting apart is how a user
+                 learns the app is unpredictable.
+                 The asymmetry with #294 is worth stating so nobody "fixes" it
+                 twice: main's `groups:update` ALREADY refuses a blank and trims
+                 (`cleanName`, group-ipc.ts), so unlike `sessions:renameCard`
+                 there was never a path to a persisted `''`. What the unguarded
+                 draft actually did was hand main a name it would THROW on, and
+                 App's `void bridge.groups.update(...).then(...)` has no catch —
+                 so an erased group name produced an unhandled rejection and a
+                 field that closed with no explanation. This makes the FIELD
+                 behave, in the idiom it already has for an edit that goes
+                 nowhere: Escape and blur both end the edit and leave the name
+                 that was there, and so does this. A rejection the user cannot
+                 dismiss is a trap. Trimming here for the same reason main does
+                 — surrounding whitespace is never what was meant, and it is
+                 what makes "blank" one rule instead of two. */
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
-                  props.onRenameGroup(g.id, groupDraft);
+                  const name = groupDraft.trim();
+                  if (name) props.onRenameGroup(g.id, name);
                   setEditingGroup(null);
                 }
                 if (e.key === 'Escape') setEditingGroup(null);
