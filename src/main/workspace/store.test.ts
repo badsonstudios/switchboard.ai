@@ -8,7 +8,13 @@ vi.mock('electron', () => ({
   BrowserWindow: class {},
 }));
 
-import { WorkspaceStore, displayFingerprint, PersistedSession, CURRENT_VERSION } from './store';
+import {
+  WorkspaceStore,
+  displayFingerprint,
+  PersistedSession,
+  CURRENT_VERSION,
+  PLACEHOLDER_GROUP_NAME,
+} from './store';
 import { Logger } from '../log/logger';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 
@@ -348,6 +354,74 @@ describe('a failed save is audible (#165)', () => {
     st.save();
     expect(warns).toEqual([]);
     expect(makeStore(file).load().sessions.map((x) => x.id)).toEqual(['a']);
+  });
+});
+
+// The app cannot write one of these: `groups:create`/`groups:update` have
+// always refused an empty name. A hand-edited or half-written file can, and a
+// group's name IS the thing you double-click to rename it — blank renders
+// zero-width, so the group becomes unreachable. Load has to hold the invariant
+// too, and it has to REPAIR rather than drop: dropping the group takes its
+// membership with it (every session inside falls back to ungrouped), which
+// spends real structure to pay for one bad field.
+describe('a blank group name is repaired on load (#327)', () => {
+  const write = (groups: unknown[], sessions: PersistedSession[] = []): void =>
+    fs.writeFileSync(file, JSON.stringify({ version: 1, sessions, groups, window: null }));
+
+  it('an empty name becomes a placeholder — the group and its members survive', () => {
+    write(
+      [{ id: 'g1', name: '', color: '#4a90d9', notifyScope: 'muted' }],
+      [{ ...sess('a'), groupId: 'g1' }]
+    );
+    const s = makeStore(file).load();
+
+    expect(s.groups).toEqual([
+      { id: 'g1', name: 'Untitled group', color: '#4a90d9', notifyScope: 'muted' },
+    ]);
+    // the whole point of repairing instead of dropping
+    expect(s.sessions[0].groupId).toBe('g1');
+  });
+
+  it('a whitespace-only name counts as blank — it renders just as empty', () => {
+    write([{ id: 'g1', name: ' \t\n ', color: '#4a90d9' }]);
+    expect(makeStore(file).load().groups[0].name).toBe(PLACEHOLDER_GROUP_NAME);
+  });
+
+  it('a name that renders is left exactly as written, padding and all', () => {
+    write([
+      { id: 'g1', name: 'IT', color: '#4a90d9' },
+      { id: 'g2', name: '  Dev  ', color: '#8f6fd8' },
+    ]);
+    const warns: Line[] = [];
+    const s = makeStore(file, fakeLogger(warns)).load();
+    expect(s.groups.map((g) => g.name)).toEqual(['IT', '  Dev  ']);
+    expect(warns).toEqual([]);
+  });
+
+  it('the repair is audible, naming the group it renamed', () => {
+    write([
+      { id: 'g1', name: 'IT', color: '#4a90d9' },
+      { id: 'g2', name: '', color: '#8f6fd8' },
+    ]);
+    const warns: Line[] = [];
+    makeStore(file, fakeLogger(warns)).load();
+    expect(warns).toHaveLength(1);
+    expect(warns[0].msg).toMatch(/blank name/i);
+    expect(warns[0].fields).toMatchObject({ file, groupId: 'g2' });
+  });
+
+  it('the repaired name is what the next save writes — the file heals', () => {
+    write([{ id: 'g1', name: '', color: '#4a90d9' }]);
+    const st = makeStore(file);
+    st.load();
+    st.save();
+    expect(makeStore(file).load().groups[0].name).toBe(PLACEHOLDER_GROUP_NAME);
+    expect(fs.readFileSync(file, 'utf8')).toContain(PLACEHOLDER_GROUP_NAME);
+  });
+
+  it('a structurally broken group is still DROPPED — repair is for recoverable fields', () => {
+    write([{ id: 'g1', name: 42, color: '#4a90d9' }, { id: 'g2', color: '#8f6fd8' }]);
+    expect(makeStore(file).load().groups).toEqual([]);
   });
 });
 
