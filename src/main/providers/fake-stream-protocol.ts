@@ -32,6 +32,21 @@ export interface FakeStreamHost {
    * hides a bug.
    */
   appendTranscript?(line: Record<string, unknown>): void;
+  /**
+   * Fire one hook event, the way the real CLI does (#313).
+   *
+   * Hooks are INDEPENDENT OF THE TRANSPORT: a session started in stream mode is
+   * still spawned with our `--settings` file, so the real CLI can POST a
+   * `Notification` at the hook listener while its permissions ride
+   * `can_use_tool`. This fake could not, which is precisely why #261 part B had
+   * to be settled by reading code — the one behaviour at issue was the one the
+   * fake had no way to produce, and part A's e2e had to POST the hook by hand
+   * from the test process instead of from the session.
+   *
+   * Optional, like `appendTranscript`: a host that cannot reach the listener
+   * (every unit test) simply records the call.
+   */
+  fireHook?(payload: Record<string, unknown>): void;
 }
 
 export const FAKE_SESSION_ID = '00000000-fake-4000-8000-000000000000';
@@ -95,6 +110,37 @@ export class FakeStreamProtocol {
     if (text === '!hang') {
       this.emitAssistantText('working on it');
       return; // no result: the turn stays open until something interrupts it
+    }
+
+    // Fire a hook `Notification`, the way the real CLI does mid-turn (#313).
+    //
+    // `!notify <notification_type> <message…>`. THE POINT is that this arrives
+    // on the hook channel and not on the stream: a Direct session is spawned
+    // with our `--settings` file exactly like a Terminal one, so the CLI has
+    // both channels open, and the whole of #313 is what should happen when the
+    // debounced nudge on one of them contradicts the exact signal on the other.
+    // Without this the fake had no hook path at all, which is why #261 part B
+    // could only be settled by reading code and why its e2e had to POST the
+    // hook from the test process instead of from the session.
+    //
+    // NOTHING ELSE IS EMITTED, and the turn is deliberately left open in the
+    // shape of `!hang`: whatever the notification did to the status has to be
+    // observable, and an `assistant` message straight after would walk the card
+    // back to `working` and hide it. `fireHook` is synchronous for the same
+    // reason — a test that saw the next stream message could otherwise still be
+    // racing the POST.
+    if (text.startsWith('!notify ')) {
+      const rest = text.slice(8).trim();
+      const sp = rest.indexOf(' ');
+      const [type, message] = sp < 0 ? [rest, ''] : [rest.slice(0, sp), rest.slice(sp + 1)];
+      this.host.fireHook?.({
+        hook_event_name: 'Notification',
+        session_id: FAKE_SESSION_ID,
+        cwd,
+        notification_type: type,
+        message,
+      });
+      return;
     }
 
     // Tokens and NOTHING ELSE (P2-E18-10): deltas, then silence. No `assistant`

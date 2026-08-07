@@ -119,6 +119,13 @@ thinking and checklists all look and behave exactly the same in either mode.
 
 - **The Terminal tab is empty and says there's no terminal.** That's correct
   for a Direct-mode session. Switch back via the ⋯ menu if you need it.
+- **A card said it needed permission and there was nothing to answer.** Fixed.
+  In Direct mode every real permission request arrives with an **Allow / Deny**
+  bar attached to it, so the amber "needs permission" badge is now only ever
+  shown when there is a question on screen waiting for you. Claude Code also
+  sends a slower, vaguer nudge of its own a few seconds behind — sometimes after
+  you'd already answered — and switchboard used to believe it. In Direct mode it
+  no longer does.
 - **You switched and nothing changed.** The change applies at the *next* start.
   Use **Restart session now** in the same menu — closing the card instead will
   forget the setting along with the card.
