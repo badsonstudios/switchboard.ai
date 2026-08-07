@@ -27,6 +27,18 @@ function isColor(c: unknown): c is string {
   return typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c);
 }
 
+/**
+ * A group's name, or `null` if what was offered is not one.
+ *
+ * THIS IS THE HALF OF THE RULE THAT SURVIVES A RESTART (#311), and it is the
+ * reason the group case was never as bad as the session one #294 fixed: a
+ * rename arriving from the rail with an empty draft has always died here, so
+ * `''` has never been a persisted group name. Keep it even though the rail now
+ * refuses a blank at the field — the field is one caller and it is the
+ * renderer, and this is the seam a §5.23 contribution or a future context-menu
+ * rename would otherwise walk straight through. `group-ipc.test.ts` fails if
+ * either half is removed.
+ */
 function cleanName(n: unknown): string | null {
   if (typeof n !== 'string') return null;
   const t = n.trim().slice(0, NAME_MAX);

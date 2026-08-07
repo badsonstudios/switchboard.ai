@@ -54,7 +54,10 @@ Groups are folders for sessions, and they stay put even when empty. Each one is
 a card with its own color and a **colored dot** beside its name.
 
 - **Make one:** click **+ group**.
-- **Rename:** double-click its name.
+- **Rename:** double-click its name. The same rules as a session's name: `Esc`
+  leaves it alone, and so does pressing Enter on an empty box — a group always
+  has a name, so clearing it counts as "never mind" rather than as a new, blank
+  one. Spaces at either end are trimmed off.
 - **Recolor:** click its colored dot to cycle through the palette.
 - **Collapse:** click the header.
 - **Add sessions:** drag a session row **anywhere onto the group card** — the

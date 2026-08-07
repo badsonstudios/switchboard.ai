@@ -25,11 +25,42 @@ test.describe('persistent groups (E12)', () => {
     await expect(w.getByText('IT', { exact: true })).toBeVisible();
     await expect(w.getByText('empty', { exact: true })).toBeVisible();
 
+    // #311, riding this launch rather than paying for another: erasing the name
+    // commits NOTHING, and does so QUIETLY.
+    //
+    // The name standing is the weaker half — main's `groups:update` has always
+    // refused a blank, so the group was never going to end up nameless (which
+    // would have been bad in a way it is not for a session: a group's name IS
+    // its rename entry point, so it would have taken the target you need in
+    // order to fix it away with it). What the unguarded draft actually did was
+    // hand main a name it THROWS on, over a bridge call App does not catch —
+    // an ordinary UI gesture that raised an unhandled rejection in the
+    // renderer. `pageerror` is the assertion that witnesses the rail's own
+    // guard; revert it and this test goes red on that line alone.
+    const rejections: string[] = [];
+    w.on('pageerror', (e) => rejections.push(e.message));
+
+    await w.getByText('IT', { exact: true }).dblclick();
+    await w.locator('input:focus').fill('   ');
+    await w.locator('input:focus').press('Enter');
+    await expect(w.locator('nav input')).toHaveCount(0);
+    await expect(w.getByText('IT', { exact: true })).toBeVisible();
+
+    // A real rename right after, with padding — it proves trimming end to end,
+    // and it is the BARRIER the assertion below needs: the name only changes
+    // once `groups:update` has resolved and the rail has re-read the store, so
+    // any rejection the erase could have raised has certainly landed by then.
+    await w.getByText('IT', { exact: true }).dblclick();
+    await w.locator('input:focus').fill('  IT crew  ');
+    await w.locator('input:focus').press('Enter');
+    await expect(w.getByText('IT crew', { exact: true })).toBeVisible();
+    expect(rejections).toEqual([]);
+
     // give the debounced store save a beat, then relaunch on the same home
     await w.waitForTimeout(800);
     await first.close();
     a = await launchApp({ home: first.home });
-    await expect(a.window.getByText('IT', { exact: true })).toBeVisible();
+    await expect(a.window.getByText('IT crew', { exact: true })).toBeVisible();
     await expect(a.window.getByText('empty', { exact: true })).toBeVisible();
   });
 
