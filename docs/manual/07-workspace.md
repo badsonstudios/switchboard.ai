@@ -109,6 +109,12 @@ off-screen — and when that monitor comes back, Events offers a one-click
 **Restore** to put the layout back the way it was. It never moves your windows
 without asking.
 
+If you use a screen reader, you don't have to keep checking Events for that
+offer: a monitor coming back is something the app notices, not you, so the
+offer reads itself out as soon as it appears. It waits for a pause rather than
+interrupting — nothing has moved, and the offer keeps standing until you
+answer it.
+
 ## Getting a session out of the way
 
 A session you're not watching right now doesn't have to take up space. Every
