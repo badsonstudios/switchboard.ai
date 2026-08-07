@@ -156,6 +156,37 @@ describe('the Session panel threads transport through to the handoff bar (issue 
     expect(openTerminalButton(host)).toBeDefined();
   });
 
+  // The `startingLong` branch, and the reason it is asserted HERE and not in
+  // an e2e (#339). Nothing can hold a session in `starting` past the bar's 8s
+  // grace period any more — transport-ready was fixed — so `stream.spec.ts`'s
+  // restarted-Direct test was asserting the absence of this bar against a
+  // session that had started a second in. It passed with the transport guard
+  // deleted. The branch is still real in production (a start-up TUI dialog only
+  // the Terminal can render), so it has to bite somewhere, and the render site
+  // is where the last two bugs of this shape lived.
+  it('a Direct session stuck STARTING is silent, while a Terminal one gets the start-up bar', async () => {
+    // The 8s timer is armed by an effect at mount, so the clock has to be fake
+    // before the mount or there is a real timer nothing can advance.
+    vi.useFakeTimers();
+    try {
+      const stream = await mountFeed({ transport: 'stream', status: 'starting' });
+      const pty = await mountFeed({ transport: 'pty', status: 'starting' });
+      await act(async () => {
+        vi.advanceTimersByTime(9_000);
+      });
+
+      expect(bar(stream)).toBeNull();
+      expect(openTerminalButton(stream)).toBeUndefined();
+      // …and the same wait on a session that DOES have a terminal produces the
+      // bar, so the silence above is the transport and not a dead branch.
+      expect(pty.textContent).toContain('Claude is showing a start-up dialog');
+      expect(bar(pty)?.getAttribute('data-handoff')).toBe('input');
+      expect(openTerminalButton(pty)).toBeDefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // And the held-approval rule still outranks everything, on both transports:
   // that decision was DELEGATED to us and the approval bar is rendering it.
   it('a HELD approval still suppresses the bar on either transport', async () => {
