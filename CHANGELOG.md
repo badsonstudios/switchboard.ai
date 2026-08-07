@@ -38,6 +38,43 @@ someone tags.
 
 ---
 
+## 0.1.1 — 2026-08-06
+
+### Added
+
+- One-click updates. The "there's a new release" dialog's **Update** button now
+  does the whole job instead of opening a web page: it downloads the installer
+  with a real progress bar and a working Cancel, checks the file against the
+  checksum the release published — a download that doesn't match is deleted and
+  never run — installs silently, and restarts the app. The next run confirms
+  the update actually landed with a "You're now on vX" note in the events
+  panel. Closing the dialog without answering leaves a small "ready to install"
+  reminder there too; choosing Ignore or Skip doesn't. Every failure ends with
+  a plain sentence and a link to the release page.
+
+### Fixed
+
+- Direct-mode sessions no longer show the "Claude is asking permission in the
+  terminal" bar — there is no terminal in that mode, and the [Open Terminal]
+  button it offered went nowhere. This includes the version of the bug where
+  a session with "Allow all" switched on flashed that bar for a few seconds on
+  every single permission, while nothing was actually waiting on you.
+- A session can no longer be renamed to nothing: an empty rename box (or one
+  with only spaces) now means "never mind", the same as pressing Escape, and a
+  blank name can no longer sneak into the saved workspace.
+- A very long session name now shortens with `…` in the card header instead of
+  pushing the status pill and window buttons off the edge of the card.
+
+### Internal
+
+- Line endings are pinned repo-wide (`.gitattributes`, `eol=lf`).
+- Build stamps on push builds name the real branch instead of "detached".
+- The urgency lamp's timing-dependent tests now run on a clock the tests own.
+- Every always-visible notice bar carries a height guard pinned by one shared
+  regression roster.
+
+---
+
 ## 0.1.0 — 2026-08-05
 
 The first packaged build. This section describes what the app *is*, not what
