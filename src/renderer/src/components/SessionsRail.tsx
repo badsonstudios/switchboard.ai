@@ -916,10 +916,14 @@ export function SessionsRail(props: {
                  twice: main's `groups:update` ALREADY refuses a blank and trims
                  (`cleanName`, group-ipc.ts), so unlike `sessions:renameCard`
                  there was never a path to a persisted `''`. What the unguarded
-                 draft actually did was hand main a name it would THROW on, and
-                 App's `void bridge.groups.update(...).then(...)` has no catch —
-                 so an erased group name produced an unhandled rejection and a
-                 field that closed with no explanation. This makes the FIELD
+                 draft actually did was hand main a name it THREW on, and App's
+                 `void bridge.groups.update(...).then(...)` has no catch — so an
+                 erased group name produced an unhandled rejection and a field
+                 that closed with no explanation. (#326 took the throw away too:
+                 `groups:*` now answers `null` for a change it refuses. Both
+                 halves stay — this one keeps the pointless round trip from
+                 happening at all, and keeps the field's behaviour identical to
+                 the session field above it.) This makes the FIELD
                  behave, in the idiom it already has for an edit that goes
                  nowhere: Escape and blur both end the edit and leave the name
                  that was there, and so does this. A rejection the user cannot

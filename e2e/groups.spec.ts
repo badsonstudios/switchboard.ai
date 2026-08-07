@@ -56,6 +56,35 @@ test.describe('persistent groups (E12)', () => {
     await expect(w.getByText('IT crew', { exact: true })).toBeVisible();
     expect(rejections).toEqual([]);
 
+    // #326: the OTHER half of the same problem, over the same launch. The rail
+    // guard above stops the one gesture that could reach a throwing handler —
+    // but every bridge call in App.tsx is uncaught, so the next caller of
+    // `groups:*` would have had the same accident. That family no longer
+    // throws: a refused mutation RESOLVES `null`. Driving the bridge directly
+    // is the point of this probe — it stands in for the caller that has not
+    // been written yet (a context-menu rename, a §5.23 contribution), which is
+    // exactly who a call-site `.catch()` policy would not have protected.
+    const refusals = await w.evaluate(async () => {
+      const api = window.switchboard;
+      const groups = await api.groups.list();
+      const id = groups[0].id;
+      return {
+        blankName: await api.groups.update(id, { name: '   ' }),
+        badColor: await api.groups.update(id, { color: 'not-a-color' }),
+        blankCreate: await api.groups.create({ name: '' }),
+        // and the store is untouched by all three
+        nameAfter: (await api.groups.list())[0].name,
+        count: (await api.groups.list()).length,
+      };
+    });
+    expect(refusals.blankName).toBeNull();
+    expect(refusals.badColor).toBeNull();
+    expect(refusals.blankCreate).toBeNull();
+    expect(refusals.nameAfter).toBe('IT crew');
+    expect(refusals.count).toBe(1);
+    // three refusals, zero rejections — the property the issue asked for
+    expect(rejections).toEqual([]);
+
     // give the debounced store save a beat, then relaunch on the same home
     await w.waitForTimeout(800);
     await first.close();

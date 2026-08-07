@@ -325,6 +325,8 @@ describe('a hold needs somebody to ask: window liveness (P2-E15-09, AR-P1-7)', (
   let windowLive: boolean;
   let livenessChecks: number;
   let livenessThrows: boolean;
+  /** every no-window line this listener logged, by level — #334's subject */
+  let noWindowLines: { warn: number; debug: number };
 
   beforeEach(async () => {
     requests = [];
@@ -332,9 +334,17 @@ describe('a hold needs somebody to ask: window liveness (P2-E15-09, AR-P1-7)', (
     windowLive = true;
     livenessChecks = 0;
     livenessThrows = false;
+    noWindowLines = { warn: 0, debug: 0 };
+    const realLog = createLogger(new LogSink({ dir }), 'hooks');
+    const count =
+      (level: 'warn' | 'debug') =>
+      (msg: string, fields?: LogFields): void => {
+        if (msg.startsWith('no live window to ask')) noWindowLines[level]++;
+        realLog[level](msg, fields);
+      };
     held = new HookListener({
       stateDir: tempDir('sb-live-'),
-      log: createLogger(new LogSink({ dir }), 'hooks'),
+      log: { ...realLog, warn: count('warn'), debug: count('debug') } satisfies Logger,
       manager: {
         apply: (sessionId, ev) => heldApplied.push({ sessionId, ev }),
         setNativeSessionId: () => {},
@@ -486,6 +496,40 @@ describe('a hold needs somebody to ask: window liveness (P2-E15-09, AR-P1-7)', (
   it('releaseHeld with nothing parked is a no-op', () => {
     expect(() => held.releaseHeld('main window closed')).not.toThrow();
     expect(held.pendingRequests()).toHaveLength(0);
+  });
+
+  // #334. `noWindowWarned` means "already warned about the outage we are IN".
+  // It was only ever cleared in `unregisterSession`, so within one session the
+  // warning fired once and every later outage went out at `debug` — an operator
+  // watching the log sees the first closed window and never the second.
+  it('the no-window warning re-arms once a window comes back', async () => {
+    const t = heldToken('s1');
+
+    // Outage 1 — loud.
+    windowLive = false;
+    expect((await postHeld(edit, t)).body).toBe('{}');
+    expect(noWindowLines).toEqual({ warn: 1, debug: 0 });
+
+    // Still down — quiet. This is the flag's real job and must not regress:
+    // one line per gated call is a log nobody reads.
+    expect((await postHeld(edit, t)).body).toBe('{}');
+    expect(noWindowLines).toEqual({ warn: 1, debug: 1 });
+
+    // The window is back: this call holds like any other, and re-arms on its
+    // way past the gate. A live window logs nothing at all here.
+    windowLive = true;
+    const pending = postHeld(edit, t);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(requests).toHaveLength(1);
+    held.decide(requests[0].requestId, 'allow');
+    await pending;
+    expect(noWindowLines).toEqual({ warn: 1, debug: 1 });
+
+    // Outage 2 — loud AGAIN. Revert the `delete` in `maybeHold` and this is
+    // the assertion that goes red (warn stays 1, debug becomes 2).
+    windowLive = false;
+    expect((await postHeld(edit, t)).body).toBe('{}');
+    expect(noWindowLines).toEqual({ warn: 2, debug: 1 });
   });
 });
 
