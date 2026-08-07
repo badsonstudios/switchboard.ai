@@ -103,6 +103,9 @@ export function UrgencyStrip(props: {
         gap: 8,
         paddingInline: 8,
         paddingBlock: 3,
+        // never give up height (#274): "always visible" is this strip's whole
+        // contract, and the shell column squeezes its auto-basis children first
+        flexShrink: 0,
         minBlockSize: 24,
         background: 'var(--panel2)',
         borderBlockEnd: '1px solid var(--border)',

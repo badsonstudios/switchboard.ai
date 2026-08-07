@@ -140,11 +140,11 @@ describe('the conversation landmark names its session (issue 196)', () => {
     expect(region.getAttribute('aria-label')).toBe('Conversation — after');
   });
 
-  // Two ways to have no name: a host that never supplies one, and a rename to
-  // nothing — the rail commits an empty draft, and main only length-caps it.
-  // Announcing "Conversation — undefined", or the title the user just deleted,
-  // would both be worse than the generic.
-  for (const [name, title] of [['absent', undefined], ['renamed to nothing', '']] as const) {
+  // Two ways to have no name: a host that never supplies one, and an empty
+  // title — no longer committable since #294, but a workspace written before it
+  // can still carry one. Announcing "Conversation — undefined", or nothing at
+  // all, would both be worse than the generic.
+  for (const [name, title] of [['absent', undefined], ['an empty string', '']] as const) {
     it(`falls back to the bare name when the title is ${name}`, async () => {
       const region = await mountFeed(title);
       expect(region.getAttribute('aria-label')).toBe('Conversation');

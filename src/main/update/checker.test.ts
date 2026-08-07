@@ -289,3 +289,72 @@ describe('pickLatest', () => {
     expect(pickLatest([{ tag_name: 42 }, null as unknown as Record<string, unknown>])).toBeNull();
   });
 });
+
+describe('the installer asset (E19-04)', () => {
+  const assets = [
+    {
+      name: 'switchboard-Setup-0.2.0.exe',
+      url: 'https://api.github.com/repos/o/r/releases/assets/1',
+      browser_download_url: 'https://github.com/o/r/releases/download/v0.2.0/switchboard-Setup-0.2.0.exe',
+      size: 123456,
+    },
+    {
+      name: 'switchboard-Setup-0.2.0.exe.sha256',
+      url: 'https://api.github.com/repos/o/r/releases/assets/2',
+      size: 78,
+    },
+  ];
+
+  it('carries the API asset URLs — NOT the browser ones', async () => {
+    // On a private repo the browser_download_url is a login page. The API URL
+    // with `Accept: application/octet-stream` is the documented way to the
+    // bytes, and it is the one thing E19-04 needs out of this response.
+    const r = await checkForUpdate({
+      currentVersion: '0.1.0',
+      fetchImpl: respond(200, [release('v0.2.0', { assets })]),
+      tokenSources: token,
+      platform: 'win32',
+    });
+    expect(r.download).toEqual({
+      name: 'switchboard-Setup-0.2.0.exe',
+      url: 'https://api.github.com/repos/o/r/releases/assets/1',
+      checksumUrl: 'https://api.github.com/repos/o/r/releases/assets/2',
+      size: 123456,
+    });
+  });
+
+  it('a release with no verifiable installer is still an OFFER — just a browser one', async () => {
+    // E19-03's behaviour, preserved: the release page is always the fallback.
+    const r = await checkForUpdate({
+      currentVersion: '0.1.0',
+      fetchImpl: respond(200, [release('v0.2.0', { assets: [assets[0]] })]),
+      tokenSources: token,
+      platform: 'win32',
+    });
+    expect(r.state).toBe('available');
+    expect(r.download).toBeUndefined();
+    expect(r.url).toContain('/releases/tag/v0.2.0');
+  });
+
+  it('offers no installer on a platform we do not package for', async () => {
+    const r = await checkForUpdate({
+      currentVersion: '0.1.0',
+      fetchImpl: respond(200, [release('v0.2.0', { assets })]),
+      tokenSources: token,
+      platform: 'linux',
+    });
+    expect(r.state).toBe('available');
+    expect(r.download).toBeUndefined();
+  });
+
+  it('an up-to-date answer carries no installer at all', async () => {
+    const r = await checkForUpdate({
+      currentVersion: '0.2.0',
+      fetchImpl: respond(200, [release('v0.2.0', { assets })]),
+      tokenSources: token,
+      platform: 'win32',
+    });
+    expect(r.state).toBe('up-to-date');
+    expect(r.download).toBeUndefined();
+  });
+});

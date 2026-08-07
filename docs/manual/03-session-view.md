@@ -108,13 +108,25 @@ Switch any time; it applies instantly and is remembered per session.
 
 ## The Terminal tab
 
-The real Claude Code interface, always available as the last tab. It's the same
-session — not a copy — so anything switchboard can't handle finishes here.
-You'll be sent here on purpose for things like the model picker.
+The real Claude Code interface, available as the last tab on a session running
+in the default **Terminal mode**. It's the same session — not a copy — so
+anything switchboard can't handle finishes here. You'll be sent here on purpose
+for things like the model picker.
+
+On a session running in [**Direct mode**](12-direct-mode.md) there is no
+terminal at all, and the tab says so: *"No terminal for this session."* Nothing
+else in the window will offer to open one.
 
 **When something can only be answered in the terminal, the Session tab says
 so** — a coloured bar across the bottom, in the same place the approval bar
-appears, with an **Open Terminal** button. You'll see it in three situations:
+appears, with an **Open Terminal** button.
+
+> **Terminal mode only.** A session on [Direct mode](12-direct-mode.md) has no
+> terminal, so it never shows this bar and never offers an **Open Terminal**
+> button. Claude hands those decisions to switchboard properly there, and you
+> answer them right here in the approval bar.
+
+You'll see it in three situations:
 
 - **"Claude is asking permission in the terminal."** Some decisions Claude Code
   always keeps for itself — most commonly edits inside a project's own
@@ -129,9 +141,8 @@ For the first two the session also marks itself **needs input** or **needs
 permission** and raises an entry in Events, so you can tell at a glance that
 it's stopped and waiting rather than still working. (A session still starting
 up doesn't raise an Events entry — it hasn't got going yet.) Answer it in the
-Terminal
-and the session carries on. Answering these
-inside the Session view is planned, not built.
+Terminal and the session carries on. Answering these inside the Session view is
+planned, not built — and in Direct mode the first of the three already is.
 
 ## Changes and History
 

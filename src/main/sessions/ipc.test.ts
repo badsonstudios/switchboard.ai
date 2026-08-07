@@ -333,6 +333,10 @@ function streamPerms(): {
       sent.push({ sessionId, msg: msg as Record<string, unknown> });
       return true;
     },
+    // #310's third collaborator. These tests are about the RELEASE half, which
+    // deliberately applies nothing (see `forgetSession`), so a no-op here is
+    // the honest stand-in — `stream-permissions.test.ts` owns the assertions.
+    () => {},
     { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as unknown as Logger
   );
   return { perms, sent };
@@ -1861,5 +1865,39 @@ describe('a session that exits on its own releases what it was holding (#271)', 
     expect(h.call('sessions:pendingPermissions')).toEqual([]);
     // …and the optional-chained router is a no-op, not a logged failure
     expect(h.warn).not.toHaveBeenCalled();
+  });
+});
+
+// #294. The rail now refuses an empty rename at the field — but the field is
+// one caller, and it is the renderer. This is the half of the rule that
+// survives a restart: `manager.rename` already declines a blank, and only for
+// the LIVE record, which is not the one the next boot reads. Without a guard
+// here `''` stayed a legal persisted title and every reader downstream had to
+// keep its own "empty counts as absent" fallback honest forever.
+describe('a card cannot be renamed to nothing (#294)', () => {
+  let folder: string;
+  tempDirEach('sb-rename-', (d) => (folder = d));
+
+  /** rename a persisted, non-live card and report what the store was handed */
+  const rename = (title: string): PersistedSession[] => {
+    const h = harness(undefined, folder, { prior: priorCard({ folder, id: 'card-1' }) });
+    h.call('sessions:renameCard', 'card-1', title);
+    return h.upserted;
+  };
+
+  it('refuses an empty title, leaving the persisted name alone', () => {
+    expect(rename('')).toEqual([]);
+  });
+
+  it('refuses a whitespace-only title for the same reason', () => {
+    expect(rename('   \t ')).toEqual([]);
+  });
+
+  it('trims the title it does accept — so "blank" is one rule and not two', () => {
+    expect(rename('  renamed  ').map((s) => s.identity.title)).toEqual(['renamed']);
+  });
+
+  it('still caps a long title at 120 characters', () => {
+    expect(rename('W'.repeat(200)).map((s) => s.identity.title)).toEqual(['W'.repeat(120)]);
   });
 });

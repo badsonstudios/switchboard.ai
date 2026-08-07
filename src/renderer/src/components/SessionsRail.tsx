@@ -523,9 +523,24 @@ export function SessionsRail(props: {
             onClick={(e) => e.stopPropagation()}
             onChange={(e) => setDraft(e.target.value)}
             onBlur={() => setEditing(null)}
+            /* A BLANK NAME IS NOT A RENAME (#294).
+               An empty commit used to put `''` in the store as a legal title,
+               and every display site (card header, tab, close confirm) grew its
+               own "empty counts as absent" rule to compensate. Worse, the rail
+               row itself renders the raw title, so the session went nameless in
+               the one place you would go to fix it.
+               Two guards, deliberately: main's `sessions:renameCard` is what
+               makes `''` impossible, and this is what makes the FIELD behave —
+               in the idiom it already has for an edit that goes nowhere. Escape
+               and blur both end the edit and leave the name that was there, and
+               so does this; a rejection the user cannot dismiss is a trap. The
+               name is trimmed on the way through for the same reason the task
+               label is — surrounding whitespace is never what was meant, and it
+               is what makes "blank" a rule you can state. */
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
-                props.onRename(s.id, draft);
+                const name = draft.trim();
+                if (name) props.onRename(s.id, name);
                 setEditing(null);
               }
               if (e.key === 'Escape') setEditing(null);

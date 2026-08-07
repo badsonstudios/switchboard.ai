@@ -81,6 +81,23 @@ export function EventsPanel(props: {
   reconnectOffer?: boolean;
   onRestoreLayout?: () => void;
   onDismissOffer?: () => void;
+  /**
+   * The update feature's one non-modal surface (E19-04), in two flavours:
+   *
+   *   • `installed` — "You're now on vX", the post-update handshake. It goes
+   *     HERE rather than in a dialog because the news is worth a glance and not
+   *     worth a click, and this panel is already where "something happened"
+   *     lives.
+   *   • `available` — the release is still on offer. Shown once the dialog is
+   *     out of the way without being answered (Escape, click-away, or a
+   *     cancelled download), which is the item's "the persistent update
+   *     available affordance remains". **Ignore and Skip do not produce it** —
+   *     those are answers, and re-asking in the corner would make them lies.
+   */
+  updateNotice?: { kind: 'installed' | 'available'; version: string } | null;
+  /** the `available` notice's button: reopen the dialog */
+  onUpdateNow?: () => void;
+  onDismissUpdateNotice?: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   // the panel's heading doubles as the list's label — one "Events", not two
@@ -138,6 +155,72 @@ export function EventsPanel(props: {
           {t('events.queueHint', { binding: props.queueBinding })}
         </div>
       )}
+      {props.updateNotice && (
+        // Same shell as the reconnect offer below — one notice shape in this
+        // panel, so a second kind of "here is a thing you might do" does not
+        // teach the eye a second pattern. Bordered in `--faint` rather than a
+        // status hue: an update is news, not attention.
+        <div
+          data-events-notice={props.updateNotice.kind}
+          style={{
+            background: 'var(--panel2)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-chip)',
+            padding: '7px 9px',
+            marginBlockEnd: 6,
+            fontSize: 11,
+          }}
+        >
+          <div
+            // Both arrive AFTER mount — one from a handshake round-trip, one
+            // when a dialog closes — so a screen reader would otherwise never
+            // hear either. `status` rather than `alert`: this is news, and news
+            // waits for a pause. (The reconnect offer below predates the rule
+            // and is left alone rather than changed in an unrelated item.)
+            role="status"
+            aria-live="polite"
+            style={{ color: 'var(--text)', marginBlockEnd: 6 }}
+          >
+            {props.updateNotice.kind === 'installed'
+              ? t('events.updateInstalled', { version: props.updateNotice.version })
+              : t('events.updateAvailable', { version: props.updateNotice.version })}
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {props.updateNotice.kind === 'available' && (
+              <button
+                onClick={props.onUpdateNow}
+                style={{
+                  background: 'var(--btn-primary-bg)',
+                  color: 'var(--btn-primary-text)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-chip)',
+                  padding: '2px 10px',
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  fontFamily: 'var(--font-ui)',
+                }}
+              >
+                {t('events.updateNow')}
+              </button>
+            )}
+            <button
+              onClick={props.onDismissUpdateNotice}
+              style={{
+                background: 'transparent',
+                color: 'var(--muted)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-chip)',
+                padding: '2px 10px',
+                cursor: 'pointer',
+                fontSize: 11,
+                fontFamily: 'var(--font-ui)',
+              }}
+            >
+              {props.updateNotice.kind === 'installed' ? t('events.gotIt') : t('events.notNow')}
+            </button>
+          </div>
+        </div>
+      )}
       {props.reconnectOffer && (
         <div
           style={{
@@ -184,7 +267,7 @@ export function EventsPanel(props: {
           </div>
         </div>
       )}
-      {events.length === 0 && !props.reconnectOffer && (
+      {events.length === 0 && !props.reconnectOffer && !props.updateNotice && (
         <div style={{ color: 'var(--muted)', fontSize: 11 }}>{t('events.empty')}</div>
       )}
       {/* A real list, so the rows read as a set and their count is announced

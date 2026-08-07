@@ -251,4 +251,53 @@ test.describe('a session card', () => {
     // the tree-kill: a live popout has outlived cleanup on CI before
     await popout.evaluate(() => window.close());
   });
+
+  // #294, both halves in one launch — they are the same sentence read from
+  // either end. The rail used to commit an empty draft (main only length-caps,
+  // so `''` was a legal title), and the header's name span used to be `nowrap`
+  // with no floor, so the OTHER thing a title can be — 120 characters — grew
+  // the header past its card and carried the status pill and the window buttons
+  // off the end with it.
+  test('a name cannot be erased, and a pathological one clips instead of the controls (#294)', async () => {
+    const folder = tempProjectFolder();
+    const name = path.basename(folder);
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    const header = cardHeaderIn(w);
+    const row = w.locator('nav .rail-row').first();
+    await expect(header.getByText(name, { exact: true })).toBeVisible({ timeout: 25_000 });
+    await expect(row).toContainText(name, { timeout: 15_000 });
+
+    // erasing it commits nothing: the edit ends and the name stands, in the
+    // rail row as well as the header — the row is the one place you would go
+    // to put a name back, and it renders the raw title
+    await renameFromRail(w, '');
+    await expect(w.locator('nav .rail-row input')).toHaveCount(0);
+    await expect(row).toContainText(name);
+    await expect(header.getByText(name, { exact: true })).toBeVisible();
+
+    // 120 chars with no space in it: main's cap, and the worst case for a row
+    // that wants to break at one
+    const long = 'W'.repeat(120);
+    await renameFromRail(w, long);
+    const nameSpan = header.getByTestId('card-header-name');
+    await expect(nameSpan).toHaveText(long, { timeout: 10_000 });
+
+    // the name is what gave way...
+    expect(await nameSpan.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+    // ...and the row still fits inside its own card
+    expect(await header.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+
+    // the controls that were being pushed off are still inside the header box
+    const box = (await header.boundingBox())!;
+    for (const control of [
+      header.getByTestId('card-collapse'),
+      header.getByTitle('Pop out into its own window'),
+    ]) {
+      await expect(control).toBeVisible();
+      const c = (await control.boundingBox())!;
+      expect(c.x).toBeGreaterThanOrEqual(box.x);
+      expect(c.x + c.width).toBeLessThanOrEqual(box.x + box.width + 1);
+    }
+  });
 });

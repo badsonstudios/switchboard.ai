@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { terminalHandoff, toneToken, HandoffTone } from './terminal-handoff';
+import { terminalHandoff, toneToken, HandoffTone, HandoffInputs } from './terminal-handoff';
 
 const inputs = (over: Partial<Parameters<typeof terminalHandoff>[0]> = {}) => ({
   status: undefined,
@@ -76,6 +76,43 @@ describe('terminalHandoff', () => {
     // you" in the exact spot they just clicked Allow.
     expect(terminalHandoff(inputs({ status: 'needs-permission', recentlyDecided: true }))).toBeNull();
     expect(terminalHandoff(inputs({ status: 'needs-input', recentlyDecided: true }))).toBeNull();
+  });
+
+  // #261. The guard existed and was never once exercised: the `feed` panel
+  // contribution dropped the prop, so `transport` was permanently `undefined`
+  // and every case below took the `pty` path in production. Table-driven over
+  // ALL THREE branches deliberately — a single `needs-permission` case would
+  // have stayed green if a later edit moved the guard below the status checks.
+  describe('a STREAM session is never sent to a terminal it does not have', () => {
+    const branches: Array<[string, Partial<HandoffInputs>]> = [
+      ['needs-permission', { status: 'needs-permission' }],
+      ['needs-input', { status: 'needs-input' }],
+      ['startingLong', { status: 'starting', startingLong: true }],
+    ];
+
+    for (const [name, over] of branches) {
+      it(`${name}: silent on stream, and still a bar on pty and on an unknown transport`, () => {
+        expect(terminalHandoff(inputs({ ...over, transport: 'stream' }))).toBeNull();
+        // The two shapes that DO have a terminal. `undefined` is not a
+        // hypothetical: a card mounts before its live record lands, and the
+        // fix for this bug must not silence the bar during that gap.
+        expect(terminalHandoff(inputs({ ...over, transport: 'pty' }))).not.toBeNull();
+        expect(terminalHandoff(inputs({ ...over, transport: undefined }))).not.toBeNull();
+      });
+    }
+
+    it('does not silence pty by silencing everything — the bars are unchanged', () => {
+      // Guards against a "fix" that returns null unconditionally, which every
+      // stream assertion above would happily accept.
+      const titles = branches.map(
+        ([, over]) => terminalHandoff(inputs({ ...over, transport: 'pty' }))!.title
+      );
+      expect(titles).toEqual([
+        'handoff.permissionTitle',
+        'handoff.inputTitle',
+        'handoff.startingTitle',
+      ]);
+    });
   });
 
   it('every tone names theme tokens that ACTUALLY EXIST in every shipped theme', () => {

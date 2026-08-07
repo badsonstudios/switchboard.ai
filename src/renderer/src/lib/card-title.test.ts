@@ -27,8 +27,9 @@ describe('cardHeaderTitle (issue 250)', () => {
   });
 
   it('treats a rename to nothing as no name — the header never goes blank', () => {
-    // the rail commits an empty draft unguarded and main only length-caps it,
-    // so '' is a legal title. Rendering it would leave the card unidentifiable.
+    // one can no longer be MADE (#294 rejects it at the rail and in main), but
+    // a workspace written before that fix can still hold one, and rendering it
+    // would leave the card unidentifiable.
     expect(cardHeaderTitle('', 'at-birth', 'C:\\Projects\\acme')).toBe('at-birth');
     expect(cardHeaderTitle('', '', 'C:\\Projects\\acme')).toBe('acme');
   });

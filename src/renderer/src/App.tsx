@@ -26,7 +26,7 @@ import { sessionStore } from './store/session-store';
 import { CommandPalette } from './components/CommandPalette';
 import { AboutPanel } from './components/AboutPanel';
 import { UpdateDialog } from './components/UpdateDialog';
-import type { UpdateStatus } from '../../shared/update';
+import type { UpdateInstallStatus, UpdateStatus } from '../../shared/update';
 import { UrgencyStrip } from './components/UrgencyStrip';
 import { CollapsedStrip } from './components/CollapsedStrip';
 import { WorkspaceReadOnlyBanner } from './components/WorkspaceReadOnlyBanner';
@@ -60,6 +60,13 @@ const subscribeStore = (cb: () => void): (() => void) => sessionStore.subscribe(
 // Compiled in at build time and constant for the process lifetime (E15-15), so
 // it is read once at module scope rather than per render.
 const BUILD_IDENTITY = buildIdentity();
+
+/** Install phases that still have something happening (E19-04). */
+const LIVE_INSTALL: ReadonlySet<UpdateInstallStatus['phase']> = new Set([
+  'downloading',
+  'verifying',
+  'launching',
+]);
 
 // Control-room shell (P1-E3-01): titlebar / rail / grid / statusbar.
 // Terminals (E3-02), identity kit (E3-03), and live badges (E3-05) land next.
@@ -118,6 +125,18 @@ export function App(): React.JSX.Element {
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [updateOpen, setUpdateOpen] = useState(false);
   const [autoCheckUpdates, setAutoCheckUpdates] = useState(true);
+  // ── the install (E19-04) ─────────────────────────────────────────────────
+  // Progress lives here rather than in the dialog because it OUTLIVES the
+  // dialog: a cancelled download leaves the offer standing in the events
+  // panel, and the panel is App's to render.
+  const [installStatus, setInstallStatus] = useState<UpdateInstallStatus | null>(null);
+  // The one-shot "you're now on vX" the previous run earned, and the "still on
+  // offer" nudge. Both render in the events panel; both are dismissible and
+  // neither survives a relaunch (the handshake is consumed by main on read).
+  const [updateNotice, setUpdateNotice] = useState<{
+    kind: 'installed' | 'available';
+    version: string;
+  } | null>(null);
   // "Ignore" means NOT THIS RUN, and that is all it means — nothing is
   // persisted, so a relaunch offers the release again. It lives in a ref
   // rather than the store because it is deliberately not durable: "Skip this
@@ -290,6 +309,12 @@ export function App(): React.JSX.Element {
   const applyUpdateStatus = React.useCallback((s: UpdateStatus | null | undefined) => {
     if (!s?.result) return;
     setUpdateStatus(s);
+    // A fresh answer retires the last install's OUTCOME — the failure message
+    // from ten minutes ago must not be what the dialog opens showing. But not a
+    // live one: the daily timer keeps ticking during a download, and clearing
+    // here would swap the progress bar for the offer while the transfer is
+    // still running.
+    setInstallStatus((prev) => (prev && LIVE_INSTALL.has(prev.phase) ? prev : null));
     // A manual check always shows something — up to date and "couldn't check"
     // included. An automatic one shows the dialog only when main says prompt,
     // and not for a version dismissed with Ignore this run.
@@ -303,6 +328,16 @@ export function App(): React.JSX.Element {
     // The pushes: a check nobody in this window asked for (the daily timer, or
     // the menu item, which has no return path to a caller).
     const off = bridge.update?.onStatus?.((s) => applyUpdateStatus(s));
+    // Progress for a download this window started (E19-04). Subscribed here
+    // rather than around the call so a status that lands while the dialog is
+    // being re-rendered is not dropped.
+    const offInstall = bridge.update?.onInstallStatus?.((s) => setInstallStatus(s));
+    // THE HANDSHAKE. Main resolved it before the first window existed and is
+    // holding the answer; this is the only thing that ever asks for it.
+    void bridge.update
+      ?.handshake?.()
+      .then((h) => h?.updatedTo && setUpdateNotice({ kind: 'installed', version: h.updatedTo }))
+      .catch(() => {});
     void bridge.update
       ?.getPrefs?.()
       .then((p) => setAutoCheckUpdates(p.autoCheck !== false))
@@ -319,7 +354,10 @@ export function App(): React.JSX.Element {
       // must never reach the console as an unhandled rejection, let alone stop
       // the shell from mounting
       .catch(() => {});
-    return () => off?.();
+    return () => {
+      off?.();
+      offInstall?.();
+    };
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, [applyUpdateStatus]);
 
@@ -330,6 +368,66 @@ export function App(): React.JSX.Element {
       .catch(() => {});
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, [applyUpdateStatus]);
+
+  /**
+   * The Update button (E19-04).
+   *
+   * Two paths, and the RESULT decides which — not the button. A release with a
+   * verifiable installer downloads in place; one without (an older release, a
+   * platform we do not package for) opens its page in the browser, which is
+   * exactly what E19-03 shipped and remains the fallback for every failure.
+   */
+  const startUpdate = React.useCallback(() => {
+    const result = updateStatus?.result;
+    if (!result) return;
+    const install = bridge.update?.install;
+    // No bridge, no progress bar. Checked BEFORE the optimistic status below:
+    // the dialog is deliberately inescapable while a download is running, so
+    // showing that face for an install that was never started would trap the
+    // user behind a Cancel button with nothing to cancel.
+    if (!result.download || typeof install !== 'function') {
+      if (result.url) void bridge.update?.openExternal?.(result.url)?.catch(() => {});
+      setUpdateOpen(false);
+      return;
+    }
+    // Optimistic, so the dialog becomes a progress bar on the click rather than
+    // on the first byte: main's own `downloading` push replaces this within
+    // milliseconds, and a button that looks inert while a token is resolved is
+    // a button people press twice.
+    setInstallStatus({
+      phase: 'downloading',
+      version: result.latestVersion ?? '',
+      received: 0,
+      total: result.download.size,
+      ...(result.url ? { url: result.url } : {}),
+    });
+    void install()
+      .then((s) => setInstallStatus(s))
+      // Fail-open: a rejected invoke (a broker refusal, a main-side crash) must
+      // leave the user with a dialog they can close, not a progress bar that
+      // never moves.
+      .catch(() => setInstallStatus(null));
+  }, [updateStatus]);
+
+  /**
+   * Closing the dialog without answering leaves the offer standing.
+   *
+   * Escape, click-away and a cancelled download all land here; Ignore and Skip
+   * do not, because those ARE answers. This is the item's "the persistent
+   * update available affordance remains".
+   */
+  const closeUpdateDialog = React.useCallback(() => {
+    setUpdateOpen(false);
+    const result = updateStatus?.result;
+    const version = result?.latestVersion;
+    if (result?.state !== 'available' || !version) return;
+    if (version === ignoredVersion.current) return;
+    // Not after a failed install: the user has just been sent to the release
+    // page in their browser, and "ready to install" in the corner would be
+    // both wrong and a second thing to dismiss.
+    if (installStatus?.phase === 'failed') return;
+    setUpdateNotice({ kind: 'available', version });
+  }, [updateStatus, installStatus]);
 
   const cycleAutonomy = (): void => {
     const order = ['ask', 'plan', 'auto-edit', 'full-auto'];
@@ -913,14 +1011,21 @@ export function App(): React.JSX.Element {
       <UpdateDialog
         open={updateOpen}
         status={updateStatus}
-        onClose={() => setUpdateOpen(false)}
-        onUpdate={(url) => void bridge.update?.openExternal?.(url)?.catch(() => {})}
+        install={installStatus}
+        onClose={closeUpdateDialog}
+        onUpdate={startUpdate}
+        onOpenUrl={(url) => void bridge.update?.openExternal?.(url)?.catch(() => {})}
+        onCancelInstall={() => void bridge.update?.cancelInstall?.()?.catch(() => {})}
         onIgnore={(version) => {
           ignoredVersion.current = version;
+          // An answer, so the corner nudge goes too — including one left over
+          // from an earlier close of the same release.
+          setUpdateNotice(null);
         }}
-        onSkip={(version) =>
-          void bridge.update?.setPrefs?.({ skippedVersion: version })?.catch(() => {})
-        }
+        onSkip={(version) => {
+          setUpdateNotice(null);
+          void bridge.update?.setPrefs?.({ skippedVersion: version })?.catch(() => {});
+        }}
       />
       <CommandPalette
         open={paletteOpen}
@@ -1028,6 +1133,12 @@ export function App(): React.JSX.Element {
             setReconnectOffer(false);
           }}
           onDismissOffer={() => setReconnectOffer(false)}
+          updateNotice={updateNotice}
+          onUpdateNow={() => {
+            setUpdateNotice(null);
+            setUpdateOpen(true);
+          }}
+          onDismissUpdateNotice={() => setUpdateNotice(null)}
         />
       </div>
       <StatusBar
