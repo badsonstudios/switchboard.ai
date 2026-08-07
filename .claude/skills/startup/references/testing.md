@@ -70,9 +70,10 @@ numbers (latency, CPU, memory) where the item asks for them.
      against whatever is already in `out/`; `npm run e2e:headed` (builds) /
      `e2e:ui` (does not) for debugging. **`e2e:only` is not "the full suite" —
      it is the full suite against the LAST BUILD.**
-   - **The stale-bundle guard (#286, extended #298).**
+   - **The stale-bundle guard (#286, extended #298, #329).**
      `scripts/bundle-guard.js` runs ahead of everything that executes `out/`
-     without building it — `e2e:only`, `e2e:ui`, and all five `check:*`. It
+     without building it — **every Playwright invocation** and all five
+     `check:*`. It
      prints the build identity baked into `out/main/index.js` (which SHA, which
      branch, how old) and **exits 1** when any bundled source under `src/` — or
      `electron.vite.config.ts` / `package.json` / `package-lock.json` — is newer
@@ -83,7 +84,21 @@ numbers (latency, CPU, memory) where the item asks for them.
      `ALLOW_STALE_BUNDLE=1` (warns, then runs; `$env:ALLOW_STALE_BUNDLE=1` in
      PowerShell — #286's `E2E_ALLOW_STALE` still works). A missing `out/` fails
      regardless — there is nothing to test. **The failure message names the
-     command you actually typed**, so it stays pasteable.
+     command you actually typed** (read off npm's `npm_lifecycle_event`), so it
+     stays pasteable.
+   - **For Playwright it runs from `globalSetup`, not from a package.json
+     script (#329).** It used to hang off `e2e:only` and `e2e:ui`, which left
+     every invocation that goes round npm — `npx playwright test`, a single
+     spec, an IDE run button, the real-claude lane below — building nothing and
+     guarded by nothing. #315's worker lost **nine minutes and eight confusing
+     failures** to exactly that. `playwright.config.ts` now names
+     `scripts/e2e-global-setup.js`, which Playwright runs once before any
+     worker starts (in UI mode too, via the test server's `runGlobalSetup`), so
+     a stale `out/` fails in ~2s with the guard's report and **no spec runs**.
+     Those two npm scripts no longer call the guard themselves — one seam, one
+     banner. `npm run e2e` is unchanged and is still the blessed path: it is
+     the one that BUILDS, so there the pre-flight is a stamp (which SHA these
+     tests actually tested, ~40ms) rather than a gate.
    - **It also flags a FOREIGN `out/` (#298)** — baked branch vs. the branch of
      the checkout, resolved the same way `probeBuildIdentity()` resolves it
      (including GitHub's env fallback, so CI's detached HEAD does not
@@ -112,7 +127,9 @@ build + check:pty + check:fake-stream on Windows/macOS/Linux; `e2e` job =
 Playwright on Windows + Linux (xvfb). Red CI blocks merge.
 
 **Opt-in REAL-claude e2e lane (local only, 2026-07-22):**
-`SWITCHBOARD_REAL_E2E=1 npx playwright test e2e/real-claude.spec.ts` — copies
+`npm run build && SWITCHBOARD_REAL_E2E=1 npx playwright test e2e/real-claude.spec.ts`
+— it builds nothing of its own, and since #329 the pre-flight will stop you
+rather than let you debug a real model turn against last hour's bundle. Copies
 the machine's claude credentials into the isolated temp home and drives a
 real model turn through the Session tab (composer → response blocks). Skipped
 everywhere else; CI stays fake-provider.

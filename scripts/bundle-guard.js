@@ -79,15 +79,26 @@ const IDENTITY_ARTIFACT = 'out/main/index.js';
 const ARTIFACTS = [IDENTITY_ARTIFACT, 'out/preload/index.js', 'out/renderer/index.html'];
 
 /**
- * What `npm run e2e:only` / `e2e:ui` is about to test.
+ * The default target: the whole app bundle, as a no-build e2e run sees it.
+ *
+ * Since #329 the suite reaches this through `e2eTarget()`, which re-words it
+ * for whichever command is running; this remains what the bare CLI
+ * (`node scripts/bundle-guard.js`, no argument) answers, and the base every
+ * e2e target is spread from.
  *
  * A "target" is the small amount this guard needs to know about its caller: the
  * artifacts whose mtime decides the verdict, and the words to print — the
  * printed remedy IS the UX of the failure, so it has to name the command the
  * reader actually typed, not e2e's.
  *
+ * `headline` is optional and defaults to `NO_BUILD_HEADLINE`. Only the
+ * Playwright pre-flight (#329) overrides it, because it is the one caller that
+ * ALSO runs behind a command that did build (`npm run e2e`), and printing "NO
+ * BUILD RAN" over a build that just ran would make the stamp a liar.
+ *
  * @typedef {{label: string, command: string, artifacts: string[],
- *            buildHint: string, remedies: [string, string][]}} Target
+ *            buildHint: string, remedies: [string, string][],
+ *            headline?: string}} Target
  * @type {Target}
  */
 const E2E_TARGET = {
@@ -367,6 +378,9 @@ function currentBranch(root, env) {
 
 const RULE = '─'.repeat(72);
 
+/** What every no-build caller says on its first line. See `Target.headline`. */
+const NO_BUILD_HEADLINE = 'NO BUILD RAN. Testing the bundle already in out/.';
+
 /**
  * The provenance note, or nothing.
  *
@@ -405,7 +419,7 @@ function formatReport(result, identity, opts = {}) {
   const now = opts.now ?? Date.now();
   const overridden = opts.overridden === true;
   const target = opts.target ?? E2E_TARGET;
-  const lines = [RULE, `${target.label} — NO BUILD RAN. Testing the bundle already in out/.`];
+  const lines = [RULE, `${target.label} — ${target.headline ?? NO_BUILD_HEADLINE}`];
 
   if (result.status === 'missing') {
     lines.push(
@@ -577,6 +591,77 @@ function guardBundle(root, bundle, env, write = (s) => process.stderr.write(s)) 
   return !failed;
 }
 
+/**
+ * The npm scripts that end in a Playwright run, and whether each one BUILT
+ * first. `npm_lifecycle_event` is npm's name for the script currently running,
+ * inherited by everything it spawns — so the pre-flight can name the command
+ * the reader actually typed instead of always saying `e2e:only`. `npx playwright
+ * test` sets none of this, which is precisely the invocation #329 exists for.
+ */
+const E2E_SCRIPTS = new Map([
+  ['e2e', true],
+  ['e2e:headed', true],
+  ['e2e:only', false],
+  ['e2e:ui', false],
+]);
+
+/**
+ * The target for the Playwright pre-flight (#329).
+ *
+ * Playwright's `globalSetup` runs on EVERY invocation of the suite, including
+ * the bare `npx playwright test` that skips npm entirely — which is how #315's
+ * worker spent nine minutes and eight confusing failures on a bundle from an
+ * earlier edit. `npm run e2e` stays the blessed path (it is the one that
+ * BUILDS); this only makes every other path fail fast instead of lying.
+ *
+ * Same artifacts and same verdict as `E2E_TARGET` — only the words move, and
+ * only because "NO BUILD RAN" is false when the reader typed `npm run e2e`.
+ *
+ * @param {Record<string, string|undefined>} env
+ * @returns {Target}
+ */
+function e2eTarget(env) {
+  const script = env.npm_lifecycle_event;
+  // `undefined` is "npm was not involved, or was running something we do not
+  // recognise" — either way the reader did not type `npm run <script>`, and
+  // printing a remedy that does not exist is worse than printing a general one.
+  const built = typeof script === 'string' ? E2E_SCRIPTS.get(script) : undefined;
+  const known = built !== undefined;
+  const command = known ? `npm run ${script}` : 'npx playwright test';
+  return {
+    ...E2E_TARGET,
+    label: known ? script : 'playwright test',
+    command,
+    headline: built ? 'the bundle Playwright is about to test.' : NO_BUILD_HEADLINE,
+    // `npm run e2e` first because it is the blessed path and the answer for
+    // almost everyone; the second remedy is for the reader who wants to keep
+    // running the command they typed, so it has to BE that command.
+    remedies: [
+      ['npm run e2e', 'build, then run the whole suite'],
+      [`npm run build && ${command}`, 'the same two steps, kept apart'],
+    ],
+  };
+}
+
+/**
+ * Guard `out/` ahead of a Playwright run; true means "you may proceed".
+ *
+ * The in-process twin of `guardBundle`, called from `scripts/e2e-global-setup.js`
+ * — see that file for why the wiring lives in `globalSetup` rather than in the
+ * package.json scripts, where it covered two of the four e2e scripts and none
+ * of the invocations that skip npm.
+ *
+ * @param {string} root
+ * @param {Record<string, string|undefined>} env
+ * @param {(s: string) => void} [write]
+ * @returns {boolean}
+ */
+function guardE2eBundle(root, env, write = (s) => process.stderr.write(s)) {
+  const { lines, failed } = run(root, env, e2eTarget(env));
+  write(`${lines.join('\n')}\n`);
+  return !failed;
+}
+
 module.exports = {
   OVERRIDE_ENV,
   LEGACY_OVERRIDE_ENV,
@@ -584,6 +669,9 @@ module.exports = {
   IDENTITY_ARTIFACT,
   EXTRA_INPUTS,
   E2E_TARGET,
+  NO_BUILD_HEADLINE,
+  e2eTarget,
+  guardE2eBundle,
   isBundledSource,
   collectInputs,
   extractBakedIdentity,
