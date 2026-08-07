@@ -184,7 +184,25 @@ structure adopting #228's temp-dir registry, verified by a local
 > #260 branch to root-cause and fix without weakening the
 > determinate-bar assertion.
 >
-> **TRAIN MERGED + v0.1.1 CUT (2026-08-06 evening):** the Actions
+> **🎉 v0.1.1 LIVE (2026-08-06 ~21:15) — RUN 7 FULLY CLOSED.**
+> Release workflow run 31136739445 SUCCESS at e1e8f6c:
+> switchboard-Setup-0.1.1.exe (103.9 MB) + .sha256 + changelog
+> notes, published (not draft). One release-blocking find en
+> route: `scripts/release-notes.test.js`'s real-CHANGELOG guard
+> pinned EXACTLY ONE section (true only for the first release
+> ever) — the v0.1.1 tag was the first to hit it; fixed on main
+> (e1e8f6c: newest-section-is-current + all-entries-semver, both
+> original intents kept), tag moved, second workflow run green.
+> Dan's one-click E19-04 acceptance test: run the b7c605f tree
+> (`git checkout b7c605f && npm run build && npm start` — reports
+> 0.1.0 with the new download code) → dialog offers v0.1.1 →
+> Update → installed app becomes 0.1.1 (stamp e1e8f6c) →
+> "You're now on v0.1.1" in the events panel. Worktrees parked
+> detached clean; zero branches left; open decisions: #255
+> tranches, prettier adopt/drop, #320 lamp beat + standing list;
+> recommended run-8 lead: #319.
+>
+> **(history) TRAIN MERGED + v0.1.1 CUT (2026-08-06 evening):** the Actions
 > outage cleared after ~3.5 h (6 status polls); one CI kick
 > (empty commit — dropped events don't replay), 4/4 green FIRST
 > TRY, **#321 merged (merge commit, main @ b7c605f)** — all six
