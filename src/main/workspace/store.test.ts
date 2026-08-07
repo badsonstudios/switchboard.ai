@@ -425,6 +425,252 @@ describe('a blank group name is repaired on load (#327)', () => {
   });
 });
 
+// Every one of these repairs used to happen in silence — the whole-file one
+// most loudly of all: `void err;` threw away the parse error, the fact, and the
+// path the corpse went to, and the user got "my workspace is suddenly empty"
+// with nothing written anywhere to explain it. Nothing is surfaced in the UI
+// (that posture question is #207); the log line IS the diagnosis, so it has to
+// name what was lost and why.
+describe('load-time repairs are audible (#344)', () => {
+  const write = (content: unknown): void =>
+    fs.writeFileSync(file, typeof content === 'string' ? content : JSON.stringify(content));
+  /** Load `file` with a capturing logger and hand back what it warned about. */
+  const loadWarns = (): Line[] => {
+    const warns: Line[] = [];
+    makeStore(file, fakeLogger(warns)).load();
+    return warns;
+  };
+
+  describe('the whole file is unreadable', () => {
+    it('says so, naming the cause and where the bad file went', () => {
+      write('{not json!!');
+      const warns = loadWarns();
+
+      expect(warns).toHaveLength(1);
+      expect(warns[0].msg).toMatch(/workspace file could not be read/i);
+      // the WHY: whatever JSON.parse objected to, verbatim
+      expect(warns[0].fields).toMatchObject({
+        file,
+        error: expect.stringContaining('JSON'),
+        setAside: `${file}.corrupt`,
+      });
+    });
+
+    it('names the deliberate throw for valid JSON that is not a workspace', () => {
+      write('[1,2]');
+      const warns = loadWarns();
+      expect(warns).toHaveLength(1);
+      expect(warns[0].fields?.error).toMatch(/not a JSON object/);
+    });
+
+    it('a missing file is first launch, not a fault — silent', () => {
+      expect(fs.existsSync(file)).toBe(false);
+      expect(loadWarns()).toEqual([]);
+    });
+
+    it('a failed set-aside copy is reported in the same line, not swallowed', () => {
+      write('{not json!!');
+      const spy = vi.spyOn(fs, 'copyFileSync').mockImplementation(() => {
+        throw new Error('EPERM: operation not permitted, copyfile');
+      });
+      let warns: Line[];
+      try {
+        warns = loadWarns();
+      } finally {
+        spy.mockRestore();
+      }
+
+      expect(warns).toHaveLength(1);
+      expect(warns[0].fields).toMatchObject({ setAsideError: expect.stringContaining('EPERM') });
+      expect(warns[0].fields?.setAside).toBeUndefined(); // nothing was set aside to point at
+    });
+  });
+
+  describe('field-level repairs', () => {
+    it('dropped session entries are counted', () => {
+      write({ version: 1, sessions: [sess('ok'), { id: 42 }, 'x'] });
+      const warns = loadWarns();
+      expect(warns).toHaveLength(1);
+      expect(warns[0].msg).toMatch(/session entries .* were unusable/);
+      expect(warns[0].fields).toMatchObject({ file, dropped: 2, kept: 1 });
+    });
+
+    it('dropped group entries are counted, and dangling members are named', () => {
+      write({
+        version: 1,
+        sessions: [{ ...sess('a'), groupId: 'ghost' }],
+        groups: [{ id: 'g1', name: 'IT', color: '#4a90d9' }, { id: 'g2' }],
+      });
+      const warns = loadWarns();
+      expect(warns.map((w) => w.msg)).toEqual([
+        expect.stringMatching(/group entries .* were unusable/),
+        expect.stringMatching(/named a group that is not in it/),
+      ]);
+      expect(warns[0].fields).toMatchObject({ dropped: 1, kept: 1 });
+      expect(warns[1].fields).toMatchObject({ file, sessionIds: ['a'] });
+    });
+
+    it('a list that is not a list loses everything in it — and says which list', () => {
+      write({ version: 1, sessions: { a: 1 }, groups: 'nope' });
+      expect(loadWarns().map((w) => w.msg)).toEqual([
+        expect.stringMatching(/^the group list .* was not a list/),
+        expect.stringMatching(/^the session list .* was not a list/),
+      ]);
+    });
+
+    it('an ignored window rect says so, and which field was unusable', () => {
+      write({
+        version: 1,
+        window: { bounds: { x: 0, y: 0, width: 10, height: 10 }, displayFingerprint: 'fp' },
+      });
+      const warns = loadWarns();
+      expect(warns).toHaveLength(1);
+      expect(warns[0].msg).toMatch(/saved window position .* unusable — opening centred/);
+      expect(warns[0].fields).toMatchObject({ file, unusable: ['bounds'] });
+    });
+
+    it('a window record with no fingerprint is ignored whole', () => {
+      write({ version: 1, window: { bounds: { x: 1, y: 2, width: 800, height: 600 } } });
+      expect(loadWarns()[0].fields).toMatchObject({ unusable: ['displayFingerprint'] });
+    });
+
+    // The rect survived, so the window opens exactly where it was saved: a line
+    // promising a centred window would be a confidently wrong diagnosis.
+    it('a repair that does NOT move the window says the smaller thing', () => {
+      write({
+        version: 1,
+        window: {
+          bounds: { x: 1, y: 2, width: 800, height: 600 },
+          isMaximized: 'yes',
+          displayFingerprint: 'fp',
+        },
+      });
+      const warns = loadWarns();
+      expect(warns).toHaveLength(1);
+      expect(warns[0].msg).toMatch(/^part of the saved window state/);
+      expect(warns[0].msg).not.toMatch(/centred/);
+      expect(warns[0].fields).toMatchObject({ unusable: ['isMaximized'] });
+    });
+
+    it('a rescued window (bounds legitimately null) stays silent', () => {
+      write({ version: 1, window: { bounds: null, isMaximized: true, displayFingerprint: 'fp' } });
+      expect(loadWarns()).toEqual([]);
+    });
+
+    it('defaulted notification prefs name the keys that were thrown out', () => {
+      write({ version: 1, notifications: { enabled: 'yes', quietStart: 7 } });
+      const warns = loadWarns();
+      expect(warns).toHaveLength(1);
+      expect(warns[0].msg).toMatch(/notification settings .* were unusable/);
+      expect(warns[0].fields).toMatchObject({ file, unusable: ['enabled', 'quietStart'] });
+    });
+
+    it('defaulted update prefs name the keys that were thrown out', () => {
+      write({ version: 1, updates: { autoCheck: 'yes', skippedVersion: null, lastCheck: 7 } });
+      const warns = loadWarns();
+      expect(warns).toHaveLength(1);
+      expect(warns[0].msg).toMatch(/update settings .* were unusable/);
+      // `skippedVersion: null` is "nothing skipped", not a broken value
+      expect(warns[0].fields).toMatchObject({ unusable: ['autoCheck', 'lastCheck'] });
+    });
+
+    it('a prefs block that is not an object is one repair, not four', () => {
+      write({ version: 1, notifications: 'off', updates: 3 });
+      expect(loadWarns().map((w) => w.fields?.unusable)).toEqual([['notifications'], ['updates']]);
+    });
+
+    // `typeof [] === 'object'`, so an array block would otherwise slip past the
+    // block check, find no bad FIELDS, and lose every setting in silence.
+    it('an array where a settings block belongs is caught, not walked', () => {
+      write({ version: 1, notifications: [], updates: [], window: [] });
+      expect(loadWarns().map((w) => w.fields?.unusable)).toEqual([
+        ['window'],
+        ['notifications'],
+        ['updates'],
+      ]);
+    });
+
+    it('a non-boolean auto-trust says it stayed on', () => {
+      write({ version: 1, autoTrust: 'sure' });
+      const warns = loadWarns();
+      expect(warns).toHaveLength(1);
+      expect(warns[0].msg).toMatch(/auto-trust .* leaving it on/);
+    });
+  });
+
+  // A file from the FUTURE is not damaged — this build just cannot read all of
+  // it, and never writes it back. "those cards do not come back" would be a lie
+  // about a file that still has them, and it would bury the one line that
+  // explains the whole situation.
+  it('a file from a newer version reports only that — its unread fields are not "repairs"', () => {
+    write({
+      version: CURRENT_VERSION + 1,
+      sessions: [sess('a'), { shapeThisBuildCannotRead: true }],
+      notifications: { enabled: 'sometimes' },
+    });
+    const warns = loadWarns();
+    expect(warns).toHaveLength(1);
+    expect(warns[0].msg).toMatch(/newer version/i);
+  });
+
+  // The whole reason the notes are collected and emitted after the load: a warn
+  // raised inside the try would be caught by the corrupt-file handler, and a
+  // dangling groupId would cost the user their entire workspace.
+  it('a logger that throws costs nothing — no wipe, no .corrupt, no exception', () => {
+    write({ version: 1, sessions: [{ ...sess('a'), groupId: 'ghost' }] });
+    const angry: Logger = {
+      debug: () => {},
+      info: () => {},
+      warn: () => {
+        throw new Error('the log volume is full');
+      },
+      error: () => {},
+      child: () => angry,
+    };
+    const st = makeStore(file, angry);
+
+    let loaded: ReturnType<typeof st.load> | undefined;
+    expect(() => (loaded = st.load())).not.toThrow();
+    expect(loaded?.sessions.map((s) => s.id)).toEqual(['a']); // the repair still happened
+    expect(fs.existsSync(`${file}.corrupt`)).toBe(false); // and nothing was thrown away
+  });
+
+  it('a whole, healthy file is silent — every field set, nothing repaired', () => {
+    write({
+      version: 1,
+      sessions: [{ ...sess('a'), groupId: 'g1' }],
+      groups: [{ id: 'g1', name: 'IT', color: '#4a90d9' }],
+      window: {
+        bounds: { x: 0, y: 0, width: 1200, height: 800 },
+        isMaximized: false,
+        displayFingerprint: 'fp',
+      },
+      layout: { grid: 'opaque' },
+      ui: { focusedCardId: 'a' },
+      notifications: { enabled: true, osToasts: false, quietStart: '22:00', quietEnd: '07:00' },
+      autoTrust: false,
+      updates: { autoCheck: false, skippedVersion: '0.2.0' },
+    });
+    expect(loadWarns()).toEqual([]);
+  });
+
+  it('a file this app just wrote reloads silently — the repairs never fire on our own output', () => {
+    const a = makeStore(file);
+    a.load();
+    a.upsertGroup({ id: 'g1', name: 'IT', color: '#4a90d9' });
+    a.upsertSession({ ...sess('a'), groupId: 'g1' });
+    a.setWindow({
+      bounds: { x: 10, y: 20, width: 1200, height: 800 },
+      isMaximized: false,
+      displayFingerprint: displayFingerprint([primary]),
+    });
+    a.setNotificationPrefs({ osToasts: true });
+    a.setUpdatePrefs({ skippedVersion: '0.2.0' });
+    a.save();
+    expect(loadWarns()).toEqual([]);
+  });
+});
+
 describe('schema version dispatch (P2-E15-13, §5.26 / AR-P2-9)', () => {
   /** A file on disk with an arbitrary `version` value and real content. */
   const writeFile = (version: unknown): void =>
