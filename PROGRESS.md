@@ -184,6 +184,37 @@ structure adopting #228's temp-dir registry, verified by a local
 > #260 branch to root-cause and fix without weakening the
 > determinate-bar assertion.
 >
+> **TRAIN MERGED + v0.1.1 CUT (2026-08-06 evening):** the Actions
+> outage cleared after ~3.5 h (6 status polls); one CI kick
+> (empty commit — dropped events don't replay), 4/4 green FIRST
+> TRY, **#321 merged (merge commit, main @ b7c605f)** — all six
+> member PRs flipped MERGED, issues #274 #294 #310 #260 #300
+> closed, #261 comment-closed citing #308+#318+#313/#319, all
+> seven branches deleted, worktrees detached clean. Release
+> v0.1.1: bump+changelog committed, tag pushed, E19-02 workflow
+> run → see below. Historical detail of the outage block follows.
+>
+> **(history) TRAIN + RELEASE (Dan-authorized 2026-08-06 ~15:00): BUILT AND
+> BLOCKED BY A GITHUB ACTIONS MAJOR OUTAGE.** train/2026-08-06 (PR
+> #321) carries all six queued branches — merged ZERO conflicts,
+> both stream.spec.ts blocks verified present, full local gate
+> green: lint/typecheck clean, unit 2362/2362 ×2 (one transient
+> file-level fail on the first run, gone on two consecutive
+> re-runs), e2e 197+1 under the lock. But githubstatus.com reports
+> **Actions: major_outage** — run creation for this repo stopped
+> ~18:00Z (the afternoon's "starvation" was the leading edge; the
+> 17:53Z main-push run for #317's merge was all-lanes 0-step
+> cancelled — infra, NOT code). PR #321 got no run despite open,
+> reopen, and an empty-commit synchronize. The v0.1.1 release plan
+> (bump+changelog → tag → E19-02 workflow) is equally blocked —
+> the workflow runs on Actions. **Dan's call (2026-08-06 ~16:30):
+> WAIT for GitHub — no --admin, no manual release.** Watchdog
+> loop: on Actions recovery → train CI green → merge #321
+> (--merge) → close #261 w/ comment → delete branches → release
+> v0.1.1 (bump+changelog → tag → E19-02 workflow) → Dan's
+> one-click test steps. #316 (#300) rides the train. Local main
+> checkout: train branch checked out.
+>
 > **DAN INTERJECTED MID-RUN (2026-08-06):** hit the Direct-mode
 > handoff-banner bug LIVE (allow-all session, banner flashes ~5s on
 > every permission ask) and sent a 4-point code-level diagnosis from
