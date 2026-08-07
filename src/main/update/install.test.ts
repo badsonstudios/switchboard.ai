@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { UpdateInstaller, pickInstallerAsset, resolveHandshake } from './install';
+import { UpdateInstaller, pickInstallerAsset, resolveHandshake, resolveOffer } from './install';
 import { DownloadError } from './download';
 import type { UpdateCheckResult, UpdateInstallStatus, UpdatePrefs } from '../../shared/update';
 
@@ -366,6 +366,80 @@ describe('the post-update handshake', () => {
       running: '0.1.0',
     });
     expect(prefs.pendingUpdateVersion).toBe('');
+  });
+});
+
+describe('the stale offer — pressing Update on a release that is gone (#315)', () => {
+  // The race: a window is open on "v9.9.9 is available", the release is
+  // withdrawn, the daily check notices, and THEN the user presses Update. Main
+  // is the side that decides what gets installed, so the press is refused —
+  // this block is about refusing it with the right reason attached.
+
+  it('lets a live offer through, unchanged', () => {
+    const live = offer();
+    const decision = resolveOffer(live);
+    expect(decision.ok).toBe(true);
+    // The same object, not a copy: what gets installed is what was checked.
+    expect(decision.ok && decision.offer).toBe(live);
+  });
+
+  it('refuses a WITHDRAWN release as `no-offer` — never as `no-asset`', () => {
+    // THE defect. The release went away, so the next check answered
+    // "up-to-date"; the dialog on screen still shows the old offer.
+    const decision = resolveOffer({
+      ok: true,
+      state: 'up-to-date',
+      currentVersion: '0.1.0',
+      checkedAt: '2026-08-06T01:00:00.000Z',
+    });
+    expect(decision).toEqual({
+      ok: false,
+      status: { phase: 'failed', version: '', received: 0, total: 0, reason: 'no-offer' },
+    });
+  });
+
+  it('names no version — the newest release is not the one they pressed Update on', () => {
+    // `latestVersion` on an up-to-date result is whatever is newest NOW, which
+    // is a different release from the one whose notes are on screen. Reporting
+    // it would be a second small lie in the same sentence.
+    const decision = resolveOffer({
+      ok: true,
+      state: 'up-to-date',
+      currentVersion: '0.1.0',
+      latestVersion: '0.1.0',
+      checkedAt: '2026-08-06T01:00:00.000Z',
+    });
+    expect(decision.ok).toBe(false);
+    expect(!decision.ok && decision.status.version).toBe('');
+  });
+
+  it('refuses every not-available state, and a check that never ran', () => {
+    // Withdrawn, superseded, or a later check that could not reach the feed:
+    // main is not standing behind a release in any of them, and the user's next
+    // move — ask again — is the same.
+    const base = { currentVersion: '0.1.0', checkedAt: '2026-08-06T01:00:00.000Z' };
+    const states: Array<UpdateCheckResult> = [
+      { ...base, ok: true, state: 'up-to-date' },
+      { ...base, ok: false, state: 'failed', reason: 'network' },
+      { ...base, ok: false, state: 'failed', reason: 'auth' },
+      { ...base, ok: false, state: 'disabled', reason: 'no-token' },
+    ];
+    for (const result of states) {
+      const decision = resolveOffer(result);
+      expect(decision.ok, result.state + '/' + result.reason).toBe(false);
+      expect(!decision.ok && decision.status.reason).toBe('no-offer');
+    }
+    // …and the boundary case: an install requested before any check completed.
+    expect(resolveOffer(null)).toMatchObject({ ok: false, status: { reason: 'no-offer' } });
+  });
+
+  it('is a fail-open record like every other refusal — nothing thrown, nothing running', () => {
+    const decision = resolveOffer(null);
+    expect(!decision.ok && decision.status.phase).toBe('failed');
+    // A terminal phase with no bytes claimed: the dialog must not show a
+    // progress bar for a download that never started.
+    expect(!decision.ok && decision.status.received).toBe(0);
+    expect(!decision.ok && decision.status.total).toBe(0);
   });
 });
 

@@ -28,7 +28,7 @@ import { parsePopoutFeatures } from './popout-bounds';
 import { scanSlashCommands } from './capabilities/slash-commands';
 import { buildMenuTemplate } from './app-menu';
 import { UpdateService, FEED_ENV, isAllowedReleaseUrl } from './update/service';
-import { UpdateInstaller, UPDATE_DIR_NAME, resolveHandshake } from './update/install';
+import { UpdateInstaller, UPDATE_DIR_NAME, resolveHandshake, resolveOffer } from './update/install';
 import { launchInstaller } from './update/installer';
 import type { UpdateHandshake, UpdateInstallStatus } from '../shared/update';
 import { installTerminalAccelerators, makeAcceleratorDeps } from './terminal-accelerators';
@@ -1024,14 +1024,20 @@ app
     // the whole capability is built the other way round.
     broker.handle('update:install', async (): Promise<UpdateInstallStatus> => {
       const offered = updates.lastResult();
-      if (!offered || offered.state !== 'available') {
-        // The renderer's dialog is showing something main no longer believes —
-        // a window left open across a release being withdrawn. Answer honestly
-        // rather than downloading whatever was last cached.
-        updateLog.warn('an install was requested with no release on offer');
-        return { phase: 'failed', version: '', received: 0, total: 0, reason: 'no-asset' };
+      // The renderer's dialog is showing something main no longer believes — a
+      // window left open across a release being withdrawn (#315). Answer
+      // honestly, and with the RIGHT reason: `no-offer` says the offer is gone,
+      // where the `no-asset` this used to return blamed the release's files.
+      const decision = resolveOffer(offered);
+      if (!decision.ok) {
+        updateLog.warn('an install was requested with no release on offer', {
+          // The distinction the UI does not carry, kept where it is useful.
+          state: offered?.state ?? 'never-checked',
+          reason: offered?.reason,
+        });
+        return decision.status;
       }
-      return installer.install(offered);
+      return installer.install(decision.offer);
     });
     broker.handle('update:cancelInstall', () => {
       installer.cancel();
