@@ -66,6 +66,7 @@
     "installFailedTitle": "That update could not be installed",
     "failedChecksum": "The download did not match the checksum the release published, so it was deleted and nothing was run. This is almost always a download that went wrong — try again, or get the installer from the release page.",
     "failedNoAsset": "This release has no installer this app can verify, so there is nothing to install automatically. The release page has the files.",
+    "failedNoOffer": "That release is no longer on offer — it was withdrawn, replaced, or could not be confirmed since this box opened. Nothing was downloaded. Check for updates again to see what's available now.",
     "failedUnsupported": "One-click updates are Windows-only for now. The release page has what you need.",
     "failedNoToken": "This machine has no credentials for the release files, so the download could not start.",
     "failedAuth": "The credentials on this machine were refused when downloading the installer.",
