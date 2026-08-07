@@ -437,9 +437,25 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     return manager.interrupt(sessionId);
   });
   // "Allow all (this session)": answered at the SERVER from now on — no
-  // hold, no needs-permission event, no beep (review P2 #19, Dan round 4)
+  // hold, no needs-permission event, no beep (review P2 #19, Dan round 4).
+  //
+  // BOTH channels (#319). It told the hooks alone, which is the whole of the
+  // promise for a PTY session and none of it for a Direct one: a stream
+  // session's permissions ride `can_use_tool`, and `HookListener.maybeHold`
+  // passes those straight through before it ever looks at its allow-all set. So
+  // stream allow-all lived only in the renderer — every gated call still had to
+  // reach a window, still beeped on the way, and a session with no window could
+  // not run a gated tool at all.
+  //
+  // Unconditional in both directions rather than branching on the session's
+  // transport. Both sets are keyed by the same live id, both are ignored by the
+  // channel that does not carry that session's permissions, and both are
+  // dropped by the same teardown — so telling both is one line cheaper than
+  // asking, and cannot go stale the way a transport test would.
   broker.handle('sessions:allowAllSession', (_e, liveId: string) => {
-    if (typeof liveId === 'string') hooks.setAllowAll(liveId);
+    if (typeof liveId !== 'string') return;
+    hooks.setAllowAll(liveId);
+    streamPermissions?.setAllowAll(liveId);
   });
 
   // Feed view blocks (P2-E12-06): live stream + backlog for attach.

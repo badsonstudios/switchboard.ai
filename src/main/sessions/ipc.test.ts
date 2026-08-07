@@ -108,6 +108,8 @@ function harness(
   const buildHookSettings = vi.fn(() => ({ hooks: {} }));
   const warn = vi.fn();
   const askedFor: string[] = [];
+  /** live ids the HOOK listener was told to allow-all (#319) */
+  const allowedAll: string[] = [];
   /** the watcher's reset listeners, so a test can fire one (P2-E18-10) */
   const resets: Array<(sessionId: string, cause?: string) => void> = [];
   const watchAccepts = opts.watchAccepts ?? true;
@@ -239,6 +241,11 @@ function harness(
           if (hookPending[i].sessionId === id) hookPending.splice(i, 1);
         }
       },
+      // the hook half of "Allow all (this session)" (#319). Recorded rather
+      // than no-op'd because the claim under test is that ONE click reaches
+      // BOTH channels — a fake that swallowed it could only prove the stream
+      // half, which is the half that was already there.
+      setAllowAll: (id: string) => allowedAll.push(id),
       buildHookSettings,
     },
     transcripts: {
@@ -302,6 +309,7 @@ function harness(
     buildHookSettings,
     warn,
     askedFor,
+    allowedAll,
     pushed,
     resets,
     trace,
@@ -1899,5 +1907,110 @@ describe('a card cannot be renamed to nothing (#294)', () => {
 
   it('still caps a long title at 120 characters', () => {
     expect(rename('W'.repeat(200)).map((s) => s.identity.title)).toEqual(['W'.repeat(120)]);
+  });
+});
+
+// #319 — "Allow all (this session)" has to reach BOTH permission channels.
+//
+// It told `HookListener` and nothing else. That is the whole of the promise for
+// a PTY session and none of it for a Direct one: `HookListener.maybeHold`
+// returns 'pass' for a stream session BEFORE it consults its allow-all set, so
+// the grant sat in a set that could never match. Stream allow-all therefore
+// lived only in the renderer — every gated call still had to reach a live
+// window, still raised `permission-held` on the way (beep, taskbar flash,
+// Events row), and a session whose window was closed could not run a gated tool
+// at all.
+//
+// These use the REAL `StreamPermissions`, so what is asserted is the wiring end
+// to end: one IPC call in, a `control_response` on the transport out, and
+// nothing pushed at the renderer in between.
+describe('allow-all is granted on both channels (#319)', () => {
+  const CARD = 'card-1';
+  let dir: string;
+  tempDirEach('sb-allowall-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir, CARD);
+
+  /** the allow the router sends the CLI when the session answers for itself */
+  function autoAllow(requestId: string): Record<string, unknown> {
+    return {
+      type: 'control_response',
+      response: {
+        subtype: 'success',
+        request_id: requestId,
+        response: { behavior: 'allow', updatedInput: { file_path: 'src/app.ts', content: 'x' } },
+      },
+    };
+  }
+
+  it('one click reaches the hook listener AND the stream router', () => {
+    const { perms } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
+    start(h);
+
+    h.call('sessions:allowAllSession', 'live-1');
+
+    expect(h.allowedAll).toEqual(['live-1']);
+    expect(perms.isAllowAll('live-1')).toBe(true);
+  });
+
+  // The behaviour the grant is FOR, through the real router: the CLI is
+  // answered here, and the renderer is never told there was a question.
+  it('a gated call is then answered at the server, with no bar raised', () => {
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
+    start(h);
+    h.call('sessions:allowAllSession', 'live-1');
+
+    perms.offer('live-1', canUseTool('req-1'));
+
+    expect(sent).toEqual([{ sessionId: 'live-1', msg: autoAllow('req-1') }]);
+    expect(asked(h)).toEqual([]); // no sessions:permissionRequest
+    expect(perms.pendingRequests()).toEqual([]); // and nothing left holding
+  });
+
+  it('without the grant the same call still raises a bar', () => {
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
+    start(h);
+
+    perms.offer('live-1', canUseTool('req-1'));
+
+    expect(sent).toEqual([]);
+    expect(asked(h)).toHaveLength(1);
+  });
+
+  // Keyed by LIVE id, so the session that replaces this one asks again — the
+  // renderer's semantics (`sessionStore.allowAllByLive`) and the hook
+  // listener's, now shared by the third holder of the same fact.
+  it('closing the card ends the grant', () => {
+    const { perms } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
+    start(h);
+    h.call('sessions:allowAllSession', 'live-1');
+
+    h.call('sessions:closeCard', CARD);
+
+    expect(perms.isAllowAll('live-1')).toBe(false);
+  });
+
+  it('a non-string id grants nothing anywhere', () => {
+    const { perms } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
+    start(h);
+
+    h.call('sessions:allowAllSession', 42 as unknown as string);
+
+    expect(h.allowedAll).toEqual([]);
+    expect(perms.isAllowAll('live-1')).toBe(false);
+  });
+
+  // The PTY-only wiring has to survive it: `streamPermissions` is optional in
+  // these deps and was undefined in every test in this file until #202.
+  it('works with no stream router at all', () => {
+    const h = harness(undefined, dir, { prior: card() });
+    start(h);
+
+    expect(() => h.call('sessions:allowAllSession', 'live-1')).not.toThrow();
+    expect(h.allowedAll).toEqual(['live-1']);
   });
 });

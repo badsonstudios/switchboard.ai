@@ -99,6 +99,7 @@ export class SessionManager {
   private readonly streamMessageListeners = new Set<
     (sessionId: string, msg: Record<string, unknown>) => void
   >();
+  private permissionHoldSuppressor: ((sessionId: string) => boolean) | null = null;
 
   constructor(
     private readonly registry: ContributionRegistry<MainContributions>,
@@ -220,7 +221,7 @@ export class SessionManager {
       //    to whoever else needs them (P2-E18-07's permission router).
       proc.onMessage((m) => {
         const ev = streamStatusEvent(m);
-        if (ev) this.apply(id, ev);
+        if (ev && !this.holdSuppressed(id, ev)) this.apply(id, ev);
         for (const l of this.streamMessageListeners) {
           try {
             l(id, m);
@@ -368,6 +369,57 @@ export class SessionManager {
     if (!handle?.send) return false;
     handle.send(msg);
     return true;
+  }
+
+  /**
+   * Teach the stream pump which sessions answer their own gated calls (#319).
+   *
+   * "Allow all (this session)" promises no hold, no needs-permission event and
+   * no beep — `HookListener.setAllowAll`'s docblock has said so since P2 — and
+   * Direct mode broke every part of it. `streamStatusEvent` maps a
+   * `can_use_tool` to `permission-held`, which lands here, and `apply` fans it
+   * out to `onStatusChange` → `feed.ingest` → ATTENTION → the Notifier's
+   * `shell.beep()` and taskbar flash, plus an Events row. Per gated call. For a
+   * session the user explicitly told us to stop asking about.
+   *
+   * IT HAS TO BE HERE, and that is the whole design decision. The obvious home
+   * is `StreamPermissions.offer` — where the allow-all verdict is actually
+   * given — but the status is applied on the line ABOVE the fan-out that
+   * reaches it, so by the time the router sees the message the beep has already
+   * happened. The only place that can suppress a hold is the place that applies
+   * it.
+   *
+   * A predicate rather than the router itself, matching `StreamPermissions`'
+   * own `ApplyStatus`: this asks one question and must not be able to answer
+   * any others. A setter rather than a constructor argument because the two
+   * collaborators are cyclic — the router is built with `manager.apply` — and a
+   * setter is the honest shape of that, not a workaround for it.
+   *
+   * SUPPRESSES `permission-held` AND NOTHING ELSE. Every other stream event
+   * from an allow-all session is exactly as meaningful as before.
+   */
+  setPermissionHoldSuppressor(fn: (sessionId: string) => boolean): void {
+    this.permissionHoldSuppressor = fn;
+  }
+
+  /** Should this event be dropped rather than applied? Only ever true for a
+   *  `permission-held` from an allow-all session — and never when the
+   *  predicate throws: "I can't tell" must fall back to the honest status, not
+   *  to silence (a suppressed hold nobody answers is a card stuck on
+   *  `working` while the CLI waits). */
+  private holdSuppressed(id: string, ev: SessionEvent): boolean {
+    if (ev.kind !== 'permission-held' || !this.permissionHoldSuppressor) return false;
+    let suppress = false;
+    try {
+      suppress = this.permissionHoldSuppressor(id) === true;
+    } catch (err) {
+      this.log.error('permission-hold suppressor threw', { sessionId: id, error: String(err) });
+      return false;
+    }
+    if (suppress) {
+      this.log.debug('permission-held suppressed: allow-all session', { sessionId: id });
+    }
+    return suppress;
   }
 
   /** Hook/permission/user events feed the state machine here. */

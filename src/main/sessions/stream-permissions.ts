@@ -46,28 +46,95 @@ export type SendToSession = (sessionId: string, msg: unknown) => boolean;
  */
 export type ApplyStatus = (sessionId: string, ev: SessionEvent) => void;
 
+/**
+ * The fail-open half (#319). Optional, and both default to the hook path's
+ * behaviour, so a call site that knows nothing about either is no worse off
+ * than it was — but the app wires both, and there is only one app.
+ */
+export interface StreamPermissionsOptions {
+  /**
+   * Is there a renderer that could answer a hold? Same provider the hook path
+   * takes (`HookListener.hasLiveWindow`), and it must be the same expression:
+   * two liveness checks that could disagree would mean one channel failing open
+   * while the other parks.
+   */
+  hasLiveWindow?: () => boolean;
+  /** How long a question may go unanswered. Defaults to the hook path's 300s. */
+  holdTimeoutMs?: number;
+}
+
 interface Pending {
   sessionId: string;
   /** the CLI's own request id — what the control_response must echo back */
   nativeRequestId: string;
   request: PermissionRequest;
+  /** the fail-open deadline (#319) — cleared by every exit from `pending` */
+  timer: NodeJS.Timeout;
 }
 
 export class StreamPermissions {
   private readonly pending = new Map<string, Pending>();
   private readonly requestListeners = new Set<(r: PermissionRequest) => void>();
   private readonly resolvedListeners = new Set<(requestId: string) => void>();
+  /**
+   * LIVE sessions where the user chose "Allow all (this session)" (#319).
+   *
+   * The stream twin of `HookListener.allowAllSessions`, and it exists for the
+   * same reason that one does: an allow-all session must not hold, beep, or
+   * round-trip the renderer for every gated call — the verdict is answered
+   * right here. Until this existed, stream allow-all was RENDERER-ONLY (a Set
+   * in `sessionStore`), so `sessions:allowAllSession` told main nothing, and an
+   * allow-all Direct session still needed a live window to run a gated tool.
+   *
+   * Keyed by LIVE id so a respawn asks again — `HookListener`'s semantics, and
+   * the renderer's (`sessionStore.allowAllByLive`). Cleared in `forgetSession`,
+   * which is where a live id stops existing.
+   */
+  private readonly allowAllSessions = new Set<string>();
+  /** sessions already warned about having no window to ask — see `offer` */
+  private readonly noWindowWarned = new Set<string>();
 
   constructor(
     private readonly send: SendToSession,
     private readonly applyStatus: ApplyStatus,
-    private readonly log: Logger
+    private readonly log: Logger,
+    private readonly opts: StreamPermissionsOptions = {}
   ) {}
+
+  /**
+   * Is there a renderer that could answer a hold? A provider that THROWS counts
+   * as "no" — "I can't tell" must never resolve to "park the CLI". Absent
+   * provider = assume yes (unit tests, and any call site that predates #319).
+   *
+   * Copied in shape from `HookListener.windowLive` deliberately: the two are
+   * the same question asked by the two channels, and a reader who has
+   * understood one has understood both.
+   */
+  private windowLive(): boolean {
+    try {
+      return this.opts.hasLiveWindow?.() !== false;
+    } catch (err) {
+      this.log.warn('window liveness check threw — treating as no window', {
+        error: String(err),
+      });
+      return false;
+    }
+  }
 
   /**
    * Offer one `control_request` to the user. Ignores anything that is not
    * `can_use_tool` — `hook_callback` and `mcp_message` ride the same channel
    * and are plumbing, not questions.
+   *
+   * Three ways out, in the hook path's order (#319):
+   *
+   * 1. **allow-all** — answered here, no hold, no push, no beep;
+   * 2. **no live window** — answered here as a DENY, because nobody can;
+   * 3. otherwise it is held, on a deadline.
+   *
+   * Order matters and is the same order `HookListener.maybeHold` uses: an
+   * allow-all verdict never needed a renderer, so checking liveness first would
+   * turn allows into denies the moment the user closed the window.
    */
   offer(sessionId: string, msg: Record<string, unknown>): void {
     if (msg.type !== 'control_request') return;
@@ -99,7 +166,70 @@ export class StreamPermissions {
         ? (req.permission_suggestions as Array<Record<string, unknown>>)
         : undefined,
     };
-    this.pending.set(requestId, { sessionId, nativeRequestId, request });
+
+    // 1. Allow-all: the user already answered every question this session will
+    //    ask. Answer at the server — no pending entry, no listener push, and
+    //    therefore no `sessions:permissionRequest`, no review bar, and no
+    //    Events entry (the last one comes from the STATUS, suppressed at
+    //    `SessionManager.onMessage`; see `setPermissionHoldSuppressor`).
+    if (this.allowAllSessions.has(sessionId)) {
+      const sent = this.send(sessionId, controlResponse(nativeRequestId, { behavior: 'allow', updatedInput: request.input }));
+      // NO `applyStatus`, deliberately, and this is the exact mirror of the
+      // hook path: `maybeHold` returns 'answered' for an allow-all session and
+      // the caller applies nothing, because a question that was never asked has
+      // no answer to record. The hold is suppressed BEFORE it is applied
+      // (`SessionManager.setPermissionHoldSuppressor`), so there is nothing here
+      // to undo.
+      //
+      // Resolving anyway would look like free insurance and is not: this
+      // session can be in `needs-permission` for a reason that has nothing to do
+      // with this call — a request offered before the grant and still sitting in
+      // the card's queue, or a `Notification` hook on a mixed session — and
+      // walking it to `working` would put the status back to lying, which is
+      // the whole of #310 pointed the other way.
+      this.log.debug('gated call auto-allowed (allow-all session)', {
+        sessionId,
+        requestId,
+        tool: request.tool,
+        delivered: sent,
+      });
+      return;
+    }
+
+    // 2. Nobody to ask — the window is closed, destroyed, or its renderer
+    //    crashed while sessions kept running. Holding here parks the CLI FOR
+    //    EVER: nothing else answers a `control_request`, and unlike a held
+    //    PreToolUse there is no TUI prompt waiting behind it to take over.
+    //
+    //    So this channel's fail-open is a DENY, for the reason `forgetSession`
+    //    gives below: a `can_use_tool` has no "no opinion" answer — the
+    //    transport IS the decision — and a refused tool call is recoverable
+    //    where a wedged session is not. The user can always ask again.
+    if (!this.windowLive()) {
+      // Loud the first time per session, quiet after: a closed window with a
+      // busy session produces one of these per gated call, and a log that
+      // repeats one line for ever is a log nobody reads (the hook path's rule).
+      const first = !this.noWindowWarned.has(sessionId);
+      this.noWindowWarned.add(sessionId);
+      const where = { sessionId, requestId, tool: request.tool };
+      const message = this.unavailable('No switchboard window was open to review this request');
+      this.send(sessionId, controlResponse(nativeRequestId, { behavior: 'deny', message }));
+      // Unlike `forgetSession`, this session is ALIVE and carries on: the
+      // `permission-held` that `streamStatusEvent` already applied one message
+      // ago has to end, or the card the user eventually reopens shows a
+      // question that was answered while they were away.
+      this.applyStatus(sessionId, { kind: 'permission-resolved' });
+      if (first) this.log.warn('no live window to ask — denying to keep the session moving', where);
+      else this.log.debug('no live window to ask — denying to keep the session moving', where);
+      return;
+    }
+
+    // 3. Held, on a deadline.
+    const timer = setTimeout(() => {
+      this.failOpen(requestId, 'permission hold timed out');
+    }, this.opts.holdTimeoutMs ?? 300_000);
+    timer.unref?.();
+    this.pending.set(requestId, { sessionId, nativeRequestId, request, timer });
     this.log.info('stream permission requested', {
       sessionId,
       requestId,
@@ -137,6 +267,7 @@ export class StreamPermissions {
     const p = this.pending.get(requestId);
     if (!p) return false;
     this.pending.delete(requestId);
+    clearTimeout(p.timer);
 
     const payload =
       decision === 'allow'
@@ -176,13 +307,117 @@ export class StreamPermissions {
    * it. Answering the CLI is the whole job here; moving the badge is not.
    */
   forgetSession(sessionId: string, why: string): void {
+    // "this session" ends here — the grant is keyed by LIVE id, so the session
+    // that replaces this one asks again (#319). Mirrors
+    // `HookListener.unregisterSession`.
+    this.allowAllSessions.delete(sessionId);
+    this.noWindowWarned.delete(sessionId);
     for (const [id, p] of [...this.pending]) {
       if (p.sessionId !== sessionId) continue;
       this.pending.delete(id);
+      clearTimeout(p.timer);
       this.send(p.sessionId, controlResponse(p.nativeRequestId, { behavior: 'deny', message: why }));
       this.log.info('stream permission auto-denied', { requestId: id, sessionId, why });
       this.notifyResolved(id);
     }
+  }
+
+  /**
+   * Fail every parked request open at once, across every session (#319).
+   *
+   * The renderer is gone — window closed, or its process died — and the
+   * sessions are still running in main. The `hasLiveWindow` gate in `offer`
+   * only helps the calls that arrive AFTER that; anything already held would
+   * otherwise sit out the full timeout with nothing able to decide it, and this
+   * channel's timeout is the only thing between it and for ever.
+   *
+   * `HookListener.releaseHeld`'s twin, called from the same `onRendererLost` —
+   * and one behaviour apart from it, deliberately. The hook path releases by
+   * ANSWERING NOTHING, which lets the CLI's own TUI prompt take the question.
+   * A `control_request` has no such fallback: the CLI is blocked on us and on
+   * nothing else, so "no opinion" is not one of the things we can say. See
+   * `forgetSession` for the full argument; this takes the same posture for the
+   * same reason.
+   *
+   * Unlike `forgetSession` it DOES apply `permission-resolved`. That function's
+   * two callers are teardowns and its comment names the hazard — a status
+   * transition a beat before the session's own exit lands. Here the sessions
+   * are alive and will keep working; leaving them on `needs-permission` would
+   * mean the user reopens the window to a card claiming to hold a question that
+   * was answered while they were away.
+   */
+  releaseHeld(reason: string): void {
+    const ids = [...this.pending.keys()];
+    if (ids.length === 0) return;
+    this.log.warn('releasing held stream permissions — denying to keep the sessions moving', {
+      reason,
+      count: ids.length,
+    });
+    for (const id of ids) this.failOpen(id, reason);
+  }
+
+  /**
+   * What the MODEL is told when nobody could answer (#319).
+   *
+   * Not a log line. The CLI feeds a deny message straight to Claude, and
+   * `HookListener.verdict` records what happens when one reads wrong: a denial
+   * that sounds like infrastructure gets ROUTED AROUND — Claude announced it
+   * was "getting blocked by something called switchboard" and reached for a
+   * second tool, then a third, until it got what the user had refused.
+   *
+   * These denials are the failure mode that reads most like a sandbox, so they
+   * have to say three things: nobody was available, it is not a restriction,
+   * and asking again is the way through. And one thing `verdict`'s denial says
+   * that this must NOT: that the user decided. The user decided nothing — that
+   * is the entire problem being reported.
+   */
+  private unavailable(what: string): string {
+    return (
+      `${what}, so switchboard declined it rather than leave you blocked for ever. ` +
+      'This is NOT a sandbox restriction, a misconfiguration, or a decision anyone made ' +
+      'about this request — there was simply nobody available to review it. Do not work ' +
+      'around it with another tool. Say so and ask again; it will be reviewed then.'
+    );
+  }
+
+  /**
+   * Answer one held request the user never got to — deadline or lost renderer.
+   *
+   * Deny, apply, notify: the same three steps `decide` takes, minus the user.
+   */
+  private failOpen(requestId: string, why: string): void {
+    const p = this.pending.get(requestId);
+    if (!p) return;
+    this.pending.delete(requestId);
+    clearTimeout(p.timer);
+    const message = this.unavailable('Nobody in switchboard answered this request in time');
+    this.send(p.sessionId, controlResponse(p.nativeRequestId, { behavior: 'deny', message }));
+    this.applyStatus(p.sessionId, { kind: 'permission-resolved' });
+    this.log.warn('stream permission failed open (denied)', {
+      requestId,
+      sessionId: p.sessionId,
+      why,
+    });
+    this.notifyResolved(requestId);
+  }
+
+  /**
+   * Mark a LIVE session as allow-all: gated calls are answered `allow` at the
+   * server, with no hold, no `needs-permission` event, and no beep (#319).
+   *
+   * Verbatim the contract `HookListener.setAllowAll`'s docblock has stated
+   * since P2 — and which Direct mode did not honour, because stream allow-all
+   * lived only in the renderer. `sessions:allowAllSession` now tells both.
+   */
+  setAllowAll(sessionId: string): void {
+    this.allowAllSessions.add(sessionId);
+    this.log.info('allow-all enabled for stream session', { sessionId });
+  }
+
+  /** Does this live session answer its own gated calls? (`SessionManager`'s
+   *  `permission-held` suppressor asks this — see `offer` step 1.) */
+  isAllowAll(sessionId: string): boolean {
+    return this.allowAllSessions.has(sessionId);
   }
 
   pendingRequests(): PermissionRequest[] {

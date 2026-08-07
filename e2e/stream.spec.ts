@@ -834,3 +834,108 @@ test.describe('allow-all in Direct mode never hands off to a terminal (#310)', (
     await expect(w.getByText(HANDOFF)).toHaveCount(0);
   });
 });
+
+// #319 — an allow-all Direct session answers its own gated calls, in MAIN.
+//
+// #310 killed the handoff banner and left the rest of the promise unkept. Dan
+// still got a BEEP and a taskbar flash on every gated call of an allow-all
+// Direct session, plus an Events row, because the verdict lived only in the
+// renderer: `sessions:allowAllSession` told `HookListener` (which passes stream
+// sessions straight through) and nothing else, so every call still travelled
+// main -> renderer -> main, and `streamStatusEvent` mapped it to
+// `permission-held` on the way — `apply` -> `onStatusChange` -> `feed.ingest` ->
+// ATTENTION -> `Notifier.shell.beep()` -> taskbar flash -> an Events row.
+//
+// The beep is not observable from here. THE STATUS IT HANGS OFF IS, and it is
+// the same signal: nothing reaches the Notifier that did not first become a
+// status change, and nothing becomes an Events row either. So a turn that never
+// enters `needs-permission` is a turn that cannot have beeped.
+//
+// `!permhang` again, for #310's reason and one more. It models the silence a
+// real tool call spends most of its life in — the fake performs the write and
+// then emits NOTHING — and that silence is what gives this test teeth: with the
+// suppression reverted the card enters `needs-permission` and STAYS there,
+// because the CLI has nothing more to say and (allow-all having answered at the
+// server) there is no decision coming to resolve it either. Measured both ways;
+// see the assertions.
+test.describe('allow-all in Direct mode answers at the server (#319)', () => {
+  let a: LaunchedApp | undefined;
+  test.afterEach(async () => {
+    const launched = a;
+    a = undefined; // cleared BEFORE the close — see `teardown`
+    await teardown(launched);
+  });
+
+  const permissionRow = 'nav .rail-row[data-session-status="needs-permission"]';
+
+  test('a gated call raises no attention at all: no status, no Events row', async () => {
+    test.setTimeout(90_000);
+    const folder = tempProjectFolder();
+    a = await launchApp({
+      seedFolder: folder,
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+    });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+
+    // 1. the first call is answered by hand — this is what turns allow-all on,
+    //    and it is the only attention this session is allowed to raise.
+    await box.click();
+    await box.fill('!perm .claude/scripts/one.sh');
+    await box.press('Enter');
+    await expect(w.getByText(/sensitive file/)).toBeVisible({ timeout: 30_000 });
+    // it really did reach needs-permission — otherwise the absences below prove
+    // only that nothing ever happens in this app
+    await expect(w.locator(permissionRow)).toHaveCount(1, { timeout: 15_000 });
+    await w.getByRole('button', { name: 'Allow all (this session)' }).click();
+    await expect(() => {
+      expect(fs.existsSync(path.join(folder, '.claude', 'scripts', 'one.sh'))).toBe(true);
+    }).toPass({ timeout: 20_000 });
+    // and the baseline is clean again before anything is counted
+    await expect(w.locator(permissionRow)).toHaveCount(0, { timeout: 20_000 });
+    await expect(w.locator('aside [data-event-kind="needs-permission"]')).toHaveCount(0);
+
+    // 2. count every commit in which the rail claims this session needs
+    //    permission. `attributes` matters and `characterData` does not: the
+    //    status is an ATTRIBUTE on a row that is never added or removed, so an
+    //    observer without it would watch the wrong thing and pass for ever.
+    await w.evaluate((selector) => {
+      const win = window as unknown as { __sbPermFrames?: number };
+      win.__sbPermFrames = 0;
+      const look = (): void => {
+        if (document.querySelector(selector)) win.__sbPermFrames!++;
+      };
+      new MutationObserver(look).observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+      });
+      look(); // the state it starts in counts too
+    }, permissionRow);
+
+    // 3. a gated call answered entirely in main, followed by the silence.
+    await box.click();
+    await box.fill('!permhang .claude/scripts/two.sh');
+    await box.press('Enter');
+    await expect(() => {
+      expect(fs.existsSync(path.join(folder, '.claude', 'scripts', 'two.sh'))).toBe(true);
+    }).toPass({ timeout: 30_000 });
+    // The file proves the CLI got its answer without a renderer round trip.
+    // Now sit in the silence — nothing further will ever arrive on this turn.
+    await w.waitForTimeout(3_000);
+
+    // 4. the claim. No frame of `needs-permission`, so no beep and no flash…
+    const frames = await w.evaluate(
+      () => (window as unknown as { __sbPermFrames?: number }).__sbPermFrames ?? -1
+    );
+    expect(frames, 'the rail reported needs-permission during an auto-allowed call').toBe(0);
+    // …and the same fact read off the other surface it would have reached.
+    await expect(w.locator('aside [data-event-kind="needs-permission"]')).toHaveCount(0);
+    // no review bar was raised either: the request never left main
+    await expect(w.getByText(/sensitive file/)).toHaveCount(0);
+  });
+});
