@@ -91,7 +91,11 @@ export class StreamPermissions {
    * which is where a live id stops existing.
    */
   private readonly allowAllSessions = new Set<string>();
-  /** sessions already warned about having no window to ask — see `offer` */
+  /**
+   * Sessions already warned about having no window to ask — see `offer`.
+   * Membership means "warned about the outage we are IN", not "warned once,
+   * ever": `offer` re-arms it the moment a live window is seen again (#334).
+   */
   private readonly noWindowWarned = new Set<string>();
 
   constructor(
@@ -223,6 +227,12 @@ export class StreamPermissions {
       else this.log.debug('no live window to ask — denying to keep the session moving', where);
       return;
     }
+    // A window is back. Re-arm the warning so the NEXT outage is loud again
+    // (#334) — same fix, same reason, same place as `HookListener.maybeHold`,
+    // because these two blocks are the same question asked by the two channels
+    // and must not drift. `forgetSession` clears it too, but only when the
+    // session itself ends; a session outlives many windows.
+    this.noWindowWarned.delete(sessionId);
 
     // 3. Held, on a deadline.
     const timer = setTimeout(() => {
