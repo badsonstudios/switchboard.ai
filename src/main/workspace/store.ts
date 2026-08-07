@@ -6,13 +6,15 @@
 // SessionManager.create({...identity}, {resumeSessionId: nativeSessionId}).
 //
 // Persistence rules: tolerant load (corrupt file -> backed aside, fresh
-// start — never crash on our own state), atomic save (tmp + rename),
+// start — never crash on our own state) but never a SILENT one: every repair
+// load makes, up to and including throwing the whole file away, writes a warn
+// naming what it cost (#344). Atomic save (tmp + rename),
 // debounced save-soon for churny callers, and a version dispatch on the way in
 // (§5.26) — a file from a FUTURE version is shown but never written back.
 import fs from 'fs';
 import path from 'path';
 import { Rectangle } from 'electron';
-import { Logger } from '../log/logger';
+import { LogFields, Logger } from '../log/logger';
 import { SessionIdentity } from '../sessions/session-manager';
 import { WindowState, mergeState, isOnAnyDisplay } from '../window-state';
 import { UpdatePrefs } from '../../shared/update';
@@ -179,6 +181,26 @@ export class WorkspaceStore {
 
   load(): WorkspaceState {
     this.readOnly = false;
+    // Everything this load has to say, COLLECTED rather than logged where it is
+    // found (#344) and emitted at the bottom. A warn raised inside the `try`
+    // below would, if the logger ever threw, land in the corrupt-file `catch` —
+    // a diagnostic that destroys the workspace it was diagnosing, which
+    // fail-open (P6) says must not be possible.
+    //
+    // Two lists, because that `catch` treats them differently: what is true of
+    // the FILE stands whatever happens next, while a repair describes the state
+    // being built — and the catch throws that state away.
+    const fileNotes: LoadNote[] = [];
+    const repairNotes: LoadNote[] = [];
+    /**
+     * Note a repair. Silent while READ-ONLY: a file from the future is not
+     * damaged, this build just cannot read all of it, nothing is written back,
+     * and the read-only line already says so — "those cards do not come back"
+     * would be a lie about a file that still has them.
+     */
+    const note = (msg: string, fields?: LogFields): void => {
+      if (!this.readOnly) repairNotes.push({ msg, fields });
+    };
     try {
       const parsed: unknown = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       // `null`, a bare number, an array: valid JSON, not a workspace. Throwing
@@ -196,54 +218,122 @@ export class WorkspaceStore {
         // lossy v1 and destroy whatever this build cannot see. So: display it,
         // never write it.
         this.readOnly = true;
-        this.log?.warn(
-          'workspace file was written by a newer version of switchboard.ai — loading it read-only; changes made this run will NOT be saved',
-          { file: this.file, fileVersion, supportedVersion: CURRENT_VERSION }
-        );
+        fileNotes.push({
+          msg: 'workspace file was written by a newer version of switchboard.ai — loading it read-only; changes made this run will NOT be saved',
+          fields: { fileVersion, supportedVersion: CURRENT_VERSION },
+        });
       }
       // Unknown future versions have no migration; fall through to the current
       // reader and let the sanitizer keep whatever still makes sense. (Nothing
       // below is reset in the `catch` on purpose: if the sanitizer ever chokes
       // on a future file, staying read-only is the safe half of the failure.)
       const raw = (MIGRATIONS[fileVersion] ?? passthrough)(obj) as Partial<WorkspaceState>;
-      const groups = (Array.isArray(raw.groups) ? raw.groups.filter(isSaneGroup) : []).map((g) => {
+      const groups = keepSane(raw.groups, isSaneGroup, 'group', note).map((g) => {
         const repaired = repairGroupName(g);
         // identity compare: the repair hands BACK the same object when the
         // name was fine, so a new one means it stepped in
         if (repaired !== g)
-          this.log?.warn('a group in the workspace file had a blank name — using a placeholder', {
-            file: this.file,
+          note('a group in the workspace file had a blank name — using a placeholder', {
             groupId: g.id,
             name: PLACEHOLDER_GROUP_NAME,
           });
         return repaired;
       });
       const groupIds = new Set(groups.map((g) => g.id));
+      // a dangling groupId (group gone, e.g. hand-edited file) degrades to ungrouped
+      const orphaned: string[] = [];
+      const sessions = keepSane(raw.sessions, isSaneSession, 'session', note).map((s) => {
+        if (!s.groupId || groupIds.has(s.groupId)) return s;
+        orphaned.push(s.id);
+        return { ...s, groupId: undefined };
+      });
+      if (orphaned.length > 0)
+        note(
+          'sessions in the workspace file named a group that is not in it — loading them ungrouped',
+          // bounded like everything else this file writes: one bad `groups`
+          // entry can orphan every session in the workspace
+          { sessionIds: orphaned.slice(0, MAX_LISTED_IDS), count: orphaned.length }
+        );
+
+      const window = sanitizeWindow(raw.window);
+      if (window.repaired.length > 0)
+        note(
+          // the consequence differs: losing the whole record (or the rect)
+          // centres the window, losing only `isMaximized` does not move it
+          window.value?.bounds
+            ? 'part of the saved window state in the workspace file was unusable — using the default for it'
+            : 'the saved window position in the workspace file was unusable — opening centred at the default size',
+          { unusable: window.repaired }
+        );
+
+      const notifications = sanitizeNotifications(raw.notifications);
+      if (notifications.repaired.length > 0)
+        note('notification settings in the workspace file were unusable — using the defaults', {
+          unusable: notifications.repaired,
+        });
+
+      const updates = sanitizeUpdates(raw.updates);
+      if (updates.repaired.length > 0)
+        note('update settings in the workspace file were unusable — using the defaults', {
+          unusable: updates.repaired,
+        });
+
+      if (wrongType(raw, 'autoTrust', 'boolean'))
+        note('the auto-trust setting in the workspace file was not true or false — leaving it on');
+
       this.state = {
         version: CURRENT_VERSION,
-        sessions: (Array.isArray(raw.sessions) ? raw.sessions.filter(isSaneSession) : []).map(
-          // a dangling groupId (group gone, e.g. hand-edited file) degrades to ungrouped
-          (s) => (s.groupId && !groupIds.has(s.groupId) ? { ...s, groupId: undefined } : s)
-        ),
+        sessions,
         groups,
-        window: sanitizeWindow(raw.window),
+        window: window.value,
         layout: raw.layout ?? null,
         ui: raw.ui ?? null,
-        notifications: sanitizeNotifications(raw.notifications),
+        notifications: notifications.value,
         autoTrust: raw.autoTrust !== false, // default on
-        updates: sanitizeUpdates(raw.updates),
+        updates: updates.value,
       };
     } catch (err) {
       // corrupt/missing: back the corpse aside (post-mortem material), start fresh
+      //
+      // This used to be `void err;` — the reason, the fact, and the set-aside
+      // path all thrown away (#344). It is the loudest thing this store can do
+      // to a user (every card, group and pane gone, a workspace that looks
+      // factory-fresh) and it was the only failure here with nothing written
+      // anywhere. Nothing is surfaced in the UI yet — that posture question is
+      // #207's — so the log line is the whole diagnosis.
+      repairNotes.length = 0; // they described a state this catch just binned
       if (fs.existsSync(this.file)) {
+        let setAside: string | undefined;
+        let setAsideError: string | undefined;
         try {
           fs.copyFileSync(this.file, `${this.file}.corrupt`);
-        } catch {
-          /* best-effort */
+          setAside = `${this.file}.corrupt`;
+        } catch (copyErr) {
+          setAsideError = String(copyErr); // best-effort, but no longer secret
         }
+        fileNotes.push({
+          msg: 'workspace file could not be read — starting with an empty workspace; the sessions, groups and layout it held are not restored',
+          fields: {
+            // the stack, not just the message: this catch is also the net for a
+            // sanitizer that chokes on a hand-edited file, and there the frame
+            // IS the diagnosis (a JSON syntax error reads the same either way)
+            error: err instanceof Error && err.stack ? err.stack : String(err),
+            ...(setAside ? { setAside } : {}),
+            ...(setAsideError ? { setAsideError } : {}),
+          },
+        });
       }
+      // A file that is simply ABSENT is first launch, not a fault: no warn.
       this.state = emptyState();
-      void err;
+    }
+    for (const n of [...fileNotes, ...repairNotes]) {
+      try {
+        this.log?.warn(n.msg, { file: this.file, ...n.fields });
+      } catch {
+        // Saying what broke must never be the thing that breaks (P6). Also the
+        // reason these run out here: a throw INSIDE the try above would have
+        // been read as a corrupt file.
+      }
     }
     return this.snapshot();
   }
@@ -328,7 +418,7 @@ export class WorkspaceStore {
     // merge-patch semantics: the enabled-toggle must not reset osToasts /
     // quiet hours to defaults (review P1 #13 — replace-then-sanitize wiped
     // every pref the caller didn't send)
-    this.state.notifications = sanitizeNotifications({ ...this.state.notifications, ...p });
+    this.state.notifications = sanitizeNotifications({ ...this.state.notifications, ...p }).value;
     this.saveSoon();
   }
 
@@ -338,7 +428,7 @@ export class WorkspaceStore {
 
   /** Merge-patch, for the reason the notification prefs are (review P1 #13). */
   setUpdatePrefs(p: Partial<UpdatePrefs>): void {
-    this.state.updates = sanitizeUpdates({ ...this.state.updates, ...p });
+    this.state.updates = sanitizeUpdates({ ...this.state.updates, ...p }).value;
     this.saveSoon();
   }
 
@@ -408,6 +498,75 @@ export class WorkspaceStore {
   }
 }
 
+/**
+ * What a sanitizer produced, plus the field names it had to step in on (#344).
+ *
+ * The sanitizers stay pure and stay the single place that knows what "usable"
+ * means; `load()` is the only caller that turns a repair into a log line —
+ * `setNotificationPrefs`/`setUpdatePrefs` run the same code on live IPC input,
+ * where a rejected field is the API working, not a file going wrong.
+ */
+interface Repaired<T> {
+  value: T;
+  /** field names that were present but unusable — empty means nothing moved */
+  repaired: string[];
+}
+
+/**
+ * Is `key` present in `o` but of the wrong type — i.e. a REPAIR rather than a
+ * default? `undefined` and `null` are "not saved" and never count: a first
+ * launch, an older file that predates a field, and an explicit null all mean
+ * the same thing to the reader, and warning about them would make every launch
+ * noisy for nothing.
+ */
+function wrongType(o: object, key: string, type: 'string' | 'boolean'): boolean {
+  const v = (o as Record<string, unknown>)[key];
+  return v !== undefined && v !== null && typeof v !== type;
+}
+
+/** A warn `load()` decided on, emitted once the load is over. See `load()`. */
+interface LoadNote {
+  msg: string;
+  fields?: LogFields;
+}
+
+/** How many ids one log line may name before it just carries the count. */
+const MAX_LISTED_IDS = 20;
+
+/** What each list costs the user when entries in it cannot be read. */
+const LOST: Record<'session' | 'group', string> = {
+  session: 'those cards do not come back',
+  group: 'any sessions in them load ungrouped',
+};
+
+/**
+ * Keep the entries of a persisted list this build can actually use, noting what
+ * was thrown away (#344).
+ *
+ * Absent or `null` is an empty workspace, not a repair — a first launch must
+ * stay silent. A non-list where a list belongs IS one, and the LOUDER of the
+ * two: it costs the user everything the list held, not some of it.
+ */
+function keepSane<T>(
+  raw: unknown,
+  sane: (v: unknown) => v is T,
+  what: 'session' | 'group',
+  note: (msg: string, fields?: LogFields) => void
+): T[] {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) {
+    note(`the ${what} list in the workspace file was not a list — ignoring all of it; ${LOST[what]}`);
+    return [];
+  }
+  const kept = (raw as unknown[]).filter(sane);
+  if (kept.length < raw.length)
+    note(
+      `some ${what} entries in the workspace file were unusable and were dropped — ${LOST[what]}`,
+      { dropped: raw.length - kept.length, kept: kept.length }
+    );
+  return kept;
+}
+
 function isSaneSession(s: unknown): s is PersistedSession {
   const x = s as Partial<PersistedSession>;
   return (
@@ -455,14 +614,31 @@ function repairGroupName(g: PersistedGroup): PersistedGroup {
   return g.name.trim().length > 0 ? g : { ...g, name: PLACEHOLDER_GROUP_NAME };
 }
 
-function sanitizeNotifications(n: unknown): NotificationPrefsState {
-  if (typeof n !== 'object' || n === null) return { enabled: true };
+/** Which of `keys` are present in `o` but the wrong type, in the order given. */
+function badFields(o: object, keys: readonly [string, 'string' | 'boolean'][]): string[] {
+  return keys.filter(([k, t]) => wrongType(o, k, t)).map(([k]) => k);
+}
+
+function sanitizeNotifications(n: unknown): Repaired<NotificationPrefsState> {
+  // A whole block that is not an object (an ARRAY is not one either) loses
+  // every setting in it at once, so it is named as one repair rather than
+  // field by field.
+  if (typeof n !== 'object' || n === null || Array.isArray(n))
+    return { value: { enabled: true }, repaired: n == null ? [] : ['notifications'] };
   const x = n as Partial<NotificationPrefsState>;
   return {
-    enabled: x.enabled !== false,
-    osToasts: x.osToasts === true, // default OFF
-    ...(typeof x.quietStart === 'string' ? { quietStart: x.quietStart } : {}),
-    ...(typeof x.quietEnd === 'string' ? { quietEnd: x.quietEnd } : {}),
+    value: {
+      enabled: x.enabled !== false,
+      osToasts: x.osToasts === true, // default OFF
+      ...(typeof x.quietStart === 'string' ? { quietStart: x.quietStart } : {}),
+      ...(typeof x.quietEnd === 'string' ? { quietEnd: x.quietEnd } : {}),
+    },
+    repaired: badFields(n, [
+      ['enabled', 'boolean'],
+      ['osToasts', 'boolean'],
+      ['quietStart', 'string'],
+      ['quietEnd', 'string'],
+    ]),
   };
 }
 
@@ -474,10 +650,11 @@ function sanitizeNotifications(n: unknown): NotificationPrefsState {
  * `skippedVersion` of `null` from a hand-edited file must not become the string
  * "null" and quietly suppress a release nobody skipped.
  */
-function sanitizeUpdates(u: unknown): UpdatePrefs {
-  if (typeof u !== 'object' || u === null) return { autoCheck: true };
+function sanitizeUpdates(u: unknown): Repaired<UpdatePrefs> {
+  if (typeof u !== 'object' || u === null || Array.isArray(u))
+    return { value: { autoCheck: true }, repaired: u == null ? [] : ['updates'] };
   const x = u as Partial<UpdatePrefs>;
-  return {
+  const value: UpdatePrefs = {
     autoCheck: x.autoCheck !== false,
     // Bounded: the value arrives over IPC from the renderer, and every other
     // sanitizer in this file refuses to write something arbitrary to disk. A
@@ -493,12 +670,30 @@ function sanitizeUpdates(u: unknown): UpdatePrefs {
       ? { pendingUpdateVersion: x.pendingUpdateVersion.slice(0, 64) }
       : {}),
   };
+  return {
+    value,
+    repaired: badFields(u, [
+      ['autoCheck', 'boolean'],
+      ['skippedVersion', 'string'],
+      ['lastCheck', 'string'],
+      ['pendingUpdateVersion', 'string'],
+    ]),
+  };
 }
 
-function sanitizeWindow(w: unknown): PersistedWindow | null {
-  if (typeof w !== 'object' || w === null) return null;
+function sanitizeWindow(w: unknown): Repaired<PersistedWindow | null> {
+  // No saved window at all — a first launch. Not a repair.
+  if (w === undefined || w === null) return { value: null, repaired: [] };
+  // Present but not a window record: the whole saved position is lost.
+  if (typeof w !== 'object' || Array.isArray(w)) return { value: null, repaired: ['window'] };
   const fp = (w as { displayFingerprint?: unknown }).displayFingerprint;
-  if (typeof fp !== 'string') return null;
+  if (typeof fp !== 'string') return { value: null, repaired: ['displayFingerprint'] };
   const merged = mergeState(w);
-  return { ...merged, displayFingerprint: fp };
+  const bounds = (w as { bounds?: unknown }).bounds;
+  const repaired = badFields(w, [['isMaximized', 'boolean']]);
+  // `bounds: null` is a legitimate saved value (a rescued window); only bounds
+  // that were WRITTEN and came back unusable — non-finite, or below the minimum
+  // size mergeState enforces — count as a repair.
+  if (bounds !== undefined && bounds !== null && merged.bounds === null) repaired.unshift('bounds');
+  return { value: { ...merged, displayFingerprint: fp }, repaired };
 }
