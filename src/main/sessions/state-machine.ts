@@ -63,6 +63,28 @@ export interface TransitionResult {
   note?: string;
 }
 
+/**
+ * Does this hook event read as "the CLI is asking permission"? (#313.)
+ *
+ * The `Notification` arm's classifier, lifted out because it now has a SECOND
+ * caller: `HookListener.ingest` has to make the same judgement one layer
+ * earlier, to decide whether a stream session's Notification should reach the
+ * state machine at all. Two copies of this regex would be two answers to one
+ * question, and the day they drifted a Notification would be suppressed as a
+ * permission by one and transitioned as an idle nag by the other.
+ *
+ * The blob, not the type alone, and that is measured rather than defensive:
+ * the CLI's debounced nudge labels every on-screen dialog `permission_prompt`
+ * (probed), and the message is where the specifics live.
+ *
+ * False for anything that is not a `Notification` — the caller should not have
+ * to check first, and no other hook event carries this signal.
+ */
+export function isPermissionNotification(ev: SessionEvent): boolean {
+  if (ev.kind !== 'hook' || ev.event !== 'Notification') return false;
+  return /permission/i.test(`${ev.notificationType ?? ''} ${ev.message ?? ''}`);
+}
+
 export function transition(current: SessionStatus, ev: SessionEvent): TransitionResult {
   const to = (status: SessionStatus, note?: string): TransitionResult => ({
     status,
@@ -170,10 +192,21 @@ export function transition(current: SessionStatus, ev: SessionEvent): Transition
           // demoting to needs-permission here would relabel a QUESTION as a
           // permission request — a card asking to approve something, with no
           // approval bar, because nothing was ever held.
-          if (current === 'needs-input' && /permission/i.test(blob)) {
+          if (current === 'needs-input' && isPermissionNotification(ev)) {
             return stay('interactive-prompt-already-known');
           }
-          if (/permission/i.test(blob)) return to('needs-permission');
+          // CONSIDERED AND DECLINED for #313: requiring a HELD request here, or
+          // refusing to override a just-resolved one. Both would need state this
+          // pure function does not have, and — the real objection — this arm is
+          // the ONLY permission signal a PTY session has when our hold policy
+          // deliberately passed the call to the CLI (plan mode never holds;
+          // full-auto gates nothing; anything outside `PRETOOL_MATCHER`). Gating
+          // it on evidence we by definition do not have would trade a nuisance
+          // badge for a session sitting blocked on a terminal prompt with the
+          // card claiming it is working — silent, and strictly worse. The false
+          // alarms are a STREAM problem, and they are answered on the stream, at
+          // the producer (`HookListener.ingest`).
+          if (isPermissionNotification(ev)) return to('needs-permission');
           // "Claude is waiting for your input" is the CLI's 60s IDLE nag —
           // nothing actionable is on screen (Dan's phantom needs-input,
           // 2026-07-22). Idle is calm: no event, no toast.

@@ -27,6 +27,7 @@ function findNodeOnPath(): string | null {
 }
 import { Logger } from '../log/logger';
 import { SessionManager } from '../sessions/session-manager';
+import { SessionEvent, isPermissionNotification } from '../sessions/state-machine';
 import {
   SHELLISH,
   MUTATING,
@@ -737,7 +738,7 @@ export class HookListener {
       );
     }
     this.opts.log.debug('hook event', { sessionId, event });
-    this.opts.manager.apply(sessionId, {
+    const ev: SessionEvent = {
       kind: 'hook',
       event,
       notificationType: typeof e.notification_type === 'string' ? e.notification_type : undefined,
@@ -745,7 +746,48 @@ export class HookListener {
       tool: typeof e.tool_name === 'string' ? e.tool_name : undefined,
       // SessionStart carries source ('compact' fires mid-turn, review P1 #11)
       source: typeof e.source === 'string' ? e.source : undefined,
-    });
+    };
+    // A STREAM session's permissions belong to the control channel, not here
+    // (#313) — the same ruling as the hold guard in `maybeHold`, applied to the
+    // other half of the same problem.
+    //
+    // P2-E18-07 stopped a stream session's PreToolUse being HELD, so there is
+    // no second approval bar. It said nothing about the STATUS, and
+    // `Notification` is the path that reaches it: `state-machine`'s Notification
+    // arm transitions to `needs-permission` on a regex over the CLI's DEBOUNCED
+    // nudge, with no evidence that anything is held and no way to know it is on
+    // a transport that has a better signal. On stream, every real permission
+    // arrives as `can_use_tool` and is mapped exactly (`stream-status.ts`), so a
+    // Notification-driven `needs-permission` is at best a duplicate of a status
+    // we already set — and at worst a FALSE ALARM, the debounced nudge landing
+    // after the request was answered and dragging a working card back to
+    // "needs permission" with nothing held and no bar to answer.
+    //
+    // Suppressed at the PRODUCER rather than in `transition()`, deliberately:
+    // the state machine is a pure function that has never had to know about
+    // transports, and teaching it would mean threading `transport` through
+    // every `SessionEvent` producer to serve one arm. This listener already
+    // knows (`transportFor` has been plumbed since P2-E18-07).
+    //
+    // DROPPING the event is exactly equivalent to not transitioning on it:
+    // `SessionManager.apply` does nothing with a hook event but run it through
+    // `transition`, and a permission-classified blob can only reach the two
+    // `/permission/i` arms — the `needs-input` one already stays. Nothing else
+    // in the payload is consumed on this path (`session_id` was applied above,
+    // before this guard).
+    //
+    // UNMEASURED, as at `maybeHold`: nobody has confirmed whether the real CLI
+    // fires Notification hooks at all under `--permission-prompt-tool stdio`.
+    // The guard is correct either way — if hooks are silent it costs nothing —
+    // but it is a guard, not a finding.
+    if (isPermissionNotification(ev) && this.opts.transportFor?.(sessionId) === 'stream') {
+      this.opts.log.debug('Notification not applied: stream session, permissions ride can_use_tool', {
+        sessionId,
+        notificationType: ev.notificationType,
+      });
+      return;
+    }
+    this.opts.manager.apply(sessionId, ev);
   }
 }
 

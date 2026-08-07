@@ -10,6 +10,7 @@ let out: Record<string, unknown>[];
 let writes: Array<{ path: string; content: string }>;
 let stderrs: string[];
 let exits: number[];
+let hooks: Record<string, unknown>[];
 let proto: FakeStreamProtocol;
 
 const host: FakeStreamHost = {
@@ -18,6 +19,7 @@ const host: FakeStreamHost = {
   stderr: (l) => stderrs.push(l),
   exit: (c) => exits.push(c),
   resolve: (cwd, target) => (target.startsWith('/') ? target : `${cwd}/${target}`),
+  fireHook: (payload) => hooks.push(payload),
 };
 
 beforeEach(() => {
@@ -25,6 +27,7 @@ beforeEach(() => {
   writes = [];
   stderrs = [];
   exits = [];
+  hooks = [];
   proto = new FakeStreamProtocol(host, (m) => out.push(m));
 });
 
@@ -348,6 +351,70 @@ describe('the other scripted behaviours (P2-E18-04)', () => {
   it('ignores message types it does not know, like the real CLI does', () => {
     expect(() => proto.handle({ type: 'something_new', payload: 1 })).not.toThrow();
     expect(out).toEqual([]);
+  });
+});
+
+// #313 — the hook channel a Direct session has and this fake did not.
+//
+// Hooks are independent of the transport: a stream session is spawned with our
+// `--settings` file exactly like a PTY one, so the real CLI can POST a
+// `Notification` while its permissions ride `can_use_tool`. That collision is
+// the whole of #313, and until now the fake could not produce one — which is
+// why #261 part B had to be settled by reading code and why its e2e POSTed the
+// hook from the test process rather than from the session.
+describe('!notify fires a hook Notification (#313)', () => {
+  it('sends the payload the real CLI would, on the hook channel', () => {
+    proto.handle(userMsg('!notify permission_prompt Claude needs your permission to use Write'));
+
+    expect(hooks).toEqual([
+      {
+        hook_event_name: 'Notification',
+        session_id: FAKE_SESSION_ID,
+        cwd: '/work',
+        notification_type: 'permission_prompt',
+        message: 'Claude needs your permission to use Write',
+      },
+    ]);
+  });
+
+  it('the classification is the CALLER own — any type, any message', () => {
+    proto.handle(userMsg('!notify idle Claude is waiting for your input'));
+
+    expect(hooks[0]).toMatchObject({
+      notification_type: 'idle',
+      message: 'Claude is waiting for your input',
+    });
+  });
+
+  it('a type with no message is a notification too', () => {
+    proto.handle(userMsg('!notify permission_prompt'));
+
+    expect(hooks[0]).toMatchObject({ notification_type: 'permission_prompt', message: '' });
+  });
+
+  // The turn is left OPEN on purpose, in the shape of `!hang`: whatever the
+  // notification did to the status has to stay observable, and an `assistant`
+  // message straight after would walk the card back to `working` and hide it.
+  it('emits nothing on the stream and does not end the turn', () => {
+    proto.handle(userMsg('!notify permission_prompt asking'));
+
+    expect(types()).toEqual(['system:init', 'user']); // the per-turn preamble, and nothing else
+  });
+
+  // Every other host of this protocol — `fake-stream-check`, and every test in
+  // this file written before #313 — has no hook channel at all.
+  it('a host without fireHook is unharmed', () => {
+    const bare = new FakeStreamProtocol({ ...host, fireHook: undefined }, (m) => out.push(m));
+
+    expect(() => bare.handle(userMsg('!notify permission_prompt asking'))).not.toThrow();
+    expect(hooks).toEqual([]);
+  });
+
+  it('a bare !notify with no type is an ordinary prompt', () => {
+    proto.handle(userMsg('!notify'));
+
+    expect(hooks).toEqual([]);
+    expect(assistantText()).toBe('FAKE-REPLY: !notify');
   });
 });
 

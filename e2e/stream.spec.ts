@@ -494,7 +494,21 @@ test.describe('switching transport the way a user does (#153)', () => {
   // no PreToolUse, therefore no hold, therefore no approval bar to outrank it.
   // On a PTY session that is the #125 case and the bar is CORRECT (asserted in
   // approval.spec.ts). Here there is no terminal to send anyone to.
-  test('a Direct session in needs-permission offers no bar and no dead button (#261)', async () => {
+  //
+  // RETARGETED FROM `needs-permission` TO `needs-input` BY #313, and the reason
+  // is that #313 removed the state this test used to drive. A permission-
+  // classified Notification no longer reaches the state machine on a stream
+  // session at all — see `stream-notification-guard.test.ts` and the e2e at the
+  // end of this file — so `needs-permission` is now reachable on this transport
+  // ONLY via a held `can_use_tool`, and a held request sets `hasApproval`, which
+  // short-circuits `terminalHandoff` BEFORE the transport check. Driving it that
+  // way would leave this test green for a reason that has nothing to do with the
+  // transport: precisely the failure mode its own comment above is about.
+  //
+  // `needs-input` is the same shape and is still reachable: an unheld, unbarred
+  // status whose handoff branch routes to a terminal a Direct session does not
+  // have. Same rule, same line of `terminalHandoff`, same two absences.
+  test('a Direct session waiting on input offers no bar and no dead button (#261)', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({
       seedFolder: folder,
@@ -516,14 +530,17 @@ test.describe('switching transport the way a user does (#153)', () => {
     const post = await hookPoster(a);
     await post(title, {
       hook_event_name: 'Notification',
-      notification_type: 'permission_prompt',
-      message: 'Claude needs your permission to use Write',
+      notification_type: 'generic',
+      // NOT "waiting for your input", which is the CLI's 60s idle nag and
+      // classifies to `idle` — a calm state with no bar at all. This is the
+      // other arm: a bare "waiting", which is the CLI stopped on something.
+      message: 'Claude is waiting on you',
     });
 
     // The session REALLY reached the state — without this the two absence
     // assertions below prove only that nothing happened, which is the exact
     // failure mode of the test above.
-    await expect(w.locator('nav .rail-row[data-session-status="needs-permission"]')).toHaveCount(1, {
+    await expect(w.locator('nav .rail-row[data-session-status="needs-input"]')).toHaveCount(1, {
       timeout: 15_000,
     });
 
@@ -532,7 +549,7 @@ test.describe('switching transport the way a user does (#153)', () => {
     // the user would have clicked to nowhere.
     await expect(w.locator('[data-handoff]')).toHaveCount(0);
     await expect(w.getByRole('button', { name: /Open Terminal/i })).toHaveCount(0);
-    await expect(w.getByText(/asking permission in the terminal/i)).toHaveCount(0);
+    await expect(w.getByText(/waiting for your answer/i)).toHaveCount(0);
   });
 
   // The path Dan took, and the one that was still broken after the restart
@@ -832,5 +849,96 @@ test.describe('allow-all in Direct mode never hands off to a terminal (#310)', (
     );
     expect(frames, 'the terminal-handoff bar rendered during an auto-allowed tool call').toBe(0);
     await expect(w.getByText(HANDOFF)).toHaveCount(0);
+  });
+});
+
+// #313 — a Direct session's own hook Notification cannot flip it to
+// needs-permission, and the SESSION fires it, not the test.
+//
+// A Direct session runs BOTH signal channels into one state machine.
+// `stream-status.ts` maps `can_use_tool` -> `needs-permission` exactly; the hook
+// `Notification` arm in `state-machine.ts` transitions on a regex over the CLI's
+// DEBOUNCED nudge, with no evidence anything is held. On stream every real
+// permission arrives on the control channel, so the hook route is a duplicate at
+// best and a false alarm at worst — the nudge landing after a request was
+// answered, dragging a working card back to "needs permission" with nothing held
+// and no bar to answer. That is the beep, the taskbar flash and the Events row
+// Dan reported, for a question that does not exist.
+//
+// THE FAKE FIRES IT ITSELF (`!notify`), and that is the point of the seam rather
+// than a flourish. `hookPoster` posts from the test process, which proves what
+// the listener does with a POST; it cannot prove a Direct session HAS a hook
+// channel at all — and it was exactly that unanswerable question that left #261
+// part B to be settled by reading code. `!notify` runs the forwarder command out
+// of the `--settings` file the session was spawned with, so this is the real
+// port, the real token and the real listener, reached from inside the session.
+//
+// The turn is left OPEN by `!notify` (the `!hang` shape), so nothing overwrites
+// the status afterwards: a false `needs-permission` would be entered and STAYED
+// IN, which is what gives the first phase its teeth. Measured with the guard
+// reverted: the row reaches `needs-permission` and never leaves.
+test.describe('a hook Notification cannot fake a permission on Direct (#313)', () => {
+  let a: LaunchedApp | undefined;
+  test.afterEach(async () => {
+    const launched = a;
+    a = undefined; // cleared BEFORE the close — see `teardown`
+    await teardown(launched);
+  });
+
+  test('the nudge is dropped, while the same channel still moves the badge', async () => {
+    test.setTimeout(90_000);
+    const folder = tempProjectFolder();
+    a = await launchApp({
+      seedFolder: folder,
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+    });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    // it really is Direct — otherwise all of this is a PTY test that passes
+    await w.getByRole('tab', { name: 'Terminal' }).first().click();
+    await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 30_000 });
+    await w.getByRole('tab', { name: 'Session', exact: true }).first().click();
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    const row = (status: string): string => `nav .rail-row[data-session-status="${status}"]`;
+
+    // 1. the nudge. Verbatim the payload the live incident produced: the CLI's
+    //    debounced notification, with no PreToolUse and therefore no hold.
+    await box.click();
+    await box.fill('!notify permission_prompt Claude needs your permission to use Write');
+    await box.press('Enter');
+
+    // The prompt was sent, so the card is working — and it must STAY working:
+    // the notification is fired inside that turn, synchronously, before the fake
+    // goes quiet.
+    await expect(w.locator(row('working'))).toHaveCount(1, { timeout: 20_000 });
+    await w.waitForTimeout(3_000); // nothing else will ever arrive on this turn
+    await expect(w.locator(row('needs-permission'))).toHaveCount(0);
+    // and nothing rang the bell on the way past, either
+    await expect(w.locator('aside [data-event-kind="needs-permission"]')).toHaveCount(0);
+
+    // 2. THE CONTROL, and the reason the absence above means anything. The same
+    //    command, the same forwarder, the same listener — one word of payload
+    //    different — and the badge moves. So the hook channel is live in this
+    //    session and phase 1 was a suppression, not a delivery failure.
+    await box.click();
+    await box.fill('!notify idle Claude is waiting for your input');
+    await box.press('Enter');
+    await expect(w.locator(row('idle'))).toHaveCount(1, { timeout: 20_000 });
+
+    // 3. the tightest form of the claim: the same nudge again, now that the
+    //    channel has been PROVEN live one message ago. (The new prompt walks the
+    //    card back to `working` on its own — `prompt-sent` — so this asserts the
+    //    turn is running and nothing else, exactly as phase 1 did.)
+    await box.click();
+    await box.fill('!notify permission_prompt Claude needs your permission to use Write');
+    await box.press('Enter');
+    await expect(w.locator(row('working'))).toHaveCount(1, { timeout: 20_000 });
+    await w.waitForTimeout(3_000);
+    await expect(w.locator(row('needs-permission'))).toHaveCount(0);
+    await expect(w.locator('aside [data-event-kind="needs-permission"]')).toHaveCount(0);
   });
 });

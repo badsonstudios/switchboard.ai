@@ -11,7 +11,7 @@ import { ProviderAdapter, SpawnOptions, SpawnRecipe } from '../extensibility/con
 import { SlashCommand } from '../../shared/slash-commands';
 import { conversationExists } from '../transcripts/paths';
 import { ensureFolderTrusted } from '../sessions/trust';
-import { claudeProjectsRoot } from './claude';
+import { claudeProjectsRoot, writeSessionSettings } from './claude';
 
 /**
  * The compiled fake CLI.
@@ -110,12 +110,26 @@ export const fakeStreamAdapter: ProviderAdapter = {
         },
       };
     }
+    // `--settings`, exactly as the real adapter builds it (#313).
+    //
+    // The fake declared the `hooks` capability from the day it was written, so
+    // a token was minted and a settings file's worth of hook config was built
+    // for every Direct session — and then thrown away, because this recipe
+    // never passed it on. The child therefore had no way to reach the hook
+    // listener, and "can a Direct session fire a hook Notification?" was
+    // unanswerable in principle rather than merely untested (the same hole as
+    // the ignored transport in #153). The real adapter has always passed it;
+    // a fake that drops it is a fake that hides a bug.
+    const args = [fakeStreamCliPath()];
+    if (options.settings && Object.keys(options.settings).length > 0) {
+      args.push('--settings', writeSessionSettings(options.stateDir, options.sessionId, options.settings));
+    }
     return {
       // process.execPath in the main process IS the Electron binary; with
       // ELECTRON_RUN_AS_NODE it runs plain Node, which is how the four
       // done-when checks already run (`scripts/run-electron-node.js`).
       command: process.execPath,
-      args: [fakeStreamCliPath()],
+      args,
       env: {
         // Set DELIBERATELY, and it survives the S-01 scrub because `buildEnv`
         // applies explicit deltas AFTER deleting the inherited landmines. That
