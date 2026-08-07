@@ -23,6 +23,10 @@ import {
   npmScriptFor,
   targetFor,
   guardBundle,
+  guardE2eBundle,
+  e2eTarget,
+  E2E_TARGET,
+  NO_BUILD_HEADLINE,
   ago,
   run,
 } from './bundle-guard.js';
@@ -590,6 +594,96 @@ describe('check bundles (#298)', () => {
   });
 });
 
+describe('the e2e pre-flight target (#329)', () => {
+  // Playwright's globalSetup guards EVERY way of starting the suite, including
+  // the `npx playwright test` that skips npm — so the report has to name the
+  // command the reader actually typed, and must not claim "NO BUILD RAN" over
+  // an `npm run e2e` that just built.
+  it('names the bare invocation when npm was not involved', () => {
+    const t = e2eTarget({});
+    expect(t.label).toBe('playwright test');
+    expect(t.command).toBe('npx playwright test');
+    expect(t.headline).toBe(NO_BUILD_HEADLINE);
+    expect(t.remedies.map(([cmd]) => cmd)).toContain('npm run e2e');
+  });
+
+  it('names the npm script that is running, via npm_lifecycle_event', () => {
+    expect(e2eTarget({ npm_lifecycle_event: 'e2e:only' }).command).toBe('npm run e2e:only');
+    expect(e2eTarget({ npm_lifecycle_event: 'e2e:ui' }).label).toBe('e2e:ui');
+  });
+
+  it('does not say "NO BUILD RAN" behind the scripts that build', () => {
+    for (const script of ['e2e', 'e2e:headed']) {
+      const t = e2eTarget({ npm_lifecycle_event: script });
+      expect(t.command).toBe(`npm run ${script}`);
+      expect(t.headline).not.toBe(NO_BUILD_HEADLINE);
+    }
+    for (const script of ['e2e:only', 'e2e:ui']) {
+      expect(e2eTarget({ npm_lifecycle_event: script }).headline).toBe(NO_BUILD_HEADLINE);
+    }
+  });
+
+  it('recognises every package.json script that ends in a Playwright run', () => {
+    // The one way this rots: a sixth e2e script lands, `npm_lifecycle_event`
+    // says a name the table has never heard of, and its report quietly starts
+    // advising `npx playwright test` to someone who typed something else. Ask
+    // package.json rather than trusting the table to be maintained — the same
+    // move `npmScriptFor` makes for the check bundles, and the same shape as
+    // `check-scripts.test.ts` (#182).
+    const { scripts } = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json')));
+    const e2eScripts = Object.entries(scripts).filter(([, cmd]) => /\bplaywright test\b/.test(cmd));
+    expect(e2eScripts.length).toBeGreaterThan(0);
+
+    for (const [name, cmd] of e2eScripts) {
+      const t = e2eTarget({ npm_lifecycle_event: name });
+      expect({ name, command: t.command }).toEqual({ name, command: `npm run ${name}` });
+      // ...and the headline must match reality: only the scripts that BUILD may
+      // skip the "NO BUILD RAN" banner.
+      const builds = /npm run build/.test(cmd);
+      expect({ name, saysNoBuild: t.headline === NO_BUILD_HEADLINE }).toEqual({
+        name,
+        saysNoBuild: !builds,
+      });
+    }
+  });
+
+  it('falls back to the bare invocation for any other script', () => {
+    // `npm test` spawning playwright, a wrapper script, a future entry point:
+    // an unrecognised name must not be printed as `npm run <it>`.
+    expect(e2eTarget({ npm_lifecycle_event: 'test' }).command).toBe('npx playwright test');
+  });
+
+  it('judges the same artifacts as e2e:only — only the words move', () => {
+    for (const env of [{}, { npm_lifecycle_event: 'e2e' }, { npm_lifecycle_event: 'e2e:only' }]) {
+      expect(e2eTarget(env).artifacts).toEqual(E2E_TARGET.artifacts);
+    }
+  });
+
+  it('passes a fresh bundle and stamps it', () => {
+    const root = project({ sources: { 'src/main/index.ts': 'a' } });
+    let out = '';
+    expect(guardE2eBundle(root, {}, (s) => (out += s))).toBe(true);
+    expect(out).toContain('playwright test — NO BUILD RAN');
+    expect(out).toContain('FRESH');
+  });
+
+  it('fails a stale bundle with a remedy for the command that was typed', () => {
+    const root = project({ sources: { 'src/renderer/App.tsx': 'a' } });
+    touch(root, 'src/renderer/App.tsx', new Date());
+    let out = '';
+    expect(guardE2eBundle(root, { npm_lifecycle_event: 'e2e:only' }, (s) => (out += s))).toBe(false);
+    expect(out).toContain('STALE');
+    expect(out).toContain('src/renderer/App.tsx');
+    expect(out).toContain(`${OVERRIDE_ENV}=1 npm run e2e:only`);
+  });
+
+  it('is honoured by the same override', () => {
+    const root = project({ sources: { 'src/main/index.ts': 'a' } });
+    touch(root, 'src/main/index.ts', new Date());
+    expect(guardE2eBundle(root, { [OVERRIDE_ENV]: '1' }, () => {})).toBe(true);
+  });
+});
+
 describe('isBuildOutput — which runs run-electron-node guards (#298)', () => {
   const root = process.cwd();
 
@@ -609,9 +703,12 @@ describe('isBuildOutput — which runs run-electron-node guards (#298)', () => {
   });
 });
 
-describe('the CLI package.json calls', () => {
+describe('the CLI entry point', () => {
   it('reports on THIS repo without throwing (whatever the verdict)', () => {
-    // The wiring, end to end: `npm run e2e:only` runs exactly this. It must
+    // The hand-run spelling — `node scripts/bundle-guard.js` — and the shape
+    // every in-process caller shares. (#329 moved e2e's call into Playwright's
+    // globalSetup, so no package.json script runs this file directly any more;
+    // it remains the way to ask the question without starting a suite.) It must
     // print its stamp to stderr and exit 0 or 1 - never crash, because a guard
     // that throws blocks a test run it was only supposed to describe.
     //
