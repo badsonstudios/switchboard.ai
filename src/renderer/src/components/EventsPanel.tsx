@@ -175,8 +175,8 @@ export function EventsPanel(props: {
             // Both arrive AFTER mount — one from a handshake round-trip, one
             // when a dialog closes — so a screen reader would otherwise never
             // hear either. `status` rather than `alert`: this is news, and news
-            // waits for a pause. (The reconnect offer below predates the rule
-            // and is left alone rather than changed in an unrelated item.)
+            // waits for a pause. (#314 gave the reconnect offer below the same
+            // pair, so this panel now has ONE announcement idiom.)
             role="status"
             aria-live="polite"
             style={{ color: 'var(--text)', marginBlockEnd: 6 }}
@@ -232,7 +232,18 @@ export function EventsPanel(props: {
             fontSize: 11,
           }}
         >
-          <div style={{ color: 'var(--text)', marginBlockEnd: 6 }}>{t('events.reconnectOffer')}</div>
+          <div
+            // #314: same pair as the update notice above, for the same reason —
+            // a monitor coming back is noticed by the app, not by the user, so
+            // the offer appears long after mount with nothing to draw a screen
+            // reader's attention to it. `polite`, because a display returning is
+            // news you can finish your sentence over.
+            role="status"
+            aria-live="polite"
+            style={{ color: 'var(--text)', marginBlockEnd: 6 }}
+          >
+            {t('events.reconnectOffer')}
+          </div>
           <div style={{ display: 'flex', gap: 6 }}>
             <button
               onClick={props.onRestoreLayout}
