@@ -112,9 +112,30 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
     props.api.title || props.params?.title,
     props.params?.folder
   );
+  // ...and the rest of the identity, from the same place (#312). `IdentityChip`
+  // has rendered an accent dot and a language badge since it was written, and
+  // this — the only site in src/ — passed neither, so every card tab painted the
+  // same grey dot while the header below it drew the card's real accent. §5.11:
+  // one identity, rendered IDENTICALLY everywhere it appears.
+  //
+  // A STORE read, not a `CardParams` field: params are frozen into the dockview
+  // layout blob at `addPanel` and survive restarts, so an accent threaded
+  // through them would be a second copy that a re-assignment could not reach —
+  // the exact bug `storeTitle` above exists to undo. The store's copy comes from
+  // `sessions:cards`, whose `accent` is `record.identity.accentColor`: the same
+  // field, from the same record, that the header's border reads.
+  const accent = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getCardAccent(cardId)
+  );
+  const badge = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getCardBadge(cardId)
+  );
   return (
     <div style={{ paddingInline: 8, display: 'flex', alignItems: 'center', gap: 4, blockSize: '100%' }}>
-      <IdentityChip title={title} compact />
+      {/* undefined accent/badge are passed through as undefined on purpose: the
+          chip's own fallbacks (grey dot, no badge) stay the behaviour for a
+          derived tab and for a card the store has not answered for yet. */}
+      <IdentityChip title={title} accent={accent} badge={badge} compact />
       <button
         onClick={(e) => {
           // close the tab: for a session card this ends the session AND

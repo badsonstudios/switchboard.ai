@@ -373,6 +373,35 @@ describe('identity maps that used to be module globals', () => {
     store.setHiding('card-A', false);
     expect(store.isHiding('card-A')).toBe(false);
   });
+
+  // #312 — the tab strip's side of the identity, the half `getCardTitle` left.
+  it("answers a card's accent and badge, and undefined for what it does not know", () => {
+    store.setSessions([session('card-A', { accent: 'var(--accent-1)', badge: 'TS' })]);
+
+    expect(store.getCardAccent('card-A')).toBe('var(--accent-1)');
+    expect(store.getCardBadge('card-A')).toBe('TS');
+    // a card the store has never heard of, and a tab with no card id at all (a
+    // derived tab): both must read as "no answer", never as a stale neighbour's
+    expect(store.getCardAccent('card-B')).toBeUndefined();
+    expect(store.getCardBadge('card-B')).toBeUndefined();
+    expect(store.getCardAccent(undefined)).toBeUndefined();
+    expect(store.getCardBadge(undefined)).toBeUndefined();
+  });
+
+  it('settles by VALUE, so a useSyncExternalStore snapshot cannot loop', () => {
+    // the reason these are two scalar getters and not one getCardIdentity():
+    // a fresh {accent, badge} per call is a new identity every render, and
+    // React re-renders until the snapshot stops changing — i.e. never
+    store.setSessions([session('card-A', { accent: 'var(--accent-1)', badge: 'TS' })]);
+    expect(store.getCardAccent('card-A')).toBe(store.getCardAccent('card-A'));
+    expect(store.getCardBadge('card-A')).toBe(store.getCardBadge('card-A'));
+  });
+
+  it('reports a session that genuinely has no accent as having none', () => {
+    store.setSessions([{ id: 'card-A', title: 'acme' }]);
+    expect(store.getCardAccent('card-A')).toBeUndefined();
+    expect(store.getCardBadge('card-A')).toBeUndefined();
+  });
 });
 
 describe('SessionStore — presentation (P2-E15-08)', () => {

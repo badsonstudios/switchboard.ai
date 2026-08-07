@@ -64,6 +64,24 @@ function rename(cardId: string, title: string): Promise<void> {
   });
 }
 
+/** Publish a card's whole identity, the way `sessions:cards` does. */
+function publishIdentity(
+  cardId: string,
+  identity: { title?: string; accent?: string; badge?: string }
+): Promise<void> {
+  return act(async () => {
+    sessionStore.setSessions([
+      { id: cardId, title: identity.title ?? 'acme', folder: 'C:\\Projects\\acme', ...identity },
+    ]);
+  });
+}
+
+/** The chip's accent dot: the only `aria-hidden` span it renders. */
+function dotColor(): string {
+  const dot = host.querySelector('span[aria-hidden]') as HTMLElement | null;
+  return dot?.style.background ?? '';
+}
+
 describe('the session tab follows a rename (issue 264)', () => {
   beforeEach(async () => {
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -154,5 +172,109 @@ describe('the session tab follows a rename (issue 264)', () => {
     });
     expect(confirm).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The same defect class as #264 above and as #261/#308 (a declared prop that no
+// caller passes), and it needs the same kind of test: the RULE here is
+// `IdentityChip`, which has rendered an accent dot and a badge correctly since
+// it was written. What no test could see was whether the tab hands it anything.
+// It did not — `<IdentityChip title={title} compact />` — so seven sessions all
+// tabbed the same grey dot while their headers each drew a different accent.
+//
+// Every assertion below reads the real DOM through the real component, so
+// dropping `accent=` or `badge=` at the render site turns them red. Verified by
+// doing exactly that before keeping them.
+describe('the session tab paints the card identity (issue 312)', () => {
+  beforeEach(async () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    document.body.innerHTML = '';
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    close.mockReset();
+    sessionStore.setSessions([]);
+    if (!i18next.isInitialized) {
+      await i18next
+        .use(ICU)
+        .use(initReactI18next)
+        .init({
+          lng: 'en',
+          resources: { en: { translation: en } },
+          interpolation: { escapeValue: false },
+        });
+    }
+  });
+
+  afterEach(async () => {
+    if (root) {
+      const r = root;
+      root = null;
+      await act(async () => r.unmount());
+    }
+    vi.unstubAllGlobals();
+    sessionStore.setSessions([]);
+  });
+
+  it('paints the accent dot in the card colour, not the grey placeholder', async () => {
+    await publishIdentity('c1', { title: 'acme', accent: 'var(--accent-1)' });
+    await mount('acme', { cardId: 'c1', title: 'acme', folder: 'C:\\Projects\\acme' });
+    // token strings, not hex: the repo's lint rule bans raw colours, and jsdom
+    // hands a `var(--…)` background back verbatim (it cannot resolve custom
+    // properties), which is exactly what makes it assertable here
+    expect(dotColor()).toBe('var(--accent-1)');
+    expect(dotColor()).not.toContain('--faint');
+  });
+
+  it('shows the language badge beside the name', async () => {
+    await publishIdentity('c1', { title: 'acme', accent: 'var(--accent-1)', badge: 'TS' });
+    await mount('acme', { cardId: 'c1', title: 'acme', folder: 'C:\\Projects\\acme' });
+    expect(tabText()).toContain('TS');
+  });
+
+  it('gives two cards two different dots — the point of the accent', async () => {
+    // THE USER-VISIBLE CLAIM. One card at a time can pass while every tab still
+    // shares one colour, so this asserts the tabs can be told APART.
+    await act(async () => {
+      sessionStore.setSessions([
+        { id: 'c1', title: 'acme', folder: 'C:\\a', accent: 'var(--accent-1)', badge: 'TS' },
+        { id: 'c2', title: 'beta', folder: 'C:\\b', accent: 'var(--accent-2)', badge: 'PY' },
+      ]);
+    });
+    await mount('acme', { cardId: 'c1', title: 'acme', folder: 'C:\\a' });
+    const first = dotColor();
+    await mount('beta', { cardId: 'c2', title: 'beta', folder: 'C:\\b' });
+    expect(dotColor()).not.toBe(first);
+    expect(first).toBe('var(--accent-1)');
+    expect(dotColor()).toBe('var(--accent-2)');
+  });
+
+  it('follows a re-assignment after the tab is already up', async () => {
+    // The store subscription, not a mount-time snapshot: nothing about the panel
+    // changes here, exactly as in the rename regression above.
+    await publishIdentity('c1', { title: 'acme', accent: 'var(--accent-1)', badge: 'TS' });
+    await mount('acme', { cardId: 'c1', title: 'acme', folder: 'C:\\Projects\\acme' });
+    expect(dotColor()).toBe('var(--accent-1)');
+
+    await publishIdentity('c1', { title: 'acme', accent: 'var(--accent-2)', badge: 'PY' });
+    expect(dotColor()).toBe('var(--accent-2)');
+    expect(tabText()).toContain('PY');
+    expect(tabText()).not.toContain('TS');
+  });
+
+  it('keeps the grey dot for a session that genuinely has no accent', async () => {
+    // Not every card has one — a suspended card restored before its record was
+    // read has neither. The chip's own fallback must survive the wiring.
+    await publishIdentity('c1', { title: 'acme' });
+    await mount('acme', { cardId: 'c1', title: 'acme', folder: 'C:\\Projects\\acme' });
+    expect(dotColor()).toBe('var(--faint)');
+    expect(tabText()).toBe('acme'); // and no badge
+  });
+
+  it('leaves a derived tab grey — no cardId, so the store has no identity for it', async () => {
+    await publishIdentity('c1', { title: 'acme', accent: 'var(--accent-1)', badge: 'TS' });
+    await mount('Changes — acme', { folder: 'C:\\Projects\\acme' });
+    expect(dotColor()).toBe('var(--faint)');
+    expect(tabText()).toBe('Changes — acme');
   });
 });

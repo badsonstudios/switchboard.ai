@@ -10,6 +10,7 @@ import http from 'http';
 import { randomBytes } from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import type { PermissionRequest } from '../../shared/ipc/permissions';
 
 function findNodeOnPath(): string | null {
   const names = process.platform === 'win32' ? ['node.exe'] : ['node'];
@@ -68,36 +69,14 @@ export interface HookListenerOptions {
   transportFor?: (sessionId: string) => 'pty' | 'stream' | undefined;
 }
 
-/**
- * An in-flight permission request (E10-03).
- *
- * ONE shape for both transports (P2-E18-07): a held `PreToolUse` hook, or a
- * `can_use_tool` control request over stream-json. The approval bar must not
- * care which — the user is answering the same question either way, and a second
- * request type would mean a second bar to keep in step with the first.
- *
- * The optional fields exist only on the stream path, because the hook payload
- * simply does not carry them. That asymmetry is the entire argument for the
- * migration, so it is worth seeing in the type: the CLI tells the
- * permission-prompt channel WHY it is asking and what would satisfy it, and
- * tells a hook nothing.
- */
-export interface PermissionRequest {
-  requestId: string;
-  sessionId: string;
-  tool: string;
-  input: Record<string, unknown>;
-  /** Where it came from. Absent = hook (every pre-E18 request). */
-  source?: 'hook' | 'stream';
-  /** Human-readable prose from the CLI — renderable, and we did not write it. */
-  reason?: string;
-  /** e.g. 'safetyCheck' — the `.claude/` guard that started this epic. */
-  reasonType?: string;
-  /** The CLI's own label for the tool, when it differs from `tool`. */
-  displayName?: string;
-  /** Remedies the CLI suggests, e.g. switch this session to acceptEdits. */
-  suggestions?: Array<Record<string, unknown>>;
-}
+// The in-flight permission request (E10-03) now lives in
+// `shared/ipc/permissions`, with its documentation, and is re-exported here
+// because that is where every existing caller already imports it from. It moved
+// because it is a BOUNDARY type — preload and the renderer describe the same
+// object over IPC — and the three hand-kept copies had already drifted: main
+// learned `reasonType`, `displayName` and `suggestions` from the stream
+// transport and neither of the other two ever heard about it (#312).
+export type { PermissionRequest } from '../../shared/ipc/permissions';
 
 /**
  * Hold policy (P2-E10-03, §5.16): hold ONLY calls the CLI itself would prompt

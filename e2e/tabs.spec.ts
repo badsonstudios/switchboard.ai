@@ -77,6 +77,25 @@ test.describe('tab strip (#84)', () => {
     expect(share).toBeLessThanOrEqual(0.45);
     await expect(w.locator('.dv-active-tab')).toBeVisible();
     await expect(w.getByText('Session', { exact: true }).first()).toBeVisible();
+
+    // #312 — and every one of those seven tabs says WHICH session it is.
+    // Riding this test because the setup it needs is the setup this test
+    // already paid for: seven real sessions, all on screen at once. §5.11's
+    // palette promises in its own docstring that "seven sessions get seven
+    // different colors", and until #312 the tab strip was where that promise
+    // died — the dot was hard-coded grey for all of them.
+    //
+    // The unit tests pin the component wiring; only this can see the whole
+    // path — main assigning an accent, `sessions:cards` carrying it, the store
+    // holding it, the tab painting it. Distinctness rather than named colours,
+    // so re-ordering the palette does not make this red.
+    const dotColors = await w.evaluate(() =>
+      [...document.querySelectorAll('.dv-tabs-container .dv-tab')].map(
+        (tab) => getComputedStyle(tab.querySelector('span[aria-hidden]')!).backgroundColor
+      )
+    );
+    expect(dotColors).toHaveLength(7);
+    expect(new Set(dotColors).size, `tabs share a colour: ${dotColors.join(', ')}`).toBe(7);
   });
 
   test('turning wrapping off restores the single-row strip and its dropdown', async () => {
