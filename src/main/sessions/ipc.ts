@@ -2,6 +2,43 @@
 // session core. Hidden panes are ingest-only (S-07): PTY bytes always land in
 // the main-process ring buffer; the renderer gets a live feed ONLY while a
 // pane is attached, and a scrollback snapshot replay on attach.
+//
+// HOW THIS SEAM SAYS NO (#347, following #326's argument for `groups:*` —
+// `main/workspace/group-ipc.ts` holds the full version and is worth reading
+// once). It refuses by RESOLVING a value the caller can read, never by
+// throwing. Most of this file was already there — `sessions:setTransport`
+// answers `{ ok, reason }`, `submitPrompt` / `interrupt` / `decidePermission`
+// answer `false`, `pty:attach` answers `null`, and the `setAutonomy` family
+// returns quietly. `sessions:create` and `sessions:rename` were the two
+// outliers, and the short version of why they changed:
+//
+//   * Every bridge call in the renderer is a bare `void x().then(...)`. A
+//     `.catch()` policy makes today's callers safe and tomorrow's (a palette
+//     command that starts a session, a §5.23 contribution, the context-menu
+//     rename that `sessions:rename` is waiting for and has no caller for yet)
+//     safe only if whoever writes them remembers. A result shape has nothing
+//     to remember, because there is nothing to reject.
+//   * A refusal is now IN THE APP LOG. It was not before: the broker does not
+//     catch handler throws, so Electron printed `Error occurred in handler for
+//     'sessions:create'` to the main process's stderr and the reason never
+//     reached the log sink at all. A card that will not start because its
+//     folder is gone was therefore unexplainable from the logs.
+//   * `null` is data, so the caller can react. `SessionGrid`'s spawn effect
+//     paints the "Session ended" overlay for a start that did not happen —
+//     which is what it already did from its `.catch`, so the screen is
+//     unchanged and only the plumbing is honest.
+//   * A renderer-wide `unhandledrejection` handler would also have stopped the
+//     crash, and would have made the `pageerror` assertions in
+//     `e2e/groups.spec.ts` and `e2e/session.spec.ts` vacuous by swallowing
+//     exactly what they watch for. Rejected for that reason (#326).
+//
+// What did NOT change: every validation still refuses, and the reasons are
+// unchanged. `SessionManager.create` still THROWS for a provider adapter it
+// does not have or a transport it cannot resolve — that is a main-process API
+// with main-process callers (`hook-check`), and this handler is the place where
+// a throw becomes a renderer's problem, so this is where it is turned into an
+// answer. The steps AFTER a successful spawn are left as they are: by then the
+// session is live, and answering `null` would strand it.
 import { BrowserWindow, dialog } from 'electron';
 import fs from 'fs';
 import { SessionManager, SessionRecord } from './session-manager';
@@ -15,7 +52,7 @@ import { Channel } from '../../shared/ipc/capabilities';
 import type { PtyAttachment, PtyChunk } from '../../shared/ipc/pty';
 import type { ProviderCapabilities } from '../extensibility/contributions';
 import { TranscriptWatcher } from '../transcripts/watcher';
-import { Logger } from '../log/logger';
+import { LogFields, Logger } from '../log/logger';
 import { assignAccent, detectProjectType } from './identity';
 import { EventFeed } from '../events/feed';
 import { planSessionStart } from './start-plan';
@@ -96,6 +133,20 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   // Phase-4 plugin needs (P2-E15-04)
   const send = (channel: Channel, payload: unknown): void => {
     deps.broker.send(deps.getWindow(), channel, payload);
+  };
+
+  /**
+   * Say no: `null` to the caller, one line in the log (#347).
+   *
+   * The log line is the whole reason a result shape is not a silent swallow —
+   * the seam still says out loud that it refused and why, in the one place that
+   * knows why. Tests assert on it. Same helper, same wording and same `warn`
+   * level as `groups:*`'s (`main/workspace/group-ipc.ts`), so one log filter
+   * finds every refused mutation in the app.
+   */
+  const refuse = (channel: Channel, reason: string, fields: LogFields = {}): null => {
+    log.warn(`${channel} refused: ${reason}`, fields);
+    return null;
   };
 
   // ── the LIVE half of the `sessions:cards` join (#170) ────────────────────
@@ -532,9 +583,13 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         groupId?: string;
       }
     ) => {
-      // validate untrusted renderer input (§5.29)
+      // Validate untrusted renderer input (§5.29). REFUSED, not thrown (#347):
+      // both of these used to reject the renderer's promise, and the second one
+      // is reachable without anybody doing anything wrong — a persisted card
+      // whose folder was renamed, deleted, or lives on a drive that is not
+      // plugged in reaches here on the first look at that card.
       if (!opts || typeof opts.cardId !== 'string' || typeof opts.folder !== 'string') {
-        throw new Error('cardId and folder required');
+        return refuse('sessions:create', 'cardId and folder are required');
       }
       let isDir = false;
       try {
@@ -542,7 +597,12 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       } catch {
         isDir = false;
       }
-      if (!isDir) throw new Error('folder is not a directory');
+      if (!isDir) {
+        return refuse('sessions:create', 'folder is not a directory', {
+          cardId: opts.cardId,
+          folder: opts.folder,
+        });
+      }
 
       const prior = deps.persist.list().find((s) => s.id === opts.cardId);
 
@@ -691,17 +751,41 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         });
       }
       const canResume = !!plan.resumeSessionId;
-      const record = manager.create(identity, {
-        // no hook capability = nothing injected and no token registered
-        settingsFor: plan.buildSettings,
-        autonomy,
-        resumeSessionId: plan.resumeSessionId,
-        // Which transport to ASK for. The CARD's own choice wins (P2-E18-08b);
-        // the env default is the escape hatch that predates the setting. The
-        // adapter still has the final say — it answers in the recipe, and one
-        // that cannot speak stream-json returns a PTY recipe we honour.
-        transport: prior?.transport ?? deps.preferredTransport?.(),
-      });
+      // THE SPAWN ITSELF, and the last thing here that can fail (#347).
+      //
+      // `SessionManager.create` throws for a provider adapter it does not have,
+      // a transport it cannot resolve, and a `spawn` that fails — all three
+      // deliberately, and all three are correct for a main-process caller. They
+      // are wrong for the renderer, which never sees the message: the broker
+      // does not catch, so the reason went to Electron's stderr and the card
+      // showed a bare "Session ended". `error` and not `warn`, unlike the
+      // validation refusals above: those are input we declined, this is a start
+      // that should have worked. `error` is what makes it look for the cause.
+      let record: SessionRecord;
+      try {
+        record = manager.create(identity, {
+          // no hook capability = nothing injected and no token registered
+          settingsFor: plan.buildSettings,
+          autonomy,
+          resumeSessionId: plan.resumeSessionId,
+          // Which transport to ASK for. The CARD's own choice wins (P2-E18-08b);
+          // the env default is the escape hatch that predates the setting. The
+          // adapter still has the final say — it answers in the recipe, and one
+          // that cannot speak stream-json returns a PTY recipe we honour.
+          transport: prior?.transport ?? deps.preferredTransport?.(),
+        });
+      } catch (err) {
+        // The manager adds no record when spawn fails ("no orphan record: it was
+        // never added"), and nothing is bound until `bindLive` below, so there
+        // is nothing to unwind here.
+        log.error('sessions:create could not start the session', {
+          cardId: opts.cardId,
+          folder: opts.folder,
+          provider: identity.providerId,
+          error: String(err),
+        });
+        return null;
+      }
       bindLive(record.id, opts.cardId);
       // A provider with no transcripts is never watched at all — the session is
       // a terminal and nothing more, which is what §5.3 promises degrading
@@ -980,7 +1064,19 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     for (const [liveId, cid] of cardOfLive) if (cid === cardId) manager.rename(liveId, clean);
   });
 
+  // Rename by LIVE id. Nothing in the renderer calls this yet — the rail and the
+  // palette rename by CARD id, above — which is exactly why it is the channel
+  // #347 is really about: it validated nothing, so a non-string title reached
+  // `title.trim()` (a TypeError) and an unknown id reached `mustGet` (a throw),
+  // and the first caller written against it would have inherited both over an
+  // uncaught `.then`. It answers `null` for a rename that did not happen and the
+  // record for one that did (#347).
   broker.handle('sessions:rename', (_e, liveId: string, title: string) => {
+    if (typeof liveId !== 'string') return refuse('sessions:rename', 'session id must be a string');
+    if (typeof title !== 'string')
+      return refuse('sessions:rename', 'title must be a string', { sessionId: liveId });
+    // A blank title is not a refusal to warn about: `manager.rename` drops it
+    // and says so, the same rule `sessions:renameCard` applies (#294).
     manager.rename(liveId, title);
     const r = manager.get(liveId);
     // persist the rename so it survives a restart
@@ -989,7 +1085,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       const prior = deps.persist.list().find((s) => s.id === cardId);
       if (prior) deps.persist.upsert({ ...prior, identity: { ...prior.identity, title: r.identity.title } });
     }
-    return r;
+    // `null`, not `undefined`, for a session that is not there: "nothing
+    // changed" is then one value across the whole non-throwing contract rather
+    // than two that a caller has to test for separately (#347).
+    return r ?? null;
   });
 
   // attach: replay scrollback, then stream. Returns the snapshot + this

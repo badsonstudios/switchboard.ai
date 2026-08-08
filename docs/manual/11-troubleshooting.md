@@ -78,6 +78,29 @@ Terminal**, answer the prompt there, and the session carries on normally.
 This one is **Terminal mode only** — a [Direct mode](12-direct-mode.md) session
 draws no start-up dialog and has no terminal, so it never shows that bar.
 
+**A card says "Session ended" the moment I open it, and it never started.**
+The usual cause is that **the folder isn't there any more** — it was renamed or
+deleted, or it lives on a drive or network share that isn't connected right now.
+Cards remember the folder they were opened on, so a card can outlive its folder,
+and a session can't start in a folder that doesn't exist.
+
+You'll see the ordinary **Session ended** panel with **Restart** and **Close**.
+Check the folder first:
+
+- **Drive or share not connected?** Connect it and click **Restart**. Nothing
+  was lost — the card, its name and its conversation history are all still
+  there.
+- **Folder renamed or moved?** switchboard can't follow it. Close the card and
+  open a new session on the folder's new location; the conversation history
+  belongs to Claude Code and is keyed to the folder, so a moved folder starts
+  fresh.
+- **Not sure which folder the card was on?** [The log](#where-the-logs-are) has
+  it: a start that was refused writes one line naming the card and the exact
+  folder it tried.
+
+Any other reason a session can't start writes a line to the log too, so if the
+folder is definitely there, that line is what to report.
+
 **Claude asked me in the Terminal instead of in the card.**
 That's the deliberate fallback in the default **Terminal mode**, and the Session
 tab tells you when it happens — a coloured bar along the bottom with an **Open

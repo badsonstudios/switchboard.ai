@@ -82,6 +82,12 @@ If a session ends or crashes, the card stays put and shows **Session ended**
 with two buttons: **Restart** starts it again in the same folder, **Close**
 removes the card. Nothing vanishes on its own.
 
+The same panel appears for a session that never got going — most often because
+the folder it was opened on has been renamed, deleted, or is on a drive that
+isn't plugged in. See
+[a card that says "Session ended" and never started](11-troubleshooting.md#sessions)
+for what to check.
+
 ## Pinning a session you always want to find
 
 Some sessions are the ones you keep coming back to all day. Pin one and

@@ -251,7 +251,11 @@ export class SessionManager {
   }
 
   kill(id: string): void {
-    const r = this.mustGet(id);
+    const r = this.sessions.get(id);
+    if (!r) {
+      this.noSuchSession('kill', id);
+      return;
+    }
     r.killRequested = true;
     // routed to the transport that SPAWNED it, not the default — a stream
     // session killed through the PTY service would simply not die
@@ -477,8 +481,16 @@ export class SessionManager {
   }
 
   rename(id: string, title: string): void {
-    const r = this.mustGet(id);
-    const clean = title.trim();
+    const r = this.sessions.get(id);
+    if (!r) {
+      this.noSuchSession('rename', id);
+      return;
+    }
+    // A BLANK TITLE IS NOT A RENAME (#294) — and neither is one that is not a
+    // string. `sessions:rename` refuses a non-string title before it gets here
+    // (#347); this is the same guard on the other side of the boundary, so a
+    // main-process caller cannot turn `title.trim()` into a TypeError either.
+    const clean = typeof title === 'string' ? title.trim() : '';
     if (!clean) return;
     r.identity = { ...r.identity, title: clean };
     this.log.info('session renamed', { sessionId: id, title: clean });
@@ -508,10 +520,25 @@ export class SessionManager {
     return () => this.exitListeners.delete(l);
   }
 
-  private mustGet(id: string): SessionRecord {
-    const r = this.sessions.get(id);
-    if (!r) throw new Error(`unknown session "${id}"`);
-    return r;
+  /**
+   * An id this manager does not know: logged and dropped, never thrown (#347).
+   *
+   * `kill` and `rename` used to go through a `mustGet` that threw
+   * `unknown session "<id>"`. Every other method in this class has always
+   * tolerated an unknown id — `apply` ("late events for removed sessions are
+   * dropped, not fatal"), `remove`, `setNativeSessionId`, `submitPrompt`,
+   * `interrupt`, `get` — so the throw was the outlier inside the class, and it
+   * was the one that could reach the renderer: `sessions:rename` handed
+   * `mustGet` whatever id it was given, over a bridge call nobody catches.
+   *
+   * Dropping it is also the honest answer. Both callers ask for a side effect on
+   * a session that is gone; there is no side effect left to have, and the two
+   * ways to get here are races rather than defects — a session that exited or was
+   * closed while a rename was in flight, and `hook-check` killing a session whose
+   * process already died. `warn` rather than `debug` because neither is routine.
+   */
+  private noSuchSession(op: string, id: string): void {
+    this.log.warn(`${op} for an unknown session — ignored`, { sessionId: id });
   }
 }
 

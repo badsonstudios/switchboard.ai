@@ -11,6 +11,47 @@ const POPOUT_FLAKY_HERE = process.platform === 'linux';
 const skipPopoutOnLinux = (): void =>
   test.skip(POPOUT_FLAKY_HERE, 'dockview popout opens a 2nd OS window — unreliable under headless xvfb; covered on Windows + macOS');
 
+/**
+ * Every sessions call main refuses, driven straight at the bridge (#347).
+ *
+ * A FREE FUNCTION on purpose: the specs below destructure the Playwright page as
+ * `window`, which shadows the renderer's own `window` inside an `evaluate` body —
+ * the code still runs against the real one, but it typechecks against `Page` and
+ * reads like a mistake. Out here nothing is shadowed.
+ */
+async function sessionsRefusals(
+  page: Page,
+  missingFolder: string
+): Promise<{
+  // The bridge's OWN types, so the `| null` this issue added has to still be
+  // there for this to compile — `unknown` would let it be removed silently.
+  noArgs: Awaited<ReturnType<typeof window.switchboard.sessions.create>>;
+  missingFolder: Awaited<ReturnType<typeof window.switchboard.sessions.create>>;
+  renameGhost: Awaited<ReturnType<typeof window.switchboard.sessions.rename>>;
+  renameBadTitle: Awaited<ReturnType<typeof window.switchboard.sessions.rename>>;
+  before: number;
+  after: number;
+}> {
+  return page.evaluate(async (gone) => {
+    const api = window.switchboard;
+    const before = (await api.sessions.cards()).length;
+    return {
+      // no cardId and no folder at all — the first of the two old throws
+      noArgs: await api.sessions.create(
+        {} as unknown as { cardId: string; folder: string; title: string }
+      ),
+      // a folder that is not there — the reachable one
+      missingFolder: await api.sessions.create({ cardId: 'probe-347', folder: gone, title: 'probe' }),
+      // and the channel with no caller at all: an unknown live id used to reach
+      // `mustGet`, a non-string title used to reach `title.trim()`
+      renameGhost: await api.sessions.rename('no-such-session-347', 'x'),
+      renameBadTitle: await api.sessions.rename('no-such-session-347', 42 as unknown as string),
+      before,
+      after: (await api.sessions.cards()).length,
+    };
+  }, missingFolder);
+}
+
 test.describe('a session card', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
@@ -34,6 +75,38 @@ test.describe('a session card', () => {
     await window.keyboard.type('echo E2E_MARKER_123');
     await window.keyboard.press('Enter');
     await expect(window.getByText(/E2E_MARKER_123/).first()).toBeVisible({ timeout: 15_000 });
+
+    // #347, riding this launch rather than paying for another: a sessions call
+    // main REFUSES comes back as an answer, not as a rejection nobody is
+    // listening for.
+    //
+    // Driving the bridge directly is the point of this probe. The one refusal an
+    // everyday gesture reaches — a card whose folder has been deleted, renamed
+    // or unplugged — arrives at the same handler with the same input, and the
+    // card's spawn effect has always caught, so the SCREEN is not what changed.
+    // What changed is the contract, and the caller who needs it is the one not
+    // written yet: a palette command that starts a session, a §5.23
+    // contribution, or the first caller of `sessions:rename`, which has none at
+    // all. `pageerror` is what witnesses it — an unhandled promise rejection in
+    // the renderer surfaces there — so put the throws back in
+    // `main/sessions/ipc.ts` and this block goes red on `evaluate` itself.
+    //
+    // NOTE for whoever extends this: do NOT add a global `unhandledrejection`
+    // handler to the renderer to quiet something down. It would swallow exactly
+    // what this and `e2e/groups.spec.ts` watch for and leave both vacuous
+    // (flagged in #326's hand-off).
+    const rejections: string[] = [];
+    window.on('pageerror', (e) => rejections.push(e.message));
+    const refused = await sessionsRefusals(window, path.join(folder, 'a-folder-that-was-deleted'));
+
+    expect(refused.noArgs).toBeNull();
+    expect(refused.missingFolder).toBeNull();
+    expect(refused.renameGhost).toBeNull();
+    expect(refused.renameBadTitle).toBeNull();
+    // four refusals and no new card: nothing was half-started
+    expect(refused.after).toBe(refused.before);
+    // ...and zero rejections, which is the property the issue asked for
+    expect(rejections).toEqual([]);
   });
 
   test('pops out into a second OS window (E8-01)', async () => {
