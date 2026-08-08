@@ -92,6 +92,57 @@ interface Live {
   transport?: 'pty' | 'stream';
 }
 
+/**
+ * Why a card is showing the "there is no session here" overlay (#355).
+ *
+ * Two states that used to be one. A session that RAN and then exited is not the
+ * same thing as a session that never started — the card used to say "Session
+ * ended — Exited unexpectedly (code -1)" for both, and for the second one every
+ * word of that is false: nothing ended, nothing exited, and the `-1` is a code
+ * this renderer made up because it had nowhere to get a real one.
+ *
+ * `never-started` carries nothing, deliberately. The REASON lives in the app log
+ * (#347): `sessions:create` answers `null` for a start it refused and logs which
+ * card, which folder and why, and widening the IPC result to carry that back
+ * would be re-architecting the lifecycle for a sentence. The overlay says what
+ * it honestly knows and the log says the rest — which is exactly what the
+ * manual's troubleshooting entry sends the user to.
+ */
+export type CardEnded =
+  | { kind: 'exited'; code: number; crashed: boolean }
+  | { kind: 'never-started' };
+
+/**
+ * The i18n keys the ended overlay renders, for one `CardEnded` (#355).
+ *
+ * A pure function and an export because the overlay itself is unreachable in
+ * unit-land — `SessionCardPanel` needs a live dockview — and the thing worth
+ * pinning is precisely the mapping: which words go with which state. The
+ * component does the `t()` calls; this decides what to translate.
+ */
+export function endedCopy(ended: CardEnded): {
+  heading: string;
+  detail: string;
+  /** ICU args for `detail`, when it takes any */
+  detailVars?: Record<string, unknown>;
+  /** the primary button — "Restart" only makes sense for something that ran */
+  action: string;
+} {
+  if (ended.kind === 'never-started') {
+    return {
+      heading: 'grid.sessionNotStarted',
+      detail: 'grid.notStartedHint',
+      action: 'grid.tryAgain',
+    };
+  }
+  return {
+    heading: 'grid.sessionEnded',
+    detail: ended.crashed ? 'grid.exitCrashed' : 'grid.exitClean',
+    detailVars: { code: ended.code },
+    action: 'grid.restart',
+  };
+}
+
 export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element {
   const { t } = useTranslation();
   const cardId = props.params?.cardId;
@@ -173,7 +224,9 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const { t } = useTranslation();
   const [visible, setVisible] = React.useState<boolean>(props.api.isVisible);
   const [live, setLive] = React.useState<Live | null>(null);
-  const [exited, setExited] = React.useState<{ code: number; crashed: boolean } | null>(null);
+  // Why this card has no session: it ended, or it never started (#355). Named
+  // `ended` and not `exited` because the second case did not exit.
+  const [ended, setEnded] = React.useState<CardEnded | null>(null);
   const [usage, setUsage] = React.useState<{ usage: Usage; model?: string } | null>(null);
   const [binding, setBinding] = React.useState<{
     binding: BindingState;
@@ -272,7 +325,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const [confirmClear, setConfirmClear] = React.useState(false);
   // locked while starting (§5.10 startup-dialog rule) or once the live
   // session is gone — a PTY write to a dead session is a silent no-op
-  const controlsLocked = status === 'starting' || status === 'crashed' || exited !== null;
+  const controlsLocked = status === 'starting' || status === 'crashed' || ended !== null;
   const spawning = React.useRef(false);
   const folder = props.params?.folder;
   // What the card CALLS itself, on screen (#250). The store's copy first, so a
@@ -310,7 +363,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // resume-on-focus: spawn (or --resume) the session when the card first
   // becomes visible. Background restored cards stay suspended until touched.
   React.useEffect(() => {
-    if (!visible || live || exited || suspended || spawning.current || !cardId || !folder) return;
+    if (!visible || live || ended || suspended || spawning.current || !cardId || !folder) return;
     spawning.current = true;
     // titlebar autonomy chip applies to NEW cards; main keeps a card's own
     // autonomy across resumes
@@ -327,12 +380,23 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     // broker's capability refusal, which rejects every channel by design.
     //
     // Both land here, because the card's answer to "it did not start" is one
-    // answer: show the overlay with Restart and Close. The console line is for
+    // answer: show the overlay with Try again and Close. The console line is for
     // whoever is looking at devtools; the REASON is in the app log, which is the
     // half that did not exist before this change.
+    //
+    // `never-started` and not the `exited` state the overlay used to be given
+    // (#355): the card is showing this because no session ever ran in it, so
+    // "Session ended — Exited unexpectedly (code -1)" was three false claims and
+    // an invented exit code. The `.catch` branch says the same thing, and it is
+    // the one worth arguing: a throw from the wiring AFTER a successful spawn
+    // could in principle leave a live session this card never bound to. It is
+    // not reachable today — #347 audited those three steps and none of them
+    // throws — and the two refusals that ARE reachable (main declining, the
+    // broker declining a capability) both mean nothing started. If a
+    // post-spawn throw is ever introduced, that is the bug to fix, not this copy.
     const startFailed = (why: unknown): void => {
       console.warn(`[sessions] session did not start for ${cardId} — see the app log`, why ?? '');
-      setExited({ code: -1, crashed: true });
+      setEnded({ kind: 'never-started' });
     };
     void window.switchboard.sessions
       .create({ cardId, folder, title: props.api.title ?? folder, autonomy, groupId: props.params?.groupId })
@@ -359,14 +423,14 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       .finally(() => {
         spawning.current = false;
       });
-  }, [visible, live, exited, suspended, cardId, folder, props.api.title]);
+  }, [visible, live, ended, suspended, cardId, folder, props.api.title]);
 
   // a dead session's card must be dismissable, not a stuck blank terminal
   React.useEffect(() => {
     if (!live) return;
     return window.switchboard.sessions.onExited((e) => {
       if (e.sessionId !== live.id) return;
-      setExited({ code: e.code, crashed: e.crashed });
+      setEnded({ kind: 'exited', code: e.code, crashed: e.crashed });
       // The THIRD way a session's held requests stop being answerable, and the
       // one that reaches neither `forgetCardLiveIds` nor main's teardown (#239):
       // a session that dies on its own keeps its binding and its record until
@@ -630,7 +694,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const resumeSelf = (): void => {
     // clear the suspended gate; the lazy-spawn effect re-fires while visible
     sessionStore.setPresentation(cardId, { suspended: false });
-    setExited(null);
+    setEnded(null);
     spawning.current = false;
   };
   const restartSelf = (): void => {
@@ -647,21 +711,27 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       void window.switchboard.sessions.dropLive(cardId);
       sessionStore.forgetCardLiveIds(cardId);
     }
-    setExited(null);
+    setEnded(null);
     setLive(null);
     spawning.current = false;
   };
-  const exitedOverlay = exited ? (
+  // One overlay, two truths (#355). `endedCopy` picks the words; the buttons are
+  // the same two either way — `restartSelf` re-arms the lazy spawn, which is
+  // "start it again" for a session that died and "try that again" for one that
+  // never got going. `maxInlineSize` matches the suspended overlay: the
+  // never-started line is a sentence, not a code.
+  const overlayCopy = ended ? endedCopy(ended) : null;
+  const endedOverlay = overlayCopy ? (
     <div>
-      <div style={{ color: 'var(--text)', fontSize: 13, marginBlockEnd: 4 }}>
-        {t('grid.sessionEnded')}
-      </div>
-      <div style={{ color: 'var(--muted)', fontSize: 11, marginBlockEnd: 12 }}>
-        {exited.crashed ? t('grid.exitCrashed', { code: exited.code }) : t('grid.exitClean')}
+      <div style={{ color: 'var(--text)', fontSize: 13, marginBlockEnd: 4 }}>{t(overlayCopy.heading)}</div>
+      <div
+        style={{ color: 'var(--muted)', fontSize: 11, marginBlockEnd: 12, maxInlineSize: 260 }}
+      >
+        {t(overlayCopy.detail, overlayCopy.detailVars)}
       </div>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
         <button onClick={restartSelf} style={overlayBtn(true)}>
-          {t('grid.restart')}
+          {t(overlayCopy.action)}
         </button>
         <button onClick={closeSelf} style={overlayBtn(false)}>
           {t('grid.close')}
@@ -1218,14 +1288,15 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 </div>
               ) : null
             )}
-            {exitedOverlay && <div style={overlayBackdrop}>{exitedOverlay}</div>}
+            {endedOverlay && <div style={overlayBackdrop}>{endedOverlay}</div>}
           </div>
         </div>
       ) : suspended ? (
         <div style={{ ...overlayBackdrop, position: 'relative', flex: 1 }}>{suspendedOverlay}</div>
-      ) : exited ? (
-        // spawn/resume failed before a terminal existed — still recoverable
-        <div style={{ ...overlayBackdrop, position: 'relative', flex: 1 }}>{exitedOverlay}</div>
+      ) : ended ? (
+        // spawn/resume failed before a terminal existed — still recoverable, and
+        // this is the branch a never-started card lands on (#355)
+        <div style={{ ...overlayBackdrop, position: 'relative', flex: 1 }}>{endedOverlay}</div>
       ) : (
         <span style={{ margin: 'auto' }}>
           {t('grid.resuming', { title: headerTitle })}

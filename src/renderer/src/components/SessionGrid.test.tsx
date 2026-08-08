@@ -19,12 +19,14 @@ import {
   applyLayout,
   applySubmitPolicy,
   cycleLayoutMode,
+  endedCopy,
   layoutSweepPort,
   setCardLadder,
   setLayoutMode,
   stepCardLadder,
   toggleMaximizeCard,
 } from './SessionGrid';
+import en from '../i18n/locales/en.json';
 import { sessionStore } from '../store/session-store';
 import { DEFAULT_LAYOUT, withMaximized, withMode } from '../lib/layout-mode';
 import type { SweepRequest } from '../lib/layout-sweep';
@@ -311,5 +313,71 @@ describe('a missing grid is never a crash', () => {
     // ...and the plan it declined to run was not empty, so the fence is what
     // stopped it rather than there being nothing to do
     expect(layoutSweepPort.plan(sweep({ trigger: 'switch' }))).not.toEqual([]);
+  });
+});
+
+// ── #355: the ended overlay tells the truth about which of the two it is ─────
+//
+// The overlay itself needs a live dockview, so what is pinned here is the
+// mapping `endedCopy` owns: which words go with which state, and that every key
+// it can name is really in en.json — a typo there renders the raw key on screen
+// and no type checks it.
+
+/** The English behind a key `endedCopy` returned. Throws if it is not there. */
+function copyText(key: string): string {
+  const text = key
+    .split('.')
+    .reduce<unknown>((node, part) => (node as Record<string, unknown> | undefined)?.[part], en);
+  if (typeof text !== 'string') throw new Error(`en.json has no string at "${key}"`);
+  return text;
+}
+
+describe('endedCopy', () => {
+  it('says a session that never started never started — and invents no exit code', () => {
+    const copy = endedCopy({ kind: 'never-started' });
+    expect(copy).toEqual({
+      heading: 'grid.sessionNotStarted',
+      detail: 'grid.notStartedHint',
+      action: 'grid.tryAgain',
+    });
+    // The bug this issue is: the card used to read "Session ended — Exited
+    // unexpectedly (code -1)" for a session that did neither. Assert on the
+    // ENGLISH, not just the keys, so re-pointing a key at the old wording is red.
+    const shown = `${copyText(copy.heading)} ${copyText(copy.detail)}`;
+    expect(shown).not.toMatch(/\bended\b|\bexited\b|\bcode\b/i);
+    // and it does not offer to "Restart" something that never ran
+    expect(copyText(copy.action)).not.toMatch(/restart/i);
+  });
+
+  it('keeps the exit copy — with the real code — for a session that ran and died', () => {
+    const copy = endedCopy({ kind: 'exited', code: 137, crashed: true });
+    expect(copy).toEqual({
+      heading: 'grid.sessionEnded',
+      detail: 'grid.exitCrashed',
+      detailVars: { code: 137 },
+      action: 'grid.restart',
+    });
+    // the code is a real one off the exit event, and the string takes it
+    expect(copyText(copy.detail)).toContain('{code}');
+  });
+
+  it('distinguishes a clean close from a crash', () => {
+    const clean = endedCopy({ kind: 'exited', code: 0, crashed: false });
+    expect(clean.detail).toBe('grid.exitClean');
+    expect(clean.heading).toBe('grid.sessionEnded');
+    expect(clean.action).toBe('grid.restart');
+  });
+
+  it('names only keys that exist in en.json', () => {
+    for (const ended of [
+      { kind: 'never-started' },
+      { kind: 'exited', code: 0, crashed: false },
+      { kind: 'exited', code: -1, crashed: true },
+    ] as const) {
+      const copy = endedCopy(ended);
+      for (const key of [copy.heading, copy.detail, copy.action]) {
+        expect(copyText(key).length).toBeGreaterThan(0);
+      }
+    }
   });
 });
