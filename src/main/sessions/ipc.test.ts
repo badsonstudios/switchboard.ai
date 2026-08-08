@@ -4,6 +4,8 @@
 // obeys them. Both are needed: a pure function nobody calls correctly is still
 // a Claude-shaped session start.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import fs from 'fs';
+import path from 'path';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { registerSessionIpc, SessionIpcDeps } from './ipc';
 import { ProviderCapabilities } from '../extensibility/contributions';
@@ -95,6 +97,11 @@ function harness(
      *  is what empties it — so the hook half of that channel is assertable
      *  instead of being a constant `[]`. */
     hookPending?: Array<{ requestId: string; sessionId: string }>;
+    /** make `SessionManager.create` BLOW UP, the way it really does for a
+     *  provider adapter it does not have, a transport it cannot resolve, or a
+     *  `spawn` that fails. `sessions:create` must answer `null` rather than
+     *  rejecting the renderer's promise (#347). */
+    throwOnSpawn?: boolean;
   } = {}
 ) {
   const created: Array<{
@@ -107,6 +114,10 @@ function harness(
   const watched: Array<{ sessionId: string; projectsRoot?: string; deriveFeed?: boolean }> = [];
   const buildHookSettings = vi.fn(() => ({ hooks: {} }));
   const warn = vi.fn();
+  /** a start that should have worked and did not is an `error`, not a `warn` (#347) */
+  const logError = vi.fn();
+  /** every live rename the IPC layer asked the manager for (#347) */
+  const renamed: Array<{ id: string; title: string }> = [];
   const askedFor: string[] = [];
   /** live ids the HOOK listener was told to allow-all (#319) */
   const allowedAll: string[] = [];
@@ -204,10 +215,16 @@ function harness(
         if (wasLive && !alreadyExited.has(id) && exitCodeOf(id) === null) fireExit(id, 0);
       },
       get: (id: string) => (knownIds.has(id) ? asRecord(id) : undefined),
+      // Modelled on the real `SessionManager.rename` (#347): it drops a rename
+      // for an id it does not know and a blank title, and it never throws for
+      // either. What the IPC layer then answers comes from `get`, so a dumb
+      // recorder here is enough to read the channel's contract off.
+      rename: (id: string, title: string) => renamed.push({ id, title }),
       create: (
         identity: SessionIdentity,
         o: { settingsFor?: unknown; resumeSessionId?: string; transport?: string }
       ) => {
+        if (opts.throwOnSpawn) throw new Error('spawn exploded');
         created.push({
           identity,
           settingsFor: o?.settingsFor,
@@ -275,7 +292,7 @@ function harness(
         forgottenEvents.push(id);
       },
     },
-    log: { info: vi.fn(), warn, error: vi.fn(), debug: vi.fn() },
+    log: { info: vi.fn(), warn, error: logError, debug: vi.fn() },
     getWindow: () => null,
     broker,
     autoTrust: () => opts.autoTrust ?? false,
@@ -308,6 +325,8 @@ function harness(
     watched,
     buildHookSettings,
     warn,
+    logError,
+    renamed,
     askedFor,
     allowedAll,
     pushed,
@@ -2012,5 +2031,186 @@ describe('allow-all is granted on both channels (#319)', () => {
 
     expect(() => h.call('sessions:allowAllSession', 'live-1')).not.toThrow();
     expect(h.allowedAll).toEqual(['live-1']);
+  });
+});
+
+// HOW THIS SEAM SAYS NO (issue 347) — the sessions-family twin of what issue 326
+// did for `groups:*`.
+//
+// `sessions:create` and `sessions:rename` were the two channels in this file
+// that refused by THROWING, and a throw out of a handler rejects the renderer's
+// promise. Every bridge call in the renderer is a bare `void x().then(...)`;
+// `SessionGrid`'s spawn effect happens to catch, so the visible behaviour of a
+// card that cannot start is unchanged — but `sessions:rename` has no caller at
+// all yet, and would have handed the first one written both a TypeError (a
+// non-string title reaching `title.trim()`) and a throw (an unknown id reaching
+// `mustGet`).
+//
+// They answer now: `null` means "nothing happened", and the reason is a line in
+// the app log — which is where it never used to be, because the broker does not
+// catch handler throws and Electron printed them to stderr instead. The refusal
+// assertions below are therefore "answered null AND started nothing AND said
+// so", which is strictly more than "threw".
+describe('a refused sessions call answers null and says why — it never throws (issue 347)', () => {
+  let dir: string;
+  tempDirEach('sb-ipc-refuse-', (d) => (dir = d));
+
+  /** the refusal warnings, in order, as they land in the app log */
+  const refusals = (h: { warn: { mock: { calls: unknown[][] } } }): string[] =>
+    h.warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('refused'));
+
+  describe('sessions:create', () => {
+    it('refuses a call with no cardId or folder, and starts nothing', () => {
+      const h = harness(undefined, dir);
+
+      expect(h.call('sessions:create', { title: 'x' })).toBeNull();
+
+      expect(h.created).toEqual([]); // no session asked for
+      expect(h.upserted).toEqual([]); // no card written
+      expect(h.watched).toEqual([]); // no transcript watched
+      expect(refusals(h)).toEqual(['sessions:create refused: cardId and folder are required']);
+    });
+
+    it.each([
+      ['nothing at all', undefined],
+      ['a non-string cardId', { cardId: 7, folder: 'anything', title: 'x' }],
+      ['a non-string folder', { cardId: 'card-1', folder: 7, title: 'x' }],
+      ['no folder', { cardId: 'card-1', title: 'x' }],
+    ])('does not throw on %s', (_what, arg) => {
+      const h = harness(undefined, dir);
+      expect(() => h.call('sessions:create', arg)).not.toThrow();
+      expect(h.call('sessions:create', arg)).toBeNull();
+      expect(h.created).toEqual([]);
+    });
+
+    // THE REACHABLE ONE. Nothing has to go wrong for a user to arrive here: a
+    // card is persisted with its folder, and that folder can be renamed,
+    // deleted, or sitting on a drive that is not plugged in by the time the card
+    // is looked at again. It used to reach `throw new Error('folder is not a
+    // directory')`.
+    it('refuses a folder that is not there — the card whose folder moved', () => {
+      const h = harness(undefined, dir);
+      const gone = path.join(dir, 'this-folder-was-deleted');
+
+      expect(h.call('sessions:create', { cardId: 'card-1', folder: gone, title: 'x' })).toBeNull();
+
+      expect(h.created).toEqual([]);
+      expect(h.upserted).toEqual([]);
+      // the folder is IN the log line's fields, which is the point of logging it
+      // here rather than leaving it to Electron's stderr
+      expect(h.warn).toHaveBeenCalledWith('sessions:create refused: folder is not a directory', {
+        cardId: 'card-1',
+        folder: gone,
+      });
+    });
+
+    it('refuses a FILE that is not a directory, for the same reason', () => {
+      const h = harness(undefined, dir);
+      const file = path.join(dir, 'a-file.txt');
+      fs.writeFileSync(file, 'not a folder');
+
+      expect(h.call('sessions:create', { cardId: 'card-1', folder: file, title: 'x' })).toBeNull();
+      expect(h.created).toEqual([]);
+    });
+
+    // The other half: the input was fine and the SPAWN failed. The manager throws
+    // for a provider adapter it does not have, a transport it cannot resolve and
+    // a spawn that fails — correct for its main-process callers, and something
+    // this handler has to turn into an answer.
+    it('answers null when the spawn itself fails, and binds or persists nothing', () => {
+      const h = harness(undefined, dir, { throwOnSpawn: true });
+
+      expect(h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' })).toBeNull();
+
+      expect(h.upserted).toEqual([]); // no card record for a session that never started
+      expect(h.watched).toEqual([]); // nothing watched
+      // and the renderer was NOT told a card gained a live session
+      expect(h.pushed.filter((p) => p.channel === 'sessions:cardsChanged')).toEqual([]);
+    });
+
+    it('logs a failed spawn as an ERROR with the reason — a warning is for input we declined', () => {
+      const h = harness(undefined, dir, { throwOnSpawn: true });
+
+      h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
+
+      expect(h.logError).toHaveBeenCalledTimes(1);
+      const [msg, fields] = h.logError.mock.calls[0] as [string, Record<string, unknown>];
+      expect(msg).toContain('sessions:create');
+      expect(fields.cardId).toBe('card-1');
+      expect(fields.folder).toBe(dir);
+      expect(String(fields.error)).toContain('spawn exploded');
+      expect(refusals(h)).toEqual([]); // not a refusal — a failure
+    });
+
+    it('a failed spawn does not throw, so a later look at the card can still start it', () => {
+      // fail-open (P6): one bad start does not poison the card
+      const h = harness(undefined, dir, { throwOnSpawn: true });
+      expect(() =>
+        h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' })
+      ).not.toThrow();
+    });
+
+    it('still starts a session it accepts, and warns about nothing', () => {
+      const h = harness(undefined, dir);
+
+      const rec = h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' }) as {
+        id: string;
+      };
+
+      expect(rec.id).toBe('live-1');
+      expect(h.created).toHaveLength(1);
+      expect(refusals(h)).toEqual([]);
+    });
+  });
+
+  describe('sessions:rename', () => {
+    it('refuses a non-string session id and renames nothing', () => {
+      const h = harness(undefined, dir, { liveIds: ['live-1'] });
+
+      expect(h.call('sessions:rename', 42, 'new name')).toBeNull();
+
+      expect(h.renamed).toEqual([]);
+      expect(refusals(h)).toEqual(['sessions:rename refused: session id must be a string']);
+    });
+
+    it('refuses a non-string title — the TypeError that used to come out of trim()', () => {
+      const h = harness(undefined, dir, { liveIds: ['live-1'] });
+
+      expect(h.call('sessions:rename', 'live-1', 42)).toBeNull();
+
+      expect(h.renamed).toEqual([]);
+      expect(refusals(h)).toEqual(['sessions:rename refused: title must be a string']);
+    });
+
+    // The `session-manager.ts` throw issue 326's worker reported: `mustGet`. The
+    // id can be stale for honest reasons — a session that exited while a rename
+    // was in flight — so it is answered, not thrown.
+    it('answers null for a session it does not know, without throwing', () => {
+      const h = harness(undefined, dir);
+
+      expect(() => h.call('sessions:rename', 'ghost', 'new name')).not.toThrow();
+      expect(h.call('sessions:rename', 'ghost', 'new name')).toBeNull();
+      expect(h.upserted).toEqual([]);
+    });
+
+    it('still renames a session it knows, and answers the record', () => {
+      const h = harness(undefined, dir, { liveIds: ['live-1'] });
+
+      const rec = h.call('sessions:rename', 'live-1', 'a better name') as { id: string };
+
+      expect(rec.id).toBe('live-1');
+      expect(h.renamed).toEqual([{ id: 'live-1', title: 'a better name' }]);
+      expect(refusals(h)).toEqual([]);
+    });
+
+    it('a blank title is not a refusal to shout about — the manager drops it', () => {
+      // `sessions:renameCard` applies the same rule (#294): a blank rename is an
+      // edit that went nowhere, not bad input
+      const h = harness(undefined, dir, { liveIds: ['live-1'] });
+
+      h.call('sessions:rename', 'live-1', '   ');
+
+      expect(refusals(h)).toEqual([]);
+    });
   });
 });

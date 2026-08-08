@@ -6,7 +6,7 @@ import { SessionManager, PtyLike } from './session-manager';
 import { transition, SessionStatus } from './state-machine';
 import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { MainContributions } from '../extensibility/contributions';
-import { LogSink, createLogger } from '../log/logger';
+import { LogSink, Logger, createLogger } from '../log/logger';
 
 // ---- fakes ------------------------------------------------------------------
 function fakeRegistry(): ContributionRegistry<MainContributions> {
@@ -234,5 +234,84 @@ describe('SessionManager (done-when: observable transitions through the cycle)',
     mgr.remove(a.id);
     expect(mgr.get(a.id)).toBeUndefined();
     expect(mgr.list().find((s) => s.id === a.id)).toBeUndefined();
+  });
+});
+
+// An unknown session id is a LOGGED NO-OP everywhere in this class (issue 347).
+//
+// `kill` and `rename` went through a private `mustGet` that threw
+// `unknown session "<id>"`; every other method has always tolerated an id it
+// does not know (`apply`: "late events for removed sessions are dropped, not
+// fatal", plus `remove`, `setNativeSessionId`, `submitPrompt`, `interrupt`,
+// `get`). So the throw was the outlier inside the class, and it was the one that
+// could reach the renderer: `sessions:rename` handed it whatever id it was given
+// over a bridge call nobody catches.
+//
+// Both ways to get here are races, not defects — a session that exited or was
+// closed while a rename was in flight, and `hook-check` killing a process that
+// has already died — so they are dropped and logged rather than thrown.
+describe('an unknown session id is answered, never thrown (issue 347)', () => {
+  /** the same manager, wired to a log a test can read */
+  function withLog(): { m: SessionManager; warnings: string[] } {
+    const warnings: string[] = [];
+    const log: Logger = {
+      debug: () => {},
+      info: () => {},
+      warn: (msg: string) => warnings.push(msg),
+      error: () => {},
+      child: () => log,
+    };
+    return { m: new SessionManager(fakeRegistry(), ptys, log, dir), warnings };
+  }
+
+  it('renaming a session that is not there does nothing, loudly', () => {
+    const { m, warnings } = withLog();
+
+    expect(() => m.rename('ghost', 'a better name')).not.toThrow();
+
+    expect(warnings).toEqual(['rename for an unknown session — ignored']);
+    expect(m.get('ghost')).toBeUndefined();
+  });
+
+  it('killing a session that is not there does nothing, loudly — and reaches no transport', () => {
+    const { m, warnings } = withLog();
+
+    expect(() => m.kill('ghost')).not.toThrow();
+
+    expect(warnings).toEqual(['kill for an unknown session — ignored']);
+    // the important half: nothing was asked to die
+    expect(ptys.removed).toEqual([]);
+  });
+
+  it('a non-string title is dropped instead of becoming a TypeError in trim()', () => {
+    const { m } = withLog();
+    const a = m.create(identity);
+
+    expect(() => m.rename(a.id, 42 as unknown as string)).not.toThrow();
+
+    expect(m.get(a.id)!.identity.title).toBe('t');
+  });
+
+  it('still renames and still kills a session it knows, and says nothing about it', () => {
+    const { m, warnings } = withLog();
+    const a = m.create(identity);
+
+    m.rename(a.id, '  renamed  ');
+    m.kill(a.id);
+
+    expect(m.get(a.id)!.identity.title).toBe('renamed'); // trimmed, as before
+    expect(ptys.removed).toEqual([a.id]);
+    expect(warnings).toEqual([]);
+  });
+
+  it('a blank rename is still dropped, and is not a warning', () => {
+    // #294's rule, unchanged: a blank title is an edit that went nowhere
+    const { m, warnings } = withLog();
+    const a = m.create(identity);
+
+    m.rename(a.id, '   ');
+
+    expect(m.get(a.id)!.identity.title).toBe('t');
+    expect(warnings).toEqual([]);
   });
 });

@@ -317,9 +317,27 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     const stored = uiGet<string>('autonomy', 'ask');
     const autonomy =
       stored === 'plan' || stored === 'auto-edit' || stored === 'full-auto' ? stored : 'ask';
+    // A start that did not happen, from either of the two ways to learn that
+    // (#347). `sessions:create` used to REJECT for everything — bad input, a
+    // folder that is gone, a spawn that failed — and this effect's `.catch` was
+    // the only thing between that and an unhandled renderer rejection. Main now
+    // ANSWERS `null` for a start it refused or could not do, so the ordinary
+    // cases are a value to read; the `.catch` stays for the extraordinary one
+    // (a throw from the wiring after the session is already live) and for the
+    // broker's capability refusal, which rejects every channel by design.
+    //
+    // Both land here, because the card's answer to "it did not start" is one
+    // answer: show the overlay with Restart and Close. The console line is for
+    // whoever is looking at devtools; the REASON is in the app log, which is the
+    // half that did not exist before this change.
+    const startFailed = (why: unknown): void => {
+      console.warn(`[sessions] session did not start for ${cardId} — see the app log`, why ?? '');
+      setExited({ code: -1, crashed: true });
+    };
     void window.switchboard.sessions
       .create({ cardId, folder, title: props.api.title ?? folder, autonomy, groupId: props.params?.groupId })
       .then((record) => {
+        if (!record) return startFailed(null);
         if (cardId) sessionStore.mapLiveToCard(record.id, cardId);
         setLive({
           id: record.id,
@@ -337,9 +355,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         // the card's stored choice, so the menu shows what will happen NEXT spawn
         setCardTransport(record.transport === 'stream' ? 'stream' : 'pty');
       })
-      .catch(() => {
-        setExited({ code: -1, crashed: true }); // spawn failed — show the overlay
-      })
+      .catch(startFailed)
       .finally(() => {
         spawning.current = false;
       });

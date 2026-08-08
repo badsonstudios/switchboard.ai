@@ -92,9 +92,30 @@ const api = {
   },
   /** sandbox-safe path for a dropped File (drag-folder-onto-window, E3-04) */
   pathForFile: (file: File): string => webUtils.getPathForFile(file),
+  /**
+   * Sessions and their cards. These do NOT reject when main refuses (#347, and
+   * #326 for `groups:*`): a call main declines RESOLVES `null`, having logged
+   * why, so a caller that forgets a `.catch()` — which is most callers in this
+   * app — cannot turn an ordinary UI gesture into an unhandled renderer
+   * rejection. `null` means "nothing happened"; re-read the truth and show it.
+   * Why this shape and not a `.catch()` policy: `main/sessions/ipc.ts`, top of
+   * file. Most of this surface was already shaped that way — `setTransport`
+   * answers `{ ok, reason }`, `submitPrompt` and `interrupt` answer `false`.
+   */
   sessions: {
     pickFolder: (): Promise<string | null> => ipcRenderer.invoke('sessions:pickFolder'),
     isDirectory: (p: string): Promise<boolean> => ipcRenderer.invoke('sessions:isDirectory', p),
+    /**
+     * Start (or `--resume`) the live session for a card.
+     *
+     * Resolves NULL when the session did not start: `cardId`/`folder` missing,
+     * a folder that is not a directory (a card whose folder was moved, deleted
+     * or unplugged — the reachable one), or a spawn the provider could not do.
+     * The reason is in the app log. It can still REJECT if the wiring AFTER a
+     * successful spawn fails, which is a bug rather than a refusal and would
+     * leave a live session behind, so callers keep a `.catch` too —
+     * `SessionGrid`'s spawn effect reads both and treats them the same.
+     */
     create: (opts: {
       cardId: string;
       folder: string;
@@ -102,13 +123,14 @@ const api = {
       autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
       groupId?: string;
     }): Promise<
-      SessionRecordDto & {
-        cardId: string;
-        priorUsage?: { input: number; output: number; cacheRead: number; cacheCreate: number };
-        priorModel?: string;
-        autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
-        taskLabel?: string;
-      }
+      | (SessionRecordDto & {
+          cardId: string;
+          priorUsage?: { input: number; output: number; cacheRead: number; cacheCreate: number };
+          priorModel?: string;
+          autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
+          taskLabel?: string;
+        })
+      | null
     > => ipcRenderer.invoke('sessions:create', opts),
     list: (): Promise<SessionRecordDto[]> => ipcRenderer.invoke('sessions:list'),
     /** composer autocomplete data (E10-07): builtins + project/user commands */
@@ -149,7 +171,14 @@ const api = {
       transport: 'pty' | 'stream'
     ): Promise<{ ok: boolean; reason?: string; pending?: boolean }> =>
       ipcRenderer.invoke('sessions:setTransport', cardId, transport),
-    rename: (id: string, title: string): Promise<SessionRecordDto | undefined> =>
+    /**
+     * Rename a LIVE session by its live id.
+     *
+     * Resolves NULL when nothing was renamed — an id this app does not know, or
+     * an argument main refused (#347). No caller yet: the rail and the palette
+     * rename by CARD id via `renameCard`, which is what survives a restart.
+     */
+    rename: (id: string, title: string): Promise<SessionRecordDto | null> =>
       ipcRenderer.invoke('sessions:rename', id, title),
     onStatus: (cb: (change: unknown) => void): (() => void) => {
       const h = (_e: unknown, c: unknown) => cb(c);
