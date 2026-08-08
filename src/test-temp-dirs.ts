@@ -20,6 +20,16 @@
 //     files whose tracked directories are ALL per-test — this deletes
 //     everything pending, including a `beforeAll`/module-scope directory the
 //     remaining tests still need.
+//
+// WHAT IT DOES NOT DO (#354). This stops the FLOW; it cannot drain the POND.
+// Everything the pre-#213 builds made is still in `%TEMP%` — 115,314 `sb-*`
+// directories on one dogfood machine when #354 was filed — and so is the odd
+// one a Windows lock keeps past even the requeue below. Draining is
+// `scripts/sweep-temp-orphans.js`, wired into `vitest.config.ts`'s
+// `globalSetup`. Read its header before inventing a new `sb-` prefix: the
+// sweeper recognises our leftovers by their SHAPE (`sb-<slug>-XXXXXX`), not by
+// a list of prefixes, so a new prefix is already covered — and a directory made
+// WITHOUT `mkdtemp`'s random suffix is not.
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
