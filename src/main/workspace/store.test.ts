@@ -870,6 +870,368 @@ describe('set-asides are never overwritten (#349)', () => {
   });
 });
 
+// #349 made the set-aside SUCCESS path safe. This is the other half: when the
+// copy itself CANNOT be made — a full disk, an anti-virus sitting on the folder
+// — the damaged `workspace.json` is the only evidence there is, and it is the
+// exact file the first save of the fresh empty workspace lands on. It used to
+// go without a trace, on precisely the machines whose owner needs the
+// post-mortem most. Now the save waits, and tries again three different ways.
+describe('a failed set-aside is retried before the file is overwritten (#352)', () => {
+  const CORRUPT = '{half a workspace';
+  /** How many saves may be held back before the live workspace wins. Mirrors
+   *  `MAX_RESCUE_ATTEMPTS`, which is deliberately not exported. */
+  const RESCUE_ATTEMPTS = 5;
+
+  const read = (name: string): string => fs.readFileSync(path.join(dir, name), 'utf8');
+  const savedIds = (): string[] =>
+    (JSON.parse(fs.readFileSync(file, 'utf8')) as { sessions: PersistedSession[] }).sessions.map(
+      (s) => s.id
+    );
+  const last = (warns: Line[]): Line => warns[warns.length - 1];
+  const boom = (code: string, op: string): Error =>
+    Object.assign(new Error(`${code}: ${op} refused`), { code });
+  /** Fail `fs[name]` only for the post-mortem names, so the store's own tmp +
+   *  rename still work and a blocked rescue never masquerades as a dead disk. */
+  const blockPostMortems = (name: 'writeFileSync' | 'renameSync', code: string) => {
+    const real = fs[name] as (...args: unknown[]) => unknown;
+    return vi.spyOn(fs, name).mockImplementation(((...args: unknown[]) => {
+      // renameSync's DESTINATION is the second argument; writeFileSync's is the first
+      const target = String(name === 'renameSync' ? args[1] : args[0]);
+      if (target.includes('.corrupt-')) throw boom(code, name);
+      return real(...args);
+    }) as never);
+  };
+  const failCopies = () =>
+    vi.spyOn(fs, 'copyFileSync').mockImplementation(() => {
+      throw boom('EPERM', 'copyFileSync');
+    });
+  /** Make the READ of the workspace file fail, so the store holds no bytes. */
+  const failTheRead = () => {
+    const real = fs.readFileSync as (...args: unknown[]) => unknown;
+    return vi.spyOn(fs, 'readFileSync').mockImplementation(((...args: unknown[]) => {
+      if (String(args[0]) === file) throw boom('EACCES', 'readFileSync');
+      return real(...args);
+    }) as never);
+  };
+
+  it('writes the bytes it read when the save comes, instead of losing them', () => {
+    fs.writeFileSync(file, CORRUPT);
+    const warns: Line[] = [];
+    const st = makeStore(file, fakeLogger(warns));
+    const copy = failCopies();
+    try {
+      st.load();
+      // nothing on disk yet — and the log says the attempt is still pending
+      expect(setAsides()).toEqual([]);
+      expect(warns[0].fields).toMatchObject({
+        setAsideError: expect.stringContaining('EPERM'),
+        setAsideRetry: true,
+      });
+      st.upsertSession(sess('a'));
+      st.save(); // the write that used to eat the evidence
+    } finally {
+      copy.mockRestore();
+    }
+
+    const kept = setAsides();
+    expect(kept).toHaveLength(1);
+    expect(read(kept[0])).toBe(CORRUPT); // the damaged file, byte for byte
+    expect(savedIds()).toEqual(['a']); // and the save itself still happened
+    expect(last(warns).msg).toMatch(/set aside on a later try/);
+    expect(last(warns).fields).toMatchObject({ setAsideHow: 'written-from-memory' });
+  });
+
+  it('a file it could not even READ is rescued by copying it', () => {
+    fs.writeFileSync(file, CORRUPT);
+    const warns: Line[] = [];
+    const st = makeStore(file, fakeLogger(warns));
+    const readSpy = failTheRead();
+    const copy = failCopies();
+    try {
+      st.load(); // no bytes to hold, and the copy refused
+    } finally {
+      readSpy.mockRestore();
+      copy.mockRestore();
+    }
+    st.upsertSession(sess('a'));
+    st.save();
+
+    const kept = setAsides();
+    expect(kept).toHaveLength(1);
+    expect(read(kept[0])).toBe(CORRUPT);
+    expect(savedIds()).toEqual(['a']);
+    expect(last(warns).fields).toMatchObject({ setAsideHow: 'copied' });
+  });
+
+  // The case a copy can never win: no room for a second copy of anything. A
+  // rename inside the directory needs none, and we are about to destroy that
+  // file anyway, so moving it is pure gain.
+  it('a disk too full to take a copy still gets the file MOVED out of the way', () => {
+    fs.writeFileSync(file, CORRUPT);
+    const warns: Line[] = [];
+    const st = makeStore(file, fakeLogger(warns));
+    const copy = failCopies();
+    const write = blockPostMortems('writeFileSync', 'ENOSPC');
+    try {
+      st.load();
+      st.upsertSession(sess('a'));
+      st.save();
+    } finally {
+      copy.mockRestore();
+      write.mockRestore();
+    }
+
+    const kept = setAsides();
+    expect(kept).toHaveLength(1);
+    expect(read(kept[0])).toBe(CORRUPT);
+    expect(last(warns).fields).toMatchObject({ setAsideHow: 'moved' });
+    expect(savedIds()).toEqual(['a']); // the move left the name free for the save
+  });
+
+  // A `wx` write that dies two thirds of the way through (the disk filling up
+  // as it goes) leaves a TRUNCATED post-mortem squatting on the honest name —
+  // worse than none, and it would push the route that actually works onto `.2`.
+  it('a write that dies partway leaves no truncated post-mortem behind', () => {
+    fs.writeFileSync(file, CORRUPT);
+    const warns: Line[] = [];
+    const st = makeStore(file, fakeLogger(warns));
+    const copy = failCopies();
+    const real = fs.writeFileSync;
+    const write = vi.spyOn(fs, 'writeFileSync').mockImplementation(((...args: unknown[]) => {
+      const target = String(args[0]);
+      if (!target.includes('.corrupt-')) return (real as (...a: unknown[]) => unknown)(...args);
+      real(target, CORRUPT.slice(0, 4)); // got some of it down, then...
+      throw boom('ENOSPC', 'writeFileSync');
+    }) as never);
+    try {
+      st.load();
+      st.upsertSession(sess('a'));
+      st.save();
+    } finally {
+      copy.mockRestore();
+      write.mockRestore();
+    }
+
+    const kept = setAsides();
+    expect(kept).toHaveLength(1); // the half-file was taken back out
+    expect(read(kept[0])).toBe(CORRUPT);
+    expect(kept[0]).not.toMatch(/\.\d$/); // and the move got the honest name
+    expect(last(warns).fields).toMatchObject({ setAsideHow: 'moved' });
+  });
+
+  it('the late set-aside is pruned like any other — the folder stays bounded', () => {
+    // six already there; the rescued one makes seven, so two go
+    const seeded = Array.from({ length: 6 }, (_, i) => {
+      const name = `workspace.json.corrupt-2026-01-0${i + 1}T00-00-00.000Z`;
+      fs.writeFileSync(path.join(dir, name), `old post-mortem ${i}`);
+      return name;
+    });
+    fs.writeFileSync(file, CORRUPT);
+    const warns: Line[] = [];
+    const st = makeStore(file, fakeLogger(warns));
+    const copy = failCopies();
+    try {
+      st.load();
+      expect(setAsides()).toEqual(seeded); // a failed copy prunes nothing (#349)
+      st.save();
+    } finally {
+      copy.mockRestore();
+    }
+    expect(setAsides()).toHaveLength(5);
+    expect(last(warns).fields).toMatchObject({
+      pruned: [seeded[1], seeded[2]].map((n) => path.join(dir, n)),
+      prunedCount: 2,
+    });
+  });
+
+  it('holds the save back rather than overwrite, then gives up loudly', () => {
+    fs.writeFileSync(file, CORRUPT);
+    const warns: Line[] = [];
+    const st = makeStore(file, fakeLogger(warns));
+    const copy = failCopies();
+    const write = blockPostMortems('writeFileSync', 'ENOSPC');
+    const rename = blockPostMortems('renameSync', 'EPERM');
+    try {
+      st.load();
+      st.upsertSession(sess('a'));
+      for (let i = 1; i < RESCUE_ATTEMPTS; i++) expect(() => st.save()).not.toThrow();
+      // every route is refused, so the only copy of the damage is still there
+      expect(fs.readFileSync(file, 'utf8')).toBe(CORRUPT);
+      expect(setAsides()).toEqual([]);
+      // said once, not once per held-back save
+      expect(warns.filter((w) => /not saving over the damaged/.test(w.msg))).toHaveLength(1);
+
+      st.save(); // the last attempt: the live workspace wins from here
+      expect(last(warns).msg).toMatch(/could not set the damaged workspace file aside/);
+      expect(last(warns).fields).toMatchObject({ attempts: RESCUE_ATTEMPTS });
+      expect(savedIds()).toEqual(['a']);
+
+      // and it really did give up — no further save is held back or re-reported
+      const after = warns.length;
+      st.upsertSession(sess('b'));
+      st.save();
+      expect(savedIds()).toEqual(['a', 'b']);
+      expect(warns).toHaveLength(after);
+    } finally {
+      copy.mockRestore();
+      write.mockRestore();
+      rename.mockRestore();
+    }
+  });
+
+  it('stops holding the save back when the damaged file has gone anyway', () => {
+    fs.writeFileSync(file, CORRUPT);
+    const warns: Line[] = [];
+    const st = makeStore(file, fakeLogger(warns));
+    const readSpy = failTheRead();
+    const copy = failCopies();
+    try {
+      st.load(); // nothing held: the read failed too
+    } finally {
+      readSpy.mockRestore();
+      copy.mockRestore();
+    }
+    fs.rmSync(file); // someone took the damaged file away themselves
+    st.upsertSession(sess('a'));
+    st.save();
+
+    expect(savedIds()).toEqual(['a']); // straight through, nothing to protect
+    expect(setAsides()).toEqual([]);
+    expect(warns).toHaveLength(1); // just the load's own line
+  });
+
+  // The move is the one operation in the store that CAN destroy a post-mortem:
+  // `renameSync` replaces its destination on both platforms. #349's whole
+  // guarantee rests on the check in front of it.
+  it('the move refuses to land on a post-mortem that is already there', () => {
+    vi.useFakeTimers({ now: new Date('2026-08-08T14:23:05.123Z') });
+    const taken = 'workspace.json.corrupt-2026-08-08T14-23-05.123Z'; // the name this load will pick
+    fs.writeFileSync(path.join(dir, taken), 'the post-mortem from last time');
+    fs.writeFileSync(file, CORRUPT);
+    const warns: Line[] = [];
+    const st = makeStore(file, fakeLogger(warns));
+    const copy = failCopies();
+    const write = blockPostMortems('writeFileSync', 'ENOSPC'); // forces the move route
+    try {
+      st.load();
+      st.save();
+    } finally {
+      copy.mockRestore();
+      write.mockRestore();
+      vi.useRealTimers();
+    }
+
+    expect(read(taken)).toBe('the post-mortem from last time'); // untouched
+    expect(setAsides()).toEqual([taken, `${taken}.2`]);
+    expect(read(`${taken}.2`)).toBe(CORRUPT);
+    expect(last(warns).fields).toMatchObject({ setAsideHow: 'moved' });
+  });
+
+  // The retry is a TIMER, not something the next mutation happens to trigger:
+  // a run that goes quiet after one save must still end up with its evidence.
+  it('retries on its own a second later, with nothing else touching the store', () => {
+    vi.useFakeTimers();
+    fs.writeFileSync(file, CORRUPT);
+    const warns: Line[] = [];
+    const st = makeStore(file, fakeLogger(warns));
+    const copy = failCopies();
+    const write = blockPostMortems('writeFileSync', 'ENOSPC');
+    const rename = blockPostMortems('renameSync', 'EPERM');
+    try {
+      st.load();
+      st.upsertSession(sess('a'));
+      st.save(); // every route refused: held back, and a retry armed
+      expect(setAsides()).toEqual([]);
+      expect(fs.readFileSync(file, 'utf8')).toBe(CORRUPT);
+
+      copy.mockRestore();
+      write.mockRestore();
+      rename.mockRestore();
+      vi.advanceTimersByTime(999); // RESCUE_RETRY_MS, to the millisecond
+      expect(setAsides()).toEqual([]);
+      vi.advanceTimersByTime(1);
+    } finally {
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    }
+
+    const kept = setAsides();
+    expect(kept).toHaveLength(1);
+    expect(read(kept[0])).toBe(CORRUPT);
+    expect(savedIds()).toEqual(['a']); // and the save it was holding went through
+  });
+
+  // A file from the FUTURE is loaded read-only, and a read-only store never
+  // writes — so there is nothing for a rescue to protect the file from. The one
+  // way to get here: a future file whose reader then chokes (see `load`).
+  it('a read-only future file promises no retry — nothing will overwrite it', () => {
+    const onDisk = '{"version":99}';
+    fs.writeFileSync(file, onDisk);
+    const warns: Line[] = [];
+    const st = makeStore(file, fakeLogger(warns));
+    const realParse = JSON.parse;
+    const parse = vi.spyOn(JSON, 'parse').mockImplementation(((text: string) =>
+      text === onDisk
+        ? {
+            version: 99,
+            get groups(): never {
+              throw new Error('a shape this build cannot read');
+            },
+          }
+        : realParse(text)) as never);
+    const copy = failCopies();
+    try {
+      st.load();
+    } finally {
+      parse.mockRestore();
+      copy.mockRestore();
+    }
+
+    expect(st.isReadOnly()).toBe(true);
+    const failed = warns.find((w) => /could not be read/.test(w.msg));
+    expect(failed?.fields).toMatchObject({ setAsideError: expect.stringContaining('EPERM') });
+    expect(failed?.fields?.setAsideRetry).toBeUndefined(); // no promise that cannot be kept
+    // and no save ever comes for it, so the file is exactly as it was
+    st.upsertSession(sess('a'));
+    st.save();
+    expect(fs.readFileSync(file, 'utf8')).toBe(onDisk);
+    expect(setAsides()).toEqual([]);
+  });
+
+  it('an absurdly large damaged file is not pinned in memory — it is copied instead', () => {
+    const huge = `{${'x'.repeat(4 * 1024 * 1024)}`; // one byte over MAX_HELD_POST_MORTEM_BYTES
+    fs.writeFileSync(file, huge);
+    const warns: Line[] = [];
+    const st = makeStore(file, fakeLogger(warns));
+    const copy = failCopies();
+    try {
+      st.load();
+    } finally {
+      copy.mockRestore();
+    }
+    st.save();
+
+    const kept = setAsides();
+    expect(kept).toHaveLength(1);
+    // held bytes would have made this 'written-from-memory'; they were not held
+    expect(last(warns).fields).toMatchObject({ setAsideHow: 'copied' });
+    expect(fs.statSync(path.join(dir, kept[0])).size).toBe(huge.length);
+    expect(savedIds()).toEqual([]);
+  });
+
+  it('says nothing about retrying when the set-aside worked first time', () => {
+    fs.writeFileSync(file, CORRUPT);
+    const warns: Line[] = [];
+    const st = makeStore(file, fakeLogger(warns));
+    st.load();
+    st.upsertSession(sess('a'));
+    st.save();
+    expect(warns).toHaveLength(1);
+    expect(warns[0].fields?.setAsideRetry).toBeUndefined();
+    expect(savedIds()).toEqual(['a']);
+  });
+});
+
 describe('schema version dispatch (P2-E15-13, §5.26 / AR-P2-9)', () => {
   /** A file on disk with an arbitrary `version` value and real content. */
   const writeFile = (version: unknown): void =>
