@@ -179,6 +179,45 @@ shown. Check the log (below) for a line from `workspace` saying the save
 failed; on Windows an anti-virus or indexer holding the file for a moment is
 the usual cause, and relaunching is enough.
 
+**My workspace came back completely empty, and there's a `.corrupt` file next to
+it.**
+Everything on the [workspace page](07-workspace.md) is kept in one file,
+`workspace.json`. If switchboard can't read that file at all — it isn't valid
+JSON any more, usually because a write was interrupted or the file was
+hand-edited — it doesn't refuse to start. It copies the unreadable file aside as
+**`workspace.json.corrupt`** and opens with an empty workspace, which it then
+saves over the original as you work.
+
+Nothing announces this: there's no banner and no log line. An empty workspace
+where you left eight sessions, plus that `.corrupt` file appearing beside it, is
+the whole symptom. Both live in the same folder — `%APPDATA%\switchboard` on
+Windows, `~/Library/Application Support/switchboard` on macOS,
+`~/.config/switchboard` on Linux.
+
+**Your work isn't lost.** Conversations belong to Claude Code and are untouched;
+what's gone is the arrangement — which sessions were open, your groups, the
+layout. Keep the `.corrupt` copy if you'd like to report it, and open the
+sessions you need again.
+
+**A group came back called "Untitled group", or a session lost its group.**
+When the file *does* read but a piece of it doesn't make sense, switchboard
+repairs that piece rather than throwing the whole file away. You only ever see
+the result:
+
+- a group whose name was blank comes back as **Untitled group** — rename it and
+  it stays renamed. This is the one repair that's logged: a line from
+  `workspace` names the group;
+- a session pointing at a group that no longer exists comes back **ungrouped**;
+- a session or group missing something it can't do without — no folder, no
+  colour — is dropped entirely;
+- a saved window position that isn't a sensible rectangle is ignored, so that
+  window opens centred at its default size;
+- notification and update settings that don't make sense fall back to their
+  defaults: notifications on, OS toasts off, update checks on.
+
+All but the first are silent on purpose. They cost you a setting, not your work,
+and a repaired workspace is better than no workspace.
+
 **A pop-out window vanished after I unplugged a monitor.**
 It was rescued back onto a visible screen. Plug the monitor back in and Events
 will offer to restore the layout.

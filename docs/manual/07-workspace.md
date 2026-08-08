@@ -466,6 +466,12 @@ starts fresh, with an empty workspace it *can* save. On Windows it's in
 and on Linux `~/.config/switchboard`. Move it, don't delete it: it's the only
 copy of the layout the newer version had.
 
+That's the one case where the file is fine and switchboard won't write it. The
+other direction — the file itself being damaged — is handled quietly and looks
+different: see
+[Troubleshooting](11-troubleshooting.md) for what a damaged workspace file
+looks like and what switchboard does about it.
+
 ## Good to know
 
 - Everything in this page persists across restarts: layout, groups, collapse
