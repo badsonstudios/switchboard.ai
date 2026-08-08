@@ -10,7 +10,7 @@ import { SessionEvent, transition } from './state-machine';
 import { streamStatusEvent } from './stream-status';
 import { PermissionRequest } from '../hooks/hook-listener';
 import { FakeStreamProtocol } from '../providers/fake-stream-protocol';
-import { LogSink, createLogger } from '../log/logger';
+import { LogSink, createLogger, LogFields, Logger } from '../log/logger';
 
 let dir: string;
 let sent: Array<{ sessionId: string; msg: Record<string, unknown> }>;
@@ -591,6 +591,53 @@ describe('failing open when nobody can answer (#319)', () => {
       expect(sent).toEqual([]);
       expect(applied).toEqual([]);
     });
+  });
+});
+
+// #334 — the same defect the hook path had, fixed in the same place for the
+// same reason: `noWindowWarned` means "already warned about the outage we are
+// IN". It was only cleared in `forgetSession`, so within one session the
+// warning fired once and every later outage went out at `debug`. These two
+// blocks are the same question asked by the two channels and must not drift.
+describe('the no-window warning re-arms once a window comes back (#334)', () => {
+  it('warns per OUTAGE, not once per session', () => {
+    let windowLive = false;
+    const lines = { warn: 0, debug: 0 };
+    const realLog = createLogger(new LogSink({ dir }), 'perm');
+    const count =
+      (level: 'warn' | 'debug') =>
+      (msg: string, fields?: LogFields): void => {
+        if (msg.startsWith('no live window to ask')) lines[level]++;
+        realLog[level](msg, fields);
+      };
+    const log = { ...realLog, warn: count('warn'), debug: count('debug') } satisfies Logger;
+    const p = new StreamPermissions(
+      () => true,
+      () => {},
+      log,
+      { hasLiveWindow: () => windowLive }
+    );
+
+    // Outage 1 — loud.
+    p.offer('s1', canUseTool('req-1'));
+    expect(lines).toEqual({ warn: 1, debug: 0 });
+
+    // Still down — quiet. The flag's real job; must not regress.
+    p.offer('s1', canUseTool('req-2'));
+    expect(lines).toEqual({ warn: 1, debug: 1 });
+
+    // Window back: this one holds, and re-arms on its way past the gate.
+    windowLive = true;
+    p.offer('s1', canUseTool('req-3'));
+    expect(p.pendingRequests()).toHaveLength(1);
+    expect(lines).toEqual({ warn: 1, debug: 1 });
+
+    // Outage 2 — loud AGAIN. Revert the `delete` in `offer` and this goes red.
+    windowLive = false;
+    p.offer('s1', canUseTool('req-4'));
+    expect(lines).toEqual({ warn: 2, debug: 1 });
+
+    p.forgetSession('s1', 'test over'); // clears the held req-3 timer
   });
 });
 

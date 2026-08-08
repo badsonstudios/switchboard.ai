@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { computeAutoGroups, pickAdoptedGroupId, railOrder } from './groups';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { computeAutoGroups, groupChangeLanded, pickAdoptedGroupId, railOrder } from './groups';
 
 describe('computeAutoGroups (E12-05 emergent repo/folder groups)', () => {
   it('two ungrouped sessions sharing a key auto-group; singletons do not', () => {
@@ -157,5 +157,47 @@ describe('railOrder — §5.8 sorts a pinned session first (E9-09)', () => {
     const sessions = [{ id: 'a' }, { id: 'b' }];
     expect(railOrder(sessions, []).flat.map((s) => s.id)).toEqual(['a', 'b']);
     expect(railOrder(sessions, [], new Set(['zz'])).flat.map((s) => s.id)).toEqual(['a', 'b']);
+  });
+});
+
+describe('groupChangeLanded — reading a refusal instead of catching one (issue 326)', () => {
+  let warned: string[];
+  let restore: () => void;
+  beforeEach(() => {
+    warned = [];
+    const original = console.warn;
+    console.warn = (...args: unknown[]) => warned.push(args.map(String).join(' '));
+    restore = () => {
+      console.warn = original;
+    };
+  });
+  afterEach(() => restore());
+
+  it('a group that came back landed, and says nothing about it', () => {
+    expect(// the value is opaque to the helper — only "is there one" matters
+    groupChangeLanded('rename', { id: 'g1', name: 'infra' })).toBe(true);
+    expect(warned).toEqual([]);
+  });
+
+  it('null is a refusal — reported, never silent', () => {
+    // the whole trade a result shape makes: "refused" looks exactly like "done"
+    // unless somebody reads it. This is the somebody.
+    expect(groupChangeLanded('rename', null)).toBe(false);
+    expect(warned).toHaveLength(1);
+    expect(warned[0]).toContain('rename');
+    expect(warned[0]).toContain('refused');
+  });
+
+  it('treats undefined as a refusal too — a bridge that answered nothing changed nothing', () => {
+    expect(groupChangeLanded('create', undefined)).toBe(false);
+    expect(warned).toHaveLength(1);
+    expect(warned[0]).toContain('create');
+  });
+
+  it('names the operation, so three call sites do not produce one indistinguishable line', () => {
+    groupChangeLanded('create', null);
+    groupChangeLanded('rename', null);
+    groupChangeLanded('recolor', null);
+    expect(new Set(warned).size).toBe(3);
   });
 });

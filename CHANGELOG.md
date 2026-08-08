@@ -72,6 +72,9 @@ someone tags.
 - The urgency lamp's timing-dependent tests now run on a clock the tests own.
 - Every always-visible notice bar carries a height guard pinned by one shared
   regression roster.
+- Group edits the app refuses now come back as an answer instead of an error
+  nobody was listening for, so a refused edit can never surface as a crash
+  report in the background.
 
 ---
 

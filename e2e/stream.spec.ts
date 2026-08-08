@@ -458,7 +458,36 @@ test.describe('switching transport the way a user does (#153)', () => {
   // by a tick while the renderer learns the session id from a much slower IPC
   // response — so the only status push it would ever get was filtered out for
   // an id nobody knew yet.
-  test('a restarted Direct session does not offer a terminal it does not have', async () => {
+  //
+  // RETARGETED BY #339, because it had been passing for the wrong reason ever
+  // since the second of those two bugs was fixed. What it CLAIMED was that a
+  // restarted Direct session never renders the handoff bar. What it actually
+  // exercised was nothing at all:
+  //
+  //  - the session now leaves `starting` in well under a second, so
+  //    `startingLong` is never true and `terminalHandoff` returns null off its
+  //    FINAL fall-through — the `transport === 'stream'` guard the test is
+  //    named for is never reached. Deleting that guard outright left this test
+  //    green (measured 2026-08-07);
+  //  - and both absence assertions were made with the TERMINAL tab selected,
+  //    so the Session panel that renders the bar was not even mounted. It
+  //    asserted the absence of a bar from a tab that has never had one.
+  //
+  // It now drives a status the bar DOES have a branch for, through the hook
+  // channel the fake grew in #338: `!notify` runs the forwarder command out of
+  // the `--settings` file THIS session was spawned with, so the signal comes
+  // from inside the restarted child rather than from the test process. That is
+  // the one thing the #261 test below cannot do — a restart moves the live
+  // session id out from under `hookPoster`, which is why that test starts in
+  // Direct instead of switching — and it makes this the only test anywhere
+  // that proves a session restarted INTO Direct has a working hook channel.
+  //
+  // The `startingLong` branch itself is no longer reachable from the outside
+  // (nothing can hold the fake in `starting` for 8s). It keeps its teeth at the
+  // render site in `FeedView.handoff.test.tsx` and in `terminal-handoff.test.ts`'s
+  // branch table, both of which fail if the stream guard is removed.
+  test('a restarted Direct session offers no bar and no dead button when the CLI waits', async () => {
+    test.setTimeout(90_000);
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
     const w = a.window;
@@ -474,11 +503,31 @@ test.describe('switching transport the way a user does (#153)', () => {
     await w.getByRole('tab', { name: 'Terminal' }).first().click();
     await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 30_000 });
 
-    // ...and nothing else in the window contradicts it. The bar's grace period
-    // is 8s, so this has to outlast it to mean anything.
-    await w.waitForTimeout(10_000);
-    await expect(w.getByText(/start-up dialog/i)).toHaveCount(0);
+    // ...and the Session tab — the one that renders the bar — has to be the
+    // tab actually on screen for its absence to mean anything.
+    await w.getByRole('tab', { name: 'Session', exact: true }).first().click();
+
+    // The CLI says it is waiting on the user, from inside the restarted child.
+    // NOT "waiting for your input", which is the 60s idle nag and classifies to
+    // `idle` — a calm state with no bar at all. And not a permission nudge,
+    // which #313 drops on this transport before the state machine sees it.
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('!notify generic Claude is waiting on you');
+    await box.press('Enter');
+
+    // The session REALLY reached a status the bar has a branch for. Without
+    // this the three absences below prove only that nothing happened — which
+    // is exactly how this test used to pass.
+    await expect(w.locator('nav .rail-row[data-session-status="needs-input"]')).toHaveCount(1, {
+      timeout: 20_000,
+    });
+
+    // `!notify` leaves the turn open, so the status stays put and nothing can
+    // walk the card out of it while we look.
+    await expect(w.locator('[data-handoff]')).toHaveCount(0);
     await expect(w.getByRole('button', { name: /Open Terminal/i })).toHaveCount(0);
+    await expect(w.getByText(/waiting for your answer/i)).toHaveCount(0);
   });
 
   // #261 — the SAME contradiction, on the branch Dan actually reported, and the

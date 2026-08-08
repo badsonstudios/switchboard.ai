@@ -226,7 +226,9 @@ export class HookListener {
   // again (P0 #2 semantics); cleared on unregister.
   private readonly allowAllSessions = new Set<string>();
   // sessions already warned about having no window to ask (P2-E15-09) — the
-  // condition repeats per gated call, the warning shouldn't
+  // condition repeats per gated call, the warning shouldn't. Membership means
+  // "warned about the outage we are IN", not "warned once, ever": `maybeHold`
+  // re-arms it the moment a live window is seen again (#334).
   private readonly noWindowWarned = new Set<string>();
   private reqCounter = 0;
 
@@ -664,6 +666,13 @@ export class HookListener {
       else this.opts.log.debug('no live window to ask — failing open to the TUI', where);
       return 'pass';
     }
+    // A window is back. Re-arm the warning so the NEXT outage is loud again
+    // (#334). The flag means "already warned about the outage we are IN", not
+    // "warned once, ever" — without this, a window that closes, returns and
+    // closes again logs the second outage at `debug` and the operator sees
+    // nothing. `unregisterSession` clears it too, but only when the session
+    // itself ends; a session outlives many windows.
+    this.noWindowWarned.delete(sessionId);
 
     const requestId = `perm-${++this.reqCounter}`;
     const timer = setTimeout(() => {

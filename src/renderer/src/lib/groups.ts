@@ -120,6 +120,32 @@ export function railOrder<T extends AutoGroupable>(
   };
 }
 
+/**
+ * Did a `groups:*` mutation land? (#326)
+ *
+ * `groups:create` and `groups:update` resolve `null` when main refused the
+ * change — a blank name, a color that is not `#rrggbb`, an unknown group. They
+ * no longer THROW for it, so an ordinary UI gesture can no longer become an
+ * unhandled renderer rejection over one of App's uncaught `void
+ * bridge.groups...then(...)` calls. See `main/workspace/group-ipc.ts` for why
+ * that shape was chosen over catching at the call sites.
+ *
+ * The trade a result shape makes is that "refused" now looks exactly like
+ * "done" unless somebody reads it, which is what this exists to prevent: the
+ * refusal always leaves a line in the renderer console, next to main's own line
+ * carrying the reason. There is deliberately NO new UI — the caller re-reads
+ * the store either way, so a refused edit simply reverts to what is really
+ * there, which is the idiom the rail's rename field already has for an edit
+ * that goes nowhere (Escape, blur, #311's blank guard).
+ */
+export function groupChangeLanded(what: string, result: unknown): boolean {
+  if (result === null || result === undefined) {
+    console.warn(`[groups] ${what} was refused — nothing changed (reason is in the app log)`);
+    return false;
+  }
+  return true;
+}
+
 export function pickAdoptedGroupId(
   myCardId: string,
   siblingCardIds: string[],

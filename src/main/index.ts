@@ -777,7 +777,7 @@ app
       }
     );
     // persistent groups (E12-01)
-    registerGroupIpc(workspace, broker);
+    registerGroupIpc(workspace, broker, createLogger(sink, 'workspace'));
     registerBuiltinContributions();
     log.app.info('contributions registered', { manifests: registry.manifests() });
 

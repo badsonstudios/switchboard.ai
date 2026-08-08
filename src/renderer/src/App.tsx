@@ -33,6 +33,7 @@ import { WorkspaceReadOnlyBanner } from './components/WorkspaceReadOnlyBanner';
 import { PreflightBanner } from './components/PreflightBanner';
 import { collapsedRows, revealTargets } from './lib/ladder';
 import { GuardedRefresh, latestWins } from './lib/latest-wins';
+import { groupChangeLanded } from './lib/groups';
 import {
   cycleGlobal,
   cycleOverride,
@@ -1085,14 +1086,32 @@ export function App(): React.JSX.Element {
             }}
             onClose={(cardId) => grid.current?.closeCard(cardId)}
             selectedId={activeCard}
+            /* These three are the `groups:*` calls that come back with an
+               ANSWER, and like every other bridge call in this file they are
+               uncaught (#326). They no longer need to be caught: main resolves
+               `null` instead of throwing when it refuses a change, so a refusal
+               is a value to read rather than a rejection nobody is listening
+               for. `groupChangeLanded` reads it; the refresh runs either way,
+               which is what makes a refused edit revert to the truth.
+               `remove` and `setSessionGroup` below answer nothing and refuse
+               the same way — quietly, with a line in the log. */
             onCreateGroup={(name) => {
-              void bridge.groups?.create?.({ name }).then(() => refreshGroups());
+              void bridge.groups?.create?.({ name }).then((made) => {
+                groupChangeLanded('create', made);
+                return refreshGroups();
+              });
             }}
             onRenameGroup={(id, name) => {
-              void bridge.groups?.update?.(id, { name }).then(() => refreshGroups());
+              void bridge.groups?.update?.(id, { name }).then((next) => {
+                groupChangeLanded('rename', next);
+                return refreshGroups();
+              });
             }}
             onRecolorGroup={(id, color) => {
-              void bridge.groups?.update?.(id, { color }).then(() => refreshGroups());
+              void bridge.groups?.update?.(id, { color }).then((next) => {
+                groupChangeLanded('recolor', next);
+                return refreshGroups();
+              });
             }}
             policies={policies}
             pinned={pinned}
