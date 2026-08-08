@@ -109,6 +109,32 @@ test.describe('a session card', () => {
     expect(rejections).toEqual([]);
   });
 
+  test('says a session did NOT start, rather than that it ended (#355)', async () => {
+    // The one refusal an everyday gesture reaches, driven the way a user reaches
+    // it: a card whose folder is not there. `sessions:create` answers `null`
+    // (#347), the spawn effect paints the overlay — and that overlay used to
+    // read "Session ended — Exited unexpectedly (code -1)", which is three false
+    // claims and an invented exit code about a session that never ran.
+    //
+    // A seeded card is the honest reproduction: the folder is gone BEFORE the
+    // card mounts, exactly as it is for a restored card whose folder was renamed
+    // between two launches. Deleting a folder out from under a LIVE session
+    // would not work here anyway — on Windows the session's own cwd holds it.
+    const gone = path.join(tempProjectFolder(), 'a-folder-that-was-deleted');
+    a = await launchApp({ seedFolder: gone });
+    const { window } = a;
+
+    await expect(window.getByText("Session didn't start")).toBeVisible({ timeout: 25_000 });
+    await expect(window.getByRole('button', { name: 'Try again' })).toBeVisible();
+    await expect(window.getByText(/renamed, deleted, or be on a drive/)).toBeVisible();
+    // ...and NOT the copy that belongs to a session which ran and died. Point
+    // `endedCopy` back at the old keys and these two go red.
+    await expect(window.getByText('Session ended')).toHaveCount(0);
+    await expect(window.getByText(/Exited unexpectedly/)).toHaveCount(0);
+    // the card is still recoverable rather than a dead end
+    await expect(window.getByRole('button', { name: 'Close' })).toBeVisible();
+  });
+
   test('pops out into a second OS window (E8-01)', async () => {
     skipPopoutOnLinux();
     const folder = tempProjectFolder();
