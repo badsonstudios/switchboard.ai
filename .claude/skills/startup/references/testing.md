@@ -122,6 +122,35 @@ numbers (latency, CPU, memory) where the item asks for them.
      ever move that line, move it in both. A vitest test named `*.spec.ts`, or a
      spec named `*.test.ts`, is silently ignored by the runner you meant.
 
+**Temp directories: make them through the registry, and know that `npm test`
+now DELETES (#213, #354).** Tests and e2e fixtures scratch in the OS temp dir,
+and a `rmSync` at the end of a test body is skipped by the assertion that
+throws above it — which is exactly when the leak happens. So register what you
+make: `tempDir('sb-<slug>-')` from `src/test-temp-dirs.ts` (unit) or
+`registerTempDir(...)` from `e2e/fixtures/app.ts` (e2e), and teardown takes it
+even when the test failed. That stopped the flow; it left ~115,000 `sb-*`
+directories on the machines that ran the older builds.
+
+- **`npm test` sweeps before it runs a test.** `vitest.config.ts` →
+  `globalSetup` → `scripts/vitest-global-setup.js`, time-budgeted to ~2 s
+  (~2,500 directories), silent when there is nothing to do. It only ever
+  removes direct children of the temp dir whose names have `mkdtemp`'s shape
+  (`sb-<slug>-XXXXXX`), that are real directories, and that are **more than
+  24 h old** — that age floor is the entire concurrency story, so nothing a
+  live suite, an e2e run or a `check:*` probe made is ever in range.
+- **`npm run sweep:temp`** is the same code with no budget, for a backlog.
+  `npm run sweep:temp -- --dry-run` counts without deleting (note the `--`).
+- **`SB_SKIP_TEMP_SWEEP=1 npm test`** turns it off (house `isOn` semantics —
+  `true`/`yes`/anything non-empty that is not `0`/`false`/`no`/`off`). Use it
+  when you deliberately need old `sb-*` directories to survive a run.
+- **A new prefix needs nothing** — the sweeper matches by shape, not by a list.
+  A scratch directory made WITHOUT `mkdtemp`'s random suffix is never swept,
+  and never cleaned up either.
+- The sweep is **test infrastructure on purpose**. Nothing that ships makes an
+  `sb-*` directory, so putting it in the app would mean the shipped product
+  deleting folders it never created on a user's machine. Full reasoning in
+  `scripts/sweep-temp-orphans.js`'s header.
+
 **CI (GitHub Actions), every PR:** `build` job = lint + typecheck + unit +
 build + check:pty + check:fake-stream on Windows/macOS/Linux; `e2e` job =
 Playwright on Windows + Linux (xvfb). Red CI blocks merge.

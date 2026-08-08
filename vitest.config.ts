@@ -19,5 +19,10 @@ export default defineConfig({
     environment: 'node',
     // shims for the jsdom-environment files (see src/test-setup.ts)
     setupFiles: ['src/test-setup.ts'],
+    // #354 — once per run, before any worker: delete the leftover `sb-*` temp
+    // directories that pre-#213 builds left behind. Time-budgeted, never
+    // throws, skippable with SB_SKIP_TEMP_SWEEP=1. See the file's header for
+    // why the sweep lives in the test run and not in the app.
+    globalSetup: ['scripts/vitest-global-setup.js'],
   },
 });
