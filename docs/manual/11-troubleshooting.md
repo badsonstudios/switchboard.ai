@@ -218,6 +218,21 @@ it copied the damaged one into (or, if it couldn't even make that copy, says
 that instead). In the app itself, an empty workspace where you left eight
 sessions is the whole symptom.
 
+**If that copy can't be made, the damaged file isn't overwritten anyway.** A
+disk with no room left, or an anti-virus sitting on the folder, can stop
+switchboard making the copy — and then the damaged `workspace.json` is the only
+record of what went wrong. So the empty workspace is *not* saved over it. The
+save is held back for a second or two and tried again: first by writing out the
+bytes switchboard already read (or, if it never managed to read them, by copying
+the file), and failing that by simply renaming the damaged file out of the way,
+which works even when there is no room left to write anything at all.
+
+Whichever way it goes, you end up with the same dated copy, and the log line
+says which route it took. Nothing about the app is held up while this happens —
+your sessions run normally. If none of the attempts ever work, switchboard says
+so in the log and saves your live workspace rather than never saving again;
+that's the one case where the damaged file is lost.
+
 **A second failure can't overwrite the first copy.** The stamped name is never
 reused, so if this happens twice you still have the copy from the *first* time —
 the one that shows how the damage started. Switchboard keeps five of them: the
