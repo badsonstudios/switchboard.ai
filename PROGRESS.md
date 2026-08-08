@@ -8,8 +8,9 @@
 E9: #70–#77 done, **#78/#79 in Dan's queue** (PRs #287/#301), #80 held on a
 scoping call; **E19 release/auto-update NEW 2026-08-05** — 01/02 merged, 03
 in Dan's queue, 04 held on #276's merge; E11/E13/E14 still outlines)
-**In progress:** **🎛 RUN 7 ACTIVE (started 2026-08-06, /orchestrate)** —
-orchestration block below. Before run 7: 🎉 **RELEASE v0.1.0 CUT
+**In progress:** **🎛 RUN 8 CLOSED 2026-08-07 (~3.5 h)** — close-out
+block below; 7 UF PRs in Dan's queue, 2 internal merged. Run 7
+CLOSED 2026-08-06 + FULLY MERGED (train #321) + **v0.1.1 LIVE**. Before run 7: 🎉 **RELEASE v0.1.0 CUT
 2026-08-06** — the run-6 merge train (13 PRs) is FULLY MERGED
 (Dan-authorized, serial bump+re-green, 5 real conflict sets + 3
 semantic integrations resolved), tag v0.1.0 pushed, the release
@@ -30,7 +31,379 @@ structure adopting #228's temp-dir registry, verified by a local
 161+1 skip (from the merged branches' gate runs: 1227+46+5+16 /
 156+4+0+1).
 
-> # ▶▶ START HERE — 🎛 RUN 7 CLOSED 2026-08-06 (~5.5 h). **10 items:
+> # ▶▶ START HERE — 🎛 RUN 8 CLOSED 2026-08-07 (~3.5 h). **9 items:
+> 2 internal MERGED (#306→#322, #329→#335), 7 user-facing PRs in
+> DAN'S QUEUE (#324 #325 #328 #330 #332 #336 #338 — **ALL SEVEN
+> 4/4 GREEN**, #338 confirmed on the close-out check). All 7 core queue items done PLUS two
+> same-run discoveries (#327, #329) dispatched and done. 9 issues
+> filed from discoveries (#323 #326 #327 #329 #331 #333 #334 #337
+> #339), 2 of them fixed same-run. Main @ fb3076f, out/ REBUILT +
+> stamp fb3076f4 verified in both bundles — `npm start` is current.
+> Suggested train order: #332 → #338 → #336 → rest any order;
+> conflict watch: stream.spec.ts + 12-direct-mode.md (#332×#338,
+> keep-both/adjacent), hook-listener.ts (#338 ingest × #336 type
+> re-export, different regions). Zero lock steals, zero red pushes,
+> zero rate-limit warnings, zero worker casualties. One honesty
+> note: #313's worker self-flagged ~3 throwaway real-token CLI
+> turns (ran check:adapter/hooks/transcripts unprompted while
+> checking what CI runs; no probe attempted). Backfill now gated on
+> the train: #334 + #333 (hook/stream files under 2 unmerged PRs),
+> #326 (PR #325's test file), #331 (documents PR #330's repairs),
+> #339 (stream.spec under 2 unmerged PRs), #337 (paired with held
+> #269).**
+>
+> **Single-writer rule:** this file is written ONLY by the orchestrator
+> session. Workers report via handoff files in
+> `.claude/work_files/orchestrator/<issue#>.md`; handoffs are the inputs,
+> this file is the output. If this session dies, a fresh /orchestrate
+> session resumes from THIS block.
+>
+> **Queue (run-8):** the 7 run-7 discoveries. Wave 1 (dispatched):
+> **#319** (stream holds fail-open + server-side allow-all, UF,
+> sb-wt-1, feature/319-stream-hold-failopen) · **#311** (group rename
+> guard, UF, sb-wt-2, feature/311-group-rename-guard) · **#306**
+> (popout flex pin, INTERNAL, sb-wt-3, feature/306-popout-flex-pin).
+> Backfill order: #314 (aria-live) → #315 (withdrawn-release reason)
+> → #313 (Notification status guard — stream track, AFTER #319
+> pushes) → #312 (IdentityChip — AFTER #319 pushes; both touch
+> SessionGrid.tsx). Train-conflict watch: #319×#313 (stream.spec.ts
+> appends, keep-both, #319 first). Held/decisions (untouched, Dan's
+> standing list): #80 #111 #255 #268 #269 #290 #292 #295 #216 #207
+> #200 #191 #129 #256(epic) #320, + prettier adopt/drop.
+>
+> **🚂 ✅ TRAIN #340 MERGED 2026-08-07 (~14:41 local) — main @
+> e844afb.** ONE CI run, 4/4 green FIRST TRY. All 7 member PRs
+> (#324 #325 #328 #330 #332 #336 #338) flipped to merged, all 7
+> issues (#314 #311 #315 #327 #319 #312 #313) closed, all 7 feature
+> branches + train branch deleted (local + remote). Main checkout
+> REBUILT, stamp e844afb7 verified in both bundles — `npm start` is
+> current. Train mechanics for the record: ONE conflict total
+> (stream.spec.ts, #332×#338 interleaved appends — resolved by
+> rebuilding the tail with each describe block taken WHOLE from its
+> source branch); hook-listener.ts + 12-direct-mode.md auto-merged
+> clean; targeted overlap check post-#338 133/133; full train gate
+> lint/typecheck clean · 2463 unit / 118 files · 199+1 e2e (7.4m)
+> under the lock.
+>
+> **🎉 v0.1.2 LIVE (2026-08-08 ~09:45) — RUN 8 FULLY CLOSED, ZERO
+> OPEN PRs, CONTEXT-CLEAR-READY.** Dan authorized "merge 343 as is"
+> + a dogfood release: PR #343 merged (bump + re-green, issue #331
+> closed — last open PR), then release commit ead4db4 (version
+> 0.1.2 + user-worded CHANGELOG section for the whole run; the
+> release-notes guard passed 45/45 locally AND a real
+> `release-notes.js --ref refs/tags/v0.1.2` extraction dry-run
+> BEFORE tagging), tag v0.1.2, workflow run 31259626913 SUCCESS
+> first try: switchboard-Setup-0.1.2.exe + .sha256 + notes,
+> published (not draft) —
+> https://github.com/badsonstudios/switchboard.ai/releases/tag/v0.1.2
+> Laptop dogfood: download the installer from that page, or any
+> 0.1.1 install's in-app Update button offers 0.1.2 (E19-04 path,
+> proven live on 0.1.0→0.1.1). A fresh /orchestrate session resumes
+> from THIS block: dispatchable next = #347 (sessions-family throw
+> sweep, template PR #345) + #349 (.corrupt retention); all else
+> Dan-gated (decisions: #323 prettier, #313 live probe, #333
+> routing, #337×#269 accents, #207+#344 surfacing, + standing
+> list). Worktrees detached+clean. Main @ ead4db4 (release commit;
+> code tree = d6acadb + docs #343).**
+>
+> **🎛 RUN 8b CLOSED 2026-08-07 (~16:10). ALL FOUR backfill
+> internals MERGED serial-chain on green (#341→#334, #342→#339,
+> #345→#326, #348→#344; two bumps, zero failures). Main @ d6acadb,
+> out/ REBUILT, stamp d6acadb8 verified both bundles. ONE open PR
+> repo-wide: #343 (#331 docs, DAN'S QUEUE — at merge time 3
+> sentences in 11-troubleshooting.md + 1 in 07-workspace.md go
+> false because #348's logging landed; exact rewrites in 344.md
+> §touch-up; sb-wt-1 parked detached, feature/331 branch ref kept
+> alive for the PR). Worktrees all detached+clean. Everything else
+> open is Dan-gated: decisions #323 (prettier — no config
+> resolves), #313 live probe, #333 routing, #337×#269 accents,
+> #207+#344 surfacing half, #349 (.corrupt overwrite), + standing
+> list #80 #111 #255 #268 #269 #290 #292 #295 #216 #207 #200 #191
+> #129 #256 #320. Run-8 totals incl. train + backfill: 13 items
+> shipped (7 UF via train #340, 6 internal direct), 13 issues
+> filed (#323 #326 #327 #329 #331 #333 #334 #337 #339 #344 #346
+> #347 #349), 5 of them fixed same-run (#327 #329 #331 #334→#344
+> chain #339), zero lock steals, zero red pushes, zero rate-limit
+> warnings.**
+>
+> ✅ **#344 → PR #348 READY (worker, ~23 min; INTERNAL — in merge
+> chain).** Every repair on 331.md's table now warns in the
+> module's idiom: .corrupt set-aside logs the caught error WITH
+> STACK + set-aside path (+ copy-failure fallback), dropped
+> sessions/groups with counts, orphaned ids (capped 20), bad
+> window rect, defaulted prefs by key, non-boolean autoTrust.
+> Deliberately silent: first launch, absent/null fields,
+> future-version files (not damage). Structural catch from
+> self-review: warns COLLECTED and emitted AFTER the try/catch —
+> a throwing logger inside the try would have been caught by the
+> corrupt-file handler and wiped the workspace it was diagnosing
+> (latent before this PR); sanitizers stay pure via
+> {value, repaired}. Gate: 2483 unit (+20), 7 warn sites
+> mutation-checked (1–3 red each); e2e skipped (main-process
+> log-only, stated call). Discovery → **#349 filed** (.corrupt
+> overwritten on every failed load — two bad launches lose the
+> first post-mortem). Handoff: 344.md.
+>
+> ✅ **#326 → PR #345 READY (worker, ~25 min; reclassified INTERNAL
+> with evidence — merge on green).** Shape chosen: NON-THROWING
+> RESULT SHAPE for the whole groups:* family (refused mutation
+> resolves null, never throws) — safe by CONSTRUCTION for the next
+> caller, and null is data the renderer can react to; a
+> .catch(log) only stops the crash. group-ipc was already half in
+> the house shape (only the validation branches threw). Rejected a
+> renderer-wide unhandledrejection handler — it would have made
+> #311's pageerror assertion vacuous (the trap the whole
+> "just stop the crash" family walks into). Not swallowed: main
+> warns channel+reason; renderer warns at groupChangeLanded; call
+> sites refresh so a refused edit reverts to truth. #325's guards
+> intact. INTERNAL because no gesture can reach a refusal today
+> (create=constant, recolor=palette, rename=#325-guarded) — manual
+> stays accurate word-for-word. Gate: 2498 unit (+35) / 199+1 e2e
+> (7.7m, lock first-try); 5 mutations red incl. the e2e probe.
+> Discoveries → **#346 filed** (broker throws 'refused:' on every
+> channel — wrong contract for Phase-4 plugins) + **#347 filed**
+> (sessions:create/session-manager same throw class — sweep with
+> #345 as template). Handoff: 326.md.
+>
+> ✅ **#331 → PR #343 READY, IN DAN'S QUEUE (worker, ~4 min; UF
+> docs-only, +45/−0).** Two troubleshooting entries (unreadable
+> file → .corrupt set-aside; field repairs) + a 07-workspace.md
+> cross-ref — every claim verified against store.ts, NOT the
+> issue text, which was wrong twice: (1) only the blank-group-name
+> repair logs; every other repair is SILENT (docs say so honestly);
+> (2) the .corrupt set-aside logs NOTHING — void err; at
+> store.ts:246, no banner, nothing surfaced ("my workspace is
+> suddenly empty" with zero explanation). → **#344 filed** and
+> dispatched same-run (log-only scope; Events-surface half parked
+> with held #207). Gate: lint/typecheck clean, 2463 unit, tree
+> untouched by design. NOTE: if #344 lands, #343's "silent"
+> sentences need a merge-time touch-up (tracked in 344's brief).
+> Handoff: 331.md.
+>
+> ✅ **#339 → PR #342 READY (worker, ~13 min; INTERNAL — merge on
+> green).** startingLong was vacuous TWO ways: (a) the transport-
+> ready fix means starting ends <1s so the guard was never reached
+> (final fall-through returned null); (b) the absence assertions
+> ran with the Terminal tab selected — the Session panel that
+> renders the bar wasn't even mounted (this half wasn't in
+> 313.md). Mutation MEASURED: guard deleted → old body PASSED,
+> retargeted body FAILED at [data-handoff] 0→1. Now pins: restart
+> into Direct → real hook out of the restarted child's own
+> --settings → needs-input reached → bar/button/prose absent; also
+> the only proof a restarted-into-Direct session has a live hook
+> channel. startingLong itself kept teeth via a new FeedView
+> panel-contribution unit case (fake timers, same-mutation red).
+> Test-only; product NOT broken. Gate: 2464 unit / stream.spec 20
+> passed (49.9s) targeted (stated call; CI runs full). Handoff:
+> 339.md.
+>
+> ✅ **#334 → PR #341 READY (worker, ~10 min; INTERNAL — merge on
+> green, CI running).** noWindowWarned now re-arms the moment the
+> liveness gate confirms a live window — in BOTH channels
+> (HookListener.maybeHold + StreamPermissions.offer): the worker
+> found the ISSUE'S PREMISE WRONG (StreamPermissions did NOT
+> re-arm on window return; both channels were symmetric-wrong,
+> cleared only at session teardown) and fixed both under the
+> files' written no-drift invariant. Also corrects #319's handoff
+> note 3 (no leak — unregisterSession has cleared per-session
+> since #113; strike that note if handoffs are kept as knowledge).
+> +2 unit (2465), mutation: each revert reds exactly its two
+> tests. e2e skipped (log-level only), no lock. Handoff: 334.md.
+>
+> **Active workers: NONE — run closed.** Worktrees clean, parked on
+> their pushed refs (sb-wt-1 feature/313-…, sb-wt-2 feature/312-…,
+> sb-wt-3 detached at dfa316b); rebase onto fresh main after the
+> train lands. **Merge queue:** empty (both internals merged
+> in-run). **Dan's queue (7 UF PRs):** #324 (#314) · #325 (#311) ·
+> #328 (#315) · #330 (#327) · #332 (#319) · #336 (#312) · #338
+> (#313). Decisions owed (new this run): #323 prettier — now
+> CONCRETE: prettier resolves NO config here, --write would
+> mass-rewrite; #313's live-probe question (shipped defensive;
+> probe still open, pairs with hook-listener.ts:633); #333 routing
+> shape; #337×#269 pairing. Standing list unchanged: #80 #111 #255
+> #268 #269 #290 #292 #295 #216 #207 #200 #191 #129 #256(epic)
+> #320.
+>
+> ✅ **#313 → PR #338 READY, IN DAN'S QUEUE (worker, ~44 min; UF —
+> last core item).** Producer-side, as endorsed: HookListener.ingest
+> no longer feeds a permission-classified Notification into
+> manager.apply() for a stream session (debug-logged like :639's
+> hold suppression); classifier lifted out of state-machine.ts as
+> isPermissionNotification so the layers can't drift. :176
+> hardening DECLINED with rationale IN THE FILE: requiring a held
+> request is actively wrong on PTY — that arm is the only
+> permission signal when hold policy deliberately passed the call
+> (plan mode, full-auto, outside PRETOOL_MATCHER); it would trade a
+> nuisance amber badge for a silently wedged session. BIG catch en
+> route: the fake stream adapter SILENTLY DROPPED options.settings
+> — every Direct e2e since P2-E18-04 ran against a HOOK-LESS child;
+> seam fixed (fake now passes --settings; !notify runs the real
+> forwarder synchronously). #261's e2e retargeted needs-permission
+> → needs-input (its old target is the state this change removes).
+> Mutation: guard→if(false) = 3/10 unit + e2e red at the exact
+> claim. #332 overlap: no shared source files; the two suppressors
+> COMPOSE (stream permission-held path vs hook Notification path).
+> Gate: 2383 unit / 198+1 e2e (~14 lock waits behind #312, no
+> steal); check:pty + check:fake-stream PASS; CI settling at close.
+> Self-flagged: ~3 throwaway real-token turns (check:adapter/hooks/
+> transcripts) — disclosed, no probe attempted. Discovery → **#339
+> filed** (startingLong passes for the wrong reason). Handoff:
+> 313.md.
+>
+> ✅ **#329 → PR #335 READY (worker, ~27 min; INTERNAL — orchestrator
+> merges on green).** Stale-bundle guard moved to Playwright
+> globalSetup (scripts/e2e-global-setup.js) — the one seam NO
+> invocation routes around; CALLS a new in-process twin of
+> guardBundle (no forked logic); e2e:only/e2e:ui dropped their own
+> guard call (one seam, one banner). Proof on a genuinely stale
+> out/: npx playwright test exited 1 in 2.4s, zero specs run; after
+> build, FRESH + pass. Guard cost 44ms. e2e:ui removal verified
+> against Playwright's own runner source (globalSetup wired into
+> both CLI and UI-mode paths). Gate: 2382 unit (+15) / 197+1 e2e
+> (two sharded full runs through the new setup), lock first-try, no
+> steal. Noted, not filed: CI e2e logs now carry the build stamp
+> (deliberate); ALLOW_STALE_BUNDLE=1 now silences EVERY Playwright
+> invocation (wider blast radius — never bake it into a runbook);
+> manual pages still say "Status: draft" (#260's standing flag).
+> Handoff: 329.md. → **MERGED on 4/4 green (main @ fb3076f), issue
+> closed, branches deleted (local delete needed sb-wt-3 detach
+> first — worktree held the ref).** The #312 worker's stale-bundle
+> gotcha (first mutated e2e run passed misleadingly off npx's
+> no-rebuild) independently CONFIRMS this guard's value — that trap
+> is now closed on main.
+>
+> ✅ **#312 → PR #336 READY, IN DAN'S QUEUE (worker, ~28 min; UF).**
+> Card tabs now paint the real accent + language badge — new store
+> getters getCardAccent/getCardBadge (store read, not a CardParams
+> thread, per spec; two SCALAR getters deliberately — a fresh
+> object per call loops useSyncExternalStore forever). Grey
+> fallback preserved + tested. DTO fold-in: the permission shape
+> existed in THREE hand-written drifted copies (main/preload/
+> renderer) — now one src/shared/ipc/permissions.ts, hook-listener
+> re-exports so ~8 importers untouched; runtime-neutrality PROVEN
+> (preload bundle byte-identical, main differs only by build
+> timestamp). Mutation ×4 configurations red; e2e added cheaply on
+> tabs.spec's existing 7 sessions (asserts distinctness, not named
+> colours; revert → all 7 tabs one colour). Zero file overlap with
+> PR #332 — train-safe either direction. Gate: 2376 unit / 197+1
+> e2e under the lock (clean handover to #313). Manual:
+> 02-sessions.md. Discovery → **#337 filed** (rail hand-rolls its
+> identity dot — the 'ONE way identity renders' contract still
+> false one surface over; sequenced with held #269). Note: card tab
+> now shows accent at 8px — #269's blast radius grew by one surface
+> (aria-hidden, no text). Handoff: 312.md.
+>
+> ✅ **#319 → PR #332 READY, IN DAN'S QUEUE (worker, ~73 min; UF —
+> the run's centerpiece).** (a) StreamPermissions gained
+> hasLiveWindow (gate at offer), a 300s deadline, and releaseHeld —
+> all resolving DENY (a can_use_tool has no "no opinion" answer);
+> onRendererLost releases both channels, each in its own try/catch;
+> hasLiveWindow is one shared expression so the channels can't
+> drift. (b) sessions:allowAllSession now tells StreamPermissions;
+> permission-held suppression lives at the status apply
+> (SessionManager.setPermissionHoldSuppressor) — allow-all Direct
+> sessions: no banner, no beep, no per-call Events entry, no
+> renderer needed. Deliberate divergence (documented in-code):
+> allow-all applies NO status event (mirrors hook path's 'answered')
+> — resolving defensively could walk a session out of
+> needs-permission while a DIFFERENT question was outstanding.
+> Self-review caught the no-window denial masquerading as
+> "sandbox blocked me" — both fail-open paths now share
+> unavailable(). Teeth measured: new e2e passes at 0
+> needs-permission frames, fails with 5 on suppressor revert; 6
+> unit guards mutation-checked. Gate: 2389 unit (+27) / 198+1 e2e;
+> ~25 min in-turn lock wait behind #311/#315, zero steals; CI
+> in flight at handoff. Manual: 04 + 11 + 12. Discoveries →
+> **#333 filed** (no-card-mapping request decays via deadline —
+> real fix is routing) + **#334 filed** (HookListener.noWindowWarned
+> never re-arms). Handoff: 319.md.
+>
+> ✅ **#327 → PR #330 READY, IN DAN'S QUEUE (worker, ~8 min; UF
+> edge-case repair).** Repair, not reject — store.ts's own posture
+> settled it (drops structural garbage, repairs recoverable fields;
+> dropping the group would silently ungroup every member session —
+> fail-open P6). New repairGroupName() + PLACEHOLDER_GROUP_NAME
+> ('Untitled group') as a .map() on the existing load() filter, warn
+> names the group id; isSaneGroup itself unchanged (a filter type
+> guard can only reject — the issue title's shape was wrong, the
+> invariant closes one line later). +6 store.test.ts (mutation ×2:
+> 4-red and 1-red). Gate: lint/typecheck clean, 2373 unit; e2e
+> skipped (hand-edited-file trigger, seam covered incl. disk
+> round-trip), lock untouched. No manual page (nothing documents
+> corruption today) → **#331 filed** (troubleshooting section for
+> BOTH corruption paths: .corrupt set-aside + load repairs). Noted,
+> not filed: group names not unique-constrained (two blanks both
+> read 'Untitled group'); zero-width chars pass trim(); IPC-vs-load
+> bounding asymmetry. Handoff: 327.md.
+>
+> ✅ **#315 → PR #328 READY, IN DAN'S QUEUE (worker, ~36 min; UF).**
+> Shape chosen on the merits (no Dan question): distinct 'no-offer'
+> reason on the update contract, NOT a press-time re-check (a
+> re-check would install whatever the feed answers NOW, not the
+> release whose notes the user agreed to). Decision moved out of the
+> update:install IPC handler into exported pure resolveOffer() —
+> index.ts is the one file the unit suite can't import, which is why
+> the branch was untested. One reason covers withdrawn/superseded/
+> unreachable-feed; the log line keeps the distinction. The existing
+> "all eight sentences distinct" Set assertion now actually proves
+> the no-asset case is distinguishable (it was previously satisfied
+> by the lie). Gate: 2367 unit / 197+1 e2e under the lock (waited
+> 1 min for #311's lock, clean handover). No e2e added — stated
+> call: reproducing needs main's lastResult() to move while the
+> renderer's copy doesn't; only the hourly timer does that. Manual:
+> 13-updates.md new section + the #314-sibling screen-reader line
+> (worded to match PR #324, read via gh pr diff — no file overlap).
+> Discovery → **#329 filed** (npx playwright test silently tests a
+> stale bundle — cost the worker a 9-min red run; globalSetup guard).
+> Handoff: 315.md.
+>
+> ✅ **#311 → PR #325 READY, IN DAN'S QUEUE (worker, ~36 min; UF).**
+> The issue's premise was HALF WRONG: main's groups:update always
+> refused/trimmed blanks (unlike #294's sessions:renameCard), so ''
+> was never persistable and the unrenameable-group scenario was
+> unreachable. The REAL bug: the empty draft hit a throwing handler
+> over App.tsx's uncaught void-then → unhandled renderer rejection
+> (proven with a Playwright pageerror probe). Fix: rail field trims +
+> refuses blanks (Escape's idiom, matching its sibling); no redundant
+> second main guard — the seam got its first-ever test file instead
+> (group-ipc.test.ts, 9 tests) + 5 rail tests + groups e2e extended.
+> Worker's testing insight worth keeping: on a two-layer guard, an
+> e2e "bad thing didn't happen" assertion only witnesses the OUTER
+> layer (it passed with the rail guard reverted) — pageerror is what
+> witnesses the renderer layer. Gate: 2376 unit / 197+1 e2e (lock
+> clean handover to #315). Manual: 07-workspace.md. Discoveries →
+> **#326 filed** (App.tsx bridge calls have no .catch(); groups:* is
+> the family that throws) + **#327 filed** (isSaneGroup accepts ''
+> on load — hand-edited workspace.json can still make the zero-width
+> button). Flake note: palette.spec.ts:120 flaked once under load,
+> passed isolated — second spec seen doing this; watching, not filed.
+> Handoff: 311.md.
+>
+> ✅ **#314 → PR #324 READY, IN DAN'S QUEUE (worker, ~6 min; UF/a11y).**
+> role="status" + aria-live="polite" on the E8-06 reconnect offer's
+> message div, identical idiom to the update notice; 4 new pins in
+> a11y-surfaces.test.tsx cover the offer AND both update-notice
+> flavours (mutation-checked ×2 red). Gate: lint/typecheck clean,
+> 2366 unit; e2e not run (nothing drives the offer without a real OS
+> display event), lock untouched. Manual: 07-workspace.md. Out-of-
+> scope note: 13-updates.md lacks the sibling a11y one-liner —
+> folded into #315's manual scope (same page) rather than filed.
+> Handoff: 314.md.
+>
+> ✅ **#306 → PR #322 DONE (worker, ~12 min).** Roster+completeness
+> scan extended to popout.html's body column (5 new tests, 7/7
+> mutations red→green); the workspace-div comment landed (note: the
+> load-bearing flex:1 drifted App.tsx:959→1064 since #274). Judgement
+> call: popout.html untouched, test accepts equivalent no-shrink
+> spellings. Gate: lint/typecheck clean, 2367 unit; e2e not run
+> (test-file + comment only, per carve-out), lock never taken.
+> Discovery → **#323 filed** (prettier resolves NO project config —
+> --check fails on the unmodified base; feeds the standing prettier
+> adopt/drop decision). Handoff: 306.md.
+>
+> ---
+>
+> # (closed) 🎛 RUN 7 CLOSED 2026-08-06 (~5.5 h). **10 items:
 > 3 internal MERGED (#280→#304, #284→#317, #300→#316*), 5 user-facing
 > PRs in DAN'S QUEUE (#305 #307 #308 #309 #318), #255 measured-only
 > (161 errors, decisions on the issue), plus Dan's LIVE mid-run bug
