@@ -5,8 +5,9 @@
 // (§5.25) — the UI layer (E3) turns a touched suspended card into
 // SessionManager.create({...identity}, {resumeSessionId: nativeSessionId}).
 //
-// Persistence rules: tolerant load (corrupt file -> backed aside, fresh
-// start — never crash on our own state) but never a SILENT one: every repair
+// Persistence rules: tolerant load (corrupt file -> backed aside under a
+// timestamped, write-once name, fresh start — never crash on our own state, and
+// never destroy an earlier post-mortem: #349) but never a SILENT one: every repair
 // load makes, up to and including throwing the whole file away, writes a warn
 // naming what it cost (#344). Atomic save (tmp + rename),
 // debounced save-soon for churny callers, and a version dispatch on the way in
@@ -303,14 +304,7 @@ export class WorkspaceStore {
       // #207's — so the log line is the whole diagnosis.
       repairNotes.length = 0; // they described a state this catch just binned
       if (fs.existsSync(this.file)) {
-        let setAside: string | undefined;
-        let setAsideError: string | undefined;
-        try {
-          fs.copyFileSync(this.file, `${this.file}.corrupt`);
-          setAside = `${this.file}.corrupt`;
-        } catch (copyErr) {
-          setAsideError = String(copyErr); // best-effort, but no longer secret
-        }
+        const aside = this.setAsideCorruptFile();
         fileNotes.push({
           msg: 'workspace file could not be read — starting with an empty workspace; the sessions, groups and layout it held are not restored',
           fields: {
@@ -318,8 +312,7 @@ export class WorkspaceStore {
             // sanitizer that chokes on a hand-edited file, and there the frame
             // IS the diagnosis (a JSON syntax error reads the same either way)
             error: err instanceof Error && err.stack ? err.stack : String(err),
-            ...(setAside ? { setAside } : {}),
-            ...(setAsideError ? { setAsideError } : {}),
+            ...aside,
           },
         });
       }
@@ -336,6 +329,118 @@ export class WorkspaceStore {
       }
     }
     return this.snapshot();
+  }
+
+  /**
+   * Set the unreadable workspace file aside for the post-mortem, under a name
+   * nothing has used before (#349).
+   *
+   * The set-aside used to be one fixed path, `workspace.json.corrupt`, which a
+   * SECOND bad load overwrote — destroying the copy of the ORIGINAL corruption,
+   * the one that explains how this started. So each set-aside gets its own
+   * timestamped name and is written with `COPYFILE_EXCL`: this path can create a
+   * post-mortem, and can delete an old one by retention policy, but it can never
+   * overwrite one — not even if the clock repeats a millisecond or runs
+   * backwards (a VM snapshot, an NTP correction, a user fixing a wrong clock).
+   *
+   * Write-once naming rather than rotating `.corrupt` → `.corrupt.1` (the
+   * logger's idiom) on purpose: rotation has to RENAME existing files on the one
+   * code path that runs when the disk is already misbehaving, and a rename that
+   * fails there loses the very file it was protecting. And the name carries the
+   * *when*, which survives being copied into a bug report — an mtime does not.
+   *
+   * Fail-open (P6): every failure here becomes a field on the warn `load()` is
+   * already writing. Nothing throws, and nothing stops the empty-workspace boot.
+   */
+  private setAsideCorruptFile(): LogFields {
+    const stamp = new Date().toISOString().replace(/:/g, '-'); // ':' is illegal on Windows
+    const base = `${this.file}.corrupt-${stamp}`;
+    for (let attempt = 1; attempt <= MAX_STAMP_ATTEMPTS; attempt++) {
+      // A stamp already on disk means the clock repeated (or went back). Take a
+      // single-digit suffix rather than the file someone else already wrote.
+      const dest = attempt === 1 ? base : `${base}.${attempt}`;
+      try {
+        fs.copyFileSync(this.file, dest, fs.constants.COPYFILE_EXCL);
+      } catch (copyErr) {
+        if ((copyErr as NodeJS.ErrnoException).code === 'EEXIST') continue;
+        return { setAsideError: String(copyErr) }; // best-effort, but no longer secret
+      }
+      // Prune only once a NEW post-mortem is safely on disk — spending the
+      // history to make room for a copy that never happened would be the bug
+      // this fixed, with extra steps — and OUTSIDE the copy's try/catch, so a
+      // prune that somehow throws cannot be reported as a failed copy.
+      return { setAside: dest, ...this.pruneSetAsides(dest) };
+    }
+    return { setAsideError: `no unused set-aside name beside ${base}` };
+  }
+
+  /**
+   * Bound the post-mortems on disk to `MAX_SET_ASIDES`, so a workspace file that
+   * fails to load on every launch cannot fill a disk.
+   *
+   * **The oldest one is never pruned.** It is the copy of the corruption that
+   * STARTED this — the whole reason #349 exists — so what goes is the middle:
+   * the newest few (the current symptom) and the first (the origin) both stay.
+   *
+   * `justWritten` is excluded from the candidates rather than trusted to sort
+   * last: if the clock ran backwards, this load's own set-aside would otherwise
+   * be a prune candidate, and the one log line would name a file it had just
+   * deleted.
+   *
+   * Only names this code itself writes are considered — the prefix AND a
+   * well-formed stamp, files only. A bare `workspace.json.corrupt` from an older
+   * build, a `workspace.json.corrupt-KEEP-THIS` the user renamed, and a stray
+   * directory are all left exactly where they are.
+   */
+  private pruneSetAsides(justWritten: string): LogFields {
+    const dir = path.dirname(this.file);
+    const prefix = `${path.basename(this.file)}.corrupt-`;
+    const mine = path.basename(justWritten);
+    let names: string[];
+    try {
+      names = fs
+        .readdirSync(dir, { withFileTypes: true })
+        .filter(
+          (e) =>
+            e.isFile() &&
+            e.name !== mine &&
+            e.name.startsWith(prefix) &&
+            STAMPED_SUFFIX.test(e.name.slice(prefix.length))
+        )
+        .map((e) => e.name)
+        .sort(); // fixed-width ISO stamps: name order IS chronological order
+    } catch (readErr) {
+      return { pruneListError: String(readErr) }; // distinct from a failed DELETE
+    }
+    // Two of the five slots are already committed — `justWritten` and the spared
+    // oldest — so the newest survivors number MAX_SET_ASIDES - 2, and starting
+    // the slice at 1 is what spares that oldest.
+    const doomed = names.slice(1, Math.max(1, names.length - (MAX_SET_ASIDES - 2)));
+    const pruned: string[] = [];
+    const errors: string[] = [];
+    for (const name of doomed) {
+      try {
+        fs.rmSync(path.join(dir, name));
+        pruned.push(path.join(dir, name));
+      } catch (rmErr) {
+        // a file someone else already deleted is not a failure to delete it
+        if ((rmErr as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        errors.push(String(rmErr));
+      }
+    }
+    return {
+      // deleting a post-mortem is a real loss, so it rides along on the same
+      // line rather than going unsaid — bounded like every other list here
+      ...(pruned.length > 0
+        ? { pruned: pruned.slice(0, MAX_LISTED_IDS), prunedCount: pruned.length }
+        : {}),
+      ...(errors.length > 0
+        ? {
+            pruneError: errors.slice(0, MAX_LISTED_ERRORS).join('; '),
+            pruneErrorCount: errors.length,
+          }
+        : {}),
+    };
   }
 
   snapshot(): WorkspaceState {
@@ -532,6 +637,26 @@ interface LoadNote {
 
 /** How many ids one log line may name before it just carries the count. */
 const MAX_LISTED_IDS = 20;
+
+/**
+ * How many `workspace.json.corrupt-<stamp>` post-mortems are kept beside the
+ * workspace file (#349). Five, matching the log sink's rotated-file default for
+ * the same reason: enough history to see a repeating failure, bounded so one
+ * cannot fill a disk. Each is a few KB. Which five: see `pruneSetAsides`.
+ */
+const MAX_SET_ASIDES = 5;
+
+/** Names `pruneSetAsides` will act on — the stamp `setAsideCorruptFile` writes,
+ *  with the optional collision suffix. Anything else in that namespace is a
+ *  human's file and is never touched. */
+const STAMPED_SUFFIX = /^\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d\.\d{3}Z(\.\d)?$/;
+
+/** Names tried for one set-aside before giving up: the stamp, then `.2`…`.9`. */
+const MAX_STAMP_ATTEMPTS = 9;
+
+/** How many failures one log field spells out; the rest are just counted. Lower
+ *  than `MAX_LISTED_IDS` because each of these is a whole error string. */
+const MAX_LISTED_ERRORS = 3;
 
 /** What each list costs the user when entries in it cannot be read. */
 const LOST: Record<'session' | 'group', string> = {

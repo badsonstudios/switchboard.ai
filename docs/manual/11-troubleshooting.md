@@ -179,25 +179,36 @@ shown. Check the log (below) for a line from `workspace` saying the save
 failed; on Windows an anti-virus or indexer holding the file for a moment is
 the usual cause, and relaunching is enough.
 
-**My workspace came back completely empty, and there's a `.corrupt` file next to
-it.**
+**My workspace came back completely empty, and there's a `.corrupt-…` file next
+to it.**
 Everything on the [workspace page](07-workspace.md) is kept in one file,
 `workspace.json`. If switchboard can't read that file at all — it isn't valid
 JSON any more, usually because a write was interrupted or the file was
-hand-edited — it doesn't refuse to start. It copies the unreadable file aside as
-**`workspace.json.corrupt`** and opens with an empty workspace, which it then
-saves over the original as you work.
+hand-edited — it doesn't refuse to start. It copies the unreadable file aside
+under a name stamped with the date and time, like
+**`workspace.json.corrupt-2026-08-08T14-23-05.123Z`**, and opens with an empty
+workspace, which it then saves over the original as you work.
 
-Nothing announces this: there's no banner and no log line. An empty workspace
-where you left eight sessions, plus that `.corrupt` file appearing beside it, is
-the whole symptom. Both live in the same folder — `%APPDATA%\switchboard` on
+Nothing announces this in the app — there's no banner. But the log says exactly
+what happened: a line from `workspace` names what it couldn't parse and the file
+it copied the damaged one into (or, if it couldn't even make that copy, says
+that instead). In the app itself, an empty workspace where you left eight
+sessions is the whole symptom.
+
+**A second failure can't overwrite the first copy.** The stamped name is never
+reused, so if this happens twice you still have the copy from the *first* time —
+the one that shows how the damage started. Switchboard keeps five of them: the
+oldest, deliberately, plus the most recent ones. If there are ever more than
+five, the copies in the middle are deleted and the same log line names the ones
+it deleted. They live next to `workspace.json` — `%APPDATA%\switchboard` on
 Windows, `~/Library/Application Support/switchboard` on macOS,
 `~/.config/switchboard` on Linux.
 
 **Your work isn't lost.** Conversations belong to Claude Code and are untouched;
 what's gone is the arrangement — which sessions were open, your groups, the
-layout. Keep the `.corrupt` copy if you'd like to report it, and open the
-sessions you need again.
+layout. If you want to keep a copy for a bug report, move it out of that folder
+(or rename it — switchboard only ever deletes the dated names it wrote itself),
+then open the sessions you need again.
 
 **A group came back called "Untitled group", or a session lost its group.**
 When the file *does* read but a piece of it doesn't make sense, switchboard
@@ -205,8 +216,7 @@ repairs that piece rather than throwing the whole file away. You only ever see
 the result:
 
 - a group whose name was blank comes back as **Untitled group** — rename it and
-  it stays renamed. This is the one repair that's logged: a line from
-  `workspace` names the group;
+  it stays renamed;
 - a session pointing at a group that no longer exists comes back **ungrouped**;
 - a session or group missing something it can't do without — no folder, no
   colour — is dropped entirely;
@@ -215,8 +225,10 @@ the result:
 - notification and update settings that don't make sense fall back to their
   defaults: notifications on, OS toasts off, update checks on.
 
-All but the first are silent on purpose. They cost you a setting, not your work,
-and a repaired workspace is better than no workspace.
+None of these interrupt you on purpose: they cost you a setting, not your work,
+and a repaired workspace is better than no workspace. Each one does write a line
+to the log saying what it repaired, so a workspace that comes back subtly
+different is always explainable after the fact.
 
 **A pop-out window vanished after I unplugged a monitor.**
 It was rescued back onto a visible screen. Plug the monitor back in and Events

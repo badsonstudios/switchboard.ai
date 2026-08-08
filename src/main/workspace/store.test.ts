@@ -72,6 +72,16 @@ const sess = (id: string, slot = 0): PersistedSession => ({
   suspendedAt: '2026-07-19T00:00:00.000Z',
 });
 
+/**
+ * The `workspace.json.corrupt-<stamp>` post-mortems sitting beside `file`,
+ * oldest first (#349). Fixed-width ISO stamps make a name sort chronological.
+ */
+const setAsides = (): string[] =>
+  fs
+    .readdirSync(dir)
+    .filter((n) => n.startsWith('workspace.json.corrupt-'))
+    .sort();
+
 const primary = { x: 0, y: 0, width: 1920, height: 1040 };
 const left = { x: -1920, y: 0, width: 1920, height: 1040 };
 
@@ -112,7 +122,7 @@ describe('WorkspaceStore (done-when: quit -> relaunch reproduces exactly)', () =
     const st = makeStore(file);
     const s = st.load();
     expect(s.sessions).toEqual([]);
-    expect(fs.existsSync(`${file}.corrupt`)).toBe(true);
+    expect(setAsides()).toHaveLength(1);
   });
 
   it('garbage session entries are filtered on load', () => {
@@ -452,8 +462,12 @@ describe('load-time repairs are audible (#344)', () => {
       expect(warns[0].fields).toMatchObject({
         file,
         error: expect.stringContaining('JSON'),
-        setAside: `${file}.corrupt`,
+        // a timestamped name since #349, and the line names the exact one
+        setAside: expect.stringMatching(/\.corrupt-\d{4}-\d\d-\d\dT[\d.-]+Z$/),
       });
+      // followable: the path in the log is a file that is really there
+      expect(fs.existsSync(String(warns[0].fields?.setAside))).toBe(true);
+      expect(setAsides()).toHaveLength(1);
     });
 
     it('names the deliberate throw for valid JSON that is not a workspace', () => {
@@ -632,7 +646,7 @@ describe('load-time repairs are audible (#344)', () => {
     let loaded: ReturnType<typeof st.load> | undefined;
     expect(() => (loaded = st.load())).not.toThrow();
     expect(loaded?.sessions.map((s) => s.id)).toEqual(['a']); // the repair still happened
-    expect(fs.existsSync(`${file}.corrupt`)).toBe(false); // and nothing was thrown away
+    expect(setAsides()).toEqual([]); // and nothing was thrown away
   });
 
   it('a whole, healthy file is silent — every field set, nothing repaired', () => {
@@ -668,6 +682,191 @@ describe('load-time repairs are audible (#344)', () => {
     a.setUpdatePrefs({ skippedVersion: '0.2.0' });
     a.save();
     expect(loadWarns()).toEqual([]);
+  });
+});
+
+// The set-aside used to be one fixed path, `workspace.json.corrupt`, so a
+// SECOND bad load overwrote the copy of the FIRST corruption — the file that
+// explains how the damage started, gone at exactly the moment there is a
+// pattern worth looking at. Post-mortems are now write-once and bounded.
+describe('set-asides are never overwritten (#349)', () => {
+  const warnsFor = (content: string): Line[] => {
+    fs.writeFileSync(file, content);
+    const warns: Line[] = [];
+    makeStore(file, fakeLogger(warns)).load();
+    return warns;
+  };
+  const read = (name: string): string => fs.readFileSync(path.join(dir, name), 'utf8');
+  /** A post-mortem already on disk, with a stamp of our choosing. */
+  const seed = (stamp: string): string => {
+    const name = `workspace.json.corrupt-${stamp}`;
+    fs.writeFileSync(path.join(dir, name), `old post-mortem ${stamp}`);
+    return name;
+  };
+  /** `count` seeded post-mortems, oldest first. */
+  const seedMany = (count: number): string[] =>
+    Array.from({ length: count }, (_, i) =>
+      seed(`2026-01-${String(i + 1).padStart(2, '0')}T00-00-00.000Z`)
+    );
+
+  it('a second bad load keeps the FIRST post-mortem, bytes intact', () => {
+    warnsFor('{first corruption');
+    warnsFor('{second corruption');
+
+    const kept = setAsides();
+    expect(kept).toHaveLength(2);
+    expect(kept.map(read)).toEqual(['{first corruption', '{second corruption']);
+  });
+
+  it('two set-asides in the same millisecond both survive', () => {
+    vi.useFakeTimers({ now: new Date('2026-08-08T14:23:05.123Z') });
+    try {
+      warnsFor('{first corruption');
+      const warns = warnsFor('{second corruption');
+      // the clock did not move, so the second copy had to find its own name
+      expect(warns[0].fields?.setAside).toMatch(/\.corrupt-2026-08-08T14-23-05\.123Z\.2$/);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(setAsides().map(read)).toEqual(['{first corruption', '{second corruption']);
+  });
+
+  it('bounds the folder at five, keeping the OLDEST and the newest', () => {
+    const seeded = seedMany(6); // the newcomer makes seven, so two have to go
+    const warns = warnsFor('{corrupt again');
+
+    const kept = setAsides();
+    expect(kept).toHaveLength(5);
+    // the origin (first) survives, the middle two go, the recent ones stay
+    expect(kept.slice(0, 4)).toEqual([seeded[0], seeded[3], seeded[4], seeded[5]]);
+    expect(read(kept[4])).toBe('{corrupt again'); // and this load's own copy
+    expect(warns[0].fields).toMatchObject({
+      pruned: [seeded[1], seeded[2]].map((n) => path.join(dir, n)),
+      prunedCount: 2,
+    });
+  });
+
+  it('nothing is deleted while there is room', () => {
+    const seeded = seedMany(2);
+    const warns = warnsFor('{corrupt again');
+    expect(setAsides()).toHaveLength(3);
+    expect(seeded.every((n) => fs.existsSync(path.join(dir, n)))).toBe(true);
+    expect(warns[0].fields?.pruned).toBeUndefined(); // no line about a loss there wasn't
+  });
+
+  // If the clock ran backwards — a VM snapshot, an NTP correction — the copy
+  // this load just wrote sorts among the OLD ones. Pruning by name alone would
+  // delete it and then log a `setAside` path that is not there.
+  it('never prunes the copy it just wrote, even with a clock that went backwards', () => {
+    const seeded = ['2027-01-01', '2027-01-02', '2027-01-03', '2027-01-04', '2027-01-05'].map((d) =>
+      seed(`${d}T00-00-00.000Z`)
+    );
+    vi.useFakeTimers({ now: new Date('2026-08-08T14:23:05.123Z') }); // a year "before" them
+    let warns: Line[];
+    try {
+      warns = warnsFor('{corrupt again');
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const mine = String(warns[0].fields?.setAside);
+    expect(fs.existsSync(mine)).toBe(true);
+    expect(warns[0].fields?.pruned).not.toContain(mine);
+    // it sorts FIRST here, and is still not what got spared as "the oldest"
+    expect(setAsides()[0]).toBe(path.basename(mine));
+    expect(setAsides()).toHaveLength(5);
+    expect(fs.existsSync(path.join(dir, seeded[0]))).toBe(true); // the spared origin
+  });
+
+  // Both of these are deliberately named so they sort INTO the range that gets
+  // pruned — only being the wrong shape, or not a file, saves them.
+  it('leaves names it did not write alone — a renamed keepsake and a stray folder', () => {
+    const keepsake = 'workspace.json.corrupt-2026-01-03-MINE'; // right prefix, not a stamp
+    const strayDir = 'workspace.json.corrupt-2026-01-02T12-00-00.000Z'; // perfect stamp, a folder
+    fs.writeFileSync(path.join(dir, keepsake), 'the one I care about');
+    fs.mkdirSync(path.join(dir, strayDir));
+    const seeded = seedMany(6);
+    const warns = warnsFor('{corrupt again');
+
+    expect(read(keepsake)).toBe('the one I care about');
+    expect(fs.existsSync(path.join(dir, strayDir))).toBe(true);
+    // neither was even a candidate: only this code's own files were pruned, and
+    // the folder never became a permanent, un-clearable prune error
+    expect(warns[0].fields).toMatchObject({
+      pruned: [seeded[1], seeded[2]].map((n) => path.join(dir, n)),
+    });
+    expect(warns[0].fields?.pruneError).toBeUndefined();
+  });
+
+  it('a bare `.corrupt` from an older build is neither overwritten nor pruned', () => {
+    // the 0.1.2 manual told the user to keep this file; nothing here may touch it
+    fs.writeFileSync(`${file}.corrupt`, 'pre-#349 post-mortem');
+    seedMany(6);
+    warnsFor('{corrupt again');
+    expect(fs.readFileSync(`${file}.corrupt`, 'utf8')).toBe('pre-#349 post-mortem');
+  });
+
+  it('a set-aside that cannot be copied prunes nothing', () => {
+    const seeded = seedMany(6);
+    const spy = vi.spyOn(fs, 'copyFileSync').mockImplementation(() => {
+      throw new Error('EPERM: operation not permitted, copyfile');
+    });
+    let warns: Line[];
+    try {
+      warns = warnsFor('{corrupt again');
+    } finally {
+      spy.mockRestore();
+    }
+    // spending the history to make room for a copy that never happened would be
+    // the original bug with extra steps
+    expect(setAsides()).toEqual(seeded);
+    expect(warns[0].fields?.pruned).toBeUndefined();
+    expect(warns[0].fields?.setAsideError).toMatch(/EPERM/);
+  });
+
+  it('a prune that fails is reported, and the new post-mortem still stands', () => {
+    seedMany(7); // enough that a prune is definitely attempted
+    const spy = vi.spyOn(fs, 'rmSync').mockImplementation(() => {
+      throw new Error('EBUSY: resource busy or locked');
+    });
+    let warns: Line[];
+    try {
+      warns = warnsFor('{corrupt again');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(warns[0].fields?.setAside).toBeDefined();
+    expect(warns[0].fields?.pruneError).toMatch(/EBUSY/);
+    expect(warns[0].fields?.pruned).toBeUndefined(); // nothing actually went
+  });
+
+  it('a folder it cannot even list is its own field, not a failed delete', () => {
+    const spy = vi.spyOn(fs, 'readdirSync').mockImplementation(() => {
+      throw new Error('EACCES: permission denied, scandir');
+    });
+    let warns: Line[];
+    try {
+      warns = warnsFor('{corrupt again');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(warns[0].fields?.setAside).toBeDefined(); // the post-mortem still landed
+    expect(warns[0].fields?.pruneListError).toMatch(/EACCES/);
+    expect(warns[0].fields?.pruneError).toBeUndefined();
+  });
+
+  it('running out of unused names says so instead of going quiet', () => {
+    const spy = vi.spyOn(fs, 'copyFileSync').mockImplementation(() => {
+      throw Object.assign(new Error('EEXIST: file already exists, copyfile'), { code: 'EEXIST' });
+    });
+    let warns: Line[];
+    try {
+      warns = warnsFor('{corrupt again');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(warns[0].fields?.setAside).toBeUndefined();
+    expect(warns[0].fields?.setAsideError).toMatch(/no unused set-aside name/);
   });
 });
 
@@ -789,7 +988,7 @@ describe('schema version dispatch (P2-E15-13, §5.26 / AR-P2-9)', () => {
     const s = st.load();
     expect(s.sessions).toEqual([]);
     expect(st.isReadOnly()).toBe(false);
-    expect(fs.existsSync(`${file}.corrupt`)).toBe(true);
+    expect(setAsides()).toHaveLength(1);
   });
 
   // Latent since P1-E2-04, surfaced by the stores this suite builds: the
