@@ -7,7 +7,9 @@
 //
 // Persistence rules: tolerant load (corrupt file -> backed aside under a
 // timestamped, write-once name, fresh start — never crash on our own state, and
-// never destroy an earlier post-mortem: #349) but never a SILENT one: every repair
+// never destroy an earlier post-mortem: #349; when that copy FAILS the damaged
+// file is the only evidence left, so the first save is held back and tries
+// again rather than overwriting it: #352) but never a SILENT one: every repair
 // load makes, up to and including throwing the whole file away, writes a warn
 // naming what it cost (#344). Atomic save (tmp + rename),
 // debounced save-soon for churny callers, and a version dispatch on the way in
@@ -174,6 +176,12 @@ export class WorkspaceStore {
   private state: WorkspaceState = emptyState();
   private saveTimer: NodeJS.Timeout | null = null;
   private readOnly = false;
+  /**
+   * The damaged workspace file this load could NOT set aside, kept so the first
+   * save does not destroy the only copy of it (#352). Null on every normal run
+   * — and null again the moment the copy lands or is given up on.
+   */
+  private unsavedPostMortem: PendingPostMortem | null = null;
 
   constructor(
     private readonly file: string,
@@ -182,6 +190,9 @@ export class WorkspaceStore {
 
   load(): WorkspaceState {
     this.readOnly = false;
+    // Both of these describe the file THIS load found; a re-load starts from
+    // neither of them.
+    this.unsavedPostMortem = null;
     // Everything this load has to say, COLLECTED rather than logged where it is
     // found (#344) and emitted at the bottom. A warn raised inside the `try`
     // below would, if the logger ever threw, land in the corrupt-file `catch` —
@@ -202,8 +213,13 @@ export class WorkspaceStore {
     const note = (msg: string, fields?: LogFields): void => {
       if (!this.readOnly) repairNotes.push({ msg, fields });
     };
+    // Held outside the try so the catch can keep what was read: if the copy
+    // below fails, these bytes are the only post-mortem left anywhere (#352).
+    // Null when the READ is what failed — then there is nothing to hold.
+    let rawBytes: Buffer | null = null;
     try {
-      const parsed: unknown = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+      rawBytes = fs.readFileSync(this.file);
+      const parsed: unknown = JSON.parse(rawBytes.toString('utf8'));
       // `null`, a bare number, an array: valid JSON, not a workspace. Throwing
       // here keeps the pre-existing corrupt-file path (back the corpse aside,
       // start fresh) — reading fields off it would just yield a silent empty
@@ -304,7 +320,7 @@ export class WorkspaceStore {
       // #207's — so the log line is the whole diagnosis.
       repairNotes.length = 0; // they described a state this catch just binned
       if (fs.existsSync(this.file)) {
-        const aside = this.setAsideCorruptFile();
+        const aside = this.setAsideCorruptFile(rawBytes);
         fileNotes.push({
           msg: 'workspace file could not be read — starting with an empty workspace; the sessions, groups and layout it held are not restored',
           fields: {
@@ -319,16 +335,22 @@ export class WorkspaceStore {
       // A file that is simply ABSENT is first launch, not a fault: no warn.
       this.state = emptyState();
     }
-    for (const n of [...fileNotes, ...repairNotes]) {
-      try {
-        this.log?.warn(n.msg, { file: this.file, ...n.fields });
-      } catch {
-        // Saying what broke must never be the thing that breaks (P6). Also the
-        // reason these run out here: a throw INSIDE the try above would have
-        // been read as a corrupt file.
-      }
-    }
+    // Out here, not where each note was made: a throw INSIDE the try above
+    // would have been read as a corrupt file. (`warn` itself cannot throw.)
+    for (const n of [...fileNotes, ...repairNotes]) this.warn(n.msg, n.fields);
     return this.snapshot();
+  }
+
+  /**
+   * Say something about this file, without the saying ever becoming the failure
+   * (P6) — a logger that throws must not cost the caller its workspace.
+   */
+  private warn(msg: string, fields?: LogFields): void {
+    try {
+      this.log?.warn(msg, { file: this.file, ...fields });
+    } catch {
+      // nothing left to try: the reporting channel is the thing that broke
+    }
   }
 
   /**
@@ -351,27 +373,178 @@ export class WorkspaceStore {
    *
    * Fail-open (P6): every failure here becomes a field on the warn `load()` is
    * already writing. Nothing throws, and nothing stops the empty-workspace boot.
+   * A failure is also REMEMBERED — see `rescuePostMortem` (#352).
    */
-  private setAsideCorruptFile(): LogFields {
+  private setAsideCorruptFile(bytes: Buffer | null): LogFields {
     const stamp = new Date().toISOString().replace(/:/g, '-'); // ':' is illegal on Windows
+    const landed = this.intoFreshSetAside(stamp, (dest) =>
+      fs.copyFileSync(this.file, dest, fs.constants.COPYFILE_EXCL)
+    );
+    // Prune only once a NEW post-mortem is safely on disk — spending the
+    // history to make room for a copy that never happened would be the bug
+    // this fixed, with extra steps — and OUTSIDE the copy's try/catch, so a
+    // prune that somehow throws cannot be reported as a failed copy.
+    if (landed.dest) return { setAside: landed.dest, ...this.pruneSetAsides(landed.dest) };
+    // Read-only, so no save will ever reach that file: there is nothing to
+    // protect it FROM, and promising a retry that can never run (never mind
+    // pinning its bytes for the life of the process) would be a lie in the log.
+    // Reachable only via the future-version file whose reader then throws —
+    // see the `catch` this was called from.
+    if (this.readOnly) return { setAsideError: landed.error };
+    // The copy failed, so the damaged file is STILL the only copy of the
+    // evidence — and it is exactly the file the next save writes over (#352).
+    // Keep what we managed to read and try again before that happens.
+    this.unsavedPostMortem = {
+      stamp,
+      // Bounded: this is pinned for as long as the rescue takes, and a real
+      // workspace.json is a few KB. A file too big to hold is not held — the
+      // copy and move routes below need no bytes at all.
+      bytes: bytes && bytes.length <= MAX_HELD_POST_MORTEM_BYTES ? bytes : null,
+      attempts: 0,
+    };
+    return { setAsideError: landed.error, setAsideRetry: true };
+  }
+
+  /**
+   * Put a post-mortem at the first `…corrupt-<stamp>` name nothing has used,
+   * with whatever `put` does.
+   *
+   * `put` MUST refuse an existing name with `EEXIST` rather than overwrite it —
+   * that refusal is the whole guarantee #349 bought, and every caller here has
+   * one: `COPYFILE_EXCL`, the `wx` write flag, and the explicit check the move
+   * makes. A stamp already on disk means the clock repeated (or went back);
+   * take a single-digit suffix rather than the file someone else already wrote.
+   */
+  private intoFreshSetAside(
+    stamp: string,
+    put: (dest: string) => void
+  ): { dest?: string; error?: string } {
     const base = `${this.file}.corrupt-${stamp}`;
     for (let attempt = 1; attempt <= MAX_STAMP_ATTEMPTS; attempt++) {
-      // A stamp already on disk means the clock repeated (or went back). Take a
-      // single-digit suffix rather than the file someone else already wrote.
       const dest = attempt === 1 ? base : `${base}.${attempt}`;
       try {
-        fs.copyFileSync(this.file, dest, fs.constants.COPYFILE_EXCL);
-      } catch (copyErr) {
-        if ((copyErr as NodeJS.ErrnoException).code === 'EEXIST') continue;
-        return { setAsideError: String(copyErr) }; // best-effort, but no longer secret
+        put(dest);
+        return { dest };
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'EEXIST') continue;
+        return { error: String(err) }; // best-effort, but no longer secret
       }
-      // Prune only once a NEW post-mortem is safely on disk — spending the
-      // history to make room for a copy that never happened would be the bug
-      // this fixed, with extra steps — and OUTSIDE the copy's try/catch, so a
-      // prune that somehow throws cannot be reported as a failed copy.
-      return { setAside: dest, ...this.pruneSetAsides(dest) };
     }
-    return { setAsideError: `no unused set-aside name beside ${base}` };
+    return { error: `no unused set-aside name beside ${base}` };
+  }
+
+  /**
+   * Last chance to keep the evidence, run immediately before the write that
+   * would destroy it (#352).
+   *
+   * #349 made the SUCCESS path safe; this is the failure path. When the copy at
+   * load time did not land, the damaged `workspace.json` is the only remaining
+   * record of what went wrong — on exactly the class of machine (full disk,
+   * anti-virus holding a handle) whose owner most needs one — and the first
+   * `saveSoon()` of the fresh empty workspace lands on top of it.
+   *
+   * Three ways in, tried in order, because the reason the first copy failed is
+   * not known (the first two are alternatives — whether the bytes were held
+   * decides which of them is even possible):
+   *
+   * 1. **write the bytes we read** — the most faithful copy, and the only one
+   *    that still works if the damaged file has since become unreadable;
+   * 2. **copy it** — for when the READ is what failed, so there are no bytes;
+   * 3. **move it** — last, and the one that works on a FULL disk, where nothing
+   *    can be written but a rename inside a directory costs nothing. Safe here
+   *    and nowhere else in this file: we are one statement from destroying that
+   *    file anyway, so moving it can only be an improvement.
+   *
+   * Returns whether the save may proceed. `false` means "not yet" — the save is
+   * re-armed and the state stays in memory; boot, the UI and every session are
+   * untouched, which is what fail-open asks for here. Nothing is held back
+   * forever: after `MAX_RESCUE_ATTEMPTS` the workspace wins and the loss is
+   * said out loud, because a workspace that can never be saved again would be a
+   * worse bug than the one this fixes.
+   *
+   * The one thing a deferral can cost: `save()` is also the quit-time FLUSH
+   * (`win.on('close')`, and the update handshake), and a flush deferred is a
+   * flush lost — the process does not live long enough for the retry. That is
+   * still the right trade, and it is why neither call site gets a bypass. The
+   * evidence is not lost by quitting: the damaged file is untouched on disk, so
+   * the next launch diagnoses it and sets it aside all over again. What is lost
+   * is one run's workspace — a run that by definition started empty, seconds
+   * ago, and whose save said in the log that it was being held (#165).
+   */
+  private rescuePostMortem(): boolean {
+    const held = this.unsavedPostMortem;
+    if (!held) return true;
+    // Nothing left to protect: no bytes in hand, and the damaged file itself is
+    // gone (a user moved it, or an earlier rescue's move did).
+    if (!held.bytes && !fs.existsSync(this.file)) {
+      this.unsavedPostMortem = null;
+      return true;
+    }
+    const fields = this.retrySetAside(held);
+    if (fields.setAside) {
+      this.unsavedPostMortem = null;
+      this.warn(
+        'the damaged workspace file was set aside on a later try — saving the empty workspace over it now',
+        fields
+      );
+      return true;
+    }
+    held.attempts++;
+    if (held.attempts < MAX_RESCUE_ATTEMPTS) {
+      // Said once, on the first deferral: a run whose saves are being held back
+      // is not something to discover only by their absence.
+      if (held.attempts === 1)
+        this.warn(
+          'not saving over the damaged workspace file yet — it is the only copy of what went wrong and it could not be set aside; retrying',
+          fields
+        );
+      this.saveTimer = setTimeout(() => this.save(), RESCUE_RETRY_MS);
+      this.saveTimer.unref?.();
+      return false;
+    }
+    this.unsavedPostMortem = null;
+    this.warn(
+      'could not set the damaged workspace file aside — saving over it; there will be no copy of it to look at',
+      { ...fields, attempts: held.attempts }
+    );
+    return true;
+  }
+
+  /** `rescuePostMortem`'s routes, in order — at most two of the three apply to
+   *  any one attempt. Reported the way the first attempt was: one `setAside`
+   *  (plus how it got there), or one collected `setAsideError`. */
+  private retrySetAside(held: PendingPostMortem): LogFields {
+    const bytes = held.bytes;
+    // The two routes that go through the damaged FILE are only offered while
+    // there is one; otherwise they contribute an `ENOENT` apiece to every
+    // report, which reads like a disk problem and is not one.
+    const stillThere = fs.existsSync(this.file);
+    const routes: Route[] = [];
+    if (bytes) routes.push(['written-from-memory', (dest) => writeNew(dest, bytes)]);
+    else if (stillThere)
+      routes.push(['copied', (dest) => fs.copyFileSync(this.file, dest, fs.constants.COPYFILE_EXCL)]);
+    if (stillThere)
+      routes.push([
+        'moved',
+        (dest) => {
+          // `renameSync` REPLACES an existing destination on both platforms —
+          // the only operation in this file that could destroy an older
+          // post-mortem — so the name is checked first. Nothing else writes
+          // these names (#289's single-instance lock), which is what makes a
+          // check-then-act enough here.
+          if (fs.existsSync(dest))
+            throw Object.assign(new Error(`EEXIST: ${dest} exists`), { code: 'EEXIST' });
+          fs.renameSync(this.file, dest);
+        },
+      ]);
+    const errors: string[] = [];
+    for (const [how, put] of routes) {
+      const landed = this.intoFreshSetAside(held.stamp, put);
+      if (landed.dest)
+        return { setAside: landed.dest, setAsideHow: how, ...this.pruneSetAsides(landed.dest) };
+      errors.push(`${how}: ${landed.error}`);
+    }
+    return { setAsideError: errors.join('; ') };
   }
 
   /**
@@ -574,6 +747,10 @@ export class WorkspaceStore {
       this.saveTimer = null;
     }
     if (this.readOnly) return; // never downgrade a future-version file to v1
+    // A damaged file that a failed set-aside left behind is still sitting at
+    // `this.file`, and the rename below is what destroys it (#352). Nothing
+    // pending is the normal case, and it answers instantly.
+    if (!this.rescuePostMortem()) return;
     const tmp = `${this.file}.tmp`;
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
@@ -588,10 +765,7 @@ export class WorkspaceStore {
       // purpose. It is exactly the kind of failure a busy machine produces —
       // on Windows the tmp+rename dance loses to a scanner or an indexer
       // holding the file for a moment (EPERM/EBUSY) — so say so (#165).
-      this.log?.warn('workspace save failed — this run will not be restored', {
-        file: this.file,
-        error: String(err),
-      });
+      this.warn('workspace save failed — this run will not be restored', { error: String(err) });
     }
   }
 
@@ -635,6 +809,56 @@ interface LoadNote {
   fields?: LogFields;
 }
 
+/**
+ * A post-mortem that has not made it to disk yet — the record `rescuePostMortem`
+ * works from (#352). Its mere existence means "the damaged file must not be
+ * overwritten yet".
+ */
+interface PendingPostMortem {
+  /** the stamp the load picked, so the copy is named for WHEN the damage was
+   *  found rather than for whenever the disk finally cooperated */
+  stamp: string;
+  /** the damaged file's bytes, when the read succeeded and they were small
+   *  enough to hold; null means the rescue has to work from the file itself */
+  bytes: Buffer | null;
+  /** saves held back so far; see `MAX_RESCUE_ATTEMPTS` */
+  attempts: number;
+}
+
+/** One way of getting a post-mortem onto disk: what to call it in the log, and
+ *  what to do. See `retrySetAside`. */
+type Route = [how: string, put: (dest: string) => void];
+
+/**
+ * Write `bytes` to a name nothing has used, leaving no half-file behind if the
+ * write dies partway.
+ *
+ * Necessary because an `ENOSPC` two thirds of the way through leaves a
+ * TRUNCATED post-mortem on the honest name — worse than none, and it would push
+ * the route that does work onto `.2`.
+ *
+ * Whether the name was free BEFORE the attempt is what makes the cleanup safe,
+ * and checking it is not paranoia: `wx` cannot truncate an existing file, but
+ * it does not always come back as `EEXIST` either — Windows answers an existing
+ * hidden or read-only file with `EPERM`/`EACCES`. Deleting on that would make
+ * this the one function in the file that destroys a post-mortem it found.
+ */
+function writeNew(dest: string, bytes: Buffer): void {
+  const wasFree = !fs.existsSync(dest);
+  try {
+    fs.writeFileSync(dest, bytes, { flag: 'wx' });
+  } catch (err) {
+    if (wasFree && (err as NodeJS.ErrnoException).code !== 'EEXIST') {
+      try {
+        fs.rmSync(dest, { force: true });
+      } catch {
+        // the disk is refusing everything; the throw below is the report
+      }
+    }
+    throw err;
+  }
+}
+
 /** How many ids one log line may name before it just carries the count. */
 const MAX_LISTED_IDS = 20;
 
@@ -653,6 +877,30 @@ const STAMPED_SUFFIX = /^\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d\.\d{3}Z(\.\d)?$/;
 
 /** Names tried for one set-aside before giving up: the stamp, then `.2`…`.9`. */
 const MAX_STAMP_ATTEMPTS = 9;
+
+/**
+ * How many saves may be held back while a failed set-aside is retried (#352),
+ * one attempt per save — a budget in SAVES, not in seconds, so a churny run
+ * spends it faster than a quiet one (the retry timer only sets the floor:
+ * roughly two to five seconds of grace for a transient handle). After that the
+ * live workspace wins, because "never saves again" is a worse failure than "no
+ * post-mortem".
+ *
+ * Reaching this is already unlikely to cost anything: a directory that refuses
+ * to take a copy, a write and a rename will refuse the save's own tmp file too.
+ */
+const MAX_RESCUE_ATTEMPTS = 5;
+
+/** Spacing of those retries — long enough that a busy scanner can finish. */
+const RESCUE_RETRY_MS = 1000;
+
+/**
+ * The largest unreadable workspace file whose bytes are pinned in memory while
+ * the set-aside is retried (#352). A real one is a few KB; something orders of
+ * magnitude bigger is not worth carrying for the life of the process, and the
+ * copy/move routes rescue it without any bytes at all.
+ */
+const MAX_HELD_POST_MORTEM_BYTES = 4 * 1024 * 1024;
 
 /** How many failures one log field spells out; the rest are just counted. Lower
  *  than `MAX_LISTED_IDS` because each of these is a whole error string. */
