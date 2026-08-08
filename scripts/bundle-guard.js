@@ -553,7 +553,15 @@ function targetFor(root, bundle) {
  *  saying no, and reading that as yes would open the gate permanently. */
 const OFF = /^(0|false|no|off)$/i;
 
-/** @param {string|undefined} raw */
+/**
+ * Is an env-var escape hatch switched on?
+ *
+ * EXPORTED, and the repo's one answer to that question — `#354`'s
+ * `SB_SKIP_TEMP_SWEEP` reads it from here rather than testing `=== '1'`, so a
+ * shell exporting `true` cannot mean "on" for one switch and "off" for another.
+ *
+ * @param {string|undefined} raw
+ */
 const isOn = (raw) => typeof raw === 'string' && raw !== '' && !OFF.test(raw);
 
 /**
@@ -671,6 +679,7 @@ module.exports = {
   E2E_TARGET,
   NO_BUILD_HEADLINE,
   e2eTarget,
+  isOn,
   guardE2eBundle,
   isBundledSource,
   collectInputs,
