@@ -31,7 +31,95 @@ structure adopting #228's temp-dir registry, verified by a local
 161+1 skip (from the merged branches' gate runs: 1227+46+5+16 /
 156+4+0+1).
 
-> # ▶▶ START HERE — 🎛 RUN 8 CLOSED 2026-08-07 (~3.5 h). **9 items:
+> # ▶▶ START HERE — 🎛 RUN 9 CLOSED 2026-08-08 (~1.6 h). **Both
+> queue items done: #349 → PR #350 and #347 → PR #351, BOTH
+> USER-FACING, BOTH marked ready, BOTH 4/4 GREEN — in Dan's queue,
+> nothing merged (no internal PRs this run). 4 issues filed from
+> discoveries (#352 #353 #354 #355). Queue now DRY: everything open
+> is Dan-gated or collision-gated on the two unmerged PRs — next
+> dispatchables AFTER Dan merges: #352 (needs #350 in), #354 (needs
+> #351 in), #346 (decide broker refusal contract — #345+#351 now
+> both set the null-result precedent). #353 is next-release-cut
+> work. Zero lock steals, zero red pushes, zero rate-limit
+> warnings, zero worker casualties.**
+>
+> **Single-writer rule:** this file is written ONLY by the orchestrator
+> session. Workers report via handoff files in
+> `.claude/work_files/orchestrator/<issue#>.md`; handoffs are the inputs,
+> this file is the output. If this session dies, a fresh /orchestrate
+> session resumes from THIS block.
+>
+> **Queue (run-9, final):** wave 1 was the whole run — **#347**
+> (sb-wt-1) + **#349** (sb-wt-2), dispatched in parallel, no file
+> collisions, both landed first try. Held/decisions untouched
+> (Dan's standing list): #80 #111 #255 #268 #269 #290 #292 #295
+> #216 #207 #200 #191 #129 #256(epic) #320 #323 #313 #333 #337
+> #344-surfacing. Main @ f14b559 all run (nothing merged).
+>
+> **Dan's queue (run-9):** **PR #350** (#349, USER-FACING, marked
+> ready, **CI 4/4 green** incl. both e2e platforms) · **PR #351**
+> (#347, USER-FACING, marked ready, **CI 4/4 green** incl. both
+> e2e platforms). Hand-test
+> lists in the PR bodies / 349.md + 347.md. Train-conflict watch:
+> NONE — #350 (store.ts/manual-workspace pages) and #351 (sessions
+> ipc/manager/manual-sessions pages) share no files; both touch
+> 11-troubleshooting.md but different sections (auto-merge
+> expected).
+>
+> ✅ **#347 → PR #351 READY, IN DAN'S QUEUE (worker, ~45 min; UF —
+> one refusal IS reachable by an ordinary gesture: a restored
+> card whose folder was renamed/deleted/unplugged calls
+> sessions:create via resume-on-focus; visible behavior unchanged
+> ["Session ended" overlay] but previously the reason went to
+> stderr, which main does not capture — the log never named the
+> folder. Now it does).** Swept all 24 sessions-family
+> registrations: only sessions:create + sessions:rename threw —
+> both now refuse → null + warn (channel, reason, cardId/folder);
+> manager.create wrapped (its 3 deliberate throws +
+> buildHookSettings + PtyService.spawn by construction);
+> SessionManager.mustGet deleted (kill/rename log-and-drop, the
+> throw was the class outlier). Post-spawn wiring left throwing on
+> purpose (session live by then, null would strand it). Preload
+> type widened to `| null` — the TYPE SYSTEM pins the renderer's
+> null branch (mutation: typecheck red ×5). Manual:
+> 11-troubleshooting new entry + 02-sessions pointer, written
+> pre-PR. Gate: lint/typecheck clean · 2542 unit (+21) · 199+1 e2e
+> (8.2m, lock first-try, owner 347) · 5 mutation reverts red incl.
+> the e2e pageerror probe (proves it non-vacuous). Trap
+> re-confirmed: NO global unhandledrejection handler (comment at
+> the probe). Discoveries → **#355 filed** (overlay says "Exited
+> unexpectedly (code -1)" for a never-started session —
+> refused-vs-died + copy + i18n), CHANGELOG gap folded into #353
+> (comment added: every post-0.1.2 merge shares it; make "open
+> next unreleased section" a release-skill step). Handoff: 347.md.
+>
+> ✅ **#349 → PR #350 READY, IN DAN'S QUEUE (worker, ~43 min; UF —
+> filename on disk + retention policy + manual sentences changed).**
+> Fix shape: write-once timestamped set-asides
+> (`workspace.json.corrupt-<iso>`, `:`→`-` for Windows,
+> COPYFILE_EXCL), cap five with **the OLDEST spared on purpose** —
+> "keep five newest" reintroduces #349 on the sixth bad launch
+> (review Blocker, fixed both in code and manual). Rejected numbered
+> rotation (renames existing files on the exact path that runs when
+> the disk is misbehaving) and the bare don't-overwrite guard
+> (strands the first corruption forever). Prune runs only after a
+> landed copy, only over names this code wrote (prefix + stamp regex
+> + isFile); justWritten excluded so a backwards clock can't delete
+> the copy it just logged. #348's warn-idiom kept (setAside/pruned
+> full paths, split pruneListError vs pruneError). Manual
+> 11-troubleshooting + 07-workspace updated pre-PR — including
+> fixing THREE sentences shipped false in 0.1.2 (#348's merge-time
+> touch-up list was dropped; process miss, noted). Gate: lint/
+> typecheck clean · 2532 unit (+11) · e2e skipped locally (stated
+> call, main-process fs only) but **CI 4/4 green incl. e2e both
+> platforms** · 7 mutation checks red-verified. Discoveries →
+> **#352 filed** (set-aside FAILURE path: first saveSoon overwrites
+> the only copy — pairs with held #207), **#353 filed** (next
+> release: CHANGELOG entry + correct 0.1.2's stale filename note),
+> **#354 filed** (~7,600 pre-#213 sb-ws-* orphans in %TEMP%, nobody
+> sweeps). Handoff: 349.md.
+>
+> # 🎛 RUN 8 CLOSED 2026-08-07 (~3.5 h). **9 items:
 > 2 internal MERGED (#306→#322, #329→#335), 7 user-facing PRs in
 > DAN'S QUEUE (#324 #325 #328 #330 #332 #336 #338 — **ALL SEVEN
 > 4/4 GREEN**, #338 confirmed on the close-out check). All 7 core queue items done PLUS two
