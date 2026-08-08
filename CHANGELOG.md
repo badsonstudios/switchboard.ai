@@ -38,6 +38,55 @@ someone tags.
 
 ---
 
+## 0.1.2 — 2026-08-08
+
+### Fixed
+
+- Sessions with **Allow all** switched on are now genuinely silent in Direct
+  mode. Before, every tool call still rang the bell — a beep, a taskbar flash,
+  and a "needs permission" entry in the events panel for a question the app
+  had already answered itself. Now those calls are answered inside the app
+  without involving the window at all: no banner, no beep, no log spam.
+- Closing (or crashing) a window can no longer strand a session that was
+  waiting on a permission answer. An unanswerable question now times out to a
+  safe "no" — the tool is denied and the session carries on, instead of
+  hanging forever on a prompt nobody can see.
+- Direct-mode sessions no longer flip to "needs permission" on background
+  notification noise when nothing is actually being asked. Real questions
+  still come through exactly as before.
+- A group can no longer be renamed to an empty name — the edit simply ends and
+  the old name stands, matching how session renames already behave. And if a
+  hand-edited (or damaged) workspace file contains a blank group name, it now
+  loads as "Untitled group" instead of producing an invisible, unclickable
+  group.
+- Pressing **Update** on a release that was withdrawn while the dialog sat
+  open now says the release is no longer available, instead of the misleading
+  "no installer this app can verify".
+- Each session tab now shows the session's identity color and language badge,
+  matching its card header. They previously always painted a grey dot.
+
+### Added
+
+- Screen readers now announce the "reconnect your pop-out window" offer in the
+  events panel, the same way they announce update notices.
+- The manual's troubleshooting page now explains what the app does with a
+  damaged workspace file — both when the whole file is unreadable (it is set
+  aside as `workspace.json.corrupt` and the app starts fresh) and when
+  individual fields are quietly repaired.
+- Every one of those load-time repairs now says so in the log: what was
+  repaired or dropped, and — when the whole file was set aside — why it
+  couldn't be read and where it went. Nothing about a damaged workspace is
+  silent anymore.
+
+### Internal
+
+- The end-to-end test suite now refuses to run against a stale build, failing
+  in seconds with a clear message instead of minutes of misleading failures.
+- Group operations refuse bad input with a result the interface can react to
+  instead of throwing, closing off a class of invisible background errors.
+- Two tests that had quietly stopped proving anything were rebuilt so they
+  fail when the behavior they name is actually broken.
+
 ## 0.1.1 — 2026-08-06
 
 ### Added
