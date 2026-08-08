@@ -31,17 +31,31 @@ structure adopting #228's temp-dir registry, verified by a local
 161+1 skip (from the merged branches' gate runs: 1227+46+5+16 /
 156+4+0+1).
 
-> # ▶▶ START HERE — 🎛 RUN 9 CLOSED 2026-08-08 (~1.6 h). **Both
-> queue items done: #349 → PR #350 and #347 → PR #351, BOTH
-> USER-FACING, BOTH marked ready, BOTH 4/4 GREEN — in Dan's queue,
-> nothing merged (no internal PRs this run). 4 issues filed from
-> discoveries (#352 #353 #354 #355). Queue now DRY: everything open
-> is Dan-gated or collision-gated on the two unmerged PRs — next
-> dispatchables AFTER Dan merges: #352 (needs #350 in), #354 (needs
-> #351 in), #346 (decide broker refusal contract — #345+#351 now
-> both set the null-result precedent). #353 is next-release-cut
-> work. Zero lock steals, zero red pushes, zero rate-limit
-> warnings, zero worker casualties.**
+> # ▶▶ START HERE — 🎛 RUN 9 CLOSED 2026-08-08 + FULLY MERGED
+> (~1.6 h run + same-morning merge). **Both queue items shipped and
+> ON MAIN: #349 → PR #350 (squash 4a9db4c) and #347 → PR #351
+> (squash 62cd57d), both UF, both 4/4 green, Dan authorized "merge
+> them" — individual squashes, NO train needed (zero file overlap,
+> zero bumps, zero conflicts). Issues #349/#347 closed, feature
+> branches deleted local+remote. Main @ 62cd57d, out/ REBUILT,
+> stamp verified both bundles — `npm start` is current. 4 issues
+> filed from discoveries (#352 #353 #354 #355). Dan's stated next
+> step: context-clear + fresh /orchestrate.**
+>
+> **Queue for the NEXT run (in suggested order):** **#352**
+> (set-aside FAILURE path eats evidence — unblocked, #350 is in;
+> store.ts) · **#354** (pre-#213 sb-ws-* orphan sweep — unblocked,
+> #351 is in) · **#355** (refused-vs-died overlay copy + i18n — UF,
+> renderer distinction; SessionGrid/ipc, so NOT concurrent with
+> #352? no — #352 is store.ts, fine; run #355 and #352 in
+> parallel, #354 in the third slot if no session-manager overlap
+> with #355, else serial after it). **#346** = decision for Dan
+> (broker refusal contract; #345+#351 both set the null-result
+> precedent — recommend result-shape). **#353** = next-release-cut
+> checklist (CHANGELOG backfill for ALL post-0.1.2 merges incl.
+> #350/#351 + correct 0.1.2's stale filename note + make "open
+> next unreleased section" a release step). Zero lock steals, zero
+> red pushes, zero rate-limit warnings, zero worker casualties.
 >
 > **Single-writer rule:** this file is written ONLY by the orchestrator
 > session. Workers report via handoff files in
@@ -56,10 +70,9 @@ structure adopting #228's temp-dir registry, verified by a local
 > #216 #207 #200 #191 #129 #256(epic) #320 #323 #313 #333 #337
 > #344-surfacing. Main @ f14b559 all run (nothing merged).
 >
-> **Dan's queue (run-9):** **PR #350** (#349, USER-FACING, marked
-> ready, **CI 4/4 green** incl. both e2e platforms) · **PR #351**
-> (#347, USER-FACING, marked ready, **CI 4/4 green** incl. both
-> e2e platforms). Hand-test
+> **✅ MERGED (Dan-authorized, 2026-08-08):** **PR #350** (#349,
+> UF, 4/4 green → squash 4a9db4c) · **PR #351** (#347, UF, 4/4
+> green → squash 62cd57d). Hand-test
 > lists in the PR bodies / 349.md + 347.md. Train-conflict watch:
 > NONE — #350 (store.ts/manual-workspace pages) and #351 (sessions
 > ipc/manager/manual-sessions pages) share no files; both touch
