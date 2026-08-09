@@ -38,6 +38,8 @@ If a consumer can `import { claudeAdapter }`, the seam is decorative.
 | [renderer/src/extensibility/panels.tsx](../src/renderer/src/extensibility/panels.tsx) | The four session view tabs |
 | [renderer/src/extensibility/feed-blocks.tsx](../src/renderer/src/extensibility/feed-blocks.tsx) | The seven transcript block renderers |
 | [renderer/src/extensibility/feed-render.ts](../src/renderer/src/extensibility/feed-render.ts) | First-match-in-order resolution for a block, fail-open |
+| [renderer/src/extensibility/themes.ts](../src/renderer/src/extensibility/themes.ts) | The four theme contributions (wrapping `builtinThemes`) and their order-sorted resolution |
+| [renderer/src/extensibility/commands.ts](../src/renderer/src/extensibility/commands.ts) | Flattens the registered `command-set` contributions, first-match wins |
 | [renderer/src/extensibility/registry-instance.ts](../src/renderer/src/extensibility/registry-instance.ts) | The renderer's registry instance, and nothing else — consumers import this, not `bootstrap.ts`, which would close an import cycle |
 | [renderer/src/extensibility/boundary.tsx](../src/renderer/src/extensibility/boundary.tsx) | `ContributionBoundary` + `safely()`: one contribution failing costs that contribution |
 | [renderer/src/extensibility/status-bar-items.tsx](../src/renderer/src/extensibility/status-bar-items.tsx) | The four status bar items |
@@ -59,7 +61,7 @@ actually serve it.
 
 | Point | Contract | Registered today |
 |---|---|---|
-| `provider-adapter` | `ProviderAdapter` | [`claudeAdapter`](../src/main/providers/claude.ts) — real; [`fakeAdapter`](../src/main/providers/fake.ts) — test double, mutually exclusive (see below) |
+| `provider-adapter` | `ProviderAdapter` | [`claudeAdapter`](../src/main/providers/claude.ts) — real; [`fakeAdapter`](../src/main/providers/fake.ts) and [`fakeStreamAdapter`](../src/main/providers/fake-stream.ts) — test doubles, one per transport. All three claim the id `claude-code` and exactly one is ever registered (see below) |
 
 **Renderer** — [`RendererContributions`](../src/renderer/src/extensibility/contributions.ts):
 
@@ -89,7 +91,7 @@ puts a thing on a bar. A contract that has only ever seen one shape of consumer
 has not been tested, and the Phase-4 gate asks for dissimilar consumers for
 exactly that reason.
 
-Two rules those points established, worth knowing before you add a fourth:
+Three rules those points established, worth knowing before you add another:
 
 - **A contribution never takes the window down.** Predicates (`enabled`,
   `badge`, `matches`) are called through `safely()` and a throw counts as the
@@ -117,24 +119,52 @@ it. It was deleted in P2-E15-02: no registrant, no consumer, no reference to
 it became, and re-adding it beside a real registrant (the §5.14 status monitor)
 is a smaller job than keeping a contract nothing has had to satisfy.
 
-The §5.23 roster lists nine first-party extensions. Two points now carry real
-registrants across two processes; items 3–9 (usage pane, notification channels,
-manager panes, feed block renderers, themes, …) are still plain in-process code
-that does **not** go through the registry — P2-E15-03 lands the next three.
+The §5.23 roster lists nine first-party extensions, and it is **not** the same
+list as the table above. **Six points carry real registrants across two
+processes**, but three of them — `command-set`, `panel` and `status-bar-item` —
+are seams retrofitted onto core surfaces that already existed (the palette, the
+card's view-tab strip, the workspace status bar), not roster entries.
+
+Measured against the roster itself, three of the nine are on the seam: provider
+adapters (1), theme presets (7, via P2-E15-05) and feed block renderers (8, via
+P2-E15-03). The remaining five — usage pane (2), notification channels (3),
+dispatch role templates (4), the service status monitor (5) and the manager
+panes (6) — do not go through the registry because **they are not built yet**;
+item 9 is a backlog bucket rather than a surface. That is the good version of
+this gap: when those features land they land as contributions, instead of
+arriving as in-process code that someone has to migrate afterwards.
 
 ### Registry consumers
 
-Three production call sites resolve through the registry, and all of them
-matter if you change the contracts:
+Production call sites resolve through the registry in **both** processes now,
+and all of them matter if you change the contracts. Main:
 
-- [session-manager.ts:102](../src/main/sessions/session-manager.ts#L102) —
+- [session-manager.ts:156](../src/main/sessions/session-manager.ts#L156) —
   resolves the adapter for a session's `providerId` to build its spawn recipe.
-- [index.ts:502](../src/main/index.ts#L502) — pulls the provider's builtin
+- [index.ts:1178-1179](../src/main/index.ts#L1178-L1179) — `capabilitiesOf` and
+  `isRegisteredProvider`, which is how the session IPC asks §5.3's capability
+  objects instead of assuming Claude.
+- [index.ts:1185](../src/main/index.ts#L1185) — pulls the provider's builtin
   `slashCommands()` for composer autocomplete (P2-E10-07).
+- [index.ts:805](../src/main/index.ts#L805) — `list('provider-adapter')[0]` is
+  the default provider for a new card, so **registration order is precedence**.
 
-Plus [index.ts:409-410](../src/main/index.ts#L409-L410), which registers the
-builtins at startup and logs every manifest — the closest thing we have to an
-"installed extensions" view.
+Renderer — one per point, each the sole resolver for its own surface:
+[commands.ts:43](../src/renderer/src/extensibility/commands.ts#L43),
+[feed-render.ts:17](../src/renderer/src/extensibility/feed-render.ts#L17),
+[panels.tsx:29](../src/renderer/src/extensibility/panels.tsx#L29),
+[status-bar-items.tsx:45](../src/renderer/src/extensibility/status-bar-items.tsx#L45)
+and [themes.ts:21](../src/renderer/src/extensibility/themes.ts#L21). Each takes
+the registry as an **argument** rather than reaching for the singleton, so a
+test can pass a fresh one; the components (`App.tsx`, `SessionGrid.tsx`,
+`FeedView.tsx`, `chrome.tsx`) import `rendererRegistry` and hand it to these
+helpers, which is what keeps each point's sort / first-match rule in one place
+instead of at every call site.
+
+Plus [index.ts:796-797](../src/main/index.ts#L796-L797) and
+[bootstrap.ts:51](../src/renderer/src/bootstrap.ts#L51), which register the
+builtins at startup and log every manifest — the closest thing we have to an
+"installed extensions" view, one line per process.
 
 ## The contract
 
@@ -181,11 +211,15 @@ it surfaces collisions at startup rather than as a silent last-wins.
 
 ### The substitution pattern (how e2e swaps the CLI)
 
-`fakeAdapter` registers under the *same* `claude-code` id as the real adapter,
-guarded by `SWITCHBOARD_FAKE_PROVIDER=1`, and `bootstrap.ts` returns early so
-only one is ever present. It spawns the OS shell in a real PTY instead of the
-`claude` CLI — a genuine interactive terminal with no CLI login and no network,
-so UI tests are hermetic and CI-safe.
+The fakes register under the *same* `claude-code` id as the real adapter,
+selected by `SWITCHBOARD_FAKE_PROVIDER`, and `bootstrap.ts` returns early so
+only one is ever present. There are two of them, one per transport, and they are
+distinct **values of one variable** rather than two flags precisely so they
+cannot both be on and race to register the same id: `=1` picks `fakeAdapter`,
+which spawns the OS shell in a real PTY instead of the `claude` CLI, and
+`=stream` picks `fakeStreamAdapter`, the stream-json fake (P2-E18-04). Either
+way it is a genuine session with no CLI login and no network, so UI tests are
+hermetic and CI-safe.
 
 This is the seam paying rent: the entire app runs against a different provider
 implementation with a two-line change in one file and no consumer edits.
@@ -367,7 +401,7 @@ is one — and those sit outside the vocabulary entirely.
 
 Main's `registry` is a singleton for the app, but `ContributionRegistry` is a plain
 class and standalone tooling constructs its own — see
-[hook-check.ts:33](../src/main/hooks/hook-check.ts#L33), a CLI check that builds
+[hook-check.ts:36](../src/main/hooks/hook-check.ts#L36), a CLI check that builds
 a private registry, registers the Claude adapter, and drives a `SessionManager`
 outside Electron. Keep `SessionManager` (and anything like it) taking a registry
 as a constructor argument rather than reaching for the singleton, or that stops
@@ -390,17 +424,21 @@ met for the first time — which is a starting condition for that conversation,
 not a decision to ship a plugin API.
 
 - **The seam covers the main process only, and the roster is mostly renderer.**
-  Of §5.23's nine first-party extensions, eight (usage pane, notification
-  channels, manager panes, feed block renderers, theme presets, status-bar
-  items, dispatch templates) are renderer contributions. **Was:** no renderer
+  Of §5.23's nine first-party extensions, only the provider adapters (item 1)
+  are main's; the other eight — usage pane, notification channels, dispatch role
+  templates, the service status monitor, manager panes, theme presets, feed
+  block renderers, and the item-9 backlog — are renderer
+  contributions. **Was:** no renderer
   registry at all, so seven of them were plain in-process code with nowhere to
   land. **RESOLVED.** E15-02 made `ContributionRegistry` process-agnostic and
   gave the renderer its own instance, bootstrap and contracts map; **E15-03**
   added `panel`, `feed-block-renderer` and `status-bar-item`, each replacing a
   hardcoded switch that already existed in `SessionGrid.tsx`, `FeedView.tsx` or
-  `chrome.tsx`. What remains unregistered is the usage pane, notification
-  channels and dispatch templates — code that does not exist yet rather than
-  code with nowhere to go.
+  `chrome.tsx`; **E15-05** added `theme`. What remains unregistered is the usage
+  pane, notification channels, dispatch templates, the service status monitor
+  and the manager panes — five roster items that are code which does not exist
+  yet, rather than code with nowhere to go. See "Contribution points and their
+  registrants" above for the roster-by-roster count.
 - **A second registry already exists without being called one.**
   `renderer/lib/commands.ts` + `command-set.ts` is
   `{id, title, category, enabled(ctx), run(ctx)}` — exactly a contribution
