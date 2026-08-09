@@ -426,9 +426,7 @@ describe('overlaySaid', () => {
     expect(spoken).not.toMatch(/\bended\b|\bexited\b|\bcode\b/i);
   });
 
-  // (the issue number stays out of this title on purpose: the hex-colour lint
-  // rule reads a `#358` inside a string literal as a three-digit colour)
-  it('announces suspension — the other overlay, audited by the same issue', () => {
+  it('announces suspension — the other overlay #358 audited', () => {
     expect(overlaySaid({ live: false, suspended: true, ended: null })).toEqual({
       heading: 'grid.suspended',
       detail: 'grid.suspendedHint',
