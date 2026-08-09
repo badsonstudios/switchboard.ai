@@ -229,8 +229,8 @@ interface IpcRefusal {
   readonly channel: string;                    // what was refused
   readonly reason: 'capability-not-held'       // you have a grant, not this one
                  | 'not-granted'               // you have no grant at all
-                 | 'unknown-channel';          // not in the map — a wiring bug
-}
+                 | 'unknown-channel';          // RESERVED: a wiring bug, and
+}                                              // unreachable through handle()
 
 isIpcRefusal(value)   // the only supported way to detect one
 ```
