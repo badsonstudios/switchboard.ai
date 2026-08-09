@@ -901,7 +901,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
           suspended.
 
           `role="status"`, which is polite by definition and is how the rest of
-          this app spells a live region (PreflightBanner, WorkspaceReadOnlyBanner,
+          this app spells a live region (PreflightBanner, WorkspaceNoticeBanner,
           the rail's move notice). `aria-live="polite"` alongside it is strictly
           redundant and written anyway, belt-and-braces, exactly as EventsPanel's
           two notices do it — the attribute is the part a reader recognises, and

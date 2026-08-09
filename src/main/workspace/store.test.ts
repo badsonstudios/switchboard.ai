@@ -367,6 +367,266 @@ describe('a failed save is audible (#165)', () => {
   });
 });
 
+// #165 made a failed write audible in the LOG. This is the other half: it was
+// still invisible in the app, which is the same silent-loss shape #168 fixed
+// for read-only mode — the layout on disk quietly stops keeping up with the one
+// on screen, and the next launch restores a stale workspace with no hint why.
+//
+// The three things this design is: a THRESHOLD (one EBUSY blip is not news),
+// a RETRY (the only thing that can still save the run's work, and the only
+// thing that can notice the disk recovering), and RECOVERY (the notice has to
+// come down, which #168's never had to).
+describe('saving that keeps failing is said on screen (#207)', () => {
+  /** Mirrors `SAVE_FAILURES_BEFORE_NOTICE`, deliberately not exported. */
+  const BEFORE_NOTICE = 3;
+  /** Mirrors `SAVE_RETRY_MS`; the schedule doubles from here. */
+  const RETRY_MS = 1000;
+  /** Mirrors `MAX_SAVE_RETRY_MS` — where that doubling stops. */
+  const MAX_RETRY_MS = 10_000;
+
+  type Level = 'warn' | 'info';
+  type Said = { level: Level; msg: string; fields?: Record<string, unknown> };
+  /** `fakeLogger`, but it keeps the good news too — recovery is an info line. */
+  const recordingLogger = (said: Said[]): Logger => {
+    const at =
+      (level: Level) =>
+      (msg: string, fields?: Record<string, unknown>): void => {
+        said.push({ level, msg, fields });
+      };
+    const l: Logger = {
+      debug: () => {},
+      info: at('info'),
+      warn: at('warn'),
+      error: () => {},
+      child: () => l,
+    };
+    return l;
+  };
+
+  /** Break the rename that finishes every save — the real Windows failure
+   *  (a scanner or an indexer holding the file for a moment). */
+  const failSaves = () =>
+    vi.spyOn(fs, 'renameSync').mockImplementation(() => {
+      throw Object.assign(new Error('EBUSY: resource busy or locked, rename'), { code: 'EBUSY' });
+    });
+
+  /** A store wired to a listener, with everything the assertions need. */
+  function failingStore(): {
+    st: WorkspaceStore;
+    said: Said[];
+    pushed: Array<{ failing: boolean; file: string }>;
+  } {
+    const said: Said[] = [];
+    const pushed: Array<{ failing: boolean; file: string }> = [];
+    const st = makeStore(file, recordingLogger(said), (s) => pushed.push({ ...s }));
+    st.load();
+    st.upsertSession(sess('a', 0));
+    return { st, said, pushed };
+  }
+
+  it('one failure is not news — nothing is pushed and no notice is raised', () => {
+    // A backup agent or an indexer touching workspace.json for a moment is an
+    // ordinary event; a banner for it is noise, and noise is how a warning
+    // stops being read.
+    const { st, said, pushed } = failingStore();
+    const spy = failSaves();
+    try {
+      st.save();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(pushed).toEqual([]);
+    expect(st.saveState()).toEqual({ failing: false, file });
+    // #165's line is still said, first time, unchanged
+    expect(said.filter((s) => s.level === 'warn')).toHaveLength(1);
+    expect(said[0].msg).toMatch(/workspace save failed/);
+  });
+
+  it('three in a row raises it — once — naming the file the user has to go look at', () => {
+    const { st, said, pushed } = failingStore();
+    const spy = failSaves();
+    try {
+      for (let i = 0; i < BEFORE_NOTICE + 2; i++) st.save();
+    } finally {
+      spy.mockRestore();
+    }
+    // pushed exactly once, on the transition, not once per failure
+    expect(pushed).toEqual([{ failing: true, file }]);
+    expect(st.saveState()).toEqual({ failing: true, file });
+    // and the log did not repeat #165's line five times: the first failure,
+    // then the one that put it on screen
+    const warns = said.filter((s) => s.level === 'warn');
+    expect(warns).toHaveLength(2);
+    expect(warns[1].msg).toMatch(/keeps failing/);
+    expect(warns[1].fields).toMatchObject({ attempts: BEFORE_NOTICE, file });
+  });
+
+  it('retries on its own, backing off, with nothing else touching the store', () => {
+    // Without this a run that goes quiet after one failed save sits unsaved
+    // until the user happens to change something else — which may be never.
+    vi.useFakeTimers();
+    const { st, pushed } = failingStore();
+    const spy = failSaves();
+    try {
+      st.save(); // failure 1 — retry armed at RETRY_MS
+      vi.advanceTimersByTime(RETRY_MS - 1);
+      expect(pushed).toEqual([]);
+      vi.advanceTimersByTime(1); // failure 2 — next retry at 2x
+      expect(pushed).toEqual([]);
+      vi.advanceTimersByTime(2 * RETRY_MS - 1);
+      expect(pushed).toEqual([]); // to the millisecond: still two failures
+      vi.advanceTimersByTime(1); // failure 3 — the threshold
+      expect(pushed).toEqual([{ failing: true, file }]);
+    } finally {
+      spy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops backing off at the cap, so a fixed disk is noticed within seconds', () => {
+    // Without the ceiling the delays keep doubling — 16s, 32s, a minute — and a
+    // user who frees up space sits under a stale banner long after the problem
+    // is gone. Deleting the `Math.min` used to leave every other test green.
+    vi.useFakeTimers();
+    const { st, pushed } = failingStore();
+    const spy = failSaves();
+    try {
+      st.save(); // failure 1; the schedule from here is 1s, 2s, 4s, 8s, 10s, 10s…
+      for (const ms of [1000, 2000, 4000, 8000]) vi.advanceTimersByTime(ms);
+      spy.mockRestore(); // failure 5 has been and gone; the next retry is the capped one
+      vi.advanceTimersByTime(MAX_RETRY_MS - 1);
+      expect(pushed).toEqual([{ failing: true, file }]); // not yet — still waiting
+      vi.advanceTimersByTime(1);
+      expect(pushed).toEqual([
+        { failing: true, file },
+        { failing: false, file },
+      ]);
+    } finally {
+      spy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('a re-load drops a pending retry along with the streak', () => {
+    vi.useFakeTimers();
+    const { st, pushed } = failingStore();
+    const spy = failSaves();
+    try {
+      for (let i = 0; i < BEFORE_NOTICE; i++) st.save();
+      expect(st.saveState().failing).toBe(true);
+      st.load(); // a fresh file: nothing from the last one carries over
+      expect(st.saveState().failing).toBe(false);
+      expect(pushed).toEqual([
+        { failing: true, file },
+        { failing: false, file },
+      ]);
+      // and no retry survived it — the writes would still fail if one fired
+      vi.advanceTimersByTime(60_000);
+      expect(pushed).toHaveLength(2);
+    } finally {
+      spy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('takes the notice back down when saving works again, and says so', () => {
+    // The half #168 never needed. A notice that outlives its condition teaches
+    // people to ignore notices.
+    vi.useFakeTimers();
+    const { st, said, pushed } = failingStore();
+    const spy = failSaves();
+    try {
+      for (let i = 0; i < BEFORE_NOTICE; i++) st.save();
+      expect(st.saveState().failing).toBe(true);
+      spy.mockRestore();
+      // the disk relents; the store's OWN retry is what finds out
+      vi.advanceTimersByTime(4 * RETRY_MS);
+    } finally {
+      spy.mockRestore();
+      vi.useRealTimers();
+    }
+    expect(pushed).toEqual([
+      { failing: true, file },
+      { failing: false, file },
+    ]);
+    expect(st.saveState()).toEqual({ failing: false, file });
+    // and the run's work is actually on disk, which is the point of retrying
+    expect(makeStore(file).load().sessions.map((x) => x.id)).toEqual(['a']);
+    const recovered = said.find((s) => s.msg.includes('recovered'));
+    expect(recovered?.level).toBe('info');
+    expect(recovered?.fields).toMatchObject({ attempts: BEFORE_NOTICE });
+  });
+
+  it('starts counting again from scratch after a recovery', () => {
+    // "three failures ever" would put a banner up over three unrelated blips
+    // spread across an afternoon. It is three IN A ROW.
+    const { st, pushed } = failingStore();
+    for (let i = 0; i < BEFORE_NOTICE - 1; i++) {
+      const spy = failSaves();
+      try {
+        st.save();
+      } finally {
+        spy.mockRestore();
+      }
+      st.save(); // works — the streak is over
+    }
+    expect(pushed).toEqual([]);
+    expect(st.saveState().failing).toBe(false);
+  });
+
+  it('a listener that throws costs the save nothing (P6)', () => {
+    // The notice must never become the failure it is reporting.
+    const st = makeStore(file, undefined, () => {
+      throw new Error('the renderer went away mid-push');
+    });
+    st.load();
+    st.upsertSession(sess('a', 0));
+    const spy = failSaves();
+    try {
+      for (let i = 0; i < BEFORE_NOTICE; i++) expect(() => st.save()).not.toThrow();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(st.saveState().failing).toBe(true);
+    expect(() => st.save()).not.toThrow(); // and recovery pushes through it too
+    expect(st.saveState().failing).toBe(false);
+  });
+
+  it('a read-only workspace never raises it — it attempts no writes at all', () => {
+    // #168's banner already owns that case, and a second one behind it would
+    // be a notice for a failure that cannot happen.
+    fs.writeFileSync(file, JSON.stringify({ version: CURRENT_VERSION + 1, sessions: [] }));
+    const pushed: unknown[] = [];
+    const st = makeStore(file, undefined, (s) => pushed.push(s));
+    st.load();
+    expect(st.isReadOnly()).toBe(true);
+    for (let i = 0; i < BEFORE_NOTICE + 2; i++) st.save();
+    expect(pushed).toEqual([]);
+    expect(st.saveState().failing).toBe(false);
+  });
+
+  it('a save HELD BACK for a post-mortem rescue is not a failed save', () => {
+    // #352's deferral is bounded, self-resolving, and ends in a save that
+    // works. Counting it would flash "saving is failing" at a user whose saving
+    // is about to be fine — and the deferral already logs its own line.
+    fs.writeFileSync(file, '{half a workspace');
+    const pushed: unknown[] = [];
+    const st = makeStore(file, undefined, (s) => pushed.push(s));
+    const copy = vi.spyOn(fs, 'copyFileSync').mockImplementation(() => {
+      throw Object.assign(new Error('EPERM: copyFileSync refused'), { code: 'EPERM' });
+    });
+    try {
+      st.load(); // the set-aside failed, so the first saves are held back
+      st.upsertSession(sess('a', 0));
+      for (let i = 0; i < BEFORE_NOTICE; i++) st.save();
+    } finally {
+      copy.mockRestore();
+    }
+    expect(pushed).toEqual([]);
+    expect(st.saveState().failing).toBe(false);
+  });
+});
+
 // The app cannot write one of these: `groups:create`/`groups:update` have
 // always refused an empty name. A hand-edited or half-written file can, and a
 // group's name IS the thing you double-click to rename it — blank renders

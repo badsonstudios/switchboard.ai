@@ -432,9 +432,12 @@ choice is remembered.
 
 Everything on this page is kept in one file, and switchboard writes it as you
 go. Occasionally it won't — and when that happens it says so in plain words
-across the top of the window, in a strip you can't dismiss: **nothing in this
-workspace will be saved**, because its file was written by a newer version of
-switchboard.
+across the top of the window, in a strip you can't dismiss. There are two
+reasons it appears, and they read differently: switchboard **won't** write the
+file (this section), or switchboard **can't** ([the next one](#when-saving-keeps-failing)).
+
+The first one says **nothing in this workspace will be saved**, because its file
+was written by a newer version of switchboard.
 
 This happens when you've gone **back to an older version of switchboard** after
 using a newer one: a newer version can put things in that file that an older one
@@ -472,6 +475,43 @@ you, and looks different: see
 [Troubleshooting](11-troubleshooting.md) for what a damaged workspace file looks
 like, what switchboard does about it, and the dated copies it keeps of the
 damaged file.
+
+## When saving keeps failing
+
+The other reason that strip appears: the file is perfectly ordinary and
+switchboard is trying to write it, but the writing keeps failing. The banner
+says **this workspace isn't being saved**, and it names the file it can't write,
+because that's the one thing you can actually go and look at.
+
+The usual causes are a drive with no room left on it, a permission that changed
+on that folder, or another program holding the file open — a backup tool, an
+anti-virus, a file-sync client. On Windows that last one is the common case.
+
+**It has to keep failing.** A single failed write doesn't put anything on
+screen. Something touching the file for a moment is an everyday event and the
+next attempt works; a banner for that would be noise, and noise is how a warning
+stops being read. Switchboard retries on its own, and only says something once
+it's been failing for about three seconds.
+
+**What still works:** everything. Your sessions run normally, and nothing on
+screen is lost — the workspace you're looking at is intact, it just isn't
+reaching the disk.
+
+**What doesn't:** anything you change from here on. If it never starts working
+again, the next launch brings back the workspace from whenever the last
+successful save was.
+
+**What to do:** check that drive for free space, and close anything that might
+have the file open. Then wait a few seconds — you don't have to restart, and
+there's nothing to click.
+
+**It takes itself down.** Switchboard keeps retrying in the background, and the
+moment a save works the banner disappears and everything you've done since is
+written out. That's the difference between this strip and the one above: that
+one lasts the whole run by design, this one is only there while the problem is.
+
+**Pop-out windows say it too**, and stop saying it at the same moment, for the
+same reason as above.
 
 ## Good to know
 

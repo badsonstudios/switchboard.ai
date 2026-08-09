@@ -201,11 +201,25 @@ in [Organizing your workspace](07-workspace.md#when-your-workspace-cant-be-saved
 Pop-out windows carry the same banner, so it's still in front of you when you
 work in one.
 
+**A banner says this workspace isn't being saved.**
+Different problem from the one above: this time the file is perfectly ordinary
+and switchboard simply can't write it. The banner names the file, and the usual
+causes are a drive with no room left, a permission on that folder, or another
+program — a backup tool, an anti-virus, a sync client — holding the file open.
+Free up some space or close whatever has it, and the banner goes away by itself:
+switchboard keeps retrying in the background, and the moment a save works it
+takes the notice down and writes everything you've done since. Your sessions run
+normally the whole time. The full explanation is in
+[Organizing your workspace](07-workspace.md#when-saving-keeps-failing).
+
 **My layout didn't come back and there was no banner.**
-The layout is written when you quit, and a failed write is logged rather than
-shown. Check the log (below) for a line from `workspace` saying the save
-failed; on Windows an anti-virus or indexer holding the file for a moment is
-the usual cause, and relaunching is enough.
+A *single* failed write doesn't raise a banner — a scanner touching the file for
+a moment is an everyday event on Windows and the next attempt works, so a notice
+for it would just be noise. It takes about three seconds of failing before the
+banner appears. The one case that can therefore go unannounced is a write that
+fails **as you quit**, because there's no time left to retry or to show you
+anything. Check the log (below) for a line from `workspace` saying the save
+failed; relaunching is enough.
 
 **My workspace came back completely empty, and there's a `.corrupt-…` file next
 to it.**
@@ -237,6 +251,10 @@ says which route it took. Nothing about the app is held up while this happens �
 your sessions run normally. If none of the attempts ever work, switchboard says
 so in the log and saves your live workspace rather than never saving again;
 that's the one case where the damaged file is lost.
+
+A folder stubborn enough to refuse all three of those attempts will usually
+refuse that save too — and *that* you do get told about, by the banner in **"A
+banner says this workspace isn't being saved"** above.
 
 **A second failure can't overwrite the first copy.** The stamped name is never
 reused, so if this happens twice you still have the copy from the *first* time —

@@ -689,7 +689,14 @@ app
     pushToRenderer = (win, channel, payload) => broker.send(win, channel, payload);
     workspace = new WorkspaceStore(
       path.join(app.getPath('userData'), 'workspace.json'),
-      createLogger(sink, 'workspace')
+      createLogger(sink, 'workspace'),
+      // Saving started failing, or started working again (#207). Pushed rather
+      // than polled because — unlike read-only, which latches at load — this
+      // changes while the user is looking at the window, and the notice has to
+      // come DOWN as well as up. `currentWindow` is read at call time, so a
+      // change before the window exists simply has nowhere to go; the window
+      // reads `workspace:saveState` when it mounts and catches up.
+      (state) => pushToRenderer?.(currentWindow, 'workspace:saveStateChanged', state)
     );
     workspace.load();
     // renderer <-> workspace layout persistence (E3-01)
@@ -721,6 +728,12 @@ app
     // reads this to say so on screen instead (#168). Latched at load, so one
     // read at boot is the whole answer; nothing pushes a change.
     broker.handle('workspace:isReadOnly', () => workspace.isReadOnly());
+    // The other half of the same story (#207): the file is writable in
+    // principle, but the writes are failing — a full disk, a permission, an
+    // anti-virus sitting on the folder. Unlike read-only this comes and goes,
+    // so it is pushed on `workspace:saveStateChanged` too; this read is what a
+    // window that opened mid-failure uses to catch up.
+    broker.handle('workspace:saveState', () => workspace.saveState());
     // renderer-owned UI state (E12-08): focus, view tabs, prefs
     broker.handle('workspace:getUi', () => workspace.getUi());
     broker.on('workspace:setUi', (_e, ui: unknown) => workspace.setUi(ui));
