@@ -132,6 +132,35 @@ export default tseslint.config(
           message: 'Raw rgb() color — use a token from theme/tokens.css (var(--...)).',
         },
       ],
+      // #191: the diff pane imports monaco from `edcore.main` (core editor, no
+      // languages) and puts the Monarch tokenizers back by hand. The package
+      // root — and the four `language/*` services it pulls in — assume a
+      // per-language web worker this app does not bundle, and throw uncaught
+      // `Missing requestHandler or method: ...` the moment a model is given a
+      // language id. Measured at 8 page errors per session (#161). One import
+      // is all it takes to bring that back, so it is a lint error.
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'monaco-editor',
+              message:
+                "Import 'monaco-editor/esm/vs/editor/edcore.main' instead — the package root loads the rich language services, which throw against this app's single plain worker (#191). See src/renderer/src/lib/monaco-languages.ts.",
+            },
+          ],
+          patterns: [
+            {
+              group: [
+                'monaco-editor/esm/vs/editor/editor.main*',
+                'monaco-editor/esm/vs/language/*',
+              ],
+              message:
+                "Rich monaco language services need their own web workers, which this app does not bundle (#191). Register a Monarch tokenizer in src/renderer/src/lib/monaco-languages.ts instead.",
+            },
+          ],
+        },
+      ],
     },
   },
   {

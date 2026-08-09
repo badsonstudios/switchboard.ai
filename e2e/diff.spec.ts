@@ -75,6 +75,28 @@ const WORKING = [
 const FILE = 'greeting.ts';
 
 /**
+ * Two more files, so one launch can prove all three halves of #191: a
+ * TypeScript file is tokenized as TypeScript, a Markdown file is tokenized as
+ * something ELSE (i.e. the language really comes from the path, it is not one
+ * hard-coded grammar), and an extension nothing maps to falls back to plain
+ * text instead of guessing.
+ *
+ * Each is committed and then modified for the same reason `greeting.ts` is —
+ * see the trap above — so clicking any of them exercises a real diff.
+ */
+const EXTRAS: Record<string, { committed: string; working: string }> = {
+  'notes.md': {
+    committed: ['# Notes', '', 'A paragraph with `code` in it.', ''].join('\n'),
+    working: ['# Notes', '', 'A paragraph with `code` and **bold** in it.', ''].join('\n'),
+  },
+  // `.log` is mapped by nothing on purpose: this is the plaintext fallback
+  'output.log': {
+    committed: ['2026-01-01 boot ok', 'const export function 42', ''].join('\n'),
+    working: ['2026-01-02 boot ok', 'const export function 42', ''].join('\n'),
+  },
+};
+
+/**
  * A throwaway git repo with one committed file and an uncommitted edit to it.
  *
  * Local to this spec on purpose: it is the only one that needs a repo, and the
@@ -97,9 +119,15 @@ function tempGitProject(): string {
   git(['config', 'user.email', 'e2e@switchboard.test']);
   git(['config', 'user.name', 'switchboard e2e']);
   fs.writeFileSync(path.join(dir, FILE), COMMITTED);
+  for (const [name, v] of Object.entries(EXTRAS)) {
+    fs.writeFileSync(path.join(dir, name), v.committed);
+  }
   git(['add', '.']);
   git(['commit', '-m', 'fixture']);
   fs.writeFileSync(path.join(dir, FILE), WORKING);
+  for (const [name, v] of Object.entries(EXTRAS)) {
+    fs.writeFileSync(path.join(dir, name), v.working);
+  }
   return dir;
 }
 
@@ -147,7 +175,7 @@ test.describe('Changes tab (Monaco diff pane)', () => {
    * two interesting acts — spawning the worker and injecting <style> elements
    * — both happen when the tab opens, well after that, so nothing is missed.
    */
-  async function openChanges(): Promise<{ w: Page; logged: string[] }> {
+  async function openChanges(): Promise<{ w: Page; logged: string[]; crashed: string[] }> {
     const folder = tempGitProject();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
@@ -155,17 +183,25 @@ test.describe('Changes tab (Monaco diff pane)', () => {
     // not created until the first diff is computed, well after this point.
     const logged: string[] = [];
     w.on('console', (msg) => logged.push(msg.text()));
+    // ...and everything it THREW. This is #191's gate, and it is the reason
+    // that bug outlived the pane by months: naming a language is a one-line
+    // change that looks perfect on screen while monaco's rich language
+    // services fire `Missing requestHandler or method: ...` at the plain
+    // worker behind it — 8 uncaught rejections per session, measured, visible
+    // nowhere in the DOM. Nothing in this suite would have seen them.
+    const crashed: string[] = [];
+    w.on('pageerror', (e) => crashed.push(e.message));
 
     const title = path.basename(folder);
     await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
     await w.locator('nav [draggable="true"]', { hasText: title }).first().click({ button: 'right' });
     await w.getByRole('menuitem', { name: 'Open changes' }).click();
     await expect(w.locator('.dv-active-tab')).toContainText('· diff', { timeout: 15_000 });
-    return { w, logged };
+    return { w, logged, crashed };
   }
 
   test('renders a real diff, computed in a real worker', async () => {
-    const { w, logged } = await openChanges();
+    const { w, logged, crashed } = await openChanges();
 
     // the file list is the git status, live: one tracked file, modified
     const entry = w.getByText(FILE, { exact: true });
@@ -204,27 +240,53 @@ test.describe('Changes tab (Monaco diff pane)', () => {
     ).not.toHaveCount(0);
     await expect(diffEditor(w).locator('.char-insert')).not.toHaveCount(0);
 
-    // and the text went through the tokenizer: view lines are rendered as
-    // `mtkN` spans rather than raw text.
+    // and the text went through a REAL tokenizer: a `.ts` file comes back with
+    // several distinct `mtkN` classes — comment, keyword, string, number,
+    // identifier all painted differently.
     //
-    // Deliberately `> 0` and not "more than one class". #161 set out to assert
-    // real syntax highlighting here and MEASURED that there isn't any: the
-    // pane creates its models with no language id, so everything is
-    // `plaintext` and the whole diff comes back with a single `mtk1`. That is
-    // a product bug, reported separately — it is NOT a one-line fix, because
-    // naming a language activates monaco's rich TS/JSON/CSS/HTML services and
-    // they immediately throw `Missing requestHandler or method: ...` against
-    // the plain editor worker this app bundles.
-    //
-    // So this asserts what is true now AND will still be true once the bug is
-    // fixed, instead of freezing the defect into the suite. Note that syntax
-    // highlighting was never the worker evidence anyway — Monarch tokenizes on
-    // the main thread. The decorations above are the evidence.
+    // This used to read `> 0`, which #161 chose knowing it proved nothing: the
+    // pane created its models with no language id, so every file was
+    // `plaintext` and the whole diff came back as one `mtk1`. #191 gave the
+    // models a language derived from the path. Note that highlighting is NOT
+    // worker evidence — Monarch tokenizes on the main thread; the decorations
+    // above are the evidence. This is about the pane being readable.
     await expect
       .poll(async () => (await tokenClasses(w)).length, {
-        message: 'no mtk token spans — nothing tokenized',
+        message: 'a .ts file came back with one token class — no syntax highlighting',
       })
-      .toBeGreaterThan(0);
+      .toBeGreaterThan(3);
+    const tsClasses = (await tokenClasses(w)).join();
+
+    // the language really comes from the PATH, not one hard-coded grammar.
+    //
+    // "more than one class" would NOT show that — the TypeScript grammar would
+    // also find something to colour in this markdown (backticks read as a
+    // template string). A DIFFERENT set of classes is the thing that can only
+    // happen if a different grammar ran, so that is what this asserts.
+    await w.getByText('notes.md', { exact: true }).click();
+    await expect(diffEditor(w)).toContainText('bold', { timeout: 15_000 });
+    await expect
+      .poll(
+        async () => {
+          const classes = await tokenClasses(w);
+          return classes.length > 1 && classes.join() !== tsClasses;
+        },
+        {
+          message: 'notes.md tokenized identically to the .ts file — one grammar for everything',
+        }
+      )
+      .toBe(true);
+
+    // ...and an extension nothing maps to falls back to plain text rather than
+    // guessing. `output.log` contains `const export function 42` precisely so
+    // that a stray tokenizer would light it up and be caught here.
+    await w.getByText('output.log', { exact: true }).click();
+    await expect(diffEditor(w)).toContainText('boot ok', { timeout: 15_000 });
+    await expect
+      .poll(async () => (await tokenClasses(w)).join(), {
+        message: 'an unmapped extension was tokenized as something',
+      })
+      .toBe('mtk1');
 
     // HALF TWO, and the half that makes this spec worth having: the work above
     // happened in a WORKER. Without this, a blocked worker is invisible —
@@ -245,6 +307,43 @@ test.describe('Changes tab (Monaco diff pane)', () => {
       logged.filter((m) => CSP_REFUSAL.test(m)),
       'CSP refused something the diff pane needs'
     ).toEqual([]);
+
+    // #191's gate, and the one this whole item turns on: giving the models a
+    // language must cost ZERO uncaught errors. Last, because every assertion
+    // above is what forces the tokenizers — and the lazily-loaded language
+    // chunks behind them — to have actually run.
+    expect(crashed, 'the diff pane threw').toEqual([]);
+  });
+
+  test('switching theme repaints the diff instead of blanking it', async () => {
+    // #191. `colorScheme` used to be a dependency of the effect that CREATES
+    // the editor, so a theme switch disposed the editor and both models and
+    // built an empty one — and nothing put the models back, because the model
+    // effect only re-runs when the SELECTION changes. The pane went blank and
+    // stayed blank until you clicked another file, which is exactly the shape
+    // of bug a screenshot review misses and nothing in this suite watched for.
+    //
+    // Its own launch, unlike the extra files above: this test drives the
+    // titlebar and then comes back to the pane, and folding that into the test
+    // above would tangle two subjects for the sake of ~2 seconds.
+    const { w, crashed } = await openChanges();
+
+    await w.getByText(FILE, { exact: true }).click();
+    await expect(diffEditor(w)).toContainText("'howdy'", { timeout: 15_000 });
+
+    for (const theme of ['daylight', 'nordic'] as const) {
+      await w.getByRole('button', { name: theme, exact: true }).click();
+      await expect(w.locator('html')).toHaveAttribute('data-theme', theme);
+      // the diff is still there, still the same file, still tokenized
+      await expect(diffEditor(w)).toContainText("'howdy'", { timeout: 15_000 });
+      await expect(diffEditor(w).locator('.line-delete')).not.toHaveCount(0);
+      expect(
+        (await tokenClasses(w)).length,
+        `no highlighting after switching to ${theme}`
+      ).toBeGreaterThan(3);
+    }
+
+    expect(crashed, 'switching theme threw').toEqual([]);
   });
 
   test('a folder that is not a repo says so instead of failing', async () => {

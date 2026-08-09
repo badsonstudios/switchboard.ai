@@ -1,16 +1,28 @@
 // Diff viewer pane (P1-E5-02): read-only Monaco diff + file list with VCS
 // badges, one pane per session. Workers are bundled by Vite (?worker) — no
 // CDN, CSP stays 'self'.
+//
+// #191 — the monaco entry point is `edcore.main`, the core editor with NO
+// languages, and the tokenizers are put back one by one by `monaco-languages`.
+// The bare `monaco-editor` entry would also register the rich TS/JSON/CSS/HTML
+// language services, which demand their own web workers and throw uncaught
+// against the single plain worker below. The full reasoning, and the numbers,
+// are in `lib/monaco-languages.ts` — read that before changing this import.
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import * as monaco from 'monaco-editor';
+import * as monaco from 'monaco-editor/esm/vs/editor/edcore.main';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
+import '../lib/monaco-languages';
+import { languageForPath } from '../lib/diff-language';
+import { defineDiffThemes, DIFF_THEME } from '../lib/monaco-theme';
 
 declare global {
   interface Window {
     MonacoEnvironment?: monaco.Environment;
   }
 }
+// One worker, and no `label` switch: with the rich language services gone,
+// `editor.worker` is the only worker anything in this app can ask for.
 window.MonacoEnvironment = {
   getWorker: () => new EditorWorker(),
 };
@@ -45,14 +57,29 @@ export function DiffPane(props: {
     void window.switchboard.git.status(props.folder).then((s) => setStatus(s as GitStatusDto));
   }, [props.folder]);
 
+  // Built ONCE per pane. `colorScheme` used to be in these deps, which meant a
+  // theme switch disposed the editor AND both models and built an empty one —
+  // and nothing put the models back, because the effect below only re-runs
+  // when the SELECTION changes. Switching theme with a file open therefore
+  // blanked the diff until you clicked another file. Monaco's standalone theme
+  // is global and swappable in place (`setTheme`, next effect), so there was
+  // never a reason to rebuild the editor for it.
   useEffect(() => {
     if (!hostRef.current) return;
+    // `vs` / `vs-dark` with the handful of below-AA token colours corrected —
+    // see lib/monaco-theme.ts for the measurements. Here and not at module
+    // load: `defineTheme` builds monaco's theme service, which reaches for
+    // `CSS.escape`, and jsdom has no `CSS` — so a module-load call takes down
+    // every unit test that merely IMPORTS the panel registry. Idempotent, and
+    // a theme has to exist before `createDiffEditor` names it, so immediately
+    // before is also the only place it has to be.
+    defineDiffThemes(monaco.editor);
     const editor = monaco.editor.createDiffEditor(hostRef.current, {
       readOnly: true,
       renderSideBySide: true,
       automaticLayout: true,
       minimap: { enabled: false },
-      theme: props.colorScheme === 'light' ? 'vs' : 'vs-dark',
+      theme: DIFF_THEME[props.colorScheme],
     });
     editorRef.current = editor;
     return () => {
@@ -61,6 +88,14 @@ export function DiffPane(props: {
       editor.dispose();
       editorRef.current = null;
     };
+    // deliberately empty: `colorScheme` is READ here for the initial paint but
+    // is not a dependency — the effect below owns every change to it
+  }, []);
+
+  useEffect(() => {
+    // global by design: monaco's standalone theme is per-page, and every diff
+    // pane in a window is showing the same app theme anyway
+    monaco.editor.setTheme(DIFF_THEME[props.colorScheme]);
   }, [props.colorScheme]);
 
   useEffect(() => {
@@ -70,9 +105,14 @@ export function DiffPane(props: {
       const ed = editorRef.current;
       if (cancelled || !ed) return;
       const old = ed.getModel();
+      // Same language on both sides — they are two versions of one file, and a
+      // mismatch would colour the "before" pane differently from the "after".
+      // Unknown extensions come back `plaintext`, which is what the pane did
+      // for EVERY file before #191.
+      const language = languageForPath(selected);
       ed.setModel({
-        original: monaco.editor.createModel(v.original),
-        modified: monaco.editor.createModel(v.modified),
+        original: monaco.editor.createModel(v.original, language),
+        modified: monaco.editor.createModel(v.modified, language),
       });
       old?.original.dispose();
       old?.modified.dispose();
