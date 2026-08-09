@@ -172,10 +172,13 @@ that file can't be found, the message names what switchboard did see:
   If a Claude Code update moved where conversations are stored, that's what
   this looks like; please report it with the path shown.
 
-**In every case the session itself is fine.** This only affects the rendered
-conversation view — the CLI is running, your work is not lost, and the
-**Terminal** tab shows the session exactly as Claude Code draws it. Restarting
-the app is safe and often enough, since matching starts fresh.
+**As long as the card is still running, the session itself is fine.** This only
+affects the rendered conversation view — the CLI is running, your work is not
+lost, and the **Terminal** tab shows the session exactly as Claude Code draws
+it. Restarting the app is safe and often enough, since matching starts fresh.
+(A card showing **Session ended** can also land on this message: switchboard
+keeps looking for a crashed session's conversation for a short while, then
+stops and says so rather than searching for ever.)
 
 **A session ended on its own.**
 The card stays with **Session ended** and a **Restart** button. If it exited

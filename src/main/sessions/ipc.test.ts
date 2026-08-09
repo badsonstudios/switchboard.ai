@@ -163,6 +163,8 @@ function harness(
   /** every live session the IPC layer tore down, in order */
   const removed: string[] = [];
   const unwatched: string[] = [];
+  /** every live session whose transcript watch was told its process died (#200) */
+  const exitedNoted: string[] = [];
   const unregistered: string[] = [];
   const forgottenEvents: string[] = [];
   /** every card id the workspace store was told to drop (`sessions:closeCard`) */
@@ -282,6 +284,14 @@ function harness(
         unwatched.push(id);
         trace.push(`unwatch:${id}`);
       },
+      // #200: the watch is TOLD the process died; it is not torn down. In the
+      // trace beside `watch`/`unwatch` because the claim under test is a
+      // sequence — the exit notice must not be mistaken for, or reordered
+      // with, the reap's teardown of the same session.
+      noteSessionExited: (id: string) => {
+        exitedNoted.push(id);
+        trace.push(`noteExited:${id}`);
+      },
     },
     feed: {
       onEvent: () => {},
@@ -334,6 +344,7 @@ function harness(
     trace,
     removed,
     unwatched,
+    exitedNoted,
     unregistered,
     forgottenEvents,
     removedCards,
@@ -1802,6 +1813,54 @@ describe('a session that exits on its own releases what it was holding (#271)', 
     expect(h.unwatched).toEqual([]);
     expect(h.forgottenEvents).toEqual([]);
     expect(h.pushed.filter((p) => p.channel === 'sessions:cardsChanged')).toHaveLength(bindings);
+  });
+
+  // #200. The watch is the ONE thing here that hears about the death directly,
+  // and the distinction is the whole item: TOLD, not torn down. A dead CLI
+  // writes no more transcript lines, so polling for them is pure waste — but
+  // `transcripts.unwatch` drops the entry that holds the Feed backlog and the
+  // binding state, which is precisely what the crashed card shows when the user
+  // comes back to it. Freezing lives in the watcher (`noteSessionExited`);
+  // what this pins is that main routes the exit to it at all, and does not
+  // "fix" the leak by reaching for `unwatch`.
+  it('tells the transcript watch the process is gone, and does NOT unwatch it', () => {
+    const h = harness({ transcripts: { projectsRoot: () => '/root' } }, dir, { prior: card() });
+    start(h);
+
+    h.fireExit('live-1', 1);
+
+    expect(h.exitedNoted).toEqual(['live-1']);
+    expect(h.unwatched).toEqual([]);
+    // the crashed card's Feed still has something to replay when its pane mounts
+    expect(h.call('transcripts:blocks', 'live-1')).toEqual([
+      { seq: 1, kind: 'assistant', text: 'transcript block for live-1' },
+    ]);
+  });
+
+  // The two paths meet on every Restart: `tearDownLive` unwatches, and the kill
+  // it asks for lands as an exit afterwards (this fake's `remove` fires it
+  // early, which is the harsher order). Neither may undo or duplicate the
+  // other's work — `noteSessionExited` is a no-op for an id that is already
+  // unwatched, and the reap unwatching a frozen session must still be exactly
+  // one teardown.
+  it('the reap and the exit notice cannot trip over each other', () => {
+    const h = harness({ transcripts: { projectsRoot: () => '/root' } }, dir, {
+      prior: card(),
+      spawnIds: ['live-1', 'live-2'],
+      exitCodes: { 'live-1': 1 },
+    });
+    start(h); // spawns live-1, which is then crashed by `exitCodes`
+    h.fireExit('live-1', 1);
+    start(h); // Restart: the reap retires the corpse, then live-2 is watched
+
+    expect(h.trace).toEqual([
+      'watch:live-1',
+      'noteExited:live-1',
+      'unwatch:live-1',
+      'watch:live-2',
+    ]);
+    expect(h.unwatched).toEqual(['live-1']);
+    expect(h.exitedNoted).toEqual(['live-1']);
   });
 
   // IDEMPOTENCY, in the order the restart paths actually produce it: Restart

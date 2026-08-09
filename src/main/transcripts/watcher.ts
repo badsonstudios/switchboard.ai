@@ -142,6 +142,27 @@ interface WatchedSession {
   /** the Feed's own state — seq, cap, tool-result stitching (P2-E18-10) */
   feed: FeedBuffer;
   /**
+   * When this session's CLI process died, or null while it is still up (#200).
+   *
+   * A dead CLI writes nothing more — every byte it completed is in the page
+   * cache by the time the OS tells us it exited, and anything still sitting in
+   * its own userspace buffer died with it. So once this is set the watch is
+   * finishing OUR OWN reading, not following a writer, and `maybeQuiesce`
+   * decides when there is nothing left for it to learn.
+   */
+  exitedAt: number | null;
+  /**
+   * Frozen (#200): this session does no more disk I/O, ever.
+   *
+   * NOT the same as unwatched. The entry stays in `sessions` with its snapshot
+   * and its Feed buffer intact, because that is what a CRASHED CARD READS —
+   * `blocks()` serves the Feed its backlog when the pane mounts, `snapshot()`
+   * answers `transcripts:binding`. Unwatching a crashed session would empty
+   * both. One-way: nothing un-quiesces, because a restart is a new live id and
+   * a new `watch()`.
+   */
+  quiesced: boolean;
+  /**
    * Does the Feed take its blocks from THIS session's transcript?
    *
    * False for a stream session, whose Feed is built from typed messages by
@@ -169,6 +190,43 @@ const CWD_BIND_FALLBACK_MS = 30_000;
  *  rather than by arithmetic. */
 const BIND_GIVEUP_MS = 45_000;
 
+/**
+ * How long a BOUND session's watch keeps draining after its process died (#200).
+ *
+ * One more drain is provably enough on a local filesystem: the exit
+ * notification is causally after every write the dead process completed, so
+ * whatever is on disk when it arrives is everything there will ever be — and a
+ * drain reads to EOF, not a chunk at a time. The three seconds are for the
+ * cases where that reasoning has a seam: a home directory on SMB, where `stat`
+ * size can lag the writes it is reporting, and a transport that reports the
+ * exit a beat before the last flush lands. Thirty more ticks of `stat` on one
+ * known file is not a cost worth shaving; losing the last words of a crashed
+ * turn out of the Feed is.
+ *
+ * Measured from the DEATH, deliberately, not from the last bytes read. Making
+ * it "quiet since we last learned something" needs a timestamp of its own and
+ * buys nothing a test can tell apart: nothing is writing, and a transcript
+ * bound late — after this window has already passed — is still drained by the
+ * tick that binds it, because the drain runs before the freeze does.
+ */
+const POST_EXIT_SETTLE_MS = 3_000;
+
+/**
+ * The hard ceiling on ANY post-exit watching (#200).
+ *
+ * An UNBOUND session that dies is the case that actually matters: a crash
+ * during the first turn routinely leaves a transcript on disk that we have not
+ * claimed yet (the widen grace alone is 10s, and an ambiguous same-cwd bind
+ * waits `CWD_BIND_FALLBACK_MS` for a native id), and giving up at the moment of
+ * death would leave that card's Feed permanently empty where today it fills
+ * seconds later. So discovery runs on until the binding question is ANSWERED —
+ * `deriveBinding` reaching `unbound` — and this is the backstop for the state
+ * combinations that never reach a verdict at all (a session nobody prompted
+ * stays `awaiting-prompt` for ever, deliberately). Comfortably past
+ * `BIND_GIVEUP_MS` so the UI's own verdict lands first whenever there is one.
+ */
+const POST_EXIT_HUNT_MS = 90_000;
+
 export interface TranscriptWatcherOptions {
   /** Default root for sessions that do not name one, and the first root seeded.
    *  Optional: a workspace whose provider has no transcripts capability watches
@@ -183,6 +241,10 @@ export interface TranscriptWatcherOptions {
   cwdBindFallbackMs?: number;
   /** how long a session searches WITH EVIDENCE before the UI says it failed */
   bindGiveUpMs?: number;
+  /** how long a bound session keeps draining after its process died (#200) */
+  postExitSettleMs?: number;
+  /** the hard ceiling on watching anything for an exited session (#200) */
+  postExitHuntMs?: number;
   /** Discovery scheduling knobs (P2-E15-11) — injectable so tests can drive
    *  filesystem events and simulate an unusable watch. */
   discovery?: Omit<DiscoveryScheduleOptions, 'log'>;
@@ -363,8 +425,16 @@ export class TranscriptWatcher {
       this.sessions.delete(sessionId);
       if (prev) {
         this.discovery.markDirty(prev.projectsRoot);
-        this.discovery.release(prev.projectsRoot);
+        // ...but only if it still holds one. A quiesced session gave its
+        // reference back when it froze (#200), and a second release would
+        // decrement a refcount that belongs to whichever LIVE sessions are on
+        // this root — closing their watch out from under them.
+        if (!prev.quiesced) this.discovery.release(prev.projectsRoot);
       }
+      // The one path that removes the last live session without going through
+      // `unwatch` — and therefore the one that could leave the interval ticking
+      // over an all-frozen map (#200).
+      this.stopPollingIfIdle();
       return false;
     }
     this.seed(root);
@@ -376,7 +446,9 @@ export class TranscriptWatcher {
     // SAME root never dips the refcount to zero — which would tear the watch
     // down and immediately rebuild it, losing every event in between.
     this.discovery.register(root);
-    if (prev) this.discovery.release(prev.projectsRoot);
+    // A quiesced predecessor already gave its reference back (#200) — see the
+    // refused-root branch above for why releasing it twice is not harmless.
+    if (prev && !prev.quiesced) this.discovery.release(prev.projectsRoot);
     this.sessions.set(sessionId, {
       sessionId,
       cwd: session.cwd,
@@ -393,6 +465,8 @@ export class TranscriptWatcher {
       tails: new Map(),
       snap: this.blankSnap(sessionId, root),
       feed: new FeedBuffer((b) => this.reemit(sessionId, b)),
+      exitedAt: null,
+      quiesced: false,
       deriveFeed: session.deriveFeed !== false,
     });
     this.ensurePolling();
@@ -409,6 +483,13 @@ export class TranscriptWatcher {
   setNativeSessionId(sessionId: string, nativeId: string, cause?: 'clear'): void {
     const w = this.sessions.get(sessionId);
     if (!w) return;
+    // Frozen means frozen (#200). This is the sharpest reason quiescing has to
+    // switch the evidence sites off rather than merely stop the poll: a hook
+    // arriving late for a dead session, naming an id we did not bind, would
+    // reach `resetBinding` and BLANK the crashed card's Feed and snapshot —
+    // with no polling left to rebuild either. Nothing about a corpse's binding
+    // is worth correcting; the user is reading what it managed to say.
+    if (w.quiesced) return;
     w.nativeSessionId = nativeId;
     // The id is the AUTHORITY that `claim()` was waiting for: a transcript it
     // refused a moment ago may be claimable now, and that file is already on
@@ -495,13 +576,137 @@ export class TranscriptWatcher {
    */
   noteConversationStarted(sessionId: string): void {
     const w = this.sessions.get(sessionId);
-    if (!w || w.conversationStarted) return;
+    // `quiesced`: a frozen session's state never moves again (#200), and
+    // latching evidence here would restart a give-up clock that nothing is
+    // polling to resolve.
+    if (!w || w.quiesced || w.conversationStarted) return;
     w.conversationStarted = true;
     // A turn just ran, so the CLI is writing a transcript right now if it has
     // not already. Look immediately rather than at whatever the ladder had
     // decayed to — this is the moment binding is most likely to succeed.
     this.discovery.markDirty(w.projectsRoot);
     this.refreshBinding(w);
+  }
+
+  /**
+   * THIS SESSION'S CLI PROCESS IS GONE (#200).
+   *
+   * Not `unwatch`, deliberately — that is the whole of the decision this item
+   * had to make. The watch is what the CRASHED CARD READS: `blocks()` hands the
+   * Feed its backlog when the pane mounts, `snapshot()` answers
+   * `transcripts:binding`, and both live inside the entry `unwatch` deletes.
+   * Tearing the watch down on exit would stop the polling AND empty the card
+   * the user came back to look at.
+   *
+   * So the watch QUIESCES instead: it keeps working for as long as it could
+   * still learn something, then freezes — no further disk I/O on behalf of a
+   * dead process, every derived value preserved and readable for ever. The two
+   * windows are `POST_EXIT_SETTLE_MS` (bound: drain to the end) and
+   * `POST_EXIT_HUNT_MS` (unbound: finish the hunt, or hit the ceiling).
+   *
+   * Called from `manager.onSessionExit`, so it fires for EVERY death including
+   * the ones the app asked for — a Restart or a card close runs `tearDownLive`
+   * first and the exit lands afterwards, on an id that is already unwatched.
+   * A no-op for an unknown id, and a one-way latch for a known one, which is
+   * what makes it safe beside the reap either way round.
+   */
+  noteSessionExited(sessionId: string): void {
+    const w = this.sessions.get(sessionId);
+    if (!w || w.exitedAt !== null) return;
+    const now = Date.now();
+    w.exitedAt = now;
+    // A death is an evidence site like any other, and this file's rule is that
+    // every one of them says so (see `noteConversationStarted`) — with more
+    // reason here than anywhere, because this is the LAST discovery window this
+    // session will ever get and the ladder may be sitting at 2s of it. For an
+    // unbound session that window is the entire hunt; for a bound one,
+    // `subagentFiles()` only runs on a sweep tick, so a subagent transcript that
+    // appeared just before the crash would otherwise miss its only chance
+    // inside the settle window and be lost for good.
+    this.discovery.markDirty(w.projectsRoot);
+    // Drain HERE, not on the next tick. Everything the CLI ever wrote is on
+    // disk by the time its exit reaches us, and up to a poll interval of it may
+    // be unread — the last words of the crashed turn. On the settle path the
+    // next tick would get them anyway; this is what makes a zero-length settle
+    // window (and the case where the ceiling has already passed) still correct.
+    for (const [full, tail] of w.tails) this.drain(w, full, tail);
+    this.maybeQuiesce(w, Date.now());
+  }
+
+  /** Has this exited session run out of things it could still learn? */
+  private maybeQuiesce(w: WatchedSession, now: number): void {
+    if (w.exitedAt === null || w.quiesced) return;
+    // A wall clock that steps BACKWARDS (NTP, VM resume, the user changing it)
+    // would make both subtractions below negative and park a dead session's
+    // watch on the disk until real time caught up — an hour of pointless
+    // scanning for an hour-sized jump. Re-anchor and lose nothing: these
+    // windows are about how long we have been waiting, not about when it began.
+    if (now < w.exitedAt) w.exitedAt = now;
+    if (now - w.exitedAt >= (this.opts.postExitHuntMs ?? POST_EXIT_HUNT_MS)) {
+      this.quiesce(w, 'post-exit ceiling');
+      return;
+    }
+    if (!w.boundFile) {
+      // Still hunting. The verdict is the watcher's OWN — `deriveBinding`
+      // reaching `unbound` means the give-up clock expired, i.e. there is
+      // nothing left to find. Stopping earlier would both cut short a bind that
+      // was about to succeed and freeze the pane mid-sentence at "Looking for
+      // this session's transcript…" for a session that is never coming back.
+      if (w.snap.binding === 'unbound') this.quiesce(w, 'binding gave up');
+      return;
+    }
+    if (now - w.exitedAt >= (this.opts.postExitSettleMs ?? POST_EXIT_SETTLE_MS)) {
+      this.quiesce(w, 'drained to the end');
+    }
+  }
+
+  /** Freeze one session: no more I/O, every derived value kept. One-way. */
+  private quiesce(w: WatchedSession, why: string): void {
+    if (w.quiesced) return;
+    w.quiesced = true;
+    // Nothing writes these files again and nothing reads the tails again, so
+    // the partial-line buffer and the per-tail decoder are released now rather
+    // than held for the lifetime of the card.
+    w.tails.clear();
+    // The search is over, so nothing about it is true any more — the same
+    // argument `refreshBinding` makes for a session that BINDS, and the same
+    // failure if it is skipped: `searchingMs` is computed live in `snapshot()`
+    // from this, so a frozen session would report a search still running, hours
+    // long, in the diagnostics a bug report is written from.
+    //
+    // `bindingDiag.candidateSeen` deliberately stands. It is not a clock but the
+    // last thing we actually observed, and it is what picks WHICH explanation
+    // the pane shows ("transcripts are being written here, none of them match"
+    // vs "nothing has turned up at all"). That answer does not stop being true
+    // because we stopped looking.
+    w.evidenceSince = null;
+    // We have STOPPED LOOKING, so "searching" has become a lie the pane would
+    // tell for the rest of the run. Only reachable via the ceiling — the branch
+    // above quiesces an unbound session precisely when the verdict lands — and
+    // only for a session with evidence behind it, which is exactly what
+    // `unbound` is defined to rest on. `awaiting-prompt` freezes untouched:
+    // no turn ever ran, so no transcript was ever owed.
+    if (w.snap.binding === 'searching') {
+      w.snap.binding = 'unbound';
+      this.emit(w);
+    }
+    // The last dead session on a root closes its recursive `fs.watch`, the same
+    // handle `unwatch` releases — which is why `unwatch` must not release it a
+    // second time for a session that came through here.
+    //
+    // No `markDirty`: the entry stays in `sessions` holding its `boundFile` and
+    // its cwd, so nothing a sibling's sweep would conclude has changed. It is
+    // the REMOVAL of an entry that moves those verdicts, and that is still
+    // `unwatch`'s to announce.
+    this.discovery.release(w.projectsRoot);
+    this.opts.log.info('transcript watch quiesced — session exited', {
+      sessionId: w.sessionId,
+      reason: why,
+      bound: !!w.boundFile,
+      lines: w.snap.lines,
+      msSinceExit: Date.now() - (w.exitedAt ?? Date.now()),
+    });
+    this.stopPollingIfIdle();
   }
 
   /**
@@ -644,12 +849,29 @@ export class TranscriptWatcher {
       // ...and the last session off a root closes its recursive watch. Closing
       // every card otherwise leaves a live OS watch on ~/.claude/projects for
       // the rest of the process's life.
-      this.discovery.release(gone.projectsRoot);
+      //
+      // ONCE (#200). A quiesced session already gave this reference back when
+      // it froze, and the reap in `sessions:create` unwatches exactly such a
+      // session — so an unguarded release here would take a reference belonging
+      // to a LIVE sibling on the same root and close the watch it is binding
+      // through. `markDirty` above stays unconditional: it is this entry
+      // LEAVING that changes what a sibling's sweep concludes (its bound file
+      // becomes unowned, `hasCwdSibling` can go false), and that is true
+      // whether it was frozen or not.
+      if (!gone.quiesced) this.discovery.release(gone.projectsRoot);
     }
-    if (this.sessions.size === 0 && this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
+    this.stopPollingIfIdle();
+  }
+
+  /** No session left that would DO anything on a tick — stop ticking (#200).
+   *  Subsumes the old "the map is empty" test: a card whose session crashed
+   *  keeps its entry for the overlay to read, so counting entries would leave
+   *  the 100ms interval running over a set of frozen sessions for ever. */
+  private stopPollingIfIdle(): void {
+    if (!this.timer) return;
+    for (const w of this.sessions.values()) if (!w.quiesced) return;
+    clearInterval(this.timer);
+    this.timer = null;
   }
 
   snapshot(sessionId: string): TranscriptSnapshot | undefined {
@@ -745,6 +967,12 @@ export class TranscriptWatcher {
     //    for anything a listener does re-entrantly during `drain()`.
     const sweeping = new Set<string>();
     for (const w of this.sessions.values()) {
+      // Deliberately NOT skipping a frozen session here (#200), even though the
+      // loop below does. This pre-pass decides per ROOT, and the answer does not
+      // depend on which session asks: a corpse can only reach a verdict its live
+      // siblings would have reached on the same tick, and on a root it left
+      // alone `noteSwept` has no state to mutate. A second `quiesced` test would
+      // be a line no mutation of it could fail a test against.
       if (!sweeping.has(w.projectsRoot) && this.discovery.shouldSweep(w.projectsRoot, now)) {
         sweeping.add(w.projectsRoot);
         this.discovery.noteSwept(w.projectsRoot, now);
@@ -752,6 +980,10 @@ export class TranscriptWatcher {
     }
 
     for (const w of this.sessions.values()) {
+      // The point of the whole item: a card left sitting on a crashed session
+      // costs nothing per tick once its watch has frozen (#200). Everything
+      // below this line touches the disk.
+      if (w.quiesced) continue;
       const maySweep = sweeping.has(w.projectsRoot);
       // discovery: scan narrowly (this session's slug dirs, case-insensitive)
       // until bound; widen to the full root if binding hasn't happened after a
@@ -829,6 +1061,10 @@ export class TranscriptWatcher {
       // item moves discovery off the hot thread, not the thing the hot thread
       // exists for.
       for (const [full, tail] of w.tails) this.drain(w, full, tail);
+      // ...and if the process behind all of that is dead, ask whether this was
+      // the last tick worth spending on it (#200). After the drain, so a tick
+      // that read the final bytes still delivers them.
+      if (w.exitedAt !== null) this.maybeQuiesce(w, now);
     }
   }
 
