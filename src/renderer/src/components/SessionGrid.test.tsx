@@ -21,6 +21,7 @@ import {
   cycleLayoutMode,
   endedCopy,
   layoutSweepPort,
+  overlaySaid,
   setCardLadder,
   setLayoutMode,
   stepCardLadder,
@@ -376,6 +377,88 @@ describe('endedCopy', () => {
     ] as const) {
       const copy = endedCopy(ended);
       for (const key of [copy.heading, copy.detail, copy.action]) {
+        expect(copyText(key).length).toBeGreaterThan(0);
+      }
+    }
+  });
+});
+
+// ── #358: the card's live region says what the card is showing ──────────────
+//
+// The REGION cannot be reached here (same live-dockview wall as the overlay),
+// and its load-bearing property — that it exists, empty, before there is
+// anything to put in it — is a DOM fact, so e2e owns that half. What is pinned
+// here is the decision `overlaySaid` makes: whether there is anything to say,
+// and which of the two overlays' words to say. Getting that wrong announces the
+// suspended copy over a dead session's panel, which is worse than the silence
+// this issue is fixing.
+
+/** the render's own branch order, as a table: [live, suspended, ended] */
+const exited = { kind: 'exited', code: 137, crashed: true } as const;
+const notStarted = { kind: 'never-started' } as const;
+
+describe('overlaySaid', () => {
+  it('says nothing while a live card is just being a card', () => {
+    expect(overlaySaid({ live: true, suspended: false, ended: null })).toBeNull();
+  });
+
+  it('says nothing for a card that is still resuming', () => {
+    // no overlay is drawn in that branch either — only "Resuming…", which is
+    // the ordinary boot and not an event
+    expect(overlaySaid({ live: false, suspended: false, ended: null })).toBeNull();
+  });
+
+  it('announces a session that died, with its exit code', () => {
+    const said = overlaySaid({ live: true, suspended: false, ended: exited });
+    expect(said).toEqual({
+      heading: 'grid.sessionEnded',
+      detail: 'grid.exitCrashed',
+      detailVars: { code: 137 },
+    });
+  });
+
+  it('announces a session that never started, in ITS words', () => {
+    const said = overlaySaid({ live: false, suspended: false, ended: notStarted });
+    expect(said).toEqual({ heading: 'grid.sessionNotStarted', detail: 'grid.notStartedHint' });
+    // the #355 lie, re-checked at the announcement seam: a screen-reader user
+    // must not be told a session ended when none ever ran
+    const spoken = `${copyText(said!.heading)} ${copyText(said!.detail)}`;
+    expect(spoken).not.toMatch(/\bended\b|\bexited\b|\bcode\b/i);
+  });
+
+  // (the issue number stays out of this title on purpose: the hex-colour lint
+  // rule reads a `#358` inside a string literal as a three-digit colour)
+  it('announces suspension — the other overlay, audited by the same issue', () => {
+    expect(overlaySaid({ live: false, suspended: true, ended: null })).toEqual({
+      heading: 'grid.suspended',
+      detail: 'grid.suspendedHint',
+    });
+  });
+
+  it('never contradicts the branch that is actually drawn', () => {
+    // suspended is ignored while the card is live: that branch renders the
+    // views, not the suspended panel
+    expect(overlaySaid({ live: true, suspended: true, ended: null })).toBeNull();
+    // ...and the ended panel is drawn OVER them, so it still wins
+    expect(overlaySaid({ live: true, suspended: true, ended: exited })?.heading).toBe(
+      'grid.sessionEnded'
+    );
+    // once the card is not live, `suspended` is the branch the render picks
+    // FIRST — the region must follow it, not the stale `ended`
+    expect(overlaySaid({ live: false, suspended: true, ended: exited })?.heading).toBe(
+      'grid.suspended'
+    );
+  });
+
+  it('names only keys that exist in en.json', () => {
+    for (const card of [
+      { live: true, suspended: false, ended: exited },
+      { live: false, suspended: false, ended: notStarted },
+      { live: false, suspended: true, ended: null },
+    ]) {
+      const said = overlaySaid(card)!;
+      expect(said).not.toBeNull();
+      for (const key of [said.heading, said.detail]) {
         expect(copyText(key).length).toBeGreaterThan(0);
       }
     }

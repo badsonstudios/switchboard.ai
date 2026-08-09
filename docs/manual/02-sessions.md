@@ -90,6 +90,15 @@ renamed, deleted, or is on a drive that isn't plugged in. See
 [a card that says "Session didn't start"](11-troubleshooting.md#sessions) for
 what to check.
 
+**With a screen reader, these panels are read out when they appear** — you
+don't have to be on the card to find out. Each one gives the session's name
+first and then what happened, so with several cards up you hear *"trading-app.
+Session ended. Exited unexpectedly (code 137)."* rather than an anonymous
+"Session ended". The same goes for a card going **suspended**. It's polite
+rather than urgent: it waits for a gap instead of cutting across what you were
+reading. A card that was already suspended when you reopened switchboard stays
+quiet — that's how you left it, not something that just happened.
+
 ## Pinning a session you always want to find
 
 Some sessions are the ones you keep coming back to all day. Pin one and

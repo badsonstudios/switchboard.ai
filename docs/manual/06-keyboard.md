@@ -268,6 +268,12 @@ Press `Enter` when you get to the one you mean.
 Tabs that aren't ready yet stay in the walk and announce themselves as
 unavailable, rather than being skipped as though they didn't exist.
 
+**A card also speaks up when its session stops.** If a session ends, refuses to
+start, or goes suspended, the card covers itself with a panel — and that panel
+is read out when it appears, named after its session, so you learn about it
+without being on that card. See
+[Restarting a dead session](02-sessions.md#restarting-a-dead-session).
+
 ### The Events panel
 
 Each row is a button: `Enter` opens that session, exactly as clicking the row

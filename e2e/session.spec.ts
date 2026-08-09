@@ -67,6 +67,17 @@ test.describe('a session card', () => {
     // usage strip is present from the start (zeros until real activity)
     await expect(window.getByText('↑ 0').first()).toBeVisible({ timeout: 15_000 });
 
+    // #358, riding this launch: the card's live region is in the DOM from the
+    // start and EMPTY. This is the load-bearing half of that fix and the half
+    // the two overlay assertions below cannot see — a live region INSERTED
+    // already holding its text is announced by almost nothing, so the only way
+    // "Session ended" / "Session didn't start" / "Session suspended" reach a
+    // screen reader is by landing inside a region that was already there.
+    // PROVEN: give the region the `{said && …}` guard that any reviewer would
+    // call a harmless tidy-up — so it mounts WITH its words, like the overlay
+    // used to — and this assertion is the only one in the file that goes red.
+    await expect(window.getByTestId('card-announcer')).toBeEmpty();
+
     // Session is the default view; the Terminal is hidden until shown (E10-01)
     await showTerminal(window);
     // the terminal is a REAL pty (fake provider spawns the OS shell): typing a
@@ -124,15 +135,31 @@ test.describe('a session card', () => {
     a = await launchApp({ seedFolder: gone });
     const { window } = a;
 
-    await expect(window.getByText("Session didn't start")).toBeVisible({ timeout: 25_000 });
+    // scoped to the PANEL (#358). The card's live region now carries the same
+    // words for the screen reader, so a bare `getByText` here matches two
+    // elements — the sr-only one is 1×1 and clipped, which Playwright still
+    // counts as visible, so `visible: true` does not separate them either.
+    const overlay = window.getByTestId('card-overlay');
+    await expect(overlay.getByText("Session didn't start")).toBeVisible({ timeout: 25_000 });
     await expect(window.getByRole('button', { name: 'Try again' })).toBeVisible();
-    await expect(window.getByText(/renamed, deleted, or be on a drive/)).toBeVisible();
+    await expect(overlay.getByText(/renamed, deleted, or be on a drive/)).toBeVisible();
     // ...and NOT the copy that belongs to a session which ran and died. Point
-    // `endedCopy` back at the old keys and these two go red.
+    // `endedCopy` back at the old keys and these two go red. Deliberately NOT
+    // scoped: the announcement must not say it either.
     await expect(window.getByText('Session ended')).toHaveCount(0);
     await expect(window.getByText(/Exited unexpectedly/)).toHaveCount(0);
     // the card is still recoverable rather than a dead end
     await expect(window.getByRole('button', { name: 'Close' })).toBeVisible();
+
+    // #358: and the panel is not silent. The same words are in the card's live
+    // region, which is what a screen-reader user who is not sitting on this
+    // card actually hears — the region was empty until the refusal landed in
+    // it. It names the session first, so several cards do not all announce an
+    // anonymous "Session didn't start".
+    const announcer = window.getByTestId('card-announcer');
+    await expect(announcer).toContainText("Session didn't start");
+    await expect(announcer).toContainText(/renamed, deleted, or be on a drive/);
+    await expect(announcer).toContainText(path.basename(gone));
   });
 
   test('pops out into a second OS window (E8-01)', async () => {
@@ -239,7 +266,14 @@ test.describe('a session card', () => {
     await popout.evaluate(() => window.close());
     await expect.poll(() => app.windows().length, { timeout: 15_000 }).toBe(1);
     // the suspended affordance shows; Resume brings the session/terminal back
-    await expect(window.getByText('Session suspended')).toBeVisible({ timeout: 15_000 });
+    // (scoped to the panel — see the note in the never-started test above)
+    await expect(
+      window.getByTestId('card-overlay').getByText('Session suspended')
+    ).toBeVisible({ timeout: 15_000 });
+    // #358 audited this overlay too: it was as silent as the ended one. The
+    // card's live region is in the main window's DOM before the words are, so
+    // the suspension is reported rather than merely drawn.
+    await expect(window.getByTestId('card-announcer')).toContainText('Session suspended');
     await window.getByRole('button', { name: 'Resume' }).click();
     await showTerminal(window); // Terminal hidden by default (E10-01)
     await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 15_000 });
