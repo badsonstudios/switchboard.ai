@@ -23,11 +23,19 @@
 // constraint) means our cleverness breaking must not leave a session unbound.
 //
 // ONE qualifier, added by #129: that promise is made to a session that is still
-// LOOKING. A root where every session has already been declared `unbound` — the
-// UI told the user so — drops to `GIVEN_UP_MS`, and there the watch stops being
-// only an accelerator: with it dead too, a transcript that turns up late is
-// found on the slow rung rather than the ladder. Nothing is left unbound, and
-// every evidence site puts the root back on the ladder at once.
+// LOOKING. A root where nobody is looking any more drops to `GIVEN_UP_MS`, and
+// there the watch stops being only an accelerator: with it dead too, a
+// transcript that turns up late is found on the slow rung rather than the
+// ladder. Nothing is left unbound, and every evidence site puts the root back on
+// the ladder at once.
+//
+// #388 makes the same qualifier apply PER SESSION, because the throttle above is
+// per root and the scan cost is per session: `poll()` walks the tree once for
+// every unbound session on a swept tick, so one live card kept every session
+// that had stopped looking paying full price. The rung is the same
+// (`GIVEN_UP_MS`) and so is the reprieve — see `noteSwept`'s return value and
+// `quietRungDue`, which are this module's half of it. The watcher still owns the
+// question of which sessions have stopped looking; this module only owns when.
 import fs from 'fs';
 import { Logger } from '../log/logger';
 
@@ -45,7 +53,9 @@ const BACKOFF_MS = [250, 500, 1000, 2000] as const;
 const WATCH_FAILED_MS = 500;
 
 /**
- * The rung a root drops to once EVERY session on it has given up (#129).
+ * The rung a root drops to once EVERY session on it has stopped looking (#129),
+ * and — since #388 — the rung an individual session that has stopped looking
+ * scans on even while its root is still fast for somebody else.
  *
  * The ladder above caps at 2s because a session that is still searching must
  * bind no slower than it used to. A session the watcher has already declared
@@ -122,11 +132,12 @@ interface RootState {
   watchFailed: boolean;
   /** when the watch was declared dead, so it can be retried (never one-way) */
   failedAt: number;
-  /** Every session on this root has reached `unbound` (#129) — nobody here is
-   *  waiting for a transcript any more. Level-driven by the watcher on every
-   *  tick and never latched here: a session binding, being replaced, or a new
-   *  card opening on this root puts it back to false without this module
-   *  having to know what any of those things are. */
+  /** Nobody on this root is looking for a transcript any more (#129, widened by
+   *  #388 to include a card nobody has prompted for `UNPROMPTED_FAST_MS` — not
+   *  every unprompted card, only one past that window). Level-driven by the
+   *  watcher on every tick and never latched here: a session binding, being
+   *  replaced, or a new card opening on this root puts it back to false without
+   *  this module having to know what any of those things are. */
   givenUp: boolean;
   /** Swept ticks still owed to the FAST ladder while `givenUp` (#129).
    *
@@ -135,7 +146,14 @@ interface RootState {
    *  it is not a session that can NEVER bind. So every evidence site
    *  (`markDirty`, a new path on the watch) buys the root one full pass back
    *  down the ladder — an immediate sweep and then 500/1000/2000, ~3.5s of
-   *  looking properly — before it goes quiet again. Counted in sweeps rather
+   *  looking properly — before it goes quiet again.
+   *
+   *  #388 spends the SAME counter on a second question: which sessions take
+   *  part in a sweep. That is deliberate rather than a second reprieve of its
+   *  own — a root is either inside a post-evidence pass or it is not, and two
+   *  counters could disagree about it. `noteSwept` reports the answer for the
+   *  sweep it consumes, so no caller can read it on the wrong side of the
+   *  decrement. Counted in sweeps rather
    *  than derived from `backoffIdx` deliberately: an append to a KNOWN path
    *  also resets that index, so a busy neighbouring session under the same root
    *  could otherwise hold a given-up root on the fast ladder for ever.
@@ -258,14 +276,21 @@ export class DiscoverySchedule {
   }
 
   /**
-   * Has every session on this root given up (#129)?
+   * Has every session on this root stopped looking (#129, #388)?
    *
    * Level-driven, and asked on every tick: the watcher owns the question (only
-   * it knows what a session is, or what `unbound` means) and this module owns
-   * the consequence. `true` drops the root to `GIVEN_UP_MS` — a failure that
-   * has already been announced to the user is not made worse by finding out
-   * about its reprieve half a minute late — but only once any outstanding fast
-   * sweeps are spent, so the LAST evidence still gets a full look.
+   * it knows what a session is, or what "stopped looking" means for one) and
+   * this module owns the consequence. `true` drops the root to `GIVEN_UP_MS` —
+   * a failure that has already been announced to the user is not made worse by
+   * finding out about its reprieve half a minute late — but only once any
+   * outstanding fast sweeps are spent, so the LAST evidence still gets a full
+   * look.
+   *
+   * Three populations answer `true`, and the watcher's `stillLooking` is where
+   * each is argued: a frozen session whose process died (#200), a session
+   * declared `unbound` (#129), and a card nobody has prompted for longer than a
+   * first prompt is plausibly still coming (#388). None of the three is a state
+   * this module can see, which is why it only ever receives the verdict.
    *
    * A root nobody has registered is ignored, like every other call here:
    * bookkeeping never blocks discovery.
@@ -275,7 +300,7 @@ export class DiscoverySchedule {
     if (!st || st.givenUp === givenUp) return;
     st.givenUp = givenUp;
     if (givenUp) {
-      this.opts.log.info('transcript discovery quiet — every session on this root has given up', {
+      this.opts.log.info('transcript discovery quiet — nobody on this root is looking any more', {
         root,
         everyMs: this.givenUpMs,
         note: 'any evidence — a new transcript, a turn, a native id — puts it back on the fast ladder',
@@ -283,6 +308,39 @@ export class DiscoverySchedule {
     } else {
       this.opts.log.info('transcript discovery back on the fast ladder', { root });
     }
+  }
+
+  /**
+   * Has a session that has STOPPED LOOKING waited out its own quiet rung (#388)?
+   *
+   * The per-session half of #129. The throttle that item built is per root, but
+   * the scan cost is per session — `poll()` walks the tree once for EVERY
+   * unbound session on a swept tick — so a single live card kept every session
+   * beside it that had already stopped looking paying the full ~2,100-syscall
+   * price at the root's fast rung. This is that session's own floor, and it is
+   * deliberately the SAME interval the root drops to: a session that has stopped
+   * looking is worth one look every `GIVEN_UP_MS`, and whether the card next to
+   * it is busy has nothing to do with that.
+   *
+   * A FLOOR, not a schedule — the sweep still has to happen, and the root
+   * decides when, so the answer here is when a session becomes ELIGIBLE and not
+   * when it looks. `sessionMaySweep` states the composed bound and the one
+   * corner where it exceeds this interval.
+   *
+   * Pure arithmetic, and the state it reads lives on the caller's session — the
+   * watcher owns what a session is, and a map keyed by session id here would be
+   * a second lifecycle to keep in step with `unwatch`. Public so the interval
+   * and the clock-backwards rule are pinned where every other rung's are.
+   */
+  quietRungDue(lastSweptAt: number, now: number): boolean {
+    // A wall clock that steps BACKWARDS (NTP correction, VM resume, the user
+    // changing it) would otherwise make this subtraction negative and stop a
+    // session taking part in ANY sweep until real time caught up — for an
+    // hour-sized jump, an hour in which it cannot bind. `shouldSweep` guards the
+    // root's own clock the same way, and a session skipping the sweeps its root
+    // is still running would be that guard defeated one level down.
+    if (now < lastSweptAt) return true;
+    return now - lastSweptAt >= this.givenUpMs;
   }
 
   /** May discovery touch the disk for this root on this tick? Pure: it reads
@@ -324,10 +382,28 @@ export class DiscoverySchedule {
     return now - st.lastSweepAt >= this.intervalFor(st);
   }
 
-  /** Record that this root was swept on this tick. */
-  noteSwept(root: string, now: number): void {
+  /**
+   * Record that this root was swept on this tick.
+   *
+   * Returns whether the sweep it just consumed was a REPRIEVE sweep — one the
+   * root still owed to its last piece of evidence (#388). The watcher spends
+   * that answer on WHICH sessions take part: a session that has stopped looking
+   * skips an ordinary sweep and takes every reprieve sweep, which is how every
+   * evidence site — `markDirty`, a new path on the watch, an event with no
+   * filename — restores its participation at once rather than leaving it to
+   * wait out `quietRungDue`.
+   *
+   * Returned from the call that CONSUMES the reprieve rather than offered as a
+   * separate query, deliberately: a reader on the wrong side of the decrement
+   * would be off by one sweep, and nothing about that is visible enough for a
+   * test to catch.
+   *
+   * An unregistered root reports a reprieve, like every other answer here:
+   * bookkeeping never narrows discovery.
+   */
+  noteSwept(root: string, now: number): boolean {
     const st = this.roots.get(this.key(root));
-    if (!st) return;
+    if (!st) return true;
     st.dirty = false;
     st.fsDirty = false;
     st.lastSweepAt = now;
@@ -337,6 +413,7 @@ export class DiscoverySchedule {
     // every root, given-up or not, so the count is simply "sweeps since the
     // last evidence, capped" and a root that gives up long after its last prod
     // goes slow on the very tick the watcher says so.
+    const reprieve = st.fastSweepsLeft > 0;
     if (st.fastSweepsLeft > 0) st.fastSweepsLeft--;
     // Cheapest place to retry a dead watch: once per root per swept tick, and
     // only after the re-arm delay. On a given-up root that means the retry can
@@ -346,6 +423,7 @@ export class DiscoverySchedule {
     if (st.watchFailed && now - st.failedAt >= (this.opts.watchRearmMs ?? WATCH_REARM_MS)) {
       this.openWatch(root, st, now);
     }
+    return reprieve;
   }
 
   stop(): void {

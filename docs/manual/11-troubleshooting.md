@@ -177,9 +177,10 @@ that file can't be found, the message names what switchboard did see:
 affects the rendered conversation view — the CLI is running, your work is not
 lost, and the **Terminal** tab shows the session exactly as Claude Code draws
 it. Restarting the app is safe and often enough, since matching starts fresh.
-A card that has given up still keeps half an eye out: send another prompt, or
-let a conversation file turn up, and it will pick it up — within a few seconds
-normally, and within about half a minute in the worst case.
+A card that has given up — or one you simply haven't typed into yet — still
+keeps half an eye out: send it a prompt, or let a conversation file turn up,
+and it will pick it up — within a few seconds normally, and within a minute even
+when Claude Code's hooks have gone quiet as well.
 (A card showing **Session ended** can also land on this message: switchboard
 keeps looking for a crashed session's conversation for a short while, then
 stops and says so rather than searching for ever.)

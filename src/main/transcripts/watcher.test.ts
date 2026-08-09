@@ -1372,6 +1372,13 @@ describe('discovery I/O is off the hot thread (P2-E15-11 / AR-P1-8)', () => {
     // would keep the root scanning for ever on behalf of a dead session — the
     // exact leak #200 removed for the corpse's own watch, re-created via its
     // neighbour's.
+    //
+    // WHAT THIS STILL PROVES, after #388: that s1 stops walking beside a corpse,
+    // and that the corpse stays readable. It no longer ISOLATES the `quiesced`
+    // clause of `stillLooking` — deleting that clause leaves this green, because
+    // the per-session gate throttles s1 to the same rung whether the root is
+    // fast or not. That is not a hole in the test; it is what #388 did to the
+    // cost. See `stillLooking` for the claim the clause makes now.
     const w = blindGiveUpWatcher({ postExitSettleMs: 20 });
     try {
       const cwd2 = 'C:/tmp/tw-project-corpse';
@@ -1399,6 +1406,229 @@ describe('discovery I/O is off the hot thread (P2-E15-11 / AR-P1-8)', () => {
       }
       // ...and the corpse is still fully readable, which is the whole of #200.
       expect(w.snapshot('s2')!.bound).toBe(true);
+    } finally {
+      w.stop();
+    }
+  });
+
+  // --- #388: the throttle is per ROOT, but the cost is per SESSION -----------
+  //
+  // #129 stopped the tree being walked for a root nobody was looking at. It did
+  // not stop it being walked FOR a session nobody is looking for, because
+  // `poll()` runs `discoveryCandidates(w, widen)` — a full `scan(root)` once
+  // widened — for EVERY unbound session on a swept tick. One live card is enough
+  // to keep the root on the fast ladder, so every card beside it that had
+  // already given up kept paying ~2,100 syscalls a sweep, for ever. That is the
+  // normal multi-card state of this app.
+  //
+  // These separate the two costs, which is what makes the claim provable rather
+  // than merely plausible. `atRoot` counts `readdirSync` OF THE ROOT ITSELF —
+  // where a widened discovery scan starts, and where a bound session's
+  // `subagentFiles()` never goes. `under` counts anything below it, which on
+  // these roots is `subagentFiles()` and nothing else. So one window measures
+  // both "the throttled card stopped walking" AND "the root is still sweeping
+  // for the card that needs it"; without the second, every assertion here would
+  // pass just as well against a poll timer that had stopped altogether.
+  function countWalks(root: string): {
+    atRoot: () => number;
+    under: () => number;
+    restore: () => void;
+  } {
+    const real = fs.readdirSync;
+    let atRoot = 0;
+    let under = 0;
+    const spy = ((p: fs.PathLike, o?: unknown) => {
+      const s = String(p);
+      if (s === root) atRoot++;
+      else if (s.startsWith(root)) under++;
+      return (real as (p: fs.PathLike, o?: unknown) => unknown)(p, o);
+    }) as typeof fs.readdirSync;
+    fs.readdirSync = spy;
+    return { atRoot: () => atRoot, under: () => under, restore: () => { fs.readdirSync = real; } };
+  }
+
+  /** A root with a LIVE bound card (s2) holding it on the fast ladder, and a
+   *  card that has given up beside it (s1) — the state #129 leaves behind. No
+   *  `fs.watch`, so a sweep is the only thing that can find anything. */
+  async function mixedRoot(over: Partial<ConstructorParameters<typeof TranscriptWatcher>[0]> = {}) {
+    const w = blindGiveUpWatcher(over);
+    const cwd2 = 'C:/tmp/tw-project-live';
+    const d2 = path.join(root, slugForCwd(cwd2));
+    fs.mkdirSync(d2, { recursive: true });
+    w.watch('s1', { cwd }); // never gets a transcript
+    w.noteConversationStarted('s1'); // ...but a turn ran, so it gives up at 60ms
+    w.watch('s2', { cwd: cwd2 });
+    writeLines(path.join(d2, 'native-2.jsonl'), [
+      JSON.stringify({ type: 'assistant', sessionId: 'native-2', cwd: cwd2, timestamp: new Date().toISOString() }),
+    ]);
+    await waitFor(() => w.snapshot('s2')!.bound === true);
+    await waitFor(() => w.snapshot('s1')!.binding === 'unbound');
+    await sleep(250); // spend the fast sweeps the start-up prods bought
+    return w;
+  }
+
+  it('a card that gave up stops full-scanning even while a live card keeps the root fast', async () => {
+    const w = await mixedRoot();
+    try {
+      const spy = countWalks(root);
+      let atRoot = 0;
+      let under = 0;
+      try {
+        await sleep(400); // ~16 ticks; the root is on the 50ms watch-failed rung
+      } finally {
+        atRoot = spy.atRoot();
+        under = spy.under();
+        spy.restore();
+      }
+      // Before this item s1 walked the root on every one of the root's ~8 sweeps
+      // in this window. Its own rung here is 5s, so it walks 0 or the one sweep
+      // a slow machine might still owe it.
+      expect(atRoot).toBeLessThan(2);
+      // ...and the root really IS still sweeping — `subagentFiles()` runs for
+      // bound s2 on every swept tick. Without this the assertion above would
+      // pass against a watcher that had simply stopped polling, which is the
+      // regression this item is most able to cause.
+      expect(under).toBeGreaterThan(0);
+      // ...and the ROOT is still on the fast ladder, which is the other half of
+      // "per session, not per root". Counting syscalls cannot show this any
+      // more — that is exactly what #388 changed — so the schedule is asked
+      // directly. Without it, deleting the give-up quorum from `poll()` passes
+      // every test in this file.
+      expect(w.discoveryStats(root)!.givenUp).toBe(false);
+    } finally {
+      w.stop();
+    }
+  });
+
+  it('...and the root DOES go quiet once the live card stops looking too (#129)', async () => {
+    // The per-root rung is still the outer bound, and after #388 this is the
+    // only way to see it: every byte of disk work is now decided per session, so
+    // a root that gave up and a root on the fast ladder cost the same in
+    // syscalls. Mutation-checked — with `stillLooking` ignored in the quorum,
+    // nothing else in this file fails.
+    const w = await mixedRoot({ postExitSettleMs: 20 });
+    try {
+      expect(w.discoveryStats(root)!.givenUp).toBe(false); // s2 is bound and live
+      w.noteSessionExited('s2'); // ...and now it is a corpse, which casts no vote
+      await waitFor(() => w.discoveryStats(root)!.givenUp === true, 2_000);
+      // The death is an evidence site, so it buys one last pass down the ladder
+      // (#200) before the rung applies — the reprieve and the rung, in order.
+      await waitFor(() => w.discoveryStats(root)!.backoffMs === 5_000, 2_000);
+      // The corpse is still fully readable, which is the whole of #200.
+      expect(w.snapshot('s2')!.bound).toBe(true);
+    } finally {
+      w.stop();
+    }
+  });
+
+  it('...and any evidence puts it straight back to looking properly', async () => {
+    // The recovery half, per session — a session that has stopped looking must
+    // never become one that can NEVER bind. Its own state does not change here
+    // (it is still `unbound`, and stays so until it binds), so the ONLY thing
+    // that can restore it is the reprieve `noteSwept` reports.
+    const w = await mixedRoot();
+    try {
+      writeLines(path.join(projectDir(), 'native-1.jsonl'), [entry()]);
+      const spy = countWalks(root);
+      let under = 0;
+      try {
+        await sleep(300);
+      } finally {
+        under = spy.under();
+        spy.restore();
+      }
+      // The root really was sweeping throughout — s1 sat those sweeps out.
+      expect(under).toBeGreaterThan(0);
+      expect(w.snapshot('s1')!.bound).toBe(false); // the per-session rung holds
+
+      w.noteConversationStarted('s1'); // the user simply prompts it again
+      await waitFor(() => w.snapshot('s1')!.bound === true, 1_000);
+    } finally {
+      w.stop();
+    }
+  });
+
+  it('...and it still binds with no evidence at all, once its own rung comes round', async () => {
+    // The floor that stops the gate becoming an off switch: with the watch dead,
+    // the hooks silent and every sibling quiet, nothing prods anything — so the
+    // only thing that can bind this transcript is the session's own quiet rung
+    // coming round. `GIVEN_UP_MS` in production; 300ms here.
+    const w = await mixedRoot({ discovery: { watchFactory: () => null, watchFailedMs: 50, givenUpMs: 300, backoffMs: [25, 50] } });
+    try {
+      writeLines(path.join(projectDir(), 'native-1.jsonl'), [entry()]);
+      await waitFor(() => w.snapshot('s1')!.bound === true, 2_000);
+    } finally {
+      w.stop();
+    }
+  });
+
+  it('a card nobody ever prompted stops holding its root fast', async () => {
+    // The second half of the item. `awaiting-prompt` never times out as a
+    // VERDICT, deliberately — a card you opened and walked away from is not
+    // broken — but it used to vote to keep its root on the fast ladder for the
+    // life of the process while doing exactly what a given-up card does: walking
+    // 2,090 entries to look for a transcript the CLI does not write until the
+    // first prompt.
+    const w = blindGiveUpWatcher({ unpromptedFastMs: 60 });
+    try {
+      w.watch('s1', { cwd }); // opened, never typed into
+      await sleep(300); // past the 60ms window and the start-up reprieve
+
+      const spy = countWalks(root);
+      let atRoot = 0;
+      try {
+        await sleep(400);
+      } finally {
+        atRoot = spy.atRoot();
+        spy.restore();
+      }
+      // This card is alone on the root, so both halves of the item point the
+      // same way: it stops voting, so #129's rung applies to the root, and it
+      // would be gated even if the root were fast for somebody else.
+      expect(atRoot).toBeLessThan(2);
+      // ...and the card still says what it always said. This is a scheduling
+      // change, not a verdict: nobody has prompted it, so nothing is wrong.
+      expect(w.snapshot('s1')!.binding).toBe('awaiting-prompt');
+    } finally {
+      w.stop();
+    }
+  });
+
+  it('...and it picks the conversation up the moment you do prompt it', async () => {
+    const w = blindGiveUpWatcher({ unpromptedFastMs: 60 });
+    try {
+      w.watch('s1', { cwd });
+      await sleep(300);
+      writeLines(path.join(projectDir(), 'native-1.jsonl'), [entry()]);
+      await sleep(300);
+      expect(w.snapshot('s1')!.bound).toBe(false); // quiet, with no watch to help
+
+      w.noteConversationStarted('s1'); // the first prompt
+      await waitFor(() => w.snapshot('s1')!.bound === true, 1_000);
+    } finally {
+      w.stop();
+    }
+  });
+
+  it('a card you DO prompt promptly is untouched — this is a timeout, not a veto', async () => {
+    // The case the timeout exists to protect, and the reason `awaiting-prompt`
+    // is not simply excluded from the quorum: for the window in which a first
+    // prompt is actually likely, a fresh card gets the full fast ladder even
+    // with both accelerators dead. Break the timeout into "never votes" and this
+    // card waits out the 5s quiet rung instead.
+    //
+    // The 400ms matters and cost a mutation round to find. The `widen` latch
+    // marks the root dirty at 30ms, which buys a full pass down the ladder — so
+    // a transcript written a hundred milliseconds in is found by that reprieve
+    // whether this card votes or not, and the test proves nothing. This one is
+    // written long after the reprieve is spent, where the only thing that can
+    // still find it is the fast rung the card's vote is holding open.
+    const w = blindGiveUpWatcher({ unpromptedFastMs: 5_000 });
+    try {
+      w.watch('s1', { cwd });
+      await sleep(400); // way past a 60ms timeout, still well inside a 5s one
+      writeLines(path.join(projectDir(), 'native-1.jsonl'), [entry()]);
+      await waitFor(() => w.snapshot('s1')!.bound === true, 1_000);
     } finally {
       w.stop();
     }

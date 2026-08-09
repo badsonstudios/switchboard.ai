@@ -96,7 +96,11 @@ on the floor, and say so in your PR.
   folder several times a second and settles into an occasional check. Anything
   that could change the answer, from a transcript appearing to your next
   prompt, puts it straight back to looking properly, so a card that gave up can
-  still pick a conversation up later on its own.
+  still pick a conversation up later on its own. Each card now settles down on
+  its own account rather than waiting for every card in the folder to: one card
+  still searching no longer keeps its neighbours rescanning, and a card you
+  opened and never typed into stops rescanning too, since Claude Code writes
+  nothing for it until your first prompt. Prompting it picks straight back up.
 
 ## 0.2.0 — 2026-08-09
 

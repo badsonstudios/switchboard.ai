@@ -137,6 +137,29 @@ interface WatchedSession {
    *  folder that nobody can take" — turning our own abandoned history into
    *  permanent evidence that our transcript is missing (P2-E15-10). */
   abandoned: Set<string>;
+  /**
+   * The last tick on which THIS session took part in its root's sweep (#388).
+   *
+   * The root decides when the disk may be touched; this decides who the touching
+   * is done for. A session that has stopped looking (`stillLooking` says which)
+   * skips the ordinary sweeps its live neighbours are still buying and takes one
+   * every `quietRungDue` — the same rung #129 gives a root where nobody is
+   * looking, now paid per session because that is how the cost is incurred.
+   *
+   * Updated on every sweep this session takes part in, looking or not, so the
+   * value is simply "sweeps ago" and a session that stops looking long after its
+   * last scan drops to the quiet rung from where it already stood rather than
+   * from zero. Lives here rather than in the scheduler for the reason
+   * `quietRungDue` gives: it dies with the entry, so there is no second
+   * lifecycle to keep in step with `unwatch`.
+   *
+   * 0 until the first sweep this session takes part in. Both routes out of that
+   * agree it is due: `stillLooking` is true for a card this new (nothing reaches
+   * the quiet rung without spending 45 seconds first), and `quietRungDue` is
+   * asked in wall-clock milliseconds, where a zero is a subtraction of the whole
+   * epoch. A new card never waits out a rung before anyone looks for it.
+   */
+  lastDiscoveryAt: number;
   tails: Map<string, Tail>;
   snap: TranscriptSnapshot;
   /** the Feed's own state — seq, cap, tool-result stitching (P2-E18-10) */
@@ -191,6 +214,49 @@ const CWD_BIND_FALLBACK_MS = 30_000;
 const BIND_GIVEUP_MS = 45_000;
 
 /**
+ * How long a card NOBODY HAS EVER PROMPTED keeps discovery on the fast ladder
+ * (#388) — for its root, and for itself.
+ *
+ * `awaiting-prompt` deliberately never times out as a VERDICT (see
+ * `deriveBinding`): a session you opened and walked away from is not broken, and
+ * saying so would be the false alarm P2-E15-10 exists to remove. That is a
+ * statement about what the UI may claim, and #388 is the discovery-scheduling
+ * question hiding behind it: nothing about "we must not accuse this card"
+ * requires walking 2,090 directory entries on its behalf, ten times a second,
+ * for the life of the process. Before this, one such card held its whole root on
+ * the fast ladder for ever — the same shape #129 fixed one rung up.
+ *
+ * WHAT DISCOVERY IS EVEN DOING FOR IT: nothing, in the healthy case. The CLI
+ * writes no transcript until the first prompt (the S-07 measurement), so there
+ * is by contract nothing on disk to find — and at the moment there IS, two
+ * independent accelerators fire. Hooks reach `noteConversationStarted`, which
+ * marks the root dirty; and the transcript appearing is a NEW path on the
+ * recursive watch, which buys a full pass down the ladder. Sweeping is
+ * load-bearing only when BOTH are dead, and there `GIVEN_UP_MS` still finds it —
+ * #129's own argument for choosing that number against the degraded path.
+ *
+ * SO WHY A TIMEOUT AND NOT "IT NEVER VOTES"? Because the doubly-degraded case is
+ * real (a network home where recursive `fs.watch` is unreliable, plus a blocked
+ * hooks listener), and there a card prompted seconds after it opened would bind
+ * up to half a minute late instead of inside two seconds — a regression on a
+ * healthy card, which is a different bargain from #129's, where the user had
+ * already been told the search had failed. A timeout keeps the fast ladder for
+ * the window in which a first prompt is actually likely and drops it for the
+ * card that is genuinely just sitting there.
+ *
+ * THE NUMBER is `BIND_GIVEUP_MS`, and the same 45 seconds for the same reason:
+ * it is this file's answer to "how long do we keep looking before we stop paying
+ * to look". A session WITH evidence spends it and is declared `unbound`; a
+ * session with none spends it and goes quiet without any verdict at all — the
+ * UI still says `awaiting-prompt`, for ever, because that remains true. It is
+ * also comfortably past both clock-driven discovery deadlines (`WIDEN_AFTER_MS`
+ * 10s and `CWD_BIND_FALLBACK_MS` 30s), so neither has to be reasoned about
+ * against it. Separately injectable so a test can drive this population without
+ * moving the give-up verdict that every other test in the file depends on.
+ */
+const UNPROMPTED_FAST_MS = BIND_GIVEUP_MS;
+
+/**
  * How long a BOUND session's watch keeps draining after its process died (#200).
  *
  * One more drain is provably enough on a local filesystem: the exit
@@ -224,6 +290,12 @@ const POST_EXIT_SETTLE_MS = 3_000;
  * combinations that never reach a verdict at all (a session nobody prompted
  * stays `awaiting-prompt` for ever, deliberately). Comfortably past
  * `BIND_GIVEUP_MS` so the UI's own verdict lands first whenever there is one.
+ *
+ * Since #388 that unprompted session spends most of the hunt on the quiet rung
+ * rather than the ladder, which costs it nothing: a dead process writes nothing
+ * new, and the three things that could still change its verdict — a late native
+ * id, a sibling closing, the `cwdDeadlineMarked` latch — all mark the root dirty
+ * and buy the sweeps back.
  */
 const POST_EXIT_HUNT_MS = 90_000;
 
@@ -241,6 +313,8 @@ export interface TranscriptWatcherOptions {
   cwdBindFallbackMs?: number;
   /** how long a session searches WITH EVIDENCE before the UI says it failed */
   bindGiveUpMs?: number;
+  /** how long a never-prompted card keeps discovery on the fast ladder (#388) */
+  unpromptedFastMs?: number;
   /** how long a bound session keeps draining after its process died (#200) */
   postExitSettleMs?: number;
   /** the hard ceiling on watching anything for an exited session (#200) */
@@ -285,6 +359,28 @@ function readRange(file: string, buf: Buffer, position: number): number | null {
       }
     }
   }
+}
+
+/**
+ * What one poll tick's pre-pass decided, for the session loop to read (#388).
+ *
+ * The pre-pass answers per ROOT and the loop spends per SESSION, and every
+ * question here has to be answered exactly once: `noteSwept` mutates the
+ * backoff, `setGivenUp` moves the rung, and `stillLooking` reads binding state a
+ * re-entrant listener can change mid-tick. Named as a value rather than passed
+ * as four arguments because the four are one decision.
+ *
+ * `sweeping`, `reprieved` and `quiet` are keyed by the RAW root spelling — the
+ * scheduler de-dupes roots itself, and the session loop only ever has the raw
+ * string. `looking` is keyed by session id.
+ */
+interface SweepPlan {
+  /** roots the disk may be touched for at all on this tick */
+  sweeping: Set<string>;
+  /** ...of which these sweeps were still owed to the root's last evidence */
+  reprieved: Set<string>;
+  /** per session: is it still looking for a transcript? (`stillLooking`) */
+  looking: Map<string, boolean>;
 }
 
 /** Path equality that tolerates case + separator differences on win32. */
@@ -462,6 +558,7 @@ export class TranscriptWatcher {
       candidateSeen: false,
       evidenceSince: null,
       abandoned: new Set(),
+      lastDiscoveryAt: 0,
       tails: new Map(),
       snap: this.blankSnap(sessionId, root),
       feed: new FeedBuffer((b) => this.reemit(sessionId, b)),
@@ -908,6 +1005,25 @@ export class TranscriptWatcher {
       : undefined;
   }
 
+  /**
+   * Test/diagnostic view of one root's discovery schedule (#388).
+   *
+   * A passthrough to `DiscoverySchedule.stats`, and it exists because this item
+   * made the per-ROOT rung invisible from outside. Every byte of disk work is
+   * now decided per session, so a test that counts syscalls can no longer tell a
+   * root that everyone gave up on from one still on the fast ladder — which left
+   * `poll()`'s give-up quorum, the whole of #129, with no failing test if it
+   * were deleted (mutation-checked; it survived). This is the observable that
+   * puts that guard back.
+   *
+   * Nothing in the app calls it, and that is deliberate rather than sloppy:
+   * #129 declined to expose `fastSweepsLeft` because nothing would have read it,
+   * and the difference here is that something does.
+   */
+  discoveryStats(root: string): ReturnType<DiscoverySchedule['stats']> {
+    return this.discovery.stats(root);
+  }
+
   onUpdate(l: (s: TranscriptSnapshot) => void): () => void {
     this.listeners.add(l);
     return () => this.listeners.delete(l);
@@ -962,6 +1078,105 @@ export class TranscriptWatcher {
     return acc;
   }
 
+  /**
+   * Is this session still LOOKING for a transcript (#129, #388)?
+   *
+   * The one predicate behind both discovery throttles: it decides whether a
+   * session votes to keep its ROOT on the fast ladder, and whether the session
+   * itself takes part in the sweeps that ladder allows. Level-driven and never
+   * latched anywhere — every answer is recomputed from state the rest of the
+   * file already maintains, so a session that starts looking again is back at
+   * full speed on the very next tick with no event required and nothing to
+   * un-stick.
+   *
+   * The four answers, and why:
+   *
+   *  - QUIESCED (#200): no. A dead session's frozen watch scans nothing already
+   *    and can learn nothing, so counting it — including a `bound` one — would
+   *    hold a root fast on behalf of a corpse. HONEST SCOPE, and #388 shrank it:
+   *    since the gate below, that no longer costs any I/O. A corpse's vote can
+   *    only change the answer when every LIVE session on the root has stopped
+   *    looking too — and those are now throttled to the same rung the root would
+   *    have dropped to, so they scan at the same rate either way. What is left
+   *    is the root's RUNG being honest, and a standing guard: the moment
+   *    anything spends a root's rung outside the per-session loop, the corpse
+   *    would be paying for it again. Deleting this clause passed every
+   *    syscall-counting test in the suite, which is why `discoveryStats` exists
+   *    — the claim is now asserted where it can still be seen.
+   *  - `unbound` (#129): no. The give-up clock expired 45 seconds ago and the UI
+   *    told the user so; it kept walking the whole tree anyway.
+   *  - `awaiting-prompt` (#388): yes for `UNPROMPTED_FAST_MS` from the moment we
+   *    started watching, then no. See that constant for the argument, which is
+   *    the whole of this item's second half: no transcript is owed to a card
+   *    nobody has prompted, and both accelerators that could tell us one has
+   *    appeared prod discovery themselves.
+   *  - `searching` or `bound`, alive: yes. A bound session is NOT done with
+   *    discovery — `subagentFiles()` only runs on a swept tick — which is why
+   *    the question is "still looking", not "still unbound".
+   */
+  private stillLooking(w: WatchedSession, now: number): boolean {
+    if (w.quiesced) return false;
+    if (w.snap.binding === 'unbound') return false;
+    if (w.snap.binding === 'awaiting-prompt') {
+      // Measured from `watchedSince`, the only clock a session with no evidence
+      // has. A `/clear` puts a long-lived card back into `awaiting-prompt` with
+      // an old `watchedSince`, so it goes quiet at once — which is right, and
+      // provably safe rather than merely defensible: a card that has just been
+      // cleared and left alone is precisely a card nobody is typing into, and
+      // `resetBinding(cause: 'clear')` is only reachable from
+      // `setNativeSessionId`, i.e. from the hooks. If we learned about the
+      // `/clear` at all then the hooks are alive, so the next prompt is
+      // guaranteed to reach `noteConversationStarted` and prod discovery.
+      return now - w.watchedSince <= (this.opts.unpromptedFastMs ?? UNPROMPTED_FAST_MS);
+    }
+    return true;
+  }
+
+  /**
+   * May THIS session take part in its root's sweep on this tick (#388)?
+   *
+   * A session that has stopped looking is not cut off — that would make it a
+   * session that can NEVER bind, the failure #129 spent its whole recovery half
+   * avoiding. It gets the identical two-part deal, one level down:
+   *
+   *  - every REPRIEVE sweep, immediately. A reprieve is what the scheduler owes
+   *    its last piece of evidence, and every evidence site on the root feeds it:
+   *    `markDirty` from a turn, a native id, a `/clear`, a sibling binding or
+   *    closing; a NEW path on the recursive watch; an event with no filename.
+   *    So the moment anything happens that a sweep would conclude differently
+   *    about, this session is looking properly again — before its own state has
+   *    to change, and whether or not the root as a whole is quiet.
+   *  - otherwise, one sweep every `GIVEN_UP_MS`, which is the floor #129
+   *    guarantees a root and this guarantees a session inside a root that is
+   *    still fast for somebody else.
+   *
+   * THE COMPOSED WORST CASE, stated honestly, because it is not simply
+   * `GIVEN_UP_MS`: this is a floor on the session, and the root still decides
+   * when a sweep happens at all, so a due session waits for the root's next one.
+   * `lastDiscoveryAt` only ever advances on a tick the ROOT also swept, so it
+   * can never run ahead of `lastSweepAt` — which means that on a root where
+   * nobody is looking the two clocks are in phase and the answer is exactly
+   * `GIVEN_UP_MS`, and on a root still fast for somebody else it is that plus
+   * the root's own rung (2s at the ladder's cap).
+   *
+   * The one corner where it is worse: a root that goes QUIET in the gap between
+   * this session's last look and its next due time. The root's rung is reset
+   * from its own last sweep, so the session waits out a fresh `GIVEN_UP_MS` on
+   * top of the one it had nearly finished — up to twice the interval since it
+   * last looked, and only when the watch and the hooks are BOTH dead, since
+   * either one would prod the root and buy a reprieve. Accepted rather than
+   * fixed: the fix is to let a due session force a sweep, which hands every
+   * throttled session the power to set the root's rate and gives back the
+   * per-root bound #129 exists to provide. It is also the direction #129 chose
+   * to be wrong in one level up — nothing here is waiting on a verdict, because
+   * the verdict has already been given.
+   */
+  private sessionMaySweep(w: WatchedSession, now: number, plan: SweepPlan): boolean {
+    if (plan.looking.get(w.sessionId)) return true;
+    if (plan.reprieved.has(w.projectsRoot)) return true;
+    return this.discovery.quietRungDue(w.lastDiscoveryAt, now);
+  }
+
   private poll(): void {
     const now = Date.now();
     // Which roots may be walked on THIS tick (P2-E15-11). Two properties, and
@@ -986,16 +1201,13 @@ export class TranscriptWatcher {
     // a root, the root drops to the slow rung; the moment it stops being true,
     // or any evidence site prods it, it is back on the fast one.
     //
-    // Two populations that look similar and are not:
-    //  - QUIESCED (#200): a dead session's frozen watch. It scans nothing
-    //    already (the loop below skips it), so it neither needs the fast ladder
-    //    nor gets a vote against it — including the bound ones, whose binding
-    //    is 'bound' and would otherwise hold a root fast on behalf of a corpse.
-    //  - BOUND and alive: still needs sweeps, for subagent transcripts. It
-    //    votes to stay fast, which is why the test below is `!== 'unbound'`
-    //    rather than "nothing is bound".
-    // `awaiting-prompt` votes to stay fast too: nobody has typed into that card
-    // yet, and its transcript is owed the moment they do.
+    // `stillLooking` is the whole of that question, per session, and #388 made
+    // it serve two answers rather than one: this quorum, and which sessions take
+    // part in the sweep the quorum allows. ONE predicate deliberately — the
+    // per-root rung and the per-session gate must not be able to disagree about
+    // whether a session is worth spending a scan on, or either becomes a way
+    // around the other. (The same reason `slowRung` serves both the interval and
+    // the filesystem-event floor in the scheduler.)
     //
     // Grouped by `rootKey`, not by the raw string, because the quorum is ONE
     // answer per root and two sessions can spell one directory differently (a
@@ -1012,12 +1224,20 @@ export class TranscriptWatcher {
     // the scheduler de-dupes the sweep itself, so that set is unchanged.
     const roots = new Map<string, string>();
     const seeking = new Set<string>();
+    const plan: SweepPlan = { sweeping: new Set(), reprieved: new Set(), looking: new Map() };
     for (const w of this.sessions.values()) {
       const key = rootKey(w.projectsRoot);
       if (!roots.has(key)) roots.set(key, w.projectsRoot);
-      if (!w.quiesced && w.snap.binding !== 'unbound') seeking.add(key);
+      // Decided ONCE for the tick and remembered, not re-derived in the loop
+      // below (#388). Both readers must get the same answer: a listener
+      // re-entering during an earlier session's `drain()` can move a LATER
+      // session's `snap.binding` between the two passes, and a session that
+      // voted to hold its root fast and was then gated out of the sweep it had
+      // just voted for is a tick of pure waste in each direction.
+      const looking = this.stillLooking(w, now);
+      plan.looking.set(w.sessionId, looking);
+      if (looking) seeking.add(key);
     }
-    const sweeping = new Set<string>();
     for (const [key, root] of roots) {
       // Before `shouldSweep`, so the rung this tick is decided on takes the
       // give-up into account rather than lagging it by one sweep.
@@ -1029,8 +1249,13 @@ export class TranscriptWatcher {
       // root it left alone `noteSwept` has no state to mutate.
       this.discovery.setGivenUp(root, !seeking.has(key));
       if (this.discovery.shouldSweep(root, now)) {
-        sweeping.add(root);
-        this.discovery.noteSwept(root, now);
+        plan.sweeping.add(root);
+        // A REPRIEVE sweep is one the root still owed its last piece of
+        // evidence. It is what puts a session that has stopped looking straight
+        // back into the sweep instead of leaving it to wait out its quiet rung —
+        // #129's recovery half, per session. `noteSwept` reports it because
+        // `noteSwept` is what spends it.
+        if (this.discovery.noteSwept(root, now)) plan.reprieved.add(root);
       }
     }
 
@@ -1039,7 +1264,16 @@ export class TranscriptWatcher {
       // costs nothing per tick once its watch has frozen (#200). Everything
       // below this line touches the disk.
       if (w.quiesced) continue;
-      const maySweep = sweeping.has(w.projectsRoot);
+      // ...and the same again per SESSION (#388). The root decides whether the
+      // disk may be touched at all; this decides who it is touched FOR, because
+      // that is how the cost is actually incurred — `discoveryCandidates` is a
+      // full walk of the tree PER unbound session on a swept tick, so before
+      // this one live card kept every session beside it that had stopped looking
+      // paying ~2,100 syscalls a sweep at the root's fast rung.
+      const maySweep = plan.sweeping.has(w.projectsRoot) && this.sessionMaySweep(w, now, plan);
+      // Only when this session actually takes part: a sweep it sat out is not a
+      // sweep it can count against its own rung.
+      if (maySweep) w.lastDiscoveryAt = now;
       // discovery: scan narrowly (this session's slug dirs, case-insensitive)
       // until bound; widen to the full root if binding hasn't happened after a
       // grace period (slug math is a PREFILTER, never the authority — the
@@ -1096,6 +1330,13 @@ export class TranscriptWatcher {
         // give-up clock could never run and a genuinely unbound session would
         // sit in `searching` for ever. The value stands until the next sweep
         // replaces it, and any event that could change it marks the root dirty.
+        //
+        // On the quiet rung (#388) "the next sweep" can be `GIVEN_UP_MS` away,
+        // so this diagnostic goes stale for up to that long on a session that
+        // has stopped looking — which is the same staleness #129 already accepts
+        // for a root where nobody is, and it cannot move the binding state: a
+        // session only reaches that rung with the verdict already settled, and
+        // any event that would unsettle it buys a reprieve sweep first.
         if (maySweep) w.candidateSeen = candidates;
         // Never gated: this drives `searchingMs`, `awaiting-prompt` and the
         // give-up clock. Making the UI's own clocks event-driven would make
