@@ -116,7 +116,12 @@ The prompt must contain, concretely:
      success or failure. A lock is stale ONLY if it is older than 45
      minutes AND no electron process has been observed across a ~5-minute
      sampling window (idle instants between spec files are normal — one
-     sample proves nothing); only then steal it, and say so. Legitimate
+     sample proves nothing); only then steal it, and say so. **Check
+     with `tasklist | grep -i electron` and READ THE LINES — never
+     `grep -c`:** `tasklist | grep -ci electron` has returned 0 while
+     four electron.exe were demonstrably running (observed 2026-08-08,
+     run 10, #360) — a count-based check can declare a live run dead
+     and corrupt it. Legitimate
      >45-minute holds are routine with three workers sharing the machine
      (learned 2026-08-02: #183 held it 91 minutes, live, during a repeat
      campaign — a clock-only rule would have corrupted two runs). Lint,
@@ -126,10 +131,25 @@ The prompt must contain, concretely:
      when your turn ends** (learned 2026-08-03, run 3: two workers went
      silent waiting on "queued" e2e jobs that no longer existed, and one
      orphaned job later re-acquired the lock as a zombie and burned a
-     full wasted suite run).
+     full wasted suite run). **Poll in one Bash call, run the suite in
+     the NEXT call — never poll-then-run in a single command:** the
+     10-minute Bash cap can kill the call between acquiring the lock
+     and finishing the suite, leaving the lock orphaned while held
+     (learned 2026-08-08, run 10: #358's combined wait-7-min-then-run
+     call was killed mid-suite while holding the lock; the worker
+     recovered, but only because it checked for orphan electrons and
+     re-ran in separate calls).
   4. Gate before push: lint + typecheck + unit green, e2e green under the
      lock. Review your own diff against `/review`'s standards (you are
      Opus; the review is yours) — fix Blockers/Should-fixes, ~3 rounds cap.
+     **Any subagent you spawn (reviewer, debugger) inherits every safety
+     constraint in this contract — restate destructive-work clauses
+     ("fixtures only", "never touch real %TEMP%", token limits) verbatim
+     in the subagent's prompt** (learned 2026-08-08, run 10: #354's
+     reviewer, told to verify behaviour empirically but not told the
+     live %TEMP% was off limits, ran the unbudgeted sweep CLI and
+     deleted ~81,600 real directories — all within the filter, no loss,
+     but outside the sanctioned envelope).
   5. User-facing items write their `docs/manual/` page before the PR — a
      missing page is a failing gate, exactly as in `/autopilot`.
   6. Push and open a **draft PR**: title `<item-id>: <title>`, body has

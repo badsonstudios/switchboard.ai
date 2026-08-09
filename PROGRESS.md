@@ -8,8 +8,8 @@
 E9: #70–#77 done, **#78/#79 in Dan's queue** (PRs #287/#301), #80 held on a
 scoping call; **E19 release/auto-update NEW 2026-08-05** — 01/02 merged, 03
 in Dan's queue, 04 held on #276's merge; E11/E13/E14 still outlines)
-**In progress:** **🎛 RUN 8 CLOSED 2026-08-07 (~3.5 h)** — close-out
-block below; 7 UF PRs in Dan's queue, 2 internal merged. Run 7
+**In progress:** **🎛 RUN 10 CLOSED 2026-08-08 + FULLY MERGED** — close-out
+block below; all 3 PRs on main (#356 #357 #359). Run 8: Run 7
 CLOSED 2026-08-06 + FULLY MERGED (train #321) + **v0.1.1 LIVE**. Before run 7: 🎉 **RELEASE v0.1.0 CUT
 2026-08-06** — the run-6 merge train (13 PRs) is FULLY MERGED
 (Dan-authorized, serial bump+re-green, 5 real conflict sets + 3
@@ -31,7 +31,218 @@ structure adopting #228's temp-dir registry, verified by a local
 161+1 skip (from the merged branches' gate runs: 1227+46+5+16 /
 156+4+0+1).
 
-> # ▶▶ START HERE — 🎛 RUN 9 CLOSED 2026-08-08 + FULLY MERGED
+> # ▶▶ START HERE — 🎛 RUN 10 CLOSED 2026-08-08 (~4 h wall, two waves +
+> branding, 6 items shipped)
+>
+> **Final state: 5 of 6 MERGED, 1 in Dan's queue.** Wave 1: #352 (PR
+> #356 → f4bb8ce), #355 (PR #357 → 8f50a53), #354 (PR #359 → 6a3ab32).
+> Branding: #361 (PR #362 → 7fe7689, Dan's WIP committed at his
+> instruction). Wave 2: #360 (PR #363 → 785f455, internal — one
+> update-branch bump + re-green, the run's only bump) and **#358 → PR
+> #364, UF, CI 4/4 GREEN, IN DAN'S QUEUE** (Narrator-based hand-test
+> list in the PR body / 358.md — the one judgement call to weigh: an
+> already-suspended card stays QUIET at boot by design). **Main @
+> 785f455, out/ REBUILT, stamp verified both bundles — `npm start` is
+> current.** Issues #352 #354 #355 #360 #361 closed. **Filed this run:
+> #358** (done same-run) **#360** (done same-run) **#365** (hex-lint
+> false-positive on '#358'-style strings) **#366** (no e2e kills a LIVE
+> session) **#367** (PreflightBanner's stale §5.26 citation + srOnly ×2)
+> — #365/#366/#367 are the next run's queue (all unblocked, small).
+> Worktrees: all three detached/clean. Skill updated twice from run
+> lessons (subagents inherit safety clauses; poll-then-run split;
+> tasklist grep -c gotcha). CHANGELOG: FOUR items now owed under a
+> `0.1.3 — unreleased` section nobody may open but a release action —
+> #353 is the ticket, Dan's. #346 (broker refusal contract) still
+> Dan's decision. One incident (reviewer swept live %TEMP%, no loss) —
+> block below, process gap closed.
+>
+> **Wave 2 (dispatched after Dan's "continue"):**
+> - **#358** ✅ DONE (~56 min) → **PR #364 READY, IN DAN'S QUEUE** (UF —
+>   assistive-tech behavior; CI pending at last check). One sr-only
+>   `role="status" aria-live="polite"` region at the CARD ROOT (not the
+>   overlay — a live region inserted already holding text announces
+>   nothing; the repo has hit that trap twice, #222/#168). Pure
+>   `overlaySaid()` mapper pinned (+7 unit incl. a precedence table);
+>   +5 e2e assertions incl. the load-bearing `toBeEmpty()` on a healthy
+>   card — mutation-proved (the "harmless tidy-up" revert goes red ONLY
+>   on that assertion). Session name announced first (#196's reason).
+>   Judgement call flagged for Dan: NO one-commit defer — a card that
+>   mounts already-suspended stays QUIET at boot by design (changes
+>   announce, restored state doesn't). Zero pixels/copy/i18n changed.
+>   Gate: lint/typecheck clean · 2652 unit · 200+1 e2e (lock: waited 7
+>   min behind #360, attempt 8, nothing stolen). Manual: 02-sessions +
+>   06-keyboard pre-PR. Discoveries → **#365** (hex-color lint
+>   false-positives on '#358'-style strings), **#366** (no e2e kills a
+>   LIVE session — died flow only covered via never-started), **#367**
+>   (PreflightBanner cites §5.26 wrongly + srOnly ×2) all filed;
+>   CHANGELOG third strike (→ #353); Playwright gotcha recorded in the
+>   handoff (`.filter({visible:true})` does NOT exclude sr-only
+>   elements — 1×1 clipped counts as visible; testid is the fix).
+>   Lock lesson → written into the /orchestrate skill (poll in one
+>   Bash call, run in the next; the 10-min cap killed a combined call
+>   mid-suite while HOLDING the lock). Handoff: 358.md.
+> - **#360** ✅ DONE (~75 min) → **PR #363 (INTERNAL), CI 4/4 green but
+>   BEHIND after branding/#364 moved main — bumped via update-branch,
+>   orchestrator merges on re-green.** Not just hygiene: main leaked
+>   **11 dirs per `npm test`** (scripts/release-notes + sha256-sidecar
+>   tests had NO teardown — outside the issue's list, which only
+>   enumerated src/; worker took them, measured 11→0 against isolated
+>   TEMP). All 5 named files + 3 scripts tests onto tempDir()/
+>   cleanupTempDirs(); two bespoke Windows-requeue copies deleted;
+>   update tests' bare rmSync (the #167 phantom-failure shape) gone.
+>   sweepBeforeTests moved INTO sweep-temp-orphans.js, both globalSetups
+>   now 3-line adapters (budget/opt-out/fail-open can't drift); e2e
+>   guards first then sweeps, proved both directions on fixture TEMPs.
+>   Safety: fixtures-only clause carried verbatim into the reviewer's
+>   prompt (it executed nothing); `withTempDirAt` now shared and THROWS
+>   if the redirect didn't take — the run-10 incident cited in its
+>   docstring. Gate: lint/typecheck clean · 2651 unit (+6, 0 sb-* left) ·
+>   200+1 e2e local under the lock (waited ~16 min on #358, clean) ·
+>   review 0 Blockers, 12 findings actioned. One red CI round, fixed
+>   (0a4ea71): a test driving the real e2e globalSetup implicitly
+>   asserts the machine's build state — CI runs npm test before build,
+>   so no out/ exists; now asserts delegation, reason written in.
+>   Discoveries: stale-lock gotcha (`tasklist | grep -c` returns 0 with
+>   electron live — READ LINES; skill updated) · sweeper census comment
+>   slightly stale in a good way · CHANGELOG fourth strike (→ #353).
+>   Handoff: 360.md.
+>
+> **Branding ✅ MERGED:** **PR #362** (#361) → squash **7fe7689**, issue
+> closed, branch deleted. Dan's WIP ("switchboard" → "switchboard.ai" in
+> window title, i18n, notifier fallback, installer shortcut/Add-Remove;
+> exe name and %APPDATA%\switchboard deliberately unchanged), committed
+> at his instruction. Orchestrator gates before push: lint/typecheck
+> clean · 2645 unit · about+boot specs 5/5 under the lock on a fresh
+> build; CI 4/4 green before merge. Main checkout tree is clean again
+> except PROGRESS.md + the /orchestrate SKILL.md edits (orchestrator's,
+> committed at run close).
+>
+> Orchestrator: Fable (/orchestrate). **Single-writer rule:** this file is
+> written ONLY by the orchestrator session. Workers report via handoff files
+> in `.claude/work_files/orchestrator/<issue#>.md`; handoffs are the inputs,
+> this file is the output. If this session dies, a fresh /orchestrate
+> session resumes from THIS block.
+>
+> **Active workers (wave 1 = the whole filed queue, all dispatched
+> 2026-08-08):**
+> - **#352** ✅ DONE (~44 min) → **PR #356 READY, IN DAN'S QUEUE** (UF —
+>   on-disk behavior + manual paragraph; **CI 4/4 GREEN** confirmed).
+>   Fix shape: `load()` holds the corrupt bytes (Buffer, 4 MB cap); a
+>   failed set-aside arms a pending rescue that `save()` runs first —
+>   write held bytes (`wx`) XOR copy (`COPYFILE_EXCL`), then MOVE the
+>   damaged file aside (works on a full disk; safe only there because
+>   the save is one statement from destroying it anyway). All routes
+>   refuse existing names (#349's guarantee centralized). All-fail →
+>   save held back, retry at 1s, budget 5 saves, then live workspace
+>   wins with a loud warn. Fail-open throughout; quit-flush deferral
+>   bounded + argued in code. Bonus pre-existing fix: `save()`'s warn
+>   was unguarded — a throwing logger reached the close handler. Review
+>   round's demanded test found a REAL bug pre-push (`writeNew` cleanup
+>   deleted a destination it hadn't created — Windows answers hidden/
+>   read-only with EPERM not EEXIST; fixed + pinned). Gate: lint/
+>   typecheck clean · 2565 unit (+12) · local e2e skipped (stated call,
+>   main-process fs only, same as #349) but CI e2e green both platforms ·
+>   10 mutation checks red-verified. Manual: 11-troubleshooting rewritten
+>   pre-PR (old sentence documented the data loss). Discoveries: CHANGELOG
+>   gap → commented on #353 (now owes #352+#355 entries too); narrow
+>   stranded-truncated-copy path (both write AND cleanup must fail —
+>   left, cost>benefit); #207 remains the surfacing half. Handoff: 352.md.
+> - **#355** ✅ DONE (~38 min) → **PR #357 READY, IN DAN'S QUEUE** (UF;
+>   CI pending at last check). Renderer-only: card `exited` state became
+>   `ended` union (`exited` | `never-started`); never-started reads
+>   "Session didn't start" + hint + **Try again** (not "Restart"), via 3
+>   new i18n keys; exited copy untouched. Pure `endedCopy()` mapper unit-
+>   pinned (+4, words not just keys); +1 e2e (missing seedFolder → new
+>   heading, zero old copy) — mutation-proved incl. the wiring revert.
+>   Gate: lint/typecheck clean · 2557 unit · 199+1 e2e (lock first-try,
+>   owner 355). Manual: 11-troubleshooting retitled + 02-sessions, pre-PR.
+>   Discoveries: **#358 filed** (overlays have no aria-live — pre-existing
+>   a11y gap); CHANGELOG gap re-hit (→ #353; worker suggests orchestrator
+>   opens `0.1.3 — unreleased` centrally once — for Dan at merge/release);
+>   refusal *reason* can't reach the screen (null carries nothing —
+>   adjacent to #346's contract decision, noted there, not filed). e2e
+>   flake watch: 2 runs × 1 different >25s bring-up timeout each
+>   (split.spec, feed.spec), both green isolated — machine load from 3
+>   workers, not worth an issue yet. Handoff: 355.md.
+> - **#354** ✅ DONE (~48 min) → **PR #359 (INTERNAL) — awaiting green CI,
+>   orchestrator merges.** Placement decision (the item's real content):
+>   the sweep is NOT app-side — sb-ws- is written only by store.test.ts,
+>   every sb-* producer is test/fixture/probe, and a shipped app deleting
+>   dirs it never created fails the PHILOSOPHY §4 litmus outright (argued
+>   divergence from the issue's stated candidate, spelled out in the PR).
+>   Shipped: `scripts/sweep-temp-orphans.js` + `npm run sweep:temp` CLI +
+>   vitest globalSetup (2s budget, SB_SKIP_TEMP_SWEEP opt-out via isOn).
+>   Envelope: direct children of tmpdir only, exact mkdtemp shape regex,
+>   dirent isDirectory (symlinks/junctions skipped), >24h, fs-root
+>   refused, never throws. Gate: lint/typecheck clean · 2629 unit (+76) ·
+>   e2e skipped locally (stated call, scripts+config only) CI runs it ·
+>   19 mutations red-verified · review 0 Blockers, 14 findings all
+>   actioned (2 were FALSE load-bearing comments: updater DOES stage in
+>   tmpdir; dir mtime does NOT move on inner writes). Internal doc:
+>   testing.md "Temp directories" block. Discoveries → **#360 filed**
+>   (raw mkdtempSync files outside #213's registry + e2e seam doesn't
+>   sweep); s11 >24h soak named as the one thing that could outlive the
+>   floor. Handoff: 354.md.
+>
+> ⚠️ **INCIDENT (reported, resolved, process gap closed):** #354's
+> code-reviewer SUBAGENT ran the unbudgeted sweep CLI against the live
+> %TEMP% (not a fixture) and deleted ~81,600 directories before being
+> killed. Assessment: NO LOSS — every one matched the orphan filter and
+> was >24h old, i.e. exactly what `npm run sweep:temp` deletes and what
+> Dan's own hand-test step 2 would have removed; the pile is now ~31k,
+> so the PR's hand-test numbers read smaller than the census figures
+> (which are labelled as a 2026-08-08 census and remain accurate).
+> Root cause: the worker's fixtures-only clause was never restated in
+> the reviewer subagent's prompt. **Fix landed in the /orchestrate
+> skill** (worker contract §4): subagents inherit every safety
+> constraint verbatim.
+>
+> Collision notes: #352 (workspace store.ts + store.test.ts) vs #354 (test
+> temp-dir infra) may both brush store.test.ts — merges serialize, rebase
+> surfaces it. All three may touch manual 11-troubleshooting.md in
+> different sections (auto-merge expected, same as run 9). #355 is
+> sessions ipc / renderer / i18n — no code overlap with the other two.
+> Base for all three branches: main @ 3e25368. e2e lock clear at run start.
+>
+> **CLOSE-OUT:** all 3 items landed first try; zero lock steals, zero red
+> pushes, zero rate-limit warnings, zero worker casualties (one incident:
+> #354's reviewer subagent — block below, gap closed in the /orchestrate
+> skill). **✅ FULLY MERGED (Dan authorized, 2026-08-08):** PR #356
+> (#352, UF, 4/4 green → squash f4bb8ce) · PR #357 (#355, UF, 4/4 green
+> → squash 8f50a53) — individual squashes, NO train needed
+> (11-troubleshooting auto-merged as predicted, zero bumps, zero
+> conflicts) · PR #359 (#354, internal → squash 6a3ab32, merged in-run).
+> Issues #352/#354/#355 closed, branches deleted local+remote. **Main @
+> 8f50a53, out/ REBUILT, stamp 8f50a53 verified both bundles — `npm
+> start` is current.** Hand-test lists remain in the PR bodies /
+> 352.md + 355.md for post-merge testing. **⚠ NOTE: Dan's uncommitted
+> branding WIP ("switchboard" → "switchboard.ai": index.html title,
+> en.json strings, electron-builder shortcutName/uninstallDisplayName,
+> about/boot specs, main/index.ts) predates the run, was preserved
+> across the merges (stash→pull→pop; en.json auto-merged cleanly), and
+> is STILL UNCOMMITTED in the main checkout — the rebuilt out/ includes
+> it. Nobody's issue yet; Dan to commit or park it.** Issues filed from
+> discoveries: **#358** (ended/never-started overlays silent to screen
+> readers — aria-live) · **#360** (temp-dir test hygiene: raw
+> mkdtempSync files outside #213's registry + e2e seam doesn't sweep);
+> #353 got a run-10 comment (CHANGELOG now owes #352+#355 entries too).
+> Worktrees: all three detached and clean — ready for next-run
+> checkouts off fresh main.
+>
+> **Queue for the NEXT run:** **#360** (internal, independent) ·
+> **#358** (UF, renderer ended-overlay surface — UNBLOCKED now that
+> #357 is merged; no overlap with #360, the two can run in parallel). **#346** (broker refusal contract) and
+> **#353** (release-cut checklist incl. CHANGELOG backfill + opening
+> `0.1.3 — unreleased`) remain Dan's decisions/actions.
+>
+> **Held/decisions (Dan's standing list, untouched):**
+> **#346** (broker refusal contract — decision for Dan; #345+#351 set the
+> null-result precedent, recommend result-shape) · **#353**
+> (next-release-cut checklist — do at the next release cut) · #80 #111
+> #255 #268 #269 #290 #292 #295 #216 #207 #200 #191 #129 #256(epic) #320
+> #323 #313 #333 #337 #344-surfacing.
+
+> # 🎛 RUN 9 CLOSED 2026-08-08 + FULLY MERGED
 > (~1.6 h run + same-morning merge). **Both queue items shipped and
 > ON MAIN: #349 → PR #350 (squash 4a9db4c) and #347 → PR #351
 > (squash 62cd57d), both UF, both 4/4 green, Dan authorized "merge
