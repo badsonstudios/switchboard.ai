@@ -1477,3 +1477,525 @@ describe('multi-byte characters split across drain chunks (#194)', () => {
     expect(snap.filesTouched.some((p) => p.includes('ORPHAN'))).toBe(false);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #200. Reported out of #187: the reap in `sessions:create` retires a crashed
+// session's watch only when the card RESPAWNS. Crash a session and leave the
+// card alone and the watch went on polling — and, while unbound, went on
+// recursively scanning ~/.claude/projects (1,128 transcripts on Dan's machine)
+// on the backoff ladder, for ever, on behalf of a process that will never write
+// again.
+//
+// The call this item had to make was NOT "unwatch on exit". `unwatch` deletes
+// the entry that holds the Feed backlog (`blocks`) and the binding state
+// (`snapshot`) — exactly what the crashed card SHOWS. So the watch quiesces
+// instead: it finishes what it could still learn, then freezes.
+describe('post-exit quiesce: stop polling, keep everything readable (#200)', () => {
+  /** Every disk touch discovery or the tail drain could make under a root.
+   *  `readdirSync` is discovery walking; `statSync` is the drain checking a
+   *  file it already holds. Together they are every I/O a tick can do. */
+  function countDiskTouches(under: string): { calls: () => number; restore: () => void } {
+    // `fs.statSync` is declared read-only, so the patch goes through a mutable
+    // view of the module object rather than a cast per assignment.
+    const mut = fs as unknown as Record<string, (p: fs.PathLike, o?: unknown) => unknown>;
+    const realDir = mut.readdirSync;
+    const realStat = mut.statSync;
+    let n = 0;
+    const counting =
+      (real: (p: fs.PathLike, o?: unknown) => unknown) =>
+      (p: fs.PathLike, o?: unknown): unknown => {
+        if (String(p).startsWith(under)) n++;
+        return real(p, o);
+      };
+    mut.readdirSync = counting(realDir);
+    mut.statSync = counting(realStat);
+    return {
+      calls: () => n,
+      restore: () => {
+        mut.readdirSync = realDir;
+        mut.statSync = realStat;
+      },
+    };
+  }
+
+  /** A watcher with the post-exit windows shrunk to test scale. The defaults
+   *  are 3s / 90s; every claim here is about the SHAPE, not the numbers. */
+  function crashable(over: Record<string, unknown> = {}): TranscriptWatcher {
+    return makeWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
+      pollMs: 25,
+      postExitSettleMs: 60,
+      ...over,
+    });
+  }
+
+  const said = (text: string) => entry({ message: { content: [{ type: 'text', text }] } });
+
+  it('a bound session that dies touches the disk zero times afterwards', async () => {
+    const w = crashable();
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    w.watch('s1', { cwd });
+    writeLines(file, [said('the last thing it managed to say')]);
+    await waitFor(() => w.snapshot('s1')!.lines >= 1);
+
+    w.noteSessionExited('s1');
+    await sleep(150); // past the 60ms settle window
+
+    const spy = countDiskTouches(root);
+    try {
+      await sleep(400); // ~16 ticks at pollMs: 25
+    } finally {
+      // the spy replaces two globals; a leak would corrupt every later test
+      spy.restore();
+    }
+    // ZERO, not "a few". A live session still sweeps on the ladder — see the
+    // AR-P1-8 block above, which can only claim `< 5` — but nothing is writing
+    // a dead session's transcript, so there is nothing to be even occasionally
+    // right about.
+    expect(spy.calls()).toBe(0);
+  });
+
+  it('an UNBOUND frozen session walks nothing, while a neighbour keeps the poll alive', async () => {
+    // The test above passes even without the poll loop's `quiesced` guard: with
+    // nothing else running the interval itself has stopped. This is the shape
+    // that discriminates, and it is the worse defect of the two.
+    //
+    // A frozen session gave its root registration back, and `shouldSweep`
+    // answers TRUE for a root it holds no state for ("never block discovery on
+    // bookkeeping"). So an unguarded tick over a frozen UNBOUND session walks
+    // its whole tree with no backoff ladder underneath it at all — every 100ms,
+    // for ever. That is #200's own defect, amplified by the release.
+    //
+    // Two ROOTS, so the spy can say "nothing, at all, for the dead one" rather
+    // than compare counts: the living session's I/O happens somewhere else.
+    const rootB = tempDir('sb-tw-rootb-quiesce-');
+    const cwd2 = 'C:/tmp/tw-project-two';
+    const w = crashable({ postExitHuntMs: 50 });
+    w.watch('s1', { cwd }); // the watcher's own root, and never binds
+    w.watch('s2', { cwd: cwd2, projectsRoot: rootB });
+
+    const aliveDir = path.join(rootB, slugForCwd(cwd2));
+    fs.mkdirSync(aliveDir, { recursive: true });
+    const alive = path.join(aliveDir, 'native-2.jsonl');
+    const live = (text: string) =>
+      JSON.stringify({
+        type: 'assistant',
+        sessionId: 'native-2',
+        cwd: cwd2,
+        timestamp: new Date().toISOString(),
+        message: { content: [{ type: 'text', text }] },
+      });
+    writeLines(alive, [live('still working')]);
+    await waitFor(() => w.snapshot('s2')!.bound);
+
+    w.noteSessionExited('s1');
+    await sleep(150); // past the 50ms ceiling: frozen while still unbound
+
+    const spy = countDiskTouches(root);
+    let before = 0;
+    try {
+      await sleep(300); // ~12 ticks, every one of which used to scan
+      before = w.snapshot('s2')!.lines;
+    } finally {
+      spy.restore();
+    }
+    expect(spy.calls()).toBe(0);
+    // ...and the guard does not over-reach: the living session still ingests.
+    writeLines(alive, [live('and still going')]);
+    await waitFor(() => w.snapshot('s2')!.lines > before);
+  });
+
+  it('keeps the Feed backlog and the binding a crashed card reads', async () => {
+    const w = crashable();
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    w.watch('s1', { cwd });
+    writeLines(file, [said('hello from before the crash')]);
+    await waitFor(() => w.snapshot('s1')!.lines >= 1);
+
+    w.noteSessionExited('s1');
+    await sleep(150);
+
+    // This is the regression an `unwatch`-on-exit fix would have shipped: the
+    // pane mounts AFTER the crash and pulls both of these.
+    expect(w.blocks('s1').some((b) => b.text === 'hello from before the crash')).toBe(true);
+    const snap = w.snapshot('s1');
+    expect(snap!.bound).toBe(true);
+    expect(snap!.binding).toBe('bound');
+    expect(snap!.lines).toBe(1);
+  });
+
+  it('reads the bytes that were still unread when the process died', async () => {
+    // Everything the CLI ever wrote is on disk by the time its exit reaches us,
+    // and up to a poll interval of it may be unread — the last words of the
+    // crashed turn. Nothing is awaited between the write and the notice, so no
+    // tick can have run in between: this is exactly that window, and with the
+    // settle window at 0 the notice is the only chance those bytes ever get.
+    const w = crashable({ postExitSettleMs: 0 });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    w.watch('s1', { cwd });
+    writeLines(file, [said('first')]);
+    await waitFor(() => w.snapshot('s1')!.lines >= 1);
+
+    writeLines(file, [said('dying words')]);
+    w.noteSessionExited('s1');
+
+    expect(w.snapshot('s1')!.lines).toBe(2);
+    expect(w.blocks('s1').some((b) => b.text === 'dying words')).toBe(true);
+  });
+
+  it('keeps draining for the settle window, then stops', async () => {
+    // What `POST_EXIT_SETTLE_MS` is FOR: the reasoning that one drain is enough
+    // has seams (SMB `stat` lag, a transport reporting the exit a beat early),
+    // so bytes that show up shortly after the death still land. Without this,
+    // deleting the settle branch entirely — freezing the moment the notice
+    // returns — passes every other test in this block.
+    const w = crashable({ postExitSettleMs: 400 });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    w.watch('s1', { cwd });
+    writeLines(file, [said('first')]);
+    await waitFor(() => w.snapshot('s1')!.lines >= 1);
+
+    w.noteSessionExited('s1');
+    await sleep(100); // still inside the 400ms window
+    writeLines(file, [said('late arrival')]);
+    await waitFor(() => w.blocks('s1').some((b) => b.text === 'late arrival'));
+
+    await sleep(500); // ...and now it is over
+    writeLines(file, [said('far too late')]);
+    await sleep(200);
+    expect(w.snapshot('s1')!.lines).toBe(2);
+  });
+
+  it('a subagent transcript written just before the crash still gets picked up', async () => {
+    // The death is an evidence site, and this is what it buys. A BOUND session
+    // only looks for subagent files on a SWEEP tick, and the ladder decays to
+    // 2s while nothing is happening — so with the settle window shorter than
+    // the ladder step, the last subagent's transcript would miss its only
+    // chance and be lost from the Feed for good. Marking the root dirty at the
+    // death gives it the very next tick.
+    //
+    // The watch is off (`watchFactory: () => null`) so no filesystem event can
+    // hand out the sweep the mark is supposed to provide.
+    const w = crashable({
+      postExitSettleMs: 300,
+      discovery: { watchFactory: () => null, watchFailedMs: 2_000 },
+    });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    w.watch('s1', { cwd });
+    writeLines(file, [said('main transcript')]);
+    await waitFor(() => w.snapshot('s1')!.bound);
+    await sleep(150); // let the ladder settle onto its slow rung
+
+    const subDir = path.join(projectDir(), 'native-1', 'subagents');
+    fs.mkdirSync(subDir, { recursive: true });
+    writeLines(path.join(subDir, 'agent-abc123.jsonl'), [
+      entry({ isSidechain: true, agentId: 'abc123', message: { usage: { output_tokens: 3 } } }),
+    ]);
+    w.noteSessionExited('s1');
+
+    await waitFor(() => w.snapshot('s1')!.usage.output === 3, 1_000);
+  });
+
+  it('an UNBOUND session keeps hunting after the crash — the transcript is still on disk', async () => {
+    // The case that rules out quiescing at the moment of death. A crash during
+    // the first turn routinely leaves a transcript we have not claimed yet (the
+    // widen grace alone is 10s), and stopping here would leave that card's Feed
+    // empty for ever where today it fills seconds later.
+    const w = crashable();
+    w.watch('s1', { cwd });
+    w.noteSessionExited('s1');
+    expect(w.snapshot('s1')!.bound).toBe(false);
+
+    writeLines(path.join(projectDir(), 'native-1.jsonl'), [said('written just before it died')]);
+    await waitFor(() => w.snapshot('s1')!.bound);
+    await waitFor(() => w.blocks('s1').some((b) => b.text === 'written just before it died'));
+  });
+
+  it('...and freezes once the binding question is ANSWERED', async () => {
+    // `bindGiveUpMs` is the watcher's own verdict that there is nothing left to
+    // find. Reaching it is what ends the hunt — not a timer of this feature's
+    // own, which could cut a bind short or outlive the answer.
+    const w = crashable({ bindGiveUpMs: 60 });
+    w.watch('s1', { cwd });
+    w.noteConversationStarted('s1'); // a turn ran => the give-up clock is armed
+    w.noteSessionExited('s1');
+    await waitFor(() => w.snapshot('s1')!.binding === 'unbound');
+    await sleep(80);
+
+    // Frozen: a transcript appearing now is not looked for, and the pane keeps
+    // the honest verdict rather than counting `searchingMs` up for ever.
+    writeLines(path.join(projectDir(), 'native-1.jsonl'), [said('too late')]);
+    await sleep(200);
+    expect(w.snapshot('s1')!.bound).toBe(false);
+    expect(w.snapshot('s1')!.binding).toBe('unbound');
+  });
+
+  it('the ceiling stops a hunt that would never reach a verdict, and stops claiming to search', async () => {
+    // `awaiting-prompt` deliberately never times out (a session you opened and
+    // walked away from is not broken), so without a ceiling a card that crashed
+    // before its first prompt would sweep for the rest of the run.
+    const w = crashable({ postExitHuntMs: 50 });
+    w.watch('s1', { cwd });
+    w.noteConversationStarted('s1');
+    await waitFor(() => w.snapshot('s1')!.binding === 'searching');
+    w.noteSessionExited('s1');
+    await sleep(150);
+
+    const spy = countDiskTouches(root);
+    try {
+      await sleep(300);
+    } finally {
+      spy.restore();
+    }
+    expect(spy.calls()).toBe(0);
+    // We stopped looking, so "Looking for this session's transcript…" would be
+    // a lie the pane told for the rest of the run.
+    expect(w.snapshot('s1')!.binding).toBe('unbound');
+    // ...and so would a search timer still counting. `searchingMs` is computed
+    // live from `evidenceSince`, so leaving it set means a bug report written
+    // an hour later says this session has been searching for an hour.
+    expect(w.snapshot('s1')!.bindingDiag.searchingMs).toBeNull();
+  });
+
+  it('a late native id cannot blank the frozen Feed', async () => {
+    // The sharpest reason quiescing switches the evidence sites off rather than
+    // merely stopping the poll: `setNativeSessionId` with an id we did not bind
+    // reaches `resetBinding`, which drops the blocks and zeroes the snapshot —
+    // with nothing left polling to rebuild either.
+    const w = crashable();
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    w.watch('s1', { cwd });
+    writeLines(file, [said('everything it said')]);
+    await waitFor(() => w.snapshot('s1')!.lines >= 1);
+    w.noteSessionExited('s1');
+    await sleep(150);
+
+    const resets: string[] = [];
+    const off = w.onReset((id) => resets.push(id));
+    w.setNativeSessionId('s1', 'some-other-native-id');
+    w.noteConversationStarted('s1');
+    off();
+
+    expect(resets).toEqual([]);
+    expect(w.blocks('s1').some((b) => b.text === 'everything it said')).toBe(true);
+    expect(w.snapshot('s1')!.nativeSessionId).toBe('native-1');
+  });
+
+  it('a late turn notice cannot restart a clock nothing is left to resolve', async () => {
+    // The other half of "frozen means frozen". A session that crashed before
+    // anyone prompted it freezes at `awaiting-prompt`, which is the truth and
+    // shows no alarm. Latching evidence afterwards would walk it to `searching`
+    // and arm the give-up clock — and with no polling left, nothing would ever
+    // deliver the verdict, so the pane would say "Looking for this session's
+    // transcript…" with a counter climbing, for the rest of the run.
+    const w = crashable({ postExitHuntMs: 30 });
+    w.watch('s1', { cwd });
+    w.noteSessionExited('s1');
+    await sleep(150); // past the ceiling: frozen, and never prompted
+    expect(w.snapshot('s1')!.binding).toBe('awaiting-prompt');
+
+    w.noteConversationStarted('s1');
+
+    expect(w.snapshot('s1')!.binding).toBe('awaiting-prompt');
+    expect(w.snapshot('s1')!.bindingDiag.searchingMs).toBeNull();
+    // and it really is frozen — the notice did not quietly restart discovery
+    writeLines(path.join(projectDir(), 'native-1.jsonl'), [said('too late')]);
+    await sleep(200);
+    expect(w.snapshot('s1')!.bound).toBe(false);
+  });
+
+  it('the reap can still unwatch a frozen session without closing a live one’s watch', async () => {
+    // The double-free this had to avoid. Quiescing gives the root's recursive
+    // `fs.watch` reference back; `unwatch` gives it back too, and the reap in
+    // `sessions:create` runs `unwatch` on exactly the session that just froze.
+    // Release it twice and the refcount hits zero underneath the sibling that
+    // is still binding through that watch.
+    const closes: string[] = [];
+    let opens = 0;
+    const w = crashable({
+      discovery: {
+        watchFactory: (r: string) => {
+          opens++;
+          return { close: () => closes.push(r) };
+        },
+        backoffMs: [25],
+      },
+    });
+    const cwd2 = 'C:/tmp/tw-project-two';
+    w.watch('s1', { cwd });
+    w.watch('s2', { cwd: cwd2 }); // same ROOT, different folder: one watch, two refs
+    expect(opens).toBe(1);
+
+    // BOUND before it dies, so the settle window really does freeze it — an
+    // unbound one would still be hunting, and this test would then prove
+    // nothing about the double release it exists for.
+    writeLines(path.join(projectDir(), 'native-1.jsonl'), [said('bound before the crash')]);
+    await waitFor(() => w.snapshot('s1')!.lines >= 1);
+    w.noteSessionExited('s1');
+    await waitFor(() => w.blocks('s1').length > 0);
+    await sleep(150); // past the 60ms settle: frozen, reference given back
+    w.unwatch('s1'); // ...and now the card is respawned, so the reap retires it
+
+    expect(closes).toEqual([]); // s2 is alive and still needs that handle
+
+    const d2 = path.join(root, slugForCwd(cwd2));
+    fs.mkdirSync(d2, { recursive: true });
+    writeLines(path.join(d2, 'native-2.jsonl'), [
+      JSON.stringify({ type: 'assistant', sessionId: 'native-2', cwd: cwd2, timestamp: new Date().toISOString() }),
+    ]);
+    await waitFor(() => w.snapshot('s2')!.bound); // the survivor still discovers
+
+    w.unwatch('s2');
+    expect(closes).toEqual([root]); // exactly once, when the last one really left
+  });
+
+  it('stops the poll timer once every session left is frozen, and restarts it for the next card', async () => {
+    // The interval is stopped when nothing left would DO anything on a tick,
+    // which is not the same test as "the map is empty" — a crashed session's
+    // entry stays, for the overlay to read. Watching `clearInterval` is the
+    // only honest observation of that: a tick over none-but-frozen sessions
+    // has no other effect to catch it by. And the second half matters more
+    // than the first: stopping it and never starting again would break the
+    // next card the user opens.
+    const w = crashable();
+    w.watch('s1', { cwd });
+    writeLines(path.join(projectDir(), 'native-1.jsonl'), [said('before the crash')]);
+    await waitFor(() => w.snapshot('s1')!.lines >= 1);
+
+    const cleared = vi.spyOn(globalThis, 'clearInterval');
+    try {
+      w.noteSessionExited('s1');
+      await waitFor(() => cleared.mock.calls.length > 0);
+    } finally {
+      cleared.mockRestore();
+    }
+
+    const cwd2 = 'C:/tmp/tw-project-two';
+    w.watch('s2', { cwd: cwd2 });
+    const d2 = path.join(root, slugForCwd(cwd2));
+    fs.mkdirSync(d2, { recursive: true });
+    writeLines(path.join(d2, 'native-2.jsonl'), [
+      JSON.stringify({ type: 'assistant', sessionId: 'native-2', cwd: cwd2, timestamp: new Date().toISOString() }),
+    ]);
+    await waitFor(() => w.snapshot('s2')!.bound);
+  });
+
+  it('a refused re-watch is the other way the last live session can leave', async () => {
+    // `watch()` with an unusable root deletes the entry and returns false
+    // WITHOUT going through `unwatch` — the one path that can empty the live
+    // set behind the timer's back, leaving the interval ticking over an
+    // all-frozen map for the rest of the run.
+    const w = crashable();
+    w.watch('s1', { cwd });
+    w.watch('s2', { cwd: 'C:/tmp/tw-project-two' });
+    writeLines(path.join(projectDir(), 'native-1.jsonl'), [said('before the crash')]);
+    await waitFor(() => w.snapshot('s1')!.lines >= 1);
+    w.noteSessionExited('s1');
+    await sleep(150); // s1 frozen; s2 is the only live session left
+
+    const cleared = vi.spyOn(globalThis, 'clearInterval');
+    try {
+      expect(w.watch('s2', { cwd: 'C:/tmp/tw-project-two', projectsRoot: 'not/absolute' })).toBe(
+        false
+      );
+      expect(cleared).toHaveBeenCalled();
+    } finally {
+      cleared.mockRestore();
+    }
+  });
+
+  it('an exit for an id it never watched changes nothing', () => {
+    const w = crashable();
+    w.watch('s1', { cwd });
+    expect(() => w.noteSessionExited('never-heard-of-it')).not.toThrow();
+    // Every death arrives here, including the ones the app asked for — a
+    // Restart tears down first and the exit lands afterwards, on an id that is
+    // already gone.
+    w.noteSessionExited('s1');
+    expect(() => w.unwatch('s1')).not.toThrow();
+    expect(() => w.noteSessionExited('s1')).not.toThrow();
+    expect(w.snapshot('s1')).toBeUndefined();
+  });
+
+  it('a SECOND exit notice cannot push the windows out', async () => {
+    // The latch is load-bearing in the gap between the death and the freeze: a
+    // duplicate notice would re-anchor `exitedAt` and buy a corpse another full
+    // window. Driven by the clock rather than by sleeping, so the two cases are
+    // ten seconds apart instead of milliseconds.
+    const w = crashable({ postExitHuntMs: 10_000 });
+    w.watch('s1', { cwd }); // unbound: the hunt window is the one in play
+    w.noteSessionExited('s1');
+
+    const real = Date.now;
+    const clock = vi.spyOn(Date, 'now');
+    try {
+      // Nine seconds on, a second notice arrives. Re-anchoring here would move
+      // the ceiling from 10s to 19s.
+      clock.mockImplementation(() => real.call(Date) + 9_000);
+      w.noteSessionExited('s1');
+      // Eleven seconds after the FIRST one: the ceiling has passed, so the
+      // watch is frozen and a transcript appearing now is never looked for.
+      clock.mockImplementation(() => real.call(Date) + 11_000);
+      await sleep(100);
+      writeLines(path.join(projectDir(), 'native-1.jsonl'), [said('too late')]);
+      await sleep(250);
+      expect(w.snapshot('s1')!.bound).toBe(false);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('a clock that steps BACKWARDS does not park the watch on the disk', async () => {
+    // Same hazard `DiscoverySchedule.shouldSweep` guards against: an NTP
+    // correction or a VM resume makes `now - exitedAt` negative, and every
+    // window would then wait out real time — an hour of scanning for an
+    // hour-sized jump, on behalf of a process that died before it happened.
+    const w = crashable({ postExitSettleMs: 100 });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    w.watch('s1', { cwd });
+    writeLines(file, [said('before the crash')]);
+    await waitFor(() => w.snapshot('s1')!.lines >= 1);
+    w.noteSessionExited('s1');
+
+    const real = Date.now;
+    const clock = vi.spyOn(Date, 'now');
+    try {
+      clock.mockImplementation(() => real.call(Date) - 3_600_000);
+      await sleep(300); // three settle windows of shifted-but-advancing time
+      writeLines(file, [said('after the freeze')]);
+      await sleep(200);
+    } finally {
+      clock.mockRestore();
+    }
+    expect(w.snapshot('s1')!.lines).toBe(1);
+  });
+
+  it('re-watching a frozen id takes its own reference rather than a second release', async () => {
+    // No first-party caller does this — live ids are minted per spawn, so a
+    // frozen id is never watched again — but `watch()` is a public method and
+    // the refcount underneath it is shared with every other session on the
+    // root. Getting it wrong closes a live card's watch.
+    const closes: string[] = [];
+    const w = crashable({
+      discovery: {
+        watchFactory: (r: string) => ({ close: () => closes.push(r) }),
+        backoffMs: [25],
+      },
+    });
+    const cwd2 = 'C:/tmp/tw-project-two';
+    w.watch('s1', { cwd });
+    w.watch('s2', { cwd: cwd2 });
+    writeLines(path.join(projectDir(), 'native-1.jsonl'), [said('bound before the crash')]);
+    await waitFor(() => w.snapshot('s1')!.lines >= 1);
+    w.noteSessionExited('s1');
+    await sleep(150); // frozen: its reference is already back
+
+    w.watch('s1', { cwd }); // the same id, watched again, no unwatch in between
+
+    w.unwatch('s1');
+    expect(closes).toEqual([]); // s2 still holds the root
+    w.unwatch('s2');
+    expect(closes).toEqual([root]);
+  });
+});

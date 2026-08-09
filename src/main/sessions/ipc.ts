@@ -401,10 +401,30 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   // the hold must go.
   //
   // NOT the whole teardown. See `releaseHeldPermissions`: an exited session
-  // keeps its record, its transcript watch and its Events entry, and the reap in
+  // keeps its record, its binding and its Events entry, and the reap in
   // `sessions:create` decides what becomes of the corpse.
+  //
+  // Its transcript WATCH is the one thing that now hears about the death
+  // directly (#200). It is not torn down either — the crashed card still reads
+  // its Feed backlog and its binding state out of it — but it stops being a
+  // watch: `noteSessionExited` drains what is left, finishes any hunt already
+  // in progress, and then freezes, so a card left sitting on a crashed session
+  // is no longer scanning `~/.claude/projects` ten times a second on behalf of
+  // a process that will never write again. A one-way latch, so the reap
+  // unwatching this same session later is safe in either order.
+  //
+  // It goes BEFORE the push, and through `tearDownStep`, for the two halves of
+  // the same rule the release above obeys. Before: the drain inside it is what
+  // puts the crashed turn's last words in the Feed, and `sessions:exited` is
+  // what raises the overlay over them. Isolated: everything ahead of that push
+  // has to be unable to cost it — and the inverse is just as bad, since a throw
+  // out of `send` would leave this watch polling for the life of the process,
+  // which is the entire defect #200 exists to remove.
   manager.onSessionExit((e) => {
     releaseHeldPermissions(e.sessionId, 'session exited');
+    tearDownStep(e.sessionId, 'transcripts.noteSessionExited', () =>
+      transcripts.noteSessionExited(e.sessionId)
+    );
     send('sessions:exited', e);
   });
   transcripts.onUpdate((snap) => {
