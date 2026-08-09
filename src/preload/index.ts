@@ -9,6 +9,7 @@ import type {
   UpdatePrefs,
   UpdateStatus,
 } from '../shared/update';
+import type { WorkspaceSaveState } from '../shared/workspace';
 
 const versionArg = process.argv.find((a) => a.startsWith('--switchboard-version='));
 const seedArg = process.argv.find((a) => a.startsWith('--switchboard-seed-panels='));
@@ -59,6 +60,22 @@ const api = {
      * this run changes will be saved (#110/#168). Fixed at load — one read.
      */
     isReadOnly: (): Promise<boolean> => ipcRenderer.invoke('workspace:isReadOnly'),
+    /**
+     * Can the workspace file still be written? (#207)
+     *
+     * Not the same question as `isReadOnly`, which is about the file being
+     * from the future and is fixed for the run. This one is about the WRITES
+     * failing — a full disk, a permission, something holding the file — and it
+     * comes and goes, so read it once on mount and then follow
+     * `onSaveStateChanged`.
+     */
+    saveState: (): Promise<WorkspaceSaveState> => ipcRenderer.invoke('workspace:saveState'),
+    /** saving started failing, or started working again (#207) */
+    onSaveStateChanged: (cb: (s: WorkspaceSaveState) => void): (() => void) => {
+      const h = (_e: unknown, s: WorkspaceSaveState): void => cb(s);
+      ipcRenderer.on('workspace:saveStateChanged', h);
+      return () => ipcRenderer.removeListener('workspace:saveStateChanged', h);
+    },
   },
   /** display work areas, for popout-position rescue on restore (E8-02) */
   workAreas: (): Promise<Array<{ x: number; y: number; width: number; height: number }>> =>

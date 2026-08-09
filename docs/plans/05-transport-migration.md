@@ -51,6 +51,15 @@ for it. The amendment explicitly did **not** decide that the terminal goes away.
 > and working first.** This is a direction, not a date, and nothing is deleted
 > until it is met.
 >
+> **▶ UPDATE 2026-08-09 (#381): the default is flipped.** Dan: *"all sessions
+> default to direct mode. not terminal."* Every card that has never chosen a
+> transport now starts in Direct; a card that explicitly chose keeps its choice,
+> Terminal included. This is the condition above being worked on rather than
+> waited for — real use is what tests Direct mode, and nothing was going to be
+> in real use while the mode had to be found in a menu. Point 3 below hardens
+> slightly as a result: PTY mode must keep working, and it is now reached by an
+> explicit per-card choice or `SWITCHBOARD_TRANSPORT=pty`, not by doing nothing.
+>
 > **What this changes in the plan, concretely:**
 >
 > 1. **E18-16 is no longer a decision, it is an execution.** It used to ask
@@ -327,8 +336,9 @@ still pass**.
 **What.** The front half: the user-facing choice, and being honest about what
 changes when they make it.
 
-Scope: a per-session transport setting (default **PTY** — opt-in, as
-`claudeCode.useTerminal` is in reverse), persisted with the session record and
+Scope: a per-session transport setting (default **PTY** when this item shipped;
+**inverted to Direct on 2026-08-09 by #381** — see the update in the decision
+block above), persisted with the session record and
 surfaced at session creation; the **Terminal tab explains itself** in a stream
 session rather than showing an empty black pane; switching a **running**
 session's transport refused with a reason.

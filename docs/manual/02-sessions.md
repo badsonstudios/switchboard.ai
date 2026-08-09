@@ -18,6 +18,12 @@ Three ways, all equivalent:
 If you open a second session in a folder you already have open, switchboard
 adds a number to the name so you can tell them apart.
 
+Every new session starts in [**Direct mode**](12-direct-mode.md): switchboard
+talks to Claude Code without a terminal, so permission requests are answered
+here in the card instead of escaping into a terminal prompt. The trade is that
+there's no Terminal tab to use — if a particular session needs one, switch that
+session to Terminal mode from its **⋯** menu and the choice sticks.
+
 ## Naming and labelling
 
 - **Rename:** double-click the session's row in the left-hand list, type, press

@@ -13,7 +13,7 @@
 // WHY THIS FILE EXISTS
 // --------------------
 // The guard is one declaration and it has been forgotten three times.
-// `WorkspaceReadOnlyBanner` carried it from #168 but nothing checked it, so
+// `WorkspaceNoticeBanner` carried it from #168 but nothing checked it, so
 // deleting it stayed green. `.preflight-banner` did not carry it at all until
 // #241, which made the "claude wasn't found" warning the one that got squeezed
 // in the very case where two notices are up at once. The two strips and the
@@ -117,14 +117,15 @@ const NOTICES: readonly Notice[] = [
     why: 'the session count, the CLI version and every contributed readout',
   },
   {
-    component: 'WorkspaceReadOnlyBanner',
-    file: 'components/WorkspaceReadOnlyBanner.tsx',
+    component: 'WorkspaceNoticeBanner',
+    file: 'components/WorkspaceNoticeBanner.tsx',
     from: 'const banner: React.CSSProperties = {',
     to: '\n};',
     guard: INLINE_GUARD,
-    // #168. Issue numbers stay in comments throughout this list: they are
-    // hex-colour-shaped, and the lint rule that keeps raw hex out of the
-    // renderer cannot tell the difference inside a string literal.
+    // #168, and #207's failing-save half. Issue numbers stay in comments
+    // throughout this list: they are hex-colour-shaped, and the lint rule that
+    // keeps raw hex out of the renderer cannot tell the difference inside a
+    // string literal.
     why: 'the only warning that nothing done this run will be saved',
   },
   {

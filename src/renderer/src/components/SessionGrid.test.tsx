@@ -14,7 +14,7 @@
 // pure functions of the store, so they can be asserted exactly — with no grid,
 // no Electron and no Playwright — even though `applyLayout` itself cannot run
 // until a real `onReady` has opened the `gridReady` fence.
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import {
   applyLayout,
   applySubmitPolicy,
@@ -22,11 +22,13 @@ import {
   endedCopy,
   layoutSweepPort,
   overlaySaid,
+  rescueStrandedPopouts,
   setCardLadder,
   setLayoutMode,
   stepCardLadder,
   toggleMaximizeCard,
 } from './SessionGrid';
+import type { DockviewApi } from 'dockview-react';
 import en from '../i18n/locales/en.json';
 import { sessionStore } from '../store/session-store';
 import { DEFAULT_LAYOUT, withMaximized, withMode } from '../lib/layout-mode';
@@ -460,5 +462,282 @@ describe('overlaySaid', () => {
         expect(copyText(key).length).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+// ── #292: a card whose popout window died comes home ─────────────────────────
+//
+// The DECISIONS are lib/popout-rescue's and are pinned there. What is pinned
+// here is everything the rescue does to the workspace and to the store: the
+// dead panel goes, the session is suspended the way a clean close suspends it,
+// and a NEW panel is built. That last one is the load-bearing part and the
+// reason the fake below models `removePanel`/`addPanel` rather than a move —
+// a rescued card that was carried back from the destroyed window renders
+// perfectly and answers no clicks, so "it is in the grid" is not the property
+// worth asserting; "it was built again" is.
+//
+// A real DockviewApi cannot be had in jsdom, which is the wall the rest of this
+// file lives behind.
+
+interface FakeGroup {
+  id: string;
+  panels: FakePanel[];
+  api: { location: { type: string; getWindow?: () => Window | null } };
+}
+interface FakePanel {
+  id: string;
+  group: FakeGroup;
+  focus: () => void;
+  api: { location: { type: string; getWindow?: () => Window | null } };
+}
+interface GroupSpec {
+  id: string;
+  type?: string;
+  win?: Window | null;
+}
+
+function fakeGrid(): {
+  api: DockviewApi;
+  addGroups: (...specs: GroupSpec[]) => void;
+  addPanel: (id: string, groupId: string) => FakePanel;
+  /** panel ids currently in the grid, in order */
+  ids: () => string[];
+  /** panel ids this run of the rescue CREATED */
+  built: string[];
+  /** panel ids this run of the rescue removed */
+  removed: string[];
+} {
+  const groups: FakeGroup[] = [];
+  let panels: FakePanel[] = [];
+  const built: string[] = [];
+  const removed: string[] = [];
+  let seq = 0;
+  const makeGroup = (spec: GroupSpec): FakeGroup => {
+    const g: FakeGroup = {
+      id: spec.id,
+      panels: [],
+      api: {
+        location:
+          spec.type === 'popout'
+            ? { type: 'popout', getWindow: () => spec.win ?? null }
+            : { type: spec.type ?? 'grid' },
+      },
+    };
+    groups.push(g);
+    return g;
+  };
+  const attach = (id: string, g: FakeGroup): FakePanel => {
+    const p: FakePanel = { id, group: g, focus: () => {}, api: { location: g.api.location } };
+    g.panels.push(p);
+    panels.push(p);
+    return p;
+  };
+  const api = {
+    get panels(): FakePanel[] {
+      return [...panels];
+    },
+    get groups(): FakeGroup[] {
+      return [...groups];
+    },
+    getPanel: (id: string): FakePanel | undefined => panels.find((p) => p.id === id),
+    addGroup: (): FakeGroup => makeGroup({ id: `new-${++seq}` }),
+    addPanel: (opts: { id: string; position?: { referenceGroup?: FakeGroup } }): FakePanel => {
+      built.push(opts.id);
+      return attach(opts.id, opts.position?.referenceGroup ?? makeGroup({ id: `new-${++seq}` }));
+    },
+    removePanel: (panel: FakePanel): void => {
+      removed.push(panel.id);
+      panel.group.panels = panel.group.panels.filter((x) => x !== panel);
+      panels = panels.filter((x) => x !== panel);
+    },
+  };
+  return {
+    api: api as unknown as DockviewApi,
+    addGroups: (...specs: GroupSpec[]) => specs.forEach(makeGroup),
+    addPanel: (id: string, groupId: string) => attach(id, groups.find((x) => x.id === groupId)!),
+    ids: () => panels.map((p) => p.id),
+    built,
+    removed,
+  };
+}
+
+const deadWindow = { closed: true } as unknown as Window;
+const liveWindow = { closed: false } as unknown as Window;
+
+/** the bridge calls a rescue makes: the card record it rebuilds from, and the
+ *  suspend it asks main for */
+function stubBridge(cards: Array<{ cardId: string }>): { dropped: string[] } {
+  const dropped: string[] = [];
+  (window as unknown as { switchboard: unknown }).switchboard = {
+    sessions: {
+      cards: () => Promise.resolve(cards.map((c) => ({ ...c, title: c.cardId, folder: '/tmp/x' }))),
+      dropLive: (cardId: string) => {
+        dropped.push(cardId);
+        return Promise.resolve();
+      },
+    },
+  };
+  return { dropped };
+}
+
+/** let the reveal's `await sessions.cards()` land */
+const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+describe('rescueStrandedPopouts (#292)', () => {
+  let said: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    said = vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    said.mockRestore();
+    delete (window as unknown as { switchboard?: unknown }).switchboard;
+  });
+
+  it('takes the dead panel away and builds the card again', async () => {
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'pop1', type: 'popout', win: deadWindow });
+    grid.addPanel('session-a', 'pop1');
+    const bridge = stubBridge([{ cardId: 'a' }]);
+
+    rescueStrandedPopouts(grid.api);
+    await settle();
+
+    // REBUILT, not moved — a carried-back card is a card with no listeners
+    expect(grid.removed).toEqual(['session-a']);
+    expect(grid.built).toEqual(['session-a']);
+    expect(grid.ids()).toEqual(['session-a']);
+    // ...and suspended, exactly as a clean close leaves it
+    expect(sessionStore.getPresentation('a').suspended).toBe(true);
+    expect(sessionStore.getPresentation('a').poppedOut).toBe(false);
+    expect(bridge.dropped).toEqual(['a']);
+    expect(said).toHaveBeenCalledWith(expect.stringContaining('session-a'));
+  });
+
+  it('leaves a LIVE popout completely alone', async () => {
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'pop1', type: 'popout', win: liveWindow });
+    grid.addPanel('session-a', 'pop1');
+    const bridge = stubBridge([{ cardId: 'a' }]);
+
+    rescueStrandedPopouts(grid.api);
+    await settle();
+
+    expect(grid.removed).toEqual([]);
+    expect(grid.built).toEqual([]);
+    expect(sessionStore.getPresentation('a').suspended).toBe(false);
+    expect(bridge.dropped).toEqual([]);
+  });
+
+  it('rescues every card the dead window was holding', async () => {
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'pop1', type: 'popout', win: deadWindow });
+    grid.addPanel('session-a', 'pop1');
+    grid.addPanel('session-b', 'pop1');
+    const bridge = stubBridge([{ cardId: 'a' }, { cardId: 'b' }]);
+
+    rescueStrandedPopouts(grid.api);
+    await settle();
+
+    expect(grid.built.sort()).toEqual(['session-a', 'session-b']);
+    expect(bridge.dropped.sort()).toEqual(['a', 'b']);
+  });
+
+  it('drops a derived tab instead of rebuilding it beside the card', async () => {
+    // a diff tab dragged into the popout has no record and no state: it is
+    // rebuilt from the card's Changes tab the next time it is asked for
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'pop1', type: 'popout', win: deadWindow });
+    grid.addPanel('diff-a', 'pop1');
+    stubBridge([{ cardId: 'a' }]);
+
+    rescueStrandedPopouts(grid.api);
+    await settle();
+
+    expect(grid.removed).toEqual(['diff-a']);
+    expect(grid.built).toEqual([]);
+  });
+
+  it('does nothing at all in an ordinary workspace', async () => {
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g1' });
+    grid.addPanel('session-a', 'g1');
+    const bridge = stubBridge([{ cardId: 'a' }]);
+
+    rescueStrandedPopouts(grid.api);
+    await settle();
+
+    expect(grid.removed).toEqual([]);
+    expect(grid.built).toEqual([]);
+    expect(bridge.dropped).toEqual([]);
+  });
+
+  it('keeps its hands off during teardown and during a layout restore', async () => {
+    // Both are moments when dockview's popout state is mid-flight and the
+    // layout is about to be written: a rescue then would save the workspace
+    // WITHOUT the popout the user should get back next launch.
+    for (const flag of ['tearing-down', 'restoring'] as const) {
+      const grid = fakeGrid();
+      grid.addGroups({ id: 'pop1', type: 'popout', win: deadWindow });
+      grid.addPanel('session-a', 'pop1');
+      stubBridge([{ cardId: 'a' }]);
+      if (flag === 'tearing-down') sessionStore.setTearingDown(true);
+      else sessionStore.setRestoringLayout(true);
+
+      rescueStrandedPopouts(grid.api);
+      await settle();
+
+      expect(grid.removed, flag).toEqual([]);
+      expect(sessionStore.getPresentation('a').suspended, flag).toBe(false);
+      sessionStore.setTearingDown(false);
+      sessionStore.setRestoringLayout(false);
+    }
+  });
+
+  it('survives a card it cannot rescue, and rescues the next one', async () => {
+    // fail-open, and the loop continues: one card that cannot be rebuilt must
+    // not cost the others their rescue
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'pop1', type: 'popout', win: deadWindow });
+    grid.addPanel('session-a', 'pop1');
+    grid.addPanel('session-b', 'pop1');
+    stubBridge([{ cardId: 'a' }, { cardId: 'b' }]);
+    const real = grid.api.removePanel.bind(grid.api);
+    let first = true;
+    (grid.api as unknown as { removePanel: (p: unknown) => void }).removePanel = (p) => {
+      if (first) {
+        first = false;
+        throw new Error('detached');
+      }
+      (real as (p: unknown) => void)(p);
+    };
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(() => rescueStrandedPopouts(grid.api)).not.toThrow();
+    await settle();
+
+    expect(grid.built).toEqual(['session-b']);
+    expect(err).toHaveBeenCalledTimes(1);
+    err.mockRestore();
+  });
+
+  it('never lets a broken grid throw into the microtask that calls it', () => {
+    // the registry wraps its listeners in a try; the deferral that makes this
+    // rescue safe to run also puts it OUTSIDE that protection, so it has to
+    // carry its own — a disposed dockview is a read this can really make
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const hostile = {
+      get panels(): never {
+        throw new Error('disposed');
+      },
+    } as unknown as DockviewApi;
+
+    expect(() => rescueStrandedPopouts(hostile)).not.toThrow();
+
+    expect(err).toHaveBeenCalledTimes(1);
+    err.mockRestore();
+  });
+
+  it('is a no-op with no grid at all', () => {
+    expect(() => rescueStrandedPopouts(null)).not.toThrow();
   });
 });

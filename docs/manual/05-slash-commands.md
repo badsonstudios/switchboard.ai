@@ -59,14 +59,17 @@ The **⋯** menu in the card header has two shortcuts:
 - **Compact conversation** — has Claude summarize the conversation so far to
   free up context.
 
-Both simply type the real `/clear` and `/compact` into the session — the same
-thing you'd do by hand.
+Both simply send the real `/clear` and `/compact` to the session — the same
+thing you'd do by hand, and they work the same in either mode.
 
 ## Good to know
 
 - Commands that open their own picker (`/model`, `/mcp` and friends) finish in
   the **Terminal** tab. switchboard sends the command; you make the choice
-  there.
+  there. A session in [Direct mode](12-direct-mode.md) — how new sessions start
+  — has no terminal, so those pickers have nowhere to appear: put the session
+  on Terminal mode from its **⋯** menu when you need one. This is a known gap,
+  listed under *What you give up* on the Direct mode page.
 - The ⋯ menu is greyed out while a session is still starting, or once it has
   ended — with a note saying which.
 - `/clear` gives no visible reply from Claude Code itself. That's expected; the

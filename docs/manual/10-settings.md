@@ -67,8 +67,12 @@ Claude Code asks whether you trust a folder the first time it runs there. With
 **auto-trust** on (the default), switchboard answers that for you, on the
 grounds that choosing a folder to run an agent in *is* the trust decision.
 
-Switch it to **🔒 ask trust** if you'd rather answer that prompt yourself in
-the Terminal tab each time.
+Switch it to **🔒 ask trust** if you'd rather answer that prompt yourself. Be
+aware of where it appears: Claude Code draws the trust question in its own
+terminal interface, so answering it needs a session in **Terminal mode** —
+and new sessions start in [Direct mode](12-direct-mode.md), which has no
+terminal. With **ask trust** on, put a session on Terminal mode from its **⋯**
+menu the first time you open a folder, then switch it back if you like.
 
 ## What's remembered
 
