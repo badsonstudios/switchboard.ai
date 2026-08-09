@@ -217,8 +217,24 @@ On each worker completion notification:
 4. **Dispatch the next unblocked issue** into the freed worktree. Re-run the
    queue analysis — merges change what is unblocked.
 5. Between notifications, schedule a fallback wakeup (20–30 min) so a hung
-   worker can't stall the run silently. A worker silent past ~90 min gets
-   checked (`TaskOutput`), then killed and its worktree rescued if wedged.
+   worker can't stall the run silently. **GROUND-TRUTH SWEEP: completion
+   notifications CAN be silently lost and workers CAN die unnoticed (run
+   13, 2026-08-09: one of each in a single run — a finished worker whose
+   notification never arrived, and a dead worker whose task id was no
+   longer even queryable).** A worker silent past ~60–90 min gets a
+   ground-truth sweep BEFORE any conclusion: its worktree's `git status`,
+   its handoff file's existence, `gh pr list` for its branch, and the
+   e2e lock owner. `TaskOutput` alone is not evidence — it can answer
+   "no task found" for both a finished and a dead worker. A dead
+   worker's uncommitted WIP can be recovered IN SITU by a fresh worker
+   told to verify-then-keep (run 13's #191 recovery kept essentially
+   all of it after re-verifying every load-bearing claim — cheaper and
+   better than a rescue-stash + restart). Refinement of the run-3
+   waiter note: detached processes MAY survive a worker's turn end (a
+   full e2e suite did, run 13); it is the worker's *notifications and
+   waiters* that reliably die — so in-turn polling remains the only
+   safe shape, and an orphaned-but-live suite is a state the sweep
+   must anticipate.
 
 ## Planning (the /pm slice this skill owns)
 

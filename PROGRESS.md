@@ -31,8 +31,179 @@ structure adopting #228's temp-dir registry, verified by a local
 161+1 skip (from the merged branches' gate runs: 1227+46+5+16 /
 156+4+0+1).
 
-> # ▶▶ START HERE — 🎛 RUN 12 CLOSED 2026-08-09 + FULLY MERGED +
-> 🎉 **RELEASE v0.2.0 TAGGED** (~75 min wall, 3 workers)
+> # ▶▶ START HERE — 🎛 RUN 13 CLOSED 2026-08-09 + FULLY MERGED (7 items,
+> ALL ON MAIN; ~6.5 h wall incl. Dan's authorizations)
+>
+> **Shipped, all merged:** #375 → PR #376 (e6fbb8a) · #200 → PR #382
+> (60a854c) · **train #386 (665740c)** carrying #381→PR #383 (Dan's
+> direct-mode ask, filed and shipped same run), #207→PR #379, #292→PR
+> #378 · #129 → PR #387 · #191 → PR #385 (6e3ee1c, post-train bump ×2,
+> one CHANGELOG conflict resolved by the orchestrator). Issues #375
+> #200 #381 #207 #292 #129 #191 ALL CLOSED. **Main @ 6e3ee1c, out/
+> REBUILT, stamp verified both bundles — `npm start` is current.**
+> Train gate: lint/typecheck clean · 2786 unit · 206+1 e2e under the
+> lock; two changelog append-conflicts were the train's only conflicts.
+>
+> **Incidents (all handled, lessons in the skill):** #191's first
+> worker DIED unnoticed (task id unqueryable, lock held dead 118 min —
+> #381 stole it by the book); recovery worker kept ~all inherited WIP
+> after re-verifying every claim. #292's completion notification was
+> SILENTLY LOST — the finished PR found only by a ground-truth sweep.
+> #207's worker armed background waiters and stopped mid-e2e —
+> corrected via SendMessage resume; its detached suite SURVIVED turn
+> end (refines run-3's lesson: processes may live, notifications die).
+> Skill updated: ground-truth sweep before concluding anything about a
+> silent worker.
+>
+> **Issues filed run 13:** #377 (extensibility roster staleness) ·
+> #380 (i18n test harnesses lack ICU — the gap that hid #207's
+> blocker) · #384 (Direct-vs-real-CLI e2e gap + ask-trust/Direct
+> unverified — real-CLI spec costs tokens, NEEDS DAN) · #388 (#129
+> follow-ups: per-session discovery gate + awaiting-prompt never times
+> out) · #381 (Dan's, shipped same run).
+>
+> **Queue after run 13:** dispatchable without Dan = **#377 #380 #388**
+> (all small). Needs Dan = #384 (token sign-off) · held-list decisions
+> (#320 #269 #80 #111) · /pm epic-expansion sitting (E9 tail, E11,
+> E13, E14 — the real pipeline refill). The `0.3.0 — unreleased`
+> CHANGELOG section now holds 6 entries — the next release cut is
+> cheap and can go whenever Dan wants. Worktrees: all three detached
+> and clean.
+>
+> Orchestrator: Fable (/orchestrate, same session). **Single-writer
+> rule:** this file is written ONLY by the orchestrator; workers report
+> via `.claude/work_files/orchestrator/<issue#>.md`. A fresh session
+> resumes from THIS block.
+>
+> **Dan (2026-08-09): "finish 375; version cadence is fine; do what you
+> think should be done next."** Cadence decision RECORDED: the CHANGELOG
+> rule stands as written (minor-for-features; v0.2.0 was correct; 0.1.1's
+> patch was the anomaly) — no amendment, next cutter shouldn't re-flag.
+> "Do what you think" = the orchestrator's recommended unholds: **#207
+> #191 #292 #200 #129 released from the held list.** Dan upgraded to
+> v0.2.0 (installed).
+>
+> **Run-13 progress:**
+> - **#375** ✅ DONE (~6 min) → **PR #376 (INTERNAL) — awaiting green
+>   CI, orchestrator merges.** Verified against bodies AND code before
+>   editing (broker.ts:141 really refuses). Four edits, one file: the
+>   named claim reworded (what's missing is the manifest→grant JOIN,
+>   not enforcement), the one-provider count → six, the "no enforcement
+>   point at all" gap bullet struck-RESOLVED like its siblings, and
+>   "declarative only" scoped to Manifest capabilities (that one was
+>   true). Gate: lint/typecheck clean · 2710 unit · e2e skipped (stated
+>   call, docs-only; lock never taken). Discovery → **#377 filed**
+>   (L120-123 roster claim stale the same way — different story).
+>   Handoff: 375.md. **sb-wt-1 refilled with #292** (popout-stranded
+>   session rescue, `feature/292-popout-stranded-session`, dispatched).
+>
+> - **#375** ✅ MERGED → PR #376 squashed as e6fbb8a, issue closed.
+> - **#207** ✅ DONE → **PR #379 READY, IN DAN'S QUEUE** (UF; CI running
+>   at last check). Full gate green after the resume: 2731 unit (+17) ·
+>   203+1 e2e (8.5m, lock waited ~60 min behind #191/#292 legitimately,
+>   nothing stolen) · 14 mutations caught. Design as recorded below;
+>   recovery = any successful save clears banner everywhere, no minimum
+>   display time (deliberate). ICU blocker fix hardened repo-wide
+>   (locales lint test). Discoveries: **#380 filed** (2 harnesses still
+>   init i18next without ICU — wants shared helper); "PreflightBanner
+>   contrast still open" claim CONFLICTS with tracker (#206 is closed) —
+>   not filed, needs body-verification; CHANGELOG:74 claim moot (the
+>   0.2.0 errata already addressed it). Handoff: 207.md. **sb-wt-2
+>   refilled with #200** (`feature/200-transcript-watch-teardown`,
+>   dispatched off e6fbb8a).
+> - **🆕 #381 (DAN, mid-run): sessions default to DIRECT mode** —
+>   **dispatched** into sb-wt-2 (`feature/381-direct-mode-default`, off
+>   e6fbb8a). Three-population spec: new → direct; explicit terminal
+>   choice kept; legacy no-mode cards = worker's call, justified.
+> - **#200** ✅ DONE (~68 min) → **PR #382 (INTERNAL) — awaiting green
+>   CI, orchestrator merges.** The call: QUIESCE, not teardown — both
+>   issue options were wrong (unwatch deletes the entry that IS the
+>   crashed card's Feed content, which is a mount-time pull; leaving it
+>   is the leak). `noteSessionExited` drains synchronously, keeps
+>   working only while it could still learn (unbound widen 10s /
+>   ambiguous-cwd 30s / subagent last-sweep; Windows settle 3s, 90s
+>   ceiling), then freezes — no I/O, content readable forever. Measured:
+>   dead process's buffered bytes are LOST not flushed (exit is causally
+>   after every completed write); the real risk was unfinished READING —
+>   two content-loss cases now pinned as tests. One-way latch,
+>   release-guarded vs the respawn reap (trace pinned). Gate: lint/
+>   typecheck clean · 2730 unit (watcher 51→69) · e2e skipped (stated
+>   call, main-process lifecycle; lock never taken) · 18 mutations,
+>   17 caught, 2 unfalsifiable mechanisms DELETED because mutation
+>   testing proved them dead weight · reviewer found 1 real content-loss
+>   bug pre-push (subagent transcript missing its last sweep). Touched
+>   watcher.ts/watcher.test.ts/ipc — NOT discovery-scheduler; **#129
+>   still held until #382 MERGES** (watcher.ts overlap risk is real).
+>   Handoff: 200.md.
+> - **PR #379 (#207) CI 4/4 GREEN — confirmed in Dan's queue.**
+> - **#381** ✅ DONE (~70 min) → **PR #383 READY, IN DAN'S QUEUE** (UF,
+>   CI 4/4 green). Seam: `prior?.transport ?? preferredTransport() ??
+>   DEFAULT_SESSION_TRANSPORT='stream'`; adapter-level DEFAULT_TRANSPORT
+>   stays pty ON PURPOSE (adapter silence ≠ user default). Three
+>   populations as specced; no migration (absence = "nobody chose", the
+>   default is never written back). **Bug found en route: ⋯-menu Clear
+>   and Compact wrote straight to the PTY — silent no-ops in Direct,
+>   would have shipped to every user with this flip; fixed via
+>   transport-agnostic sendSessionCommand.** 4 vacuous tests re-pinned
+>   to pty. DESIGN §5.2 amended (dated, cites Dan). Gate: 2723 unit ·
+>   203+1 e2e full · CI green. Legitimately STOLE #191's stale lock
+>   (118 min, 0 electron across 6 samples — by the book). Discoveries →
+>   **#384 filed** (Direct-vs-real-CLI has no e2e + ask-trust/Direct
+>   unverified; real-CLI spec costs tokens, needs Dan). Handoff: 381.md.
+> - **#292** ✅ DONE → **PR #378 READY, IN DAN'S QUEUE** (UF, CI 4/4
+>   green). Its completion notification was LOST (task id unknown when
+>   checked) — discovered via ground-truth sweep; handoff 292.md was in
+>   place all along. Rescue shape: RESTORE TO GRID ON SWEEP with the
+>   full clean-close outcome (card home, suspended, Resume) — "restore
+>   but keep live" rejected on the strongest ground (user can't
+>   distinguish the two closes; a rule nobody could hold in their
+>   head); announcement rides #358's existing "Session suspended" (a
+>   rescue-specific one would narrate our internals). Relaunch path
+>   checked, deliberately untouched. Handoff: 292.md.
+> - **#200 → PR #382 ✅ MERGED (squash 60a854c)**, issue closed. **#129
+>   UNBLOCKED and dispatched** → sb-wt-2,
+>   `feature/129-given-up-discovery` (off 60a854c, briefed on #200's
+>   quiesce interaction).
+> - **⚠ #191 WORKER DIED** (no PR, no handoff, lock held ~2h idle —
+>   the steal confirmed it; task id no longer tracked). Uncommitted WIP
+>   (DiffPane.tsx, diff.spec, eslint.config, manual, CHANGELOG) left in
+>   sb-wt-3 on its branch. **Recovery worker dispatched** into sb-wt-3:
+>   assess inherited diff skeptically, keep-or-redo, rebase onto fresh
+>   main, finish the item. Kept the worktree in place (no rescue-branch
+>   stash needed — recovery inherits in situ).
+> - **#207** ⚠ protocol slip, corrected: worker finished implementation
+>   (all pre-e2e gates green, 2731 unit +17; review found a REAL
+>   Blocker — i18next-icu bypasses `{{}}` interpolation, `{{file}}`
+>   would have rendered literally; fixed + locale lint test added) but
+>   ENDED ITS TURN with the e2e suite running in background waiters —
+>   the run-3 violation. Orchestrator observed the suite still live
+>   (4 electrons, lock owner 207) and RESUMED the worker via
+>   SendMessage with in-turn completion orders. Note for the skill at
+>   close-out: the detached suite SURVIVED turn end this time — the
+>   reliable part of the lesson is that waiters/notifications die, not
+>   necessarily the processes; either way in-turn is the only safe
+>   shape. Design so far: failing = 3 consecutive failed saves via a
+>   new capped-backoff retry (1s→10s, never gives up — the retry IS
+>   the recovery detector); #168's seam reused; banner unified into
+>   WorkspaceNoticeBanner (one slot, read-only wins); #352's give-up
+>   deliberately NOT folded (bounded + self-resolving ≠ failing).
+>
+> **Queue (run 13):** wave 1 = **#375** (sb-wt-1,
+> `feature/375-extensibility-contradiction`, tiny doc fix) + **#207**
+> (sb-wt-2, `feature/207-failed-write-banner`, UF — save-failure banner,
+> sequel to #352) + **#191** (sb-wt-3,
+> `feature/191-diff-syntax-highlighting`, UF — Monaco language design
+> call). Refills in order: **#292** (popout-stranded session rescue, UF)
+> → **#200** (crashed session's transcript watch teardown) → **#129**
+> (given-up discovery full-scan; SERIAL after #200 — same transcripts
+> subsystem). All workers make the embedded design calls themselves
+> (Dan delegated), justify in the PR, stop only on genuine DESIGN
+> contradiction. All off main @ 9dbfae4. Collisions: #207 touches
+> workspace store/banner (no sibling overlap); #191 is DiffPane/Monaco;
+> #375 is one doc paragraph. Still held: #80 #111 #255 #268 #269 #290
+> #295 #216 #256 #313 #320 #323 #333 #337 #344-surfacing (+ #320/#269/
+> #80/#111 need Dan's answers). /pm epic-expansion pass deferred to its
+> own sitting with Dan.
 >
 > **Final state: all three merged, tag pushed, 🎉 RELEASE v0.2.0 LIVE
 > (workflow success verified: switchboard-Setup-0.2.0.exe + sha256 +
