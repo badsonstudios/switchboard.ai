@@ -34,12 +34,22 @@ export interface PersistedSession {
   /** autonomy mode this card runs at (stable across resumes) */
   autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
   /**
-   * Which transport this card's sessions run on (P2-E18-08b).
+   * Which transport this card's sessions run on (P2-E18-08b). Stored per CARD,
+   * not per live session, so the choice survives a resume the same way autonomy
+   * does.
    *
-   * Absent = `pty`, which is every card that existed before E18 and every new
-   * one: stream mode ships OPT-IN, the mirror image of the VS Code extension's
-   * `claudeCode.useTerminal`. Stored per CARD, not per live session, so the
-   * choice survives a resume the same way autonomy does.
+   * **Absent means "this card has never chosen", NOT "chose the PTY"** — so an
+   * absent field follows `DEFAULT_SESSION_TRANSPORT` (`main/transport/
+   * transport.ts`) at the moment the session starts, whatever that is then.
+   * Which is how #381 moved every untouched card to Direct in one line, and how
+   * a future change of default would move them again. Cards that predate the
+   * setting are exactly this population.
+   *
+   * It said "absent = `pty`, stream mode ships OPT-IN" until #381 flipped the
+   * default; only the default changed, not the meaning of the field. A card
+   * with a VALUE here keeps it, Terminal included — that is the promise that
+   * makes the default safe to flip, and `sessions:create` is where the two are
+   * ordered.
    */
   transport?: 'pty' | 'stream';
   /** freeform "what is this doing" label, distinct from the folder title */

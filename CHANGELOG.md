@@ -53,6 +53,16 @@ on the floor, and say so in your PR.
 
 ## 0.3.0 — unreleased
 
+### Changed
+
+- **New sessions now start in Direct mode** instead of Terminal mode.
+  Permission requests — including the `.claude` ones that used to escape into
+  the terminal and ask you twice — are answered in the card, and replies arrive
+  a word at a time. The trade is that a Direct session has no Terminal tab: if
+  a session needs one, switch that session to Terminal from its **⋯** menu and
+  it stays there. Sessions you had already switched by hand keep exactly what
+  you chose; ones you never touched move to Direct.
+
 ### Internal
 
 - Every IPC seam — groups, sessions and the capability broker — now refuses a

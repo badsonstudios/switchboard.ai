@@ -306,6 +306,7 @@ export async function launchSecondInstance(
   delete env.ELECTRON_NO_ATTACH_CONSOLE;
   delete env.NoDefaultCurrentDirectoryInExePath;
   delete env.SWITCHBOARD_AUTOCLOSE;
+  delete env.SWITCHBOARD_TRANSPORT; // the same scrub `launchApp` does (#381)
   env.SWITCHBOARD_NO_QUIT_CONFIRM = '1';
   env.SWITCHBOARD_FAKE_PROVIDER = '1';
   applyIsolatedPaths(env, home);
@@ -354,6 +355,13 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   // reasons no failure message would ever mention. Same family as the landmines
   // above: scrub it, and let a spec that wants it pass it in `opts.env`.
   delete env.SWITCHBOARD_AUTOCLOSE;
+  // Same reasoning, and newly worth having since #381 made Direct the default
+  // and `SWITCHBOARD_TRANSPORT=pty` the documented way back to a terminal: a
+  // developer with it exported in their shell would silently run the whole
+  // suite on the other transport, and the two specs that assert the DEFAULT
+  // would fail on a 30s locator timeout with nothing pointing at the cause.
+  // Scrubbed here, before `opts.env`, so a spec that means it can still ask.
+  delete env.SWITCHBOARD_TRANSPORT;
   // Teardown must never meet a modal (#185). Quitting with a session in
   // `working` / `needs-input` / `needs-permission` raises the busy-sessions
   // confirmation — a main-process `showMessageBoxSync`, which blocks the close

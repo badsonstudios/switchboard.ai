@@ -14,10 +14,24 @@
 // keeps a concrete `PtyService` reference for those, which is why the terminal
 // IPC is unchanged by this item.
 
-/** Which wire a session's CLI is hosted on. */
-export type TransportKind = 'pty' | 'stream';
+// `TransportKind` and `DEFAULT_SESSION_TRANSPORT` live in `shared/transport.ts`
+// (#381): the renderer needs both and may not reach into main. Re-exported here
+// because this file is where every main-side caller already imports the
+// vocabulary from, and moving ~40 call sites would bury the one real change.
+export type { TransportKind } from '../../shared/transport';
+export { DEFAULT_SESSION_TRANSPORT } from '../../shared/transport';
+import type { TransportKind } from '../../shared/transport';
 
-/** The default when an adapter's recipe says nothing — every pre-E18 adapter. */
+/**
+ * The default when an ADAPTER's recipe says nothing — every pre-E18 adapter.
+ *
+ * Stays `pty`, and must: an adapter that returns a recipe without a transport
+ * field has told us it does not speak stream-json, and reading that silence as
+ * "stream" would hand a terminal-only CLI a protocol it cannot answer. That is
+ * a different claim from `DEFAULT_SESSION_TRANSPORT`, which is what a USER's
+ * silence means and is only ever a *request* — the adapter still answers, and
+ * this constant is how the answer "I can't" is read.
+ */
 export const DEFAULT_TRANSPORT: TransportKind = 'pty';
 
 export interface TransportSpawnOptions {
