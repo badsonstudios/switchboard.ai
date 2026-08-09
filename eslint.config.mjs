@@ -9,6 +9,34 @@ import react from 'eslint-plugin-react';
 // effect that really does return a cleanup disables this by name, in one line.
 const EFFECT_BODY_MESSAGE =
   'useEffect callback must use a block body — an expression body silently returns its value as the cleanup.';
+// §5.20's net for a colour written by hand instead of taken from a token.
+// It used to be `#[0-9a-fA-F]{3,8}\b`, which reads most of this repo's ISSUE
+// NUMBERS as colours — `'#358'` is three hex digits — and cost #358 a test
+// title (#365). Comments were never affected; only string literals. Three facts
+// separate a colour from a reference:
+//
+//   • a CSS hex colour is 3, 4, 6 or 8 digits — `#12345` is neither;
+//   • an issue reference is DECIMAL, so a token carrying a–f is always a colour;
+//   • this repo's issue numbers are 3–4 digits, so ONLY the all-numeric short
+//     forms are genuinely ambiguous (`#358` is also the colour `#335588`).
+//
+// The ambiguous ones are then decided by position: an all-numeric 3–4 digit
+// token is a colour when it is the WHOLE string (`{ color: '#000' }` — how
+// every inline style in this tree writes one) and an issue reference when it
+// sits inside a sentence. Everything else is a colour wherever it appears.
+//
+// Known gap, accepted: an all-numeric shorthand inside a longer CSS string
+// (`'1px solid #000'`) reads as prose and slips through. Nothing in this tree
+// writes one — the template-literal styles all interpolate a token
+// (`1px solid ${hue}`) — and closing it would take the issue numbers back.
+const HEX = '[0-9a-fA-F]';
+/** 3, 4, 6 or 8 hex digits, not part of a longer run */
+const HEX_RUN = `(?:${HEX}{8}|${HEX}{6}|${HEX}{4}|${HEX}{3})(?!${HEX})`;
+/** the same run, narrowed to the shapes no issue number can wear */
+const COLOR_RUN = `(?:${HEX}{8}|${HEX}{6}|(?=${HEX}*[a-fA-F])(?:${HEX}{4}|${HEX}{3}))(?!${HEX})`;
+const HEX_COLOR = `^\\s*#${HEX_RUN}\\s*$|#${COLOR_RUN}`;
+const HEX_MESSAGE = 'Raw hex color — use a token from theme/tokens.css (var(--...)).';
+
 const EFFECT_BODY_RULES = [
   {
     selector:
@@ -92,12 +120,12 @@ export default tseslint.config(
         'error',
         ...EFFECT_BODY_RULES,
         {
-          selector: 'Literal[value=/#[0-9a-fA-F]{3,8}\\b/]',
-          message: 'Raw hex color — use a token from theme/tokens.css (var(--...)).',
+          selector: `Literal[value=/${HEX_COLOR}/]`,
+          message: HEX_MESSAGE,
         },
         {
-          selector: 'TemplateElement[value.raw=/#[0-9a-fA-F]{3,8}\\b/]',
-          message: 'Raw hex color — use a token from theme/tokens.css (var(--...)).',
+          selector: `TemplateElement[value.raw=/${HEX_COLOR}/]`,
+          message: HEX_MESSAGE,
         },
         {
           selector: 'Literal[value=/\\brgba?\\(/]',
