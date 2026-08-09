@@ -51,7 +51,9 @@ on the floor, and say so in your PR.
 
 ---
 
-## 0.3.0 — unreleased
+## 0.4.0 — unreleased
+
+## 0.3.0 — 2026-08-09
 
 ### Changed
 
@@ -92,15 +94,16 @@ on the floor, and say so in your PR.
   disk for it. The transcript watch finishes what it was reading, then stops;
   everything the crashed session said stays on the card exactly as before.
 - Once no card is still looking for a conversation to show — every one that was
-  has said it couldn't find it — switchboard stops rescanning your transcripts
-  folder several times a second and settles into an occasional check. Anything
-  that could change the answer, from a transcript appearing to your next
-  prompt, puts it straight back to looking properly, so a card that gave up can
-  still pick a conversation up later on its own. Each card now settles down on
-  its own account rather than waiting for every card in the folder to: one card
-  still searching no longer keeps its neighbours rescanning, and a card you
-  opened and never typed into stops rescanning too, since Claude Code writes
-  nothing for it until your first prompt. Prompting it picks straight back up.
+  looking has said it couldn't find it — switchboard stops rescanning your
+  transcripts folder several times a second and settles into an occasional
+  check. Anything that could change the answer, from a transcript appearing to
+  your next prompt, puts it straight back to looking properly, so a card that
+  gave up can still pick a conversation up later on its own. Each card now
+  settles down on its own account rather than waiting for every other card to
+  give up too: one card still searching no longer keeps its neighbours
+  rescanning, and a card you opened and never typed into stops rescanning as
+  well, since Claude Code writes nothing for it until your first prompt.
+  Prompting it picks straight back up.
 
 ## 0.2.0 — 2026-08-09
 
