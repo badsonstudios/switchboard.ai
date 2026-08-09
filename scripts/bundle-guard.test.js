@@ -114,6 +114,16 @@ describe('isBundledSource', () => {
     expect(isBundledSource('src/renderer/App.test.tsx')).toBe(false);
     expect(isBundledSource('src/test-setup.ts')).toBe(false);
   });
+
+  it('ignores the test-only helpers that are not named *.test.ts', () => {
+    // They sit under src/ beside what they serve, but no bundler entry reaches
+    // them — so they cost a rebuild for nothing (#380).
+    expect(isBundledSource('src/test-temp-dirs.ts')).toBe(false);
+    expect(isBundledSource('src/renderer/src/i18n/test-i18n.ts')).toBe(false);
+    expect(isBundledSource('src\\renderer\\src\\i18n\\test-i18n.ts')).toBe(false);
+    // …but a REAL module whose name merely starts the same way still counts
+    expect(isBundledSource('src/renderer/src/i18n/index.ts')).toBe(true);
+  });
 });
 
 describe('collectInputs', () => {

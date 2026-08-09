@@ -13,9 +13,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
-import i18next from 'i18next';
-import { initReactI18next } from 'react-i18next';
-import ICU from 'i18next-icu';
+import { initI18nForTests } from '../i18n/test-i18n';
 import en from '../i18n/locales/en.json';
 import { EventsPanel } from './EventsPanel';
 
@@ -70,13 +68,7 @@ beforeEach(async () => {
   host = document.createElement('div');
   document.body.appendChild(host);
   root = createRoot(host);
-  if (!i18next.isInitialized) {
-    await i18next.use(ICU).use(initReactI18next).init({
-      lng: 'en',
-      resources: { en: { translation: en } },
-      interpolation: { escapeValue: false },
-    });
-  }
+  await initI18nForTests();
 });
 
 afterEach(async () => {

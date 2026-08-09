@@ -11,9 +11,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import i18next from 'i18next';
-import { initReactI18next } from 'react-i18next';
-import ICU from 'i18next-icu';
-import en from '../i18n/locales/en.json';
+import { initI18nForTests } from '../i18n/test-i18n';
 import { CollapsedStrip } from './CollapsedStrip';
 import { collapsedRows, CollapsedRow } from '../lib/ladder';
 
@@ -57,16 +55,7 @@ describe('the collapsed strip folds idle sessions (E9-08)', () => {
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
     document.body.innerHTML = '';
     expanded.length = 0;
-    if (!i18next.isInitialized) {
-      // WITH the ICU plugin, because the count in the label is an ICU plural —
-      // the app's own init uses it, and a test that skipped it would assert a
-      // string no user ever sees
-      await i18next.use(ICU).use(initReactI18next).init({
-        lng: 'en',
-        resources: { en: { translation: en } },
-        interpolation: { escapeValue: false },
-      });
-    }
+    await initI18nForTests();
   });
 
   afterEach(async () => {
