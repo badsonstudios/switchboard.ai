@@ -139,7 +139,13 @@ module.exports = {
     perMachine: false,
     // The name E19-02's release workflow and E19-04's downloader both expect.
     artifactName: 'switchboard-Setup-${version}.exe',
-    shortcutName: 'switchboard',
+    // The user-visible brand is "switchboard.ai"; productName stays bare
+    // "switchboard" because it names the exe (switchboard.ai.exe would read as
+    // a file extension), the %APPDATA%\switchboard state folder existing
+    // installs already use, and the artifact above. Shortcut + Add/Remove
+    // entry carry the full brand instead.
+    shortcutName: 'switchboard.ai',
+    uninstallDisplayName: 'switchboard.ai ${version}',
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
     // A dogfooding tool that deletes its own workspace/session state on
