@@ -53,6 +53,17 @@ on the floor, and say so in your PR.
 
 ## 0.3.0 — unreleased
 
+### Fixed
+
+- Code in the **Changes** tab is now syntax-coloured for its language instead
+  of arriving as one undifferentiated wall of text — TypeScript, Python, Rust,
+  Go, Markdown, Dockerfiles and around a hundred other names and extensions,
+  in both light and dark. Files switchboard doesn't recognise stay plain rather
+  than being coloured wrongly. Switching theme with a file open also stops
+  blanking the diff.
+- The installed app carries about 18 MB less: it had been shipping four
+  language-server bundles it could never load.
+
 ### Internal
 
 - Every IPC seam — groups, sessions and the capability broker — now refuses a
