@@ -9,52 +9,21 @@
 // same reasoning that put the stale-bundle guard in `e2e-global-setup.js`
 // rather than in three package.json entries (#329).
 //
-// `npm test` is the seam and not `npm run e2e`, even though e2e leaks the most
-// (22,512 `sb-e2e-proj-` in the census): `npm test` is what every gate, every
-// worker and every commit runs, so it is where a two-second job converges
-// fastest, and `e2e-global-setup.js` stays the single-purpose file it says it
-// is. Nothing stops a later item adding the same one-line call there.
+// `npm test` was the FIRST seam and not the only one: #360 added the same call
+// to `e2e-global-setup.js`, so both runners now sweep. `npm test` is still the
+// one that matters most — it is what every gate, every worker and every commit
+// runs, so it is where a two-second job converges fastest — while e2e is the
+// biggest producer (22,512 `sb-e2e-proj-` in the census) and used to have to
+// wait for the next `npm test` to have its litter taken.
 //
-// WHY IT IS BUDGETED. The backlog on a dogfood machine is six figures and
-// deleting it takes minutes; a test run must not pay that. MEASURED: 2,000
-// two-file directories go in 1.5 s, so `DEFAULT_BUDGET_MS` buys roughly 2,500 a
-// run — invisible next to a suite that runs for minutes, and enough that even a
-// six-figure pile drains over a couple of days of ordinary use. Anyone who
-// wants it gone NOW types `npm run sweep:temp`, which is the same code with no
-// budget. On CI, where the temp dir is fresh, the whole call is one `readdir`
-// of an almost-empty directory.
+// The sweep itself — how long it may spend, which off-switch it honours, and
+// what it does with a throw — is `sweepBeforeTests` in
+// `sweep-temp-orphans.js`, so that this file and the Playwright one cannot
+// answer those three questions differently (#360). The sizing of the budget is
+// documented on `DEFAULT_BUDGET_MS` there.
 'use strict';
 
-const { isOn } = require('./bundle-guard');
-const {
-  DEFAULT_BUDGET_MS,
-  SKIP_ENV,
-  formatSummary,
-  sweepTempOrphans,
-} = require('./sweep-temp-orphans');
-
-/**
- * @param {{env?: Record<string, string|undefined>, write?: (s: string) => void,
- *          budgetMs?: number}} [opts]
- */
-function sweepBeforeTests(opts = {}) {
-  const { env = process.env, write = (s) => process.stderr.write(s + '\n') } = opts;
-  // `isOn`, not `=== '1'` — the repo already has one answer to "is this escape
-  // hatch on" (`bundle-guard.js`, for ALLOW_STALE_BUNDLE) and this is the only
-  // off-switch on a delete loop. A shell that exports SB_SKIP_TEMP_SWEEP=true
-  // and gets swept anyway is the wrong direction to fail in.
-  if (isOn(env[SKIP_ENV])) return;
-  // Belt and braces. `sweepTempOrphans` is written not to throw and is tested
-  // for it, but a throw from `globalSetup` aborts the ENTIRE run before a
-  // single test executes — the one outcome housekeeping is never allowed to
-  // cause. Cheapest possible insurance against a future edit.
-  try {
-    const line = formatSummary(sweepTempOrphans({ budgetMs: opts.budgetMs ?? DEFAULT_BUDGET_MS }));
-    if (line) write(line);
-  } catch {
-    /* fail-open: never let a cleanup stop a test run */
-  }
-}
+const { sweepBeforeTests } = require('./sweep-temp-orphans');
 
 /**
  * @type {() => void} vitest's globalSetup entry point.
@@ -69,4 +38,3 @@ function sweepBeforeTests(opts = {}) {
 module.exports = function globalSetup() {
   sweepBeforeTests();
 };
-module.exports.sweepBeforeTests = sweepBeforeTests;

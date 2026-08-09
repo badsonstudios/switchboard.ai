@@ -8,6 +8,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { SIDECAR_EXT, sidecarLine, hashFile, writeSidecar } from './sha256-sidecar.js';
+import { tempDir } from '../src/test-temp-dirs';
 
 const root = process.cwd();
 const SCRIPT = path.join(root, 'scripts', 'sha256-sidecar.js');
@@ -16,7 +17,10 @@ const SCRIPT = path.join(root, 'scripts', 'sha256-sidecar.js');
 const ABC = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad';
 
 function tempFile(name, contents) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-sha-'));
+  // Registered, so `test-setup.ts`'s `afterAll` net takes it (#213, #360).
+  // Before that this file had no teardown at all: one leaked directory per
+  // call, for ever.
+  const dir = tempDir('sb-sha-');
   const file = path.join(dir, name);
   fs.writeFileSync(file, contents);
   return file;

@@ -8,8 +8,8 @@
 // assert, request by request.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
+import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import {
   DownloadError,
   downloadAsset,
@@ -26,11 +26,13 @@ let dir: string;
 let dest: string;
 
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-dl-'));
+  dir = tempDir('sb-dl-');
   dest = path.join(dir, 'switchboard-Setup-9.9.9.exe');
 });
+// One directory per test, deleted at the end of that test (#213, #360). Every
+// download here has resolved or rejected by then, so no write stream is open.
 afterEach(() => {
-  fs.rmSync(dir, { recursive: true, force: true });
+  cleanupTempDirs();
 });
 
 /** A Response carrying `body` as a real web stream, the way fetch does. */

@@ -122,17 +122,26 @@ numbers (latency, CPU, memory) where the item asks for them.
      ever move that line, move it in both. A vitest test named `*.spec.ts`, or a
      spec named `*.test.ts`, is silently ignored by the runner you meant.
 
-**Temp directories: make them through the registry, and know that `npm test`
-now DELETES (#213, #354).** Tests and e2e fixtures scratch in the OS temp dir,
-and a `rmSync` at the end of a test body is skipped by the assertion that
+**Temp directories: make them through the registry, and know that the test run
+now DELETES (#213, #354, #360).** Tests and e2e fixtures scratch in the OS temp
+dir, and a `rmSync` at the end of a test body is skipped by the assertion that
 throws above it — which is exactly when the leak happens. So register what you
 make: `tempDir('sb-<slug>-')` from `src/test-temp-dirs.ts` (unit) or
 `registerTempDir(...)` from `e2e/fixtures/app.ts` (e2e), and teardown takes it
-even when the test failed. That stopped the flow; it left ~115,000 `sb-*`
-directories on the machines that ran the older builds.
+even when the test failed. **An UNREGISTERED `fs.mkdtempSync` plus your own
+teardown is not the same thing** — it works right up until the hook that cleans
+it up is skipped, and then it leaks silently — so there is no reason to write
+one; #360 moved the last unit-test files (`src/**` and `scripts/**`) onto the
+registry. In e2e the blessed form is `registerTempDir(fs.mkdtempSync(...))`:
+the call stays, the result goes on the registry. That stopped the flow; it left
+~115,000 `sb-*` directories on the machines that ran the older builds.
 
-- **`npm test` sweeps before it runs a test.** `vitest.config.ts` →
-  `globalSetup` → `scripts/vitest-global-setup.js`, time-budgeted to ~2 s
+- **`npm test` and `npm run e2e` both sweep before they run a test** (#354,
+  #360). `vitest.config.ts` → `globalSetup` → `scripts/vitest-global-setup.js`,
+  and `playwright.config.ts` → `globalSetup` → `scripts/e2e-global-setup.js`,
+  which runs the stale-bundle guard first and sweeps only if the run is going
+  ahead. Both call the same `sweepBeforeTests` in
+  `scripts/sweep-temp-orphans.js`: time-budgeted to ~2 s
   (~2,500 directories), silent when there is nothing to do. It only ever
   removes direct children of the temp dir whose names have `mkdtemp`'s shape
   (`sb-<slug>-XXXXXX`), that are real directories, and that are **more than
@@ -140,7 +149,8 @@ directories on the machines that ran the older builds.
   live suite, an e2e run or a `check:*` probe made is ever in range.
 - **`npm run sweep:temp`** is the same code with no budget, for a backlog.
   `npm run sweep:temp -- --dry-run` counts without deleting (note the `--`).
-- **`SB_SKIP_TEMP_SWEEP=1 npm test`** turns it off (house `isOn` semantics —
+- **`SB_SKIP_TEMP_SWEEP=1 npm test`** turns it off, for `npm run e2e` too
+  (house `isOn` semantics —
   `true`/`yes`/anything non-empty that is not `0`/`false`/`no`/`off`). Use it
   when you deliberately need old `sb-*` directories to survive a run.
 - **A new prefix needs nothing** — the sweeper matches by shape, not by a list.

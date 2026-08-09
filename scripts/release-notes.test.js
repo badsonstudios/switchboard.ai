@@ -22,6 +22,7 @@ import {
   decideAction,
   installerName,
 } from './release-notes.js';
+import { tempDir } from '../src/test-temp-dirs';
 
 const root = process.cwd();
 const SCRIPT = path.join(root, 'scripts', 'release-notes.js');
@@ -303,7 +304,10 @@ describe('idempotency + artifact naming', () => {
 
 /** a throwaway repo root: package.json + CHANGELOG.md + the packaging config */
 function fakeRepo(version, changelog) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-release-'));
+  // Registered, so `test-setup.ts`'s `afterAll` net takes it (#213, #360).
+  // Before that this file had no teardown at all: one leaked directory per
+  // call, for ever.
+  const dir = tempDir('sb-release-');
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ version }));
   fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), changelog);
   fs.copyFileSync(path.join(root, 'electron-builder.js'), path.join(dir, 'electron-builder.js'));

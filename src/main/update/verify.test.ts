@@ -9,9 +9,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import crypto from 'crypto';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { hashFile, parseSidecar, verifyChecksum } from './verify';
+import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 
 /**
  * The line `scripts/sha256-sidecar.js` writes, reproduced rather than imported
@@ -28,11 +28,13 @@ const CONTENT = 'pretend this is 120 MB of NSIS installer';
 const DIGEST = crypto.createHash('sha256').update(CONTENT).digest('hex');
 
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-verify-'));
+  dir = tempDir('sb-verify-');
   file = path.join(dir, 'switchboard-Setup-9.9.9.exe');
   fs.writeFileSync(file, CONTENT);
 });
-afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+// One directory per test, deleted at the end of that test (#213, #360). Nothing
+// here holds a handle: `hashFile` streams and closes before the assertion.
+afterEach(() => cleanupTempDirs());
 
 describe('parsing the sidecar', () => {
   it('reads the exact format the release workflow writes', () => {
