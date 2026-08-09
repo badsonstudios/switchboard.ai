@@ -256,7 +256,13 @@ test.describe('urgency strip (E9-04)', () => {
     const popout = app.windows().find((x) => x !== w)!;
     await popout.evaluate(() => window.close());
     await expect.poll(() => app.windows().length, { timeout: 15_000 }).toBe(1);
-    await expect(w.getByText('Session suspended')).toBeVisible({ timeout: 15_000 });
+    // scoped to the card's PANEL: the card also carries a `role="status"` live
+    // region holding the same words for a screen reader (#358), and an sr-only
+    // element is 1×1 and clipped rather than hidden, so Playwright counts it as
+    // visible too. `card-overlay` is the one that is actually on screen.
+    await expect(w.getByTestId('card-overlay').getByText('Session suspended')).toBeVisible({
+      timeout: 15_000,
+    });
 
     // still one lamp, flagged suspended rather than silently reading "idle"
     await expect(lamps(w)).toHaveCount(1);

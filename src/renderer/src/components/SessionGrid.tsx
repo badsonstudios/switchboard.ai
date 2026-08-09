@@ -143,6 +143,44 @@ export function endedCopy(ended: CardEnded): {
   };
 }
 
+/**
+ * What the card's live region should be SAYING right now — the keys, not the
+ * words (#358).
+ *
+ * Both card overlays were silent to a screen reader: they arrive as plain divs
+ * with no live region, so a user who is not sitting on the card learns nothing
+ * when a session dies, refuses to start, or suspends. #355 made that worse by
+ * making the two ended messages worth distinguishing.
+ *
+ * This exists as an exported pure function for the same reason `endedCopy` does:
+ * the overlay needs a live dockview and is unreachable in unit-land, and the
+ * part worth pinning is the DECISION — which overlay is on screen, and therefore
+ * what the region must not contradict. It mirrors the render's branch order
+ * exactly (live→ended over the panel, else suspended, else ended), because a
+ * region that announces the suspended copy while the ended panel is drawn is a
+ * worse bug than saying nothing.
+ *
+ * `null` for the "Resuming…" state deliberately: that is the card's ordinary
+ * boot, not an event, and it is already gone by the time a polite region would
+ * get to it.
+ */
+export function overlaySaid(card: {
+  live: boolean;
+  suspended: boolean;
+  ended: CardEnded | null;
+}): { heading: string; detail: string; detailVars?: Record<string, unknown> } | null {
+  // an ended session's panel wins while the card is live (it is drawn OVER the
+  // views); once it is not, `suspended` is the branch that renders
+  if (card.ended && (card.live || !card.suspended)) {
+    const { heading, detail, detailVars } = endedCopy(card.ended);
+    return { heading, detail, detailVars };
+  }
+  if (!card.live && card.suspended) {
+    return { heading: 'grid.suspended', detail: 'grid.suspendedHint' };
+  }
+  return null;
+}
+
 export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element {
   const { t } = useTranslation();
   const cardId = props.params?.cardId;
@@ -722,7 +760,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // never-started line is a sentence, not a code.
   const overlayCopy = ended ? endedCopy(ended) : null;
   const endedOverlay = overlayCopy ? (
-    <div>
+    // `card-overlay` (#358): the SEEN panel, as opposed to the card's live
+    // region, which now holds the same words for the screen reader. A bare
+    // `getByText('Session suspended')` matches both — an sr-only element is
+    // 1×1 and clipped, which Playwright still counts as visible — so a spec
+    // that means the panel has to say so. Same reason `view-tabs` carries one.
+    <div data-testid="card-overlay">
       <div style={{ color: 'var(--text)', fontSize: 13, marginBlockEnd: 4 }}>{t(overlayCopy.heading)}</div>
       <div
         style={{ color: 'var(--muted)', fontSize: 11, marginBlockEnd: 12, maxInlineSize: 260 }}
@@ -740,7 +783,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     </div>
   ) : null;
   const suspendedOverlay = suspended ? (
-    <div>
+    <div data-testid="card-overlay">
       <div style={{ color: 'var(--text)', fontSize: 13, marginBlockEnd: 4 }}>
         {t('grid.suspended')}
       </div>
@@ -757,6 +800,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       </div>
     </div>
   ) : null;
+  // ...and what the card's live region says about whichever of them is up
+  // (#358). Computed from the same three values the branch below switches on,
+  // through the one function that knows their order.
+  const said = overlaySaid({ live: !!live, suspended, ended });
   const changed = git?.files.length ?? 0;
   // Contributed view tabs (§5.23). The strip and the panel bodies below both
   // render from this list, so a new tab is a contribution plus a bootstrap
@@ -848,6 +895,66 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         display: 'flex',
       }}
     >
+      {/* THE CARD'S ONE LIVE REGION (#358). Both overlays used to appear in
+          silence — the panel is the whole message, and a user not sitting on
+          this card was told nothing when a session died, refused to start, or
+          suspended.
+
+          `role="status"`, which is polite by definition and is how the rest of
+          this app spells a live region (PreflightBanner, WorkspaceReadOnlyBanner,
+          the rail's move notice). `aria-live="polite"` alongside it is strictly
+          redundant and written anyway, belt-and-braces, exactly as EventsPanel's
+          two notices do it — the attribute is the part a reader recognises, and
+          the one thing this element must never quietly stop being is live.
+
+          Polite and not `alert`/assertive: a card stopping is worth knowing and
+          is not worth cutting across the sentence someone is in the middle of.
+
+          The region is rendered HERE, unconditionally, rather than on the
+          overlay's own container. That is the whole trick and it is not
+          cosmetic: a live region INSERTED already holding its text is announced
+          by almost nothing, and every overlay in this file mounts with its
+          words in the same commit (a whole branch of the tree swaps). Putting
+          the role on the overlay would look like a fix and announce nothing.
+          The card root is the one element that outlives every branch, so a
+          region parked here exists — empty — from the card's first frame, and
+          the overlay's arrival is a text change INSIDE it, which is the
+          mutation screen readers watch. `e2e/session.spec.ts` asserts that
+          emptiness on a live card, which is the only assertion in the suite
+          that fails if someone "tidies" this into `{said && <div …>}`.
+
+          Deliberately NO one-commit `spoken` defer, unlike PreflightBanner. That
+          trick exists to make a region announce state that was already true at
+          mount; here that would be wrong. `suspended` comes off the store, so a
+          restored card mounts already suspended — and eight restored cards
+          announcing themselves at boot is noise, not news. Falling out of the
+          plain read: a state that CHANGES while the card is up is announced, one
+          that was already true when it mounted is not. `ended` starts null in
+          every case, so it is always the first kind.
+
+          It names the session first. With several cards up, "Session ended" on
+          its own does not say whose — the same reason #196 named each card's
+          conversation landmark. Three block children rather than one joined
+          string: no ICU fragment-concatenation, and the reader gets a pause
+          between the name, the heading and the sentence. Known and accepted:
+          `role="status"` is atomic, so RENAMING a card while its panel is up
+          re-reads the whole thing. Rare, harmless, and cheaper than memoising
+          around it.
+
+          The words are duplicated in the visible panel below, and that is
+          accepted rather than papered over: `aria-hidden` on the panel's text
+          would leave the overlay with NOTHING in the accessibility tree if this
+          region ever regressed — strictly worse than today's bug. The buttons
+          are not repeated here; they are focusable and announce themselves. */}
+      <div role="status" aria-live="polite" data-testid="card-announcer" style={srOnly}>
+        {said ? (
+          <>
+            <div>{headerTitle}</div>
+            <div>{t(said.heading)}</div>
+            <div>{t(said.detail, said.detailVars)}</div>
+          </>
+        ) : null}
+      </div>
       {live ? (
         <div style={{ flex: 1, minInlineSize: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
           {/* card header (.chead) — accent border, identity, status, window controls */}
@@ -1389,6 +1496,21 @@ function vtabStyle(active: boolean, disabled: boolean, accent?: string): React.C
     opacity: disabled ? 0.5 : 1,
   };
 }
+
+/** A live region that must be INVISIBLE rather than absent (#358) — the card's
+ *  overlay announcer. Same declarations as the rail's (SessionsRail's `srOnly`,
+ *  #253), and kept local for the same reason that one is: both files hold their
+ *  look inline, and two copies of six lines is not yet a module. */
+const srOnly: React.CSSProperties = {
+  position: 'absolute',
+  inlineSize: 1,
+  blockSize: 1,
+  margin: -1,
+  padding: 0,
+  overflow: 'hidden',
+  clipPath: 'inset(50%)',
+  whiteSpace: 'nowrap',
+};
 
 const overlayBackdrop: React.CSSProperties = {
   position: 'absolute',
