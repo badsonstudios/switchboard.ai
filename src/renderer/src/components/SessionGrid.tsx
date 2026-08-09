@@ -1500,7 +1500,8 @@ function vtabStyle(active: boolean, disabled: boolean, accent?: string): React.C
 /** A live region that must be INVISIBLE rather than absent (#358) — the card's
  *  overlay announcer. Same declarations as the rail's (SessionsRail's `srOnly`,
  *  #253), and kept local for the same reason that one is: both files hold their
- *  look inline, and two copies of six lines is not yet a module. */
+ *  look inline, and two copies of six lines is not yet a module. Copy 2 of 2 —
+ *  a THIRD copy is the signal to extract a shared module instead (#367). */
 const srOnly: React.CSSProperties = {
   position: 'absolute',
   inlineSize: 1,
