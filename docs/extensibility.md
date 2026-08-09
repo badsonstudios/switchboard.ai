@@ -218,6 +218,79 @@ the point.** The check exists, so Phase 4 wires a plugin manifest into it
 instead of inventing it at the moment it first matters. Narrowing our own
 renderer is a separate argument with real behavioural consequences.
 
+### How the broker refuses — the contract (#346)
+
+**A refused `invoke` RESOLVES; it never rejects.** The value is an `IpcRefusal`
+from [`src/shared/ipc/refusal.ts`](../src/shared/ipc/refusal.ts):
+
+```ts
+interface IpcRefusal {
+  readonly __ipcRefused: true;                 // the key is IPC_REFUSAL_BRAND in code
+  readonly channel: string;                    // what was refused
+  readonly reason: 'capability-not-held'       // you have a grant, not this one
+                 | 'not-granted'               // you have no grant at all
+                 | 'unknown-channel';          // RESERVED: a wiring bug, and
+}                                              // unreachable through handle()
+
+isIpcRefusal(value)   // the only supported way to detect one
+```
+
+Three rules follow from it, and they are the whole contract:
+
+1. **Success passes through untouched.** The broker does not envelope replies.
+   A channel that answers `null`, `false`, `{ok:false,reason}` or a record
+   answers exactly that, exactly as before — which is why this contract changed
+   no shipped behaviour when it landed.
+2. **A handler's own throw still rejects.** The broker refuses *on the caller's
+   behalf* and knows nothing about what a handler failing halfway means, so it
+   does not catch. Whether a *family* throws is that family's contract — see
+   `sessions/ipc.ts` and `workspace/group-ipc.ts`, both of which answer instead
+   (#326, #347). A caller that is not first-party should still expect a
+   rejection from a handler.
+3. **One-way channels drop a refusal silently.** `ipcMain.on` has no reply, so
+   a refused `send` is logged and dropped; and outbound `broker.send` to a
+   window that may not hear a channel is dropped deliberately, because telling
+   it "refused" on every push would leak the traffic pattern the gate exists to
+   withhold. If a caller needs to know whether a one-way call landed, that
+   wants an `invoke` channel.
+
+**What a Phase-4 plugin host must do:** check `isIpcRefusal` once, in the bridge
+it generates for the plugin, and translate it into that API's error model. It is
+one check in one place — which is precisely why the refusal is a *branded value*
+and not a bare `null`. **Nothing type-level or lint-level forces that check**;
+pass-through is what buys the zero-churn contract, and this is what it costs, so
+put "the bridge checks `isIpcRefusal`" on the plugin-bridge work item rather than
+trusting this paragraph.
+
+- **Not bare `null`** (what `groups:*` and `sessions:*` answer). A handler knows
+  what `null` means for its own channel; the broker is generic and does not.
+  `groups:update`, `pty:attach` and `sessions:create` all answer `null` for
+  ordinary reasons, so a null refusal would be indistinguishable from success on
+  the very channels most likely to be refused. A generic bridge can detect a
+  brand; it cannot detect a null.
+- **Not `{ok:false, reason}`.** That shape is already taken —
+  `sessions:setTransport` legitimately answers `{ok:false, reason:'unknown-card'}`
+  from its own handler. Same collision, more ceremony.
+- **Not an envelope on every reply.** The only shape a caller cannot ignore, and
+  it costs a rewrite of every preload signature and every call site to guard a
+  branch no shipped caller can reach.
+- **Not a typed error.** A throw is the thing being removed, and an `Error` does
+  not survive structured clone as itself anyway: the old `refused: <channel>`
+  arrived in the renderer as a string with `Error invoking remote method` glued
+  to the front, which is unparseable by design.
+
+The `reason` is coarse and does **not** name the missing capability, keeping the
+broker's original intent ("an untrusted caller does not need us enumerating the
+permission it should ask for"). It is not a secret — the channel → capability
+map is shared code, so a host that wants the name calls `capabilityFor(channel)`
+itself. Adding a field later is not a breaking change; removing one is.
+
+**Preload types are not widened by `| IpcRefusal`**, and that is deliberate: our
+renderer holds `allCapabilities()`, so it cannot be refused and its declared
+return types are exact. The day a bridge is handed to a caller with a partial
+grant, that bridge's types carry the refusal — the check belongs where the
+refusal can arrive, not everywhere it cannot.
+
 ### The vocabulary
 
 | Capability | Covers |
@@ -285,7 +358,8 @@ is one — and those sit outside the vocabulary entirely.
 - **The broker fails CLOSED**, uniquely in this codebase. Everywhere else our
   breakage must not block a session; here an unknown channel or an ungranted
   caller is refused, because both mean a wiring bug rather than a degraded
-  dependency.
+  dependency. Failing closed is about the *decision*, not the *delivery*: the
+  call is refused, and the refusal arrives as a value (see the contract above).
 
 ## Standalone entry points
 

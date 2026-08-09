@@ -33,6 +33,15 @@ export interface SessionRecordDto {
 }
 
 // The bridge grows with each subsystem. Every surface is promise/event based.
+//
+// WHAT THE RETURN TYPES BELOW PROMISE (#346). They describe what the HANDLER
+// answers, and they are exact for THIS bridge: the broker answers an
+// `IpcRefusal` instead when a caller lacks the channel's capability, and this
+// renderer is granted every capability, so it cannot be refused. They are
+// deliberately not widened by `| IpcRefusal` — see `shared/ipc/refusal.ts` for
+// the argument. If this preload ever stops being first-party, or first-party
+// stops holding `allCapabilities()`, these types become a lie and an
+// `isIpcRefusal` check belongs here.
 const api = {
   appVersion: versionArg ? versionArg.split('=')[1] : 'unknown',
   platform: process.platform,

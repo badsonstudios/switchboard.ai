@@ -33,11 +33,13 @@
 // scope. Refusing is still refusing; it just no longer detonates in the caller.
 // `group-ipc.test.ts` holds both halves — the refusal AND the log line.
 //
-// Residual, stated so nobody reads this as "groups can no longer reject": the
-// broker (`ipc/broker.ts`) throws `refused: <channel>` for ANY channel whose
-// caller lacks the capability, so no per-family shape can make a renderer
-// rejection impossible in principle. Unreachable today (our one renderer holds
-// every capability); a real question when Phase-4 plugins arrive.
+// The residual this comment used to name is CLOSED (#346): the broker
+// (`ipc/broker.ts`) threw `refused: <channel>` for any channel whose caller
+// lacked the capability, so no per-family shape could make a rejection
+// impossible in principle. It now answers an `IpcRefusal` instead, so the whole
+// path from bridge to store refuses with a value. Unreachable either way today
+// — our one renderer holds every capability — but the Phase-4 question is
+// settled rather than pending: `shared/ipc/refusal.ts`.
 import { randomUUID } from 'crypto';
 import { PersistedGroup, WorkspaceStore } from './store';
 import { IpcBroker } from '../ipc/broker';
