@@ -14,10 +14,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
-import i18next from 'i18next';
-import ICU from 'i18next-icu';
-import { initReactI18next } from 'react-i18next';
-import en from '../i18n/locales/en.json';
+import { initI18nForTests } from '../i18n/test-i18n';
 import { IdentityTab, type CardParams } from './SessionGrid';
 import { sessionStore } from '../store/session-store';
 import type { IDockviewPanelProps } from 'dockview-react';
@@ -91,18 +88,7 @@ describe('the session tab follows a rename (issue 264)', () => {
     root = createRoot(host);
     close.mockReset();
     sessionStore.setSessions([]);
-    if (!i18next.isInitialized) {
-      // ICU, like the app (i18n/index.ts) — the close confirmation's `{title}`
-      // is an ICU placeholder and i18next's own syntax would leave it verbatim
-      await i18next
-        .use(ICU)
-        .use(initReactI18next)
-        .init({
-          lng: 'en',
-          resources: { en: { translation: en } },
-          interpolation: { escapeValue: false },
-        });
-    }
+    await initI18nForTests();
   });
 
   afterEach(async () => {
@@ -194,16 +180,7 @@ describe('the session tab paints the card identity (issue 312)', () => {
     root = createRoot(host);
     close.mockReset();
     sessionStore.setSessions([]);
-    if (!i18next.isInitialized) {
-      await i18next
-        .use(ICU)
-        .use(initReactI18next)
-        .init({
-          lng: 'en',
-          resources: { en: { translation: en } },
-          interpolation: { escapeValue: false },
-        });
-    }
+    await initI18nForTests();
   });
 
   afterEach(async () => {

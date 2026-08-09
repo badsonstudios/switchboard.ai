@@ -141,9 +141,20 @@ const toPosix = (p) => String(p).replace(/\\/g, '/').replace(/^\.\//, '');
 function isBundledSource(relPath) {
   const p = toPosix(relPath);
   if (/\.test\.tsx?$/.test(p)) return false; // vitest's, not the bundler's
-  if (p === 'src/test-setup.ts') return false; // vitest setup only
-  return true;
+  return !TEST_ONLY.has(p);
 }
+
+/**
+ * Test-only modules that are NOT named `*.test.ts` — helpers the tests import.
+ * They live under `src/` beside what they serve, but no bundler entry can
+ * reach them, so editing one must not demand a rebuild any more than editing
+ * a test does. Adding a helper here is part of adding the helper.
+ */
+const TEST_ONLY = new Set([
+  'src/test-setup.ts', // vitest `setupFiles`
+  'src/test-temp-dirs.ts', // the temp-dir registry every test allocates through
+  'src/renderer/src/i18n/test-i18n.ts', // the one i18next init a test may use (#380)
+]);
 
 /**
  * Every bundled input with its mtime, newest first.

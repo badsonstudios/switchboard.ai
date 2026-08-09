@@ -16,10 +16,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
-import i18next from 'i18next';
-import { initReactI18next } from 'react-i18next';
-import ICU from 'i18next-icu';
-import en from '../i18n/locales/en.json';
+import { initI18nForTests } from '../i18n/test-i18n';
 import { UrgencyStrip } from './UrgencyStrip';
 import { RailSession } from '../model/types';
 import { presentStatus, STATUS_TOKENS } from '../lib/rail-view';
@@ -68,16 +65,7 @@ async function mountLamp(status: string): Promise<HTMLElement> {
 }
 
 beforeAll(async () => {
-  if (!i18next.isInitialized) {
-    await i18next
-      .use(ICU)
-      .use(initReactI18next)
-      .init({
-        lng: 'en',
-        resources: { en: { translation: en } },
-        interpolation: { escapeValue: false },
-      });
-  }
+  await initI18nForTests();
 });
 
 beforeEach(() => {

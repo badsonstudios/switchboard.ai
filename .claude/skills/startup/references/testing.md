@@ -122,6 +122,22 @@ numbers (latency, CPU, memory) where the item asks for them.
      ever move that line, move it in both. A vitest test named `*.spec.ts`, or a
      spec named `*.test.ts`, is silently ignored by the runner you meant.
 
+**i18n in a component test: `initI18nForTests()`, and nothing else (#380).**
+A test that renders anything translated calls `await initI18nForTests()` from
+`src/renderer/src/i18n/test-i18n.ts` — one line, in `beforeAll`/`beforeEach`.
+It calls the app's OWN `configureI18n`, so the harness cannot be configured
+almost-like the app. **Hand-rolling `i18next.use(...).init(...)` in a test is
+now a test FAILURE** (`i18n/test-i18n.test.ts` scans `src/` and `e2e/` for it,
+three ways). Why it is worth a ban: the app installs `i18next-icu`, and an
+`i18nFormat` plugin REPLACES i18next's own `{{…}}` interpolator rather than
+adding to it. One harness had quietly dropped ICU, where mustache still works
+— so #207's `{{file}}` passed its component test and would have shown a user
+the literal braces. `i18n/locales.test.ts` guards the other half (no `{{` may
+appear in `en.json`; write ICU's `{file}`). Renders-but-never-initialises is
+the same defect wearing a hat: every label comes back as its own key, and an
+assertion written against what it saw then pins the key
+(`feed-blocks.a11y.test.tsx` had one).
+
 **Temp directories: make them through the registry, and know that the test run
 now DELETES (#213, #354, #360).** Tests and e2e fixtures scratch in the OS temp
 dir, and a `rmSync` at the end of a test body is skipped by the assertion that
