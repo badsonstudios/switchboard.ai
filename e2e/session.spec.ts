@@ -52,6 +52,26 @@ async function sessionsRefusals(
   }, missingFolder);
 }
 
+/**
+ * The live session id bound to the ONLY card in the grid, or undefined.
+ *
+ * A free function for the same reason `sessionsRefusals` is one: the specs
+ * destructure the Playwright page as `window`, which shadows the renderer's own
+ * `window` inside an `evaluate` body.
+ *
+ * Keyed on "the only card" rather than on a title: its caller seeds exactly one
+ * session, and a card's title is not the folder name by contract — that is the
+ * TAB's business, and a spec asserting a lifecycle fact should not fail the day
+ * the two diverge. A caller with several cards wants a different helper, not a
+ * title lookup bolted onto this one.
+ */
+async function soleCardLiveId(page: Page): Promise<string | undefined> {
+  const cards = (await page.evaluate(() => window.switchboard.sessions.cards())) as Array<{
+    liveId?: string;
+  }>;
+  return cards[0]?.liveId;
+}
+
 test.describe('a session card', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
@@ -160,6 +180,111 @@ test.describe('a session card', () => {
     await expect(announcer).toContainText("Session didn't start");
     await expect(announcer).toContainText(/renamed, deleted, or be on a drive/);
     await expect(announcer).toContainText(path.basename(gone));
+  });
+
+  test('says a session ENDED, with the code the process really exited with (#366)', async () => {
+    // The other half of #355's pair, and the half nothing covered end to end: a
+    // session that genuinely RAN and then DIED. Every e2e assertion about the
+    // "Session ended" panel arrived through the never-started path above, so
+    // the real died flow — pty exit -> `sessions:exited` -> the overlay ->
+    // #358's announcement — had no test at all, and the ONE number that tells
+    // the two panels apart (a code off a real process, not the invented `-1`
+    // #355 removed) was never read from anything that exited.
+    //
+    // THE KILL MECHANISM, and why it needs no test hook: under the fake
+    // provider the session IS the OS shell in a real PTY (`main/providers/
+    // fake.ts` — `cmd.exe` on Windows, `sh` elsewhere) and the Terminal tab is
+    // that PTY's real surface. So this spec does exactly what the hand-test
+    // step does — type `exit` at the prompt — and every step after the
+    // keystroke is the product's: node-pty reports the status, `SessionManager`
+    // calls it crashed because nobody asked for the kill, the renderer paints
+    // what it was told. Nothing test-only is reachable here, in this launch or
+    // any other.
+    //
+    // `exit 3` rather than a bare `exit` so the assertion names a number THIS
+    // SPEC chose: a renderer that invents a code cannot invent 3 by accident,
+    // and a clean 0 exit would take the other copy branch. `exit <n>` is the
+    // same syntax in both shells.
+    const folder = tempProjectFolder();
+    const name = path.basename(folder);
+    a = await launchApp({ seedFolder: folder });
+    const { window } = a;
+
+    await expect(window.getByText(name).first()).toBeVisible({ timeout: 25_000 });
+    // the BEFORE state, and #358's precondition: a healthy card says nothing,
+    // so the words asserted at the end arrive in a region that was already
+    // there and empty — which is the only way a screen reader hears them
+    const announcer = window.getByTestId('card-announcer');
+    await expect(announcer).toBeEmpty();
+
+    await showTerminal(window);
+    await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 15_000 });
+    await window.locator('.xterm-screen').first().click();
+    // Not a proof that the session ran — the surface ECHOES what is typed, so
+    // this matches either way. It is a readiness gate: the keystrokes below
+    // have to reach a PTY through a focused xterm, and this is the cheapest
+    // evidence that they will. What proves the session ran is the exit STATUS
+    // asserted below: only a live shell can be told `exit 3` and answer 3.
+    await window.keyboard.type('echo E2E_ALIVE_366');
+    await window.keyboard.press('Enter');
+    await expect(window.getByText(/E2E_ALIVE_366/).first()).toBeVisible({ timeout: 15_000 });
+
+    // Read the live id only now. The tab is drawn from the card before the
+    // spawn has answered, so this is racy at the top of the test and settled
+    // here — a shell rendering its own output is a session main knows about.
+    const firstLiveId = await soleCardLiveId(window);
+    expect(firstLiveId).toBeTruthy();
+
+    // ...and now it DIES, from the keyboard, the way a user kills one
+    await window.keyboard.type('exit 3');
+    await window.keyboard.press('Enter');
+
+    // scoped to the PANEL, like the never-started test above: the announcer
+    // carries the same words and an sr-only element is 1×1 and clipped, which
+    // Playwright still counts as visible
+    const overlay = window.getByTestId('card-overlay');
+    await expect(overlay.getByText('Session ended')).toBeVisible({ timeout: 25_000 });
+    // THE assertion. 3 is what the shell was told to exit with, so this is red
+    // for a renderer that makes a code up (`-1`), red for one that reports the
+    // clean-exit copy for a nonzero status, and red if `crashed` stops being
+    // derived from the code.
+    await expect(overlay.getByText('Exited unexpectedly (code 3)')).toBeVisible();
+    await expect(overlay.getByRole('button', { name: 'Restart' })).toBeVisible();
+    await expect(overlay.getByRole('button', { name: 'Close' })).toBeVisible();
+    // ...and never the other panel's words, nor the code that used to be
+    // invented. Deliberately UNSCOPED (#358's rule): the announcement must not
+    // say the wrong thing either.
+    await expect(window.getByText("Session didn't start")).toHaveCount(0);
+    await expect(window.getByText(/code -1/)).toHaveCount(0);
+
+    // #358's live region, on the path it was written for and could not reach.
+    // It names the session first, so with several cards up the user hears whose
+    // session died. Same region asserted EMPTY at the top of this test — the
+    // pair is the property, not either half.
+    await expect(announcer).toContainText(name);
+    await expect(announcer).toContainText('Session ended');
+    await expect(announcer).toContainText('Exited unexpectedly (code 3)');
+
+    // Restart is the panel's whole point and this is the only spec that can
+    // press it on a session that actually died. Main does NOT reap a
+    // self-exited session — the record and its binding survive precisely so
+    // this button has something to replace — so the externally visible proof
+    // that a NEW session spawned is the card's live id changing.
+    await overlay.getByRole('button', { name: 'Restart' }).click();
+    await expect(overlay).toHaveCount(0, { timeout: 25_000 });
+    await expect
+      .poll(
+        async () => {
+          const id = await soleCardLiveId(window);
+          return Boolean(id) && id !== firstLiveId;
+        },
+        { timeout: 25_000 }
+      )
+      .toBe(true);
+    // and the card is quiet again — the region empties when the panel goes,
+    // rather than leaving a screen reader with a session that is alive and a
+    // last-heard message saying it ended
+    await expect(announcer).toBeEmpty();
   });
 
   test('pops out into a second OS window (E8-01)', async () => {
