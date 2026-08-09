@@ -53,6 +53,12 @@ on the floor, and say so in your PR.
 
 ## 0.3.0 — unreleased
 
+### Internal
+
+- Every IPC seam — groups, sessions and the capability broker — now refuses a
+  call by answering rather than by throwing, so a refusal can be read and
+  logged instead of surfacing as an unhandled error.
+
 ## 0.2.0 — 2026-08-09
 
 ### Added

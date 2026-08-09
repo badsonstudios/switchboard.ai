@@ -31,8 +31,89 @@ structure adopting #228's temp-dir registry, verified by a local
 161+1 skip (from the merged branches' gate runs: 1227+46+5+16 /
 156+4+0+1).
 
-> # ▶▶ START HERE — 🎛 RUN 11 CLOSED 2026-08-09 + FULLY MERGED (~80 min
-> wall; 3 items + #364's merge, ALL ON MAIN)
+> # ▶▶ START HERE — 🎛 RUN 12 CLOSED 2026-08-09 + FULLY MERGED +
+> 🎉 **RELEASE v0.2.0 TAGGED** (~75 min wall, 3 workers)
+>
+> **Final state: all three merged, tag pushed, release workflow's
+> result to be verified (in progress at close-out write).** #353 → PR
+> #373 → **e8bc165, TAGGED v0.2.0** (version 0.2.0 per CHANGELOG's own
+> rule — minor for features; Dan can still object, reversal documented
+> in 353.md) · #369 → PR #372 → f5d59ae (a11y charter now §5.32; bare
+> §5.26 always means version-drift) · #346 → PR #374 → c39a218 (broker
+> refuses with a BRANDED result `{__ipcRefused, channel, reason}` —
+> `{ok:false}` was already taken by sessions:setTransport, the finding
+> that settled the shape; Phase-4's obligation is one isIpcRefusal
+> check). Issues #353 #369 #346 closed, branches deleted, worktrees
+> detached/clean. **CHANGELOG 0.3.0-unreleased section is OPEN and
+> test-enforced — the five-run entry blockage is structurally over;**
+> orchestrator added #346's owed Internal line (worker-drafted wording)
+> post-merge. **#375 filed** (extensibility.md "no capability
+> enforcement" contradicts E15-04). 0.1.2's notes got an ERRATA (they
+> were true when shipped — #349 landed after the tag).
+>
+> **Open queue after run 12: #375 only** (small doc fix) + the standing
+> held list. v0.2.0 release verification + Dan's version-number
+> sign-off are the outstanding items.
+>
+> Orchestrator: Fable (/orchestrate, same session). **Single-writer
+> rule:** this file is written ONLY by the orchestrator session; workers
+> report via `.claude/work_files/orchestrator/<issue#>.md`. A fresh
+> /orchestrate session resumes from THIS block.
+>
+> **Dan's "go" (2026-08-09) = the recommended plan, with the on-record
+> recommendations as the decisions** (each still lands as a PR Dan can
+> reject): **#346** decided as RESULT-SHAPE refusals (the #345/#351
+> precedent) · **#369** decided as DO THE SPLIT (a11y to its own DESIGN
+> section) · **#353** = cut the release. Release choreography: the #353
+> PR merges FIRST on green (Dan-authorized under "go"), the orchestrator
+> tags its merge commit immediately (tag = outward-facing step, covered
+> by the same authorization), THEN #346/#369 merge — they land in the
+> newly-opened unreleased section's era. #346/#369 are HELD from merge
+> until the tag is pushed even if green earlier.
+>
+> **Active workers (all dispatched 2026-08-09, off main @ 08e0441):**
+> - **#353** ✅ DONE (~11 min) → **PR #373 (UF, Dan-authorized under
+>   "go") — merges FIRST on green, then tag v0.2.0.** **VERSION: 0.2.0
+>   (minor)** per CHANGELOG's own rule (three features: rebrand,
+>   never-started state, screen-reader announcements) — flagged: the
+>   file's PRECEDENT contradicts its rule (0.1.1 shipped a feature as a
+>   patch); reversal to 0.1.3 = four edits if Dan objects. The 0.1.2
+>   stale-filename "correction" became an ERRATA block, not a rewrite —
+>   the issue's premise was wrong, 0.1.2 really did write the bare
+>   filename (#349 landed after the tag); released notes are history.
+>   10 entries backfilled (all 11 merges; #367 comments-only omitted,
+>   deliberate, flagged). Blockage now STRUCTURALLY impossible: header
+>   rule vs cut-step-2 reconciled (the placeholder is opened BY the cut,
+>   a SECOND one is what's forbidden), `0.3.0 — unreleased` open, and
+>   release-notes.test.js REQUIRES the placeholder — skip step 2 and CI
+>   is red on the next commit. Gate: lint/typecheck clean · 2679 unit ·
+>   e2e skipped (stated call; no lock). TAG NOTE: resolveRelease
+>   hard-fails on tag↔package.json mismatch — tag must be v0.2.0.
+>   Discoveries: version rule-vs-cadence wants a one-line header
+>   amendment once Dan picks; no release skill exists (the test is the
+>   enforcement). Handoff: 353.md.
+> - **#346** broker refusals become result-shape → sb-wt-2,
+>   `feature/346-broker-refusal-result` — in flight
+> - **#369** ✅ DONE (~8 min) → **PR #372 (INTERNAL) — HELD until the
+>   release tag, then orchestrator merges on green.** New `### 5.32
+>   Accessibility` (verified 5.31 is the current highest — pure append,
+>   nothing renumbered); the 59-line as-built appendix moved verbatim
+>   (empty diff proof); §5.26 keeps a 5-line stub — a bare §5.26 now
+>   always means updates/version-drift. **10 citations swept** incl. two
+>   in tokens.css the inventory missed (lesson: .css comments carry
+>   §-citations); ~35 version-drift cites untouched, classified by BODY.
+>   #368's six-line annotation collapsed to one plain citation. Also a
+>   2-line accuracy parenthetical in the /orchestrate SKILL.md (its
+>   run-11 example stopped reproducing post-split) — reviewed by the
+>   orchestrator, accepted. Gate: lint/typecheck clean · 2679 unit ·
+>   e2e skipped (stated call, docs+comments; lock never taken).
+>   CHANGELOG sixth strike (moot — #353 in flight this run). Handoff:
+>   369.md.
+> Collisions: #369 rewrites the PreflightBanner annotation #368 just
+> added (expected, it's the point); #346 is src/main ipc broker; #353 is
+> CHANGELOG/package.json/release docs — no file overlap between the
+> three. **Merge queue:** #353 first + tag, then #346/#369 (internal,
+> orchestrator merges on green).
 >
 > **Final state: everything merged, nothing awaiting Dan from this run.**
 > #364 (#358 aria-live, run-10 carryover) → cbc6cb3 · #367 → PR #368 →
