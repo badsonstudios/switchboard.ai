@@ -63,6 +63,13 @@ on the floor, and say so in your PR.
   it stays there. Sessions you had already switched by hand keep exactly what
   you chose; ones you never touched move to Direct.
 
+### Fixed
+
+- When switchboard can't write its workspace file — a full drive, a permission,
+  a backup or anti-virus tool holding the file — a banner now says so and names
+  the file, instead of the failure going only to the log. It retries on its own
+  and takes the banner back down the moment saving works again.
+
 ### Internal
 
 - Every IPC seam — groups, sessions and the capability broker — now refuses a

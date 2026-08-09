@@ -29,7 +29,7 @@ import { UpdateDialog } from './components/UpdateDialog';
 import type { UpdateInstallStatus, UpdateStatus } from '../../shared/update';
 import { UrgencyStrip } from './components/UrgencyStrip';
 import { CollapsedStrip } from './components/CollapsedStrip';
-import { WorkspaceReadOnlyBanner } from './components/WorkspaceReadOnlyBanner';
+import { WorkspaceNoticeBanner } from './components/WorkspaceNoticeBanner';
 import { PreflightBanner } from './components/PreflightBanner';
 import { collapsedRows, revealTargets } from './lib/ladder';
 import { GuardedRefresh, latestWins } from './lib/latest-wins';
@@ -1036,9 +1036,10 @@ export function App(): React.JSX.Element {
         focusCard={focusCard}
         platform={platform}
       />
-      {/* shows nothing unless the workspace file is from a newer build and so
-          cannot be saved this run (#168) — it reads that itself */}
-      <WorkspaceReadOnlyBanner />
+      {/* shows nothing unless the workspace cannot be saved — either the file
+          is from a newer build (#168) or the writes themselves keep failing
+          (#207). It reads and follows both itself */}
+      <WorkspaceNoticeBanner />
       {/* rendered unconditionally, and gated INSIDE: its live region has to
           exist before the preflight answer lands or the warning is announced to
           nobody (#222). Same reason as its sibling above. */}

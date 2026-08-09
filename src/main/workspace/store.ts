@@ -11,7 +11,9 @@
 // file is the only evidence left, so the first save is held back and tries
 // again rather than overwriting it: #352) but never a SILENT one: every repair
 // load makes, up to and including throwing the whole file away, writes a warn
-// naming what it cost (#344). Atomic save (tmp + rename),
+// naming what it cost (#344). Atomic save (tmp + rename), which RETRIES on
+// failure and — once it has failed enough times in a row to mean something —
+// says so on screen rather than only in the log (#207),
 // debounced save-soon for churny callers, and a version dispatch on the way in
 // (§5.26) — a file from a FUTURE version is shown but never written back.
 import fs from 'fs';
@@ -21,6 +23,7 @@ import { LogFields, Logger } from '../log/logger';
 import { SessionIdentity } from '../sessions/session-manager';
 import { WindowState, mergeState, isOnAnyDisplay } from '../window-state';
 import { UpdatePrefs } from '../../shared/update';
+import { WorkspaceSaveState } from '../../shared/workspace';
 
 export interface PersistedSession {
   id: string;
@@ -192,10 +195,24 @@ export class WorkspaceStore {
    * — and null again the moment the copy lands or is given up on.
    */
   private unsavedPostMortem: PendingPostMortem | null = null;
+  /** consecutive `save()` attempts that threw; zero the moment one works */
+  private saveFailures = 0;
+  /** the streak has gone on long enough to be worth a banner (#207) */
+  private saveFailing = false;
+  /** how long the next retry waits — doubles per failure, capped */
+  private saveRetryMs = 0;
 
+  /**
+   * @param onSaveState called whenever the answer to "can this workspace still
+   * be saved?" CHANGES (#207) — main forwards it to the renderer, which puts a
+   * notice on screen. Never called for a one-off failure, and never called at
+   * all on a run where saving works. Optional: the store is fully functional
+   * without a listener, and a listener that throws is swallowed (P6).
+   */
   constructor(
     private readonly file: string,
-    private readonly log?: Logger
+    private readonly log?: Logger,
+    private readonly onSaveState?: (state: WorkspaceSaveState) => void
   ) {}
 
   load(): WorkspaceState {
@@ -203,6 +220,16 @@ export class WorkspaceStore {
     // Both of these describe the file THIS load found; a re-load starts from
     // neither of them.
     this.unsavedPostMortem = null;
+    // …and so does the save health: whatever the last file's writes were doing
+    // says nothing about this one's. The timer goes with it — a retry armed
+    // against the file we are replacing would fire against the new one, which
+    // is harmless today (one `load()` per process) and is exactly the sort of
+    // thing that stops being harmless quietly.
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    this.clearSaveFailures();
     // Everything this load has to say, COLLECTED rather than logged where it is
     // found (#344) and emitted at the bottom. A warn raised inside the `try`
     // below would, if the logger ever threw, land in the corrupt-file `catch` —
@@ -356,8 +383,17 @@ export class WorkspaceStore {
    * (P6) — a logger that throws must not cost the caller its workspace.
    */
   private warn(msg: string, fields?: LogFields): void {
+    this.say('warn', msg, fields);
+  }
+
+  /** `warn`'s counterpart for good news — saving working again is not a fault. */
+  private info(msg: string, fields?: LogFields): void {
+    this.say('info', msg, fields);
+  }
+
+  private say(level: 'warn' | 'info', msg: string, fields?: LogFields): void {
     try {
-      this.log?.warn(msg, { file: this.file, ...fields });
+      this.log?.[level](msg, { file: this.file, ...fields });
     } catch {
       // nothing left to try: the reporting channel is the thing that broke
     }
@@ -751,6 +787,15 @@ export class WorkspaceStore {
     return this.readOnly;
   }
 
+  /**
+   * Whether saving is currently failing, for a window that wants to say so
+   * (#207). The push is `onSaveState`; this is the read a window makes when it
+   * opens, because a window that starts up mid-failure has missed the change.
+   */
+  saveState(): WorkspaceSaveState {
+    return { failing: this.saveFailing, file: this.file };
+  }
+
   save(): void {
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
@@ -760,22 +805,121 @@ export class WorkspaceStore {
     // A damaged file that a failed set-aside left behind is still sitting at
     // `this.file`, and the rename below is what destroys it (#352). Nothing
     // pending is the normal case, and it answers instantly.
+    //
+    // A DEFERRAL IS NOT A FAILURE. This returns before the try, so a held-back
+    // save never counts towards the streak below — deliberately (#207): the
+    // hold is bounded, self-resolving, and ends in a save that works, so
+    // counting it would flash a "saving is failing" notice at a user whose
+    // saving is about to be fine. When the hold gives up and the disk really is
+    // broken, the write below fails on its own and IS counted — which is how
+    // #352's give-up reaches the screen, in the only case where it means
+    // something to the person looking at it.
     if (!this.rescuePostMortem()) return;
     const tmp = `${this.file}.tmp`;
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
       fs.writeFileSync(tmp, JSON.stringify(this.state, null, 2));
       fs.renameSync(tmp, this.file);
+      this.saveSucceeded();
     } catch (err) {
-      // Persistence is best-effort — never take the app down (fail-open, P6).
-      // But it was also SILENT, and this is the write that carries the whole
-      // layout: every card, every group, every popped-out window. A failure
-      // here means the next launch quietly restores a stale workspace with no
-      // hint as to why, which is indistinguishable from the app forgetting on
-      // purpose. It is exactly the kind of failure a busy machine produces —
-      // on Windows the tmp+rename dance loses to a scanner or an indexer
-      // holding the file for a moment (EPERM/EBUSY) — so say so (#165).
-      this.warn('workspace save failed — this run will not be restored', { error: String(err) });
+      this.saveFailed(err);
+    }
+  }
+
+  /**
+   * The write threw (#165, #207).
+   *
+   * Persistence is best-effort — never take the app down (fail-open, P6). But
+   * it was also SILENT, and this is the write that carries the whole layout:
+   * every card, every group, every popped-out window. A failure here means the
+   * next launch quietly restores a stale workspace with no hint as to why,
+   * which is indistinguishable from the app forgetting on purpose.
+   *
+   * Two things happen, and the order matters less than the reason for each.
+   *
+   * **It is tried again.** The usual cause on Windows is a scanner or an
+   * indexer holding the file for a moment (EPERM/EBUSY), and that is over in
+   * well under a second. Without a retry the run's work sat unsaved until the
+   * user happened to change something else — and with the app idle, that could
+   * be never. Retries back off (1s, 2s, 4s… to `MAX_SAVE_RETRY_MS`) and do not
+   * stop, because they are the only thing that can still save this run's work
+   * AND the only thing that can notice the disk recovering. One small write
+   * every ten seconds on an unref'd timer is a price worth paying for both.
+   *
+   * **After `SAVE_FAILURES_BEFORE_NOTICE` in a row it goes on screen.** Not on
+   * the first: with the backoff above, a streak of three means saving has been
+   * failing for about three seconds, which no transient handle survives. That
+   * threshold is the whole difference between a notice that means something and
+   * a banner that blinks at every anti-virus scan.
+   */
+  private saveFailed(err: unknown): void {
+    this.saveFailures++;
+    const error = String(err);
+    // #165's line, unchanged, and still said the first time. Not repeated per
+    // retry: a disk that has stopped taking writes would otherwise fill the log
+    // with one identical line every ten seconds for the life of the process.
+    if (this.saveFailures === 1)
+      this.warn('workspace save failed — this run will not be restored', { error });
+    if (!this.saveFailing && this.saveFailures >= SAVE_FAILURES_BEFORE_NOTICE) {
+      this.saveFailing = true;
+      this.warn('workspace saving keeps failing — saying so on screen', {
+        error,
+        attempts: this.saveFailures,
+      });
+      this.announceSaveState();
+    }
+    this.saveRetryMs = Math.min(
+      this.saveRetryMs > 0 ? this.saveRetryMs * 2 : SAVE_RETRY_MS,
+      MAX_SAVE_RETRY_MS
+    );
+    this.saveTimer = setTimeout(() => this.save(), this.saveRetryMs);
+    this.saveTimer.unref?.();
+  }
+
+  /** The write landed. Silent on the overwhelmingly common path — there is
+   *  nothing to undo and nothing to say. */
+  private saveSucceeded(): void {
+    const attempts = this.saveFailures;
+    if (attempts === 0) return;
+    this.clearSaveFailures();
+    this.info('workspace saving recovered — this run will be restored after all', { attempts });
+  }
+
+  /**
+   * Forget a failure streak, telling anyone watching if the SURFACED answer
+   * changed. Recovery is the half of #207 the read-only notice never needed:
+   * that condition lasts the whole run by definition, this one is expected to
+   * end, and a notice that outlives its condition teaches people to ignore
+   * notices.
+   *
+   * **No minimum display time, deliberately.** Saving that is genuinely
+   * intermittent can raise the notice and drop it again — and in a popped-out
+   * window that costs a dockview re-layout and a terminal re-fit each way (see
+   * `WorkspaceNoticeBanner`). Holding the notice up for a grace period would
+   * smooth that, and was rejected: it would mean `saveState()` reporting
+   * `failing: true` over a store that is saving perfectly well, which is the
+   * same class of lie this whole item exists to remove. Flapping is also
+   * information — "your disk is intermittent" is worth seeing — and the
+   * threshold already costs three consecutive failures, so the cycle floor is
+   * seconds, not a strobe.
+   */
+  private clearSaveFailures(): void {
+    this.saveFailures = 0;
+    this.saveRetryMs = 0;
+    if (!this.saveFailing) return;
+    this.saveFailing = false;
+    this.announceSaveState();
+  }
+
+  /** Tell the listener, without the telling ever becoming the failure (P6) —
+   *  the same rule `warn` follows, for the same reason: this is called from
+   *  inside `save()`, and a throw here would be a notice that costs a write. */
+  private announceSaveState(): void {
+    try {
+      this.onSaveState?.(this.saveState());
+    } catch {
+      // a window that cannot be told is a missing notice; a save that dies
+      // trying to tell it is the data loss the notice exists to report
     }
   }
 
@@ -903,6 +1047,30 @@ const MAX_RESCUE_ATTEMPTS = 5;
 
 /** Spacing of those retries — long enough that a busy scanner can finish. */
 const RESCUE_RETRY_MS = 1000;
+
+/**
+ * Consecutive failed saves before the user is told on screen (#207).
+ *
+ * THREE, not one. A single EPERM/EBUSY from a backup agent or an indexer
+ * touching `workspace.json` for a moment is an ordinary event on Windows and
+ * the very next save works — a banner for that would be noise, and noise is
+ * how a warning stops being read. With the backoff below, a third consecutive
+ * failure means saving has been failing for roughly three seconds, which no
+ * momentary handle survives.
+ */
+const SAVE_FAILURES_BEFORE_NOTICE = 3;
+
+/** First retry after a failed save; doubles each time up to the cap. */
+const SAVE_RETRY_MS = 1000;
+
+/**
+ * The slowest the retry gets. Retrying does not stop while saving is broken —
+ * it is what eventually saves the run's work, and what notices the disk
+ * recovering so the notice can come down — so the cadence has to settle
+ * somewhere that costs nothing. Ten seconds is also the longest a user should
+ * wait to see the banner clear after they fix whatever it was.
+ */
+const MAX_SAVE_RETRY_MS = 10_000;
 
 /**
  * The largest unreadable workspace file whose bytes are pinned in memory while
