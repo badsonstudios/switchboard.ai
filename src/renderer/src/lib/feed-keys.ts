@@ -1,4 +1,4 @@
-// Keyboard navigation inside the Session view's conversation (#174, §5.26
+// Keyboard navigation inside the Session view's conversation (#174, §5.32
 // "keyboard-complete"). Pure — FeedView applies these against the real DOM;
 // the tests pin the semantics.
 //

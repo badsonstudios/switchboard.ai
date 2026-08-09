@@ -4,7 +4,7 @@
 // "claude CLI not found" is the message that explains why nothing in the app
 // will start. It was rendered only once the answer came back and carried no
 // live region, so it was announced to nobody — a warning that, for a
-// screen-reader user, did not exist. DESIGN §5.26.
+// screen-reader user, did not exist. DESIGN §5.32.
 //
 // What this holds: the region is in the document BEFORE there is anything to
 // say, the words then land inside that same region rather than arriving with a

@@ -169,6 +169,8 @@ heading** — run 11: #358 reported a "stale §5.26 citation" off the section
 heading alone; the rule was in the body all along, and the follow-up item
 (#367) existed only to disprove the report. Workers' prompts for such
 findings should demand the quoted evidence before an issue is filed.
+*(#369 has since promoted that a11y material to its own §5.32, so the example
+no longer reproduces — the lesson about quoting the body does.)*
 
 ## While workers run — the orchestrator loop
 

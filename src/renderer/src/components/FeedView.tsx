@@ -360,7 +360,7 @@ export function FeedView(props: {
     return () => ro.disconnect();
   }, [pin, restore]);
 
-  // Keyboard path into the conversation (#174, §5.26 "keyboard-complete").
+  // Keyboard path into the conversation (#174, §5.32 "keyboard-complete").
   //
   // The scroller is ONE tab stop — a labelled region — and the arrow keys move
   // between the expanders inside it, which are real buttons carrying
