@@ -356,6 +356,97 @@ describe('DiscoverySchedule — a root everyone gave up on goes quiet (#129)', (
   });
 });
 
+describe('DiscoverySchedule — the per-SESSION half of the throttle (#388)', () => {
+  // #129 made the RUNG per root; the scan cost is per session, so the watcher
+  // also has to decide WHICH sessions a sweep is run for. This module supplies
+  // the two answers it needs and nothing else: whether the sweep it is consuming
+  // was one the root still owed to its last evidence, and how long a session
+  // that has stopped looking waits between looks of its own.
+  const LADDER = [100, 200, 400] as const;
+  const SLOW = 10_000;
+
+  function sched(over: Partial<DiscoveryScheduleOptions> = {}) {
+    return new DiscoverySchedule({
+      log: log(),
+      watchFactory: fakeWatch().factory,
+      backoffMs: [...LADDER],
+      givenUpMs: SLOW,
+      ...over,
+    });
+  }
+
+  it('noteSwept reports the reprieve it is spending, one per rung, then stops', () => {
+    // The count IS the reprieve: `register` grants a full pass down the ladder,
+    // and the answer has to go false on the sweep after the last rung, not
+    // before it — a session that has stopped looking takes exactly the sweeps
+    // the root still owed, which is what makes "evidence buys a proper look"
+    // mean the same thing per session as it does per root.
+    const s = sched();
+    s.register(ROOT);
+    expect(s.noteSwept(ROOT, 100)).toBe(true);
+    expect(s.noteSwept(ROOT, 200)).toBe(true);
+    expect(s.noteSwept(ROOT, 300)).toBe(true);
+    expect(s.noteSwept(ROOT, 400)).toBe(false); // spent: the root is quiet again
+    expect(s.noteSwept(ROOT, 500)).toBe(false);
+  });
+
+  it('markDirty buys the reprieve back — every evidence site restores a session', () => {
+    // The recovery half, per session. `markDirty` is reached by a turn, a native
+    // id, a `/clear`, a sibling binding and a sibling closing, so this is the
+    // single point every one of them has to arrive at.
+    const s = sched();
+    s.register(ROOT);
+    for (let i = 0; i < LADDER.length + 1; i++) s.noteSwept(ROOT, 100 * i);
+    expect(s.noteSwept(ROOT, 1_000)).toBe(false);
+
+    s.markDirty(ROOT);
+    expect(s.noteSwept(ROOT, 1_100)).toBe(true);
+  });
+
+  it('a transcript APPEARING buys it back; an append to a known file does not', () => {
+    // Same split the rung makes (#129), and it has to be the same one: an append
+    // storm from a busy neighbour must not drag a session that stopped looking
+    // back into full scans, or this item's defect returns through the watch.
+    const { state, factory } = fakeWatch();
+    const s = sched({ watchFactory: factory });
+    s.register(ROOT);
+    state.fire('native-abc.jsonl'); // the create: now a KNOWN path
+    for (let i = 0; i < LADDER.length + 1; i++) s.noteSwept(ROOT, 100 * i);
+    expect(s.noteSwept(ROOT, 1_000)).toBe(false);
+
+    for (let i = 0; i < 50; i++) state.fire('native-abc.jsonl');
+    expect(s.noteSwept(ROOT, 1_100)).toBe(false);
+
+    state.fire('native-xyz.jsonl');
+    expect(s.noteSwept(ROOT, 1_200)).toBe(true);
+  });
+
+  it('an unregistered root reports a reprieve — bookkeeping never narrows discovery', () => {
+    const s = sched();
+    expect(s.noteSwept('C:/never/registered', 0)).toBe(true);
+  });
+
+  it('the quiet rung is the same interval a root gets, and a session waits it out', () => {
+    const s = sched();
+    expect(s.quietRungDue(1_000, 1_000 + SLOW - 1)).toBe(false);
+    expect(s.quietRungDue(1_000, 1_000 + SLOW)).toBe(true);
+    // 0 is "has never taken part in a sweep". Every caller passes wall-clock
+    // milliseconds, so that always reads as due — a card must not wait out a
+    // rung before anyone has ever looked for its transcript.
+    expect(s.quietRungDue(0, Date.now())).toBe(true);
+  });
+
+  it('...and a clock that steps BACKWARDS does not lock a session out of every sweep', () => {
+    // An NTP correction or a VM resume would otherwise make the subtraction
+    // negative and stop this session taking part in ANY sweep until real time
+    // caught up — for an hour-sized jump, an hour in which it cannot bind, while
+    // its root sweeps on around it. `shouldSweep` guards the root's own clock
+    // the same way; this is that guard one level down.
+    const s = sched();
+    expect(s.quietRungDue(10_000_000, 9_999_000)).toBe(true);
+  });
+});
+
 /**
  * Wait for `check`, up to `ms`. Resolves either way — callers decide whether a
  * timeout means anything, because for the real-fs.watch tests it is often a
