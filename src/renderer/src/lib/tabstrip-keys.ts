@@ -1,4 +1,4 @@
-// Keyboard navigation for the card's view-tab strip (#197, §5.26
+// Keyboard navigation for the card's view-tab strip (#197, §5.32
 // "keyboard-complete"). Pure — SessionGrid applies the result against the real
 // DOM; the tests pin the semantics.
 //

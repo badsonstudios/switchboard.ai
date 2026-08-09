@@ -598,7 +598,7 @@ Rules the container carries:
 The box being the mouse target does not make it the control. A box CONTAINS
 other interactive controls (Bash IN/OUT, and later copy buttons and file links),
 so it may not be a `button` — ARIA forbids it, and a `role="button"` there would
-be a lie a screen reader passes on to its user. The rule §5.26 already sets
+be a lie a screen reader passes on to its user. The rule §5.32 already sets
 ("keyboard-complete") is met like this instead:
 
 - **Each expander is a real `<button aria-expanded>`** — the block's header line
@@ -1449,66 +1449,11 @@ Designed answer:
 - **Data portability**: versioned app-data schema; workspaces, layouts, themes,
   and settings exportable/importable as plain files — back up or move the whole
   setup.
-- **Accessibility**: keyboard-complete (S5) + screen-reader labels on status
-  surfaces; lamps/status encode SHAPE as well as color (colorblind-safe — never
-  hue alone).
-
-  > **As built (#174 then #197, 2026-08-04) — the rule the app applies, so the
-  > next surface does not have to re-derive it.** "Keyboard-complete" was a
-  > commitment without a shape, and the renderer had drifted into the same
-  > defect on every interactive surface: a `div` with an `onClick`, no role, no
-  > accessible name, no way in from the keyboard. #174 fixed the Session feed
-  > and #197 swept the Sessions rail, the urgency lamps, the card's view tabs
-  > and the Events rows. Four rules came out of it:
-  >
-  > 1. **The control is a real `<button>`.** Enter, Space, focus and the
-  >    announcement all come from the platform, and none of them can be
-  >    forgotten by the next renderer.
-  > 2. **A container that holds controls stays role-less.** A rail row holds
-  >    its ✕, an Events row holds Dismiss, a tool box holds its IN/OUT
-  >    expanders — and `button`, `option` and `tab` all take *presentational
-  >    children*, so putting one of those roles on the container would hide the
-  >    controls inside it. The container keeps its click as a MOUSE convenience
-  >    that duplicates the button; it never becomes the only way in.
-  > 3. **Composite roles only where they are true.** The view tab strip really
-  >    does select one panel of several, so it is a real
-  >    `tablist`/`tab`/`tabpanel` — which then OBLIGES the roving tabindex and
-  >    the arrow keys, because that is what the role promises. Nothing else in
-  >    the sweep earned one, and plain buttons were shipped instead of a
-  >    `listbox` that would have had to lie about its children.
-  > 4. **Visible focus is part of the path.** One `:focus-visible` ring, in
-  >    `--status-working-ink` (theme-tuned, clears 1.4.11's 3:1 on both shipped
-  >    themes), never `:focus` — a ring painted on every mouse click trains
-  >    people to stop seeing it.
-  >
-  > Two consequences worth writing down. **Decoration is marked as
-  > decoration**: the rail's status glyph carried an `aria-label` on a
-  > role-less `span`, which no screen reader reads, so the state it was trying
-  > to announce now lives in the row button's own name and the glyph is
-  > `aria-hidden`. And **`aria-controls` must resolve** — the rail's group body
-  > is always in the DOM and merely `hidden` when collapsed, because a
-  > reference to an element that does not exist is worse than no reference.
-  >
-  > The one thing deliberately NOT unified: tab-stop budget. The feed is a
-  > single tab stop with arrows inside (#174) because a composer sits behind
-  > hundreds of expanders; the rail, the lamps and the Events panel each spend
-  > one or two stops per session, which is bounded by how many sessions a human
-  > runs and buys back the simplicity of ordinary buttons.
-  >
-  > **A fifth rule, added by #253 (2026-08-05):** *a drag is never the only way
-  > to do something.* The sweep above made every CONTROL reachable and left one
-  > INTERACTION that wasn't — a session's group could only be changed by
-  > dragging its row onto a group card, which fails 2.1.1 for the whole feature
-  > no matter how well-labelled the row is. The keyboard equivalent belongs in
-  > the surface's existing menu, as a `menuitemradio` set when the drag picks
-  > one destination out of a known list, and it must (a) call the SAME state
-  > change the drop calls — never a parallel path that can drift — (b) say what
-  > happened in a live region, because a drop is confirmed by the eye and
-  > nothing else, and (c) restore focus AFTER the change lands, since the moved
-  > element is re-parented and the node the menu was opened from is detached by
-  > then. Destinations the drop refuses (auto-groups, whose membership is
-  > computed) are absent from the menu for the same reason they refuse drops:
-  > an offer that does nothing wastes more time than a missing one.
+- **Accessibility** — **moved to §5.32** (#369, 2026-08-08). The keyboard-
+  complete / screen-reader / colorblind-safe rules and their as-built
+  appendix lived here until then, which made a bare `§5.26` citation
+  ambiguous and cost one wrong bug report (#358 → #367). A `§5.26` citation
+  now always means updates, version drift or data portability.
 
 ### 5.27 Mobile companion — fleet remote control
 
@@ -1799,6 +1744,77 @@ in-place jump requires deriving a window of blocks around an arbitrary
 transcript offset, which the watcher cannot do today. v1 gives those hits a
 generous snippet and marks them as earlier than the loaded view; on-demand block
 loading is the named follow-up, not a silent gap.
+
+### 5.32 Accessibility
+
+*(§5.32 since #369, 2026-08-08 — a promotion, not a new rule. This material
+was filed inside §5.26 "Updates, version drift & data portability", two
+unrelated subjects under one number. ~30 code comments cite §5.26 and a reader
+could not tell which half was meant without opening the doc; that ambiguity
+produced one wrong bug report (#358, disproved by #367). The rule and the
+as-built appendix below are unchanged — only the number moved, and §5.26 keeps
+a pointer where they left.)*
+
+- **The rule**: keyboard-complete (S5) + screen-reader labels on status
+  surfaces; lamps/status encode SHAPE as well as color (colorblind-safe — never
+  hue alone).
+
+  > **As built (#174 then #197, 2026-08-04) — the rule the app applies, so the
+  > next surface does not have to re-derive it.** "Keyboard-complete" was a
+  > commitment without a shape, and the renderer had drifted into the same
+  > defect on every interactive surface: a `div` with an `onClick`, no role, no
+  > accessible name, no way in from the keyboard. #174 fixed the Session feed
+  > and #197 swept the Sessions rail, the urgency lamps, the card's view tabs
+  > and the Events rows. Four rules came out of it:
+  >
+  > 1. **The control is a real `<button>`.** Enter, Space, focus and the
+  >    announcement all come from the platform, and none of them can be
+  >    forgotten by the next renderer.
+  > 2. **A container that holds controls stays role-less.** A rail row holds
+  >    its ✕, an Events row holds Dismiss, a tool box holds its IN/OUT
+  >    expanders — and `button`, `option` and `tab` all take *presentational
+  >    children*, so putting one of those roles on the container would hide the
+  >    controls inside it. The container keeps its click as a MOUSE convenience
+  >    that duplicates the button; it never becomes the only way in.
+  > 3. **Composite roles only where they are true.** The view tab strip really
+  >    does select one panel of several, so it is a real
+  >    `tablist`/`tab`/`tabpanel` — which then OBLIGES the roving tabindex and
+  >    the arrow keys, because that is what the role promises. Nothing else in
+  >    the sweep earned one, and plain buttons were shipped instead of a
+  >    `listbox` that would have had to lie about its children.
+  > 4. **Visible focus is part of the path.** One `:focus-visible` ring, in
+  >    `--status-working-ink` (theme-tuned, clears 1.4.11's 3:1 on both shipped
+  >    themes), never `:focus` — a ring painted on every mouse click trains
+  >    people to stop seeing it.
+  >
+  > Two consequences worth writing down. **Decoration is marked as
+  > decoration**: the rail's status glyph carried an `aria-label` on a
+  > role-less `span`, which no screen reader reads, so the state it was trying
+  > to announce now lives in the row button's own name and the glyph is
+  > `aria-hidden`. And **`aria-controls` must resolve** — the rail's group body
+  > is always in the DOM and merely `hidden` when collapsed, because a
+  > reference to an element that does not exist is worse than no reference.
+  >
+  > The one thing deliberately NOT unified: tab-stop budget. The feed is a
+  > single tab stop with arrows inside (#174) because a composer sits behind
+  > hundreds of expanders; the rail, the lamps and the Events panel each spend
+  > one or two stops per session, which is bounded by how many sessions a human
+  > runs and buys back the simplicity of ordinary buttons.
+  >
+  > **A fifth rule, added by #253 (2026-08-05):** *a drag is never the only way
+  > to do something.* The sweep above made every CONTROL reachable and left one
+  > INTERACTION that wasn't — a session's group could only be changed by
+  > dragging its row onto a group card, which fails 2.1.1 for the whole feature
+  > no matter how well-labelled the row is. The keyboard equivalent belongs in
+  > the surface's existing menu, as a `menuitemradio` set when the drag picks
+  > one destination out of a known list, and it must (a) call the SAME state
+  > change the drop calls — never a parallel path that can drift — (b) say what
+  > happened in a live region, because a drop is confirmed by the eye and
+  > nothing else, and (c) restore focus AFTER the change lands, since the moved
+  > element is re-parented and the node the menu was opened from is detached by
+  > then. Destinations the drop refuses (auto-groups, whose membership is
+  > computed) are absent from the menu for the same reason they refuse drops:
+  > an offer that does nothing wastes more time than a missing one.
 
 ## 6. Tech Stack — Decision
 

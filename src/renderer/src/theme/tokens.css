@@ -344,7 +344,7 @@ body {
   padding: 2px 6px;
 }
 
-/* Feed keyboard navigation (#174, §5.26). A keyboard path nobody can SEE is
+/* Feed keyboard navigation (#174, §5.32). A keyboard path nobody can SEE is
  * not a keyboard path, so both stops in the conversation draw a real ring:
  * the region itself (the single tab stop) and whichever expander the arrow
  * keys have moved to.
@@ -371,7 +371,7 @@ body {
   outline: none;
 }
 
-/* The rest of the app's keyboard path (#197, §5.26). #174 fixed the feed; this
+/* The rest of the app's keyboard path (#197, §5.32). #174 fixed the feed; this
  * is the same ring on the four surfaces the sweep covered — rail rows and group
  * headers, the urgency lamps, the view tabs (data-vtab, so dockview’s own tabs keep theirs), and the Events rows — plus the
  * small controls that live inside them.

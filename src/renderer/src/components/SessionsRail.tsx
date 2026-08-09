@@ -20,7 +20,7 @@
 //  3. The working ring is the ONLY animation. Blinking status dots were an
 //     explicit rejection.
 //
-// KEYBOARD & SCREEN READER (#197, §5.26), following #174's rule:
+// KEYBOARD & SCREEN READER (#197, §5.32), following #174's rule:
 //
 // A rail row CONTAINS controls — the ✕, and (on a group header) the recolor
 // dot and three action buttons. So neither `role="option"` nor a `<button>`

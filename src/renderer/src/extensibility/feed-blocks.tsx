@@ -29,7 +29,7 @@ import { Markdown } from '../lib/markdown';
 const NO_TOGGLE = { 'data-no-toggle': '' };
 
 /**
- * The one shape every expander in the feed takes (#174, §5.26).
+ * The one shape every expander in the feed takes (#174, §5.32).
  *
  * A REAL `<button aria-expanded>`, because that is the only honest answer for
  * "this control shows and hides that content": screen readers announce its
