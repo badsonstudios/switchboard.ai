@@ -18,19 +18,32 @@ It is not the same thing as the build identity: see
   stamped in automatically at build time and shown in About. It answers "which
   bytes am I running?", which a semver cannot.
 
-**While work is landing:** add your entry to the section for the version
-currently in `package.json`, under `Added` / `Changed` / `Fixed` / `Internal`
-(drop the groups you do not need). Write it in the user's words, not the
-issue's. Never open a section for a version *beyond* the one in
-`package.json` — a speculative section becomes real release notes the moment
-someone tags.
+**While work is landing:** add your entry to the **topmost `— unreleased`
+section**, under `Added` / `Changed` / `Fixed` / `Internal` (drop the groups
+you do not need). Write it in the user's words, not the issue's.
+
+That section is opened by the *previous* release cut (step 2 below) and its
+version number is a **placeholder** — the next cut confirms or corrects it.
+There is only ever one: never open a second unreleased section, never add to a
+dated one, and never invent a version number to file under while an unreleased
+section already exists. Two open sections split the entries between them, and
+the cut publishes only the one whose number it lands on — the other vanishes
+from the release without anyone noticing. If there is no unreleased section at
+all — the last cut skipped step 2 — open one rather than dropping your entry
+on the floor, and say so in your PR.
 
 **To cut a release:**
 
 1. Bump `version` in `package.json` — patch for fixes, minor for features,
-   major for a break. Pre-1.0, a minor is what a "release" normally is.
+   major for a break. Pre-1.0, a minor is what a "release" normally is. If the
+   open unreleased section's placeholder version is not the number you landed
+   on, rename its heading to match.
 2. Replace that version's `— unreleased` with the release date, and open a new
-   `## <next version> — unreleased` section above it if work continues.
+   `## <next version> — unreleased` section above it. **Always** — not "if work
+   continues". That empty section is the only place the next work item is
+   allowed to file, so skipping it blocks every item until the following cut.
+   Guess the next number; step 1 corrects it. `release-notes.test.js` fails if
+   you forget — that is deliberate, and it is why this step is not optional.
 3. Commit both together. The version and its notes arriving in one commit is
    what makes "this tag has no changelog section" a bug worth failing a build
    over — which is exactly what P2-E19-02's workflow does.
@@ -38,7 +51,83 @@ someone tags.
 
 ---
 
+## 0.3.0 — unreleased
+
+## 0.2.0 — 2026-08-09
+
+### Added
+
+- Screen readers now announce a session card's **Session ended**, **Session
+  didn't start** and **Session suspended** panels the moment they appear, and
+  they say which session it was first — "trading-app. Session ended. Exited
+  unexpectedly (code 137)" rather than an anonymous "Session ended" with
+  several cards open. It waits for a gap rather than cutting across what you
+  were listening to, and a card that was *already* suspended when you reopened
+  switchboard stays quiet — that is how you left it, not news. Nothing on
+  screen changed.
+
+### Changed
+
+- The app calls itself **switchboard.ai** everywhere you read its name: the
+  window title, desktop notifications, the Start-menu and desktop shortcuts,
+  and the Add/Remove Programs entry. The program file, the installer's
+  filename and your existing settings folder are deliberately unchanged, so
+  nothing you already have installed moves.
+
+### Fixed
+
+- A session card that never got going now says **Session didn't start**,
+  explains the usual cause, points at the log line with the exact reason, and
+  offers **Try again**. It used to claim "Session ended — Exited unexpectedly
+  (code -1)": three things that had not happened and an exit code the app
+  invented because it had nowhere to get one. Any card whose folder has been
+  renamed, deleted, or lives on a drive that isn't plugged in lands here. A
+  session that really ran and then stopped keeps exactly the words it had, and
+  its real exit code.
+- When a workspace file is too damaged to read, switchboard sets it aside so
+  there is something to look at afterwards. Every copy used to go to the same
+  name, so a second bad launch destroyed the copy from the first — the one that
+  shows how the damage started. Each copy now carries the date and time in its
+  name and can never overwrite another. Five are kept: the oldest, deliberately,
+  plus the most recent; the extras in between are deleted and named in the log.
+  Files you have renamed yourself are never touched.
+- If setting that damaged file aside *fails* — a full disk, an anti-virus
+  sitting on the folder — the damaged file is no longer written over seconds
+  later by the first save of your now-empty workspace, on exactly the machine
+  most likely to need the post-mortem. The save waits and tries again three
+  different ways, the last of which simply renames the damaged file out of the
+  way and works with no room left at all. If none of them work, the save is
+  held back a few seconds, the live workspace then wins, and the log says the
+  copy was lost. Nothing in the app is blocked while any of this happens.
+
+### Internal
+
+- Starting a session on a folder that has gone missing, and renaming a live
+  session, now answer with a refusal instead of throwing an error into the
+  running app — and the log names the folder and the reason, which previously
+  went to a stream nothing records. On screen this is identical.
+- `npm test` now spends a moment clearing the scratch folders older test runs
+  left in the system temp directory — 115,314 of them had built up on one
+  machine — and `npm run sweep:temp` clears the whole backlog in one go. It
+  only ever touches folders our own tests named, and it is deliberately not in
+  the app, which never creates them.
+- The last test files making scratch folders outside the shared bookkeeping
+  were moved onto it — two had no cleanup at all — and the end-to-end runner
+  sweeps now as well as the unit runner. A run leaves nothing behind.
+- The rule that stops hand-written colours in the interface code no longer
+  reads an issue number such as `#358` as a colour, so citations in test names
+  work again.
+- The "Session ended" panel is now tested the real way — a session that runs
+  and is then killed — rather than only through the card that never started.
+
 ## 0.1.2 — 2026-08-08
+
+> **Errata, added at 0.2.0:** the set-aside filename named below,
+> `workspace.json.corrupt`, is what 0.1.2 actually shipped and the note is left
+> as released. From 0.2.0 the copy is named
+> `workspace.json.corrupt-<timestamp>` and five are kept — see 0.2.0's Fixed
+> group, and the manual's troubleshooting page, which describes the current
+> build.
 
 ### Fixed
 

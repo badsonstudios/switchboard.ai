@@ -125,8 +125,27 @@ describe('CHANGELOG parsing', () => {
     // history (this bit on the 0.1.1 tag: the original `toEqual([version])`
     // assumed a one-section changelog, true only for the first release ever).
     const versions = listVersions(real);
-    expect(versions[0], 'newest section must be the current version').toBe(version);
     for (const v of versions) expect(v).toMatch(/^\d+\.\d+\.\d+$/);
+
+    // Above the released section sits EXACTLY ONE `— unreleased` placeholder,
+    // opened by the release cut (CHANGELOG.md, cut step 2) for work that lands
+    // next. It is mandatory, and pinned here rather than left to discipline:
+    // 0.1.2 shipped without one and five consecutive work items then had
+    // nowhere legal to file their entry (#353). Red on the next commit beats
+    // five more workers finding out one at a time.
+    //
+    // It cannot leak into a release: buildNotes only rolls up versions OLDER
+    // than the one being released, so a newer heading is invisible to the
+    // notes. A SECOND speculative section is the thing that hurts — entries
+    // split across two, and only the one the cut lands on is published.
+    expect(
+      headingFor(real, versions[0]),
+      'CHANGELOG.md needs one "— unreleased" section above the released one (cut step 2)'
+    ).toMatch(/unreleased/i);
+    expect(versions[0], 'the unreleased placeholder may not reuse the released version').not.toBe(
+      version
+    );
+    expect(versions[1], 'only one section may sit above the current version').toBe(version);
   });
 });
 
