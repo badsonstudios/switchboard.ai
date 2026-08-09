@@ -34,7 +34,6 @@ export interface RescueLocation {
 /** The shape of a dockview group this module needs. */
 export interface RescueGroup {
   readonly id: string;
-  readonly panels: readonly unknown[];
   readonly api: { readonly location: RescueLocation };
 }
 
@@ -56,8 +55,14 @@ export interface RescuePanel {
  */
 export function popoutWindowGone(loc: RescueLocation): boolean {
   if (loc.type !== 'popout') return false;
+  // A popout location with no way to ask is the "cannot ask" case, not the
+  // "gone" case — `getWindow` is optional here only because this type is
+  // structural, and inventing a death from its absence is the one mistake this
+  // function must not make. Its ANSWER being null is different: that is
+  // dockview having dropped the window itself.
+  if (typeof loc.getWindow !== 'function') return false;
   try {
-    const win = loc.getWindow?.();
+    const win = loc.getWindow();
     return !win || win.closed === true;
   } catch {
     return false;
@@ -90,24 +95,10 @@ export function strandedByGroup<T extends RescuePanel>(panels: readonly T[]): Ma
   return out;
 }
 
-/**
- * Where a rescued card comes home to: an EMPTY group in the grid, if there is
- * one, otherwise nothing (the caller makes a group).
- *
- * An empty grid group is not a coincidence — dockview deletes a group the
- * moment its last panel leaves, with two exceptions, and both of them are
- * exactly where this card belongs. Popping a card out leaves its old group
- * behind as an empty hidden shell, and closing the window normally is what
- * puts the card back INTO that shell; landing there is therefore the same spot
- * a clean close would have chosen. The other exception is the watermark group
- * of an empty workspace, which is the only thing in the grid and so is also
- * where the card should go.
- *
- * Best-effort, and worth being honest about in the same way `placeAt` is: with
- * two windows dead at once the second card may take the first one's shell.
- * Both shells are empty and both are in the grid, so the cost is a card
- * arriving one slot from where it left — against a card nobody can see at all.
- */
-export function rescueHome<T extends RescueGroup>(groups: readonly T[]): T | undefined {
-  return groups.find((g) => g.api.location.type === 'grid' && g.panels.length === 0);
-}
+// WHERE a rescued card lands is deliberately NOT decided here, because there
+// is no decision left to make: it goes into a group of its own. The tempting
+// alternative — the empty shell a pop-out leaves behind in the grid, which is
+// where a clean close puts the card back — cannot be used from outside
+// dockview, since taking the last card out of the popout group makes dockview
+// remove that shell in the same breath. `rescueStrandedPopouts` carries the
+// full reasoning next to the `addGroup` call that embodies it.

@@ -1,6 +1,12 @@
 import { test, expect, Locator, Page } from '@playwright/test';
 import path from 'path';
-import { launchApp, LaunchedApp, showTerminal, tempProjectFolder } from './fixtures/app';
+import {
+  launchApp,
+  LaunchedApp,
+  registeredPopouts,
+  showTerminal,
+  tempProjectFolder,
+} from './fixtures/app';
 
 // Pop-out tests open a real SECOND OS window (window.open -> BrowserWindow).
 // That is reliable on Windows + macOS but flaky under the headless xvfb display
@@ -415,6 +421,10 @@ test.describe('a session card', () => {
   // suspended — the same place the clean close above leaves it.
   test('a popout the OS kills brings its card home suspended, not into limbo (#292)', async () => {
     skipPopoutOnLinux();
+    // the clean-close test's whole cost, plus the sweep's own interval before
+    // anything can start happening. Declared rather than discovered as a red
+    // build on a loaded CI runner.
+    test.slow();
     const folder = tempProjectFolder();
     const name = path.basename(folder);
     a = await launchApp({ seedFolder: folder });
@@ -453,6 +463,10 @@ test.describe('a session card', () => {
     // said out loud, not merely drawn — #358's live region, the same assertion
     // the clean close makes, because to the user this IS the clean close
     await expect(window.getByTestId('card-announcer')).toContainText('Session suspended');
+    // the dead window is out of the SAVED layout as well as off the screen —
+    // otherwise the next launch would faithfully reopen an empty popout
+    await expect.poll(() => registeredPopouts(a), { timeout: 15_000 }).toBe(0);
+    expect(app.windows().length, 'a window came back from the dead').toBe(1);
     // and it is a working card again, not a headstone
     await window.getByRole('button', { name: 'Resume' }).click();
     await showTerminal(window); // Terminal hidden by default (E10-01)

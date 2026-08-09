@@ -7,7 +7,6 @@ import {
   DockviewReact,
   DockviewReadyEvent,
   DockviewApi,
-  DockviewGroupPanel,
   DockviewTheme,
   IDockviewPanel,
   IDockviewPanelProps,
@@ -53,7 +52,7 @@ import { StatusPill } from './StatusPill';
 import type { Ladder } from '../lib/presentation';
 import { pickAdoptedGroupId } from '../lib/groups';
 import { addPopoutWindow, removePopoutWindow, subscribePopoutWindows } from '../lib/popout-windows';
-import { rescueHome, strandedByGroup } from '../lib/popout-rescue';
+import { strandedByGroup } from '../lib/popout-rescue';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { setDraggedCard } from '../lib/drag-context';
 import { writePromptToPty } from '../lib/composer';
@@ -1614,40 +1613,60 @@ export function popOutCardPanel(api: DockviewApi | null, cardId: string): void {
  * would mean "closing a popout suspends the session, unless we missed the
  * close" — a rule with an exception nobody could predict.
  *
+ * IT LANDS IN A GROUP OF ITS OWN, and that is forced rather than chosen. The
+ * obvious home is the empty shell a pop-out leaves behind in the grid — the
+ * place a clean close puts the card back into — but dockview destroys that
+ * shell as part of this very move: taking the last panel out of the popout
+ * group makes dockview remove the group, and removing a popout group also
+ * removes its now-empty reference group. The card would be `openPanel`'d into
+ * something disposed a moment earlier, which is #292 again with extra steps
+ * (and was this function's first draft, caught by the e2e below). dockview's
+ * own close path dodges it by moving the panels in FIRST and removing the
+ * popout group with a flag we cannot pass from out here — so a fresh group it
+ * is, which is also the fallback dockview itself takes when a returning
+ * popout's reference group is gone.
+ *
  * Not during teardown or a layout restore: both are moments when dockview's own
  * popout state is mid-flight, and a rescue then would rewrite the layout being
  * saved — quitting with a dead popout would lose the window arrangement it
- * should come back with. Nothing is lost by waiting: a popout still in the
- * saved layout simply reopens next launch.
+ * should come back with. Neither costs the user the card: a quit leaves the
+ * popout in the saved layout, so the next launch just reopens the window, and a
+ * restore is where those windows are being created in the first place.
  */
 export function rescueStrandedPopouts(api: DockviewApi | null): void {
   if (!api || sessionStore.isTearingDown() || sessionStore.isRestoringLayout()) return;
-  for (const stranded of strandedByGroup(api.panels).values()) {
-    // One home per dead WINDOW, chosen once: cards that shared a popout come
-    // back sharing a group, exactly as a clean close returns them.
-    let home: DockviewGroupPanel | undefined;
-    for (const panel of stranded) {
-      try {
-        // Chosen inside the loop's first pass and reused after: the empty shell
-        // stops being empty the moment the first card lands in it.
-        home ??= rescueHome(api.groups) ?? api.addGroup();
-        // A shell left by a pop-out is HIDDEN as well as empty (dockview hides
-        // the group it took the card from). Landing a card in it without this
-        // would swap one invisible home for another.
-        if (!home.api.isVisible) home.api.setVisible(true);
-        panel.api.moveTo({ group: home });
-        // Logged, like the popout open/fail lines above it: this happens
-        // several seconds after a window disappeared and with no gesture
-        // behind it, so it is the first thing anyone reading a log about a
-        // card that "moved on its own" needs to see.
-        console.log(`[popout] window gone — brought ${panel.id} home`);
-      } catch (err) {
-        // fail-open, and the loop continues: one card that cannot be moved must
-        // not strand the others that can. What is left behind is what was there
-        // before this function existed, so a failure costs nothing new.
-        console.error('[popout] could not bring a stranded card home', err);
+  try {
+    for (const stranded of strandedByGroup(api.panels).values()) {
+      // One home per dead WINDOW: cards that shared a popout come back sharing
+      // a group, which is what a clean close does with them.
+      const home = api.addGroup();
+      for (const panel of stranded) {
+        try {
+          panel.api.moveTo({ group: home });
+          // Logged, like the popout open/fail lines this sits beside: it
+          // happens seconds after a window disappeared with no gesture behind
+          // it, so it is the first thing anyone reading a log about a card that
+          // "moved on its own" needs to see.
+          console.log(`[popout] window gone — brought ${panel.id} home`);
+        } catch (err) {
+          // fail-open, and the loop continues: one card that cannot be moved
+          // must not cost the others their rescue. What is left behind is what
+          // was there before this function existed.
+          console.error('[popout] could not bring a stranded card home', err);
+        }
       }
+      // Nobody made it: take the empty group back out rather than leave a blank
+      // pane in the workspace as the only visible sign of the failure.
+      if (home.panels.length === 0) api.removeGroup(home);
     }
+  } catch (err) {
+    // The registry calls its listeners inside its own try (popout-windows'
+    // `fire`), but the microtask that makes this rescue safe to run also puts
+    // it OUTSIDE that protection — and `api.panels` on a dockview that is
+    // mid-teardown is exactly the read `saveLayout` already guards against. An
+    // uncaught rejection from a janitor would be a worse bug than the one it
+    // fixes.
+    console.error('[popout] the stranded-card sweep failed', err);
   }
 }
 
@@ -1656,7 +1675,11 @@ function popoutBoxOf(panel: IDockviewPanel): Box | null {
   const loc = panel.api.location;
   if (loc.type !== 'popout') return null;
   const w = loc.getWindow();
-  if (!w) return null;
+  // A CLOSED window is as good as no window (#292). Its proxy still answers,
+  // with zeroes, and this rect becomes the card's remembered monitor — so a
+  // layout change in the seconds between a popout dying and the sweep noticing
+  // would quietly overwrite "where you left it" with a 0×0 box at the origin.
+  if (!w || w.closed) return null;
   return { left: w.screenX, top: w.screenY, width: w.outerWidth, height: w.outerHeight };
 }
 
@@ -2757,18 +2780,24 @@ export function SessionGrid(props: {
       // ...and when one of those windows turns out to have died on its own
       // (#292), the card it was hosting comes home. The registry's own liveness
       // sweep (#279) is the trigger: it is already the one thing in the app that
-      // asks whether a popout window is still there, and a `removed` it did not
-      // hear from dockview is precisely the case that strands a session. An
-      // ordinary close reaches here too, and finds nothing to do — dockview has
-      // already put the card back by then, which is what makes this safe to hang
-      // off every removal rather than needing to know which kind it was.
+      // asks whether a popout window is still there, so there is no second timer
+      // and no second definition of "gone".
       //
-      // Deferred by a microtask because dockview fires this from INSIDE its own
+      // ANY membership change, not just a removal. A removal is the one that
+      // matters — that is the sweep reporting a corpse — but `changed` also
+      // covers a card popped out while another one is stranded, which is the
+      // same "honest moment" #279 sweeps on and costs a walk of a list that is
+      // never more than a handful long. An ordinary close reaches here too and
+      // finds nothing to do: dockview has already put that card back by then,
+      // which is what makes this safe to hang off every change rather than
+      // needing to know which kind it was.
+      //
+      // Deferred by a microtask because dockview fires these from INSIDE its own
       // removal, with the panel momentarily still in the group being torn down.
       // Rescuing there would be moving furniture out from under it; a microtask
       // lands after the whole synchronous teardown, when the answer is settled.
       const offRescue = subscribePopoutWindows({
-        removed: () => queueMicrotask(() => rescueStrandedPopouts(api)),
+        changed: () => queueMicrotask(() => rescueStrandedPopouts(api)),
       });
       window.addEventListener('beforeunload', () => offRescue());
       // window teardown must not be mistaken for the user closing cards
