@@ -7,18 +7,21 @@
 // neither in the grid nor in a window anyone can see. The registry sweep fixes
 // the bookkeeping; this fixes the user's problem.
 //
-// WHAT WE DO ABOUT IT is the design call, and it is "exactly what a clean close
-// does": the card comes back to the grid and its session suspends. Two reasons.
-// A user who closes a popout from the task bar has done the same thing as a
-// user who closes it with the ⤡ button; whether dockview happened to hear the
-// event is our implementation detail, and a rule that reads "closing a popout
-// suspends the session — unless the close was one we missed, in which case
-// something else happens" is not a rule anybody could hold in their head. And
-// the alternative shape — leave it stranded, offer a "re-open it" affordance —
-// keeps the session invisible until the user finds the offer, which IS the
-// defect. E8's display-change rescue set the precedent: when the OS invalidates
-// a window, the app puts the card somewhere visible on its own and tells the
-// user afterwards.
+// WHAT WE DO ABOUT IT is the design call, and it is "the outcome of a clean
+// close": the card is back in the grid and its session is suspended. A user who
+// closes a popout from the task bar has done the same thing as a user who
+// closes it with the ⤡ button; whether dockview happened to hear the event is
+// our implementation detail, and a rule that reads "closing a popout suspends
+// the session — unless the close was one we missed, in which case something
+// else happens" is not a rule anybody could hold in their head. The alternative
+// shape — leave it stranded and offer a "re-open it" affordance — keeps the
+// session invisible until the user finds the offer, which IS the defect. E8's
+// display-change rescue set the precedent: when the OS invalidates a window,
+// the app puts the card somewhere visible on its own and says so afterwards.
+//
+// The card is REBUILT rather than carried back, because a destroyed document
+// takes its nodes' event listeners with it — `rescueStrandedPopouts` in
+// SessionGrid has that story, next to the code it dictates.
 //
 // Everything that DECIDES is here and pure — which panels are stranded, and
 // where a rescued one lands — for the reason lib/dock-slot gives: these rules
@@ -95,10 +98,12 @@ export function strandedByGroup<T extends RescuePanel>(panels: readonly T[]): Ma
   return out;
 }
 
-// WHERE a rescued card lands is deliberately NOT decided here, because there
-// is no decision left to make: it goes into a group of its own. The tempting
-// alternative — the empty shell a pop-out leaves behind in the grid, which is
-// where a clean close puts the card back — cannot be used from outside
-// dockview, since taking the last card out of the popout group makes dockview
-// remove that shell in the same breath. `rescueStrandedPopouts` carries the
-// full reasoning next to the `addGroup` call that embodies it.
+// WHERE a rescued card lands is deliberately NOT decided here, because there is
+// no decision left to make: the card is rebuilt through the ordinary reveal, so
+// it lands wherever a revealed card lands (lib/dock-slot's `placeAt`) — and its
+// remembered slot names a popout group that no longer exists, so that is "a
+// group of its own in the grid". The one thing worth knowing is that it must
+// NOT come back as a new popout window: `popoutBoxOf` refuses to record a rect
+// for a closed window, so the slot carries no box and `placeAt` asks for no
+// window. Re-opening the window a user just killed is the one outcome nobody
+// would forgive.

@@ -1600,31 +1600,25 @@ export function popOutCardPanel(api: DockviewApi | null, cardId: string): void {
  * at all: not in the grid, not on screen, and reachable only by closing the
  * card outright. This is the half that puts it back.
  *
- * IT IS DELIBERATELY NOT A SPECIAL CASE. The panel is moved into the grid and
- * nothing else happens here — no suspend, no presentation write, no flags. The
- * card's own `onDidLocationChange` handler is watching for exactly this
- * transition and already knows what a popout leaving its window means: mark it
- * no longer popped out, drop the live session and show the suspended panel,
- * unless the move was our own (`isMoving`) or a dock-back toggle. That is why
- * this does NOT set `isMoving` — the whole point is that a window the OS took
- * is indistinguishable from a window the user closed, so it must go down the
- * same path and come out the same way, down to the words the card's live
- * region announces (#358). A rescue that quietly kept the session running
- * would mean "closing a popout suspends the session, unless we missed the
- * close" — a rule with an exception nobody could predict.
+ * THE CARD IS REBUILT, NOT MOVED, and that is the fact the whole shape hangs
+ * on. dockview ADOPTS a popped-out card's DOM into the other window's document,
+ * and when the OS destroys that window Chromium strips every event listener off
+ * every node in the document it is tearing down — React's included. Carrying
+ * those nodes back into the main window gives you a card that renders perfectly
+ * and answers no clicks: a picture of a session, with a Resume button that does
+ * nothing. (That was this function's first draft; the e2e below is what caught
+ * it, and no unit test could have.) So the dead panel is taken away and the card
+ * is built again from its record — the ladder's hidden rung and a reveal, both
+ * of which already exist and are how every panel-less card comes back.
  *
- * IT LANDS IN A GROUP OF ITS OWN, and that is forced rather than chosen. The
- * obvious home is the empty shell a pop-out leaves behind in the grid — the
- * place a clean close puts the card back into — but dockview destroys that
- * shell as part of this very move: taking the last panel out of the popout
- * group makes dockview remove the group, and removing a popout group also
- * removes its now-empty reference group. The card would be `openPanel`'d into
- * something disposed a moment earlier, which is #292 again with extra steps
- * (and was this function's first draft, caught by the e2e below). dockview's
- * own close path dodges it by moving the panels in FIRST and removing the
- * popout group with a flag we cannot pass from out here — so a fresh group it
- * is, which is also the fallback dockview itself takes when a returning
- * popout's reference group is gone.
+ * AND IT SUSPENDS, exactly as a clean close does. To the user a window taken by
+ * the OS and a window closed with its own X are the same event; whether dockview
+ * happened to hear about it is our implementation detail, and "closing a popout
+ * suspends the session — unless we missed the close" is not a rule anybody could
+ * hold in their head. The card's own `onDidLocationChange` handler would
+ * normally do this (E8-04), and cannot here: it never sees a location change,
+ * because its panel goes straight from the dead window to nowhere. So the two
+ * store writes and `dropLive` are made here instead, deliberately mirroring it.
  *
  * Not during teardown or a layout restore: both are moments when dockview's own
  * popout state is mid-flight, and a rescue then would rewrite the layout being
@@ -1637,27 +1631,24 @@ export function rescueStrandedPopouts(api: DockviewApi | null): void {
   if (!api || sessionStore.isTearingDown() || sessionStore.isRestoringLayout()) return;
   try {
     for (const stranded of strandedByGroup(api.panels).values()) {
-      // One home per dead WINDOW: cards that shared a popout come back sharing
-      // a group, which is what a clean close does with them.
-      const home = api.addGroup();
       for (const panel of stranded) {
         try {
-          panel.api.moveTo({ group: home });
-          // Logged, like the popout open/fail lines this sits beside: it
-          // happens seconds after a window disappeared with no gesture behind
-          // it, so it is the first thing anyone reading a log about a card that
-          // "moved on its own" needs to see.
-          console.log(`[popout] window gone — brought ${panel.id} home`);
+          const cardId = /^session-(.+)$/.exec(panel.id)?.[1];
+          // A DERIVED tab (a diff) went into the window with its card. It has no
+          // record and no state worth keeping — it is rebuilt from the card's
+          // Changes tab whenever it is asked for again — so it is simply
+          // dropped rather than rebuilt beside a suspended session.
+          if (!cardId) {
+            api.removePanel(panel);
+            continue;
+          }
+          rescueStrandedCard(api, cardId);
         } catch (err) {
-          // fail-open, and the loop continues: one card that cannot be moved
-          // must not cost the others their rescue. What is left behind is what
-          // was there before this function existed.
+          // fail-open, and the loop continues: one card that cannot be rebuilt
+          // must not cost the others their rescue.
           console.error('[popout] could not bring a stranded card home', err);
         }
       }
-      // Nobody made it: take the empty group back out rather than leave a blank
-      // pane in the workspace as the only visible sign of the failure.
-      if (home.panels.length === 0) api.removeGroup(home);
     }
   } catch (err) {
     // The registry calls its listeners inside its own try (popout-windows'
@@ -1668,6 +1659,44 @@ export function rescueStrandedPopouts(api: DockviewApi | null): void {
     // fixes.
     console.error('[popout] the stranded-card sweep failed', err);
   }
+}
+
+/** One card: take the dead panel away, suspend, build it again in the grid. */
+function rescueStrandedCard(api: DockviewApi, cardId: string): void {
+  // The ladder's own "take the panel away, and this is NOT the user closing the
+  // card": it flags the removal so `onDidRemovePanel` keeps the record, banks
+  // the slot, and clears `poppedOut`. Removing the last panel of the popout
+  // group is also what makes dockview forget the window and the empty shell it
+  // left in the grid, so the ghost goes with it.
+  removePanelKeepingSlot(api, cardId, 'hidden');
+  // Then exactly what the card's own location handler does when a popout window
+  // closes (E8-04) — because that is what happened. The card cannot do it for
+  // itself here: it is being unmounted, and it never saw a location change,
+  // since the panel went straight from the dead window to nowhere.
+  sessionStore.forgetCardLiveIds(cardId);
+  sessionStore.setPresentation(cardId, { suspended: true });
+  console.log(`[popout] window gone — rebuilding session-${cardId} in the grid`);
+  // And build it again. NOT a move: when the OS destroys a window, Chromium
+  // strips every event listener from the document it is destroying — including
+  // the ones React put on the card's DOM, which dockview had adopted into that
+  // window. Carrying those nodes back into the main window gives you a card
+  // that RENDERS and answers no clicks: the Resume button below would be a
+  // picture of a button. Only a fresh mount is a working card, which is why
+  // this is the hidden rung and a reveal rather than `moveTo`.
+  //
+  // WITH focus, which the attention reveal deliberately does not take. Two
+  // reasons, and neither is "it looked nicer": a clean close activates the
+  // group it hands back, so this is parity again; and a reveal without focus
+  // adds the panel INACTIVE, which for the card's own fresh group means a
+  // rescued card that is present, correct, and drawn by nobody. The window that
+  // just died is overwhelmingly the one the user was looking at.
+  void revealCardPanel(api, cardId, true).catch((err) => {
+    console.error('[popout] the rescued card could not be rebuilt', err);
+  });
+  // Last, because it is the only step that leaves this window: main lets the
+  // session go, the same suspend a bare window close performs. Everything the
+  // user can see is already right if this never comes back.
+  void window.switchboard.sessions.dropLive(cardId);
 }
 
 /** The popout window's rect on screen, when this panel is in one. */
