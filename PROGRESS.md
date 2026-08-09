@@ -34,8 +34,9 @@ structure adopting #228's temp-dir registry, verified by a local
 > # ▶▶ START HERE — 🎛 RUN 12 CLOSED 2026-08-09 + FULLY MERGED +
 > 🎉 **RELEASE v0.2.0 TAGGED** (~75 min wall, 3 workers)
 >
-> **Final state: all three merged, tag pushed, release workflow's
-> result to be verified (in progress at close-out write).** #353 → PR
+> **Final state: all three merged, tag pushed, 🎉 RELEASE v0.2.0 LIVE
+> (workflow success verified: switchboard-Setup-0.2.0.exe + sha256 +
+> notes, not draft).** #353 → PR
 > #373 → **e8bc165, TAGGED v0.2.0** (version 0.2.0 per CHANGELOG's own
 > rule — minor for features; Dan can still object, reversal documented
 > in 353.md) · #369 → PR #372 → f5d59ae (a11y charter now §5.32; bare
