@@ -16,7 +16,12 @@ test.describe('real claude end-to-end (opt-in)', () => {
   test('composer prompt -> real claude -> rendered response in the Session tab', async () => {
     test.setTimeout(180_000); // a real model turn takes what it takes
     const folder = tempProjectFolder();
-    a = await launchApp({ seedFolder: folder, realClaude: true });
+    // Pinned to the PTY (#381 made Direct the default): the assertion at the
+    // bottom of this test reads TERMINAL text, so a Direct session would have
+    // nothing to read. Rewriting it to assert through the Session view is the
+    // real fix and needs a real logged-in CLI to verify — not something this
+    // change can do honestly, so it says which transport it means instead.
+    a = await launchApp({ seedFolder: folder, realClaude: true, env: { SWITCHBOARD_TRANSPORT: 'pty' } });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 30_000 });
 

@@ -689,7 +689,14 @@ app
     pushToRenderer = (win, channel, payload) => broker.send(win, channel, payload);
     workspace = new WorkspaceStore(
       path.join(app.getPath('userData'), 'workspace.json'),
-      createLogger(sink, 'workspace')
+      createLogger(sink, 'workspace'),
+      // Saving started failing, or started working again (#207). Pushed rather
+      // than polled because — unlike read-only, which latches at load — this
+      // changes while the user is looking at the window, and the notice has to
+      // come DOWN as well as up. `currentWindow` is read at call time, so a
+      // change before the window exists simply has nowhere to go; the window
+      // reads `workspace:saveState` when it mounts and catches up.
+      (state) => pushToRenderer?.(currentWindow, 'workspace:saveStateChanged', state)
     );
     workspace.load();
     // renderer <-> workspace layout persistence (E3-01)
@@ -721,6 +728,12 @@ app
     // reads this to say so on screen instead (#168). Latched at load, so one
     // read at boot is the whole answer; nothing pushes a change.
     broker.handle('workspace:isReadOnly', () => workspace.isReadOnly());
+    // The other half of the same story (#207): the file is writable in
+    // principle, but the writes are failing — a full disk, a permission, an
+    // anti-virus sitting on the folder. Unlike read-only this comes and goes,
+    // so it is pushed on `workspace:saveStateChanged` too; this read is what a
+    // window that opened mid-failure uses to catch up.
+    broker.handle('workspace:saveState', () => workspace.saveState());
     // renderer-owned UI state (E12-08): focus, view tabs, prefs
     broker.handle('workspace:getUi', () => workspace.getUi());
     broker.on('workspace:setUi', (_e, ui: unknown) => workspace.setUi(ui));
@@ -1175,12 +1188,21 @@ app
           // commands vanished" should not sit at info among routine chatter.
           (msg) => log.app.warn(msg)
         ),
-      // Env-selected until P2-E18-08b (#149) gives it a per-session setting —
-      // the same way the two fakes are selected, and deliberately NOT a UI
-      // control yet, because a half-wired mode with a switch on it invites
-      // being switched.
-      preferredTransport: () =>
-        process.env.SWITCHBOARD_TRANSPORT === 'stream' ? 'stream' : undefined,
+      // The app-wide override, below a card's own choice and above the default
+      // (#381). It reads BOTH values now: `stream` was the only one worth
+      // naming while the PTY was the default, and the moment Direct became the
+      // default that spelling turned into a no-op while `pty` — the one anybody
+      // would now reach for — was silently ignored. An env var that quietly
+      // does nothing is worse than not having one.
+      preferredTransport: () => {
+        const v = process.env.SWITCHBOARD_TRANSPORT;
+        if (v === 'stream' || v === 'pty') return v;
+        // A typo used to be harmless — it fell through to the PTY, which was
+        // also the default. Now it falls through to Direct, i.e. to the exact
+        // opposite of what someone setting this variable is usually asking for.
+        if (v) log.app.warn('SWITCHBOARD_TRANSPORT ignored: expected "pty" or "stream"', { value: v });
+        return undefined;
+      },
     });
     app.on('quit', () => {
       ptys.killAll();

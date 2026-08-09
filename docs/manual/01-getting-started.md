@@ -61,5 +61,9 @@ same result, no dialog.
   saved sessions and quietly tread on each other. Everything already running
   keeps running; nothing restarts.
 - Nothing leaves your machine. There's no cloud sync, no telemetry, no login.
-- If switchboard itself breaks, your sessions keep running — you can always
-  drop into the **Terminal** tab and work exactly as you would without it.
+- If switchboard itself breaks, your sessions keep running — the real `claude`
+  is doing the work, not us. On a session you've put in **Terminal mode** you
+  can drop into its **Terminal** tab and work exactly as you would without
+  switchboard; sessions in [Direct mode](12-direct-mode.md), which is how new
+  ones start, have no terminal to drop into, so the fallback there is to switch
+  that session to Terminal mode from its **⋯** menu.

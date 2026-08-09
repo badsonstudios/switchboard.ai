@@ -110,7 +110,10 @@ It does not force the session to stay expanded; you can still collapse, tab or
 hide it yourself.
 
 ``Ctrl+` `` is a toggle: press it once to look at the Terminal, press it again
-to go straight back to the Session view.
+to go straight back to the Session view. On a session in
+[Direct mode](12-direct-mode.md) — how new sessions start — the Terminal tab is
+there but says there's no terminal, so the toggle still works and there is
+simply nothing to see.
 
 `Ctrl+Shift+↓` and `Ctrl+Shift+↑` walk the focused session down and up the
 four-rung ladder — full card, slim row, tab, gone. None of them stops the
@@ -296,8 +299,10 @@ away from the text box first, and the shortcuts come back. The one exception is
 `Ctrl+Shift+P`, the command palette — it's how you reach everything else, and
 it isn't a key you'd ever mean as text.
 
-**The Terminal tab is the CLI's, with exactly two exceptions.** Everything you
-press in the Terminal goes to the real Claude Code — that's the point of it, and
+**The Terminal tab is the CLI's, with exactly two exceptions.** (Only on a
+session in Terminal mode — a [Direct mode](12-direct-mode.md) session has no
+terminal, so none of this applies and every shortcut keeps working normally.)
+Everything you press in the Terminal goes to the real Claude Code — that's the point of it, and
 `Ctrl+1`, `Ctrl+B`, `Ctrl+W` and the rest all stand down there.
 
 The two exceptions are the ones you'd otherwise be stranded without:
