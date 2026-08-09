@@ -109,7 +109,7 @@ if (!isPrimaryInstance) {
 /** Stamped in at build time (P2-E15-15); constant for the process lifetime. */
 const BUILD_IDENTITY = buildIdentity();
 /** The name the OS window carries when there is nothing unusual to report. */
-const APP_NAME = 'switchboard';
+const APP_NAME = 'switchboard.ai';
 
 // Safe-by-default for every window this app will ever open (§5.29 posture).
 app.enableSandbox();
@@ -1101,7 +1101,7 @@ app
     const notifier = new Notifier({
       getWindow: () => currentWindow,
       getPrefs: () => workspace.getNotificationPrefs(),
-      titleFor: (sessionId) => manager.get(sessionId)?.identity.title ?? 'switchboard',
+      titleFor: (sessionId) => manager.get(sessionId)?.identity.title ?? 'switchboard.ai',
       bodyFor: (e) => e.kind.replace(/-/g, ' '),
     });
     feed.onEvent((e) => {

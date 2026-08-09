@@ -88,13 +88,13 @@ test.describe('build identity (E15-15)', () => {
     const title = await windowTitle(a);
     if (branch === 'main' && !commit.endsWith('*')) {
       // a clean release build carries no noise at all
-      expect(title).toBe('switchboard');
+      expect(title).toBe('switchboard.ai');
     } else {
       // …and every other build says which one it is, readable from the taskbar
       expect(title).toContain(commit);
       expect(title).toContain(branch);
     }
     // whichever branch we are on, index.html's <title> must not have won
-    expect(title.startsWith('switchboard')).toBe(true);
+    expect(title.startsWith('switchboard.ai')).toBe(true);
   });
 });

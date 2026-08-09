@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "switchboard"
+    "title": "switchboard.ai"
   },
   "shell": {
     "scaffoldStatus": "scaffold OK — {platform} · v{version} · theme: {theme} ({pref})"
@@ -244,7 +244,7 @@
   },
   "workspace": {
     "readOnlyTitle": "Nothing in this workspace will be saved.",
-    "readOnlyBody": "Its file was written by a newer version of switchboard, and saving it from this one would throw away whatever that version added — so the file is being left untouched. Everything here works normally, but nothing you change this run — sessions, layout, groups, settings — will be there next launch. Run the newer version of switchboard again to save as normal."
+    "readOnlyBody": "Its file was written by a newer version of switchboard.ai, and saving it from this one would throw away whatever that version added — so the file is being left untouched. Everything here works normally, but nothing you change this run — sessions, layout, groups, settings — will be there next launch. Run the newer version of switchboard.ai again to save as normal."
   },
   "preflight": {
     "missingCli": "claude CLI not found — install it and log in: npm install -g @anthropic-ai/claude-code, then run `claude` once. New sessions are disabled until then.",
@@ -305,7 +305,7 @@
   },
   "handoff": {
     "permissionTitle": "Claude is asking permission in the terminal",
-    "permissionBody": "Claude Code is handling this one in its own prompt rather than offering it to switchboard — most often an edit inside the project's .claude folder. Answer it in the Terminal.",
+    "permissionBody": "Claude Code is handling this one in its own prompt rather than offering it to switchboard.ai — most often an edit inside the project's .claude folder. Answer it in the Terminal.",
     "inputTitle": "Claude is waiting for your answer",
     "inputBody": "It is waiting for you in its own prompt, which only the Terminal tab can show.",
     "startingTitle": "Claude is showing a start-up dialog",
