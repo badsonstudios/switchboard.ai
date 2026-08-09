@@ -150,8 +150,10 @@ interface CapabilityManifest {
 Every contribution, at every point, carries one. `id` is the resolution key;
 `capabilities` is the declared least-privilege set.
 
-**Capabilities are declarative only — nothing enforces them yet.** The vocabulary
-in use today is `sessions.spawn`, `sessions.resume`, `settings.inject`, and
+**Manifest capabilities are declarative only — nothing enforces them yet.** (The
+IPC channel capabilities are a *different* set, and the broker does enforce
+those — see "Two vocabularies, not yet joined".) The vocabulary in use today is
+`sessions.spawn`, `sessions.resume`, `settings.inject`, and
 `slash-commands.list`. `registry.list(point, capability)` filters on them, and
 `manifests()` reports them, but no code path checks a capability before letting
 a contributor act. When the real plugin host lands, the main process becomes the
@@ -414,14 +416,15 @@ not a decision to ship a plugin API.
   expressed in the contract, the contract is wrong* — the contract is wrong.
   E15-01 fixes it. **This is the one that blocks the multi-provider goal**: you
   would discover it by writing adapter #2 and having to edit a consumer.
-- **Capabilities have no enforcement point at all.** The section above says
-  "declarative only — nothing enforces them yet", which is accurate but
-  understates it: the preload bridge is ~60 hand-maintained methods with no
-  capability scoping, so there is no place a check *could* go. E15-04 tags every
-  IPC channel with one declared capability and adds a single main-side choke
-  point — a runtime no-op for first-party, which is the point: Phase 4 wires a
-  plugin manifest into an existing check instead of inventing a permission
-  model.
+- **~~Capabilities have no enforcement point at all.~~ RESOLVED for IPC
+  (E15-04); still true of contribution manifests.** "The contract" above says
+  manifest capabilities are "declarative only — nothing enforces them yet",
+  which remains accurate for *those* strings. What changed is that there is now
+  a place a check can go at all: the preload bridge **was** ~60 hand-maintained
+  methods with no capability scoping. E15-04 tags every IPC channel with one
+  declared capability and adds a single main-side choke point — a runtime no-op
+  for first-party, which is the point: Phase 4 wires a plugin manifest into an
+  existing check instead of inventing a permission model.
 - **~~Themes are not a contribution shape yet.~~ RESOLVED (E15-05).** §5.20 says
   a theme is a JSON token map; the implementation was two hardcoded
   `[data-theme]` blocks and a two-value `ThemeName` union that made a third
@@ -440,13 +443,23 @@ being trimmed to internal tidiness.
 
 No on-disk manifest format · no loader or install path · no `utilityProcess`
 plugin host or typed RPC · no activation events (`onSessionStart`,
-`onProviderNeeded:<id>`, `onEvent:<type>`) · no capability enforcement · no
-sandboxed webview panels · no distribution story.
+`onProviderNeeded:<id>`, `onEvent:<type>`) · no *join* between a contribution's
+declared capabilities and the grants the broker checks · no sandboxed webview
+panels · no distribution story.
 
-All of it is Phase 4, and it is **gated**: the plugin API alpha starts only
-after 2–3 dissimilar internal consumers exist on the seams
-(`docs/plans/03-later-phases.md`). Current count: one provider adapter. Check
-the registry's actual consumer list before anyone schedules that work.
+Note how narrow that *join* item is: **capability enforcement itself exists.**
+E15-04 tags every IPC channel with one capability and the broker refuses a
+caller that does not hold it — answering an `IpcRefusal` rather than throwing
+(#346, "How the broker refuses — the contract" above). What is missing is the
+wiring on the other side: the strings in a `CapabilityManifest` still bind
+nothing, so turning a plugin's declared set into the grant the broker already
+enforces is the Phase-4 job (see "Two vocabularies, not yet joined").
+
+Every item on that list is Phase 4, and it is **gated**: the plugin API alpha
+starts only after 2–3 dissimilar internal consumers exist on the seams
+(`docs/plans/03-later-phases.md`). Current count: **six**, so that condition is
+met — see "Known gaps" above for what it does and does not license. Check the
+registry's actual consumer list before anyone schedules that work.
 
 Two constraints from §5.23 worth knowing before designing against this:
 
