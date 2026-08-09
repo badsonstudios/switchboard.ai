@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { DiscoverySchedule, WatchHandle } from './discovery-scheduler';
+import { DiscoverySchedule, DiscoveryScheduleOptions, WatchHandle } from './discovery-scheduler';
 import { LogSink, createLogger } from '../log/logger';
 import { tempDir } from '../../test-temp-dirs';
 
@@ -214,6 +214,145 @@ describe('DiscoverySchedule — lifecycle, clock and recovery (review round 1)',
     // A watcher that errors repeatedly must not re-close a handle we dropped.
     expect(() => state.fail(new Error('EPERM again'))).not.toThrow();
     expect(s.stats(ROOT)!.watchFailed).toBe(true);
+  });
+});
+
+describe('DiscoverySchedule — a root everyone gave up on goes quiet (#129)', () => {
+  const LADDER = [100, 200, 400] as const;
+  const SLOW = 10_000;
+
+  /** A root sitting at the bottom of the fast ladder, with the reprieve that
+   *  `register` grants already spent — i.e. the steady state a session reaches
+   *  long before it gives up (45s in). */
+  function settled(over: { watchFactory?: DiscoveryScheduleOptions['watchFactory'] } = {}) {
+    const s = new DiscoverySchedule({
+      log: log(),
+      watchFactory: over.watchFactory ?? fakeWatch().factory,
+      backoffMs: [...LADDER],
+      givenUpMs: SLOW,
+      watchFailedMs: 500,
+    });
+    s.register(ROOT);
+    let t = 0;
+    for (let i = 0; i < LADDER.length; i++) s.noteSwept(ROOT, (t += 1000));
+    return { s, at: t };
+  }
+
+  it('drops to the slow rung — the full scan does not run for ever after the UI gave up', () => {
+    const { s, at } = settled();
+    expect(s.stats(ROOT)!.backoffMs).toBe(400); // the old floor: a scan every 400ms, for ever
+    s.setGivenUp(ROOT, true);
+    expect(s.stats(ROOT)!.givenUp).toBe(true);
+    expect(s.stats(ROOT)!.backoffMs).toBe(SLOW);
+    expect(s.shouldSweep(ROOT, at + 9_999)).toBe(false); // 25 sweeps the old ladder would have taken
+    expect(s.shouldSweep(ROOT, at + SLOW)).toBe(true);
+  });
+
+  it('...and the watch-failed rung, which is the expensive one, goes with it', () => {
+    // 500ms flat per unbound session was the measured worst case in the issue.
+    const { s, at } = settled({ watchFactory: () => null });
+    expect(s.stats(ROOT)!.watchFailed).toBe(true);
+    expect(s.stats(ROOT)!.backoffMs).toBe(500);
+    s.setGivenUp(ROOT, true);
+    expect(s.stats(ROOT)!.backoffMs).toBe(SLOW);
+    expect(s.shouldSweep(ROOT, at + 2_000)).toBe(false);
+  });
+
+  it('markDirty buys back the WHOLE fast ladder, not one sweep', () => {
+    // The other half of the done-when. A give-up must never become a session
+    // that can no longer bind: a native id, a turn, a `/clear` or a sibling
+    // closing all reach `markDirty`, and binding often needs several sweeps
+    // after one of them (the file may not be on disk for another beat).
+    const { s, at } = settled();
+    s.setGivenUp(ROOT, true);
+    expect(s.stats(ROOT)!.backoffMs).toBe(SLOW);
+
+    s.markDirty(ROOT);
+    expect(s.shouldSweep(ROOT, at + 1)).toBe(true); // immediately: dirty
+    let t = at + 1;
+    // One sweep per rung, from the top of the ladder — [100, 200, 400] here,
+    // [250, 500, 1000, 2000] in production, so ~3.5s of looking properly.
+    for (const rung of [LADDER[1], LADDER[2]]) {
+      s.noteSwept(ROOT, t);
+      expect(s.stats(ROOT)!.backoffMs).toBe(rung);
+      expect(s.shouldSweep(ROOT, t + rung - 1)).toBe(false);
+      expect(s.shouldSweep(ROOT, t + rung)).toBe(true);
+      t += rung;
+    }
+    // ...and then it is quiet again, without the watcher having to say so twice.
+    s.noteSwept(ROOT, t);
+    expect(s.stats(ROOT)!.backoffMs).toBe(SLOW);
+  });
+
+  it('a transcript APPEARING buys it back too, and an append to a known file does not', () => {
+    const { state, factory } = fakeWatch();
+    const s = new DiscoverySchedule({
+      log: log(),
+      watchFactory: factory,
+      backoffMs: [...LADDER],
+      givenUpMs: SLOW,
+    });
+    s.register(ROOT);
+    state.fire('native-abc.jsonl'); // the create: now a KNOWN path
+    let t = 0;
+    for (let i = 0; i < LADDER.length; i++) s.noteSwept(ROOT, (t += 1000));
+    s.setGivenUp(ROOT, true);
+
+    // An append storm on a file we already know about is the tail drain's
+    // business. Without the slow floor in `shouldSweep`, one busy session
+    // anywhere under this root would hold every given-up card at 100ms sweeps
+    // on any platform that reports appends (macOS does).
+    for (let i = 0; i < 50; i++) state.fire('native-abc.jsonl');
+    expect(s.shouldSweep(ROOT, t + 5_000)).toBe(false);
+    expect(s.shouldSweep(ROOT, t + SLOW)).toBe(true);
+
+    // A path we have NEVER seen is the one thing that can still rescue this
+    // root, so it is immediate and it re-arms the ladder.
+    state.fire('native-xyz.jsonl');
+    expect(s.shouldSweep(ROOT, t + 1)).toBe(true);
+    s.noteSwept(ROOT, t + 1);
+    expect(s.stats(ROOT)!.backoffMs).toBe(LADDER[1]);
+  });
+
+  it('an event with NO filename buys it back too — the platforms we trust least', () => {
+    // A Windows ReadDirectoryChangesW overflow and macOS coalescing both arrive
+    // as "something moved, and we will not say what", which on a given-up root
+    // reads as "we cannot rule out that the transcript just appeared". One
+    // sweep and silence again would be the wrong answer there.
+    const { state, factory } = fakeWatch();
+    const s = new DiscoverySchedule({
+      log: log(),
+      watchFactory: factory,
+      backoffMs: [...LADDER],
+      givenUpMs: SLOW,
+    });
+    s.register(ROOT);
+    let t = 0;
+    for (let i = 0; i < LADDER.length; i++) s.noteSwept(ROOT, (t += 1000));
+    s.setGivenUp(ROOT, true);
+    expect(s.stats(ROOT)!.backoffMs).toBe(SLOW);
+
+    state.fire(null);
+    expect(s.shouldSweep(ROOT, t + 1)).toBe(true);
+    s.noteSwept(ROOT, t + 1);
+    expect(s.stats(ROOT)!.backoffMs).toBe(LADDER[1]); // the ladder, not one look
+  });
+
+  it('a session that starts looking again lifts it, with no evidence event at all', () => {
+    // The watcher answers this every tick, so a card opening on the root, or a
+    // session going back to `searching`, is enough — nothing has to be dirty.
+    const { s } = settled();
+    s.setGivenUp(ROOT, true);
+    expect(s.stats(ROOT)!.backoffMs).toBe(SLOW);
+    s.setGivenUp(ROOT, false);
+    expect(s.stats(ROOT)!.givenUp).toBe(false);
+    expect(s.stats(ROOT)!.backoffMs).toBe(LADDER[LADDER.length - 1]);
+  });
+
+  it('an unregistered root is not something to give up on', () => {
+    const s = new DiscoverySchedule({ log: log(), watchFactory: fakeWatch().factory });
+    expect(() => s.setGivenUp('C:/never/registered', true)).not.toThrow();
+    expect(s.shouldSweep('C:/never/registered', 0)).toBe(true);
   });
 });
 

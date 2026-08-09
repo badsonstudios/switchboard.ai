@@ -21,19 +21,49 @@
 // alone, and the watch only makes it fast. If the watch never fires a single
 // event, discovery still runs — just on the slower ladder. Fail-open (a hard
 // constraint) means our cleverness breaking must not leave a session unbound.
+//
+// ONE qualifier, added by #129: that promise is made to a session that is still
+// LOOKING. A root where every session has already been declared `unbound` — the
+// UI told the user so — drops to `GIVEN_UP_MS`, and there the watch stops being
+// only an accelerator: with it dead too, a transcript that turns up late is
+// found on the slow rung rather than the ladder. Nothing is left unbound, and
+// every evidence site puts the root back on the ladder at once.
 import fs from 'fs';
 import { Logger } from '../log/logger';
 
 /** Sweep ladder used while nothing is happening, in ms. Capped at 2s so that
  *  even with the watch completely dead, discovery stays inside the S-04 ~4s
  *  budget — the done-when says a session must bind NO SLOWER than today, and
- *  that has to hold on the degraded path too, not just the happy one. */
+ *  that has to hold on the degraded path too, not just the happy one. The cap
+ *  is the guarantee for as long as ANYONE on the root is still searching; see
+ *  `GIVEN_UP_MS` for what happens when nobody is. */
 const BACKOFF_MS = [250, 500, 1000, 2000] as const;
 
 /** Used instead of the ladder once we know the watch is not delivering. Flat,
  *  not decaying: there is no signal coming, so backing off further would only
  *  add latency with nothing to gain. Still 20x less I/O than the 100ms poll. */
 const WATCH_FAILED_MS = 500;
+
+/**
+ * The rung a root drops to once EVERY session on it has given up (#129).
+ *
+ * The ladder above caps at 2s because a session that is still searching must
+ * bind no slower than it used to. A session the watcher has already declared
+ * `unbound` is not searching any more — the UI said so 45 seconds ago — and it
+ * kept walking the whole tree anyway: ~2,100 syscalls per sweep, so ~1,050/sec
+ * per card at the 2s cap and ~4,200/sec on the watch-failed 500ms rung, for the
+ * rest of the run. Announced failure plus permanent full scans is the worst of
+ * both: we pay the price of looking and get none of the credit.
+ *
+ * Flat, for `WATCH_FAILED_MS`'s reason: nothing is expected here, and every
+ * event that could change the answer prods the root back to the fast ladder
+ * (see `fastSweepsLeft`). 30s is chosen against the DEGRADED path rather than
+ * the happy one — with the recursive watch alive a transcript appearing is an
+ * immediate sweep, so this interval is only ever felt when the watch AND the
+ * hooks are both silent, and there it is the difference between binding a
+ * surprise transcript half a minute late and burning a thread forever.
+ */
+const GIVEN_UP_MS = 30_000;
 
 /** How long a failed watch stays failed before we try to open it again.
  *  `markWatchFailed` used to be one-way, which is easy to trip by accident: a
@@ -42,6 +72,19 @@ const WATCH_FAILED_MS = 500;
  *  transient burst would have pinned the process to flat sweeps for the rest of
  *  its life. */
 const WATCH_REARM_MS = 60_000;
+
+/**
+ * Two spellings of one directory are ONE root — a watch handle is a far
+ * costlier duplicate than a Set entry, and on win32 case is not identity.
+ *
+ * Exported because a caller that GROUPS sessions by root has to group them the
+ * way this module does (#129): the give-up quorum is one answer per root, and
+ * computing it under a second notion of identity would let a session spelling
+ * the root one way overwrite the answer for a session spelling it another.
+ */
+export function rootKey(root: string): string {
+  return process.platform === 'win32' ? root.toLowerCase() : root;
+}
 
 /** Closeable handle — `fs.FSWatcher` in production, a stub in tests. */
 export interface WatchHandle {
@@ -60,6 +103,7 @@ export interface DiscoveryScheduleOptions {
   backoffMs?: readonly number[];
   watchFailedMs?: number;
   watchRearmMs?: number;
+  givenUpMs?: number;
 }
 
 interface RootState {
@@ -78,6 +122,28 @@ interface RootState {
   watchFailed: boolean;
   /** when the watch was declared dead, so it can be retried (never one-way) */
   failedAt: number;
+  /** Every session on this root has reached `unbound` (#129) — nobody here is
+   *  waiting for a transcript any more. Level-driven by the watcher on every
+   *  tick and never latched here: a session binding, being replaced, or a new
+   *  card opening on this root puts it back to false without this module
+   *  having to know what any of those things are. */
+  givenUp: boolean;
+  /** Swept ticks still owed to the FAST ladder while `givenUp` (#129).
+   *
+   *  A give-up is not a death sentence — a transcript can still turn up, and
+   *  the item that made this rung slow is also the item that has to guarantee
+   *  it is not a session that can NEVER bind. So every evidence site
+   *  (`markDirty`, a new path on the watch) buys the root one full pass back
+   *  down the ladder — an immediate sweep and then 500/1000/2000, ~3.5s of
+   *  looking properly — before it goes quiet again. Counted in sweeps rather
+   *  than derived from `backoffIdx` deliberately: an append to a KNOWN path
+   *  also resets that index, so a busy neighbouring session under the same root
+   *  could otherwise hold a given-up root on the fast ladder for ever.
+   *
+   *  One reprieve is one pass down the ladder, so a test injecting a
+   *  single-rung `backoffMs` gets exactly the immediate sweep and nothing
+   *  after it. */
+  fastSweepsLeft: number;
   /** how many sessions are on this root — the last one out closes the watch */
   refs: number;
   /** counters, for the log line and for tests that assert we stopped scanning */
@@ -122,10 +188,12 @@ export class DiscoverySchedule {
   private readonly roots = new Map<string, RootState>();
   private readonly backoff: readonly number[];
   private readonly failedMs: number;
+  private readonly givenUpMs: number;
 
   constructor(private readonly opts: DiscoveryScheduleOptions) {
     this.backoff = opts.backoffMs?.length ? opts.backoffMs : BACKOFF_MS;
     this.failedMs = opts.watchFailedMs ?? WATCH_FAILED_MS;
+    this.givenUpMs = opts.givenUpMs ?? GIVEN_UP_MS;
   }
 
   /** Begin watching a root (idempotent) and ask for an immediate first sweep.
@@ -145,6 +213,8 @@ export class DiscoverySchedule {
         handle: null,
         watchFailed: false,
         failedAt: 0,
+        givenUp: false,
+        fastSweepsLeft: this.backoff.length,
         refs: 0,
         sweeps: 0,
         events: 0,
@@ -184,8 +254,35 @@ export class DiscoverySchedule {
   markDirty(root: string): void {
     const st = this.roots.get(this.key(root));
     if (!st) return;
-    st.dirty = true;
-    st.backoffIdx = 0; // something really happened — be fast again
+    this.goFast(st);
+  }
+
+  /**
+   * Has every session on this root given up (#129)?
+   *
+   * Level-driven, and asked on every tick: the watcher owns the question (only
+   * it knows what a session is, or what `unbound` means) and this module owns
+   * the consequence. `true` drops the root to `GIVEN_UP_MS` — a failure that
+   * has already been announced to the user is not made worse by finding out
+   * about its reprieve half a minute late — but only once any outstanding fast
+   * sweeps are spent, so the LAST evidence still gets a full look.
+   *
+   * A root nobody has registered is ignored, like every other call here:
+   * bookkeeping never blocks discovery.
+   */
+  setGivenUp(root: string, givenUp: boolean): void {
+    const st = this.roots.get(this.key(root));
+    if (!st || st.givenUp === givenUp) return;
+    st.givenUp = givenUp;
+    if (givenUp) {
+      this.opts.log.info('transcript discovery quiet — every session on this root has given up', {
+        root,
+        everyMs: this.givenUpMs,
+        note: 'any evidence — a new transcript, a turn, a native id — puts it back on the fast ladder',
+      });
+    } else {
+      this.opts.log.info('transcript discovery back on the fast ladder', { root });
+    }
   }
 
   /** May discovery touch the disk for this root on this tick? Pure: it reads
@@ -210,7 +307,14 @@ export class DiscoverySchedule {
     // an accelerator. The filter is still worth keeping — it makes Windows and
     // Linux quiet rather than merely bounded — but the GUARANTEE lives here,
     // where no platform's event semantics can reach it.
-    if (st.fsDirty && now - st.lastSweepAt >= this.backoff[0]) return true;
+    //
+    // The floor is the SLOW rung on a given-up root (#129). A known path is,
+    // by this module's own reckoning, the CLI appending to a transcript it
+    // already owns — the tail drain's business, not ours. Leaving the floor at
+    // the fastest rung would have let one busy session anywhere under the root
+    // hold every given-up card at 250ms sweeps on any platform that reports
+    // appends (macOS does), which is this item's defect with extra steps.
+    if (st.fsDirty && now - st.lastSweepAt >= (this.slowRung(st) ?? this.backoff[0])) return true;
     // A wall clock that steps BACKWARDS (NTP correction, VM resume, the user
     // changing the clock) would otherwise make this subtraction negative and
     // stall discovery until real time caught up — for an hour-sized jump, an
@@ -229,8 +333,16 @@ export class DiscoverySchedule {
     st.lastSweepAt = now;
     st.sweeps++;
     if (st.backoffIdx < this.backoff.length - 1) st.backoffIdx++;
+    // Spend one of the fast sweeps the last evidence bought (#129). Counted on
+    // every root, given-up or not, so the count is simply "sweeps since the
+    // last evidence, capped" and a root that gives up long after its last prod
+    // goes slow on the very tick the watcher says so.
+    if (st.fastSweepsLeft > 0) st.fastSweepsLeft--;
     // Cheapest place to retry a dead watch: once per root per swept tick, and
-    // only after the re-arm delay.
+    // only after the re-arm delay. On a given-up root that means the retry can
+    // land up to `GIVEN_UP_MS` late (#129) — which is the right trade in the
+    // one direction it can go wrong: the watch is an accelerator, and a root
+    // nobody is waiting on can afford to get it back half a minute late.
     if (st.watchFailed && now - st.failedAt >= (this.opts.watchRearmMs ?? WATCH_REARM_MS)) {
       this.openWatch(root, st, now);
     }
@@ -249,25 +361,29 @@ export class DiscoverySchedule {
   }
 
   /** Test/diagnostic view. */
-  stats(
-    root: string
-  ): { sweeps: number; events: number; watchFailed: boolean; backoffMs: number; refs: number } | null {
+  stats(root: string): {
+    sweeps: number;
+    events: number;
+    watchFailed: boolean;
+    givenUp: boolean;
+    backoffMs: number;
+    refs: number;
+  } | null {
     const st = this.roots.get(this.key(root));
     return st
       ? {
           sweeps: st.sweeps,
           events: st.events,
           watchFailed: st.watchFailed,
+          givenUp: st.givenUp,
           backoffMs: this.intervalFor(st),
           refs: st.refs,
         }
       : null;
   }
 
-  /** Two spellings of one directory must not open two recursive watches on the
-   *  same tree — a watch handle is a far costlier duplicate than a Set entry. */
   private key(root: string): string {
-    return process.platform === 'win32' ? root.toLowerCase() : root;
+    return rootKey(root);
   }
 
   private openWatch(root: string, st: RootState, now: number): void {
@@ -294,7 +410,28 @@ export class DiscoverySchedule {
     }
   }
 
+  /** Be fast again: something happened that a sweep would conclude differently
+   *  about. The reprieve is the #129 half — see `fastSweepsLeft`. */
+  private goFast(st: RootState): void {
+    st.dirty = true;
+    st.backoffIdx = 0;
+    st.fastSweepsLeft = this.backoff.length;
+  }
+
+  /** The slow rung, or null if this root is not on it (#129). One predicate,
+   *  because the sweep interval and the filesystem-event floor must agree:
+   *  either would otherwise be a way around the other. */
+  private slowRung(st: RootState): number | null {
+    return st.givenUp && st.fastSweepsLeft <= 0 ? this.givenUpMs : null;
+  }
+
   private intervalFor(st: RootState): number {
+    // Give-up outranks the watch-failed rung deliberately. That rung is the
+    // expensive one (500ms flat, ~4,200 syscalls/sec on Dan's tree) and it
+    // exists to keep a session that is still LOOKING bound-able with no events
+    // to help it — which is exactly what a given-up session has stopped doing.
+    const slow = this.slowRung(st);
+    if (slow !== null) return slow;
     return st.watchFailed ? this.failedMs : this.backoff[Math.min(st.backoffIdx, this.backoff.length - 1)];
   }
 
@@ -322,7 +459,7 @@ export class DiscoverySchedule {
     if (name === null) {
       // The platform did not tell us WHICH path moved. Assume the worst — it
       // could be the transcript we are waiting for.
-      st.dirty = true;
+      this.goFast(st);
       return;
     }
     if (st.seenNames.has(name)) {
@@ -334,7 +471,10 @@ export class DiscoverySchedule {
     // immediate sweep per path, not correctness.
     if (st.seenNames.size > 5000) st.seenNames.clear();
     st.seenNames.add(name);
-    st.dirty = true;
+    // A transcript APPEARING is the one thing that can still rescue a root
+    // every session gave up on, so it buys the fast ladder back (#129) — the
+    // known-path branch above deliberately does not.
+    this.goFast(st);
   }
 
   private onWatchError(root: string, err: unknown): void {

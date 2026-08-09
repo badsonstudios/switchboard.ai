@@ -1244,6 +1244,165 @@ describe('discovery I/O is off the hot thread (P2-E15-11 / AR-P1-8)', () => {
       w.stop();
     }
   });
+
+  // --- #129: a session that has GIVEN UP stops full-scanning the root --------
+  //
+  // AR-P1-8 left one population paying for ever: once `widen` is true every
+  // swept tick is a full `scan(root)` — ~2,100 syscalls on Dan's tree — and the
+  // ladder's floor (2s) or the watch-failed rung (500ms) kept that going long
+  // after `deriveBinding` said `unbound` at 45s and the UI told the user we had
+  // given up. These use the watch-failed rung deliberately: it is the worst
+  // measured case (~4,200 syscalls/sec per card), and with no `fs.watch` the
+  // ONLY thing that can find a transcript is a sweep, so "it stopped sweeping"
+  // and "it can still bind" are both real claims here rather than artefacts of
+  // an event arriving to save us.
+  function blindGiveUpWatcher(over: Partial<ConstructorParameters<typeof TranscriptWatcher>[0]> = {}) {
+    return makeWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
+      pollMs: 25,
+      widenAfterMs: 30, // the expensive branch — a full walk of the root
+      bindGiveUpMs: 60,
+      discovery: { watchFactory: () => null, watchFailedMs: 50, givenUpMs: 5_000, backoffMs: [25, 50] },
+      ...over,
+    });
+  }
+
+  it('a session that GAVE UP stops walking the tree — and still binds on evidence', async () => {
+    const w = blindGiveUpWatcher();
+    try {
+      w.watch('s1', { cwd });
+      w.noteConversationStarted('s1'); // a turn ran: the give-up clock starts
+      await waitFor(() => w.snapshot('s1')!.binding === 'unbound');
+      await sleep(150); // spend the fast sweeps the start-up prods bought
+
+      const spy = countReaddirs(root);
+      let quiet = 0;
+      try {
+        await sleep(500); // 20 ticks
+      } finally {
+        quiet = spy.calls();
+        spy.restore();
+      }
+      // The assertion is against TICKS, like its sibling above: on the
+      // watch-failed rung this window is ~10 full scans of the root, and before
+      // P2-E15-11 it was ~20. The slow rung here is 5s, so it is 0 or the one
+      // sweep a slow machine might still owe from before the give-up.
+      expect(quiet).toBeLessThan(2);
+
+      // The other half of the done-when, and the reason the rung is slow rather
+      // than off: a give-up must never become a session that can NEVER bind.
+      // The transcript is on disk and nothing can see it appear — no watch —
+      // so the only thing that can find it is a prod putting discovery back on
+      // the fast ladder.
+      writeLines(path.join(projectDir(), 'native-1.jsonl'), [entry()]);
+      await sleep(150);
+      expect(w.snapshot('s1')!.bound).toBe(false); // still quiet: 6 ticks, no sweep
+
+      w.setNativeSessionId('s1', 'native-1'); // a late hook — a markDirty site
+      await waitFor(() => w.snapshot('s1')!.bound === true, 1_000);
+      expect(w.snapshot('s1')!.binding).toBe('bound');
+    } finally {
+      w.stop();
+    }
+  });
+
+  it('a LATER turn prods it — the evidence latch is not a bookkeeping latch', async () => {
+    // The prod a user who simply keeps typing produces, and the one this item
+    // most needs to work: `conversationStarted` is a one-way latch, so every
+    // turn after the first used to reach it and stop — and by construction
+    // EVERY given-up session has that latch closed already (the give-up clock
+    // only starts once a turn has run). With no watch and no hooks changing the
+    // native id, this is the only thing between such a card and the slow rung.
+    const w = blindGiveUpWatcher();
+    try {
+      w.watch('s1', { cwd });
+      w.noteConversationStarted('s1'); // the turn that starts the give-up clock
+      await waitFor(() => w.snapshot('s1')!.binding === 'unbound');
+      await sleep(150);
+
+      writeLines(path.join(projectDir(), 'native-1.jsonl'), [entry()]);
+      await sleep(150);
+      expect(w.snapshot('s1')!.bound).toBe(false); // the slow rung is holding
+
+      w.noteConversationStarted('s1'); // ...and the user prompts it again
+      await waitFor(() => w.snapshot('s1')!.bound === true, 1_000);
+    } finally {
+      w.stop();
+    }
+  });
+
+  it('one live BOUND session keeps the whole root fast — subagents still turn up', async () => {
+    // The populations this must not conflate. A bound session is not done with
+    // discovery: `subagentFiles()` only runs on a swept tick, so dropping a
+    // root to 30s because a NEIGHBOURING card gave up would hide a subagent
+    // transcript for half a minute. Its vote is `binding !== 'unbound'`, which
+    // is why the quorum is not "nothing here is searching".
+    const w = blindGiveUpWatcher();
+    try {
+      const cwd2 = 'C:/tmp/tw-project-bound';
+      const d2 = path.join(root, slugForCwd(cwd2));
+      fs.mkdirSync(d2, { recursive: true });
+
+      w.watch('s1', { cwd }); // never gets a transcript: gives up at 60ms
+      w.noteConversationStarted('s1');
+      w.watch('s2', { cwd: cwd2 });
+      writeLines(path.join(d2, 'native-2.jsonl'), [
+        JSON.stringify({ type: 'assistant', sessionId: 'native-2', cwd: cwd2, timestamp: new Date().toISOString() }),
+      ]);
+      await waitFor(() => w.snapshot('s2')!.bound === true);
+      await waitFor(() => w.snapshot('s1')!.binding === 'unbound');
+      await sleep(150);
+
+      const spy = countReaddirs(root);
+      try {
+        await sleep(300);
+      } finally {
+        expect(spy.calls()).toBeGreaterThan(0);
+        spy.restore();
+      }
+    } finally {
+      w.stop();
+    }
+  });
+
+  it('a QUIESCED session casts no vote — a corpse cannot hold the root fast (#200)', async () => {
+    // The same set-up as above with s2 CRASHED. Its watch is frozen: it does no
+    // I/O and can learn nothing, so counting its `bound` as "still looking"
+    // would keep the root scanning for ever on behalf of a dead session — the
+    // exact leak #200 removed for the corpse's own watch, re-created via its
+    // neighbour's.
+    const w = blindGiveUpWatcher({ postExitSettleMs: 20 });
+    try {
+      const cwd2 = 'C:/tmp/tw-project-corpse';
+      const d2 = path.join(root, slugForCwd(cwd2));
+      fs.mkdirSync(d2, { recursive: true });
+
+      w.watch('s1', { cwd });
+      w.noteConversationStarted('s1');
+      w.watch('s2', { cwd: cwd2 });
+      writeLines(path.join(d2, 'native-2.jsonl'), [
+        JSON.stringify({ type: 'assistant', sessionId: 'native-2', cwd: cwd2, timestamp: new Date().toISOString() }),
+      ]);
+      await waitFor(() => w.snapshot('s2')!.bound === true);
+      await waitFor(() => w.snapshot('s1')!.binding === 'unbound');
+
+      w.noteSessionExited('s2'); // the CLI died; the watch drains, then freezes
+      await sleep(200); // past the settle window, and past the fast sweeps
+
+      const spy = countReaddirs(root);
+      try {
+        await sleep(400);
+      } finally {
+        expect(spy.calls()).toBeLessThan(2);
+        spy.restore();
+      }
+      // ...and the corpse is still fully readable, which is the whole of #200.
+      expect(w.snapshot('s2')!.bound).toBe(true);
+    } finally {
+      w.stop();
+    }
+  });
 });
 
 describe('discovery still works with no filesystem watch at all (P2-E15-11 fail-open)', () => {

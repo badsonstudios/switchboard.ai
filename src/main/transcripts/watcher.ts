@@ -17,7 +17,7 @@ import { FeedBlock, deriveIntents } from '../feed/blocks';
 import { FeedBuffer } from '../feed/buffer';
 import { conversationExists, slugForCwd } from './paths';
 import { DriftDetector } from './drift';
-import { DiscoverySchedule, DiscoveryScheduleOptions } from './discovery-scheduler';
+import { DiscoverySchedule, DiscoveryScheduleOptions, rootKey } from './discovery-scheduler';
 
 // Re-exported: these moved to `paths.ts` so the provider adapters can use them
 // without importing the watcher (P2-E15-01).
@@ -578,13 +578,26 @@ export class TranscriptWatcher {
     const w = this.sessions.get(sessionId);
     // `quiesced`: a frozen session's state never moves again (#200), and
     // latching evidence here would restart a give-up clock that nothing is
-    // polling to resolve.
-    if (!w || w.quiesced || w.conversationStarted) return;
-    w.conversationStarted = true;
+    // polling to resolve. Nor may a corpse prod discovery on its root: it gave
+    // its reference back when it froze, and the sweep would be spent on behalf
+    // of a session that cannot use it.
+    if (!w || w.quiesced) return;
     // A turn just ran, so the CLI is writing a transcript right now if it has
     // not already. Look immediately rather than at whatever the ladder had
     // decayed to — this is the moment binding is most likely to succeed.
+    //
+    // ABOVE the latch, deliberately (#129). The latch is about EVIDENCE — a
+    // turn having run never becomes untrue, so the second one tells the binding
+    // state nothing — but the prod is bookkeeping, and every later turn is
+    // still the strongest possible sign that a transcript is being written
+    // right now. It is also the only prod a session that has GIVEN UP gets from
+    // a user who simply keeps typing: the give-up clock only starts once a turn
+    // has run, so by construction every such session has this latch already
+    // closed. It cannot cost more than the fast ladder's own rate, which is
+    // what an unbound sibling is paying anyway.
     this.discovery.markDirty(w.projectsRoot);
+    if (w.conversationStarted) return;
+    w.conversationStarted = true;
     this.refreshBinding(w);
   }
 
@@ -965,17 +978,59 @@ export class TranscriptWatcher {
     //    the flag the bind had just raised, killing the sibling notification
     //    that mark exists for (P2-E15-10: evidence can RETRACT). Same hazard
     //    for anything a listener does re-entrantly during `drain()`.
-    const sweeping = new Set<string>();
+    //
+    // Pass one answers ONE question per root: is anybody here still looking?
+    // (#129) A session the watcher has already declared `unbound` gave up 45
+    // seconds ago and the UI said so — yet it kept walking the entire tree on
+    // every rung of the ladder, for ever. When that is true of every session on
+    // a root, the root drops to the slow rung; the moment it stops being true,
+    // or any evidence site prods it, it is back on the fast one.
+    //
+    // Two populations that look similar and are not:
+    //  - QUIESCED (#200): a dead session's frozen watch. It scans nothing
+    //    already (the loop below skips it), so it neither needs the fast ladder
+    //    nor gets a vote against it — including the bound ones, whose binding
+    //    is 'bound' and would otherwise hold a root fast on behalf of a corpse.
+    //  - BOUND and alive: still needs sweeps, for subagent transcripts. It
+    //    votes to stay fast, which is why the test below is `!== 'unbound'`
+    //    rather than "nothing is bound".
+    // `awaiting-prompt` votes to stay fast too: nobody has typed into that card
+    // yet, and its transcript is owed the moment they do.
+    //
+    // Grouped by `rootKey`, not by the raw string, because the quorum is ONE
+    // answer per root and two sessions can spell one directory differently (a
+    // provider's `transcripts` capability vs the default root — the case that
+    // helper exists for). The honest scope of that: it is NOT a sweep fix. Each
+    // root here is set-and-then-asked in the same step, so even under raw
+    // grouping every spelling gets the answer its own sessions deserve — and
+    // the second spelling never sweeps at all, before this item or after, since
+    // the first one has consumed the tick's sweep by the time it is asked. What
+    // it buys is a STABLE flag: raw grouping would set it true and false again
+    // on every 100ms tick, with `setGivenUp`'s log line each way.
+    //
+    // `sweeping` deliberately stays keyed by the raw spelling it always was —
+    // the scheduler de-dupes the sweep itself, so that set is unchanged.
+    const roots = new Map<string, string>();
+    const seeking = new Set<string>();
     for (const w of this.sessions.values()) {
-      // Deliberately NOT skipping a frozen session here (#200), even though the
-      // loop below does. This pre-pass decides per ROOT, and the answer does not
-      // depend on which session asks: a corpse can only reach a verdict its live
-      // siblings would have reached on the same tick, and on a root it left
-      // alone `noteSwept` has no state to mutate. A second `quiesced` test would
-      // be a line no mutation of it could fail a test against.
-      if (!sweeping.has(w.projectsRoot) && this.discovery.shouldSweep(w.projectsRoot, now)) {
-        sweeping.add(w.projectsRoot);
-        this.discovery.noteSwept(w.projectsRoot, now);
+      const key = rootKey(w.projectsRoot);
+      if (!roots.has(key)) roots.set(key, w.projectsRoot);
+      if (!w.quiesced && w.snap.binding !== 'unbound') seeking.add(key);
+    }
+    const sweeping = new Set<string>();
+    for (const [key, root] of roots) {
+      // Before `shouldSweep`, so the rung this tick is decided on takes the
+      // give-up into account rather than lagging it by one sweep.
+      //
+      // Every root a session names is answered, including one whose sessions
+      // are all frozen (#200): this pre-pass decides per ROOT and the answer
+      // does not depend on which session asks — a corpse can only reach a
+      // verdict its live siblings would have reached on the same tick, and on a
+      // root it left alone `noteSwept` has no state to mutate.
+      this.discovery.setGivenUp(root, !seeking.has(key));
+      if (this.discovery.shouldSweep(root, now)) {
+        sweeping.add(root);
+        this.discovery.noteSwept(root, now);
       }
     }
 
