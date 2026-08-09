@@ -14,10 +14,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { act, StrictMode } from 'react';
 import { createRoot, Root } from 'react-dom/client';
-import i18next from 'i18next';
-import ICU from 'i18next-icu';
-import { initReactI18next } from 'react-i18next';
 import type { WorkspaceSaveState } from '../../../shared/workspace';
+import { initI18nForTests } from '../i18n/test-i18n';
 import en from '../i18n/locales/en.json';
 import { WorkspaceNoticeBanner } from './WorkspaceNoticeBanner';
 import { addPopoutWindow, removePopoutWindow, resetPopoutWindows } from '../lib/popout-windows';
@@ -102,22 +100,7 @@ beforeEach(async () => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '';
   resetPopoutWindows(); // module state; outlives a test
-  if (!i18next.isInitialized) {
-    // ICU, exactly as `i18n/index.ts` initialises it. NOT optional here, and
-    // this file learned it the hard way: with an `i18nFormat` plugin installed
-    // i18next hands the whole string to ICU and never runs its own `{{…}}`
-    // interpolator, so a key written in the wrong dialect renders its
-    // placeholder verbatim to the user. A harness without ICU cannot see that
-    // — it was green on a banner that said "…failing to write {{file}}".
-    await i18next
-      .use(ICU)
-      .use(initReactI18next)
-      .init({
-        lng: 'en',
-        resources: { en: { translation: en } },
-        interpolation: { escapeValue: false },
-      });
-  }
+  await initI18nForTests();
 });
 
 afterEach(async () => {

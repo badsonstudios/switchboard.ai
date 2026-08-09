@@ -7,9 +7,11 @@
 // wrapping in `ToolBox` and forgetting it. So this renders every shipped block
 // shape through the real registry and asserts the contract off the DOM, rather
 // than trusting each renderer to have remembered.
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { initI18nForTests } from '../i18n/test-i18n';
+import en from '../i18n/locales/en.json';
 import { createRendererRegistry } from '../bootstrap';
 import { renderFeedBlock } from './feed-render';
 import { FEED_EXPANDER_ATTR } from '../lib/feed-keys';
@@ -54,6 +56,16 @@ const todos = block({ kind: 'todos', todos: [{ content: 'step one', status: 'com
 const thinking = block({ kind: 'thinking', text: 'pondering', durationMs: 3000 });
 const command = block({ kind: 'user', text: '<command-name>/usage</command-name>\nboilerplate' });
 const shortPrompt = block({ kind: 'user', text: 'do the thing' });
+
+// #380: this file renders real components, several of which call
+// `useTranslation`, and it used to render them with i18next never initialised
+// — react-i18next warned `NO_I18NEXT_INSTANCE` once per run and every label
+// came back as its own key. The names below are then only accidentally
+// non-empty, which is most of what this file is checking. One line puts the
+// app's own configuration under it.
+beforeAll(async () => {
+  await initI18nForTests();
+});
 
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -161,7 +173,12 @@ describe('operating an expander from the keyboard does what the mouse does', () 
     const host = draw(bash);
     const labels = expanders(host).map((el) => (el.textContent ?? '').trim());
     expect(labels[0]).toContain('Bash');
-    expect(labels[1]).toContain('feedView.in');
-    expect(labels[2]).toContain('feedView.out');
+    // the translated headers, not the literal 'feedView.in' this used to
+    // assert: with i18next uninitialised every label WAS its own key, and the
+    // check could not tell a translated section header from a missing one
+    // (#380). Whole-word, because "IN"/"OUT" are two and three characters and
+    // `toContain` would take them out of any passing word.
+    expect(labels[1]).toMatch(new RegExp(`(^|\\s)${en.feedView.in}(\\s|$)`));
+    expect(labels[2]).toMatch(new RegExp(`(^|\\s)${en.feedView.out}(\\s|$)`));
   });
 });
