@@ -54,7 +54,8 @@ import { pickAdoptedGroupId } from '../lib/groups';
 import { addPopoutWindow, removePopoutWindow } from '../lib/popout-windows';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { setDraggedCard } from '../lib/drag-context';
-import { writePromptToPty } from '../lib/composer';
+import { sendSessionCommand } from '../lib/composer';
+import { DEFAULT_SESSION_TRANSPORT, type TransportKind } from '../../../shared/transport';
 import {
   dropRetired,
   enqueueHeld,
@@ -323,7 +324,16 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // autonomy above — the CLI cannot change either on a live session. It is
   // ACCEPTED either way; when a session is running we say the change is queued
   // rather than implying it took effect.
-  const [cardTransport, setCardTransport] = React.useState<'pty' | 'stream'>('pty');
+  //
+  // Seeded from the shared default rather than a hard-coded `'pty'` (#381).
+  // Defence in depth: the menu only renders for a LIVE session and the create
+  // response sets this in the same batch as `live`, so the seed is not
+  // observable today — but it is the answer this component gives if it is ever
+  // asked before main has answered, and that answer should not be a second
+  // opinion about what the default is.
+  const [cardTransport, setCardTransport] = React.useState<TransportKind>(
+    DEFAULT_SESSION_TRANSPORT
+  );
   const [transportPending, setTransportPending] = React.useState(false);
   const toggleTransport = (): void => {
     if (!cardId) return;
@@ -1151,11 +1161,13 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                       fontFamily: 'var(--font-ui)',
                     }}
                   >
-                    {/* session controls write the REAL slash command to the
-                        PTY. Locked while 'starting' — the CLI may still be in
-                        a startup TUI dialog the composer can't see (§5.10
-                        startup-dialog rule) — and once the session is dead
-                        (crashed/exited): the write would be a silent no-op.
+                    {/* session controls send the REAL slash command to the
+                        session, on whichever transport it is on (#381 — they
+                        went straight to the PTY before, and did nothing at all
+                        in Direct mode). Locked while 'starting' — the CLI may
+                        still be in a startup TUI dialog the composer can't see
+                        (§5.10 startup-dialog rule) — and once the session is
+                        dead (crashed/exited): the send would be a silent no-op.
                         'done' stays live — the session is idle, not gone. */}
                     {confirmClear && !controlsLocked ? (
                       <div style={{ padding: '4px 8px' }}>
@@ -1165,7 +1177,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button
                             onClick={() => {
-                              writePromptToPty(live.id, '/clear');
+                              void sendSessionCommand(live.id, '/clear');
                               setMenuOpen(false);
                               setConfirmClear(false);
                             }}
@@ -1249,7 +1261,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                                 : t('grid.menuDead')
                           }
                           onClick={() => {
-                            writePromptToPty(live.id, '/compact');
+                            void sendSessionCommand(live.id, '/compact');
                             setMenuOpen(false);
                           }}
                           style={menuItemStyle(controlsLocked)}

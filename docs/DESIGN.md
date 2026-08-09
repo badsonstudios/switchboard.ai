@@ -108,12 +108,13 @@ user's `claude login` (Max subscription). The first two bullets are
 **alternative transports**, chosen per session (§6 amendment 2026-08-01); the
 transcript and hook channels ride alongside either:
 
-- **Interactive PTY** (the default transport, **and scheduled for removal** —
-  see the amendment note below): spawn `claude` in the session folder. Full
+- **Interactive PTY** (**no longer the default, and scheduled for removal** —
+  see the amendment notes below): spawn `claude` in the session folder. Full
   fidelity of the TUI: permission prompts, slash commands, plan mode, ANSI
   rendering — and the affordances only a terminal has (Ctrl-R history, vim mode,
   the `/resume` and `--from-pr` pickers).
-- **Duplex stream-json** (opt-in, per session; epic E18): the same CLI over
+- **Duplex stream-json** (**the default since 2026-08-09**, per session; epic
+  E18): the same CLI over
   `child_process` pipes with `--output-format stream-json --verbose
   --input-format stream-json`, plus a bidirectional control channel. What it
   buys that the PTY cannot: **`can_use_tool` permission requests** carrying
@@ -139,6 +140,16 @@ transcript and hook channels ride alongside either:
 > Execution and the full list of what is lost: `docs/plans/05-transport-migration.md`,
 > E18-16. **This does not relax P7:** each terminal-only affordance is rebuilt
 > properly or dropped and said so. Screen-scraping stays rejected precedent (§5).
+>
+> **Amendment 2026-08-09 (#381) — Direct is the default; the PTY is opt-in.**
+> Dan: *"all sessions default to direct mode. not terminal."* This inverts what
+> E18-08b shipped — Direct opt-in, the PTY by default — and is
+> the next step of the same migration, not a new decision: the removal condition
+> is "Direct mode tested and working in real use", and a mode nobody is put in
+> does not get tested in real use. A card that has explicitly chosen keeps its
+> choice either way; a card that never chose follows the default, so untouched
+> cards move to Direct. The PTY still works, is still one menu click away, and
+> is still the fallback until the condition is met.
 >
 > ⚠ **Known consequence, measured 2026-08-02 (#156):** the transcript channel
 > below is **strictly poorer than the stream** for local slash commands —
@@ -1848,7 +1859,9 @@ above) and **duplex stream-json** (`child_process.spawn` over pipes,
 `--output-format stream-json --verbose --input-format stream-json`, with a
 bidirectional control channel). `StreamService` lands **beside** `PtyService`,
 not instead of it. Epic **E18** (`docs/plans/05-transport-migration.md`) is the
-migration; stream mode ships opt-in, per session, defaulting to PTY.
+migration; stream mode shipped opt-in, per session, defaulting to PTY — and
+**became the default on 2026-08-09 (#381)**, with the PTY reachable per session.
+See §5.2's amendments.
 
 **What forced it.** Our entire approval path rides PreToolUse hooks, and hooks
 are blind to anything the CLI decides *above* the hook layer. On 2026-08-01 that

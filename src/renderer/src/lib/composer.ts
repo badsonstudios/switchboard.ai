@@ -20,13 +20,32 @@ export function writePromptToPty(sessionId: string, text: string): void {
 }
 
 /**
- * Submit a prompt, whichever transport this session is on (P2-E18-08a).
+ * Send text to a session, whichever transport it is on (P2-E18-08a) — WITHOUT
+ * the "the user just submitted a prompt" side effects.
  *
  * TRY-THEN-FALL-BACK, deliberately: main answers false when the session has no
  * typed-message transport, and only then do we do the PTY dance. That keeps the
  * renderer completely ignorant of transports — it has no session record to
- * consult and, until P2-E18-08b, no setting either. When the choice becomes a
- * user-facing one, this function does not change.
+ * consult and no need of one.
+ *
+ * This is what the ⋯ session-controls menu uses for `/clear` and `/compact`.
+ * Those two called `writePromptToPty` directly until #381, which was survivable
+ * only while Direct mode was opt-in: a stream session has no PTY, so
+ * `ptys.get(id)?.write()` dropped the command and the menu item did nothing at
+ * all. Exactly the #154 stop-button defect, on the last surface that still had
+ * it — and #381 made Direct the default, which would have shipped it to
+ * everyone.
+ */
+export async function sendSessionCommand(sessionId: string, text: string): Promise<void> {
+  if (await window.switchboard.sessions.submitPrompt(sessionId, text)) return;
+  writePromptToPty(sessionId, text);
+}
+
+/**
+ * Submit a prompt the USER typed, whichever transport this session is on.
+ *
+ * `sendSessionCommand` plus the one thing that separates a person pressing
+ * Enter from a menu item writing a command: §5.8's auto-minimize.
  */
 export async function submitPrompt(sessionId: string, text: string): Promise<void> {
   // §5.8's auto-minimize hangs off THIS call and not off the composer component,
@@ -38,13 +57,12 @@ export async function submitPrompt(sessionId: string, text: string): Promise<voi
   // gesture and must not wait on an IPC round trip, nor depend on which
   // transport ended up taking the prompt.
   //
-  // `writePromptToPty` is NOT a submit point of its own. Its other caller is the
-  // ⋯ session-controls menu, which types slash commands like `/compact` — the
-  // workspace folding itself away because you clicked a menu item would be
-  // baffling, and §5.8 says "submitting a prompt", not "writing to the PTY".
+  // `sendSessionCommand` is NOT a submit point of its own. Its other caller is
+  // the ⋯ session-controls menu, which sends slash commands like `/compact` —
+  // the workspace folding itself away because you clicked a menu item would be
+  // baffling, and §5.8 says "submitting a prompt", not "sending text".
   sessionStore.notifyPromptSubmitted(sessionId);
-  if (await window.switchboard.sessions.submitPrompt(sessionId, text)) return;
-  writePromptToPty(sessionId, text);
+  await sendSessionCommand(sessionId, text);
 }
 
 /**

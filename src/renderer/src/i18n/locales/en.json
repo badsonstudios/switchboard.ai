@@ -461,7 +461,7 @@
   },
   "terminal": {
     "streamTitle": "No terminal for this session",
-    "streamBody": "This session talks to Claude Code directly instead of through a terminal, so there is nothing to show here. In exchange, permission requests appear in this window — including the ones that used to escape into the terminal and ask you twice. Switch this session back to Terminal mode from the ⋯ menu if you need the terminal itself."
+    "streamBody": "This session talks to Claude Code directly instead of through a terminal, so there is nothing to show here. In exchange, permission requests appear in this window — including the ones that used to escape into the terminal and ask you twice. Switch this session to Terminal mode from the ⋯ menu if you need the terminal itself."
   },
   "policy": {
     "always-visible": "Keep visible",

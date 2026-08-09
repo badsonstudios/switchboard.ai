@@ -107,8 +107,9 @@ different story: a session that *did* run and has stopped — see
 [Restarting a dead session](02-sessions.md#restarting-a-dead-session).
 
 **Claude asked me in the Terminal instead of in the card.**
-That's the deliberate fallback in the default **Terminal mode**, and the Session
-tab tells you when it happens — a coloured bar along the bottom with an **Open
+That's the deliberate fallback in **Terminal mode** — a session you put back on
+the terminal, since new ones run in [Direct mode](12-direct-mode.md) — and the
+Session tab tells you when it happens — a coloured bar along the bottom with an **Open
 Terminal** button, in the same place the Allow/Deny bar appears.
 
 Two different things can put it there. Usually switchboard simply couldn't get

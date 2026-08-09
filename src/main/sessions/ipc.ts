@@ -58,6 +58,7 @@ import { EventFeed } from '../events/feed';
 import { planSessionStart } from './start-plan';
 import { PersistedSession } from '../workspace/store';
 import { commandsFromCli, SlashCommand } from '../../shared/slash-commands';
+import { DEFAULT_SESSION_TRANSPORT } from '../transport/transport';
 
 export interface SessionIpcDeps {
   manager: SessionManager;
@@ -99,9 +100,13 @@ export interface SessionIpcDeps {
   /** slash-command discovery for the composer popup (E10-07, §5.17) — async:
    *  the scan must never stall the main process on a slow disk */
   slashCommands: (folder: string, providerId: string) => Promise<SlashCommand[]>;
-  /** Which transport a NEW session should ask its adapter for (P2-E18-08a).
-   *  Absent = the adapter's default, i.e. the PTY. Replaced by the persisted
-   *  per-session setting in P2-E18-08b (#149). */
+  /** The env-level override of which transport a session asks its adapter for
+   *  (P2-E18-08a). It sits BELOW the card's own setting and above the default —
+   *  the full order is at the `sessions:create` call site. Returning `undefined`
+   *  = no override. Kept after #149 gave the choice a real home on the card,
+   *  because it is the only way to aim a WHOLE app instance at one transport —
+   *  which is how the e2e suite starts a session on the Terminal now that
+   *  Direct is the default (#381). */
   preferredTransport?: () => 'pty' | 'stream' | undefined;
 }
 
@@ -768,11 +773,22 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
           settingsFor: plan.buildSettings,
           autonomy,
           resumeSessionId: plan.resumeSessionId,
-          // Which transport to ASK for. The CARD's own choice wins (P2-E18-08b);
-          // the env default is the escape hatch that predates the setting. The
-          // adapter still has the final say — it answers in the recipe, and one
-          // that cannot speak stream-json returns a PTY recipe we honour.
-          transport: prior?.transport ?? deps.preferredTransport?.(),
+          // Which transport to ASK for, most specific first:
+          //
+          //  1. the CARD's own stored choice (P2-E18-08b) — an explicit answer
+          //     from the user, and it wins over everything, including Terminal;
+          //  2. the env escape hatch, which predates the setting and can now
+          //     force EITHER transport (#381);
+          //  3. Direct, the default for a card that has never chosen (#381).
+          //
+          // Absence in the record is "never chose", not "chose Terminal": we do
+          // not write the default onto the card, so a card follows whatever the
+          // default is at the time it starts. That is what makes this one line
+          // move every untouched card, which is the point of the issue.
+          //
+          // The adapter still has the final say — it answers in the recipe, and
+          // one that cannot speak stream-json returns a PTY recipe we honour.
+          transport: prior?.transport ?? deps.preferredTransport?.() ?? DEFAULT_SESSION_TRANSPORT,
         });
       } catch (err) {
         // The manager adds no record when spawn fails ("no orphan record: it was
