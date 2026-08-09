@@ -31,7 +31,89 @@ structure adopting #228's temp-dir registry, verified by a local
 161+1 skip (from the merged branches' gate runs: 1227+46+5+16 /
 156+4+0+1).
 
-> # ▶▶ START HERE — 🎛 RUN 13 CLOSED 2026-08-09 + FULLY MERGED (7 items,
+> # ▶▶ START HERE — 🎛 RUN 14 CLOSED 2026-08-09 + FULLY MERGED (3 items,
+> all internal, same-day; ~2 h wall)
+>
+> **Shipped, all merged, no hand-tests owed (nothing user-visible):**
+> #377 → PR #389 — extensibility.md's roster claims now match the CODE
+> (the real bug was conflating seam registrations with the §5.23
+> roster: 6 points carry registrants but only 3 of 9 roster items are
+> on the seam; 5 more stale count-claims swept). #380 → PR #390 —
+> `configureI18n` EXTRACTED from the app's own init (drift now requires
+> changing the app); 12 test-init sites migrated; found+fixed a third
+> harness species (a11y test asserting a raw untranslated key); the
+> hand-rolled-harness ban is a TEST because flat-config replaces rule
+> options. #388 → PR #391 (squash d190cf2) — discovery throttled PER
+> SESSION via one `stillLooking` predicate shared with #129's root
+> quorum; awaiting-prompt gets a 45s timeout-not-veto; 17/17 mutations
+> after re-arming two predecessor guards this change had de-fanged
+> (all disk work moved to session level → root-rung mutations no
+> longer changed I/O; observable via new test-only discoveryStats).
+> One CI flake (check:pty windows, the #176 class — pre-bump green,
+> re-run green) — single re-run, documented, not a red push. **Main @
+> d190cf2, out/ REBUILT, stamp verified both bundles.** Issues #377
+> #380 #388 closed. No new issues filed. Worktrees: all detached/
+> clean. Skill: added the stash-before-mutation-experiments rule
+> (#388's harness ate uncommitted edits via raw git checkout).
+>
+> **THE QUEUE IS NOW ENTIRELY DAN-GATED:** #384 (Direct-vs-real-CLI
+> e2e — token sign-off) · held decisions #320 #269 #80 #111 · the /pm
+> epic-expansion sitting (E9 tail, E11, E13, E14 — the pipeline
+> refill) · v0.3.0 cut on request (`0.3.0 — unreleased` holds 8
+> entries: Direct default, save-failure banner, popout rescue, diff
+> colors, −18 MB, + 4 Internal). Next /orchestrate run has nothing to
+> dispatch until Dan moves one of these.
+>
+> Orchestrator: Fable (/orchestrate, same session). Single-writer rule
+> applies: workers report via `.claude/work_files/orchestrator/
+> <issue#>.md`; this file is the orchestrator's alone. A fresh session
+> resumes from THIS block.
+>
+> **Dan: "do what you think" (2026-08-09, post-run-13).** Orchestrator's
+> call: run the three small dispatchable items; the v0.3.0 cut stays
+> PARKED until Dan asks explicitly (outward-facing; last release had
+> its own authorization).
+>
+> **Active workers (all dispatched off main @ 823ef9f):**
+> - **#377** ✅ DONE (~9 min) → **PR #389 (INTERNAL) — awaiting green
+>   CI, orchestrator merges.** Real finding: the stale paragraph
+>   conflated SEAM registrations (6 points carry registrants) with the
+>   §5.23 ROSTER (only 3 of 9 roster items are on the seam; 5 are
+>   unbuilt-not-unmigrated; command-set/panel/status-bar are retrofits).
+>   Swept 5 more stale count claims + 2 missing table rows, all
+>   verified against code. Near-miss self-caught pre-commit (a "never
+>   imports the singleton" claim a grep disproved). Gate: lint/
+>   typecheck clean · 2825 unit · e2e skipped (stated call, docs-only).
+>   Handoff: 377.md.
+> - **#377 → PR #389 ✅ MERGED**, issue closed.
+> - **#380 → PR #390 ✅ MERGED** (CI 4/4, no bump needed), issue closed.
+> - **#380** ✅ DONE (~35 min) → **PR #390 (INTERNAL) — awaiting green
+>   CI, orchestrator merges (will need a bump after #389's merge).**
+>   REUSE not mirror: `configureI18n(instance, lng)` extracted from the
+>   app's own `initI18n()` — drift now requires changing the app; the
+>   language param (the sole remaining divergence) has its own test.
+>   Issue's count was stale: ONE harness lacked ICU at base (not two —
+>   #379 had fixed one), but 12 init sites across 11 files migrated,
+>   plus a THIRD species found: feed-blocks.a11y.test.tsx never inited
+>   i18next at all and one assertion had ossified around a raw key.
+>   Ban is a TEST not an eslint rule (flat-config replaces rule options
+>   — a test-glob block would silently drop the monaco/effect bans;
+>   documented in the config). bundle-guard taught test-only helpers
+>   (closes a pre-existing gap for test-temp-dirs.ts). Gate: lint/
+>   typecheck clean · 2839 unit (+13, 127 files) · 6 mutations caught ·
+>   reviewer 0 blockers, 11/12 findings taken · e2e skipped (stated
+>   call, test infra; CI runs it). Handoff: 380.md.
+> - **#388** per-session discovery gate + awaiting-prompt timeout →
+>   sb-wt-3, `feature/388-per-session-discovery-gate` — in flight
+> No collisions (docs / renderer test harnesses / src/main/transcripts).
+> All three expected INTERNAL → orchestrator merges on green. e2e lock
+> free at dispatch.
+>
+> **Still needing Dan:** #384 (token sign-off) · held-list decisions
+> (#320 #269 #80 #111) · /pm epic-expansion sitting · the v0.3.0 cut
+> (6 entries ready).
+
+> # 🎛 RUN 13 CLOSED 2026-08-09 + FULLY MERGED (7 items,
 > ALL ON MAIN; ~6.5 h wall incl. Dan's authorizations)
 >
 > **Shipped, all merged:** #375 → PR #376 (e6fbb8a) · #200 → PR #382

@@ -142,6 +142,11 @@ The prompt must contain, concretely:
   4. Gate before push: lint + typecheck + unit green, e2e green under the
      lock. Review your own diff against `/review`'s standards (you are
      Opus; the review is yours) — fix Blockers/Should-fixes, ~3 rounds cap.
+     **Mutation/revert experiments must stash or commit the working
+     state FIRST — never raw `git checkout --` over uncommitted work**
+     (run 14: #388's mutation harness restored with git checkout and
+     ate the uncommitted source edits; recovered from context, no loss,
+     but only by luck of a small diff).
      **Any subagent you spawn (reviewer, debugger) inherits every safety
      constraint in this contract — restate destructive-work clauses
      ("fixtures only", "never touch real %TEMP%", token limits) verbatim
