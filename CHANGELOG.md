@@ -69,6 +69,11 @@ on the floor, and say so in your PR.
   a backup or anti-virus tool holding the file — a banner now says so and names
   the file, instead of the failure going only to the log. It retries on its own
   and takes the banner back down the moment saving works again.
+- A pop-out window that dies without warning — killed from the task bar, force
+  closed, or lost with a crash — no longer takes its session with it. The card
+  comes back to the main window suspended, with its **Resume** button, exactly
+  as it does when you close the window normally; it used to be left in a window
+  that no longer existed, visible nowhere.
 
 ### Internal
 

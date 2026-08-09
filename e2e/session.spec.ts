@@ -1,6 +1,12 @@
 import { test, expect, Locator, Page } from '@playwright/test';
 import path from 'path';
-import { launchApp, LaunchedApp, showTerminal, tempProjectFolder } from './fixtures/app';
+import {
+  launchApp,
+  LaunchedApp,
+  registeredPopouts,
+  showTerminal,
+  tempProjectFolder,
+} from './fixtures/app';
 
 // Pop-out tests open a real SECOND OS window (window.open -> BrowserWindow).
 // That is reliable on Windows + macOS but flaky under the headless xvfb display
@@ -399,6 +405,69 @@ test.describe('a session card', () => {
     // card's live region is in the main window's DOM before the words are, so
     // the suspension is reported rather than merely drawn.
     await expect(window.getByTestId('card-announcer')).toContainText('Session suspended');
+    await window.getByRole('button', { name: 'Resume' }).click();
+    await showTerminal(window); // Terminal hidden by default (E10-01)
+    await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 15_000 });
+  });
+
+  // #292. The test above is that same event arriving properly; this is it going
+  // missing. `destroy()` is Electron's force-close — no close event, no
+  // beforeunload — which is exactly what a window killed from the task bar or
+  // lost with a crash looks like to dockview: nothing at all. Before this issue
+  // the card was left in a popout group whose window was a corpse, so it was in
+  // no window anywhere, and the only thing left to do with the session was close
+  // it. It now takes the ordinary route home: the registry's liveness sweep
+  // (#279) notices within a few seconds, and the card lands back in the grid
+  // suspended — the same place the clean close above leaves it.
+  test('a popout the OS kills brings its card home suspended, not into limbo (#292)', async () => {
+    skipPopoutOnLinux();
+    // the clean-close test's whole cost, plus the sweep's own interval before
+    // anything can start happening. Declared rather than discovered as a red
+    // build on a loaded CI runner.
+    test.slow();
+    const folder = tempProjectFolder();
+    const name = path.basename(folder);
+    a = await launchApp({ seedFolder: folder });
+    const { app, window } = a;
+    await expect(window.getByText(name).first()).toBeVisible({ timeout: 25_000 });
+    await window.getByTitle('Pop out into its own window').click();
+    await expect
+      .poll(() => app.windows().filter((p) => p.url().includes('popout.html')).length, {
+        timeout: 15_000,
+      })
+      .toBe(1);
+    // the card's DOM is ADOPTED into the popout, so it leaves the main window
+    // entirely — this is the "before" half of the rescue assertion below
+    await expect(window.getByTestId('card-header')).toHaveCount(0, { timeout: 15_000 });
+
+    // kill it the way the OS does: no unload reaches the renderer, so dockview
+    // is never told and only the sweep can find out
+    const killed = await app.evaluate(({ BrowserWindow }) => {
+      const popout = BrowserWindow.getAllWindows().find((win) =>
+        win.webContents.getURL().includes('popout.html')
+      );
+      if (!popout) return false;
+      popout.destroy();
+      return true;
+    });
+    expect(killed, 'no popout window found to kill').toBe(true);
+    await expect.poll(() => app.windows().length, { timeout: 15_000 }).toBe(1);
+
+    // THE CARD IS BACK IN THE MAIN WINDOW, and suspended exactly as a clean
+    // close leaves it. Generous timeout: the sweep runs on a several-second
+    // interval by design (it is a janitor, not a watchdog), so noticing is
+    // allowed to take a moment.
+    await expect(window.getByTestId('card-overlay').getByText('Session suspended')).toBeVisible({
+      timeout: 30_000,
+    });
+    // said out loud, not merely drawn — #358's live region, the same assertion
+    // the clean close makes, because to the user this IS the clean close
+    await expect(window.getByTestId('card-announcer')).toContainText('Session suspended');
+    // the dead window is out of the SAVED layout as well as off the screen —
+    // otherwise the next launch would faithfully reopen an empty popout
+    await expect.poll(() => registeredPopouts(a), { timeout: 15_000 }).toBe(0);
+    expect(app.windows().length, 'a window came back from the dead').toBe(1);
+    // and it is a working card again, not a headstone
     await window.getByRole('button', { name: 'Resume' }).click();
     await showTerminal(window); // Terminal hidden by default (E10-01)
     await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 15_000 });
