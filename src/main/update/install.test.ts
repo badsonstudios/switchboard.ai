@@ -12,8 +12,8 @@
 //      user is left exactly where they were before this feature existed.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
+import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { UpdateInstaller, pickInstallerAsset, resolveHandshake, resolveOffer } from './install';
 import { DownloadError } from './download';
 import type { UpdateCheckResult, UpdateInstallStatus, UpdatePrefs } from '../../shared/update';
@@ -46,8 +46,16 @@ interface Harness {
   download: ReturnType<typeof vi.fn>;
 }
 
-function harness(over: Record<string, unknown> = {}): Harness {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-install-'));
+/**
+ * A whole installer under test, plus the temp dir it stages into.
+ *
+ * The directory is registered rather than remembered here (#213, #360): every
+ * one of them is per-test, and `cleanupTempDirs()` in the `afterEach` below
+ * takes them all — including the ones belonging to a test that threw before it
+ * could reach a teardown of its own.
+ */
+function make(over: Record<string, unknown> = {}): Harness {
+  const dir = tempDir('sb-install-');
   const pushed: UpdateInstallStatus[] = [];
   const prefs: UpdatePrefs = { autoCheck: true };
   const launched: string[] = [];
@@ -82,19 +90,12 @@ function harness(over: Record<string, unknown> = {}): Harness {
 
 const phases = (h: Harness): string[] => h.pushed.map((s) => s.phase);
 
-let dirs: string[] = [];
 beforeEach(() => {
   vi.clearAllMocks();
-  dirs = [];
 });
 afterEach(() => {
-  for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
+  cleanupTempDirs();
 });
-function make(over: Record<string, unknown> = {}): Harness {
-  const h = harness(over);
-  dirs.push(h.dir);
-  return h;
-}
 
 describe('the happy path, in order', () => {
   it('downloads, verifies, remembers the pending version, THEN launches', async () => {

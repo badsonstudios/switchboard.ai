@@ -21,7 +21,8 @@
 // created, on a user's machine, where they cannot exist unless that user ran
 // our test suite — a real destructive behaviour bought for a benefit of exactly
 // zero users. The litter is made by the test run, so the test run cleans it up
-// (`vitest.config.ts`'s `globalSetup`, and this file's own CLI for the backlog).
+// — both runners' `globalSetup` (`vitest.config.ts`'s, and
+// `playwright.config.ts`'s since #360), plus this file's own CLI for a backlog.
 //
 // WHAT IT WILL TOUCH. A candidate must clear all five:
 //   1. it is a direct child of the temp dir it was pointed at (`os.tmpdir()`
@@ -58,6 +59,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { isOn } = require('./bundle-guard');
 
 /**
  * Names this repo provably wrote: our `sb-` prefix, then a slug, then the six
@@ -87,7 +89,18 @@ const ORPHAN_NAME = /^sb-[A-Za-z0-9][A-Za-z0-9._-]*-[A-Za-z0-9]{6}$/;
 /** 24 h. Long enough that no run of anything we own can still own a candidate. */
 const DEFAULT_MIN_AGE_MS = 24 * 60 * 60 * 1000;
 
-/** Budget for the automatic sweep. See `vitest-global-setup.js` for the sizing. */
+/**
+ * Budget for the automatic sweep in either runner's `globalSetup`
+ * (`sweepBeforeTests` below).
+ *
+ * The backlog on a dogfood machine is six figures and deleting it takes
+ * minutes; a test run must not pay that. MEASURED: 2,000 two-file directories
+ * go in 1.5 s, so this buys roughly 2,500 a run — invisible next to a suite
+ * that runs for minutes, and enough that even a six-figure pile drains over a
+ * couple of days of ordinary use. Anyone who wants it gone NOW types
+ * `npm run sweep:temp`, which is this code with no budget. On CI, where the
+ * temp dir is fresh, the whole call is one `readdir` of an empty directory.
+ */
 const DEFAULT_BUDGET_MS = 2_000;
 
 /** Set to `1` to make the automatic sweep a no-op. */
@@ -279,6 +292,39 @@ function formatSummary(summary, { dryRun = false } = {}) {
 }
 
 /**
+ * The automatic sweep, as both test runners' `globalSetup` wants it: budgeted,
+ * opt-outable, silent when clean, and incapable of failing a run.
+ *
+ * It lives HERE, next to the delete loop, and not in either global-setup file,
+ * because there are two callers now — `scripts/vitest-global-setup.js` and
+ * `scripts/e2e-global-setup.js` (#360) — and the three decisions it encodes
+ * (which budget, which off-switch, what happens on a throw) must be one answer
+ * rather than two that drift. Same reasoning that made #354 export `isOn` from
+ * `bundle-guard.js` instead of re-spelling it here.
+ *
+ * @param {{env?: Record<string, string|undefined>, write?: (s: string) => void,
+ *          budgetMs?: number}} [opts]
+ */
+function sweepBeforeTests(opts = {}) {
+  const { env = process.env, write = (s) => process.stderr.write(s + '\n') } = opts;
+  // `isOn`, not `=== '1'` — the repo already has one answer to "is this escape
+  // hatch on" (`bundle-guard.js`, for ALLOW_STALE_BUNDLE) and this is the only
+  // off-switch on a delete loop. A shell that exports SB_SKIP_TEMP_SWEEP=true
+  // and gets swept anyway is the wrong direction to fail in.
+  if (isOn(env[SKIP_ENV])) return;
+  // Belt and braces. `sweepTempOrphans` is written not to throw and is tested
+  // for it, but a throw from `globalSetup` aborts the ENTIRE run before a
+  // single test executes — the one outcome housekeeping is never allowed to
+  // cause. Cheapest possible insurance against a future edit.
+  try {
+    const line = formatSummary(sweepTempOrphans({ budgetMs: opts.budgetMs ?? DEFAULT_BUDGET_MS }));
+    if (line) write(line);
+  } catch {
+    /* fail-open: never let a cleanup stop a test run */
+  }
+}
+
+/**
  * A finite number that is at least `min`, or `NaN`.
  *
  * `Number('')` is 0 and `Number(undefined)` is `NaN`, so without this a
@@ -394,6 +440,7 @@ module.exports = {
   USAGE,
   isPlausibleTempRoot,
   sweepTempOrphans,
+  sweepBeforeTests,
   formatSummary,
   parseArgs,
   main,

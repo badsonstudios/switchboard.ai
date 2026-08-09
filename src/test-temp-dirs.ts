@@ -25,11 +25,12 @@
 // Everything the pre-#213 builds made is still in `%TEMP%` — 115,314 `sb-*`
 // directories on one dogfood machine when #354 was filed — and so is the odd
 // one a Windows lock keeps past even the requeue below. Draining is
-// `scripts/sweep-temp-orphans.js`, wired into `vitest.config.ts`'s
-// `globalSetup`. Read its header before inventing a new `sb-` prefix: the
-// sweeper recognises our leftovers by their SHAPE (`sb-<slug>-XXXXXX`), not by
-// a list of prefixes, so a new prefix is already covered — and a directory made
-// WITHOUT `mkdtemp`'s random suffix is not.
+// `scripts/sweep-temp-orphans.js`, wired into BOTH runners' `globalSetup` —
+// `vitest.config.ts`'s, and `playwright.config.ts`'s since #360. Read its
+// header before inventing a new `sb-` prefix: the sweeper recognises our
+// leftovers by their SHAPE (`sb-<slug>-XXXXXX`), not by a list of prefixes, so
+// a new prefix is already covered — and a directory made WITHOUT `mkdtemp`'s
+// random suffix is not.
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -56,6 +57,46 @@ export function tempDir(prefix: string): string {
 export function trackTempDir(dir: string): string {
   pending.add(dir);
   return dir;
+}
+
+/** The variables `os.tmpdir()` reads, in the order it reads them. */
+const TMP_VARS = ['TMPDIR', 'TEMP', 'TMP'];
+
+/**
+ * Run `fn` with the OS temp dir pointed at `dir`, then put the environment
+ * back. Returns whatever `fn` returned.
+ *
+ * THIS IS A SAFETY BARRIER, not a convenience. It exists for the tests of
+ * `scripts/sweep-temp-orphans.js` — a delete loop whose only input is
+ * `os.tmpdir()` — and the redirect is the single thing standing between those
+ * tests and a developer's real `%TEMP%`. It got its own home the moment there
+ * were two copies of it (#360), for the reason #354 gave when it exported
+ * `isOn` rather than re-spelling it: one answer, not two that drift.
+ *
+ * Which is also why it CHECKS, rather than assuming: if `os.tmpdir()` does not
+ * come back as `dir`, `fn` is never called. A redirect that silently failed
+ * would hand the real temp dir to the caller most likely to delete things in
+ * it. (Run 10: a review subagent, unaware of the rule, ran the unbudgeted
+ * sweeper against a live `%TEMP%` and removed ~81,600 directories.)
+ */
+export function withTempDirAt<T>(dir: string, fn: () => T): T {
+  const saved = TMP_VARS.map((k) => [k, process.env[k]] as const);
+  const restore = (): void => {
+    for (const [k, v] of saved) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  };
+  for (const k of TMP_VARS) process.env[k] = dir;
+  try {
+    const actual = os.tmpdir();
+    if (path.resolve(actual) !== path.resolve(dir)) {
+      throw new Error(`temp redirect failed: os.tmpdir() is ${actual}, expected ${dir}`);
+    }
+    return fn();
+  } finally {
+    restore();
+  }
 }
 
 /**

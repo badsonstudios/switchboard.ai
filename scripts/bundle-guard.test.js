@@ -5,7 +5,7 @@
 // people to type ALLOW_STALE_BUNDLE=1 until it means nothing. Both directions are
 // pinned here, on real files in a temp dir rather than a mocked fs, because
 // mtime comparison is exactly the thing a mock would let us get wrong.
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
@@ -31,6 +31,7 @@ import {
   run,
 } from './bundle-guard.js';
 import { isBuildOutput } from './run-electron-node.js';
+import { cleanupTempDirs, tempDir } from '../src/test-temp-dirs';
 // #300 — the build-time half of the same question. Imported so the two
 // implementations are compared directly instead of via mirrored comments; see
 // the `currentBranch` agreement test below. Test-only, and the one place these
@@ -54,7 +55,10 @@ function bundleWith(id) {
 
 /** Build a fake project root: sources, then artifacts stamped newer. */
 function makeProject({ sources = {}, artifacts = true, identity = null } = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'e2e-guard-'));
+  // `sb-` prefixed since #360, and not for tidiness: the orphan sweeper
+  // recognises leftovers by SHAPE (`sb-<slug>-XXXXXX`), so a fixture named
+  // `e2e-guard-` was one nothing would ever collect if a teardown missed it.
+  const root = tempDir('sb-e2e-guard-');
   const write = (rel, body) => {
     fs.mkdirSync(path.join(root, path.dirname(rel)), { recursive: true });
     fs.writeFileSync(path.join(root, rel), body);
@@ -87,17 +91,12 @@ function touch(root, rel, when) {
   fs.utimesSync(path.join(root, rel), when, when);
 }
 
-let roots = [];
-beforeEach(() => {
-  roots = [];
-});
-afterEach(() => {
-  for (const r of roots) fs.rmSync(r, { recursive: true, force: true });
-});
+// Every fixture here is per-test, so the whole registry goes at the end of each
+// one (#213, #360). It replaces a hand-rolled list and a bare `rmSync` — which
+// a hook that threw above it would have skipped, silently, for ever.
+afterEach(() => cleanupTempDirs());
 function project(opts) {
-  const root = makeProject(opts);
-  roots.push(root);
-  return root;
+  return makeProject(opts);
 }
 
 describe('isBundledSource', () => {

@@ -14,7 +14,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
-import { tempDir, cleanupTempDirs } from '../src/test-temp-dirs';
+import { tempDir, cleanupTempDirs, withTempDirAt } from '../src/test-temp-dirs';
 import {
   ORPHAN_NAME,
   DEFAULT_MIN_AGE_MS,
@@ -25,11 +25,13 @@ import {
   atLeast,
   MIN_AGE_FLOOR_HOURS,
   sweepTempOrphans,
+  sweepBeforeTests,
   formatSummary,
   parseArgs,
   main,
 } from './sweep-temp-orphans.js';
-import { sweepBeforeTests } from './vitest-global-setup.js';
+import vitestGlobalSetup from './vitest-global-setup.js';
+import vitestConfig from '../vitest.config.ts';
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -545,23 +547,14 @@ describe('main', () => {
   });
 });
 
-describe('vitest globalSetup', () => {
+describe('the automatic sweep both globalSetups call', () => {
   // `sweepBeforeTests` deliberately exposes no `dir` — the seam it sits on gets
   // the OS temp dir and nothing else — so these point the OS temp dir at a
-  // fixture, exactly as the `main` tests above do.
-  const TMP_VARS = ['TMPDIR', 'TEMP', 'TMP'];
-  const withTempDirAt = (dir, fn) => {
-    const saved = TMP_VARS.map((k) => [k, process.env[k]]);
-    for (const k of TMP_VARS) process.env[k] = dir;
-    try {
-      return fn();
-    } finally {
-      for (const [k, v] of saved) {
-        if (v === undefined) delete process.env[k];
-        else process.env[k] = v;
-      }
-    }
-  };
+  // fixture, exactly as the `main` tests above do. NOTHING in this file may run
+  // it against the real `%TEMP%`.
+  // `withTempDirAt` is shared with `e2e-global-setup.test.js` and lives in
+  // `src/test-temp-dirs.ts`; it refuses to run the callback if the redirect did
+  // not take, which is the only thing keeping these tests off the real `%TEMP%`.
 
   it('sweeps and writes one line', () => {
     seed('sb-ws-aaaaaa');
@@ -633,5 +626,40 @@ describe('vitest globalSetup', () => {
     } finally {
       fs.readdirSync = realReaddir;
     }
+  });
+
+  // The wiring, which is the half that rots silently: a `globalSetup` that
+  // stops being named in the config, or an export shape vitest rejects, both
+  // look exactly like "there was nothing to sweep".
+  it('is named in vitest.config.ts, and the file it names exists', () => {
+    expect(vitestConfig.test.globalSetup).toEqual(['scripts/vitest-global-setup.js']);
+    expect(fs.existsSync(path.join(process.cwd(), 'scripts/vitest-global-setup.js'))).toBe(true);
+  });
+
+  it('is what vitest.config.ts’s globalSetup actually runs', () => {
+    // Driven through the real default export — a plain function, because
+    // vitest's CJS interop rejects the `{ setup }` object form. Pointed at a
+    // fixture: the real `%TEMP%` is never a target from a test.
+    expect(typeof vitestGlobalSetup).toBe('function');
+    seed('sb-ws-aaaaaa');
+    // The default export takes no `write`, so its line goes to the real stderr
+    // — captured here rather than printed, because a test that prints into the
+    // run it is part of is indistinguishable from the thing going wrong.
+    const realWrite = process.stderr.write;
+    const wrote = [];
+    process.stderr.write = (s) => (wrote.push(String(s)), true);
+    // It reads the REAL `process.env` too, and a developer running the suite
+    // with SB_SKIP_TEMP_SWEEP=1 (the sanctioned way to keep old `sb-*`
+    // directories alive) would otherwise see this fail for the right reason.
+    const skip = process.env[SKIP_ENV];
+    delete process.env[SKIP_ENV];
+    try {
+      withTempDirAt(root, () => vitestGlobalSetup());
+    } finally {
+      process.stderr.write = realWrite;
+      if (skip !== undefined) process.env[SKIP_ENV] = skip;
+    }
+    expect(wrote.join('')).toContain('removed 1 orphaned dir(s)');
+    expect(names()).toEqual([]);
   });
 });

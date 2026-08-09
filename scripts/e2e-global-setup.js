@@ -1,5 +1,15 @@
-// #329 — Playwright's `globalSetup`, and the only thing it does is run the
-// stale-bundle guard before a single spec starts.
+// Playwright's `globalSetup`: the two housekeeping jobs that have to happen
+// before a single spec starts — the stale-bundle guard (#329), and then the
+// temp-orphan sweep (#354, wired in here by #360).
+//
+// It was a single-purpose file until #360 and the header said so. Both jobs are
+// here for the same reason, which is the reason below: `globalSetup` is the one
+// seam a Playwright invocation cannot route around. What each job DOES belongs
+// to its own module (`bundle-guard.js`, `sweep-temp-orphans.js`); this file
+// only decides that they run, and in which order.
+//
+// ---------------------------------------------------------------------------
+// #329 — the stale-bundle guard.
 //
 // The trap it closes: `npm run e2e` is `npm run build && playwright test`, and
 // the guard was wired into the OTHER two scripts (`e2e:only`, `e2e:ui`). So
@@ -25,10 +35,26 @@
 // builds, so this pre-flight is a stamp there, not a gate. Cost on a fresh
 // bundle is a directory walk of `src/` plus one `git rev-parse`, well under a
 // second against a suite that runs for minutes.
+//
+// ---------------------------------------------------------------------------
+// #360 — the temp-orphan sweep.
+//
+// #354 put the sweep on `npm test`'s `globalSetup` only, on the grounds that it
+// is the far more frequent seam and that this file was single-purpose. The gap
+// that left: e2e is the BIGGEST producer of the litter (22,512 `sb-e2e-proj-`
+// in the 2026-08-08 census, plus an Electron `userData` tree per app home), so
+// the run that makes the most of it was the one run that never cleared any, and
+// a machine used mostly for e2e had to wait for someone to type `npm test`.
+//
+// One call, deliberately identical to vitest's — same `sweepBeforeTests`, same
+// 2 s budget, same `SB_SKIP_TEMP_SWEEP` off-switch, same silence when there is
+// nothing to remove, same 24 h floor that keeps a live run's directories out of
+// range. Nothing about it is e2e-specific and nothing here re-decides it.
 'use strict';
 
 const path = require('path');
 const { guardE2eBundle } = require('./bundle-guard');
+const { sweepBeforeTests } = require('./sweep-temp-orphans');
 
 /** Root from __dirname, not cwd — the house pattern (bundle-guard.js's note). */
 const ROOT = path.join(__dirname, '..');
@@ -59,8 +85,38 @@ function e2eBundlePreflight(opts = {}) {
   }
 }
 
+/**
+ * Everything that happens before the first spec: guard, then sweep.
+ *
+ * ORDER IS DELIBERATE. The guard can end the run, and when it is going to, the
+ * developer should be told immediately rather than after two seconds of
+ * housekeeping — so a stale bundle means no sweep this time, which costs
+ * nothing: the sweep's whole design is that missing a run is fine (a 24 h
+ * floor, a budget, and a next time). The reverse order would spend the budget
+ * on a run that was never going to happen.
+ *
+ * `write` is threaded into both so a test can capture what a run would print.
+ * The two have different conventions and that is theirs, not this file's: the
+ * guard writes its report with the newline included, `sweepBeforeTests`
+ * writes one line and lets its default writer add it.
+ *
+ * The sweep gets its three options NAMED, not the whole bag: `opts.root` is a
+ * filesystem path meaning "project root", and handing that to a function whose
+ * job is to delete directories is how a future option ends up somewhere nobody
+ * decided it should be. `sweep-temp-orphans.js`'s `main` already refuses to
+ * spread its parsed arguments for exactly this reason; same rule here.
+ *
+ * @param {{root?: string, env?: Record<string, string|undefined>,
+ *          write?: (s: string) => void, budgetMs?: number}} [opts]
+ */
+function e2ePreflight(opts = {}) {
+  e2eBundlePreflight(opts);
+  sweepBeforeTests({ env: opts.env, write: opts.write, budgetMs: opts.budgetMs });
+}
+
 /** @type {() => void} Playwright's globalSetup entry point. */
 module.exports = function globalSetup() {
-  e2eBundlePreflight();
+  e2ePreflight();
 };
 module.exports.e2eBundlePreflight = e2eBundlePreflight;
+module.exports.e2ePreflight = e2ePreflight;

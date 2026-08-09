@@ -18,9 +18,10 @@ if (d) {
 // call `cleanupTempDirs()` from their own `afterEach` as well; this is the last
 // pass, not the only one.
 //
-// It runs AFTER a file's own `afterAll` (which matters for the two files that
-// reap live handles there — `transcripts/watcher.test.ts` and
-// `transport/stream-service.test.ts`) because vitest's `sequence.hooks`
+// It runs AFTER a file's own `afterAll` (which matters for the one file that
+// reaps live handles there — `transport/stream-service.test.ts`, which kills
+// its children and only then deletes the directory they had as their cwd)
+// because vitest's `sequence.hooks`
 // defaults to `"stack"`: same-level `afterAll` hooks run in reverse
 // registration order, and a setup file registers before the test file is even
 // loaded. Load-bearing, and not pinned in `vitest.config.ts`.

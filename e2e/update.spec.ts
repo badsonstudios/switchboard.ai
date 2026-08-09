@@ -16,7 +16,14 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { AddressInfo } from 'net';
-import { launchApp, LaunchedApp, poll, workspaceJsonPath } from './fixtures/app';
+import {
+  launchApp,
+  LaunchedApp,
+  poll,
+  registerTempDir,
+  sweepTempDirs,
+  workspaceJsonPath,
+} from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 /** The name `electron-builder.js` produces, which is what the picker looks for. */
@@ -387,13 +394,19 @@ test.describe('one-click download + verified install (E19-04)', () => {
     await feed.start();
     // Our own temp: the staged installer is asserted on, and a suite that
     // swept the machine's real temp directory would be a rude thing to run.
-    temp = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-temp-'));
+    // Registered with the fixture's registry (#213, #360) rather than removed
+    // by hand — this directory is the app's TEMP, so a test that fails while
+    // the installer is being staged is exactly when the rm needs the registry's
+    // requeue, and exactly when a bare `rmSync` throwing out of a hook would
+    // report a second, invented failure.
+    temp = registerTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-temp-')));
   });
   test.afterEach(async () => {
     await a?.cleanup();
     a = undefined;
     await feed.stop();
-    fs.rmSync(temp, { recursive: true, force: true });
+    // `cleanup()` sweeps too, so this is for the test that never got an app.
+    await sweepTempDirs();
   });
 
   const launch = (home?: string): Promise<LaunchedApp> =>

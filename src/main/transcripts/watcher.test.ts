@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { TranscriptWatcher, slugForCwd, conversationExists } from './watcher';
 import { LogSink, createLogger } from '../log/logger';
+import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 
 let root: string;
 let logDir: string;
@@ -43,41 +43,8 @@ function stopExtras(): void {
   extras.length = 0;
 }
 
-/** Dirs a teardown could not delete, waiting for the next attempt. */
-const stuck: string[] = [];
-
-/**
- * Delete temp dirs, tolerating the Windows file-lock race — and never throwing.
- *
- * Both halves are load-bearing. `maxRetries` covers the ENOTEMPTY/EPERM path a
- * scanner or indexer holding one file inside the tree produces — but NOT a lock
- * on the directory itself: node's recursive rm only enters its retry loop after
- * the not-empty recursion, so an `EBUSY` off the first `rmdir` is rethrown
- * untouched. That one is covered by the REQUEUE instead: whatever will not go
- * is tried again by the next teardown and by `afterAll`.
- *
- * And it never throws, because a throw from a vitest hook is attributed to the
- * FILE — a failed file with zero failing tests, the #167 phantom. Fail-open
- * applies to test infra too: a directory that will not go is a leak, not a
- * broken run.
- */
-function rmDirs(dirs: string[]): void {
-  for (const d of dirs) {
-    try {
-      fs.rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
-    } catch {
-      stuck.push(d);
-    }
-  }
-}
-
-/** Remove `dir`, and retry anything an earlier teardown left behind. */
-function removeTemp(dir: string): void {
-  rmDirs([...stuck.splice(0, stuck.length), dir]);
-}
-
 beforeEach(() => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-tw-root-'));
+  root = tempDir('sb-tw-root-');
   // The log sink gets its OWN directory, deliberately. It used to write into
   // `root` — i.e. inside the very tree the watcher scans — which was harmless
   // while discovery was a blind 100ms poll (`scan` only collects `.jsonl`).
@@ -86,7 +53,7 @@ beforeEach(() => {
   // defeated a regression test, which passed against the very defect it was
   // written to catch because the watcher's own "transcript bound" log line was
   // re-dirtying the root for it.
-  logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-tw-log-'));
+  logDir = tempDir('sb-tw-log-');
   cwd = 'C:/tmp/tw-project';
   watcher = makeWatcher({
     projectsRoot: root,
@@ -107,16 +74,18 @@ afterEach(() => {
   // allowed to throw on the way to the rm: that would leak the dirs AND report
   // a failed file with no failing test (#167).
   stopExtras();
-  // Both dirs were leaked outright until these two lines — MEASURED at 102
-  // orphaned directories per run (two per test) against an isolated `TEMP`, and
-  // 0 after — on a file that runs dozens of times a day on a dev machine (#180).
-  removeTemp(root);
-  removeTemp(logDir);
-});
-
-afterAll(() => {
-  // Last call for anything still locked when its own teardown ran.
-  rmDirs(stuck.splice(0, stuck.length));
+  // Both dirs were leaked outright until this line — MEASURED at 102 orphaned
+  // directories per run (two per test) against an isolated `TEMP`, and 0 after
+  // — on a file that runs dozens of times a day on a dev machine (#180).
+  //
+  // Every directory this file makes is per-TEST, which is the precondition for
+  // sweeping the whole registry here rather than naming dirs one by one. It
+  // takes `rootB` too (the block below registers it and has no teardown of its
+  // own), and it carries the Windows file-lock requeue this file used to spell
+  // out for itself: whatever will not go stays pending, is retried by the next
+  // teardown, and finally by `test-setup.ts`'s `afterAll` net — which is why
+  // the local `afterAll` that used to do that last pass is gone (#213, #360).
+  cleanupTempDirs();
 });
 
 function projectDir(): string {
@@ -753,20 +722,18 @@ describe('pre-existing transcripts are never adopted', () => {
 describe('per-session transcripts root (P2-E15-01)', () => {
   let rootB: string;
 
+  // No teardown of its own, deliberately. These tests point a watcher at
+  // `rootB` and discovery puts it under `fs.watch` — an open directory handle,
+  // closed synchronously by `stop()` — so the rm MUST come after every watcher
+  // is stopped. An inner `afterEach` runs BEFORE the outer one, i.e. before
+  // `stopExtras()`, so deleting from here used to need its own `stopExtras()`
+  // call to avoid an EBUSY that vitest reports as a failed FILE with zero
+  // failing tests (the #167 shape). Registering the directory instead puts it
+  // in the outer teardown's sweep, which is already on the right side of the
+  // stop. (`extras` lives at file scope since #180 — EVERY watcher in the file
+  // is registered with it, not just this block's.)
   beforeEach(() => {
-    rootB = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-tw-rootb-'));
-  });
-  afterEach(() => {
-    // Stop FIRST. These tests point a watcher at `rootB`, and discovery puts it
-    // under `fs.watch` — an open directory handle, closed synchronously by
-    // `stop()`. Vitest runs the innermost `afterEach` before the outer one, so
-    // without this the rm here would race the outer teardown's stop and throw
-    // EBUSY on Windows, which vitest reports as a failed FILE with zero failing
-    // tests (the #167 shape). `stop()` is idempotent, so the outer hook running
-    // it again is fine. (`extras` lives at file scope since #180 — EVERY watcher
-    // in the file is registered with it now, not just this block's.)
-    stopExtras();
-    removeTemp(rootB);
+    rootB = tempDir('sb-tw-rootb-');
   });
 
   it('a session watches under ITS provider root, not the watcher default', async () => {

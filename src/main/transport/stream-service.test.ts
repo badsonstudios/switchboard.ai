@@ -9,8 +9,8 @@
 // fake gives the e2e suite.
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
+import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import {
   StreamService,
   StreamSession,
@@ -113,7 +113,11 @@ async function reapAll(): Promise<void> {
 }
 
 beforeAll(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-stream-'));
+  // One directory for the whole FILE — every child spawned here has it as its
+  // cwd — so there is deliberately no `afterEach` sweep (it would delete the
+  // scripts under the remaining tests). Registered with #213's registry, so
+  // even a `beforeAll` that throws half-way leaves nothing behind (#360).
+  dir = tempDir('sb-stream-');
 });
 afterEach(async () => {
   // Reap per test rather than only at the end, so a child never outlives the
@@ -122,12 +126,16 @@ afterEach(async () => {
 }, 20_000);
 afterAll(async () => {
   await reapAll();
-  // Second layer, and the reason for the explicit options: even with every
-  // child reaped, a virus scanner or the search indexer can hold a transient
-  // handle on a file it just saw appear. `maxRetries` makes node retry on
-  // exactly the transient codes (EBUSY/EPERM/ENOTEMPTY/EMFILE/ENFILE) instead
-  // of throwing on the first one.
-  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  // Second layer. `cleanupTempDirs()` carries the retries this used to spell
+  // out itself (a virus scanner or the search indexer can hold a transient
+  // handle on a file it just saw appear, and `maxRetries` covers exactly those
+  // codes) AND — unlike the bare `rmSync` that was here — it cannot throw out
+  // of this hook, which vitest would report as a failed FILE with zero failing
+  // tests (#167). Called explicitly rather than left to `test-setup.ts`'s net
+  // so the delete still happens straight after the reap, with the ordering the
+  // comment above `reapAll` depends on; the net then retries anything Windows
+  // was still holding.
+  cleanupTempDirs();
 }, 20_000);
 beforeEach(() => {
   svc = new StreamService();

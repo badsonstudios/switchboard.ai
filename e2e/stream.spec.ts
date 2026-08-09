@@ -11,14 +11,12 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { hookPoster, launchApp, LaunchedApp } from './fixtures/app';
-
-/** Project folders this file made, waiting to be deleted. See `teardown`. */
-const tempFolders: string[] = [];
+import { hookPoster, launchApp, LaunchedApp, registerTempDir, sweepTempDirs } from './fixtures/app';
 
 function tempProjectFolder(): string {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-stream-e2e-'));
-  tempFolders.push(d);
+  // Registered with the fixture's registry (#213) rather than a list of this
+  // file's own, so `sweepTempDirs()` takes it — see `teardown`.
+  const d = registerTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'sb-stream-e2e-')));
   fs.writeFileSync(path.join(d, 'README.md'), '# stream\n');
   return d;
 }
@@ -30,21 +28,15 @@ function tempProjectFolder(): string {
  * folders as its cwd, and on Windows a running process holds a lock on its cwd
  * — so an rm issued before the app is reaped is guaranteed to fail with EBUSY.
  * `cleanup()` closes the app and kills the tree first; the kill only *asks*,
- * though, so the rm can still land while the last child is dying.
+ * though, so the rm can still land while the last child is dying. That last
+ * race is why the delete has to requeue rather than retry, and why it is
+ * `sweepTempDirs()` doing it — the fixture's registry (`fixtures/app.ts`) is
+ * where the requeue, the async rm and the never-throw rule live, and this file
+ * kept a second copy of all three until #360. It also adds a guard this copy
+ * did not have: a sweep while an app is still open is deferred, not attempted.
  *
- * `maxRetries` is NOT the answer to that one, and it is worth writing down
- * because it looks like it should be: node's recursive rm only enters its retry
- * loop after the not-empty recursion, so an `EBUSY` off the very first `rmdir`
- * — exactly what a still-held cwd produces — is rethrown untouched (measured on
- * this machine, 0/4 retried). What actually makes this robust is the REQUEUE: a
- * folder that will not go stays on the list and is tried again by the next
- * test's teardown and by the file's `afterAll`, by which time its process is
- * long gone. The retries are still worth asking for — they cover the
- * ENOTEMPTY/EPERM path a scanner or indexer holding one file produces.
- *
- * And it never throws. A throw here would fail a test that has already passed;
- * fail-open applies to test infra too, so a directory that will not go is a
- * leak, not a broken run.
+ * `cleanup()` sweeps on its own, so the call below is for the case that has no
+ * app: a test that threw before `launchApp` returned still made its folder.
  *
  * The hooks hand the app over and clear their own `a` FIRST (the diff.spec.ts
  * shape). A test that throws before assigning it otherwise leaves the PREVIOUS
@@ -59,16 +51,7 @@ async function teardown(app?: LaunchedApp): Promise<void> {
   try {
     await app?.cleanup();
   } finally {
-    const pending = tempFolders.splice(0, tempFolders.length);
-    for (const d of pending) {
-      try {
-        // async: the ENOTEMPTY retry ladder sleeps ~5s, and a sync one would
-        // spend it blocking the worker inside Playwright's own hook budget
-        await fs.promises.rm(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-      } catch {
-        tempFolders.push(d); // retried next time — see above
-      }
-    }
+    await sweepTempDirs();
   }
 }
 
