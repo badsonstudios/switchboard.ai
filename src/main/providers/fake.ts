@@ -45,6 +45,16 @@ export const fakeAdapter: ProviderAdapter = {
       { name: 'compact', description: 'Summarize the conversation', source: 'builtin' },
     ];
   },
+  // Takes no `options` and therefore IGNORES the requested transport — this
+  // fake only knows how to be a terminal, and a recipe without a `transport`
+  // field says so (`session-manager.ts` reads that silence as `pty`).
+  //
+  // Load-bearing since #381 made Direct the default: the host now asks every
+  // session for the stream and this adapter refuses, so every spec on
+  // `SWITCHBOARD_FAKE_PROVIDER=1` — which is nearly the whole suite — still runs
+  // on the PTY. Worth knowing before assuming the suite covers the app's
+  // default configuration: only the specs on the dual-capable fake
+  // (`=stream`, `providers/fake-stream.ts`) do.
   buildSpawn(): SpawnRecipe {
     return {
       command: process.platform === 'win32' ? 'cmd.exe' : 'sh',

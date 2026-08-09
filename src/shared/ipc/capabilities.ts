@@ -131,6 +131,9 @@ export const CHANNEL_CAPABILITIES = {
   'workspace:getLayout': 'workspace.read',
   'workspace:getUi': 'workspace.read',
   'workspace:isReadOnly': 'workspace.read',
+  // whether the workspace file can still be written (#207). A READ of the
+  // store's own health — it starts nothing and changes nothing.
+  'workspace:saveState': 'workspace.read',
   'workspace:setLayout': 'workspace.write',
   'workspace:setUi': 'workspace.write',
 
@@ -160,6 +163,9 @@ export const CHANNEL_CAPABILITIES = {
   // a check the renderer did not ask for (the daily timer, or the menu item)
   // finished — the renderer decides whether that becomes a dialog
   'update:status': 'update.check',
+  // saving started failing, or started working again (#207). Same capability
+  // as reading the state: a window that may ask may be told.
+  'workspace:saveStateChanged': 'workspace.read',
 } as const satisfies Record<string, Capability>;
 
 /**

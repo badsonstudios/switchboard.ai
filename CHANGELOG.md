@@ -53,6 +53,28 @@ on the floor, and say so in your PR.
 
 ## 0.3.0 — unreleased
 
+### Changed
+
+- **New sessions now start in Direct mode** instead of Terminal mode.
+  Permission requests — including the `.claude` ones that used to escape into
+  the terminal and ask you twice — are answered in the card, and replies arrive
+  a word at a time. The trade is that a Direct session has no Terminal tab: if
+  a session needs one, switch that session to Terminal from its **⋯** menu and
+  it stays there. Sessions you had already switched by hand keep exactly what
+  you chose; ones you never touched move to Direct.
+
+### Fixed
+
+- When switchboard can't write its workspace file — a full drive, a permission,
+  a backup or anti-virus tool holding the file — a banner now says so and names
+  the file, instead of the failure going only to the log. It retries on its own
+  and takes the banner back down the moment saving works again.
+- A pop-out window that dies without warning — killed from the task bar, force
+  closed, or lost with a crash — no longer takes its session with it. The card
+  comes back to the main window suspended, with its **Resume** button, exactly
+  as it does when you close the window normally; it used to be left in a window
+  that no longer existed, visible nowhere.
+
 ### Internal
 
 - Every IPC seam — groups, sessions and the capability broker — now refuses a

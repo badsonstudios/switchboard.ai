@@ -9,7 +9,7 @@
 // This module owns only the DOM plumbing: WHERE the notice goes in that other
 // document. WHICH popouts exist is `lib/popout-windows`' answer (#227), and the
 // notice itself — with the one call that decides whether there is anything to
-// say — stays in WorkspaceReadOnlyBanner.tsx. There is still a single source of
+// say — stays in WorkspaceNoticeBanner.tsx. There is still a single source of
 // truth for each of the three.
 //
 // Everything here is fail-open by construction: a popout window can be closed

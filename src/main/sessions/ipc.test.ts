@@ -76,6 +76,8 @@ function harness(
     streamFeed?: StreamFeed;
     /** the transport the manager reports for a live session (P2-E18-10) */
     transport?: 'pty' | 'stream';
+    /** the app-wide env override of which transport to ask for (#381) */
+    preferredTransport?: () => 'pty' | 'stream' | undefined;
     /** exit codes per session id — a session listed here is DEAD but still has
      *  a record, which is exactly what a crash leaves behind (#187) */
     exitCodes?: Record<string, number>;
@@ -132,6 +134,12 @@ function harness(
     status: 'starting',
     createdAt: '',
     exitCode: null,
+    // What the fake manager REPORTS a live session is on, which is independent
+    // of what the seam ASKED for — since #381 the ask defaults to `stream`
+    // while this still answers `pty`, a pairing a stream-capable adapter could
+    // not produce in production. That is fine for the channels under test here
+    // (they read the record, not the request), but do not read a transport
+    // claim about the real app out of a test that leaves this at its default.
     transport: opts.transport ?? 'pty',
   };
 
@@ -325,6 +333,7 @@ function harness(
     streamCommands: opts.streamCommands,
     streamPermissions: opts.streamPermissions,
     streamFeed: opts.streamFeed,
+    preferredTransport: opts.preferredTransport,
   } as unknown as SessionIpcDeps;
 
   registerSessionIpc(deps);
@@ -767,10 +776,89 @@ describe('per-card transport (P2-E18-08b)', () => {
     });
   });
 
-  // The card's stored choice must WIN over the env default, or the setting
-  // would be decorative on a machine that has the escape hatch set.
+  // The card's stored choice must reach the spawn, or the setting is
+  // decorative.
+  //
+  // Asserted with `pty` since #381: with Direct as the default, a card storing
+  // `stream` proved nothing here — deleting `prior?.transport ??` from the seam
+  // left this green. `pty` is the value the default can never supply.
   it("a new session asks for the CARD's transport", async () => {
-    const h = harness(undefined, dir, { prior: { ...card(), transport: 'stream' } });
+    const h = harness(undefined, dir, { prior: { ...card(), transport: 'pty' } });
+
+    await start(h);
+
+    expect(h.created[0].transport).toBe('pty');
+  });
+});
+
+// #381 — Direct is what a session starts on unless something says otherwise.
+//
+// Dan, 2026-08-09: "all sessions default to direct mode. not terminal". The
+// three populations these tests separate are the whole of the change:
+//
+//  1. a card that has never chosen (including every card that predates the
+//     setting) follows the default, and the default is now Direct;
+//  2. a card that explicitly chose keeps its choice — Terminal included, which
+//     is the promise that makes flipping the default safe;
+//  3. the env override sits between the two, so a whole app instance can be
+//     aimed at one transport without touching anybody's card.
+describe('Direct is the default transport (#381)', () => {
+  const CARD = 'card-1';
+  let dir: string;
+  tempDirEach('sb-tr-default-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir, CARD);
+
+  it('a card that never chose starts in Direct', async () => {
+    const h = harness(undefined, dir, { prior: card() });
+
+    await start(h);
+
+    expect(h.created[0].transport).toBe('stream');
+  });
+
+  it('a brand-new card with no record at all starts in Direct', async () => {
+    const h = harness(undefined, dir, {});
+
+    await start(h, 'fresh');
+
+    expect(h.created[0].transport).toBe('stream');
+  });
+
+  // The promise in the issue, and the reason this is a default and not a
+  // migration: a session that was deliberately put on the terminal stays there.
+  it('a card that explicitly chose Terminal keeps Terminal', async () => {
+    const h = harness(undefined, dir, { prior: { ...card(), transport: 'pty' } });
+
+    await start(h);
+
+    expect(h.created[0].transport).toBe('pty');
+  });
+
+  // ...and the default is not written back onto the card, so a card that never
+  // chose keeps following the default rather than freezing today's answer. This
+  // is what makes population 1 move on one line — and what would make it move
+  // back if the default ever changed again.
+  it('does not record the default as if the user had chosen it', async () => {
+    const h = harness(undefined, dir, { prior: card() });
+
+    await start(h);
+
+    expect(h.upserted.at(-1)?.transport).toBeUndefined();
+  });
+
+  it('the env override decides for a card that never chose', async () => {
+    const h = harness(undefined, dir, { prior: card(), preferredTransport: () => 'pty' });
+
+    await start(h);
+
+    expect(h.created[0].transport).toBe('pty');
+  });
+
+  it("a card's own choice still beats the env override", async () => {
+    const h = harness(undefined, dir, {
+      prior: { ...card(), transport: 'stream' },
+      preferredTransport: () => 'pty',
+    });
 
     await start(h);
 
@@ -803,14 +891,18 @@ describe('starting a session preserves the card (#153 follow-up)', () => {
     } as PersistedSession;
   }
 
+  // `pty` and not `stream` since #381, and deliberately: Direct is the default
+  // now, so a card storing `stream` would spawn on `stream` even if the field
+  // were dropped on the way — the second assertion, the one about the spawn,
+  // would have passed on the very bug this test exists for.
   it('keeps the transport across a session start — the relaunch case', async () => {
-    const h = harness(undefined, dir, { prior: priorWith({ transport: 'stream' }) });
+    const h = harness(undefined, dir, { prior: priorWith({ transport: 'pty' }) });
 
     await start(h);
 
-    expect(h.upserted.at(-1)?.transport).toBe('stream');
+    expect(h.upserted.at(-1)?.transport).toBe('pty');
     // and it was actually USED for the spawn, not merely re-saved
-    expect(h.created[0].transport).toBe('stream');
+    expect(h.created[0].transport).toBe('pty');
   });
 
   it('keeps usage, model, task label and group membership too', async () => {

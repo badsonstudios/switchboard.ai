@@ -51,10 +51,12 @@ import { cardHeaderTitle } from '../lib/card-title';
 import { StatusPill } from './StatusPill';
 import type { Ladder } from '../lib/presentation';
 import { pickAdoptedGroupId } from '../lib/groups';
-import { addPopoutWindow, removePopoutWindow } from '../lib/popout-windows';
+import { addPopoutWindow, removePopoutWindow, subscribePopoutWindows } from '../lib/popout-windows';
+import { strandedByGroup } from '../lib/popout-rescue';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { setDraggedCard } from '../lib/drag-context';
-import { writePromptToPty } from '../lib/composer';
+import { sendSessionCommand } from '../lib/composer';
+import { DEFAULT_SESSION_TRANSPORT, type TransportKind } from '../../../shared/transport';
 import {
   dropRetired,
   enqueueHeld,
@@ -323,7 +325,16 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // autonomy above — the CLI cannot change either on a live session. It is
   // ACCEPTED either way; when a session is running we say the change is queued
   // rather than implying it took effect.
-  const [cardTransport, setCardTransport] = React.useState<'pty' | 'stream'>('pty');
+  //
+  // Seeded from the shared default rather than a hard-coded `'pty'` (#381).
+  // Defence in depth: the menu only renders for a LIVE session and the create
+  // response sets this in the same batch as `live`, so the seed is not
+  // observable today — but it is the answer this component gives if it is ever
+  // asked before main has answered, and that answer should not be a second
+  // opinion about what the default is.
+  const [cardTransport, setCardTransport] = React.useState<TransportKind>(
+    DEFAULT_SESSION_TRANSPORT
+  );
   const [transportPending, setTransportPending] = React.useState(false);
   const toggleTransport = (): void => {
     if (!cardId) return;
@@ -901,7 +912,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
           suspended.
 
           `role="status"`, which is polite by definition and is how the rest of
-          this app spells a live region (PreflightBanner, WorkspaceReadOnlyBanner,
+          this app spells a live region (PreflightBanner, WorkspaceNoticeBanner,
           the rail's move notice). `aria-live="polite"` alongside it is strictly
           redundant and written anyway, belt-and-braces, exactly as EventsPanel's
           two notices do it — the attribute is the part a reader recognises, and
@@ -1151,11 +1162,13 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                       fontFamily: 'var(--font-ui)',
                     }}
                   >
-                    {/* session controls write the REAL slash command to the
-                        PTY. Locked while 'starting' — the CLI may still be in
-                        a startup TUI dialog the composer can't see (§5.10
-                        startup-dialog rule) — and once the session is dead
-                        (crashed/exited): the write would be a silent no-op.
+                    {/* session controls send the REAL slash command to the
+                        session, on whichever transport it is on (#381 — they
+                        went straight to the PTY before, and did nothing at all
+                        in Direct mode). Locked while 'starting' — the CLI may
+                        still be in a startup TUI dialog the composer can't see
+                        (§5.10 startup-dialog rule) — and once the session is
+                        dead (crashed/exited): the send would be a silent no-op.
                         'done' stays live — the session is idle, not gone. */}
                     {confirmClear && !controlsLocked ? (
                       <div style={{ padding: '4px 8px' }}>
@@ -1165,7 +1178,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button
                             onClick={() => {
-                              writePromptToPty(live.id, '/clear');
+                              void sendSessionCommand(live.id, '/clear');
                               setMenuOpen(false);
                               setConfirmClear(false);
                             }}
@@ -1249,7 +1262,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                                 : t('grid.menuDead')
                           }
                           onClick={() => {
-                            writePromptToPty(live.id, '/compact');
+                            void sendSessionCommand(live.id, '/compact');
                             setMenuOpen(false);
                           }}
                           style={menuItemStyle(controlsLocked)}
@@ -1589,12 +1602,125 @@ export function popOutCardPanel(api: DockviewApi | null, cardId: string): void {
   void api.addPopoutGroup(panel, { popoutUrl });
 }
 
+/**
+ * Bring home every card whose popout window died without telling anyone (#292).
+ *
+ * #279 taught the registry to notice a window that closed with no event — the
+ * task bar's close, a crash, the OS taking it. That stopped the bookkeeping
+ * lying; it did not give the user their session back. dockview still has the
+ * card in a popout group whose window is a corpse, so the card is in no window
+ * at all: not in the grid, not on screen, and reachable only by closing the
+ * card outright. This is the half that puts it back.
+ *
+ * THE CARD IS REBUILT, NOT MOVED, and that is the fact the whole shape hangs
+ * on. dockview ADOPTS a popped-out card's DOM into the other window's document,
+ * and when the OS destroys that window Chromium strips every event listener off
+ * every node in the document it is tearing down — React's included. Carrying
+ * those nodes back into the main window gives you a card that renders perfectly
+ * and answers no clicks: a picture of a session, with a Resume button that does
+ * nothing. (That was this function's first draft; the e2e below is what caught
+ * it, and no unit test could have.) So the dead panel is taken away and the card
+ * is built again from its record — the ladder's hidden rung and a reveal, both
+ * of which already exist and are how every panel-less card comes back.
+ *
+ * AND IT SUSPENDS, exactly as a clean close does. To the user a window taken by
+ * the OS and a window closed with its own X are the same event; whether dockview
+ * happened to hear about it is our implementation detail, and "closing a popout
+ * suspends the session — unless we missed the close" is not a rule anybody could
+ * hold in their head. The card's own `onDidLocationChange` handler would
+ * normally do this (E8-04), and cannot here: it never sees a location change,
+ * because its panel goes straight from the dead window to nowhere. So the two
+ * store writes and `dropLive` are made here instead, deliberately mirroring it.
+ *
+ * Not during teardown or a layout restore: both are moments when dockview's own
+ * popout state is mid-flight, and a rescue then would rewrite the layout being
+ * saved — quitting with a dead popout would lose the window arrangement it
+ * should come back with. Neither costs the user the card: a quit leaves the
+ * popout in the saved layout, so the next launch just reopens the window, and a
+ * restore is where those windows are being created in the first place.
+ */
+export function rescueStrandedPopouts(api: DockviewApi | null): void {
+  if (!api || sessionStore.isTearingDown() || sessionStore.isRestoringLayout()) return;
+  try {
+    for (const stranded of strandedByGroup(api.panels).values()) {
+      for (const panel of stranded) {
+        try {
+          const cardId = /^session-(.+)$/.exec(panel.id)?.[1];
+          // A DERIVED tab (a diff) went into the window with its card. It has no
+          // record and no state worth keeping — it is rebuilt from the card's
+          // Changes tab whenever it is asked for again — so it is simply
+          // dropped rather than rebuilt beside a suspended session.
+          if (!cardId) {
+            api.removePanel(panel);
+            continue;
+          }
+          rescueStrandedCard(api, cardId);
+        } catch (err) {
+          // fail-open, and the loop continues: one card that cannot be rebuilt
+          // must not cost the others their rescue.
+          console.error('[popout] could not bring a stranded card home', err);
+        }
+      }
+    }
+  } catch (err) {
+    // The registry calls its listeners inside its own try (popout-windows'
+    // `fire`), but the microtask that makes this rescue safe to run also puts
+    // it OUTSIDE that protection — and `api.panels` on a dockview that is
+    // mid-teardown is exactly the read `saveLayout` already guards against. An
+    // uncaught rejection from a janitor would be a worse bug than the one it
+    // fixes.
+    console.error('[popout] the stranded-card sweep failed', err);
+  }
+}
+
+/** One card: take the dead panel away, suspend, build it again in the grid. */
+function rescueStrandedCard(api: DockviewApi, cardId: string): void {
+  // The ladder's own "take the panel away, and this is NOT the user closing the
+  // card": it flags the removal so `onDidRemovePanel` keeps the record, banks
+  // the slot, and clears `poppedOut`. Removing the last panel of the popout
+  // group is also what makes dockview forget the window and the empty shell it
+  // left in the grid, so the ghost goes with it.
+  removePanelKeepingSlot(api, cardId, 'hidden');
+  // Then exactly what the card's own location handler does when a popout window
+  // closes (E8-04) — because that is what happened. The card cannot do it for
+  // itself here: it is being unmounted, and it never saw a location change,
+  // since the panel went straight from the dead window to nowhere.
+  sessionStore.forgetCardLiveIds(cardId);
+  sessionStore.setPresentation(cardId, { suspended: true });
+  console.log(`[popout] window gone — rebuilding session-${cardId} in the grid`);
+  // And build it again. NOT a move: when the OS destroys a window, Chromium
+  // strips every event listener from the document it is destroying — including
+  // the ones React put on the card's DOM, which dockview had adopted into that
+  // window. Carrying those nodes back into the main window gives you a card
+  // that RENDERS and answers no clicks: the Resume button below would be a
+  // picture of a button. Only a fresh mount is a working card, which is why
+  // this is the hidden rung and a reveal rather than `moveTo`.
+  //
+  // WITH focus, which the attention reveal deliberately does not take. Two
+  // reasons, and neither is "it looked nicer": a clean close activates the
+  // group it hands back, so this is parity again; and a reveal without focus
+  // adds the panel INACTIVE, which for the card's own fresh group means a
+  // rescued card that is present, correct, and drawn by nobody. The window that
+  // just died is overwhelmingly the one the user was looking at.
+  void revealCardPanel(api, cardId, true).catch((err) => {
+    console.error('[popout] the rescued card could not be rebuilt', err);
+  });
+  // Last, because it is the only step that leaves this window: main lets the
+  // session go, the same suspend a bare window close performs. Everything the
+  // user can see is already right if this never comes back.
+  void window.switchboard.sessions.dropLive(cardId);
+}
+
 /** The popout window's rect on screen, when this panel is in one. */
 function popoutBoxOf(panel: IDockviewPanel): Box | null {
   const loc = panel.api.location;
   if (loc.type !== 'popout') return null;
   const w = loc.getWindow();
-  if (!w) return null;
+  // A CLOSED window is as good as no window (#292). Its proxy still answers,
+  // with zeroes, and this rect becomes the card's remembered monitor — so a
+  // layout change in the seconds between a popout dying and the sweep noticing
+  // would quietly overwrite "where you left it" with a 0×0 box at the origin.
+  if (!w || w.closed) return null;
   return { left: w.screenX, top: w.screenY, width: w.outerWidth, height: w.outerHeight };
 }
 
@@ -2692,6 +2818,29 @@ export function SessionGrid(props: {
       api.onDidRemovePopoutGroup?.((e: PopoutGroup) => {
         if (e.window) removePopoutWindow(e.window);
       });
+      // ...and when one of those windows turns out to have died on its own
+      // (#292), the card it was hosting comes home. The registry's own liveness
+      // sweep (#279) is the trigger: it is already the one thing in the app that
+      // asks whether a popout window is still there, so there is no second timer
+      // and no second definition of "gone".
+      //
+      // ANY membership change, not just a removal. A removal is the one that
+      // matters — that is the sweep reporting a corpse — but `changed` also
+      // covers a card popped out while another one is stranded, which is the
+      // same "honest moment" #279 sweeps on and costs a walk of a list that is
+      // never more than a handful long. An ordinary close reaches here too and
+      // finds nothing to do: dockview has already put that card back by then,
+      // which is what makes this safe to hang off every change rather than
+      // needing to know which kind it was.
+      //
+      // Deferred by a microtask because dockview fires these from INSIDE its own
+      // removal, with the panel momentarily still in the group being torn down.
+      // Rescuing there would be moving furniture out from under it; a microtask
+      // lands after the whole synchronous teardown, when the answer is settled.
+      const offRescue = subscribePopoutWindows({
+        changed: () => queueMicrotask(() => rescueStrandedPopouts(api)),
+      });
+      window.addEventListener('beforeunload', () => offRescue());
       // window teardown must not be mistaken for the user closing cards
       window.addEventListener('beforeunload', () => {
         sessionStore.setTearingDown(true);
