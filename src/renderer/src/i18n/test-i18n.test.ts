@@ -114,13 +114,13 @@ function testFiles(dir: string, out: Array<[string, string]> = []): Array<[strin
   return out;
 }
 
-// both roots `vitest.config.ts` collects from; nothing in e2e/ touches i18next
-// today, and the ban is worth nothing if it only covers where the problem
-// already was
 /** This file, which names all three banned tokens because it IS the ban. The
  *  comment stripper cannot save it — they are in the test titles. */
 const SELF = 'src/renderer/src/i18n/test-i18n.test.ts';
 
+// both roots `vitest.config.ts` collects from; nothing in e2e/ touches i18next
+// today, and the ban is worth nothing if it only covers where the problem
+// already was
 const TEST_FILES = [
   ...testFiles(join(process.cwd(), 'src')),
   ...testFiles(join(process.cwd(), 'e2e')),
