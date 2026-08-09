@@ -105,6 +105,11 @@ for a second monitor. The session keeps running throughout; nothing restarts.
 - **Closing the pop-out window** instead *suspends* the session: the card
   returns to the main window with a **Resume** button, and the conversation is
   kept.
+- **However** the window goes — the ⤡ button, its own **X**, the task bar, Task
+  Manager, or a crash — the card comes back to the main window the same way. A
+  window that dies without warning can take a few seconds to be noticed; the
+  card then arrives suspended, with the same **Resume** button, and nothing is
+  lost in the meantime.
 
 Window positions are remembered. If a monitor is missing at startup,
 switchboard rescues any windows that were on it rather than losing them

@@ -22,6 +22,7 @@ import {
   endedCopy,
   layoutSweepPort,
   overlaySaid,
+  rescueStrandedPopouts,
   setCardLadder,
   setLayoutMode,
   stepCardLadder,
@@ -460,5 +461,244 @@ describe('overlaySaid', () => {
         expect(copyText(key).length).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+// ── #292: a card whose popout window died comes home ─────────────────────────
+//
+// The DECISIONS are lib/popout-rescue's and are pinned there. What is pinned
+// here is the dockview half — which verbs are called, in which order, and the
+// two guards — because the failure this issue is about was not a wrong decision
+// but a card left where nobody could reach it, and the only way to be sure it
+// is reachable is to watch it move.
+//
+// The fake grid below is the smallest thing that answers the four questions
+// `rescueStrandedPopouts` asks of dockview (panels, groups, addGroup, moveTo);
+// a real DockviewApi cannot be had in jsdom, which is the same wall the rest of
+// this file lives behind.
+
+interface FakeGroup {
+  id: string;
+  panels: FakePanel[];
+  api: {
+    location: { type: string; getWindow?: () => Window | null };
+    isVisible: boolean;
+    setVisible: (v: boolean) => void;
+  };
+}
+interface FakePanel {
+  id: string;
+  group: FakeGroup;
+  api: { moveTo: (opts: { group: FakeGroup }) => void };
+}
+interface GroupSpec {
+  id: string;
+  type?: string;
+  win?: Window | null;
+  visible?: boolean;
+}
+
+/** a grid that moves panels between groups the way dockview does */
+function fakeGrid(): {
+  api: never;
+  addGroups: (...specs: GroupSpec[]) => void;
+  addPanel: (id: string, groupId: string) => FakePanel;
+  group: (id: string) => FakeGroup;
+  where: (panelId: string) => string | undefined;
+  created: string[];
+} {
+  const groups: FakeGroup[] = [];
+  const panels: FakePanel[] = [];
+  const created: string[] = [];
+  let seq = 0;
+  const makeGroup = (spec: GroupSpec): FakeGroup => {
+    const g: FakeGroup = {
+      id: spec.id,
+      panels: [],
+      api: {
+        location:
+          spec.type === 'popout'
+            ? { type: 'popout', getWindow: () => spec.win ?? null }
+            : { type: spec.type ?? 'grid' },
+        isVisible: spec.visible ?? true,
+        setVisible: (v: boolean) => {
+          g.api.isVisible = v;
+        },
+      },
+    };
+    groups.push(g);
+    return g;
+  };
+  const api = {
+    get panels(): FakePanel[] {
+      return [...panels];
+    },
+    get groups(): FakeGroup[] {
+      return [...groups];
+    },
+    addGroup: (): FakeGroup => {
+      const g = makeGroup({ id: `new-${++seq}` });
+      created.push(g.id);
+      return g;
+    },
+  };
+  return {
+    api: api as never,
+    addGroups: (...specs: GroupSpec[]) => specs.forEach(makeGroup),
+    addPanel: (id: string, groupId: string) => {
+      const g = groups.find((x) => x.id === groupId)!;
+      const p: FakePanel = {
+        id,
+        group: g,
+        api: {
+          moveTo: ({ group }) => {
+            p.group.panels = p.group.panels.filter((x) => x !== p);
+            p.group = group;
+            group.panels.push(p);
+          },
+        },
+      };
+      g.panels.push(p);
+      panels.push(p);
+      return p;
+    },
+    group: (id: string) => groups.find((x) => x.id === id)!,
+    where: (panelId: string) => panels.find((p) => p.id === panelId)?.group.id,
+    created,
+  };
+}
+
+const deadWindow = { closed: true } as unknown as Window;
+const liveWindow = { closed: false } as unknown as Window;
+
+describe('rescueStrandedPopouts (#292)', () => {
+  it('moves a card out of a dead popout and into the shell it left behind', () => {
+    const grid = fakeGrid();
+    // the state a pop-out leaves the workspace in: an empty HIDDEN group where
+    // the card used to be, and the card itself in a popout group
+    grid.addGroups({ id: 'g1', visible: false }, { id: 'pop1', type: 'popout', win: deadWindow });
+    grid.addPanel('session-a', 'pop1');
+
+    rescueStrandedPopouts(grid.api);
+
+    expect(grid.where('session-a')).toBe('g1');
+    // ...and it is a home you can actually see
+    expect(grid.group('g1').api.isVisible).toBe(true);
+    expect(grid.created).toEqual([]); // no group invented while a home existed
+  });
+
+  it('gives the card a group of its own when there is no empty one', () => {
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g1' }, { id: 'pop1', type: 'popout', win: deadWindow });
+    grid.addPanel('session-b', 'g1'); // g1 is occupied
+    grid.addPanel('session-a', 'pop1');
+
+    rescueStrandedPopouts(grid.api);
+
+    expect(grid.created).toEqual(['new-1']);
+    expect(grid.where('session-a')).toBe('new-1');
+    expect(grid.where('session-b')).toBe('g1'); // nobody else was disturbed
+  });
+
+  it('leaves a LIVE popout exactly where it is', () => {
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g1', visible: false }, { id: 'pop1', type: 'popout', win: liveWindow });
+    grid.addPanel('session-a', 'pop1');
+
+    rescueStrandedPopouts(grid.api);
+
+    expect(grid.where('session-a')).toBe('pop1');
+    expect(grid.created).toEqual([]);
+    // the hidden shell stays hidden: nothing happened, so nothing was shown
+    expect(grid.group('g1').api.isVisible).toBe(false);
+  });
+
+  it('brings cards that shared a dead window home together', () => {
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g1', visible: false }, { id: 'pop1', type: 'popout', win: deadWindow });
+    grid.addPanel('session-a', 'pop1');
+    grid.addPanel('session-b', 'pop1');
+
+    rescueStrandedPopouts(grid.api);
+
+    expect(grid.where('session-a')).toBe('g1');
+    expect(grid.where('session-b')).toBe('g1');
+    expect(grid.created).toEqual([]); // one home for the window, not one each
+  });
+
+  it('rescues two dead windows into two homes', () => {
+    const grid = fakeGrid();
+    grid.addGroups(
+      { id: 'g1', visible: false },
+      { id: 'pop1', type: 'popout', win: deadWindow },
+      { id: 'pop2', type: 'popout', win: deadWindow }
+    );
+    grid.addPanel('session-a', 'pop1');
+    grid.addPanel('session-b', 'pop2');
+
+    rescueStrandedPopouts(grid.api);
+
+    expect(grid.where('session-a')).toBe('g1');
+    // the shell was taken by the first card, so the second gets a fresh group
+    // rather than being piled on top of a stranger
+    expect(grid.where('session-b')).toBe('new-1');
+  });
+
+  it('does nothing at all in an ordinary workspace', () => {
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g1' });
+    grid.addPanel('session-a', 'g1');
+
+    rescueStrandedPopouts(grid.api);
+
+    expect(grid.where('session-a')).toBe('g1');
+    expect(grid.created).toEqual([]);
+  });
+
+  it('keeps its hands off during teardown and during a layout restore', () => {
+    // Both are moments when dockview's popout state is mid-flight and the
+    // layout is about to be written: a rescue then would save the workspace
+    // WITHOUT the popout the user should get back next launch.
+    for (const flag of ['tearing-down', 'restoring'] as const) {
+      const grid = fakeGrid();
+      grid.addGroups({ id: 'g1', visible: false }, { id: 'pop1', type: 'popout', win: deadWindow });
+      grid.addPanel('session-a', 'pop1');
+      if (flag === 'tearing-down') sessionStore.setTearingDown(true);
+      else sessionStore.setRestoringLayout(true);
+
+      rescueStrandedPopouts(grid.api);
+
+      expect(grid.where('session-a'), flag).toBe('pop1');
+      sessionStore.setTearingDown(false);
+      sessionStore.setRestoringLayout(false);
+    }
+  });
+
+  it('survives a panel that refuses to move, and rescues the next one', () => {
+    // fail-open (and the loop keeps going): one card that cannot be moved must
+    // not cost the others their rescue
+    const grid = fakeGrid();
+    grid.addGroups(
+      { id: 'g1', visible: false },
+      { id: 'pop1', type: 'popout', win: deadWindow },
+      { id: 'pop2', type: 'popout', win: deadWindow }
+    );
+    const stuck = grid.addPanel('session-a', 'pop1');
+    stuck.api.moveTo = () => {
+      throw new Error('detached');
+    };
+    grid.addPanel('session-b', 'pop2');
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(() => rescueStrandedPopouts(grid.api)).not.toThrow();
+
+    expect(grid.where('session-a')).toBe('pop1');
+    expect(grid.where('session-b')).toBe('g1');
+    expect(err).toHaveBeenCalledTimes(1);
+    err.mockRestore();
+  });
+
+  it('is a no-op with no grid at all', () => {
+    expect(() => rescueStrandedPopouts(null)).not.toThrow();
   });
 });

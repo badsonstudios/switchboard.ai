@@ -53,6 +53,14 @@ on the floor, and say so in your PR.
 
 ## 0.3.0 — unreleased
 
+### Fixed
+
+- A pop-out window that dies without warning — killed from the task bar, force
+  closed, or lost with a crash — no longer takes its session with it. The card
+  comes back to the main window suspended, with its **Resume** button, exactly
+  as it does when you close the window normally; it used to be left in a window
+  that no longer existed, visible nowhere.
+
 ### Internal
 
 - Every IPC seam — groups, sessions and the capability broker — now refuses a

@@ -7,6 +7,7 @@ import {
   DockviewReact,
   DockviewReadyEvent,
   DockviewApi,
+  DockviewGroupPanel,
   DockviewTheme,
   IDockviewPanel,
   IDockviewPanelProps,
@@ -51,7 +52,8 @@ import { cardHeaderTitle } from '../lib/card-title';
 import { StatusPill } from './StatusPill';
 import type { Ladder } from '../lib/presentation';
 import { pickAdoptedGroupId } from '../lib/groups';
-import { addPopoutWindow, removePopoutWindow } from '../lib/popout-windows';
+import { addPopoutWindow, removePopoutWindow, subscribePopoutWindows } from '../lib/popout-windows';
+import { rescueHome, strandedByGroup } from '../lib/popout-rescue';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { setDraggedCard } from '../lib/drag-context';
 import { writePromptToPty } from '../lib/composer';
@@ -1589,6 +1591,66 @@ export function popOutCardPanel(api: DockviewApi | null, cardId: string): void {
   void api.addPopoutGroup(panel, { popoutUrl });
 }
 
+/**
+ * Bring home every card whose popout window died without telling anyone (#292).
+ *
+ * #279 taught the registry to notice a window that closed with no event — the
+ * task bar's close, a crash, the OS taking it. That stopped the bookkeeping
+ * lying; it did not give the user their session back. dockview still has the
+ * card in a popout group whose window is a corpse, so the card is in no window
+ * at all: not in the grid, not on screen, and reachable only by closing the
+ * card outright. This is the half that puts it back.
+ *
+ * IT IS DELIBERATELY NOT A SPECIAL CASE. The panel is moved into the grid and
+ * nothing else happens here — no suspend, no presentation write, no flags. The
+ * card's own `onDidLocationChange` handler is watching for exactly this
+ * transition and already knows what a popout leaving its window means: mark it
+ * no longer popped out, drop the live session and show the suspended panel,
+ * unless the move was our own (`isMoving`) or a dock-back toggle. That is why
+ * this does NOT set `isMoving` — the whole point is that a window the OS took
+ * is indistinguishable from a window the user closed, so it must go down the
+ * same path and come out the same way, down to the words the card's live
+ * region announces (#358). A rescue that quietly kept the session running
+ * would mean "closing a popout suspends the session, unless we missed the
+ * close" — a rule with an exception nobody could predict.
+ *
+ * Not during teardown or a layout restore: both are moments when dockview's own
+ * popout state is mid-flight, and a rescue then would rewrite the layout being
+ * saved — quitting with a dead popout would lose the window arrangement it
+ * should come back with. Nothing is lost by waiting: a popout still in the
+ * saved layout simply reopens next launch.
+ */
+export function rescueStrandedPopouts(api: DockviewApi | null): void {
+  if (!api || sessionStore.isTearingDown() || sessionStore.isRestoringLayout()) return;
+  for (const stranded of strandedByGroup(api.panels).values()) {
+    // One home per dead WINDOW, chosen once: cards that shared a popout come
+    // back sharing a group, exactly as a clean close returns them.
+    let home: DockviewGroupPanel | undefined;
+    for (const panel of stranded) {
+      try {
+        // Chosen inside the loop's first pass and reused after: the empty shell
+        // stops being empty the moment the first card lands in it.
+        home ??= rescueHome(api.groups) ?? api.addGroup();
+        // A shell left by a pop-out is HIDDEN as well as empty (dockview hides
+        // the group it took the card from). Landing a card in it without this
+        // would swap one invisible home for another.
+        if (!home.api.isVisible) home.api.setVisible(true);
+        panel.api.moveTo({ group: home });
+        // Logged, like the popout open/fail lines above it: this happens
+        // several seconds after a window disappeared and with no gesture
+        // behind it, so it is the first thing anyone reading a log about a
+        // card that "moved on its own" needs to see.
+        console.log(`[popout] window gone — brought ${panel.id} home`);
+      } catch (err) {
+        // fail-open, and the loop continues: one card that cannot be moved must
+        // not strand the others that can. What is left behind is what was there
+        // before this function existed, so a failure costs nothing new.
+        console.error('[popout] could not bring a stranded card home', err);
+      }
+    }
+  }
+}
+
 /** The popout window's rect on screen, when this panel is in one. */
 function popoutBoxOf(panel: IDockviewPanel): Box | null {
   const loc = panel.api.location;
@@ -2692,6 +2754,23 @@ export function SessionGrid(props: {
       api.onDidRemovePopoutGroup?.((e: PopoutGroup) => {
         if (e.window) removePopoutWindow(e.window);
       });
+      // ...and when one of those windows turns out to have died on its own
+      // (#292), the card it was hosting comes home. The registry's own liveness
+      // sweep (#279) is the trigger: it is already the one thing in the app that
+      // asks whether a popout window is still there, and a `removed` it did not
+      // hear from dockview is precisely the case that strands a session. An
+      // ordinary close reaches here too, and finds nothing to do — dockview has
+      // already put the card back by then, which is what makes this safe to hang
+      // off every removal rather than needing to know which kind it was.
+      //
+      // Deferred by a microtask because dockview fires this from INSIDE its own
+      // removal, with the panel momentarily still in the group being torn down.
+      // Rescuing there would be moving furniture out from under it; a microtask
+      // lands after the whole synchronous teardown, when the answer is settled.
+      const offRescue = subscribePopoutWindows({
+        removed: () => queueMicrotask(() => rescueStrandedPopouts(api)),
+      });
+      window.addEventListener('beforeunload', () => offRescue());
       // window teardown must not be mistaken for the user closing cards
       window.addEventListener('beforeunload', () => {
         sessionStore.setTearingDown(true);

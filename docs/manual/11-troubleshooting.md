@@ -277,6 +277,16 @@ different is always explainable after the fact.
 It was rescued back onto a visible screen. Plug the monitor back in and Events
 will offer to restore the layout.
 
+**A pop-out window died — closed from the task bar, killed, or crashed — and
+its session is nowhere.**
+Wait a few seconds. switchboard checks its pop-out windows on a short timer,
+and a window that goes without warning is noticed on the next check; the card
+then comes back to the main window suspended, with a **Resume** button, exactly
+as if you had closed the window normally. Nothing is lost while it's away — the
+conversation belongs to Claude Code — and **Resume** picks the session up again.
+If the card is still missing well after that, say so in a report with your log:
+the app writes a line whenever it brings a stranded card home.
+
 **A pop-out came back in the wrong place after a restart.**
 Pop-out windows are meant to reopen exactly where you left them, on whichever
 monitor that was. If one comes back somewhere else — drifted, or sitting across
