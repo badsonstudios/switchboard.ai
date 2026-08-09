@@ -123,7 +123,10 @@ const menuSectionStyle: React.CSSProperties = {
 
 /** A live region that must be INVISIBLE rather than absent (#253). Inline, like
  *  the rest of this file — the rail keeps its look in the component and only
- *  the states CSS can express (hover, the working ring) in the stylesheet. */
+ *  the states CSS can express (hover, the working ring) in the stylesheet.
+ *  Copy 1 of 2: SessionGrid.tsx has the same declarations (#358). Two is the
+ *  stated convention; a THIRD copy is the signal to extract a shared module
+ *  rather than paste it again (#367). */
 const srOnly: React.CSSProperties = {
   position: 'absolute',
   inlineSize: 1,

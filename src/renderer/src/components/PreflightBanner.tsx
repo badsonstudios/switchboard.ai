@@ -10,7 +10,12 @@ import { useTranslation } from 'react-i18next';
  * region at all. To a screen-reader user that is a warning that never happens —
  * the one message explaining why no session will ever start was silent, and the
  * user is left with a disabled "new session" and no stated reason (#222).
- * DESIGN §5.26: screen-reader labels on status surfaces.
+ * DESIGN §5.26: screen-reader labels on status surfaces — §5.26's
+ * "**Accessibility**" bullet, which really is filed under a section titled
+ * "Updates, version drift & data portability". This LOOKS like a stale citation
+ * and is not: #358 filed it as drift off the heading alone and #367 re-verified
+ * it against the body. §5.10's keyboard-complete passage cites §5.26 for the
+ * same rule, and every other §5.26 a11y citation in the renderer is sound too.
  *
  * Two things make it announce, and it needs both — this is why it was never a
  * one-attribute fix:
