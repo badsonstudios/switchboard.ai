@@ -83,6 +83,12 @@ on the floor, and say so in your PR.
 - A card left sitting on a session that crashed no longer keeps reading the
   disk for it. The transcript watch finishes what it was reading, then stops;
   everything the crashed session said stays on the card exactly as before.
+- Once no card is still looking for a conversation to show — every one that was
+  has said it couldn't find it — switchboard stops rescanning your transcripts
+  folder several times a second and settles into an occasional check. Anything
+  that could change the answer, from a transcript appearing to your next
+  prompt, puts it straight back to looking properly, so a card that gave up can
+  still pick a conversation up later on its own.
 
 ## 0.2.0 — 2026-08-09
 
