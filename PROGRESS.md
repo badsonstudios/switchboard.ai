@@ -31,7 +31,96 @@ structure adopting #228's temp-dir registry, verified by a local
 161+1 skip (from the merged branches' gate runs: 1227+46+5+16 /
 156+4+0+1).
 
-> # ▶▶ START HERE — 🎛 RUN 10 CLOSED 2026-08-08 (~4 h wall, two waves +
+> # ▶▶ START HERE — 🎛 RUN 11 CLOSED 2026-08-09 + FULLY MERGED (~80 min
+> wall; 3 items + #364's merge, ALL ON MAIN)
+>
+> **Final state: everything merged, nothing awaiting Dan from this run.**
+> #364 (#358 aria-live, run-10 carryover) → cbc6cb3 · #367 → PR #368 →
+> 191a649 · #365 → PR #370 → eaa042a · #366 → PR #371 → 9e61d9a. The
+> three run-11 internals merged BACK-TO-BACK with ZERO bumps (all based
+> on the same main; note: #363's BEHIND refusal last run was transient —
+> immediate serial merges of same-base green PRs do not trip the
+> protection). Issues #358 #365 #366 #367 closed, branches deleted,
+> worktrees all detached/clean. **Main @ 9e61d9a, out/ REBUILT, stamp
+> verified both bundles — `npm start` is current.**
+>
+> **Run-11 items in one line each:** #367 — the issue's premise was
+> FALSE (§5.26's body really holds the a11y rule); annotated, swept,
+> zero drift found; **#369 filed** (split §5.26 — Dan decision). #365 —
+> hex-lint rule now positional (letters/6/8-digit → color; all-numeric
+> 3–4 digit → color only as whole string); 21-test harness drives the
+> real config; #358's reworded title restored as proof. #366 — died-
+> session e2e types `exit 3` into the real PTY (Dan's hand-test step,
+> automated); NO test hook added, shipped posture untouched; +1 e2e
+> (201+1), mutation-proven three ways.
+>
+> **Queue state after run 11: NOTHING dispatchable without Dan.** Open
+> and Dan's: **#369** (§5.26 split decision) · **#346** (broker refusal
+> contract) · **#353** (release cut — CHANGELOG owes entries for EVERY
+> merge since v0.1.2; 5th consecutive item flagged it). Standing held
+> list unchanged (run-10 block). Next /orchestrate run needs Dan to
+> decide/unhold something or /pm to file new plan items.
+>
+> Orchestrator: Fable (/orchestrate, same session as run 10). **Single-
+> writer rule:** this file is written ONLY by the orchestrator session.
+> Workers report via handoff files in
+> `.claude/work_files/orchestrator/<issue#>.md`; handoffs are the
+> inputs, this file is the output. If this session dies, a fresh
+> /orchestrate session resumes from THIS block.
+>
+> **PR #364 (#358, aria-live) MERGED first → squash cbc6cb3** (Dan:
+> "all good continue"). Run 10 is fully landed — nothing of it remains
+> open. Main @ cbc6cb3 at dispatch.
+>
+> **Active workers (wave 1 = run 10's discovery queue, all dispatched
+> 2026-08-09):**
+> - **#365** ✅ DONE (~14 min) → **PR #370 (INTERNAL) — awaiting green
+>   CI, orchestrator merges.** Fix is POSITIONAL, not a loosening: any
+>   letter → color; 6/8 digits → color; all-numeric 3–4 digits → color
+>   only as the WHOLE string, reference inside a sentence (also drops
+>   the bogus 5/7-digit matches). "Require a letter" rejected on
+>   evidence — the repo really writes #000/#555/#242933 etc. Accepted
+>   gap documented in the config: `'1px solid #000'` mid-string slips
+>   (nothing in the tree writes one — all template styles interpolate
+>   tokens). NEW `scripts/eslint-hex-rule.test.js` (21 tests) drives
+>   the REAL config through the real ESLint API — 8+3 mutation-red —
+>   because `npm run lint` green also means "matches nothing". #358's
+>   reworded test title RESTORED as the proof. Gate: lint/typecheck
+>   clean · 2679 unit (+21, +1 file) · e2e skipped (stated call, lint
+>   config can't reach runtime; lock never taken). Discoveries: no doc
+>   describes the lint rules (extensibility.md candidate — noted, not
+>   filed); scripts/ hosts a root-file's test for lack of a home;
+>   CHANGELOG (→ #353). Handoff: 365.md.
+> - **#366** e2e for a session that ran and DIED → sb-wt-2,
+>   `feature/366-died-session-e2e` — in flight
+> - **#367** ✅ DONE (~6 min) → **PR #368 (INTERNAL) — awaiting green
+>   CI, orchestrator merges.** THE ISSUE'S PREMISE WAS FALSE: §5.26's
+>   BODY (DESIGN.md ~1452) contains the a11y rule verbatim; only the
+>   heading ("Updates, version drift…") misleads, and DESIGN.md:601
+>   (§5.10) itself CITES §5.26. Worker annotated the comment instead of
+>   breaking a correct citation, swept every § in the touched files +
+>   all six other §5.26 a11y citations — zero drift anywhere. srOnly
+>   copies now name each other + the three-copies extraction rule.
+>   3 files, comments only. Gate: lint/typecheck clean · 2658 unit ·
+>   e2e skipped (stated call, comments-only; lock never taken).
+>   Discoveries: **#369 filed** (§5.26 is two unrelated sections under
+>   one number — split decision, Dan's); verify-before-filing lesson →
+>   written into the /orchestrate skill (citation findings must quote
+>   the BODY); CHANGELOG fifth strike (→ #353); line endings are
+>   PER-FILE in this repo (CRLF and LF coexist — check, never assume).
+>   Handoff: 367.md.
+> Collisions: none — #365 is eslint config + affected string literals,
+> #366 is e2e/fixtures (maybe a test-only kill hook), #367 is a comment
+> fix. #366 may brush e2e/session.spec.ts which #365 could touch only
+> if a '#365' string appears in it (unlikely); rebase surfaces it.
+>
+> **Merge queue:** empty. Expected: #365 internal, #367 internal, #366
+> likely internal (test-only; worker classifies — ambiguous → UF).
+> **Held/decisions (Dan's):** #346 (broker refusal contract) · #353
+> (release cut + CHANGELOG backfill, four entries owed) · standing held
+> list unchanged (see run-10 block).
+
+> # 🎛 RUN 10 CLOSED 2026-08-08 (~4 h wall, two waves +
 > branding, 6 items shipped)
 >
 > **Final state: 5 of 6 MERGED, 1 in Dan's queue.** Wave 1: #352 (PR

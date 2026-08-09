@@ -163,7 +163,12 @@ The prompt must contain, concretely:
 
 **Mid-flight discoveries:** a worker that finds an unrelated bug reports it
 in the handoff; the orchestrator files it as a new issue (`gh issue create`)
-and queues it. No scope creep on open PRs.
+and queues it. No scope creep on open PRs. **A citation-drift or
+doc-contradiction finding must quote the section BODY it checked, not the
+heading** — run 11: #358 reported a "stale §5.26 citation" off the section
+heading alone; the rule was in the body all along, and the follow-up item
+(#367) existed only to disprove the report. Workers' prompts for such
+findings should demand the quoted evidence before an issue is filed.
 
 ## While workers run — the orchestrator loop
 
