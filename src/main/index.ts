@@ -578,9 +578,11 @@ function createWindow(): BrowserWindow {
           // into this window while the JS keeps running in the OPENER, so a
           // popout never makes an IPC call of its own — which is why it is
           // never granted capabilities (P2-E15-04). Adding a preload would make
-          // it an ungranted caller: `invoke`s would reject and `on`-channels
-          // would be dropped with only a log line, and nobody would connect
-          // that to this change. Grant it here if you ever do add one.
+          // it an ungranted caller, and since #346 that fails QUIETLY: every
+          // `invoke` RESOLVES an `IpcRefusal` (`shared/ipc/refusal.ts`) that the
+          // renderer's code is not checking for, so a card list arrives as a
+          // refusal object rather than as a rejection, and `on`-channels are
+          // dropped with only a log line. Grant it here if you ever add one.
           webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
         },
       };

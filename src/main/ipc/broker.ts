@@ -9,6 +9,13 @@
 // Today the only caller is our own window, granted everything, so nothing is
 // refused and behaviour is identical. §5.23's claim that "the main process is
 // the sole enforcer" stops being true-by-vacuum and becomes true-in-code.
+//
+// HOW THIS SEAM SAYS NO (#346). A refused `invoke` RESOLVES with an
+// `IpcRefusal` and never rejects — the last place in the app that still
+// refused by throwing, after #326 (`groups:*`) and #347 (`sessions:*`). The
+// full argument for the shape, and why it is neither bare `null` nor
+// `{ok:false}`, is in `shared/ipc/refusal.ts`; the contract a Phase-4 caller
+// reads is `docs/extensibility.md` → "How the broker refuses".
 import { BrowserWindow, ipcMain, IpcMainInvokeEvent, WebContents } from 'electron';
 import { Logger } from '../log/logger';
 import {
@@ -18,6 +25,7 @@ import {
   CHANNEL_CAPABILITIES,
   StaticChannel,
 } from '../../shared/ipc/capabilities';
+import { IpcRefusalReason, ipcRefusal } from '../../shared/ipc/refusal';
 
 /** What a caller is allowed to do. */
 export interface CallerGrant {
@@ -53,8 +61,18 @@ export class IpcBroker {
     });
   }
 
-  /** Does this caller hold the capability a channel needs? */
-  private allowed(channel: Channel, sender: WebContents | undefined): boolean {
+  /**
+   * WHY this caller may not use this channel — or `undefined` if it may.
+   *
+   * The decision and the reason are one function because they are one
+   * decision: `handle` has to tell the caller which of the three refusals it
+   * hit, and re-deriving that outside would be a second copy of the rule that
+   * could disagree with the log line beside it.
+   */
+  private denyReason(
+    channel: Channel,
+    sender: WebContents | undefined
+  ): IpcRefusalReason | undefined {
     const needed = capabilityFor(channel);
     if (!needed) {
       // An untagged channel cannot be judged, so it is refused. Failing CLOSED
@@ -62,7 +80,7 @@ export class IpcBroker {
       // channel is a bug in our own wiring, and a unit test asserts every
       // registered channel is tagged, so this should be unreachable.
       this.log.error('ipc call on an UNTAGGED channel — refused', { channel });
-      return false;
+      return 'unknown-channel';
     }
     const grant = sender ? this.grants.get(sender.id) : undefined;
     if (!grant) {
@@ -73,7 +91,7 @@ export class IpcBroker {
         capability: needed,
         senderId: sender?.id ?? -1,
       });
-      return false;
+      return 'not-granted';
     }
     if (!grant.capabilities.has(needed)) {
       this.log.warn('ipc call refused — capability not held', {
@@ -81,12 +99,27 @@ export class IpcBroker {
         capability: needed,
         caller: grant.id,
       });
-      return false;
+      return 'capability-not-held';
     }
-    return true;
+    return undefined;
   }
 
-  /** `ipcMain.handle`, gated. A refused call rejects rather than returning junk. */
+  /** Does this caller hold the capability a channel needs? */
+  private allowed(channel: Channel, sender: WebContents | undefined): boolean {
+    return this.denyReason(channel, sender) === undefined;
+  }
+
+  /**
+   * `ipcMain.handle`, gated. A refused call RESOLVES an `IpcRefusal` (#346).
+   *
+   * A handler's own throw is deliberately left alone: it still rejects the
+   * caller. The broker refuses on the caller's behalf and has no idea what a
+   * handler failing halfway means, so catching here would convert every
+   * subsystem's genuine failure into a value the caller reads as a refusal —
+   * the opposite of the honesty this change is for. Whether a FAMILY throws is
+   * that family's own contract (#326, #347 answered it for `groups:*` and
+   * `sessions:*`).
+   */
   handle<C extends StaticChannel>(
     channel: C,
     // Mirrors Electron's own ipcMain.handle signature so call sites keep
@@ -96,19 +129,28 @@ export class IpcBroker {
     handler: (event: IpcMainInvokeEvent, ...args: any[]) => unknown
   ): void {
     ipcMain.handle(channel, (event, ...args) => {
-      if (!this.allowed(channel, event.sender)) {
-        // Reject, don't return undefined: a caller that lacks a capability
-        // should fail loudly in its own code, not silently read a missing
-        // answer as an empty one. The message stays GENERIC — `allowed()` has
-        // already logged which capability was missing, and an untrusted caller
-        // does not need us enumerating the permission it should ask for.
-        throw new Error(`refused: ${channel}`);
+      const denied = this.denyReason(channel, event.sender);
+      if (denied) {
+        // Answer, don't throw. The old throw arrived as a rejected promise in
+        // the caller's code, so the first partially-granted caller — a Phase-4
+        // plugin — would meet a refusal as an unhandled rejection it had no
+        // reason to expect. A value can be checked; a rejection has to be
+        // remembered. Still not silent: `denyReason` has already written the
+        // channel, the capability and the caller to the log, and the payload
+        // stays coarse on purpose (`refusal.ts` has the why).
+        return ipcRefusal(channel, denied);
       }
       return handler(event, ...args);
     });
   }
 
-  /** `ipcMain.on`, gated. Fire-and-forget, so a refusal is dropped and logged. */
+  /**
+   * `ipcMain.on`, gated. Fire-and-forget, so a refusal is dropped and logged.
+   *
+   * The asymmetry with `handle` is the transport's, not a choice: `send` has no
+   * reply channel, so there is nowhere to put an `IpcRefusal`. A caller that
+   * needs to know whether a one-way call landed has to use an `invoke` channel.
+   */
   on<C extends StaticChannel>(
     channel: C,
     // as above — mirrors Electron's ipcMain.on signature
@@ -127,6 +169,11 @@ export class IpcBroker {
    * Outbound needs the check as much as inbound: without it a Phase-4 plugin
    * would receive every session event regardless of what it declared. A no-op
    * for first-party, which holds everything.
+   *
+   * Refusing here is a silent drop by design, and unlike `on` that is a choice
+   * rather than the transport's limit: a window that may not hear about
+   * sessions must not be told that sessions are happening. Telling it "refused"
+   * on every push would leak exactly the traffic pattern the gate withholds.
    */
   send<C extends Channel>(win: BrowserWindow | null, channel: C, payload: unknown): void {
     if (!win || win.isDestroyed()) return;

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { Logger } from '../log/logger';
@@ -8,12 +8,40 @@ import {
   capabilityFor,
   CHANNEL_CAPABILITIES,
   CAPABILITIES,
+  StaticChannel,
 } from '../../shared/ipc/capabilities';
+import { isIpcRefusal } from '../../shared/ipc/refusal';
 
-// Electron is not available in a unit test, so the broker's ipcMain
-// registration is exercised by the e2e suite (which drives the real app).
-// What is tested here is the DECISION — who may call what — which is the part
-// that will matter when a caller other than our own renderer exists.
+// The registrations `handle`/`on` make, captured. Electron is not present in a
+// unit test, so until #346 the two REGISTERING methods were exercised only by
+// the e2e suite and their refusal branch by nothing at all — which is how the
+// broker kept a throw nobody had ever seen. A small fake is enough to run
+// the wrapper the broker actually installs, so the contract is tested where it
+// is written rather than inferred from the decision it wraps.
+const registered = vi.hoisted(() => ({
+  handles: new Map<string, (...args: unknown[]) => unknown>(),
+  ons: new Map<string, (...args: unknown[]) => unknown>(),
+}));
+
+vi.mock('electron', () => ({
+  BrowserWindow: class {},
+  ipcMain: {
+    // Real ipcMain throws on a second handler for the same channel. The fake
+    // does too: a Map that silently overwrote would make every `clear()` below
+    // cosmetic, and would happily accept a double registration in `index.ts`
+    // that the real app would refuse to start with.
+    handle: (channel: string, fn: (...args: unknown[]) => unknown) => {
+      if (registered.handles.has(channel))
+        throw new Error(`Attempted to register a second handler for '${channel}'`);
+      registered.handles.set(channel, fn);
+    },
+    on: (channel: string, fn: (...args: unknown[]) => unknown) => registered.ons.set(channel, fn),
+  },
+}));
+
+// What most of this file tests is the DECISION — who may call what — which is
+// the part that matters when a caller other than our own renderer exists. The
+// issue-346 blocks at the bottom test the ANSWER, through the fake above.
 
 function freshBroker(): { broker: IpcBroker; lines: string[] } {
   // a plain object rather than a real LogSink: no disk I/O, nothing to clean up
@@ -196,5 +224,207 @@ describe('IpcBroker decisions', () => {
       expect(allowed(channel, wc), `first-party refused ${channel}`).toBe(true);
     }
     expect(allowed('pty:data:some-session', wc)).toBe(true);
+  });
+});
+
+// ── the refusal contract (issue 346) ───────────────────────────────────────
+//
+// A refused `invoke` RESOLVES an IpcRefusal; it does not reject. Nothing
+// shipped can reach this — first-party holds every capability — so there is no
+// behaviour change to observe and these tests ARE the deliverable. They run the
+// wrapper the broker installs on ipcMain, not a re-implementation of it.
+describe('a refused call answers, it does not throw (issue 346)', () => {
+  let broker: IpcBroker;
+  let lines: string[];
+  let calls: unknown[][];
+
+  beforeEach(() => {
+    registered.handles.clear();
+    registered.ons.clear();
+    const made = freshBroker();
+    broker = made.broker;
+    lines = made.lines;
+    calls = [];
+  });
+
+  /** register `channel` with a handler that records its args and answers `answer` */
+  const install = (channel: StaticChannel, answer: unknown = 'the answer'): void => {
+    broker.handle(channel, (_e, ...args) => {
+      calls.push(args);
+      return answer;
+    });
+  };
+
+  /** invoke the wrapper ipcMain really got, as Electron would */
+  const invoke = (channel: StaticChannel, sender: unknown, ...args: unknown[]): unknown => {
+    const wrapper = registered.handles.get(channel);
+    if (!wrapper) throw new Error(`nothing registered for ${channel}`);
+    return wrapper({ sender } as unknown, ...args);
+  };
+
+  it('an UNGRANTED caller gets a refusal value — the handler never runs', () => {
+    install('sessions:create');
+    const answer = invoke('sessions:create', fakeContents(1), { cardId: 'c1' });
+    expect(isIpcRefusal(answer)).toBe(true);
+    expect(answer).toEqual({
+      __ipcRefused: true,
+      channel: 'sessions:create',
+      reason: 'not-granted',
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it('a caller missing the capability gets a refusal that says so', () => {
+    install('sessions:create');
+    const wc = fakeContents(2);
+    broker.grant(wc, { id: 'read-only-plugin', capabilities: new Set(['sessions.read']) });
+    expect(invoke('sessions:create', wc)).toEqual({
+      __ipcRefused: true,
+      channel: 'sessions:create',
+      reason: 'capability-not-held',
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it('refusing is not silent — the log still names the channel, capability and caller', () => {
+    // the whole reason a result shape is not a swallow: main said why, once,
+    // in the place that knows. The payload stays coarse; the LOG is detailed.
+    install('sessions:create');
+    const wc = fakeContents(3);
+    broker.grant(wc, { id: 'read-only-plugin', capabilities: new Set(['sessions.read']) });
+    invoke('sessions:create', wc);
+    const line = lines.find((l) => l.includes('capability not held'));
+    expect(line).toBeDefined();
+    expect(line).toContain('sessions:create');
+    expect(line).toContain('sessions.spawn');
+    expect(line).toContain('read-only-plugin');
+  });
+
+  it('NOTHING throws on the refusal path — the property this item exists for', () => {
+    // Before this change every one of these threw `refused: <channel>`, which
+    // reaches the caller as a rejected promise. An `invoke` in a plugin that
+    // did not expect one is an unhandled rejection in third-party code.
+    const ungranted = fakeContents(4);
+    for (const channel of IpcBroker.knownChannels()) {
+      broker.handle(channel, () => 'never');
+      let answer: unknown;
+      expect(() => (answer = invoke(channel, ungranted)), `${channel} threw`).not.toThrow();
+      expect(isIpcRefusal(answer), `${channel} did not answer a refusal`).toBe(true);
+    }
+  });
+
+  it('no channel is exempt — every refusal names ITSELF', () => {
+    // a refusal that named the wrong channel would be worse than none: the
+    // caller's own log line is the only place the channel appears on its side
+    const ungranted = fakeContents(5);
+    for (const channel of IpcBroker.knownChannels()) {
+      broker.handle(channel, () => 'never');
+      const answer = invoke(channel, ungranted);
+      expect(isIpcRefusal(answer) && answer.channel).toBe(channel);
+    }
+  });
+
+  it('a caller with no sender at all is refused rather than crashing', () => {
+    // `event.sender` is always present in Electron; this is the defensive edge,
+    // and the point is that it lands in the SAME answer shape
+    install('sessions:cards');
+    expect(invoke('sessions:cards', undefined)).toEqual({
+      __ipcRefused: true,
+      channel: 'sessions:cards',
+      reason: 'not-granted',
+    });
+  });
+});
+
+describe('an ALLOWED call is untouched — the no-behaviour-change half (issue 346)', () => {
+  let broker: IpcBroker;
+  let wc: Electron.WebContents;
+
+  beforeEach(() => {
+    registered.handles.clear();
+    registered.ons.clear();
+    broker = freshBroker().broker;
+    wc = fakeContents(1);
+    broker.grant(wc, { id: 'renderer', capabilities: allCapabilities() });
+  });
+
+  const invoke = (channel: StaticChannel, ...args: unknown[]): unknown =>
+    registered.handles.get(channel)!({ sender: wc } as unknown, ...args);
+
+  it('passes the handler its arguments and hands back its value unchanged', () => {
+    const seen: unknown[][] = [];
+    const answer = { id: 'g1', name: 'Work' };
+    broker.handle('groups:update', (_e, ...args) => {
+      seen.push(args);
+      return answer;
+    });
+    // toBe, not toEqual: the claim is that the broker hands back the handler's
+    // OWN value, which a deep clone or a rebuild would also satisfy
+    expect(invoke('groups:update', 'g1', { name: 'Work' })).toBe(answer);
+    expect(seen).toEqual([['g1', { name: 'Work' }]]);
+  });
+
+  it('does NOT wrap the answer — including the answers a refusal could be confused with', () => {
+    // The success path is byte-identical to before, which is why this item
+    // changes no shipped behaviour. Each of these is a real handler answer;
+    // none of them may read as a refusal.
+    const answers: unknown[] = [
+      null, // groups:update, pty:attach, sessions:create
+      undefined, // a void handler
+      false, // submitPrompt / interrupt / decidePermission
+      { ok: false, reason: 'unknown-card' }, // sessions:setTransport's own
+      [], // sessions:cards on a fresh workspace
+      'plain string',
+    ];
+    for (const answer of answers) {
+      registered.handles.clear();
+      broker.handle('sessions:cards', () => answer);
+      const got = invoke('sessions:cards');
+      expect(got).toBe(answer);
+      expect(isIpcRefusal(got)).toBe(false);
+    }
+  });
+
+  it("a HANDLER's own throw still rejects — the broker did not become a catch-all", () => {
+    // Deliberate: whether a family throws is that family's contract (#326,
+    // #347). If the broker swallowed handler errors it would turn every
+    // genuine failure into a value the caller reads as a refusal.
+    broker.handle('sessions:create', () => {
+      throw new Error('folder is not a directory');
+    });
+    expect(() => invoke('sessions:create')).toThrow('folder is not a directory');
+  });
+
+  it('a promise-returning handler is passed through as its promise', async () => {
+    broker.handle('git:status', async () => ({ dirty: true }));
+    await expect(invoke('git:status')).resolves.toEqual({ dirty: true });
+  });
+});
+
+describe('one-way channels drop a refusal, because they have nowhere to put it (issue 346)', () => {
+  let broker: IpcBroker;
+
+  beforeEach(() => {
+    registered.ons.clear();
+    broker = freshBroker().broker;
+  });
+
+  const fire = (channel: StaticChannel, sender: unknown): unknown =>
+    registered.ons.get(channel)!({ sender } as unknown);
+
+  it('a refused send() call runs no handler and throws nothing', () => {
+    let ran = 0;
+    broker.on('workspace:setUi', () => void ran++);
+    expect(() => fire('workspace:setUi', fakeContents(1))).not.toThrow();
+    expect(ran).toBe(0);
+  });
+
+  it('and a granted one still runs', () => {
+    let ran = 0;
+    broker.on('workspace:setUi', () => void ran++);
+    const wc = fakeContents(2);
+    broker.grant(wc, { id: 'renderer', capabilities: allCapabilities() });
+    fire('workspace:setUi', wc);
+    expect(ran).toBe(1);
   });
 });
