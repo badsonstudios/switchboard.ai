@@ -122,38 +122,27 @@ describe('the Playwright pre-flight (#329, #360)', () => {
     expect(fs.existsSync(path.join(process.cwd(), playwrightConfig.globalSetup))).toBe(true);
   });
 
-  it('exports a plain function, which is what Playwright calls — and it sweeps', () => {
-    // Driven through the REAL default export, because that is the half that
-    // rots silently: an edit that drops the sweep from it leaves every other
-    // test in this file passing. Same shape as the vitest twin in
-    // sweep-temp-orphans.test.js, so the pair reads as a pair.
+  it('exports a plain function, and that function runs the COMPOSED pre-flight', () => {
+    // The rot this closes: someone edits the default export back to
+    // `e2eBundlePreflight()` and every other test in this file still passes,
+    // because they all drive `e2ePreflight` directly. So the delegation is
+    // asserted — by READING the export, not by running it.
+    //
+    // Running it is not available here, and the reason is worth recording. The
+    // export takes no arguments (deliberately: a Playwright `FullConfig` must
+    // never be mistaken for options), so it guards the REAL repo root — and CI
+    // runs `npm test` BEFORE `npm run build`, where `out/` does not exist yet.
+    // A missing bundle is the one verdict `ALLOW_STALE_BUNDLE` cannot override
+    // ("the escape hatch means my edit cannot have changed the bundle, which
+    // presupposes there is a bundle" — bundle-guard.js's `formatReport`). A
+    // test that invoked it would therefore pass on a developer's machine and
+    // fail on every CI run: MEASURED, on the first push of #360.
+    //
+    // The vitest twin in sweep-temp-orphans.test.js CAN drive its real default
+    // export, because that one has no guard in front of it.
     expect(typeof globalSetup).toBe('function');
-    const tmp = sweepFixture();
-
-    // The export takes no arguments, so all three inputs are the real ones:
-    //   - the temp dir, redirected at a fixture (`withTempDirAt` refuses to run
-    //     the callback if that did not take — this is never the real `%TEMP%`);
-    //   - `process.env`, which must not carry the developer's own
-    //     SB_SKIP_TEMP_SWEEP, and which gets ALLOW_STALE_BUNDLE so the guard
-    //     cannot fail this test over whatever is in `out/` right now;
-    //   - stderr, captured rather than printed.
-    const realWrite = process.stderr.write;
-    const wrote = [];
-    process.stderr.write = (s) => (wrote.push(String(s)), true);
-    const saved = { skip: process.env[SKIP_ENV], stale: process.env.ALLOW_STALE_BUNDLE };
-    delete process.env[SKIP_ENV];
-    process.env.ALLOW_STALE_BUNDLE = '1';
-    try {
-      withTempDirAt(tmp, () => globalSetup());
-    } finally {
-      process.stderr.write = realWrite;
-      if (saved.skip === undefined) delete process.env[SKIP_ENV];
-      else process.env[SKIP_ENV] = saved.skip;
-      if (saved.stale === undefined) delete process.env.ALLOW_STALE_BUNDLE;
-      else process.env.ALLOW_STALE_BUNDLE = saved.stale;
-    }
-    expect(wrote.join('')).toContain('removed 1 orphaned dir(s)');
-    expect(fs.readdirSync(tmp)).toEqual([]);
+    expect(globalSetup.length).toBe(0);
+    expect(String(globalSetup)).toContain('e2ePreflight()');
   });
 
   it('lets a fresh bundle through, and stamps what it is about to test', () => {
