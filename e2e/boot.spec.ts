@@ -9,7 +9,7 @@ test.describe('app boots', () => {
     a = await launchApp();
     const { window } = a;
     // title bar identity
-    await expect(window.getByText('switchboard', { exact: true })).toBeVisible();
+    await expect(window.getByText('switchboard.ai', { exact: true })).toBeVisible();
     // core controls
     await expect(window.getByRole('button', { name: '+ session' })).toBeVisible();
     // empty-state messages (distinctive, unambiguous)
