@@ -31,8 +31,32 @@ structure adopting #228's temp-dir registry, verified by a local
 161+1 skip (from the merged branches' gate runs: 1227+46+5+16 /
 156+4+0+1).
 
-> # ▶▶ START HERE — 🎛 RUN 16 CLOSED 2026-08-10 (the five-decision
-> campaign: 5/5 complete; 4 UF PRs in DAN'S QUEUE, #111 merged)
+> # ▶▶ START HERE — 🎛 RUN 16 FULLY CLOSED 2026-08-10: TRAIN #403
+> LANDED — EVERYTHING MERGED
+>
+> **Train #403 → merge commit 6d3249a.** PRs #396 #398 #399 #400 all
+> MERGED, issues #384 #320 #80 #269 all CLOSED, feature + train
+> branches deleted, worktrees all detached/clean. **Main @ 6d3249a,
+> out/ REBUILT, stamp verified both bundles — `npm start` is current.**
+> Train CI 4/4 green (one lane); local gate had been 3063 unit / 212+3
+> e2e. Sixteen runs, ~60 items, three releases — the milestone's filed
+> queue is EMPTY.
+>
+> **NEXT SESSION STARTS HERE:** Dan intends to clear context. The next
+> prompt should be **/pm** — the epic-expansion sitting (E9 tail, E11,
+> E13, E14 are outlines; expanding them into filed issues is the
+> pipeline refill and needs Dan's scoping calls). Bring to that same
+> sitting: #320's parked question (allow >1 pending lamp mark while
+> the window can't paint, or keep the two-lamp rule?), #397 (ask-trust
+> inert on Direct — disable/annotate/redesign?), and the small open
+> issues #394 (package-lock version, fold into next cut) and #402
+> (S-07 correction note). After /pm files the new milestone: run
+> **/orchestrate**. Also available whenever: a release cut — `0.4.0 —
+> unreleased` holds 4 entries headlined by batch permissions.
+>
+> # 🎛 RUN 16 CLOSED 2026-08-10 (the five-decision
+> campaign: 5/5 complete; 4 UF PRs in DAN'S QUEUE → train #403, #111
+> merged)
 >
 > **Final state:** #384 → **PR #396** (real-CLI Direct spec; ask-trust
 > is INERT on Direct, manual corrected) · #320 → **PR #398** (lamp beat
