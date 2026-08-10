@@ -722,6 +722,18 @@ Every session carries an identity that renders IDENTICALLY everywhere it appears
 - **Title**: defaults to folder name (full path in tooltip); user-editable.
 - **Accent color**: auto-assigned from a distinguishable palette; user-overridable.
   Applied to card border, sidebar dot, feed entries, toast edge.
+  **An accent is a FIELD colour, never a text ink** *(amended 2026-08-10, Dan's
+  call, #269)* — a stripe, a dot, a ring, a badge's background. It is chosen to
+  be DISTINGUISHABLE from the other seven, which is a different job from being
+  READABLE, and unlike the status ramp (§5.20, #221/#243) it cannot grow a
+  per-theme ink family to swap in: a second shade of an identity is a second
+  identity. Measured as 9px text, all eight accents were 1.80–3.11:1 on the light
+  theme and as low as 3.39:1 on the dark one. Where words have to sit on an
+  accent, the accent is the field and the words take the one neutral
+  `--accent-ink-on-fill`, which is theme-independent for the same reason the
+  accents are and clears 4.5:1 on every one of them. Enforced, not remembered:
+  `tokens.drift.test.ts` fails any `color:` in the renderer that names an accent,
+  and `e2e/theme.spec.ts` measures the badge as painted in all four themes.
 - **Icon**: default from project-type detection (`.csproj`→C#, `package.json`→Node,
   `Cargo.toml`→Rust, `pyproject.toml`→Python, …); emoji/icon picker to override.
   Provider badge (Claude/Codex/…) shown alongside.

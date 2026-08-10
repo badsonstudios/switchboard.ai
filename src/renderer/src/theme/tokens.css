@@ -179,6 +179,28 @@
   --accent-pink: #db61a2;
   --accent-orange: #f0883e;
 
+  /* Ink for words on an ACCENT FIELD — the §5.11 identity badge (#269, Dan's
+     call 2026-08-10: an accent is a FIELD colour, never a text ink at badge
+     sizes). The palette above has no ink family and cannot grow one the way the
+     status ramp did: an accent is an IDENTITY, so a per-theme second shade would
+     be a second identity. Written as 9px text the accents measured 3.39-5.87:1
+     on nordic and 1.80-3.11:1 on daylight — every one of the eight below AA on
+     the light theme. Inverted, the same colours are a comfortable field: this
+     ink clears 4.57:1 (pink, the tightest) to 7.90:1 (amber) on all eight, and
+     the number does not move with the theme because neither colour does.
+
+     NOT THEMEABLE, deliberately, and this is where it differs from
+     `--status-needs-permission-ink-on-fill` above: that fill IS a themeable
+     token, so a theme repainting it must be able to lift the ink with it. An
+     accent field is theme-INDEPENDENT, so a theme that could lift this ink could
+     only ever break a promise about a colour it is not allowed to touch.
+     tokens.drift.test.ts asserts both halves — the ratio per accent, and that no
+     theme may set this.
+
+     Same value as the needs-permission on-fill ink on purpose: "dark ink on a
+     light fill" is one idea in this palette, not two. */
+  --accent-ink-on-fill: #20252e;
+
   /* typography */
   --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', monospace;

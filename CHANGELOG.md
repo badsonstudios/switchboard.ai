@@ -53,6 +53,13 @@ on the floor, and say so in your PR.
 
 ## 0.4.0 — unreleased
 
+### Fixed
+
+- The little language badge beside a session's name (`TS`, `PY`, `JS`) is now
+  filled with the session's own color and lettered in dark, instead of being
+  written in that color. On the light theme it was barely visible against the
+  card header; it is now readable on every theme and in every session color.
+
 ## 0.3.0 — 2026-08-09
 
 ### Changed
