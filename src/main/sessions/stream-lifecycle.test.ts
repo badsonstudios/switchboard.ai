@@ -435,3 +435,116 @@ describe('allow-all suppresses the hold at the status apply (#319)', () => {
     expect(mgr.get(rec.id)!.status).toBe('needs-permission');
   });
 });
+
+// #404 — the resume identity comes off the stream itself, not the hooks.
+//
+// E18-05's done-when said "the native session id is learned from
+// `system:init.session_id`" and closed without it: the only writer was the
+// hook listener's SessionStart. Hooks DO fire under `--input-format
+// stream-json` (measured 2026-08-10, claude 2.1.226), so nothing was visibly
+// broken — but E18-15 deletes that listener, and a Direct session's `--resume`
+// id must not die with it. These pin the stream pump as a writer in its own
+// right.
+describe('the native session id is learned from system:init (#404, E18-05)', () => {
+  const init = (sessionId: string): Record<string, unknown> => ({
+    type: 'system',
+    subtype: 'init',
+    session_id: sessionId,
+  });
+
+  it("system:init teaches the manager the conversation's id", () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity);
+    const learned: Array<{ nativeId: string; cause?: string }> = [];
+    mgr.onNativeSessionId((_id, nativeId, cause) => learned.push({ nativeId, cause }));
+
+    stream.emit(rec.id, init('native-1'));
+
+    expect(mgr.get(rec.id)!.nativeSessionId).toBe('native-1');
+    expect(learned).toEqual([{ nativeId: 'native-1', cause: undefined }]);
+  });
+
+  // Named for the finding (S-11: 26 inits for 25 turns): init is a TURN
+  // event, not a session event. A listener that re-fired per turn would
+  // re-persist the card and re-tighten the watcher binding every prompt.
+  it('a second system:init with the SAME id — the next turn — changes nothing', () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity);
+    const learned: string[] = [];
+    mgr.onNativeSessionId((_id, nativeId) => learned.push(nativeId));
+
+    stream.emit(rec.id, init('native-1'));
+    stream.emit(rec.id, init('native-1'));
+    stream.emit(rec.id, init('native-1'));
+
+    expect(learned).toEqual(['native-1']);
+  });
+
+  it("an id CHANGE mid-session is a /clear — fired with cause 'clear'", () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity);
+    const learned: Array<{ nativeId: string; cause?: string }> = [];
+    mgr.onNativeSessionId((_id, nativeId, cause) => learned.push({ nativeId, cause }));
+
+    stream.emit(rec.id, init('native-1'));
+    stream.emit(rec.id, init('native-2'));
+
+    expect(learned).toEqual([
+      { nativeId: 'native-1', cause: undefined },
+      { nativeId: 'native-2', cause: 'clear' },
+    ]);
+    expect(mgr.get(rec.id)!.nativeSessionId).toBe('native-2');
+  });
+
+  // A resumed session's first init carries the NEW id the CLI minted for the
+  // resumed conversation. `create()` never seeds the record's id, so that
+  // first init must land as a learn, not a 'clear' — the marker the cause
+  // drives says "conversation cleared", which a resume is not.
+  it("a session's FIRST init is never tagged 'clear', whatever id it carries", () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity);
+    const causes: Array<string | undefined> = [];
+    mgr.onNativeSessionId((_id, _n, cause) => causes.push(cause));
+
+    stream.emit(rec.id, init('minted-by-resume'));
+
+    expect(causes).toEqual([undefined]);
+  });
+
+  it('a system message that is not an init teaches nothing', () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity);
+
+    stream.emit(rec.id, { type: 'system', subtype: 'status', session_id: 'native-1' });
+    stream.emit(rec.id, { type: 'system', subtype: 'init' }); // no session_id
+    stream.emit(rec.id, { type: 'system', subtype: 'init', session_id: 42 }); // not a string
+
+    expect(mgr.get(rec.id)!.nativeSessionId).toBeUndefined();
+  });
+
+  // An empty string is a string, and learning it would falsely tag the first
+  // REAL id as a 'clear' (`'' !== 'native-1'`). Both sibling consumers of the
+  // field reject it by truthiness (hook-listener, stream-feed); so does this.
+  it("an EMPTY session_id teaches nothing, and the next real id is not a 'clear'", () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity);
+    const learned: Array<{ nativeId: string; cause?: string }> = [];
+    mgr.onNativeSessionId((_id, nativeId, cause) => learned.push({ nativeId, cause }));
+
+    stream.emit(rec.id, init(''));
+    stream.emit(rec.id, init('native-1'));
+
+    expect(learned).toEqual([{ nativeId: 'native-1', cause: undefined }]);
+  });
+
+  // The pump's closure outlives `remove()`; a late init must hit the missing
+  // record and stop, like every other post-removal event this class tolerates.
+  it('an init arriving after remove() is dropped, not a throw', () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity);
+    mgr.remove(rec.id);
+
+    expect(() => stream.emit(rec.id, init('native-1'))).not.toThrow();
+    expect(mgr.get(rec.id)).toBeUndefined();
+  });
+});

@@ -19,6 +19,7 @@ import path from 'path';
 import {
   launchApp,
   LaunchedApp,
+  readWorkspaceFile,
   tempProjectFolder,
   workspaceJsonPath,
 } from './fixtures/app';
@@ -131,6 +132,18 @@ test.describe('real claude on the DEFAULT transport (#384, opt-in)', () => {
     // than the text merely arriving — the lifecycle half of what the PTY test
     // gets from its idle pill.
     await expect(w.getByText('Done.').first()).toBeVisible({ timeout: 60_000 });
+
+    // #404: a Direct card persists its `--resume` identity. This pins the
+    // OUTCOME, not the writer — against the real CLI both writers are live
+    // (hooks fire under stream-json, measured 2026-08-10, AND `system:init`
+    // carries the id); the writer-specific proof is the fake-stream relaunch
+    // e2e, where SessionStart never fires. The day the real CLI stops
+    // supplying the id either way, this is the red run. Save is debounced —
+    // poll, don't race.
+    await expect(() => {
+      const card = readWorkspaceFile(a!.home).sessions?.[0];
+      expect(card?.nativeSessionId).toMatch(/^[0-9a-f][0-9a-f-]{30,}$/i);
+    }).toPass({ timeout: 15_000 });
   });
 
   // #384's second half: "ask trust" (auto-trust OFF) meeting Direct.

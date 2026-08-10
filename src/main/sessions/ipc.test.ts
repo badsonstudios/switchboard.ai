@@ -125,6 +125,11 @@ function harness(
   const allowedAll: string[] = [];
   /** the watcher's reset listeners, so a test can fire one (P2-E18-10) */
   const resets: Array<(sessionId: string, cause?: string) => void> = [];
+  /** the IPC layer's `manager.onNativeSessionId` subscriber, so a test can
+   *  teach a live session its conversation id the way the manager does (#404) */
+  const nativeIdListeners: Array<(liveId: string, nativeId: string, cause?: 'clear') => void> = [];
+  /** every native id the transcript watcher was told, with its cause */
+  const nativeIdsSet: Array<{ sessionId: string; nativeId: string; cause?: string }> = [];
   const watchAccepts = opts.watchAccepts ?? true;
   const { broker, call, pushed } = fakeBroker();
 
@@ -188,7 +193,9 @@ function harness(
 
   const deps = {
     manager: {
-      onNativeSessionId: () => {},
+      onNativeSessionId: (l: (liveId: string, nativeId: string, cause?: 'clear') => void) => {
+        nativeIdListeners.push(l);
+      },
       onStatusChange: () => {},
       onSessionExit: (l: (e: { sessionId: string; code: number; crashed: boolean }) => void) => {
         exitListeners.push(l);
@@ -278,6 +285,9 @@ function harness(
     transcripts: {
       onUpdate: () => {},
       onBlock: () => {},
+      setNativeSessionId: (sessionId: string, nativeId: string, cause?: string) => {
+        nativeIdsSet.push({ sessionId, nativeId, cause });
+      },
       onReset: (l: (sessionId: string, cause?: string) => void) => {
         resets.push(l);
       },
@@ -341,6 +351,10 @@ function harness(
     call,
     created,
     upserted,
+    nativeIdsSet,
+    fireNativeId: (liveId: string, nativeId: string, cause?: 'clear') => {
+      for (const l of nativeIdListeners) l(liveId, nativeId, cause);
+    },
     watched,
     buildHookSettings,
     warn,
@@ -2363,5 +2377,52 @@ describe('a refused sessions call answers null and says why — it never throws 
 
       expect(refusals(h)).toEqual([]);
     });
+  });
+});
+
+// #404 — the seam a session's resume identity rides through. The manager
+// learns `nativeSessionId` from two writers (a hook's SessionStart, and since
+// #404 the stream's own `system:init`); HERE is where the learned id becomes
+// durable: persisted onto the card for the next boot's `--resume`, and handed
+// to the transcript watcher so a /clear rebinds with its cause. Untested until
+// #404 — the fake manager swallowed the subscription, so nothing pinned that
+// the listener was wired at all.
+describe('a learned native id reaches the card and the watcher (#404)', () => {
+  const CARD = 'card-1';
+  let dir: string;
+  tempDirEach('sb-nativeid-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir, CARD);
+
+  it('persists the id onto the card, so --resume survives a relaunch', () => {
+    const h = harness(undefined, dir, { prior: card() });
+    start(h);
+
+    h.fireNativeId('live-1', 'native-9');
+
+    expect(h.upserted.at(-1)?.nativeSessionId).toBe('native-9');
+  });
+
+  it("tells the transcript watcher, cause included — the /clear rebind's whole input", () => {
+    const h = harness(undefined, dir, { prior: card() });
+    start(h);
+
+    h.fireNativeId('live-1', 'native-9');
+    h.fireNativeId('live-1', 'native-10', 'clear');
+
+    expect(h.nativeIdsSet).toEqual([
+      { sessionId: 'live-1', nativeId: 'native-9', cause: undefined },
+      { sessionId: 'live-1', nativeId: 'native-10', cause: 'clear' },
+    ]);
+  });
+
+  it('an id with no card behind it still reaches the watcher, and throws nothing', () => {
+    const h = harness(undefined, dir);
+
+    expect(() => h.fireNativeId('live-ghost', 'native-9')).not.toThrow();
+
+    expect(h.nativeIdsSet).toEqual([
+      { sessionId: 'live-ghost', nativeId: 'native-9', cause: undefined },
+    ]);
+    expect(h.upserted).toEqual([]); // no card to write
   });
 });

@@ -354,6 +354,40 @@ describe('the other scripted behaviours (P2-E18-04)', () => {
   });
 });
 
+// #404 — `--resume` made observable. The real CLI silently continues the
+// conversation; nothing on the wire says "resumed", so the fake says it
+// out loud in its first reply — that marker is the only way an e2e can read
+// "the relaunch really passed --resume" off the screen.
+describe('a resumed session announces it, once (#404)', () => {
+  const resumed = (): FakeStreamProtocol =>
+    new FakeStreamProtocol(host, (m) => out.push(m), { resumedFrom: 'native-7' });
+
+  it('the first reply leads with RESUMED-FROM:<id>', () => {
+    const p = resumed();
+    p.handle(userMsg('hello'));
+
+    expect(assistantText()).toBe('RESUMED-FROM:native-7');
+    // and the ordinary reply still follows in the same turn
+    expect(types()).toContain('result:success');
+  });
+
+  it('the second turn is an ordinary turn — the marker is once per PROCESS', () => {
+    const p = resumed();
+    p.handle(userMsg('first'));
+    out.length = 0;
+
+    p.handle(userMsg('second'));
+
+    expect(out.some((m) => JSON.stringify(m).includes('RESUMED-FROM'))).toBe(false);
+  });
+
+  it('a session spawned without --resume never says it', () => {
+    proto.handle(userMsg('hello'));
+
+    expect(out.some((m) => JSON.stringify(m).includes('RESUMED-FROM'))).toBe(false);
+  });
+});
+
 // #313 — the hook channel a Direct session has and this fake did not.
 //
 // Hooks are independent of the transport: a stream session is spawned with our

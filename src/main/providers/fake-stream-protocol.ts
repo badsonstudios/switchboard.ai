@@ -60,8 +60,21 @@ export class FakeStreamProtocol {
 
   constructor(
     private readonly host: FakeStreamHost,
-    private readonly emit: (m: OutMessage) => void
+    private readonly emit: (m: OutMessage) => void,
+    /**
+     * `--resume <id>` support (#404). The real adapter passes the flag and the
+     * real CLI silently continues that conversation; nothing on the wire says
+     * "resumed". The fake makes it OBSERVABLE instead — the first reply leads
+     * with a `RESUMED-FROM:<id>` line — because "the relaunch actually passed
+     * --resume" is exactly the claim the #404 e2e has to read off the screen,
+     * and a fake that swallowed the flag would let the resume path rot the way
+     * the ignored transport did in #153.
+     */
+    private readonly opts: { resumedFrom?: string } = {}
   ) {}
+
+  /** the resume marker goes out once, on the first turn, not per turn */
+  private resumeNoted = false;
 
   /** Feed one decoded inbound message. */
   handle(msg: Record<string, unknown>): void {
@@ -92,6 +105,12 @@ export class FakeStreamProtocol {
     // user prompt at all — a fake missing something the real thing does is a
     // fake that hides a bug.
     this.emit({ type: 'user', message, session_id: FAKE_SESSION_ID, parent_tool_use_id: null });
+
+    // the #404 marker — see the constructor docblock
+    if (this.opts.resumedFrom && !this.resumeNoted) {
+      this.resumeNoted = true;
+      this.emitAssistantText(`RESUMED-FROM:${this.opts.resumedFrom}`);
+    }
 
     if (text.startsWith('!exit ')) {
       this.host.exit(Number(text.slice(6).trim()) || 0);

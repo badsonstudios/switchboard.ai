@@ -124,6 +124,12 @@ export const fakeStreamAdapter: ProviderAdapter = {
     if (options.settings && Object.keys(options.settings).length > 0) {
       args.push('--settings', writeSessionSettings(options.stateDir, options.sessionId, options.settings));
     }
+    // `--resume`, exactly as the real adapter passes it (#404). Dropped until
+    // #404, which made the whole resume path — persisted id, `canResume`,
+    // `start-plan` — invisible to every e2e on this fake: the same "a fake
+    // that cannot say no cannot test the request" hole as the ignored
+    // transport above, on the flag next to it.
+    if (options.resumeSessionId) args.push('--resume', options.resumeSessionId);
     return {
       // process.execPath in the main process IS the Electron binary; with
       // ELECTRON_RUN_AS_NODE it runs plain Node, which is how the four

@@ -67,6 +67,10 @@ function fireHook(payload: Record<string, unknown>): void {
   }
 }
 
+// `--resume <id>` arrives exactly as the real adapter sends it (#404); the
+// protocol turns it into the observable RESUMED-FROM marker
+const resumeIdx = process.argv.indexOf('--resume');
+
 const proto = new FakeStreamProtocol(
   {
     cwd: () => process.cwd(),
@@ -93,7 +97,8 @@ const proto = new FakeStreamProtocol(
     },
     fireHook,
   },
-  (m) => process.stdout.write(JSON.stringify(m) + '\n')
+  (m) => process.stdout.write(JSON.stringify(m) + '\n'),
+  { resumedFrom: resumeIdx >= 0 ? process.argv[resumeIdx + 1] : undefined }
 );
 
 // Same framing as the real CLI, and the same reason for a decoder rather than a

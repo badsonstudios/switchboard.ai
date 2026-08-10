@@ -220,6 +220,33 @@ export class SessionManager {
       // 2. The messages themselves drive status from here, and are fanned out
       //    to whoever else needs them (P2-E18-07's permission router).
       proc.onMessage((m) => {
+        // The stream carries the resume identity itself: `system:init` arrives
+        // once per turn with the conversation's `session_id` (E18-05's
+        // done-when, closed without this half — #404). Learned HERE so stream
+        // mode never depends on the hook listener E18-15 deletes. Hooks DO
+        // fire under `--input-format stream-json` (measured 2026-08-10,
+        // claude 2.1.226), so today this is a second, idempotent writer of
+        // the same id; the day the hooks fall silent it is the only one.
+        // An id CHANGE mid-session means the CLI minted a new conversation —
+        // the same ruling `stream-feed.ts` applies to reset the Feed — and
+        // the watcher needs it tagged 'clear' to rebind with the cleared
+        // marker. (The hook writer is STRICTER — it tags only
+        // `SessionStart source:'clear'` — and the first writer to land wins
+        // the cause; the two only diverge for a non-clear id change no CLI
+        // has been seen to make, and the hook writer retires with E18-15.)
+        // A resume is not a change: the record's id starts undefined
+        // (create() never seeds it), so a resumed session's first init lands
+        // untagged, exactly like the hook path's. `&& m.session_id` also
+        // rejects the empty string, as both sibling consumers do — learning
+        // '' would falsely tag the first REAL id as a 'clear'.
+        if (m.type === 'system' && m.subtype === 'init' && typeof m.session_id === 'string' && m.session_id) {
+          const prior = record.nativeSessionId;
+          this.setNativeSessionId(
+            id,
+            m.session_id,
+            prior !== undefined && prior !== m.session_id ? 'clear' : undefined
+          );
+        }
         const ev = streamStatusEvent(m);
         if (ev && !this.holdSuppressed(id, ev)) this.apply(id, ev);
         for (const l of this.streamMessageListeners) {
