@@ -68,7 +68,11 @@ export interface PermissionBatch {
  * inside those is one an attacker — or a merely unlucky tool description — can
  * use to make two different questions serialise identically. NUL is the one
  * byte that cannot survive `JSON.stringify` — it comes back as the six
- * printable characters of its escape — and no tool name carries it.
+ * printable characters of its escape — so once every component of the key has
+ * been through `canonical`, no component can contain the separator and the
+ * concatenation is injective. That is why the TOOL goes through it too, rather
+ * than being trusted: tool names arrive from MCP servers, and "no tool name
+ * carries a NUL" would be an assumption about other people's strings.
  */
 const NUL = String.fromCharCode(0);
 
@@ -121,10 +125,7 @@ function canonical(v: unknown, seen: Set<object>): string {
  */
 export function batchKey(r: Pick<PermissionRequestDto, 'requestId' | 'tool' | 'input' | 'reason'>): string {
   try {
-    // the tool goes through `canonical` too, and is not merely concatenated:
-    // tool names come from MCP servers as well as from the CLI, so "no tool
-    // name contains a NUL" is an assumption about other people's strings. Run
-    // through JSON escaping, every component of the key is injective.
+    // every component through `canonical`, including the tool — see NUL
     return [r.tool, r.input, r.reason].map((v) => canonical(v, new Set())).join(NUL);
   } catch {
     return NUL + 'ungroupable:' + r.requestId;
