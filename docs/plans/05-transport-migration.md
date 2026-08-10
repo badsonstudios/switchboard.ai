@@ -262,6 +262,14 @@ distinguishes a wind-down from a crash; the native session id is learned from
 `/clear` rule still holds).
 *Depends on:* E18-04.
 
+> **2026-08-10 (#404):** the "learned from `system:init.session_id`" half was
+> found unimplemented after this item closed — the only writer of the native id
+> was the hook listener's SessionStart. Landed in #404 slice 1, together with
+> the measurement the code had been calling UNMEASURED: hooks DO fire under
+> `--input-format stream-json` (claude 2.1.226), which is why nothing had
+> visibly broken. The stream fake now honours `--resume`, and a relaunch e2e
+> pins the persisted-id → `--resume` journey on the default transport.
+
 ### E18-06 · Prompt submission; `composer.ts` deleted — S — [#136](https://github.com/badsonstudios/switchboard.ai/issues/136)
 
 **What.** One `stdin.write(JSON.stringify(msg) + '\n')`. The bracketed-paste

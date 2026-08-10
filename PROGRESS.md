@@ -8,7 +8,16 @@
 E9: #70–#77 done, **#78/#79 in Dan's queue** (PRs #287/#301), #80 held on a
 scoping call; **E19 release/auto-update NEW 2026-08-05** — 01/02 merged, 03
 in Dan's queue, 04 held on #276's merge; E11/E13/E14 still outlines)
-**In progress:** **🎛 RUN 10 CLOSED 2026-08-08 + FULLY MERGED** — close-out
+**In progress:** **#404 slice 1 — Direct resume identity: DONE 2026-08-10, PR
+open (Dan's queue).** Probed: hooks DO fire under the Direct flag list (claude
+2.1.226) — the two UNMEASURED comments are now MEASURED. Stream pump learns the
+native id from `system:init.session_id` (E18-05's done-when, closed unmet);
+fake honours `--resume` with an observable RESUMED-FROM marker; relaunch e2e on
+the DEFAULT transport. Gates: unit 3076 / e2e 213+3skip / stream.spec 23 /
+real-CLI Direct 1 turn green / review 0 blockers (fixes applied). #404 stays
+OPEN — checkbox 1 ticked; checkboxes 2-5 (E18-14 matrix, unit pins, spec
+renames, renderer UI tests) are /pm's to split. **Next up:** the /pm
+epic-expansion sitting (see START HERE below). Previously: **🎛 RUN 10 CLOSED 2026-08-08 + FULLY MERGED** — close-out
 block below; all 3 PRs on main (#356 #357 #359). Run 8: Run 7
 CLOSED 2026-08-06 + FULLY MERGED (train #321) + **v0.1.1 LIVE**. Before run 7: 🎉 **RELEASE v0.1.0 CUT
 2026-08-06** — the run-6 merge train (13 PRs) is FULLY MERGED

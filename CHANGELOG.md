@@ -80,6 +80,17 @@ on the floor, and say so in your PR.
   written in that color. On the light theme it was barely visible against the
   card header; it is now readable on every theme and in every session color.
 
+### Internal
+
+- A Direct-mode session now learns the conversation id it will resume with
+  from the stream itself (`system:init`), instead of only from hook events —
+  so "reopen the same conversation after an app restart" no longer depends on
+  the hook listener staying alive, which is the path being retired. Nothing
+  changes visibly today (measured 2026-08-10: the CLI does still fire hooks in
+  Direct mode); this is the groundwork and the coverage. The stream test fake
+  now honours `--resume`, and a new end-to-end test relaunches the app and
+  proves the conversation continues.
+
 ## 0.3.0 — 2026-08-09
 
 ### Changed

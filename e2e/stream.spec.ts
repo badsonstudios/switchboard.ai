@@ -11,7 +11,14 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { hookPoster, launchApp, LaunchedApp, registerTempDir, sweepTempDirs } from './fixtures/app';
+import {
+  hookPoster,
+  launchApp,
+  LaunchedApp,
+  readWorkspaceFile,
+  registerTempDir,
+  sweepTempDirs,
+} from './fixtures/app';
 
 function tempProjectFolder(): string {
   // Registered with the fixture's registry (#213) rather than a list of this
@@ -769,6 +776,73 @@ test.describe('a new session starts in Direct (#381)', () => {
     await a.window.getByRole('button', { name: '⋯' }).first().click();
     await expect(a.window.getByRole('button', { name: /switch to Direct/i })).toBeVisible({
       timeout: 15_000,
+    });
+  });
+});
+
+// #404 — a Direct conversation survives an app relaunch.
+//
+// The resume identity comes off the stream itself: `system:init.session_id` →
+// the manager's pump → persisted onto the card → the next boot's
+// `sessions:create` finds it, `canResume` finds the transcript the fake wrote,
+// and the spawn carries `--resume`. The fake's RESUMED-FROM marker is the only
+// on-screen trace that the flag was really passed (`fake-stream-protocol.ts`),
+// so the final assertion reads the whole path at once.
+//
+// NO `SWITCHBOARD_TRANSPORT` anywhere in this describe: this is the DEFAULT
+// path, the one every real user has been on since #381 — and until #404 the
+// only writer of the persisted id was the hook listener the fake never fires
+// SessionStart on, so this exact journey silently started a fresh conversation.
+test.describe('a Direct conversation survives an app relaunch (#404)', () => {
+  let a: LaunchedApp | undefined;
+  test.afterEach(async () => {
+    const launched = a;
+    a = undefined; // cleared BEFORE the close — see `teardown`
+    await teardown(launched);
+  });
+
+  test('the id learned from system:init is persisted, and the relaunch resumes with it', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const first = a;
+    const w = first.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    // one full turn, so the pump has seen a system:init
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('hello from before the relaunch');
+    await box.press('Enter');
+    await expect(w.getByText('FAKE-REPLY: hello from before the relaunch')).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // the id is already durable — on disk, where the next boot reads it. The
+    // save is debounced, so poll rather than race it.
+    await expect(() => {
+      const card = readWorkspaceFile(first.home).sessions?.[0];
+      expect(card?.nativeSessionId).toBe('00000000-fake-4000-8000-000000000000');
+    }).toPass({ timeout: 15_000 });
+    await first.close();
+
+    // Fresh process, same profile — and deliberately NO seedFolder: seeding
+    // again creates a SECOND card, and the assertion lands on the wrong one
+    // (the #381 relaunch test paid for that lesson first).
+    a = await launchApp({ home: first.home, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w2 = a.window;
+    await expect(w2.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    const box2 = w2.getByPlaceholder(/Prompt this session/);
+    await box2.click();
+    await box2.fill('same conversation?');
+    await box2.press('Enter');
+
+    await expect(w2.getByText(/RESUMED-FROM:00000000-fake-4000-8000-000000000000/)).toBeVisible({
+      timeout: 30_000,
     });
   });
 });

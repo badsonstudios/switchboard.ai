@@ -613,10 +613,11 @@ export class HookListener {
     // that carries the reason and that the `.claude/` guard actually honours,
     // so it wins and this passes.
     //
-    // UNMEASURED and worth saying so: nobody has yet confirmed whether the real
-    // CLI fires PreToolUse at all under `--permission-prompt-tool stdio`. S-10
-    // never ran hooks and stream together. This guard is correct either way —
-    // if hooks are silent it costs nothing — but it is a guard, not a finding.
+    // MEASURED 2026-08-10 (#404 probe, claude 2.1.226, the exact Direct flag
+    // list): the real CLI DOES fire PreToolUse (and SessionStart / Stop /
+    // UserPromptSubmit / PostToolUse) under `--input-format stream-json` with
+    // `--permission-prompt-tool stdio`. So this guard is live, not
+    // precautionary — without it every Direct tool call would be held twice.
     if (this.opts.transportFor?.(sessionId) === 'stream') {
       this.opts.log.debug('PreToolUse passed: stream session, permissions ride can_use_tool', {
         sessionId,
@@ -764,10 +765,10 @@ export class HookListener {
     // in the payload is consumed on this path (`session_id` was applied above,
     // before this guard).
     //
-    // UNMEASURED, as at `maybeHold`: nobody has confirmed whether the real CLI
-    // fires Notification hooks at all under `--permission-prompt-tool stdio`.
-    // The guard is correct either way — if hooks are silent it costs nothing —
-    // but it is a guard, not a finding.
+    // MEASURED 2026-08-10 (#404 probe, claude 2.1.226): hooks DO fire under
+    // `--permission-prompt-tool stdio` — see `maybeHold`. Neither probe run
+    // produced a Notification specifically (no permission prompt was drawn),
+    // but the channel is confirmed live, so this guard is load-bearing.
     if (isPermissionNotification(ev) && this.opts.transportFor?.(sessionId) === 'stream') {
       this.opts.log.debug('Notification not applied: stream session, permissions ride can_use_tool', {
         sessionId,
