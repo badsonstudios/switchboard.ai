@@ -153,6 +153,17 @@ const NOTICES: readonly Notice[] = [
     guard: INLINE_GUARD,
     why: 'the only place a collapsed session is listed outside the rail (§5.8)',
   },
+  {
+    component: 'BatchApprovalBar',
+    file: 'components/BatchApprovalBar.tsx',
+    from: 'data-testid="batch-approval"',
+    to: '\n    >',
+    guard: INLINE_GUARD,
+    // P2-E9-11, §5.8's batch bullet. It renders nothing when nothing groups —
+    // like the collapsed strip — but when it IS there, several CLIs are parked
+    // behind it and the buttons are the only thing that releases them.
+    why: 'the buttons several blocked sessions are waiting on (§5.8)',
+  },
 ];
 
 /**

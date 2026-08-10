@@ -56,6 +56,13 @@ import {
   resolveFocusPolicy,
 } from '../lib/focus-policy';
 import {
+  chooseBatch,
+  PermissionBatch,
+  sameBatch,
+} from '../lib/permission-batches';
+import { dropRetired } from '../lib/held-permissions';
+import type { PermissionRequestDto } from '../../../shared/ipc/permissions';
+import {
   isPinned,
   NO_PINS,
   persistablePins,
@@ -123,6 +130,26 @@ export interface SessionState {
    * sweep and by close-all as well, both of which run outside React's commit.
    */
   readonly pinned: PinSet;
+  /**
+   * Every permission request main is currently holding, ACROSS every session
+   * (P2-E9-11, §5.8's batch bullet).
+   *
+   * The cards already keep their own copies — `SessionCardPanel`'s `permQueue`,
+   * one per card, each filtered to its own `cardId`. This is not a second
+   * authority over those: it is the first place anything in the renderer can
+   * see the requests TOGETHER, which is the one thing a grouped prompt needs
+   * and a per-card queue can never provide. Main is the authority over both,
+   * and both are fed by the same three primitives (`permissionRequest`,
+   * `permissionResolved`, and the `pendingPermissions` replay).
+   *
+   * It has to be a whole-fleet view for a second reason: dockview mounts only
+   * the panels it is showing, so the card holding the sibling question usually
+   * is not mounted at all. Its request exists in main and in nothing on screen.
+   *
+   * In `state` and not one of the imperative registries below because a surface
+   * RENDERS from it — that is the same test `policies` and `pinned` pass.
+   */
+  readonly pendingPermissions: readonly PermissionRequestDto[];
 }
 
 const EMPTY: SessionState = {
@@ -138,7 +165,12 @@ const EMPTY: SessionState = {
   focusPolicies: DEFAULT_FOCUS_BOOK,
   layout: DEFAULT_LAYOUT,
   pinned: NO_PINS,
+  pendingPermissions: [],
 };
+
+/** The "no batch" snapshot, once. `useSyncExternalStore` compares by identity,
+ *  so a fresh `new Set()` per read would re-render every subscriber forever. */
+const NO_BATCHED_IDS: ReadonlySet<string> = new Set();
 
 export class SessionStore {
   private state: SessionState = EMPTY;
@@ -156,6 +188,13 @@ export class SessionStore {
   // recomputing the filter at each of those call sites is how two of them end
   // up disagreeing about which sessions are silenced.
   private derivedAttention: readonly EventDto[] = [];
+  // §5.8's batch prompt (P2-E9-11): the ONE group currently on screen, and the
+  // request ids it has taken responsibility for. Derived on mutation like the
+  // rest, and — unlike the rest — deliberately identity-STABLE across a
+  // recompute that changes nothing (`sameBatch`), because a new object here
+  // would replace the card the user is mid-click on.
+  private derivedBatch: PermissionBatch | null = null;
+  private derivedBatchedIds: ReadonlySet<string> = NO_BATCHED_IDS;
 
   // ── live session id -> stable card id ───────────────────────────────────
   // The rail tracks LIVE sessions; cards are the durable unit. A live id
@@ -228,6 +267,7 @@ export class SessionStore {
     // do: setting a session to `none` must take it off the to-do list the same
     // moment, not at the next event push.
     if ('events' in patch || 'focusPolicies' in patch) this.rederiveAttention();
+    if ('pendingPermissions' in patch) this.rederiveBatch();
     for (const l of this.listeners) {
       try {
         l();
@@ -254,6 +294,110 @@ export class SessionStore {
       this.focusPolicyFor(this.cardIdForLive(liveId))
     );
     this.derivedQueue = attentionQueue(this.derivedAttention);
+  }
+
+  /**
+   * Recompute §5.8's grouped prompt (P2-E9-11).
+   *
+   * Sticky on the CURRENT key, so a group already on screen keeps the card as
+   * long as two sessions are still asking it — see `chooseBatch`.
+   *
+   * The early return is not an optimisation. The batch and the batched-id set
+   * are read through `useSyncExternalStore`, which compares by identity: a new
+   * object on every unrelated permission event would re-render the shell and
+   * every mounted card, and would swap the grouped card's buttons for
+   * identical-looking new ones between a user's read and their click.
+   */
+  private rederiveBatch(): void {
+    const next = chooseBatch(this.state.pendingPermissions, this.derivedBatch?.key ?? null);
+    if (sameBatch(next, this.derivedBatch)) return;
+    this.derivedBatch = next;
+    this.derivedBatchedIds = next
+      ? new Set(next.members.map((m) => m.requestId))
+      : NO_BATCHED_IDS;
+  }
+
+  /** The grouped prompt on screen right now, or null when nothing groups. */
+  getPermissionBatch(): PermissionBatch | null {
+    return this.derivedBatch;
+  }
+
+  /**
+   * The requests the grouped card has taken responsibility for.
+   *
+   * A card's own review bar SKIPS these (`SessionGrid`), so one question is
+   * asked in exactly one place. The direction of that coupling is the safe one:
+   * this set only ever names requests a rendered group is holding, and it
+   * empties the moment the group dissolves, so the worst a mistake here can do
+   * is show a question twice. Nothing can make a held request appear nowhere.
+   */
+  getBatchedRequestIds(): ReadonlySet<string> {
+    return this.derivedBatchedIds;
+  }
+
+  /**
+   * Take one held request into the whole-fleet ledger.
+   *
+   * Idempotent by request id, because the two feeds overlap by design: the
+   * `pendingPermissions` replay a mounting renderer asks for can race the live
+   * push of the same request (E10-04 review P0#3 chose that overlap on purpose
+   * — a missed push must never park the CLI).
+   */
+  addPendingPermission(r: PermissionRequestDto): void {
+    this.addPendingPermissions([r]);
+  }
+
+  /**
+   * Take a whole replay in ONE write.
+   *
+   * The `pendingPermissions` replay hands back everything main is holding, and
+   * adding them one at a time would re-key the entire ledger and re-render
+   * every subscriber once per request — a fleet coming back from a reload
+   * paying N full renders for one answer that has not changed since the first.
+   *
+   * A duplicate is dropped, because the two feeds overlap BY DESIGN: the replay
+   * races the live push of the same request (E10-04 review P0#3 chose that
+   * overlap on purpose — a missed push must never park the CLI). Dropped with
+   * one exception — a copy that carries a `cardId` the held one lacks WINS.
+   * Main stamps the card id from `cardOfLive` at send time, so a push that beat
+   * the binding carries none, and keeping the older copy would leave that
+   * member reading "unnamed session" for the rest of the run.
+   */
+  addPendingPermissions(incoming: readonly PermissionRequestDto[]): void {
+    let next = this.state.pendingPermissions;
+    for (const r of incoming) {
+      const at = next.findIndex((p) => p.requestId === r.requestId);
+      if (at < 0) {
+        next = [...next, r];
+      } else if (next[at].cardId === undefined && r.cardId !== undefined) {
+        next = next.map((p, i) => (i === at ? r : p));
+      }
+    }
+    if (next === this.state.pendingPermissions) return;
+    this.set({ pendingPermissions: next });
+  }
+
+  /** Answered, released, or timed out — main said so. */
+  removePendingPermission(requestId: string): void {
+    const next = this.state.pendingPermissions.filter((p) => p.requestId !== requestId);
+    if (next.length === this.state.pendingPermissions.length) return;
+    this.set({ pendingPermissions: next });
+  }
+
+  /**
+   * The session died; its questions die with it (#239).
+   *
+   * The same rule the cards apply, through the same function, for the reason
+   * `dropRetired`'s docblock gives: main's release is explicitly best-effort,
+   * and a ledger whose only correction comes from another process cannot repair
+   * itself when that correction is what went missing. A grouped card holding a
+   * dead session's question would offer an Allow that decides nothing and count
+   * a session that is gone.
+   */
+  dropPendingPermissionsForLive(retiredLiveId: string): void {
+    const next = dropRetired(this.state.pendingPermissions, retiredLiveId);
+    if (next === this.state.pendingPermissions) return;
+    this.set({ pendingPermissions: next });
   }
 
   setCards(cards: string[]): void {

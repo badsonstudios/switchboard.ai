@@ -30,10 +30,20 @@ import type { PermissionRequestDto } from '../../../shared/ipc/permissions';
  * has bound `live` at all, and "I have not learned this card's session yet" must
  * not read as "every held request is stale" (E10-04 review P0#3 — a missed push
  * must never park the CLI).
+ *
+ * Takes a `readonly` list so the store's whole-fleet ledger (P2-E9-11) can apply
+ * the SAME rule to the SAME event — the two must not be able to disagree about
+ * what belongs to a dead session, which is the argument that put this rule in a
+ * function in the first place. The returned array is the caller's to own, and
+ * the unchanged case hands back the very array it was given, so the identity
+ * check above still means "nothing happened".
  */
-export function dropRetired<T extends { sessionId: string }>(queue: T[], retiredLiveId: string): T[] {
+export function dropRetired<T extends { sessionId: string }>(
+  queue: readonly T[],
+  retiredLiveId: string
+): T[] {
   const next = queue.filter((held) => held.sessionId !== retiredLiveId);
-  return next.length === queue.length ? queue : next;
+  return next.length === queue.length ? (queue as T[]) : next;
 }
 
 /**
@@ -89,6 +99,29 @@ export function enqueueHeld(
       reason: r.reason,
     },
   ];
+}
+
+/**
+ * Take ONE answered request out of the card's queue, by id.
+ *
+ * By id and never by position, and P2-E9-11 is why. The bar used to render
+ * `permQueue[0]` and pop `slice(1)`, and those two agreed because they were the
+ * same expression twice. §5.8's grouped prompt broke that: a request the batch
+ * card owns is filtered out of the bar, so the head the user is answering can
+ * be the SECOND entry in the raw queue — and `slice(1)` would then answer the
+ * one they clicked while deleting a DIFFERENT request that is still held. Once
+ * the group dissolves, that one is on no card, on no bar, and still parking its
+ * CLI: the one outcome the whole batch design promises cannot happen.
+ *
+ * Returns the SAME array when nothing matched, like its two neighbours here, so
+ * a redelivered resolution costs no render.
+ */
+export function dropAnswered<T extends { requestId: string }>(
+  queue: readonly T[],
+  answeredRequestId: string
+): T[] {
+  const next = queue.filter((held) => held.requestId !== answeredRequestId);
+  return next.length === queue.length ? (queue as T[]) : next;
 }
 
 /**

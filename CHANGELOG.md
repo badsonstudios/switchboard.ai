@@ -53,6 +53,15 @@ on the floor, and say so in your PR.
 
 ## 0.4.0 — unreleased
 
+### Added
+
+- When two or more sessions are waiting on **exactly the same** permission
+  request, it now appears once, on a single card above the workspace, with
+  every session named — answer all of them with one click, or allow one and
+  decline another. Requests only share a card when the tool and every argument
+  match character for character, so `rm -rf build` and `rm -rf /` are never
+  answered together.
+
 ## 0.3.0 — 2026-08-09
 
 ### Changed

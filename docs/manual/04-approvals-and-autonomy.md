@@ -29,6 +29,43 @@ If several requests pile up, they queue: the bar shows **+2 more waiting** and
 advances as you answer. The card surfaces its Session tab automatically when a
 request arrives, even if you were looking at the Terminal.
 
+## When several sessions ask the same thing
+
+Run a few sessions on the same job and they tend to hit the same wall at the
+same moment — all of them wanting to run `npm test`, all of them stopped.
+
+When **two or more sessions are waiting on exactly the same request**,
+switchboard puts it on one card just above the workspace instead of making you
+visit each session in turn. The card says how many sessions are asking, what
+they want to run, and lists them by name:
+
+- **Allow in all N sessions** / **Deny in all N sessions** — one click, every
+  session on the card answered.
+- Each session also gets its own **Allow** and **Deny** next to its name, so
+  you can say yes to one and no to another. Answering one leaves the rest
+  exactly as they were: still waiting, still yours to decide.
+
+While a request is on the grouped card, it is not also shown in its own
+session's review bar — one question, one place to answer it. Answer or decline
+one session's copy and, if that leaves only one session still asking, the card
+goes away and the last question returns to that session's own bar.
+
+Things worth knowing:
+
+- **"Exactly the same" means exactly.** Same tool, same arguments, character
+  for character. `rm -rf build` and `rm -rf /` are not the same request and
+  will never share a card. Two sessions editing "the same file" in two
+  different project folders are asking about two different paths, so they get
+  asked separately too. The bias is deliberate: being asked twice is a small
+  annoyance, and one click approving something you did not read is not.
+- **One card at a time.** If a second, different group forms while a card is
+  up, those sessions keep asking in their own cards until the first card is
+  answered. A session that joins the group *while it is on screen* is asking
+  the identical question, so it simply joins the count.
+- **There is no "allow all" on the grouped card.** Every button answers only
+  the requests listed on it. Standing permission is still a per-session choice,
+  from that session's own bar.
+
 A request belongs to the session that asked it. If that session ends — you hit
 **Restart**, you close a popped-out window and it suspends, or it exits on its
 own — anything still waiting in its bar goes with it. There is nothing left to
