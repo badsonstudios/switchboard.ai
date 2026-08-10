@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { dropRetired, enqueueHeld, IncomingPermission, intakePermission } from './held-permissions';
+import {
+  dropAnswered,
+  dropRetired,
+  enqueueHeld,
+  IncomingPermission,
+  intakePermission,
+} from './held-permissions';
 import { terminalHandoff } from './terminal-handoff';
 
 // A stand-in for the card's queue entries: only `sessionId` is load-bearing,
@@ -51,6 +57,36 @@ describe('dropRetired — the queue rule when a session ends (issue 239)', () =>
     // would drop one arbitrary hold and keep the dead session's others
     const queue = [hold('live-A', 'live-B')]; // a requestId that looks like the dead id
     expect(dropRetired(queue, 'live-A')).toBe(queue);
+  });
+});
+
+// P2-E9-11 — the pop, once the rendered head stopped being the raw head.
+//
+// The bar used to render `permQueue[0]` and pop `slice(1)`, which agreed
+// because they were the same expression twice. §5.8's grouped prompt filters
+// the batched requests out of the bar, so the two can now name DIFFERENT
+// entries — and the positional pop would then answer the one the user clicked
+// while deleting one that is still held.
+describe('dropAnswered — taking the answered request out of the bar (P2-E9-11)', () => {
+  const held = (requestId: string, sessionId = 'live-A') => ({ requestId, sessionId });
+
+  it('removes the answered request and nothing else', () => {
+    const queue = [held('perm-1'), held('perm-2'), held('perm-3')];
+    expect(dropAnswered(queue, 'perm-2')).toEqual([held('perm-1'), held('perm-3')]);
+  });
+
+  it('keeps a request that is NOT the head — the whole point of the change', () => {
+    // perm-1 is on the grouped card, so the bar's head is perm-2. A positional
+    // pop here would answer perm-2 and delete perm-1, which the CLI is still
+    // parked on and which nothing would ever show again.
+    const queue = [held('perm-1'), held('perm-2')];
+    expect(dropAnswered(queue, 'perm-2')).toEqual([held('perm-1')]);
+  });
+
+  it('hands back the SAME array when the id is not there', () => {
+    // a redelivered resolution must not cost a re-render
+    const queue = [held('perm-1')];
+    expect(dropAnswered(queue, 'perm-9')).toBe(queue);
   });
 });
 

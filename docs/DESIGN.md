@@ -479,7 +479,17 @@ done | crashed`) fed by hooks + transcript events. The layout engine reacts to i
 - **Delayed urgency reset** (research v2: i3 `force_display_urgency_hint`): after
   jumping to a session that demanded attention, its urgency lamp stays lit for a
   configurable beat (~0.5–2s) — you can still see WHICH session called you after
-  you arrive.
+  you arrive. **The beat runs from the first PAINT of the lit lamp, not from the
+  keypress** *(amended 2026-08-10, Dan, after #320)*: measured from the keypress,
+  a machine busy enough to take longer than a beat to draw the strip showed no
+  lit lamp at all — not late, never — and it failed silently in exactly the busy
+  moments the signal matters most. The beat exists so a HUMAN can see the lamp,
+  so the pixels are the only honest start. Implementation: the jump records
+  "lit, no deadline"; the strip converts it to `paint + beat` from the frame
+  after the commit that drew it (`requestAnimationFrame` twice — a commit is not
+  a paint). A mark that has not painted yet therefore survives a backgrounded
+  window rather than burning down unseen; once the beat has started it runs on
+  the wall clock like any other.
 - **Focus mode is a composition, with a keyboard-fail-open invariant** (research
   v2: IntelliJ Zen = Full Screen + Distraction-free; VS Code maximize-toggle):
   "focus on one agent" composes existing presentation-ladder states rather than
@@ -722,6 +732,18 @@ Every session carries an identity that renders IDENTICALLY everywhere it appears
 - **Title**: defaults to folder name (full path in tooltip); user-editable.
 - **Accent color**: auto-assigned from a distinguishable palette; user-overridable.
   Applied to card border, sidebar dot, feed entries, toast edge.
+  **An accent is a FIELD colour, never a text ink** *(amended 2026-08-10, Dan's
+  call, #269)* — a stripe, a dot, a ring, a badge's background. It is chosen to
+  be DISTINGUISHABLE from the other seven, which is a different job from being
+  READABLE, and unlike the status ramp (§5.20, #221/#243) it cannot grow a
+  per-theme ink family to swap in: a second shade of an identity is a second
+  identity. Measured as 9px text, all eight accents were 1.80–3.11:1 on the light
+  theme and as low as 3.39:1 on the dark one. Where words have to sit on an
+  accent, the accent is the field and the words take the one neutral
+  `--accent-ink-on-fill`, which is theme-independent for the same reason the
+  accents are and clears 4.5:1 on every one of them. Enforced, not remembered:
+  `tokens.drift.test.ts` fails any `color:` in the renderer that names an accent,
+  and `e2e/theme.spec.ts` measures the badge as painted in all four themes.
 - **Icon**: default from project-type detection (`.csproj`→C#, `package.json`→Node,
   `Cargo.toml`→Rust, `pyproject.toml`→Python, …); emoji/icon picker to override.
   Provider badge (Claude/Codex/…) shown alongside.

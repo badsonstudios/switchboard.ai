@@ -21,7 +21,7 @@ import { sessionStore } from '../store/session-store';
 import { DEFAULT_PANEL_ID, PanelContext, PanelId } from '../extensibility/contributions';
 import { listPanels, panelBadge, panelEnabled } from '../extensibility/panels';
 import { ContributionBoundary } from '../extensibility/boundary';
-import { IdentityChip } from './IdentityChip';
+import { IdentityChip, identityBadgeStyle } from './IdentityChip';
 import { DiffPane } from './DiffPane';
 import { UsageStrip } from './UsageStrip';
 import { GitContext, GitStatusDto } from './GitContext';
@@ -59,6 +59,7 @@ import { sendSessionCommand } from '../lib/composer';
 import { DEFAULT_SESSION_TRANSPORT, type TransportKind } from '../../../shared/transport';
 import {
   dropRetired,
+  dropAnswered,
   enqueueHeld,
   HeldPermission,
   IncomingPermission,
@@ -350,7 +351,40 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // The entry shape moved to `lib/held-permissions` with the rules that build
   // and prune it (#310), so the queue and its reducers cannot drift apart.
   const [permQueue, setPermQueue] = React.useState<HeldPermission[]>([]);
-  const perm = permQueue[0] ?? null;
+  // …minus whatever §5.8's grouped prompt is currently asking on behalf of
+  // several sessions at once (P2-E9-11). One question, one place to answer it:
+  // a card that also drew its own bar for a grouped request would show the user
+  // the same question twice with two different button sets, and let them answer
+  // for one session in a card headed "2 sessions want…".
+  //
+  // The direction of this coupling is the safe one, and it is the only reason a
+  // shell surface is allowed to take a question off a card at all: the set only
+  // ever names requests a RENDERED group is holding, and it empties the instant
+  // that group dissolves — so the worst a bug in it can do is ask twice.
+  // NOTHING here can make a held request appear nowhere. The queue itself is
+  // untouched; a request that leaves the group is back on this bar on the next
+  // render, still held, still answerable.
+  //
+  // EXCEPT in a pop-out. The grouped card lives in the app shell, and a
+  // popped-out panel is portalled into a DIFFERENT WINDOW that has no shell —
+  // so for a user working in that window, suppressing here would take the
+  // question off the only screen they are looking at. This card keeps its own
+  // bar there and the group keeps its row: two windows, two placements of one
+  // question (§5.16 names three, and calls placement a preference). Both
+  // answer through the same request id, so whichever is used resolves the other.
+  const batchedIds = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getBatchedRequestIds()
+  );
+  const cardQueue = React.useMemo(
+    () => (poppedOut ? permQueue : permQueue.filter((p) => !batchedIds.has(p.requestId))),
+    [permQueue, batchedIds, poppedOut]
+  );
+  const perm = cardQueue[0] ?? null;
+  // this card has a held question, and the grouped prompt is the one asking it.
+  // The handoff bar reads this: "no bar here" must not become "switchboard
+  // can't answer it, go to the terminal" when switchboard is answering it eight
+  // pixels lower (#125's defect, one surface over).
+  const permBatched = cardQueue.length < permQueue.length;
   // "an answer just went out" — the window that keeps the terminal-handoff bar
   // off the screen while the resolution makes its IPC round trip. Declared HERE,
   // above both of its writers: the intake effect (auto-allow, #310) opens it too,
@@ -637,7 +671,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     });
   }, []);
   const decide = (decision: 'allow' | 'deny', allowAll = false): void => {
-    const head = permQueue[0];
+    // the head of the bar's OWN list, not of the raw queue: a grouped request
+    // is answered on the grouped card, and this button must never decide one
+    // the user cannot see (P2-E9-11)
+    const head = cardQueue[0];
     if (!head) return;
     if (allowAll) {
       // main answers future gated calls at the server — no hold/event/beep
@@ -646,7 +683,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       void window.switchboard.sessions.allowAllSession(head.sessionId);
     }
     void window.switchboard.sessions.decidePermission(head.requestId, decision);
-    setPermQueue((prev) => prev.slice(1)); // resolved event prunes too (idempotent)
+    // BY ID, not `slice(1)` (P2-E9-11). The head the user answered is the head
+    // of the FILTERED list, and a grouped sibling ahead of it in the raw queue
+    // makes those two different entries — `slice(1)` would answer this one and
+    // silently delete that one, which is still held. See `dropAnswered`.
+    // The resolved event prunes too; both are idempotent.
+    setPermQueue((prev) => dropAnswered(prev, head.requestId));
     // The queue pops NOW; `permission-resolved` only comes back after a full
     // IPC round trip, so for a frame or two the card reads
     // "needs-permission with nothing held" — which is exactly the state the
@@ -840,7 +882,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     recentlyDecided,
     changed,
     approval: perm,
-    approvalQueued: Math.max(0, permQueue.length - 1),
+    approvalQueued: Math.max(0, cardQueue.length - 1),
+    approvalBatched: permBatched,
     onDecide: decide,
     onCycleAutonomy: cycleCardAutonomy,
     setView,
@@ -999,19 +1042,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               background: 'var(--panel2)',
             }}
           >
+            {/* the SAME badge the tab above draws (#269) — §5.11's "renders
+                identically everywhere", and the accent is the field, never the
+                ink: as 9px text it measured 1.80-3.11:1 on daylight */}
             {live.badge && (
-              <span
-                style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 9,
-                  fontWeight: 700,
-                  color: live.accent ?? 'var(--muted)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 4,
-                  paddingInline: 4,
-                  paddingBlock: 1,
-                }}
-              >
+              <span data-testid="identity-badge" style={identityBadgeStyle(live.accent)}>
                 {live.badge}
               </span>
             )}

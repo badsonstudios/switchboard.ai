@@ -13,6 +13,13 @@
 //  - session accent colors (`--accent-*`) — §5.20: identities are separate from
 //    themes and survive a theme switch. A theme that could repaint them would
 //    change what a session IS, not how the app looks.
+//  - `--accent-ink-on-fill`, the ink the §5.11 badge writes ON one of those
+//    accents (#269). Note this is the OPPOSITE call from
+//    `--status-needs-permission-ink-on-fill` below, which IS themeable, and the
+//    difference is which side of the pair a theme controls: that ink sits on a
+//    themeable fill, so a theme repainting the fill must be able to lift the ink
+//    with it. An accent field is theme-independent, so a theme that could lift
+//    this ink could only break a promise about a colour it may not touch.
 //  - typography, radii and spacing — colors are what a theme is for today;
 //    widening the map later is additive and does not break a stored theme.
 //  - layer-3 component tokens (`--card-bg`, `--auto-surface`, …) — they are

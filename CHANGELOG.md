@@ -53,6 +53,33 @@ on the floor, and say so in your PR.
 
 ## 0.4.0 — unreleased
 
+### Added
+
+- When two or more sessions are waiting on **exactly the same** permission
+  request, it now appears once, on a single card above the workspace, with
+  every session named — answer all of them with one click, or allow one and
+  decline another. Requests only share a card when the tool and every argument
+  match character for character, so `rm -rf build` and `rm -rf /` are never
+  answered together.
+
+### Fixed
+
+- **The manual was wrong about 🔒 ask trust in Direct mode.** It said you had to
+  put a session on Terminal mode to answer Claude Code's folder-trust prompt.
+  In fact Claude Code raises no trust question at all in Direct mode — it just
+  runs in the folder — so nothing hangs and nothing needs working around. The
+  real consequence is the other way round: **ask trust only does anything for
+  Terminal-mode sessions.** Settings and Direct mode now say so.
+- The ring that shows you which session `Ctrl+Space` just sent you to now lasts
+  a second and a half **from the moment it appears on screen**. It used to be
+  counted from the keypress, so on a busy machine the whole beat could pass
+  before the window caught up and you saw no ring at all — the flash you could
+  miss on a slow machine.
+- The little language badge beside a session's name (`TS`, `PY`, `JS`) is now
+  filled with the session's own color and lettered in dark, instead of being
+  written in that color. On the light theme it was barely visible against the
+  card header; it is now readable on every theme and in every session color.
+
 ## 0.3.0 — 2026-08-09
 
 ### Changed

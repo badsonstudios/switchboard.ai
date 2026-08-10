@@ -165,6 +165,13 @@ export interface PanelContext {
     reason?: string;
   } | null;
   approvalQueued?: number;
+  /**
+   * This session has a held request and §5.8's grouped prompt is the one
+   * showing it (P2-E9-11) — so `approval` is null here on purpose, and a panel
+   * must NOT conclude that the CLI is waiting on something switchboard cannot
+   * answer. It is being answered, one surface up.
+   */
+  approvalBatched?: boolean;
   onDecide?: (decision: 'allow' | 'deny', allowAll?: boolean) => void;
   onCycleAutonomy?: () => void;
   /** switch the card to another panel by id */

@@ -60,8 +60,9 @@ Clicking a row there counts as visiting it, so the shortcut won't send you
 straight back to it.
 
 When you land, the session's lamp in the strip along the top stays ringed for
-about a second and a half, so you can still see *which* one called you after
-the screen has changed. See
+about a second and a half — counted from when the ring appears on screen, so a
+busy machine delays it rather than eating it — and you can still see *which* one
+called you after the screen has changed. See
 [the lamp strip](09-notifications.md#the-lamp-strip).
 
 ## Moving between sessions

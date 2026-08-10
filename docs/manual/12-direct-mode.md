@@ -86,6 +86,14 @@ show, and the tab says so. That means you lose:
   request from the command line
 - Anything else that only exists as a full-screen terminal interface
 
+**And the folder-trust question is never asked.** If you've turned auto-trust
+off (**🔒 ask trust** in the title bar — see [Settings](10-settings.md#trusting-folders)),
+a Terminal-mode session shows you Claude Code's trust prompt for a new folder
+and waits. A Direct-mode session doesn't: Claude Code raises no trust question
+at all outside its own terminal, so it just runs in the folder. Nothing hangs
+and nothing is hidden from you — but if being asked matters for a folder, open
+it once in Terminal mode.
+
 Everything else works the same — better, in a couple of places. Your
 conversation still appears in the Session view (and arrives faster; see
 [Replies arrive as they're written](#replies-arrive-as-theyre-written)), prompts

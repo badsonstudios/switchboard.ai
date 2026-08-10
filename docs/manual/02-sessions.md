@@ -42,10 +42,12 @@ session to Terminal mode from its **⋯** menu and the choice sticks.
   recognize it without reading. The color is the stripe down the left edge of
   the card header, the dot in the sessions list — and the dot on the card's own
   **tab**. The badge is a two- or three-letter note of what the project is
-  written in (`TS`, `PY`, `RS`), and it sits next to the name in those same
-  places. Both are picked for you when the session starts and stay the same for
-  that session, including across restarts, so "the orange one" keeps meaning the
-  same session all day.
+  written in (`TS`, `Py`, `Rs`), and it sits next to the name in those same
+  places — **filled in the session's own color, with dark lettering on top**, so
+  it is a second place the color shows up rather than a second thing to read.
+  Both are picked for you when the session starts and stay the same for that
+  session, including across restarts, so "the orange one" keeps meaning the same
+  session all day.
 
   With several cards docked side by side, the tabs are usually all you can see
   of the ones you are not looking at — so the color and badge there are what let

@@ -225,6 +225,16 @@
     "deny": "Deny",
     "more": "+{n} more waiting"
   },
+  "batchApproval": {
+    "title": "{count, plural, one {# session wants} other {# sessions want}} to run {tool}",
+    "allow": "Allow",
+    "deny": "Deny",
+    "allowOne": "Allow in {session}",
+    "denyOne": "Deny in {session}",
+    "allowAll": "Allow in {count, plural, one {# session} other {all # sessions}}",
+    "denyAll": "Deny in {count, plural, one {# session} other {all # sessions}}",
+    "unnamedSession": "unnamed session {id}"
+  },
   "status": {
     "starting": "starting",
     "working": "working",

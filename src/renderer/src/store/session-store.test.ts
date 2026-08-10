@@ -522,8 +522,36 @@ describe("SessionStore — the urgency strip's delayed reset (P2-E9-04)", () => 
   it('markUrgency lights a card and publishes a new state object', () => {
     const before = store.getState();
     store.markUrgency('card-A', T);
-    expect(store.getState().urgency.get('card-A')).toBe(T + 1500);
+    // no deadline yet: the strip starts the beat from the paint (#320), so all
+    // the keypress records is that the lamp is lit
+    expect(store.getState().urgency.get('card-A')).toBeNull();
+    expect(store.getState().urgency.has('card-A')).toBe(true);
     expect(store.getState()).not.toBe(before); // identity IS the change signal
+  });
+
+  it('startUrgencyBeat turns the paint into the deadline', () => {
+    store.markUrgency('card-A', T);
+    store.startUrgencyBeat(['card-A'], T + 9000); // nine seconds of stalled frame
+    expect(store.getState().urgency.get('card-A')).toBe(T + 9000 + 1500);
+    // ...and it is a full beat from THERE, not from the keypress
+    store.expireUrgency(T + 9000 + 1499);
+    expect(store.getState().urgency.has('card-A')).toBe(true);
+    store.expireUrgency(T + 9000 + 1500);
+    expect(store.getState().urgency.has('card-A')).toBe(false);
+  });
+
+  it('startUrgencyBeat with nothing waiting is a NO-OP — a frame is not a re-render', () => {
+    // it runs after the paint of every urgency change; most have nothing to start
+    store.markUrgency('card-A', T);
+    store.startUrgencyBeat(['card-A'], T);
+    let notifications = 0;
+    store.subscribe(() => {
+      notifications += 1;
+    });
+    const before = store.getState();
+    store.startUrgencyBeat(['card-A'], T + 100);
+    expect(store.getState()).toBe(before);
+    expect(notifications).toBe(0);
   });
 
   it('is readable SYNCHRONOUSLY, the way the keydown handler needs it', () => {
@@ -543,13 +571,24 @@ describe("SessionStore — the urgency strip's delayed reset (P2-E9-04)", () => 
 
   it('expireUrgency puts out only the lamps whose beat has passed', () => {
     store.markUrgency('card-A', T);
+    store.startUrgencyBeat(['card-A'], T);
     store.markUrgency('card-B', T + 400);
+    store.startUrgencyBeat(['card-B'], T + 400);
     store.expireUrgency(T + 1500);
     expect([...store.getState().urgency.keys()]).toEqual(['card-B']);
   });
 
+  it('expireUrgency leaves a lamp nobody has seen yet alone', () => {
+    // it is waiting on a frame, not on a clock — putting it out here is the
+    // silent no-lamp case (#320) with extra steps
+    store.markUrgency('card-A', T);
+    store.expireUrgency(T + 60_000);
+    expect(store.getState().urgency.has('card-A')).toBe(true);
+  });
+
   it('expireUrgency with nothing to drop is a NO-OP — no re-render for a stray timer', () => {
     store.markUrgency('card-A', T);
+    store.startUrgencyBeat(['card-A'], T);
     let notifications = 0;
     store.subscribe(() => {
       notifications += 1;
@@ -984,5 +1023,140 @@ describe('SessionStore — the live-retired signal', () => {
     // bar would have re-granted an id in no map — which is the leak, and the
     // reason the two releases have to happen together
     expect(store.isAllowAll('live-A')).toBe(false);
+  });
+
+  // ── the whole-fleet permission ledger (P2-E9-11, §5.8) ────────────────────
+  //
+  // The grouping RULE is tested next door in `lib/permission-batches`. What is
+  // here is the store's half: that the ledger derives the group, that the
+  // derived value is identity-stable (the thing `useSyncExternalStore` needs
+  // and the thing that stops a card being swapped mid-click), and that the two
+  // ways a request leaves both reach it.
+  describe('the batch permission ledger', () => {
+    const req = (requestId: string, sessionId: string, command = 'npm test') => ({
+      requestId,
+      sessionId,
+      cardId: 'card-' + sessionId,
+      tool: 'Bash',
+      input: { command },
+    });
+
+    it('derives no group from a single session', () => {
+      store.addPendingPermission(req('r1', 'live-A'));
+      expect(store.getPermissionBatch()).toBeNull();
+      expect(store.getBatchedRequestIds().size).toBe(0);
+    });
+
+    it('derives the group the moment a second session asks the same thing', () => {
+      store.addPendingPermission(req('r1', 'live-A'));
+      store.addPendingPermission(req('r2', 'live-B'));
+      expect(store.getPermissionBatch()!.sessionCount).toBe(2);
+      expect([...store.getBatchedRequestIds()].sort()).toEqual(['r1', 'r2']);
+    });
+
+    it('is idempotent by request id — the replay races the live push by design', () => {
+      store.addPendingPermission(req('r1', 'live-A'));
+      store.addPendingPermission(req('r2', 'live-B'));
+      const before = store.getPermissionBatch();
+      store.addPendingPermission(req('r1', 'live-A')); // the same request, again
+      expect(store.getState().pendingPermissions).toHaveLength(2);
+      // and nothing re-rendered: same object, not merely an equal one
+      expect(store.getPermissionBatch()).toBe(before);
+    });
+
+    it('lets a duplicate that KNOWS the card id replace one that does not', () => {
+      // main stamps the card id from `cardOfLive` at send time, so a push that
+      // beat the binding carries none while the replay behind it does. Keeping
+      // the older copy would leave that row reading "unnamed session" for the
+      // rest of the run.
+      store.addPendingPermission({ ...req('r1', 'live-A'), cardId: undefined });
+      store.addPendingPermission(req('r2', 'live-B'));
+      store.addPendingPermission(req('r1', 'live-A')); // the replay, with the binding
+      expect(store.getState().pendingPermissions.map((p) => p.cardId)).toEqual([
+        'card-live-A',
+        'card-live-B',
+      ]);
+      // …and the derive noticed, or nothing would re-read the name
+      expect(store.getPermissionBatch()!.members[0].cardId).toBe('card-live-A');
+    });
+
+    it('adds a whole replay in ONE write', () => {
+      // one notify, not one per request: a fleet coming back from a reload
+      // must not pay N full renders for a ledger that settles once
+      let ticks = 0;
+      store.subscribe(() => ticks++);
+      store.addPendingPermissions([req('r1', 'live-A'), req('r2', 'live-B'), req('r3', 'live-C')]);
+      expect(ticks).toBe(1);
+      expect(store.getPermissionBatch()!.sessionCount).toBe(3);
+      // a replay that says nothing new says nothing at all
+      store.addPendingPermissions([req('r1', 'live-A'), req('r2', 'live-B')]);
+      expect(ticks).toBe(1);
+    });
+
+    it('keeps the derived batch IDENTICAL across an unrelated permission event', () => {
+      // the guard that stops the grouped card being replaced under the cursor
+      store.addPendingPermission(req('r1', 'live-A'));
+      store.addPendingPermission(req('r2', 'live-B'));
+      const shown = store.getPermissionBatch();
+      const ids = store.getBatchedRequestIds();
+
+      store.addPendingPermission(req('r9', 'live-Z', 'something else entirely'));
+
+      expect(store.getPermissionBatch()).toBe(shown);
+      expect(store.getBatchedRequestIds()).toBe(ids);
+    });
+
+    it('dissolves the group when one member is answered, and frees the survivor', () => {
+      // "declining one leaves the other held": the survivor is not answered and
+      // not lost — it goes back to its own card's bar, which is exactly what
+      // leaving the batched set means
+      store.addPendingPermission(req('r1', 'live-A'));
+      store.addPendingPermission(req('r2', 'live-B'));
+      store.removePendingPermission('r1');
+
+      expect(store.getPermissionBatch()).toBeNull();
+      expect(store.getBatchedRequestIds().size).toBe(0);
+      expect(store.getState().pendingPermissions.map((p) => p.requestId)).toEqual(['r2']);
+    });
+
+    it('ignores a resolution for a request it never held', () => {
+      store.addPendingPermission(req('r1', 'live-A'));
+      store.addPendingPermission(req('r2', 'live-B'));
+      const before = store.getPermissionBatch();
+      store.removePendingPermission('never-heard-of-it');
+      expect(store.getPermissionBatch()).toBe(before);
+    });
+
+    it("takes a dead session's questions out of the group (issue 239)", () => {
+      // main's release is best-effort; a grouped card that outlived it would
+      // count a session that is gone and offer an Allow that decides nothing
+      store.addPendingPermission(req('r1', 'live-A'));
+      store.addPendingPermission(req('r2', 'live-B'));
+      store.addPendingPermission(req('r3', 'live-C'));
+
+      store.dropPendingPermissionsForLive('live-B');
+
+      expect(store.getState().pendingPermissions.map((p) => p.sessionId)).toEqual([
+        'live-A',
+        'live-C',
+      ]);
+      expect(store.getPermissionBatch()!.sessionCount).toBe(2);
+
+      store.dropPendingPermissionsForLive('live-C');
+      expect(store.getPermissionBatch()).toBeNull();
+    });
+
+    it('notifies subscribers when the group appears and when it goes', () => {
+      let ticks = 0;
+      store.subscribe(() => ticks++);
+      store.addPendingPermission(req('r1', 'live-A'));
+      store.addPendingPermission(req('r2', 'live-B'));
+      expect(ticks).toBe(2);
+      store.removePendingPermission('r2');
+      expect(ticks).toBe(3);
+      // a no-op drop is not a change
+      store.dropPendingPermissionsForLive('live-nobody');
+      expect(ticks).toBe(3);
+    });
   });
 });

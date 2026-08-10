@@ -29,6 +29,9 @@ import { UpdateDialog } from './components/UpdateDialog';
 import type { UpdateInstallStatus, UpdateStatus } from '../../shared/update';
 import { UrgencyStrip } from './components/UrgencyStrip';
 import { CollapsedStrip } from './components/CollapsedStrip';
+import { BatchApprovalBar } from './components/BatchApprovalBar';
+import { memberViews } from './lib/permission-batches';
+import type { PermissionRequestDto } from '../../shared/ipc/permissions';
 import { WorkspaceNoticeBanner } from './components/WorkspaceNoticeBanner';
 import { PreflightBanner } from './components/PreflightBanner';
 import { collapsedRows, revealTargets } from './lib/ladder';
@@ -169,6 +172,12 @@ export function App(): React.JSX.Element {
   const railFlat = useSyncExternalStore(subscribeStore, () => sessionStore.getRailOrder().flat);
   const urgency = useSyncExternalStore(subscribeStore, () => sessionStore.getState().urgency);
   const expireUrgency = React.useCallback(() => sessionStore.expireUrgency(), []);
+  // #320: the lamps the strip just PAINTED lit — that is where their 1.5s beat
+  // starts, so a slow frame delays the beat instead of eating it.
+  const startUrgencyBeat = React.useCallback(
+    (cardIds: readonly string[]) => sessionStore.startUrgencyBeat(cardIds),
+    []
+  );
   // §5.8's ladder (E9-05). The strip renders from rail order for the reason the
   // lamps do — a session must not be third in one list and first in another.
   const presentation = useSyncExternalStore(
@@ -190,6 +199,97 @@ export function App(): React.JSX.Element {
       ),
     [railFlat, presentation, pinned]
   );
+  // §5.8's batch permission prompt (P2-E9-11). The store keeps the whole-fleet
+  // ledger of held requests and derives the ONE group on screen; App owns the
+  // subscription that fills it, because it is the only component that is always
+  // mounted — a card is not (dockview mounts what it shows), and the sibling
+  // session asking the same question is usually behind a card that is not.
+  const permissionBatch = useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getPermissionBatch()
+  );
+  const batchMembers = React.useMemo(
+    () => (permissionBatch ? memberViews(permissionBatch, sessions) : []),
+    [permissionBatch, sessions]
+  );
+  const decideBatch = React.useCallback(
+    (requestIds: readonly string[], decision: 'allow' | 'deny') => {
+      // One call PER REQUEST, on the same channel the card's own bar uses
+      // (E10-04) — there is no batch verb in main and there must not be: each
+      // held request is a separate CLI blocked on a separate answer, and main
+      // routing them one by one is what keeps a partly-failed batch honest.
+      // Deliberately NOT `allowAllSession`: see BatchApprovalBar's header.
+      for (const requestId of requestIds) {
+        void bridge.sessions
+          ?.decidePermission?.(requestId, decision)
+          // FALSE means main never had it — released, timed out, or resolved by
+          // something else, and no `permissionResolved` is coming for it. Self-
+          // heal, or the ledger would count a phantom session on the card for
+          // the rest of the run.
+          .then((owned) => {
+            if (!owned) sessionStore.removePendingPermission(requestId);
+          })
+          // A REJECTION is not the same answer. `sessions:decidePermission`
+          // resolves false rather than throwing, so this is the channel itself
+          // failing — main gone, handler unregistered mid-teardown — and in
+          // that state we know nothing about whether the request is still held.
+          // Leaving it in the ledger keeps it on screen; dropping it would take
+          // a live question off every surface on a guess.
+          .catch(() => {});
+      }
+      // Note what is NOT here: an optimistic drop from the ledger.
+      //
+      // The per-card bar pops its queue on click, and has to — it is the only
+      // thing holding the request. This card is not: main is, and main's
+      // `permissionResolved` reaches the shell and every card in one push, so
+      // letting it do the clearing keeps the grouped card and the cards'
+      // own bars in step. Dropping optimistically here would take the group
+      // down a whole IPC round trip before the cards heard, and for that round
+      // trip a mounted card would draw its own review bar over a question that
+      // was answered before the user let go of the mouse.
+      //
+      // The cost is that these buttons stay live until the answers land. That
+      // is safe: `sessions:decidePermission` is keyed by request id, and a
+      // second verdict for a request main has already released is refused,
+      // which is exactly the branch above.
+    },
+    [bridge]
+  );
+  // The one subscription behind the ledger. Deliberately the same three
+  // primitives the cards use — a live push, a resolution, and the replay for
+  // whatever arrived before we subscribed (E10-04 review P0#3: a missed push
+  // must never park the CLI) — plus the store's own live-retired signal, so a
+  // dead session's question leaves the group the moment the renderer knows,
+  // without waiting on main's best-effort release (#239).
+  useEffect(() => {
+    // An allow-all session is answered without a bar, at the server for PTY and
+    // by the card for stream. Its requests must never reach a group, or a
+    // session the user took out of the loop would flash into a prompt and be
+    // counted in "2 sessions want…".
+    const groupable = (r: PermissionRequestDto): boolean => !sessionStore.isAllowAll(r.sessionId);
+    const take = (r: PermissionRequestDto): void => {
+      if (groupable(r)) sessionStore.addPendingPermission(r);
+    };
+    const offReq = bridge.sessions?.onPermissionRequest?.(take);
+    const offRes = bridge.sessions?.onPermissionResolved?.((r) =>
+      sessionStore.removePendingPermission(r.requestId)
+    );
+    const offRetired = sessionStore.subscribeLiveRetired((liveId) =>
+      sessionStore.dropPendingPermissionsForLive(liveId)
+    );
+    void bridge.sessions
+      ?.pendingPermissions?.()
+      // one write for the whole replay, not one per request
+      .then((list) => sessionStore.addPendingPermissions(list.filter(groupable)))
+      // fail-open: a ledger that never fills costs the grouped card, not a
+      // session — every one of these requests is still on its own card's bar
+      .catch(() => {});
+    return () => {
+      offReq?.();
+      offRes?.();
+      offRetired();
+    };
+    // bridge is resolved once per mount and stable for the process
+  }, []);
   // §5.8's presentation policy (E9-06). Read from the store rather than App
   // state, because the SUBMIT path reads it synchronously from outside React's
   // commit — the same requirement that put the ladder there.
@@ -698,6 +798,10 @@ export function App(): React.JSX.Element {
     // you can still see WHICH session called you. Keyed by CARD id — the event
     // carries the live id, which churns on every resume, and a lamp that went
     // dark because the session respawned would defeat the whole point.
+    //
+    // This only LIGHTS it. The beat itself starts when the strip paints the lit
+    // lamp (#320) — measuring it from here meant a slow frame could spend the
+    // whole 1.5s before anything was drawn, and the user saw no lamp at all.
     sessionStore.markUrgency(sessionStore.cardIdForLive(next.sessionId));
     // "Done." relaxes to "Ready" — you have now looked at it. Every other kind
     // is untouched by ack and leaves the queue only when actually answered,
@@ -1054,6 +1158,7 @@ export function App(): React.JSX.Element {
         activeCardId={activeCard}
         onFocus={focusCard}
         onExpire={expireUrgency}
+        onBeatStart={startUrgencyBeat}
       />
       {/* §5.8's second rung. Outside the grid for the same reason the lamps
           are — the grid is what a collapsed card has just left. Renders
@@ -1063,6 +1168,14 @@ export function App(): React.JSX.Element {
         activeCardId={activeCard}
         onExpand={(cardId) => focusCard(cardId)}
       />
+      {/* §5.8's batch prompt (P2-E9-11). LAST in the stack of bands, directly
+          above the workspace, on purpose: it is the only one of them that comes
+          and goes with events rather than with the user's own actions, and
+          anywhere higher it would shove the two permanent strips down the
+          screen every time a fleet parked. Renders nothing when nothing groups.
+          Outside the grid for the reason the strips are — a group spans cards,
+          and dockview has not mounted most of them. */}
+      <BatchApprovalBar batch={permissionBatch} members={batchMembers} onDecide={decideBatch} />
       {/* The one child of this column that is MEANT to give. `flex: 1` is
           `flex: 1 1 0%` — a basis of ZERO — and a flex container shares out
           negative free space in proportion to each item's shrink factor times
