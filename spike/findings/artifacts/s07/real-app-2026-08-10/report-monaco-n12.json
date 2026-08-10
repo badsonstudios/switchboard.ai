@@ -1,0 +1,2432 @@
+{
+  "item": "#111 P2-E15-14",
+  "build": {
+    "version": "0.3.0",
+    "sha": "191255d"
+  },
+  "startedAt": "2026-08-10T15:13:10.927Z",
+  "transport": "stream",
+  "machine": {
+    "cpus": 32,
+    "totalMemMB": 65294,
+    "cpu": "13th Gen Intel(R) Core(TM) i9-13900K"
+  },
+  "phases": {
+    "idle-12": {
+      "n": 12,
+      "samples": 28,
+      "durationMs": 90524,
+      "cpuPctAvg": 9.7,
+      "cpuPctMax": 19.3,
+      "appCpuPctAvg": 2.7,
+      "cliCpuPctAvg": 7,
+      "workingSetMBAvg": 4435.7,
+      "mainMBAvg": 102.3,
+      "rendererMBAvg": 139.6,
+      "gpuMBAvg": 115,
+      "utilityMBAvg": 45,
+      "cliMBAvg": 3934.5,
+      "cliCount": 24,
+      "perSessionMB": 327.9,
+      "renderer": {
+        "maxStallMs": 14.9,
+        "avgDriftMs": 2.85,
+        "ticks": 905,
+        "over16": 0,
+        "over50": 0,
+        "over100": 0,
+        "fps": 30.6
+      },
+      "ui": {
+        "jumpMs": {
+          "n": 6,
+          "avg": 45.8,
+          "max": 54.2
+        },
+        "inputMs": {
+          "n": 5,
+          "avg": 49.2,
+          "max": 53.9
+        },
+        "raw": {
+          "jumps": [
+            54.2,
+            48.7,
+            40.4,
+            49.5,
+            45.1,
+            37
+          ],
+          "types": [
+            41.9,
+            49.3,
+            53.8,
+            46.9,
+            53.9
+          ]
+        }
+      }
+    },
+    "monaco-4": {
+      "n": 12,
+      "samples": 25,
+      "durationMs": 77882,
+      "cpuPctAvg": 9.3,
+      "cpuPctMax": 26.2,
+      "appCpuPctAvg": 2.8,
+      "cliCpuPctAvg": 6.5,
+      "workingSetMBAvg": 4479.6,
+      "mainMBAvg": 102.7,
+      "rendererMBAvg": 166.2,
+      "gpuMBAvg": 129.2,
+      "utilityMBAvg": 45.2,
+      "cliMBAvg": 3936.2,
+      "cliCount": 24,
+      "perSessionMB": 328,
+      "renderer": {
+        "maxStallMs": 15.8,
+        "avgDriftMs": 2.89,
+        "ticks": 779,
+        "over16": 0,
+        "over50": 0,
+        "over100": 0,
+        "fps": 30.6
+      },
+      "ui": {
+        "jumpMs": {
+          "n": 6,
+          "avg": 45,
+          "max": 63.2
+        },
+        "inputMs": {
+          "n": 5,
+          "avg": 46.2,
+          "max": 51.3
+        },
+        "raw": {
+          "jumps": [
+            63.2,
+            39.8,
+            41.8,
+            37.3,
+            47.3,
+            40.7
+          ],
+          "types": [
+            51.3,
+            41.4,
+            49.5,
+            40.7,
+            48.1
+          ]
+        }
+      },
+      "editors": 1
+    },
+    "monaco-12": {
+      "n": 12,
+      "samples": 24,
+      "durationMs": 78077,
+      "cpuPctAvg": 12.6,
+      "cpuPctMax": 29.4,
+      "appCpuPctAvg": 2.7,
+      "cliCpuPctAvg": 9.9,
+      "workingSetMBAvg": 4497.9,
+      "mainMBAvg": 103,
+      "rendererMBAvg": 177,
+      "gpuMBAvg": 131,
+      "utilityMBAvg": 46,
+      "cliMBAvg": 3939.4,
+      "cliCount": 24,
+      "perSessionMB": 328.3,
+      "renderer": {
+        "maxStallMs": 15.2,
+        "avgDriftMs": 2.77,
+        "ticks": 781,
+        "over16": 0,
+        "over50": 0,
+        "over100": 0,
+        "fps": 30.6
+      },
+      "ui": {
+        "jumpMs": {
+          "n": 6,
+          "avg": 41.9,
+          "max": 48
+        },
+        "inputMs": {
+          "n": 5,
+          "avg": 51.2,
+          "max": 56.1
+        },
+        "raw": {
+          "jumps": [
+            42.9,
+            38.9,
+            43.7,
+            38,
+            48,
+            40.1
+          ],
+          "types": [
+            50.7,
+            47,
+            54.8,
+            47.3,
+            56.1
+          ]
+        }
+      },
+      "editors": 1
+    }
+  },
+  "turns": [],
+  "events": [
+    {
+      "kind": "add",
+      "i": 0,
+      "ms": 221
+    },
+    {
+      "kind": "add",
+      "i": 1,
+      "ms": 289
+    },
+    {
+      "kind": "add",
+      "i": 2,
+      "ms": 201
+    },
+    {
+      "kind": "add",
+      "i": 3,
+      "ms": 189
+    },
+    {
+      "kind": "add",
+      "i": 4,
+      "ms": 243
+    },
+    {
+      "kind": "add",
+      "i": 5,
+      "ms": 163
+    },
+    {
+      "kind": "add",
+      "i": 6,
+      "ms": 172
+    },
+    {
+      "kind": "add",
+      "i": 7,
+      "ms": 193
+    },
+    {
+      "kind": "add",
+      "i": 8,
+      "ms": 230
+    },
+    {
+      "kind": "add",
+      "i": 9,
+      "ms": 162
+    },
+    {
+      "kind": "add",
+      "i": 10,
+      "ms": 201
+    },
+    {
+      "kind": "add",
+      "i": 11,
+      "ms": 159
+    },
+    {
+      "kind": "cards",
+      "tier": 12,
+      "cards": [
+        {
+          "cardId": "bd0d3d43-28ef-466f-9b3b-2c141c0735fb",
+          "liveId": "0f1e79a6-6705-46c7-9488-22ca02819ea1",
+          "status": "idle"
+        },
+        {
+          "cardId": "b3d6aa29-ca19-41bb-999c-26b263c96a15",
+          "liveId": "f3ec98a1-8eae-4141-87e2-527e5c1e8558",
+          "status": "idle"
+        },
+        {
+          "cardId": "84610c6b-a695-4bc7-8d0a-61ff16be4320",
+          "liveId": "257f460e-20ec-45c2-b834-41f28844c1d6",
+          "status": "idle"
+        },
+        {
+          "cardId": "8da9e7d3-74fe-464c-a3c8-2985d32b0827",
+          "liveId": "dbb9e5d6-dab8-4d48-93ce-064e7fba31af",
+          "status": "idle"
+        },
+        {
+          "cardId": "d763caf8-6852-46eb-8ebf-4632676dd4d6",
+          "liveId": "dcf21ee9-ae39-40cb-9ec0-116adb11a5ba",
+          "status": "idle"
+        },
+        {
+          "cardId": "8212ca2c-723e-41ba-982c-695f2a0c0414",
+          "liveId": "3fab6ec8-2bb6-4585-a25f-dbf4f3676323",
+          "status": "idle"
+        },
+        {
+          "cardId": "60af0756-08bc-4beb-86f8-fa83c200551c",
+          "liveId": "440d0610-cf27-4c2c-87bf-47ff2507fe14",
+          "status": "idle"
+        },
+        {
+          "cardId": "1e89abc0-0622-4ac9-a425-54582512efac",
+          "liveId": "d08b812d-1235-41ed-a624-93eecf101b81",
+          "status": "idle"
+        },
+        {
+          "cardId": "3b321f54-2a92-46d7-994d-08d52506b739",
+          "liveId": "f0880bbf-0f7f-4d5f-ae84-c7721bfb3947",
+          "status": "idle"
+        },
+        {
+          "cardId": "96d00db7-fae8-4d06-8f08-6f5f09ef604d",
+          "liveId": "495bf4fc-2214-4da4-9704-6728727406a6",
+          "status": "idle"
+        },
+        {
+          "cardId": "d920c603-4d69-4fbe-bc7e-31d9b7086bbe",
+          "liveId": "27536f6f-7ce3-422f-8667-0b612b2d59c8",
+          "status": "idle"
+        },
+        {
+          "cardId": "cea224ed-e66a-4a67-9f09-d2a041c23304",
+          "liveId": "046d3606-9bf3-482a-9f8f-93370ec5e008",
+          "status": "idle"
+        }
+      ]
+    }
+  ],
+  "occlusion": {
+    "visible": true,
+    "minimized": false,
+    "alwaysOnTop": true,
+    "bounds": {
+      "x": -8,
+      "y": -8,
+      "width": 1936,
+      "height": 1048
+    }
+  },
+  "transcriptFiles": 0,
+  "samples": [
+    {
+      "at": "2026-08-10T15:14:03.488Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 22.03125,
+      "totalWorkingSetMB": 4441,
+      "cpuPctSinceLast": null,
+      "appCpuSecs": 5.015625,
+      "cliCpuSecs": 16.828125,
+      "mainMB": 104,
+      "rendererMB": 145,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3932
+    },
+    {
+      "at": "2026-08-10T15:14:06.579Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 22.34375,
+      "totalWorkingSetMB": 4441,
+      "cpuPctSinceLast": 10.1,
+      "appCpuSecs": 5.09375,
+      "cliCpuSecs": 17.0625,
+      "mainMB": 104,
+      "rendererMB": 145,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3932,
+      "appCpuPct": 2.5,
+      "cliCpuPct": 7.6
+    },
+    {
+      "at": "2026-08-10T15:14:09.724Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 22.796875,
+      "totalWorkingSetMB": 4441,
+      "cpuPctSinceLast": 14.4,
+      "appCpuSecs": 5.25,
+      "cliCpuSecs": 17.359375,
+      "mainMB": 104,
+      "rendererMB": 145,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3932,
+      "appCpuPct": 5,
+      "cliCpuPct": 9.4
+    },
+    {
+      "at": "2026-08-10T15:14:12.865Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 23.125,
+      "totalWorkingSetMB": 4441,
+      "cpuPctSinceLast": 10.4,
+      "appCpuSecs": 5.34375,
+      "cliCpuSecs": 17.59375,
+      "mainMB": 104,
+      "rendererMB": 145,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3932,
+      "appCpuPct": 3,
+      "cliCpuPct": 7.5
+    },
+    {
+      "at": "2026-08-10T15:14:16.003Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 23.234375,
+      "totalWorkingSetMB": 4434,
+      "cpuPctSinceLast": 3.5,
+      "appCpuSecs": 5.40625,
+      "cliCpuSecs": 17.640625,
+      "mainMB": 103,
+      "rendererMB": 140,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3932,
+      "appCpuPct": 2,
+      "cliCpuPct": 1.5
+    },
+    {
+      "at": "2026-08-10T15:14:19.163Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 23.421875,
+      "totalWorkingSetMB": 4433,
+      "cpuPctSinceLast": 5.9,
+      "appCpuSecs": 5.421875,
+      "cliCpuSecs": 17.8125,
+      "mainMB": 102,
+      "rendererMB": 140,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3932,
+      "appCpuPct": 0.5,
+      "cliCpuPct": 5.4
+    },
+    {
+      "at": "2026-08-10T15:14:22.262Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 23.46875,
+      "totalWorkingSetMB": 4434,
+      "cpuPctSinceLast": 1.5,
+      "appCpuSecs": 5.46875,
+      "cliCpuSecs": 17.8125,
+      "mainMB": 103,
+      "rendererMB": 140,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3932,
+      "appCpuPct": 1.5,
+      "cliCpuPct": 0
+    },
+    {
+      "at": "2026-08-10T15:14:25.367Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 23.734375,
+      "totalWorkingSetMB": 4434,
+      "cpuPctSinceLast": 8.6,
+      "appCpuSecs": 5.5625,
+      "cliCpuSecs": 17.984375,
+      "mainMB": 103,
+      "rendererMB": 140,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3932,
+      "appCpuPct": 3,
+      "cliCpuPct": 5.5
+    },
+    {
+      "at": "2026-08-10T15:14:28.446Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 24.15625,
+      "totalWorkingSetMB": 4433,
+      "cpuPctSinceLast": 13.7,
+      "appCpuSecs": 5.6875,
+      "cliCpuSecs": 18.28125,
+      "mainMB": 102,
+      "rendererMB": 140,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3932,
+      "appCpuPct": 4.1,
+      "cliCpuPct": 9.6
+    },
+    {
+      "at": "2026-08-10T15:14:31.579Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 24.3125,
+      "totalWorkingSetMB": 4433,
+      "cpuPctSinceLast": 5,
+      "appCpuSecs": 5.78125,
+      "cliCpuSecs": 18.34375,
+      "mainMB": 102,
+      "rendererMB": 140,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3932,
+      "appCpuPct": 3,
+      "cliCpuPct": 2
+    },
+    {
+      "at": "2026-08-10T15:14:34.712Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 24.453125,
+      "totalWorkingSetMB": 4433,
+      "cpuPctSinceLast": 4.5,
+      "appCpuSecs": 5.890625,
+      "cliCpuSecs": 18.375,
+      "mainMB": 102,
+      "rendererMB": 140,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3932,
+      "appCpuPct": 3.5,
+      "cliCpuPct": 1
+    },
+    {
+      "at": "2026-08-10T15:14:37.792Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 24.640625,
+      "totalWorkingSetMB": 4433,
+      "cpuPctSinceLast": 6.1,
+      "appCpuSecs": 6,
+      "cliCpuSecs": 18.453125,
+      "mainMB": 102,
+      "rendererMB": 140,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3932,
+      "appCpuPct": 3.6,
+      "cliCpuPct": 2.5
+    },
+    {
+      "at": "2026-08-10T15:14:40.893Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 24.890625,
+      "totalWorkingSetMB": 4434,
+      "cpuPctSinceLast": 8.1,
+      "appCpuSecs": 6.15625,
+      "cliCpuSecs": 18.546875,
+      "mainMB": 102,
+      "rendererMB": 140,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3932,
+      "appCpuPct": 5,
+      "cliCpuPct": 3
+    },
+    {
+      "at": "2026-08-10T15:14:44.072Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 25.140625,
+      "totalWorkingSetMB": 4435,
+      "cpuPctSinceLast": 7.9,
+      "appCpuSecs": 6.21875,
+      "cliCpuSecs": 18.734375,
+      "mainMB": 102,
+      "rendererMB": 140,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3934,
+      "appCpuPct": 2,
+      "cliCpuPct": 5.9
+    },
+    {
+      "at": "2026-08-10T15:14:47.184Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 25.484375,
+      "totalWorkingSetMB": 4434,
+      "cpuPctSinceLast": 11,
+      "appCpuSecs": 6.34375,
+      "cliCpuSecs": 18.953125,
+      "mainMB": 102,
+      "rendererMB": 139,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3934,
+      "appCpuPct": 4,
+      "cliCpuPct": 7
+    },
+    {
+      "at": "2026-08-10T15:14:50.279Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 25.875,
+      "totalWorkingSetMB": 4435,
+      "cpuPctSinceLast": 12.6,
+      "appCpuSecs": 6.375,
+      "cliCpuSecs": 19.3125,
+      "mainMB": 102,
+      "rendererMB": 139,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3934,
+      "appCpuPct": 1,
+      "cliCpuPct": 11.6
+    },
+    {
+      "at": "2026-08-10T15:14:53.417Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 26.140625,
+      "totalWorkingSetMB": 4435,
+      "cpuPctSinceLast": 8.5,
+      "appCpuSecs": 6.46875,
+      "cliCpuSecs": 19.484375,
+      "mainMB": 102,
+      "rendererMB": 139,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3936,
+      "appCpuPct": 3,
+      "cliCpuPct": 5.5
+    },
+    {
+      "at": "2026-08-10T15:14:56.527Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 26.53125,
+      "totalWorkingSetMB": 4436,
+      "cpuPctSinceLast": 12.6,
+      "appCpuSecs": 6.515625,
+      "cliCpuSecs": 19.828125,
+      "mainMB": 102,
+      "rendererMB": 138,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3937,
+      "appCpuPct": 1.5,
+      "cliCpuPct": 11.1
+    },
+    {
+      "at": "2026-08-10T15:14:59.646Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 26.84375,
+      "totalWorkingSetMB": 4436,
+      "cpuPctSinceLast": 10,
+      "appCpuSecs": 6.578125,
+      "cliCpuSecs": 20.078125,
+      "mainMB": 102,
+      "rendererMB": 138,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3937,
+      "appCpuPct": 2,
+      "cliCpuPct": 8
+    },
+    {
+      "at": "2026-08-10T15:15:02.786Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 27.265625,
+      "totalWorkingSetMB": 4436,
+      "cpuPctSinceLast": 13.4,
+      "appCpuSecs": 6.625,
+      "cliCpuSecs": 20.453125,
+      "mainMB": 102,
+      "rendererMB": 138,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3937,
+      "appCpuPct": 1.5,
+      "cliCpuPct": 11.9
+    },
+    {
+      "at": "2026-08-10T15:15:05.888Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 27.84375,
+      "totalWorkingSetMB": 4437,
+      "cpuPctSinceLast": 18.6,
+      "appCpuSecs": 6.71875,
+      "cliCpuSecs": 20.9375,
+      "mainMB": 102,
+      "rendererMB": 138,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3937,
+      "appCpuPct": 3,
+      "cliCpuPct": 15.6
+    },
+    {
+      "at": "2026-08-10T15:15:09.003Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 28.078125,
+      "totalWorkingSetMB": 4436,
+      "cpuPctSinceLast": 7.5,
+      "appCpuSecs": 6.75,
+      "cliCpuSecs": 21.140625,
+      "mainMB": 102,
+      "rendererMB": 138,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3937,
+      "appCpuPct": 1,
+      "cliCpuPct": 6.5
+    },
+    {
+      "at": "2026-08-10T15:15:12.096Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 28.59375,
+      "totalWorkingSetMB": 4436,
+      "cpuPctSinceLast": 16.7,
+      "appCpuSecs": 6.859375,
+      "cliCpuSecs": 21.546875,
+      "mainMB": 102,
+      "rendererMB": 138,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3937,
+      "appCpuPct": 3.5,
+      "cliCpuPct": 13.1
+    },
+    {
+      "at": "2026-08-10T15:15:15.158Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 28.875,
+      "totalWorkingSetMB": 4436,
+      "cpuPctSinceLast": 9.2,
+      "appCpuSecs": 7,
+      "cliCpuSecs": 21.6875,
+      "mainMB": 102,
+      "rendererMB": 138,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3937,
+      "appCpuPct": 4.6,
+      "cliCpuPct": 4.6
+    },
+    {
+      "at": "2026-08-10T15:15:18.311Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 29.484375,
+      "totalWorkingSetMB": 4436,
+      "cpuPctSinceLast": 19.3,
+      "appCpuSecs": 7.03125,
+      "cliCpuSecs": 22.265625,
+      "mainMB": 102,
+      "rendererMB": 138,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3937,
+      "appCpuPct": 1,
+      "cliCpuPct": 18.3
+    },
+    {
+      "at": "2026-08-10T15:15:21.405Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 29.84375,
+      "totalWorkingSetMB": 4436,
+      "cpuPctSinceLast": 11.6,
+      "appCpuSecs": 7.125,
+      "cliCpuSecs": 22.53125,
+      "mainMB": 102,
+      "rendererMB": 138,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3937,
+      "appCpuPct": 3,
+      "cliCpuPct": 8.6
+    },
+    {
+      "at": "2026-08-10T15:15:24.517Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 30.046875,
+      "totalWorkingSetMB": 4437,
+      "cpuPctSinceLast": 6.5,
+      "appCpuSecs": 7.171875,
+      "cliCpuSecs": 22.6875,
+      "mainMB": 102,
+      "rendererMB": 138,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3937,
+      "appCpuPct": 1.5,
+      "cliCpuPct": 5
+    },
+    {
+      "at": "2026-08-10T15:15:27.776Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 30.234375,
+      "totalWorkingSetMB": 4437,
+      "cpuPctSinceLast": 5.8,
+      "appCpuSecs": 7.25,
+      "cliCpuSecs": 22.796875,
+      "mainMB": 102,
+      "rendererMB": 138,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3937,
+      "appCpuPct": 2.4,
+      "cliCpuPct": 3.4
+    },
+    {
+      "at": "2026-08-10T15:15:30.883Z",
+      "phase": "idle-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 30.484375,
+      "totalWorkingSetMB": 4437,
+      "cpuPctSinceLast": 8,
+      "appCpuSecs": 7.375,
+      "cliCpuSecs": 22.921875,
+      "mainMB": 102,
+      "rendererMB": 138,
+      "gpuMB": 115,
+      "utilityMB": 45,
+      "cliMB": 3937,
+      "appCpuPct": 4,
+      "cliCpuPct": 4
+    },
+    {
+      "at": "2026-08-10T15:17:16.290Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 44.546875,
+      "totalWorkingSetMB": 4478,
+      "cpuPctSinceLast": 13.3,
+      "appCpuSecs": 12.796875,
+      "cliCpuSecs": 31.5625,
+      "mainMB": 102,
+      "rendererMB": 166,
+      "gpuMB": 129,
+      "utilityMB": 45,
+      "cliMB": 3936,
+      "appCpuPct": 5.1,
+      "cliCpuPct": 8.2
+    },
+    {
+      "at": "2026-08-10T15:17:19.398Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 44.78125,
+      "totalWorkingSetMB": 4479,
+      "cpuPctSinceLast": 7.5,
+      "appCpuSecs": 12.890625,
+      "cliCpuSecs": 31.703125,
+      "mainMB": 103,
+      "rendererMB": 166,
+      "gpuMB": 129,
+      "utilityMB": 45,
+      "cliMB": 3936,
+      "appCpuPct": 3,
+      "cliCpuPct": 4.5
+    },
+    {
+      "at": "2026-08-10T15:17:22.490Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 44.859375,
+      "totalWorkingSetMB": 4479,
+      "cpuPctSinceLast": 2.5,
+      "appCpuSecs": 12.96875,
+      "cliCpuSecs": 31.703125,
+      "mainMB": 103,
+      "rendererMB": 166,
+      "gpuMB": 129,
+      "utilityMB": 45,
+      "cliMB": 3936,
+      "appCpuPct": 2.5,
+      "cliCpuPct": 0
+    },
+    {
+      "at": "2026-08-10T15:17:25.559Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 45.015625,
+      "totalWorkingSetMB": 4479,
+      "cpuPctSinceLast": 5.1,
+      "appCpuSecs": 13.078125,
+      "cliCpuSecs": 31.75,
+      "mainMB": 103,
+      "rendererMB": 166,
+      "gpuMB": 129,
+      "utilityMB": 45,
+      "cliMB": 3936,
+      "appCpuPct": 3.6,
+      "cliCpuPct": 1.5
+    },
+    {
+      "at": "2026-08-10T15:17:28.639Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 45.109375,
+      "totalWorkingSetMB": 4478,
+      "cpuPctSinceLast": 3,
+      "appCpuSecs": 13.140625,
+      "cliCpuSecs": 31.78125,
+      "mainMB": 102,
+      "rendererMB": 166,
+      "gpuMB": 129,
+      "utilityMB": 45,
+      "cliMB": 3936,
+      "appCpuPct": 2,
+      "cliCpuPct": 1
+    },
+    {
+      "at": "2026-08-10T15:17:31.750Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 45.328125,
+      "totalWorkingSetMB": 4479,
+      "cpuPctSinceLast": 7,
+      "appCpuSecs": 13.171875,
+      "cliCpuSecs": 31.96875,
+      "mainMB": 102,
+      "rendererMB": 166,
+      "gpuMB": 129,
+      "utilityMB": 45,
+      "cliMB": 3936,
+      "appCpuPct": 1,
+      "cliCpuPct": 6
+    },
+    {
+      "at": "2026-08-10T15:17:34.851Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 45.640625,
+      "totalWorkingSetMB": 4478,
+      "cpuPctSinceLast": 10.1,
+      "appCpuSecs": 13.234375,
+      "cliCpuSecs": 32.21875,
+      "mainMB": 103,
+      "rendererMB": 166,
+      "gpuMB": 129,
+      "utilityMB": 45,
+      "cliMB": 3936,
+      "appCpuPct": 2,
+      "cliCpuPct": 8.1
+    },
+    {
+      "at": "2026-08-10T15:17:37.950Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 46.0625,
+      "totalWorkingSetMB": 4479,
+      "cpuPctSinceLast": 13.6,
+      "appCpuSecs": 13.296875,
+      "cliCpuSecs": 32.578125,
+      "mainMB": 103,
+      "rendererMB": 166,
+      "gpuMB": 129,
+      "utilityMB": 45,
+      "cliMB": 3936,
+      "appCpuPct": 2,
+      "cliCpuPct": 11.6
+    },
+    {
+      "at": "2026-08-10T15:17:41.085Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 46.34375,
+      "totalWorkingSetMB": 4479,
+      "cpuPctSinceLast": 9,
+      "appCpuSecs": 13.40625,
+      "cliCpuSecs": 32.75,
+      "mainMB": 103,
+      "rendererMB": 166,
+      "gpuMB": 129,
+      "utilityMB": 45,
+      "cliMB": 3936,
+      "appCpuPct": 3.5,
+      "cliCpuPct": 5.5
+    },
+    {
+      "at": "2026-08-10T15:17:44.277Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 46.6875,
+      "totalWorkingSetMB": 4479,
+      "cpuPctSinceLast": 10.8,
+      "appCpuSecs": 13.484375,
+      "cliCpuSecs": 33.015625,
+      "mainMB": 103,
+      "rendererMB": 166,
+      "gpuMB": 129,
+      "utilityMB": 45,
+      "cliMB": 3936,
+      "appCpuPct": 2.4,
+      "cliCpuPct": 8.3
+    },
+    {
+      "at": "2026-08-10T15:17:47.414Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 46.984375,
+      "totalWorkingSetMB": 4478,
+      "cpuPctSinceLast": 9.5,
+      "appCpuSecs": 13.609375,
+      "cliCpuSecs": 33.1875,
+      "mainMB": 102,
+      "rendererMB": 166,
+      "gpuMB": 129,
+      "utilityMB": 45,
+      "cliMB": 3936,
+      "appCpuPct": 4,
+      "cliCpuPct": 5.5
+    },
+    {
+      "at": "2026-08-10T15:17:50.499Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 47.15625,
+      "totalWorkingSetMB": 4478,
+      "cpuPctSinceLast": 5.6,
+      "appCpuSecs": 13.671875,
+      "cliCpuSecs": 33.296875,
+      "mainMB": 102,
+      "rendererMB": 166,
+      "gpuMB": 129,
+      "utilityMB": 45,
+      "cliMB": 3936,
+      "appCpuPct": 2,
+      "cliCpuPct": 3.5
+    },
+    {
+      "at": "2026-08-10T15:17:53.579Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 47.265625,
+      "totalWorkingSetMB": 4479,
+      "cpuPctSinceLast": 3.6,
+      "appCpuSecs": 13.6875,
+      "cliCpuSecs": 33.390625,
+      "mainMB": 102,
+      "rendererMB": 166,
+      "gpuMB": 129,
+      "utilityMB": 45,
+      "cliMB": 3936,
+      "appCpuPct": 0.5,
+      "cliCpuPct": 3
+    },
+    {
+      "at": "2026-08-10T15:17:56.672Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 47.90625,
+      "totalWorkingSetMB": 4479,
+      "cpuPctSinceLast": 20.7,
+      "appCpuSecs": 13.8125,
+      "cliCpuSecs": 33.90625,
+      "mainMB": 103,
+      "rendererMB": 166,
+      "gpuMB": 129,
+      "utilityMB": 45,
+      "cliMB": 3936,
+      "appCpuPct": 4,
+      "cliCpuPct": 16.7
+    },
+    {
+      "at": "2026-08-10T15:17:59.747Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 48.046875,
+      "totalWorkingSetMB": 4479,
+      "cpuPctSinceLast": 4.6,
+      "appCpuSecs": 13.859375,
+      "cliCpuSecs": 34,
+      "mainMB": 103,
+      "rendererMB": 166,
+      "gpuMB": 129,
+      "utilityMB": 45,
+      "cliMB": 3936,
+      "appCpuPct": 1.5,
+      "cliCpuPct": 3
+    },
+    {
+      "at": "2026-08-10T15:18:02.861Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 48.1875,
+      "totalWorkingSetMB": 4479,
+      "cpuPctSinceLast": 4.5,
+      "appCpuSecs": 13.921875,
+      "cliCpuSecs": 34.078125,
+      "mainMB": 103,
+      "rendererMB": 166,
+      "gpuMB": 129,
+      "utilityMB": 45,
+      "cliMB": 3936,
+      "appCpuPct": 2,
+      "cliCpuPct": 2.5
+    },
+    {
+      "at": "2026-08-10T15:18:05.977Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 48.40625,
+      "totalWorkingSetMB": 4479,
+      "cpuPctSinceLast": 7,
+      "appCpuSecs": 14.015625,
+      "cliCpuSecs": 34.203125,
+      "mainMB": 103,
+      "rendererMB": 166,
+      "gpuMB": 129,
+      "utilityMB": 45,
+      "cliMB": 3936,
+      "appCpuPct": 3,
+      "cliCpuPct": 4
+    },
+    {
+      "at": "2026-08-10T15:18:09.076Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 48.578125,
+      "totalWorkingSetMB": 4478,
+      "cpuPctSinceLast": 5.5,
+      "appCpuSecs": 14.0625,
+      "cliCpuSecs": 34.328125,
+      "mainMB": 102,
+      "rendererMB": 166,
+      "gpuMB": 129,
+      "utilityMB": 45,
+      "cliMB": 3936,
+      "appCpuPct": 1.5,
+      "cliCpuPct": 4
+    },
+    {
+      "at": "2026-08-10T15:18:12.219Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 48.71875,
+      "totalWorkingSetMB": 4479,
+      "cpuPctSinceLast": 4.5,
+      "appCpuSecs": 14.203125,
+      "cliCpuSecs": 34.328125,
+      "mainMB": 102,
+      "rendererMB": 166,
+      "gpuMB": 129,
+      "utilityMB": 45,
+      "cliMB": 3936,
+      "appCpuPct": 4.5,
+      "cliCpuPct": 0
+    },
+    {
+      "at": "2026-08-10T15:18:15.351Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 49.203125,
+      "totalWorkingSetMB": 4480,
+      "cpuPctSinceLast": 15.5,
+      "appCpuSecs": 14.375,
+      "cliCpuSecs": 34.640625,
+      "mainMB": 103,
+      "rendererMB": 167,
+      "gpuMB": 130,
+      "utilityMB": 46,
+      "cliMB": 3936,
+      "appCpuPct": 5.5,
+      "cliCpuPct": 10
+    },
+    {
+      "at": "2026-08-10T15:18:18.570Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 50.046875,
+      "totalWorkingSetMB": 4481,
+      "cpuPctSinceLast": 26.2,
+      "appCpuSecs": 14.515625,
+      "cliCpuSecs": 35.34375,
+      "mainMB": 103,
+      "rendererMB": 167,
+      "gpuMB": 130,
+      "utilityMB": 46,
+      "cliMB": 3936,
+      "appCpuPct": 4.4,
+      "cliCpuPct": 21.8
+    },
+    {
+      "at": "2026-08-10T15:18:21.643Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 50.15625,
+      "totalWorkingSetMB": 4482,
+      "cpuPctSinceLast": 3.6,
+      "appCpuSecs": 14.546875,
+      "cliCpuSecs": 35.421875,
+      "mainMB": 103,
+      "rendererMB": 167,
+      "gpuMB": 130,
+      "utilityMB": 46,
+      "cliMB": 3937,
+      "appCpuPct": 1,
+      "cliCpuPct": 2.5
+    },
+    {
+      "at": "2026-08-10T15:18:24.749Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 50.5,
+      "totalWorkingSetMB": 4483,
+      "cpuPctSinceLast": 11.1,
+      "appCpuSecs": 14.65625,
+      "cliCpuSecs": 35.65625,
+      "mainMB": 103,
+      "rendererMB": 167,
+      "gpuMB": 130,
+      "utilityMB": 46,
+      "cliMB": 3937,
+      "appCpuPct": 3.5,
+      "cliCpuPct": 7.5
+    },
+    {
+      "at": "2026-08-10T15:18:27.914Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 51,
+      "totalWorkingSetMB": 4484,
+      "cpuPctSinceLast": 15.8,
+      "appCpuSecs": 14.75,
+      "cliCpuSecs": 36.0625,
+      "mainMB": 103,
+      "rendererMB": 167,
+      "gpuMB": 130,
+      "utilityMB": 46,
+      "cliMB": 3938,
+      "appCpuPct": 3,
+      "cliCpuPct": 12.8
+    },
+    {
+      "at": "2026-08-10T15:18:31.013Z",
+      "phase": "monaco-4",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 51.40625,
+      "totalWorkingSetMB": 4484,
+      "cpuPctSinceLast": 13.1,
+      "appCpuSecs": 14.828125,
+      "cliCpuSecs": 36.390625,
+      "mainMB": 103,
+      "rendererMB": 167,
+      "gpuMB": 130,
+      "utilityMB": 46,
+      "cliMB": 3938,
+      "appCpuPct": 2.5,
+      "cliCpuPct": 10.6
+    },
+    {
+      "at": "2026-08-10T15:22:51.783Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 85.71875,
+      "totalWorkingSetMB": 4490,
+      "cpuPctSinceLast": 13.2,
+      "appCpuSecs": 25.90625,
+      "cliCpuSecs": 59.625,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3932,
+      "appCpuPct": 4.2,
+      "cliCpuPct": 8.9
+    },
+    {
+      "at": "2026-08-10T15:22:54.882Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 86.265625,
+      "totalWorkingSetMB": 4490,
+      "cpuPctSinceLast": 17.6,
+      "appCpuSecs": 26.015625,
+      "cliCpuSecs": 60.0625,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3932,
+      "appCpuPct": 3.5,
+      "cliCpuPct": 14.1
+    },
+    {
+      "at": "2026-08-10T15:22:57.973Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 86.734375,
+      "totalWorkingSetMB": 4490,
+      "cpuPctSinceLast": 15.2,
+      "appCpuSecs": 26.109375,
+      "cliCpuSecs": 60.4375,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3932,
+      "appCpuPct": 3,
+      "cliCpuPct": 12.1
+    },
+    {
+      "at": "2026-08-10T15:23:01.087Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 87.171875,
+      "totalWorkingSetMB": 4490,
+      "cpuPctSinceLast": 14,
+      "appCpuSecs": 26.203125,
+      "cliCpuSecs": 60.78125,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3932,
+      "appCpuPct": 3,
+      "cliCpuPct": 11
+    },
+    {
+      "at": "2026-08-10T15:23:04.146Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 87.671875,
+      "totalWorkingSetMB": 4490,
+      "cpuPctSinceLast": 16.3,
+      "appCpuSecs": 26.28125,
+      "cliCpuSecs": 61.203125,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3932,
+      "appCpuPct": 2.6,
+      "cliCpuPct": 13.8
+    },
+    {
+      "at": "2026-08-10T15:23:07.228Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 88.328125,
+      "totalWorkingSetMB": 4490,
+      "cpuPctSinceLast": 21.3,
+      "appCpuSecs": 26.453125,
+      "cliCpuSecs": 61.6875,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3932,
+      "appCpuPct": 5.6,
+      "cliCpuPct": 15.7
+    },
+    {
+      "at": "2026-08-10T15:23:10.376Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 88.40625,
+      "totalWorkingSetMB": 4490,
+      "cpuPctSinceLast": 2.5,
+      "appCpuSecs": 26.484375,
+      "cliCpuSecs": 61.734375,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3932,
+      "appCpuPct": 1,
+      "cliCpuPct": 1.5
+    },
+    {
+      "at": "2026-08-10T15:23:13.468Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 88.625,
+      "totalWorkingSetMB": 4490,
+      "cpuPctSinceLast": 7.1,
+      "appCpuSecs": 26.546875,
+      "cliCpuSecs": 61.890625,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3932,
+      "appCpuPct": 2,
+      "cliCpuPct": 5.1
+    },
+    {
+      "at": "2026-08-10T15:23:16.606Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 88.890625,
+      "totalWorkingSetMB": 4490,
+      "cpuPctSinceLast": 8.5,
+      "appCpuSecs": 26.65625,
+      "cliCpuSecs": 62.046875,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3932,
+      "appCpuPct": 3.5,
+      "cliCpuPct": 5
+    },
+    {
+      "at": "2026-08-10T15:23:19.714Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 89.171875,
+      "totalWorkingSetMB": 4490,
+      "cpuPctSinceLast": 9,
+      "appCpuSecs": 26.734375,
+      "cliCpuSecs": 62.25,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3932,
+      "appCpuPct": 2.5,
+      "cliCpuPct": 6.5
+    },
+    {
+      "at": "2026-08-10T15:23:22.881Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 89.234375,
+      "totalWorkingSetMB": 4490,
+      "cpuPctSinceLast": 2,
+      "appCpuSecs": 26.75,
+      "cliCpuSecs": 62.296875,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3932,
+      "appCpuPct": 0.5,
+      "cliCpuPct": 1.5
+    },
+    {
+      "at": "2026-08-10T15:23:26.002Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 89.796875,
+      "totalWorkingSetMB": 4495,
+      "cpuPctSinceLast": 18,
+      "appCpuSecs": 26.90625,
+      "cliCpuSecs": 62.703125,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3936,
+      "appCpuPct": 5,
+      "cliCpuPct": 13
+    },
+    {
+      "at": "2026-08-10T15:23:29.135Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 89.953125,
+      "totalWorkingSetMB": 4496,
+      "cpuPctSinceLast": 5,
+      "appCpuSecs": 26.921875,
+      "cliCpuSecs": 62.84375,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3937,
+      "appCpuPct": 0.5,
+      "cliCpuPct": 4.5
+    },
+    {
+      "at": "2026-08-10T15:23:32.228Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 90.25,
+      "totalWorkingSetMB": 4500,
+      "cpuPctSinceLast": 9.6,
+      "appCpuSecs": 27.046875,
+      "cliCpuSecs": 63.015625,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3941,
+      "appCpuPct": 4,
+      "cliCpuPct": 5.6
+    },
+    {
+      "at": "2026-08-10T15:23:35.349Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 90.515625,
+      "totalWorkingSetMB": 4503,
+      "cpuPctSinceLast": 8.5,
+      "appCpuSecs": 27.125,
+      "cliCpuSecs": 63.203125,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3944,
+      "appCpuPct": 2.5,
+      "cliCpuPct": 6
+    },
+    {
+      "at": "2026-08-10T15:23:38.542Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 91.453125,
+      "totalWorkingSetMB": 4507,
+      "cpuPctSinceLast": 29.4,
+      "appCpuSecs": 27.140625,
+      "cliCpuSecs": 64.125,
+      "mainMB": 104,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3948,
+      "appCpuPct": 0.5,
+      "cliCpuPct": 28.9
+    },
+    {
+      "at": "2026-08-10T15:23:44.790Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 92.4375,
+      "totalWorkingSetMB": 4510,
+      "cpuPctSinceLast": 15.8,
+      "appCpuSecs": 27.28125,
+      "cliCpuSecs": 64.96875,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3951,
+      "appCpuPct": 2.3,
+      "cliCpuPct": 13.5
+    },
+    {
+      "at": "2026-08-10T15:23:47.986Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 93.109375,
+      "totalWorkingSetMB": 4509,
+      "cpuPctSinceLast": 21,
+      "appCpuSecs": 27.359375,
+      "cliCpuSecs": 65.5625,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3951,
+      "appCpuPct": 2.4,
+      "cliCpuPct": 18.6
+    },
+    {
+      "at": "2026-08-10T15:23:51.180Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 93.578125,
+      "totalWorkingSetMB": 4509,
+      "cpuPctSinceLast": 14.7,
+      "appCpuSecs": 27.40625,
+      "cliCpuSecs": 65.984375,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3950,
+      "appCpuPct": 1.5,
+      "cliCpuPct": 13.2
+    },
+    {
+      "at": "2026-08-10T15:23:54.282Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 93.90625,
+      "totalWorkingSetMB": 4508,
+      "cpuPctSinceLast": 10.6,
+      "appCpuSecs": 27.5,
+      "cliCpuSecs": 66.21875,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3949,
+      "appCpuPct": 3,
+      "cliCpuPct": 7.6
+    },
+    {
+      "at": "2026-08-10T15:23:57.376Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 94.46875,
+      "totalWorkingSetMB": 4506,
+      "cpuPctSinceLast": 18.2,
+      "appCpuSecs": 27.625,
+      "cliCpuSecs": 66.65625,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3947,
+      "appCpuPct": 4,
+      "cliCpuPct": 14.1
+    },
+    {
+      "at": "2026-08-10T15:24:00.476Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 94.734375,
+      "totalWorkingSetMB": 4506,
+      "cpuPctSinceLast": 8.6,
+      "appCpuSecs": 27.6875,
+      "cliCpuSecs": 66.859375,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3947,
+      "appCpuPct": 2,
+      "cliCpuPct": 6.6
+    },
+    {
+      "at": "2026-08-10T15:24:03.584Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 94.828125,
+      "totalWorkingSetMB": 4505,
+      "cpuPctSinceLast": 3,
+      "appCpuSecs": 27.78125,
+      "cliCpuSecs": 66.859375,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3946,
+      "appCpuPct": 3,
+      "cliCpuPct": 0
+    },
+    {
+      "at": "2026-08-10T15:24:06.713Z",
+      "phase": "monaco-12",
+      "n": 12,
+      "nProcs": 41,
+      "cliCount": 24,
+      "totalCpuSeconds": 95.21875,
+      "totalWorkingSetMB": 4505,
+      "cpuPctSinceLast": 12.5,
+      "appCpuSecs": 27.859375,
+      "cliCpuSecs": 67.171875,
+      "mainMB": 103,
+      "rendererMB": 177,
+      "gpuMB": 131,
+      "utilityMB": 46,
+      "cliMB": 3946,
+      "appCpuPct": 2.5,
+      "cliCpuPct": 10
+    }
+  ],
+  "procSnapshots": {
+    "idle-12": [
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 317
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 321
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 321
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 321
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 318
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 318
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 319
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 321
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 319
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 319
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 321
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 318
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "other",
+        "wsMB": 7
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "electron",
+        "type": "renderer",
+        "wsMB": 145
+      },
+      {
+        "name": "electron",
+        "type": "main",
+        "wsMB": 104
+      },
+      {
+        "name": "electron",
+        "type": "gpu-process",
+        "wsMB": 115
+      },
+      {
+        "name": "electron",
+        "type": "utility",
+        "wsMB": 45
+      }
+    ],
+    "monaco-4": [
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 317
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 322
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 321
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 321
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 318
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 318
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 319
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 321
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 319
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 319
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 322
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 318
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "other",
+        "wsMB": 7
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "electron",
+        "type": "renderer",
+        "wsMB": 166
+      },
+      {
+        "name": "electron",
+        "type": "main",
+        "wsMB": 102
+      },
+      {
+        "name": "electron",
+        "type": "gpu-process",
+        "wsMB": 129
+      },
+      {
+        "name": "electron",
+        "type": "utility",
+        "wsMB": 45
+      }
+    ],
+    "monaco-12": [
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 317
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 321
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 321
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 321
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 318
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 318
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 319
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 320
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 319
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 319
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 321
+      },
+      {
+        "name": "claude",
+        "type": "cli",
+        "wsMB": 318
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "other",
+        "wsMB": 7
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "cmd",
+        "type": "cli",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "conhost",
+        "type": "other",
+        "wsMB": 8
+      },
+      {
+        "name": "electron",
+        "type": "renderer",
+        "wsMB": 177
+      },
+      {
+        "name": "electron",
+        "type": "main",
+        "wsMB": 103
+      },
+      {
+        "name": "electron",
+        "type": "gpu-process",
+        "wsMB": 131
+      },
+      {
+        "name": "electron",
+        "type": "utility",
+        "wsMB": 46
+      }
+    ]
+  },
+  "finishedAt": "2026-08-10T15:24:15.046Z",
+  "realTurns": 0,
+  "home": "C:\\Users\\dheinz\\AppData\\Local\\Temp\\sb-perf111-LoGPv5"
+}
