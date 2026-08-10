@@ -379,6 +379,16 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   // the quit-confirm line above, so it can.
   env.SWITCHBOARD_UPDATE_FEED = 'off';
   if (opts.realClaude) {
+    // The one env var that would make "realClaude" a lie (#384). It is set in
+    // the `else` branch below and never here, so nothing in this file turns the
+    // fake on for a real launch — but a developer with `SWITCHBOARD_FAKE_PROVIDER`
+    // exported in their shell inherits it through the `...process.env` spread
+    // above, and every assertion in `real-claude.spec.ts` would then be made
+    // against the fake. The fake's reply QUOTES THE PROMPT BACK, so a spec that
+    // asks for a token and looks for it would still pass. Same family as the
+    // `SWITCHBOARD_TRANSPORT` scrub (#381), and the same reason: a spec whose
+    // whole point is which provider answered must not be decidable by the shell.
+    delete env.SWITCHBOARD_FAKE_PROVIDER;
     // Claude Code SKIPS writing conversation transcripts when it detects a
     // test environment (persistence guard found via GH research 2026-07-23;
     // escape hatch below). Also scrub the Playwright worker markers it may
