@@ -31,7 +31,31 @@ structure adopting #228's temp-dir registry, verified by a local
 161+1 skip (from the merged branches' gate runs: 1227+46+5+16 /
 156+4+0+1).
 
-> # ▶▶ START HERE — 🎛 RUN 14 CLOSED 2026-08-09 + FULLY MERGED (3 items,
+> # ▶▶ START HERE — 🎛 RUN 15 CLOSED 2026-08-09 — 🎉 **RELEASE v0.3.0
+> LIVE** (~40 min cut-to-live)
+>
+> **v0.3.0 shipped:** #392 → PR #393 → squash **006f99e**, tagged
+> v0.3.0, Release workflow SUCCESS, `switchboard-Setup-0.3.0.exe` +
+> sha256 published, not draft. Headline: Direct-by-default; plus the
+> save-failure banner, popout rescue, diff syntax colors, −18 MB
+> installer, and the Internal group. Completeness audit: all 7
+> user-visible issues since v0.2.0 have entries; docs/test-infra
+> omissions per precedent, listed in 392.md. `## 0.4.0 — unreleased`
+> is OPEN (the placeholder discipline held). **Main @ 006f99e, out/
+> REBUILT, stamp verified both bundles.** Issue #392 closed; **#394
+> filed** (package-lock root version stale at 0.1.0 across four cuts —
+> cosmetic, fold into next cut). Worktrees: all detached/clean.
+>
+> **WAITING ON DAN — five one-word answers (asked 2026-08-09), which
+> become the next wave:** #320 anchor lamp beat to paint? (rec yes) ·
+> #269 badge contrast a/b/c? (rec b) · #80 build batch permissions
+> now? (rec yes) · #111 ok to spend tokens measuring 12 real
+> sessions? (rec yes) · #384 build the real-CLI Direct spec? (rec
+> yes). Also standing: the /pm epic-expansion sitting; the rest of the
+> held list (#191 #200 #207 #216 #255 #256 #268 #290 #292 #295 #313
+> #323 #333 #337 #344 minus the shipped ones — see run-13/14 blocks).
+
+> # 🎛 RUN 14 CLOSED 2026-08-09 + FULLY MERGED (3 items,
 > all internal, same-day; ~2 h wall)
 >
 > **Shipped, all merged, no hand-tests owed (nothing user-visible):**
