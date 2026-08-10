@@ -39,17 +39,18 @@ interface ClockStash {
  * Run `body` with the RENDERER's wall clock STOPPED (#284).
  *
  * The urgency lamp's `data-lit` is a ~1.5s transient computed from `Date.now()`
- * at RENDER time: `markUrgency` stamps `now + URGENCY_LINGER_MS` and the render
- * compares the map against a fresh reading. A render delayed past that deadline
- * therefore never paints the lamp lit AT ALL, and no amount of Playwright
- * retrying can observe a state that was never painted — an assertion whose
- * budget is wall-clock rather than the deadline every other `expect` here gets.
- * Measured margin on an idle box is ~10x; under three parallel e2e workers it
- * is a flake, and one that would present exactly like the renderer race #251
- * spent a forensics pass distinguishing. This makes the beat last as long as
- * the block does.
+ * at RENDER time. Since #320 the beat is anchored to the PAINT — the jump marks
+ * the lamp with no deadline at all and the strip stamps `paint + 1500` from the
+ * frame after it draws — so the lamp can no longer be skipped ENTIRELY the way
+ * it could when the deadline ran from the keypress. What #320 did not do, and
+ * could not, is give this assertion a deadline of its own: it still has to land
+ * inside a ~1.5s wall-clock window, which is not the budget every other
+ * `expect` in this file gets. Measured margin on an idle box is ~10x; under
+ * three parallel e2e workers it is a flake, and one that would present exactly
+ * like the renderer race #251 spent a forensics pass distinguishing. This makes
+ * the beat last as long as the block does.
  *
- * With the clock stopped, `markUrgency` stamps `frozen + 1500` and every render
+ * With the clock stopped, the paint stamps `frozen + 1500` and every render
  * reads the same `frozen`, so the lamp is unconditionally lit — and the expiry
  * timer, which runs on the REAL monotonic clock, prunes nothing when it fires
  * (`frozen + 1500 > frozen`) and re-arms instead of ending the chain. So the
@@ -202,6 +203,12 @@ test.describe('urgency strip (E9-04)', () => {
     // the beat passing. This is now a transition that was WATCHED rather than
     // merely found: the assertion above proved the lamp was lit, so a lamp that
     // never lit can no longer satisfy this one on arrival.
+    //
+    // Since #320 it is also the only end-to-end guard that the PAINT ANCHOR is
+    // wired at all. A mark whose beat is never started has no deadline and arms
+    // no timer, so a strip that stopped calling `onBeatStart` — or an App that
+    // stopped passing it — would leave this lamp lit forever and fail here,
+    // in the real window, on the real rAF.
     await expect(lamp(w, names[1])).toHaveAttribute('data-lit', 'false', { timeout: 6_000 });
     // the status itself is untouched by the beat: it is still blocked
     await expect(lamp(w, names[1])).toHaveAttribute('data-status', 'needs-permission');

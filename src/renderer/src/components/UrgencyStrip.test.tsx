@@ -14,13 +14,13 @@
 //      every ratio the drift test computes becomes a fiction while staying
 //      perfectly green. Same guard, and the same reason, as CollapsedStrip's.
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
-import { act } from 'react';
+import { act, useCallback, useState, type ReactElement, type ReactNode } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { UrgencyStrip } from './UrgencyStrip';
 import { RailSession } from '../model/types';
 import { presentStatus, STATUS_TOKENS } from '../lib/rail-view';
-import { URGENCY_LINGER_MS } from '../lib/urgency';
+import { pruneLit, startBeat, URGENCY_LINGER_MS, type UrgencyMarks } from '../lib/urgency';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -33,28 +33,43 @@ declare global {
 let roots: Root[] = [];
 const noop = (): void => {};
 
-/** Mount the real strip over whatever sessions and beats a test needs, and hand
- *  back the host so a test can read any lamp by card id. */
-async function mountStrip(opts: {
-  sessions: RailSession[];
-  urgency?: ReadonlyMap<string, number>;
-  onExpire?: () => void;
-}): Promise<HTMLElement> {
+/** Mount anything into a tracked root, so the teardown above reaches it, and
+ *  hand back the way to render into that SAME root again. */
+async function mountNode(node: ReactNode): Promise<{
+  host: HTMLElement;
+  render: (next: ReactNode) => Promise<void>;
+}> {
   const host = document.createElement('div');
   document.body.appendChild(host);
   const root = createRoot(host);
   roots.push(root);
-  await act(async () => {
-    root.render(
-      <UrgencyStrip
-        sessions={opts.sessions}
-        urgency={opts.urgency ?? new Map<string, number>()}
-        activeCardId={opts.sessions[0]?.id ?? null}
-        onFocus={noop}
-        onExpire={opts.onExpire ?? noop}
-      />
-    );
-  });
+  const render = async (next: ReactNode): Promise<void> => {
+    await act(async () => {
+      root.render(next);
+    });
+  };
+  await render(node);
+  return { host, render };
+}
+
+/** Mount the real strip over whatever sessions and beats a test needs, and hand
+ *  back the host so a test can read any lamp by card id. */
+async function mountStrip(opts: {
+  sessions: RailSession[];
+  urgency?: UrgencyMarks;
+  onExpire?: () => void;
+  onBeatStart?: (cardIds: readonly string[]) => void;
+}): Promise<HTMLElement> {
+  const { host } = await mountNode(
+    <UrgencyStrip
+      sessions={opts.sessions}
+      urgency={opts.urgency ?? new Map<string, number>()}
+      activeCardId={opts.sessions[0]?.id ?? null}
+      onFocus={noop}
+      onExpire={opts.onExpire ?? noop}
+      onBeatStart={opts.onBeatStart ?? noop}
+    />
+  );
   return host;
 }
 
@@ -252,3 +267,177 @@ describe('the lit beat, on a clock the test owns (issue 284)', () => {
     expect(onExpire).toHaveBeenCalledTimes(2);
   });
 });
+
+// --- the beat runs from the PAINT (issue 320, Dan 2026-08-10) ---------------
+//
+// The keypress used to stamp `now + 1500` and every render compared it against
+// a fresh clock, so a machine busy enough to take longer than a beat between
+// the keydown and the paint drew NO LIT LAMP AT ALL — not late, never. §5.8
+// asks for the beat so a human can see which session called them, which makes
+// "the pixels existed" the only start that means anything.
+//
+// A mark now arrives with no deadline (`null`) and the strip starts the beat
+// from the frame AFTER the one that paints it. These tests own that seam: that
+// an unpainted mark is lit and expires on nothing, that the commit is not
+// treated as the paint, and that a stalled paint delays the beat instead of
+// eating it.
+describe('the beat starts at the paint, not the keypress (issue 320)', () => {
+  const T = 1_700_000_000_000;
+  const two: RailSession[] = [
+    { id: 'c1', title: 'alpha', status: 'idle' },
+    { id: 'c2', title: 'beta', status: 'idle' },
+  ];
+  const litOf = (host: HTMLElement, cardId: string): string | null =>
+    host.querySelector(`[data-urgency-lamp="${cardId}"]`)!.getAttribute('data-lit');
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(T);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('paints a mark that has no deadline yet, and arms nothing to take it away', async () => {
+    const onExpire = vi.fn();
+    const host = await mountStrip({
+      sessions: two,
+      urgency: new Map([['c1', null]]),
+      onExpire,
+    });
+    expect(litOf(host, 'c1')).toBe('true');
+    expect(litOf(host, 'c2')).toBe('false');
+    // ten beats of clock, and nothing puts it out: an unpainted mark is waiting
+    // on a frame, not on a deadline
+    await act(async () => void vi.advanceTimersByTime(10 * URGENCY_LINGER_MS));
+    expect(onExpire).not.toHaveBeenCalled();
+    expect(litOf(host, 'c1')).toBe('true');
+  });
+
+  it('does not treat the COMMIT as the paint — it waits a frame past it', async () => {
+    // The distinction the whole fix rests on. A layout effect runs after the
+    // DOM is mutated and before the browser paints, and the first rAF callback
+    // runs before ITS frame's pixels too; only the second is past a paint.
+    const onBeatStart = vi.fn();
+    await mountStrip({ sessions: two, urgency: new Map([['c1', null]]), onBeatStart });
+    expect(onBeatStart, 'the DOM is mutated, the pixels are not up').not.toHaveBeenCalled();
+
+    await act(async () => void vi.advanceTimersToNextTimer());
+    expect(onBeatStart, 'a frame callback still runs BEFORE that frame paints').not.toHaveBeenCalled();
+
+    await act(async () => void vi.advanceTimersToNextTimer());
+    expect(onBeatStart).toHaveBeenCalledTimes(1);
+    expect(onBeatStart).toHaveBeenCalledWith(['c1']);
+  });
+
+  it('offers up only the marks that are waiting, never one already counting down', async () => {
+    // (that a beat already running is left ALONE is startBeat's rule, and
+    // urgency.test.ts owns it — this is the half that decides what it is asked
+    // about in the first place)
+    const onBeatStart = vi.fn();
+    await mountStrip({
+      sessions: two,
+      urgency: new Map([
+        ['c1', null],
+        ['c2', T + URGENCY_LINGER_MS],
+      ]),
+      onBeatStart,
+    });
+    await act(async () => void vi.advanceTimersByTime(64));
+    expect(onBeatStart).toHaveBeenCalledTimes(1);
+    expect(onBeatStart).toHaveBeenCalledWith(['c1']); // not c2, which is counting down
+  });
+
+  it('asks for no frame at all when nothing is waiting on one', async () => {
+    // literally no frame, not merely no call: most renders of this strip have
+    // nothing pending, and a rAF per render is a wakeup per render forever
+    const raf = vi.spyOn(globalThis, 'requestAnimationFrame');
+    const onBeatStart = vi.fn();
+    await mountStrip({ sessions: two, urgency: new Map([['c1', T + 500]]), onBeatStart });
+    expect(raf).not.toHaveBeenCalled();
+    await act(async () => void vi.advanceTimersByTime(64));
+    expect(onBeatStart).not.toHaveBeenCalled();
+    raf.mockRestore();
+  });
+
+  it('fails open when there is no rAF to anchor to', async () => {
+    // §4: our blind spot must not become a lamp that is lit forever. With no
+    // paint signal at all, a beat that starts a frame early beats one that
+    // never starts.
+    vi.stubGlobal('requestAnimationFrame', undefined);
+    try {
+      const onBeatStart = vi.fn();
+      await mountStrip({ sessions: two, urgency: new Map([['c1', null]]), onBeatStart });
+      expect(onBeatStart).toHaveBeenCalledWith(['c1']);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a jump key held down cannot starve the beat', async () => {
+    // Every repeat writes a new urgency map. A chain that cancelled and
+    // rescheduled itself on each one would be killed one frame short of firing,
+    // every time, for as long as the key was down — Windows auto-repeat is
+    // ~33ms and two frames at 60Hz is 32 — and every lamp would sit lit with no
+    // beat ever started. So an in-flight chain is left to land.
+    const onBeatStart = vi.fn();
+    const held = (): ReactElement => (
+      <UrgencyStrip
+        sessions={two}
+        urgency={new Map([['c1', null]])} // a NEW map each time, as a repeat makes
+        activeCardId={null}
+        onFocus={noop}
+        onExpire={noop}
+        onBeatStart={onBeatStart}
+      />
+    );
+    const { render } = await mountNode(held());
+    for (let repeat = 0; repeat < 6 && !onBeatStart.mock.calls.length; repeat += 1) {
+      await act(async () => void vi.advanceTimersToNextTimer()); // one frame passes
+      await render(held()); // ...and the key repeats under it
+    }
+    expect(onBeatStart).toHaveBeenCalledWith(['c1']);
+  });
+
+  it('a stalled paint DELAYS the beat instead of eating it', async () => {
+    // The bug, end to end, with the store's own two rules standing in for the
+    // store (which unit-tests them itself). The jump marks the lamp at T; the
+    // machine is busy for a minute; the user still gets a whole beat of lit
+    // lamp, starting from the frame they could first have seen it.
+    const { host } = await mountNode(<Harness sessions={two} initial={new Map([['c1', null]])} />);
+    expect(litOf(host, 'c1')).toBe('true');
+
+    vi.setSystemTime(T + 60_000); // forty beats of stall between keydown and frame
+    await act(async () => void vi.advanceTimersByTime(64)); // ...and then the paint
+    expect(litOf(host, 'c1'), 'the beat cannot have expired before it started').toBe('true');
+
+    await act(async () => void vi.advanceTimersByTime(URGENCY_LINGER_MS - 100));
+    expect(litOf(host, 'c1'), 'a WHOLE beat, measured from the paint').toBe('true');
+
+    await act(async () => void vi.advanceTimersByTime(200));
+    expect(litOf(host, 'c1'), 'and it still ends by itself').toBe('false');
+  });
+});
+
+/** The strip wired to the two rules the store applies to its answers — the same
+ *  `startBeat` / `pruneLit` calls `startUrgencyBeat` and `expireUrgency` make,
+ *  so a test can watch a mark go pending -> lit -> out without a store. */
+function Harness(props: { sessions: RailSession[]; initial: UrgencyMarks }): ReactElement {
+  const [urgency, setUrgency] = useState(props.initial);
+  const onBeatStart = useCallback((cardIds: readonly string[]) => {
+    setUrgency((cur) => startBeat(cur, cardIds, Date.now()) ?? cur);
+  }, []);
+  const onExpire = useCallback(() => {
+    setUrgency((cur) => pruneLit(cur, Date.now()) ?? cur);
+  }, []);
+  return (
+    <UrgencyStrip
+      sessions={props.sessions}
+      urgency={urgency}
+      activeCardId={null}
+      onFocus={noop}
+      onExpire={onExpire}
+      onBeatStart={onBeatStart}
+    />
+  );
+}
