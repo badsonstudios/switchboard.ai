@@ -65,6 +65,10 @@ export const sessionPanels: PanelContribution[] = [
         model={ctx.model}
         approval={ctx.approval}
         approvalQueued={ctx.approvalQueued}
+        // P2-E9-11, and #261's lesson applied before it bites: the flag exists
+        // to stop the handoff bar contradicting a grouped prompt, and it is
+        // dead unless THIS render site threads it through
+        approvalBatched={ctx.approvalBatched}
         // #261: the handoff bar routes the user to the Terminal in EVERY
         // branch, and a stream session has none — so without this the bar is
         // not merely unhelpful, it is false and its button is dead. The guard

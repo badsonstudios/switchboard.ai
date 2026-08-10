@@ -188,4 +188,38 @@ describe('the Session panel threads transport through to the handoff bar (issue 
       expect(bar(host), `${transport} with a held approval`).toBeNull();
     }
   });
+
+  // …and so does a request that §5.8's grouped prompt has taken (P2-E9-11).
+  // Here for the reason the whole file is: `approvalBatched` is a flag that
+  // does nothing unless the panel contribution threads it through, which is the
+  // exact defect #261 was. Without it, a card whose only held question got
+  // grouped would say "switchboard can't answer it, go to the Terminal" while
+  // its Allow button sat a few pixels higher in the shell.
+  it('a BATCHED approval suppresses the bar too, with no approval of its own', async () => {
+    for (const transport of ['pty', 'stream'] as const) {
+      const host = await mountFeed({
+        transport,
+        status: 'needs-permission',
+        // exactly what SessionGrid passes once the grouped card owns the
+        // request: no approval left for this bar, and a flag saying why
+        approval: null,
+        approvalBatched: true,
+        onDecide: () => {},
+      });
+      expect(bar(host), `${transport} with a batched approval`).toBeNull();
+    }
+  });
+
+  it('…and the bar comes back the moment the group lets go', async () => {
+    // the fallback that makes the suppression safe: a request that leaves the
+    // group is a question this card is responsible for again
+    const host = await mountFeed({
+      transport: 'pty',
+      status: 'needs-permission',
+      approval: null,
+      approvalBatched: false,
+      onDecide: () => {},
+    });
+    expect(bar(host)).not.toBeNull();
+  });
 });

@@ -14,6 +14,7 @@ import { rendererRegistry } from '../extensibility/registry-instance';
 import { renderFeedBlock } from '../extensibility/feed-render';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { interruptSession, submitPrompt } from '../lib/composer';
+import { argumentSummary } from '../lib/permission-batches';
 import {
   filterCommands,
   insertCommand,
@@ -167,6 +168,9 @@ export function FeedView(props: {
   } | null;
   /** more holds waiting behind this one (review P0#4) */
   approvalQueued?: number;
+  /** a held request of this session's is on §5.8's grouped prompt instead
+   *  (P2-E9-11) — the question IS answerable, just not from here */
+  approvalBatched?: boolean;
   /** which transport hosts this session — the handoff bar must not point at a
    *  terminal that does not exist (P2 #153 follow-up) */
   transport?: 'pty' | 'stream';
@@ -211,7 +215,15 @@ export function FeedView(props: {
     // The SAME predicate the approval bar renders on, deliberately written as
     // one expression: if these two ever disagree, the user gets neither
     // surface and is stranded with no affordance at all.
-    hasApproval: !!(props.approval && props.onDecide),
+    //
+    // …OR the grouped prompt is showing it (P2-E9-11). The question the handoff
+    // bar answers is "does the user have somewhere to answer this?", not "is
+    // the bar below me drawing it": a batched request has a surface, it is just
+    // one card up in the shell. Without this clause a session whose only held
+    // request had been grouped would read "switchboard can't answer it, go to
+    // the Terminal" while its Allow button sat a few pixels away — #125's
+    // defect, one surface over.
+    hasApproval: !!(props.approval && props.onDecide) || !!props.approvalBatched,
     // `startingLong` is cleared by an effect, so the first render that sees a
     // new status still has the old flag — without this, one frame can paint
     // the working banner and a "still starting" handoff together.
@@ -734,7 +746,11 @@ function ApprovalBar({
             flex: 1,
           }}
         >
-          {String(approval.input.file_path ?? approval.input.command ?? approval.input.url ?? '')}
+          {/* shared with the grouped prompt (P2-E9-11): the two are placements
+              of ONE question (§5.16), and a user who reads the summary on one
+              and a different one on the other has been shown two things and
+              told they are the same */}
+          {argumentSummary(approval.input)}
         </span>
       </div>
       {/* The CLI's OWN prose for why it is asking (P2-E18-07, stream transport
