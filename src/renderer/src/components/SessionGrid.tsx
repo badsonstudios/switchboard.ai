@@ -21,7 +21,7 @@ import { sessionStore } from '../store/session-store';
 import { DEFAULT_PANEL_ID, PanelContext, PanelId } from '../extensibility/contributions';
 import { listPanels, panelBadge, panelEnabled } from '../extensibility/panels';
 import { ContributionBoundary } from '../extensibility/boundary';
-import { IdentityChip } from './IdentityChip';
+import { IdentityChip, identityBadgeStyle } from './IdentityChip';
 import { DiffPane } from './DiffPane';
 import { UsageStrip } from './UsageStrip';
 import { GitContext, GitStatusDto } from './GitContext';
@@ -1042,19 +1042,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               background: 'var(--panel2)',
             }}
           >
+            {/* the SAME badge the tab above draws (#269) — §5.11's "renders
+                identically everywhere", and the accent is the field, never the
+                ink: as 9px text it measured 1.80-3.11:1 on daylight */}
             {live.badge && (
-              <span
-                style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 9,
-                  fontWeight: 700,
-                  color: live.accent ?? 'var(--muted)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 4,
-                  paddingInline: 4,
-                  paddingBlock: 1,
-                }}
-              >
+              <span data-testid="identity-badge" style={identityBadgeStyle(live.accent)}>
                 {live.badge}
               </span>
             )}

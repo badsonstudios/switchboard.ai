@@ -70,6 +70,9 @@ function declaredValues(text: string): Record<string, string> {
   return out;
 }
 
+/** the one neutral ink §5.11 badges write on an accent field (#269) */
+const ACCENT_INK = '--accent-ink-on-fill';
+
 const nordic = declaredTokens(block(":root,\n:root[data-theme='nordic']"));
 const daylight = declaredTokens(block(":root[data-theme='daylight']"));
 describe('themeable token list', () => {
@@ -542,6 +545,75 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))(
   }
 );
 
+// --- Words on an ACCENT FIELD, in EVERY shipped theme (#269) ----------------
+//
+// The §5.11 identity badge is the one place a session's accent has words on it,
+// and until #269 the accent WAS the words: 9px of `--accent-pink` on the card
+// header measured 3.39:1 on nordic, and every one of the eight was 1.80-3.11:1
+// on daylight. The status ramp's answer (#221/#243 — a second, per-theme shade
+// tuned to be read) is not available here, because an accent is an IDENTITY: a
+// second shade of it would be a second identity, and §5.20 already forbids a
+// theme from repainting one.
+//
+// So the accent became the FIELD and the ink became neutral, and this is the
+// assertion that makes that a promise rather than a preference.
+//
+// BOTH HALVES ARE THEME-INDEPENDENT, so these are eight distinct facts measured
+// four times, not thirty-two: the numbers below do NOT differ per theme, and
+// that identity is the claim. It is still run per theme because `resolved()`
+// spreads a theme's own tokens last — so a JSON theme that found a way to set
+// either side would fail here, in the theme that set it, rather than ship.
+//
+// The accents are READ OUT OF THE FILE, so a ninth needs no edit to this test.
+
+/** every `--accent-<name>` the palette declares, minus the ink that sits on them */
+const ACCENT_TOKENS = declaredTokens(block(':root {\n  /* status machine')).filter(
+  (t) => t.startsWith('--accent-') && t !== ACCENT_INK
+);
+
+it('has an accent palette to measure', () => {
+  // the guard's guard: a renamed prefix would leave this list empty and every
+  // case below would pass by not existing. Once, at module scope — inside the
+  // per-theme describe it was the same assertion four times.
+  expect(ACCENT_TOKENS.length).toBeGreaterThan(4);
+});
+
+describe.each(builtinThemes.map((t) => [t.id, t] as const))(
+  '%s: words on an accent field',
+  (id, theme) => {
+    const tokens = resolved(theme);
+
+    it.each(ACCENT_TOKENS)(`${ACCENT_INK} on %s clears 4.5:1`, (accent) => {
+      for (const token of [ACCENT_INK, accent]) {
+        expect(tokens[token], `${id} ${token} must be #rrggbb to be measured`).toMatch(
+          /^#[0-9a-f]{6}$/i
+        );
+      }
+      expect(
+        ratio(tokens[ACCENT_INK], tokens[accent]),
+        `${id}: ${ACCENT_INK} on ${accent} (${tokens[ACCENT_INK]} on ${tokens[accent]})`
+      ).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+);
+
+// The badge falls back to a neutral chip for a card with no accent yet, and that
+// pair is `--text` on `--chip` — 8.4:1 on nordic, where the `--muted` it
+// replaced was 4.10:1. Held here because the chip is the only place in the app
+// that writes it and PAIRS above only covers the two contrast themes.
+describe.each(builtinThemes.map((t) => [t.id, t] as const))(
+  '%s: the accent-less badge',
+  (id, theme) => {
+    const tokens = resolved(theme);
+    it('clears 4.5:1 on the neutral chip it falls back to', () => {
+      expect(
+        ratio(tokens['--text'], tokens['--chip']),
+        `${id}: --text on --chip (${tokens['--text']} on ${tokens['--chip']})`
+      ).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+);
+
 // --- The urgency lamp's STATE MODEL, in EVERY shipped theme (#267) ----------
 //
 // The pill above is one rule with one fill. The lamp is a state MATRIX, and
@@ -878,6 +950,47 @@ describe('a status hue is never spent on words', () => {
     ).toEqual([]);
   });
 
+  /**
+   * ...and the same rule for a §5.11 ACCENT (#269).
+   *
+   * Same shape, different vocabulary: `--status-<x>` has an ink to reach for
+   * instead, an accent does not and never will, so the rule is simply that an
+   * accent is a FIELD — a dot, a stripe, a ring, a badge's background — and
+   * never a `color:`. That is what the card header's badge did (`color:
+   * live.accent`), at 1.80-3.11:1 on daylight for all eight.
+   *
+   * Matched by NAME, not by value, and that is the whole reason this lives here
+   * rather than in the painted e2e sweep: four of the eight accents are
+   * byte-identical to a status hue, and a session's accent reaches the renderer
+   * as a raw hex from the main process, so on screen there is nothing to tell
+   * `--accent-blue` from `--status-working`. In the SOURCE there is — the
+   * property is spelled `accent`.
+   *
+   * Both spellings count: `var(--accent-*)` for a stylesheet, and any value
+   * naming an `accent` identifier for the inline styles the badge is written in.
+   * The one exemption is the ink that sits ON a field, which has to be allowed
+   * to be a `color:` because being one is its entire job.
+   *
+   * SAME BLIND SPOT as the hop above, and it is worth naming: `color: ink`,
+   * where a local holds the token, reads as innocent here. `identityBadgeStyle`
+   * is written that way on purpose (a ternary inside the declaration would read
+   * as an offender), so its half of the promise is held by IdentityChip.test.tsx
+   * and by the painted badge test in e2e/theme.spec.ts, which measures both
+   * render sites in all four themes against what is really behind them.
+   */
+  const accented = (src: string): string[] =>
+    colorValues(src)
+      .map((v) => v.split(`var(${ACCENT_INK})`).join('').trim())
+      .filter((v) => /\baccent\b/i.test(v));
+
+  it.each(sources)('%s writes no word in an identity accent', (_name, src) => {
+    expect(
+      accented(src),
+      'an accent is a field — a dot, a stripe, a badge background. Words on one ' +
+        'take the neutral on-field ink instead'
+    ).toEqual([]);
+  });
+
   it('sees the defect it is named for', () => {
     // the guard's own guard: an empty scan (a regex that matches nothing, a
     // file walk that finds no files) passes every case above, silently
@@ -900,6 +1013,16 @@ describe('a status hue is never spent on words', () => {
     expect(
       mapValues("const T: Record<string, string> = {\n  a: 'var(--status-done)',\n};\n").T
     ).toContain('var(--status-done)');
+
+    // The accent half (#269): the exact declaration the card header shipped,
+    // the stylesheet spelling of the same mistake, and the two things that are
+    // NOT the mistake — an accent as a FIELD, and the ink that sits on one.
+    // Through the SHARED `accented`, not a copy of it: a private copy here would
+    // report the scan healthy while the real filter had been loosened.
+    expect(accented("  color: live.accent ?? 'var(--muted)',\n")).toHaveLength(1);
+    expect(accented('  color: var(--accent-pink);\n')).toHaveLength(1);
+    expect(accented('  background: var(--accent-pink);\n')).toEqual([]);
+    expect(accented(`  color: 'var(${ACCENT_INK})',\n`)).toEqual([]);
   });
 });
 
