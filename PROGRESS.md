@@ -8,8 +8,10 @@
 E9: #70–#77 done, **#78/#79 in Dan's queue** (PRs #287/#301), #80 held on a
 scoping call; **E19 release/auto-update NEW 2026-08-05** — 01/02 merged, 03
 in Dan's queue, 04 held on #276's merge; E11/E13/E14 still outlines)
-**In progress:** **#404 slice 1 — Direct resume identity: DONE 2026-08-10, PR
-[#405](https://github.com/badsonstudios/switchboard.ai/pull/405) in Dan's queue.** Probed: hooks DO fire under the Direct flag list (claude
+**In progress:** **#404 slice 1 — Direct resume identity: MERGED 2026-08-10**
+(PR [#405](https://github.com/badsonstudios/switchboard.ai/pull/405) → main
+@ 0197c1c, CI 4/4 green, Dan authorized the merge; out/ REBUILT, branch
+deleted). Probed: hooks DO fire under the Direct flag list (claude
 2.1.226) — the two UNMEASURED comments are now MEASURED. Stream pump learns the
 native id from `system:init.session_id` (E18-05's done-when, closed unmet);
 fake honours `--resume` with an observable RESUMED-FROM marker; relaunch e2e on
