@@ -31,8 +31,132 @@ structure adopting #228's temp-dir registry, verified by a local
 161+1 skip (from the merged branches' gate runs: 1227+46+5+16 /
 156+4+0+1).
 
-> # ▶▶ START HERE — 🎛 RUN 15 CLOSED 2026-08-09 — 🎉 **RELEASE v0.3.0
-> LIVE** (~40 min cut-to-live)
+> # ▶▶ START HERE — 🎛 RUN 16 CLOSED 2026-08-10 (the five-decision
+> campaign: 5/5 complete; 4 UF PRs in DAN'S QUEUE, #111 merged)
+>
+> **Final state:** #384 → **PR #396** (real-CLI Direct spec; ask-trust
+> is INERT on Direct, manual corrected) · #320 → **PR #398** (lamp beat
+> from paint) · #80 → **PR #399** (batch permissions + latent P0 fixed)
+> · #269 → **PR #400** (badge neutral-ink-on-field, all accents ≥4.57
+> all themes) — **ALL FOUR UF, ALL CI GREEN, AWAITING DAN'S MERGE
+> AUTHORIZATION.** #111 → **PR #401 MERGED (bd2e49c)**: shipped app
+> BEATS the harness everywhere — 12 real sessions idle at 9.5% of one
+> core (harness said 24-28%), renderer never past 16.1ms across 10k
+> ticks even with ALL 12 STREAMING AT ONCE; zero product regressions;
+> S-07's own published figures were sampler bugs (→ **#402 filed**).
+> **Token spend: 20 real turns total** (#384: 6, #111: 14), both under
+> ceiling. Issues filed: **#397** (ask-trust inert on default transport
+> — UX decision) · **#402** (S-07 sampler correction). **Main @
+> bd2e49c, out/ REBUILT, stamp verified both bundles.** Worktrees:
+> sb-wt-1 detached; sb-wt-2/3 hold feature/80 + feature/269 branches
+> (open PRs — detach at merge time). No incidents this run; one worker
+> paused on a CI watch (work was complete, ground-truth confirmed).
+>
+> **WAITING ON DAN:** (1) merge authorization for PRs #396 #398 #399
+> #400 (hand-test list in the run-16 final report / PR bodies) ·
+> (2) #320's parked question: allow >1 pending lamp mark while the
+> main window can't paint, or keep the two-lamp rule? · (3) #397
+> ask-trust UX call · (4) **the /pm sitting — THE gate for any new
+> pipeline** (E9 tail, E11, E13, E14 are outlines; queue is otherwise
+> empty except held items).
+>
+> Orchestrator: Fable (/orchestrate, same session; single-writer rule;
+> handoffs in `.claude/work_files/orchestrator/`). **Dan answered all
+> five (2026-08-10): #320 YES anchor-to-paint · #269 option B (neutral
+> text on accent field) · #80 YES build now · #111 YES tokens approved ·
+> #384 YES build the real-CLI Direct spec.**
+>
+> **Run-16 progress:**
+> - **#384** ✅ DONE (~25 min, **6 of ~10 budgeted real turns spent**,
+>   4 output tokens per prompt) → **PR #396 READY, IN DAN'S QUEUE**
+>   (UF — a wrong 0.3.0 manual instruction is corrected; CI pending at
+>   last check). THE VERDICT INVERTED THE FEAR: stream-json mode draws
+>   NO trust prompt at all (verified twice: bare CLI with stripped
+>   isolated home + exact flag list, and through the app with
+>   autoTrust:false) — no hang, no guard needed; instead 🔒 ask-trust
+>   is silently INERT on Direct and the manual told users to answer a
+>   prompt that doesn't exist. Fixed in 10-settings + 12-direct-mode +
+>   CHANGELOG 0.4.0 Fixed, pinned by a test (a future CLI change goes
+>   red). New real-CLI describe: launches with NO transport var (the
+>   absence is the assertion), proves Direct via Terminal-tab absence,
+>   asserts streamed feed block + closing result. Live bug fixed:
+>   launchApp(realClaude) didn't scrub inherited SWITCHBOARD_FAKE_
+>   PROVIDER — the fake echoes prompts, so token-matching "real"
+>   assertions could pass against it; scrubbed + both tests assert no
+>   FAKE-REPLY. Gate: 2852 unit · 207+3 e2e full · real lane 3/3 in
+>   17.5s · skip gate proven (no CLI on PATH + CI=1 → 3 skipped).
+>   Discovery → **#397 filed** (ask-trust inert on the default
+>   transport = a setting that silently no-ops; UX decision).
+>   Handoff: 384.md.
+>
+> - **#320** ✅ DONE (~70 min) → **PR #398 READY, IN DAN'S QUEUE** (UF,
+>   CI 4/4 green first attempt). Beat runs from FIRST PAINT: two-phase
+>   mark (markLit → null "lit, no timer"; startBeat → paint+1500),
+>   anchored via useLayoutEffect + DOUBLE rAF (single rAF fires before
+>   its own frame's pixels — the trap; layout effect pins registration
+>   to one frame after paint). Self-caught starvation bug: cancel-and-
+>   reschedule on dep change would die one frame short forever under a
+>   held jump key (~33ms churn vs 32ms two-frame window) — now an
+>   in-flight ref, cancelled only at unmount. Mutations: keypress-
+>   revert 11 red, single-rAF 1 red, cancel-on-rerun 1 red. Gate: 2871
+>   unit · 207+1 e2e ×2 under the lock (waited ~9 min behind #384,
+>   in-turn). DESIGN §5.8 dated amendment; manual 09+06; CHANGELOG
+>   0.4.0 Fixed. **Question for Dan (not changed):** pendings can now
+>   accumulate while the main window can't paint (popout jump bridge) —
+>   allow >1 pending mark at once, or keep the two-lamp rule? Detail
+>   320.md. **#269 DISPATCHED** into sb-wt-3
+>   (`feature/269-badge-neutral-ink`, option B per Dan) — #320's
+>   touched files (UrgencyStrip/urgency/session-store/App) don't
+>   overlap the identity surface.
+>
+> - **#80** ✅ DONE (~80 min) → **PR #399 READY, IN DAN'S QUEUE** (UF;
+>   CI running at last check). Shape: a SHELL BAND above the workspace
+>   (CollapsedStrip-like, null when nothing groups) fed by a whole-
+>   fleet ledger in sessionStore — had to be shell, not card: dockview
+>   mounts only visible panels, so the matching sibling usually doesn't
+>   exist as a component. Decisions owned: key is EXACT (tool +
+>   canonical key-sorted full input + reason — what the card renders;
+>   "rm -rf build" and "rm -rf /" can never share a card) · group
+>   Allow/Deny + per-member cherry-pick per §5.16, deliberately NO
+>   "allow-all across sessions" (pinned by a test) · late matchers
+>   JOIN (safe only because the key is exact; band keyed on key+count
+>   so a straddling click lands on nothing). **Latent P0 found+fixed:
+>   SessionGrid.decide() popped positionally (slice(1)) while rendering
+>   the filtered head — a grouped sibling ahead could answer one
+>   request and silently delete a DIFFERENT still-held one; now pops
+>   by id, unit+e2e pinned, mutation-checked.** Gate: 2919 unit (129
+>   files) · 211+1 e2e full under the lock. Suite-cost lesson for
+>   future specs: one-app-per-file + serial + draining afterEach took
+>   4.3m of launches to 28.5s. Hand-test note: the POPOUT path is
+>   e2e-unreachable (popped card keeps its own bar — no shell in that
+>   window). Handoff: 80.md.
+>
+> - **#269** ✅ DONE (~75 min) → **PR #400 READY, IN DAN'S QUEUE** (UF;
+>   CI running at last check). Option B implemented: neutral dark ink
+>   on the accent FIELD — every accent now ≥4.57:1 in ALL FOUR themes
+>   (worst was pink; daylight's old worst was 1.80). Measurement
+>   correction: the issue's "3.41 amber on nordic" was PINK (amber
+>   nordic is 5.87; daylight amber 1.80 matched). Second defect found
+>   by the every-site sweep: the TAB's badge copy wrote --muted on
+>   --chip (4.10 nordic) — §5.11's one-identity rule had quietly
+>   forked; now one shared identityBadgeStyle. Manual 02-sessions
+>   updated (incl. correcting example badges to the shipped TS/Py/Rs
+>   strings). CHANGELOG 0.4.0 Fixed. Handoff: 269.md.
+> - **#111 DISPATCHED SOLO** (machine locally quiet — all other
+>   workers done) → sb-wt-1 detached → `feature/111-s07-remeasure`.
+>   Holds the e2e lock for its whole measurement window; token ceiling
+>   ~15 trivial turns, exact count reported; measurement ONLY (no
+>   fixes, no filing — orchestrator files candidate regressions).
+>
+> **Campaign plan (5 items, sequenced):** wave 1 = **#320** (sb-wt-1,
+> `feature/320-lamp-beat-from-paint`, UF) + **#80** (sb-wt-2,
+> `feature/80-batch-permissions`, UF, Size M) + **#384** (sb-wt-3,
+> `feature/384-real-cli-direct-spec`, token-sanctioned for THIS item,
+> bounded). Wave 2 = **#269** AFTER #320 lands (both touch the rail
+> surface — serialized). Wave 3 = **#111** SOLO LAST (perf measurement
+> needs a quiet machine; no concurrent workers, holds the e2e lock
+> during its measurement window). All off main @ 191255d. e2e lock
+> free at dispatch.
 >
 > **v0.3.0 shipped:** #392 → PR #393 → squash **006f99e**, tagged
 > v0.3.0, Release workflow SUCCESS, `switchboard-Setup-0.3.0.exe` +
