@@ -53,6 +53,15 @@ on the floor, and say so in your PR.
 
 ## 0.4.0 — unreleased
 
+### Fixed
+
+- **The manual was wrong about 🔒 ask trust in Direct mode.** It said you had to
+  put a session on Terminal mode to answer Claude Code's folder-trust prompt.
+  In fact Claude Code raises no trust question at all in Direct mode — it just
+  runs in the folder — so nothing hangs and nothing needs working around. The
+  real consequence is the other way round: **ask trust only does anything for
+  Terminal-mode sessions.** Settings and Direct mode now say so.
+
 ## 0.3.0 — 2026-08-09
 
 ### Changed
