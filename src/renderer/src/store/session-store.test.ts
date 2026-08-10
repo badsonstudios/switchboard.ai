@@ -522,8 +522,36 @@ describe("SessionStore — the urgency strip's delayed reset (P2-E9-04)", () => 
   it('markUrgency lights a card and publishes a new state object', () => {
     const before = store.getState();
     store.markUrgency('card-A', T);
-    expect(store.getState().urgency.get('card-A')).toBe(T + 1500);
+    // no deadline yet: the strip starts the beat from the paint (#320), so all
+    // the keypress records is that the lamp is lit
+    expect(store.getState().urgency.get('card-A')).toBeNull();
+    expect(store.getState().urgency.has('card-A')).toBe(true);
     expect(store.getState()).not.toBe(before); // identity IS the change signal
+  });
+
+  it('startUrgencyBeat turns the paint into the deadline', () => {
+    store.markUrgency('card-A', T);
+    store.startUrgencyBeat(['card-A'], T + 9000); // nine seconds of stalled frame
+    expect(store.getState().urgency.get('card-A')).toBe(T + 9000 + 1500);
+    // ...and it is a full beat from THERE, not from the keypress
+    store.expireUrgency(T + 9000 + 1499);
+    expect(store.getState().urgency.has('card-A')).toBe(true);
+    store.expireUrgency(T + 9000 + 1500);
+    expect(store.getState().urgency.has('card-A')).toBe(false);
+  });
+
+  it('startUrgencyBeat with nothing waiting is a NO-OP — a frame is not a re-render', () => {
+    // it runs after the paint of every urgency change; most have nothing to start
+    store.markUrgency('card-A', T);
+    store.startUrgencyBeat(['card-A'], T);
+    let notifications = 0;
+    store.subscribe(() => {
+      notifications += 1;
+    });
+    const before = store.getState();
+    store.startUrgencyBeat(['card-A'], T + 100);
+    expect(store.getState()).toBe(before);
+    expect(notifications).toBe(0);
   });
 
   it('is readable SYNCHRONOUSLY, the way the keydown handler needs it', () => {
@@ -543,13 +571,24 @@ describe("SessionStore — the urgency strip's delayed reset (P2-E9-04)", () => 
 
   it('expireUrgency puts out only the lamps whose beat has passed', () => {
     store.markUrgency('card-A', T);
+    store.startUrgencyBeat(['card-A'], T);
     store.markUrgency('card-B', T + 400);
+    store.startUrgencyBeat(['card-B'], T + 400);
     store.expireUrgency(T + 1500);
     expect([...store.getState().urgency.keys()]).toEqual(['card-B']);
   });
 
+  it('expireUrgency leaves a lamp nobody has seen yet alone', () => {
+    // it is waiting on a frame, not on a clock — putting it out here is the
+    // silent no-lamp case (#320) with extra steps
+    store.markUrgency('card-A', T);
+    store.expireUrgency(T + 60_000);
+    expect(store.getState().urgency.has('card-A')).toBe(true);
+  });
+
   it('expireUrgency with nothing to drop is a NO-OP — no re-render for a stray timer', () => {
     store.markUrgency('card-A', T);
+    store.startUrgencyBeat(['card-A'], T);
     let notifications = 0;
     store.subscribe(() => {
       notifications += 1;

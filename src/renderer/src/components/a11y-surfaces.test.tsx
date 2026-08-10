@@ -641,6 +641,7 @@ describe('urgency lamps (issue 197)', () => {
         activeCardId="c2"
         onFocus={noop}
         onExpire={noop}
+        onBeatStart={noop}
       />
     );
     const lamps = Array.from(host.querySelectorAll<HTMLElement>('[data-urgency-lamp]'));
@@ -657,6 +658,7 @@ describe('urgency lamps (issue 197)', () => {
         activeCardId="c2"
         onFocus={noop}
         onExpire={noop}
+        onBeatStart={noop}
       />
     );
     const current = host.querySelectorAll('[data-urgency-lamp][aria-current="true"]');

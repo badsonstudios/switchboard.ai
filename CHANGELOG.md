@@ -53,6 +53,14 @@ on the floor, and say so in your PR.
 
 ## 0.4.0 — unreleased
 
+### Fixed
+
+- The ring that shows you which session `Ctrl+Space` just sent you to now lasts
+  a second and a half **from the moment it appears on screen**. It used to be
+  counted from the keypress, so on a busy machine the whole beat could pass
+  before the window caught up and you saw no ring at all — the flash you could
+  miss on a slow machine.
+
 ## 0.3.0 — 2026-08-09
 
 ### Changed

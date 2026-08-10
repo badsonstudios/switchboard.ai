@@ -479,7 +479,17 @@ done | crashed`) fed by hooks + transcript events. The layout engine reacts to i
 - **Delayed urgency reset** (research v2: i3 `force_display_urgency_hint`): after
   jumping to a session that demanded attention, its urgency lamp stays lit for a
   configurable beat (~0.5–2s) — you can still see WHICH session called you after
-  you arrive.
+  you arrive. **The beat runs from the first PAINT of the lit lamp, not from the
+  keypress** *(amended 2026-08-10, Dan, after #320)*: measured from the keypress,
+  a machine busy enough to take longer than a beat to draw the strip showed no
+  lit lamp at all — not late, never — and it failed silently in exactly the busy
+  moments the signal matters most. The beat exists so a HUMAN can see the lamp,
+  so the pixels are the only honest start. Implementation: the jump records
+  "lit, no deadline"; the strip converts it to `paint + beat` from the frame
+  after the commit that drew it (`requestAnimationFrame` twice — a commit is not
+  a paint). A mark that has not painted yet therefore survives a backgrounded
+  window rather than burning down unseen; once the beat has started it runs on
+  the wall clock like any other.
 - **Focus mode is a composition, with a keyboard-fail-open invariant** (research
   v2: IntelliJ Zen = Full Screen + Distraction-free; VS Code maximize-toggle):
   "focus on one agent" composes existing presentation-ladder states rather than

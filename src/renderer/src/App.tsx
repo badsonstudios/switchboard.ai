@@ -169,6 +169,12 @@ export function App(): React.JSX.Element {
   const railFlat = useSyncExternalStore(subscribeStore, () => sessionStore.getRailOrder().flat);
   const urgency = useSyncExternalStore(subscribeStore, () => sessionStore.getState().urgency);
   const expireUrgency = React.useCallback(() => sessionStore.expireUrgency(), []);
+  // #320: the lamps the strip just PAINTED lit — that is where their 1.5s beat
+  // starts, so a slow frame delays the beat instead of eating it.
+  const startUrgencyBeat = React.useCallback(
+    (cardIds: readonly string[]) => sessionStore.startUrgencyBeat(cardIds),
+    []
+  );
   // §5.8's ladder (E9-05). The strip renders from rail order for the reason the
   // lamps do — a session must not be third in one list and first in another.
   const presentation = useSyncExternalStore(
@@ -698,6 +704,10 @@ export function App(): React.JSX.Element {
     // you can still see WHICH session called you. Keyed by CARD id — the event
     // carries the live id, which churns on every resume, and a lamp that went
     // dark because the session respawned would defeat the whole point.
+    //
+    // This only LIGHTS it. The beat itself starts when the strip paints the lit
+    // lamp (#320) — measuring it from here meant a slow frame could spend the
+    // whole 1.5s before anything was drawn, and the user saw no lamp at all.
     sessionStore.markUrgency(sessionStore.cardIdForLive(next.sessionId));
     // "Done." relaxes to "Ready" — you have now looked at it. Every other kind
     // is untouched by ack and leaves the queue only when actually answered,
@@ -1054,6 +1064,7 @@ export function App(): React.JSX.Element {
         activeCardId={activeCard}
         onFocus={focusCard}
         onExpire={expireUrgency}
+        onBeatStart={startUrgencyBeat}
       />
       {/* §5.8's second rung. Outside the grid for the same reason the lamps
           are — the grid is what a collapsed card has just left. Renders

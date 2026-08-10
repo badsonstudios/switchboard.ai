@@ -32,6 +32,25 @@ import { presentStatus, StatusToken } from './rail-view';
  */
 export const URGENCY_LINGER_MS = 1500;
 
+/**
+ * The lit map: card id -> the epoch ms at which that lamp's beat ends, or
+ * **`null` for a lamp that has been marked but not yet PAINTED**.
+ *
+ * The `null` rung is the whole of #320 *(Dan, 2026-08-10 — the beat runs from
+ * first paint)*. A jump used to stamp `keypress + 1500` and every render
+ * compared that against a fresh clock, so on a machine busy enough that the
+ * strip did not paint within the beat, the lamp was never drawn lit AT ALL —
+ * not drawn late, never drawn. §5.8 wants the beat so a HUMAN can see which
+ * session called them, and it failed silently in exactly the busy moments the
+ * signal matters most.
+ *
+ * So a mark is now two-phase: `markLit` writes `null` ("lit, beat not started")
+ * and `startBeat` — called from the strip once the lit lamp is on the screen —
+ * converts it to a real deadline. A `null` entry is unconditionally lit and
+ * arms no timer: nothing is counting down yet.
+ */
+export type UrgencyMarks = ReadonlyMap<string, number | null>;
+
 /** One lamp: a session reduced to what the strip paints. */
 export interface UrgencyLamp {
   /** the durable card id — what a click focuses, and what survives a resume */
@@ -72,7 +91,7 @@ export interface LampSource {
  */
 export function buildLamps(
   sessions: readonly LampSource[],
-  lit: ReadonlyMap<string, number>,
+  lit: UrgencyMarks,
   now: number
 ): UrgencyLamp[] {
   return sessions.map((s) => {
@@ -98,33 +117,63 @@ export function litCount(lamps: readonly UrgencyLamp[]): number {
 /**
  * Is this card's lamp still lit?
  *
- * Strictly `>`: an entry whose deadline is exactly `now` has run out. That
- * makes the boundary the same for the render and for the timer that schedules
- * the re-render, so a lamp can never be painted lit with a timer that has
- * already fired.
+ * A `null` entry — marked, not yet painted — is lit unconditionally: its beat
+ * has not started, so there is no deadline to be past. That is the property
+ * that makes a slow machine show the lamp instead of skipping it.
+ *
+ * Otherwise strictly `>`: an entry whose deadline is exactly `now` has run out.
+ * That makes the boundary the same for the render and for the timer that
+ * schedules the re-render, so a lamp can never be painted lit with a timer that
+ * has already fired.
  */
-export function isLit(lit: ReadonlyMap<string, number>, cardId: string, now: number): boolean {
+export function isLit(lit: UrgencyMarks, cardId: string, now: number): boolean {
   const until = lit.get(cardId);
-  return until !== undefined && until > now;
+  // `undefined` is "no entry" — the map never stores undefined, so this cannot
+  // be confused with the `null` (unpainted) rung
+  if (until === undefined) return false;
+  return until === null || until > now;
 }
 
 /**
- * Light a lamp, expiring anything already run out in the same pass.
+ * Mark a lamp as lit — WITHOUT starting its beat — expiring anything already
+ * run out in the same pass. `startBeat` gives it a deadline once it paints.
  *
  * Pruning here as well as in `pruneLit` is deliberate: jumps are the only thing
  * that grows this map, so folding the sweep into the write means the map cannot
  * outgrow the session list even if a render (and therefore the expiry timer)
- * never happens — a backgrounded window, say.
+ * never happens — a backgrounded window, say. Unpainted entries survive the
+ * sweep by construction: they have no deadline to have passed, and dropping
+ * them would reintroduce exactly the silent no-lamp case #320 fixes.
  */
-export function markLit(
-  lit: ReadonlyMap<string, number>,
-  cardId: string,
-  now: number,
-  ms: number = URGENCY_LINGER_MS
-): Map<string, number> {
-  const next = new Map<string, number>();
-  for (const [id, until] of lit) if (until > now) next.set(id, until);
-  next.set(cardId, now + ms);
+export function markLit(lit: UrgencyMarks, cardId: string, now: number): Map<string, number | null> {
+  const next = new Map<string, number | null>();
+  for (const [id, until] of lit) if (until === null || until > now) next.set(id, until);
+  next.set(cardId, null);
+  return next;
+}
+
+/**
+ * The strip has painted: start the beat for every mark that was still waiting
+ * on one. Returns null when none was — the same no-op discipline as `pruneLit`,
+ * so the frame after every ordinary paint costs no state write.
+ *
+ * Only `null` entries are touched. A card whose beat is already running is left
+ * alone: re-stamping it on every repaint would make the lamp stay lit for as
+ * long as the strip kept re-rendering, which is a beat with no end.
+ */
+export function startBeat(
+  lit: UrgencyMarks,
+  cardIds: Iterable<string>,
+  now: number
+): Map<string, number | null> | null {
+  let next: Map<string, number | null> | null = null;
+  for (const id of cardIds) {
+    // reads whichever map is current, so a repeated id in `cardIds` is skipped
+    // the second time rather than relying on `now` being fixed within the call
+    if ((next ?? lit).get(id) !== null) continue; // no entry, or already counting down
+    next ??= new Map(lit);
+    next.set(id, now + URGENCY_LINGER_MS);
+  }
   return next;
 }
 
@@ -132,12 +181,12 @@ export function markLit(
  * Drop lamps whose beat has passed. Returns null when there was nothing to
  * drop, so the caller can skip a state write and the re-render it would cost —
  * the same no-op discipline lib/presentation uses.
+ *
+ * An unpainted mark is never expired here: it is waiting for a paint, not for
+ * a clock.
  */
-export function pruneLit(
-  lit: ReadonlyMap<string, number>,
-  now: number
-): Map<string, number> | null {
-  const expired = [...lit.entries()].filter(([, until]) => until <= now);
+export function pruneLit(lit: UrgencyMarks, now: number): Map<string, number | null> | null {
+  const expired = [...lit.entries()].filter(([, until]) => until !== null && until <= now);
   if (expired.length === 0) return null;
   const next = new Map(lit);
   for (const [id] of expired) next.delete(id);
@@ -145,14 +194,19 @@ export function pruneLit(
 }
 
 /**
- * Milliseconds until the next lamp goes out, or null when none is lit — what
- * the strip arms a single timer with, rather than polling a clock.
+ * Milliseconds until the next lamp goes out, or null when none is COUNTING
+ * DOWN — what the strip arms a single timer with, rather than polling a clock.
+ *
+ * Unpainted marks are skipped: they have no deadline yet, and the paint that
+ * gives them one re-runs the effect that arms this timer. A strip whose only
+ * lit lamps are unpainted therefore asks the OS for nothing at all.
  *
  * Never negative: an already-passed deadline schedules immediately.
  */
-export function nextLitExpiry(lit: ReadonlyMap<string, number>, now: number): number | null {
+export function nextLitExpiry(lit: UrgencyMarks, now: number): number | null {
   let soonest: number | null = null;
   for (const until of lit.values()) {
+    if (until === null) continue;
     if (soonest === null || until < soonest) soonest = until;
   }
   return soonest === null ? null : Math.max(0, soonest - now);

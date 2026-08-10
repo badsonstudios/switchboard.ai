@@ -86,6 +86,14 @@ So it isn't. The lamp you were just sent to gets a **ring around it for about a
 second and a half** after you land, then quietly fades out. Long enough to see
 where you were sent, short enough not to become part of the furniture.
 
+The second and a half is counted **from the moment the ring is actually on your
+screen**, not from the moment you pressed the key. If the machine is busy and
+the window takes a while to catch up, you still get the full beat once it does —
+you never arrive to find that the thing meant to show you where you are has
+already come and gone. A ring that hasn't appeared yet waits for the window to
+come back rather than counting down behind your back; once it's up, it fades on
+its own schedule like anything else.
+
 Nothing on the strip blinks or animates for attention. It's a readout, not an
 alarm.
 

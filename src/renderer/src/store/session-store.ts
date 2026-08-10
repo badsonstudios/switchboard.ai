@@ -30,7 +30,7 @@ import {
   prunePresentation,
   samePresentation,
 } from '../lib/presentation';
-import { markLit, pruneLit } from '../lib/urgency';
+import { markLit, pruneLit, startBeat, UrgencyMarks } from '../lib/urgency';
 import {
   DEFAULT_BOOK,
   persistablePolicies,
@@ -85,13 +85,14 @@ export interface SessionState {
   readonly presentation: ReadonlyMap<string, CardPresentation>;
   /**
    * The delayed urgency reset (P2-E9-04, §5.8): card id -> the epoch ms at
-   * which its lamp stops being lit. Deliberately deadlines rather than a plain
-   * Set plus a timer — a deadline is a fact the render can read, so the timer
-   * only has to schedule a re-render and can never be the authority on what is
-   * lit. NOT persisted: "which session called you 1.5 seconds ago" is not a
-   * fact a relaunch can inherit.
+   * which its lamp stops being lit, or `null` for a lamp that has been marked
+   * but not yet painted (#320 — the beat runs from first paint). Deliberately
+   * deadlines rather than a plain Set plus a timer — a deadline is a fact the
+   * render can read, so the timer only has to schedule a re-render and can
+   * never be the authority on what is lit. NOT persisted: "which session called
+   * you 1.5 seconds ago" is not a fact a relaunch can inherit.
    */
-  readonly urgency: ReadonlyMap<string, number>;
+  readonly urgency: UrgencyMarks;
   /**
    * §5.8's presentation policy (P2-E9-06): the global default plus the
    * per-group and per-session overrides. In `state` and not a registry because
@@ -615,16 +616,34 @@ export class SessionStore {
   // requirement that made this a store in the first place.
 
   /**
-   * The lamp for this card just took a jump: keep it lit for a beat so the user
-   * can see WHICH session called them after they arrive (§5.8's delayed urgency
-   * reset). Takes a CARD id — a live id churns on every resume, and a lamp that
-   * went dark because the session respawned would defeat the whole point.
+   * The lamp for this card just took a jump: light it, so the user can see
+   * WHICH session called them after they arrive (§5.8's delayed urgency reset).
+   * Takes a CARD id — a live id churns on every resume, and a lamp that went
+   * dark because the session respawned would defeat the whole point.
    *
-   * `now` is injectable so the rule is unit-testable without a fake clock.
+   * It does NOT start the beat — `startUrgencyBeat` does, from the paint. `now`
+   * is only the sweep's clock here, and stays injectable so the rule is
+   * unit-testable without a fake one.
    */
   markUrgency(cardId: string, now: number = Date.now()): void {
     if (!cardId) return;
     this.set({ urgency: markLit(this.state.urgency, cardId, now) });
+  }
+
+  /**
+   * The strip has PAINTED these lamps lit — start their beat (#320, Dan
+   * 2026-08-10). Called from the frame after the commit that drew them, so the
+   * ~1.5s a human gets to read the lamp is 1.5s of the lamp being on the
+   * screen, not 1.5s that may have been spent getting there.
+   *
+   * A no-op write is skipped entirely, exactly as `expireUrgency`'s is: this
+   * runs after the paint of every urgency change, and most of them have nothing
+   * waiting on one.
+   */
+  startUrgencyBeat(cardIds: Iterable<string>, now: number = Date.now()): void {
+    const next = startBeat(this.state.urgency, cardIds, now);
+    if (!next) return;
+    this.set({ urgency: next });
   }
 
   /** The beat has passed — put the expired lamps out. A no-op write is skipped
