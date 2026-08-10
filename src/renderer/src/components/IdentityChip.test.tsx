@@ -18,16 +18,12 @@ import { identityBadgeStyle } from './IdentityChip';
 const ACCENT = 'var(--accent-pink)';
 
 describe('the identity badge (issue 269)', () => {
-  it('paints the accent as the FIELD, never as the ink', () => {
+  it('paints the accent as the FIELD, and the ink measured against it', () => {
+    // the ink is named, not merely "not the accent": `--muted` and `--text` are
+    // both plausible-looking neutrals and neither is measured against a field
     const s = identityBadgeStyle(ACCENT);
     expect(s.background).toBe(ACCENT);
-    expect(String(s.color)).not.toContain('accent-pink');
-  });
-
-  it('writes the one ink measured against the accent palette', () => {
-    // named, not just "not the accent": `--muted` and `--text` are both
-    // plausible-looking neutrals and neither is measured against a field
-    expect(identityBadgeStyle(ACCENT).color).toBe('var(--accent-ink-on-fill)');
+    expect(s.color).toBe('var(--accent-ink-on-fill)');
   });
 
   it('falls back to a neutral chip when the card has no accent yet', () => {

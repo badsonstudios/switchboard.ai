@@ -1,6 +1,13 @@
-// Identity chip (P1-E3-03, §5.11): the ONE way a session's identity renders —
-// used verbatim in the rail rows and the card tab header so seven sessions
-// read identically everywhere. Accent survives theme switches by design.
+// Identity chip (P1-E3-03, §5.11): the ONE way a session's identity renders,
+// so seven sessions read identically everywhere. Accent survives theme switches
+// by design.
+//
+// "used verbatim in the rail rows and the card tab header" is what this line
+// used to claim and it was never true of the rail: `SessionsRail` hand-rolls its
+// own row (#337 is the held issue for folding it back in). Today the chip has
+// exactly ONE consumer, the card's dockview tab (SessionGrid's `IdentityTab`) —
+// and, since #269, one exported piece: `identityBadgeStyle`, which the card
+// HEADER uses so the badge really is one look in both places.
 import React from 'react';
 
 /**
@@ -21,9 +28,16 @@ import React from 'react';
  * in the palette (4.57-7.90:1, theme-independent because neither colour moves
  * with the theme).
  *
- * The border stays: on a light theme an accent field can be 1.8:1 against the
- * header behind it, so without an edge the badge loses its shape even though its
- * text is legible.
+ * The border is the card header's existing edge, kept and extended to the tab so
+ * the two are one shape. Measured, and NOT the "it carries the outline on light
+ * themes" story it is easy to tell: on the three dark presets it is a real edge
+ * (nordic `--border` #3b4252 against an amber field, 5.17:1), but on daylight
+ * `--border` #dde1e7 is 1.48:1 against that field and 1.21:1 against the header,
+ * i.e. a SOFTER step than the 1.80-3.11:1 the field already makes on its own. So
+ * on daylight the field carries the shape and this line is neutral-to-slightly-
+ * softening. It stays because it is what the header already drew and because
+ * removing an edge is a look change nobody asked for — not because it is doing
+ * the accessibility work. What does that work is the ink, below.
  *
  * NO ACCENT is not "paint it anyway" — a card whose record has not been read yet
  * has none, and a dark ink on nothing is invisible. It falls back to the neutral

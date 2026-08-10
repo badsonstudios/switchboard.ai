@@ -556,10 +556,13 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))(
 // theme from repainting one.
 //
 // So the accent became the FIELD and the ink became neutral, and this is the
-// assertion that makes that a promise rather than a preference. Both halves are
-// theme-independent, so every theme measures the same number — asserted per
-// theme anyway, because "the same in every theme" is exactly the claim, and a
-// theme that found a way to override either would fail here rather than ship.
+// assertion that makes that a promise rather than a preference.
+//
+// BOTH HALVES ARE THEME-INDEPENDENT, so these are eight distinct facts measured
+// four times, not thirty-two: the numbers below do NOT differ per theme, and
+// that identity is the claim. It is still run per theme because `resolved()`
+// spreads a theme's own tokens last — so a JSON theme that found a way to set
+// either side would fail here, in the theme that set it, rather than ship.
 //
 // The accents are READ OUT OF THE FILE, so a ninth needs no edit to this test.
 
@@ -568,16 +571,17 @@ const ACCENT_TOKENS = declaredTokens(block(':root {\n  /* status machine')).filt
   (t) => t.startsWith('--accent-') && t !== ACCENT_INK
 );
 
+it('has an accent palette to measure', () => {
+  // the guard's guard: a renamed prefix would leave this list empty and every
+  // case below would pass by not existing. Once, at module scope — inside the
+  // per-theme describe it was the same assertion four times.
+  expect(ACCENT_TOKENS.length).toBeGreaterThan(4);
+});
+
 describe.each(builtinThemes.map((t) => [t.id, t] as const))(
   '%s: words on an accent field',
   (id, theme) => {
     const tokens = resolved(theme);
-
-    it('has a palette to measure', () => {
-      // the guard's guard: a renamed prefix would leave this list empty and
-      // every case below would pass by not existing
-      expect(ACCENT_TOKENS.length).toBeGreaterThan(4);
-    });
 
     it.each(ACCENT_TOKENS)(`${ACCENT_INK} on %s clears 4.5:1`, (accent) => {
       for (const token of [ACCENT_INK, accent]) {
@@ -971,15 +975,17 @@ describe('a status hue is never spent on words', () => {
    * where a local holds the token, reads as innocent here. `identityBadgeStyle`
    * is written that way on purpose (a ternary inside the declaration would read
    * as an offender), so its half of the promise is held by IdentityChip.test.tsx
-   * and by the painted sweep in e2e/theme.spec.ts, which measures the badge in
-   * all four themes against what is really behind it.
+   * and by the painted badge test in e2e/theme.spec.ts, which measures both
+   * render sites in all four themes against what is really behind them.
    */
-  it.each(sources)('%s writes no word in an identity accent', (_name, src) => {
-    const offenders = colorValues(src)
+  const accented = (src: string): string[] =>
+    colorValues(src)
       .map((v) => v.split(`var(${ACCENT_INK})`).join('').trim())
       .filter((v) => /\baccent\b/i.test(v));
+
+  it.each(sources)('%s writes no word in an identity accent', (_name, src) => {
     expect(
-      offenders,
+      accented(src),
       'an accent is a field — a dot, a stripe, a badge background. Words on one ' +
         'take the neutral on-field ink instead'
     ).toEqual([]);
@@ -1008,13 +1014,11 @@ describe('a status hue is never spent on words', () => {
       mapValues("const T: Record<string, string> = {\n  a: 'var(--status-done)',\n};\n").T
     ).toContain('var(--status-done)');
 
-    // the accent half (#269): the exact declaration the card header shipped,
+    // The accent half (#269): the exact declaration the card header shipped,
     // the stylesheet spelling of the same mistake, and the two things that are
-    // NOT the mistake — an accent as a FIELD, and the ink that sits on one
-    const accented = (src: string): string[] =>
-      colorValues(src)
-        .map((v) => v.split(`var(${ACCENT_INK})`).join('').trim())
-        .filter((v) => /\baccent\b/i.test(v));
+    // NOT the mistake — an accent as a FIELD, and the ink that sits on one.
+    // Through the SHARED `accented`, not a copy of it: a private copy here would
+    // report the scan healthy while the real filter had been loosened.
     expect(accented("  color: live.accent ?? 'var(--muted)',\n")).toHaveLength(1);
     expect(accented('  color: var(--accent-pink);\n')).toHaveLength(1);
     expect(accented('  background: var(--accent-pink);\n')).toEqual([]);

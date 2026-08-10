@@ -150,7 +150,13 @@ const auditWords = (opts: { ramp: string[]; only?: string }): Audit => {
       const style = (rule as CSSStyleRule).style;
       if (!style) continue;
       for (const prop of Array.from(style)) {
-        if (prop.startsWith('--accent-')) accents.add(norm(style.getPropertyValue(prop)));
+        // the palette, not everything spelled `--accent-`: the on-field INK
+        // shares that prefix and is also `--bar` on nordic and the
+        // needs-permission on-fill ink in every theme, so sweeping it into the
+        // skip set would quietly excuse three unrelated tokens
+        if (prop.startsWith('--accent-') && !prop.endsWith('-ink-on-fill')) {
+          accents.add(norm(style.getPropertyValue(prop)));
+        }
       }
     }
   }
@@ -186,13 +192,20 @@ const auditWords = (opts: { ramp: string[]; only?: string }): Audit => {
     // the token this element was HANDED, when it was handed one. A name cannot
     // collide; a colour value can.
     //
-    // `--accent-*` is read here too since #269: the §5.11 badge writes
-    // `--accent-ink-on-fill` inline, and without the name that word would fall
-    // into the value-matching branch below, be recognised as neither a hue nor a
-    // status ink, and be skipped — the fix would ship unmeasured. Reading the
-    // name also means an accent written back into a `color:` fails here, by the
-    // name that says what it is, rather than being waved through by the accent
-    // skip below (which exists because a VALUE cannot be told apart).
+    // `--accent-*` is read here too since #269, and it is worth being precise
+    // about what that buys. The §5.11 badge writes `--accent-ink-on-fill`
+    // inline; without the name, that word falls into the value-matching branch
+    // below, is recognised as neither a hue nor a status ink, and is SKIPPED —
+    // so the fix would ship unmeasured. That is the reason.
+    //
+    // What it does NOT buy is catching the revert. A session's accent reaches
+    // the renderer as a raw hex from the main process, so `color: live.accent`
+    // computes to `#db61a2` with no name attached and lands in the accent skip
+    // below (which exists precisely because a VALUE cannot be told apart from a
+    // status hue). What catches THAT is the `"JS"` entry in this sweep's site
+    // list — the badge drops out of the words measured — and the focused badge
+    // test above. A named `color: var(--accent-pink)` would fail here; that is a
+    // stylesheet spelling nothing in the tree currently uses.
     const token = /var\((--(?:status|accent)-[a-z-]+)\)/.exec(
       (el as HTMLElement).style?.color ?? ''
     );
@@ -368,6 +381,31 @@ test.describe('themes (P2-E15-05)', () => {
     await expect(badge).toBeVisible({ timeout: 25_000 });
     await expect(badge).toHaveText('JS');
 
+    // WHICH COLOUR WENT WHERE, at the render site, with the real accent the main
+    // process assigned. The ratio loop below cannot say this: a badge painted
+    // dark-on-dark would fail it, but a badge that simply dropped the field and
+    // kept a legible ink would pass while the identity signal was gone. Read off
+    // the inline style, so the accent is the raw hex `sessions/identity.ts`
+    // handed over rather than a token this test could have spelled itself.
+    const paint = await badge.evaluate((el) => ({
+      color: (el as HTMLElement).style.color,
+      background: (el as HTMLElement).style.background,
+    }));
+    expect(paint.color, 'the badge writes the one measured on-field ink').toBe(
+      'var(--accent-ink-on-fill)'
+    );
+    expect(paint.background, 'the accent is the FIELD — a real colour, not a token').toMatch(
+      /^(#|rgb)/
+    );
+
+    // The sweep disables transitions before sampling for a real reason (#246's
+    // hand-off: a mid-`transition: color` sample reads the previous theme).
+    // Nothing this test measures transitions today, but the next person will
+    // copy it, so it samples end states too.
+    await w.addStyleTag({
+      content: '*, *::before, *::after { transition: none !important; }',
+    });
+
     for (const [label, id] of THEMES) {
       await w.getByRole('button', { name: label, exact: true }).click();
       await expect(w.locator('html')).toHaveAttribute('data-theme-id', id);
@@ -380,8 +418,15 @@ test.describe('themes (P2-E15-05)', () => {
       // the regression risk respectively, and a single one measured would let
       // the other drift back
       expect(seen.words.length, `${id}: fewer than two badges were measured`).toBeGreaterThan(1);
+      // NOT covered here, and worth knowing: the accent-LESS branch
+      // (`--text` on `--chip`, for a card whose record has not been read yet).
+      // Every seeded session has an accent, so only the drift test's
+      // "the accent-less badge" case measures that pair.
       for (const word of seen.words) {
         expect(word.from, `${id}: the badge's own field must be what the word sits on`).toBe('self');
+        // fires on the stylesheet spelling of the revert (`color:
+        // var(--accent-pink)`); the raw-hex spelling is caught by `from` and the
+        // ratio, both mutation-checked 2026-08-10
         expect(word.hue, `${id}: the badge must paint its ink, never an accent`).toBeNull();
         expect(word.ratio, `${id} identity badge contrast — ${word.why}`).toBeGreaterThanOrEqual(
           4.5
@@ -403,7 +448,17 @@ test.describe('themes (P2-E15-05)', () => {
     //      actually behind it, opacity included?
     // The feed is loaded first because five of the six sites are in it, and it
     // is where the surfaces are tinted rather than flat.
+    //
+    // The package.json is for the §5.11 badge (#269), and it is not decoration:
+    // a folder with no project marker gets the badge `·`, which this sweep
+    // rightly refuses to count as a word — so the badge was never among the
+    // words measured at all, and a revert passed here. With `JS` in it the badge
+    // joins the site list below, and a revert to `color: live.accent` fails
+    // because the badge stops being one of the words measured (its colour is
+    // then a bare accent value, which the skip drops). Mutation-checked both
+    // ways, 2026-08-10.
     const folder = tempProjectFolder();
+    fs.writeFileSync(path.join(folder, 'package.json'), '{}\n');
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
@@ -481,7 +536,7 @@ test.describe('themes (P2-E15-05)', () => {
       // rendering the feed would look like. Named sites, not a count, so a
       // sweep that quietly stops reaching the feed fails instead of shrinking.
       const measured = seen.words.map((x) => x.what).join(' | ');
-      for (const site of ['.status-pill', 'a "the manual"', '"Read"', '"[x]"']) {
+      for (const site of ['.status-pill', 'a "the manual"', '"Read"', '"[x]"', '"JS"']) {
         expect(measured, `${id}: ${site} was not among the words measured`).toContain(site);
       }
       if (seen.distinguishable) distinguishable.add(id);
