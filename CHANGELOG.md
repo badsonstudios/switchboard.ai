@@ -55,6 +55,20 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **Tell me when *this* one is done.** Each session's ⋯ menu now has a **Notify
+  when done** tick-box. Tick it and that session pops up a desktop notification
+  when it finishes a turn — only while you're in another window, and only for
+  the sessions you asked about. Everything else stays as quiet on finishing as
+  it was, because a pop-up for every five-second turn is noise. The tick is
+  remembered across restarts.
+- Notifications are now driven by **rules** — *when [event] in [this session or
+  any], and [the window is or isn't in front] → [do something]*. The checkbox
+  above is the first one. Nothing else changes yet, but the pieces that were
+  hard-coded (no pop-ups while you're looking at the window; crashes pop up
+  anyway) are now conditions on a rule, which is what makes per-session sounds,
+  spoken announcements, Allow/Deny buttons on notifications and phone push
+  possible without another special case each.
+
 - When two or more sessions are waiting on **exactly the same** permission
   request, it now appears once, on a single card above the workspace, with
   every session named — answer all of them with one click, or allow one and
