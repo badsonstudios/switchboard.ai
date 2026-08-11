@@ -1,20 +1,75 @@
-// The renderer's ONE markdown path (extracted for P2-E19-03).
+// The renderer's ONE markdown path (P2-E19-03 extracted it; P2-E16-01 gave it
+// the configuration).
 //
 // It was inline in `extensibility/feed-blocks.tsx` and had exactly one caller;
-// the update dialog is the second, and two copies of a `marked` + DOMPurify
-// pipeline is two sanitizer configurations that can drift apart. So it moved
-// here, unchanged in behaviour, with the feed importing it.
+// the update dialog is the second, the §5.30 document viewer is the third, and
+// three copies of a `marked` + DOMPurify pipeline is three sanitizer
+// configurations that drift apart — the security configuration drifting with
+// them. DESIGN.md §5.30 states the single renderer as a REQUIREMENT for that
+// reason, so it is code, not a convention: nothing outside this file imports
+// `marked` or `dompurify`, and `markdown.test.tsx` asserts that.
 //
-// This is a DOWN PAYMENT on P2-E16-01, which specifies "one renderer-side
-// markdown module with ONE sanitizer configuration" — not the whole item. E16
-// still owns the shared options (gfm, link handling, code highlighting); what
-// exists here is the single call site those options will eventually configure.
+// P2-E16-01 finished the extraction by naming the options instead of inheriting
+// whichever defaults the two libraries happen to ship. What the viewer adds on
+// top (heading anchors, a language label and copy button on code fences, front
+// matter as a chip, relative-link navigation) is P2-E16-02, and it lands HERE
+// rather than beside the viewer — a second pipeline is the thing this file
+// exists to prevent.
 import React from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import type { Config as SanitizeConfig } from 'dompurify';
 
 /** The "still typing" cue. A glyph, not copy — nothing here to translate. */
 export const STREAMING_CARET = '▌';
+
+/**
+ * The ONE parser configuration.
+ *
+ * Written out rather than left to `marked`'s defaults so that a version bump
+ * that changes one of them is a diff on this line instead of a silent change of
+ * behaviour in two surfaces at once.
+ *
+ *  - `async: false` — the return type is the string, not a promise. Rendering
+ *    happens inside `useMemo`, which cannot await.
+ *  - `gfm: true` — tables, task lists, strikethrough and autolinks. This is
+ *    what agents actually emit (§5.30), and it is already `marked`'s default;
+ *    naming it makes it a decision rather than an inheritance.
+ *  - `breaks: false` — a single newline is not a `<br>`. GFM's own rule, and
+ *    the one that keeps a hard-wrapped paragraph from rendering as a ladder.
+ */
+export const MARKED_OPTIONS = { async: false, gfm: true, breaks: false } as const;
+
+/**
+ * The ONE sanitizer configuration. §5.29 in a constant.
+ *
+ * `USE_PROFILES: { html: true }` is the whole of it, and it is narrower than
+ * DOMPurify's default, which also allows SVG and MathML. Markdown never
+ * produces either — they can only arrive as RAW EMBEDDED MARKUP in a file we
+ * did not write, which is precisely the input §5.30 says to distrust. §5.30
+ * also settles the SVG question directly: "SVG via `<img>` and never inlined so
+ * it cannot carry script". An `<img src="x.svg">` still renders under this
+ * profile; an inline `<svg>` with an `onload` does not survive it.
+ *
+ * Everything else is DOMPurify's default and deliberately so: its allow-list,
+ * its `javascript:`-scheme refusal and its `on*`-attribute stripping are the
+ * parts that get security review upstream, and re-deriving them here would mean
+ * owning them here. What we choose is the PROFILE; what is safe inside it is
+ * theirs.
+ */
+export const SANITIZE_CONFIG: SanitizeConfig = { USE_PROFILES: { html: true } };
+
+/**
+ * Markdown in, sanitized HTML out. The only place either library is called.
+ *
+ * Exported as a function as well as a component because the viewer needs the
+ * HTML in its own container with its own scroll handling, and "render markdown
+ * without mounting `<Markdown>`" must not be a reason to write a second
+ * pipeline.
+ */
+export function renderMarkdown(text: string): string {
+  return DOMPurify.sanitize(marked.parse(text, MARKED_OPTIONS), SANITIZE_CONFIG);
+}
 
 /**
  * Render markdown to sanitized HTML.
@@ -45,10 +100,7 @@ export function Markdown({
   streaming?: boolean;
   className?: string;
 }): React.JSX.Element {
-  const html = React.useMemo(
-    () => (streaming ? '' : DOMPurify.sanitize(marked.parse(text, { async: false }) as string)),
-    [text, streaming]
-  );
+  const html = React.useMemo(() => (streaming ? '' : renderMarkdown(text)), [text, streaming]);
   if (streaming) {
     return (
       <div className={className} style={{ whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>

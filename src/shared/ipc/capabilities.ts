@@ -39,6 +39,13 @@ export const CAPABILITIES = [
   // home config. Named for what it DOES, not where the
   // answer is shown — "settings.read" hid a child process.
   'fs.probe', // existence/type of an arbitrary caller-supplied path
+  'fs.read', // the CONTENTS of a file, scoped to open session folders plus
+  // what the user picked (P2-E16-01, §5.30). Deliberately NOT
+  // folded into `fs.probe`: existence-and-type is strictly less
+  // power than bytes, and the whole point of splitting the
+  // vocabulary is that a Phase-4 consumer can hold one without
+  // the other. Same argument as `update.check` vs
+  // `update.install` below.
   'dialog.open', // a NATIVE file dialog. Deliberately its own capability:
   // holding "sessions" must not imply the power to put an
   // OS dialog in front of the user.
@@ -78,6 +85,9 @@ export const CHANNEL_CAPABILITIES = {
   'events:ack': 'events.write',
   'events:dismiss': 'events.write',
   'events:list': 'events.read',
+  // read a file's contents — scope-checked, size-capped and refused in MAIN
+  // (P2-E16-01). Its own family, because it belongs to no session.
+  'fs:read': 'fs.read',
   'git:fileVersions': 'git.read',
   'git:status': 'git.read',
   'groups:create': 'groups.write',
