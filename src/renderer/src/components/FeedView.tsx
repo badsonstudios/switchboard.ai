@@ -14,6 +14,7 @@ import { rendererRegistry } from '../extensibility/registry-instance';
 import { renderFeedBlock } from '../extensibility/feed-render';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { interruptSession, submitPrompt } from '../lib/composer';
+import { composerSize, resolveLineHeight } from '../lib/composer-size';
 import { argumentSummary } from '../lib/permission-batches';
 import {
   filterCommands,
@@ -813,6 +814,28 @@ function ApprovalBar({
 }
 
 /**
+ * An element's block-axis padding or border, in px — the parts of its height
+ * that are not rendered text.
+ *
+ * Logical longhands first (this codebase writes logical properties), physical
+ * as the fallback: jsdom resolves only the physical ones, and a measurement
+ * that silently read zero there would size a different box in tests than in
+ * the app.
+ */
+function blockEdge(cs: CSSStyleDeclaration, part: 'padding' | 'border'): number {
+  const px = (v: string): number => {
+    const n = Number.parseFloat(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const w = part === 'border' ? '-width' : '';
+  const logical =
+    px(cs.getPropertyValue(`${part}-block-start${w}`)) +
+    px(cs.getPropertyValue(`${part}-block-end${w}`));
+  if (logical > 0) return logical;
+  return px(cs.getPropertyValue(`${part}-top${w}`)) + px(cs.getPropertyValue(`${part}-bottom${w}`));
+}
+
+/**
  * Prompt composer (P2-E10-02, §5.10): an INPUT ROUTE to the real CLI — the
  * text is written to the session's PTY exactly as if typed in the terminal
  * (multiline goes as a bracketed paste so the TUI treats it as one prompt).
@@ -903,6 +926,56 @@ function Composer({
     setDismissed(true); // closed until the token changes again
     setPendingCaret({ pos: name.length + 2 }); // after "/name "
   };
+
+  // Auto-grow (P2-E10-08, §5.10): the box is as tall as what the browser
+  // ACTUALLY RENDERED — soft wrapping included — capped at COMPOSER_MAX_LINES
+  // and scrolling inside itself past that. The arithmetic is in
+  // `composer-size.ts`; this end only measures.
+  //
+  // Reset-then-read is the whole trick: an element never reports a scrollHeight
+  // smaller than the height we last gave it, so last frame's height has to be
+  // released before the new content can be read. That is also what lets the box
+  // SHRINK again as text is deleted.
+  //
+  // Not debounced, deliberately: it is one forced layout on one small textarea
+  // per keystroke — the same cost React already pays to re-render a controlled
+  // input — and a debounce would leave the box visibly lagging the caret.
+  const grow = React.useCallback((): void => {
+    const el = box.current;
+    const view = el?.ownerDocument.defaultView;
+    if (!el || !view) return;
+    el.style.blockSize = 'auto';
+    el.style.overflowY = 'hidden'; // a scrollbar appearing mid-measure re-wraps the text
+    const cs = view.getComputedStyle(el);
+    const size = composerSize({
+      scrollHeight: el.scrollHeight,
+      lineHeight: resolveLineHeight(cs.lineHeight, cs.fontSize),
+      padding: blockEdge(cs, 'padding'),
+      border: blockEdge(cs, 'border'),
+      borderBox: cs.getPropertyValue('box-sizing') === 'border-box',
+    });
+    el.style.blockSize = `${size.blockSize}px`;
+    el.style.overflowY = size.overflowY;
+  }, []);
+  // A LAYOUT effect: the height is written in the same commit as the new text,
+  // so the box never paints a frame at the old size.
+  React.useLayoutEffect(grow, [draft, grow]);
+  // A NARROWER box wraps the same text into more lines, and nothing re-renders
+  // when dockview drags a splitter. Only an INLINE-size change re-measures, so
+  // our own height writes cannot feed back into this.
+  React.useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    let last = el.getBoundingClientRect().width;
+    const ro = new ResizeObserver(() => {
+      const width = el.getBoundingClientRect().width;
+      if (width === last) return;
+      last = width;
+      grow();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [grow]);
 
   const submit = (): void => {
     const text = draft.replace(/\r\n/g, '\n').trimEnd();
@@ -1044,7 +1117,11 @@ function Composer({
           }
         }}
         placeholder={t('feedView.composerPlaceholder')}
-        rows={Math.min(6, Math.max(1, draft.split('\n').length))}
+        // ONE row, always: the height is measured and written by `grow()`
+        // below. `rows` counts hard newlines and cannot see soft wrapping —
+        // that was the whole of #406. It stays at 1 so the very first paint,
+        // before any layout effect runs, is the small box the design wants.
+        rows={1}
         style={{
           flex: 1,
           resize: 'none',
