@@ -57,6 +57,17 @@ export interface PersistedSession {
   transport?: 'pty' | 'stream';
   /** freeform "what is this doing" label, distinct from the folder title */
   taskLabel?: string;
+  /**
+   * Who set `taskLabel` (P2-E7-06, §5.11): the user typed it, or it was filled
+   * from the CLI's own conversation title. `'user'` is sticky for ever;
+   * `'auto'` keeps tracking.
+   *
+   * ABSENT ON EVERY CARD WRITTEN BEFORE THIS FEATURE, and the meaning of that
+   * absence matters — those cards may carry a label the user typed under E7-03.
+   * `sessions/auto-label.ts` reads it, and treats "absent with text in it" as
+   * the user's; nothing here needs a migration because that rule is exact.
+   */
+  labelSource?: 'auto' | 'user';
   /** persistent-group membership (E12); absent/null = ungrouped */
   groupId?: string;
 }
@@ -101,6 +112,21 @@ export interface WorkspaceState {
   notifications: NotificationPrefsState;
   /** auto-trust a folder on session open (picking a folder = trusting it) */
   autoTrust: boolean;
+  /**
+   * Fill a blank task label from the CLI's own conversation title (P2-E7-06,
+   * §5.11). Default ON — it is the feature.
+   *
+   * The off-switch exists for one concrete reason and it is not squeamishness:
+   * the label is derived from what the user asked the agent, and it renders on
+   * the card, in the rail and in OS toasts, which is to say it leaves the app
+   * window and lands in a screen-share. Turning it off hides every auto label
+   * at once and drops toast text back to the session title.
+   *
+   * A workspace setting beside `autoTrust`, not a notification pref, even though
+   * §5.11 files it under §5.9: notification prefs are about notifications, and
+   * this governs the card first and the toast second.
+   */
+  autoLabels: boolean;
   /**
    * Update-check preferences (P2-E19-03). A top-level TYPED field rather than
    * a key in the opaque `ui` blob, because MAIN is the reader: the daily timer
@@ -163,6 +189,7 @@ const EMPTY: WorkspaceState = {
   ui: null,
   notifications: { enabled: true, osToasts: false },
   autoTrust: true,
+  autoLabels: true,
   updates: { autoCheck: true },
 };
 
@@ -335,6 +362,9 @@ export class WorkspaceStore {
       if (wrongType(raw, 'autoTrust', 'boolean'))
         note('the auto-trust setting in the workspace file was not true or false — leaving it on');
 
+      if (wrongType(raw, 'autoLabels', 'boolean'))
+        note('the auto-label setting in the workspace file was not true or false — leaving it on');
+
       this.state = {
         version: CURRENT_VERSION,
         sessions,
@@ -344,6 +374,7 @@ export class WorkspaceStore {
         ui: raw.ui ?? null,
         notifications: notifications.value,
         autoTrust: raw.autoTrust !== false, // default on
+        autoLabels: raw.autoLabels !== false, // default on — same shape, same reason
         updates: updates.value,
       };
     } catch (err) {
@@ -762,6 +793,15 @@ export class WorkspaceStore {
 
   setAutoTrust(on: boolean): void {
     this.state.autoTrust = on;
+    this.saveSoon();
+  }
+
+  getAutoLabels(): boolean {
+    return this.state.autoLabels;
+  }
+
+  setAutoLabels(on: boolean): void {
+    this.state.autoLabels = on;
     this.saveSoon();
   }
 

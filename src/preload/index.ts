@@ -222,6 +222,21 @@ const api = {
       ipcRenderer.on('sessions:cardsChanged', h);
       return () => ipcRenderer.removeListener('sessions:cardsChanged', h);
     },
+    /**
+     * A card's task label changed (P2-E7-06) — usually because the CLI wrote a
+     * title into its transcript and nothing in the renderer asked for it.
+     *
+     * Carries the value, unlike `onCardsChanged`: the grid's card header keeps
+     * its label in local state, so there is nothing there to re-read, and
+     * `cards()` resolves a git root per card — far too expensive to run every
+     * time one string moves. `label` is undefined when the card has none to
+     * show, which includes an auto label the user has switched off.
+     */
+    onTaskLabel: (cb: (p: { cardId: string; label?: string }) => void): (() => void) => {
+      const h = (_e: unknown, p: { cardId: string; label?: string }) => cb(p);
+      ipcRenderer.on('sessions:taskLabel', h);
+      return () => ipcRenderer.removeListener('sessions:taskLabel', h);
+    },
     onUsage: (cb: (snap: unknown) => void): (() => void) => {
       const h = (_e: unknown, s: unknown) => cb(s);
       ipcRenderer.on('sessions:usage', h);
@@ -297,6 +312,12 @@ const api = {
   settings: {
     getAutoTrust: (): Promise<boolean> => ipcRenderer.invoke('settings:getAutoTrust'),
     setAutoTrust: (on: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setAutoTrust', on),
+    /** Fill blank task labels from the CLI's own conversation title (P2-E7-06).
+     *  Off hides every auto label at once and drops toast text back to the
+     *  session title — the screen-share switch (§5.11). */
+    getAutoLabels: (): Promise<boolean> => ipcRenderer.invoke('settings:getAutoLabels'),
+    setAutoLabels: (on: boolean): Promise<boolean> =>
+      ipcRenderer.invoke('settings:setAutoLabels', on),
   },
   preflight: {
     check: (): Promise<{

@@ -40,6 +40,17 @@ export interface TranscriptSnapshot {
   usage: UsageTotals;
   /** last-seen model id from the transcript, for cost estimation */
   model?: string;
+  /**
+   * The conversation title the CLI wrote into its own transcript (§5.11,
+   * P2-E7-06) — what fills a blank task label. Undefined until a line carries
+   * one, which may be line 8 or line 510 or never.
+   *
+   * DE-DUPED AT SOURCE: only ever assigned when the value actually changes, so
+   * the 14 identical `ai-title` lines a 171-line transcript carries move this
+   * once. Everything downstream (the persist, the renderer push) hangs off that
+   * one move.
+   */
+  title?: string;
   lines: number;
   malformed: number;
   /** Schema keys this run has never seen before (§5.26 drift detector). Sits
@@ -195,6 +206,15 @@ interface WatchedSession {
    * feeding one Feed would render every block twice.
    */
   deriveFeed: boolean;
+  /**
+   * Read this provider's conversation title off a transcript line (§5.11), or
+   * undefined when the provider declares no `titles` capability — in which case
+   * no line is ever inspected and `snap.title` stays undefined for ever. That
+   * is the "an adapter that does not declare titles starts no title watch at
+   * all" half of P2-E7-06, and it is a per-SESSION field because the provider
+   * is a per-session fact: one watcher serves cards on different adapters.
+   */
+  readTitle?: (line: Record<string, unknown>) => string | undefined;
 }
 
 /** After this long unbound, widen discovery beyond the slug prefilter. */
@@ -498,6 +518,9 @@ export class TranscriptWatcher {
        * stop watching.
        */
       deriveFeed?: boolean;
+      /** How this session's provider spells a conversation title (§5.11).
+       *  Omitted = it has none, and no line is inspected for one. */
+      readTitle?: (line: Record<string, unknown>) => string | undefined;
     }
   ): boolean {
     const root = session.projectsRoot ?? this.opts.projectsRoot ?? '';
@@ -565,6 +588,7 @@ export class TranscriptWatcher {
       exitedAt: null,
       quiesced: false,
       deriveFeed: session.deriveFeed !== false,
+      readTitle: session.readTitle,
     });
     this.ensurePolling();
     return true;
@@ -1603,6 +1627,7 @@ export class TranscriptWatcher {
     if (full === w.boundFile && typeof e.sessionId === 'string' && !w.snap.nativeSessionId) {
       w.snap.nativeSessionId = e.sessionId;
     }
+    this.absorbTitle(w, full, e);
     this.deriveBlocks(w, full, e);
     const message = e.message as
       | { usage?: Record<string, number>; content?: unknown; model?: string }
@@ -1636,6 +1661,34 @@ export class TranscriptWatcher {
         }
       }
     }
+  }
+
+  /**
+   * The conversation title, if this line carries one (§5.11, P2-E7-06).
+   *
+   * Three gates, each of which removes a real failure rather than a
+   * hypothetical one:
+   *
+   *  - **no `readTitle`** — the provider declares no `titles` capability, so
+   *    nothing is inspected at all. Not "we look and find nothing": there is no
+   *    shared spelling of a title anywhere in this file to look for.
+   *  - **the BOUND file only** — a subagent's transcript is a different
+   *    conversation with its own title, and letting one through would relabel
+   *    the card with whatever a `Task` call happened to be doing.
+   *  - **an unchanged value is not a change** — the CLI re-emits the settled
+   *    title every turn (14 identical lines in a 171-line transcript, measured),
+   *    so without this every turn on every open session would push a snapshot
+   *    the renderer re-renders and a card the store re-writes. THIS is the
+   *    de-dupe P2-E7-06 asks for; everything downstream inherits it.
+   *
+   * Last-wins otherwise, because the CLI revises: an observed session went
+   * `"…preview windows"` → `"…preview feature"` one line later.
+   */
+  private absorbTitle(w: WatchedSession, full: string, e: Record<string, unknown>): void {
+    if (!w.readTitle || full !== w.boundFile) return;
+    const title = w.readTitle(e);
+    if (typeof title !== 'string' || !title || title === w.snap.title) return;
+    w.snap.title = title;
   }
 
   /** Read meta sidecars for any agent files under our session dir (S-05). */

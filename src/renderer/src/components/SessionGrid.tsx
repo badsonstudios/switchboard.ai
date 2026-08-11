@@ -508,6 +508,22 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       });
   }, [visible, live, ended, suspended, cardId, folder, props.api.title]);
 
+  // The label can fill itself from the CLI's own conversation title (P2-E7-06),
+  // and it can do it minutes after this card mounted — observed as late as line
+  // 510 of a transcript. Nothing in this component asked for it, so main pushes
+  // it; the header reserves its space either way, so a late arrival never
+  // reflows the row.
+  //
+  // Bound to the CARD, not the live session: the label outlives a restart, and
+  // this is also the echo of the user's own edit below (the rail shows the same
+  // label and is not the caller when the grid is).
+  React.useEffect(() => {
+    if (!cardId) return;
+    return window.switchboard.sessions.onTaskLabel?.((p) => {
+      if (p.cardId === cardId) setTaskLabel(p.label ?? '');
+    });
+  }, [cardId]);
+
   // a dead session's card must be dismissable, not a stuck blank terminal
   React.useEffect(() => {
     if (!live) return;

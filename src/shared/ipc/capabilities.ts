@@ -112,6 +112,8 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:setAutonomy': 'sessions.write',
   'sessions:setTaskLabel': 'sessions.write',
   'sessions:slashCommands': 'sessions.read',
+  'settings:getAutoLabels': 'settings.read',
+  'settings:setAutoLabels': 'settings.write',
   'settings:getAutoTrust': 'settings.read',
   'settings:setAutoTrust': 'settings.write',
   'transcripts:binding': 'transcripts.read',
@@ -156,6 +158,9 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:permissionRequest': 'sessions.read',
   'sessions:permissionResolved': 'sessions.read',
   'sessions:status': 'sessions.read',
+  // a card's task label moved, and the renderer did not do it (P2-E7-06) —
+  // carries the new value, because its two readers have nothing to re-read
+  'sessions:taskLabel': 'sessions.read',
   'sessions:usage': 'sessions.read',
   // how far the download/verify/install has got (E19-04). Same capability as
   // starting one: a window that may not install may not watch one either.

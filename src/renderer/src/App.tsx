@@ -355,6 +355,7 @@ export function App(): React.JSX.Element {
   const [preflightOk, setPreflightOk] = useState(true);
   const [cliVersion, setCliVersion] = useState<string | null>(null);
   const [autoTrust, setAutoTrust] = useState(true);
+  const [autoLabels, setAutoLabels] = useState(true);
   const [usageByLive, setUsageByLive] = useState<Map<string, { usage: Usage; model?: string }>>(
     new Map()
   );
@@ -395,6 +396,7 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void bridge.notifications?.getPrefs?.().then((p) => setNotifEnabled(p.enabled));
     void bridge.settings?.getAutoTrust?.().then(setAutoTrust);
+    void bridge.settings?.getAutoLabels?.().then(setAutoLabels);
     void bridge.preflight?.check?.().then((r) => {
       setPreflightOk(r.ok);
       setCliVersion(r.version);
@@ -640,10 +642,19 @@ export function App(): React.JSX.Element {
     // …and when a card gains or loses its live session without any status
     // having changed — a resume (#170). Same refresh, third trigger.
     const offCards = bridge.sessions?.onCardsChanged?.(() => void refreshSessions());
+    // A task label filled itself from the CLI's own title (P2-E7-06). Patched
+    // into the store rather than triggering the refresh above: the label is the
+    // only field that moved, and this fires on a card whose title the CLI keeps
+    // revising — a full `cards()` re-read per revision would walk a git root per
+    // session for one string.
+    const offLabel = bridge.sessions?.onTaskLabel?.((p) =>
+      sessionStore.setTaskLabel(p.cardId, p.label)
+    );
     return () => {
       offStatus?.();
       offExit?.();
       offCards?.();
+      offLabel?.();
     };
   }, [cards, refreshSessions]); // re-sync when the grid's cards change
 
@@ -1085,6 +1096,14 @@ export function App(): React.JSX.Element {
           const next = !autoTrust;
           setAutoTrust(next);
           void bridge.settings?.setAutoTrust?.(next);
+        }}
+        autoLabels={autoLabels}
+        onToggleAutoLabels={() => {
+          const next = !autoLabels;
+          setAutoLabels(next); // optimistic: the chip must move on the click…
+          // …and main answers with what it actually stored, which is also what
+          // re-publishes every visible label under the new setting.
+          void bridge.settings?.setAutoLabels?.(next).then(setAutoLabels);
         }}
         railHidden={railHidden}
         onToggleRail={toggleRail}

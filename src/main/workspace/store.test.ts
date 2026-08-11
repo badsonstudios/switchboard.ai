@@ -295,6 +295,34 @@ describe('update prefs (P2-E19-03)', () => {
     st.load();
     expect(st.getUpdatePrefs()).toEqual({ autoCheck: true });
     expect(st.getAutoTrust()).toBe(false); // …and nothing else moved
+    // auto labels default ON for a file that predates them (P2-E7-06): the
+    // feature is what the setting is for, and off is the exception
+    expect(st.getAutoLabels()).toBe(true);
+  });
+
+  it('the auto-label switch survives a reload (P2-E7-06)', () => {
+    const a = makeStore(file);
+    a.load();
+    expect(a.getAutoLabels()).toBe(true);
+    a.setAutoLabels(false);
+    a.save();
+
+    const b = makeStore(file);
+    b.load();
+    expect(b.getAutoLabels()).toBe(false);
+  });
+
+  it('a card remembers who set its label (P2-E7-06)', () => {
+    // `labelSource` is what makes "typing pins it forever" survive a restart.
+    const a = makeStore(file);
+    a.load();
+    a.upsertSession({ ...sess('a'), taskLabel: 'mine', labelSource: 'user' });
+    a.save();
+
+    const b = makeStore(file);
+    b.load();
+    expect(b.listSessions()[0].labelSource).toBe('user');
+    expect(b.listSessions()[0].taskLabel).toBe('mine');
   });
 
   it('two stores do not share the defaults object', () => {
@@ -869,6 +897,13 @@ describe('load-time repairs are audible (#344)', () => {
       const warns = loadWarns();
       expect(warns).toHaveLength(1);
       expect(warns[0].msg).toMatch(/auto-trust .* leaving it on/);
+    });
+
+    it('a non-boolean auto-label setting says it stayed on too (P2-E7-06)', () => {
+      write({ version: 1, autoLabels: 'sure' });
+      const warns = loadWarns();
+      expect(warns).toHaveLength(1);
+      expect(warns[0].msg).toMatch(/auto-label .* leaving it on/);
     });
   });
 

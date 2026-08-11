@@ -388,6 +388,50 @@ describe('identity maps that used to be module globals', () => {
     expect(store.getCardBadge(undefined)).toBeUndefined();
   });
 
+  // P2-E7-06 — a label that filled itself from the CLI's own conversation
+  // title, patched in from main's push rather than a full card re-read.
+  it('patches ONE card task label without disturbing its neighbours', () => {
+    store.setSessions([session('card-A'), session('card-B')]);
+    const before = store.getState().sessions[1];
+
+    store.setTaskLabel('card-A', 'Add markdown and file preview feature');
+
+    expect(store.getState().sessions[0].taskLabel).toBe('Add markdown and file preview feature');
+    expect(store.getState().sessions[1]).toBe(before); // untouched, same object
+  });
+
+  it('ignores a push for a card it has never listed', () => {
+    // Inventing a row from one field would put a session with no title, folder
+    // or status in the rail; the card list itself answers this when it arrives.
+    store.setSessions([session('card-A')]);
+    const before = store.getState().sessions;
+
+    store.setTaskLabel('card-ghost', 'nope');
+
+    expect(store.getState().sessions).toBe(before);
+  });
+
+  it('does not re-render for a label that has not moved', () => {
+    // The CLI re-emits its settled title every turn; this is the last of the
+    // three de-dupes that stands between that and a render per turn per card.
+    store.setSessions([session('card-A', { taskLabel: 'same' })]);
+    const before = store.getState().sessions;
+
+    store.setTaskLabel('card-A', 'same');
+
+    expect(store.getState().sessions).toBe(before);
+  });
+
+  it('clears a label when main says there is none to show', () => {
+    // What the screen-share switch pushes: the value is kept in main, and the
+    // renderer is told to stop showing it.
+    store.setSessions([session('card-A', { taskLabel: 'derived from a prompt' })]);
+
+    store.setTaskLabel('card-A', undefined);
+
+    expect(store.getState().sessions[0].taskLabel).toBeUndefined();
+  });
+
   it('settles by VALUE, so a useSyncExternalStore snapshot cannot loop', () => {
     // the reason these are two scalar getters and not one getCardIdentity():
     // a fresh {accent, badge} per call is a new identity every render, and
