@@ -456,13 +456,15 @@ interrupt). `interrupt` is in the protocol and has never been exercised.
 Drive the S-05 sidechain rendering from the field that is already on every
 message. Unmeasured against our feed.
 
-### E18-14 · Transport-matrix e2e — M
+### E18-14 · Transport-matrix e2e — M [issue #416, filed 2026-08-11]
 
 The specs that assert against terminal output or the hook path —
 `real-claude`, `reconnect`, `session`, `approval`, `binding`, `slash-commands`,
 `split` — get run against **both** transports where the behaviour should be
-identical, and split where it should not. Sized after E18-11 tells us how many
-behaviours genuinely differ.
+identical, and split where it should not. ~~Sized after E18-11 tells us how many
+behaviours genuinely differ.~~ **Sized 2026-08-11 by the #404 audit** (37 of 39
+e2e spec files silently run the PTY; the port list — permissions, attention,
+feed — is in #416).
 
 ### E18-15 · Retire the hook listener — M [gated on the default flip]
 
@@ -494,6 +496,25 @@ permissible; it makes saying "this is gone" mandatory.
 *Sizing note:* this is the item where the epic's cost is repaid — the deletion
 list above is most of the 14 load-bearing files in S-10's blast-radius table.
 
+### E18-17 · Cheap transport unit pins — S [issue #417, filed 2026-08-11]
+
+The #404 audit's checkbox-3 batch: adapter-fallback pin, command-rejection
+try/catch tests, the `SWITCHBOARD_TRANSPORT` parser extraction + tests,
+`PersistedSession.transport` round-trip, fake-ignores-transport pin,
+bracketed-paste coverage. Full list in #417.
+
+### E18-18 · Mark transport-scoped specs honestly — S [issue #418, filed 2026-08-11]
+
+Rename/annotate the PTY-by-construction specs (#404 checkbox 4) so their green
+stops implying default-transport coverage. Coordinates with E18-14: a ported
+spec doesn't also need the rename.
+
+### E18-19 · Renderer transport UI unit tests — S [issue #419, filed 2026-08-11]
+
+The ⋯ transport toggle, mode label, pending-restart affordance, and
+StreamTerminalNotice are e2e-only (#404 checkbox 5). Component tests for all
+four, pinning the seed-from-default path.
+
 ---
 
 ## What is NOT fileable yet, and why
@@ -503,9 +524,11 @@ chooser probes turn out. They build the spine — seam, service, fake, lifecycle
 submission, approvals, the opt-in flag, commands, feed — and by E18-08 the epic
 is dogfoodable.
 
-**Unfiled: E18-11…E18-16.** Their done-when depends on measurements that do not
-exist yet. Per `00-process.md` we do not file issues whose acceptance criteria
-we know to be unstable. File them when S-11's findings note lands.
+**Unfiled: E18-11…E18-13, E18-15, E18-16.** Their done-when depends on
+measurements that do not exist yet. Per `00-process.md` we do not file issues
+whose acceptance criteria we know to be unstable. File them when S-11's
+findings note lands. **E18-14 and E18-17…19 were filed 2026-08-11 (#416–#419)**
+— the #404 audit supplied the measurements E18-14 was waiting on.
 
 ## Relationship to the rest of Phase 2
 

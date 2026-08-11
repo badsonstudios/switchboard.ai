@@ -3,6 +3,29 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> ## 🎛 ORCHESTRATION BLOCK — RUN 17 (started 2026-08-11, post-/pm refill)
+>
+> **Single-writer rule: only the orchestrator (this session) writes this
+> file.** Workers report via `.claude/work_files/orchestrator/<issue#>.md`;
+> those handoffs are the inputs, this block is the output. If this session
+> dies, a fresh /orchestrate session resumes from THIS block + the handoffs.
+>
+> **Active workers (wave 1):**
+> - **#408** (E7-06 auto task labels, UF) → `sb-wt-1` → `feature/408-auto-task-labels`
+> - **#409** (E16-01 markdown renderer + fs.read, internal) → `sb-wt-2` → `feature/409-markdown-fs-read`
+> - **#426** (pending-lamp cap, UF) → `sb-wt-3` → `feature/426-pending-lamp-cap`
+>
+> **Merge queue:** (empty) · **Dan's queue:** (empty)
+>
+> **Dispatch order after wave 1:** #395 + #416 (Direct coverage; e2e-heavy —
+> stagger on the lock) · #410 → #411 → #412 (E16 chain, serial) · #397 ·
+> #406 · #417 #418 #419 (small, independent) · #413–#415 (E17, after E16) ·
+> E14: #407 FIRST and it is a DESIGN GATE (2–3 options to Dan — dispatch
+> prepares options, Dan picks) → then #420, then #421 → #422/#423/#424;
+> #425 anytime. Long tail: #216 #255 #290 #295 #323 #333 #337; #268 may be
+> mooted by #407; #394 rides the next release cut; #402 is a docs note;
+> #256 umbrella awaits Dan's close.
+
 **Milestone:** Phase 2 - The Switchboard (E7+E8+E10+E12 complete & merged;
 **E18-01…10 ALL DONE 2026-08-02**; E15 done except #111 [held — real tokens];
 E9: #70–#77 done, **#78/#79 in Dan's queue** (PRs #287/#301), #80 held on a
@@ -53,17 +76,29 @@ structure adopting #228's temp-dir registry, verified by a local
 > e2e. Sixteen runs, ~60 items, three releases — the milestone's filed
 > queue is EMPTY.
 >
-> **NEXT SESSION STARTS HERE:** Dan intends to clear context. The next
-> prompt should be **/pm** — the epic-expansion sitting (E9 tail, E11,
-> E13, E14 are outlines; expanding them into filed issues is the
-> pipeline refill and needs Dan's scoping calls). Bring to that same
-> sitting: #320's parked question (allow >1 pending lamp mark while
-> the window can't paint, or keep the two-lamp rule?), #397 (ask-trust
-> inert on Direct — disable/annotate/redesign?), and the small open
-> issues #394 (package-lock version, fold into next cut) and #402
-> (S-07 correction note). After /pm files the new milestone: run
-> **/orchestrate**. Also available whenever: a release cut — `0.4.0 —
-> unreleased` holds 4 entries headlined by batch permissions.
+> **THE /pm SITTING HAPPENED 2026-08-11 — the queue is REFILLED.**
+> Filed with Dan's go-ahead: **#408** (E7-06 auto task labels, take
+> first) · **#409–#412** (E16 document viewer) · **#413–#415** (E17
+> session find, after E16) · **#416–#419** (E18-14 transport-matrix
+> e2e + E18-17/18/19 unit pins / honest spec renames / renderer
+> transport UI tests — #404's checkboxes 2–5, #404 CLOSED as the audit
+> record). **#395 milestoned** into Phase 2 (Direct resume empty view —
+> high priority, default-transport defect). **E14 EXPANDED AND FILED**
+> (Dan chose E14 over E11, confirmed the draft): **#407 = E14-01**
+> (retitled; design gate — 2–3 shapes to Dan before building) ·
+> **#420–#425** = E14-02…07; full section now in
+> `04-phase-2-switchboard.md`, outline gone. **Decisions taken (Dan):**
+> #397 = disable ask-trust on Direct, grey + tooltip (recorded on the
+> issue; it is now the work item) · #320's parked lamp question =
+> painted lamps keep the two-lamp rule, PENDING marks cap at one,
+> latest wins → filed as **#426** (S, one guarded line + tests).
+> **NEXT:** run **/orchestrate** — ~20 runnable issues: #408 first,
+> then #395/#416 (Direct coverage), E16 chain #409–#412, E14 via
+> #407's design gate; filler #406 #397 #417–#419 #426. E17 #413–#415
+> after E16. Plan-file + PROGRESS edits from the sitting are
+> UNCOMMITTED — fold into the next docs commit. Also available
+> whenever: a release cut — `0.4.0 — unreleased` holds 4 entries
+> headlined by batch permissions (+ fold #394 into it).
 >
 > # 🎛 RUN 16 CLOSED 2026-08-10 (the five-decision
 > campaign: 5/5 complete; 4 UF PRs in DAN'S QUEUE → train #403, #111

@@ -89,7 +89,7 @@ costing — at a glance. Uses existing data; mostly UI wiring.*
   it is focused, with a "suspended" affordance.
 
 - **P2-E7-06 · Auto task labels from the CLI's own title — S (§5.11, §5.3,
-  §5.26). [added 2026-07-30, owner request]** A blank task label fills itself
+  §5.26). [added 2026-07-30, owner request; issue #408 filed 2026-08-11]** A blank task label fills itself
   from the description Claude Code *already writes into its transcript* — the
   same thing the Claude Code VS Code extension puts in its tab text. E7-03
   shipped the user-typed label; this fills it when the user has not.
@@ -134,7 +134,7 @@ costing — at a glance. Uses existing data; mostly UI wiring.*
 **E7 exit:** a 5-session workspace reads at a glance — identity, live status,
 cost, git, and plan progress — and the rail mirrors every card. Litmus
 (PHILOSOPHY §4) checked on each visible surface. *(E7-01…05 shipped in PR #42;
-**E7-06 added 2026-07-30 and is NOT yet filed as an issue** — the epic is
+**E7-06 filed as issue #408, 2026-08-11** — the epic is
 otherwise merged, so this one item reopens it rather than starting an epic.)*
 
 ---
@@ -844,19 +844,19 @@ session", lineage nesting in the rail ("↳ Review of X", ephemeral by default).
 Agent-initiated `spawn_session` and rules-engine auto-dispatch stay Phase 3
 (Dispatch v2). Depends on E11's context packages — sequence after it.
 
-## E14 — Notifications v2, event feed v2 & service status (outline — restored 2026-07-21)
+## E14 — Notifications v2, event feed v2 & service status (milestone: Phase 2; expanded 2026-08-11 from the 2026-07-21 outline; issues #407 + #420–#425)
 
-Three §8 items that share the event pipeline, dropped in the original
-break-out; they interleave anywhere after E9:
+*Goal: the event pipeline becomes the app's nervous system — rules decide who
+gets told what and how (§5.9), the Events surface gets smaller and more capable
+(§5.12), and the status bar knows when the provider is having a day (§5.14).
+Expanded at the 2026-08-11 /pm sitting (Dan picked E14 over E11). Ordering:
+01 → 02 (the design gate reshapes the surface 02 builds on); 03 unlocks
+04/05/06; 07 is independent and interleaves anywhere.*
 
-- **Notifications v2 (§5.9).** Rules engine (when [event] in [session | any] →
-  actions), per-session distinct sounds, TTS announcements, phone push
-  (ntfy / Pushover), webhook, actionable Allow/Deny toasts (keystroke to PTY),
-  visibility-aware rule conditions, quiet hours + missed-events digest.
-  Actionable toasts pair naturally with E10 — consider landing that slice with
-  approvals.
-- **Events panel rework: reclaim the column (owner request 2026-08-11,
-  issue #407 — filed ahead of the epic; okay to run standalone).** Dan's
+Work items:
+
+- **P2-E14-01 · Events panel rework: reclaim the column — M (§5.12, §5.8;
+  owner request 2026-08-11). [issue #407, filed ahead of the epic]** Dan's
   verdict on the shipped panel: too large for what it does, and largely
   redundant — session cards, the rail, and the urgency strip already carry
   most of its signal. Today it is an always-visible fixed 220px right-hand
@@ -870,35 +870,77 @@ break-out; they interleave anywhere after E9:
   keep the queue-ordering/Ctrl+Space contract legible (E9-03: the queue is
   the authority, this panel renders it), rehome the reconnect offer and
   update notice, and honor §5.8 keyboard-fail-open — collapsing chrome never
-  removes capability. Interacts with Events v2 below (inline decisions want
-  a visible surface — a collapsed drawer changes that calculus) and may moot
-  #268 (reviewed-row opacity) if the row styling is rebuilt.
-- **Events v2 (§5.12, revised 2026-07-22).** The one-item-per-session /
-  resolved-means-gone core shipped with the E10 fix round; v2 adds the
-  mockup's filters (All · Needed · By-session), inline actions on events,
-  the full §5.12 event catalog, and the **questions-queue placeholder**
-  (a session's clarification questions render as an expandable list the
-  operator returns to later — owner request 2026-07-22).
-  **Inline permission decisions (owner request 2026-07-23):** a
+  removes capability. Interacts with 02 (inline decisions want a visible
+  surface — a collapsed drawer changes that calculus) and may moot #268
+  (reviewed-row opacity) if the row styling is rebuilt.
+  *Done when:* the design gate ran and Dan picked; the chosen shape ships
+  with the invariants above intact and the reclaimed space going to the grid.
+- **P2-E14-02 · Events v2: filters, inline permission decisions, questions
+  queue — M (§5.12, revised 2026-07-22). [issue #420]** *(depends: 01 — the
+  surface's shape changes this item.)* Filters (All · Needed · By-session);
+  **inline permission decisions (owner request 2026-07-23):** a
   needs-permission event carries the SAME buttons as the approval bar —
-  Allow · Allow all (this session) · Deny — decidable from the Events panel
-  without focusing the card ("blind allow/deny"). Plumbing: the event needs
-  the held requestId(s) attached (join `sessions:pendingPermissions` by live
-  id, or enrich the event push in ipc.ts); decisions ride the existing
-  `sessions:decidePermission` / `sessions:allowAllSession` IPC. Interim
-  shipped 2026-07-23: uniform item heights + per-item dismiss ✕.
-- **Per-session "notify when done" checkbox (§5.9, owner request
-  2026-07-22).** Done-toasts opt-in per session; rides the rules engine.
-  (Interim shipped: no OS toasts while the window is focused, crashes
-  excepted.)
-- **Status bar service health (§5.14).** Anthropic Statuspage polling
-  (status + unresolved incidents), status-bar dot + tooltip, incident Feed
-  events, local corroboration banner (multiple sessions erroring → "possible
-  provider issue" before the status page catches up).
+  Allow · Allow all (this session) · Deny — decidable without focusing the
+  card ("blind allow/deny"). Plumbing: attach the held requestId(s) (join
+  `sessions:pendingPermissions` by live id, or enrich the event push in
+  ipc.ts); decisions ride the existing `sessions:decidePermission` /
+  `sessions:allowAllSession` IPC. Plus the **questions-queue placeholder**
+  (owner request 2026-07-22): a session's clarification questions render as
+  an expandable list the operator returns to later. (Interim shipped
+  2026-07-23: uniform item heights + per-item dismiss ✕.)
+  *Done when:* a held permission is answered entirely from the Events
+  surface with the card never focused; declining one session's request
+  leaves another's held; filters work; a clarification renders as an
+  expandable list item; e2e via the stream fake (coordinates with
+  E18-14 / #416).
+- **P2-E14-03 · Rules engine core + per-session "notify when done" — M
+  (§5.9; owner request 2026-07-22). [issue #421]** `when [event] in
+  [session | any] → [actions]` with visibility-aware conditions; rules
+  persist in the workspace store. First consumer: the per-session
+  "notify when done" checkbox — done-toasts opt-in per session. The interim
+  behavior (no OS toasts while focused, crashes excepted) becomes a
+  visibility condition, not a special case.
+  *Done when:* a rule fires only when event, scope, and visibility all
+  hold; the checkbox round-trips restart; evaluation is table-driven
+  unit-tested; one rule proven e2e.
+- **P2-E14-04 · Actionable Allow/Deny toasts — S (§5.9). [issue #422]**
+  *(depends: 03)* OS toasts for needs-permission carry Allow / Deny riding
+  the same decide IPC — one decision path, three surfaces (bar, Events,
+  toast). Quiet when the window is focused.
+  *Done when:* toast-Allow runs the held tool with the app unfocused; Deny
+  refuses; a permission decided elsewhere withdraws its toast; a dead
+  session's toast logs instead of throwing.
+- **P2-E14-05 · Per-session sounds, TTS, quiet hours + digest — M (§5.9).
+  [issue #423]** *(depends: 03)* Distinct per-session sounds; TTS speaking
+  the task label (pairs with E7-06/#408, falls back to title); quiet hours;
+  missed-events digest on return.
+  *Done when:* two sessions ring distinguishably; TTS speaks the label;
+  quiet hours suppress and the digest lists what was suppressed; all
+  actions fail open — audio failure never delays the event.
+- **P2-E14-06 · Phone push (ntfy/Pushover) + webhook — M (§5.9) [part
+  user]. [issue #424]** *(depends: 03 + Dan's service pick)* Push and
+  generic-webhook rule actions; credentials in the OS credential store
+  (§5.29), never files.
+  *Done when:* a rule pushes to a phone; the webhook payload is documented;
+  the app runs fine unconfigured; delivery failure is fail-open and logged;
+  secrets never hit logs or the workspace file.
+- **P2-E14-07 · Status bar service health — M (§5.14). [issue #425]** *(no
+  deps)* Anthropic Statuspage polling (status + unresolved incidents),
+  status-bar dot + tooltip, incident Events entries, local corroboration
+  banner (multiple sessions erroring → "possible provider issue" before the
+  status page catches up).
+  *Done when:* mocked responses drive dot/tooltip/entries through all
+  states incl. unknown; the corroboration banner raises and clears; a
+  polling failure never nags.
+
+**E14 exit:** the Events surface earns its pixels (small, capable, decisions
+inline), a session can reach you by sound, voice, toast, or phone — each
+opt-in, each fail-open — and the status bar answers "is it me or is it them?"
+Litmus (PHILOSOPHY §4) checked per surface.
 
 ---
 
-## E16 — Document viewer v1: rendered markdown (milestone: Phase 2; added 2026-07-30, owner request)
+## E16 — Document viewer v1: rendered markdown (milestone: Phase 2; added 2026-07-30, owner request; issues #409–#412 filed 2026-08-11)
 
 *Goal: read what the agent wrote, in the app, rendered. Governing spec:
 DESIGN.md §5.30 (written with this epic), plus §5.7, §5.10, §5.23, §5.29.*
@@ -1005,7 +1047,7 @@ does the viewer window land on the intended monitor.
 
 ---
 
-## E17 — Session find (Ctrl+F) (milestone: Phase 2; added 2026-07-30, owner request)
+## E17 — Session find (Ctrl+F) (milestone: Phase 2; added 2026-07-30, owner request; issues #413–#415 filed 2026-08-11)
 
 *Goal: find a string in a session the way you find one in a browser. Governing
 spec: DESIGN.md §5.31 (written with this epic), plus §5.10, §5.23.*
