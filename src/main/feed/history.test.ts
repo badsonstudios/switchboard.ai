@@ -86,6 +86,18 @@ describe('readTranscriptTail', () => {
     expect(texts).toEqual(['two', 'three']);
   });
 
+  it('keeps a first line the budget happens to land exactly on', () => {
+    // the off-by-one that costs a whole entry: `size - maxBytes` can fall on a
+    // line boundary, where there is no fragment to drop
+    const lines = [userLine('one'), userLine('two'), userLine('three')];
+    const file = writeTranscript(NATIVE, lines);
+    const budget = Buffer.byteLength(lines[1] + '\n' + lines[2] + '\n');
+    const texts = readTranscriptTail(file, budget).map(
+      (e) => (e.message as { content: Array<{ text: string }> }).content[0].text
+    );
+    expect(texts).toEqual(['two', 'three']);
+  });
+
   it('caps how many lines it will parse, keeping the most recent', () => {
     const file = writeTranscript(NATIVE, ['one', 'two', 'three'].map(userLine));
     const entries = readTranscriptTail(file, HISTORY_TAIL_BYTES, 2);
@@ -139,13 +151,21 @@ describe('replayResumedHistory', () => {
   it('refuses an id that is not a conversation id — no path traversal (§5.29)', () => {
     writeTranscript(NATIVE, [userLine('one')]);
     const f = feed();
-    const n = replayResumedHistory(f, log, {
-      ...args,
-      projectsRoot: root,
-      folder,
-      nativeSessionId: `../${slugForCwd(folder)}/${NATIVE}`,
-    });
-    expect(n).toBe(0);
+    // The id reaches us from the persisted workspace file and from hook
+    // payloads, and it is interpolated into a path. Every separator shape is
+    // refused at the boundary, not at the join.
+    for (const id of [
+      `../${slugForCwd(folder)}/${NATIVE}`,
+      `..\\${slugForCwd(folder)}\\${NATIVE}`,
+      path.join(root, slugForCwd(folder), NATIVE),
+      '/etc/passwd',
+      'C:\\Windows\\win.ini',
+      // passes the character class and is inert: it names `..jsonl`
+      '..',
+    ]) {
+      expect(replayResumedHistory(f, log, { ...args, projectsRoot: root, folder, nativeSessionId: id })).toBe(0);
+    }
+    expect(f.calls).toEqual([]);
   });
 
   it('a hydrate that throws is survivable — P6, our breakage never blocks a session', () => {

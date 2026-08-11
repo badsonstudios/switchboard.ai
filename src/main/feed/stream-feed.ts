@@ -138,20 +138,28 @@ export class StreamFeed {
       return 0;
     }
     let n = 0;
-    for (const e of entries) {
-      // The SAME derivation the transcript watcher runs (`blocks.ts`), so a
-      // replayed turn cannot look different from the one that streamed live.
-      for (const intent of deriveIntents(e)) {
-        if (intent.t === 'tool-result') {
-          s.buffer.attachResult(intent.toolUseId, intent.out);
-          continue;
+    // SILENTLY: the caller runs inside `sessions:create`, whose own response is
+    // what tells the renderer this session's live id — so every push here would
+    // be sent to a panel that cannot yet be subscribed to it, and dropped on
+    // arrival. The panel reads the backlog when it mounts. See `FeedBuffer`.
+    s.buffer.silently(() => {
+      for (const e of entries) {
+        // The SAME derivation the transcript watcher runs (`blocks.ts`), so a
+        // replayed turn cannot look different from the one that streamed live.
+        // What it does NOT reproduce is the watcher's subagent files: only the
+        // main conversation is read back, so a resumed session's sidechains are
+        // absent rather than misfiled — rendering them at all is E18-13.
+        for (const intent of deriveIntents(e)) {
+          if (intent.t === 'tool-result') {
+            s.buffer.attachResult(intent.toolUseId, intent.out);
+            continue;
+          }
+          const block = s.buffer.push(intent.block, e.isSidechain === true);
+          if (intent.toolUseId) s.buffer.remember(intent.toolUseId, block);
+          n++;
         }
-        // `sidechain: false`: only the session's own transcript is read here.
-        const block = s.buffer.push(intent.block, false);
-        if (intent.toolUseId) s.buffer.remember(intent.toolUseId, block);
-        n++;
       }
-    }
+    });
     return n;
   }
 

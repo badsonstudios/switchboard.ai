@@ -1246,6 +1246,25 @@ describe('a resumed Direct session replays its history (#395)', () => {
     expect(streamFeed.blocks('live-1')).toEqual([]);
   });
 
+  it('does not read a root the watcher just refused', () => {
+    seedTranscript();
+    const streamFeed = new StreamFeed();
+    const h = harness(capsWith(() => root), dir, {
+      transport: 'stream',
+      liveIds: ['live-1'],
+      streamFeed,
+      // the watcher refuses a root it cannot poll safely (§5.29). A refusal has
+      // to mean the same thing on both paths, or "unusable root" quietly stops
+      // being a decision anyone can rely on.
+      watchAccepts: false,
+      prior: priorCard({ folder: dir, nativeSessionId: NATIVE }),
+    });
+
+    h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
+
+    expect(streamFeed.blocks('live-1')).toEqual([]);
+  });
+
   it('replays nothing when there is no StreamFeed wired at all', () => {
     seedTranscript();
     const h = harness(capsWith(() => root), dir, {

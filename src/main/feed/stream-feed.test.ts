@@ -566,10 +566,49 @@ describe('replaying a resumed conversation (#395)', () => {
       [3, 'user', 'and now?'],
       [4, 'assistant', 'now we resume'],
     ]);
-    // and the renderer, which upserts on seq, sees exactly the same four
+    // The renderer is PUSHED only the live half — the replayed half is served
+    // to it as backlog when its panel mounts (see `hydrate`) — and the pushes
+    // never reuse a seq the replay already spent, which is what would make the
+    // upsert overwrite history with the live tail.
     const bySeq = new Map(seen.map((b) => [b.seq, b]));
-    expect([...bySeq.keys()].sort()).toEqual([1, 2, 3, 4]);
+    expect([...bySeq.keys()].sort()).toEqual([3, 4]);
     expect(bySeq.get(4)?.streaming).toBe(false);
+  });
+
+  it('replaying pushes nothing at the renderer — there is nobody there yet', () => {
+    feed.hydrate(SID, [
+      line('assistant', [
+        { type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'ls' } },
+      ]),
+      line('user', [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'a.txt' }]),
+      ...history,
+    ]);
+
+    expect(seen).toEqual([]); // not a block, and not a tool-result update either
+    expect(feed.blocks(SID)).toHaveLength(3);
+    // ...and the buffer is un-muted afterwards: the very next live block goes out
+    feed.offer(SID, assistant([{ type: 'text', text: 'live' }]));
+    expect(seen.map((b) => b.text)).toEqual(['live']);
+  });
+
+  it('a thinking block left open by the old conversation is not timed against the new one', () => {
+    // the resumed conversation ended mid-thought, yesterday
+    feed.hydrate(SID, [
+      {
+        ...line('assistant', [{ type: 'thinking', thinking: 'where was I' }]),
+        timestamp: new Date(Date.now() - 24 * 3600_000).toISOString(),
+      },
+    ]);
+    feed.offer(SID, assistant([{ type: 'text', text: '今日' }]));
+
+    // "Thought for 86400s" is a claim, and it would be a false one: the gap is
+    // the seam, not the thinking. No duration beats a wrong duration.
+    expect(feed.blocks(SID)[0].durationMs).toBeUndefined();
+  });
+
+  it('an isSidechain line replays as a sidechain, not as the main conversation', () => {
+    feed.hydrate(SID, [{ ...line('assistant', [{ type: 'text', text: 'subagent' }]), isSidechain: true }, ...history]);
+    expect(feed.blocks(SID).map((b) => b.sidechain)).toEqual([true, false, false]);
   });
 
   it('a tool result that was already on disk still attaches to its call', () => {

@@ -32,9 +32,15 @@ export function conversationExists(projectsRoot: string, folder: string, nativeI
  * The same question `conversationExists` asks — it is now this function's
  * boolean — because #395 needs the PATH: a resumed Direct session replays the
  * history off this file into its Feed, since the CLI re-sends none of it over
- * the stream. One resolver, so "resumable" and "replayable" cannot come apart:
- * a card that resumes and then finds no history to show is exactly the empty
- * Session view that issue is about.
+ * the stream.
+ *
+ * ONE RESOLVER, so "is this resumable" and "where do I read it back from" cannot
+ * answer differently for the same directory. They can still be asked about
+ * DIFFERENT roots — `canResume` is a provider capability and the replay uses the
+ * plan's `transcriptsRoot`, which is a second capability call — so an adapter
+ * that ever declared two different roots would resume and then show nothing.
+ * Identical for every shipped provider today; worth knowing before Phase 4 makes
+ * these strings third-party.
  */
 export function conversationFile(
   projectsRoot: string,

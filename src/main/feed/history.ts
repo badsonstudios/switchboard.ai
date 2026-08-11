@@ -32,12 +32,12 @@ import { conversationFile } from '../transcripts/paths';
  * whatever those conversations happen to weigh. The watcher pays a similar cost
  * for a PTY session but pays it on its own poll tick, off the critical path.
  *
- * READING THE TAIL LOSES NOTHING THE FEED WOULD HAVE SHOWN in the ordinary
- * case: `FeedBuffer` keeps `BLOCK_CAP` (1000) blocks and evicts the oldest, so a
- * transcript big enough to be truncated here was going to be truncated there.
- * The number is deliberately generous against the pathological line — a single
- * tool result can run to hundreds of kilobytes — so that a conversation of big
- * outputs still replays a useful stretch of its recent past.
+ * READING THE TAIL RARELY LOSES ANYTHING THE FEED WOULD HAVE SHOWN: `FeedBuffer`
+ * keeps `BLOCK_CAP` (1000) blocks and evicts the oldest, so an ordinary
+ * transcript big enough to be truncated here was going to be truncated there
+ * anyway. The two budgets are not the same shape, though — a conversation of
+ * huge tool results can hit the byte budget well short of 1000 blocks — which is
+ * why the number is deliberately generous against the pathological line.
  */
 export const HISTORY_TAIL_BYTES = 4 * 1024 * 1024;
 
@@ -65,6 +65,14 @@ export function readTranscriptTail(
   }
   if (size <= 0) return [];
   const from = Math.max(0, size - maxBytes);
+  // ONE BYTE OF CONTEXT for a truncated read, so the cut can be classified
+  // rather than assumed. `from` lands wherever the arithmetic put it, and that
+  // is sometimes exactly the start of a line — dropping "the first line" blind
+  // would then throw away a whole entry. Reading the byte BEFORE it turns the
+  // question into "is there a newline here", and the same `slice` answers both
+  // cases: at a boundary it removes only the newline, mid-line it removes the
+  // fragment.
+  const start = from > 0 ? from - 1 : 0;
   let text: string;
   let fd: number | null = null;
   try {
@@ -72,11 +80,22 @@ export function readTranscriptTail(
     // one: on Windows an open handle PINS the user's transcript and the CLI
     // cannot rotate it (the #179 argument, made again in `watcher.ts`).
     fd = fs.openSync(file, 'r');
-    const buf = Buffer.alloc(size - from);
-    const n = fs.readSync(fd, buf, 0, buf.length, from);
+    // `allocUnsafe`: only `0..got` is ever decoded, so zeroing up to 4 MB per
+    // resumed card buys nothing.
+    const buf = Buffer.allocUnsafe(size - start);
+    // LOOPED, because a short read costs the NEWEST line — the one the user
+    // most wants to see. `readSync` is allowed to return less than asked for,
+    // and a partial tail would leave the last entry an unparseable fragment.
+    let got = 0;
+    for (;;) {
+      const n = fs.readSync(fd, buf, got, buf.length - got, start + got);
+      if (n <= 0) break;
+      got += n;
+      if (got >= buf.length) break;
+    }
     // Decoded whole, not chunk by chunk: this is one read of a file nobody is
     // appending to yet, so there is no boundary to split a character across.
-    text = buf.toString('utf8', 0, n);
+    text = buf.toString('utf8', 0, got);
   } catch {
     return [];
   } finally {
@@ -88,10 +107,13 @@ export function readTranscriptTail(
       }
     }
   }
+  if (from > 0) {
+    // Everything up to and including the first newline belongs to a line that
+    // started before the window — or is the boundary newline itself.
+    const nl = text.indexOf('\n');
+    text = nl < 0 ? '' : text.slice(nl + 1);
+  }
   const lines = text.split('\n');
-  // A tail read starts mid-line by construction; the fragment is not JSON and
-  // must not be counted as a malformed transcript either.
-  if (from > 0) lines.shift();
   const out: Record<string, unknown>[] = [];
   // Blanks are dropped BEFORE the cap, not inside the loop: a JSONL file ends
   // with a newline, so the split leaves an empty last element and a cap applied

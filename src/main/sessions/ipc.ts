@@ -862,7 +862,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         // loop since the spawn, so `StreamFeed` has been offered no message for
         // this session and cannot be. Everything on disk is numbered below
         // everything the stream will say — no duplicate at the join, and no gap.
-        if (record.transport === 'stream' && plan.resumeSessionId && deps.streamFeed) {
+        //
+        // Gated on `watching` as well: the watcher refuses a root it cannot
+        // poll SAFELY (a relative path it would crawl from the process cwd —
+        // §5.29's boundary check, sitting there because Phase 4 makes that
+        // string third-party). Reading a transcript out of a root the host has
+        // just declared unusable would make the refusal mean two different
+        // things on two paths.
+        if (watching && record.transport === 'stream' && plan.resumeSessionId && deps.streamFeed) {
           replayResumedHistory(deps.streamFeed, log, {
             sessionId: record.id,
             projectsRoot: plan.transcriptsRoot,
