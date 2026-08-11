@@ -42,7 +42,7 @@ If a consumer can `import { claudeAdapter }`, the seam is decorative.
 | [renderer/src/extensibility/commands.ts](../src/renderer/src/extensibility/commands.ts) | Flattens the registered `command-set` contributions, first-match wins |
 | [renderer/src/extensibility/registry-instance.ts](../src/renderer/src/extensibility/registry-instance.ts) | The renderer's registry instance, and nothing else — consumers import this, not `bootstrap.ts`, which would close an import cycle |
 | [renderer/src/extensibility/boundary.tsx](../src/renderer/src/extensibility/boundary.tsx) | `ContributionBoundary` + `safely()`: one contribution failing costs that contribution |
-| [renderer/src/extensibility/status-bar-items.tsx](../src/renderer/src/extensibility/status-bar-items.tsx) | The four status bar items |
+| [renderer/src/extensibility/status-bar-items.tsx](../src/renderer/src/extensibility/status-bar-items.tsx) | The five status bar items |
 | [renderer/src/extensibility/points.test.ts](../src/renderer/src/extensibility/points.test.ts) | The E15-03 done-when, executable: a new panel / block renderer / status item takes effect with no edit to any consumer |
 | [shared/…/registry.test.ts](../src/shared/extensibility/registry.test.ts) | Mechanics, against toy contracts — plus the guard that the class stays free of `main/` and `renderer/` imports |
 | [main/…/contributions.test.ts](../src/main/extensibility/contributions.test.ts) | The P1-E1-06 done-when: the Claude adapter is resolvable via the registry |
@@ -70,7 +70,7 @@ actually serve it.
 | `command-set` | `CommandSetContribution` | `core-commands` — the E9-01 seed set, resolved by the palette and the keyboard dispatcher |
 | `panel` | `PanelContribution` | `panel-session`, `panel-changes`, `panel-history` (placeholder), `panel-terminal` — the session card's view-tab strip |
 | `feed-block-renderer` | `FeedBlockRendererContribution` | `feed-block-{todos,bash,edit,tool,thinking,user,markdown}` — one per transcript block shape |
-| `status-bar-item` | `StatusBarItemContribution` | `status-{session-count,usage,cli-version,theme}` |
+| `status-bar-item` | `StatusBarItemContribution` | `status-{session-count,usage,service-health,cli-version,theme}` |
 | `theme` | `ThemeContribution` | `theme-{nordic,daylight,high-contrast,soft-contrast}` — the picker and the status bar list from here |
 
 `theme` (P2-E15-05) is the first **data-only** point: every other contribution
@@ -153,7 +153,7 @@ Renderer — one per point, each the sole resolver for its own surface:
 [commands.ts:43](../src/renderer/src/extensibility/commands.ts#L43),
 [feed-render.ts:17](../src/renderer/src/extensibility/feed-render.ts#L17),
 [panels.tsx:29](../src/renderer/src/extensibility/panels.tsx#L29),
-[status-bar-items.tsx:45](../src/renderer/src/extensibility/status-bar-items.tsx#L45)
+[status-bar-items.tsx:74](../src/renderer/src/extensibility/status-bar-items.tsx#L74)
 and [themes.ts:21](../src/renderer/src/extensibility/themes.ts#L21). Each takes
 the registry as an **argument** rather than reaching for the singleton, so a
 test can pass a fresh one; the components (`App.tsx`, `SessionGrid.tsx`,
