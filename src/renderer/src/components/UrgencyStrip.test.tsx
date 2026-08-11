@@ -431,7 +431,7 @@ describe('the beat starts at the paint, not the keypress (issue 320)', () => {
 // lib/urgency owns that rule; what is decided HERE is the half the rule can
 // only break through this component — that a chain already in the air when a
 // mark is superseded still leaves the survivor with a beat that ends.
-describe('several jumps with nothing painting light exactly one lamp (issue 426)', () => {
+describe('the mark waiting on a paint is capped at one, the latest (issue 426)', () => {
   const T = 1_700_000_000_000;
   const three: RailSession[] = [
     { id: 'c1', title: 'alpha', status: 'idle' },
@@ -503,6 +503,19 @@ describe('several jumps with nothing painting light exactly one lamp (issue 426)
 
     await act(async () => void vi.advanceTimersByTime(URGENCY_LINGER_MS + 500));
     expect(litOf(host, 'c2'), 'a beat that never started is a lamp lit forever').toBe('false');
+  });
+
+  it('a landing that changed NOTHING does not re-arm — no rAF spin', async () => {
+    // the re-run above is conditional on purpose. When the map has not moved,
+    // the landing drained everything it captured and the resulting state write
+    // re-runs the effect on its own; nudging there as well would schedule a
+    // fresh chain per landing, two frames apart, for as long as the strip was
+    // mounted — a wakeup forever, for a readout that is finished.
+    const raf = vi.spyOn(globalThis, 'requestAnimationFrame');
+    await mountStrip({ sessions: three, urgency: new Map([['c1', null]]), onBeatStart: noop });
+    await act(async () => void vi.advanceTimersByTime(10 * URGENCY_LINGER_MS));
+    expect(raf, 'one chain — two frames, and then nothing').toHaveBeenCalledTimes(2);
+    raf.mockRestore();
   });
 
   it('a ring you have already SEEN is not taken away by the next jump', async () => {
