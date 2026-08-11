@@ -706,6 +706,22 @@ Work items:
   *Done when:* `/` pops the list, arrow/enter selects, the composed command
   runs in the session; no popup when `/` is mid-sentence; `/clear` works
   from the Session tab and the Feed reflects the cleared conversation.
+- **P2-E10-08 · Composer auto-grow by rendered height — S (§5.10; owner
+  request 2026-08-11).** The composer sizes itself by counting hard newlines
+  only — `rows={Math.min(6, ...draft.split('\n').length)}`
+  (`FeedView.tsx:1047`) — so soft-wrapped text never grows the box: a pasted
+  paragraph that wraps to five visual lines still shows as one or two rows,
+  and even the nominal 6-row cap is reachable only via Shift+Enter. Grow by
+  *measured rendered height* (scrollHeight-style auto-grow) instead, capped at
+  **12 lines**, shrinking back as text is deleted, with an inner scrollbar
+  past the cap. Layout guard: the composer bottom-docks with the options row
+  and the approval bar above it — growth must push the feed up, not overlap
+  either neighbor.
+  *Done when:* a pasted single-line paragraph that wraps to ~8 visual lines
+  shows all of them without scrolling; growth stops at 12 lines and scrolls
+  within the box past that; deleting text shrinks it back down to one line;
+  the options row / approval bar stay correctly docked at max height; a test
+  pins wrap-based growth (not newline counting).
 
 **E10 exit:** a user can run a whole coding turn — prompt, watch, approve —
 without the Terminal tab even being VISIBLE; the turn reads like the VS Code
@@ -839,6 +855,24 @@ break-out; they interleave anywhere after E9:
   visibility-aware rule conditions, quiet hours + missed-events digest.
   Actionable toasts pair naturally with E10 — consider landing that slice with
   approvals.
+- **Events panel rework: reclaim the column (owner request 2026-08-11,
+  issue #407 — filed ahead of the epic; okay to run standalone).** Dan's
+  verdict on the shipped panel: too large for what it does, and largely
+  redundant — session cards, the rail, and the urgency strip already carry
+  most of its signal. Today it is an always-visible fixed 220px right-hand
+  `<aside>` (`EventsPanel.tsx:123`) that costs every layout mode horizontal
+  space the session grid wants. Rework it smaller and/or relocated —
+  candidate shapes: a slim strip across the top; a collapsed-by-default
+  drawer with a badge/count button that expands on click; merging it into
+  the urgency strip's surface. **Design gate: present 2–3 concrete options
+  to Dan before building — the shape is deliberately undecided.** Whatever
+  wins must keep the §5.12 core (one item per session, resolved-means-gone),
+  keep the queue-ordering/Ctrl+Space contract legible (E9-03: the queue is
+  the authority, this panel renders it), rehome the reconnect offer and
+  update notice, and honor §5.8 keyboard-fail-open — collapsing chrome never
+  removes capability. Interacts with Events v2 below (inline decisions want
+  a visible surface — a collapsed drawer changes that calculus) and may moot
+  #268 (reviewed-row opacity) if the row styling is rebuilt.
 - **Events v2 (§5.12, revised 2026-07-22).** The one-item-per-session /
   resolved-means-gone core shipped with the E10 fix round; v2 adds the
   mockup's filters (All · Needed · By-session), inline actions on events,
