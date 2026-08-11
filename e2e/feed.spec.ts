@@ -639,4 +639,63 @@ test.describe('Feed view (E12-06)', () => {
     await showTerminal(w);
     await expect(w.getByText(/COMPOSER_OK_42/).first()).toBeVisible({ timeout: 15_000 });
   });
+
+  // P2-E10-08 (#406). The unit tests pin the sizing rule against a stubbed
+  // layout; only a real engine can say whether the box actually wraps, caps and
+  // stays docked. Every length below is derived from the MEASURED width of the
+  // box, because the panel's width depends on the window the runner gives us.
+  test('the composer grows with WRAPPED text, caps at twelve lines, and shrinks back (E10-08)', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    const chip = w.getByTitle('Autonomy for this session (applies on next resume)');
+    const feed = w.locator('[data-feed-region]').first();
+    /** height, inner overflow and one rendered line — as the engine has them */
+    const measure = (): Promise<{ height: number; scrollHeight: number; line: number; width: number }> =>
+      box.evaluate((el) => {
+        const t = el as HTMLTextAreaElement;
+        return {
+          height: t.clientHeight,
+          scrollHeight: t.scrollHeight,
+          line: Number.parseFloat(getComputedStyle(t).lineHeight),
+          width: t.clientWidth,
+        };
+      });
+    /** one line of text, no newline in it anywhere, `chars` long */
+    const paragraph = (chars: number): string => 'lorem ipsum '.repeat(Math.ceil(chars / 12)).slice(0, chars);
+
+    const empty = await measure();
+    const feedEmpty = (await feed.boundingBox())!;
+
+    // ~1.2 characters per pixel of width: whatever the font measures, that is
+    // between four and ten wrapped lines — comfortably inside the cap
+    await box.fill(paragraph(Math.round(empty.width * 1.2)));
+    const grown = await measure();
+    expect(grown.height).toBeGreaterThan(empty.height + 3 * empty.line); // wrapped, and it noticed
+    expect(grown.scrollHeight).toBeLessThanOrEqual(grown.height + 2); // all of it on screen
+    // the feed gave up the room — the composer did not grow over it
+    expect((await feed.boundingBox())!.height).toBeLessThan(feedEmpty.height - 3 * empty.line);
+
+    // far past the cap: the box stops at twelve lines and scrolls inside itself
+    await box.fill(paragraph(Math.round(empty.width * 6)));
+    const capped = await measure();
+    expect(capped.height).toBeGreaterThan(11.5 * empty.line);
+    expect(capped.height).toBeLessThan(13.5 * empty.line); // + padding, not a 13th line
+    expect(capped.scrollHeight).toBeGreaterThan(capped.height + 2);
+
+    // ...and at full height the neighbours are still docked where they belong:
+    // the options row under the box, both of them inside the window
+    const boxBox = (await box.boundingBox())!;
+    const chipBox = (await chip.boundingBox())!;
+    expect(chipBox.y).toBeGreaterThanOrEqual(boxBox.y + boxBox.height - 1);
+    await expect(chip).toBeInViewport();
+    await expect(box).toBeInViewport();
+
+    // deleting it all puts the one-line box back
+    await box.fill('');
+    expect((await measure()).height).toBe(empty.height);
+  });
 });

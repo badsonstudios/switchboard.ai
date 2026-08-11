@@ -88,6 +88,16 @@ async function type(box: HTMLTextAreaElement, text: string): Promise<void> {
 /** the height the component wrote back, in px */
 const heightOf = (box: HTMLTextAreaElement): number => Number.parseFloat(box.style.blockSize);
 
+/**
+ * Heights are written as whole pixels (a height a fraction short of the text
+ * clips it), so a comparison of two of them carries up to a pixel of rounding
+ * either way. Everything asserted here is a difference of LINES, and 1.5px is
+ * well under one 17.4px line.
+ */
+const expectPx = (actual: number, expected: number): void => {
+  expect(Math.abs(actual - expected)).toBeLessThanOrEqual(1.5);
+};
+
 /** one rendered line, by the same rule the component resolves it with */
 function lineHeight(box: HTMLTextAreaElement): number {
   const cs = window.getComputedStyle(box);
@@ -106,7 +116,12 @@ function stubWrappingLayout(): void {
       const rendered = this.value
         .split('\n')
         .reduce((n, hard) => n + Math.max(1, Math.ceil(hard.length / WRAP_COLUMN)), 0);
-      return rendered * lineHeight(this) + PADDING;
+      // ...and never LESS than the height it was last given, which is the whole
+      // reason the component releases the height before reading. A stub that
+      // reported the content alone would stay green with that reset deleted,
+      // and the box would then never shrink again in a real browser.
+      const given = Number.parseFloat(this.style.blockSize);
+      return Math.max(rendered * lineHeight(this) + PADDING, Number.isFinite(given) ? given : 0);
     },
   });
 }
@@ -145,7 +160,7 @@ describe('the composer sizes itself by rendered height (issue 406)', () => {
     await type(box, wrapsTo(8));
     // the whole defect: `split('\n').length` is 1 for this draft, so the old
     // rule left it a one-row slot with seven lines hidden
-    expect(heightOf(box) - empty).toBeCloseTo(7 * lineHeight(box), 1);
+    expectPx(heightOf(box) - empty, 7 * lineHeight(box));
     expect(box.style.overflowY).toBe('hidden'); // all eight visible, no scrolling
     // and the height is not coming from `rows` — that stays put at one
     expect(box.rows).toBe(1);
@@ -158,7 +173,7 @@ describe('the composer sizes itself by rendered height (issue 406)', () => {
     expect(box.style.overflowY).toBe('hidden');
 
     await type(box, wrapsTo(COMPOSER_MAX_LINES * 3));
-    expect(heightOf(box)).toBeCloseTo(capped, 1); // not one pixel taller
+    expectPx(heightOf(box), capped); // not a line taller
     expect(box.style.overflowY).toBe('auto'); // the rest is reachable by scrolling
   });
 
@@ -168,15 +183,15 @@ describe('the composer sizes itself by rendered height (issue 406)', () => {
     await type(box, wrapsTo(20));
     expect(heightOf(box)).toBeGreaterThan(empty);
     await type(box, wrapsTo(3));
-    expect(heightOf(box) - empty).toBeCloseTo(2 * lineHeight(box), 1);
+    expectPx(heightOf(box) - empty, 2 * lineHeight(box));
     await type(box, '');
-    expect(heightOf(box)).toBeCloseTo(empty, 1);
+    expectPx(heightOf(box), empty);
   });
 
   it('counts hard newlines too — they are rendered lines like any other', async () => {
     const box = await mountComposer();
     const empty = heightOf(box);
     await type(box, 'one\ntwo\nthree');
-    expect(heightOf(box) - empty).toBeCloseTo(2 * lineHeight(box), 1);
+    expectPx(heightOf(box) - empty, 2 * lineHeight(box));
   });
 });

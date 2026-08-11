@@ -14,7 +14,12 @@ import { rendererRegistry } from '../extensibility/registry-instance';
 import { renderFeedBlock } from '../extensibility/feed-render';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { interruptSession, submitPrompt } from '../lib/composer';
-import { composerSize, resolveLineHeight } from '../lib/composer-size';
+import {
+  COMPOSER_FONT_SIZE,
+  COMPOSER_LINE_RATIO,
+  composerSize,
+  resolveLineHeight,
+} from '../lib/composer-size';
 import { argumentSummary } from '../lib/permission-batches';
 import {
   filterCommands,
@@ -831,8 +836,37 @@ function blockEdge(cs: CSSStyleDeclaration, part: 'padding' | 'border'): number 
   const logical =
     px(cs.getPropertyValue(`${part}-block-start${w}`)) +
     px(cs.getPropertyValue(`${part}-block-end${w}`));
+  // `> 0`, not `!== ''`: jsdom ANSWERS the logical longhands, with "0" — an
+  // empty-string check would take that zero for a measurement and size a
+  // different box in tests than in the app.
   if (logical > 0) return logical;
   return px(cs.getPropertyValue(`${part}-top${w}`)) + px(cs.getPropertyValue(`${part}-bottom${w}`));
+}
+
+/** the conversation never gives up its last 60px to make room for the box */
+const MIN_FEED_PX = 60;
+
+/**
+ * The tallest the composer's textarea may grow to without pushing anything off
+ * the panel — see `ComposerMetrics.available` for why a line cap alone is not
+ * enough. Undefined when there is no layout to measure (a hidden panel), which
+ * leaves the line cap in sole charge rather than guessing a small number.
+ *
+ * Called with the box already collapsed for measurement, so `own - el` is the
+ * composer's own chrome (padding, the gap, the options row) at its true size.
+ */
+function roomForBox(own: HTMLElement | null, el: HTMLElement): number | undefined {
+  const panel = own?.parentElement;
+  if (!own || !panel || panel.clientHeight === 0) return undefined;
+  let taken = MIN_FEED_PX + (own.offsetHeight - el.offsetHeight);
+  for (const sib of Array.from(panel.children)) {
+    // everything docked around the conversation — the verbosity strip, the
+    // working banner, an approval bar — keeps the height it asked for; only the
+    // scroller (`flex: 1`) is the one that yields
+    if (sib === own || sib.hasAttribute('data-feed-region')) continue;
+    taken += (sib as HTMLElement).offsetHeight;
+  }
+  return Math.max(0, panel.clientHeight - taken);
 }
 
 /**
@@ -856,6 +890,8 @@ function Composer({
   const { t } = useTranslation();
   const [draft, setDraft] = React.useState('');
   const box = React.useRef<HTMLTextAreaElement | null>(null);
+  /** the composer's own root — the auto-grow measures the panel through it */
+  const root = React.useRef<HTMLDivElement | null>(null);
 
   // Slash-command autocomplete (E10-07, §5.10): typing '/' as the FIRST
   // character pops the list — CLI builtins + the project's/user's own
@@ -944,7 +980,14 @@ function Composer({
     const el = box.current;
     const view = el?.ownerDocument.defaultView;
     if (!el || !view) return;
-    el.style.blockSize = 'auto';
+    // Past the cap the box is scrolled, and the caret is usually at the bottom
+    // of it. Releasing the height makes the content fit, which clamps the
+    // element's own scrollTop to 0 — so the reset goes to ZERO rather than
+    // `auto` (max scroll only grows, nothing to clamp) and the offset is
+    // written back anyway, for engines that clamp regardless. Without this,
+    // every keystroke on line 20 scrolls the user back to line 1.
+    const top = el.scrollTop;
+    el.style.blockSize = '0px';
     el.style.overflowY = 'hidden'; // a scrollbar appearing mid-measure re-wraps the text
     const cs = view.getComputedStyle(el);
     const size = composerSize({
@@ -953,23 +996,30 @@ function Composer({
       padding: blockEdge(cs, 'padding'),
       border: blockEdge(cs, 'border'),
       borderBox: cs.getPropertyValue('box-sizing') === 'border-box',
+      available: roomForBox(root.current, el),
     });
-    el.style.blockSize = `${size.blockSize}px`;
+    // ceil, not the raw float: 12 × 17.4 is 208.79999999999998, and a height a
+    // fraction short of the text clips the last line it was measured to show
+    el.style.blockSize = `${Math.ceil(size.blockSize)}px`;
     el.style.overflowY = size.overflowY;
+    el.scrollTop = top;
   }, []);
   // A LAYOUT effect: the height is written in the same commit as the new text,
   // so the box never paints a frame at the old size.
   React.useLayoutEffect(grow, [draft, grow]);
-  // A NARROWER box wraps the same text into more lines, and nothing re-renders
-  // when dockview drags a splitter. Only an INLINE-size change re-measures, so
-  // our own height writes cannot feed back into this.
+  // A NARROWER box wraps the same text into more lines, and a shorter panel has
+  // less to spare — neither re-renders anything when dockview drags a splitter.
+  // Only an INLINE-size change re-measures, so our own height writes (block
+  // axis only) cannot feed back into this.
   React.useEffect(() => {
     const el = box.current;
     if (!el) return;
     let last = el.getBoundingClientRect().width;
     const ro = new ResizeObserver(() => {
       const width = el.getBoundingClientRect().width;
-      if (width === last) return;
+      // a collapsed panel measures 0 and would re-measure the draft as one
+      // empty line; it comes back at full width, and that tick does the work
+      if (width === last || width === 0) return;
       last = width;
       grow();
     });
@@ -990,6 +1040,7 @@ function Composer({
 
   return (
     <div
+      ref={root}
       style={{
         position: 'relative',
         display: 'flex',
@@ -1122,6 +1173,9 @@ function Composer({
         // that was the whole of #406. It stays at 1 so the very first paint,
         // before any layout effect runs, is the small box the design wants.
         rows={1}
+        // `blockSize` and `overflowY` are deliberately ABSENT and written
+        // imperatively by `grow()`: React only diffs the keys it is given, so
+        // adding either one here would have every render fight the measurement.
         style={{
           flex: 1,
           resize: 'none',
@@ -1130,9 +1184,9 @@ function Composer({
           border: '1px solid var(--border)',
           borderRadius: 8,
           padding: '7px 10px',
-          fontSize: 12,
+          fontSize: COMPOSER_FONT_SIZE,
           fontFamily: 'var(--font-ui)',
-          lineHeight: 1.45,
+          lineHeight: COMPOSER_LINE_RATIO,
           outline: 'none',
         }}
       />

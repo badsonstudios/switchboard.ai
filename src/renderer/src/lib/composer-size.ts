@@ -16,12 +16,10 @@
 /** Owner call, 2026-08-11 (#406): grow to twelve rendered lines, then scroll. */
 export const COMPOSER_MAX_LINES = 12;
 
-/**
- * `line-height: normal` is ~1.2 in every engine, but the composer sets its own
- * 1.45 ratio — so when a computed value can't be read, the composer's own
- * number is a closer guess than the generic one.
- */
-const FALLBACK_LINE_RATIO = 1.45;
+/** The composer's own type. Exported so the style prop and the fallback below
+ *  cannot drift apart — the fallback claims to BE the composer's ratio. */
+export const COMPOSER_FONT_SIZE = 12;
+export const COMPOSER_LINE_RATIO = 1.45;
 
 /** What the DOM reports about a textarea whose height has been released. */
 export interface ComposerMetrics {
@@ -35,6 +33,19 @@ export interface ComposerMetrics {
   border: number;
   /** `box-sizing: border-box` — i.e. the height we set must swallow padding + border */
   borderBox: boolean;
+  /**
+   * The tallest the box may be (border-box px) given what its panel can spare,
+   * or undefined when nothing is measurable and the line cap is the only limit.
+   *
+   * The 12-line cap is a READING limit, not a fitting one: the composer is the
+   * bottom of a flex column whose conversation yields height first, so in a
+   * short panel — a small pop-out, a splitter dragged up — twelve lines would
+   * eat the feed and then push the options row off the panel entirely. The
+   * layout guard in #406's spec is exactly that: growth pushes the feed up, it
+   * does not overlap a neighbour. Whichever limit is lower wins; one line
+   * always survives both.
+   */
+  available?: number;
 }
 
 export interface ComposerSize {
@@ -51,14 +62,17 @@ export interface ComposerSize {
 export function composerSize(m: ComposerMetrics, maxLines = COMPOSER_MAX_LINES): ComposerSize {
   // rendered content only: scrollHeight carries the padding with it
   const content = Math.max(0, m.scrollHeight - m.padding);
-  // A line-height we could not resolve means we cannot count lines — cap and
-  // floor both stop meaning anything, so fit the content and never trap it
-  // behind a scrollbar we can't size.
-  if (!(m.lineHeight > 0)) {
-    return { blockSize: box(content, m), overflowY: 'hidden' };
-  }
-  const max = m.lineHeight * maxLines;
-  const fitted = Math.min(Math.max(content, m.lineHeight), max);
+  // A line-height we could not resolve means we cannot count lines, so the line
+  // cap simply does not apply — the room the panel has is a real limit either
+  // way, and a floor of zero is the browser's own minimum.
+  const floor = m.lineHeight > 0 ? m.lineHeight : 0;
+  const byLines = m.lineHeight > 0 ? m.lineHeight * maxLines : Infinity;
+  const byRoom =
+    m.available === undefined ? Infinity : Math.max(0, m.available - m.padding - m.border);
+  // one line always beats both limits: a box too small to show the line being
+  // typed is not a composer
+  const max = Math.max(Math.min(byLines, byRoom), floor);
+  const fitted = Math.min(Math.max(content, floor), max);
   // half a pixel of slack: sub-pixel line-heights (12px × 1.45 = 17.4) make
   // `content` land a hair over the cap on the exact line that fills it, and a
   // scrollbar for nothing is worse than a rounding error
@@ -80,7 +94,7 @@ function box(content: number, m: ComposerMetrics): number {
  */
 export function resolveLineHeight(lineHeight: string, fontSize: string): number {
   const parsedFont = Number.parseFloat(fontSize);
-  const font = Number.isFinite(parsedFont) && parsedFont > 0 ? parsedFont : 12;
+  const font = Number.isFinite(parsedFont) && parsedFont > 0 ? parsedFont : COMPOSER_FONT_SIZE;
   const raw = (lineHeight ?? '').trim();
   if (raw.endsWith('px')) {
     const px = Number.parseFloat(raw);
@@ -89,5 +103,5 @@ export function resolveLineHeight(lineHeight: string, fontSize: string): number 
     const ratio = Number(raw); // unitless multiplier, e.g. "1.45"
     if (Number.isFinite(ratio) && ratio > 0) return ratio * font;
   }
-  return font * FALLBACK_LINE_RATIO;
+  return font * COMPOSER_LINE_RATIO;
 }

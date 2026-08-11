@@ -60,11 +60,39 @@ describe('composerSize', () => {
   });
 
   it('fits the content when the line height is unknowable', () => {
-    // no line height means no line COUNT: capping would be a guess, and a
-    // scrollbar we cannot size is a prompt the user cannot read
+    // no line height means no line COUNT, so the cap cannot be applied — but
+    // the room the panel has is still a real limit
     const size = composerSize(metrics(40, { lineHeight: 0 }));
     expect(size.blockSize).toBeCloseTo(40 * LINE, 5);
     expect(size.overflowY).toBe('hidden');
+    const boxed = composerSize(metrics(40, { lineHeight: 0, available: 100 + PAD + BORDER }));
+    expect(boxed.blockSize).toBeCloseTo(100, 5);
+    expect(boxed.overflowY).toBe('auto');
+  });
+
+  describe('the room the panel can spare', () => {
+    // The layout guard: the composer is the bottom of a flex column whose
+    // conversation yields height first, so in a short panel twelve lines would
+    // push the options row off the bottom rather than push the feed up.
+    it('stops short of the cap when the panel cannot spare twelve lines', () => {
+      const room = 5 * LINE + PAD + BORDER;
+      const size = composerSize(metrics(30, { available: room }));
+      expect(size.blockSize).toBeCloseTo(5 * LINE, 5);
+      expect(size.overflowY).toBe('auto'); // the rest is still reachable
+    });
+
+    it('is ignored when the panel has more room than the cap', () => {
+      const size = composerSize(metrics(30, { available: 1000 }));
+      expect(size.blockSize).toBeCloseTo(COMPOSER_MAX_LINES * LINE, 5);
+    });
+
+    it('never squeezes the box below the line being typed', () => {
+      // a panel with nothing to give still owes the user the line they are on;
+      // overlapping the options row for one line beats a box you cannot read
+      const size = composerSize(metrics(4, { available: 0 }));
+      expect(size.blockSize).toBeCloseTo(LINE, 5);
+      expect(size.overflowY).toBe('auto');
+    });
   });
 
   it('takes a caller-supplied cap', () => {
