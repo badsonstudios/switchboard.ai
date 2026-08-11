@@ -275,13 +275,177 @@ export class FakeStreamProtocol {
       return;
     }
 
+    // ONE REQUEST PER TARGET, all of them raised before any answer can arrive
+    // (P2-E18-14). A single target is the original behaviour, unchanged.
+    //
+    // Two at once is the only way to reach the card's QUEUE from the outside on
+    // this transport. The protocol has always supported concurrent requests —
+    // `onControlResponse` routes by id — but the only route in was two prompts,
+    // and the second cannot be typed while the composer's session sits in
+    // `needs-permission` with the first one's bar over it. So the fake raises
+    // both from one turn, exactly as a real assistant message carrying two
+    // gated `tool_use` blocks would.
+    //
+    // Targets are split on WHITESPACE, so a path containing a space becomes two
+    // requests rather than one. Nothing asks for one — every call site is a
+    // short relative name or an absolute test path — and a fake is not the
+    // place to grow a quoting grammar.
     if (text.startsWith('!perm ')) {
-      const target = text.slice(6).trim();
-      const filePath = this.host.resolve(cwd, target);
-      this.askPermission('Write', { file_path: filePath, content: 'echo hi\n' });
-      return; // the turn continues when the answer arrives
+      for (const target of text.slice(6).trim().split(/\s+/)) {
+        if (!target) continue;
+        const filePath = this.host.resolve(cwd, target);
+        this.askPermission('Write', { file_path: filePath, content: 'echo hi\n' });
+      }
+      return; // the turn continues when the answers arrive
+    }
+
+    // A turn made of TOOL CALLS (P2-E18-14).
+    //
+    // Every rich Feed block — the Bash box with its IN/OUT sections, the Edit
+    // diff panes, a plain tool row, the TodoWrite checklist — existed only on
+    // the transcript path at e2e level, because nothing on this transport ever
+    // emitted a `tool_use`. `!perm` raises a control_request, which is a
+    // question, not a rendered block. So the whole of `blocks.ts`' rich half
+    // was reachable from a JSONL file and from no stream anywhere.
+    if (text === '!tools') {
+      this.emitToolTurn();
+      return;
+    }
+
+    // N assistant MESSAGES in one turn (P2-E18-14) — enough conversation to
+    // SCROLL. The tail-pin, the reading-position restore and the keyboard walk
+    // all need a feed taller than the pane, and a fake that answers in one
+    // paragraph can never produce one.
+    //
+    // Messages, not content blocks: each one is a full
+    // `message_start`…`message_stop`, which is a longer conversation rather
+    // than one enormous reply. That is a fixture's convenience and not a
+    // measured shape — nothing here is asserting anything about turn framing,
+    // only about a feed with more in it than fits.
+    if (text.startsWith('!bulk ')) {
+      const [rawCount, ...rest] = text.slice(6).trim().split(/\s+/);
+      // Bounded: this is a test fixture, and an unbounded count is a way to
+      // hang the harness by typo rather than a feature.
+      const count = Math.min(Math.max(Math.trunc(Number(rawCount)) || 0, 0), 200);
+      const prefix = rest.join(' ') || 'BULK_BLOCK_';
+      // No thinking block: this verb is about VOLUME, and 200 signature deltas
+      // buy nothing the plain-turn tests do not already pin.
+      for (let i = 1; i <= count; i++) this.emitAssistantText(`${prefix}${i}`, true, false);
+      this.emitResult();
+      return;
     }
     this.emitAssistantText(`FAKE-REPLY: ${text}`);
+    this.emitResult();
+  }
+
+  /**
+   * A turn whose content is TOOL CALLS, in the shape the real CLI emits them.
+   *
+   * The same two measured rules `emitAssistantText`'s docblock records, because
+   * they are properties of the CLI and not of text: ONE `assistant` message per
+   * content block, each carrying a single-element `content` array (so every one
+   * of them reports content index 0 while the stream events that built it were
+   * addressed 0, 1, 2…), and each arriving MID-STREAM, before its own
+   * `content_block_stop`.
+   *
+   * The tool INPUT is streamed as `input_json_delta` — fragments of half-written
+   * JSON — and never as anything renderable. That is deliberate and it is what
+   * `StreamFeed` is built against: the row opens on `content_block_start`, which
+   * carries the tool's NAME whole, and stays a shell until the message fills in
+   * its input. A fake that streamed the input as text would let a host render
+   * half a path and call it a tool row.
+   *
+   * The turn ends with a `user` message carrying a `tool_result`, which is how
+   * the Bash box's OUT section gets anything to show.
+   *
+   * ONE THING HERE IS SYNTHETIC, and is called out rather than left to look
+   * measured: the PROSE COMES AFTER the tool calls. A real turn that reaches for
+   * tools normally ends at them. It is arranged this way so that block ORDER is
+   * observable from the outside — a builder that ignored `content_block_start`
+   * and took its ordering from the `assistant` messages alone would render these
+   * identically if the prose came first, so a prose-first turn could not tell
+   * the two apart. Everything else about the shape is the measured one.
+   */
+  private emitToolTurn(): void {
+    /** the one call whose result comes back — the Bash box's OUT section */
+    const bashId = 'toolu_fake_bash';
+    // EVERY call carries an `id`, including the three whose results never come
+    // back. The real API never emits a `tool_use` without one, and a fake that
+    // omitted them could not stitch a result onto more than one block even if a
+    // test wanted it to — `blocks.ts` keys `toolUseId` off exactly this field.
+    // A fake missing something the real thing does is a fake that hides a bug.
+    const calls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [
+      {
+        id: bashId,
+        name: 'Bash',
+        // two lines on purpose: a COLLAPSED section still shows its first line,
+        // so only a second one can tell open from shut (feed.spec.ts's lesson)
+        input: { command: 'echo STREAM_CMD\nSTREAM_CMD_LINE2', description: 'Stream check' },
+      },
+      {
+        id: 'toolu_fake_edit',
+        name: 'Edit',
+        input: { file_path: 'C:/tmp/stream.ts', old_string: 'STREAM_OLD', new_string: 'STREAM_NEW' },
+      },
+      { id: 'toolu_fake_read', name: 'Read', input: { file_path: 'C:/tmp/stream.md' } },
+      {
+        id: 'toolu_fake_todo',
+        name: 'TodoWrite',
+        input: { todos: [{ content: 'first stream step', status: 'completed' }] },
+      },
+    ];
+
+    this.ev({ type: 'message_start', message: { role: 'assistant', content: [] } });
+    let index = 0;
+    for (const call of calls) {
+      // the NAME arrives whole; the input does not
+      this.ev({
+        type: 'content_block_start',
+        index,
+        content_block: { type: 'tool_use', id: call.id, name: call.name, input: {} },
+      });
+      // a real prefix of this call's real input, so the fragment is one a host
+      // could in principle accumulate — not a constant that parses to nothing
+      this.ev({
+        type: 'content_block_delta',
+        index,
+        delta: { type: 'input_json_delta', partial_json: JSON.stringify(call.input).slice(0, 8) },
+      });
+      const content = [{ type: 'tool_use', id: call.id, name: call.name, input: call.input }];
+      const message = { role: 'assistant', content };
+      this.emit({ type: 'assistant', message, session_id: FAKE_SESSION_ID, parent_tool_use_id: null });
+      this.transcribe('assistant', message);
+      this.ev({ type: 'content_block_stop', index });
+      index += 1;
+    }
+
+    // prose LAST, so "the tools rendered above the answer" is a claim the test
+    // can make rather than an accident of the fake sending text first
+    const prose = 'STREAM_PROSE answer';
+    this.ev({ type: 'content_block_start', index, content_block: { type: 'text', text: '' } });
+    for (const piece of prose.match(/[\s\S]{1,8}/g) ?? []) {
+      this.ev({ type: 'content_block_delta', index, delta: { type: 'text_delta', text: piece } });
+    }
+    const proseMessage = { role: 'assistant', content: [{ type: 'text', text: prose }] };
+    this.emit({ type: 'assistant', message: proseMessage, session_id: FAKE_SESSION_ID, parent_tool_use_id: null });
+    this.transcribe('assistant', proseMessage);
+    this.ev({ type: 'content_block_stop', index });
+    this.ev({ type: 'message_delta', delta: { stop_reason: 'tool_use' } });
+    this.ev({ type: 'message_stop' });
+
+    // the tool's OUTPUT, replayed as the CLI replays it
+    const resultMessage = {
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: bashId,
+          content: 'STREAM_OUTPUT\nSTREAM_OUT_LINE2',
+        },
+      ],
+    };
+    this.emit({ type: 'user', message: resultMessage, session_id: FAKE_SESSION_ID, parent_tool_use_id: null });
+    this.transcribe('user', resultMessage);
     this.emitResult();
   }
 

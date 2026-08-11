@@ -334,6 +334,187 @@ describe('the can_use_tool round trip (P2-E18-04)', () => {
 
     expect(writes).toEqual([{ path: '/work/b.sh', content: 'echo hi\n' }]);
   });
+
+  // P2-E18-14 — the route to the card's QUEUE on this transport.
+  //
+  // Two prompts also produce two pending requests (the test above), but that
+  // route is not walkable from the UI: the composer's session sits in
+  // `needs-permission` behind the first request's bar, so the second prompt
+  // cannot be typed. One turn raising both is what a real assistant message
+  // carrying two gated `tool_use` blocks does, and it is what an e2e can drive.
+  it('!perm with several targets raises one request PER TARGET, in order', () => {
+    proto.handle(userMsg('!perm one.sh two.sh'));
+
+    const reqs = out.filter((m) => m.type === 'control_request') as Array<{
+      request_id: string;
+      request: { input: { file_path: string } };
+    }>;
+    expect(reqs).toHaveLength(2);
+    expect(reqs.map((r) => r.request.input.file_path)).toEqual(['/work/one.sh', '/work/two.sh']);
+    expect(reqs[0].request_id).not.toBe(reqs[1].request_id);
+    // both are outstanding: the turn does not end until every one is answered
+    expect(types()).not.toContain('result:success');
+  });
+
+  it('each of the several is answered independently, by its own id', () => {
+    proto.handle(userMsg('!perm one.sh two.sh'));
+    const reqs = out.filter((m) => m.type === 'control_request') as Array<{ request_id: string }>;
+
+    proto.handle({
+      type: 'control_response',
+      response: { subtype: 'success', request_id: reqs[0].request_id, response: { behavior: 'allow' } },
+    });
+    proto.handle({
+      type: 'control_response',
+      response: { subtype: 'success', request_id: reqs[1].request_id, response: { behavior: 'deny' } },
+    });
+
+    // the allowed one ran, the denied one did not — which is the whole claim a
+    // queue test reads off the disk
+    expect(writes).toEqual([{ path: '/work/one.sh', content: 'echo hi\n' }]);
+  });
+
+  it('extra whitespace between targets is not a third, empty request', () => {
+    proto.handle(userMsg('!perm  a.sh   b.sh '));
+    expect(out.filter((m) => m.type === 'control_request')).toHaveLength(2);
+  });
+
+  it('one target is exactly what it always was', () => {
+    proto.handle(userMsg('!perm .claude/scripts/coverage.sh'));
+    const reqs = out.filter((m) => m.type === 'control_request') as Array<{
+      request: { input: { file_path: string } };
+    }>;
+    expect(reqs).toHaveLength(1);
+    expect(reqs[0].request.input.file_path).toBe('/work/.claude/scripts/coverage.sh');
+  });
+});
+
+// P2-E18-14 — a turn made of TOOL CALLS.
+//
+// Nothing on this transport ever emitted a `tool_use`, so every rich Feed block
+// was reachable from a JSONL transcript and from no stream anywhere. The shape
+// asserted here is the same one `emitAssistantText` was corrected to in E18-10,
+// because it is a property of the CLI and not of text: one `assistant` message
+// per content block, single-element `content`, arriving mid-stream.
+describe('!tools — a turn of tool calls (P2-E18-14)', () => {
+  /** every `assistant` message's single content item, in order */
+  const items = (): Array<{ type?: string; name?: string; text?: string }> =>
+    out
+      .filter((m) => m.type === 'assistant')
+      .map(
+        (m) =>
+          (m.message as { content: Array<{ type?: string; name?: string; text?: string }> })
+            .content[0]
+      );
+
+  it('emits one assistant message per tool call, then the prose', () => {
+    proto.handle(userMsg('!tools'));
+    expect(items().map((c) => c.name ?? c.type)).toEqual([
+      'Bash',
+      'Edit',
+      'Read',
+      'TodoWrite',
+      'text',
+    ]);
+  });
+
+  it('every assistant message carries a SINGLE content item, as the real CLI does', () => {
+    proto.handle(userMsg('!tools'));
+    for (const m of out.filter((x) => x.type === 'assistant')) {
+      expect((m.message as { content: unknown[] }).content).toHaveLength(1);
+    }
+  });
+
+  it('opens each block with the tool NAME and streams the input as JSON fragments', () => {
+    proto.handle(userMsg('!tools'));
+    const starts = out.filter(
+      (m) => (m.event as { type?: string } | undefined)?.type === 'content_block_start'
+    );
+    // four tool blocks addressed 0..3, plus the text block at 4
+    expect(
+      starts.map((m) => {
+        const ev = m.event as { index: number; content_block: { type: string; name?: string } };
+        return [ev.index, ev.content_block.type, ev.content_block.name ?? null];
+      })
+    ).toEqual([
+      [0, 'tool_use', 'Bash'],
+      [1, 'tool_use', 'Edit'],
+      [2, 'tool_use', 'Read'],
+      [3, 'tool_use', 'TodoWrite'],
+      [4, 'text', null],
+    ]);
+    // and the input arrives only as half-written JSON — nothing renderable
+    const deltas = out
+      .map((m) => m.event as { type?: string; delta?: { type?: string } } | undefined)
+      .filter((ev) => ev?.type === 'content_block_delta');
+    expect(deltas.filter((d) => d?.delta?.type === 'input_json_delta')).toHaveLength(4);
+  });
+
+  it('an assistant message arrives BEFORE its own content_block_stop', () => {
+    proto.handle(userMsg('!tools'));
+    const firstAssistant = out.findIndex((m) => m.type === 'assistant');
+    const firstStop = out.findIndex(
+      (m) => (m.event as { type?: string } | undefined)?.type === 'content_block_stop'
+    );
+    expect(firstAssistant).toBeGreaterThan(0);
+    expect(firstAssistant).toBeLessThan(firstStop);
+  });
+
+  it('replays a tool_result for the Bash call and finishes the turn', () => {
+    proto.handle(userMsg('!tools'));
+    // the LAST user message is the replay; the first is our own prompt echo
+    const results = out.filter((m) => {
+      const content = (m.message as { content?: Array<{ type?: string }> } | undefined)?.content;
+      return m.type === 'user' && content?.[0]?.type === 'tool_result';
+    }) as Array<{ message: { content: Array<{ tool_use_id: string; content: string }> } }>;
+    expect(results).toHaveLength(1);
+    expect(results[0].message.content[0].tool_use_id).toBe('toolu_fake_bash');
+    expect(results[0].message.content[0].content).toContain('STREAM_OUT_LINE2');
+    expect(types()).toContain('result:success');
+  });
+
+  it('mirrors the whole turn into the transcript, as the real CLI does', () => {
+    const lines: Record<string, unknown>[] = [];
+    const p = new FakeStreamProtocol(
+      { ...host, appendTranscript: (l) => lines.push(l) },
+      (m) => out.push(m)
+    );
+    p.handle(userMsg('!tools'));
+    // the prompt, four tool calls, the prose, the tool result
+    expect(lines).toHaveLength(7);
+  });
+});
+
+// P2-E18-14 — enough conversation to scroll.
+describe('!bulk — many blocks in one turn (P2-E18-14)', () => {
+  const texts = (): string[] =>
+    out
+      .filter((m) => m.type === 'assistant')
+      .map(
+        (m) => (m.message as { content: Array<{ text?: string }> }).content[0]?.text ?? ''
+      );
+
+  it('emits the requested number of assistant blocks, numbered from 1', () => {
+    proto.handle(userMsg('!bulk 5 SB_'));
+    expect(texts()).toEqual(['SB_1', 'SB_2', 'SB_3', 'SB_4', 'SB_5']);
+    expect(types()).toContain('result:success');
+  });
+
+  it('has a default prefix, and no thinking block to pad the count', () => {
+    proto.handle(userMsg('!bulk 2'));
+    expect(texts()).toEqual(['BULK_BLOCK_1', 'BULK_BLOCK_2']);
+  });
+
+  it('is bounded, so a typo cannot hang the harness', () => {
+    proto.handle(userMsg('!bulk 99999 X'));
+    expect(texts()).toHaveLength(200);
+  });
+
+  it('a non-numeric count is zero blocks and a finished turn, not a crash', () => {
+    proto.handle(userMsg('!bulk lots'));
+    expect(texts()).toEqual([]);
+    expect(types()).toContain('result:success');
+  });
 });
 
 describe('the other scripted behaviours (P2-E18-04)', () => {
