@@ -37,7 +37,8 @@ export function writePromptToPty(sessionId: string, text: string): void {
  * everyone.
  */
 export async function sendSessionCommand(sessionId: string, text: string): Promise<void> {
-  if (await window.switchboard.sessions.submitPrompt(sessionId, text)) return;
+  if (await mainTook('submitPrompt', () => window.switchboard.sessions.submitPrompt(sessionId, text)))
+    return;
   writePromptToPty(sessionId, text);
 }
 
@@ -75,6 +76,36 @@ export async function submitPrompt(sessionId: string, text: string): Promise<voi
  * business knowing which transport it is on.
  */
 export async function interruptSession(sessionId: string): Promise<void> {
-  if (await window.switchboard.sessions.interrupt(sessionId)) return;
+  if (await mainTook('interrupt', () => window.switchboard.sessions.interrupt(sessionId))) return;
   window.switchboard.pty.input(sessionId, ESC);
+}
+
+/**
+ * Did main take this call? A REJECTION is read as "no" — and said out loud.
+ *
+ * Every caller of the two functions above is a `void`-ed click handler, so
+ * until P2-E18-17 a rejecting IPC did two bad things at once: it became an
+ * unhandled renderer rejection nobody had a reason to expect (the #326 shape,
+ * on a different family), and the try-then-fall-back never ran — so the control
+ * did nothing at all and said nothing about it. That is the #154 defect class
+ * arriving through a different door.
+ *
+ * Falling back on a throw is safe rather than merely hopeful. `sessions:
+ * submitPrompt` and `sessions:interrupt` answer `false` for a PTY session
+ * WITHOUT side effects, so the only call that can throw is one whose typed
+ * message did not land; the fallback then either reaches a real PTY (correct)
+ * or is dropped by main's `ptys.get(id)?.write()`, because a stream session has
+ * no PTY to write to (harmless). It cannot double-send.
+ *
+ * Console, not UI, for the same reason `groups.ts` chose it: main has already
+ * written the real cause to the app log, and inventing a dialog for a failure
+ * whose retry is one click away would be worse than a line next to it.
+ */
+async function mainTook(what: string, call: () => Promise<boolean>): Promise<boolean> {
+  try {
+    return await call();
+  } catch (err) {
+    console.warn(`[composer] sessions.${what} failed — trying the terminal route`, err);
+    return false;
+  }
 }

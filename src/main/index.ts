@@ -8,6 +8,7 @@ import { registerBuiltinContributions } from './bootstrap';
 import { registry } from './extensibility';
 import { PtyService } from './pty/pty-service';
 import { StreamService } from './transport/stream-service';
+import { parsePreferredTransport, TRANSPORT_ENV_VAR } from './transport/preferred-transport';
 import { StreamPermissions } from './sessions/stream-permissions';
 import { StreamCommands } from './sessions/stream-commands';
 import { StreamFeed } from './feed/stream-feed';
@@ -1209,20 +1210,11 @@ app
           (msg) => log.app.warn(msg)
         ),
       // The app-wide override, below a card's own choice and above the default
-      // (#381). It reads BOTH values now: `stream` was the only one worth
-      // naming while the PTY was the default, and the moment Direct became the
-      // default that spelling turned into a no-op while `pty` — the one anybody
-      // would now reach for — was silently ignored. An env var that quietly
-      // does nothing is worse than not having one.
-      preferredTransport: () => {
-        const v = process.env.SWITCHBOARD_TRANSPORT;
-        if (v === 'stream' || v === 'pty') return v;
-        // A typo used to be harmless — it fell through to the PTY, which was
-        // also the default. Now it falls through to Direct, i.e. to the exact
-        // opposite of what someone setting this variable is usually asking for.
-        if (v) log.app.warn('SWITCHBOARD_TRANSPORT ignored: expected "pty" or "stream"', { value: v });
-        return undefined;
-      },
+      // (#381). Read per call, not once at boot, so a test or a relaunch-free
+      // change of the variable is picked up by the next session; the parse and
+      // the reason a typo warns live in `transport/preferred-transport.ts`.
+      preferredTransport: () =>
+        parsePreferredTransport(process.env[TRANSPORT_ENV_VAR], log.app.warn),
     });
     app.on('quit', () => {
       ptys.killAll();
