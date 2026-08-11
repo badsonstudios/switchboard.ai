@@ -16,6 +16,8 @@ import { HookListener } from './hooks/hook-listener';
 import { TranscriptWatcher } from './transcripts/watcher';
 import { registerSessionIpc } from './sessions/ipc';
 import { registerGroupIpc } from './workspace/group-ipc';
+import { registerFsIpc } from './fs/ipc';
+import { ReadScope } from './fs/read-scope';
 import { IpcBroker } from './ipc/broker';
 import { allCapabilities, Channel } from '../shared/ipc/capabilities';
 import { EventFeed } from './events/feed';
@@ -1146,6 +1148,24 @@ app
       }
       return gitService.fileVersions(folder, file);
     });
+    // `fs:read` — the document viewer's door to a file (P2-E16-01, §5.30).
+    //
+    // The roots are the folders of the sessions that are OPEN, and "open" here
+    // means EVERY CARD in the workspace, not just the ones with a live process:
+    // the daily case this epic exists for is reading `PROGRESS.md` for a
+    // project whose card is sitting there suspended, and a scope built from
+    // `manager.list()` alone would refuse exactly that. `knownFolder` above is
+    // narrower on purpose — a git status shells out against a live session's
+    // repo — and the two are different questions, so they are two lists.
+    const fsLog = createLogger(sink, 'fs');
+    const readScope = new ReadScope({
+      sessionFolders: () => [
+        ...manager.list().map((s) => s.identity.folder),
+        ...workspace.listSessions().map((s) => s.identity.folder),
+      ],
+      log: fsLog,
+    });
+    registerFsIpc({ broker, log: fsLog, scope: readScope });
     broker.handle('notifications:getPrefs', () => workspace.getNotificationPrefs());
     broker.handle('notifications:setPrefs', (_e, p) => {
       workspace.setNotificationPrefs(p);

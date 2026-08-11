@@ -98,10 +98,14 @@ describe('the IPC capability map (the done-when: no channel is untagged)', () =>
     // channel typed as the map's key set, so an untagged channel will not
     // compile. This is the other direction — a tag left behind after the
     // channel it described was deleted, which reads like coverage and is not.
+    // Every file that registers channels. A new registration FILE has to be
+    // added here — otherwise its channels read as stale and this goes red,
+    // which is the correct failure: the list is the test's whole input.
     const sources = [
       'src/main/index.ts',
       'src/main/sessions/ipc.ts',
       'src/main/workspace/group-ipc.ts',
+      'src/main/fs/ipc.ts',
     ]
       .map((f) => fs.readFileSync(path.join(process.cwd(), f), 'utf8'))
       .join(' ');

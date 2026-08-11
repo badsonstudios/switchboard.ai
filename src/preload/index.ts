@@ -3,6 +3,7 @@ import type { SlashCommand } from '../shared/slash-commands';
 import type { PtyAttachment, PtyChunk } from '../shared/ipc/pty';
 import type { BindingSnapshot } from '../shared/transcripts';
 import type { PermissionRequestDto } from '../shared/ipc/permissions';
+import type { FileReadResult } from '../shared/ipc/fs';
 import type {
   UpdateHandshake,
   UpdateInstallStatus,
@@ -349,6 +350,19 @@ const api = {
      * same for every window and for every call within one run.
      */
     handshake: (): Promise<UpdateHandshake | null> => ipcRenderer.invoke('update:handshake'),
+  },
+  /**
+   * Files, read-only and scope-checked in main (P2-E16-01, §5.30).
+   *
+   * This one does NOT follow the `null`-and-log convention: it answers a result
+   * union, because "that file is gone" and "you may not read that" are
+   * different things for the viewer to say and a bare null collapses them.
+   * Every refusal is already in the app log by the time this resolves — the
+   * caller does not have to log it again, only render it.
+   */
+  files: {
+    /** absolute path in, at most `MAX_FILE_READ_BYTES` of UTF-8 out */
+    read: (p: string): Promise<FileReadResult> => ipcRenderer.invoke('fs:read', p),
   },
   git: {
     status: (folder: string): Promise<unknown> => ipcRenderer.invoke('git:status', folder),

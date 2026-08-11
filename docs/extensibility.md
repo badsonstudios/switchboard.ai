@@ -345,15 +345,34 @@ refusal can arrive, not everywhere it cannot.
 | `app.window` | display geometry, popout movement |
 | `environment.probe` | runs the CLI to read its version; stats the user's home config |
 | `fs.probe` | existence/type of an arbitrary caller-supplied path |
+| `fs.read` | the **contents** of a file, scope-checked and size-capped in main |
 | `dialog.open` | a **native** file dialog |
+| `update.check` | contacts the release host **over the network** |
+| `update.install` | downloads an executable and runs it |
+| `shell.openExternal` | hands a URL to the user's **browser** |
 
-The last three are named for **what they do, not where the answer is shown**.
+Those are named for **what they do, not where the answer is shown**.
 `preflight:check` sat under `settings.read` until review pointed out that it
 `execFile`s the CLI and stats `~/.claude.json` — a child process behind a
 capability called "read settings". `sessions:isDirectory` stats an arbitrary
 caller-supplied path with no folder scoping. And `dialog.open` is its own
 capability because holding "sessions" must not imply the power to put an OS
 dialog in front of the user.
+
+**`fs.read` is not `fs.probe` widened** (P2-E16-01, DESIGN §5.30). Probe answers
+"is this there, and is it a directory"; read answers with the bytes. Existence
+is strictly less power than contents, so folding the second into the first would
+hand every probe-holder a file-read primitive — and the entire point of the
+split vocabulary is that a Phase-4 consumer can hold one without the other. The
+same argument keeps `update.check` from implying `update.install`.
+
+Where `fs.read` may point is decided in **main and only main**
+(`src/main/fs/read-scope.ts`): the folders of open session cards, plus paths the
+user picked in the native dialog. Every decision is made on the **resolved real
+path**, so `../` and a symlink out of the root are refused by construction
+rather than by pattern-matching the string, and the size cap is applied before
+the bytes cross the bridge. A renderer-side version of any of that would protect
+nobody — the caller it defends against is the renderer.
 
 ### Two vocabularies, not yet joined
 
