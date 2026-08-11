@@ -46,6 +46,7 @@ import { PtyService } from '../pty/pty-service';
 import { StreamPermissions } from './stream-permissions';
 import { StreamCommands } from './stream-commands';
 import { StreamFeed } from '../feed/stream-feed';
+import { replayResumedHistory } from '../feed/history';
 import { HookListener } from '../hooks/hook-listener';
 import { IpcBroker } from '../ipc/broker';
 import { Channel } from '../../shared/ipc/capabilities';
@@ -848,6 +849,25 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
           log.warn('provider declares transcripts but the root was refused', {
             cardId: opts.cardId,
             root: plan.transcriptsRoot,
+          });
+        }
+        // ...which leaves a RESUMED stream session with no source of history at
+        // all, and that is #395: `--resume` restores the model's context and
+        // re-sends none of it, the line above forbids the transcript from
+        // deriving, and the card opens blank as if it had been wiped. Replay the
+        // conversation into the Feed once, here, from the same JSONL the
+        // watcher would have read.
+        //
+        // HERE, and not later, is the seam: nothing has yielded to the event
+        // loop since the spawn, so `StreamFeed` has been offered no message for
+        // this session and cannot be. Everything on disk is numbered below
+        // everything the stream will say — no duplicate at the join, and no gap.
+        if (record.transport === 'stream' && plan.resumeSessionId && deps.streamFeed) {
+          replayResumedHistory(deps.streamFeed, log, {
+            sessionId: record.id,
+            projectsRoot: plan.transcriptsRoot,
+            folder: opts.folder,
+            nativeSessionId: plan.resumeSessionId,
           });
         }
       }

@@ -91,6 +91,70 @@ export class StreamFeed {
   /** Optional so a test can construct one bare; the app always passes it. */
   constructor(private readonly log?: Logger) {}
 
+  /**
+   * Seed a RESUMED session's Feed with the conversation that already happened
+   * (#395) — the backlog, before a single byte of the live stream arrives.
+   *
+   * WHY THIS EXISTS. `--resume <id>` restores the model's context and re-sends
+   * none of it: the CLI's stream starts at the next turn. A Terminal session
+   * gets its history back twice over (the PTY repaint, and the transcript
+   * watcher adopting the pre-existing JSONL), and a Direct session got it
+   * neither way — the watcher is told `deriveFeed: false` precisely so the two
+   * sources cannot interleave. The result was a resumed card that looked wiped,
+   * which is how Dan read it after 0.3.0.
+   *
+   * WHY IT IS THE STREAM FEED'S JOB and not the watcher's. The interleaving
+   * hazard is about the LIVE TAIL, not the backlog — but two buffers feeding one
+   * renderer is more than a rendering-order problem: both number their blocks
+   * from seq 1, and the renderer upserts on seq (`lib/feed.ts`), so the first
+   * streamed block would OVERWRITE the first replayed one. Hydrating THIS
+   * buffer keeps one seq space, one backlog for `transcripts:blocks` to serve,
+   * and one reset to route — nothing downstream has to learn that a session's
+   * Feed can have two sources at once.
+   *
+   * THE SEAM is the file's contents at this instant. The caller runs it inside
+   * `sessions:create`, in the same synchronous stretch as the spawn, so no
+   * stream message has been offered yet and nothing else can be appended in
+   * between (the CLI writes nothing until its first turn — the S-07
+   * measurement). Everything on disk lands below seq N; everything the stream
+   * says lands above it.
+   *
+   * IT DOES NOT TOUCH `conversationId`. That field means "the conversation the
+   * CLI last claimed", and it is how `/clear` is detected. Seeding it with the
+   * resumed id would make a CLI that answers `--resume` with a forked id look
+   * like a `/clear` on the very first turn — and the reset would wipe the
+   * history this method just replayed.
+   *
+   * Returns the number of blocks replayed. Refuses a buffer that already holds
+   * blocks: hydration is a start-of-session act, and a second one would append
+   * the past onto the present.
+   */
+  hydrate(sessionId: string, entries: readonly Record<string, unknown>[]): number {
+    const s = this.ensure(sessionId);
+    if (s.buffer.size > 0) {
+      this.log?.warn('refusing to replay history into a Feed that already has blocks', {
+        sessionId,
+      });
+      return 0;
+    }
+    let n = 0;
+    for (const e of entries) {
+      // The SAME derivation the transcript watcher runs (`blocks.ts`), so a
+      // replayed turn cannot look different from the one that streamed live.
+      for (const intent of deriveIntents(e)) {
+        if (intent.t === 'tool-result') {
+          s.buffer.attachResult(intent.toolUseId, intent.out);
+          continue;
+        }
+        // `sidechain: false`: only the session's own transcript is read here.
+        const block = s.buffer.push(intent.block, false);
+        if (intent.toolUseId) s.buffer.remember(intent.toolUseId, block);
+        n++;
+      }
+    }
+    return n;
+  }
+
   /** Feed one typed message from one stream session. */
   offer(sessionId: string, msg: Record<string, unknown>): void {
     switch (typeof msg.type === 'string' ? msg.type : '') {
