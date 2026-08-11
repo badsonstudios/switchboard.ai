@@ -1007,23 +1007,33 @@ function Composer({
   // A LAYOUT effect: the height is written in the same commit as the new text,
   // so the box never paints a frame at the old size.
   React.useLayoutEffect(grow, [draft, grow]);
-  // A NARROWER box wraps the same text into more lines, and a shorter panel has
-  // less to spare — neither re-renders anything when dockview drags a splitter.
-  // Only an INLINE-size change re-measures, so our own height writes (block
-  // axis only) cannot feed back into this.
+  // A NARROWER box wraps the same text into more lines, and a SHORTER panel has
+  // less to spare — dragging a splitter or resizing the window re-renders
+  // nothing, so without this a long draft keeps a height its panel no longer
+  // has and overhangs its own options row.
+  //
+  // Neither trigger can loop: our writes are block-axis-only (so the box's
+  // width never moves) and they redistribute space INSIDE the panel without
+  // changing the panel's own height.
   React.useEffect(() => {
     const el = box.current;
+    const panel = root.current?.parentElement;
     if (!el) return;
-    let last = el.getBoundingClientRect().width;
+    let lastWidth = el.getBoundingClientRect().width;
+    let lastRoom = panel?.clientHeight ?? 0;
     const ro = new ResizeObserver(() => {
       const width = el.getBoundingClientRect().width;
       // a collapsed panel measures 0 and would re-measure the draft as one
-      // empty line; it comes back at full width, and that tick does the work
-      if (width === last || width === 0) return;
-      last = width;
+      // empty line; it comes back at full size, and that tick does the work
+      if (width === 0) return;
+      const room = panel?.clientHeight ?? 0;
+      if (width === lastWidth && room === lastRoom) return;
+      lastWidth = width;
+      lastRoom = room;
       grow();
     });
     ro.observe(el);
+    if (panel) ro.observe(panel);
     return () => ro.disconnect();
   }, [grow]);
 
