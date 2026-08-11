@@ -774,6 +774,26 @@ describe('per-card transport (P2-E18-08b)', () => {
     });
   });
 
+  // #397 — the shell renders this now, so the write has to be announced.
+  it('announces the change, so surfaces outside the card re-read it', async () => {
+    const h = harness(undefined, dir, { prior: card() });
+    const before = h.pushed.filter((p) => p.channel === 'sessions:cardsChanged').length;
+
+    await h.call('sessions:setTransport', CARD, 'pty');
+
+    expect(h.pushed.filter((p) => p.channel === 'sessions:cardsChanged')).toHaveLength(before + 1);
+  });
+
+  it('says nothing when it refused — a rejected write changed no card', async () => {
+    const h = harness(undefined, dir, { prior: card() });
+    const before = h.pushed.filter((p) => p.channel === 'sessions:cardsChanged').length;
+
+    await h.call('sessions:setTransport', CARD, 'carrier-pigeon');
+    await h.call('sessions:setTransport', 'nope', 'pty');
+
+    expect(h.pushed.filter((p) => p.channel === 'sessions:cardsChanged')).toHaveLength(before);
+  });
+
   it('rejects a value that is not a transport', async () => {
     const h = harness(undefined, dir, { prior: card() });
     expect(await h.call('sessions:setTransport', CARD, 'carrier-pigeon')).toEqual({
@@ -802,6 +822,98 @@ describe('per-card transport (P2-E18-08b)', () => {
     await start(h);
 
     expect(h.created[0].transport).toBe('pty');
+  });
+
+  // #397 — the renderer needs the same answer BEFORE the spawn.
+  //
+  // The trust chip greys itself out when no card will spawn on the Terminal,
+  // because Claude Code raises no trust question on the Direct transport
+  // (#384). That rule is only as good as the field it reads, and the field has
+  // to mean "what the NEXT session will run on" — the same three-step
+  // precedence `sessions:create` applies, not the record's raw `transport` and
+  // not what a running session happens to be hosted on.
+  describe('`sessions:cards` reports the NEXT-spawn transport (#397)', () => {
+    const transportOf = async (h: {
+      call: (c: string, ...a: unknown[]) => unknown;
+    }): Promise<string | undefined> => {
+      const cards = (await h.call('sessions:cards')) as Array<{ transport?: string }>;
+      return cards[0]?.transport;
+    };
+
+    it("reports the card's own choice", async () => {
+      const h = harness(undefined, dir, { prior: { ...card(), transport: 'pty' } });
+      expect(await transportOf(h)).toBe('pty');
+    });
+
+    it('reports the DEFAULT for a card that never chose — never `undefined`', async () => {
+      // Silence here would reach the renderer as "no answer", and the chip
+      // would have to guess. It resolves the default instead.
+      const h = harness(undefined, dir, { prior: card() });
+      expect(await transportOf(h)).toBe('stream');
+    });
+
+    it('honours the env override, exactly as the spawn does', async () => {
+      // This is how the e2e suite puts a whole app instance on the Terminal. A
+      // chip that ignored the override would sit greyed out in a run where
+      // every session really is on the Terminal and really can be asked.
+      const h = harness(undefined, dir, { prior: card(), preferredTransport: () => 'pty' });
+      expect(await transportOf(h)).toBe('pty');
+    });
+
+    // ...and the ORDER of those two, which the pair above cannot pin: each of
+    // them leaves the other input absent, so swapping the precedence keeps both
+    // green. `sessions:create` has the identical test for the identical reason.
+    it("a card's own choice still beats the env override", async () => {
+      const h = harness(undefined, dir, {
+        prior: { ...card(), transport: 'pty' },
+        preferredTransport: () => 'stream',
+      });
+      expect(await transportOf(h)).toBe('pty');
+    });
+
+    // THE DECISION, as an executable claim. Both of these run a session on one
+    // transport while the card holds a choice for the other — the state a
+    // pending restart leaves behind — and both assert the CHOICE wins. Reading
+    // the running session instead (`rec?.transport`, which is right there in
+    // the same handler) flips both.
+    it('follows a PENDING switch TO Terminal, not the Direct session still running', async () => {
+      // The workflow this protects: the manual tells someone who wants to be
+      // asked about a folder to open it in Terminal mode. They switch the card
+      // and the restart is what reads `autoTrust` — so the chip has to be
+      // reachable BEFORE the restart, not after it.
+      const prior = card(); // never chose → starts Direct
+      // `transport` here is what the fake manager REPORTS the live session is
+      // on, and it has to be set: its default is `pty`, which would have made
+      // the running and chosen answers agree and let a handler that read the
+      // running one straight through this test.
+      const h = harness(undefined, dir, { prior, liveIds: ['live-1'], transport: 'stream' });
+      await start(h);
+      expect(h.created[0].transport).toBe('stream'); // ...and really is running on it
+
+      await h.call('sessions:setTransport', CARD, 'pty');
+      // the stub's `persist.list` closes over this object, so mutating it is
+      // how the store's write becomes visible to a later read
+      prior.transport = 'pty';
+
+      expect(await transportOf(h)).toBe('pty');
+    });
+
+    it('follows a PENDING switch TO Direct, not the Terminal session still running', async () => {
+      // The other direction, and the one that costs something: the chip goes
+      // quiet while a Terminal session is still up. That is the honest answer —
+      // the next spawn cannot be asked — and it is reversible by switching the
+      // card back, which is exactly what the tooltip says to do.
+      const prior: PersistedSession = { ...card(), transport: 'pty' };
+      // ...and stated here too, for the same reason in the other direction
+      const h = harness(undefined, dir, { prior, liveIds: ['live-1'], transport: 'pty' });
+      await start(h);
+      expect(h.created[0].transport).toBe('pty');
+
+      await h.call('sessions:setTransport', CARD, 'stream');
+      prior.transport = 'stream';
+
+      expect(await transportOf(h)).toBe('stream');
+    });
   });
 });
 

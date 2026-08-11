@@ -11,6 +11,8 @@
     "notifOff": "🔕 off",
     "trustOn": "🔓 auto-trust",
     "trustOff": "🔒 ask trust",
+    "trustHint": "Whether a folder you open is trusted for you, or Claude Code is left to ask about it. Only Terminal-mode sessions are ever asked.",
+    "trustInert": "Unavailable: Claude Code only ever asks about folder trust in Terminal mode, and no session is set to run there. Switch one to Terminal from its ⋯ menu to use this setting.",
     "rail": "▤ rail",
     "railHint": "Show or hide the sessions rail ({binding})",
     "palette": "▸ commands",

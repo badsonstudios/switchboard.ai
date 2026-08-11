@@ -6,7 +6,7 @@ Everything lives as chips in the title bar. There's no settings window yet.
 
 | Chip | Does |
 |---|---|
-| **🔓 auto-trust / 🔒 ask trust** | Whether new folders are trusted automatically |
+| **🔓 auto-trust / 🔒 ask trust** | Whether new folders are trusted automatically. Greyed out unless a session is set to Terminal mode — see below |
 | **🛡 ask / plan / auto-edit / full-auto** | The autonomy mode *new* sessions start at — click to cycle |
 | **⬍ Keep visible / Collapse on submit / Hide on submit** | What happens to a session's card when you send it a prompt — click to cycle. See below |
 | **🔔 on / 🔕 off** | All notifications |
@@ -77,10 +77,29 @@ session's mode:
   never asks.** It has no terminal to ask in, and it does not raise the question
   any other way — it simply runs in the folder. Measured against claude 2.1.226.
 
-So **🔒 ask trust** only really does anything for Terminal-mode sessions. If
-being asked matters to you for a particular folder, open it in Terminal mode
-from the session's **⋯** menu the first time; once you have answered, the
-answer is remembered and Direct mode works the same either way.
+So **🔒 ask trust** can only ever get you *asked* in a Terminal-mode session.
+
+### Why the chip is sometimes greyed out
+
+Because of that, the chip **is disabled whenever no session is set to run in
+Terminal mode** — which, since Direct mode is what new sessions use, is most of
+the time. Hover it and it tells you why: there is no session there that could
+put the question in front of you.
+
+It comes back to life the moment any session is switched to Terminal mode from
+its **⋯** menu — including while that session is still running and waiting for a
+restart, because the choice is what the *next* start will use, and the next
+start is what reads this setting.
+
+Being disabled never changes what you had chosen. If you had picked **🔒 ask
+trust**, the chip still says so, greyed out, and it is still what you get the
+moment a Terminal-mode session starts.
+
+So: if being asked matters to you for a particular folder, switch that session
+to Terminal mode **before anything runs in that folder for the first time**, and
+restart it. With **auto-trust** on, the first session in a folder — Terminal or
+Direct — records your acceptance for good, and there is nothing left to ask
+about afterwards.
 
 ## What's remembered
 

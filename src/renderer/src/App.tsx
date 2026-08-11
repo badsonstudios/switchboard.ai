@@ -37,6 +37,7 @@ import { PreflightBanner } from './components/PreflightBanner';
 import { collapsedRows, revealTargets } from './lib/ladder';
 import { GuardedRefresh, latestWins } from './lib/latest-wins';
 import { groupChangeLanded } from './lib/groups';
+import { trustSettingReaches } from './lib/trust-reach';
 import {
   cycleGlobal,
   cycleOverride,
@@ -355,6 +356,11 @@ export function App(): React.JSX.Element {
   const [preflightOk, setPreflightOk] = useState(true);
   const [cliVersion, setCliVersion] = useState<string | null>(null);
   const [autoTrust, setAutoTrust] = useState(true);
+  // Can the trust setting change what any session does? (#397) Only the
+  // Terminal transport ever raises Claude Code's trust question, so an
+  // all-Direct workspace gets an inert chip that says why. The rule and the
+  // measurement behind it are in `lib/trust-reach.ts`.
+  const trustReaches = trustSettingReaches(sessions);
   const [usageByLive, setUsageByLive] = useState<Map<string, { usage: Usage; model?: string }>>(
     new Map()
   );
@@ -596,6 +602,7 @@ export function App(): React.JSX.Element {
             autoKey: c.autoKey,
             liveId: c.liveId,
             taskLabel: c.taskLabel,
+            transport: c.transport,
           }))
         )
     )
@@ -1081,7 +1088,13 @@ export function App(): React.JSX.Element {
         onCycleLayoutMode={cycleLayoutMode}
         layoutBinding={layoutBindingLabel}
         autoTrust={autoTrust}
+        trustReaches={trustReaches}
         onToggleTrust={() => {
+          // Defence in depth (#397): the chip is already inert when the setting
+          // cannot reach a session, and this makes the WRITE impossible rather
+          // than merely unclicked — a stored preference must not change because
+          // something else found a way to fire this handler.
+          if (!trustReaches) return;
           const next = !autoTrust;
           setAutoTrust(next);
           void bridge.settings?.setAutoTrust?.(next);

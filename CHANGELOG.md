@@ -62,6 +62,18 @@ on the floor, and say so in your PR.
   match character for character, so `rm -rf build` and `rm -rf /` are never
   answered together.
 
+### Changed
+
+- **The 🔓 auto-trust / 🔒 ask trust chip is now greyed out when nothing could
+  ask you.** Claude Code only ever raises its folder-trust question in Terminal
+  mode, so on a workspace where every session is in Direct mode — the default —
+  picking **🔒 ask trust** could never actually get you asked. The chip is now
+  disabled there, and hovering it says why. Switch any session to Terminal mode
+  from its **⋯** menu and the chip comes straight back, including while that
+  session is still running and waiting for its restart. Whatever you had chosen
+  is kept and still shown: being greyed out takes away the switch, never your
+  answer.
+
 ### Fixed
 
 - **The manual was wrong about 🔒 ask trust in Direct mode.** It said you had to

@@ -1003,6 +1003,25 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
           status: rec?.status ?? 'suspended',
           liveId,
           groupId: card.groupId,
+          // The transport this card's next session will be ASKED for (#397), by
+          // the SAME precedence `sessions:create` applies (card > env override
+          // > default). Read it off `card`, above the await below, so it comes
+          // from the same synchronous snapshot as everything else here.
+          //
+          // Deliberately not `rec?.transport`, which is what a running session
+          // happens to be on: the renderer's only consumer asks "can Claude
+          // Code ever raise a trust question for this card?", and trust is
+          // consulted at SPAWN time, so the transport that answers it is the
+          // one the next spawn will use. When a pending transport change is
+          // outstanding those two differ, and the pending one is the honest
+          // answer — see `lib/trust-reach.ts`.
+          //
+          // ASKED FOR, not resolved: an adapter that cannot speak stream-json
+          // downgrades the request to a PTY (`session-manager.ts`, and only the
+          // fake providers do it today). Reading `capabilitiesOf` here would
+          // make it exact; it is not worth the coupling until a real adapter
+          // does it.
+          transport: card.transport ?? deps.preferredTransport?.() ?? DEFAULT_SESSION_TRANSPORT,
           autoKey: await autoKeyFor(card.identity.folder),
           taskLabel: card.taskLabel,
         };
@@ -1064,6 +1083,19 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       if (cid === cardId && isRunning(liveId)) pending = true;
     }
     log.info('card transport changed', { cardId, transport, pending });
+    // A card's transport is now something the SHELL renders, not just the card
+    // (#397: the trust chip greys itself out while nothing will spawn on the
+    // Terminal), so this write has to be announced.
+    //
+    // It is the exception the note above `cardsChanged` allows for. That note
+    // says a renderer-initiated change to the persisted half needs no push
+    // because "the caller refreshes at its own call site" — true of renaming a
+    // card, whose caller is the rail. It is NOT true here: the caller is the
+    // grid's ⋯ menu, which has no route to the rail's refresh. That is the same
+    // gap #170 closed for the live half, and leaving it open would mean
+    // switching a session to Terminal mode did not wake the chip up until some
+    // unrelated event happened to refresh the list.
+    cardsChanged();
     return { ok: true, pending };
   });
 
