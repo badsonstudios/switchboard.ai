@@ -14,13 +14,13 @@
 //      every ratio the drift test computes becomes a fiction while staying
 //      perfectly green. Same guard, and the same reason, as CollapsedStrip's.
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
-import { act, useCallback, useState, type ReactElement, type ReactNode } from 'react';
+import { act, useCallback, useEffect, useState, type ReactElement, type ReactNode } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { UrgencyStrip } from './UrgencyStrip';
 import { RailSession } from '../model/types';
 import { presentStatus, STATUS_TOKENS } from '../lib/rail-view';
-import { pruneLit, startBeat, URGENCY_LINGER_MS, type UrgencyMarks } from '../lib/urgency';
+import { markLit, pruneLit, startBeat, URGENCY_LINGER_MS, type UrgencyMarks } from '../lib/urgency';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -419,10 +419,113 @@ describe('the beat starts at the paint, not the keypress (issue 320)', () => {
   });
 });
 
-/** The strip wired to the two rules the store applies to its answers — the same
- *  `startBeat` / `pruneLit` calls `startUrgencyBeat` and `expireUrgency` make,
- *  so a test can watch a mark go pending -> lit -> out without a store. */
-function Harness(props: { sessions: RailSession[]; initial: UrgencyMarks }): ReactElement {
+// --- the pending cap: one mark waiting, the latest (issue 426) --------------
+//
+// Anchoring the beat to the paint (issue 320) made a jump QUEUE a mark that
+// only a paint drains. `Ctrl+Space` routes through the main renderer while
+// focus raises a POPOUT, so an operator working across popouts leaves the main
+// window occluded and unpainted for jump after jump — and every queued ring
+// used to fire at once on return, all of them stale. `markLit` now keeps only
+// the newest unpainted mark.
+//
+// lib/urgency owns that rule; what is decided HERE is the half the rule can
+// only break through this component — that a chain already in the air when a
+// mark is superseded still leaves the survivor with a beat that ends.
+describe('several jumps with nothing painting light exactly one lamp (issue 426)', () => {
+  const T = 1_700_000_000_000;
+  const three: RailSession[] = [
+    { id: 'c1', title: 'alpha', status: 'idle' },
+    { id: 'c2', title: 'beta', status: 'idle' },
+    { id: 'c3', title: 'gamma', status: 'idle' },
+  ];
+  const litOf = (host: HTMLElement, cardId: string): string | null =>
+    host.querySelector(`[data-urgency-lamp="${cardId}"]`)!.getAttribute('data-lit');
+  const lampsLit = (host: HTMLElement): string[] =>
+    [...host.querySelectorAll<HTMLElement>('[data-urgency-lamp]')]
+      .filter((el) => el.dataset.lit === 'true')
+      .map((el) => el.dataset.urgencyLamp!);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(T);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** mount the harness and hand back the host plus the jump */
+  const mountJumpable = async (): Promise<{
+    host: HTMLElement;
+    jump: (cardId: string) => void;
+  }> => {
+    const jumpRef: { current: ((cardId: string) => void) | null } = { current: null };
+    const { host } = await mountNode(
+      <Harness sessions={three} initial={new Map<string, number | null>()} jumpRef={jumpRef} />
+    );
+    return { host, jump: (cardId) => jumpRef.current!(cardId) };
+  };
+
+  it('the fireworks: three jumps, no frames, ONE ring on return', async () => {
+    const { host, jump } = await mountJumpable();
+    // the window is occluded behind a popout: renders happen, frames do not
+    await act(async () => {
+      jump('c1');
+      jump('c2');
+      jump('c3');
+    });
+    expect(lampsLit(host), 'only the last landing answers "where am I?"').toEqual(['c3']);
+
+    // ...and now the operator comes back and the window paints
+    await act(async () => void vi.advanceTimersByTime(64));
+    expect(lampsLit(host), 'one ring, not three at once').toEqual(['c3']);
+
+    // that ring is a real beat, on the clock, and it ends
+    await act(async () => void vi.advanceTimersByTime(URGENCY_LINGER_MS + 500));
+    expect(lampsLit(host)).toEqual([]);
+  });
+
+  it('a mark superseded UNDER a chain in flight still gets a beat that ends', async () => {
+    // The regression this cap is one line away from causing. The chain captures
+    // the ids as of the commit that scheduled it; the cap can delete them
+    // before the second frame arrives, and then `startBeat` has nothing to
+    // start and writes NOTHING — so a strip that waited on that write to re-run
+    // its effect would never schedule a chain for the mark that replaced them.
+    // No beat, and `nextLitExpiry` arms no timer for the unpainted: lit forever.
+    const { host, jump } = await mountJumpable();
+    await act(async () => void jump('c1'));
+    await act(async () => void vi.advanceTimersToNextTimer()); // one frame: chain half-way
+    await act(async () => void jump('c2')); // ...and c1 is superseded under it
+    expect(litOf(host, 'c1')).toBe('false');
+    expect(litOf(host, 'c2')).toBe('true');
+
+    await act(async () => void vi.advanceTimersByTime(64)); // the chain lands on nothing
+    expect(litOf(host, 'c2'), 'still lit — its own chain has to reach it').toBe('true');
+
+    await act(async () => void vi.advanceTimersByTime(URGENCY_LINGER_MS + 500));
+    expect(litOf(host, 'c2'), 'a beat that never started is a lamp lit forever').toBe('false');
+  });
+
+  it('a ring you have already SEEN is not taken away by the next jump', async () => {
+    // the other half of the rule, through the component: the cap is scoped to
+    // marks nobody has painted. Two rings overlap exactly as they always did.
+    const { host, jump } = await mountJumpable();
+    await act(async () => void jump('c1'));
+    await act(async () => void vi.advanceTimersByTime(64)); // c1 paints, its beat starts
+    await act(async () => void jump('c2'));
+    expect(lampsLit(host), 'both up together').toEqual(['c1', 'c2']);
+  });
+});
+
+/** The strip wired to the THREE rules the store applies to its answers — the
+ *  same `markLit` / `startBeat` / `pruneLit` calls `markUrgency`,
+ *  `startUrgencyBeat` and `expireUrgency` make, so a test can watch a mark go
+ *  jumped-to -> pending -> lit -> out without a store. */
+function Harness(props: {
+  sessions: RailSession[];
+  initial: UrgencyMarks;
+  /** filled with the jump `markUrgency` makes, for a test to press */
+  jumpRef?: { current: ((cardId: string) => void) | null };
+}): ReactElement {
   const [urgency, setUrgency] = useState(props.initial);
   const onBeatStart = useCallback((cardIds: readonly string[]) => {
     setUrgency((cur) => startBeat(cur, cardIds, Date.now()) ?? cur);
@@ -430,6 +533,13 @@ function Harness(props: { sessions: RailSession[]; initial: UrgencyMarks }): Rea
   const onExpire = useCallback(() => {
     setUrgency((cur) => pruneLit(cur, Date.now()) ?? cur);
   }, []);
+  const jump = useCallback((cardId: string) => {
+    setUrgency((cur) => markLit(cur, cardId, Date.now()));
+  }, []);
+  const { jumpRef } = props;
+  useEffect(() => {
+    if (jumpRef) jumpRef.current = jump;
+  }, [jumpRef, jump]);
   return (
     <UrgencyStrip
       sessions={props.sessions}

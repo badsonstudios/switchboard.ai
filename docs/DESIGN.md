@@ -489,7 +489,15 @@ done | crashed`) fed by hooks + transcript events. The layout engine reacts to i
   after the commit that drew it (`requestAnimationFrame` twice — a commit is not
   a paint). A mark that has not painted yet therefore survives a backgrounded
   window rather than burning down unseen; once the beat has started it runs on
-  the wall clock like any other.
+  the wall clock like any other. **At most ONE mark may be waiting on a paint —
+  the latest** *(amended 2026-08-11, Dan, after #426)*: two lamps whose beats
+  are RUNNING still overlap (jump A, jump B a moment later, both rings up), but
+  an unpainted mark is discarded by a newer one. `Ctrl+Space` runs in the main
+  renderer while focus raises a POPOUT, so an operator working across popouts
+  can leave the main window occluded for jump after jump, and a queue of marks
+  drained by one paint is a fireworks show of stale "you arrived here" flashes.
+  The beat answers "where did I just land?", and after a popout stint only the
+  last landing carries that.
 - **Focus mode is a composition, with a keyboard-fail-open invariant** (research
   v2: IntelliJ Zen = Full Screen + Distraction-free; VS Code maximize-toggle):
   "focus on one agent" composes existing presentation-ladder states rather than

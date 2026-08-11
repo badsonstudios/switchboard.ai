@@ -94,6 +94,14 @@ already come and gone. A ring that hasn't appeared yet waits for the window to
 come back rather than counting down behind your back; once it's up, it fades on
 its own schedule like anything else.
 
+**Only ever one ring is kept waiting** — the last one. `Ctrl+Space` works from a
+pop-out window, but the strip it rings is on the main window, so if that window
+is behind something you can make several jumps before it gets a chance to draw
+anything. You come back to a single ring on the session you actually landed on,
+not a firework display of every jump you made while it was hidden. Rings you
+have already *seen* are left alone: jump twice in quick succession and both are
+up together, each fading on its own count.
+
 Nothing on the strip blinks or animates for attention. It's a readout, not an
 alarm.
 

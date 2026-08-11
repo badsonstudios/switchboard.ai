@@ -48,6 +48,11 @@ export const URGENCY_LINGER_MS = 1500;
  * and `startBeat` — called from the strip once the lit lamp is on the screen —
  * converts it to a real deadline. A `null` entry is unconditionally lit and
  * arms no timer: nothing is counting down yet.
+ *
+ * At most ONE entry is `null` at a time — `markLit` drops the older ones, see
+ * there (issue 426). The rules below still handle several because a rule that
+ * assumes an invariant it does not enforce is a rule that breaks silently when
+ * the invariant moves.
  */
 export type UrgencyMarks = ReadonlyMap<string, number | null>;
 
@@ -141,13 +146,24 @@ export function isLit(lit: UrgencyMarks, cardId: string, now: number): boolean {
  * Pruning here as well as in `pruneLit` is deliberate: jumps are the only thing
  * that grows this map, so folding the sweep into the write means the map cannot
  * outgrow the session list even if a render (and therefore the expiry timer)
- * never happens — a backgrounded window, say. Unpainted entries survive the
- * sweep by construction: they have no deadline to have passed, and dropping
- * them would reintroduce exactly the silent no-lamp case #320 fixes.
+ * never happens — a backgrounded window, say.
+ *
+ * **AT MOST ONE MARK IS EVER WAITING ON A PAINT — the latest** *(Dan,
+ * 2026-08-11, issue 426)*. A lamp whose beat is RUNNING is never touched here:
+ * jump A, jump B a moment later and both rings are on the screen together, the
+ * overlap §5.8 has always had. But a mark that has never painted carries no
+ * information a newer one does not, and a queue of them is a fireworks show:
+ * `Ctrl+Space` routes through the main renderer while focus raises a POPOUT, so
+ * an operator working across popouts can leave the main window occluded and
+ * unpainted for several jumps — and every queued ring would then fire at once
+ * on return, all of them stale, none of them the answer to "where did I just
+ * land?". Dropping the older ones costs nothing seen: nobody has seen them.
  */
 export function markLit(lit: UrgencyMarks, cardId: string, now: number): Map<string, number | null> {
   const next = new Map<string, number | null>();
-  for (const [id, until] of lit) if (until === null || until > now) next.set(id, until);
+  // `until !== null` is the cap: unpainted marks do not survive a newer mark,
+  // where a running beat does until its deadline passes
+  for (const [id, until] of lit) if (until !== null && until > now) next.set(id, until);
   next.set(cardId, null);
   return next;
 }
