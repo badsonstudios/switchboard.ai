@@ -140,6 +140,18 @@ function errorCode(err: unknown): string | undefined {
  * viewer closed should not be a second dialog. It does not survive a restart:
  * a persisted allow-list is a security decision with a much longer tail, and
  * §5.30 does not ask for one.
+ *
+ * A PICKED FILE GRANTS THAT FILE, NOT ITS FOLDER (noted P2-E16-02). `roots()`
+ * puts the picked path in the same list as a session folder, and `isWithinRoot`
+ * answers true only for the root itself or something under it — so a root that
+ * IS a file grants exactly one file, and a relative link out of a picked
+ * document ("[b](./b.md)") is refused. That is the literal reading of §5.30's
+ * "paths the user picks through the native dialog", and it is deliberately not
+ * widened here: granting the containing directory would mean one dialog click
+ * opening a whole tree, which is a security decision for an owner and not a
+ * side effect of a convenience. The cost is written down in
+ * `docs/manual/14-document-viewer.md` so a user is not left guessing why one
+ * link works inside a session folder and not outside it.
  */
 export class ReadScope {
   private readonly picked = new Set<string>();

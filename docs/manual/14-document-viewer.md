@@ -1,0 +1,115 @@
+# Reading files in the app
+
+> Status: draft
+
+Your agent writes Markdown all day — progress notes, plans, findings, hand-off
+summaries, review reports. The document viewer lets you *read* those files
+inside switchboard.ai, properly rendered, instead of alt-tabbing to an editor
+and squinting at a wall of `**`, `|` and backticks.
+
+It opens any text file too, with syntax colouring, and it is **read-only** on
+purpose. switchboard.ai is not an editor and is not becoming one.
+
+<!-- screenshot: PROGRESS.md open in the viewer, rendered, with the outline on the left -->
+
+## Opening a file
+
+Two ways today:
+
+1. **The command list** — press `Ctrl+Shift+P` (`Cmd+Shift+P` on a Mac), type
+   "open file", and pick **Open file…**. Choose a file in the dialog that
+   appears.
+2. **The Changes tab** — each row in the file list on the left has a small **↗**
+   at its right-hand end. Click it to open that file in the viewer. (Clicking
+   the row itself still shows the diff, which is a different question: the diff
+   shows what changed, the viewer shows what the file says now.)
+
+Files inside a folder you already have a session open in can be opened
+directly. Anything else has to come through **Open file…** — that dialog is how
+you tell switchboard.ai it may read a file, and it will not go looking anywhere
+you have not pointed it.
+
+## Rendered or source
+
+Markdown files open **rendered**. Everything else opens as **source**.
+
+The `Rendered | Source` buttons at the top of the panel switch between them, and
+each view remembers where you had scrolled to, so flipping back and forth
+doesn't lose your place. For a file that isn't Markdown, **Rendered** is greyed
+out — there is nothing to render.
+
+What you get in the rendered view:
+
+- **Tables**, which scroll sideways on their own if they're wide, instead of
+  making the whole page scroll.
+- **Task lists** — `- [ ]` and `- [x]` become real (non-clickable) checkboxes.
+- **Code blocks** with the language named and a **Copy** button, for when the
+  agent has just handed you a command.
+- **An outline** down the left of long documents. Click a heading to jump.
+- **Front matter** (the `---` block some files start with) folded into a small
+  chip you can expand, rather than dumped at the top as a line of noise.
+- **Links that work.** A link to another file in a folder you have a session
+  open in opens *in the viewer* — use the `‹` and `›` buttons to go back and
+  forward, like a browser. A web link opens in your normal browser.
+
+  One catch: a file you opened with **Open file…** grants access to *that file
+  only*. Links out of it to its neighbours are refused, because you told
+  switchboard.ai it could read one file, not a folder. Pick the neighbour the
+  same way, or open a session in that folder.
+
+## Finding text
+
+With a rendered document on screen, press `Ctrl+F` (`Cmd+F` on a Mac). A small
+find bar appears above the document; type, and matches light up. `Enter` goes to
+the next one, `Shift+Enter` the previous, `Esc` closes it.
+
+The search only ever looks at the document in front of you — never at other
+panels.
+
+In **Source** view, use the editor's own find box (also `Ctrl+F`).
+
+## Files it won't show you
+
+PDFs, images, archives, executables, video, audio — anything that isn't text —
+get a small card naming the file, its type and its size, with two buttons:
+
+- **Open externally** hands the file to whatever app you normally use for it.
+- **Reveal in folder** shows it in Explorer / Finder / your file manager.
+
+Those two buttons are in the header of *every* document too, so getting a file
+into your own tools is always one click away.
+
+## Good to know
+
+- **Nothing is ever saved from here.** The viewer cannot edit, and there is no
+  setting that makes it. Use your editor.
+- **Images in a document are not loaded.** A picture in a Markdown file shows as
+  a small chip with its name. For a picture hosted on the web, the chip has an
+  **Open in browser** button. This is deliberate: switchboard.ai never makes a
+  network request on your behalf, and an image in a file someone else wrote is
+  the easiest possible way to find out that you read it.
+- **Very large files are cut short.** Above about 2 MB you get the beginning of
+  the file and a note saying how much is missing. Open it externally to read the
+  rest.
+- **Files that aren't UTF-8.** UTF-16 files that start with a byte-order mark
+  (which is how Notepad and PowerShell write them) are read correctly, and the
+  header says so. One written without that marker can't be told apart from a
+  binary file, so it gets the "open externally" card.
+- **The viewer is not a session.** It doesn't appear in the sidebar, it doesn't
+  count towards anything, and closing sessions doesn't close it.
+- **It doesn't follow the file yet.** If the agent rewrites the file while it's
+  open, close and reopen it to see the new version. Live re-rendering is coming.
+
+## If something goes wrong
+
+- **"switchboard.ai only opens files inside a session's folder…"** — you asked
+  for a file outside every open session's folder. Use **Open file…** from the
+  command list and pick it, which grants access to that one file.
+- **"That file isn't there any more."** — it was deleted or renamed after you
+  opened it.
+- **The document looks like a wall of symbols** — you're in **Source** view.
+  Click **Rendered**.
+- **A link did nothing when I clicked it** — links using anything other than
+  `http`, `https`, `mailto`, or a path to another file in the project are
+  ignored on purpose. A document you didn't write should not be able to make the
+  app do things.

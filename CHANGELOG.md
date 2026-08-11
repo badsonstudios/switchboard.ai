@@ -55,6 +55,20 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **Read a file in the app, rendered.** A new document viewer opens Markdown as
+  Markdown — tables, task lists, code blocks with a Copy button, an outline for
+  long documents, and links to other files in the project that open right there
+  with back and forward. Open one from **Open file…** in the command list
+  (`Ctrl+Shift+P`), or by clicking a file's path in the Changes tab. Anything
+  that isn't Markdown opens as read-only, syntax-coloured source; the
+  `Rendered | Source` buttons switch between them and each keeps its own scroll
+  position. `Ctrl+F` finds text in the document you are reading, and nowhere
+  else. PDFs, images and other binaries aren't rendered — you get a card naming
+  the file with **Open externally** and **Reveal in folder**, which are in the
+  header of every document too. The viewer never saves anything, never loads a
+  picture from the internet, and only opens files inside a folder you already
+  have a session in, or files you picked yourself.
+
 - When two or more sessions are waiting on **exactly the same** permission
   request, it now appears once, on a single card above the workspace, with
   every session named — answer all of them with one click, or allow one and

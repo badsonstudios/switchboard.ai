@@ -23,6 +23,8 @@ import { listPanels, panelBadge, panelEnabled } from '../extensibility/panels';
 import { ContributionBoundary } from '../extensibility/boundary';
 import { IdentityChip, identityBadgeStyle } from './IdentityChip';
 import { DiffPane } from './DiffPane';
+import { DocumentViewer } from './DocumentViewer';
+import { baseName } from '../lib/document-kind';
 import { UsageStrip } from './UsageStrip';
 import { GitContext, GitStatusDto } from './GitContext';
 import { Usage, ZERO_USAGE } from '../lib/usage';
@@ -1594,7 +1596,92 @@ function DiffPanel(
   );
 }
 
-const components = { sessionCard: SessionCardPanel, diffPane: DiffPanel };
+/**
+ * The §5.30 document viewer as a dockview panel (P2-E16-02).
+ *
+ * A DERIVED panel like `diffPane` — no `cardId`, so `IdentityTab` falls back to
+ * the dockview title and the store never tries to rename it. Its params are the
+ * file path and the colour scheme, both primitives, because params are frozen
+ * into the layout blob.
+ *
+ * The tab title follows relative-link navigation: `onTitleChange` calls
+ * dockview's `setTitle`, which is the one place a panel's title is allowed to
+ * move after `addPanel`.
+ */
+/** A viewer's tab says the file's name; the panel's own header says the path. */
+function documentTabTitle(filePath: string): string {
+  return baseName(filePath) || filePath;
+}
+
+/**
+ * Open (or focus) a document viewer on `filePath` (P2-E16-02).
+ *
+ * A module-level function taking the api, like every other imperative verb in
+ * this file, so the scripted-check seam in `onReady` can call the same code the
+ * controller does — through the controller it would race the effect that
+ * installs it.
+ */
+function openDocumentPanel(
+  api: DockviewApi | null,
+  filePath: string,
+  colorScheme: 'light' | 'dark'
+): void {
+  if (!api || !filePath) return;
+  // One panel per FILE, not per spelling: the Changes tab joins with `/` and
+  // the native picker answers with `\`, and `C:/p/a.md` and `C:\p\a.md` are the
+  // same document. Case is left alone — it decides nothing on POSIX.
+  const id = `doc-${filePath.replace(/\\/g, '/')}`;
+  const existing = api.getPanel(id);
+  if (existing) {
+    existing.focus();
+    return;
+  }
+  // A VIEWER NEVER DISPLACES A SESSION (§5.30), and the mechanism is the E8-04
+  // one: dockview's `addPanel` defaults to the ACTIVE group, which becomes a
+  // popout the moment a card is torn off — so a file opened while a popped-out
+  // session had focus would land as a tab inside that session's window. Pin it
+  // to a group in the main grid, making one if every group has been popped out.
+  // (`openDiff` predates this rule and still has the gap; widening it is not
+  // this item's to take.)
+  const refGroup = api.groups.find((g) => g.api.location.type === 'grid') ?? api.addGroup();
+  api.addPanel({
+    id,
+    component: 'documentViewer',
+    title: documentTabTitle(filePath),
+    params: { path: filePath, colorScheme },
+    position: { referenceGroup: refGroup },
+  });
+}
+
+function DocumentViewerPanel(
+  props: IDockviewPanelProps<{ path?: string; colorScheme?: string }>
+): React.JSX.Element {
+  const api = props.api;
+  // Stable identity: the viewer holds this in an effect's deps, so an inline
+  // arrow would re-run `setTitle` on every render of the panel.
+  const setTitle = React.useCallback((title: string) => api.setTitle(title), [api]);
+  return (
+    // §5.30's litmus #3, in one wrapper: "read-only and out of band, wrapped in
+    // `ContributionBoundary`; a viewer that throws cannot touch a session".
+    // Without it a throw from the viewer's render or an effect propagates to the
+    // renderer ROOT — there is no other boundary above a dockview panel — and
+    // blanks every session pane in the window. The panel is not a contribution,
+    // but the containment argument is the same one, and so is the component.
+    <ContributionBoundary id="document-viewer">
+      <DocumentViewer
+        path={props.params?.path ?? ''}
+        colorScheme={props.params?.colorScheme === 'light' ? 'light' : 'dark'}
+        onTitleChange={setTitle}
+      />
+    </ContributionBoundary>
+  );
+}
+
+const components = {
+  sessionCard: SessionCardPanel,
+  diffPane: DiffPanel,
+  documentViewer: DocumentViewerPanel,
+};
 
 /** Our dockview theme (#84) — one definition, applied at ready and on switch. */
 function dockviewTheme(colorScheme: 'light' | 'dark'): DockviewTheme {
@@ -2363,6 +2450,13 @@ export interface GridController {
   restoreRescuedPopouts: () => void;
   /** open (or focus) the per-session diff tab (E5-02) */
   openDiff: (sessionId: string, folder: string, title: string) => void;
+  /**
+   * Open (or focus) a §5.30 document viewer on an absolute path (P2-E16-02).
+   *
+   * One panel per path today; P2-E16-03 replaces that with the peek slot. It
+   * never lands in a session's group — see the implementation's note.
+   */
+  openDocument: (absolutePath: string) => void;
   /** card id of the active session panel, or null (E9-01 command context) */
   activeCardId: () => string | null;
   /** close a card the way the tab ✕ does — including its confirm (E9-01) */
@@ -2732,6 +2826,7 @@ export function SessionGrid(props: {
           params: { folder, colorScheme: props.colorScheme },
         });
       },
+      openDocument: (filePath) => openDocumentPanel(apiRef.current, filePath, props.colorScheme),
     };
     // eslint's exhaustive-deps plugin isn't installed; deps kept accurate by hand
   }, [props.controller, addSessionCard, hideCard, revealCard, setLadder, stepLadder, props.colorScheme, t]);
@@ -2751,7 +2846,11 @@ export function SessionGrid(props: {
     // panel on purpose (see restoreLayout below), so none survives a relaunch
     // to be healed here. `updateParameters` MERGES, so this names one key.
     for (const panel of api.panels) {
-      if (panel.id.startsWith('diff-')) panel.api.updateParameters({ colorScheme: props.colorScheme });
+      // A document viewer took its scheme the same way and needs the same heal
+      // — Monaco's theme in its source body is scheme-dependent.
+      if (panel.id.startsWith('diff-') || panel.id.startsWith('doc-')) {
+        panel.api.updateParameters({ colorScheme: props.colorScheme });
+      }
     }
   }, [props.colorScheme]);
 
@@ -2974,7 +3073,12 @@ export function SessionGrid(props: {
             sessionStore.prunePins(known);
             for (const p of [...api.panels]) {
               const s = /^session-(.+)$/.exec(p.id);
-              const d = /^diff-/.exec(p.id);
+              // Diff panes and document viewers are both DERIVED — drop them
+              // and let the user reopen. "Restoring open viewers across
+              // relaunch" is named in E16's *Not in scope*, and a viewer
+              // restored blind would also re-read a file whose folder may no
+              // longer be in the read scope.
+              const d = /^(diff|doc)-/.exec(p.id);
               if (d || (s && !known.has(s[1]))) api.removePanel(p);
             }
             // land the user exactly where they were (§5.25): refocus the saved
@@ -3003,6 +3107,12 @@ export function SessionGrid(props: {
         if (seedFolder) {
           await addSessionCard(seedFolder);
         }
+        // scripted-check seam: one document viewer without the file dialog
+        // (P2-E16-02). AFTER the session above, and that order is the point —
+        // the seam grants nothing, so the file is only readable because its
+        // folder is now an open session's folder.
+        const seedDoc = window.switchboard.seedDocument;
+        if (seedDoc) openDocumentPanel(api, seedDoc, props.colorScheme);
         report();
       } catch (err) {
         // the renderer console is forwarded into switchboard.log (#165)

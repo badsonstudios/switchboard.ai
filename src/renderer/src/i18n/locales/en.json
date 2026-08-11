@@ -276,6 +276,56 @@
       "modified": "M",
       "staged": "S",
       "both": "SM"
+    },
+    "openInViewer": "Open {file} in the document viewer",
+    "openInViewerIcon": "↗"
+  },
+  "document": {
+    "rendered": "Rendered",
+    "source": "Source",
+    "toggleLabel": "How to show this file",
+    "renderedOnlyForMarkdown": "Only Markdown files have a rendered view",
+    "openExternally": "Open externally",
+    "revealInFolder": "Reveal in folder",
+    "pin": "Pin this document",
+    "unpin": "Unpin this document",
+    "back": "Back",
+    "forward": "Forward",
+    "find": "Find in this document",
+    "findPlaceholder": "Find…",
+    "findNext": "Next match",
+    "findPrev": "Previous match",
+    "findCount": "{n} of {total}",
+    "findNone": "No matches",
+    "close": "Close",
+    "loading": "Opening…",
+    "outline": "Outline",
+    "frontMatter": "Front matter",
+    "copy": "Copy",
+    "copied": "Copied",
+    "icon": {
+      "back": "‹",
+      "forward": "›",
+      "close": "✕",
+      "pinned": "📌",
+      "unpinned": "📍"
+    },
+    "image": "Image",
+    "openInBrowser": "Open in browser",
+    "mediaOmitted": "Media isn't shown here",
+    "truncated": "This file is large — showing the first {shown} of {size}. Open it externally to read the rest.",
+    "encodingNote": "Decoded as {encoding}",
+    "card": {
+      "title": "This file isn't shown here",
+      "body": "{name} is a {type} file ({size}). switchboard.ai doesn't render this kind of file — open it in the app you already use for it.",
+      "bodyUnknown": "{name} ({size}) isn't text, so there is nothing to show. Open it in the app you already use for it."
+    },
+    "refusal": {
+      "invalid-path": "That doesn't look like a file path.",
+      "out-of-scope": "switchboard.ai only opens files inside a session's folder, or files you picked yourself.",
+      "not-found": "That file isn't there any more.",
+      "not-a-file": "That's a folder, not a file.",
+      "unreadable": "That file couldn't be read."
     }
   },
   "events": {
@@ -404,6 +454,7 @@
     "toggleTerminal": "Toggle Terminal view",
     "toggleChanges": "Toggle Changes view",
     "toggleRail": "Toggle the sessions rail",
+    "openFile": "Open file… — read a file in the document viewer",
     "toggleTabRows": "Toggle tabs on multiple rows",
     "openPalette": "Show all commands",
     "goToSession": "Go to {title}",

@@ -66,6 +66,16 @@ export const CAPABILITIES = [
   // for the `dialog.open` reason — putting something in
   // front of the user, outside the app, is a power in its
   // own right and is not implied by anything else.
+  'shell.openPath', // hands a LOCAL PATH to the OS — "Open externally" and
+  // "Reveal in folder" (P2-E16-02, §5.30). Deliberately NOT
+  // folded into `shell.openExternal`, and the difference is
+  // not pedantry: a URL goes to the browser, which sandboxes
+  // it, while a path goes to whatever the OS has registered
+  // for that extension — and for `.exe`, `.bat` or `.lnk`
+  // that is EXECUTION. Sharper power, separate word. The
+  // handlers behind it re-check `fs.read`'s scope, so it can
+  // only ever be aimed at a file the caller could already
+  // have read.
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -88,6 +98,16 @@ export const CHANNEL_CAPABILITIES = {
   // read a file's contents — scope-checked, size-capped and refused in MAIN
   // (P2-E16-01). Its own family, because it belongs to no session.
   'fs:read': 'fs.read',
+  // the document viewer's `Open file…` (P2-E16-02). It is the ONE path that
+  // widens `fs.read`'s scope, and it widens it by asking the user — which is
+  // why it is tagged `dialog.open` and not `fs.read`: the power being exercised
+  // is "put an OS dialog in front of the user", and the grant is its result.
+  'fs:pickFile': 'dialog.open',
+  // a link inside a rendered document, handed to the browser (P2-E16-02)
+  'fs:openExternal': 'shell.openExternal',
+  // the §5.30 escape hatch: the file itself, in the user's own tools
+  'fs:openPath': 'shell.openPath',
+  'fs:reveal': 'shell.openPath',
   'git:fileVersions': 'git.read',
   'git:status': 'git.read',
   'groups:create': 'groups.write',

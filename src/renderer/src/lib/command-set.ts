@@ -62,6 +62,8 @@ export interface CommandDeps {
   openAbout: () => void;
   /** ask the release host whether there is a newer build (E19-03) */
   checkForUpdates: () => void;
+  /** pick a file and open it in a §5.30 document viewer (E16-02) */
+  openFile: () => void;
 }
 
 const CATEGORY_SESSION = 'commands.category.session';
@@ -508,6 +510,19 @@ export function buildCommands(deps: CommandDeps): Command[] {
       run: (ctx) => {
         if (ctx.activeCardId) deps.toggleCardView(ctx.activeCardId, 'diff');
       },
+    },
+    {
+      // §5.30's `Open file…`. In the VIEW category and not SESSION, because a
+      // document viewer belongs to no session — it is a surface the workspace
+      // holds, like the rail. Palette-only and unbound: opening a file is a
+      // once-in-a-while action that starts with a native dialog anyway, and
+      // Mod+O is not free of meaning to anyone who has used an editor (they
+      // will expect a file tree, which is Phase 3).
+      id: 'view.openFile',
+      titleKey: 'commands.openFile',
+      categoryKey: CATEGORY_VIEW,
+      scope: 'app',
+      run: () => deps.openFile(),
     },
     {
       id: 'view.rail',

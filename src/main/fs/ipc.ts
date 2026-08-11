@@ -12,11 +12,54 @@
 // in the app. That matters more here than for a mutation: a refused read is
 // either a link pointing somewhere it should not, or a scope that is wrong —
 // and both are things you only find out about if they are written down.
+import { BrowserWindow, dialog, shell } from 'electron';
 import { IpcBroker } from '../ipc/broker';
 import type { Logger } from '../log/logger';
 import { MAX_FILE_READ_BYTES, FileReadResult } from '../../shared/ipc/fs';
 import { readCappedText } from './read-file';
 import { ReadScope } from './read-scope';
+
+/**
+ * Schemes a link inside a rendered document may be opened with (§5.30).
+ *
+ * An ALLOW-list, and a short one: "`http`/`https`/`mailto` links open in the OS
+ * browser via `shell.openExternal` against a scheme allowlist; every other
+ * scheme is refused." A deny-list would be the wrong shape here — the input is
+ * a string from a file we did not write, and the set of schemes an OS has a
+ * handler for is open-ended and includes several that are "run this" in a
+ * trench coat.
+ */
+export const ALLOWED_LINK_SCHEMES = ['http:', 'https:', 'mailto:'] as const;
+
+/** Is this a link a document may hand to the user's browser? */
+export function isAllowedDocumentLink(url: unknown): boolean {
+  if (typeof url !== 'string' || url.length === 0) return false;
+  try {
+    return (ALLOWED_LINK_SCHEMES as readonly string[]).includes(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
+
+/** The bits of electron these handlers touch, injectable so tests need no app. */
+export interface FsShell {
+  openExternal(url: string): Promise<void>;
+  openPath(p: string): Promise<string>;
+  showItemInFolder(p: string): void;
+  pickFile(win: BrowserWindow | null): Promise<string | null>;
+}
+
+/** The real one. */
+export const electronFsShell: FsShell = {
+  openExternal: (url) => shell.openExternal(url),
+  openPath: (p) => shell.openPath(p),
+  showItemInFolder: (p) => shell.showItemInFolder(p),
+  pickFile: async (win) => {
+    const opts = { properties: ['openFile' as const] };
+    const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
+    return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0];
+  },
+};
 
 export interface FsIpcDeps {
   broker: IpcBroker;
@@ -24,6 +67,10 @@ export interface FsIpcDeps {
   scope: ReadScope;
   /** the cap, overridable for tests; production uses `MAX_FILE_READ_BYTES` */
   cap?: number;
+  /** the window a modal dialog belongs to; null while there isn't one */
+  getWindow?: () => BrowserWindow | null;
+  /** electron's shell + dialog, swapped out in tests */
+  shell?: FsShell;
 }
 
 export function registerFsIpc(deps: FsIpcDeps): void {
@@ -58,4 +105,77 @@ export function registerFsIpc(deps: FsIpcDeps): void {
     }
     return result;
   });
+
+  // --- P2-E16-02: the viewer's three doors out of the app ------------------
+  const sh = deps.shell ?? electronFsShell;
+
+  /**
+   * `Open file…` — the ONE thing that widens the read scope, and it widens it
+   * by asking the user.
+   *
+   * The grant is recorded BEFORE the path is handed back, so the `fs:read` that
+   * follows cannot lose the race with it. `addPicked` resolves and stores the
+   * real path; a file that vanished between the dialog and here is simply not
+   * granted, and the read that follows answers `out-of-scope` — which is the
+   * honest answer, because by then it is.
+   */
+  deps.broker.handle('fs:pickFile', async (): Promise<string | null> => {
+    const picked = await sh.pickFile(deps.getWindow?.() ?? null);
+    if (!picked) return null;
+    deps.scope.addPicked(picked);
+    return picked;
+  });
+
+  /** A link out of a rendered document. Scheme-checked, and refused loudly. */
+  deps.broker.handle('fs:openExternal', (_e, url: unknown): boolean => {
+    if (!isAllowedDocumentLink(url)) {
+      deps.log.warn('fs:openExternal refused: scheme', { url: String(url).slice(0, 200) });
+      return false;
+    }
+    // `openExternal` REJECTS when the OS has no handler for the scheme, and an
+    // unhandled rejection in main is an "A JavaScript error occurred" modal —
+    // the opposite of fail-open, from a click whose worst case should be
+    // "nothing happened". Same guard as `update:openExternal`.
+    void sh
+      .openExternal(url as string)
+      .catch((err: unknown) => deps.log.warn('fs:openExternal failed', { error: String(err) }));
+    return true;
+  });
+
+  /**
+   * The §5.30 escape hatch, in two flavours: open the file in whatever the OS
+   * has registered for it, or show it in the file manager.
+   *
+   * BOTH RE-CHECK THE READ SCOPE, which is the point. `shell.openPath` on a
+   * `.exe` is execution, so "the renderer sent a path" is not a good enough
+   * reason to run one; going through `ReadScope.resolve` means these buttons
+   * can only ever be aimed at a file the caller could already have read, and
+   * the resolved path — not the caller's spelling — is what is handed to the
+   * OS.
+   */
+  const scoped = (
+    channel: 'fs:openPath' | 'fs:reveal',
+    act: (real: string) => void
+  ): void => {
+    deps.broker.handle(channel, (_e, target: unknown): boolean => {
+      const decision = deps.scope.resolve(target);
+      if (!decision.ok) {
+        deps.log.warn(`${channel} refused: ${decision.reason}`, {
+          path: typeof target === 'string' ? target : String(target),
+        });
+        return false;
+      }
+      act(decision.path);
+      return true;
+    });
+  };
+  scoped('fs:openPath', (real) => {
+    void sh.openPath(real).then((err) => {
+      // `openPath` RESOLVES with an error string rather than rejecting — an
+      // empty string is success. A file type with no registered handler is the
+      // common case, and it must read as "nothing happened", not as a crash.
+      if (err) deps.log.warn('fs:openPath could not open the file', { path: real, error: err });
+    });
+  });
+  scoped('fs:reveal', (real) => sh.showItemInFolder(real));
 }

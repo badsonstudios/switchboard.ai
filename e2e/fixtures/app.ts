@@ -232,6 +232,13 @@ export interface LaunchedApp {
 export interface LaunchOptions {
   /** auto-create one fake session in this folder at boot */
   seedFolder?: string;
+  /**
+   * Open one §5.30 document viewer on this path at boot (P2-E16-02).
+   *
+   * The seam grants NOTHING: the path still has to be inside the read scope,
+   * so a spec pairs it with `seedFolder` and puts the file in that folder.
+   */
+  seedDocument?: string;
   /** reuse an existing home dir (to relaunch and test persistence) */
   home?: string;
   /** extra env for the main process */
@@ -416,6 +423,7 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   }
   applyIsolatedPaths(env, home);
   if (opts.seedFolder) env.SWITCHBOARD_SEED_SESSION = opts.seedFolder;
+  if (opts.seedDocument) env.SWITCHBOARD_SEED_DOCUMENT = opts.seedDocument;
   Object.assign(env, opts.env);
 
   let app: ElectronApplication;
