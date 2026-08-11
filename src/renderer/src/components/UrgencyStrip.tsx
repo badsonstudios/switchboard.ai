@@ -170,6 +170,10 @@ export function UrgencyStrip(props: {
         onBeatStart(waiting);
         // the map moved under us: some of `waiting` may no longer exist, so the
         // call above may have written nothing. Re-run rather than assume it did.
+        // Map IDENTITY is a proxy for "an unpainted mark may be left without a
+        // chain" and over-fires — an expiry landing inside the same two frames
+        // also trips it — which is the direction to be wrong in: over-firing
+        // costs one render of a readout, under-firing costs a lamp lit forever.
         if (committed.current !== urgency) chainLanded();
       });
     });

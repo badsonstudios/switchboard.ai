@@ -14,7 +14,15 @@
 //      every ratio the drift test computes becomes a fiction while staying
 //      perfectly green. Same guard, and the same reason, as CollapsedStrip's.
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
-import { act, useCallback, useEffect, useState, type ReactElement, type ReactNode } from 'react';
+import {
+  act,
+  StrictMode,
+  useCallback,
+  useEffect,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { UrgencyStrip } from './UrgencyStrip';
@@ -467,12 +475,14 @@ describe('the mark waiting on a paint is capped at one, the latest (issue 426)',
 
   it('the fireworks: three jumps, no frames, ONE ring on return', async () => {
     const { host, jump } = await mountJumpable();
-    // the window is occluded behind a popout: renders happen, frames do not
-    await act(async () => {
-      jump('c1');
-      jump('c2');
-      jump('c3');
-    });
+    // The window is occluded behind a popout: it COMMITS — the jump runs in
+    // this renderer — but no frame ever arrives, so the chain the first commit
+    // scheduled is still in the air when the second and third supersede it.
+    // (One `act` for all three would batch them into a single commit and never
+    // reach that path, which is the one this component can break.)
+    await act(async () => void jump('c1'));
+    await act(async () => void jump('c2'));
+    await act(async () => void jump('c3'));
     expect(lampsLit(host), 'only the last landing answers "where am I?"').toEqual(['c3']);
 
     // ...and now the operator comes back and the window paints
@@ -499,8 +509,10 @@ describe('the mark waiting on a paint is capped at one, the latest (issue 426)',
     expect(litOf(host, 'c2')).toBe('true');
 
     await act(async () => void vi.advanceTimersByTime(64)); // the chain lands on nothing
-    expect(litOf(host, 'c2'), 'still lit — its own chain has to reach it').toBe('true');
+    expect(litOf(host, 'c2')).toBe('true'); // lit either way here — the next one is the pin
 
+    // THE assertion: an unpainted mark arms no timer, so the only thing that
+    // can ever put this lamp out is a chain of its own reaching it
     await act(async () => void vi.advanceTimersByTime(URGENCY_LINGER_MS + 500));
     expect(litOf(host, 'c2'), 'a beat that never started is a lamp lit forever').toBe('false');
   });
@@ -508,14 +520,44 @@ describe('the mark waiting on a paint is capped at one, the latest (issue 426)',
   it('a landing that changed NOTHING does not re-arm — no rAF spin', async () => {
     // the re-run above is conditional on purpose. When the map has not moved,
     // the landing drained everything it captured and the resulting state write
-    // re-runs the effect on its own; nudging there as well would schedule a
-    // fresh chain per landing, two frames apart, for as long as the strip was
-    // mounted — a wakeup forever, for a readout that is finished.
+    // re-runs the effect on its own; nudging there as well would ask for a
+    // fresh chain every landing, for a readout that is finished. What this
+    // measures is the first turn of that wheel — an unconditional nudge asks
+    // for a third frame here — because a `act`-bounded test cannot watch a
+    // spin compound, and one wakeup nobody asked for is the whole defect.
     const raf = vi.spyOn(globalThis, 'requestAnimationFrame');
     await mountStrip({ sessions: three, urgency: new Map([['c1', null]]), onBeatStart: noop });
     await act(async () => void vi.advanceTimersByTime(10 * URGENCY_LINGER_MS));
     expect(raf, 'one chain — two frames, and then nothing').toHaveBeenCalledTimes(2);
     raf.mockRestore();
+  });
+
+  it('survives StrictMode, which cancels a chain BETWEEN its two mounts', async () => {
+    // The app renders in StrictMode (main.tsx), whose remount simulation runs
+    // the unmount effect — the one place the chain is cancelled — in between.
+    // The whole mechanism here is two refs and a reducer, which is exactly the
+    // shape that simulation exists to catch, and a chain cancelled without
+    // being rescheduled is a lamp lit forever.
+    const jumpRef: { current: ((cardId: string) => void) | null } = { current: null };
+    const { host } = await mountNode(
+      <StrictMode>
+        <Harness
+          sessions={three}
+          initial={new Map<string, number | null>([['c1', null]])}
+          jumpRef={jumpRef}
+        />
+      </StrictMode>
+    );
+    expect(lampsLit(host)).toEqual(['c1']);
+
+    await act(async () => void jumpRef.current!('c2')); // superseded under the chain
+    expect(lampsLit(host)).toEqual(['c2']);
+    // two advances, not one: the re-render the landing asks for is flushed at
+    // the END of an act, so c2's own chain is scheduled by the first and can
+    // only run in the second
+    await act(async () => void vi.advanceTimersByTime(64));
+    await act(async () => void vi.advanceTimersByTime(URGENCY_LINGER_MS + 500));
+    expect(lampsLit(host), 'the beat still started, and still ended').toEqual([]);
   });
 
   it('a ring you have already SEEN is not taken away by the next jump', async () => {
