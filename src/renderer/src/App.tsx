@@ -34,6 +34,8 @@ import { memberViews } from './lib/permission-batches';
 import type { PermissionRequestDto } from '../../shared/ipc/permissions';
 import { WorkspaceNoticeBanner } from './components/WorkspaceNoticeBanner';
 import { PreflightBanner } from './components/PreflightBanner';
+import { ServiceHealthBanner } from './components/ServiceHealthBanner';
+import type { ServiceHealthStatus } from '../../shared/service-health';
 import { collapsedRows, revealTargets } from './lib/ladder';
 import { GuardedRefresh, latestWins } from './lib/latest-wins';
 import { groupChangeLanded } from './lib/groups';
@@ -147,6 +149,12 @@ export function App(): React.JSX.Element {
   // version" is the durable answer, and conflating the two would leave a user
   // who clicked the soft option unable to find the release again.
   const ignoredVersion = React.useRef<string | null>(null);
+  // ── provider service health (E14-07, §5.14) ──────────────────────────────
+  // One record, two halves: what the status page says and what this machine
+  // has noticed. Local state, like the update status above — it is pushed, not
+  // stored, and nothing else in the app reads it.
+  const [serviceHealth, setServiceHealth] = useState<ServiceHealthStatus | null>(null);
+  const [statusPolling, setStatusPolling] = useState(true);
   // Attention events (E9-03). This subscription used to live inside
   // EventsPanel; it moved up here because the queue is the SINGLE ordering
   // authority — two independent subscriptions to events:changed could hand the
@@ -461,6 +469,28 @@ export function App(): React.JSX.Element {
     };
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, [applyUpdateStatus]);
+
+  // ── provider service health (E14-07) ─────────────────────────────────────
+  //
+  // Subscribe FIRST, then read: main starts polling before the first window
+  // exists, so a push can land between this mount and the answer to `get`.
+  // Subscribing second would drop it and leave the dot blank until the next
+  // poll — the same lost-push shape the read-only notice fixed (#207).
+  //
+  // Every call is optional-chained and swallowed. This is a dot: a bridge
+  // without it, or a main that refuses, must cost the shell nothing.
+  useEffect(() => {
+    const off = bridge.health?.onStatus?.((s) => setServiceHealth(s));
+    void bridge.health
+      ?.get?.()
+      .then((s) => setServiceHealth((prev) => prev ?? s))
+      .catch(() => {});
+    void bridge.health
+      ?.getPrefs?.()
+      .then((p) => setStatusPolling(p.poll !== false))
+      .catch(() => {});
+    return () => off?.();
+  }, []);
 
   const checkForUpdates = React.useCallback(() => {
     void bridge.update
@@ -1109,6 +1139,15 @@ export function App(): React.JSX.Element {
             .then((p) => setAutoCheckUpdates(p.autoCheck !== false))
             .catch(() => {});
         }}
+        statusPolling={statusPolling}
+        onToggleStatusPolling={(on) => {
+          setStatusPolling(on); // optimistic, like the auto-check box above…
+          void bridge.health
+            ?.setPrefs?.({ poll: on })
+            // …then main's answer wins: it is the authority on what it will do
+            .then((p) => setStatusPolling(p.poll !== false))
+            .catch(() => {});
+        }}
         // a second dialog is above this one: two stacked `aria-modal` regions
         // is a thing screen readers disagree about, so only the top one claims it
         dialogAbove={updateOpen}
@@ -1148,6 +1187,11 @@ export function App(): React.JSX.Element {
           exist before the preflight answer lands or the warning is announced to
           nobody (#222). Same reason as its sibling above. */}
       <PreflightBanner shown={!preflightOk} />
+      {/* §5.14's local corroboration. Rendered unconditionally and gated
+          INSIDE, exactly like the two banners above: its live region has to
+          exist before the push lands or the one sentence that says "this may
+          not be you" is announced to nobody. */}
+      <ServiceHealthBanner status={serviceHealth} />
       {/* Outside the rail (which toggles) and outside the grid (whose cards
           hide, pop out and — with E9-07 — rearrange by layout mode): the only
           place a strip can be "always visible" without every one of those
@@ -1281,11 +1325,13 @@ export function App(): React.JSX.Element {
             setUpdateOpen(true);
           }}
           onDismissUpdateNotice={() => setUpdateNotice(null)}
+          incidents={serviceHealth?.incidents}
         />
       </div>
       <StatusBar
         count={cards.length}
         theme={theme}
+        serviceHealth={serviceHealth}
         cliVersion={cliVersion}
         totalOutputTokens={workspaceUsage.output}
         totalCostUsd={workspaceCost}

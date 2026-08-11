@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, screen, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, net, screen, session, shell } from 'electron';
 import path from 'path';
 import { windowOptionsFrom, WindowState } from './window-state';
 import { WorkspaceStore, displayFingerprint } from './workspace/store';
@@ -33,6 +33,8 @@ import { UpdateService, FEED_ENV, isAllowedReleaseUrl } from './update/service';
 import { UpdateInstaller, UPDATE_DIR_NAME, resolveHandshake, resolveOffer } from './update/install';
 import { launchInstaller } from './update/installer';
 import type { UpdateHandshake, UpdateInstallStatus } from '../shared/update';
+import { ServiceHealthService } from './health/service';
+import { SERVICE_STATUS_FEED_ENV } from './health/statuspage';
 import { installTerminalAccelerators, makeAcceleratorDeps } from './terminal-accelerators';
 import {
   Box,
@@ -870,6 +872,32 @@ app
     // still be filling in (#140). The session's exit is the last honest moment
     // to say so.
     manager.onSessionExit((e) => streamFeed.finalize(e.sessionId));
+    // ── provider service health (P2-E14-07, §5.14) ────────────────────────
+    //
+    // The FOURTH subscription to the same stream, for the reason spelled out
+    // above: one listener per consumer, one blast radius each. This one reads
+    // exactly one thing — whether a turn ended in an error — because "several
+    // sessions failing at once" is the local half of "is it me or is it them?",
+    // and a failed turn is otherwise indistinguishable from a finished one.
+    const health = new ServiceHealthService({
+      getPrefs: () => workspace.getServiceHealthPrefs(),
+      // `currentWindow` is reassigned on macOS re-activate, so this reads it
+      // fresh — the convention every other push in this file follows.
+      push: (status) => pushToRenderer?.(currentWindow, 'health:status', status),
+      log: createLogger(sink, 'health'),
+      // Dev/test only, and the reason no test in this repo ever reaches the
+      // real status page. Same P2-E15-10 rule as the update feed: a packaged
+      // build has no environment variable that can move a user-visible
+      // endpoint.
+      feedOverride: app.isPackaged ? undefined : process.env[SERVICE_STATUS_FEED_ENV],
+      // "no polling when offline is detected" (§5.14). Electron's own answer,
+      // not a heuristic of ours.
+      isOnline: () => net.isOnline(),
+      probeDeps: { userAgent: app.getVersion() },
+    });
+    manager.onStreamMessage((sessionId, msg) => health.noteStreamMessage(sessionId, msg));
+    // A session that is gone stops corroborating anything.
+    manager.onSessionExit((e) => health.forgetSession(e.sessionId));
     const hooks = new HookListener({
       stateDir,
       manager,
@@ -1075,6 +1103,23 @@ app
       if (typeof p?.skippedVersion === 'string') updates.skip(p.skippedVersion);
       return workspace.getUpdatePrefs();
     });
+    // ── provider service health (P2-E14-07) ──────────────────────────────
+    //
+    // A mounting window asks once; everything after that arrives on
+    // `health:status`. `start()` polls immediately, so the first answer is on
+    // its way before the window has finished asking.
+    broker.handle('health:get', () => health.current());
+    broker.handle('health:getPrefs', () => workspace.getServiceHealthPrefs());
+    broker.handle('health:setPrefs', (_e, p: { poll?: boolean }) => {
+      if (typeof p?.poll === 'boolean') {
+        workspace.setServiceHealthPrefs({ poll: p.poll });
+        // start or stop the timer to match — turning it off must actually stop
+        // the traffic, not just grey out a checkbox
+        health.prefsChanged();
+      }
+      return workspace.getServiceHealthPrefs();
+    });
+    health.start();
     broker.handle('update:openExternal', (_e, url: string) => {
       // The strings that reach here came out of a release body we rendered, so
       // the allowlist is tight and lives next to the checker (§5.29).
@@ -1230,6 +1275,7 @@ app
       hooks.stop();
       transcripts.stop();
       updates.stop(); // kills the daily timer; a check in flight becomes a no-op
+      health.stop(); // same, for the status-page poll
       staticServer?.close();
       scheduleForcedExit();
     });
