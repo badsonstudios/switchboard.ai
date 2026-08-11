@@ -1,7 +1,11 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { SlashCommand } from '../shared/slash-commands';
 import type { PtyAttachment, PtyChunk } from '../shared/ipc/pty';
-import type { BindingSnapshot } from '../shared/transcripts';
+import type {
+  BindingSnapshot,
+  TranscriptSearchRequest,
+  TranscriptSearchResult,
+} from '../shared/transcripts';
 import type { PermissionRequestDto } from '../shared/ipc/permissions';
 import type { FileReadResult } from '../shared/ipc/fs';
 import type {
@@ -400,6 +404,16 @@ const api = {
     // half an hour ago (P2-E15-10)
     binding: (liveId: string): Promise<BindingSnapshot | null> =>
       ipcRenderer.invoke('transcripts:binding', liveId),
+    /**
+     * Session find (P2-E17-01, §5.31) — scan the transcript FILE in main.
+     *
+     * Scope is the `sessionIds` list, so §10's cross-session search is this
+     * call with more ids rather than a second channel. A hit that carries no
+     * `seq` is in a block the view buffer has evicted: readable in the results
+     * list, not jump-to-able in place (the recorded v1 boundary).
+     */
+    search: (req: TranscriptSearchRequest): Promise<TranscriptSearchResult> =>
+      ipcRenderer.invoke('transcripts:search', req),
     onBlock: (cb: (payload: { sessionId: string; block: unknown }) => void): (() => void) => {
       const h = (_e: unknown, p: { sessionId: string; block: unknown }) => cb(p);
       ipcRenderer.on('sessions:feedBlock', h);

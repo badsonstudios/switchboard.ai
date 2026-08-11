@@ -68,6 +68,76 @@ export const BLOCK_CAP = 1000;
 export const DETAIL_CAP = 4000;
 export const TEXT_CAP = 20_000;
 
+/**
+ * How much of each field a derivation keeps (P2-E17-01).
+ *
+ * The caps used to be constants spliced in at five call sites, which was right
+ * while the Feed was the only consumer. Session find is a SECOND consumer with
+ * a different answer to the same question: §5.31 says a find "searches
+ * everything, including what the view is hiding", and `DETAIL_CAP` hides
+ * exactly the tail of a tool result where an error string lives. Searching the
+ * capped text would be the same confident lie as searching the DOM, one layer
+ * down.
+ *
+ * A PARAMETER rather than a second extractor, deliberately: the caps change how
+ * LONG a field is and nothing else, so every derivation produces the same
+ * intents, in the same order, with the same `toolUseId`s — which is the whole of
+ * what block identity rests on. A search that re-derived blocks its own way
+ * could not hand E17-02 a seq the Feed agrees with.
+ */
+export interface DerivationCaps {
+  /** user / assistant / thinking prose, and local-command output */
+  text: number;
+  /** the tool input JSON, and a tool_result's output. 0 skips building it */
+  detail: number;
+  /** the tool row's one-line summary and its `description`. These were two
+   *  independently written `120`s before this type existed and are one number
+   *  from now on — the same value, and now coupled on purpose: both are "the
+   *  one line a tool row shows", and a reason to move one is a reason to move
+   *  the other */
+  summary: number;
+  /** the old/new string previews the inline diff renders */
+  edit: number;
+  /** how many TodoWrite items are kept */
+  todos: number;
+}
+
+/** What the Feed renders — the caps this module has always applied. */
+export const DISPLAY_CAPS: DerivationCaps = {
+  text: TEXT_CAP,
+  detail: DETAIL_CAP,
+  summary: 120,
+  edit: 1500,
+  todos: 30,
+};
+
+/** Everything, uncapped — what a find must see (P2-E17-01, §5.31). */
+export const FULL_CAPS: DerivationCaps = {
+  text: Infinity,
+  detail: Infinity,
+  summary: Infinity,
+  edit: Infinity,
+  todos: Infinity,
+};
+
+/**
+ * Shape only: same intents, same order, same ids, no text built at all.
+ *
+ * The search engine derives EVERY line to keep its block ordinal in step with
+ * the Feed's `seq`, but only the lines whose raw JSON could possibly contain the
+ * term need their text. `detail: 0` is the one that pays: it skips a
+ * `JSON.stringify` of the whole tool input per tool call, which is the single
+ * most expensive thing derivation does and is pure waste on a line already known
+ * not to match.
+ */
+export const IDENTITY_ONLY_CAPS: DerivationCaps = {
+  text: 0,
+  detail: 0,
+  summary: 0,
+  edit: 0,
+  todos: 0,
+};
+
 /** A block to add, optionally keyed by the tool_use id whose result it awaits. */
 export interface EmitIntent {
   t: 'block';
@@ -144,7 +214,10 @@ function localCommandText(entry: Record<string, unknown>): string | null {
  * shape produces an empty list, never a throw — both callers are reading
  * untrusted output from another process.
  */
-export function deriveIntents(entry: Record<string, unknown>): BlockIntent[] {
+export function deriveIntents(
+  entry: Record<string, unknown>,
+  caps: DerivationCaps = DISPLAY_CAPS
+): BlockIntent[] {
   // CLI-internal lines are not conversation. FIRST, ahead of every shape test:
   // it used to sit behind the `message` check, which was harmless while only
   // `user`/`assistant` were read and stops being so the moment another entry
@@ -154,20 +227,24 @@ export function deriveIntents(entry: Record<string, unknown>): BlockIntent[] {
 
   const local = localCommandText(entry);
   if (local !== null) {
-    return [{ t: 'block', block: { kind: 'assistant', text: local.slice(0, TEXT_CAP), ts } }];
+    return [{ t: 'block', block: { kind: 'assistant', text: local.slice(0, caps.text), ts } }];
   }
 
   const message = entry.message as { content?: unknown; role?: string } | undefined;
   if (!message) return [];
 
-  if (entry.type === 'user') return userIntents(message, ts);
+  if (entry.type === 'user') return userIntents(message, ts, caps);
   if (entry.type === 'assistant' && Array.isArray(message.content)) {
-    return assistantIntents(message.content, ts);
+    return assistantIntents(message.content, ts, caps);
   }
   return [];
 }
 
-function userIntents(message: { content?: unknown }, ts: string | undefined): BlockIntent[] {
+function userIntents(
+  message: { content?: unknown },
+  ts: string | undefined,
+  caps: DerivationCaps
+): BlockIntent[] {
   const out: BlockIntent[] = [];
   // a real prompt is a string (or text items); tool_result items attach their
   // output to the originating tool block (E10-06 OUT sections).
@@ -177,7 +254,7 @@ function userIntents(message: { content?: unknown }, ts: string | undefined): Bl
   // above, with the wrapper stripped.
   if (typeof message.content === 'string' && message.content.trim()) {
     if (isPlumbing(message.content)) return out;
-    out.push({ t: 'block', block: { kind: 'user', text: message.content.slice(0, TEXT_CAP), ts } });
+    out.push({ t: 'block', block: { kind: 'user', text: message.content.slice(0, caps.text), ts } });
     return out;
   }
   if (!Array.isArray(message.content)) return out;
@@ -190,19 +267,23 @@ function userIntents(message: { content?: unknown }, ts: string | undefined): Bl
     }>
   ).entries()) {
     if (c?.type === 'text' && c.text?.trim() && !isPlumbing(c.text)) {
-      out.push({ t: 'block', block: { kind: 'user', text: c.text.slice(0, TEXT_CAP), ts }, index });
+      out.push({ t: 'block', block: { kind: 'user', text: c.text.slice(0, caps.text), ts }, index });
     } else if (c?.type === 'tool_result' && typeof c.tool_use_id === 'string') {
       out.push({
         t: 'tool-result',
         toolUseId: c.tool_use_id,
-        out: toolResultText(c.content).slice(0, DETAIL_CAP),
+        out: toolResultText(c.content).slice(0, caps.detail),
       });
     }
   }
   return out;
 }
 
-function assistantIntents(content: unknown[], ts: string | undefined): BlockIntent[] {
+function assistantIntents(
+  content: unknown[],
+  ts: string | undefined,
+  caps: DerivationCaps
+): BlockIntent[] {
   const out: BlockIntent[] = [];
   for (const [index, c] of (
     content as Array<{
@@ -217,17 +298,17 @@ function assistantIntents(content: unknown[], ts: string | undefined): BlockInte
     if (c?.type === 'text' && c.text?.trim()) {
       out.push({
         t: 'block',
-        block: { kind: 'assistant', text: c.text.slice(0, TEXT_CAP), ts },
+        block: { kind: 'assistant', text: c.text.slice(0, caps.text), ts },
         index,
       });
     } else if (c?.type === 'thinking' && c.thinking?.trim()) {
       out.push({
         t: 'block',
-        block: { kind: 'thinking', text: c.thinking.slice(0, TEXT_CAP), ts },
+        block: { kind: 'thinking', text: c.thinking.slice(0, caps.text), ts },
         index,
       });
     } else if (c?.type === 'tool_use' && typeof c.name === 'string') {
-      out.push(toolIntent(c, index, ts));
+      out.push(toolIntent(c, index, ts, caps));
     }
   }
   return out;
@@ -236,7 +317,8 @@ function assistantIntents(content: unknown[], ts: string | undefined): BlockInte
 function toolIntent(
   c: { name?: string; id?: unknown; input?: Record<string, unknown> },
   index: number,
-  ts: string | undefined
+  ts: string | undefined,
+  caps: DerivationCaps
 ): EmitIntent {
   const name = String(c.name);
   const input = c.input ?? {};
@@ -244,7 +326,7 @@ function toolIntent(
   // TodoWrite renders as a checklist block, not a raw tool row (E10-06)
   if (name === 'TodoWrite' && Array.isArray(input.todos)) {
     const todos = (input.todos as Array<{ content?: unknown; status?: unknown }>)
-      .slice(0, 30)
+      .slice(0, caps.todos)
       .map((td) => ({ content: String(td?.content ?? ''), status: String(td?.status ?? '') }));
     return { t: 'block', block: { kind: 'todos', todos, ts }, index };
   }
@@ -255,10 +337,13 @@ function toolIntent(
     input.command ??
     input.description ??
     input.pattern;
-  const summary = typeof primary === 'string' ? primary.slice(0, 120) : '';
+  const summary = typeof primary === 'string' ? primary.slice(0, caps.summary) : '';
   let detail: string | undefined;
   try {
-    detail = JSON.stringify(input, null, 2)?.slice(0, DETAIL_CAP);
+    // `detail: 0` means nobody will read it, and building it is the most
+    // expensive thing in this file — a full `JSON.stringify` of the tool input.
+    // Skipping it is what makes the search engine's identity-only pass cheap.
+    detail = caps.detail === 0 ? undefined : JSON.stringify(input, null, 2)?.slice(0, caps.detail);
   } catch {
     detail = undefined;
   }
@@ -269,12 +354,14 @@ function toolIntent(
     detail,
   };
   // structured fields for the rich blocks (E10-06)
-  if (typeof input.description === 'string') tool.description = input.description.slice(0, 120);
+  if (typeof input.description === 'string') {
+    tool.description = input.description.slice(0, caps.summary);
+  }
   if (typeof input.file_path === 'string') tool.filePath = input.file_path;
-  if (typeof input.old_string === 'string') tool.oldString = input.old_string.slice(0, 1500);
-  if (typeof input.new_string === 'string') tool.newString = input.new_string.slice(0, 1500);
+  if (typeof input.old_string === 'string') tool.oldString = input.old_string.slice(0, caps.edit);
+  if (typeof input.new_string === 'string') tool.newString = input.new_string.slice(0, caps.edit);
   if (name === 'Write' && typeof input.content === 'string') {
-    tool.newString = input.content.slice(0, 1500);
+    tool.newString = input.content.slice(0, caps.edit);
   }
   return { t: 'block', block: { kind: 'tool', tool, ts }, index, toolUseId };
 }

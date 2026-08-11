@@ -52,6 +52,8 @@ import { Channel } from '../../shared/ipc/capabilities';
 import type { PtyAttachment, PtyChunk } from '../../shared/ipc/pty';
 import type { ProviderCapabilities } from '../extensibility/contributions';
 import { TranscriptWatcher } from '../transcripts/watcher';
+import { searchTranscripts } from '../transcripts/search';
+import type { TranscriptQuery, TranscriptSearchRequest } from '../../shared/transcripts';
 import { LogFields, Logger } from '../log/logger';
 import { assignAccent, detectProjectType } from './identity';
 import { EventFeed } from '../events/feed';
@@ -569,6 +571,58 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       ? deps.streamFeed.blocks(liveId)
       : transcripts.blocks(liveId);
   });
+  // Session find (P2-E17-01, §5.31): scan the transcript FILE, in main.
+  //
+  // Behind `transcripts.read` and NO new capability — the file is one we
+  // already watch and already stream to this window block by block.
+  //
+  // The scope arrives as a LIST of session ids and is resolved to files HERE,
+  // by asking the watcher which transcript each id is bound to. The caller
+  // therefore names sessions, never paths: a renderer cannot ask this channel
+  // to read a file no card is showing, which is the same rule `fs:read` enforces
+  // with a scope check and this one gets for free from the indirection.
+  //
+  // A STREAM session is searched too, and completely: the watcher still binds
+  // its transcript (usage, the native id, drift all want it — only the FEED
+  // comes from somewhere else), so the file on disk is the same complete
+  // archive. What it does not get today is a jump: `loaded` is routed the way
+  // `transcripts:blocks` routes it, and a stream block's `ts` is the moment the
+  // message reached US rather than the timestamp the CLI wrote, so the engine's
+  // alignment check refuses and every hit comes back snippet-only. Refusing is
+  // the right answer to "I cannot tell which block this is" — see E17-02's
+  // hand-off for the follow-up.
+  broker.handle('transcripts:search', async (_e, req: unknown) => {
+    const r = (req ?? {}) as Partial<TranscriptSearchRequest>;
+    // De-duped and capped: the scope is a list the caller builds, and the same
+    // id twice is the same 7.7MB file scanned twice on the thread that pumps
+    // every terminal. Neither is reachable from today's caller — which is the
+    // cheapest moment to make it unreachable from tomorrow's (§5.29: validate at
+    // the boundary).
+    const ids = Array.isArray(r.sessionIds)
+      ? [...new Set(r.sessionIds.filter((s) => typeof s === 'string'))].slice(0, 64)
+      : [];
+    const q = (r.query ?? {}) as Partial<TranscriptQuery>;
+    const request: TranscriptSearchRequest = {
+      sessionIds: ids,
+      query: {
+        term: typeof q.term === 'string' ? q.term : '',
+        caseSensitive: q.caseSensitive === true,
+        wholeWord: q.wholeWord === true,
+        regex: q.regex === true,
+      },
+      ...(typeof r.limit === 'number' && r.limit > 0 ? { limit: Math.min(r.limit, 5000) } : {}),
+    };
+    const targets = ids.map((sessionId) => ({
+      sessionId,
+      file: transcripts.transcriptFile(sessionId),
+      loaded:
+        isStream(sessionId) && deps.streamFeed
+          ? deps.streamFeed.blocks(sessionId)
+          : transcripts.blocks(sessionId),
+    }));
+    return searchTranscripts(targets, request, { ...(request.limit ? { limit: request.limit } : {}) });
+  });
+
   // Binding state on demand (P2-E15-10). Transitions ride `sessions:usage`
   // like everything else on the snapshot; this is the pull a panel needs when
   // it MOUNTS, since a session that failed to bind long ago will never push
