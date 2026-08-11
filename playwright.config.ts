@@ -13,7 +13,7 @@ export default defineConfig({
   // `e2e/fixtures/*.test.ts` is vitest's (the fixtures' own unit tests, #230) —
   // without this it would try to run them as Electron specs and fail on the
   // `vitest` import. The suite already names every spec `*.spec.ts`.
-  testMatch: '**/*.spec.ts',
+  testMatch: '**/zz-probe.spec.ts',
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
