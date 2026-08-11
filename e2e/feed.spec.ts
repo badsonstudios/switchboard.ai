@@ -670,21 +670,31 @@ test.describe('Feed view (E12-06)', () => {
     const empty = await measure();
     const feedEmpty = (await feed.boundingBox())!;
 
-    // ~1.2 characters per pixel of width: whatever the font measures, that is
-    // between four and ten wrapped lines — comfortably inside the cap
-    await box.fill(paragraph(Math.round(empty.width * 1.2)));
+    // ~1 character per pixel of width: at any plausible glyph width that is
+    // between four and nine wrapped lines — comfortably inside the cap
+    await box.fill(paragraph(Math.round(empty.width)));
     const grown = await measure();
     expect(grown.height).toBeGreaterThan(empty.height + 3 * empty.line); // wrapped, and it noticed
     expect(grown.scrollHeight).toBeLessThanOrEqual(grown.height + 2); // all of it on screen
     // the feed gave up the room — the composer did not grow over it
     expect((await feed.boundingBox())!.height).toBeLessThan(feedEmpty.height - 3 * empty.line);
 
-    // far past the cap: the box stops at twelve lines and scrolls inside itself
+    // far past the cap: the box stops at twelve lines and scrolls inside itself.
+    // Measured against the ONE-LINE box, so the assertion carries no assumption
+    // about padding — eleven more lines than the box we started with.
     await box.fill(paragraph(Math.round(empty.width * 6)));
     const capped = await measure();
-    expect(capped.height).toBeGreaterThan(11.5 * empty.line);
-    expect(capped.height).toBeLessThan(13.5 * empty.line); // + padding, not a 13th line
+    expect(capped.height - empty.height).toBeGreaterThan(10.5 * empty.line);
+    expect(capped.height - empty.height).toBeLessThan(11.5 * empty.line); // not a 13th line
     expect(capped.scrollHeight).toBeGreaterThan(capped.height + 2);
+
+    // Typing at the bottom of a capped box must not scroll the user back to the
+    // top of their own prompt. Re-measuring RELEASES the height, which makes the
+    // content fit and would clamp the element's own scrollTop to 0 on every
+    // keystroke — the one hazard of auto-grow that only a real engine has.
+    await box.press('Control+End');
+    await box.pressSequentially('tail');
+    expect(await box.evaluate((el) => (el as HTMLTextAreaElement).scrollTop)).toBeGreaterThan(0);
 
     // ...and at full height the neighbours are still docked where they belong:
     // the options row under the box, both of them inside the window
