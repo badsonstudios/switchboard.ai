@@ -31,9 +31,16 @@ import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import en from '../i18n/locales/en.json';
 import { sessionStore } from '../store/session-store';
+import { registerBuiltinContributions } from '../bootstrap';
+import { rendererRegistry } from '../extensibility/registry-instance';
 import { DEFAULT_SESSION_TRANSPORT, type TransportKind } from '../../../shared/transport';
 import type { IDockviewPanelProps } from 'dockview-react';
-import type { CardParams } from './SessionGrid';
+// STATIC, not a dynamic import inside the hook: this module pulls in monaco
+// and xterm through its panel components, and paying for that inside a
+// `beforeAll` blew vitest's 10s hook budget when the file ran alongside the
+// rest of the suite. Collection has no such cap. `vi.mock` is hoisted above
+// every import, so the stub below is still in place when this loads.
+import { SessionGrid, type CardParams } from './SessionGrid';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -86,7 +93,9 @@ function installBridge(): void {
         calls.create++;
         return Promise.resolve({
           id: `live-${calls.create}`,
-          identity: { accentColor: '#888', langBadge: 'ts' },
+          // a token, not a hex: the card paints its accent border with this and
+          // the lint rule that bans raw hex in this repo applies to tests too
+          identity: { accentColor: 'var(--faint)', langBadge: 'ts' },
           autonomy: 'ask',
           status: 'idle',
           transport: spawnTransport,
@@ -179,7 +188,7 @@ async function click(el: HTMLElement): Promise<void> {
   });
 }
 
-/** Mount a card whose session comes up on `transport`, and open its ⋯ menu. */
+/** Mount a card whose session comes up on `transport`. */
 async function mountCard(transport: TransportKind | undefined = 'pty'): Promise<void> {
   spawnTransport = transport;
   await act(async () => {
@@ -195,12 +204,16 @@ beforeAll(async () => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   await initI18nForTests();
   installBridge();
+  // The card renders its view tabs from the MODULE registry, which `main.tsx`
+  // fills at boot and a test file does not get for free — without this a card
+  // has a header and an empty body, and the panel half of these surfaces would
+  // be asserting against nothing.
+  registerBuiltinContributions(rendererRegistry);
   // one render of the real grid, purely to take the components map off the
   // stubbed DockviewReact
   const gridHost = document.createElement('div');
   document.body.appendChild(gridHost);
   const gridRoot = createRoot(gridHost);
-  const { SessionGrid } = await import('./SessionGrid');
   await act(async () => {
     gridRoot.render(
       <SessionGrid colorScheme="dark" seedPanels={0} onCardsChanged={() => {}} />
@@ -216,6 +229,7 @@ beforeEach(() => {
   setTransportReply = { ok: true, pending: false };
   sessionStore.setSessions([]);
   sessionStore.initPresentation(new Map());
+  sessionStore.forgetCardLiveIds('c1'); // no live id from the last card survives
   host = document.createElement('div');
   document.body.appendChild(host);
   root = createRoot(host);
@@ -293,7 +307,7 @@ describe('the ⋯ menu says which transport this session is on', () => {
       land();
       await held;
     });
-    expect(menuButton()).not.toBeNull();
+    expect(menuButton().textContent).toBe(en.grid.menuIcon);
   });
 });
 
@@ -419,8 +433,28 @@ describe('a change queued behind a running session', () => {
     expect(transportItem()).toBeNull(); // the menu closed
     // ...and the card really did start again, on the transport that was queued
     expect(calls.create).toBe(2);
+    // REOPENED, which is where a notice that was merely hidden by the closing
+    // menu would come back: "still running on the old one" over a session that
+    // is running on the new one.
     await openMenu();
     expect(transportItem()?.textContent).toBe(label(STREAM, PTY));
+    expect(pendingNoticeShown()).toBe(false);
+    expect(restartButton()).toBeNull();
+  });
+
+  it('does not move the RUNNING session — the Terminal tab keeps its terminal', async () => {
+    // The two notions of "this card's transport", side by side, which is the
+    // whole reason the notice exists. The menu label is the CHOICE (what the
+    // next spawn will use); the panel context is the RUNNING session
+    // (`live.transport`). Wiring the panels to the choice would take a PTY
+    // session's terminal away while it is still streaming into it — the empty
+    // black rectangle, arrived at from the other direction.
+    setTransportReply = { ok: true, pending: true };
+    await mountCard('pty');
+    await openMenu();
+    await click(transportItem()!);
+    expect(transportItem()?.textContent).toBe(label(STREAM, PTY));
+    expect(host.querySelector('[data-testid="terminal-pane"]')).not.toBeNull();
   });
 
   it('does not carry the notice over to the next change', async () => {
