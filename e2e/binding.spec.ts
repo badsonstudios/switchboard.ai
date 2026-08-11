@@ -8,6 +8,22 @@
 //
 // The fake provider writes no transcript, so as in feed.spec.ts the test plays
 // Claude's part and writes JSONL into the isolated HOME itself.
+//
+// TRANSPORT SCOPE (P2-E18-18, #404): `[pty]` for the whole group. Every session
+// here runs on the PTY (see `launchApp` in `fixtures/app.ts`), and the empty
+// state these tests read is the one a PTY session gets: the `unbound` arm ends
+// in `binding.unboundFallback` — "The Terminal tab is unaffected — your session
+// is still running there." — which is a sentence only a PTY session can be
+// told. A Direct session's Terminal tab holds the P2-E18-08b notice, not a
+// running CLI. There is no Direct counterpart spec: the watcher still binds for
+// a stream session (only `deriveFeed` is off, `sessions/ipc.ts`), so these
+// states are reachable on Direct and are simply untested there.
+//
+// OUT OF SCOPE, FOUND HERE (#418): `binding.unboundFallback` renders with no
+// transport gate (`FeedView.tsx`, the `copy.problem` arm), so an unbound DIRECT
+// session is currently told to go look at a Terminal tab that has no terminal.
+// That is a product defect, not a test one, so this item does not touch it —
+// it is reported on #418 rather than fixed here.
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
@@ -17,7 +33,7 @@ function slugForCwd(cwd: string): string {
   return cwd.replace(/[\\/:. ]/g, '-');
 }
 
-test.describe('transcript binding transparency (E15-10)', () => {
+test.describe('[pty] transcript binding transparency (E15-10)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 

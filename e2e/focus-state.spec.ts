@@ -1,6 +1,13 @@
 // P2-E12-08: focus-state persistence — the active view tab (and focused card)
 // come back exactly after a relaunch, via the workspace store's ui blob (NOT
 // localStorage, which resets with the loopback port each packaged launch).
+//
+// TRANSPORT SCOPE (P2-E18-18, #404): the persistence mechanism is
+// transport-independent, but the first test PROVES the restore by looking for a
+// live `.xterm` — which only a PTY session has. It is tagged `[pty]` for that;
+// the mechanism it covers is not PTY-only, and the same restore on a Direct
+// card (Terminal tab → the P2-E18-08b notice) has no spec. See `launchApp` in
+// `fixtures/app.ts` for the tag.
 import { test, expect } from '@playwright/test';
 import { launchApp, LaunchedApp, showTerminal, tempProjectFolder } from './fixtures/app';
 
@@ -8,7 +15,7 @@ test.describe('focus-state persistence (E12-08)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 
-  test('active view tab survives a relaunch (Session default -> Terminal restored)', async () => {
+  test('[pty] active view tab survives a relaunch (Session default -> Terminal restored)', async () => {
     const folder = tempProjectFolder();
     const title = folder.split(/[\\/]/).pop()!;
     a = await launchApp({ seedFolder: folder }); // shared handle first (#16)

@@ -2,6 +2,18 @@
 // The popup data comes from the REAL scanner (this test seeds command/skill
 // files into the session folder) and selection/submission go through the real
 // PTY — the fake provider's shell echoes what the composer typed.
+//
+// TRANSPORT SCOPE (P2-E18-18, #404): the popup itself — the scanner, the
+// filtering, the caret, Tab-vs-Enter, Escape — is renderer-side and
+// transport-independent, so those tests are untagged. What is tagged `[pty]` is
+// every test that proves DELIVERY by reading the shell's echo out of the
+// Terminal tab, plus the /clear feed-reset, which rides the transcript watcher
+// (off for stream, `deriveFeed` in `sessions/ipc.ts`). A Direct session submits
+// over stdin and resets its feed off `system:init` instead — a different path
+// with no e2e of its own (`sessions/ipc.ts`'s stream branch for
+// `sessions:command`). Direct's own list-of-commands story is covered by
+// `stream.spec.ts` → "slash commands come from the CLI in Direct mode
+// (P2-E18-09)". See `launchApp` in `fixtures/app.ts` for the tag.
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
@@ -85,7 +97,7 @@ test.describe('composer slash commands (E10-07)', () => {
     await a?.cleanup();
   });
 
-  test('/ pops builtins + scanned project commands; arrows+Enter insert; submit reaches the PTY', async () => {
+  test('[pty] / pops builtins + scanned project commands; arrows+Enter insert; submit reaches the PTY', async () => {
     const folder = tempProjectFolder();
     seedProjectCommands(folder);
     a = await launchApp({ seedFolder: folder });
@@ -145,8 +157,11 @@ test.describe('composer slash commands (E10-07)', () => {
   // ran nothing. The first Enter looked like a no-op because the text it
   // produced was the text already on screen.
   //
-  // Not transport-specific, and tested here on the PTY for that reason.
-  test('a command typed IN FULL submits on the first Enter (#163)', async () => {
+  // Not transport-specific, and tested here on the PTY for that reason — but
+  // the PROOF is, so it carries the tag: "it really sent" is read off the
+  // shell's echo in the Terminal tab, which a Direct session has nothing to
+  // show in.
+  test('[pty] a command typed IN FULL submits on the first Enter (#163)', async () => {
     const folder = tempProjectFolder();
     seedProjectCommands(folder);
     a = await launchApp({ seedFolder: folder });
@@ -209,7 +224,7 @@ test.describe('composer slash commands (E10-07)', () => {
     await expect(box).toHaveValue('/'); // the draft survives the dismiss
   });
 
-  test('⋯ menu: Clear conversation confirms, then types /clear into the PTY', async () => {
+  test('[pty] ⋯ menu: Clear conversation confirms, then types /clear into the PTY', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
@@ -232,7 +247,10 @@ test.describe('composer slash commands (E10-07)', () => {
     await expect(w.getByText(/\/clear/).first()).toBeVisible({ timeout: 15_000 });
   });
 
-  test('a /clear-minted session id wipes the Feed and shows the cleared marker', async () => {
+  // `[pty]`: the wipe rides the transcript watcher's rebind on a new native id,
+  // and a stream session's feed is not built from the transcript at all — it
+  // resets off `system:init` in `feed/stream-feed.ts`, which no e2e drives.
+  test('[pty] a /clear-minted session id wipes the Feed and shows the cleared marker', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
