@@ -39,6 +39,19 @@ const scrollTop = (w: Page): Promise<number> =>
     return el ? Math.round(el.scrollTop) : -1;
   });
 
+/**
+ * How far the same scroller is from its tail. `-1` when nothing overflows —
+ * a conversation that fits IS at its tail, which is why that reads as pinned.
+ * The shape (and the -1) is `feed.spec.ts:200`'s.
+ */
+const tailGap = (w: Page): Promise<number> =>
+  w.evaluate(() => {
+    const el = [...document.querySelectorAll('div')].find(
+      (d) => d.scrollHeight > d.clientHeight + 40 && getComputedStyle(d).overflowY === 'auto'
+    );
+    return el ? Math.round(el.scrollHeight - el.scrollTop - el.clientHeight) : -1;
+  });
+
 test.describe.configure({ mode: 'serial' });
 
 test.describe('the Feed renders a Direct turn (P2-E18-14)', () => {
@@ -196,6 +209,37 @@ test.describe('the Feed renders a Direct turn (P2-E18-14)', () => {
     test.setTimeout(120_000);
     const w = a.window;
     const box = w.getByPlaceholder(/Prompt this session/);
+
+    // ARRANGE — a reader who is AT the tail, said out loud instead of inherited.
+    //
+    // This test used to open on whatever scroll position the three tests above
+    // it left behind, and on a shorter window than a dev machine's that is NOT
+    // the tail. Measured on the windows CI runner (2026-08-11, PR #430): its
+    // desktop is 1024x768, the app window clamps to it, and the feed is 254px
+    // tall — so the `!tools` turn (347px with `▸ OUT` open) OVERFLOWS. Playwright
+    // scrolls a half-cut-off element into view before clicking it, so test 1's
+    // click on `▸ OUT` scrolled the feed UP by 64px, inside that click's own
+    // gesture window — which is exactly what FeedView's `lastGesture` rule reads
+    // as "the user scrolled up" (a deliberate rule: #112 / Dan 2026-07-26). The
+    // tail was unpinned three tests before this one, nothing re-pins an unpinned
+    // feed, and 60 blocks then landed under a stationary reader: `SFEED_BLOCK_60`
+    // was rendered 2565px down a 655px window and never came on screen. On a
+    // 1264x735 window the same turn fits in the 375px feed, nothing scrolls, and
+    // the artefact does not exist — which is why this was green here and red
+    // there, twice, on the same commit.
+    //
+    // So take the wheel and land on the bottom, the way a user following the
+    // conversation is on it. This does not weaken a thing below: the claim under
+    // test is what a NEW block does to a reader who IS at the tail, and that
+    // reader is now a precondition the test states rather than one it hopes for.
+    await w.locator('[data-feed-region]').hover();
+    await w.mouse.wheel(0, 5000);
+    await expect.poll(() => tailGap(w), { timeout: 10_000 }).toBeLessThan(40);
+    // and let the gesture window (FeedView's GESTURE_MS, 500ms) close before the
+    // blocks arrive: a scroll sampled inside it re-derives the pin from raw
+    // distance, which is the very trap described above.
+    await w.waitForTimeout(600);
+
     await box.click();
     await box.fill('!bulk 60 SFEED_BLOCK_');
     await box.press('Enter');
