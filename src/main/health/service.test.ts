@@ -191,6 +191,42 @@ describe('polling can be off, and off changes nothing else', () => {
     svc.stop();
   });
 
+  it('drops an incident card it will never refresh again', async () => {
+    // turning the check off must not leave an incident notice standing for the
+    // rest of the run with nothing able to clear it
+    let poll = true;
+    const pushed: ServiceHealthStatus[] = [];
+    const svc = new ServiceHealthService({
+      getPrefs: () => ({ poll }),
+      push: (s) => pushed.push(s),
+      log: log(),
+      probeImpl: vi.fn(async () => ok({ state: 'outage', incidents: [INCIDENT] })),
+    });
+    svc.start();
+    await vi.waitFor(() => expect(svc.current().incidents).toHaveLength(1));
+    poll = false;
+    svc.prefsChanged();
+    expect(svc.current()).toMatchObject({ state: 'unknown', reason: 'polling-off', incidents: [] });
+    expect(svc.current().checkedAt).toBeUndefined();
+    svc.stop();
+  });
+
+  it('going offline KEEPS what the page already told us', async () => {
+    // the other way round: we still believe it, we just cannot ask again
+    let online = true;
+    const { svc } = make({
+      isOnline: () => online,
+      probe: vi.fn(async () => ok({ state: 'outage', incidents: [INCIDENT] })),
+    });
+    svc.start();
+    await vi.waitFor(() => expect(svc.current().incidents).toHaveLength(1));
+    online = false;
+    await vi.advanceTimersByTimeAsync(MIN_POLL_MS + 10);
+    await vi.waitFor(() => expect(svc.current().reason).toBe('offline'));
+    expect(svc.current().incidents).toHaveLength(1);
+    svc.stop();
+  });
+
   it('still corroborates locally with polling off — that half asks nobody', async () => {
     const { svc, pushed } = make({ poll: false });
     svc.start();

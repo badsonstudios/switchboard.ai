@@ -160,6 +160,24 @@ export class ServiceHealthService {
    */
   private goDark(reason: 'polling-off' | 'offline'): void {
     this.knownIncidents = new Set();
+    if (reason === 'polling-off') {
+      // The user said stop looking, so what we last saw stops being a claim:
+      // the Events card and the tooltip's incident list are drawn from this
+      // record, and an incident we will never refresh would sit there for the
+      // rest of the run — outliving the fact, with nothing able to clear it.
+      //
+      // OFFLINE is the other way round and falls through to `applyProbe`, which
+      // keeps them: we still believe what the page told us, we just cannot ask
+      // again for the moment.
+      this.status = {
+        state: 'unknown',
+        reason,
+        incidents: [],
+        corroboration: this.status.corroboration,
+      };
+      this.pushIfChanged();
+      return;
+    }
     this.applyProbe({ state: 'unknown', reason, incidents: [], checkedAt: '' });
   }
 
