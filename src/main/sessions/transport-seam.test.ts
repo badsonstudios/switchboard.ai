@@ -299,6 +299,7 @@ describe('DEFAULT_TRANSPORT vs DEFAULT_SESSION_TRANSPORT (P2-E18-17)', () => {
   });
 
   it("...which is NOT what a user's silence means", () => {
+    expect(DEFAULT_SESSION_TRANSPORT).toBe('stream'); // named, so the diff explains itself if it moves
     expect(DEFAULT_TRANSPORT).not.toBe(DEFAULT_SESSION_TRANSPORT);
   });
 });

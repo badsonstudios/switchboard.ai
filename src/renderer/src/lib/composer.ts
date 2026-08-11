@@ -90,12 +90,22 @@ export async function interruptSession(sessionId: string): Promise<void> {
  * did nothing at all and said nothing about it. That is the #154 defect class
  * arriving through a different door.
  *
- * Falling back on a throw is safe rather than merely hopeful. `sessions:
- * submitPrompt` and `sessions:interrupt` answer `false` for a PTY session
- * WITHOUT side effects, so the only call that can throw is one whose typed
- * message did not land; the fallback then either reaches a real PTY (correct)
- * or is dropped by main's `ptys.get(id)?.write()`, because a stream session has
- * no PTY to write to (harmless). It cannot double-send.
+ * Falling back on a throw is safe WHEREVER the throw came from, which is a
+ * stronger claim than "the typed message did not land" and the one that
+ * actually holds: a session is spawned on exactly ONE transport, so the
+ * fallback either reaches a real PTY (correct) or is dropped by main's
+ * `ptys.get(id)?.write()` because a stream session has no PTY to write to
+ * (harmless). Even a throw raised AFTER `handle.send()` already succeeded
+ * cannot double-send, and that is why — not because the ordering is lucky.
+ *
+ * `=== true`, not truthiness, and that is the second door: `broker.handle`
+ * RESOLVES an `IpcRefusal` object for a refused channel rather than throwing
+ * (#346), and an object is truthy — so a refusal would have been read as "main
+ * took it" and suppressed the fallback, silently reinstating the #154 defect
+ * this function exists to remove. Unreachable today (first-party windows hold
+ * every capability), which is exactly how it would have been found the hard
+ * way; the preload's return types stay as they are, and `shared/ipc/refusal.ts`
+ * says why widening ~60 of them was declined.
  *
  * Console, not UI, for the same reason `groups.ts` chose it: main has already
  * written the real cause to the app log, and inventing a dialog for a failure
@@ -103,7 +113,7 @@ export async function interruptSession(sessionId: string): Promise<void> {
  */
 async function mainTook(what: string, call: () => Promise<boolean>): Promise<boolean> {
   try {
-    return await call();
+    return (await call()) === true;
   } catch (err) {
     console.warn(`[composer] sessions.${what} failed — trying the terminal route`, err);
     return false;

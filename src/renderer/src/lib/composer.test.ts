@@ -10,6 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sendSessionCommand, submitPrompt, interruptSession, SUBMIT_DELAY_MS } from './composer';
 import { sessionStore } from '../store/session-store';
+import { ipcRefusal } from '../../../shared/ipc/refusal';
 
 /** everything written to the PTY, in order, as the bridge would have seen it */
 let ptyWrites: Array<{ id: string; data: string }>;
@@ -50,6 +51,10 @@ beforeEach(() => {
     },
   };
 });
+
+// ...and hand the clock back, so nothing that runs after this file's last test
+// inherits a frozen one.
+afterEach(() => vi.useRealTimers());
 
 const ESC = String.fromCharCode(27);
 const CR = String.fromCharCode(13);
@@ -195,6 +200,25 @@ describe('a rejecting IPC is read as "main did not take it" (P2-E18-17)', () => 
     await sendSessionCommand('live-1', '/clear');
 
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  // The OTHER door: `broker.handle` resolves an `IpcRefusal` OBJECT for a
+  // refused channel instead of throwing (#346), and an object is truthy — so a
+  // truthiness check reads a refusal as "main took it" and drops the command on
+  // the floor, which is #154 all over again. Unreachable today (first-party
+  // holds every capability), and green either way unless `mainTook` compares
+  // `=== true`.
+  it('a refusal OBJECT is not mistaken for a yes', async () => {
+    // the broker's real payload, built by the real factory — a hand-rolled
+    // stand-in would stop matching the day the brand changes
+    (
+      window as unknown as { switchboard: { sessions: Record<string, unknown> } }
+    ).switchboard.sessions.submitPrompt = () =>
+      Promise.resolve(ipcRefusal('sessions:submitPrompt', 'capability-not-held'));
+
+    await sendSessionCommand('live-1', '/clear');
+
+    expect(ptyWrites[0]).toEqual({ id: 'live-1', data: '/clear' });
   });
 });
 

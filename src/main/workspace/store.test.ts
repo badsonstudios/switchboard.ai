@@ -1697,7 +1697,11 @@ describe('PersistedSession.transport survives quit -> relaunch (P2-E18-17)', () 
     expect(b.listSessions()[0].transport).toBeUndefined();
   });
 
-  it('upserting the same card again keeps the choice it already had', () => {
+  // Named for what it actually pins: `upsertSession` REPLACES the record whole
+  // (`store.ts`: `this.state.sessions[i] = copy`), so this is de-duplication by
+  // id plus the field riding along on a FULL record — not preservation across a
+  // partial upsert, which the store does not offer and a caller must not assume.
+  it('upserting the same card replaces rather than duplicates, transport included', () => {
     const st = makeStore(file);
     st.load();
     st.upsertSession(withTransport('one', 'pty'));

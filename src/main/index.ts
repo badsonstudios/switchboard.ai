@@ -1210,9 +1210,8 @@ app
           (msg) => log.app.warn(msg)
         ),
       // The app-wide override, below a card's own choice and above the default
-      // (#381). Read per call, not once at boot, so a test or a relaunch-free
-      // change of the variable is picked up by the next session; the parse and
-      // the reason a typo warns live in `transport/preferred-transport.ts`.
+      // (#381). Read per call rather than once at boot; the parse itself, and
+      // the reason a typo has to warn, live in `transport/preferred-transport.ts`.
       preferredTransport: () =>
         parsePreferredTransport(process.env[TRANSPORT_ENV_VAR], log.app.warn),
     });

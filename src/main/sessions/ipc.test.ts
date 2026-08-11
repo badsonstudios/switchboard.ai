@@ -2455,6 +2455,10 @@ describe('the env override is not written back onto the card (P2-E18-17)', () =>
     await start(h);
 
     expect(h.created[0].transport).toBe('pty'); // it did decide...
+    // `.at(-1)?` on an EMPTY list is undefined too, so the card must be proved
+    // written at all — otherwise "stopped persisting the card" passes this as
+    // cleanly as "did not write the transport".
+    expect(h.upserted).not.toHaveLength(0);
     expect(h.upserted.at(-1)?.transport).toBeUndefined(); // ...and recorded nothing
   });
 
@@ -2464,6 +2468,7 @@ describe('the env override is not written back onto the card (P2-E18-17)', () =>
     await start(h, 'fresh');
 
     expect(h.created[0].transport).toBe('pty');
+    expect(h.upserted).not.toHaveLength(0);
     expect(h.upserted.at(-1)?.transport).toBeUndefined();
   });
 
@@ -2476,6 +2481,7 @@ describe('the env override is not written back onto the card (P2-E18-17)', () =>
     // the card must still say nothing, or it silently stops following the
     // default the day the default moves.
     expect(h.created[0].transport).toBe('stream');
+    expect(h.upserted).not.toHaveLength(0);
     expect(h.upserted.at(-1)?.transport).toBeUndefined();
   });
 
