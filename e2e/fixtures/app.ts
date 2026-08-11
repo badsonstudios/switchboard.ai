@@ -787,6 +787,83 @@ export function tempProjectFolder(): string {
   return dir;
 }
 
+/* ---- driving a DIRECT (stream) session -------------------------------------
+ *
+ * The stream twin of `hookPoster` below, and it exists for the same reason:
+ * a spec needs a session in a particular state, and the honest way to get one
+ * is to make the CLI produce it rather than to fake the signal.
+ *
+ * `hookPoster` cannot serve on this transport. A Direct session's permissions
+ * ride `can_use_tool` on the control channel, and its permission-classified
+ * hook `Notification` is deliberately DROPPED (#313) — so the POST that puts a
+ * PTY session into `needs-permission` does nothing at all here. The stimulus
+ * that works is a PROMPT: `!perm`, `!tools`, `!bulk` and friends are scripted
+ * into the fake CLI (`providers/fake-stream-protocol.ts`), and everything after
+ * the prompt is the shipped article.
+ */
+
+/**
+ * Submit a prompt to a card BY TITLE, on that card's own transport (P2-E18-14).
+ *
+ * The SAME IPC the composer uses (`sessions:submitPrompt`), not a test-only
+ * channel — so everything from the CLI's stdin onwards is what a user typing
+ * into the box drives. The one thing it skips is what the composer does BEFORE
+ * that call: §5.8's auto-minimize (`renderer/src/lib/composer.ts`). Deliberate,
+ * and it is the point — a spec about a session you are not looking at must not
+ * rearrange the screen on the way in.
+ *
+ * Why it exists rather than typing into the composer: the composer belongs to
+ * the card dockview currently has MOUNTED, and half the behaviours worth
+ * testing are about a session you are NOT looking at (a hidden card raising the
+ * lamp, a focus policy that must not steal the screen, a second session joining
+ * a grouped prompt). Typing is still the right stimulus where the card is on
+ * screen, and the specs use it there.
+ *
+ * The live id is resolved per CALL, not snapshotted: a restart mints a new one,
+ * and a prompter that had cached the old one would submit into a corpse and
+ * report success (`submitPrompt` answers false for an unknown session — hence
+ * the throw, which turns that into a named failure instead of a locator
+ * timeout thirty seconds later).
+ */
+export function streamPrompter(
+  a: LaunchedApp
+): (title: string, text: string) => Promise<void> {
+  return async (title, text) => {
+    const liveId = await pollAsync(async () => {
+      const cards = (await a.window.evaluate(() => window.switchboard.sessions.cards())) as Array<{
+        title: string;
+        liveId?: string;
+      }>;
+      return cards.find((c) => c.title === title)?.liveId ?? null;
+    }, `no live session for card "${title}"`);
+    const accepted = await a.window.evaluate(
+      ([id, t]) => window.switchboard.sessions.submitPrompt(id, t),
+      [liveId, text]
+    );
+    if (!accepted) {
+      throw new Error(
+        `submitPrompt was refused for "${title}" — a PTY session has no typed-message ` +
+          `transport, so this card is not in Direct mode`
+      );
+    }
+  };
+}
+
+/** `poll`, for a check that has to await something. */
+export async function pollAsync<T>(
+  fn: () => Promise<T | null>,
+  what = 'poll timed out',
+  timeoutMs = 25_000
+): Promise<T> {
+  const start = Date.now();
+  for (;;) {
+    const v = await fn();
+    if (v) return v;
+    if (Date.now() - start > timeoutMs) throw new Error(what);
+    await new Promise((r) => setTimeout(r, 250));
+  }
+}
+
 /* ---- driving the REAL hook listener ---------------------------------------
  * Specs that need a session in a particular attention state play the CLI's
  * part: POST the hook event the CLI would have sent, with that session's own
@@ -835,14 +912,15 @@ export function findTokens(root: string, depth = 6): Map<string, string> {
   return out;
 }
 
+/**
+ * Retry a SYNCHRONOUS check until it answers truthily. `pollAsync`'s twin, and
+ * implemented in terms of it rather than beside it: two ten-line copies of the
+ * same loop in one file is how the argument orders drift apart, and a caller
+ * who passed the timeout to the wrong parameter would get a 25-second wait with
+ * a nonsense message instead of a type error.
+ */
 export async function poll<T>(fn: () => T | null, timeoutMs = 25_000): Promise<T> {
-  const start = Date.now();
-  for (;;) {
-    const v = fn();
-    if (v) return v;
-    if (Date.now() - start > timeoutMs) throw new Error('poll timed out');
-    await new Promise((r) => setTimeout(r, 250));
-  }
+  return pollAsync(() => Promise.resolve(fn()), 'poll timed out', timeoutMs);
 }
 
 /**

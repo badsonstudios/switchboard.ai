@@ -82,6 +82,19 @@ on the floor, and say so in your PR.
 
 ### Internal
 
+- The session controls (`/clear`, `/compact`, Stop, and sending a prompt) no
+  longer go quiet if the internal call behind them fails outright. They used to
+  ask the app to take the message and, if that request *errored* rather than
+  answering, do nothing at all and say nothing — the same shape as the Stop
+  button that did nothing in Direct mode. They now fall back to the terminal
+  route and leave a line in the console explaining why — for a Direct-mode
+  session there is no terminal to fall back to, so what changes there is that
+  the failure is visible at all rather than silent. Plus the batch of tests
+  that pins the transport rules already in place: which transport a session
+  ends up on is the provider's answer, not the caller's request; a mistyped
+  `SWITCHBOARD_TRANSPORT` warns instead of silently landing on the opposite
+  transport; and a card that explicitly chose Terminal still comes back on
+  Terminal after a restart.
 - A Direct-mode session now learns the conversation id it will resume with
   from the stream itself (`system:init`), instead of only from hook events —
   so "reopen the same conversation after an app restart" no longer depends on
