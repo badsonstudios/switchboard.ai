@@ -852,13 +852,19 @@ const MIN_FEED_PX = 60;
  * enough. Undefined when there is no layout to measure (a hidden panel), which
  * leaves the line cap in sole charge rather than guessing a small number.
  *
- * Called with the box already collapsed for measurement, so `own - el` is the
- * composer's own chrome (padding, the gap, the options row) at its true size.
+ * Called with the box already collapsed for measurement, so the difference
+ * between the composer and the box's own ROW is its chrome (padding, the gap,
+ * the options row) at its true size. The row, not the box: the send button
+ * holds that row 30px tall however small the box gets, and measuring against
+ * the collapsed box counted those 30px as chrome — the feed kept an extra
+ * half-line it was never owed and the box stopped that much early (caught by
+ * the e2e's floor assertion, 2026-08-11).
  */
 function roomForBox(own: HTMLElement | null, el: HTMLElement): number | undefined {
   const panel = own?.parentElement;
+  const row = el.parentElement ?? el;
   if (!own || !panel || panel.clientHeight === 0) return undefined;
-  let taken = MIN_FEED_PX + (own.offsetHeight - el.offsetHeight);
+  let taken = MIN_FEED_PX + (own.offsetHeight - row.offsetHeight);
   for (const sib of Array.from(panel.children)) {
     // everything docked around the conversation — the verbosity strip, the
     // working banner, an approval bar — keeps the height it asked for; only the

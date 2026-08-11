@@ -661,8 +661,13 @@ test.describe('Feed view (E12-06)', () => {
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
 
-    /** CI's measured window: a 1008x655 client area on a 1024x768 desktop */
-    const CI_CONTENT_HEIGHT = 655;
+    /**
+     * Under the app's own 600px minimum, so Electron clamps to it: the SHORTEST
+     * window a user can make, and shorter than any CI runner's (Linux CI is
+     * 1008x655 on a 1024x768 desktop, measured 2026-08-11). Whatever branch a
+     * runner lands on, this reaches it or one stricter.
+     */
+    const SHORTEST_CONTENT_HEIGHT = 400;
     /** MIN_FEED_PX in FeedView.tsx — the conversation's floor */
     const MIN_FEED = 60;
 
@@ -737,19 +742,21 @@ test.describe('Feed view (E12-06)', () => {
     await box.pressSequentially('tail');
     expect(await box.evaluate((el) => (el as HTMLTextAreaElement).scrollTop)).toBeGreaterThan(0);
 
-    // Now CI's geometry, with the long draft still in the box: a panel that
-    // shrinks under a filled composer must RE-FIT it, not leave it overhanging
-    // its own options row. (On CI the window is already this size, so there the
-    // resize is a no-op and the assertions below simply run again.)
+    // Now the shortest window the app allows, with the long draft still in the
+    // box: a panel that shrinks under a filled composer must RE-FIT it, not
+    // leave it overhanging its own options row. This is also the geometry that
+    // takes the OTHER branch of the cap — the conversation reaches its floor
+    // before the box reaches twelve lines — which no dev machine sees at its
+    // normal window size and every short runner does.
     const tall = await measure();
     await a.app.evaluate(({ BrowserWindow }, height) => {
       const win = BrowserWindow.getAllWindows()[0];
       win.unmaximize();
       win.setContentSize(win.getContentSize()[0], height);
-    }, CI_CONTENT_HEIGHT);
+    }, SHORTEST_CONTENT_HEIGHT);
     await expect
       .poll(async () => (await measure()).height, { timeout: 10_000 })
-      .toBeLessThanOrEqual(tall.height);
+      .toBeLessThan(tall.height); // re-fitted without a keystroke
 
     await box.fill('');
     const oneLine = await measure();
