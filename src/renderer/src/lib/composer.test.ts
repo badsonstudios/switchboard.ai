@@ -30,6 +30,13 @@ beforeEach(() => {
   promptFailure = null;
   interruptFailure = null;
   vi.useFakeTimers();
+  // Re-installing fake timers does NOT drop what the previous test scheduled,
+  // and `writePromptToPty` schedules its CR 75ms out — so a test that ends
+  // before flushing leaves a live timer whose callback resolves
+  // `window.switchboard.pty.input` at FIRE time, i.e. writes into the NEXT
+  // test's `ptyWrites`. Found while mutation-testing P2-E18-17: a mutant that
+  // failed early leaked a stray CR into an unrelated test three cases later.
+  vi.clearAllTimers();
   (window as unknown as { switchboard: unknown }).switchboard = {
     pty: { input: (id: string, data: string) => ptyWrites.push({ id, data }) },
     sessions: {
