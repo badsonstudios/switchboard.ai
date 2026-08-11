@@ -92,11 +92,6 @@ export class CorroborationTracker {
     this.errors.delete(sessionId);
   }
 
-  /** Every session's evidence, dropped. Used when the rule is turned off. */
-  clear(): void {
-    this.errors.clear();
-  }
-
   /** Is the rule raised right now? Expires stale entries as it goes. */
   evaluate(now: number): CorroborationVerdict {
     let oldest = Infinity;

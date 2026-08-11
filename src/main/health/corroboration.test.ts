@@ -44,7 +44,9 @@ describe('raising', () => {
     const v = t.evaluate(T0 + 130_000);
     expect(v.raised).toBe(true);
     expect(v.sessions).toBe(3);
-    // "since" is the OLDEST error still standing — what the banner dates itself
+    // "since" is the OLDEST error still standing. Main-side only: it is not on
+    // the record that crosses IPC, because no surface renders it (§5.29 — a
+    // field nobody draws is a field that should not travel).
     expect(v.since).toBe(new Date(T0).toISOString());
   });
 

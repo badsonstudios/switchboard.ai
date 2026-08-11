@@ -68,6 +68,9 @@ talks to the internet. It only looks at what's happening in your own window.
 
 ## What gets sent
 
-Nothing. The status check is a plain read of a public page, the same one you'd
-open in a browser at *status.anthropic.com*. No account, no identifier, no
-information about your sessions, your machine or your work leaves the app.
+Almost nothing, and nothing about you. The status check is a plain read of a
+public page — the same one you'd open in a browser at *status.anthropic.com*.
+The request carries the app's name and version, the way a browser identifies
+itself, and that's all. No account, no identifier, and nothing about your
+sessions, your files or your work. Nothing is uploaded, and the app never sends
+anything back.

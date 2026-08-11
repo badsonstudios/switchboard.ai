@@ -49,6 +49,8 @@ const MAX_TEXT = 300;
 /** More unresolved incidents than this is a page having a very bad day; the
  *  tooltip cannot show them all and the extras cost memory for nothing. */
 const MAX_INCIDENTS = 10;
+/** An ISO-8601 timestamp is 24 characters; anything past this is not one. */
+const MAX_TIMESTAMP = 64;
 
 export interface StatuspageProbe {
   state: ServiceHealthState;
@@ -136,8 +138,12 @@ export function readIncidents(body: unknown): ServiceIncident[] {
       status: text(i.status, 'unknown'),
       impact: impactOf(i.impact),
       ...(typeof i.shortlink === 'string' && i.shortlink ? { url: i.shortlink.slice(0, MAX_TEXT) } : {}),
-      ...(typeof i.created_at === 'string' ? { startedAt: i.created_at.slice(0, 64) } : {}),
-      ...(typeof i.updated_at === 'string' ? { updatedAt: i.updated_at.slice(0, 64) } : {}),
+      ...(typeof i.created_at === 'string'
+        ? { startedAt: i.created_at.slice(0, MAX_TIMESTAMP) }
+        : {}),
+      ...(typeof i.updated_at === 'string'
+        ? { updatedAt: i.updated_at.slice(0, MAX_TIMESTAMP) }
+        : {}),
     });
     if (out.length >= MAX_INCIDENTS) break;
   }
@@ -166,6 +172,12 @@ export async function probeStatuspage(deps: ProbeDeps = {}): Promise<StatuspageP
 
   if (typeof doFetch !== 'function') return unknown('network');
 
+  // Two headers, and that is the entire outbound payload: what we will accept,
+  // and who is asking. The User-Agent is the app name and its version — the
+  // courtesy a public JSON API is owed, and nothing that identifies a person, a
+  // machine or a session. No cookies (none are sent: `fetch` defaults to
+  // `credentials: 'same-origin'` and this is cross-origin), no query string, no
+  // body, no second request that could correlate one poll with another.
   const headers: Record<string, string> = {
     accept: 'application/json',
     'user-agent': `switchboard.ai/${deps.userAgent ?? 'dev'}`,

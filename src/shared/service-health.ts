@@ -49,14 +49,15 @@ export interface ServiceIncident {
 /**
  * The local half: N distinct sessions saw an error inside the window.
  *
- * `sessions` is a COUNT, not a list of ids — the banner says "several sessions",
- * and shipping the ids would put session identity into a surface that has no
- * use for it.
+ * A COUNT, and nothing else. Not the ids — the banner says "several sessions",
+ * and shipping identity to a surface with no use for it is how a surface grows
+ * one. Not the window's start either: main knows it (the tracker's verdict
+ * carries it, and its own tests read it) and no surface renders it, so it stops
+ * at the process boundary rather than riding IPC on the chance somebody wants
+ * it later.
  */
 export interface ServiceCorroboration {
   sessions: number;
-  /** the oldest error still inside the window */
-  since: string;
 }
 
 /** What main pushes on `health:status`. */
@@ -66,7 +67,12 @@ export interface ServiceHealthStatus {
   /** the page's own summary line, e.g. "All Systems Operational" */
   description?: string;
   incidents: ServiceIncident[];
-  /** ISO time of the last completed poll — absent until one completes */
+  /**
+   * ISO time of the last poll the page actually ANSWERED — absent until one
+   * does, and deliberately not moved by a poll that was skipped (offline,
+   * polling off) or that failed. "Checked at 14:32" has to mean somebody
+   * answered at 14:32.
+   */
   checkedAt?: string;
   /** null unless the local rule is currently raised */
   corroboration: ServiceCorroboration | null;
@@ -78,9 +84,11 @@ export interface ServiceHealthPrefs {
 }
 
 /** The state a window starts in, before main has said anything. */
-export const UNKNOWN_HEALTH: ServiceHealthStatus = {
-  state: 'unknown',
-  reason: 'never-checked',
-  incidents: [],
+export const UNKNOWN_HEALTH: Readonly<ServiceHealthStatus> = Object.freeze({
+  state: 'unknown' as const,
+  reason: 'never-checked' as const,
+  // frozen too: a shared mutable array behind a `{ ...UNKNOWN_HEALTH }` spread
+  // is one push away from every window's record pointing at the same list
+  incidents: Object.freeze([]) as unknown as ServiceIncident[],
   corroboration: null,
-};
+});

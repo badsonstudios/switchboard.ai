@@ -82,7 +82,7 @@ test.describe('provider service health (E14-07)', () => {
   const launch = (): Promise<LaunchedApp> =>
     launchApp({ env: { SWITCHBOARD_STATUS_FEED: page.url } });
 
-  test('an all-clear page paints a quiet dot with the page own words in its tooltip', async () => {
+  test("an all-clear page paints a quiet dot with the page's own words in its tooltip", async () => {
     a = await launch();
     const w = a.window;
     await expect(stamp(w)).toBeVisible();

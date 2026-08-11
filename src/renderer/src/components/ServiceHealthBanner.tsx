@@ -48,7 +48,7 @@ export function ServiceHealthBanner({
   return (
     <div role="status" data-testid="service-health-banner" className={spoken ? 'service-health-banner' : undefined}>
       {spoken && status?.corroboration
-        ? `${t('health.banner')} ${t('health.bannerSessions', { count: status.corroboration.sessions })}`
+        ? t('health.banner', { count: status.corroboration.sessions })
         : null}
     </div>
   );

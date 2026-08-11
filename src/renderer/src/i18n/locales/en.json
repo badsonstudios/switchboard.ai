@@ -325,8 +325,7 @@
     "corroborated": "{count, plural, one {# session here} other {# sessions here}} hit errors recently.",
     "checkedAt": "Checked at {time}",
     "eventsIncident": "Provider incident: {name} ({status})",
-    "banner": "Several sessions just hit errors — this may be a problem at the provider rather than anything you did.",
-    "bannerSessions": "{count, plural, one {# session} other {# sessions}} in the last few minutes.",
+    "banner": "{count, plural, one {# session} other {# sessions}} just hit errors in the last few minutes — this may be a problem at the provider rather than anything you did.",
     "setting": "Check provider status",
     "settingHint": "Ask Anthropic's public status page every few minutes whether it is having a day. Nothing is sent; turning it off changes nothing else."
   },

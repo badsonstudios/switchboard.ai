@@ -182,6 +182,14 @@ export function EventsPanel(props: {
           <div
             // The panel's one announcement idiom (#314): status + polite. An
             // incident is news about the world, and it arrives long after mount.
+            //
+            // Inserted WITH its text, unlike the corroboration strip, which
+            // holds its words back a commit so an already-existing region
+            // receives them (#222's lesson). Deliberate, not an oversight: this
+            // card is one of three notices sharing this slot and the panel's
+            // idiom is the one a reader of this file will expect — and the
+            // strip is the surface that has to be heard, because it is the one
+            // that arrives while you are busy blaming your own prompt.
             role="status"
             aria-live="polite"
             style={{ color: 'var(--text)' }}

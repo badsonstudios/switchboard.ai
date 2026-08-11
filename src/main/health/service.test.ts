@@ -315,6 +315,114 @@ describe('incident transitions', () => {
   });
 });
 
+describe('an answer that arrives too late', () => {
+  /** a probe that resolves only when the test says so */
+  function deferred() {
+    let release: (p: StatuspageProbe) => void = () => {};
+    const probe = vi.fn(
+      () =>
+        new Promise<StatuspageProbe>((r) => {
+          release = r;
+        })
+    );
+    return { probe, release: (p: StatuspageProbe) => release(p) };
+  }
+
+  it('does not undo polling being switched off', async () => {
+    // the shape of the bug: untick the box while a poll is on the wire, and the
+    // answer puts the dot back to green — and re-arms the timer that was killed
+    const d = deferred();
+    let poll = true;
+    const pushed: ServiceHealthStatus[] = [];
+    const svc = new ServiceHealthService({
+      getPrefs: () => ({ poll }),
+      push: (s) => pushed.push(s),
+      log: log(),
+      probeImpl: d.probe,
+    });
+    svc.start();
+    await vi.waitFor(() => expect(d.probe).toHaveBeenCalled());
+    poll = false;
+    svc.prefsChanged();
+    expect(svc.current().reason).toBe('polling-off');
+    d.release(ok());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(svc.current().reason).toBe('polling-off');
+    // …and nothing was scheduled: five minutes later it has still not asked again
+    await vi.advanceTimersByTimeAsync(MIN_POLL_MS * 2);
+    expect(d.probe).toHaveBeenCalledTimes(1);
+    svc.stop();
+  });
+
+  it('does not speak after the service has stopped', async () => {
+    const d = deferred();
+    const pushed: ServiceHealthStatus[] = [];
+    const svc = new ServiceHealthService({
+      getPrefs: () => ({ poll: true }),
+      push: (s) => pushed.push(s),
+      log: log(),
+      probeImpl: d.probe,
+    });
+    svc.start();
+    await vi.waitFor(() => expect(d.probe).toHaveBeenCalled());
+    svc.stop();
+    const before = pushed.length;
+    d.release(ok());
+    await vi.advanceTimersByTimeAsync(MIN_POLL_MS * 2);
+    expect(pushed).toHaveLength(before);
+    expect(d.probe).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a failed poll loses nothing it did not learn', () => {
+  it('keeps the incident it already knew about', async () => {
+    // one lost packet in the middle of a real outage must not make the Events
+    // card and the tooltip's incident list blink out of existence
+    let answer = ok({ state: 'outage', incidents: [INCIDENT] });
+    const { svc } = make({ probe: vi.fn(async () => answer) });
+    svc.start();
+    await vi.waitFor(() => expect(svc.current().incidents).toHaveLength(1));
+    answer = ok({ state: 'unknown', reason: 'network', incidents: [] });
+    await vi.advanceTimersByTimeAsync(MIN_POLL_MS + 10);
+    await vi.waitFor(() => expect(svc.current().state).toBe('unknown'));
+    expect(svc.current().incidents).toHaveLength(1);
+    svc.stop();
+  });
+
+  it('does not move "checked at" for a check that never happened', async () => {
+    let answer = ok({ checkedAt: '2026-08-11T09:00:00.000Z' });
+    const { svc } = make({ probe: vi.fn(async () => answer) });
+    svc.start();
+    await vi.waitFor(() => expect(svc.current().checkedAt).toBe('2026-08-11T09:00:00.000Z'));
+    answer = ok({ state: 'unknown', reason: 'network', checkedAt: '2026-08-11T17:00:00.000Z' });
+    await vi.advanceTimersByTimeAsync(MIN_POLL_MS + 10);
+    await vi.waitFor(() => expect(svc.current().state).toBe('unknown'));
+    expect(svc.current().checkedAt).toBe('2026-08-11T09:00:00.000Z');
+    svc.stop();
+  });
+
+  it('nor for a poll that was skipped because polling is off', async () => {
+    const { svc } = make({ poll: false });
+    svc.start();
+    expect(svc.current().checkedAt).toBeUndefined();
+    svc.stop();
+  });
+
+  it('pushes a fresh check time even when the verdict has not changed', async () => {
+    // the tooltip's whole job is saying how fresh the dot is; a record that only
+    // pushed on a change of verdict would leave it reading 09:12 all afternoon
+    let answer = ok({ checkedAt: '2026-08-11T09:00:00.000Z' });
+    const { svc, pushed } = make({ probe: vi.fn(async () => answer) });
+    svc.start();
+    await vi.waitFor(() => expect(pushed.length).toBe(1));
+    answer = ok({ checkedAt: '2026-08-11T09:05:00.000Z' });
+    await vi.advanceTimersByTimeAsync(MIN_POLL_MS + 10);
+    await vi.waitFor(() => expect(pushed.length).toBe(2));
+    expect(pushed[1].checkedAt).toBe('2026-08-11T09:05:00.000Z');
+    svc.stop();
+  });
+});
+
 describe('stopping', () => {
   it('a stopped service polls no more', async () => {
     const { svc, probe } = make();

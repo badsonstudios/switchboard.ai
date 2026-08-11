@@ -28,7 +28,7 @@ const quiet: ServiceHealthStatus = {
 };
 const raised: ServiceHealthStatus = {
   ...quiet,
-  corroboration: { sessions: 3, since: '2026-08-11T10:00:00.000Z' },
+  corroboration: { sessions: 3 },
 };
 
 function region(): HTMLElement | null {

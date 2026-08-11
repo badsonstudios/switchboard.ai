@@ -35,6 +35,17 @@ export const MIN_POLL_MS = 5 * 60_000;
 /** A silly `max-age` must not turn polling off by accident. */
 export const MAX_POLL_MS = 30 * 60_000;
 
+/**
+ * How often a RAISED corroboration re-checks itself.
+ *
+ * Evidence expires on the clock, not on an event, so without a tick of its own
+ * the banner would sit there until the next error or the next poll happened to
+ * knock it down. Thirty seconds is a tenth of the five-minute window: fine
+ * enough that "it cleared a moment ago" is true, coarse enough to be free. It
+ * runs only while the rule is raised.
+ */
+export const CORROBORATION_SWEEP_MS = 30_000;
+
 /** `max-age` → the interval we will actually use. */
 export function pollIntervalFor(maxAgeMs: number | undefined): number {
   if (!maxAgeMs || !Number.isFinite(maxAgeMs)) return MIN_POLL_MS;
@@ -69,12 +80,22 @@ export interface ServiceHealthDeps {
   corroboration?: CorroborationOptions;
 }
 
-/** The fields that decide whether the renderer needs telling again. */
+/**
+ * The fields that decide whether the renderer needs telling again.
+ *
+ * `checkedAt` is IN it: the tooltip says when we last looked, and a record that
+ * only pushed on a change of VERDICT would leave that line reading 09:12 at
+ * five in the afternoon. It costs one push per poll, i.e. one every five
+ * minutes. What the check is really for is the local half — corroboration
+ * re-evaluates on every `result` message in the workspace, and `checkedAt` does
+ * not move on that path, so the dedupe still does its job where it matters.
+ */
 function signature(s: ServiceHealthStatus): string {
   return JSON.stringify([
     s.state,
     s.reason,
     s.description ?? '',
+    s.checkedAt ?? '',
     s.incidents.map((i) => `${i.id}:${i.status}:${i.impact}`),
     s.corroboration ? s.corroboration.sessions : 0,
   ]);
@@ -125,16 +146,21 @@ export class ServiceHealthService {
    */
   start(): void {
     if (this.stopped || this.timer) return;
-    if (!this.pollingOn()) {
-      this.applyProbe({
-        state: 'unknown',
-        reason: 'polling-off',
-        incidents: [],
-        checkedAt: new Date(this.now()).toISOString(),
-      });
-      return;
-    }
+    if (!this.pollingOn()) return this.goDark('polling-off');
     void this.refresh();
+  }
+
+  /**
+   * Stop knowing, for a reason that is nobody's fault.
+   *
+   * ONE path to "unknown because we did not ask", so the polling-off branches in
+   * `start`, `poll` and `prefsChanged` cannot drift apart — and the incident
+   * memory is cleared in all three, because a list we have stopped refreshing
+   * is a list that will be wrong soon.
+   */
+  private goDark(reason: 'polling-off' | 'offline'): void {
+    this.knownIncidents = new Set();
+    this.applyProbe({ state: 'unknown', reason, incidents: [], checkedAt: '' });
   }
 
   /**
@@ -153,13 +179,7 @@ export class ServiceHealthService {
     }
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
-    this.knownIncidents = new Set();
-    this.applyProbe({
-      state: 'unknown',
-      reason: 'polling-off',
-      incidents: [],
-      checkedAt: new Date(this.now()).toISOString(),
-    });
+    this.goDark('polling-off');
   }
 
   stop(): void {
@@ -178,34 +198,27 @@ export class ServiceHealthService {
    */
   refresh(): Promise<void> {
     if (this.inFlight) return this.inFlight;
-    const run = this.poll().finally(() => {
-      this.inFlight = null;
-    });
+    const run = this.poll()
+      // The promise above, kept. `poll` guards the probe itself, but the log
+      // calls around it are somebody else's code and every caller here is a
+      // `void` — an unhandled rejection in main is an "A JavaScript error
+      // occurred" modal, the exact opposite of what this feature promises.
+      .catch(() => {})
+      .finally(() => {
+        this.inFlight = null;
+      });
     this.inFlight = run;
     return run;
   }
 
   private async poll(): Promise<void> {
     if (this.stopped) return;
-    if (!this.pollingOn()) {
-      this.applyProbe({
-        state: 'unknown',
-        reason: 'polling-off',
-        incidents: [],
-        checkedAt: new Date(this.now()).toISOString(),
-      });
-      return;
-    }
+    if (!this.pollingOn()) return this.goDark('polling-off');
     // Offline: ask nothing, say "unknown", and keep the timer running so the
     // dot comes back on its own when the network does.
     if (this.deps.isOnline && !safeOnline(this.deps)) {
       this.deps.log.debug?.('provider status: offline, skipping the poll');
-      this.applyProbe({
-        state: 'unknown',
-        reason: 'offline',
-        incidents: [],
-        checkedAt: new Date(this.now()).toISOString(),
-      });
+      this.goDark('offline');
       this.schedule(MIN_POLL_MS);
       return;
     }
@@ -231,6 +244,11 @@ export class ServiceHealthService {
         checkedAt: new Date(this.now()).toISOString(),
       };
     }
+    // The world moved while we were on the wire. Stopping, or switching polling
+    // off, must not be undone by an answer that was already in flight: without
+    // this, unticking the box puts the dot back to green for up to five minutes
+    // and re-arms the timer that was just killed.
+    if (this.stopped || !this.pollingOn()) return;
     this.applyProbe(probe);
     this.schedule(pollIntervalFor(probe.maxAgeMs));
   }
@@ -268,7 +286,7 @@ export class ServiceHealthService {
 
   private evaluateLocal(): void {
     const v = this.tracker.evaluate(this.now());
-    const next = v.raised ? { sessions: v.sessions, since: v.since! } : null;
+    const next = v.raised ? { sessions: v.sessions } : null;
     const was = this.status.corroboration;
     this.status = { ...this.status, corroboration: next };
     if (next && !was) {
@@ -284,7 +302,7 @@ export class ServiceHealthService {
       this.sweep = setTimeout(() => {
         this.sweep = null;
         this.evaluateLocal();
-      }, 30_000);
+      }, CORROBORATION_SWEEP_MS);
       this.sweep.unref?.();
     }
     this.pushIfChanged();
@@ -293,16 +311,27 @@ export class ServiceHealthService {
   // ── assembling and announcing ─────────────────────────────────────────────
 
   private applyProbe(probe: StatuspageProbe): void {
+    // Did the page actually answer? Only then do the incident list and the
+    // "checked at" line mean anything.
+    //
+    // A blip must not RESOLVE an incident. `noteIncidentTransitions` already
+    // refuses to log one resolving off a failed poll; without the same rule
+    // here the surfaces the user reads would flicker anyway — the Events card
+    // and the tooltip's incident list vanishing on one lost packet in the
+    // middle of a real outage, and coming back on the next poll. `checkedAt`
+    // is the same promise: a check that never happened must not move it.
+    const answered = probe.reason === 'ok' || probe.reason === 'bad-response';
+    const checkedAt = (answered && probe.checkedAt) || this.status.checkedAt;
     this.status = {
       state: probe.state,
       reason: probe.reason,
       ...(probe.description ? { description: probe.description } : {}),
-      incidents: probe.incidents,
-      ...(probe.reason === 'polling-off' ? {} : { checkedAt: probe.checkedAt }),
+      incidents: answered ? probe.incidents : this.status.incidents,
+      ...(checkedAt ? { checkedAt } : {}),
       // the local half is independent of the page and survives every poll
       corroboration: this.status.corroboration,
     };
-    this.noteIncidentTransitions(probe.incidents, probe.reason);
+    this.noteIncidentTransitions(this.status.incidents, probe.reason);
     this.pushIfChanged();
   }
 

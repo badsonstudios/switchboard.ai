@@ -44,10 +44,11 @@ describe('the dot', () => {
 describe('the tooltip', () => {
   const keys = (s: ServiceHealthStatus): string[] => healthTooltip(s).map((l) => l.key);
 
-  it('leads with our verdict, then the page own words', () => {
-    expect(
-      keys({ ...base, description: 'All Systems Operational' })
-    ).toEqual(['health.state.operational', 'health.page', 'health.checkedAt'].slice(0, 2));
+  it("leads with our verdict, then the page's own words", () => {
+    expect(keys({ ...base, description: 'All Systems Operational' })).toEqual([
+      'health.state.operational',
+      'health.page',
+    ]);
   });
 
   it('says why when it could not find out', () => {
@@ -79,7 +80,7 @@ describe('the tooltip', () => {
   it('carries the local corroboration too', () => {
     const lines = healthTooltip({
       ...base,
-      corroboration: { sessions: 3, since: '2026-08-11T00:00:00.000Z' },
+      corroboration: { sessions: 3 },
     });
     expect(lines.find((l) => l.key === 'health.corroborated')?.params).toEqual({ count: 3 });
   });

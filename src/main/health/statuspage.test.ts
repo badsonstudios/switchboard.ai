@@ -5,12 +5,13 @@
 // while building this (2026-08-11) and never fetched again: no test in this
 // repo may reach the network, and the point of writing them down is that the
 // shape under test is the shape the page really serves.
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   mapIndicator,
   parseMaxAgeMs,
   probeStatuspage,
   readIncidents,
+  REQUEST_TIMEOUT_MS,
   STATUSPAGE_BASE,
 } from './statuspage';
 
@@ -126,6 +127,37 @@ describe('reading incidents', () => {
   it('bounds an absurdly long name', () => {
     const [i] = readIncidents({ incidents: [{ ...INCIDENT, name: 'x'.repeat(5_000) }] });
     expect(i.name.length).toBe(300);
+  });
+});
+
+describe('the deadline', () => {
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('aborts a page that answers and then stalls', async () => {
+    // the failure this prevents: a 200 whose BODY never arrives. Without the
+    // abort covering the body read, the poll hangs for the life of the process
+    // and every later refresh joins the same pending promise.
+    vi.useFakeTimers();
+    const fetchImpl = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        })
+    ) as unknown as typeof fetch;
+    const probe = probeStatuspage({ fetchImpl });
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS + 10);
+    await expect(probe).resolves.toMatchObject({ state: 'unknown', reason: 'network' });
+  });
+
+  it('clears its timer when the answer arrives in time', async () => {
+    vi.useFakeTimers();
+    const p = await probeStatuspage({ fetchImpl: feed(LIVE_STATUS, LIVE_UNRESOLVED) });
+    expect(p.state).toBe('operational');
+    // a leaked 8s timer per poll would show up here as a pending timer
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 
