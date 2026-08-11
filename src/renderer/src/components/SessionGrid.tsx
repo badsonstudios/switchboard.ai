@@ -1119,6 +1119,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             ) : (
               <span
                 data-no-maximize
+                // A stable handle: the label's TEXT is the thing under test in
+                // e2e/task-label.spec.ts, and §5.11 has it render in the rail
+                // as well — so locating it by its words finds two elements.
+                data-testid="card-task-label"
                 onClick={() => setEditingLabel(true)}
                 title={t('grid.taskLabelHint')}
                 style={{

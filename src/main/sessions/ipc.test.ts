@@ -2681,6 +2681,21 @@ describe('auto task labels (P2-E7-06, §5.11)', () => {
       expect(h.labelFor('live-1')).toBe(SETTLED);
     });
 
+    it('reaches a SUSPENDED card too — the ones nobody is looking at', () => {
+      // A suspended card has no live session but still has a panel and a rail
+      // row, both showing whatever label it was left with. Walking the live
+      // bindings would leave exactly those still displaying a prompt-derived
+      // phrase, which is the case the switch exists for.
+      const h = harness(claudeLike, dir, { prior: card() });
+      start(h);
+      h.fireSnapshot({ sessionId: 'live-1', title: SETTLED });
+      h.call('sessions:dropLive', 'card-1'); // suspended: the binding is gone
+
+      h.call('settings:setAutoLabels', false);
+
+      expect(labels(h).at(-1)).toEqual({ cardId: 'card-1', label: undefined });
+    });
+
     it('never hides a label the user typed', () => {
       const h = harness(claudeLike, dir, { prior: card() });
       start(h);

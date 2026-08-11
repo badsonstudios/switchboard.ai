@@ -55,6 +55,21 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **A session's task label now fills itself in.** Claude Code gives every
+  conversation a short title of its own; if you have not typed a label, the card
+  shows that instead — so a screen full of sessions reads "Add markdown
+  preview", "Fix the login redirect" rather than three copies of your folder
+  name. It usually turns up a turn or two after your first prompt, keeps up when
+  Claude rewords it, and rides into desktop notifications ("Add markdown preview
+  needs your input"). Anything you type wins permanently, clearing the box hands
+  it back, and a conversation Claude never names simply has no label — exactly
+  as before. Costs nothing: the transcript was already being read, and no tokens
+  are spent.
+- **🏷 auto labels** in the title bar turns that off. The label is derived from
+  what you asked, so this takes it off the card, out of the sessions list and
+  out of notifications in one click — for a screen-share or a demo. Labels you
+  typed yourself are never hidden, nothing is deleted, and turning it back on
+  restores them instantly.
 - When two or more sessions are waiting on **exactly the same** permission
   request, it now appears once, on a single card above the workspace, with
   every session named — answer all of them with one click, or allow one and

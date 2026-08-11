@@ -45,10 +45,13 @@ export interface TranscriptSnapshot {
    * P2-E7-06) — what fills a blank task label. Undefined until a line carries
    * one, which may be line 8 or line 510 or never.
    *
-   * DE-DUPED AT SOURCE: only ever assigned when the value actually changes, so
-   * the 14 identical `ai-title` lines a 171-line transcript carries move this
-   * once. Everything downstream (the persist, the renderer push) hangs off that
-   * one move.
+   * Last-wins, and it does MOVE: the CLI revises its first answer (an observed
+   * session went `"…preview windows"` → `"…preview feature"` one line later)
+   * and then re-emits the settled one every turn — 14 identical `ai-title`
+   * lines in a 171-line transcript. So this field reads the same across a long
+   * run of snapshots, and the de-dupes that make that free live where the
+   * writes are: `sessions/auto-label.ts` for the workspace file, `SessionStore`
+   * for the render.
    */
   title?: string;
   lines: number;
@@ -1675,14 +1678,16 @@ export class TranscriptWatcher {
    *  - **the BOUND file only** — a subagent's transcript is a different
    *    conversation with its own title, and letting one through would relabel
    *    the card with whatever a `Task` call happened to be doing.
-   *  - **an unchanged value is not a change** — the CLI re-emits the settled
-   *    title every turn (14 identical lines in a 171-line transcript, measured),
-   *    so without this every turn on every open session would push a snapshot
-   *    the renderer re-renders and a card the store re-writes. THIS is the
-   *    de-dupe P2-E7-06 asks for; everything downstream inherits it.
+   *  - **a blank title is no title** — a label that renders as empty is
+   *    indistinguishable from no label, and one would blank a label the CLI had
+   *    already filled. (Claude's reader rejects these too; this is the host
+   *    refusing to trust a contributor with the invariant.)
    *
    * Last-wins otherwise, because the CLI revises: an observed session went
-   * `"…preview windows"` → `"…preview feature"` one line later.
+   * `"…preview windows"` → `"…preview feature"` one line later. The
+   * same-value guard on the assignment saves a redundant write and nothing
+   * else — the de-dupe with teeth is downstream, at the two places that spend
+   * something (see `TranscriptSnapshot.title`).
    */
   private absorbTitle(w: WatchedSession, full: string, e: Record<string, unknown>): void {
     if (!w.readTitle || full !== w.boundFile) return;

@@ -47,10 +47,11 @@ export function labelSourceOf(card: LabelledCard): LabelSource {
  * (nothing): auto labels are switched off, the card is the user's, the CLI has
  * not produced a title, and the title has not moved since last time.
  *
- * The last of those is the de-dupe. The watcher already de-dupes at source, so
- * this is the second line of the same defence and it earns its keep on the
- * paths the watcher's does not cover — a snapshot replayed after a rebind, a
- * card whose stored label already matches, a session adopted at startup.
+ * The last of those is THE de-dupe, and it is the one that matters: a transcript
+ * snapshot fires on every drain and carries the same settled title every time,
+ * so without this each turn on each open session would rewrite the workspace
+ * file and push a render. Measured on a real transcript: 13 `ai-title` lines,
+ * one distinct title (`fixtures/ai-title.ts`).
  */
 export function nextAutoLabel(
   card: LabelledCard,

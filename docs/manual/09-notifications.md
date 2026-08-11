@@ -111,6 +111,19 @@ panel is the calm default; pop-ups are opt-in.
 
 Turn the whole lot off with the **🔔 / 🔕** chip in the title bar.
 
+### What a pop-up says
+
+If you have turned pop-ups on, each one is headed with the session's **task
+label** — "Add markdown preview needs your input" rather than a third pop-up
+saying "switchboard.ai". That is the whole point of them at seven or eight
+sessions: you can tell which one is calling without looking.
+
+If the session has no label it falls back to the session's name. And if you have
+turned **🏷 auto labels** off (see
+[Sessions › Turning it off](02-sessions.md#turning-it-off-screen-sharing)),
+pop-ups go back to the session name too — so a phrase from your prompt does not
+appear on a shared screen.
+
 ## Good to know
 
 - Notifications never interrupt a session. If notifying fails for any reason,

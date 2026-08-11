@@ -1172,22 +1172,26 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   });
 
   // The auto-label switch (P2-E7-06, §5.11 litmus #4). It lives HERE rather
-  // than beside `settings:setAutoTrust` in `index.ts` because turning it back
-  // on has to put the labels back on screen immediately, and the live→card
-  // binding that answers "which cards" is this module's private state.
+  // than beside `settings:setAutoTrust` in `index.ts` because flipping it has
+  // to move what is on screen, and the label plumbing that does that is this
+  // module's.
   broker.handle('settings:getAutoLabels', () => deps.autoLabels());
   broker.handle('settings:setAutoLabels', (_e, on: boolean) => {
     deps.setAutoLabels(on === true);
     const enabled = deps.autoLabels();
-    // Re-publish every bound card's label under the new setting: off blanks the
-    // auto ones on screen, on puts them straight back from the value we never
+    // Re-publish EVERY card's label under the new setting: off takes the auto
+    // ones off screen, on puts them straight back from a value we never
     // deleted. Waiting for the next `ai-title` line would work — the CLI
     // re-emits every turn — but "every turn" is minutes on an idle session, and
     // a switch you flip that appears to do nothing is a switch nobody trusts.
-    const cards = deps.persist.list();
-    for (const cardId of new Set(cardOfLive.values())) {
-      const card = cards.find((s) => s.id === cardId);
-      if (card) publishLabel(cardId, visibleTaskLabel(card, enabled));
+    //
+    // Every card, not every LIVE one. A suspended card still has a panel and a
+    // rail row, both showing the label it was left with, and neither has a live
+    // session behind it — so walking `cardOfLive` would leave exactly the cards
+    // nobody is looking at still displaying a phrase from a prompt, which is
+    // the one thing this switch exists to prevent.
+    for (const card of deps.persist.list()) {
+      publishLabel(card.id, visibleTaskLabel(card, enabled));
     }
     return enabled;
   });
