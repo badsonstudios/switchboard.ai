@@ -171,40 +171,31 @@ export class ReadScope {
   }
 
   /**
-   * Both spellings of every root, from ONE reading of the session list.
+   * Every root, RESOLVED — realpath'd session folders plus the picked set,
+   * which is stored resolved already.
    *
-   *  - `raw` — resolved only. No IO, and the spelling the cards themselves
-   *    hold, which is the one a caller is most likely to have.
-   *  - `real` — realpath'd, plus the picked set (already stored real). This is
-   *    the list that DECIDES; `raw` only ever admits a path to the second pass.
+   * One reading of the session list, and deduplicated, because the list
+   * `index.ts` supplies is the union of the live sessions and the persisted
+   * cards: every live session appears in both, and realpathing the same folder
+   * twice per read is IO on main's event loop for nothing.
    *
-   * One reading, and deduplicated, because the session list in `index.ts` is
-   * the union of the live sessions and the persisted cards — every live session
-   * appears in both, and realpathing the same folder twice per read is IO on
-   * main's event loop for nothing. An unresolvable root is dropped silently: a
-   * card whose folder is on an unplugged drive is an ordinary state, not an
-   * error, and it simply contains nothing readable right now.
+   * An unresolvable root is dropped silently — a card whose folder is on an
+   * unplugged drive is an ordinary state, not an error, and it simply contains
+   * nothing readable right now.
    */
-  private rootSets(): { raw: string[]; real: string[] } {
-    const raw: string[] = [];
-    const real: string[] = [];
+  roots(): string[] {
+    const out: string[] = [];
     const seen = new Set<string>();
     for (const folder of this.sessionFolders()) {
       if (typeof folder !== 'string' || folder.length === 0) continue;
       const resolved = path.resolve(folder);
       if (seen.has(resolved)) continue;
       seen.add(resolved);
-      raw.push(resolved);
-      const r = this.tryRealpath(resolved);
-      if (r) real.push(r);
+      const real = this.tryRealpath(resolved);
+      if (real) out.push(real);
     }
-    real.push(...this.picked);
-    return { raw, real };
-  }
-
-  /** Every root that DECIDES — realpath'd session folders plus picked paths. */
-  roots(): string[] {
-    return this.rootSets().real;
+    out.push(...this.picked);
+    return out;
   }
 
   /**
@@ -263,48 +254,42 @@ export class ReadScope {
       return { ok: false, reason: 'invalid-path' };
     }
     const resolved = path.resolve(target);
-    const { raw, real: roots } = this.rootSets();
+    const roots = this.roots();
 
-    // FIRST PASS, on the path as written and before the disk is touched at all.
+    // EVERY DECISION IS MADE ON THE RESOLVED PATH, and there is deliberately no
+    // cheap "does the spelling look like it is under a root" pre-check in front
+    // of it. That pre-check was written, and CI killed it: GitHub's Windows
+    // runners hand out `C:\Users\RUNNER~1\AppData\Local\Temp`, an 8.3 SHORT
+    // NAME, which `realpath.native` expands to `runneradmin` — so a legitimate
+    // read of a granted file was refused because the string it was spelled with
+    // did not start with the string the root was spelled with. A symlinked
+    // prefix anywhere above a session folder does the same thing. A path has
+    // many true spellings and exactly one resolution; only the resolution can
+    // be compared.
     //
-    // This ordering is a disclosure decision, not an optimisation. If the
-    // realpath ran first, an out-of-scope ask would answer `not-found` when the
-    // file is absent and `out-of-scope` when it is present — and the difference
-    // between two refusals is an existence oracle for the whole filesystem,
-    // handed to a caller that may read none of it. `fs.read` would then quietly
-    // contain `fs.probe`, which is the exact conflation this capability exists
-    // to avoid. Refusing here means every path outside the scope gets the SAME
-    // answer whether or not it is there, and nothing outside the scope is ever
-    // so much as stat'ed.
-    //
-    // Checked against both spellings of the roots — as the cards hold them, and
-    // as the OS resolves them — because a session folder that is a symlink has
-    // two, and a caller may have either. The second pass is what actually
-    // decides; this one only refuses.
-    if (
-      !raw.some((root) => isWithinRoot(root, resolved)) &&
-      !roots.some((root) => isWithinRoot(root, resolved))
-    ) {
-      return { ok: false, reason: 'out-of-scope' };
-    }
-
+    // Which leaves the disclosure question the pre-check was there to answer:
+    // if resolving comes first, does the difference between `not-found` and
+    // `out-of-scope` become an existence oracle for the whole filesystem —
+    // `fs.probe` smuggled inside `fs.read`, the one conflation this capability
+    // exists to prevent? No, and the `catch` below is why: a path that does not
+    // resolve is only reported as missing when the nearest thing that DOES
+    // resolve is itself in scope. Every path outside the scope gets the same
+    // answer whether or not it is there.
     let real: string;
     try {
       real = this.realpath(resolved);
     } catch (err) {
       // It did not resolve. WHERE it failed to resolve decides what we may say
-      // about it, and this is the second half of the oracle argument above: a
-      // symlink INSIDE a granted root pointing out of it passes the first pass
-      // by spelling, so without this branch `root/link-to-slash/etc/shadow`
-      // would answer `not-found` when absent and `out-of-scope` when present —
-      // an existence oracle for the entire filesystem, reached from inside a
-      // folder the user did grant. Planting that symlink is one line in a
-      // repository an agent is already writing to.
+      // about it, and this is the whole of the oracle argument above: without
+      // this branch, `/etc/shadow` would answer `out-of-scope` and `/etc/nope`
+      // would answer `not-found`, and a caller that may read neither could map
+      // the filesystem by watching which refusal it got.
       //
-      // So: walk up to the nearest ancestor that DOES resolve, and re-run the
-      // check on it. If that ancestor is outside the scope, the caller learns
-      // only that it asked for something out of scope — the same answer the
-      // present case gets.
+      // So: walk up to the nearest ancestor that DOES resolve, and run the
+      // scope check on that. If the ancestor is outside the scope, the caller
+      // learns only that it asked for something out of scope — the same answer
+      // the present case gets. If it is inside, the caller was entitled to know
+      // that a file in a folder it may read is not there.
       const anchor = this.nearestRealAncestor(resolved);
       if (!anchor || !roots.some((root) => isWithinRoot(root, anchor))) {
         return { ok: false, reason: 'out-of-scope' };
@@ -318,9 +303,9 @@ export class ReadScope {
       };
     }
 
-    // SECOND PASS, on what the OS says the path really is. This is the one that
-    // catches the symlink, the junction and the Windows 8.3 short name: all
-    // three pass the first pass by spelling and land somewhere else entirely.
+    // The check, on what the OS says the path really is. This is what catches
+    // the symlink, the junction and the `..` that climbed out: all three are
+    // spellings that look like one place and open another.
     if (!roots.some((root) => isWithinRoot(root, real))) {
       return { ok: false, reason: 'out-of-scope' };
     }

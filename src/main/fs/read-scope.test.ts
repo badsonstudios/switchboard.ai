@@ -284,20 +284,20 @@ describe('ReadScope.resolve', () => {
     });
   });
 
-  it('refuses an out-of-scope path without touching the disk at all', () => {
-    // The other half of the same argument: a refused path is not stat'ed, so
-    // there is nothing to time either.
-    const asked: string[] = [];
-    const scope = new ReadScope({
-      sessionFolders: () => [ROOT],
-      log,
-      realpath: (p) => {
-        asked.push(path.resolve(p));
-        return path.resolve(p);
-      },
+  it('accepts a path SPELLED unlike the root it resolves into', () => {
+    // The regression CI found. GitHub's Windows runners hand out
+    // `C:\Users\RUNNER~1\AppData\Local\Temp` — an 8.3 short name — which
+    // `realpath.native` expands to `runneradmin`. An earlier version of this
+    // check refused anything whose spelling was not under a root BEFORE
+    // resolving it, and so refused a legitimate read of a granted file because
+    // two true spellings of the same directory are different strings. A
+    // symlinked prefix above a session folder does exactly the same thing.
+    const alias = path.resolve(path.sep === '\\' ? 'C:\\PROGRA~1\\app' : '/short/app');
+    const scope = scopeWith({ links: { [alias]: ROOT } });
+    expect(scope.resolve(path.join(alias, 'PROGRESS.md'))).toEqual({
+      ok: true,
+      path: inRoot('PROGRESS.md'),
     });
-    expect(scope.resolve(outside('id_rsa'))).toEqual({ ok: false, reason: 'out-of-scope' });
-    expect(asked).not.toContain(outside('id_rsa'));
   });
 });
 
