@@ -110,7 +110,13 @@ export interface SessionIpcDeps {
   preferredTransport?: () => 'pty' | 'stream' | undefined;
 }
 
-export function registerSessionIpc(deps: SessionIpcDeps): void {
+/** What registration hands back — the joins only this closure knows about. */
+export interface SessionIpcHandle {
+  /** the durable card a live session belongs to, or null if unbound */
+  cardIdFor: (liveSessionId: string) => string | null;
+}
+
+export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   const { manager, ptys, hooks, transcripts, log, broker, streamPermissions, streamCommands } =
     deps;
   // per-session live-feed unsubscribers (attached panes only)
@@ -1168,4 +1174,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   broker.on('pty:resize', (_e, id: string, cols: number, rows: number) => {
     ptys.get(id)?.resize(cols, rows);
   });
+
+  return {
+    // The live -> card binding, read-only, for the one consumer OUTSIDE the
+    // renderer that needs it: the notification rules engine (P2-E14-03). A
+    // rule is scoped to a CARD (it has to survive the session it was written
+    // for), while a feed event carries the LIVE id — and this map is the only
+    // place that join exists. Returned rather than exported as a module-level
+    // map so it stays one-per-registration, like everything else in here.
+    cardIdFor: (liveSessionId: string) => cardOfLive.get(liveSessionId) ?? null,
+  };
 }

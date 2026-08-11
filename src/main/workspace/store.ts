@@ -24,6 +24,7 @@ import { SessionIdentity } from '../sessions/session-manager';
 import { WindowState, mergeState, isOnAnyDisplay } from '../window-state';
 import { UpdatePrefs } from '../../shared/update';
 import { WorkspaceSaveState } from '../../shared/workspace';
+import { Rule, isSaneRule } from '../events/rules';
 
 export interface PersistedSession {
   id: string;
@@ -99,6 +100,17 @@ export interface WorkspaceState {
    *  origin changes port per launch, so localStorage resets every run. */
   ui: unknown;
   notifications: NotificationPrefsState;
+  /**
+   * Notification rules (P2-E14-03, §5.9) — `when [event] in [session | any] ->
+   * [actions]`. A TOP-LEVEL typed field for the same reason `updates` is one:
+   * MAIN is the reader (the engine runs with no renderer involved), and the
+   * renderer rewrites the opaque `ui` blob wholesale.
+   *
+   * Only USER rules live here. The built-ins are synthesized from the
+   * notification prefs on every event (`events/rules.ts` → `defaultRules`), so
+   * flipping a pref never has to rewrite anyone's data.
+   */
+  rules: Rule[];
   /** auto-trust a folder on session open (picking a folder = trusting it) */
   autoTrust: boolean;
   /**
@@ -162,6 +174,7 @@ const EMPTY: WorkspaceState = {
   layout: null,
   ui: null,
   notifications: { enabled: true, osToasts: false },
+  rules: [],
   autoTrust: true,
   updates: { autoCheck: true },
 };
@@ -180,6 +193,7 @@ function emptyState(): WorkspaceState {
     ...EMPTY,
     sessions: [],
     groups: [],
+    rules: [],
     notifications: { ...EMPTY.notifications },
     updates: { ...EMPTY.updates },
   };
@@ -332,6 +346,11 @@ export class WorkspaceStore {
           unusable: updates.repaired,
         });
 
+      // A rule this build cannot read is dropped, not repaired: a half-understood
+      // rule would fire the wrong channel at the wrong moment, which is worse
+      // than not firing (P6 fail-open cuts this way for notifications).
+      const rules = keepSane(raw.rules, isSaneRule, 'rule', note);
+
       if (wrongType(raw, 'autoTrust', 'boolean'))
         note('the auto-trust setting in the workspace file was not true or false — leaving it on');
 
@@ -343,6 +362,7 @@ export class WorkspaceStore {
         layout: raw.layout ?? null,
         ui: raw.ui ?? null,
         notifications: notifications.value,
+        rules,
         autoTrust: raw.autoTrust !== false, // default on
         updates: updates.value,
       };
@@ -680,6 +700,11 @@ export class WorkspaceStore {
 
   removeSession(id: string): void {
     this.state.sessions = this.state.sessions.filter((x) => x.id !== id);
+    // A closed card takes its rules with it. Nothing else ever would: rules are
+    // scoped by card id, and a card id is never reused, so a rule left behind
+    // is a row in the file that can never fire again — and, once a rules
+    // EDITOR exists (E14 follow-ups), a row the user cannot explain.
+    this.state.rules = this.state.rules.filter((r) => r.session !== id);
     this.saveSoon();
   }
 
@@ -744,6 +769,31 @@ export class WorkspaceStore {
     // every pref the caller didn't send)
     this.state.notifications = sanitizeNotifications({ ...this.state.notifications, ...p }).value;
     this.saveSoon();
+  }
+
+  /** The USER rules (P2-E14-03). The built-ins are not in here — see the field. */
+  listRules(): Rule[] {
+    return this.state.rules.map((r) => JSON.parse(JSON.stringify(r)) as Rule);
+  }
+
+  /** Add or replace a rule by id. Refuses one this build could not load back. */
+  upsertRule(rule: Rule): boolean {
+    if (!isSaneRule(rule)) return false;
+    const copy = JSON.parse(JSON.stringify(rule)) as Rule; // no shared refs with callers
+    const i = this.state.rules.findIndex((r) => r.id === rule.id);
+    if (i >= 0) this.state.rules[i] = copy;
+    else this.state.rules.push(copy);
+    this.saveSoon();
+    return true;
+  }
+
+  /** Remove a rule by id. `false` = there was nothing by that id. */
+  removeRule(id: string): boolean {
+    const before = this.state.rules.length;
+    this.state.rules = this.state.rules.filter((r) => r.id !== id);
+    if (this.state.rules.length === before) return false;
+    this.saveSoon();
+    return true;
   }
 
   getUpdatePrefs(): UpdatePrefs {
@@ -1085,9 +1135,10 @@ const MAX_HELD_POST_MORTEM_BYTES = 4 * 1024 * 1024;
 const MAX_LISTED_ERRORS = 3;
 
 /** What each list costs the user when entries in it cannot be read. */
-const LOST: Record<'session' | 'group', string> = {
+const LOST: Record<'session' | 'group' | 'rule', string> = {
   session: 'those cards do not come back',
   group: 'any sessions in them load ungrouped',
+  rule: 'those notifications stop firing',
 };
 
 /**
@@ -1101,7 +1152,7 @@ const LOST: Record<'session' | 'group', string> = {
 function keepSane<T>(
   raw: unknown,
   sane: (v: unknown) => v is T,
-  what: 'session' | 'group',
+  what: 'session' | 'group' | 'rule',
   note: (msg: string, fields?: LogFields) => void
 ): T[] {
   if (raw === undefined || raw === null) return [];

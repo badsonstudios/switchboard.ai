@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, screen, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, Notification, screen, session, shell } from 'electron';
 import path from 'path';
 import { windowOptionsFrom, WindowState } from './window-state';
 import { WorkspaceStore, displayFingerprint } from './workspace/store';
@@ -22,6 +22,9 @@ import { IpcBroker } from './ipc/broker';
 import { allCapabilities, Channel } from '../shared/ipc/capabilities';
 import { EventFeed } from './events/feed';
 import { Notifier } from './events/notifier';
+import { ACTION_OS_TOAST, defaultRules, visibilityOf } from './events/rules';
+import { RuleActionRegistry, RulesEngine } from './events/rules-engine';
+import { registerRulesIpc } from './events/rules-ipc';
 import { GitService } from './git/git-service';
 import { runPreflight } from './preflight';
 import { startStaticServer, StaticServer } from './static-server';
@@ -1115,11 +1118,54 @@ app
     snapshotPopoutBoxes(); // before the renderer can rewrite the layout (#86)
     createWindow(); // sets currentWindow; IPC/notifier read it via closure
     const feed = new EventFeed();
+
+    // ── the notification rules engine (P2-E14-03, §5.9) ──────────────────
+    //
+    // Assembled here because this is the only file allowed to touch
+    // `Notification`; everything above it (`events/rules.ts`,
+    // `events/rules-engine.ts`) is pure and testable without electron.
+    const rulesLog = createLogger(sink, 'rules');
+    const ruleActions = new RuleActionRegistry(rulesLog);
+    ruleActions.register(ACTION_OS_TOAST, (_action, ctx) => {
+      if (!Notification.isSupported()) return;
+      new Notification({
+        title: ctx.title,
+        body: ctx.body,
+        silent: true, // the Notifier's beep is the sound cue
+      }).show();
+      // The e2e proof that a rule reached the OS (`e2e/rules.spec.ts`) — and
+      // the line to grep after "why did/didn't it pop".
+      rulesLog.info('os toast shown', {
+        kind: ctx.event.kind,
+        cardId: ctx.cardId ?? '',
+        visibility: ctx.visibility,
+        ruleId: ctx.rule.id,
+      });
+    });
+    // Assigned the moment `registerSessionIpc` returns, a few dozen lines
+    // below; until then no session exists, so no event can ask.
+    let cardIdForLive: (liveId: string) => string | null = () => null;
+    const rules = new RulesEngine({
+      getRules: () => workspace.listRules(),
+      getDefaultRules: () => defaultRules(workspace.getNotificationPrefs()),
+      cardIdFor: (liveId) => cardIdForLive(liveId),
+      getVisibility: () => visibilityOf(currentWindow),
+      titleFor: (e) => manager.get(e.sessionId)?.identity.title ?? 'switchboard.ai',
+      bodyFor: (e) => e.kind.replace(/-/g, ' '),
+      registry: ruleActions,
+      log: rulesLog,
+    });
+    registerRulesIpc({
+      broker,
+      log: rulesLog,
+      store: workspace,
+      knownCard: (cardId) => workspace.listSessions().some((s) => s.id === cardId),
+    });
+
     const notifier = new Notifier({
       getWindow: () => currentWindow,
       getPrefs: () => workspace.getNotificationPrefs(),
-      titleFor: (sessionId) => manager.get(sessionId)?.identity.title ?? 'switchboard.ai',
-      bodyFor: (e) => e.kind.replace(/-/g, ' '),
+      rules,
     });
     feed.onEvent((e) => {
       if (e) notifier.handle(e); // null = pure removal, nothing to announce
@@ -1176,7 +1222,7 @@ app
       workspace.setAutoTrust(on === true);
       return workspace.getAutoTrust();
     });
-    registerSessionIpc({
+    const sessionIpc = registerSessionIpc({
       manager,
       ptys,
       streamPermissions,
@@ -1224,6 +1270,8 @@ app
         return undefined;
       },
     });
+    // the live -> card join the rules engine scopes by (P2-E14-03)
+    cardIdForLive = sessionIpc.cardIdFor;
     app.on('quit', () => {
       ptys.killAll();
       streams.killAll();

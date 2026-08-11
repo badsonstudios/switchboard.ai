@@ -99,6 +99,14 @@ export const CHANNEL_CAPABILITIES = {
   'notifications:getPrefs': 'settings.read',
   'notifications:setPrefs': 'settings.write',
   'preflight:check': 'environment.probe',
+  // Notification RULES (P2-E14-03). They are notification preferences that
+  // happen to be per-session, so they carry the settings capabilities rather
+  // than minting a pair of their own — reading one tells you nothing a
+  // `notifications:getPrefs` did not, and writing one changes no more than the
+  // toast toggle beside it does.
+  'rules:list': 'settings.read',
+  'rules:notifyWhenDone': 'settings.read',
+  'rules:setNotifyWhenDone': 'settings.write',
   'pty:attach': 'pty.read',
   'pty:detach': 'pty.read',
   'pty:input': 'pty.write',

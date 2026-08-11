@@ -346,6 +346,42 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       setTransportPending(!!r.pending);
     });
   };
+  // Per-session "notify when done" (P2-E14-03, §5.9). It lives in this menu
+  // rather than the composer's options row because it is a durable property of
+  // the CARD — like the transport switch directly above it — not a choice
+  // about the next prompt, and because the composer is gone entirely from the
+  // Terminal tab and from a collapsed card, where the setting must still be
+  // reachable. Its whole implementation in main is a RULE; the checkbox is
+  // just the rule's on/off.
+  //
+  // The state is main's, not this component's: it is read back after every
+  // write so a refused write (an unknown card, a store that cannot save)
+  // reverts the tick instead of leaving it lying about what will happen.
+  const [notifyWhenDone, setNotifyWhenDone] = React.useState(false);
+  React.useEffect(() => {
+    if (!cardId) return;
+    let alive = true;
+    void window.switchboard.rules
+      .notifyWhenDone(cardId)
+      .then((on) => {
+        if (alive) setNotifyWhenDone(on === true);
+      })
+      .catch(() => {
+        /* fail-open: an unreadable rule shows as off, which is the quiet answer */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [cardId]);
+  const toggleNotifyWhenDone = (): void => {
+    if (!cardId) return;
+    const next = !notifyWhenDone;
+    setNotifyWhenDone(next); // optimistic; the answer below is the truth
+    void window.switchboard.rules
+      .setNotifyWhenDone(cardId, next)
+      .then((on) => setNotifyWhenDone(on === true))
+      .catch(() => setNotifyWhenDone(!next));
+  };
   // held permissions awaiting decisions (E10-04) — a QUEUE, not a slot:
   // parallel tool calls each hold their own request (review P0#4)
   // The entry shape moved to `lib/held-permissions` with the rules that build
@@ -1273,6 +1309,27 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                             </button>
                           </div>
                         )}
+                        {/* A CHECKBOX, not a command: `menuitemcheckbox` +
+                            `aria-checked` is what tells a screen reader this
+                            entry has a state, and the box glyph is the same
+                            fact for everyone else — never color alone
+                            (§5.32). Not locked with the session controls
+                            above: those type a slash command into a live CLI,
+                            this writes a preference, and a suspended or
+                            crashed card is exactly when you want to arm it. */}
+                        <button
+                          role="menuitemcheckbox"
+                          aria-checked={notifyWhenDone}
+                          data-testid="card-notify-when-done"
+                          onClick={toggleNotifyWhenDone}
+                          title={t('grid.menuNotifyWhenDoneHint')}
+                          style={menuItemStyle(false)}
+                        >
+                          <span aria-hidden="true" style={{ marginInlineEnd: 6 }}>
+                            {notifyWhenDone ? t('grid.checkedIcon') : t('grid.uncheckedIcon')}
+                          </span>
+                          {t('grid.menuNotifyWhenDone')}
+                        </button>
                         <button
                           disabled={controlsLocked}
                           title={
