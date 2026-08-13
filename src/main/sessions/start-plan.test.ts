@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { planSessionStart, StartPlanInput } from './start-plan';
-import { ProviderCapabilities } from '../extensibility/contributions';
+import { ProviderCapabilities, ResumeQuery } from '../extensibility/contributions';
 
 const host = { buildHookSettings: (id: string) => ({ hooks: { seen: id } }) };
 
@@ -125,12 +125,82 @@ describe('planSessionStart', () => {
     });
 
     it('asks with the folder and the id it is deciding about', () => {
-      const canResume = vi.fn(() => true);
+      const canResume = vi.fn<(q: ResumeQuery) => boolean>(() => true);
       plan({
         capabilitiesOf: () => fullCaps({ resume: { canResume } }),
         prior: { nativeSessionId: 'native-1' },
       });
-      expect(canResume).toHaveBeenCalledWith('/work/app', 'native-1');
+      expect(canResume).toHaveBeenCalledWith({
+        projectsRoot: '/roots/claude',
+        folder: '/work/app',
+        nativeSessionId: 'native-1',
+      });
+    });
+
+    describe('...and about the ONE root this plan declares (#432)', () => {
+      // Eligibility and #395's resumed-history replay must read the same
+      // directory. Two independent declarations agree by coincidence: an adapter
+      // answering "yes" from a root the host never reads passes this check and
+      // then replays nothing — the blank-resume symptom #395 fixed, one
+      // abstraction up.
+      it('is asked about exactly the root the session will watch and replay from', () => {
+        const canResume = vi.fn<(q: ResumeQuery) => boolean>(() => true);
+        const p = plan({
+          capabilitiesOf: () =>
+            fullCaps({
+              transcripts: { projectsRoot: () => '/roots/somewhere-else' },
+              resume: { canResume },
+            }),
+          prior: { nativeSessionId: 'native-1' },
+        });
+        expect(p.transcriptsRoot).toBe('/roots/somewhere-else');
+        expect(canResume.mock.calls[0][0].projectsRoot).toBe(p.transcriptsRoot);
+      });
+
+      it('a provider with no transcripts is handed no root, not a made-up one', () => {
+        // it may still resume — resumability that has nothing to do with a local
+        // transcript is the adapter's own knowledge to report
+        const canResume = vi.fn<(q: ResumeQuery) => boolean>(() => true);
+        const p = plan({
+          capabilitiesOf: () => ({ resume: { canResume } }),
+          prior: { nativeSessionId: 'native-1' },
+        });
+        expect(canResume).toHaveBeenCalledWith({
+          projectsRoot: '',
+          folder: '/work/app',
+          nativeSessionId: 'native-1',
+        });
+        expect(p.resumeSessionId).toBe('native-1');
+      });
+
+      it('a transcripts capability that THREW hands over "", not a stale root', () => {
+        const canResume = vi.fn<(q: ResumeQuery) => boolean>(() => true);
+        const p = plan({
+          capabilitiesOf: () =>
+            fullCaps({
+              transcripts: {
+                projectsRoot: () => {
+                  throw new Error('adapter is broken');
+                },
+              },
+              resume: { canResume },
+            }),
+          prior: { nativeSessionId: 'native-1' },
+        });
+        expect(p.transcriptsRoot).toBeUndefined();
+        expect(canResume.mock.calls[0][0].projectsRoot).toBe('');
+      });
+
+      it('an unusable empty root is "" here too — the plan and the query agree', () => {
+        const canResume = vi.fn<(q: ResumeQuery) => boolean>(() => true);
+        const p = plan({
+          capabilitiesOf: () =>
+            fullCaps({ transcripts: { projectsRoot: () => '' }, resume: { canResume } }),
+          prior: { nativeSessionId: 'native-1' },
+        });
+        expect(p.transcriptsRoot).toBeUndefined();
+        expect(canResume.mock.calls[0][0].projectsRoot).toBe('');
+      });
     });
   });
 
@@ -168,12 +238,18 @@ describe('planSessionStart', () => {
     it('a card that falls back is judged by the DEFAULT provider capabilities', () => {
       // the native id belongs to a provider that is gone; the fallback provider
       // decides whether it means anything
-      const canResume = vi.fn(() => false);
+      const canResume = vi.fn<(q: ResumeQuery) => boolean>(() => false);
       const p = plan({
         capabilitiesOf: (id) => (id === 'p' ? fullCaps({ resume: { canResume } }) : undefined),
         prior: { providerId: 'codex', nativeSessionId: 'native-1' },
       });
-      expect(canResume).toHaveBeenCalledWith('/work/app', 'native-1');
+      // the fallback provider's root as well as its verdict — a card judged by
+      // one provider must not be resumed out of another's directory
+      expect(canResume).toHaveBeenCalledWith({
+        projectsRoot: '/roots/claude',
+        folder: '/work/app',
+        nativeSessionId: 'native-1',
+      });
       expect(p.resumeSessionId).toBeUndefined();
     });
 
