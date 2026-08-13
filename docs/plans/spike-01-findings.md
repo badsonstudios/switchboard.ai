@@ -20,7 +20,17 @@ item live in `spike/findings/`; committed evidence in
 | S-04 Transcript discovery + tailing | **GO** | Discovery ~4s, lag median 268ms, tolerant reader proven |
 | S-05 Sidechain visibility | **GO** | Nested per-agent files + meta.json identity; ~160ms lag; plan-chip viable |
 | S-06 Hook-driven status | **GO** | Full cycle hook-only; Stop within ~30ms; Notification debounce ~6s characterized |
-| S-07 12-session concurrency | **GO** | Idle ~28% of one core; ~420MB/session (CLI-owned); 15ms max UI stall |
+| S-07 12-session concurrency | **GO** | ~~Idle ≈28% of one core~~ → **idle 9.5% of one core** ✗; ~420MB/session (CLI-owned); 15ms max UI stall |
+
+✗ **Corrected 2026-08-10 (P2-E15-14, #111, PR #401; recorded as #402).** The
+struck idle figure was a measurement bug, not a measurement: S-07's PowerShell
+sampler was spawned by the probe's own main process and so was counted inside
+the process tree it measured, and the published means were skewed by a single
+negative-delta outlier per tier. The re-measure on the shipped app (12 real
+sessions, dockview + Monaco + FeedView streaming + git polling all live) gives
+**9.5 % of one core at idle** and a 15.8 ms max renderer stall; the memory and
+stall figures above stand. Verdict unchanged — GO, by a wider margin. Detail:
+`spike/findings/s-07-concurrency-perf.md` → *Real-app re-measure — 2026-08-10*.
 
 ## Spike exit criteria
 
