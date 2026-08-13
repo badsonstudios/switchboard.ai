@@ -201,9 +201,14 @@ export const claudeAdapter: ProviderAdapter = {
     // pass the host's wiring straight through — the CLI's `settings.hooks`
     // schema IS the shape HookListener builds
     hooks: { settingsFor: (sessionId, host) => host.buildHookSettings(sessionId) },
+    // §5.25: only the layout knows whether the conversation is really on disk.
+    // The ROOT is the host's — the one it resolved from `transcripts` above and
+    // will hand the watcher and the resumed-history replay — so this answer and
+    // the file that gets read back cannot be about two different directories
+    // (#432; the coupling #395 found and only documented).
     resume: {
-      canResume: (folder, nativeSessionId) =>
-        conversationExists(claudeProjectsRoot(), folder, nativeSessionId),
+      canResume: ({ projectsRoot, folder, nativeSessionId }) =>
+        conversationExists(projectsRoot, folder, nativeSessionId),
     },
     // §5.9: the CLI refuses to work in a folder the user has not accepted, and
     // it asks with a modal we cannot answer from here. Writing the acceptance

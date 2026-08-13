@@ -132,20 +132,38 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
 
   const caps = safely('capabilitiesOf', () => input.capabilitiesOf(providerId));
 
+  // An adapter that cannot say WHERE its transcripts are has, for our purposes,
+  // no transcripts: watching "" would poll a directory that does not exist
+  // forever and report nothing, which reads like a bug rather than a provider
+  // without the feature.
+  //
+  // Resolved BEFORE the resume decision, and that order is load-bearing (#432).
+  // THIS is the session's transcript root — the one string the watcher polls,
+  // the one a resumed Direct session replays its history out of (#395), and
+  // therefore the one `canResume` is asked about below. It used to be asked
+  // about whatever root the adapter derived for itself, which made one contract
+  // two independent declarations: a provider that answered from a root the host
+  // never reads would resume and then show nothing.
+  const root = caps?.transcripts
+    ? safely('transcripts.projectsRoot', () => caps.transcripts!.projectsRoot())
+    : undefined;
+  const transcriptsRoot = root || undefined;
+
   // Resume only when the provider says this conversation is really there. The
   // capability is asked BEFORE the id is used, because a stale id is not
   // harmless: it makes the CLI exit at spawn and the card crash.
   const nativeId = input.prior?.nativeSessionId;
   const resumable =
-    !!nativeId && !!safely('resume.canResume', () => caps?.resume?.canResume(input.folder, nativeId));
-
-  // An adapter that cannot say WHERE its transcripts are has, for our purposes,
-  // no transcripts: watching "" would poll a directory that does not exist
-  // forever and report nothing, which reads like a bug rather than a provider
-  // without the feature.
-  const root = caps?.transcripts
-    ? safely('transcripts.projectsRoot', () => caps.transcripts!.projectsRoot())
-    : undefined;
+    !!nativeId &&
+    !!safely('resume.canResume', () =>
+      caps?.resume?.canResume({
+        // exactly what this plan exposes, not a second reading of the
+        // capability — "" for a provider that declares no transcripts at all
+        projectsRoot: transcriptsRoot ?? '',
+        folder: input.folder,
+        nativeSessionId: nativeId,
+      })
+    );
 
   // Deliberately NOT gated on `root`: the two are independent declarations and
   // reading a title costs nothing extra, because the host is already tailing.
@@ -177,7 +195,7 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
   return {
     providerId,
     resumeSessionId: resumable ? nativeId : undefined,
-    transcriptsRoot: root || undefined,
+    transcriptsRoot,
     readTitle,
     buildSettings: caps?.hooks
       ? (id) => safely('hooks.settingsFor', () => caps.hooks!.settingsFor(id, host)) ?? {}
