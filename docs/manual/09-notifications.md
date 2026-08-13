@@ -128,10 +128,12 @@ before. Untick it to stop.
 
 Three things worth knowing:
 
-- **It only pops up when you're not looking.** If the switchboard window is the
-  window you're currently in, there's no pop-up: you're already here, and the
-  Events panel and the sound have already told you. Click away to another app
-  (or minimize) and the pop-ups start arriving.
+- **It only pops up when you're not looking.** If you're currently in a
+  switchboard window, there's no pop-up: you're already here, and the Events
+  panel and the sound have already told you. Click away to another app (or
+  minimize) and the pop-ups start arriving. "A switchboard window" means any of
+  them — a session you've popped out into its own window counts, so working in a
+  pop-out keeps things quiet even if the main window is minimized behind it.
 - **It's remembered.** The tick survives closing the app, and comes back with
   the session when you reopen it. Closing a session for good forgets its
   setting along with the card.
