@@ -153,11 +153,58 @@ describe('the delayed urgency reset (§5.8 force_display_urgency_hint)', () => {
   });
 
   it('two lamps can be lit at once — repeated jumps overlap', () => {
-    const both = markLit(markLit(new Map(), 'a', T), 'b', T + 100);
+    // The rule this has always been about, and issue 426 leaves it exactly
+    // where it was: a lamp whose beat is RUNNING — one you have seen — is never
+    // touched by the next jump. Jump to a, see it, jump to b 100ms later and
+    // both rings are on the screen together.
+    //
+    // (426 narrowed only the UNPAINTED case, below: you cannot overlap two
+    // rings nobody has seen yet, and the paint here is what makes this the
+    // painted case. Before 426 the same assertion held with no paint at all.)
+    const seen = marked('a', T, T);
+    const both = markLit(seen, 'b', T + 100);
     expect([...both.keys()]).toEqual(['a', 'b']);
-    // one paint starts both, each with its own full beat from that instant
-    const painted = startBeat(both, ['a', 'b'], T + 100)!;
-    expect(nextLitExpiry(painted, T + 100)).toBe(URGENCY_LINGER_MS);
+    const painted = startBeat(both, ['b'], T + 100)!;
+    expect(isLit(painted, 'a', T + 100), 'the elder ring is still up').toBe(true);
+    expect(isLit(painted, 'b', T + 100)).toBe(true);
+    // ...and each keeps its own deadline: a's is 100ms nearer, being 100ms older
+    expect(nextLitExpiry(painted, T + 100)).toBe(URGENCY_LINGER_MS - 100);
+  });
+
+  it('a new mark discards a mark that never painted — latest wins (issue 426)', () => {
+    // The counterpart to the rule above. An unpainted mark carries nothing a
+    // newer one does not: the beat answers "where did I just land?", and the
+    // answer to that is singular.
+    const waiting = markLit(new Map(), 'old', T);
+    const next = markLit(waiting, 'new', T + 60_000);
+    expect([...next.keys()]).toEqual(['new']);
+    expect(isLit(next, 'old', T + 60_000), 'nobody ever saw it, so nothing is lost').toBe(false);
+    expect(next.get('new')).toBeNull(); // still waiting on its own paint
+  });
+
+  it('a mark whose beat is RUNNING is never discarded by a new mark (issue 426)', () => {
+    // the cap is scoped to the unpainted. A ring already on the screen is a
+    // thing the user is in the middle of reading, and taking it away mid-beat
+    // would be a flicker with no meaning.
+    const running = marked('lit', T, T);
+    const next = markLit(running, 'new', T + 1);
+    expect(next.get('lit'), 'its deadline is untouched').toBe(T + URGENCY_LINGER_MS);
+    expect(isLit(next, 'lit', T + 1)).toBe(true);
+    // and it still ends on its own clock, exactly when it always would have
+    expect(isLit(next, 'lit', T + URGENCY_LINGER_MS)).toBe(false);
+  });
+
+  it('N jumps with nothing painting leave exactly ONE lamp waiting (issue 426)', () => {
+    // The popout case this rule exists for: Ctrl+Space routes through the main
+    // renderer while focus raises the POPOUT, so the main window can sit
+    // occluded and unpainted across several jumps. Every one of those marks
+    // would otherwise be waiting, and all of them would fire at once on return.
+    let map = new Map<string, number | null>();
+    for (const id of ['a', 'b', 'c', 'd', 'e']) map = markLit(map, id, T);
+    expect([...map.keys()]).toEqual(['e']);
+    // ...and the paint that finally comes lights that one, for a whole beat
+    const painted = startBeat(map, ['e'], T + 60_000)!;
+    expect(painted.get('e')).toBe(T + 60_000 + URGENCY_LINGER_MS);
   });
 
   it('marking sweeps entries that already ran out, so the map cannot grow forever', () => {
@@ -169,11 +216,11 @@ describe('the delayed urgency reset (§5.8 force_display_urgency_hint)', () => {
     expect([...next.keys()]).toEqual(['new']);
   });
 
-  it('the sweep spares a lamp still waiting for its first paint', () => {
-    // it has no deadline to have passed, and dropping it would put back the
-    // silent no-lamp case: marked, never drawn, gone
-    const waiting = markLit(new Map(), 'old', T);
-    const next = markLit(waiting, 'new', T + 60_000);
+  it('the sweep keeps a lamp whose beat is still running, however old the mark', () => {
+    // the sweep is a clock, not a broom: `until > now` is the only thing that
+    // decides a running beat's fate here
+    const running = marked('old', T, T);
+    const next = markLit(running, 'new', T + URGENCY_LINGER_MS - 1);
     expect([...next.keys()]).toEqual(['old', 'new']);
   });
 
@@ -225,7 +272,14 @@ describe('the delayed urgency reset (§5.8 force_display_urgency_hint)', () => {
 
 describe('startBeat — the paint is what starts the clock (#320)', () => {
   it('gives every waiting lamp a full beat from the paint', () => {
-    const both = markLit(markLit(new Map(), 'a', T), 'b', T);
+    // hand-built rather than two `markLit`s: since issue 426 only one mark can
+    // be waiting at a time, and this rule is deliberately still written for
+    // several — the strip offers up whatever it finds unpainted, and a rule
+    // that assumed the cap would break silently the day the cap moved
+    const both = new Map<string, number | null>([
+      ['a', null],
+      ['b', null],
+    ]);
     const next = startBeat(both, ['a', 'b'], T + 5000)!;
     expect(next.get('a')).toBe(T + 5000 + URGENCY_LINGER_MS);
     expect(next.get('b')).toBe(T + 5000 + URGENCY_LINGER_MS);

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, screen, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, net, Notification, screen, session, shell } from 'electron';
 import path from 'path';
 import { windowOptionsFrom, WindowState } from './window-state';
 import { WorkspaceStore, displayFingerprint } from './workspace/store';
@@ -15,7 +15,7 @@ import { StreamFeed } from './feed/stream-feed';
 import { SessionManager } from './sessions/session-manager';
 import { HookListener } from './hooks/hook-listener';
 import { TranscriptWatcher } from './transcripts/watcher';
-import { registerSessionIpc } from './sessions/ipc';
+import { registerSessionIpc, SessionIpcHandle } from './sessions/ipc';
 import { registerGroupIpc } from './workspace/group-ipc';
 import { registerFsIpc } from './fs/ipc';
 import { ReadScope } from './fs/read-scope';
@@ -23,6 +23,9 @@ import { IpcBroker } from './ipc/broker';
 import { allCapabilities, Channel } from '../shared/ipc/capabilities';
 import { EventFeed } from './events/feed';
 import { Notifier } from './events/notifier';
+import { ACTION_OS_TOAST, defaultRules, visibilityAcross } from './events/rules';
+import { RuleActionRegistry, RulesEngine } from './events/rules-engine';
+import { registerRulesIpc } from './events/rules-ipc';
 import { GitService } from './git/git-service';
 import { runPreflight } from './preflight';
 import { startStaticServer, StaticServer } from './static-server';
@@ -34,6 +37,8 @@ import { UpdateService, FEED_ENV, isAllowedReleaseUrl } from './update/service';
 import { UpdateInstaller, UPDATE_DIR_NAME, resolveHandshake, resolveOffer } from './update/install';
 import { launchInstaller } from './update/installer';
 import type { UpdateHandshake, UpdateInstallStatus } from '../shared/update';
+import { ServiceHealthService } from './health/service';
+import { SERVICE_STATUS_FEED_ENV } from './health/statuspage';
 import { installTerminalAccelerators, makeAcceleratorDeps } from './terminal-accelerators';
 import {
   Box,
@@ -438,6 +443,7 @@ function createWindow(): BrowserWindow {
         `--switchboard-version=${app.getVersion()}`,
         `--switchboard-seed-panels=${process.env.SWITCHBOARD_SEED_PANELS ?? 0}`,
         `--switchboard-seed-session=${process.env.SWITCHBOARD_SEED_SESSION ?? ''}`,
+        `--switchboard-seed-document=${process.env.SWITCHBOARD_SEED_DOCUMENT ?? ''}`,
       ],
     },
   });
@@ -871,6 +877,32 @@ app
     // still be filling in (#140). The session's exit is the last honest moment
     // to say so.
     manager.onSessionExit((e) => streamFeed.finalize(e.sessionId));
+    // ── provider service health (P2-E14-07, §5.14) ────────────────────────
+    //
+    // The FOURTH subscription to the same stream, for the reason spelled out
+    // above: one listener per consumer, one blast radius each. This one reads
+    // exactly one thing — whether a turn ended in an error — because "several
+    // sessions failing at once" is the local half of "is it me or is it them?",
+    // and a failed turn is otherwise indistinguishable from a finished one.
+    const health = new ServiceHealthService({
+      getPrefs: () => workspace.getServiceHealthPrefs(),
+      // `currentWindow` is reassigned on macOS re-activate, so this reads it
+      // fresh — the convention every other push in this file follows.
+      push: (status) => pushToRenderer?.(currentWindow, 'health:status', status),
+      log: createLogger(sink, 'health'),
+      // Dev/test only, and the reason no test in this repo ever reaches the
+      // real status page. Same P2-E15-10 rule as the update feed: a packaged
+      // build has no environment variable that can move a user-visible
+      // endpoint.
+      feedOverride: app.isPackaged ? undefined : process.env[SERVICE_STATUS_FEED_ENV],
+      // "no polling when offline is detected" (§5.14). Electron's own answer,
+      // not a heuristic of ours.
+      isOnline: () => net.isOnline(),
+      probeDeps: { userAgent: app.getVersion() },
+    });
+    manager.onStreamMessage((sessionId, msg) => health.noteStreamMessage(sessionId, msg));
+    // A session that is gone stops corroborating anything.
+    manager.onSessionExit((e) => health.forgetSession(e.sessionId));
     const hooks = new HookListener({
       stateDir,
       manager,
@@ -1076,6 +1108,23 @@ app
       if (typeof p?.skippedVersion === 'string') updates.skip(p.skippedVersion);
       return workspace.getUpdatePrefs();
     });
+    // ── provider service health (P2-E14-07) ──────────────────────────────
+    //
+    // A mounting window asks once; everything after that arrives on
+    // `health:status`. `start()` polls immediately, so the first answer is on
+    // its way before the window has finished asking.
+    broker.handle('health:get', () => health.current());
+    broker.handle('health:getPrefs', () => workspace.getServiceHealthPrefs());
+    broker.handle('health:setPrefs', (_e, p: { poll?: boolean }) => {
+      if (typeof p?.poll === 'boolean') {
+        workspace.setServiceHealthPrefs({ poll: p.poll });
+        // start or stop the timer to match — turning it off must actually stop
+        // the traffic, not just grey out a checkbox
+        health.prefsChanged();
+      }
+      return workspace.getServiceHealthPrefs();
+    });
+    health.start();
     broker.handle('update:openExternal', (_e, url: string) => {
       // The strings that reach here came out of a release body we rendered, so
       // the allowlist is tight and lives next to the checker (§5.29).
@@ -1116,11 +1165,74 @@ app
     snapshotPopoutBoxes(); // before the renderer can rewrite the layout (#86)
     createWindow(); // sets currentWindow; IPC/notifier read it via closure
     const feed = new EventFeed();
+
+    // ── the notification rules engine (P2-E14-03, §5.9) ──────────────────
+    //
+    // Assembled here because this is the only file allowed to touch
+    // `Notification`; everything above it (`events/rules.ts`,
+    // `events/rules-engine.ts`) is pure and testable without electron.
+    const rulesLog = createLogger(sink, 'rules');
+    const ruleActions = new RuleActionRegistry(rulesLog);
+    ruleActions.register(ACTION_OS_TOAST, (_action, ctx) => {
+      // Whether the OS can display a notification at all is an ENVIRONMENT
+      // fact, not a decision this rule made: a Linux box with no notification
+      // daemon (a CI container, say) reports `false` here forever. So the two
+      // facts are logged separately — the rule fired, and this is whether the
+      // desktop took it. A silent early return was the one outcome that could
+      // not be debugged, and "why didn't it pop?" is a real support question.
+      const shown = Notification.isSupported();
+      if (shown) {
+        new Notification({
+          title: ctx.title,
+          body: ctx.body,
+          silent: true, // the Notifier's beep is the sound cue
+        }).show();
+      }
+      // The e2e proof that a rule reached the toast action
+      // (`e2e/rules.spec.ts`) — and the line to grep after "why did/didn't it
+      // pop".
+      rulesLog.info('os toast rule fired', {
+        kind: ctx.event.kind,
+        cardId: ctx.cardId ?? '',
+        visibility: ctx.visibility,
+        ruleId: ctx.rule.id,
+        shown,
+      });
+    });
+    // Assigned the moment `registerSessionIpc` returns, a few dozen lines
+    // below; until then no session exists, so no event can ask.
+    let cardIdForLive: (liveId: string) => string | null = () => null;
+    // P2-E7-06 x P2-E14-03 integration (train/2026-08-13): toast titles
+    // prefer the card's task label over the session title — the label answers
+    // WHAT is waiting, the title answers WHICH. Late-bound exactly like
+    // cardIdForLive above; a suppressed auto label returns undefined here too.
+    let labelForLive: (sessionId: string) => string | undefined = () => undefined;
+    const rules = new RulesEngine({
+      getRules: () => workspace.listRules(),
+      getDefaultRules: () => defaultRules(workspace.getNotificationPrefs()),
+      cardIdFor: (liveId) => cardIdForLive(liveId),
+      // Every window, not just the main one: a popped-out card (E8) is a
+      // window the user can be looking at while the main one is minimized.
+      getVisibility: () => visibilityAcross([currentWindow, ...popoutWindows.map((p) => p.win)]),
+      titleFor: (e) =>
+        labelForLive(e.sessionId) ??
+        manager.get(e.sessionId)?.identity.title ??
+        'switchboard.ai',
+      bodyFor: (e) => e.kind.replace(/-/g, ' '),
+      registry: ruleActions,
+      log: rulesLog,
+    });
+    registerRulesIpc({
+      broker,
+      log: rulesLog,
+      store: workspace,
+      knownCard: (cardId) => workspace.listSessions().some((s) => s.id === cardId),
+    });
+
     const notifier = new Notifier({
       getWindow: () => currentWindow,
       getPrefs: () => workspace.getNotificationPrefs(),
-      titleFor: (sessionId) => manager.get(sessionId)?.identity.title ?? 'switchboard.ai',
-      bodyFor: (e) => e.kind.replace(/-/g, ' '),
+      rules,
     });
     feed.onEvent((e) => {
       if (e) notifier.handle(e); // null = pure removal, nothing to announce
@@ -1166,7 +1278,12 @@ app
       ],
       log: fsLog,
     });
-    registerFsIpc({ broker, log: fsLog, scope: readScope });
+    // P2-E16-02 hands the same object the picker: `Open file…` is the only
+    // thing that widens this scope, so the widening lives WITH the scope rather
+    // than in a second module that would need a reference to it. `getWindow` is
+    // the modal's parent, and is a thunk for the reason every other one here is
+    // — `currentWindow` is reassigned on macOS re-activate.
+    registerFsIpc({ broker, log: fsLog, scope: readScope, getWindow: () => currentWindow });
     broker.handle('notifications:getPrefs', () => workspace.getNotificationPrefs());
     broker.handle('notifications:setPrefs', (_e, p) => {
       workspace.setNotificationPrefs(p);
@@ -1177,7 +1294,7 @@ app
       workspace.setAutoTrust(on === true);
       return workspace.getAutoTrust();
     });
-    registerSessionIpc({
+    const sessionIpc: SessionIpcHandle = registerSessionIpc({
       manager,
       ptys,
       streamPermissions,
@@ -1190,6 +1307,8 @@ app
       log: createLogger(sink, 'ipc'),
       getWindow: () => currentWindow, // reassigned on macOS re-activate
       autoTrust: () => workspace.getAutoTrust(),
+      autoLabels: () => workspace.getAutoLabels(),
+      setAutoLabels: (on) => workspace.setAutoLabels(on),
       persist: {
         list: () => workspace.listSessions(),
         upsert: (s) => workspace.upsertSession(s),
@@ -1215,12 +1334,16 @@ app
       preferredTransport: () =>
         parsePreferredTransport(process.env[TRANSPORT_ENV_VAR], log.app.warn),
     });
+    // the live -> card join the rules engine scopes by (P2-E14-03)
+    cardIdForLive = sessionIpc.cardIdFor;
+    labelForLive = sessionIpc.labelFor;
     app.on('quit', () => {
       ptys.killAll();
       streams.killAll();
       hooks.stop();
       transcripts.stop();
       updates.stop(); // kills the daily timer; a check in flight becomes a no-op
+      health.stop(); // same, for the status-page poll
       staticServer?.close();
       scheduleForcedExit();
     });

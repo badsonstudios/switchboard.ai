@@ -13,6 +13,7 @@ import { ThemeDefinition } from '../theme/theme';
 import { BuildIdentity, commitStamp } from '../../../shared/build-identity';
 import type { PresentationPolicy } from '../lib/presentation-policy';
 import type { LayoutMode } from '../lib/layout-mode';
+import type { ServiceHealthStatus } from '../../../shared/service-health';
 
 const barStyle: React.CSSProperties = {
   background: 'var(--titlebar-bg)',
@@ -61,6 +62,10 @@ export function TitleBar(props: {
   layoutBinding: string;
   autoTrust: boolean;
   onToggleTrust: () => void;
+  /** §5.11's auto task labels (P2-E7-06) — off hides every label the CLI filled
+   *  in, on the card, in the rail and in OS toasts */
+  autoLabels: boolean;
+  onToggleAutoLabels: () => void;
   /** sessions-rail visibility — the mouse path for the Ctrl+B command (E9-01) */
   railHidden: boolean;
   onToggleRail: () => void;
@@ -96,6 +101,19 @@ export function TitleBar(props: {
       </Chip>
       <Chip selected={props.autoTrust} onClick={props.onToggleTrust}>
         {props.autoTrust ? t('titlebar.trustOn') : t('titlebar.trustOff')}
+      </Chip>
+      {/* Auto task labels (P2-E7-06, §5.11). A chip and not a buried setting
+          for the same reason as the two below it: the thing it governs is a
+          phrase derived from what you asked the agent, rendered on every card
+          and pushed into OS toasts — so the person who needs it off needs it
+          off NOW, mid screen-share, without hunting. */}
+      <Chip
+        selected={props.autoLabels}
+        onClick={props.onToggleAutoLabels}
+        title={t('titlebar.autoLabelsHint')}
+        testId="auto-labels"
+      >
+        {props.autoLabels ? t('titlebar.autoLabelsOn') : t('titlebar.autoLabelsOff')}
       </Chip>
       <Chip selected={false} onClick={props.onCycleAutonomy}>
         {t(`autonomy.${props.autonomy}`)}
@@ -209,6 +227,8 @@ function BuildStamp(props: {
 export function StatusBar(props: {
   count: number;
   theme: ThemeDefinition;
+  /** the provider's service health (E14-07) — the dot's whole input */
+  serviceHealth?: ServiceHealthStatus | null;
   cliVersion?: string | null;
   totalOutputTokens?: number;
   totalCostUsd?: number;

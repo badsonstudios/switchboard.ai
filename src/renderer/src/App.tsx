@@ -34,6 +34,8 @@ import { memberViews } from './lib/permission-batches';
 import type { PermissionRequestDto } from '../../shared/ipc/permissions';
 import { WorkspaceNoticeBanner } from './components/WorkspaceNoticeBanner';
 import { PreflightBanner } from './components/PreflightBanner';
+import { ServiceHealthBanner } from './components/ServiceHealthBanner';
+import type { ServiceHealthStatus } from '../../shared/service-health';
 import { collapsedRows, revealTargets } from './lib/ladder';
 import { GuardedRefresh, latestWins } from './lib/latest-wins';
 import { groupChangeLanded } from './lib/groups';
@@ -55,6 +57,7 @@ import {
 import { buildIdentity } from '../../shared/build-identity';
 import { applyTabRows, loadTabRows, syncDocumentFlags, toggleTabRows } from './lib/tab-rows';
 import { openPopoutWindows, subscribePopoutWindows } from './lib/popout-windows';
+import { setDocumentOpener } from './lib/document-open';
 
 // One stable subscribe identity for every useSyncExternalStore call below.
 // An inline arrow is a new function each render, and React unsubscribes and
@@ -147,6 +150,12 @@ export function App(): React.JSX.Element {
   // version" is the durable answer, and conflating the two would leave a user
   // who clicked the soft option unable to find the release again.
   const ignoredVersion = React.useRef<string | null>(null);
+  // ── provider service health (E14-07, §5.14) ──────────────────────────────
+  // One record, two halves: what the status page says and what this machine
+  // has noticed. Local state, like the update status above — it is pushed, not
+  // stored, and nothing else in the app reads it.
+  const [serviceHealth, setServiceHealth] = useState<ServiceHealthStatus | null>(null);
+  const [statusPolling, setStatusPolling] = useState(true);
   // Attention events (E9-03). This subscription used to live inside
   // EventsPanel; it moved up here because the queue is the SINGLE ordering
   // authority — two independent subscriptions to events:changed could hand the
@@ -355,10 +364,21 @@ export function App(): React.JSX.Element {
   const [preflightOk, setPreflightOk] = useState(true);
   const [cliVersion, setCliVersion] = useState<string | null>(null);
   const [autoTrust, setAutoTrust] = useState(true);
+  const [autoLabels, setAutoLabels] = useState(true);
   const [usageByLive, setUsageByLive] = useState<Map<string, { usage: Usage; model?: string }>>(
     new Map()
   );
   const grid = React.useRef<GridController | null>(null);
+
+  // §5.30's "opened from wherever a path already appears" (P2-E16-02). The
+  // surfaces that show a path — the Changes tab's file list today, a feed block
+  // and the §5.7 tree later — reach the dock through this module rather than
+  // through a prop each. Installed once the grid controller exists, removed on
+  // unmount so a torn-down window's dock is never called into.
+  useEffect(() => {
+    setDocumentOpener((file) => grid.current?.openDocument(file));
+    return () => setDocumentOpener(null);
+  }, []);
 
   useEffect(() => {
     const offUsage = bridge.sessions?.onUsage?.((snap) => {
@@ -395,6 +415,7 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void bridge.notifications?.getPrefs?.().then((p) => setNotifEnabled(p.enabled));
     void bridge.settings?.getAutoTrust?.().then(setAutoTrust);
+    void bridge.settings?.getAutoLabels?.().then(setAutoLabels);
     void bridge.preflight?.check?.().then((r) => {
       setPreflightOk(r.ok);
       setCliVersion(r.version);
@@ -461,6 +482,28 @@ export function App(): React.JSX.Element {
     };
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, [applyUpdateStatus]);
+
+  // ── provider service health (E14-07) ─────────────────────────────────────
+  //
+  // Subscribe FIRST, then read: main starts polling before the first window
+  // exists, so a push can land between this mount and the answer to `get`.
+  // Subscribing second would drop it and leave the dot blank until the next
+  // poll — the same lost-push shape the read-only notice fixed (#207).
+  //
+  // Every call is optional-chained and swallowed. This is a dot: a bridge
+  // without it, or a main that refuses, must cost the shell nothing.
+  useEffect(() => {
+    const off = bridge.health?.onStatus?.((s) => setServiceHealth(s));
+    void bridge.health
+      ?.get?.()
+      .then((s) => setServiceHealth((prev) => prev ?? s))
+      .catch(() => {});
+    void bridge.health
+      ?.getPrefs?.()
+      .then((p) => setStatusPolling(p.poll !== false))
+      .catch(() => {});
+    return () => off?.();
+  }, []);
 
   const checkForUpdates = React.useCallback(() => {
     void bridge.update
@@ -640,10 +683,19 @@ export function App(): React.JSX.Element {
     // …and when a card gains or loses its live session without any status
     // having changed — a resume (#170). Same refresh, third trigger.
     const offCards = bridge.sessions?.onCardsChanged?.(() => void refreshSessions());
+    // A task label filled itself from the CLI's own title (P2-E7-06). Patched
+    // into the store rather than triggering the refresh above: the label is the
+    // only field that moved, and this fires on a card whose title the CLI keeps
+    // revising — a full `cards()` re-read per revision would walk a git root per
+    // session for one string.
+    const offLabel = bridge.sessions?.onTaskLabel?.((p) =>
+      sessionStore.setTaskLabel(p.cardId, p.label)
+    );
     return () => {
       offStatus?.();
       offExit?.();
       offCards?.();
+      offLabel?.();
     };
   }, [cards, refreshSessions]); // re-sync when the grid's cards change
 
@@ -856,6 +908,15 @@ export function App(): React.JSX.Element {
           jumpToNextAttention,
           openAbout: () => setAboutOpen(true),
           checkForUpdates,
+          // §5.30's `Open file…`. Picking a file in the native dialog is also
+          // what GRANTS it: main widens the `fs.read` scope with the chosen
+          // path before answering, which is the one sanctioned way that scope
+          // grows (P2-E16-02).
+          openFile: () => {
+            void bridge.files?.pickFile?.().then((file) => {
+              if (file) grid.current?.openDocument(file);
+            });
+          },
       }),
     [
       toggleRail,
@@ -1086,6 +1147,14 @@ export function App(): React.JSX.Element {
           setAutoTrust(next);
           void bridge.settings?.setAutoTrust?.(next);
         }}
+        autoLabels={autoLabels}
+        onToggleAutoLabels={() => {
+          const next = !autoLabels;
+          setAutoLabels(next); // optimistic: the chip must move on the click…
+          // …and main answers with what it actually stored, which is also what
+          // re-publishes every visible label under the new setting.
+          void bridge.settings?.setAutoLabels?.(next).then(setAutoLabels);
+        }}
         railHidden={railHidden}
         onToggleRail={toggleRail}
         railBinding={railBindingLabel}
@@ -1107,6 +1176,15 @@ export function App(): React.JSX.Element {
             // …then main's sanitized answer wins: it is the authority, and a
             // refused write must not leave the box saying otherwise
             .then((p) => setAutoCheckUpdates(p.autoCheck !== false))
+            .catch(() => {});
+        }}
+        statusPolling={statusPolling}
+        onToggleStatusPolling={(on) => {
+          setStatusPolling(on); // optimistic, like the auto-check box above…
+          void bridge.health
+            ?.setPrefs?.({ poll: on })
+            // …then main's answer wins: it is the authority on what it will do
+            .then((p) => setStatusPolling(p.poll !== false))
             .catch(() => {});
         }}
         // a second dialog is above this one: two stacked `aria-modal` regions
@@ -1148,6 +1226,11 @@ export function App(): React.JSX.Element {
           exist before the preflight answer lands or the warning is announced to
           nobody (#222). Same reason as its sibling above. */}
       <PreflightBanner shown={!preflightOk} />
+      {/* §5.14's local corroboration. Rendered unconditionally and gated
+          INSIDE, exactly like the two banners above: its live region has to
+          exist before the push lands or the one sentence that says "this may
+          not be you" is announced to nobody. */}
+      <ServiceHealthBanner status={serviceHealth} />
       {/* Outside the rail (which toggles) and outside the grid (whose cards
           hide, pop out and — with E9-07 — rearrange by layout mode): the only
           place a strip can be "always visible" without every one of those
@@ -1281,11 +1364,13 @@ export function App(): React.JSX.Element {
             setUpdateOpen(true);
           }}
           onDismissUpdateNotice={() => setUpdateNotice(null)}
+          incidents={serviceHealth?.incidents}
         />
       </div>
       <StatusBar
         count={cards.length}
         theme={theme}
+        serviceHealth={serviceHealth}
         cliVersion={cliVersion}
         totalOutputTokens={workspaceUsage.output}
         totalCostUsd={workspaceCost}

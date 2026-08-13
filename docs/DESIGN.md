@@ -223,6 +223,13 @@ contract differs in three ways, each deliberate:
   a capability with no implementation and no consumer is exactly what AR-P2-13 had
   us delete (`event-source`). It arrives beside its first registrant and first
   caller — as a config-writing capability, since §5.4 made the bus stdio-only.
+- **`titles` is a fifth capability** *(added by P2-E7-06, 2026-08-11)*. The CLI
+  writes a title of the conversation into its own transcript and we display it
+  as the task label (§5.11). Separate from `transcripts` because that one says
+  WHERE the file is and this one says the file contains a title and how to
+  recognise it — a provider can easily have the first without the second, and
+  the key that carries it is undocumented, so the one thing that must not happen
+  is that spelling leaking into shared code.
 - **`transcripts` LOCATES transcripts; it does not abstract reading them.** The
   sketch names a `TranscriptReader`. Our tolerant parser, tailer and block builder
   stay host-side and are shared by every provider writing that shape; the adapter
@@ -489,7 +496,15 @@ done | crashed`) fed by hooks + transcript events. The layout engine reacts to i
   after the commit that drew it (`requestAnimationFrame` twice — a commit is not
   a paint). A mark that has not painted yet therefore survives a backgrounded
   window rather than burning down unseen; once the beat has started it runs on
-  the wall clock like any other.
+  the wall clock like any other. **At most ONE mark may be waiting on a paint —
+  the latest** *(amended 2026-08-11, Dan, after #426)*: two lamps whose beats
+  are RUNNING still overlap (jump A, jump B a moment later, both rings up), but
+  an unpainted mark is discarded by a newer one. `Ctrl+Space` runs in the main
+  renderer while focus raises a POPOUT, so an operator working across popouts
+  can leave the main window occluded for jump after jump, and a queue of marks
+  drained by one paint is a fireworks show of stale "you arrived here" flashes.
+  The beat answers "where did I just land?", and after a popout stint only the
+  last landing carries that.
 - **Focus mode is a composition, with a keyboard-fail-open invariant** (research
   v2: IntelliJ Zen = Full Screen + Distraction-free; VS Code maximize-toggle):
   "focus on one agent" composes existing presentation-ladder states rather than
@@ -516,6 +531,14 @@ or sits idle awaiting input, and `Stop` when it finishes. On top:
 - **Per-session "notify when done" (owner request 2026-07-22):** a checkbox on
   the session card — done-toasts only for sessions the user opted into (long
   tasks), because a toast for every short turn is noise.
+  *(Shipped P2-E14-03. It lives in the card's ⋯ menu, beside the transport
+  switch — the established home for a durable per-card setting, and reachable
+  from every view, which the composer's options row is not. Implementation
+  decision, same item: a ticked box is **its own opt-in**, so it fires with the
+  global `osToasts` switch below off — a per-session control that silently did
+  nothing because of a global one elsewhere would be a lie. The master
+  notification toggle and quiet hours still sit above everything, rules
+  included.)*
 - **The default signal model (owner decision 2026-07-22):** attention events
   produce a **sound + an Events-panel item + a taskbar flash** (when
   backgrounded). **OS toast popups are OFF by default** — an opt-in
@@ -811,6 +834,15 @@ Consequences worth designing for, not discovering:
   `{ transcripts, hooks, resume, trust }` — `mcp` waits for E11; see §5.3's "as
   built" note. `titles` slots in beside them, and its decision belongs in
   `sessions/start-plan.ts` with the rest.)*
+  **As built (P2-E7-06):** `titles.titleFrom(line) => string | undefined` — a
+  per-LINE reader, not "read the title out of this file". The host is already
+  tailing line by line, so handing the adapter the file would make it re-read
+  bytes we have decoded, and a per-line reader means the title tracks the
+  conversation for free. `ai-title`/`aiTitle` appears exactly once in the tree,
+  in `providers/claude.ts`. It is the only capability asked per line, so unlike
+  the other four a throw degrades it to absent **for the rest of the session**
+  and is reported once — reporting per line would flood the log at transcript
+  speed.
 - **`ai-title` is undocumented.** No Claude Code contract promises the key
   exists or keeps its name, which makes it a §5.26 version-drift item and the
   natural second customer for the transcript drift detector. Fail-open is
@@ -822,6 +854,14 @@ Consequences worth designing for, not discovering:
   leaves the app window, so a screen-sharing user needs a way to suppress it:
   notification text falls back to the title when auto labels are turned off
   (§5.9 preference, off-switch per litmus #4).
+  **As built (P2-E7-06):** the switch is a WORKSPACE setting (`autoLabels`,
+  default on, the `autoTrust` shape) surfaced as a title-bar chip, not a key in
+  the notification prefs. §5.9's prefs are about notifications; this governs the
+  card first and the toast second, and the person who needs it off needs it off
+  mid-screen-share without hunting. Off HIDES rather than deletes: every auto
+  label leaves card, rail and toast at once, a label the user TYPED is never
+  hidden (those are the user's words, not the CLI's), and flipping back restores
+  instantly from a value that was never thrown away.
 
 ### 5.12 Events — what needs the operator NOW
 

@@ -37,7 +37,52 @@ session to Terminal mode from its **⋯** menu and the choice sticks.
   the whole name in the rename box.
 - **Task label:** click **+ task label** in the card header to note what this
   session is *for* ("fix the login bug"). It shows up in the sessions list and
-  in Events, which is what makes a wall of sessions readable.
+  in Events, which is what makes a wall of sessions readable. If you don't write
+  one, it fills itself in — see below.
+
+### The label writes itself
+
+Claude Code gives every conversation a short title of its own — the same thing
+you see on the tab in the VS Code extension. If you haven't typed a task label,
+switchboard shows that title instead, so a wall of cards reads "Add markdown
+preview", "Fix the login redirect", "Review the migration" rather than three
+copies of your project's folder name.
+
+Things worth knowing:
+
+- **It usually turns up a turn or two after your first prompt**, not instantly —
+  Claude names the conversation once it has something to name. Sometimes much
+  later. The space is reserved either way, so nothing on the card jumps when it
+  arrives.
+- **It keeps up.** Claude sometimes rewords its title as the work becomes
+  clearer, and the label follows.
+- **Anything you type wins, permanently.** The moment you type a label it is
+  yours, and no title from Claude will ever replace it — including after a
+  restart.
+- **Clearing the box hands it back.** Delete what you typed and press Enter, and
+  the label goes back to filling itself in. (Leaving it blank on purpose is not
+  the same as never having typed in it — that is why clearing is the way back
+  rather than "is it empty?")
+- **No title, no label.** If Claude never names the conversation, the card looks
+  exactly as it did before this existed: the folder name, and **+ task label**
+  waiting for you.
+- **It costs nothing.** switchboard is already reading the transcript file; it
+  reads one more line out of it. Nothing is sent anywhere, and it does not spend
+  a single token of your plan.
+- **Other tools may not have it.** This works for any CLI that writes a title of
+  its own. One that doesn't simply has no auto label — nothing breaks.
+
+### Turning it off (screen-sharing)
+
+The label is derived from your conversation, so it can put a phrase from your
+prompt on screen — on the card, in the sessions list, and in desktop
+notifications. If you're presenting or sharing your screen, click the **🏷 auto
+labels** chip in the title bar to turn it off.
+
+Off means: every auto-filled label disappears at once, desktop notifications go
+back to using the session's name, and no new ones are filled in. **Labels you
+typed yourself are never hidden** — those are your words, not Claude's. Click
+the chip again and the auto labels come straight back; nothing was thrown away.
 - Each session also gets a color and a short badge automatically, so you can
   recognize it without reading. The color is the stripe down the left edge of
   the card header, the dot in the sessions list — and the dot on the card's own

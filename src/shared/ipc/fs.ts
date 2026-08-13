@@ -42,17 +42,60 @@ export type FileReadRefusal =
   /** permissions, a busy handle, an I/O error — main logged the detail */
   | 'unreadable';
 
+/**
+ * How the bytes were decoded (P2-E16-02).
+ *
+ * The viewer showed mojibake for a UTF-16 file when this did not exist —
+ * `TextDecoder('utf-8')` over UTF-16LE renders every ASCII character followed
+ * by a NUL, so `hello` arrives as `h\0e\0l\0l\0o\0` — a wall of replacement
+ * glyphs rather than a document. Main sniffs the
+ * BOM and decodes accordingly, and says which one it used, because "this file
+ * is UTF-16" is worth showing in the header rather than leaving the reader to
+ * infer it from the damage.
+ */
+export type FileTextEncoding = 'utf-8' | 'utf-16le' | 'utf-16be';
+
 /** A successful read. `path` is the RESOLVED path, which may differ from the ask. */
 export interface FileReadOk {
   readonly ok: true;
   /** the real path the bytes came from — symlinks followed, `..` collapsed */
   readonly path: string;
-  /** UTF-8 text, at most `MAX_FILE_READ_BYTES` of it */
+  /** UTF-8 text, at most `MAX_FILE_READ_BYTES` of it. Empty when `binary`. */
   readonly text: string;
   /** the file's FULL size on disk in bytes, whether or not it all came back */
   readonly size: number;
   /** true when `text` is the first `MAX_FILE_READ_BYTES` of a larger file */
   readonly truncated: boolean;
+  /**
+   * How many BYTES of the file `text` was decoded from (P2-E16-02).
+   *
+   * Not `text.length` and not a re-measure in the renderer: the viewer's
+   * truncation strip says "showing the first X of Y", and X is a count only
+   * main has. Re-deriving it renderer-side means measuring DECODED text in
+   * UTF-8, which for a UTF-16 file is roughly half the truth.
+   */
+  readonly bytes?: number;
+  /**
+   * How `text` was decoded (P2-E16-02).
+   *
+   * Always present on a text read, never on a binary one — optional in the type
+   * because of the second half of that sentence, not because it is sometimes
+   * omitted for a text file. Reporting it even for the overwhelmingly common
+   * `utf-8` is deliberate: a field that is sometimes there is a field every
+   * caller has to remember the rule for.
+   */
+  readonly encoding?: FileTextEncoding;
+  /**
+   * The bytes are not text, and `text` is empty (P2-E16-02).
+   *
+   * Decided in MAIN, on the bytes, and the answer is deliberately not "read it
+   * anyway and let the renderer cope": §5.30's rule for a binary file is a card
+   * naming it, "not garbage", and the cheapest way to guarantee no garbage
+   * crosses the bridge is for the garbage never to leave main. It also means a
+   * `.txt` that is really a JPEG gets the card the same as a `.jpg` does — the
+   * extension is a hint, the bytes are the truth.
+   */
+  readonly binary?: boolean;
 }
 
 export interface FileReadRefused {

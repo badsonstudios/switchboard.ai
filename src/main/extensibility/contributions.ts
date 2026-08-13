@@ -68,6 +68,20 @@ export interface ProviderCapabilities {
    * is registered, so status comes from the process alone.
    */
   hooks?: HookCapability;
+  /**
+   * The CLI writes a human-readable TITLE of the conversation into its own
+   * transcript, which we display as the task label (§5.11, P2-E7-06). Absent:
+   * no line is ever inspected for one and the label is never auto-filled — the
+   * folder name stands, which is exactly how the app read before this existed.
+   *
+   * Separate from `transcripts` on purpose. That one says WHERE the file is;
+   * this one says the file contains a title AND how to recognise it. A provider
+   * can easily have the first without the second, and the key that carries it
+   * (`ai-title`/`aiTitle` for Claude) is undocumented — no contract promises it
+   * exists or keeps its name — so the one thing that must not happen is that
+   * spelling leaking into shared code as "the" way transcripts carry titles.
+   */
+  titles?: TitleCapability;
   /** The CLI can resume a previous conversation (§5.25). Absent: every start is
    *  a fresh session, and a persisted native id is simply not used. */
   resume?: ResumeCapability;
@@ -90,6 +104,24 @@ export interface TranscriptCapability {
    *  rather than once at startup, so it can depend on the environment (a
    *  provider may honour a HOME or config override the user changes). */
   projectsRoot(): string;
+}
+
+export interface TitleCapability {
+  /**
+   * The conversation title carried by ONE already-parsed transcript line, or
+   * undefined when this line does not carry one — which is the answer for
+   * nearly every line in the file.
+   *
+   * A per-line reader rather than "read the title out of this file": the host
+   * is already tailing, line by line, and handing the adapter the file would
+   * make it re-read bytes we have decoded. It also means the title tracks the
+   * conversation for free — the CLI revises it and then re-emits the settled
+   * value every turn, and the host de-dupes.
+   *
+   * MUST NOT THROW; if it does, the host degrades this capability to absent for
+   * the session rather than losing the transcript (fail-open, P6).
+   */
+  titleFrom(line: Record<string, unknown>): string | undefined;
 }
 
 export interface HookCapability {

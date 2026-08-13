@@ -11,7 +11,7 @@ import { ProviderAdapter, SpawnOptions, SpawnRecipe } from '../extensibility/con
 import { SlashCommand } from '../../shared/slash-commands';
 import { conversationExists } from '../transcripts/paths';
 import { ensureFolderTrusted } from '../sessions/trust';
-import { claudeProjectsRoot, writeSessionSettings } from './claude';
+import { claudeProjectsRoot, readAiTitle, writeSessionSettings } from './claude';
 
 /**
  * The compiled fake CLI.
@@ -54,6 +54,7 @@ export const fakeStreamAdapter: ProviderAdapter = {
   // nothing about the seam.
   capabilities: {
     transcripts: { projectsRoot: claudeProjectsRoot },
+    titles: { titleFrom: readAiTitle },
     hooks: { settingsFor: (sessionId, host) => host.buildHookSettings(sessionId) },
     resume: {
       canResume: (folder, nativeSessionId) =>
