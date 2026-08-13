@@ -376,7 +376,10 @@ export function App(): React.JSX.Element {
   // through a prop each. Installed once the grid controller exists, removed on
   // unmount so a torn-down window's dock is never called into.
   useEffect(() => {
-    setDocumentOpener((file) => grid.current?.openDocument(file));
+    // `sessionId` forwarded, not swallowed (P2-E16-03): the surface that asked
+    // is the only thing that knows which session a path belongs to, and §5.24's
+    // attribution is exactly that answer travelling with the request.
+    setDocumentOpener((file, sessionId) => grid.current?.openDocument(file, sessionId));
     return () => setDocumentOpener(null);
   }, []);
 
