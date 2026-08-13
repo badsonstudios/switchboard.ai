@@ -345,6 +345,44 @@ export async function launchSecondInstance(
   });
 }
 
+/**
+ * Launch the app on an isolated home, with the PTY-only fake CLI.
+ *
+ * THE `[pty]` TAG (P2-E18-18, #404) — the one place it is defined.
+ *
+ * Unless `env.SWITCHBOARD_FAKE_PROVIDER` says otherwise, this sets it to `'1'`:
+ * the terminal-only fake. Since #381 the host ASKS every session for `stream`
+ * (Direct is the default transport), and that fake answers with a PTY recipe —
+ * an adapter that cannot speak stream-json is honoured, so `session-manager.ts`
+ * falls back. **Every session launched through here therefore runs on the PTY,
+ * which is no longer the configuration most users are in.** The refusal itself
+ * is pinned by `stream.spec.ts` → "a PTY session still gets a real terminal"
+ * and by `providers/fake.test.ts`, so it cannot change meaning silently.
+ *
+ * Most specs do not care: a rail reorder or a palette row behaves the same on
+ * either transport, and running them on the PTY is an implementation detail.
+ * Some specs DO care — they assert a live `.xterm`, or they drive a subsystem
+ * the stream path switches off (the hook-hold permission path,
+ * `hooks/hook-listener.ts`; the transcript-derive feed, `deriveFeed:
+ * record.transport !== 'stream'` in `sessions/ipc.ts`). Those cannot pass as
+ * written on the app's default transport, so their green must not be read as
+ * default-mode coverage.
+ *
+ * **Those carry a literal `[pty]` prefix in their `describe`/`test` title**, and
+ * their file header carries a `TRANSPORT SCOPE` note saying what is
+ * PTY-by-construction and where the Direct counterpart lives (`stream.spec.ts`,
+ * `stream-approval.spec.ts`, `stream-attention.spec.ts`, `stream-feed.spec.ts`).
+ *
+ * Tag at the HIGHEST level that is wholly PTY-scoped, and only there — a
+ * `describe` when every test under it is, individual tests when the group is
+ * mixed, never both. So an UNtagged test in a tagged `describe` does not exist;
+ * an untagged test in a file whose OTHER tests are tagged is
+ * transport-independent and merely happens to run on the PTY.
+ *
+ * The tag is plain text in the title, not a Playwright `tag:` option, so it
+ * shows up in every reporter and in failure output; `playwright test --grep
+ * '\[pty\]'` (or `--grep-invert`) filters on it. Nothing in CI greps titles.
+ */
 export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> {
   const home = opts.home ?? fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-'));
   const env: Record<string, string> = { ...process.env } as Record<string, string>;
