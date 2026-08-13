@@ -3,7 +3,41 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — 🎛 RUN 17 FULLY CLOSED 2026-08-13: 30 ITEMS, TWO
+> # ▶▶ START HERE — 📋 /PM SITTING 2026-08-13 (post-run-17) DONE
+>
+> **Four agenda items, all closed:**
+> **(1) #397 DECIDED: gate the trust pre-write on the resolved spawn
+> transport.** Dan-authorized real-CLI probe ran at the sitting (untrusted
+> `C:\tmp` folder, stream-json mode, CLI 2.1.226): session runs, **project
+> hooks fire, settings load**, and the CLI writes NO projects entry — the
+> app's pre-write is the only trust grantor on Direct, so gating loses
+> nothing. Decision + probe record posted on PR #437. Next: small follow-up
+> commit on `feature/397-ask-trust-direct` (+ test pinning Direct+autoTrust
+> writes nothing), un-draft → Dan's queue.
+> **(2) #407 design gate: three shapes presented to Dan** (A merge into
+> urgency strip · B collapsed drawer w/ badge + status-bar queue count —
+> RECOMMENDED · C full dissolution into existing surfaces). **Awaiting
+> Dan's pick; #420 #449 #268 #483-render held behind it.**
+> **(3) Release cut AUTHORIZED → issue #480** (0.4.0; folds #394
+> package-lock refresh; ~219-line completeness audit vs v0.3.0..HEAD;
+> Dan pushes the v0.4.0 tag after merging the cut PR). **Run #480 FIRST
+> next batch, before new merges grow the section.**
+> **(4) Tail triaged; #423 SPLIT → #481 (05a sounds+TTS, drop-in) /
+> #482 (05b quiet-hours conditions + #424's webhook-applicability
+> decision) / #483 (05c digest, depends 05b), plan file updated.**
+> Priority queue: #480 → finish #437 → #458 (find jump-to-hit on Direct)
+> → composer serial track #475→#476 → #465→#477 serial (copy button rides
+> the forgery guard's plumbing) → #479 (e2e secondary monitor). Then small
+> fry #447 #445 #462(now unblocked, #461 merged) #470 #472 #412 #415 #481.
+> Collision map + full triage table in the sitting report (2026-08-13).
+> Held: #420 #449 behind #407 pick · #337 behind design-hold #269 · #442
+> serial-after #447 (same FeedView) · #466 soft-collides #465 · #255 is L,
+> campaign-vs-tranches split still undecided (only true L in the tail).
+> **NEXT SESSION: Dan picks the #407 shape, then /orchestrate (queue
+> above); #480 solo first.**
+>
+> # (run-17 close record follows)
+> # 🎛 RUN 17 FULLY CLOSED 2026-08-13: 30 ITEMS, TWO
 > # TRAINS, EVERYTHING MERGED
 >
 > **TRAIN #478 (2nd, Dan-authorized "go ahead and merge the PRs") LANDED

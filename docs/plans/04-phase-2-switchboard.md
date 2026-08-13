@@ -930,13 +930,29 @@ Work items:
   *Done when:* toast-Allow runs the held tool with the app unfocused; Deny
   refuses; a permission decided elsewhere withdraws its toast; a dead
   session's toast logs instead of throwing.
-- **P2-E14-05 · Per-session sounds, TTS, quiet hours + digest — M (§5.9).
-  [issue #423]** *(depends: 03)* Distinct per-session sounds; TTS speaking
-  the task label (pairs with E7-06/#408, falls back to title); quiet hours;
-  missed-events digest on return.
-  *Done when:* two sessions ring distinguishably; TTS speaks the label;
-  quiet hours suppress and the digest lists what was suppressed; all
-  actions fail open — audio failure never delays the event.
+- **P2-E14-05 · Per-session sounds, TTS, quiet hours + digest — SPLIT
+  2026-08-13 (§5.9).** Filed as #423, split at the 2026-08-13 /pm sitting
+  per #421's sizing note (sounds/TTS are drop-in actions on the #421 seam;
+  quiet hours are *conditions* needing `Rule` schema + a clock on
+  `RuleTrigger`, which rules.ts deliberately forbids today):
+  - **P2-E14-05a · Sounds + TTS as rule actions — S/M. [issue #481]**
+    *(depends: 03, shipped)* Distinct per-session sounds; TTS speaking the
+    task label (pairs with E7-06/#408, falls back to title).
+    *Done when:* two sessions ring distinguishably; TTS falls back when
+    auto-labels are off; prefs persist; audio/TTS failure never delays the
+    event.
+  - **P2-E14-05b · Quiet hours as conditions + per-action-class
+    applicability — M. [issue #482]** *(depends: 03, shipped)* Schema +
+    evaluator changes; injected clock; the #424 decision — person-facing
+    actions honor quiet hours, webhook (machine-facing) gets an override
+    or exemption, pinned with a test; suppressed events recorded for 05c.
+    *Done when:* quiet hours silence person-facing actions only; webhook
+    semantics pinned; evaluation stays table-driven and deterministic.
+  - **P2-E14-05c · Missed-events digest — M. [issue #483]** *(depends:
+    05b's suppression record; render surface follows the 01/#407 gate)*
+    What happened while you were away, surfaced on return.
+    *Done when:* digest lists what was suppressed, clears on review,
+    fails open.
 - **P2-E14-06 · Phone push (ntfy/Pushover) + webhook — M (§5.9) [part
   user]. [issue #424]** *(depends: 03 + Dan's service pick)* Push and
   generic-webhook rule actions; credentials in the OS credential store
