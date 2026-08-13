@@ -6,9 +6,12 @@
 // (`e2e/permission-toast.spec.ts`) proves the toast that carries those buttons
 // is really built and really withdrawn.
 import { describe, it, expect, vi } from 'vitest';
+import fs from 'fs';
+import path from 'path';
 import type { PermissionRequest } from '../../shared/ipc/permissions';
 import {
   DECIDE_BUTTONS,
+  DECIDE_BUTTON_LABELS,
   PermissionToasts,
   permissionSummary,
   toastActionsSupported,
@@ -51,6 +54,8 @@ describe('PermissionToasts — the button routing (P2-E14-04)', () => {
     // The whole failure this pins: reorder the buttons on the notification and
     // forget the routing, and Allow sends deny. There is exactly one source.
     expect(DECIDE_BUTTONS).toEqual(['allow', 'deny']);
+    // …and every button has a label, so a third one cannot ship blank.
+    expect(DECIDE_BUTTONS.map((d) => DECIDE_BUTTON_LABELS[d])).toEqual(['Allow', 'Deny']);
   });
 
   it('an index this build never attached decides NOTHING', () => {
@@ -263,5 +268,33 @@ describe('permissionSummary — a toast that names what Allow would allow', () =
     expect(
       permissionSummary({ requestId: 'r', sessionId: 's', tool: '', input: undefined as never })
     ).toBe('Allow a tool?');
+  });
+});
+
+// The click path crosses main -> preload -> App, and no runtime test in this
+// repo can reach it: a click on a real OS toast happens in the shell, and App
+// is never mounted in a unit test (it is a 100vh shell over dockview — see
+// `always-visible-notices.test.ts`, which reads App's source for exactly this
+// reason). So the witness is the SOURCE TEXT, the established fallback here.
+// Without it, `sessions:revealCard` could be deleted at any one of the three
+// ends and everything would stay green while the only gesture a Linux user has
+// stopped working.
+describe('the click path is wired end to end (P2-E14-04)', () => {
+  const read = (...p: string[]): string =>
+    fs.readFileSync(path.join(__dirname, '..', '..', ...p), 'utf8');
+
+  it('the channel is declared, or the broker would refuse main own push', () => {
+    expect(read('shared', 'ipc', 'capabilities.ts')).toContain("'sessions:revealCard': 'sessions.read'");
+  });
+
+  it('the preload exposes it on that channel', () => {
+    const preload = read('preload', 'index.ts');
+    expect(preload).toContain('onRevealCard');
+    expect(preload).toContain("ipcRenderer.on('sessions:revealCard'");
+  });
+
+  it('App subscribes and lands on the card, rather than merely raising a window', () => {
+    const app = read('renderer', 'src', 'App.tsx');
+    expect(app).toMatch(/onRevealCard\?\.\(\(r\) => \{[\s\S]{0,120}focusCard\(r\.cardId\)/);
   });
 });
