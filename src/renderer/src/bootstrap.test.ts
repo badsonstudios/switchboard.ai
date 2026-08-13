@@ -38,6 +38,7 @@ function noopDeps(): CommandDeps {
     openAbout: () => {},
     checkForUpdates: () => {},
     openFile: () => {},
+    openPushSetup: () => {},
   };
 }
 

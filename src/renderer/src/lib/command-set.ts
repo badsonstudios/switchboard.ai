@@ -64,6 +64,8 @@ export interface CommandDeps {
   checkForUpdates: () => void;
   /** pick a file and open it in a §5.30 document viewer (E16-02) */
   openFile: () => void;
+  /** set up phone push / webhooks — the credential surface (E14-06, §5.29) */
+  openPushSetup: () => void;
 }
 
 const CATEGORY_SESSION = 'commands.category.session';
@@ -148,6 +150,18 @@ export function buildCommands(deps: CommandDeps): Command[] {
       enabled: (ctx) => ctx.attentionCount > 0,
       disabledReasonKey: 'commands.disabled.emptyQueue',
       run: () => deps.jumpToNextAttention(),
+    },
+    {
+      // Phone push + webhooks (E14-06). Filed under Attention rather than Help
+      // because that is the question it answers — "how does a session reach
+      // me?" — and palette-only, unbound, like About: it is a setup gesture
+      // done once, not something to give a chord to. The About panel carries
+      // the mouse path, beside the app's other outbound-network switches.
+      id: 'attention.pushSetup',
+      titleKey: 'commands.pushSetup',
+      categoryKey: CATEGORY_ATTENTION,
+      scope: 'app',
+      run: () => deps.openPushSetup(),
     },
     ...jumps,
     {

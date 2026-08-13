@@ -16,6 +16,7 @@ import type {
 } from '../shared/update';
 import type { WorkspaceSaveState } from '../shared/workspace';
 import type { ServiceHealthPrefs, ServiceHealthStatus } from '../shared/service-health';
+import type { PushConfig, PushPrefs, PushSecretKey, PushSendResult } from '../shared/push';
 
 const versionArg = process.argv.find((a) => a.startsWith('--switchboard-version='));
 const seedArg = process.argv.find((a) => a.startsWith('--switchboard-seed-panels='));
@@ -479,6 +480,26 @@ const api = {
     getPrefs: (): Promise<ServiceHealthPrefs> => ipcRenderer.invoke('health:getPrefs'),
     setPrefs: (p: { poll?: boolean }): Promise<ServiceHealthPrefs> =>
       ipcRenderer.invoke('health:setPrefs', p),
+  },
+  /**
+   * Phone push + webhook (P2-E14-06, §5.9 + §5.29).
+   *
+   * **Write-only for credentials.** `setSecret` puts a value into the OS
+   * credential store and there is no call that reads one back — `getConfig`
+   * answers with booleans. That is the point of the boundary: this side of it
+   * renders documents it did not write, and a compromise here must not be able
+   * to walk off with the user's Pushover token.
+   */
+  push: {
+    getConfig: (): Promise<PushConfig> => ipcRenderer.invoke('push:getConfig'),
+    setPrefs: (p: Partial<PushPrefs>): Promise<PushConfig> =>
+      ipcRenderer.invoke('push:setPrefs', p),
+    /** store one credential; an empty string forgets it */
+    setSecret: (key: PushSecretKey, value: string): Promise<PushConfig> =>
+      ipcRenderer.invoke('push:setSecret', key, value),
+    /** send one now, whatever the switches say — the dialog's Send test */
+    test: (channel: 'push' | 'webhook'): Promise<PushSendResult> =>
+      ipcRenderer.invoke('push:test', channel),
   },
   transcripts: {
     blocks: (liveId: string): Promise<unknown[]> => ipcRenderer.invoke('transcripts:blocks', liveId),

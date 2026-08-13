@@ -64,6 +64,19 @@ export interface RuleAction {
 /** The `os-toast` action's payload, the only built-in action in v1. */
 export const ACTION_OS_TOAST = 'os-toast';
 
+/**
+ * The two actions that leave the machine (P2-E14-06, §5.9): a notification on
+ * the user's phone, and one POST to an endpoint they own.
+ *
+ * **Both carry an empty payload, deliberately.** The destination — an ntfy
+ * topic, a Pushover token, a webhook URL — is a credential, and a credential in
+ * an action payload is a credential in the workspace file (§5.29 forbids
+ * exactly that). The handler reads it from the OS credential store when it
+ * fires: `events/push-actions.ts`.
+ */
+export const ACTION_PUSH = 'push';
+export const ACTION_WEBHOOK = 'webhook';
+
 export interface Rule {
   id: string;
   /** which event fires it */
@@ -136,25 +149,61 @@ export function notifyWhenDoneFor(rules: readonly Rule[], cardId: string): boole
  *   on its own, and it is worth a popup even if they are looking at another
  *   card in the same window.
  *
- * `done` is deliberately absent: since this item it is per-session opt-in via
- * the checkbox, because a toast for every short turn is noise (§5.9). That is a
- * REDUCTION for anyone who had `osToasts` on — it is called out in the manual
- * and the changelog rather than left to be discovered.
+ * `done` is deliberately absent from the TOASTS: since this item it is
+ * per-session opt-in via the checkbox, because a toast for every short turn is
+ * noise (§5.9). That is a REDUCTION for anyone who had `osToasts` on — it is
+ * called out in the manual and the changelog rather than left to be discovered.
+ *
+ * P2-E14-06 adds two more channels on the same terms — each with its own
+ * switch, each synthesized here rather than persisted, and each independent of
+ * the toasts: a user can have their phone buzz with desktop popups off, which
+ * is the same "a control that silently did nothing because of another one
+ * elsewhere would be a lie" decision the per-session checkbox is built on.
  */
-export function defaultRules(prefs: { osToasts?: boolean }): Rule[] {
-  if (!prefs.osToasts) return [];
-  const toast = (kind: FeedKind, visibility: readonly WindowVisibility[]): Rule => ({
-    id: `default:${kind}`,
+export function defaultRules(prefs: {
+  osToasts?: boolean;
+  /** phone push is configured AND switched on (P2-E14-06) */
+  push?: boolean;
+  /** the generic webhook is configured AND switched on (P2-E14-06) */
+  webhook?: boolean;
+}): Rule[] {
+  const rule = (
+    channel: string,
+    action: string,
+    kind: FeedKind,
+    visibility: readonly WindowVisibility[]
+  ): Rule => ({
+    id: `default:${channel}${kind}`,
     event: kind,
     visibility: [...visibility],
-    actions: [{ type: ACTION_OS_TOAST }],
-    source: `default:${kind}`,
+    actions: [{ type: action }],
+    source: `default:${channel}${kind}`,
   });
-  return [
-    toast('needs-input', WHEN_AWAY),
-    toast('needs-permission', WHEN_AWAY),
-    toast('crashed', ALL_VISIBILITIES),
-  ];
+  const out: Rule[] = [];
+  if (prefs.osToasts) {
+    const toast = (kind: FeedKind, vis: readonly WindowVisibility[]): Rule =>
+      rule('', ACTION_OS_TOAST, kind, vis);
+    out.push(
+      toast('needs-input', WHEN_AWAY),
+      toast('needs-permission', WHEN_AWAY),
+      toast('crashed', ALL_VISIBILITIES)
+    );
+  }
+  // Phone push (P2-E14-06). The same three events the toasts cover, and only
+  // WHEN AWAY — including `crashed`, which the toast excepts. The exception is
+  // right for a popup on the screen you are already looking at and wrong for a
+  // phone in your pocket: if you are at the desk, you can see the card died.
+  if (prefs.push)
+    for (const kind of ['needs-input', 'needs-permission', 'crashed'] as const)
+      out.push(rule('push:', ACTION_PUSH, kind, WHEN_AWAY));
+  // The webhook is NOT a notification and is not conditioned like one: it goes
+  // to a program, so it fires whatever the window is doing, and it includes
+  // `done` — a consumer building a dashboard or a log wants the whole attention
+  // stream, not the half of it the user happened to miss.
+  if (prefs.webhook)
+    for (const kind of ['needs-input', 'needs-permission', 'crashed', 'done'] as const)
+      out.push(rule('webhook:', ACTION_WEBHOOK, kind, ALL_VISIBILITIES));
+  return out;
 }
 
 /** Does this rule fire for this trigger? Event AND scope AND visibility. */

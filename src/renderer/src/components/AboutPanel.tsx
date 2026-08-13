@@ -41,6 +41,14 @@ export function AboutPanel(props: {
   statusPolling?: boolean;
   onToggleStatusPolling?: (on: boolean) => void;
   /**
+   * Phone push + webhooks (P2-E14-06). The mouse path to that dialog, and it
+   * is here for the reason the status-polling toggle above it is: this panel
+   * has become the one place that collects everything this app sends or
+   * fetches over the network, and a user looking for "what leaves my machine?"
+   * should find all of it together. Optional, like the pair above.
+   */
+  onOpenPushSetup?: () => void;
+  /**
    * Another modal is stacked ON TOP of this one (the update dialog, which is
    * reachable from here). Two nested `aria-modal="true"` regions is a case
    * screen readers handle inconsistently, so the panel underneath stops
@@ -288,6 +296,21 @@ export function AboutPanel(props: {
               />
               {t('health.setting')}
             </label>
+          </div>
+        )}
+        {props.onOpenPushSetup && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+              padding: '10px 14px',
+              borderBlockStart: '1px solid var(--border)',
+            }}
+          >
+            <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{t('push.sectionPush')}</span>
+            <AboutButton onClick={props.onOpenPushSetup}>{t('push.open')}</AboutButton>
           </div>
         )}
         <div
