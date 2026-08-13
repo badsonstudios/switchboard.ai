@@ -15,10 +15,12 @@ import type {
   UpdateStatus,
 } from '../shared/update';
 import type { WorkspaceSaveState } from '../shared/workspace';
+import type { ServiceHealthPrefs, ServiceHealthStatus } from '../shared/service-health';
 
 const versionArg = process.argv.find((a) => a.startsWith('--switchboard-version='));
 const seedArg = process.argv.find((a) => a.startsWith('--switchboard-seed-panels='));
 const seedSessionArg = process.argv.find((a) => a.startsWith('--switchboard-seed-session='));
+const seedDocArg = process.argv.find((a) => a.startsWith('--switchboard-seed-document='));
 
 export interface SessionRecordDto {
   id: string;
@@ -55,6 +57,15 @@ const api = {
   seedPanels: seedArg ? Number(seedArg.split('=')[1]) || 0 : 0,
   /** scripted-check seam: auto-create one real session in this folder */
   seedSessionFolder: seedSessionArg ? seedSessionArg.split('=').slice(1).join('=') : '',
+  /**
+   * scripted-check seam: open one document viewer at boot (P2-E16-02).
+   *
+   * It grants NOTHING — the path still has to be inside the read scope, so a
+   * spec seeds a session folder and points this at a file within it. That is
+   * deliberate: a seam that widened the scope would be a seam that could be
+   * used to test the scope away.
+   */
+  seedDocument: seedDocArg ? seedDocArg.split('=').slice(1).join('=') : '',
   workspace: {
     getLayout: (): Promise<unknown> => ipcRenderer.invoke('workspace:getLayout'),
     setLayout: (layout: unknown): void => ipcRenderer.send('workspace:setLayout', layout),
@@ -227,6 +238,21 @@ const api = {
       ipcRenderer.on('sessions:cardsChanged', h);
       return () => ipcRenderer.removeListener('sessions:cardsChanged', h);
     },
+    /**
+     * A card's task label changed (P2-E7-06) — usually because the CLI wrote a
+     * title into its transcript and nothing in the renderer asked for it.
+     *
+     * Carries the value, unlike `onCardsChanged`: the grid's card header keeps
+     * its label in local state, so there is nothing there to re-read, and
+     * `cards()` resolves a git root per card — far too expensive to run every
+     * time one string moves. `label` is undefined when the card has none to
+     * show, which includes an auto label the user has switched off.
+     */
+    onTaskLabel: (cb: (p: { cardId: string; label?: string }) => void): (() => void) => {
+      const h = (_e: unknown, p: { cardId: string; label?: string }) => cb(p);
+      ipcRenderer.on('sessions:taskLabel', h);
+      return () => ipcRenderer.removeListener('sessions:taskLabel', h);
+    },
     onUsage: (cb: (snap: unknown) => void): (() => void) => {
       const h = (_e: unknown, s: unknown) => cb(s);
       ipcRenderer.on('sessions:usage', h);
@@ -302,6 +328,12 @@ const api = {
   settings: {
     getAutoTrust: (): Promise<boolean> => ipcRenderer.invoke('settings:getAutoTrust'),
     setAutoTrust: (on: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setAutoTrust', on),
+    /** Fill blank task labels from the CLI's own conversation title (P2-E7-06).
+     *  Off hides every auto label at once and drops toast text back to the
+     *  session title — the screen-share switch (§5.11). */
+    getAutoLabels: (): Promise<boolean> => ipcRenderer.invoke('settings:getAutoLabels'),
+    setAutoLabels: (on: boolean): Promise<boolean> =>
+      ipcRenderer.invoke('settings:setAutoLabels', on),
   },
   preflight: {
     check: (): Promise<{
@@ -365,8 +397,28 @@ const api = {
    * caller does not have to log it again, only render it.
    */
   files: {
-    /** absolute path in, at most `MAX_FILE_READ_BYTES` of UTF-8 out */
+    /** absolute path in, at most `MAX_FILE_READ_BYTES` of decoded text out */
     read: (p: string): Promise<FileReadResult> => ipcRenderer.invoke('fs:read', p),
+    /**
+     * The native `Open file…` dialog (P2-E16-02). Resolves the chosen path, or
+     * null if the user cancelled. Choosing a file also GRANTS it: main adds it
+     * to the read scope before answering, so the `read` that follows succeeds.
+     */
+    pickFile: (): Promise<string | null> => ipcRenderer.invoke('fs:pickFile'),
+    /**
+     * A link out of a rendered document, into the user's browser. Resolves
+     * FALSE for any scheme but `http`, `https` and `mailto` — a `javascript:`
+     * or `file:` href does nothing at all.
+     */
+    openExternal: (url: string): Promise<boolean> => ipcRenderer.invoke('fs:openExternal', url),
+    /**
+     * §5.30's escape hatch: hand the file to whatever the OS has registered for
+     * it. Scope-checked in main against the same roots as `read`, so this can
+     * only be aimed at a file the caller could already have read.
+     */
+    openPath: (p: string): Promise<boolean> => ipcRenderer.invoke('fs:openPath', p),
+    /** Show the file in the OS file manager. Scope-checked like `openPath`. */
+    reveal: (p: string): Promise<boolean> => ipcRenderer.invoke('fs:reveal', p),
   },
   git: {
     status: (folder: string): Promise<unknown> => ipcRenderer.invoke('git:status', folder),
@@ -385,6 +437,20 @@ const api = {
     }): Promise<{ enabled: boolean; osToasts?: boolean; quietStart?: string; quietEnd?: string }> =>
       ipcRenderer.invoke('notifications:setPrefs', p),
   },
+  /**
+   * Notification rules (P2-E14-03, §5.9). The renderer's whole write surface
+   * in v1 is the per-session "notify when done" checkbox — main mints the rule
+   * itself, so the renderer never names an event, a condition or an action.
+   */
+  rules: {
+    list: (): Promise<unknown[]> => ipcRenderer.invoke('rules:list'),
+    /** is this card's "notify when done" box ticked? */
+    notifyWhenDone: (cardId: string): Promise<boolean> =>
+      ipcRenderer.invoke('rules:notifyWhenDone', cardId),
+    /** tick/untick it; resolves to the state the STORE now holds */
+    setNotifyWhenDone: (cardId: string, on: boolean): Promise<boolean> =>
+      ipcRenderer.invoke('rules:setNotifyWhenDone', cardId, on),
+  },
   events: {
     list: (): Promise<unknown[]> => ipcRenderer.invoke('events:list'),
     ack: (sessionId: string): Promise<void> => ipcRenderer.invoke('events:ack', sessionId),
@@ -395,6 +461,24 @@ const api = {
       ipcRenderer.on('events:changed', h);
       return () => ipcRenderer.removeListener('events:changed', h);
     },
+  },
+  /**
+   * Provider service health (P2-E14-07, §5.14) — "is it me or is it them?".
+   *
+   * READ-ONLY, both halves: the status page's own verdict and this machine's
+   * corroboration arrive in one record. `get` is what a mounting window asks;
+   * everything after that arrives on `onStatus`.
+   */
+  health: {
+    get: (): Promise<ServiceHealthStatus> => ipcRenderer.invoke('health:get'),
+    onStatus: (cb: (s: ServiceHealthStatus) => void): (() => void) => {
+      const h = (_e: unknown, s: ServiceHealthStatus): void => cb(s);
+      ipcRenderer.on('health:status', h);
+      return () => ipcRenderer.removeListener('health:status', h);
+    },
+    getPrefs: (): Promise<ServiceHealthPrefs> => ipcRenderer.invoke('health:getPrefs'),
+    setPrefs: (p: { poll?: boolean }): Promise<ServiceHealthPrefs> =>
+      ipcRenderer.invoke('health:setPrefs', p),
   },
   transcripts: {
     blocks: (liveId: string): Promise<unknown[]> => ipcRenderer.invoke('transcripts:blocks', liveId),

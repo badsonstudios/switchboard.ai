@@ -135,7 +135,12 @@ costing — at a glance. Uses existing data; mostly UI wiring.*
 cost, git, and plan progress — and the rail mirrors every card. Litmus
 (PHILOSOPHY §4) checked on each visible surface. *(E7-01…05 shipped in PR #42;
 **E7-06 filed as issue #408, 2026-08-11** — the epic is
-otherwise merged, so this one item reopens it rather than starting an epic.)*
+otherwise merged, so this one item reopens it rather than starting an epic.
+**E7-06 built 2026-08-11**: `titles` is a fifth §5.3 capability with a per-LINE
+reader, `labelSource` rides the persisted card, and the off-switch landed as a
+workspace setting + title-bar chip rather than a notification pref — both "as
+built" notes are in DESIGN §5.11 and §5.3. Fixtures are REAL `ai-title` lines
+copied out of `~/.claude/projects/`, in `src/main/transcripts/fixtures/`.)*
 
 ---
 

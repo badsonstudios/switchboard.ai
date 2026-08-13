@@ -270,7 +270,13 @@ function resolved(theme: (typeof builtinThemes)[number]): Record<string, string>
 /** the rules that fill OPAQUELY with a color and write on it, and the floor
  *  each owes. Tinted fills are the same promise measured differently — see
  *  "Text on a TINTED fill" below. */
-const FILLED_RULES: Array<[string, number]> = [['.preflight-banner', 4.5]];
+const FILLED_RULES: Array<[string, number]> = [
+  ['.preflight-banner', 4.5],
+  // P2-E14-07's corroboration strip. Same pair as the preflight banner, and on
+  // the list for the same reason: a warning nobody can read is a warning that
+  // did not arrive.
+  ['.service-health-banner', 4.5],
+];
 
 /**
  * The rules whose background is a color-mix of a hue into a surface. Declared

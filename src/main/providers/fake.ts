@@ -10,7 +10,7 @@ import { ensureFolderTrusted } from '../sessions/trust';
 // the real adapter's root, imported rather than re-derived: a hand-copied
 // second copy is how "indistinguishable from the real thing" quietly stops
 // being true
-import { claudeProjectsRoot } from './claude';
+import { claudeProjectsRoot, readAiTitle } from './claude';
 
 export const fakeAdapter: ProviderAdapter = {
   manifest: {
@@ -30,6 +30,7 @@ export const fakeAdapter: ProviderAdapter = {
   // test adapter in `sessions/start-plan.test.ts` and `sessions/ipc.test.ts`.
   capabilities: {
     transcripts: { projectsRoot: claudeProjectsRoot },
+    titles: { titleFrom: readAiTitle },
     hooks: { settingsFor: (sessionId, host) => host.buildHookSettings(sessionId) },
     resume: {
       canResume: (folder, nativeSessionId) =>

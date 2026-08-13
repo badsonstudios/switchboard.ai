@@ -23,7 +23,9 @@ import { LogFields, Logger } from '../log/logger';
 import { SessionIdentity } from '../sessions/session-manager';
 import { WindowState, mergeState, isOnAnyDisplay } from '../window-state';
 import { UpdatePrefs } from '../../shared/update';
+import { ServiceHealthPrefs } from '../../shared/service-health';
 import { WorkspaceSaveState } from '../../shared/workspace';
+import { Rule, isSaneRule } from '../events/rules';
 
 export interface PersistedSession {
   id: string;
@@ -57,6 +59,17 @@ export interface PersistedSession {
   transport?: 'pty' | 'stream';
   /** freeform "what is this doing" label, distinct from the folder title */
   taskLabel?: string;
+  /**
+   * Who set `taskLabel` (P2-E7-06, §5.11): the user typed it, or it was filled
+   * from the CLI's own conversation title. `'user'` is sticky for ever;
+   * `'auto'` keeps tracking.
+   *
+   * ABSENT ON EVERY CARD WRITTEN BEFORE THIS FEATURE, and the meaning of that
+   * absence matters — those cards may carry a label the user typed under E7-03.
+   * `sessions/auto-label.ts` reads it, and treats "absent with text in it" as
+   * the user's; nothing here needs a migration because that rule is exact.
+   */
+  labelSource?: 'auto' | 'user';
   /** persistent-group membership (E12); absent/null = ungrouped */
   groupId?: string;
 }
@@ -99,8 +112,34 @@ export interface WorkspaceState {
    *  origin changes port per launch, so localStorage resets every run. */
   ui: unknown;
   notifications: NotificationPrefsState;
+  /**
+   * Notification rules (P2-E14-03, §5.9) — `when [event] in [session | any] ->
+   * [actions]`. A TOP-LEVEL typed field for the same reason `updates` is one:
+   * MAIN is the reader (the engine runs with no renderer involved), and the
+   * renderer rewrites the opaque `ui` blob wholesale.
+   *
+   * Only USER rules live here. The built-ins are synthesized from the
+   * notification prefs on every event (`events/rules.ts` → `defaultRules`), so
+   * flipping a pref never has to rewrite anyone's data.
+   */
+  rules: Rule[];
   /** auto-trust a folder on session open (picking a folder = trusting it) */
   autoTrust: boolean;
+  /**
+   * Fill a blank task label from the CLI's own conversation title (P2-E7-06,
+   * §5.11). Default ON — it is the feature.
+   *
+   * The off-switch exists for one concrete reason and it is not squeamishness:
+   * the label is derived from what the user asked the agent, and it renders on
+   * the card, in the rail and in OS toasts, which is to say it leaves the app
+   * window and lands in a screen-share. Turning it off hides every auto label
+   * at once and drops toast text back to the session title.
+   *
+   * A workspace setting beside `autoTrust`, not a notification pref, even though
+   * §5.11 files it under §5.9: notification prefs are about notifications, and
+   * this governs the card first and the toast second.
+   */
+  autoLabels: boolean;
   /**
    * Update-check preferences (P2-E19-03). A top-level TYPED field rather than
    * a key in the opaque `ui` blob, because MAIN is the reader: the daily timer
@@ -109,6 +148,12 @@ export interface WorkspaceState {
    * written.
    */
   updates: UpdatePrefs;
+  /**
+   * Provider service-health polling (P2-E14-07). A typed top-level field for
+   * the `updates` reason: MAIN is the reader — the poll timer runs with no
+   * renderer involved, and the renderer rewrites `ui` wholesale.
+   */
+  health: ServiceHealthPrefs;
 }
 
 /** The schema version this build writes. Bump it and add a MIGRATIONS entry. */
@@ -162,8 +207,11 @@ const EMPTY: WorkspaceState = {
   layout: null,
   ui: null,
   notifications: { enabled: true, osToasts: false },
+  rules: [],
   autoTrust: true,
+  autoLabels: true,
   updates: { autoCheck: true },
+  health: { poll: true },
 };
 
 /** Stable identity for a display arrangement (§7). */
@@ -180,8 +228,10 @@ function emptyState(): WorkspaceState {
     ...EMPTY,
     sessions: [],
     groups: [],
+    rules: [],
     notifications: { ...EMPTY.notifications },
     updates: { ...EMPTY.updates },
+    health: { ...EMPTY.health },
   };
 }
 
@@ -332,8 +382,21 @@ export class WorkspaceStore {
           unusable: updates.repaired,
         });
 
+      // A rule this build cannot read is dropped, not repaired: a half-understood
+      // rule would fire the wrong channel at the wrong moment, which is worse
+      // than not firing (P6 fail-open cuts this way for notifications).
+      const rules = keepSane(raw.rules, isSaneRule, 'rule', note);
+      const health = sanitizeHealth(raw.health);
+      if (health.repaired.length > 0)
+        note('the provider-status setting in the workspace file was unusable — leaving polling on', {
+          unusable: health.repaired,
+        });
+
       if (wrongType(raw, 'autoTrust', 'boolean'))
         note('the auto-trust setting in the workspace file was not true or false — leaving it on');
+
+      if (wrongType(raw, 'autoLabels', 'boolean'))
+        note('the auto-label setting in the workspace file was not true or false — leaving it on');
 
       this.state = {
         version: CURRENT_VERSION,
@@ -343,8 +406,11 @@ export class WorkspaceStore {
         layout: raw.layout ?? null,
         ui: raw.ui ?? null,
         notifications: notifications.value,
+        rules,
         autoTrust: raw.autoTrust !== false, // default on
+        autoLabels: raw.autoLabels !== false, // default on — same shape, same reason
         updates: updates.value,
+        health: health.value,
       };
     } catch (err) {
       // corrupt/missing: back the corpse aside (post-mortem material), start fresh
@@ -680,6 +746,11 @@ export class WorkspaceStore {
 
   removeSession(id: string): void {
     this.state.sessions = this.state.sessions.filter((x) => x.id !== id);
+    // A closed card takes its rules with it. Nothing else ever would: rules are
+    // scoped by card id, and a card id is never reused, so a rule left behind
+    // is a row in the file that can never fire again — and, once a rules
+    // EDITOR exists (E14 follow-ups), a row the user cannot explain.
+    this.state.rules = this.state.rules.filter((r) => r.session !== id);
     this.saveSoon();
   }
 
@@ -746,6 +817,31 @@ export class WorkspaceStore {
     this.saveSoon();
   }
 
+  /** The USER rules (P2-E14-03). The built-ins are not in here — see the field. */
+  listRules(): Rule[] {
+    return this.state.rules.map((r) => JSON.parse(JSON.stringify(r)) as Rule);
+  }
+
+  /** Add or replace a rule by id. Refuses one this build could not load back. */
+  upsertRule(rule: Rule): boolean {
+    if (!isSaneRule(rule)) return false;
+    const copy = JSON.parse(JSON.stringify(rule)) as Rule; // no shared refs with callers
+    const i = this.state.rules.findIndex((r) => r.id === rule.id);
+    if (i >= 0) this.state.rules[i] = copy;
+    else this.state.rules.push(copy);
+    this.saveSoon();
+    return true;
+  }
+
+  /** Remove a rule by id. `false` = there was nothing by that id. */
+  removeRule(id: string): boolean {
+    const before = this.state.rules.length;
+    this.state.rules = this.state.rules.filter((r) => r.id !== id);
+    if (this.state.rules.length === before) return false;
+    this.saveSoon();
+    return true;
+  }
+
   getUpdatePrefs(): UpdatePrefs {
     return { ...this.state.updates };
   }
@@ -756,12 +852,31 @@ export class WorkspaceStore {
     this.saveSoon();
   }
 
+  getServiceHealthPrefs(): ServiceHealthPrefs {
+    return { ...this.state.health };
+  }
+
+  /** Merge-patch, like the update and notification prefs above. */
+  setServiceHealthPrefs(p: Partial<ServiceHealthPrefs>): void {
+    this.state.health = sanitizeHealth({ ...this.state.health, ...p }).value;
+    this.saveSoon();
+  }
+
   getAutoTrust(): boolean {
     return this.state.autoTrust;
   }
 
   setAutoTrust(on: boolean): void {
     this.state.autoTrust = on;
+    this.saveSoon();
+  }
+
+  getAutoLabels(): boolean {
+    return this.state.autoLabels;
+  }
+
+  setAutoLabels(on: boolean): void {
+    this.state.autoLabels = on;
     this.saveSoon();
   }
 
@@ -1085,9 +1200,10 @@ const MAX_HELD_POST_MORTEM_BYTES = 4 * 1024 * 1024;
 const MAX_LISTED_ERRORS = 3;
 
 /** What each list costs the user when entries in it cannot be read. */
-const LOST: Record<'session' | 'group', string> = {
+const LOST: Record<'session' | 'group' | 'rule', string> = {
   session: 'those cards do not come back',
   group: 'any sessions in them load ungrouped',
+  rule: 'those notifications stop firing',
 };
 
 /**
@@ -1101,7 +1217,7 @@ const LOST: Record<'session' | 'group', string> = {
 function keepSane<T>(
   raw: unknown,
   sane: (v: unknown) => v is T,
-  what: 'session' | 'group',
+  what: 'session' | 'group' | 'rule',
   note: (msg: string, fields?: LogFields) => void
 ): T[] {
   if (raw === undefined || raw === null) return [];
@@ -1230,6 +1346,18 @@ function sanitizeUpdates(u: unknown): Repaired<UpdatePrefs> {
       ['pendingUpdateVersion', 'string'],
     ]),
   };
+}
+
+/**
+ * Service-health prefs (P2-E14-07). `poll` defaults ON, the `!== false` shape
+ * `autoCheck` and `autoTrust` use: a file that predates this field, or one a
+ * hand-edit mangled, leaves the feature working rather than silently off.
+ */
+function sanitizeHealth(h: unknown): Repaired<ServiceHealthPrefs> {
+  if (typeof h !== 'object' || h === null || Array.isArray(h))
+    return { value: { poll: true }, repaired: h == null ? [] : ['health'] };
+  const x = h as Partial<ServiceHealthPrefs>;
+  return { value: { poll: x.poll !== false }, repaired: badFields(h, [['poll', 'boolean']]) };
 }
 
 function sanitizeWindow(w: unknown): Repaired<PersistedWindow | null> {

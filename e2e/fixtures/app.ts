@@ -232,6 +232,13 @@ export interface LaunchedApp {
 export interface LaunchOptions {
   /** auto-create one fake session in this folder at boot */
   seedFolder?: string;
+  /**
+   * Open one §5.30 document viewer on this path at boot (P2-E16-02).
+   *
+   * The seam grants NOTHING: the path still has to be inside the read scope,
+   * so a spec pairs it with `seedFolder` and puts the file in that folder.
+   */
+  seedDocument?: string;
   /** reuse an existing home dir (to relaunch and test persistence) */
   home?: string;
   /** extra env for the main process */
@@ -416,6 +423,12 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   // overrides this with its own local stub feed; set BEFORE `opts.env`, like
   // the quit-confirm line above, so it can.
   env.SWITCHBOARD_UPDATE_FEED = 'off';
+  // Same rule for the provider status page (P2-E14-07): `off` means the poller
+  // never runs, so no spec in this suite reaches status.anthropic.com and no
+  // window grows a dot whose colour depends on somebody else's afternoon.
+  // `service-health.spec.ts` points it at its own local stub; set BEFORE
+  // `opts.env` so it can.
+  env.SWITCHBOARD_STATUS_FEED = 'off';
   if (opts.realClaude) {
     // The one env var that would make "realClaude" a lie (#384). It is set in
     // the `else` branch below and never here, so nothing in this file turns the
@@ -454,6 +467,7 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   }
   applyIsolatedPaths(env, home);
   if (opts.seedFolder) env.SWITCHBOARD_SEED_SESSION = opts.seedFolder;
+  if (opts.seedDocument) env.SWITCHBOARD_SEED_DOCUMENT = opts.seedDocument;
   Object.assign(env, opts.env);
 
   let app: ElectronApplication;

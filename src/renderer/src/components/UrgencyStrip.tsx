@@ -124,8 +124,24 @@ export function UrgencyStrip(props: {
   // (This effect runs BEFORE the timer effect above on every commit — React
   // flushes all layout effects ahead of any passive one — despite reading
   // second.)
+  //
+  // ── and the landing has to be able to re-run this effect (#426) ────────────
+  //
+  // Since the pending cap, a mark can be SUPERSEDED while its chain is in the
+  // air: `markLit` keeps only the newest unpainted mark, so the ids this effect
+  // captured may be gone by the time the second frame arrives. `onBeatStart`
+  // then writes nothing — `startBeat` has nothing to start — and without a
+  // state write this effect never re-runs, so the mark that replaced them would
+  // sit lit with no chain to give it a beat and no timer to end it: a lamp lit
+  // forever, in exactly the popout case the cap exists for. `landings` is the
+  // nudge. It is bumped ONLY when the map moved under the chain, because when
+  // it did not the landing drains everything it captured and the resulting
+  // state write re-runs us — bumping there too would be a rAF spin.
   const chain = React.useRef<{ outer: number; inner: number } | null>(null);
+  const committed = React.useRef(urgency);
+  const [landings, chainLanded] = React.useReducer((n: number) => n + 1, 0);
   React.useLayoutEffect(() => {
+    committed.current = urgency;
     if (chain.current) return;
     // Every mark still waiting on a paint, including any whose card has no lamp
     // in this render: the strip HAS painted, and a mark with nothing to draw has
@@ -152,9 +168,16 @@ export function UrgencyStrip(props: {
         // to schedule the next chain for whatever went pending in the meantime
         chain.current = null;
         onBeatStart(waiting);
+        // the map moved under us: some of `waiting` may no longer exist, so the
+        // call above may have written nothing. Re-run rather than assume it did.
+        // Map IDENTITY is a proxy for "an unpainted mark may be left without a
+        // chain" and over-fires — an expiry landing inside the same two frames
+        // also trips it — which is the direction to be wrong in: over-firing
+        // costs one render of a readout, under-firing costs a lamp lit forever.
+        if (committed.current !== urgency) chainLanded();
       });
     });
-  }, [urgency, onBeatStart]);
+  }, [urgency, onBeatStart, landings]);
 
   // Unmount only — the chain above deliberately outlives a re-render, so this
   // is the one place it is right to cancel.

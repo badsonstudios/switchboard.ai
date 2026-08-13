@@ -18,7 +18,7 @@ closes it and puts your cursor back.
 It searches the *whole* session, including the parts scrolled out of memory and
 the tool output your detail level is hiding, and jumping to a match opens
 whatever was folded over it. On the **Changes** tab the same key opens the diff
-editor's own find. Full details: [Finding something in a session](14-find.md).
+editor's own find. Full details: [Finding something in a session](16-find.md).
 
 ## The command palette — everything, in one list
 

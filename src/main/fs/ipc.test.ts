@@ -72,8 +72,14 @@ describe('fs:read', () => {
     registerFsIpc({ broker: bus.broker, log: rec.log, scope, cap: 100 });
   });
 
-  it('registers exactly one channel, and it is the one in the capability map', () => {
-    expect(bus.channels()).toEqual(['fs:read']);
+  it('registers exactly the channels the capability map tags to this family', () => {
+    expect(bus.channels()).toEqual([
+      'fs:read',
+      'fs:pickFile',
+      'fs:openExternal',
+      'fs:openPath',
+      'fs:reveal',
+    ]);
   });
 
   it('reads a file inside an open session folder', async () => {
@@ -137,5 +143,142 @@ describe('fs:read', () => {
     await expect(bus.call('fs:read', null)).resolves.toMatchObject({ ok: false });
     await expect(bus.call('fs:read', { toString: () => 'x' })).resolves.toMatchObject({ ok: false });
     await expect(bus.call('fs:read', ROOT)).resolves.toEqual({ ok: false, reason: 'not-a-file' });
+  });
+});
+
+// ─── P2-E16-02: the viewer's three doors out of the app ────────────────────
+
+/** A fake `FsShell` that records every call instead of touching the OS. */
+function fakeShell() {
+  const calls: Array<{ what: string; arg: string }> = [];
+  let picked: string | null = null;
+  return {
+    calls,
+    setPick: (p: string | null) => {
+      picked = p;
+    },
+    shell: {
+      openExternal: async (url: string) => {
+        calls.push({ what: 'openExternal', arg: url });
+      },
+      openPath: async (p: string) => {
+        calls.push({ what: 'openPath', arg: p });
+        return '';
+      },
+      showItemInFolder: (p: string) => {
+        calls.push({ what: 'reveal', arg: p });
+      },
+      pickFile: async () => picked,
+    },
+  };
+}
+
+describe('the document viewer’s shell channels (P2-E16-02)', () => {
+  let bus: ReturnType<typeof fakeBroker>;
+  let rec: ReturnType<typeof recordingLog>;
+  let scope: ReadScope;
+  let sh: ReturnType<typeof fakeShell>;
+
+  beforeEach(() => {
+    bus = fakeBroker();
+    rec = recordingLog();
+    sh = fakeShell();
+    scope = new ReadScope({ sessionFolders: () => [ROOT], log: rec.log });
+    registerFsIpc({
+      broker: bus.broker,
+      log: rec.log,
+      scope,
+      cap: 100,
+      shell: sh.shell,
+      getWindow: () => null,
+    });
+  });
+
+  describe('fs:openExternal', () => {
+    it('hands http, https and mailto to the browser', async () => {
+      for (const url of ['http://example.com/a', 'https://example.com/b', 'mailto:a@b.c']) {
+        expect(await bus.call('fs:openExternal', url)).toBe(true);
+      }
+      expect(sh.calls.map((c) => c.arg)).toEqual([
+        'http://example.com/a',
+        'https://example.com/b',
+        'mailto:a@b.c',
+      ]);
+    });
+
+    it('does NOTHING AT ALL for javascript:, and says so in the log', async () => {
+      // The done-when names this one: "a `javascript:` link does nothing at
+      // all". Not a warning dialog, not the browser — nothing.
+      expect(await bus.call('fs:openExternal', 'javascript:alert(1)')).toBe(false);
+      expect(sh.calls).toEqual([]);
+      expect(rec.lines.some((l) => l.msg === 'fs:openExternal refused: scheme')).toBe(true);
+    });
+
+    it('refuses every other scheme a hostile document might reach for', async () => {
+      const hostile = [
+        'JavaScript:alert(1)', // case is not a defence
+        'java\nscript:alert(1)',
+        'data:text/html;base64,PHNjcmlwdD4=',
+        'file:///etc/passwd',
+        'vbscript:msgbox(1)',
+        'ms-msdt:/id',
+        'smb://host/share',
+        'chrome://settings',
+        '',
+        '   ',
+        null,
+        42,
+        {},
+      ];
+      for (const url of hostile) {
+        expect(await bus.call('fs:openExternal', url)).toBe(false);
+      }
+      expect(sh.calls).toEqual([]);
+    });
+  });
+
+  describe('fs:openPath and fs:reveal', () => {
+    it('open and reveal a file inside the scope, using its RESOLVED path', async () => {
+      const target = path.join(ROOT, 'PROGRESS.md');
+      expect(await bus.call('fs:openPath', target)).toBe(true);
+      expect(await bus.call('fs:reveal', target)).toBe(true);
+      expect(sh.calls).toHaveLength(2);
+      expect(sh.calls[0]).toMatchObject({ what: 'openPath' });
+      expect(sh.calls[1]).toMatchObject({ what: 'reveal' });
+      // fs.realpathSync.native may spell the temp dir differently than we do
+      for (const c of sh.calls) expect(c.arg.endsWith('PROGRESS.md')).toBe(true);
+    });
+
+    it('refuses a path outside the scope — "open externally" is not a way past it', async () => {
+      // `shell.openPath` on a `.exe` is EXECUTION, which is the whole reason
+      // this re-checks the scope instead of trusting the renderer's string.
+      const target = path.join(OUTSIDE, 'id_rsa');
+      expect(await bus.call('fs:openPath', target)).toBe(false);
+      expect(await bus.call('fs:reveal', target)).toBe(false);
+      expect(sh.calls).toEqual([]);
+      expect(rec.lines.filter((l) => l.msg.endsWith('refused: out-of-scope'))).toHaveLength(2);
+    });
+
+    it('refuses a ../ climb, because the check runs on the resolved path', async () => {
+      const climb = path.join(ROOT, '..', 'secrets', 'id_rsa');
+      expect(await bus.call('fs:openPath', climb)).toBe(false);
+      expect(sh.calls).toEqual([]);
+    });
+  });
+
+  describe('fs:pickFile', () => {
+    it('grants what the user picked, so the read that follows succeeds', async () => {
+      const target = path.join(OUTSIDE, 'id_rsa');
+      expect(await bus.call('fs:read', target)).toEqual({ ok: false, reason: 'out-of-scope' });
+      sh.setPick(target);
+      expect(await bus.call('fs:pickFile')).toBe(target);
+      expect(await bus.call('fs:read', target)).toMatchObject({ ok: true });
+    });
+
+    it('a cancelled dialog grants nothing and answers null', async () => {
+      sh.setPick(null);
+      expect(await bus.call('fs:pickFile')).toBe(null);
+      expect(scope.pickedPaths()).toEqual([]);
+    });
   });
 });

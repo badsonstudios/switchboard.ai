@@ -4,10 +4,12 @@ import path from 'path';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import {
   claudeAdapter,
+  readAiTitle,
   resetCliPathCache,
   scanPath,
   writeSessionSettings,
 } from './claude';
+import { LATE, REPEAT_HEAVY, REVISED } from '../transcripts/fixtures/ai-title';
 
 let tmp: string;
 let origPath: string | undefined;
@@ -110,5 +112,59 @@ describe('claudeAdapter.buildSpawn', () => {
       stateDir: path.join(tmp, 'state'),
     });
     expect(recipe.args).not.toContain('--settings');
+  });
+});
+
+// P2-E7-06: the `titles` capability. Claude's is the ONLY place in the tree
+// that knows the key is called `ai-title`, so this is where the real captured
+// lines get parsed.
+describe('readAiTitle — the conversation title Claude writes into its transcript', () => {
+  const read = claudeAdapter.capabilities!.titles!.titleFrom;
+
+  it('reads every real captured line, in either key order', () => {
+    // `aiTitle` comes before `sessionId` on some lines and after it on others,
+    // in the same file, on adjacent lines. Verified against the capture rather
+    // than asserted about it.
+    for (const capture of [REVISED, REPEAT_HEAVY, LATE]) {
+      for (const [lineNo, raw] of capture.lines) {
+        const title = read(JSON.parse(raw) as Record<string, unknown>);
+        expect(title, `${capture.source}:${lineNo}`).toBeTruthy();
+      }
+    }
+    expect(read(JSON.parse(REVISED.lines[0][1]) as Record<string, unknown>)).toBe(
+      'Add markdown and file preview windows'
+    );
+    expect(read(JSON.parse(REVISED.lines[1][1]) as Record<string, unknown>)).toBe(
+      'Add markdown and file preview feature'
+    );
+  });
+
+  it('the exported function and the declared capability are the same reader', () => {
+    // Two spellings of the key is how the adapter and its capability drift.
+    expect(claudeAdapter.capabilities!.titles!.titleFrom).toBe(readAiTitle);
+  });
+
+  it('says nothing about every other kind of line', () => {
+    expect(read({ type: 'assistant', message: { content: [] } })).toBeUndefined();
+    expect(read({ type: 'user', aiTitle: 'not from a user line' })).toBeUndefined();
+    expect(read({})).toBeUndefined();
+  });
+
+  it('a renamed or dropped key is simply no title (§5.26 drift)', () => {
+    // The key is undocumented. The day a release renames it, this is what every
+    // line looks like — and the app then reads exactly as it did before the
+    // feature existed.
+    expect(read({ type: 'ai-title', conversationTitle: 'renamed' })).toBeUndefined();
+    expect(read({ type: 'ai-title' })).toBeUndefined();
+    expect(read({ type: 'ai-title', aiTitle: 42 })).toBeUndefined();
+    expect(read({ type: 'ai-title', aiTitle: null })).toBeUndefined();
+  });
+
+  it('an empty or blank title is no title', () => {
+    // A label that renders as empty is indistinguishable from no label, and
+    // letting one through would blank a label the CLI had already filled.
+    expect(read({ type: 'ai-title', aiTitle: '' })).toBeUndefined();
+    expect(read({ type: 'ai-title', aiTitle: '   ' })).toBeUndefined();
+    expect(read({ type: 'ai-title', aiTitle: '  spaced  ' })).toBe('spaced');
   });
 });

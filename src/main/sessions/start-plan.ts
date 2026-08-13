@@ -53,6 +53,15 @@ export interface StartPlan {
   resumeSessionId?: string;
   /** watch transcripts under this root; undefined = do not watch at all */
   transcriptsRoot?: string;
+  /**
+   * Pull a conversation title out of one transcript line (§5.11, P2-E7-06).
+   * Undefined = this provider has no titles, so no line is ever inspected for
+   * one and the task label is never auto-filled.
+   *
+   * Wrapped in the same fail-open guard as the rest: a contributor that throws
+   * on a line degrades to "this line has no title", not to a lost transcript.
+   */
+  readTitle?: (line: Record<string, unknown>) => string | undefined;
   /** build injectable settings for the spawned session; undefined = inject
    *  nothing, and do not register a hook token either */
   buildSettings?: (sessionId: string) => Record<string, unknown>;
@@ -138,10 +147,38 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
     ? safely('transcripts.projectsRoot', () => caps.transcripts!.projectsRoot())
     : undefined;
 
+  // Deliberately NOT gated on `root`: the two are independent declarations and
+  // reading a title costs nothing extra, because the host is already tailing.
+  // A provider that declared titles but no transcripts would simply never be
+  // asked — nothing tails, so no line reaches this.
+  //
+  // The ONE capability asked per TRANSCRIPT LINE rather than once per session,
+  // so it cannot use `safely` as-is: that appends to `warnings` and calls
+  // `onDegraded` on every throw, and a provider whose reader throws would grow
+  // an unbounded array and flood the log at transcript speed. A throw here
+  // degrades `titles` to ABSENT for the rest of the session — reported once,
+  // then never asked again, which is also what `TitleCapability` promises. The
+  // session keeps its transcript, its Feed and its usage totals; it just does
+  // not get labels.
+  let titlesBroken = false;
+  const readTitle = caps?.titles
+    ? (line: Record<string, unknown>): string | undefined => {
+        if (titlesBroken) return undefined;
+        try {
+          return caps.titles!.titleFrom(line);
+        } catch (err) {
+          titlesBroken = true;
+          degraded(`provider capability "titles.titleFrom" threw: ${String(err)}`);
+          return undefined;
+        }
+      }
+    : undefined;
+
   return {
     providerId,
     resumeSessionId: resumable ? nativeId : undefined,
     transcriptsRoot: root || undefined,
+    readTitle,
     buildSettings: caps?.hooks
       ? (id) => safely('hooks.settingsFor', () => caps.hooks!.settingsFor(id, host)) ?? {}
       : undefined,

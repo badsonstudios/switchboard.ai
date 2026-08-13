@@ -285,7 +285,7 @@ that is when CSP becomes load-bearing. → **P2-E15-12**
 ### AR-P2-11 · The perf premise is validated but stale
 
 [S-07](../spike/findings/s-07-concurrency-perf.md) is genuinely good work — 12
-sessions, ~2.3% of one core each, and the correct conclusion (hidden panes
+sessions, ~~≈2.3% of one core each~~, and the correct conclusion (hidden panes
 ingest-only) which was then implemented. But it measured a **spike harness**:
 PTY + tailer + one xterm. Since then the app added dockview, Monaco (9MB
 bundle), live FeedView block streaming, per-card git polling, and the
@@ -294,6 +294,17 @@ slash-command scanner.
 Re-run against the real app **before E9 declares the queue the primary workflow
 at 7–8 sessions** — that is where S6/S7 become load-bearing claims.
 → **P2-E15-14**
+
+> **Correction + outcome — 2026-08-10 (P2-E15-14, #111, PR #401; recorded as
+> #402).** Done, and the premise holds by a wider margin: 12 real sessions on
+> the shipped app idle at **9.5 % of one core** with the renderer never stalling
+> past 16.1 ms, all the subsystems named above live. The struck **≈2.3 % of one
+> core each** was never a real figure — S-07's sampler was spawned by the
+> probe's own main process and counted inside the tree it measured, and its
+> published means were skewed by one negative-delta outlier per tier; the
+> harness's own idle cost was roughly flat in N (29.9 % median at N=8, 24.0 % at
+> N=12), not per-session. See `spike/findings/s-07-concurrency-perf.md` →
+> *Real-app re-measure — 2026-08-10*.
 
 ### AR-P2-12 · Cost estimation lives in the renderer
 

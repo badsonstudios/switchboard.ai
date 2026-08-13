@@ -38,6 +38,7 @@ function noopDeps(): CommandDeps {
     jumpToNextAttention: () => {},
     openAbout: () => {},
     checkForUpdates: () => {},
+    openFile: () => {},
   };
 }
 

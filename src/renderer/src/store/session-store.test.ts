@@ -388,6 +388,50 @@ describe('identity maps that used to be module globals', () => {
     expect(store.getCardBadge(undefined)).toBeUndefined();
   });
 
+  // P2-E7-06 — a label that filled itself from the CLI's own conversation
+  // title, patched in from main's push rather than a full card re-read.
+  it('patches ONE card task label without disturbing its neighbours', () => {
+    store.setSessions([session('card-A'), session('card-B')]);
+    const before = store.getState().sessions[1];
+
+    store.setTaskLabel('card-A', 'Add markdown and file preview feature');
+
+    expect(store.getState().sessions[0].taskLabel).toBe('Add markdown and file preview feature');
+    expect(store.getState().sessions[1]).toBe(before); // untouched, same object
+  });
+
+  it('ignores a push for a card it has never listed', () => {
+    // Inventing a row from one field would put a session with no title, folder
+    // or status in the rail; the card list itself answers this when it arrives.
+    store.setSessions([session('card-A')]);
+    const before = store.getState().sessions;
+
+    store.setTaskLabel('card-ghost', 'nope');
+
+    expect(store.getState().sessions).toBe(before);
+  });
+
+  it('does not re-render for a label that has not moved', () => {
+    // The CLI re-emits its settled title every turn; this is the last of the
+    // three de-dupes that stands between that and a render per turn per card.
+    store.setSessions([session('card-A', { taskLabel: 'same' })]);
+    const before = store.getState().sessions;
+
+    store.setTaskLabel('card-A', 'same');
+
+    expect(store.getState().sessions).toBe(before);
+  });
+
+  it('clears a label when main says there is none to show', () => {
+    // What the screen-share switch pushes: the value is kept in main, and the
+    // renderer is told to stop showing it.
+    store.setSessions([session('card-A', { taskLabel: 'derived from a prompt' })]);
+
+    store.setTaskLabel('card-A', undefined);
+
+    expect(store.getState().sessions[0].taskLabel).toBeUndefined();
+  });
+
   it('settles by VALUE, so a useSyncExternalStore snapshot cannot loop', () => {
     // the reason these are two scalar getters and not one getCardIdentity():
     // a fresh {accent, badge} per call is a new identity every render, and
@@ -561,7 +605,21 @@ describe("SessionStore — the urgency strip's delayed reset (P2-E9-04)", () => 
     store.markUrgency('card-A', T);
     expect(store.getState().urgency.has('card-A')).toBe(true); // visible already
     store.markUrgency('card-B', T);
-    expect([...store.getState().urgency.keys()]).toEqual(['card-A', 'card-B']);
+    // and the second press SAW the first: it superseded it, which is the cap
+    // (issue 426) — an unpainted mark never outlives a newer one
+    expect([...store.getState().urgency.keys()]).toEqual(['card-B']);
+  });
+
+  it('caps the marks nobody has painted at one — the latest (issue 426)', () => {
+    // the popout case: Ctrl+Space runs in THIS renderer while focus goes to a
+    // popout, so the main window can queue several jumps unpainted. Only the
+    // last one still answers "where did I just land?".
+    for (const id of ['card-A', 'card-B', 'card-C']) store.markUrgency(id, T);
+    expect([...store.getState().urgency.keys()]).toEqual(['card-C']);
+    // a lamp already counting down is not a queued mark and survives
+    store.startUrgencyBeat(['card-C'], T);
+    store.markUrgency('card-D', T + 100);
+    expect([...store.getState().urgency.keys()]).toEqual(['card-C', 'card-D']);
   });
 
   it('ignores an empty card id rather than lighting a lamp nobody owns', () => {

@@ -454,7 +454,11 @@ interrupt). `interrupt` is in the protocol and has never been exercised.
 ### E18-13 · Sidechains from `parent_tool_use_id` — M [S-11 gate]
 
 Drive the S-05 sidechain rendering from the field that is already on every
-message. Unmeasured against our feed.
+message. Unmeasured against our feed. **Note from #395 (2026-08-11):** a
+resumed Direct card's replay reads only the main conversation file, so
+subagent sidechains are absent from replayed history too — a visible
+difference vs a resumed Terminal card. This item owns both the live and the
+replayed sidechain path when picked up.
 
 ### E18-14 · Transport-matrix e2e — M [issue #416, filed 2026-08-11]
 
@@ -465,6 +469,18 @@ identical, and split where it should not. ~~Sized after E18-11 tells us how many
 behaviours genuinely differ.~~ **Sized 2026-08-11 by the #404 audit** (37 of 39
 e2e spec files silently run the PTY; the port list — permissions, attention,
 feed — is in #416).
+
+**Shipped 2026-08-11 (PR #430):** 11 Direct-mode e2e tests in 3 files, all on
+the app's REAL default (no transport var): permissions (Deny, queueing,
+cross-session band, crash-releases-hold), attention (lamp/queue/Events/jump,
+§5.8 focus policies), feed (blocks, Edit diffs, Bash IN/OUT, verbosity, #174
+keyboard walk, #196 landmark, tail pin). Three new fake verbs (`!perm a b …`,
+`!tools`, `!bulk`) + `fake.test.ts` pinning the PTY fake's refusal. Falsified
+by forcing PTY: 8 fail / 3 don't run. **Deferred, priority order:**
+presentation-policy/layout-modes on Direct · feed position-restore across a
+panel switch · `/clear` feed reset (needs the fake to emit a second
+session_id first) · session/reconnect/split ports. No product bugs found —
+every ported behaviour was already correct.
 
 ### E18-15 · Retire the hook listener — M [gated on the default flip]
 

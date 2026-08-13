@@ -34,7 +34,9 @@ no page is an unfinished work item.
 | [11 — Troubleshooting](11-troubleshooting.md) | When a session won't start, hangs, or vanishes | draft |
 | [12 — Direct mode (beta)](12-direct-mode.md) | How sessions now talk to Claude by default: fixes the `.claude` double-prompt, costs you the terminal | draft |
 | [13 — Updates](13-updates.md) | When it checks for a new version, what the release box offers, what Skip means | draft |
-| [14 — Finding something](14-find.md) | `Ctrl+F` over a session: the find bar, the results list, what it searches that you can't see | draft |
+| [14 — Is it me or is it them?](14-provider-status.md) | The status dot, provider incidents, and the "several sessions just hit errors" strip | draft |
+| [15 — Reading files in the app](15-document-viewer.md) | Opening a file, rendered Markdown, source view, find, what won't be shown | draft |
+| [16 — Finding something](16-find.md) | `Ctrl+F` over a session: the find bar, the results list, what it searches that you can't see | draft |
 
 Backfilled 2026-07-24 from the shipped app (Phase 1 + Phase 2 epics E7, E8,
 E10, E12) — written against the actual UI strings and behavior, not from

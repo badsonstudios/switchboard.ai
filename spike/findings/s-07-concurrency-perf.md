@@ -1,9 +1,23 @@
 # S-07 — Concurrency & perf probe
 
-> **Re-measured on the shipped app 2026-08-10 (P2-E15-14, #111).** The verdict
-> below still holds — by a wider margin than it claimed. Two of the numbers in
-> this original section are measurement artifacts of the harness and should not
-> be quoted: see **Real-app re-measure** at the bottom.
+> **CORRECTION — 2026-08-10 (P2-E15-14, #111, PR #401; recorded as #402).**
+> **The idle-CPU figures published in this original section are measurement
+> bugs, not measurements — do not quote them.** The harness's PowerShell
+> sampler was spawned *by the probe's own main process*, so a `powershell.exe`
+> was created inside the very process tree it was measuring every 2 s and its
+> CPU landed in the "idle" figure; the published means are further skewed by
+> one negative-delta outlier per tier (−418.1 % at N=8, −122.9 % at N=12),
+> produced when those transient sampler children exited between two samples.
+> Recomputed from the same raw samples: idle **29.9 % median at N=8** and
+> **24.0 % at N=12** — i.e. roughly *flat* in N, and mostly the sampler itself,
+> not the 7.6 % / 27.8 % printed below. Re-measured on the shipped app: **12
+> real sessions idle at 9.5 % of one core**. Read the whole harness table as an
+> upper bound.
+>
+> The verdict below still holds — by a wider margin than it claimed. The
+> original figures are **struck, not deleted**: this is a historical record, so
+> corrections annotate it. Quote **Real-app re-measure** at the bottom instead;
+> the mechanism of each bug is in *Two corrections to the harness numbers*.
 
 **Verdict: S6/S7 principles hold on the real stack without mitigation.** 8 and
 12 concurrent claude PTY sessions + transcript tailers are comfortably cheap
@@ -22,16 +36,28 @@ transcript tailer, PowerShell process-tree sampler every 2s). Full reports:
 
 | Metric | N=8 | N=12 |
 |---|---|---|
-| Idle CPU (avg, % of one core) | **7.6%** | **27.8%** (~2.3%/session) |
+| Idle CPU (avg, % of one core) — **WRONG, see ✗** | ~~**7.6%**~~ ✗ | ~~**27.8%** (≈2.3%/session)~~ ✗ |
 | Streaming CPU (1 session active; avg / peak) | 33% / 63% | 38% / 68% |
 | Total working set (idle) | 3.47 GB | 5.03 GB |
 | Per-session working set | ~433 MB | ~419 MB |
 | Renderer max event-loop stall | **15ms** (98s monitored) | 939ms — **artifact, see below** |
 | Tailer parse errors | 0 | 0 |
 
+✗ **Corrected 2026-08-10 (#111 / #402).** These two idle figures are the
+sampler-in-tree bug plus one negative-delta outlier each; the medians of the
+same raw samples are **29.9 % (N=8)** and **24.0 % (N=12)**, and the shipped app
+idles at **9.5 % of one core at N=12**. The `~2.3%/session` scaling read off
+them is therefore not real — harness idle cost was roughly flat in N. The
+streaming rows are inflated by the same sampler (real app: 8.8 % median at
+N=12) — treat every CPU row here as an upper bound. Detail: *Two corrections to
+the harness numbers*, below.
+
 - CPU percentages are of a **single core**; on this 32-core machine, 12 idle
-  sessions cost <1% of total machine. Even on a 8-core laptop, ~28% of one
-  core idle is acceptable.
+  sessions cost <1% of total machine. ~~Even on a 8-core laptop, ≈28% of one
+  core idle is acceptable.~~ ✗ *(corrected 2026-08-10: the harness's own idle
+  figure was ~24–30 % of one core and mostly its sampler; the real app costs
+  9.5 % — the conclusion "acceptable on a small laptop" holds with room to
+  spare.)*
 - **The N=12 jank number is measurement artifact, not load:** Electron
   throttles timers in occluded windows to ~1s ticks; 939ms ≈ the 900ms drift
   a throttled 100ms timer shows, and the monitor stopped advancing when the

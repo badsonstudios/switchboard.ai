@@ -138,6 +138,16 @@ const NOTICES: readonly Notice[] = [
     why: 'the only statement of why no session will ever start',
   },
   {
+    component: 'ServiceHealthBanner',
+    file: 'theme/tokens.css',
+    from: '.service-health-banner {',
+    to: '\n}',
+    guard: CSS_GUARD,
+    // P2-E14-07, §5.14. Same shape as the preflight banner: a CSS rule, so the
+    // guard is checked here rather than in a rendered test jsdom cannot style.
+    why: 'the only hint that a wall of failing sessions might not be your fault',
+  },
+  {
     component: 'UrgencyStrip',
     file: 'components/UrgencyStrip.tsx',
     from: 'data-testid="urgency-strip"',

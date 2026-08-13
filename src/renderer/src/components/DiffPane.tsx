@@ -16,6 +16,19 @@ import '../lib/monaco-languages';
 import { languageForPath } from '../lib/diff-language';
 import { defineDiffThemes, DIFF_THEME } from '../lib/monaco-theme';
 import { findSurfaceKey, publishFindSurface, type MonacoFindSurface } from '../lib/find-surfaces';
+import { openDocument } from '../lib/document-open';
+
+/**
+ * `folder` + git's forward-slash relative path, in the folder's own spelling.
+ *
+ * git reports `src/main/index.ts` on every platform; main resolves whatever it
+ * is handed, so the only thing that matters is that the two halves are joined
+ * with a separator the OS will accept — and both accept `/` on Windows.
+ */
+function joinPath(folder: string, relative: string): string {
+  const sep = folder.includes('\\') && !folder.includes('/') ? '\\' : '/';
+  return `${folder.replace(/[\\/]+$/, '')}${sep}${relative}`;
+}
 
 declare global {
   interface Window {
@@ -205,6 +218,43 @@ export function DiffPane(props: {
             <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)', fontSize: 10 }}>
               {f.path}
             </span>
+            {/* §5.30's "opened from wherever a path already appears", as its
+                OWN control rather than as the path's click target.
+
+                The plan line reads "a path click in the Changes tab's file
+                list", and the literal reading was written and then withdrawn:
+                the whole row already means "show me this file's diff", and
+                turning the file NAME — nearly all of the row — into "open the
+                whole file somewhere else" leaves the tab's primary gesture with
+                a status badge to aim at, and sends a user who wanted a diff to
+                a different panel. That is the calm check failing on a surface
+                that was fine. The viewer is a SECOND question about the same
+                row ("never mind the change, what does this file say now?"), so
+                it gets a second, labelled control. */}
+            <button
+              type="button"
+              className="diff-open-viewer"
+              title={t('diff.openInViewer', { file: f.path })}
+              aria-label={t('diff.openInViewer', { file: f.path })}
+              onClick={(e) => {
+                // the row's own handler would select it into the diff as well —
+                // harmless, but two things happening from one click reads as a
+                // bug even when both are wanted
+                e.stopPropagation();
+                openDocument(joinPath(props.folder, f.path));
+              }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--muted)',
+                cursor: 'pointer',
+                fontSize: 10,
+                lineHeight: 1,
+                padding: '0 2px',
+              }}
+            >
+              {t('diff.openInViewerIcon')}
+            </button>
             <span
               style={{
                 fontSize: 9,

@@ -261,3 +261,63 @@ describe('planSessionStart', () => {
     expect(settingsFor).toHaveBeenCalledWith('late-id', host);
   });
 });
+
+// P2-E7-06: `titles` is the fifth capability, and the reason it is one is that
+// a session on an adapter without it must start NO title watch at all.
+describe('titles (P2-E7-06, §5.11)', () => {
+  const line = { type: 'ai-title', aiTitle: 'Wire up the parser' };
+
+  it('hands the caller a reader when the adapter declares one', () => {
+    const p = plan({
+      capabilitiesOf: () => fullCaps({ titles: { titleFrom: () => 'Wire up the parser' } }),
+    });
+    expect(p.readTitle?.(line)).toBe('Wire up the parser');
+  });
+
+  it('hands back NOTHING when it does not — no reader, no watch, no dead path', () => {
+    const p = plan({ capabilitiesOf: () => fullCaps({ titles: undefined }) });
+    expect(p.readTitle).toBeUndefined();
+  });
+
+  it('an adapter that declares nothing at all gets no reader either', () => {
+    expect(plan().readTitle).toBeUndefined();
+  });
+
+  it('a reader that throws degrades titles for the session — reported ONCE', () => {
+    // The only capability asked per transcript LINE. Reporting each throw would
+    // grow an unbounded warning list and flood the log at transcript speed, so
+    // the first one switches it off for the rest of the session.
+    const onDegraded = vi.fn();
+    const p = plan({
+      onDegraded,
+      capabilitiesOf: () =>
+        fullCaps({
+          titles: {
+            titleFrom: () => {
+              throw new Error('boom');
+            },
+          },
+        }),
+    });
+    for (let i = 0; i < 50; i++) expect(p.readTitle?.(line)).toBeUndefined();
+    expect(onDegraded).toHaveBeenCalledTimes(1);
+    expect(onDegraded.mock.calls[0][0]).toContain('titles.titleFrom');
+  });
+
+  it('a throwing reader costs the session nothing else', () => {
+    const p = plan({
+      capabilitiesOf: () =>
+        fullCaps({
+          titles: {
+            titleFrom: () => {
+              throw new Error('boom');
+            },
+          },
+        }),
+    });
+    p.readTitle?.(line);
+    expect(p.transcriptsRoot).toBe('/roots/claude'); // the transcript is untouched
+    expect(p.buildSettings).toBeDefined();
+    expect(p.ensureTrusted).toBeDefined();
+  });
+});

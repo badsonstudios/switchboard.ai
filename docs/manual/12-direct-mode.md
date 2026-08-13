@@ -105,7 +105,9 @@ file changes are unaffected.
 - **Nothing about your Claude subscription.** Direct mode uses the same
   installed `claude` command and the same login. No API key, no extra cost.
 - **Your conversation history.** It's still written to disk in the same place,
-  so resuming a session works exactly as before.
+  and reopening switchboard picks the conversation back up: Claude remembers it,
+  and the Session view shows it again (see
+  [What you see when a session resumes](#what-you-see-when-a-session-resumes)).
 - **Any other session.** The setting is per session. You can run one session in
   Direct mode and leave the rest alone.
 
@@ -132,6 +134,30 @@ They now print their output into the Session view like any other reply, in both
 modes. (It was never really a Direct-mode fault — the output had always been
 missing from the Session view, and in Terminal mode you'd see it in the Terminal
 tab instead, so Direct mode only removed the place it was hiding.)
+
+## What you see when a session resumes
+
+Quit switchboard with Direct-mode sessions running, open it again, and each card
+comes back with **the conversation you left in it** — your prompts, Claude's
+replies, the file edits and commands, all in order. Carry on typing and the new
+turn appends to the bottom, exactly where you left off.
+
+Two details worth knowing:
+
+- **The Session view shows the recent past, not the entire archive.** A very long
+  conversation is trimmed to its most recent stretch, the same way it is while
+  the session is running. Claude's own memory of the conversation is not trimmed
+  — it has the full context regardless of how much of it is on screen.
+- **If the history is missing, nothing was lost.** A resumed card can come back
+  empty if the conversation's file has been deleted from `~/.claude/projects`
+  (some people prune it). The card still works; it just starts a fresh
+  conversation, because there is nothing left to resume.
+
+> **Fixed in 0.4.0.** Before this, a resumed Direct-mode session came back
+> *blank*: the conversation was still there and Claude still remembered every
+> word of it, but the Session view showed none of it, which looked exactly like
+> the session had been wiped. If you saw that on the 0.3.0 update, nothing was
+> lost then either — the history was on disk the whole time.
 
 ## Replies arrive as they're written
 

@@ -42,8 +42,8 @@ If a consumer can `import { claudeAdapter }`, the seam is decorative.
 | [renderer/src/extensibility/commands.ts](../src/renderer/src/extensibility/commands.ts) | Flattens the registered `command-set` contributions, first-match wins |
 | [renderer/src/extensibility/registry-instance.ts](../src/renderer/src/extensibility/registry-instance.ts) | The renderer's registry instance, and nothing else — consumers import this, not `bootstrap.ts`, which would close an import cycle |
 | [renderer/src/extensibility/boundary.tsx](../src/renderer/src/extensibility/boundary.tsx) | `ContributionBoundary` + `safely()`: one contribution failing costs that contribution |
-| [renderer/src/extensibility/status-bar-items.tsx](../src/renderer/src/extensibility/status-bar-items.tsx) | The four status bar items |
-| [renderer/src/extensibility/find-providers.ts](../src/renderer/src/extensibility/find-providers.ts) | The session-find providers (§5.31), their by-panel resolution, and written registration recipes for the two registrants that do not exist yet |
+| [renderer/src/extensibility/status-bar-items.tsx](../src/renderer/src/extensibility/status-bar-items.tsx) | The five status bar items |
+| [renderer/src/extensibility/find-providers.ts](../src/renderer/src/extensibility/find-providers.ts) | The session-find providers (§5.31), their by-panel resolution, and a written registration recipe for the one registrant that does not exist yet |
 | [renderer/src/lib/find-surfaces.ts](../src/renderer/src/lib/find-surfaces.ts) | The live-surface registry a mounted panel publishes into, keyed by (card, panel) |
 | [renderer/src/extensibility/points.test.ts](../src/renderer/src/extensibility/points.test.ts) | The E15-03 done-when, executable: a new panel / block renderer / status item takes effect with no edit to any consumer |
 | [shared/…/registry.test.ts](../src/shared/extensibility/registry.test.ts) | Mechanics, against toy contracts — plus the guard that the class stays free of `main/` and `renderer/` imports |
@@ -72,7 +72,7 @@ actually serve it.
 | `command-set` | `CommandSetContribution` | `core-commands` — the E9-01 seed set, resolved by the palette and the keyboard dispatcher |
 | `panel` | `PanelContribution` | `panel-session`, `panel-changes`, `panel-history` (placeholder), `panel-terminal` — the session card's view-tab strip |
 | `feed-block-renderer` | `FeedBlockRendererContribution` | `feed-block-{todos,bash,edit,tool,thinking,user,markdown}` — one per transcript block shape |
-| `status-bar-item` | `StatusBarItemContribution` | `status-{session-count,usage,cli-version,theme}` |
+| `status-bar-item` | `StatusBarItemContribution` | `status-{session-count,usage,service-health,cli-version,theme}` |
 | `theme` | `ThemeContribution` | `theme-{nordic,daylight,high-contrast,soft-contrast}` — the picker and the status bar list from here |
 | `find-provider` | `FindProviderContribution` | **`find-session`, `find-changes` — two of the four §5.31 names day one**; see the honest count below |
 
@@ -94,9 +94,14 @@ to reimplement. A point whose registrants only ever varied by *which* thing they
 searched would have proved much less about the contract.
 
 **It ships with TWO of the four registrants §5.31 names, and the gap is stated
-rather than glossed.** The document viewer (§5.30) is unmerged, and the
-Terminal's provider is P2-E17-03's own work item, which depends on this one.
-Both have a written registration recipe at the bottom of
+rather than glossed.** The Terminal's provider is P2-E17-03's own work item,
+which depends on this one. The **document viewer** (§5.30) landed on main in
+the same train as this bar and is deliberately still un-joined: it already has
+a working Ctrl+F, scoped to its own container for exactly the reason this point
+exists, so the gap is a seam rather than a feature — and joining it means
+teaching the dispatcher what "the focused surface" is when it is not a session
+card, which is a §5.8 question. That is P2-E16's follow-up. Both have a written
+registration recipe at the bottom of
 [`find-providers.ts`](../src/renderer/src/extensibility/find-providers.ts) — the
 panel id to claim, the surface shape to publish, and the trap each one must not
 inherit (the Terminal must label its group "scrollback only", because xterm sees
@@ -174,7 +179,7 @@ Renderer — one per point, each the sole resolver for its own surface:
 [commands.ts:43](../src/renderer/src/extensibility/commands.ts#L43),
 [feed-render.ts:17](../src/renderer/src/extensibility/feed-render.ts#L17),
 [panels.tsx:29](../src/renderer/src/extensibility/panels.tsx#L29),
-[status-bar-items.tsx:45](../src/renderer/src/extensibility/status-bar-items.tsx#L45),
+[status-bar-items.tsx:74](../src/renderer/src/extensibility/status-bar-items.tsx#L74),
 [themes.ts:21](../src/renderer/src/extensibility/themes.ts#L21) and
 [find-providers.ts](../src/renderer/src/extensibility/find-providers.ts)
 (`findProviderFor`, the sole resolver the find bar calls). Each takes
@@ -373,6 +378,7 @@ refusal can arrive, not everywhere it cannot.
 | `update.check` | contacts the release host **over the network** |
 | `update.install` | downloads an executable and runs it |
 | `shell.openExternal` | hands a URL to the user's **browser** |
+| `shell.openPath` | hands a **local path** to the OS — "Open externally", "Reveal in folder". Split from `shell.openExternal` because a URL goes to the browser and a path goes to whatever is registered for that extension, which for `.exe` is execution. The handlers behind it re-check `fs.read`'s scope, so it can only ever be aimed at a file the caller could already have read |
 
 Those are named for **what they do, not where the answer is shown**.
 `preflight:check` sat under `settings.read` until review pointed out that it

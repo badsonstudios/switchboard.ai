@@ -413,6 +413,23 @@ export class SessionStore {
   setGroups(groups: RailGroup[]): void {
     this.set({ groups });
   }
+  /**
+   * One card's task label, from main's push (P2-E7-06).
+   *
+   * A targeted patch rather than a re-read of `sessions:cards`: the label is the
+   * only field that moved, and a refresh would resolve a git root per card every
+   * time the CLI revised a title. Unknown cards are ignored — a push for a card
+   * this window has not listed yet is answered by the list itself when it
+   * arrives, and inventing a row from one field would put a session with no
+   * title, folder or status in the rail.
+   */
+  setTaskLabel(cardId: string, taskLabel: string | undefined): void {
+    const i = this.state.sessions.findIndex((s) => s.id === cardId);
+    if (i < 0 || this.state.sessions[i].taskLabel === taskLabel) return;
+    const sessions = [...this.state.sessions];
+    sessions[i] = { ...sessions[i], taskLabel };
+    this.set({ sessions });
+  }
   /** Replace the event list (a push from main, or the initial list). */
   setEvents(events: EventDto[]): void {
     this.feedDelivered = true;

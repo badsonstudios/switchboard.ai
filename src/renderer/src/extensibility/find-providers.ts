@@ -245,9 +245,29 @@ export const findProviders: FindProviderContribution[] = [sessionFindProvider, c
 // survive that. Adding `Mod+F` to that allowlist belongs to E17-03, with the
 // find command's `dispatchAccelerator` path, and is deliberately not done here.
 //
-// **Document viewer (§5.30, the #433 follow-up).** `mode: 'bar'` over the
-// rendered document, or `mode: 'delegated'` if the viewer ends up embedding an
-// editor with a find of its own. It publishes under
-// `findSurfaceKey(cardId, '<its panel id>')`; `unavailableKey` should name the
-// "no document open" state rather than returning a provider that finds nothing.
+// **Document viewer (§5.30).** It IS on main now (#433 / P2-E16-02), and it
+// already has a working Ctrl+F of its own — correctly scoped to its own
+// container, for the same reason this point exists: its `lib/document-find.ts`
+// header cites §5.30's correction that `findInPage` "would cheerfully match
+// text in three other sessions' panes". So there is **no user-visible gap**
+// here, only a seam not yet joined, and that module says out loud that it is
+// meant to become the body of this provider.
+//
+// It is NOT wired here, because it is not the ~15-line addition the rest of
+// this recipe describes — two structural things are in the way, and both are
+// bigger than a registrant:
+//   1. **The viewer is not a session-card tab.** It is its own dockview panel
+//      (`SessionGrid`'s `documentViewer` component), so there is no `PanelId`
+//      for `findProviderFor` to match, `GridController.activeCardId()` answers
+//      null while it has focus (its panel id is not `session-*`), and the bar
+//      is rendered by `SessionCardPanel` from a session's context. Dispatching
+//      to a non-card panel means teaching the command what "the focused
+//      surface" is when it is not a session — a §5.8 question, not a find one.
+//   2. Doing it right also **deletes ~90 lines of working UI** from the viewer
+//      (its own bar, four pieces of state and a keydown handler) and re-hangs
+//      them on `FindSurface`. That is a change to the viewer's own component,
+//      which is its owner's call rather than a merge-time drive-by.
+// Both belong on P2-E16's follow-up (#411), with this file's contract as the
+// target. When it lands, `applyMatches` / `focusMatch` / `clearMatches` are
+// the provider's `search` and `reveal` almost verbatim.
 // ---------------------------------------------------------------------------
