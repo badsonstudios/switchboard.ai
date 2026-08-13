@@ -43,7 +43,16 @@ export interface RuleActionContext {
   body: string;
 }
 
-export type RuleActionHandler = (action: RuleAction, ctx: RuleActionContext) => void;
+/**
+ * May be async, and #424's will be: a push or a webhook is an HTTP round trip.
+ * A handler that returns a promise gets the same fail-open treatment as one
+ * that throws synchronously — see `run` — rather than leaving the main process
+ * with an unhandled rejection the first time a phone is unreachable.
+ */
+export type RuleActionHandler = (
+  action: RuleAction,
+  ctx: RuleActionContext
+) => void | Promise<void>;
 
 /**
  * Action type -> handler.
@@ -75,15 +84,25 @@ export class RuleActionRegistry {
       });
       return false;
     }
-    try {
-      handler(action, ctx);
-      return true;
-    } catch (err) {
+    const failed = (err: unknown): void => {
       this.log?.warn('a notification action failed', {
         action: action.type,
         ruleId: ctx.rule.id,
         error: String(err),
       });
+    };
+    try {
+      // An async handler is dispatched, not awaited: the engine sits on the
+      // event path and must not hold it open for a network round trip. `true`
+      // therefore means DISPATCHED, and a later rejection is logged where a
+      // synchronous throw would have been.
+      const maybe = handler(action, ctx);
+      if (maybe && typeof (maybe as Promise<void>).catch === 'function') {
+        void (maybe as Promise<void>).catch(failed);
+      }
+      return true;
+    } catch (err) {
+      failed(err);
       return false;
     }
   }

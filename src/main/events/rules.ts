@@ -124,8 +124,9 @@ export function notifyWhenDoneFor(rules: readonly Rule[], cardId: string): boole
  * The built-in rules, synthesized from the global notification prefs — never
  * persisted, so flipping a pref changes behavior without rewriting user data.
  *
- * Two decisions are encoded here, both pre-existing and both now conditions
- * rather than branches:
+ * Two decisions are encoded here as conditions rather than branches. Both come
+ * from §5.9; neither was actually in the code before this item, where the toast
+ * fired for every attention event whenever `osToasts` was on:
  *
  * - **No toast while the window is focused.** A popup over the window the user
  *   is already reading is noise; the Events panel and the sound already told
@@ -136,7 +137,9 @@ export function notifyWhenDoneFor(rules: readonly Rule[], cardId: string): boole
  *   card in the same window.
  *
  * `done` is deliberately absent: since this item it is per-session opt-in via
- * the checkbox, because a toast for every short turn is noise (§5.9).
+ * the checkbox, because a toast for every short turn is noise (§5.9). That is a
+ * REDUCTION for anyone who had `osToasts` on — it is called out in the manual
+ * and the changelog rather than left to be discovered.
  */
 export function defaultRules(prefs: { osToasts?: boolean }): Rule[] {
   if (!prefs.osToasts) return [];
@@ -230,6 +233,32 @@ export function visibilityOf(win: VisibilityProbe | null | undefined): WindowVis
   }
 }
 
+/**
+ * The visibility of the APP, not of one window (§5.9).
+ *
+ * A card popped out into its own window (E8) is the case that makes this more
+ * than a rename: with the main window minimized and a popout focused, asking
+ * only the main window returns `hidden` — and the rule then pops a toast for a
+ * session the user is looking straight at, which is the exact thing the manual
+ * promises it will not do. The inverse is just as wrong: a focused main window
+ * would suppress the toast for a popped-out card hidden behind it.
+ *
+ * Most-visible wins, because every condition here is a question about the USER
+ * ("can they see us?"), not about a particular frame. No windows at all is
+ * `hidden`, same as a single dead one.
+ */
+export function visibilityAcross(
+  wins: readonly (VisibilityProbe | null | undefined)[]
+): WindowVisibility {
+  let best: WindowVisibility = 'hidden';
+  for (const w of wins) {
+    const v = visibilityOf(w);
+    if (v === 'focused') return 'focused';
+    if (v === 'visible') best = 'visible';
+  }
+  return best;
+}
+
 /** Keep only rules this build can actually use (store + IPC input). */
 export function isSaneRule(r: unknown): r is Rule {
   const x = r as Partial<Rule> | null;
@@ -242,9 +271,10 @@ export function isSaneRule(r: unknown): r is Rule {
     if (!x.visibility.every((v) => ALL_VISIBILITIES.includes(v as WindowVisibility))) return false;
   }
   if (!Array.isArray(x.actions)) return false;
-  // An action with no `type` can never be dispatched; a rule made entirely of
-  // those is a rule that does nothing, and it is dropped rather than kept as a
-  // no-op the user would have no way to notice.
+  // An action with no `type` can never be dispatched, so a rule carrying one is
+  // dropped rather than kept as a half-working rule. An EMPTY action list is
+  // allowed through — it is storable and simply never matches (`ruleMatches`),
+  // which is what a rules editor needs while a half-written rule is on screen.
   return x.actions.every(
     (a) => !!a && typeof a === 'object' && typeof (a as RuleAction).type === 'string'
   );

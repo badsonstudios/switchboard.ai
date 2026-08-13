@@ -4,11 +4,20 @@
 // budget: hook -> feed -> here is milliseconds (S-06: Stop lands ~30ms after
 // turn end).
 //
-// **What moved out (P2-E14-03).** The OS toast used to be an `if` right here.
-// It is now an ACTION dispatched by the rules engine (`rules-engine.ts`), and
-// the "not while the window is focused" part of it is a rule CONDITION rather
-// than a special case — which is what lets the per-session "notify when done"
-// checkbox be a rule instead of a second special case beside the first.
+// **What moved out (P2-E14-03), and what CHANGED with it.** The OS toast used
+// to be an `if` right here — `if (prefs.osToasts) show()`, with no condition on
+// it at all. It is now an ACTION dispatched by the rules engine
+// (`rules-engine.ts`) under rule CONDITIONS, which is what lets the per-session
+// "notify when done" checkbox be a rule rather than a second special case.
+//
+// Note for anyone reading P2-E14-03's issue text: it describes the shipped
+// behavior as "no OS toasts while the window is focused, crashes excepted".
+// That was the DESIGN (§5.9), not the code — the focus test here only ever
+// guarded `flashFrame`, never the toast. So for a user who had turned
+// `osToasts` on, this item changed two things rather than porting them:
+// `needs-input` / `needs-permission` stop toasting while the window is
+// focused, and `done` stops toasting at all unless that session's box is
+// ticked. Both are what §5.9 asked for; neither was true before.
 //
 // The split that remains is deliberate: this class owns what happens for EVERY
 // attention event no matter what (the beep, the flash, quiet hours, the master

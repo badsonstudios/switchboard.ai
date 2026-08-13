@@ -19,6 +19,7 @@ import {
   notifyWhenDoneRule,
   plannedActions,
   ruleMatches,
+  visibilityAcross,
   visibilityOf,
 } from './rules';
 import type { FeedKind } from './feed';
@@ -252,6 +253,47 @@ describe('visibilityOf', () => {
       isFocused: () => true,
     };
     expect(visibilityOf(angry)).toBe('hidden');
+  });
+});
+
+describe('visibilityAcross — the APP, not one window', () => {
+  const w = (o: Partial<Record<'minimized' | 'visible' | 'focused', boolean>>) => ({
+    isDestroyed: () => false,
+    isMinimized: () => o.minimized === true,
+    isVisible: () => o.visible !== false,
+    isFocused: () => o.focused === true,
+  });
+  const MAIN_MIN = w({ minimized: true });
+  const POPOUT_FOCUSED = w({ focused: true });
+
+  it('no windows at all is hidden', () => {
+    expect(visibilityAcross([])).toBe('hidden');
+    expect(visibilityAcross([null, undefined])).toBe('hidden');
+  });
+
+  // The bug this function exists for: a card popped into its own window (E8)
+  // while the main window is minimized. Asking only the main window says
+  // `hidden`, and the rule then toasts a session the user is reading.
+  it('a focused POPOUT beats a minimized main window', () => {
+    expect(visibilityAcross([MAIN_MIN, POPOUT_FOCUSED])).toBe('focused');
+    expect(visibilityOf(MAIN_MIN)).toBe('hidden'); // …which alone would say otherwise
+  });
+
+  it('the inverse too: a focused main window with a hidden popout is focused', () => {
+    expect(visibilityAcross([POPOUT_FOCUSED, MAIN_MIN])).toBe('focused');
+  });
+
+  it('on screen but focused elsewhere is `visible`, and one hidden peer cannot lower it', () => {
+    expect(visibilityAcross([w({}), MAIN_MIN])).toBe('visible');
+  });
+
+  it('every window minimized is hidden', () => {
+    expect(visibilityAcross([MAIN_MIN, w({ visible: false })])).toBe('hidden');
+  });
+
+  it('the notify-when-done rule is therefore SILENT while a popout has focus', () => {
+    const seen = visibilityAcross([MAIN_MIN, POPOUT_FOCUSED]);
+    expect(ruleMatches(notifyWhenDoneRule(CARD), trigger('done', CARD, seen))).toBe(false);
   });
 });
 

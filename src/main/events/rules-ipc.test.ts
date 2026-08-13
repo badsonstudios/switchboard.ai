@@ -105,6 +105,17 @@ describe('rules:setNotifyWhenDone', () => {
     expect(h.rules.map((r) => r.session)).toEqual(['card-b']);
   });
 
+  // The reader (`notifyWhenDoneFor`) matches on source + card, so the remover
+  // has to as well: matching on the derived id alone left a box that could be
+  // ticked but never unticked once a hand-edited file carried one under
+  // another id.
+  it('unticking clears a notify-when-done rule stored under a FOREIGN id', () => {
+    h.rules.push({ ...notifyWhenDoneRule(CARD), id: 'hand-edited-by-a-human' });
+    expect(h.call('rules:notifyWhenDone', CARD)).toBe(true);
+    expect(h.call('rules:setNotifyWhenDone', CARD, false)).toBe(false);
+    expect(h.rules).toEqual([]);
+  });
+
   it('answers the state the STORE holds, so a refusal reverts the tick', () => {
     const unknown = harness([], []); // no cards at all
     expect(unknown.call('rules:setNotifyWhenDone', 'ghost', true)).toBe(false);

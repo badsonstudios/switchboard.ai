@@ -56,6 +56,34 @@ describe('RuleActionRegistry', () => {
     expect(log.lines[0][1]).toContain('no handler');
   });
 
+  // The seam #424 (push / webhook) lands on: those handlers are HTTP round
+  // trips, so the registry has to take an async one without the main process
+  // collecting an unhandled rejection the first time a phone is unreachable.
+  it('an async handler that REJECTS is logged, not left unhandled (P6)', async () => {
+    const log = fakeLog();
+    const reg = new RuleActionRegistry(log);
+    let reject: (e: Error) => void = () => {};
+    reg.register('push', () => new Promise<void>((_res, rej) => (reject = rej)));
+    const rule: Rule = { id: 'r', event: 'done', actions: [{ type: 'push' }] };
+    // dispatched, and NOT awaited — the engine sits on the event path
+    expect(reg.run({ type: 'push' }, ctx(rule))).toBe(true);
+    expect(log.lines).toHaveLength(0);
+    reject(new Error('the phone is off'));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(log.lines[0][0]).toBe('warn');
+    expect(log.lines[0][1]).toContain('failed');
+  });
+
+  it('an async handler that resolves logs nothing', async () => {
+    const log = fakeLog();
+    const reg = new RuleActionRegistry(log);
+    reg.register('push', () => Promise.resolve());
+    const rule: Rule = { id: 'r', event: 'done', actions: [{ type: 'push' }] };
+    expect(reg.run({ type: 'push' }, ctx(rule))).toBe(true);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(log.lines).toHaveLength(0);
+  });
+
   it('a handler that THROWS costs its own action and nothing else (P6)', () => {
     const log = fakeLog();
     const reg = new RuleActionRegistry(log);

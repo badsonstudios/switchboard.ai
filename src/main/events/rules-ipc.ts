@@ -11,7 +11,7 @@
 import { IpcBroker } from '../ipc/broker';
 import { LogFields, Logger } from '../log/logger';
 import { WorkspaceStore } from '../workspace/store';
-import { Rule, notifyWhenDoneFor, notifyWhenDoneRule } from './rules';
+import { NOTIFY_WHEN_DONE, Rule, notifyWhenDoneFor, notifyWhenDoneRule } from './rules';
 
 export interface RulesIpcDeps {
   broker: IpcBroker;
@@ -51,7 +51,14 @@ export function registerRulesIpc(deps: RulesIpcDeps): void {
       return refuse('rules:setNotifyWhenDone', 'unknown card', { cardId });
     const rule = notifyWhenDoneRule(cardId);
     if (on) store.upsertRule(rule);
-    else store.removeRule(rule.id);
+    // Untick removes by what the READER matches on (source + card), not just
+    // by the derived id. `notifyWhenDoneFor` counts any notify-when-done rule
+    // for this card, so a hand-edited workspace file carrying one under a
+    // different id would otherwise leave a box that ticks but never unticks.
+    else
+      for (const r of store.listRules())
+        if (r.id === rule.id || (r.source === NOTIFY_WHEN_DONE && r.session === cardId))
+          store.removeRule(r.id);
     log.info('notify-when-done changed', { cardId, on });
     return notifyWhenDoneFor(store.listRules(), cardId);
   });

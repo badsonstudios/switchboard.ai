@@ -22,7 +22,7 @@ import { IpcBroker } from './ipc/broker';
 import { allCapabilities, Channel } from '../shared/ipc/capabilities';
 import { EventFeed } from './events/feed';
 import { Notifier } from './events/notifier';
-import { ACTION_OS_TOAST, defaultRules, visibilityOf } from './events/rules';
+import { ACTION_OS_TOAST, defaultRules, visibilityAcross } from './events/rules';
 import { RuleActionRegistry, RulesEngine } from './events/rules-engine';
 import { registerRulesIpc } from './events/rules-ipc';
 import { GitService } from './git/git-service';
@@ -1149,7 +1149,9 @@ app
       getRules: () => workspace.listRules(),
       getDefaultRules: () => defaultRules(workspace.getNotificationPrefs()),
       cardIdFor: (liveId) => cardIdForLive(liveId),
-      getVisibility: () => visibilityOf(currentWindow),
+      // Every window, not just the main one: a popped-out card (E8) is a
+      // window the user can be looking at while the main one is minimized.
+      getVisibility: () => visibilityAcross([currentWindow, ...popoutWindows.map((p) => p.win)]),
       titleFor: (e) => manager.get(e.sessionId)?.identity.title ?? 'switchboard.ai',
       bodyFor: (e) => e.kind.replace(/-/g, ' '),
       registry: ruleActions,
