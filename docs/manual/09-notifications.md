@@ -205,12 +205,14 @@ have the same shape:
 > **when** [something happens] **in** [this session, or any session], **and**
 > [the window is / isn't in front] → **do** [something]
 
-Today the only thing a rule can *do* is pop up a desktop notification — with
-**Allow** / **Deny** on it when the thing that happened was a permission
-request, as above — and the only rule you can write is the checkbox. Sounds per
-session, spoken announcements, quiet hours, and phone push / webhooks are all
-the same machinery with more actions plugged in — they're coming, and they'll
-appear on this page as they land.
+A rule can pop up a desktop notification — with **Allow** / **Deny** on it
+when the thing that happened was a permission request, as above — send a
+notification to your **phone**, or **POST an event to a webhook** (both
+below). Sounds per session, spoken announcements and quiet hours are the same
+machinery with more actions plugged in — they're coming, and they'll appear
+on this page as they land.
+
+The only rule you can *write* by hand is the checkbox; the rest are switched on
 
 ### What a pop-up says
 
@@ -225,10 +227,153 @@ turned **🏷 auto labels** off (see
 pop-ups go back to the session name too — so a phrase from your prompt does not
 appear on a shared screen.
 
+## Getting told on your phone
+
+A desktop pop-up is no use once you've walked away from the machine. So a
+session can reach your **phone** instead — through
+[ntfy](https://ntfy.sh) (no account, free) or
+[Pushover](https://pushover.net) (a one-off purchase).
+
+**This is off until you set it up, and switchboard works perfectly well with it
+switched off forever.** Nothing is sent anywhere until you paste in a
+destination yourself.
+
+### Where the setup lives
+
+There's no settings screen yet, so setup lives in a dialog you can reach two
+ways:
+
+- press **`Ctrl+Shift+P`** and type *phone push*; or
+- open the **About** panel (click the version in the title bar) and press
+  **Phone push & webhooks…**
+
+*This placement is temporary and will move into Settings when that screen
+exists.*
+
+### Setting up ntfy (the easy one)
+
+1. Install the **ntfy** app on your phone (iOS or Android), or open
+   [ntfy.sh](https://ntfy.sh) in a phone browser.
+2. Make up a **topic** name. Treat it like a password: anyone who knows it can
+   read your notifications and send you fake ones, so
+   `dan-switchboard-7f3a91c2` — not `dan`.
+3. **Subscribe** to that topic in the phone app.
+4. In switchboard, open the setup dialog, paste the topic into **Topic**, and
+   press **Save**.
+5. Tick **Send events to my phone**.
+6. Press **Send test**. Your phone should buzz within a second or two.
+
+Running your own ntfy server? Put its address in **Server**. Leave it empty for
+the public ntfy.sh.
+
+### Setting up Pushover
+
+1. Sign in at [pushover.net](https://pushover.net) and copy your **User key**
+   from the front page.
+2. Create an application there (any name) and copy its **API token**.
+3. In the setup dialog, choose **Pushover**, paste both, save each, tick the
+   switch, and press **Send test**.
+
+### What gets sent, and when
+
+You get a push for **needs permission**, **needs input**, and **crashes** —
+and only while you're **away from switchboard**. If you're sitting in front of
+the app, your pocket stays quiet: the screen already told you.
+
+A finished turn (**Done.**) does *not* push. That's what the per-session
+**Notify when done** checkbox above is for.
+
+The message is the same one a desktop pop-up would have shown: the session's
+task label (or its name), plus what happened. That label is derived from what
+you asked the agent, and it leaves your machine when a push is sent — turn off
+**🏷 auto labels** in the title bar if you'd rather it didn't.
+
+Attention events go out at *high* priority, never *urgent*: switchboard will not
+override your phone's do-not-disturb.
+
+## Webhooks — telling a program instead of a person
+
+The **webhook** action POSTs each event as JSON to a URL you own — a home
+dashboard, a Slack/Discord relay, a Home Assistant automation, a log file.
+
+Set it up in the same dialog: paste the URL, save it, and tick **POST events to
+my webhook**. **Send test** POSTs one immediately so you can check the other end
+is listening.
+
+Unlike the phone push, a webhook fires **whatever the window is doing** and
+includes **Done.** — a program isn't distracted by being looked at, and a
+dashboard wants the whole picture.
+
+The body looks like this:
+
+```json
+{
+  "source": "switchboard.ai",
+  "version": 1,
+  "event": "needs-permission",
+  "sessionId": "live-8f1c…",
+  "cardId": "card-3b2a…",
+  "title": "Add markdown preview",
+  "body": "needs permission",
+  "ruleId": "default:webhook:needs-permission",
+  "visibility": "hidden",
+  "at": "2026-08-13T18:04:11.204Z"
+}
+```
+
+A POST from the **Send test** button carries one extra field, `"test": true`.
+It's absent on every real event, so an automation can skip it rather than
+switching the lights on for a session that never ran.
+
+- **`event`** is the one to switch on: `needs-permission`, `needs-input`,
+  `done`, or `crashed`. Ignore any value you don't recognize — new ones may
+  appear.
+- **`cardId`** is stable across restarts; **`sessionId`** is not (it's minted
+  fresh every time a session resumes).
+- **`version`** only changes if the shape changes in a way that would break you.
+- Nothing else goes with it: no folder, no file paths, no prompt text, no
+  transcript.
+
+Your webhook URL is treated as a secret, because most of them are. It has to be
+a full `http://` or `https://` address — a bare `example.com/hook` is refused
+when you save it, with a note saying so, rather than accepted and then never
+fired.
+
+**One thing the webhook is *not* louder than:** the 🔔 title-bar switch and
+quiet hours sit above every channel on this page, webhooks included. With
+notifications off, or inside a quiet-hours window, nothing is sent — your
+dashboard goes quiet too. (Quiet hours have no settings screen yet.)
+
+## Where your credentials are kept
+
+Your topic, tokens and webhook URL go into your **operating system's credential
+store** — Windows DPAPI, the macOS Keychain, or your Linux keyring — and never
+into a switchboard file. What's on disk beside the workspace file is an
+encrypted blob only your account on this machine can open; copy it to another
+computer and it decrypts to nothing.
+
+Consequences worth knowing:
+
+- **switchboard can't show you a saved value again.** A field you've filled in
+  reads **· saved** and stays empty. To change one, paste the new value over it;
+  to remove it, press **Forget**.
+- **They never appear in the logs**, even when a send fails.
+- **On Linux without a keyring** (gnome-keyring or kwallet), there's nowhere
+  safe to put them. The dialog says so and refuses to store anything rather than
+  writing a token to a plain file.
+
 ## Good to know
 
 - Notifications never interrupt a session. If notifying fails for any reason,
-  the session carries on regardless.
+  the session carries on regardless. A phone that's off, a webhook host that's
+  gone, a laptop with no signal: the session doesn't notice and neither do you.
+- **Nothing is retried and nothing is queued.** A push that doesn't get through
+  is gone — you'll find the session waiting when you come back, which is what
+  the Events panel is for.
+- A failure is written to the log **once**, not once per event, so an evening
+  with the phone off doesn't bury everything else in there.
+- The 🔔 title-bar switch is still above all of this. With notifications off,
+  nothing is sent anywhere.
 
 TODO: quiet hours are supported internally but have no settings screen yet.
 TODO: there is no rules *editor* yet — the per-session checkbox is the only rule

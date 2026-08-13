@@ -36,6 +36,14 @@ import { WorkspaceNoticeBanner } from './components/WorkspaceNoticeBanner';
 import { PreflightBanner } from './components/PreflightBanner';
 import { ServiceHealthBanner } from './components/ServiceHealthBanner';
 import type { ServiceHealthStatus } from '../../shared/service-health';
+import { PushSetupDialog } from './components/PushSetupDialog';
+import { unavailablePushConfig } from '../../shared/push';
+import type {
+  PushConfig,
+  PushSecretKey,
+  PushSendResult,
+  PushWriteResult,
+} from '../../shared/push';
 import { collapsedRows, revealTargets } from './lib/ladder';
 import { GuardedRefresh, latestWins } from './lib/latest-wins';
 import { groupChangeLanded } from './lib/groups';
@@ -157,6 +165,16 @@ export function App(): React.JSX.Element {
   // stored, and nothing else in the app reads it.
   const [serviceHealth, setServiceHealth] = useState<ServiceHealthStatus | null>(null);
   const [statusPolling, setStatusPolling] = useState(true);
+  // ── phone push + webhooks (E14-06, §5.9 + §5.29) ─────────────────────────
+  // On demand, like About. The config is fetched when the dialog opens rather
+  // than at mount: it is two booleans and four "is it set" flags that nothing
+  // else on screen reads, and asking main for them on every launch would be a
+  // read of the credential store nobody asked for.
+  const [pushOpen, setPushOpen] = useState(false);
+  const [pushConfig, setPushConfig] = useState<PushConfig | null>(null);
+  // The last write main REFUSED, for the field it was aimed at. Cleared on the
+  // next successful write and on every re-open.
+  const [pushWrite, setPushWrite] = useState<{ key: string; problem: string } | null>(null);
   // Attention events (E9-03). This subscription used to live inside
   // EventsPanel; it moved up here because the queue is the SINGLE ordering
   // authority — two independent subscriptions to events:changed could hand the
@@ -514,6 +532,45 @@ export function App(): React.JSX.Element {
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, [applyUpdateStatus]);
 
+  // ── phone push + webhooks (E14-06, §5.29) ────────────────────────────────
+  //
+  // Every call is optional-chained and swallowed, and `config` stays null when
+  // the bridge has no `push` namespace — the dialog then renders with its
+  // fields disabled rather than throwing out of an event handler. #444's lesson
+  // (a notification nicety must never be able to white-screen the shell), and
+  // the reason the whole family is written this way.
+  const openPushSetup = React.useCallback(() => {
+    setPushOpen(true);
+    setPushWrite(null);
+    const answer = bridge.push?.getConfig?.();
+    // No `push` namespace at all: show the dialog as UNREACHABLE rather than as
+    // an empty working one. A Save button that silently does nothing is worse
+    // than a disabled one that says why (review finding).
+    if (!answer) return setPushConfig(unavailablePushConfig());
+    void answer.then((c) => setPushConfig(c)).catch(() => setPushConfig(unavailablePushConfig()));
+    // eslint's exhaustive-deps plugin isn't installed; bridge is stable
+  }, []);
+  const applyPushAnswer = React.useCallback(
+    (key: string, p: Promise<PushWriteResult> | undefined) => {
+      if (!p) return setPushConfig(unavailablePushConfig());
+      void p
+        .then((r) => {
+          setPushConfig(r.config);
+          // What the dialog renders beside the field: main is the authority on
+          // whether the write happened, and a credential cannot be read back to
+          // check.
+          setPushWrite(r.ok ? null : { key, problem: r.problem ?? 'refused' });
+        })
+        .catch(() => setPushWrite({ key, problem: 'refused' }));
+    },
+    []
+  );
+  const testPush = React.useCallback(
+    (channel: 'push' | 'webhook'): Promise<PushSendResult> =>
+      bridge.push?.test?.(channel) ?? Promise.resolve({ ok: false, reason: 'not-configured' }),
+    []
+  );
+
   /**
    * The Update button (E19-04).
    *
@@ -820,7 +877,7 @@ export function App(): React.JSX.Element {
   const modalOpenRef = React.useRef(false);
   useEffect(() => {
     railHiddenRef.current = railHidden;
-    modalOpenRef.current = paletteOpen || aboutOpen || updateOpen;
+    modalOpenRef.current = paletteOpen || aboutOpen || updateOpen || pushOpen;
   });
 
   // Set when a command deliberately raised a DIFFERENT OS window (jumping to a
@@ -922,6 +979,7 @@ export function App(): React.JSX.Element {
           },
           jumpToNextAttention,
           openAbout: () => setAboutOpen(true),
+          openPushSetup,
           checkForUpdates,
           // §5.30's `Open file…`. Picking a file in the native dialog is also
           // what GRANTS it: main widens the `fs.read` scope with the chosen
@@ -943,6 +1001,7 @@ export function App(): React.JSX.Element {
       setSessionFocusPolicy,
       togglePin,
       checkForUpdates,
+      openPushSetup,
     ], // other deps read live state through refs; grid.current is stable
   );
   // chips advertise their own binding, derived from the registry so a tooltip
@@ -1217,7 +1276,21 @@ export function App(): React.JSX.Element {
         }}
         // a second dialog is above this one: two stacked `aria-modal` regions
         // is a thing screen readers disagree about, so only the top one claims it
-        dialogAbove={updateOpen}
+        dialogAbove={updateOpen || pushOpen}
+        onOpenPushSetup={openPushSetup}
+      />
+      <PushSetupDialog
+        open={pushOpen}
+        onClose={() => setPushOpen(false)}
+        config={pushConfig}
+        write={pushWrite}
+        onSetPrefs={(p) =>
+          applyPushAnswer(p.ntfyServer !== undefined ? 'ntfyServer' : 'prefs', bridge.push?.setPrefs?.(p))
+        }
+        onSetSecret={(key: PushSecretKey, value: string) =>
+          applyPushAnswer(key, bridge.push?.setSecret?.(key, value))
+        }
+        onTest={testPush}
       />
       <UpdateDialog
         open={updateOpen}

@@ -24,6 +24,7 @@ import { SessionIdentity } from '../sessions/session-manager';
 import { WindowState, mergeState, isOnAnyDisplay } from '../window-state';
 import { UpdatePrefs } from '../../shared/update';
 import { ServiceHealthPrefs } from '../../shared/service-health';
+import { DEFAULT_PUSH_PREFS, PushPrefs } from '../../shared/push';
 import { WorkspaceSaveState } from '../../shared/workspace';
 import { Rule, isSaneRule } from '../events/rules';
 
@@ -154,6 +155,20 @@ export interface WorkspaceState {
    * renderer involved, and the renderer rewrites `ui` wholesale.
    */
   health: ServiceHealthPrefs;
+  /**
+   * Phone push + webhook (P2-E14-06, §5.9). A typed top-level field, for the
+   * `health` and `updates` reason: MAIN is the reader — the rules engine
+   * synthesizes the default rules from these switches with no renderer
+   * involved.
+   *
+   * **The non-secret half only.** The ntfy topic, the Pushover keys and the
+   * webhook URL are credentials and live in the OS credential store
+   * (`main/secrets/store.ts`, §5.29) — this field holds two booleans, a service
+   * name and an optional self-hosted server address, and there is a test that
+   * writes a credential and then asserts the workspace file does not contain
+   * it.
+   */
+  push: PushPrefs;
 }
 
 /** The schema version this build writes. Bump it and add a MIGRATIONS entry. */
@@ -212,6 +227,7 @@ const EMPTY: WorkspaceState = {
   autoLabels: true,
   updates: { autoCheck: true },
   health: { poll: true },
+  push: { ...DEFAULT_PUSH_PREFS },
 };
 
 /** Stable identity for a display arrangement (§7). */
@@ -232,6 +248,7 @@ function emptyState(): WorkspaceState {
     notifications: { ...EMPTY.notifications },
     updates: { ...EMPTY.updates },
     health: { ...EMPTY.health },
+    push: { ...EMPTY.push },
   };
 }
 
@@ -392,6 +409,12 @@ export class WorkspaceStore {
           unusable: health.repaired,
         });
 
+      const push = sanitizePush(raw.push);
+      if (push.repaired.length > 0)
+        note('the phone-push settings in the workspace file were unusable — leaving them off', {
+          unusable: push.repaired,
+        });
+
       if (wrongType(raw, 'autoTrust', 'boolean'))
         note('the auto-trust setting in the workspace file was not true or false — leaving it on');
 
@@ -411,6 +434,7 @@ export class WorkspaceStore {
         autoLabels: raw.autoLabels !== false, // default on — same shape, same reason
         updates: updates.value,
         health: health.value,
+        push: push.value,
       };
     } catch (err) {
       // corrupt/missing: back the corpse aside (post-mortem material), start fresh
@@ -860,6 +884,18 @@ export class WorkspaceStore {
   setServiceHealthPrefs(p: Partial<ServiceHealthPrefs>): void {
     this.state.health = sanitizeHealth({ ...this.state.health, ...p }).value;
     this.saveSoon();
+  }
+
+  /** Phone push + webhook, non-secret half (P2-E14-06). */
+  getPushPrefs(): PushPrefs {
+    return { ...this.state.push };
+  }
+
+  /** Merge-patch, like every pref above it. */
+  setPushPrefs(p: Partial<PushPrefs>): PushPrefs {
+    this.state.push = sanitizePush({ ...this.state.push, ...p }).value;
+    this.saveSoon();
+    return { ...this.state.push };
   }
 
   getAutoTrust(): boolean {
@@ -1358,6 +1394,44 @@ function sanitizeHealth(h: unknown): Repaired<ServiceHealthPrefs> {
     return { value: { poll: true }, repaired: h == null ? [] : ['health'] };
   const x = h as Partial<ServiceHealthPrefs>;
   return { value: { poll: x.poll !== false }, repaired: badFields(h, [['poll', 'boolean']]) };
+}
+
+/**
+ * Phone push + webhook prefs (P2-E14-06). Both switches default **OFF**, the
+ * opposite of `poll` and `autoCheck` above and deliberately so: those default
+ * on because the feature is harmless and useful; these send data to a
+ * third-party service, and a mangled field must never be the reason something
+ * left the machine.
+ *
+ * A field that could hold a SECRET is not read here at all — a hand-edited file
+ * with a `topic` in it contributes nothing, because this shape has nowhere to
+ * put one.
+ */
+function sanitizePush(p: unknown): Repaired<PushPrefs> {
+  if (typeof p !== 'object' || p === null || Array.isArray(p))
+    return { value: { ...DEFAULT_PUSH_PREFS }, repaired: p == null ? [] : ['push'] };
+  const x = p as Partial<PushPrefs>;
+  const service = x.service === 'pushover' ? 'pushover' : 'ntfy';
+  return {
+    value: {
+      push: x.push === true,
+      service,
+      webhook: x.webhook === true,
+      ...(typeof x.ntfyServer === 'string' && x.ntfyServer ? { ntfyServer: x.ntfyServer } : {}),
+    },
+    repaired: [
+      ...badFields(p, [
+        ['push', 'boolean'],
+        ['webhook', 'boolean'],
+        ['ntfyServer', 'string'],
+      ]),
+      // an unknown service name is not a type error, and it is still a value we
+      // could not use — it would have silently become ntfy otherwise
+      ...(x.service !== undefined && x.service !== 'ntfy' && x.service !== 'pushover'
+        ? ['service']
+        : []),
+    ],
+  };
 }
 
 function sanitizeWindow(w: unknown): Repaired<PersistedWindow | null> {

@@ -532,6 +532,21 @@ or sits idle awaiting input, and `Stop` when it finishes. On top:
   (per-session distinct sounds; optional TTS announcement "TradingApp needs
   permission"), flash taskbar/dock icon, restore/focus window, OS toast, phone push
   (ntfy / Pushover), webhook.
+  *(Phone push + webhook shipped P2-E14-06. Decisions taken with them, recorded
+  so they are not re-litigated: **(a)** the two are conditioned differently on
+  purpose — a push goes to a PERSON and fires only while the app is not focused,
+  a webhook goes to a PROGRAM and fires at every visibility and on `done` too;
+  **(b)** an action payload carries **no destination** (`{type:'push'}`), because
+  a destination in a rule is a credential in the workspace file — the handler
+  reads it from the credential store when it fires, which caps v1 at one
+  destination per channel and hands a future rules editor a slot NAME to
+  reference rather than a value to copy; **(c)** neither channel ever uses its
+  service's top priority, which on both ntfy and Pushover means "bypass
+  do-not-disturb" — a calm-by-design tool does not get to override the user's
+  night; **(d)** no retries and no queue, per P6: a missed push is missed, and
+  the Events panel is the durable record. The setup surface is a modal reached
+  from the palette and from About, explicitly provisional until E14's settings
+  screen exists.)*
 - **Actionable toasts**: permission toasts carry Allow / Deny buttons that send the
   verdict on that session's input route — approve without switching windows.
   *(Shipped P2-E14-04. Three decisions worth recording. **One decision path:**
@@ -1638,6 +1653,21 @@ specified BEFORE the first listener ships — not hardening-later items.
   localhost listener ships in Phase 2.** If a future provider cannot do stdio,
   it declares no `mcp` capability (§5.3) and simply does not get the bus —
   we do not add an HTTP fallback to accommodate it.
+- **User credentials — the OS credential store (P2-E14-06, first use)**: this
+  section's "credentials live in the OS credential store, never in files" is
+  implemented with Electron's **`safeStorage`** (`src/main/secrets/store.ts`).
+  The nuance, stated rather than hidden behind the phrase: the *key* is the
+  OS's — DPAPI on Windows, the login Keychain on macOS, libsecret
+  (gnome-keyring / kwallet) on Linux — and what lands on disk beside the
+  workspace file is ciphertext only that OS user on that machine can open. Three
+  rules the store keeps and a test pins: **no plaintext fallback** (a machine
+  with no keyring is told it cannot keep a secret, and stores nothing), **no
+  read path to the renderer** (the IPC surface writes credentials and answers
+  with booleans — there is no `getSecret`, so a compromised renderer cannot
+  exfiltrate one), and **no value in any log line**. `update/token.ts` reserved
+  a slot for this store before it existed; the slot is still empty because
+  nothing yet asks the user to paste a GitHub token in, but the store it named
+  is now real.
 - **Mobile companion WebSocket (Phase 4)**: the near-isomorphic precedent is
   Cline's local Kanban WebSocket (CVE-2026-44211, CVSS 9.7): no origin check,
   no auth token → any webpage the developer visited received a full workspace

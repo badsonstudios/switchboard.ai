@@ -1,4 +1,14 @@
-import { app, BrowserWindow, Menu, net, Notification, screen, session, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  net,
+  Notification,
+  safeStorage,
+  screen,
+  session,
+  shell,
+} from 'electron';
 import path from 'path';
 import { windowOptionsFrom, WindowState } from './window-state';
 import { WorkspaceStore, displayFingerprint } from './workspace/store';
@@ -23,7 +33,13 @@ import { IpcBroker } from './ipc/broker';
 import { allCapabilities, Channel } from '../shared/ipc/capabilities';
 import { EventFeed } from './events/feed';
 import { Notifier } from './events/notifier';
-import { ACTION_OS_TOAST, defaultRules, visibilityAcross } from './events/rules';
+import {
+  ACTION_OS_TOAST,
+  ACTION_PUSH,
+  ACTION_WEBHOOK,
+  defaultRules,
+  visibilityAcross,
+} from './events/rules';
 import { RuleActionRegistry, RulesEngine } from './events/rules-engine';
 import {
   DECIDE_BUTTONS,
@@ -33,6 +49,9 @@ import {
   toastActionsSupported,
 } from './events/permission-toast';
 import { registerRulesIpc } from './events/rules-ipc';
+import { PushActions } from './events/push-actions';
+import { registerPushIpc } from './events/push-ipc';
+import { SecretStore } from './secrets/store';
 import { GitService } from './git/git-service';
 import { runPreflight } from './preflight';
 import { startStaticServer, StaticServer } from './static-server';
@@ -1312,6 +1331,32 @@ app
         requestId: req?.requestId ?? '',
       });
     });
+    // ── the two channels that leave the machine (P2-E14-06, §5.9 + §5.29) ──
+    //
+    // Assembled here for the same reason the toast is: this file owns the
+    // electron singletons, and `safeStorage` is one. Everything below it —
+    // the store, the senders, the deciding — is plain TypeScript that a unit
+    // test drives with a fake crypto and a fake `fetch`.
+    //
+    // Both actions are registered UNCONDITIONALLY, configured or not: an
+    // unregistered type is logged as "this build has no handler for it" on
+    // every event, which is a lie about the build. The handlers themselves
+    // resolve to "not configured" in silence, which is the truth about the
+    // machine.
+    const pushLog = createLogger(sink, 'push');
+    const secretStore = new SecretStore({
+      dir: app.getPath('userData'),
+      crypto: safeStorage,
+      log: pushLog,
+    });
+    const pushActions = new PushActions({
+      secrets: secretStore,
+      getPrefs: () => workspace.getPushPrefs(),
+      log: pushLog,
+      userAgent: app.getVersion(),
+    });
+    ruleActions.register(ACTION_PUSH, pushActions.pushHandler);
+    ruleActions.register(ACTION_WEBHOOK, pushActions.webhookHandler);
     // Assigned the moment `registerSessionIpc` returns, a few dozen lines
     // below; until then no session exists, so no event can ask.
     let cardIdForLive: (liveId: string) => string | null = () => null;
@@ -1322,7 +1367,17 @@ app
     let labelForLive: (sessionId: string) => string | undefined = () => undefined;
     const rules = new RulesEngine({
       getRules: () => workspace.listRules(),
-      getDefaultRules: () => defaultRules(workspace.getNotificationPrefs()),
+      // The built-ins are synthesized per event from the switches, push and
+      // webhook included — so turning the phone on in the setup dialog takes
+      // effect on the next event with nothing to persist and no rule to write.
+      getDefaultRules: () => {
+        const push = workspace.getPushPrefs();
+        return defaultRules({
+          ...workspace.getNotificationPrefs(),
+          push: push.push,
+          webhook: push.webhook,
+        });
+      },
       cardIdFor: (liveId) => cardIdForLive(liveId),
       // Every window, not just the main one: a popped-out card (E8) is a
       // window the user can be looking at while the main one is minimized.
@@ -1352,6 +1407,13 @@ app
       log: rulesLog,
       store: workspace,
       knownCard: (cardId) => workspace.listSessions().some((s) => s.id === cardId),
+    });
+    registerPushIpc({
+      broker,
+      log: pushLog,
+      store: workspace,
+      secrets: secretStore,
+      actions: pushActions,
     });
 
     const notifier = new Notifier({

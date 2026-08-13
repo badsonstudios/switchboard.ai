@@ -105,11 +105,24 @@ submit (global, per group and per session), what a session may do when it needs
 you (global and per session), layout, groups, sessions, per-session detail
 level, and window position all persist across restarts, stored on your machine.
 
+## Phone push & webhooks
+
+Reachable with **`Ctrl+Shift+P`** → *phone push*, or from the **About** panel.
+Off until you set it up. Full walk-through in
+[Notifications](09-notifications.md#getting-told-on-your-phone).
+
+Anything you paste in there — an ntfy topic, Pushover keys, a webhook URL —
+goes into your operating system's credential store, never into a switchboard
+file, so it is **not** part of "what's remembered" above and does not travel
+with your workspace.
+
 ## Good to know
 
 - switchboard has no account, no cloud sync, and sends no telemetry anywhere.
-- Credentials are handled by Claude Code itself, on your subscription. There is
-  no API key to enter and switchboard never stores one.
+- Credentials for **Claude** are handled by Claude Code itself, on your
+  subscription. There is no API key to enter and switchboard never stores one.
+  The only credentials switchboard holds are the phone-push / webhook ones you
+  choose to give it, and those live in the OS credential store.
 
 TODO: a proper settings screen (notification rules, quiet hours, per-session
 sounds) is planned.
