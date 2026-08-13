@@ -157,10 +157,24 @@ describe('the single-instance lock comes first (#289)', () => {
     // the hook listener's start() sweeps every hook-token under stateDir (#282)
     ['the hook listener is built', 'new HookListener('],
     ['the session state dir is derived', "path.join(app.getPath('userData'), 'sessions')"],
+    // …and the sweep that DELETES directories under it (#290). Its safety
+    // argument is that a losing instance never reaches it — without the lock
+    // it would be deleting the winner's live sessions' settings files.
+    ['the session state dirs are swept', 'manager.sweepOrphanStateDirs()'],
     // (a regex: the call is line-wrapped, so `\s*` spans the break)
     ['the app becomes ready', /app\s*\.whenReady\(\)/],
   ])('is taken before %s', (_what: string, marker: string | RegExp) => {
     expect(lock()).toBeLessThan(at(marker));
+  });
+
+  // The sweep's OTHER placement claim (#290), and the one the lock says
+  // nothing about: within this process it must run before anything can spawn a
+  // session, or a live session's directory becomes a candidate. Every session
+  // is spawned through the session IPC, so "before `registerSessionIpc`" is
+  // the whole of it — and the comment at the call site asserts exactly this,
+  // which is why it is pinned rather than trusted.
+  it('sweeps the session state dirs before any session can be spawned (#290)', () => {
+    expect(at('manager.sweepOrphanStateDirs()')).toBeLessThan(at('registerSessionIpc({'));
   });
 
   it('turns a losing instance away instead of running the bootstrap', () => {
