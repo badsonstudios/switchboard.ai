@@ -55,6 +55,20 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **Answer a permission from the desktop pop-up.** When a session asks
+  permission while you are in another app, the pop-up now carries **Allow** and
+  **Deny** — press one and the tool runs, or Claude is told no, without
+  switchboard ever coming to the front. The pop-up names what it would allow
+  ("Allow Bash? npm run build"), not just that something is waiting. Clicking
+  the pop-up *body* is never an answer: it brings switchboard forward onto the
+  card that is asking. Answer it anywhere else — the approval bar, the Events
+  panel, the batch bar — and the pop-up is withdrawn, so a stale **Allow** can
+  never sit in your notification centre for a settled question. Buttons on
+  notifications are the operating system's to grant: Windows and macOS get
+  them (an installed build on Windows, a signed one on macOS); Linux gets the
+  click-to-jump path instead. The approval bar in the app is unchanged and is
+  always there.
+
 - **A session's task label now fills itself in.** Claude Code gives every
   conversation a short title of its own; if you have not typed a label, the card
   shows that instead — so a screen full of sessions reads "Add markdown

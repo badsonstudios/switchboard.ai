@@ -184,6 +184,8 @@ function harness(
   };
   /** the hook listener's held requests, keyed the way the real one holds them */
   const hookPending = [...(opts.hookPending ?? [])];
+  /** every verdict the HOOK router was handed, whatever surface sent it (E14-04) */
+  const hookDecisions: Array<{ requestId: string; decision: string; reason?: string }> = [];
   const spawnIds = [...(opts.spawnIds ?? [])];
   const exitCodeOf = (id: string): number | null => opts.exitCodes?.[id] ?? null;
   const asRecord = (id: string): Record<string, unknown> => ({
@@ -292,6 +294,19 @@ function harness(
         for (let i = hookPending.length - 1; i >= 0; i--) {
           if (hookPending[i].sessionId === id) hookPending.splice(i, 1);
         }
+      },
+      // The hook half of the app's ONE decision path (P2-E14-04). Recorded and
+      // real (it drops the request) rather than a no-op, because the claim
+      // under test is that `SessionIpcHandle.decidePermission` — what an OS
+      // toast's Allow/Deny button calls, with no window in the loop — lands in
+      // the same routers `sessions:decidePermission` does, and answers FALSE
+      // for a request nobody holds.
+      decide: (requestId: string, decision: string, reason?: string) => {
+        const i = hookPending.findIndex((r) => r.requestId === requestId);
+        if (i < 0) return false;
+        hookPending.splice(i, 1);
+        hookDecisions.push({ requestId, decision, reason });
+        return true;
       },
       // the hook half of "Allow all (this session)" (#319). Recorded rather
       // than no-op'd because the claim under test is that ONE click reaches
@@ -407,6 +422,10 @@ function harness(
   return {
     /** what the bootstrap gets back — the toast's route to a card's label */
     labelFor: ipc.labelFor,
+    /** …and the two halves an ACTIONABLE toast needs (P2-E14-04) */
+    pendingPermissionFor: ipc.pendingPermissionFor,
+    decidePermission: ipc.decidePermission,
+    hookDecisions,
     call,
     created,
     upserted,
@@ -2271,6 +2290,118 @@ describe('a session that exits on its own releases what it was holding (#271)', 
     expect(h.call('sessions:pendingPermissions')).toEqual([]);
     // …and the optional-chained router is a no-op, not a logged failure
     expect(h.warn).not.toHaveBeenCalled();
+  });
+});
+
+// P2-E14-04. The OS toast's Allow/Deny answers from the MAIN process, with no
+// window in the loop — so the two things it needs (what is being asked, and how
+// to answer it) come back on `SessionIpcHandle` rather than over IPC. What is
+// pinned here is that they are the SAME routers `sessions:decidePermission`
+// reaches: a toast with its own route to the CLI would be a second opinion
+// about what "allow" means, and the two would drift the first time either
+// changed.
+describe('a toast can name and answer a held permission (P2-E14-04)', () => {
+  const CARD = 'card-1';
+  let dir: string;
+  tempDirEach('sb-toastperm-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir, CARD);
+
+  it('names the OLDEST request the live session is holding — what the bar answers', () => {
+    const h = harness(undefined, dir, {
+      prior: card(),
+      hookPending: [
+        { requestId: 'hook-1', sessionId: 'live-1' },
+        { requestId: 'hook-2', sessionId: 'live-1' },
+      ],
+    });
+    start(h);
+    // FIFO, because the approval bar's buttons act on `cardQueue[0]`. A toast
+    // that answered the newest while the bar answered the oldest would make the
+    // two surfaces disagree about which question is on screen.
+    expect(h.pendingPermissionFor('live-1')?.requestId).toBe('hook-1');
+  });
+
+  it('answers null for a session holding nothing, and for one that never existed', () => {
+    const h = harness(undefined, dir, { prior: card() });
+    start(h);
+    expect(h.pendingPermissionFor('live-1')).toBeNull();
+    expect(h.pendingPermissionFor('no-such-session')).toBeNull();
+  });
+
+  it('sees BOTH transports — a Direct session holds on the stream router', () => {
+    const { perms } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
+    start(h);
+    perms.offer('live-1', canUseTool('req-1'));
+    expect(h.pendingPermissionFor('live-1')?.requestId).toBe('stream:live-1:req-1');
+  });
+
+  it('decidePermission reaches the hook router, exactly as the channel does', () => {
+    const h = harness(undefined, dir, {
+      prior: card(),
+      hookPending: [{ requestId: 'hook-1', sessionId: 'live-1' }],
+    });
+    start(h);
+
+    expect(h.decidePermission('hook-1', 'deny')).toBe(true);
+
+    expect(h.hookDecisions).toEqual([
+      { requestId: 'hook-1', decision: 'deny', reason: undefined },
+    ]);
+    // and the request really is gone — the bar and the replay agree with the toast
+    expect(h.pendingPermissionFor('live-1')).toBeNull();
+    expect(h.call('sessions:pendingPermissions')).toEqual([]);
+  });
+
+  it('decidePermission reaches the STREAM router too', () => {
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
+    start(h);
+    perms.offer('live-1', canUseTool('req-1'));
+
+    expect(h.decidePermission('stream:live-1:req-1', 'allow')).toBe(true);
+
+    expect(sent).toHaveLength(1);
+    expect(h.pendingPermissionFor('live-1')).toBeNull();
+  });
+
+  // The dead-session half of the issue's done-when, at the seam the toast
+  // actually calls: nothing holds it, so nothing is decided and the caller is
+  // told so rather than being left to assume it worked.
+  it('answers FALSE for a request nobody holds, and for a nonsense verdict', () => {
+    const h = harness(undefined, dir, {
+      prior: card(),
+      hookPending: [{ requestId: 'hook-1', sessionId: 'live-1' }],
+    });
+    start(h);
+
+    expect(h.decidePermission('gone', 'allow')).toBe(false);
+    expect(h.decidePermission('hook-1', 'maybe')).toBe(false);
+    expect(h.decidePermission('', 'allow')).toBe(false);
+
+    expect(h.hookDecisions).toEqual([]); // nothing reached a router
+    expect(h.pendingPermissionFor('live-1')?.requestId).toBe('hook-1'); // still held
+  });
+
+  it('the channel and the handle are the same function — one path, two callers', () => {
+    const h = harness(undefined, dir, {
+      prior: card(),
+      hookPending: [
+        { requestId: 'hook-1', sessionId: 'live-1' },
+        { requestId: 'hook-2', sessionId: 'live-1' },
+      ],
+    });
+    start(h);
+
+    h.call('sessions:decidePermission', 'hook-1', 'allow', 'from the bar');
+    h.decidePermission('hook-2', 'allow', 'from the toast');
+
+    // Same shape, same clamping, same router — the only difference is who
+    // called. (`reason` is passed straight through by both.)
+    expect(h.hookDecisions).toEqual([
+      { requestId: 'hook-1', decision: 'allow', reason: 'from the bar' },
+      { requestId: 'hook-2', decision: 'allow', reason: 'from the toast' },
+    ]);
   });
 });
 

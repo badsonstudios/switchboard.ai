@@ -220,6 +220,11 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:feedReset': 'transcripts.read',
   'sessions:permissionRequest': 'sessions.read',
   'sessions:permissionResolved': 'sessions.read',
+  // "bring this card to the front" — pushed when the user clicked an OS toast
+  // for a held permission (P2-E14-04). `sessions.read` and not `.write`: it
+  // moves the SCREEN, not a session. The verdict, if there is one, still goes
+  // through `sessions:decidePermission` and its `sessions.write`.
+  'sessions:revealCard': 'sessions.read',
   'sessions:status': 'sessions.read',
   // a card's task label moved, and the renderer did not do it (P2-E7-06) —
   // carries the new value, because its two readers have nothing to re-read

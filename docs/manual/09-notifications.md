@@ -157,6 +157,46 @@ input** pop up while you're away from the window, and a **crash** pops up even
 if you're looking right at switchboard — a session that has died is not going to
 fix itself while you read another card.
 
+## Answering a permission from the pop-up itself
+
+When a session asks permission to run something and you're in another app, the
+pop-up doesn't just tell you — it **asks**, with **Allow** and **Deny** on it.
+Press one and that's the answer: the tool runs, or Claude is told no, and the
+session carries on. You never had to come back to switchboard at all.
+
+**The pop-up tells you what you'd be allowing.** It reads *"Allow Bash? npm run
+build"* — the same question the approval bar inside the app asks, with the
+actual command, file, or address in it. A button that granted something you
+couldn't see would be worse than no pop-up.
+
+**A click on the pop-up itself is not an answer.** Clicking the body (rather
+than a button) brings switchboard to the front and lands you on the card that's
+asking, with its approval bar open. Dismissing notifications by reflex is a real
+thing people do, and reflex should not be able to grant a tool call.
+
+**Answer it anywhere and the pop-up goes away.** If you come back to the window
+and use the approval bar, the Events panel's buttons, or the batch bar, the
+pop-up is withdrawn straight away — you'll never find a stale **Allow** sitting
+in your notification centre for a question that was settled ten minutes ago. The
+same is true if the session dies while the pop-up is up: pressing a button then
+does nothing at all except say so in the log. It can't misfire into a session
+that isn't there.
+
+### What your desktop actually gives you
+
+Buttons on notifications are the operating system's to grant, not ours, so this
+one honestly differs by platform:
+
+| | What you get |
+|---|---|
+| **Windows 10/11** | **Allow** and **Deny** buttons on the pop-up. In an installed build these work as described. Running switchboard from a development checkout, Windows may show the pop-up without its buttons — it only offers them to apps it has a Start-menu registration for — in which case clicking the pop-up still takes you straight to the request. |
+| **macOS** | **Allow** and **Deny** buttons, on a signed build. An unsigned local build gets a plain pop-up; clicking it still takes you to the request. |
+| **Linux** | No buttons — Electron doesn't offer notification actions there. Clicking the pop-up brings switchboard forward onto the card that's asking, which is still one gesture. |
+
+Whatever your desktop does, **nothing is lost**: the approval bar inside the app
+is always there, always keyboard-reachable, and is the same decision either way.
+The pop-up is a shortcut to it, never a replacement for it.
+
 ## Under the hood: rules
 
 The two behaviors above aren't special cases; they're **rules**, and they all
@@ -165,11 +205,12 @@ have the same shape:
 > **when** [something happens] **in** [this session, or any session], **and**
 > [the window is / isn't in front] → **do** [something]
 
-Today the only thing a rule can *do* is pop up a desktop notification, and the
-only rule you can write is the checkbox. Sounds per session, spoken
-announcements, quiet hours, notifications with **Allow** / **Deny** buttons on
-them, and phone push / webhooks are all the same machinery with more actions
-plugged in — they're coming, and they'll appear on this page as they land.
+Today the only thing a rule can *do* is pop up a desktop notification — with
+**Allow** / **Deny** on it when the thing that happened was a permission
+request, as above — and the only rule you can write is the checkbox. Sounds per
+session, spoken announcements, quiet hours, and phone push / webhooks are all
+the same machinery with more actions plugged in — they're coming, and they'll
+appear on this page as they land.
 
 ### What a pop-up says
 

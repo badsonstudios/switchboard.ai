@@ -291,6 +291,19 @@ const api = {
       ipcRenderer.on('sessions:permissionResolved', h);
       return () => ipcRenderer.removeListener('sessions:permissionResolved', h);
     },
+    /**
+     * Main asks for a card to be brought to the front (P2-E14-04).
+     *
+     * Today's only sender is a click on the OS toast for a held permission —
+     * the gesture that has to work when the app is not focused, and the only
+     * gesture at all on a desktop whose toasts cannot carry buttons. It is a
+     * request to move the SCREEN; it never carries a verdict.
+     */
+    onRevealCard: (cb: (r: { cardId: string }) => void): (() => void) => {
+      const h = (_e: unknown, r: { cardId: string }) => cb(r);
+      ipcRenderer.on('sessions:revealCard', h);
+      return () => ipcRenderer.removeListener('sessions:revealCard', h);
+    },
     onExited: (cb: (e: { sessionId: string; code: number; crashed: boolean }) => void): (() => void) => {
       const h = (_e: unknown, x: { sessionId: string; code: number; crashed: boolean }) => cb(x);
       ipcRenderer.on('sessions:exited', h);
