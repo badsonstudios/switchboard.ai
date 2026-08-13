@@ -81,6 +81,29 @@ on the floor, and say so in your PR.
   above is the first one, and rules are what make per-session sounds, spoken
   announcements, Allow/Deny buttons on notifications and phone push possible
   without another special case each.
+- **A session can now reach your phone.** Point switchboard at an
+  [ntfy](https://ntfy.sh) topic or a [Pushover](https://pushover.net) account
+  and it will buzz your phone when a session needs permission, needs input, or
+  crashes — but only while you are away from the app, and never at an urgency
+  that overrides your phone's do-not-disturb. Set it up with `Ctrl+Shift+P` →
+  *phone push*, or from the About panel; there is a **Send test** button so you
+  find out it works before you need it to.
+- **Webhooks.** The same events can be POSTed as JSON to a URL you own — a
+  dashboard, a Slack relay, a home automation. The body is documented in the
+  manual and carries the event type, the session and card ids, the title and a
+  timestamp, and nothing else: no folder, no file paths, no prompt text. Unlike
+  the phone push it fires whatever the window is doing, and includes finished
+  turns.
+- **Your credentials go into your operating system's credential store** —
+  Windows DPAPI, the macOS Keychain, your Linux keyring — never into a
+  switchboard file, and never into the logs. switchboard cannot show a saved
+  value back to you (a filled field reads "saved" and stays empty); paste a new
+  one over it to change it, or press Forget. On a Linux box with no keyring it
+  says so and refuses to store anything rather than writing a token to a plain
+  file. All of this is off until you set it up, and the app is entirely usable
+  with none of it configured — a phone that is off, or a webhook host that has
+  gone away, can never hold a session up, and the failure is logged once rather
+  than on every event.
 - **The app now knows when Anthropic is having a day.** A small dot at the
   right-hand end of the bottom bar reflects Anthropic's public status page —
   green for all clear, amber for degraded, red for an outage, hollow grey when

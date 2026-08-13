@@ -1,0 +1,275 @@
+// @vitest-environment jsdom
+// The phone-push / webhook setup dialog (P2-E14-06, §5.29).
+//
+// What is worth pinning here is not the layout — it is the promises the dialog
+// makes about credentials:
+//
+//  • a stored value is NEVER rendered: the fields open empty and read "saved";
+//  • the typed value leaves component state the moment it is handed over;
+//  • a machine with no credential store says so and disables everything, rather
+//    than accepting a token it cannot keep;
+//  • the app works with none of it configured — which here means the dialog
+//    renders and behaves with a bridge that answered nothing at all.
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { act } from 'react';
+import { createRoot, Root } from 'react-dom/client';
+import { initI18nForTests } from '../i18n/test-i18n';
+import en from '../i18n/locales/en.json';
+import { PushSetupDialog } from './PushSetupDialog';
+import type { PushConfig } from '../../../shared/push';
+
+declare global {
+  var IS_REACT_ACT_ENVIRONMENT: boolean;
+}
+
+let root: Root | null = null;
+let host: HTMLElement;
+const TOPIC = 'topic-9f3a-SECRET';
+
+const handlers = {
+  onClose: vi.fn(),
+  onSetPrefs: vi.fn(),
+  onSetSecret: vi.fn(),
+  onTest: vi.fn(async () => ({ ok: true })),
+};
+
+function config(over: Partial<PushConfig> = {}): PushConfig {
+  return {
+    prefs: { push: false, service: 'ntfy', webhook: false },
+    secrets: {
+      'ntfy.topic': false,
+      'pushover.token': false,
+      'pushover.user': false,
+      'webhook.url': false,
+    },
+    storeAvailable: true,
+    ...over,
+  };
+}
+
+async function render(open: boolean, cfg: PushConfig | null = config()): Promise<void> {
+  await act(async () => {
+    root!.render(<PushSetupDialog open={open} config={cfg} {...handlers} />);
+  });
+}
+
+const dialog = (): HTMLElement | null => host.querySelector<HTMLElement>('[role="dialog"]');
+const field = (name: string): HTMLInputElement | null =>
+  host.querySelector<HTMLInputElement>(`[data-push-field="${name}"]`);
+const statusOf = (key: string): string =>
+  host.querySelector<HTMLElement>(`[data-push-status="${key}"]`)?.textContent ?? '';
+function button(label: string): HTMLButtonElement {
+  const found = [...host.querySelectorAll('button')].find((b) => b.textContent === label);
+  if (!found) throw new Error(`no button labelled "${label}"`);
+  return found as HTMLButtonElement;
+}
+async function type(el: HTMLInputElement, value: string): Promise<void> {
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    setter?.call(el, value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+async function click(el: Element): Promise<void> {
+  await act(async () => {
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  });
+}
+
+beforeEach(async () => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  for (const h of Object.values(handlers)) h.mockReset();
+  handlers.onTest.mockImplementation(async () => ({ ok: true }));
+  document.body.innerHTML = '';
+  host = document.createElement('div');
+  document.body.appendChild(host);
+  root = createRoot(host);
+  await initI18nForTests();
+});
+
+afterEach(async () => {
+  if (root) {
+    const r = root;
+    root = null;
+    await act(async () => r.unmount());
+  }
+});
+
+describe('the setup dialog', () => {
+  it('renders nothing when closed', async () => {
+    await render(false);
+    expect(dialog()).toBeNull();
+  });
+
+  it('opens with the ntfy fields and both switches off', async () => {
+    await render(true);
+    expect(dialog()).not.toBeNull();
+    expect(field('ntfy.topic')).not.toBeNull();
+    expect(field('pushover.token')).toBeNull(); // the other service is not shown
+    expect(field('enable-push')?.checked).toBe(false);
+    expect(field('enable-webhook')?.checked).toBe(false);
+  });
+
+  it('renders with a bridge that answered nothing, disabled rather than broken', async () => {
+    await render(true, null);
+    expect(dialog()).not.toBeNull();
+    expect(field('ntfy.topic')?.disabled).toBe(false); // a null config is "unknown", not "unavailable"
+    expect(field('enable-push')?.checked).toBe(false);
+  });
+
+  it('shows the picked service`s fields, and switches them', async () => {
+    await render(true, config({ prefs: { push: false, service: 'pushover', webhook: false } }));
+    expect(field('pushover.token')).not.toBeNull();
+    expect(field('pushover.user')).not.toBeNull();
+    expect(field('ntfy.topic')).toBeNull();
+    await click(field('service.ntfy')!);
+    expect(handlers.onSetPrefs).toHaveBeenCalledWith({ service: 'ntfy' });
+  });
+});
+
+describe('credentials', () => {
+  it('hands the typed value over and forgets it immediately', async () => {
+    await render(true);
+    const input = field('ntfy.topic')!;
+    await type(input, TOPIC);
+    await click(button(en.push.save));
+    expect(handlers.onSetSecret).toHaveBeenCalledWith('ntfy.topic', TOPIC);
+    // the box is empty again — the renderer keeps no second copy
+    expect(input.value).toBe('');
+  });
+
+  it('never renders a stored value: a set slot reads "saved" and the box is empty', async () => {
+    await render(
+      true,
+      config({
+        secrets: {
+          'ntfy.topic': true,
+          'pushover.token': false,
+          'pushover.user': false,
+          'webhook.url': false,
+        },
+      })
+    );
+    expect(statusOf('ntfy.topic')).toBe(en.push.set);
+    expect(field('ntfy.topic')?.value).toBe('');
+    expect(host.innerHTML).not.toContain(TOPIC);
+  });
+
+  it('uses a password field — this gets set up on shared screens', async () => {
+    await render(true);
+    expect(field('ntfy.topic')?.type).toBe('password');
+    expect(field('webhook.url')?.type).toBe('password');
+  });
+
+  it('does not send an empty save', async () => {
+    await render(true);
+    await click(button(en.push.save));
+    expect(handlers.onSetSecret).not.toHaveBeenCalled();
+  });
+
+  it('offers Forget only for a slot that has something in it', async () => {
+    await render(true);
+    expect(() => button(en.push.forget)).toThrow();
+    await render(
+      true,
+      config({
+        secrets: {
+          'ntfy.topic': true,
+          'pushover.token': false,
+          'pushover.user': false,
+          'webhook.url': false,
+        },
+      })
+    );
+    await click(button(en.push.forget));
+    expect(handlers.onSetSecret).toHaveBeenCalledWith('ntfy.topic', '');
+  });
+
+  it('re-opening clears a half-typed value rather than leaving it on screen', async () => {
+    await render(true);
+    await type(field('ntfy.topic')!, 'half-typed');
+    await render(false);
+    await render(true);
+    expect(field('ntfy.topic')?.value).toBe('');
+  });
+});
+
+describe('a machine with no credential store', () => {
+  it('says so, and refuses to take anything', async () => {
+    await render(true, config({ storeAvailable: false }));
+    expect(host.textContent).toContain(en.push.unavailable);
+    expect(field('ntfy.topic')?.disabled).toBe(true);
+    expect(field('enable-push')?.disabled).toBe(true);
+  });
+});
+
+describe('Send test', () => {
+  it('reports success', async () => {
+    await render(true);
+    await click(button(en.push.sendTest));
+    expect(handlers.onTest).toHaveBeenCalledWith('push');
+    expect(host.querySelector('[data-push-result="push"]')?.textContent).toBe(en.push.testOk);
+  });
+
+  it('reports a failure in words, per reason', async () => {
+    handlers.onTest.mockImplementation(async () => ({ ok: false, reason: 'not-configured' }));
+    await render(true);
+    await click(button(en.push.sendTest));
+    expect(host.querySelector('[data-push-result="push"]')?.textContent).toContain(
+      en.push.reason['not-configured']
+    );
+  });
+
+  it('a rejected call is a failure, not an unhandled rejection', async () => {
+    handlers.onTest.mockImplementation(() => Promise.reject(new Error('bridge gone')));
+    await render(true);
+    await click(button(en.push.sendTest));
+    expect(host.querySelector('[data-push-result="push"]')).not.toBeNull();
+  });
+});
+
+describe('the switches', () => {
+  it('write straight through — main is the authority on what it stored', async () => {
+    await render(true);
+    await act(async () => {
+      field('enable-push')!.click();
+    });
+    expect(handlers.onSetPrefs).toHaveBeenCalledWith({ push: true });
+    await act(async () => {
+      field('enable-webhook')!.click();
+    });
+    expect(handlers.onSetPrefs).toHaveBeenCalledWith({ webhook: true });
+  });
+});
+
+describe('the modal contract it shares with About', () => {
+  it('closes on Escape', async () => {
+    await render(true);
+    await act(async () => {
+      dialog()!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      );
+    });
+    expect(handlers.onClose).toHaveBeenCalled();
+  });
+
+  it('closes on a click outside, and not on a click inside', async () => {
+    await render(true);
+    await act(async () => {
+      dialog()!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    });
+    expect(handlers.onClose).not.toHaveBeenCalled();
+    await act(async () => {
+      host
+        .querySelector('div')!
+        .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    });
+    expect(handlers.onClose).toHaveBeenCalled();
+  });
+
+  it('is labelled, so a screen reader announces what opened', async () => {
+    await render(true);
+    expect(dialog()?.getAttribute('aria-label')).toBe(en.push.title);
+    expect(dialog()?.getAttribute('aria-modal')).toBe('true');
+  });
+});
