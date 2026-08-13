@@ -4,6 +4,8 @@ import path from 'path';
 import { TranscriptWatcher, slugForCwd, conversationExists } from './watcher';
 import { LogSink, createLogger } from '../log/logger';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
+import { readAiTitle } from '../providers/claude';
+import { CapturedTitles, LATE, REPEAT_HEAVY, REVISED, rebuild, titlesOf } from './fixtures/ai-title';
 
 let root: string;
 let logDir: string;
@@ -2386,5 +2388,129 @@ describe('post-exit quiesce: stop polling, keep everything readable (#200)', () 
     expect(closes).toEqual([]); // s2 still holds the root
     w.unwatch('s2');
     expect(closes).toEqual([root]);
+  });
+});
+
+// ── P2-E7-06: the CLI's own conversation title ─────────────────────────────
+//
+// Driven by REAL captured `ai-title` lines, replayed at the line numbers they
+// really occupied — see `fixtures/ai-title.ts` for why a hand-written fixture
+// would not have caught the three things these tests turn on.
+describe('the conversation title off the transcript (P2-E7-06)', () => {
+  /** Claude's reader, imported rather than re-spelled: the key lives in the
+   *  adapter, and a second copy here would let the two drift apart silently. */
+  const readTitle = readAiTitle;
+
+  /** Write a captured transcript into the project dir, `filler` on every other
+   *  line, and return the file it went to. */
+  function writeCapture(c: CapturedTitles, file = 'native-1.jsonl'): string {
+    const full = path.join(projectDir(), file);
+    fs.writeFileSync(full, rebuild(c, () => entry({ message: { content: [] } })));
+    return full;
+  }
+
+  it('fills in the title the CLI settled on, revisions included', async () => {
+    // REVISED's first answer is on line 8 and its SECOND, different answer is
+    // on line 9 — so a reader that latched the first title it saw would end
+    // this test holding "…preview windows" for ever.
+    writeCapture(REVISED);
+    watcher.watch('s1', { cwd, readTitle });
+    const settled = titlesOf(REVISED)[1];
+    await waitFor(() => watcher.snapshot('s1')?.title === settled);
+    expect(watcher.snapshot('s1')!.title).toBe('Add markdown and file preview feature');
+  });
+
+  it('a repeat costs nothing: 13 real title lines, ONE snapshot change', async () => {
+    // The de-dupe, asserted against the repeat-heavy capture rather than
+    // assumed. Undeduped this is a persist and a renderer push per turn, on
+    // every open session at once.
+    let titleChanges = 0;
+    let last: string | undefined;
+    watcher.onUpdate((s) => {
+      if (s.sessionId === 's1' && s.title !== last) {
+        last = s.title;
+        titleChanges++;
+      }
+    });
+    writeCapture(REPEAT_HEAVY);
+    watcher.watch('s1', { cwd, readTitle });
+    await waitFor(() => watcher.snapshot('s1')!.lines >= REPEAT_HEAVY.totalLines);
+    await sleep(120); // any further change would have landed by now
+    expect(watcher.snapshot('s1')!.title).toBe('Analyze and improve Playwright test coverage');
+    expect(titleChanges).toBe(1);
+  });
+
+  it('a title that arrives on line 510 still arrives', async () => {
+    // "It shows up early" is not a property of this key. Written in two halves
+    // so the watcher genuinely tails past 500 title-less lines rather than
+    // ingesting the whole file in its first drain.
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    const all = rebuild(LATE, () => entry({ message: { content: [] } })).split('\n');
+    fs.writeFileSync(file, all.slice(0, 400).join('\n') + '\n');
+    watcher.watch('s1', { cwd, readTitle });
+    await waitFor(() => watcher.snapshot('s1')!.lines >= 400);
+    expect(watcher.snapshot('s1')!.title).toBeUndefined(); // nothing to say yet
+
+    writeLines(file, all.slice(400).filter(Boolean));
+    await waitFor(() => watcher.snapshot('s1')?.title !== undefined);
+    expect(watcher.snapshot('s1')!.title).toBe('Review next steps after PR merge');
+  });
+
+  it('an adapter that declares no titles gets no title watch at all', async () => {
+    // Not "we looked and found nothing": with no reader there is no shared
+    // spelling of a title to look FOR, which is the whole point of putting it
+    // behind a §5.3 capability.
+    writeCapture(REVISED);
+    watcher.watch('s1', { cwd }); // no readTitle
+    await waitFor(() => watcher.snapshot('s1')!.lines >= REVISED.totalLines);
+    expect(watcher.snapshot('s1')!.title).toBeUndefined();
+  });
+
+  it('a transcript with no ai-title line looks exactly as it did before', async () => {
+    // The fail-open case, and it gets a test because the key is undocumented:
+    // any CLI release may rename or drop it, and the day it does this is what
+    // every session looks like.
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [
+      entry({ message: { content: [{ type: 'text', text: 'hello' }] } }),
+      // the key RENAMED, which is the realistic version of it disappearing
+      JSON.stringify({ type: 'ai-title', sessionId: 'native-1', cwd, conversationTitle: 'nope' }),
+    ]);
+    watcher.watch('s1', { cwd, readTitle });
+    await waitFor(() => watcher.snapshot('s1')!.lines >= 2);
+    expect(watcher.snapshot('s1')!.title).toBeUndefined();
+    expect(watcher.snapshot('s1')!.malformed).toBe(0); // it is a LINE, not a fault
+  });
+
+  it("a subagent's title never becomes the card's", async () => {
+    // A subagent transcript is a different conversation with a title of its
+    // own; letting one through relabels the card with whatever a Task call was
+    // doing. The watcher tails both files, so only the bound one may speak.
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [
+      entry({ message: { content: [] } }),
+      REVISED.lines[1][1], // the settled title, on the BOUND file
+    ]);
+    watcher.watch('s1', { cwd, readTitle });
+    await waitFor(() => watcher.snapshot('s1')?.title !== undefined);
+
+    const subDir = path.join(projectDir(), 'native-1', 'subagents');
+    fs.mkdirSync(subDir, { recursive: true });
+    writeLines(path.join(subDir, 'agent-a.jsonl'), [
+      JSON.stringify({ type: 'ai-title', sessionId: 'native-1', cwd, aiTitle: 'Subagent doing its own thing' }),
+    ]);
+    await sleep(200);
+    expect(watcher.snapshot('s1')!.title).toBe('Add markdown and file preview feature');
+  });
+
+  it('a /clear drops the old title with the old conversation', async () => {
+    // The title describes the conversation, and a /clear starts a new one. A
+    // stale label surviving the reset would describe work the session is no
+    // longer doing.
+    writeCapture(REPEAT_HEAVY);
+    watcher.watch('s1', { cwd, nativeSessionId: 'native-1', readTitle });
+    await waitFor(() => watcher.snapshot('s1')?.title !== undefined);
+    watcher.setNativeSessionId('s1', 'native-2', 'clear');
+    expect(watcher.snapshot('s1')!.title).toBeUndefined();
   });
 });

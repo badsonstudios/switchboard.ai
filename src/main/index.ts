@@ -15,7 +15,7 @@ import { StreamFeed } from './feed/stream-feed';
 import { SessionManager } from './sessions/session-manager';
 import { HookListener } from './hooks/hook-listener';
 import { TranscriptWatcher } from './transcripts/watcher';
-import { registerSessionIpc } from './sessions/ipc';
+import { registerSessionIpc, SessionIpcHandle } from './sessions/ipc';
 import { registerGroupIpc } from './workspace/group-ipc';
 import { registerFsIpc } from './fs/ipc';
 import { ReadScope } from './fs/read-scope';
@@ -1116,15 +1116,6 @@ app
     snapshotPopoutBoxes(); // before the renderer can rewrite the layout (#86)
     createWindow(); // sets currentWindow; IPC/notifier read it via closure
     const feed = new EventFeed();
-    const notifier = new Notifier({
-      getWindow: () => currentWindow,
-      getPrefs: () => workspace.getNotificationPrefs(),
-      titleFor: (sessionId) => manager.get(sessionId)?.identity.title ?? 'switchboard.ai',
-      bodyFor: (e) => e.kind.replace(/-/g, ' '),
-    });
-    feed.onEvent((e) => {
-      if (e) notifier.handle(e); // null = pure removal, nothing to announce
-    });
     broker.handle('preflight:check', () => runPreflight());
     busySessions = () =>
       manager
@@ -1177,7 +1168,7 @@ app
       workspace.setAutoTrust(on === true);
       return workspace.getAutoTrust();
     });
-    registerSessionIpc({
+    const sessionIpc: SessionIpcHandle = registerSessionIpc({
       manager,
       ptys,
       streamPermissions,
@@ -1190,6 +1181,8 @@ app
       log: createLogger(sink, 'ipc'),
       getWindow: () => currentWindow, // reassigned on macOS re-activate
       autoTrust: () => workspace.getAutoTrust(),
+      autoLabels: () => workspace.getAutoLabels(),
+      setAutoLabels: (on) => workspace.setAutoLabels(on),
       persist: {
         list: () => workspace.listSessions(),
         upsert: (s) => workspace.upsertSession(s),
@@ -1214,6 +1207,31 @@ app
       // the reason a typo has to warn, live in `transport/preferred-transport.ts`.
       preferredTransport: () =>
         parsePreferredTransport(process.env[TRANSPORT_ENV_VAR], log.app.warn),
+    });
+    // Built AFTER the session IPC, because its toast text reads a card's task
+    // label through the handle that registration hands back (P2-E7-06). It used
+    // to sit beside `new EventFeed()`; nothing between the two emits a Feed
+    // event — an event needs a session, and a session needs the IPC that
+    // creates one — so the only observable change is that the renderer's
+    // `events:changed` push now runs a line before the beep instead of after.
+    const notifier = new Notifier({
+      getWindow: () => currentWindow,
+      getPrefs: () => workspace.getNotificationPrefs(),
+      // The §5.11 payoff at 7–8 sessions: "Add markdown and file preview
+      // feature needs your input" instead of a third toast reading
+      // "switchboard.ai". The task label first, because it answers WHAT is
+      // waiting; the session title behind it, because it answers WHICH; and the
+      // app name last, for a toast belonging to no session at all. A suppressed
+      // auto label is suppressed here too — the toast is the surface that
+      // leaves the app window.
+      titleFor: (sessionId) =>
+        sessionIpc.labelFor(sessionId) ??
+        manager.get(sessionId)?.identity.title ??
+        'switchboard.ai',
+      bodyFor: (e) => e.kind.replace(/-/g, ' '),
+    });
+    feed.onEvent((e) => {
+      if (e) notifier.handle(e); // null = pure removal, nothing to announce
     });
     app.on('quit', () => {
       ptys.killAll();

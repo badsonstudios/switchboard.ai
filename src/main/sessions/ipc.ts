@@ -58,6 +58,7 @@ import { LogFields, Logger } from '../log/logger';
 import { assignAccent, detectProjectType } from './identity';
 import { EventFeed } from '../events/feed';
 import { planSessionStart } from './start-plan';
+import { nextAutoLabel, typedLabel, visibleTaskLabel } from './auto-label';
 import { PersistedSession } from '../workspace/store';
 import { commandsFromCli, SlashCommand } from '../../shared/slash-commands';
 import { DEFAULT_SESSION_TRANSPORT } from '../transport/transport';
@@ -83,6 +84,11 @@ export interface SessionIpcDeps {
   broker: IpcBroker;
   /** auto-trust the folder before spawning (default on; user picks folder) */
   autoTrust: () => boolean;
+  /** Fill blank task labels from the CLI's own conversation title (P2-E7-06,
+   *  §5.11; default on). Off hides every auto label and drops toast text back
+   *  to the session title — the screen-share switch. */
+  autoLabels: () => boolean;
+  setAutoLabels: (on: boolean) => void;
   /** persisted session cards (resume-on-focus across app restarts, §5.25) */
   persist: {
     list: () => PersistedSession[];
@@ -112,7 +118,21 @@ export interface SessionIpcDeps {
   preferredTransport?: () => 'pty' | 'stream' | undefined;
 }
 
-export function registerSessionIpc(deps: SessionIpcDeps): void {
+/**
+ * What registering the session IPC hands BACK to the bootstrap.
+ *
+ * One method, and it exists because §5.11 says a session's identity renders
+ * identically everywhere it appears — including in an OS toast, which is
+ * composed in `index.ts` and has no other route to the live→card binding this
+ * module keeps private. A getter rather than a subscription: a toast asks at
+ * the moment it fires, which is the only moment the answer matters.
+ */
+export interface SessionIpcHandle {
+  /** This live session's card label, or undefined when it has none to show. */
+  labelFor: (liveSessionId: string) => string | undefined;
+}
+
+export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   const { manager, ptys, hooks, transcripts, log, broker, streamPermissions, streamCommands } =
     deps;
   // per-session live-feed unsubscribers (attached panes only)
@@ -209,6 +229,40 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   // leak #170 declined to take and #187 removed the need for.
   const unbindLive = (liveId: string): void => {
     if (cardOfLive.delete(liveId)) cardsChanged();
+  };
+
+  /**
+   * A card's task label changed — tell the renderer (P2-E7-06).
+   *
+   * The exception to the paragraph above, and the reason it needed writing
+   * down. Every other persisted-half mutation is renderer-initiated, so the
+   * caller refreshes at its own call site; an AUTO label is initiated by a line
+   * appearing in a file nobody asked about, and there is no call site to
+   * refresh. Without this the label would be correct in the workspace file and
+   * invisible until something unrelated happened to reload the card list.
+   *
+   * Carries the VALUE rather than signalling "go and re-read", unlike
+   * `cardsChanged`. Two reasons, and both are about the two consumers: the
+   * grid's card header holds its label in local state (there is nothing to
+   * re-read), and `sessions:cards` resolves a git root per card, so a signal
+   * would turn one field moving into a directory walk per session per turn.
+   */
+  const publishLabel = (cardId: string, label: string | undefined): void =>
+    send('sessions:taskLabel', { cardId, label });
+
+  /**
+   * The task label to SHOW for a live session, or undefined when it has none
+   * (§5.9's toast text reads this — see `index.ts`).
+   *
+   * Goes through `visibleTaskLabel`, so a card whose auto label is suppressed
+   * is suppressed in the toast too. That is the whole point of the switch: the
+   * toast is the surface that leaves the app window.
+   */
+  const labelFor = (liveSessionId: string): string | undefined => {
+    const cardId = cardOfLive.get(liveSessionId);
+    if (!cardId) return undefined;
+    const card = deps.persist.list().find((s) => s.id === cardId);
+    return card ? visibleTaskLabel(card, deps.autoLabels()) : undefined;
   };
 
   /**
@@ -447,8 +501,25 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     const cardId = cardOfLive.get(snap.sessionId);
     if (!cardId) return;
     const prior = deps.persist.list().find((s) => s.id === cardId);
+    if (!prior) return;
     // keep the last real model if this snapshot hasn't seen a model line yet
-    if (prior) deps.persist.upsert({ ...prior, usage: snap.usage, model: snap.model ?? prior.model });
+    const next: PersistedSession = { ...prior, usage: snap.usage, model: snap.model ?? prior.model };
+    // ...and the CLI's own conversation title fills a blank label (P2-E7-06).
+    // ONE upsert, not two: a second `{...prior, taskLabel}` would be built from
+    // the same `prior` and would put the usage totals back to what they were
+    // before the line that triggered this.
+    //
+    // `null` on nearly every call — see `nextAutoLabel` for the four ways — and
+    // that is what makes "repeat titles cost nothing" true rather than hoped
+    // for: the CLI re-emits its settled title every turn, and every one of those
+    // lands here.
+    const label = nextAutoLabel(prior, snap.title, deps.autoLabels());
+    if (label !== null) {
+      next.taskLabel = label;
+      next.labelSource = 'auto';
+    }
+    deps.persist.upsert(next);
+    if (label !== null) publishLabel(cardId, label);
   });
 
   broker.handle('events:list', () => deps.feed.list());
@@ -773,7 +844,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
           priorUsage: prior?.usage,
           priorModel: prior?.model,
           autonomy: prior?.autonomy ?? running.autonomy,
-          taskLabel: prior?.taskLabel,
+          taskLabel: prior && visibleTaskLabel(prior, deps.autoLabels()),
         };
       }
       let title = (prior?.identity.title ?? (typeof opts.title === 'string' ? opts.title : opts.folder)).slice(0, 120);
@@ -894,6 +965,12 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
           // the drift detector are all still wanted, and the CLI writes the
           // JSONL in stream mode too (S-10).
           deriveFeed: record.transport !== 'stream',
+          // Undefined for a provider that declares no `titles` capability, and
+          // the watcher then inspects no line for one — "starts no title watch
+          // at all" (P2-E7-06). Not conditional on the transport: the CLI
+          // writes the same JSONL in stream mode (S-10), and unlike the Feed
+          // there is no second source of titles to collide with.
+          readTitle: plan.readTitle,
         });
         // the watcher refuses a root it cannot poll safely. Say so against the
         // CARD — a warning keyed by a live session id, in the transcripts log,
@@ -945,7 +1022,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         priorUsage: prior?.usage,
         priorModel: prior?.model,
         autonomy,
-        taskLabel: prior?.taskLabel,
+        taskLabel: prior && visibleTaskLabel(prior, deps.autoLabels()),
       };
     }
   );
@@ -1058,7 +1135,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
           liveId,
           groupId: card.groupId,
           autoKey: await autoKeyFor(card.identity.folder),
-          taskLabel: card.taskLabel,
+          // Through the switch (P2-E7-06): a suppressed auto label must not
+          // reach the renderer at all, or it renders in the rail for a
+          // screen-share to read.
+          taskLabel: visibleTaskLabel(card, deps.autoLabels()),
         };
       })
     );
@@ -1130,11 +1210,44 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     if (prior) deps.persist.upsert({ ...prior, autonomy: autonomy as PersistedSession['autonomy'] });
   });
 
-  // freeform task label for a card (E7-03), persisted across restarts
+  // Freeform task label for a card (E7-03), persisted across restarts — and
+  // since P2-E7-06 the act that PINS it: typing makes the label the user's and
+  // no later `ai-title` may touch it, clearing the field hands it back to auto.
+  // `typedLabel` owns both halves of that rule.
   broker.handle('sessions:setTaskLabel', (_e, cardId: string, label: string) => {
     if (typeof cardId !== 'string' || typeof label !== 'string') return;
     const prior = deps.persist.list().find((s) => s.id === cardId);
-    if (prior) deps.persist.upsert({ ...prior, taskLabel: label.slice(0, 120) });
+    if (!prior) return;
+    const typed = typedLabel(label);
+    deps.persist.upsert({ ...prior, ...typed });
+    // Echoed even though the renderer initiated it: a card's label renders in
+    // the grid header AND the rail row, and only one of the two was the caller.
+    publishLabel(cardId, typed.taskLabel);
+  });
+
+  // The auto-label switch (P2-E7-06, §5.11 litmus #4). It lives HERE rather
+  // than beside `settings:setAutoTrust` in `index.ts` because flipping it has
+  // to move what is on screen, and the label plumbing that does that is this
+  // module's.
+  broker.handle('settings:getAutoLabels', () => deps.autoLabels());
+  broker.handle('settings:setAutoLabels', (_e, on: boolean) => {
+    deps.setAutoLabels(on === true);
+    const enabled = deps.autoLabels();
+    // Re-publish EVERY card's label under the new setting: off takes the auto
+    // ones off screen, on puts them straight back from a value we never
+    // deleted. Waiting for the next `ai-title` line would work — the CLI
+    // re-emits every turn — but "every turn" is minutes on an idle session, and
+    // a switch you flip that appears to do nothing is a switch nobody trusts.
+    //
+    // Every card, not every LIVE one. A suspended card still has a panel and a
+    // rail row, both showing the label it was left with, and neither has a live
+    // session behind it — so walking `cardOfLive` would leave exactly the cards
+    // nobody is looking at still displaying a phrase from a prompt, which is
+    // the one thing this switch exists to prevent.
+    for (const card of deps.persist.list()) {
+      publishLabel(card.id, visibleTaskLabel(card, enabled));
+    }
+    return enabled;
   });
 
   // rename a card by cardId (works for suspended cards too) — updates the
@@ -1222,4 +1335,6 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   broker.on('pty:resize', (_e, id: string, cols: number, rows: number) => {
     ptys.get(id)?.resize(cols, rows);
   });
+
+  return { labelFor };
 }

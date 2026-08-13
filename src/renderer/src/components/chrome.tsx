@@ -61,6 +61,10 @@ export function TitleBar(props: {
   layoutBinding: string;
   autoTrust: boolean;
   onToggleTrust: () => void;
+  /** §5.11's auto task labels (P2-E7-06) — off hides every label the CLI filled
+   *  in, on the card, in the rail and in OS toasts */
+  autoLabels: boolean;
+  onToggleAutoLabels: () => void;
   /** sessions-rail visibility — the mouse path for the Ctrl+B command (E9-01) */
   railHidden: boolean;
   onToggleRail: () => void;
@@ -96,6 +100,19 @@ export function TitleBar(props: {
       </Chip>
       <Chip selected={props.autoTrust} onClick={props.onToggleTrust}>
         {props.autoTrust ? t('titlebar.trustOn') : t('titlebar.trustOff')}
+      </Chip>
+      {/* Auto task labels (P2-E7-06, §5.11). A chip and not a buried setting
+          for the same reason as the two below it: the thing it governs is a
+          phrase derived from what you asked the agent, rendered on every card
+          and pushed into OS toasts — so the person who needs it off needs it
+          off NOW, mid screen-share, without hunting. */}
+      <Chip
+        selected={props.autoLabels}
+        onClick={props.onToggleAutoLabels}
+        title={t('titlebar.autoLabelsHint')}
+        testId="auto-labels"
+      >
+        {props.autoLabels ? t('titlebar.autoLabelsOn') : t('titlebar.autoLabelsOff')}
       </Chip>
       <Chip selected={false} onClick={props.onCycleAutonomy}>
         {t(`autonomy.${props.autonomy}`)}
