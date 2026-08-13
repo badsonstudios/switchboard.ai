@@ -1751,12 +1751,9 @@ function openDocumentPanel(
     existing.focus();
     return;
   }
-  // A VIEWER NEVER DISPLACES A SESSION (§5.30), and the mechanism is the E8-04
-  // one: dockview's `addPanel` defaults to the ACTIVE group, which becomes a
-  // popout the moment a card is torn off — so a file opened while a popped-out
-  // session had focus would land as a tab inside that session's window. Pin it
-  // to a group in the main grid, making one if every group has been popped out.
-  // (`openDiff` does the same, via `gridRefGroup` — #434.)
+  // A VIEWER NEVER DISPLACES A SESSION (§5.30), by the E8-04 mechanism — see
+  // `gridRefGroup`. Unconditional here, unlike `openDiff`: a viewer is not
+  // *about* a session, so it has no reason to prefer the active group.
   const refGroup = gridRefGroup(api);
   api.addPanel({
     id,
@@ -2933,15 +2930,22 @@ export function SessionGrid(props: {
         const cardId = sessionStore.cardIdForLive(liveId);
         const existing = api.getPanel(`diff-${cardId}`);
         if (existing) return existing.focus();
+        // A Changes tab is opened from the rail, which lives in the MAIN window
+        // — so it must open there, not inside whatever popout dockview last
+        // made active (E8-04, #434). Only when the active group is NOT in the
+        // grid, though: while it is, `addPanel`'s own default is the group the
+        // user is looking at, which is where a diff belongs in a split layout,
+        // and dockview reads a `position` of `undefined` as no position at all
+        // (`_doAddPanel`: `if (options.position) … else activeGroup`). So the
+        // main-window case comes out byte-identical to before.
+        const active = api.activeGroup;
+        const inGrid = active?.api.location.type === 'grid';
         api.addPanel({
           id: `diff-${cardId}`,
           component: 'diffPane',
           title: t('diff.tabTitle', { title }),
           params: { folder, colorScheme: props.colorScheme },
-          // A Changes tab is opened from the rail, which lives in the MAIN
-          // window — so it must open there, not inside whatever popout dockview
-          // last made active (E8-04, #434).
-          position: { referenceGroup: gridRefGroup(api) },
+          position: inGrid ? undefined : { referenceGroup: gridRefGroup(api) },
         });
       },
       openDocument: (filePath) => openDocumentPanel(apiRef.current, filePath, props.colorScheme),
