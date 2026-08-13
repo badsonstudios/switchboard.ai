@@ -138,6 +138,15 @@ export const CHANNEL_CAPABILITIES = {
   // deserve no capability of their own.
   'update:setPrefs': 'settings.write',
   'transcripts:blocks': 'transcripts.read',
+  // Session find (P2-E17-01, §5.31). Deliberately NOT a capability of its own,
+  // unlike E16's `fs.read`, and the reason is the FILE rather than the payload:
+  // this scans the transcript the watcher already picked for that session, so it
+  // reads nothing a holder of `transcripts.read` was not already being streamed
+  // block by block from — same file, same watcher, same trust boundary. (It does
+  // return MORE of that file than `transcripts:blocks` does: past `DETAIL_CAP`,
+  // and from blocks the view buffer dropped. That is a different depth of the
+  // same conversation, not a different power.)
+  'transcripts:search': 'transcripts.read',
   'workspace:getLayout': 'workspace.read',
   'workspace:getUi': 'workspace.read',
   'workspace:isReadOnly': 'workspace.read',

@@ -99,6 +99,9 @@ function harness(
      *  is what empties it — so the hook half of that channel is assertable
      *  instead of being a constant `[]`. */
     hookPending?: Array<{ requestId: string; sessionId: string }>;
+    /** which transcript each live id is bound to, for `transcripts:search`
+     *  (P2-E17-01). Absent means the watcher has nothing bound for it. */
+    transcriptFiles?: Record<string, string | null>;
     /** make `SessionManager.create` BLOW UP, the way it really does for a
      *  provider adapter it does not have, a transport it cannot resolve, or a
      *  `spawn` that fails. `sessions:create` must answer `null` rather than
@@ -297,6 +300,10 @@ function harness(
         return watchAccepts;
       },
       blocks: (id: string) => [{ seq: 1, kind: 'assistant', text: `transcript block for ${id}` }],
+      // Which file a session is bound to — how `transcripts:search` turns a
+      // session id into something to scan (P2-E17-01). `null` is the ordinary
+      // answer for a session nobody has prompted yet.
+      transcriptFile: (id: string) => opts.transcriptFiles?.[id] ?? null,
       unwatch: (id: string) => {
         if (id === opts.throwOnUnwatch) throw new Error('teardown exploded');
         unwatched.push(id);
@@ -2424,6 +2431,143 @@ describe('a learned native id reaches the card and the watcher (#404)', () => {
       { sessionId: 'live-ghost', nativeId: 'native-9', cause: undefined },
     ]);
     expect(h.upserted).toEqual([]); // no card to write
+  });
+});
+
+// Session find (P2-E17-01, §5.31). The engine has its own test file; what is
+// pinned here is the WIRING — the scope arrives as session ids, and main is what
+// turns an id into a file. A renderer that could name the path would be able to
+// read a transcript no card is showing.
+describe('transcripts:search resolves a scope of sessions to files', () => {
+  let dir: string;
+  tempDirEach('sb-ipc-find-', (d) => (dir = d));
+
+  const caps = { transcripts: { projectsRoot: () => '/root' } };
+  const line = (text: string): string =>
+    JSON.stringify({
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text }] },
+    });
+
+  const write = (name: string, texts: string[]): string => {
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, texts.map(line).join('\n') + '\n');
+    return file;
+  };
+
+  it('scans the transcript the watcher says the session is bound to', async () => {
+    const file = write('a.jsonl', ['nothing here', 'the FOUNDLING is here']);
+    const h = harness(caps, dir, { liveIds: ['live-1'], transcriptFiles: { 'live-1': file } });
+
+    const r = (await h.call('transcripts:search', {
+      sessionIds: ['live-1'],
+      query: { term: 'FOUNDLING' },
+    })) as { total: number; hits: Array<{ sessionId: string; blockIndex: number }> };
+
+    expect(r.total).toBe(1);
+    expect(r.hits[0]).toMatchObject({ sessionId: 'live-1', blockIndex: 2 });
+  });
+
+  it('answers a session with no bound transcript with an empty, unsearched group', async () => {
+    const h = harness(caps, dir, { liveIds: ['live-1'] });
+
+    const r = (await h.call('transcripts:search', {
+      sessionIds: ['live-1'],
+      query: { term: 'anything' },
+    })) as { total: number; groups: Array<{ searched: boolean }> };
+
+    expect(r.total).toBe(0);
+    expect(r.groups[0].searched).toBe(false);
+  });
+
+  it('takes a LIST — the scope §10 extends rather than replaces', async () => {
+    const a = write('a.jsonl', ['SHARED once']);
+    const b = write('b.jsonl', ['SHARED twice', 'and SHARED again']);
+    const h = harness(caps, dir, {
+      liveIds: ['live-1', 'live-2'],
+      transcriptFiles: { 'live-1': a, 'live-2': b },
+    });
+
+    const r = (await h.call('transcripts:search', {
+      sessionIds: ['live-1', 'live-2'],
+      query: { term: 'SHARED' },
+    })) as { total: number; groups: Array<{ sessionId: string; hits: number }> };
+
+    expect(r.total).toBe(3);
+    expect(r.groups.map((g) => [g.sessionId, g.hits])).toEqual([
+      ['live-1', 1],
+      ['live-2', 2],
+    ]);
+  });
+
+  it('survives a caller that sends nonsense, the way every channel here does', async () => {
+    const h = harness(caps, dir, { liveIds: ['live-1'] });
+
+    for (const bad of [undefined, null, 'a string', 42, { sessionIds: 'not-a-list' }, {}]) {
+      const r = (await h.call('transcripts:search', bad)) as { hits: unknown[]; groups: unknown[] };
+      expect(r.hits).toEqual([]);
+      expect(r.groups).toEqual([]);
+    }
+  });
+
+  it('reports a bad regex rather than rejecting the renderer’s promise', async () => {
+    const file = write('a.jsonl', ['anything at all']);
+    const h = harness(caps, dir, { liveIds: ['live-1'], transcriptFiles: { 'live-1': file } });
+
+    const r = (await h.call('transcripts:search', {
+      sessionIds: ['live-1'],
+      query: { term: '[', regex: true },
+    })) as { error?: { code: string } };
+
+    expect(r.error?.code).toBe('bad-pattern');
+  });
+});
+
+// A stream session's transcript is still on disk and still complete — only its
+// FEED comes from somewhere else (P2-E18-10). So find searches it, and says
+// plainly that it cannot offer a jump.
+describe('transcripts:search over a stream session (P2-E17-01)', () => {
+  let dir: string;
+  tempDirEach('sb-ipc-find-stream-', (d) => (dir = d));
+
+  it('searches the transcript, and reports that it cannot line it up', async () => {
+    const file = path.join(dir, 'stream.jsonl');
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        type: 'assistant',
+        timestamp: '2026-08-11T00:00:00.000Z',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'a STREAMED answer' }] },
+      }) + '\n'
+    );
+    const streamFeed = new StreamFeed();
+    const h = harness({ transcripts: { projectsRoot: () => '/root' } }, dir, {
+      transport: 'stream',
+      liveIds: ['live-1'],
+      streamFeed,
+      transcriptFiles: { 'live-1': file },
+    });
+    streamFeed.offer('live-1', {
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'a STREAMED answer' }] },
+      parent_tool_use_id: null,
+    });
+
+    const r = (await h.call('transcripts:search', {
+      sessionIds: ['live-1'],
+      query: { term: 'STREAMED' },
+    })) as {
+      total: number;
+      hits: Array<{ seq?: number; earlierThanLoaded: boolean }>;
+      groups: Array<{ searched: boolean; aligned: boolean }>;
+    };
+
+    expect(r.total).toBe(1); // complete — the file is the archive either way
+    expect(r.groups[0].searched).toBe(true);
+    // A stream block's `ts` is when the message reached US, not what the CLI
+    // wrote, so the two cannot be lined up and the engine says so.
+    expect(r.groups[0].aligned).toBe(false);
+    expect(r.hits[0].seq).toBeUndefined();
   });
 });
 

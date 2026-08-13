@@ -1040,6 +1040,21 @@ export class TranscriptWatcher {
     return this.sessions.get(sessionId)?.feed.list() ?? [];
   }
 
+  /**
+   * The transcript this session is bound to, or null (P2-E17-01).
+   *
+   * Session find scans the FILE rather than the Feed, and the watcher is the
+   * only thing that knows which file that is — discovery's whole job. Exposed
+   * read-only and by session id, so the search engine cannot be handed a path
+   * of its own choosing and read something no card is showing.
+   *
+   * Still answered for a QUIESCED session (#200): the card is still on screen
+   * and its Feed is still readable, so a find over it must work too.
+   */
+  transcriptFile(sessionId: string): string | null {
+    return this.sessions.get(sessionId)?.boundFile ?? null;
+  }
+
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;

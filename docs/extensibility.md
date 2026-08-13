@@ -336,7 +336,7 @@ refusal can arrive, not everywhere it cannot.
 | `sessions.write` | rename, task label, autonomy, permission decisions |
 | `pty.read` | attach to a terminal's output stream |
 | `pty.write` | send keystrokes to a running CLI |
-| `transcripts.read` | conversation blocks |
+| `transcripts.read` | conversation blocks, and **searching the transcript file** (§5.31) |
 | `git.read` | status and file versions |
 | `events.read` / `.write` | the attention feed; write is ack/dismiss |
 | `settings.read` / `.write` | preferences, notification prefs, preflight |
