@@ -108,11 +108,6 @@ export class PermissionToasts {
     this.open.set(requestId, toast);
   }
 
-  /** The OS told us this toast is gone (dismissed, timed out). Stop tracking. */
-  forget(requestId: string): void {
-    this.open.delete(requestId);
-  }
-
   /**
    * A button was pressed. `index` is what the OS reported.
    *
@@ -195,6 +190,15 @@ export class PermissionToasts {
    * This request was decided (or released) somewhere — the bar, the Events
    * panel's inline buttons, the batch band, a session teardown, or this toast.
    * Take the toast down.
+   *
+   * A toast is tracked until its request resolves, NOT until the OS says the
+   * toast closed — deliberately, and Electron's own docs are why: on Windows a
+   * toast that times out emits `close` and then **lives on in the Action
+   * Center**, where `close()` still removes it. Dropping the handle on that
+   * event would leave exactly the artefact this method exists to prevent, a
+   * live-looking **Allow** for a question that was settled ten minutes ago.
+   * Nothing leaks: every permission resolves (a verdict, or the teardown
+   * releasing its holds), and every resolution comes through here.
    *
    * Idempotent and never throws: `close()` on a notification the OS has already
    * retired is allowed to fail, and a failure here must not cost the caller,

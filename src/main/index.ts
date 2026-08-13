@@ -1267,7 +1267,9 @@ app
           // platform, because it is the whole gesture on Linux and the fallback
           // wherever the buttons do not render.
           toast.on('click', () => permissionToasts.activate(requestId, ctx.cardId));
-          toast.on('close', () => permissionToasts.forget(requestId));
+          // Deliberately NOT unhooked on `close`: a Windows toast that times
+          // out fires `close` and then sits in the Action Center, where
+          // `close()` still removes it. See `PermissionToasts.withdraw`.
           permissionToasts.track(requestId, toast);
         }
         toast.show();

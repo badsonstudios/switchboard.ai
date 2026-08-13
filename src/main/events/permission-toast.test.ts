@@ -171,13 +171,18 @@ describe('PermissionToasts — the click path', () => {
     expect(second.close).toHaveBeenCalledTimes(1);
   });
 
-  it('forget() drops a toast the OS retired without closing it again', () => {
+  it('a toast is tracked until its REQUEST resolves, not until the OS closes it', () => {
+    // Electron's docs: a Windows toast that times out emits `close` and then
+    // lives on in the Action Center, where `close()` still removes it. So there
+    // is no "the OS closed it, stop caring" path — the tracking is keyed to the
+    // permission, and a verdict given at the bar long afterwards still reaches
+    // the Action Center copy.
     const { toasts } = harness();
     const t = fakeToast();
     toasts.track('req', t);
-    toasts.forget('req');
+    expect(toasts.size).toBe(1);
     toasts.withdraw('req');
-    expect(t.close).not.toHaveBeenCalled();
+    expect(t.close).toHaveBeenCalledTimes(1);
     expect(toasts.size).toBe(0);
   });
 
