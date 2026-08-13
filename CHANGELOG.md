@@ -145,6 +145,21 @@ on the floor, and say so in your PR.
   header of every document too. The viewer never saves anything, never loads a
   picture from the internet, and only opens files inside a folder you already
   have a session in, or files you picked yourself.
+- **One document at a time, unless you say otherwise.** Opening a second file
+  reuses the same viewer instead of stacking up tabs — glance at six files and
+  you still have one panel, not six. When you want to keep one, click the 📌 in
+  its header: that document stays put and the next file you open gets a fresh
+  panel of its own. Click 📌 again to hand the slot back.
+- **A document can have its own window.** The ⤢ beside the pin moves the
+  document you are reading onto its own OS window — a second monitor, your
+  reference open beside the work — and the same button puts it back. Closing the
+  window puts it back too.
+- **A document opened from a session says so.** Open a file from a session's
+  Changes tab and the viewer wears that session's colour down its edge with a
+  small `↳ name` chip. It is a label, not a leash: the document is not part of
+  that session, does not appear in the sessions list, is never picked up by
+  **Close all sessions**, and stays open after the session it came from is
+  closed.
 
 - When two or more sessions are waiting on **exactly the same** permission
   request, it now appears once, on a single card above the workspace, with

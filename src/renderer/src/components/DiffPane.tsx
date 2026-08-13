@@ -64,6 +64,15 @@ export function DiffPane(props: {
    *  other (P2-E17-02). Absent on a card with no durable id: no registration,
    *  and the bar greys with a reason. */
   cardId?: string;
+  /**
+   * The card whose changes these are (P2-E16-03, §5.24).
+   *
+   * A Changes tab is a session's surface, so a file opened from one is opened
+   * FROM that session and the viewer says so — an accent tint and a `↳ session`
+   * chip. Optional because this pane is also rendered by tests and could one
+   * day be pointed at a folder with no session behind it.
+   */
+  sessionId?: string;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [status, setStatus] = useState<GitStatusDto | null>(null);
@@ -241,7 +250,7 @@ export function DiffPane(props: {
                 // harmless, but two things happening from one click reads as a
                 // bug even when both are wanted
                 e.stopPropagation();
-                openDocument(joinPath(props.folder, f.path));
+                openDocument(joinPath(props.folder, f.path), props.sessionId);
               }}
               style={{
                 background: 'transparent',
