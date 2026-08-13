@@ -188,7 +188,7 @@ describe('filesToScan', () => {
 
   it('keeps `node_modules/` out of this repo’s list', () => {
     // `--others` without `--exclude-standard` would put tens of thousands of
-    // files in here and turn a 90ms check into a minute of I/O.
+    // files in here and turn a ~70ms check into a minute of I/O.
     expect(filesToScan(ROOT).some((f) => f.startsWith('node_modules/'))).toBe(false);
   });
 
@@ -200,22 +200,49 @@ describe('filesToScan', () => {
   });
 });
 
+/**
+ * git inside a scratch repo, deaf to whatever the machine's global and system
+ * config say. A `core.excludesFile` that happens to match `untracked.md`, a
+ * global commit hook, or gpg signing would otherwise decide these tests from
+ * outside the repo. Both variables point at a file that does not exist, which
+ * git reads as an empty config (and `os.devNull` is not a portable answer here).
+ *
+ * stderr is piped, not ignored, so a failure in `beforeAll` says what git said
+ * instead of only `Command failed with exit code 128`.
+ */
+const gitIn = (cwd, ...args) =>
+  execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: path.join(cwd, 'no-such-global-config'),
+      GIT_CONFIG_SYSTEM: path.join(cwd, 'no-such-system-config'),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+/** A committable empty repo. */
+function initRepo(prefix) {
+  const dir = tempDir(prefix);
+  gitIn(dir, 'init', '-b', 'main');
+  gitIn(dir, 'config', 'user.email', 'test@test');
+  gitIn(dir, 'config', 'user.name', 'test');
+  return dir;
+}
+
 describe('a scratch repo (#459 — the untracked hole)', () => {
   let repo;
 
   const write = (rel, text) => fs.writeFileSync(path.join(repo, rel), text.replace(/@/g, '\0'));
-  const git = (...args) => execFileSync('git', args, { cwd: repo, stdio: 'ignore' });
 
   beforeAll(() => {
     // Lives for the whole FILE; `test-setup.ts`'s afterAll net deletes it (#213).
-    repo = tempDir('sb-check-nul-');
-    git('init', '-b', 'main');
-    git('config', 'user.email', 'test@test');
-    git('config', 'user.name', 'test');
+    repo = initRepo('sb-check-nul-');
     write('.gitignore', 'ignored.md\n');
     write('committed.md', 'clean\n');
-    git('add', '.');
-    git('commit', '-m', 'init');
+    gitIn(repo, 'add', '.');
+    gitIn(repo, 'commit', '-m', 'init');
     write('untracked.md', 'oops@here\n'); // the file #414 lost a cycle to
     write('ignored.md', 'also@bad\n');
   });
@@ -230,9 +257,30 @@ describe('a scratch repo (#459 — the untracked hole)', () => {
     expect(filesToScan(repo)).not.toContain('ignored.md');
   });
 
-  it('lists each path once', () => {
-    const files = filesToScan(repo);
-    expect(new Set(files).size).toBe(files.length);
+  it('lists an unmerged path once, not once per stage', () => {
+    // `--cached` prints a conflicted file once per stage; without the de-dup the
+    // scan reads it three times and one broken file is reported as three.
+    const conflicted = initRepo('sb-check-nul-conflict-');
+    const commit = (text, message) => {
+      fs.writeFileSync(path.join(conflicted, 'both.md'), text);
+      gitIn(conflicted, 'add', '.');
+      gitIn(conflicted, 'commit', '-m', message);
+    };
+    commit('base\n', 'base');
+    gitIn(conflicted, 'checkout', '-b', 'other');
+    commit('theirs\n', 'theirs');
+    gitIn(conflicted, 'checkout', 'main');
+    commit('ours\n', 'ours');
+    try {
+      gitIn(conflicted, 'merge', 'other');
+    } catch {
+      /* the conflict IS the fixture */
+    }
+
+    // guards the fixture: a merge that quietly succeeded would make the
+    // assertion below pass without ever exercising the de-dup
+    expect(gitIn(conflicted, 'ls-files', '--cached', 'both.md').trim().split('\n')).toHaveLength(3);
+    expect(filesToScan(conflicted).filter((f) => f === 'both.md')).toHaveLength(1);
   });
 
   it('FAILS on a NUL in a file that was never `git add`ed', () => {
@@ -250,6 +298,9 @@ describe('a scratch repo (#459 — the untracked hole)', () => {
 
 describe('run', () => {
   it('finds no NUL byte anywhere in this repo', () => {
+    // Since #459 this reads your WORKING TREE, not just what is committed: a
+    // red here can be untracked local scratch of your own, which is precisely
+    // the failure `npm run lint` is now meant to give you.
     const { lines, failed } = run(ROOT);
     expect(failed, lines.join('\n')).toBe(false);
   });
@@ -261,7 +312,7 @@ describe('run', () => {
   });
 
   it('stays cheap enough to sit in front of every lint', () => {
-    // Measured on this repo (544 files): ~90ms warm, ~500ms on a cold file
+    // Measured on this repo (597 files): ~70ms warm, ~500ms on a cold file
     // cache, plus node's own startup. The ceiling is deliberately far above
     // that — it is a smoke test for a SCOPE regression (someone pointing the
     // scan at node_modules or `out/`, which is seconds), not a benchmark. A

@@ -47,10 +47,12 @@ const { execFileSync } = require('child_process');
  * Extensions whose files are EXPECTED to contain NUL bytes, and are therefore
  * not scanned. Lower-case, with the dot, as `path.extname()` returns it.
  *
- * Everything tracked in this repo today is text apart from `.png` and `.ico`;
- * the rest of the list is the ordinary binary furniture a desktop app grows
- * (icons, fonts, archives, native modules, media). Adding to it is the correct
- * response to this check failing on a genuinely binary file.
+ * Everything in this repo today is text apart from `.png` and `.ico`; the rest
+ * of the list is the ordinary binary furniture a desktop app grows (icons,
+ * fonts, archives, native modules, media). Adding to it is the correct response
+ * to this check failing on a genuinely binary file that BELONGS here — since
+ * #459 the scan also sees untracked files, and the answer for a local artifact
+ * nobody is committing is to ignore it, not to edit this list.
  */
 const BINARY_EXTENSIONS = new Set([
   // images
@@ -246,15 +248,19 @@ function formatReport(result, opts = {}) {
     'Fix: re-save the file without the byte. In node:',
     "  node -e \"const f='<file>',fs=require('fs');fs.writeFileSync(f,fs.readFileSync(f).filter(b=>b!==0))\"",
     '',
-    'If the file above is genuinely BINARY, add its extension to',
-    'BINARY_EXTENSIONS in scripts/check-nul.js instead.'
+    'If the file above is genuinely BINARY: when it belongs in the repo, add its',
+    'extension to BINARY_EXTENSIONS in scripts/check-nul.js; when it is local',
+    'scratch nobody is committing, ignore it instead (.gitignore, or',
+    '.git/info/exclude for something only on your machine) — the scan follows',
+    'both.'
   );
   return { lines, failed: true };
 }
 
 /** What is printed, and exited on, when git cannot list the files. */
 const NO_GIT_LINES = [
-  'check-nul: skipped — `git ls-files` did not answer (no git, or not a repo).',
+  'check-nul: skipped — `git ls-files` did not answer (no git, not a repo, or the',
+  'listing timed out).',
   'check-nul: nothing to scan against; not failing the build over it.',
 ];
 
