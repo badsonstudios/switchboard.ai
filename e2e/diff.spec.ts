@@ -401,7 +401,11 @@ test.describe('Changes tab (Monaco diff pane)', () => {
     // it landed HERE, in the window the user asked from...
     await expect(w.locator('.dv-active-tab')).toContainText('· diff', { timeout: 15_000 });
     await expect(w.getByText(FILE, { exact: true })).toBeVisible({ timeout: 15_000 });
-    // ...and NOT as a tab inside the popped-out session's window
+    // ...and NOT as a tab inside the popped-out session's window. The count-1
+    // assertion first, so the count-0 one below cannot pass vacuously on a
+    // window that renders no `.dv-tab` at all: the popout has exactly one tab,
+    // the session card's, and nothing joined it.
+    await expect(popout.locator('.dv-tab')).toHaveCount(1);
     await expect(popout.locator('.dv-tab').filter({ hasText: '· diff' })).toHaveCount(0);
     expect(app.windows().length, 'the diff opened a window of its own').toBe(2);
   });
