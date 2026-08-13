@@ -73,6 +73,22 @@ function harness(
   };
 }
 
+/** A logger that keeps what it was told — for the cases that need their own. */
+function recordingLog(): { log: Logger; logs: LogLine[] } {
+  const logs: LogLine[] = [];
+  const rec =
+    (level: string) =>
+    (msg: string, fields?: LogFields): void => void logs.push({ level, msg, fields });
+  const log = {
+    debug: rec('debug'),
+    info: rec('info'),
+    warn: rec('warn'),
+    error: rec('error'),
+    child: () => log,
+  } as unknown as Logger;
+  return { log, logs };
+}
+
 function ctx(over: Partial<RuleActionContext> = {}): RuleActionContext {
   return {
     event: { id: 1, sessionId: 'live-1', kind: 'needs-permission', at: '2026-08-13T10:00:00.000Z' },
@@ -180,6 +196,64 @@ describe('one failure, one log line', () => {
     expect(h.warnings()).toHaveLength(1);
   });
 
+  // The regression the first version of this could not catch: Pushover puts a
+  // fresh request id in EVERY response body, and most webhook hosts put a
+  // request/ray id in theirs — so a signature keyed on the response detail
+  // never matched and the "one line" promise became one line per event.
+  it('is still one line when the service`s body CHANGES every time', async () => {
+    let n = 0;
+    const fetchImpl = (async () =>
+      ({
+        ok: false,
+        status: 400,
+        text: async () => `{"status":0,"request":"${n++}-3f9a-uuid","errors":["bad token"]}`,
+      }) as unknown as Response) as unknown as typeof fetch;
+    const seen = recordingLog();
+    const actions = new PushActions({
+      secrets: { available: () => true, get: () => TOPIC },
+      getPrefs: () => ({ push: true, service: 'ntfy', webhook: false }),
+      log: seen.log,
+      fetchImpl,
+    });
+    for (let i = 0; i < 6; i++) await actions.pushHandler({ type: 'push' }, ctx());
+    // the bodies really were all different — otherwise this passes vacuously
+    expect(n).toBe(6);
+    expect(seen.logs.filter((l) => l.level === 'warn')).toHaveLength(1);
+  });
+
+  // A DIFFERENT status is a different fact and gets its own line — the
+  // suppression must not swallow "it started 500ing" after a 404.
+  it('a different HTTP status is worth its own line', async () => {
+    let status = 404;
+    const fetchImpl = (async () =>
+      ({ ok: false, status, text: async () => 'nope' }) as unknown as Response) as unknown as typeof fetch;
+    const seen = recordingLog();
+    const actions = new PushActions({
+      secrets: { available: () => true, get: () => TOPIC },
+      getPrefs: () => ({ push: true, service: 'ntfy', webhook: false }),
+      log: seen.log,
+      fetchImpl,
+    });
+    await actions.pushHandler({ type: 'push' }, ctx());
+    await actions.pushHandler({ type: 'push' }, ctx());
+    status = 500;
+    await actions.pushHandler({ type: 'push' }, ctx());
+    expect(seen.logs.filter((l) => l.level === 'warn')).toHaveLength(2);
+  });
+
+  // `bad-url` is NOT silent, unlike `not-configured`: it is a mistake the user
+  // just made, not the resting state of a feature nobody turned on.
+  it('says something when the destination itself is unusable', async () => {
+    const h = harness({
+      prefs: { push: true, ntfyServer: 'ntfy.example.test' },
+      stored: { 'ntfy.topic': TOPIC },
+    });
+    await h.actions.pushHandler({ type: 'push' }, ctx());
+    expect(h.calls).toEqual([]);
+    expect(h.warnings()).toHaveLength(1);
+    expect(h.warnings()[0].fields).toMatchObject({ reason: 'bad-url' });
+  });
+
   it('the failure line names the channel and the reason, never the destination', async () => {
     const h = harness({
       prefs: { webhook: true },
@@ -261,6 +335,9 @@ describe('Send test', () => {
       source: 'switchboard.ai',
       event: 'done',
       at: '2026-08-13T10:00:00.000Z',
+      // …and it is MARKED as a test, so a consumer wired to an automation does
+      // not act on a session that never ran (review finding)
+      test: true,
     });
   });
 });

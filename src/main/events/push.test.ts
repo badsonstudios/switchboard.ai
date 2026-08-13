@@ -117,7 +117,10 @@ describe('sendNtfy', () => {
       fetchImpl: f.impl,
     });
     expect(r.ok).toBe(false);
-    expect(r.reason).toBe('not-configured');
+    // `bad-url`, not `not-configured`: a destination that cannot work is a
+    // mistake to say out loud, where "nothing is set up" is a state to keep
+    // quiet about. `push-actions.ts` logs one and not the other.
+    expect(r.reason).toBe('bad-url');
     expect(f.calls).toHaveLength(0);
   });
 
@@ -222,7 +225,7 @@ describe('postWebhook', () => {
   ])('refuses %s without asking the network', async (_name, url) => {
     const f = fakeFetch();
     const r = await postWebhook(url, buildWebhookPayload(ctx()), { fetchImpl: f.impl });
-    expect(r).toMatchObject({ ok: false, reason: 'not-configured' });
+    expect(r).toMatchObject({ ok: false, reason: 'bad-url' });
     expect(f.calls).toHaveLength(0);
   });
 

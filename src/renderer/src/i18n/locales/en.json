@@ -407,7 +407,7 @@
     "enablePush": "Send events to my phone",
     "enablePushHint": "Needs permission, needs input, and crashes — only while you are away from switchboard.",
     "enableWebhook": "POST events to my webhook",
-    "enableWebhookHint": "All four events, whatever the window is doing: a program is not distracted by being looked at.",
+    "enableWebhookHint": "All four events, whatever the window is doing: a program is not distracted by being looked at. The 🔔 switch and quiet hours still silence it.",
     "set": "· saved",
     "notSet": "· not set",
     "save": "Save",
@@ -419,8 +419,15 @@
     "reason": {
       "no-store": "this machine has no credential store.",
       "not-configured": "nothing is set up yet.",
+      "bad-url": "that address is not a usable http(s) URL.",
       "network": "it could not be reached.",
       "refused": "the service turned it down — check the details you pasted."
+    },
+    "detail": "The service said: {detail}",
+    "problem": {
+      "bad-url": "Not saved — that needs to be a full http(s) address, like https://example.com/hook (and without a username or password in it).",
+      "not-stored": "Not saved — this machine's credential store would not take it.",
+      "refused": "Not saved."
     },
     "secretNote": "Saved in your operating system's credential store, never in a switchboard file.",
     "close": "Close"

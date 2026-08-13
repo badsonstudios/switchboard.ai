@@ -10,7 +10,7 @@ import { SecretStore } from '../secrets/store';
 import { IpcBroker } from '../ipc/broker';
 import { LogFields, Logger } from '../log/logger';
 import { WorkspaceStore } from '../workspace/store';
-import { PushConfig, PushPrefs, PushSecretKey } from '../../shared/push';
+import { PushConfig, PushPrefs, PushSecretKey, PushWriteResult } from '../../shared/push';
 import { CHANNEL_CAPABILITIES } from '../../shared/ipc/capabilities';
 
 type Handler = (e: unknown, ...args: unknown[]) => unknown;
@@ -96,6 +96,8 @@ describe('the channels this feature exposes', () => {
     const h = harness();
     h.call('push:setSecret', 'ntfy.topic', TOPIC);
     for (const channel of h.handlers.keys()) expect(channel).not.toMatch(/getSecret|readSecret/i);
+    // the WRITE's own answer carries no value either
+    expect(JSON.stringify(h.call('push:setSecret', 'ntfy.topic', TOPIC))).not.toContain(TOPIC);
     const config = h.call('push:getConfig') as PushConfig;
     expect(JSON.stringify(config)).not.toContain(TOPIC);
     expect(config.secrets['ntfy.topic']).toBe(true); // "set", not the value
@@ -127,8 +129,9 @@ describe('push:getConfig', () => {
 describe('push:setPrefs', () => {
   it('merge-patches, and answers with the whole config', () => {
     const h = harness();
-    const after = h.call('push:setPrefs', { push: true }) as PushConfig;
-    expect(after.prefs).toMatchObject({ push: true, webhook: false, service: 'ntfy' });
+    const after = h.call('push:setPrefs', { push: true }) as PushWriteResult;
+    expect(after.ok).toBe(true);
+    expect(after.config.prefs).toMatchObject({ push: true, webhook: false, service: 'ntfy' });
     h.call('push:setPrefs', { service: 'pushover' });
     expect(h.prefs).toMatchObject({ push: true, service: 'pushover' });
   });
@@ -140,9 +143,27 @@ describe('push:setPrefs', () => {
     ['a non-string server', [{ ntfyServer: 7 }], 'must be a string'],
   ])('refuses %s with the truth and a warning', (_n, args, reason) => {
     const h = harness();
-    const after = h.call('push:setPrefs', ...(args as unknown[])) as PushConfig;
-    expect(after.prefs.push).toBe(false);
+    const after = h.call('push:setPrefs', ...(args as unknown[])) as PushWriteResult;
+    expect(after.ok).toBe(false);
+    expect(after.config.prefs.push).toBe(false);
     expect(h.logs.some((l) => l.level === 'warn' && l.msg.includes(reason as string))).toBe(true);
+  });
+
+  // Review finding: a server address that can never work used to be stored,
+  // read back as "saved", and then silently never fire.
+  it.each([
+    ['a bare hostname', 'ntfy.example.test'],
+    ['a credential in the URL', 'https://dan:hunter2@ntfy.example.test'],
+  ])('refuses %s as a server, saying which problem it is', (_n, server) => {
+    const h = harness();
+    const after = h.call('push:setPrefs', { ntfyServer: server }) as PushWriteResult;
+    expect(after).toMatchObject({ ok: false, problem: 'bad-url' });
+    expect(after.config.prefs.ntfyServer).toBeUndefined();
+  });
+
+  it('accepts an EMPTY server — that means "use ntfy.sh"', () => {
+    const h = harness();
+    expect((h.call('push:setPrefs', { ntfyServer: '   ' }) as PushWriteResult).ok).toBe(true);
   });
 
   it('logs the switches — none of them is a credential', () => {
@@ -159,8 +180,9 @@ describe('push:setSecret', () => {
   });
 
   it('stores one, and never echoes it back or logs it', () => {
-    const after = h.call('push:setSecret', 'ntfy.topic', TOPIC) as PushConfig;
-    expect(after.secrets['ntfy.topic']).toBe(true);
+    const after = h.call('push:setSecret', 'ntfy.topic', TOPIC) as PushWriteResult;
+    expect(after.ok).toBe(true);
+    expect(after.config.secrets['ntfy.topic']).toBe(true);
     expect(h.values.get('ntfy.topic')).toBe(TOPIC);
     expect(JSON.stringify(after)).not.toContain(TOPIC);
     expect(h.text()).not.toContain(TOPIC);
@@ -168,8 +190,8 @@ describe('push:setSecret', () => {
 
   it('an empty value forgets it', () => {
     h.call('push:setSecret', 'ntfy.topic', TOPIC);
-    const after = h.call('push:setSecret', 'ntfy.topic', '  ') as PushConfig;
-    expect(after.secrets['ntfy.topic']).toBe(false);
+    const after = h.call('push:setSecret', 'ntfy.topic', '  ') as PushWriteResult;
+    expect(after.config.secrets['ntfy.topic']).toBe(false);
     expect(h.values.has('ntfy.topic')).toBe(false);
   });
 
@@ -184,11 +206,30 @@ describe('push:setSecret', () => {
     expect(h.values.size).toBe(0);
   });
 
-  it('tells the truth when the store refused it', () => {
+  it('tells the truth when the store refused it, and says which failure it was', () => {
     const none = harness({ available: false });
-    const after = none.call('push:setSecret', 'ntfy.topic', TOPIC) as PushConfig;
-    expect(after.secrets['ntfy.topic']).toBe(false);
+    const after = none.call('push:setSecret', 'ntfy.topic', TOPIC) as PushWriteResult;
+    expect(after).toMatchObject({ ok: false, problem: 'not-stored' });
+    expect(after.config.secrets['ntfy.topic']).toBe(false);
     expect(none.logs.some((l) => l.msg.includes('could not be stored'))).toBe(true);
+  });
+
+  // The one credential whose shape can be checked, and the one users get
+  // wrong. Refused at the door, with a problem the dialog can render.
+  it.each([
+    ['a bare hostname', 'hooks.example.test/abc'],
+    ['a file URL', 'file:///etc/passwd'],
+    ['a password in the URL', 'https://dan:hunter2@hooks.example.test/abc'],
+  ])('refuses %s as a webhook URL rather than storing something dead', (_n, url) => {
+    const after = h.call('push:setSecret', 'webhook.url', url) as PushWriteResult;
+    expect(after).toMatchObject({ ok: false, problem: 'bad-url' });
+    expect(h.values.has('webhook.url')).toBe(false);
+  });
+
+  it('stores a webhook URL that IS usable', () => {
+    const after = h.call('push:setSecret', 'webhook.url', 'https://hooks.example.test/abc') as PushWriteResult;
+    expect(after.ok).toBe(true);
+    expect(h.values.get('webhook.url')).toBe('https://hooks.example.test/abc');
   });
 });
 

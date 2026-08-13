@@ -281,6 +281,10 @@ The body looks like this:
 }
 ```
 
+A POST from the **Send test** button carries one extra field, `"test": true`.
+It's absent on every real event, so an automation can skip it rather than
+switching the lights on for a session that never ran.
+
 - **`event`** is the one to switch on: `needs-permission`, `needs-input`,
   `done`, or `crashed`. Ignore any value you don't recognize — new ones may
   appear.
@@ -290,7 +294,15 @@ The body looks like this:
 - Nothing else goes with it: no folder, no file paths, no prompt text, no
   transcript.
 
-Your webhook URL is treated as a secret, because most of them are.
+Your webhook URL is treated as a secret, because most of them are. It has to be
+a full `http://` or `https://` address — a bare `example.com/hook` is refused
+when you save it, with a note saying so, rather than accepted and then never
+fired.
+
+**One thing the webhook is *not* louder than:** the 🔔 title-bar switch and
+quiet hours sit above every channel on this page, webhooks included. With
+notifications off, or inside a quiet-hours window, nothing is sent — your
+dashboard goes quiet too. (Quiet hours have no settings screen yet.)
 
 ## Where your credentials are kept
 

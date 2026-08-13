@@ -57,6 +57,13 @@ export interface SendDeps {
  * Applied to service error bodies and to thrown-error strings — a URL that
  * failed to resolve arrives inside the error message, and for the webhook that
  * URL *is* the secret.
+ *
+ * Two limits, stated rather than discovered: it is an exact-substring match, so
+ * a value a service echoes back re-encoded (percent-escaped, JSON-escaped) is
+ * not caught; and anything under four characters is left alone, because
+ * redacting a three-letter topic would redact half the English in the message
+ * and tell the reader nothing. Neither is a hole in the STORAGE promise — this
+ * is defence in depth over one string that reaches a log and a dialog.
  */
 export function scrubSecrets(text: string, secrets: readonly string[] = []): string {
   let out = text;
@@ -177,7 +184,14 @@ async function post(
       },
       body: init.body,
       signal: abort.signal,
-      redirect: 'follow',
+      // NOT `follow`, unlike the status poller next door — and the difference
+      // is the body. A 307/308 re-POSTs it to whatever host the redirect
+      // names, which for these two requests means handing an ntfy topic or a
+      // session's title to a third party the user never configured. Neither
+      // service redirects its publish endpoint, so this costs nothing real,
+      // and a setup that does redirect fails visibly in Send test rather than
+      // leaking quietly.
+      redirect: 'error',
     });
     let body = '';
     try {
@@ -199,6 +213,7 @@ function failure(raw: RawResult, deps: SendDeps): PushSendResult {
   return {
     ok: false,
     reason: 'refused',
+    ...(typeof raw.status === 'number' ? { status: raw.status } : {}),
     detail: detail(`HTTP ${raw.status ?? '?'} ${raw.body ?? ''}`, deps.secrets),
   };
 }
@@ -224,7 +239,7 @@ export interface NtfyMessage {
 export async function sendNtfy(msg: NtfyMessage, deps: SendDeps = {}): Promise<PushSendResult> {
   const base = (msg.server?.trim() || NTFY_DEFAULT_SERVER).replace(/\/+$/, '');
   if (!isPostableUrl(base))
-    return { ok: false, reason: 'not-configured', detail: 'the ntfy server is not a URL' };
+    return { ok: false, reason: 'bad-url', detail: 'the ntfy server is not an http(s) URL' };
   if (!msg.topic.trim()) return { ok: false, reason: 'not-configured' };
   const raw = await post(
     `${base}/`,
@@ -266,11 +281,14 @@ export async function sendPushover(
   deps: SendDeps = {}
 ): Promise<PushSendResult> {
   if (!msg.token.trim() || !msg.user.trim()) return { ok: false, reason: 'not-configured' };
+  // Their documented ceilings (250 / 1024). Nothing we send is near them —
+  // these are a task label and four words — but a title long enough to be
+  // refused would fail every push with a 4xx nobody could read.
   const form = new URLSearchParams({
     token: msg.token.trim(),
     user: msg.user.trim(),
-    title: msg.title,
-    message: msg.message,
+    title: msg.title.slice(0, 250),
+    message: msg.message.slice(0, 1024),
   });
   if (msg.priority) form.set('priority', String(msg.priority));
   const raw = await post(
@@ -306,7 +324,7 @@ export async function postWebhook(
   deps: SendDeps = {}
 ): Promise<PushSendResult> {
   if (!isPostableUrl(url))
-    return { ok: false, reason: 'not-configured', detail: 'the webhook URL is not http(s)' };
+    return { ok: false, reason: 'bad-url', detail: 'the webhook URL is not http(s)' };
   const raw = await post(
     url,
     { headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) },

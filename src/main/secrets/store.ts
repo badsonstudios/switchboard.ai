@@ -152,7 +152,14 @@ export class SecretStore {
     return this.get(key) !== null;
   }
 
-  /** Forget one. `true` if there was something to forget. */
+  /**
+   * Forget one. `true` if there was something to forget **and it is gone**.
+   *
+   * A failed write must NOT poison the cache: reporting "forgotten" while the
+   * ciphertext is still in the file would have the dialog say "not set" over a
+   * credential that comes back on the next launch. Forget is the one operation
+   * here where a comfortable lie is worst (found in review).
+   */
   clear(key: string): boolean {
     const entries = { ...this.read() };
     if (!(key in entries)) {
@@ -160,7 +167,7 @@ export class SecretStore {
       return false;
     }
     delete entries[key];
-    this.write(entries);
+    if (!this.write(entries)) return false;
     this.cache.set(key, null);
     this.opts.log?.info('a credential was cleared', { key });
     return true;

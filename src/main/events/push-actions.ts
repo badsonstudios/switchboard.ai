@@ -123,13 +123,18 @@ export class PushActions {
   }
 
   /** POST the documented body. Same switch rule as `sendPush`. */
-  async sendWebhook(ctx: RuleActionContext, enforceSwitch = true): Promise<PushSendResult> {
+  async sendWebhook(
+    ctx: RuleActionContext,
+    enforceSwitch = true,
+    isTest = false
+  ): Promise<PushSendResult> {
     const prefs = this.deps.getPrefs();
     if (enforceSwitch && !prefs.webhook) return { ok: false, reason: 'not-configured' };
     if (!this.deps.secrets.available()) return { ok: false, reason: 'no-store' };
     const url = this.deps.secrets.get('webhook.url');
     if (!url) return { ok: false, reason: 'not-configured' };
-    return postWebhook(url, buildWebhookPayload(ctx), this.sendDeps());
+    const payload = buildWebhookPayload(ctx);
+    return postWebhook(url, isTest ? { ...payload, test: true } : payload, this.sendDeps());
   }
 
   /** The `push` action, ready for `registry.register`. */
@@ -176,7 +181,8 @@ export class PushActions {
               title: 'switchboard.ai',
               body: 'test',
             },
-            false
+            false,
+            true // marks the payload `test: true` — see WebhookPayload
           );
     // A test is a thing the user is watching, so it is always worth a line —
     // and it resets the suppression counter, because the state of the world
@@ -216,7 +222,13 @@ export class PushActions {
       return;
     }
     if (result.reason === 'not-configured') return;
-    const signature = `${result.reason ?? '?'}:${result.detail ?? ''}`;
+    // The signature is the STABLE part of the failure — reason and HTTP status,
+    // never `detail`. Pushover puts a fresh request id in every response body
+    // and most webhook hosts put a request/ray id in theirs, so a
+    // detail-keyed signature never repeated and the "one failure, one line"
+    // promise quietly became one line per attention event. Caught in review;
+    // `push-actions.test.ts` now drives it with a changing body.
+    const signature = `${result.reason ?? '?'}:${result.status ?? ''}`;
     if (this.lastFailure.get(channel) === signature) {
       this.suppressed.set(channel, (this.suppressed.get(channel) ?? 0) + 1);
       return;

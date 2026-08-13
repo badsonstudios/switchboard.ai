@@ -29,8 +29,19 @@ import {
 export interface PushSetupDialogProps {
   open: boolean;
   onClose: () => void;
-  /** null until main has answered — the fields stay disabled until it does */
+  /**
+   * null only for the frame before main answers. A bridge that CANNOT answer
+   * sends `unavailablePushConfig()` instead, so "we have not asked yet" and
+   * "there is nothing to ask" are different states on screen rather than the
+   * same empty form.
+   */
   config: PushConfig | null;
+  /**
+   * The last write main refused, and which field it was aimed at. The dialog
+   * cannot read a credential back, so a refusal it did not render would leave
+   * the user with an empty box and no idea whether the paste landed.
+   */
+  write?: { key: string; problem: string } | null;
   onSetPrefs: (patch: { push?: boolean; webhook?: boolean; service?: PushService; ntfyServer?: string }) => void;
   /** store one credential; an empty string forgets it */
   onSetSecret: (key: PushSecretKey, value: string) => void;
@@ -152,6 +163,14 @@ export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element 
           <DialogButton onClick={() => props.onSetSecret(key, '')}>{t('push.forget')}</DialogButton>
         )}
       </div>
+      {props.write?.key === key && (
+        <span
+          data-push-problem={key}
+          style={{ fontSize: 11, color: 'var(--status-needs-input-ink)' }}
+        >
+          {t(`push.problem.${props.write.problem}`)}
+        </span>
+      )}
       {hint && <span style={{ fontSize: 11, color: 'var(--faint)' }}>{hint}</span>}
     </div>
   );
@@ -174,6 +193,12 @@ export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element 
             {r.ok
               ? t('push.testOk')
               : t('push.testFailed', { reason: t(`push.reason.${r.reason ?? 'network'}`) })}
+            {/* The service's own complaint — "application token is invalid"
+                beats "the service turned it down" when you are trying to get
+                set up. Scrubbed of every stored credential in main before it
+                is allowed this far (`push.ts`), which is what makes showing it
+                safe on a screen someone may be sharing. */}
+            {!r.ok && r.detail ? ` ${t('push.detail', { detail: r.detail })}` : ''}
           </span>
         )}
       </div>
@@ -304,6 +329,14 @@ export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element 
                         fontSize: 11.5,
                       }}
                     />
+                    {props.write?.key === 'ntfyServer' && (
+                      <span
+                        data-push-problem="ntfyServer"
+                        style={{ fontSize: 11, color: 'var(--status-needs-input-ink)' }}
+                      >
+                        {t(`push.problem.${props.write.problem}`)}
+                      </span>
+                    )}
                     <span style={{ fontSize: 11, color: 'var(--faint)' }}>
                       {t('push.ntfyServerHint')}
                     </span>

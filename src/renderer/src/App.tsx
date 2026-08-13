@@ -37,7 +37,13 @@ import { PreflightBanner } from './components/PreflightBanner';
 import { ServiceHealthBanner } from './components/ServiceHealthBanner';
 import type { ServiceHealthStatus } from '../../shared/service-health';
 import { PushSetupDialog } from './components/PushSetupDialog';
-import type { PushConfig, PushSecretKey, PushSendResult } from '../../shared/push';
+import { unavailablePushConfig } from '../../shared/push';
+import type {
+  PushConfig,
+  PushSecretKey,
+  PushSendResult,
+  PushWriteResult,
+} from '../../shared/push';
 import { collapsedRows, revealTargets } from './lib/ladder';
 import { GuardedRefresh, latestWins } from './lib/latest-wins';
 import { groupChangeLanded } from './lib/groups';
@@ -165,6 +171,9 @@ export function App(): React.JSX.Element {
   // read of the credential store nobody asked for.
   const [pushOpen, setPushOpen] = useState(false);
   const [pushConfig, setPushConfig] = useState<PushConfig | null>(null);
+  // The last write main REFUSED, for the field it was aimed at. Cleared on the
+  // next successful write and on every re-open.
+  const [pushWrite, setPushWrite] = useState<{ key: string; problem: string } | null>(null);
   // Attention events (E9-03). This subscription used to live inside
   // EventsPanel; it moved up here because the queue is the SINGLE ordering
   // authority — two independent subscriptions to events:changed could hand the
@@ -531,15 +540,30 @@ export function App(): React.JSX.Element {
   // the reason the whole family is written this way.
   const openPushSetup = React.useCallback(() => {
     setPushOpen(true);
-    void bridge.push
-      ?.getConfig?.()
-      .then((c) => setPushConfig(c))
-      .catch(() => {});
+    setPushWrite(null);
+    const answer = bridge.push?.getConfig?.();
+    // No `push` namespace at all: show the dialog as UNREACHABLE rather than as
+    // an empty working one. A Save button that silently does nothing is worse
+    // than a disabled one that says why (review finding).
+    if (!answer) return setPushConfig(unavailablePushConfig());
+    void answer.then((c) => setPushConfig(c)).catch(() => setPushConfig(unavailablePushConfig()));
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, []);
-  const applyPushAnswer = React.useCallback((p: Promise<PushConfig> | undefined) => {
-    void p?.then((c) => setPushConfig(c)).catch(() => {});
-  }, []);
+  const applyPushAnswer = React.useCallback(
+    (key: string, p: Promise<PushWriteResult> | undefined) => {
+      if (!p) return setPushConfig(unavailablePushConfig());
+      void p
+        .then((r) => {
+          setPushConfig(r.config);
+          // What the dialog renders beside the field: main is the authority on
+          // whether the write happened, and a credential cannot be read back to
+          // check.
+          setPushWrite(r.ok ? null : { key, problem: r.problem ?? 'refused' });
+        })
+        .catch(() => setPushWrite({ key, problem: 'refused' }));
+    },
+    []
+  );
   const testPush = React.useCallback(
     (channel: 'push' | 'webhook'): Promise<PushSendResult> =>
       bridge.push?.test?.(channel) ?? Promise.resolve({ ok: false, reason: 'not-configured' }),
@@ -1231,9 +1255,12 @@ export function App(): React.JSX.Element {
         open={pushOpen}
         onClose={() => setPushOpen(false)}
         config={pushConfig}
-        onSetPrefs={(p) => applyPushAnswer(bridge.push?.setPrefs?.(p))}
+        write={pushWrite}
+        onSetPrefs={(p) =>
+          applyPushAnswer(p.ntfyServer !== undefined ? 'ntfyServer' : 'prefs', bridge.push?.setPrefs?.(p))
+        }
         onSetSecret={(key: PushSecretKey, value: string) =>
-          applyPushAnswer(bridge.push?.setSecret?.(key, value))
+          applyPushAnswer(key, bridge.push?.setSecret?.(key, value))
         }
         onTest={testPush}
       />

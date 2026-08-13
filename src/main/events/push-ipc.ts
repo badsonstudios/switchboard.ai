@@ -27,11 +27,13 @@ import {
   PushPrefs,
   PushSecretStatus,
   PushSendResult,
+  PushWriteResult,
   PUSH_SECRET_KEYS,
   isPushSecretKey,
 } from '../../shared/push';
 import { PushActions, PushChannel } from './push-actions';
 import { SecretStore } from '../secrets/store';
+import { isPostableUrl } from './push';
 
 export interface PushIpcDeps {
   broker: IpcBroker;
@@ -54,14 +56,40 @@ export function registerPushIpc(deps: PushIpcDeps): void {
     secrets: status(),
     storeAvailable: secrets.available(),
   });
-  const refuse = (channel: string, reason: string, fields: LogFields = {}): PushConfig => {
+  const ok = (): PushWriteResult => ({ config: config(), ok: true });
+  const refuse = (
+    channel: string,
+    reason: string,
+    problem: PushWriteResult['problem'] = 'refused',
+    fields: LogFields = {}
+  ): PushWriteResult => {
     log.warn(`${channel} refused: ${reason}`, fields);
-    return config();
+    return { config: config(), ok: false, problem };
+  };
+
+  /**
+   * A destination we could never reach, refused at the DOOR rather than at
+   * send time.
+   *
+   * Without this, pasting `hooks.example.com/x` (no scheme) stored fine, read
+   * back "saved", and then silently never fired — the worst shape a setting
+   * can have. Review caught it; the reason it belongs here and not only in the
+   * sender is that this is the moment the user is looking at the screen.
+   *
+   * Credentials in the URL (`https://user:pass@host`) are refused too: this
+   * one field is NOT in the credential store (a server address is not a
+   * secret), so accepting one would put a password in the workspace file
+   * through the side door.
+   */
+  const usableUrl = (value: string): boolean => {
+    if (!isPostableUrl(value)) return false;
+    const u = new URL(value);
+    return !u.username && !u.password;
   };
 
   broker.handle('push:getConfig', (): PushConfig => config());
 
-  broker.handle('push:setPrefs', (_e, p: unknown): PushConfig => {
+  broker.handle('push:setPrefs', (_e, p: unknown): PushWriteResult => {
     if (typeof p !== 'object' || p === null || Array.isArray(p))
       return refuse('push:setPrefs', 'the patch must be an object');
     const patch = p as Partial<PushPrefs>;
@@ -78,13 +106,20 @@ export function registerPushIpc(deps: PushIpcDeps): void {
     }
     if (patch.service !== undefined) {
       if (patch.service !== 'ntfy' && patch.service !== 'pushover')
-        return refuse('push:setPrefs', 'unknown push service', { service: String(patch.service) });
+        return refuse('push:setPrefs', 'unknown push service', 'refused', {
+          service: String(patch.service),
+        });
       clean.service = patch.service;
     }
     if (patch.ntfyServer !== undefined) {
       if (typeof patch.ntfyServer !== 'string')
         return refuse('push:setPrefs', 'the ntfy server must be a string');
-      clean.ntfyServer = patch.ntfyServer.trim();
+      const server = patch.ntfyServer.trim();
+      // Empty is meaningful — it means "use ntfy.sh" — so only a NON-empty
+      // unusable one is refused.
+      if (server && !usableUrl(server))
+        return refuse('push:setPrefs', 'the ntfy server is not a usable http(s) URL', 'bad-url');
+      clean.ntfyServer = server;
     }
     const saved = store.setPushPrefs(clean);
     // The VALUES are switches and a hostname; none of them is a credential, so
@@ -95,7 +130,7 @@ export function registerPushIpc(deps: PushIpcDeps): void {
       webhook: saved.webhook,
       service: saved.service,
     });
-    return config();
+    return ok();
   });
 
   /**
@@ -106,18 +141,23 @@ export function registerPushIpc(deps: PushIpcDeps): void {
    * The value is never logged, never echoed back, and never returned by any
    * channel in this file.
    */
-  broker.handle('push:setSecret', (_e, key: unknown, value: unknown): PushConfig => {
+  broker.handle('push:setSecret', (_e, key: unknown, value: unknown): PushWriteResult => {
     if (!isPushSecretKey(key)) return refuse('push:setSecret', 'unknown credential slot');
-    if (typeof value !== 'string') return refuse('push:setSecret', 'the value must be a string', {
-      key,
-    });
+    if (typeof value !== 'string')
+      return refuse('push:setSecret', 'the value must be a string', 'refused', { key });
     if (!value.trim()) {
       secrets.clear(key);
-      return config();
+      return ok();
     }
+    // The webhook URL is the one credential whose SHAPE we can check, and the
+    // one users get wrong (a bare hostname). See `usableUrl`.
+    if (key === 'webhook.url' && !usableUrl(value.trim()))
+      return refuse('push:setSecret', 'the webhook URL is not a usable http(s) URL', 'bad-url', {
+        key,
+      });
     if (!secrets.set(key, value))
-      return refuse('push:setSecret', 'the credential could not be stored', { key });
-    return config();
+      return refuse('push:setSecret', 'the credential could not be stored', 'not-stored', { key });
+    return ok();
   });
 
   /** Send one now, and say what came back. Bypasses the enable switch. */

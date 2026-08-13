@@ -86,6 +86,18 @@ export type PushFailure =
   | 'no-store'
   /** the switch is off, or the credential it needs was never pasted in */
   | 'not-configured'
+  /**
+   * There IS a destination and it is not usable — a webhook URL with no
+   * scheme, an ntfy server that is not a URL.
+   *
+   * Its own reason rather than `not-configured`, because the two need opposite
+   * handling: nothing configured is the resting state of a feature nobody
+   * turned on and must stay silent, while a destination that cannot work is a
+   * mistake the user made two minutes ago and must be said out loud. Review
+   * caught this as "paste a bare hostname, see 'saved', never hear from it
+   * again".
+   */
+  | 'bad-url'
   /** the request never landed: DNS, timeout, refused */
   | 'network'
   /** it landed and the service said no (non-2xx, or ntfy/Pushover's own error) */
@@ -94,6 +106,15 @@ export type PushFailure =
 export interface PushSendResult {
   ok: boolean;
   reason?: PushFailure;
+  /**
+   * The HTTP status, when there was one. Carried separately from `detail`
+   * because it is the STABLE half of a failure: `detail` contains the service's
+   * own body, and Pushover (like most APIs) puts a fresh request id in every
+   * one — so keying "have I already logged this failure?" on the detail meant
+   * never matching, and warning once per attention event forever. Found in
+   * review, pinned by a test with a changing body.
+   */
+  status?: number;
   /**
    * One short line for the setup dialog's "Send test" — the service's own
    * complaint, truncated. **Scrubbed of anything secret before it gets here**
@@ -144,4 +165,50 @@ export interface WebhookPayload {
   visibility: string;
   /** ISO-8601, from the feed event */
   at: string;
+  /**
+   * Present and `true` only for the setup dialog's **Send test**.
+   *
+   * Absent on every real event, so a consumer that ignores it is unaffected —
+   * but one wired to an automation ("turn on the lamp when a session finishes")
+   * can skip a test rather than acting on a session that never ran. Added in
+   * review: without it the only tell was a magic `sessionId`.
+   */
+  test?: boolean;
+}
+
+/**
+ * The answer to a WRITE (`push:setPrefs`, `push:setSecret`).
+ *
+ * Not just the new config: a credential can never be read back, so "did my
+ * paste land?" is a question the dialog cannot answer by looking. A write that
+ * was refused has to say so — otherwise the field empties, the status still
+ * reads "not set", and nothing on screen explains why.
+ */
+export interface PushWriteResult {
+  config: PushConfig;
+  ok: boolean;
+  /** why not — `bad-url`, or `not-stored` when the credential store refused */
+  problem?: 'bad-url' | 'not-stored' | 'refused';
+}
+
+/**
+ * What the renderer shows when main cannot answer at all — no `push` namespace
+ * on the bridge, or a call that rejected.
+ *
+ * `storeAvailable: false` on purpose: a dialog that cannot reach main can no
+ * more keep a secret than a machine with no keyring can, and rendering it as
+ * live would give the user a Save button that silently does nothing. Same
+ * fail-open posture, honest about which failure it is.
+ */
+export function unavailablePushConfig(): PushConfig {
+  return {
+    prefs: { ...DEFAULT_PUSH_PREFS },
+    secrets: {
+      'ntfy.topic': false,
+      'pushover.token': false,
+      'pushover.user': false,
+      'webhook.url': false,
+    },
+    storeAvailable: false,
+  };
 }

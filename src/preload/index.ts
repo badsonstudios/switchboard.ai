@@ -16,7 +16,13 @@ import type {
 } from '../shared/update';
 import type { WorkspaceSaveState } from '../shared/workspace';
 import type { ServiceHealthPrefs, ServiceHealthStatus } from '../shared/service-health';
-import type { PushConfig, PushPrefs, PushSecretKey, PushSendResult } from '../shared/push';
+import type {
+  PushConfig,
+  PushPrefs,
+  PushSecretKey,
+  PushSendResult,
+  PushWriteResult,
+} from '../shared/push';
 
 const versionArg = process.argv.find((a) => a.startsWith('--switchboard-version='));
 const seedArg = process.argv.find((a) => a.startsWith('--switchboard-seed-panels='));
@@ -492,10 +498,11 @@ const api = {
    */
   push: {
     getConfig: (): Promise<PushConfig> => ipcRenderer.invoke('push:getConfig'),
-    setPrefs: (p: Partial<PushPrefs>): Promise<PushConfig> =>
+    /** answers the new config AND whether the write happened — see PushWriteResult */
+    setPrefs: (p: Partial<PushPrefs>): Promise<PushWriteResult> =>
       ipcRenderer.invoke('push:setPrefs', p),
     /** store one credential; an empty string forgets it */
-    setSecret: (key: PushSecretKey, value: string): Promise<PushConfig> =>
+    setSecret: (key: PushSecretKey, value: string): Promise<PushWriteResult> =>
       ipcRenderer.invoke('push:setSecret', key, value),
     /** send one now, whatever the switches say — the dialog's Send test */
     test: (channel: 'push' | 'webhook'): Promise<PushSendResult> =>

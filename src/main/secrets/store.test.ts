@@ -182,6 +182,20 @@ describe('SecretStore', () => {
     });
   });
 
+  // Forget is the one operation where a comfortable lie is worst: a "cleared"
+  // that did not clear leaves the dialog saying "not set" over a credential
+  // that comes back on the next launch (review finding).
+  it('clear() reports FALSE when the write failed, and keeps no false memory', () => {
+    h.store.set('ntfy.topic', SECRET);
+    // make the write fail: the file's directory disappears under it
+    fs.rmSync(h.dir, { recursive: true, force: true });
+    fs.writeFileSync(h.dir, 'not a directory'); // now the path cannot hold a file
+    expect(h.store.clear('ntfy.topic')).toBe(false);
+    expect(h.store.get('ntfy.topic')).toBe(SECRET); // still there, and known to be
+    fs.rmSync(h.dir, { force: true });
+    fs.mkdirSync(h.dir, { recursive: true }); // so afterEach can clean up
+  });
+
   it('leaves no .tmp file behind after a write', () => {
     h.store.set('ntfy.topic', SECRET);
     expect(fs.readdirSync(h.dir)).toEqual([SECRETS_FILE]);

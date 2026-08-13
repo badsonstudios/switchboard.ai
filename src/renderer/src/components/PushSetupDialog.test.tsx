@@ -16,6 +16,7 @@ import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import en from '../i18n/locales/en.json';
 import { PushSetupDialog } from './PushSetupDialog';
+import { unavailablePushConfig } from '../../../shared/push';
 import type { PushConfig } from '../../../shared/push';
 
 declare global {
@@ -47,9 +48,13 @@ function config(over: Partial<PushConfig> = {}): PushConfig {
   };
 }
 
-async function render(open: boolean, cfg: PushConfig | null = config()): Promise<void> {
+async function render(
+  open: boolean,
+  cfg: PushConfig | null = config(),
+  write: { key: string; problem: string } | null = null
+): Promise<void> {
   await act(async () => {
-    root!.render(<PushSetupDialog open={open} config={cfg} {...handlers} />);
+    root!.render(<PushSetupDialog open={open} config={cfg} write={write} {...handlers} />);
   });
 }
 
@@ -110,11 +115,21 @@ describe('the setup dialog', () => {
     expect(field('enable-webhook')?.checked).toBe(false);
   });
 
-  it('renders with a bridge that answered nothing, disabled rather than broken', async () => {
+  // Two different states, deliberately: `null` is the frame before main
+  // answers, and `unavailablePushConfig()` is what App sends when there is no
+  // bridge to ask. Rendering the second as a live empty form would give the
+  // user a Save button that silently does nothing (review finding).
+  it('renders while it waits for main, without claiming anything', async () => {
     await render(true, null);
     expect(dialog()).not.toBeNull();
-    expect(field('ntfy.topic')?.disabled).toBe(false); // a null config is "unknown", not "unavailable"
     expect(field('enable-push')?.checked).toBe(false);
+  });
+
+  it('a bridge that cannot answer renders as UNREACHABLE, not as a working form', async () => {
+    await render(true, unavailablePushConfig());
+    expect(host.textContent).toContain(en.push.unavailable);
+    expect(field('ntfy.topic')?.disabled).toBe(true);
+    expect(field('enable-push')?.disabled).toBe(true);
   });
 
   it('shows the picked service`s fields, and switches them', async () => {
@@ -194,6 +209,30 @@ describe('credentials', () => {
   });
 });
 
+describe('a write main refused', () => {
+  // The dialog can never read a credential back, so a refusal it did not
+  // render would leave an empty box and no idea whether the paste landed.
+  it('says so, beside the field it was aimed at', async () => {
+    await render(true, config(), { key: 'webhook.url', problem: 'bad-url' });
+    const note = host.querySelector('[data-push-problem="webhook.url"]');
+    expect(note?.textContent).toBe(en.push.problem['bad-url']);
+    // …and not beside any other field
+    expect(host.querySelector('[data-push-problem="ntfy.topic"]')).toBeNull();
+  });
+
+  it('names the credential store when that is what refused', async () => {
+    await render(true, config(), { key: 'ntfy.topic', problem: 'not-stored' });
+    expect(host.querySelector('[data-push-problem="ntfy.topic"]')?.textContent).toBe(
+      en.push.problem['not-stored']
+    );
+  });
+
+  it('says it for the server field too, which is not a credential', async () => {
+    await render(true, config(), { key: 'ntfyServer', problem: 'bad-url' });
+    expect(host.querySelector('[data-push-problem="ntfyServer"]')).not.toBeNull();
+  });
+});
+
 describe('a machine with no credential store', () => {
   it('says so, and refuses to take anything', async () => {
     await render(true, config({ storeAvailable: false }));
@@ -217,6 +256,21 @@ describe('Send test', () => {
     await click(button(en.push.sendTest));
     expect(host.querySelector('[data-push-result="push"]')?.textContent).toContain(
       en.push.reason['not-configured']
+    );
+  });
+
+  // The service's own complaint beats our generic sentence when you are trying
+  // to get set up. It is scrubbed of every stored credential in main.
+  it('shows what the service actually said, when it said anything', async () => {
+    handlers.onTest.mockImplementation(async () => ({
+      ok: false,
+      reason: 'refused',
+      detail: 'HTTP 400 application token is invalid',
+    }));
+    await render(true);
+    await click(button(en.push.sendTest));
+    expect(host.querySelector('[data-push-result="push"]')?.textContent).toContain(
+      'application token is invalid'
     );
   });
 
