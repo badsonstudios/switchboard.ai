@@ -18,6 +18,7 @@
     "src/build/**/*",
     "electron.vite.config.ts",
     "vitest.config.ts",
-    "src/test-setup.ts"
+    "src/test-setup.ts",
+    "src/test-fake-timers.test.ts"
   ]
 }

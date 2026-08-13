@@ -177,6 +177,30 @@ the call stays, the result goes on the registry. That stopped the flow; it left
   deleting folders it never created on a user's machine. Full reasoning in
   `scripts/sweep-temp-orphans.js`'s header.
 
+**Fake timers: install them freely — the run hands the clock back for you
+(#439, #441).** `vi.useFakeTimers()` is a **no-op when a clock is already
+installed**, so a `beforeEach` that only installs re-uses the previous test's
+clock *and its pending queue* — those timers then fire inside the next test.
+That is #439: `composer.test.ts` armed its 75 ms CR, ended before flushing, and
+the stray PTY write landed in an unrelated case (measured on the guardless
+file: **7** timers carried across one boundary). Since #441 an `afterEach` in
+`src/test-setup.ts` clears the queue and uninstalls the clock after **every**
+test in the run — it also undoes a lone `vi.setSystemTime`, which mocks `Date`
+without faking timers.
+
+- **You do not need to hand the clock back for the next test's sake.** Restore
+  inside a test only when *that* test wants real time again (e.g.
+  `transcripts/watcher.test.ts` freezes `Date` for the first half of a case,
+  then runs the second half on the real clock). Existing `try { … } finally {
+  vi.useRealTimers(); }` blocks are fine — the net is a backstop, not a reason
+  to strip explicit teardown.
+- The net runs **after** a file's own `afterEach` hooks (`sequence.hooks`
+  defaults to `"stack"`, and a setup file registers first), so teardown that
+  needs the fake clock still has it.
+- `src/test-fake-timers.test.ts` pins the invariant with two deliberately
+  order-dependent cases: one arms a timer and walks away, the next proves it
+  starts on a real clock, with an empty queue, and that the stray never fires.
+
 **CI (GitHub Actions), every PR:** `build` job = lint + typecheck + unit +
 build + check:pty + check:fake-stream on Windows/macOS/Linux; `e2e` job =
 Playwright on Windows + Linux (xvfb). Red CI blocks merge.
@@ -199,7 +223,7 @@ must be in one of them (#234):**
 
 | Project | Covers |
 |---|---|
-| `tsconfig.node.json` | `src/main`, `src/preload`, `src/shared`, `src/build`, `electron.vite.config.ts`, `vitest.config.ts`, `src/test-setup.ts` |
+| `tsconfig.node.json` | `src/main`, `src/preload`, `src/shared`, `src/build`, `electron.vite.config.ts`, `vitest.config.ts`, `src/test-setup.ts`, `src/test-fake-timers.test.ts` |
 | `tsconfig.web.json` | `src/renderer`, `src/shared`, `src/preload/index.ts` |
 | `tsconfig.e2e.json` | `e2e/**` (BOTH runners' files), `playwright.config.ts`, `src/renderer/src/env.d.ts` |
 
