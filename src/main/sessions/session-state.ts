@@ -174,8 +174,9 @@ export interface SweepResult {
  * live sessions; `src/main/index.ts` takes `app.requestSingleInstanceLock()` as
  * the first statement of the bootstrap (#289) and a second instance quits
  * before it can reach this. Within this process the call site is the bootstrap,
- * before any IPC handler is registered, so no session of ours exists yet — the
- * same shape as `HookListener.sweepOrphanTokens`, one directory level up.
+ * above `registerSessionIpc` — the only door a session can be spawned through —
+ * so no session of ours exists yet. Same shape as `HookListener`'s token sweep,
+ * one directory level up. `single-instance.test.ts` pins both orderings.
  *
  * A live session's directory is therefore never a candidate — but `keep` says
  * so IN THE FUNCTION rather than leaving it a property of the call site. The
@@ -195,8 +196,11 @@ export interface SweepResult {
  *   5. there is budget left (`budgetMs`);
  *   6. it is older than `minAgeMs`.
  *
- * Nothing here throws. A directory it cannot list, stat or delete is counted,
- * named in one log line, and left for the next start.
+ * Nothing here throws. A `stateDir` it cannot LIST is one warning and an empty
+ * result; an individual directory it cannot stat or delete is counted in
+ * `failed`, reported in the aggregate line, and left for the next start —
+ * deliberately not named one-per-entry, because the case that produces it is a
+ * scanner holding a whole backlog and the log is not where that gets fixed.
  */
 export function sweepOrphanSessionStateDirs(
   stateDir: string,
