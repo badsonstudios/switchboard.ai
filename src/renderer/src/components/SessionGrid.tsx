@@ -1721,12 +1721,13 @@ function documentTabTitle(filePath: string): string {
  * dockview's `addPanel` defaults to the ACTIVE group, and the active group
  * becomes a popout the moment a card is torn off — so a panel opened while a
  * popped-out session had focus lands as a tab inside that session's OS window,
- * where the user never asked for it and cannot find it. Pin it to a group in
- * the main grid instead, making one when every group has been popped out.
+ * where the user never asked for it and cannot find it. Pin it to a group the
+ * user can actually see in the main grid instead — reviving or making one when
+ * there is none.
  */
 function gridRefGroup(api: DockviewApi): DockviewApi['groups'][number] {
-  const inGrid = api.groups.filter((g) => g.api.location.type === 'grid');
-  const visible = inGrid.find((g) => g.api.isVisible);
+  const candidates = api.groups.filter((g) => g.api.location.type === 'grid');
+  const visible = candidates.find((g) => g.api.isVisible);
   if (visible) return visible;
   // Nothing VISIBLE is left in the grid, which is not the same as nothing being
   // left in it. We pop a CARD out, not a whole group, and dockview's answer to
@@ -1738,7 +1739,7 @@ function gridRefGroup(api: DockviewApi): DockviewApi['groups'][number] {
   // exactly what a `location`-only test walks into. Show the husk again rather
   // than adding a group beside it: it holds the geometry the card used to
   // occupy, and the card rejoins it as a sibling tab when it docks back.
-  const husk = inGrid[0];
+  const husk = candidates[0];
   if (husk) {
     husk.api.setVisible(true);
     return husk;
@@ -2956,8 +2957,13 @@ export function SessionGrid(props: {
         // and dockview reads a `position` of `undefined` as no position at all
         // (`_doAddPanel`: `if (options.position) … else activeGroup`). So the
         // main-window case comes out byte-identical to before.
+        //
+        // `isVisible` as well as `location`, for the reason `gridRefGroup`
+        // spells out: the group a popped-out card came from stays in the grid,
+        // hidden, and defaulting into THAT one is how the tab ends up on the
+        // right window and one pixel wide.
         const active = api.activeGroup;
-        const inGrid = active?.api.location.type === 'grid';
+        const inGrid = active?.api.location.type === 'grid' && active.api.isVisible;
         api.addPanel({
           id: `diff-${cardId}`,
           component: 'diffPane',
