@@ -826,6 +826,15 @@ app
     const manager = new SessionManager(registry, ptys, createLogger(sink, 'sessions'), stateDir, {
       stream: streams,
     });
+    // Last run's session state directories, taken NOW (#290) — before a single
+    // IPC handler is registered, so no session of ours can exist and none of
+    // the directories on disk can belong to a live process. That placement is
+    // the sweep's entire safety argument (with the single-instance lock this
+    // bootstrap takes at its first statement); it is not free to move later in
+    // the file. `HookListener.start` sweeps the same tree for stray
+    // `hook-token` files a beat later — that one still earns its place, for the
+    // directories this sweep is too young to take.
+    manager.sweepOrphanStateDirs();
     // Is there anyone to ask? A destroyed window or a crashed renderer means no
     // (P2-E15-09). A RELOADING renderer is neither, so the pending-holds replay
     // path still gets its chance — that case must not regress.

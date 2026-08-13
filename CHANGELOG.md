@@ -155,6 +155,13 @@ on the floor, and say so in your PR.
   filled eight lines on screen still sat in a one-line slot with the rest
   hidden. It now grows with the text as it wraps, up to twelve lines, scrolls
   inside itself past that, and shrinks back down as you delete.
+- **Sessions no longer leave a folder behind on disk for ever.** Every session
+  switchboard starts gets a small private folder to hold the settings file it
+  hands the CLI, and nothing ever deleted it — one folder per session you had
+  ever started, kept until you reinstalled. They now go when the session ends,
+  however it ends, and the ones already piled up from earlier versions are
+  cleared out the next time you open the app. Nothing you can see changes;
+  you get the disk space back.
 
 ### Internal
 

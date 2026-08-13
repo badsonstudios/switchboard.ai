@@ -16,6 +16,11 @@ import {
   UnknownTransportError,
 } from '../transport/transport';
 import { SessionEvent, SessionStatus, transition } from './state-machine';
+import {
+  removeSessionStateDir,
+  sweepOrphanSessionStateDirs,
+  SweepResult,
+} from './session-state';
 import { streamStatusEvent } from './stream-status';
 import { interruptRequest, userMessage } from '../../shared/stream-protocol';
 
@@ -272,6 +277,17 @@ export class SessionManager {
           this.log.error('exit listener threw', { sessionId: id, error: String(err) });
         }
       }
+      // The CLI is gone, so its `settings.json` and the directory holding it
+      // are dead weight (#290). This is the SELF-EXIT half of the lifecycle:
+      // a session that ends on its own and is never touched again reaches no
+      // card-level teardown at all, so anything not taken here would live for
+      // the rest of the install. The record and the binding deliberately stay
+      // (#187) — the corpse is still on screen; only its disk state goes.
+      //
+      // LAST, after the listeners: this is housekeeping and it must not sit
+      // between a process dying and the UI being told. Its own failure is a
+      // logged nuisance and cannot reach a subscriber either way.
+      removeSessionStateDir(this.stateDir, id, this.log);
     });
     this.log.info('session created', { sessionId: id, folder: identity.folder, pid: proc.pid, provider: identity.providerId });
     return { ...record };
@@ -327,7 +343,33 @@ export class SessionManager {
     } catch {
       /* already gone */
     }
+    // …and its state directory goes with it (#290), AFTER the teardown above
+    // has asked the transport to kill: the file we are deleting is the one the
+    // CLI was launched with, so the kill goes out first on the one path where
+    // the process may still be alive for a beat. It is idempotent with the
+    // delete in `onExit` — whichever lands second finds nothing and says
+    // nothing — and both are needed: this one covers a card closed on a corpse
+    // (whose exit fired long ago) and a transport that never reports one.
+    removeSessionStateDir(this.stateDir, id, this.log);
     this.log.info('session removed', { sessionId: id, transport: r.transport });
+  }
+
+  /**
+   * Drop the state directories of sessions from PREVIOUS runs (#290).
+   *
+   * Bootstrap-only, and the caller's placement is what makes it safe — see
+   * `sweepOrphanSessionStateDirs`, which holds the full argument. It lives on
+   * the manager because the manager is what owns `stateDir`: `create()` hands
+   * it to `buildSpawn`, which is what makes these directories in the first
+   * place.
+   *
+   * Three things still leak a directory past the two lifecycle deletes above —
+   * a spawn that throws (the settings file is written before the process
+   * exists), an app quit with sessions running, and a crash — so this is not
+   * belt-and-braces for a closed hole; it is the only owner those three have.
+   */
+  sweepOrphanStateDirs(opts?: { minAgeMs?: number; budgetMs?: number }): SweepResult {
+    return sweepOrphanSessionStateDirs(this.stateDir, { log: this.log, ...opts });
   }
 
   // `restart()` USED TO LIVE HERE. Deleted in P2-E15-01: it was a second
