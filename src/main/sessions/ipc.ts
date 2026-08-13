@@ -51,6 +51,7 @@ import { HookListener } from '../hooks/hook-listener';
 import { IpcBroker } from '../ipc/broker';
 import { Channel } from '../../shared/ipc/capabilities';
 import type { PtyAttachment, PtyChunk } from '../../shared/ipc/pty';
+import type { PermissionRequest } from '../../shared/ipc/permissions';
 import type { ProviderCapabilities } from '../extensibility/contributions';
 import { TranscriptWatcher } from '../transcripts/watcher';
 import { searchTranscripts } from '../transcripts/search';
@@ -129,6 +130,19 @@ export interface SessionIpcHandle {
   labelFor: (liveSessionId: string) => string | undefined;
   /** the durable card a live session belongs to, or null if unbound (P2-E14-03) */
   cardIdFor: (liveSessionId: string) => string | null;
+  /**
+   * The oldest permission this live session is still holding (P2-E14-04) — what
+   * an OS toast has to name before it offers to allow it, and the request its
+   * buttons answer.
+   */
+  pendingPermissionFor: (liveSessionId: string) => PermissionRequest | null;
+  /**
+   * Answer a held permission from the MAIN process — the toast's Allow/Deny.
+   * The identical call `sessions:decidePermission` makes, so the toast is a
+   * fourth button on the app's one decision path rather than a second path.
+   * Returns false when nothing holds that request any more.
+   */
+  decidePermission: (requestId: string, decision: string, reason?: string) => boolean;
 }
 
 export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
@@ -553,21 +567,43 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       cardId: cardOfLive.get(r.sessionId),
     }))
   );
+  /**
+   * **The** decision path (P2-E14-04). Named and hoisted out of the channel
+   * handler because it now has more than one caller: the renderer's four
+   * surfaces come through `sessions:decidePermission` below, and the OS toast's
+   * Allow/Deny buttons come through `SessionIpcHandle.decidePermission` — from
+   * the main process, with no window in the loop at all. A toast that reached
+   * the routers itself would be a second opinion about what "allow" means.
+   */
+  const decidePermission = (requestId: string, decision: string, reason?: string): boolean => {
+    if (typeof requestId !== 'string' || (decision !== 'allow' && decision !== 'deny')) return false;
+    const clean = typeof reason === 'string' ? reason.slice(0, 500) : undefined;
+    // Ids are namespaced (`stream:<sessionId>:<native>`), so exactly one of
+    // these can own a given request and the order is not load-bearing.
+    // Falls through rather than branching on the prefix: the prefix is an
+    // implementation detail of the stream router, and asking the routers who
+    // owns it cannot go stale the way a string test would.
+    return (
+      hooks.decide(requestId, decision, clean) ||
+      (streamPermissions?.decide(requestId, decision, clean) ?? false)
+    );
+  };
   broker.handle('sessions:decidePermission',
-    (_e, requestId: string, decision: string, reason?: string) => {
-      if (typeof requestId !== 'string' || (decision !== 'allow' && decision !== 'deny')) return false;
-      const clean = typeof reason === 'string' ? reason.slice(0, 500) : undefined;
-      // Ids are namespaced (`stream:<sessionId>:<native>`), so exactly one of
-      // these can own a given request and the order is not load-bearing.
-      // Falls through rather than branching on the prefix: the prefix is an
-      // implementation detail of the stream router, and asking the routers who
-      // owns it cannot go stale the way a string test would.
-      return (
-        hooks.decide(requestId, decision, clean) ||
-        (streamPermissions?.decide(requestId, decision, clean) ?? false)
-      );
-    }
+    (_e, requestId: string, decision: string, reason?: string) =>
+      decidePermission(requestId, decision, reason)
   );
+  /**
+   * The oldest request this LIVE session is still holding, or null (E14-04).
+   *
+   * FIFO across both routers, because that is what the approval bar answers:
+   * its buttons act on `cardQueue[0]`. A toast that answered the newest request
+   * while the bar answered the oldest would make the two surfaces disagree
+   * about which question is on screen — and the user would have no way to tell.
+   */
+  const pendingPermissionFor = (liveSessionId: string): PermissionRequest | null =>
+    [...hooks.pendingRequests(), ...(streamPermissions?.pendingRequests() ?? [])].find(
+      (r) => r.sessionId === liveSessionId
+    ) ?? null;
   // Submit a prompt on the session's own transport (P2-E18-08a). Returns
   // false for a PTY session, whose composer route is a bracketed paste and a
   // delayed CR — a genuinely different operation. The renderer tries this
@@ -1370,5 +1406,9 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // place that join exists. Returned rather than exported as a module-level
     // map so it stays one-per-registration, like everything else in here.
     cardIdFor: (liveSessionId: string) => cardOfLive.get(liveSessionId) ?? null,
+    // The other two consumers outside the renderer, both P2-E14-04's toast:
+    // what is being asked, and the one function that answers it.
+    pendingPermissionFor,
+    decidePermission,
   };
 }

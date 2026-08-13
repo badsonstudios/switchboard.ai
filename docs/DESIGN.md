@@ -534,6 +534,26 @@ or sits idle awaiting input, and `Stop` when it finishes. On top:
   (ntfy / Pushover), webhook.
 - **Actionable toasts**: permission toasts carry Allow / Deny buttons that send the
   verdict on that session's input route — approve without switching windows.
+  *(Shipped P2-E14-04. Three decisions worth recording. **One decision path:**
+  the buttons call `SessionIpcHandle.decidePermission` — literally the function
+  `sessions:decidePermission` calls — so the toast is a fourth button on the
+  path the approval bar, the Events panel and the batch band already share,
+  not a second route to the CLI. **The toast names what it would allow**
+  ("Allow Bash? npm run build"); an Allow beside the words "needs permission"
+  would ask the user to grant a call they cannot see, which is the one thing an
+  off-screen decision path may not do. **Clicking the body is not a verdict** —
+  it raises the window onto the asking card, because dismissing a notification
+  by reflex must not be able to grant a tool call, and because that click is the
+  whole gesture on a desktop that cannot render buttons.*
+  *Platform reality, verified against Electron 43's API docs rather than
+  assumed: `NotificationConstructorOptions.actions` and the `action` event are
+  `darwin` + `win32` (Windows toast actions landed in the 40.x line — the older
+  "macOS only" folklore is out of date); Linux has none. Where buttons cannot
+  render — Linux always, an unsigned macOS build, a Windows dev run with no
+  Start-menu AppUserModelID — the click path carries it, and the manual says so
+  per OS rather than promising a button that will not appear. A decision made on
+  any other surface withdraws the toast; a toast for a dead session decides
+  nothing and logs.)*
 - Rule conditions include visibility (research v2: Zed's `when_hidden`): fire a
   channel only when the session/app is backgrounded — no toast for a session
   already on screen. This is the calm default for S3.

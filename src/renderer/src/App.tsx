@@ -971,6 +971,19 @@ export function App(): React.JSX.Element {
     };
   }, []);
   const focusCard = React.useCallback((cardId: string) => focusSession(cardId), [focusSession]);
+  // P2-E14-04: main asks for a card to be brought forward. Today's only sender
+  // is a click on the OS toast for a held permission — main has already raised
+  // the WINDOW by then, and this is the second half: land on the card that is
+  // actually asking, so the gesture ends at the approval bar rather than at
+  // whichever tab happened to be active. Defensive about the bridge for the
+  // same reason #421's checkbox is (a partial `window.switchboard` in a unit
+  // test must not throw out of a passive effect and tear the app down).
+  useEffect(() => {
+    const off = window.switchboard?.sessions?.onRevealCard?.((r) => {
+      if (r?.cardId) focusCard(r.cardId);
+    });
+    return off;
+  }, [focusCard]);
   const popoutKeysRef = React.useRef(new Map<Window, (e: KeyboardEvent) => void>());
   useEffect(() => {
     // Returns the command that ran (or null) — the popout bridge below needs

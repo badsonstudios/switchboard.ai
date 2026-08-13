@@ -29,6 +29,14 @@ If several requests pile up, they queue: the bar shows **+2 more waiting** and
 advances as you answer. The card surfaces its Session tab automatically when a
 request arrives, even if you were looking at the Terminal.
 
+**You can also answer without coming back at all.** If desktop pop-ups are on
+and you're in another app, the pop-up for a permission request carries **Allow**
+and **Deny** of its own, and it names what it would allow. Answering it here or
+there is the same decision — whichever you use, the other goes away. See
+[Notifications › Answering a permission from the pop-up
+itself](09-notifications.md#answering-a-permission-from-the-pop-up-itself),
+which also covers what each operating system can actually put on a pop-up.
+
 ## When several sessions ask the same thing
 
 Run a few sessions on the same job and they tend to hit the same wall at the
