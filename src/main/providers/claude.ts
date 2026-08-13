@@ -201,7 +201,9 @@ export const claudeAdapter: ProviderAdapter = {
     // pass the host's wiring straight through — the CLI's `settings.hooks`
     // schema IS the shape HookListener builds
     hooks: { settingsFor: (sessionId, host) => host.buildHookSettings(sessionId) },
-    // §5.25: only the layout knows whether the conversation is really on disk.
+    // Resume eligibility (§5.3's `resume`; the feature it serves is §5.25's
+    // resume-on-relaunch): only the layout knows whether the conversation is
+    // really on disk.
     // The ROOT is the host's — the one it resolved from `transcripts` above and
     // will hand the watcher and the resumed-history replay — so this answer and
     // the file that gets read back cannot be about two different directories

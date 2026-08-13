@@ -180,10 +180,13 @@ export interface ResumeQuery {
    * watcher and reads the resumed conversation back from, so an answer of
    * "yes, under this root" is an answer about a file the host will really read.
    *
-   * `''` when the provider declares no `transcripts` capability, or its call
-   * threw. Not a reason to refuse by default: a provider whose resumability has
-   * nothing to do with a local transcript ignores this and answers from its own
-   * knowledge — it just may not do so from a root it invented.
+   * `''` when there is no such root at all: the provider declares no
+   * `transcripts` capability, or its call threw, or it returned an unusable
+   * empty root. All three mean the same thing to answer from — the host will
+   * watch nothing and replay nothing for this session — so a provider that
+   * resumes OUT of a transcript has nothing to say yes about. One that resumes
+   * on some other authority ignores this and answers from its own knowledge; it
+   * just may not answer from a root it invented.
    */
   projectsRoot: string;
   /** the project folder the session will run in */

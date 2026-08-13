@@ -152,6 +152,15 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
   // Resume only when the provider says this conversation is really there. The
   // capability is asked BEFORE the id is used, because a stale id is not
   // harmless: it makes the CLI exit at spawn and the card crash.
+  //
+  // Note what this makes `resume` — unlike `titles` below — deliberately NOT
+  // independent of `transcripts`: a provider whose root could not be resolved is
+  // asked about `''`, and one that answers out of a transcript therefore says
+  // no, so the card starts FRESH. That loses a resume we might have got away
+  // with; it is the trade this item chose, because the alternative is resuming
+  // against a directory the host will not read, which is a session that looks
+  // wiped. A provider that resumes on some other authority is unaffected — it
+  // ignores the root and still gets to say yes.
   const nativeId = input.prior?.nativeSessionId;
   const resumable =
     !!nativeId &&

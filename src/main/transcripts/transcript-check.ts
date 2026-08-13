@@ -11,11 +11,12 @@ import os from 'os';
 import path from 'path';
 import { TranscriptWatcher } from './watcher';
 import { LogSink, createLogger } from '../log/logger';
-import { resolveCliPath } from '../providers/claude';
+import { claudeProjectsRoot, resolveCliPath } from '../providers/claude';
 
 const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-tw-check-'));
 const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-tw-check-log-'));
-const projectsRoot = path.join(os.homedir(), '.claude', 'projects');
+// the adapter's own declaration, not a third hand-copied spelling of it (#432)
+const projectsRoot = claudeProjectsRoot();
 
 async function main(): Promise<number> {
   const watcher = new TranscriptWatcher({

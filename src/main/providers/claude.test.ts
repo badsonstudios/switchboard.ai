@@ -4,6 +4,7 @@ import path from 'path';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import {
   claudeAdapter,
+  claudeProjectsRoot,
   readAiTitle,
   resetCliPathCache,
   scanPath,
@@ -195,8 +196,30 @@ describe('claudeAdapter.capabilities.resume (#432 — the host declares the root
     expect(ask(path.join(tmp, 'other-roots'), folder)).toBe(false);
   });
 
-  it('no root means no conversation — never a fall-back to the real home', () => {
-    expect(ask('', path.join(tmp, 'project'))).toBe(false);
+  it('no root means no conversation — never a fall-back to the home directory', () => {
+    // The conversation IS in `~/.claude/projects`, and the answer is still no.
+    // Asserting `false` against an unseeded home would pass under the old
+    // implementation too, which is no pin at all — so the home is pointed at a
+    // temp dir and seeded, and only a reintroduced `claudeProjectsRoot()` call
+    // inside `canResume` can turn this green.
+    const home = path.join(tmp, 'home');
+    const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+    process.env.HOME = home;
+    process.env.USERPROFILE = home; // what os.homedir() reads on win32
+    try {
+      const folder = path.join(tmp, 'project');
+      seed(claudeProjectsRoot(), folder);
+      expect(claudeProjectsRoot().startsWith(home)).toBe(true); // the seed landed
+      expect(ask('', folder)).toBe(false);
+      // and the same conversation IS found when the host hands over that root —
+      // so the `false` above is about the missing root, not a broken lookup
+      expect(ask(claudeProjectsRoot(), folder)).toBe(true);
+    } finally {
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
   });
 
   it('a missing conversation under a real root is not resumable', () => {
