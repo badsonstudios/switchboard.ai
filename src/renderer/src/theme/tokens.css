@@ -925,6 +925,9 @@ body {
  * measurements that settled that. `--doc-accent` is set inline by the panel
  * only when there is a session; the fallback keeps a themed edge if it isn't. */
 .doc-attributed {
+  /* border-box because `.doc-viewer` is sized to fill its dockview pane; on a
+     content box the rule would push 3px of the panel off the right edge */
+  box-sizing: border-box;
   border-inline-start: 3px solid var(--doc-accent, var(--faint));
 }
 .doc-attribution {

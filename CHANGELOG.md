@@ -113,7 +113,7 @@ on the floor, and say so in your PR.
   you still have one panel, not six. When you want to keep one, click the 📌 in
   its header: that document stays put and the next file you open gets a fresh
   panel of its own. Click 📌 again to hand the slot back.
-- **A document can have its own window.** The ⧉ beside the pin moves the
+- **A document can have its own window.** The ⤢ beside the pin moves the
   document you are reading onto its own OS window — a second monitor, your
   reference open beside the work — and the same button puts it back. Closing the
   window puts it back too.

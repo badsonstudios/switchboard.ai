@@ -419,7 +419,6 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
       ref={rootRef}
       style={rootStyle}
       data-testid="document-viewer"
-      data-doc-session={attribution ? '' : undefined}
     >
       <div className="doc-header">
         <div className="doc-nav">

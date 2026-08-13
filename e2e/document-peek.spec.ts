@@ -211,6 +211,11 @@ test.describe('the viewer window (P2-E16-03)', () => {
 
     await openInViewer(w, 'TWO.md');
     await expect(docName(w)).toHaveText('TWO.md', { timeout: 15_000 });
+    // VISIBLE, not merely present. Popping a lone panel out leaves its old
+    // group in the grid, empty and hidden, as the shell it docks back into —
+    // and `addPanel` into that shell would put the new viewer in the layout at
+    // zero height. "It is in the DOM" is the assertion that misses it.
+    await expect(viewer(w)).toBeVisible();
     // ...and the viewer window is untouched: still ONE.md, still one viewer
     await expect(viewer(popout)).toHaveCount(1);
     await expect(docName(popout)).toHaveText('ONE.md');
@@ -227,6 +232,48 @@ test.describe('the viewer window (P2-E16-03)', () => {
       .toBe(0);
     await expect(docTab(w, 'ONE.md')).toHaveCount(1, { timeout: 15_000 });
     await expect(docTab(w, 'TWO.md')).toHaveCount(1);
+  });
+
+  test('a file opened while a SESSION is popped out lands in the document area', async () => {
+    // THE DONE-WHEN'S OWN SENTENCE, and the reason it insists on e2e rather than
+    // reasoning: this is E8-04 in mirror image. dockview's `addPanel` defaults
+    // to the ACTIVE group, and popping the card out both makes its new group
+    // active AND leaves an empty, hidden shell behind in the grid — two
+    // different ways for the viewer to end up somewhere the user cannot see it.
+    skipPopoutOnLinux();
+    const dir = tempGitProject(['ONE.md']);
+    a = await launchApp({ seedFolder: dir });
+    const w = a.window;
+    await openChanges(w, dir);
+    // The Changes tab is now the group's active tab, and the card's pop-out
+    // control lives in the card HEADER — which dockview is not rendering while
+    // another tab of that group is up. Bring the card forward to reach it; the
+    // Changes tab stays behind in the grid when the card leaves, which is
+    // exactly the surface this test needs to click ↗ from afterwards.
+    await w
+      .locator('.dv-tab')
+      .filter({ hasText: path.basename(dir) })
+      .filter({ hasNotText: '· diff' })
+      .first()
+      .click();
+    await w.getByTitle('Pop out into its own window').click();
+    await expect
+      .poll(() => a!.app.windows().filter((p) => p.url().includes('popout.html')).length, {
+        timeout: 15_000,
+      })
+      .toBe(1);
+    const popout = a.app.windows().find((p) => p.url().includes('popout.html'))!;
+    await popout.waitForLoadState('domcontentloaded');
+    await expect(popout.getByTestId('card-header')).toBeVisible({ timeout: 15_000 });
+
+    // the Changes tab stayed behind with the grid; open a file from it
+    await openInViewer(w, 'ONE.md');
+    await expect(viewer(w)).toBeVisible({ timeout: 15_000 });
+    await expect(docName(w)).toHaveText('ONE.md');
+    // NOT in the session's window — not as a tab, not at all
+    await expect(viewer(popout)).toHaveCount(0);
+
+    await popout.evaluate(() => window.close());
   });
 });
 
@@ -267,16 +314,19 @@ test.describe('a viewer is not a session (P2-E16-03, §5.30)', () => {
   });
 
   test('quitting with viewers open costs no session state', async () => {
-    const dir = tempGitProject(['ONE.md']);
+    const dir = tempGitProject(['ONE.md', 'TWO.md']);
     const first = await launchApp({ seedFolder: dir });
     a = first;
     const w = first.window;
     await openChanges(w, dir);
     await openInViewer(w, 'ONE.md');
     await expect(viewer(w)).toBeVisible();
-    // a pinned second one too, so the quit happens with the peek slot AND a
-    // kept viewer live — the state this item added is what has to be harmless
+    // Pinned, and then a SECOND one — so the quit happens with a kept viewer
+    // AND a live peek slot, which is all of the state this item added.
     await w.getByTestId('doc-pin').click();
+    await openInViewer(w, 'TWO.md');
+    await expect(docTab(w, 'ONE.md')).toHaveCount(1);
+    await expect(docTab(w, 'TWO.md')).toHaveCount(1);
 
     await first.close();
     a = await launchApp({ home: first.home });
@@ -288,5 +338,38 @@ test.describe('a viewer is not a session (P2-E16-03, §5.30)', () => {
     // ...and the viewers did not (restoring open viewers is Phase 3) — stated
     // so that the day it changes, this line is the one that says so
     await expect(viewer(w2)).toHaveCount(0);
+  });
+
+  test('quitting with a viewer in its OWN window leaves no empty window behind', async () => {
+    // A popped-out viewer IS a popout group in the saved layout, and popout
+    // groups are restored before the `doc-` prune runs. Removing a popout
+    // group's last panel is what makes dockview forget the window — so the
+    // shell goes with the viewer — but "so it should" is the kind of claim the
+    // E8 specs exist because nobody checked.
+    skipPopoutOnLinux();
+    const dir = tempGitProject(['ONE.md']);
+    const first = await launchApp({ seedFolder: dir });
+    a = first;
+    const w = first.window;
+    await openChanges(w, dir);
+    await openInViewer(w, 'ONE.md');
+    await w.getByTitle('Open this document in its own window').click();
+    await expect
+      .poll(() => first.app.windows().filter((p) => p.url().includes('popout.html')).length, {
+        timeout: 15_000,
+      })
+      .toBe(1);
+
+    await first.close();
+    a = await launchApp({ home: first.home });
+    const w2 = a.window;
+    await expect(railRows(w2)).toHaveCount(1, { timeout: 25_000 });
+    // no viewer, and — the point — no window left holding nothing
+    await expect(viewer(w2)).toHaveCount(0);
+    await expect
+      .poll(() => a!.app.windows().filter((p) => p.url().includes('popout.html')).length, {
+        timeout: 20_000,
+      })
+      .toBe(0);
   });
 });

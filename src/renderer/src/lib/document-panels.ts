@@ -37,7 +37,18 @@
 export interface DocumentPanelEntry {
   /** the dockview panel id (`doc-<n>`) */
   id: string;
-  /** the file it is currently showing — a PEEK entry's path moves */
+  /**
+   * The file this panel was opened on.
+   *
+   * It moves when the peek slot is RE-POINTED, and only then. Following a
+   * relative link inside the viewer moves what is on screen without telling
+   * this module, so a viewer navigated from `DESIGN.md` to `00-process.md` is
+   * still recorded against `DESIGN.md`. The one consequence: asking for
+   * `00-process.md` from outside re-points the panel (`replace`) instead of
+   * merely focusing it, which costs the back stack. In-viewer navigation is a
+   * lens on one open document, not a new open, and teaching the registry about
+   * it would mean routing every link click back out through the panel.
+   */
   path: string;
   /** the card this viewer was opened from, for §5.24 attribution (or none) */
   sessionId?: string;

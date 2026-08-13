@@ -1761,22 +1761,45 @@ function syncDocumentPins(api: DockviewApi): void {
  *  2. THE SESSION'S GROUP. P2-E16-02 took the first grid group, which with one
  *     session open IS that session's group — the viewer arrived as a tab beside
  *     the card, and switching to it hid the session. Group membership is the
- *     test, not group count: a grid group holding any `session-` panel is a
- *     session's group and is not offered.
+ *     test, not group count, and a Changes tab counts: pop a card out of a
+ *     group that also holds its `diff-` tab and only the card moves, leaving a
+ *     group that has no `session-` panel in it and is still, unmistakably, that
+ *     session's — dockview merges the card straight back into it on dock-back.
+ *
+ *  3. THE INVISIBLE PLACEHOLDER, which is the one that costs an hour. Popping
+ *     out a panel that is ALONE in its group leaves the original group in the
+ *     grid, EMPTY and `setVisible(false)`, because that shell is how the group
+ *     docks back later (dockview's `_doAddPopoutGroup`). It is a grid group
+ *     with no session panel and no doc panel, so it matches every predicate
+ *     above — and `addPanel` does not un-hide it. The viewer would be in the
+ *     DOM, in the layout, and 0px tall. `isVisible` is the whole fix; nothing
+ *     else in this app hides a grid group.
  *
  * Preference order: the group already holding viewers (there IS one document
- * area, not one per file), then any session-free grid group, then a new one —
+ * area, not one per file), then any other eligible group, then a new one —
  * which is what puts the document area on screen the first time, beside the
  * sessions rather than over them.
  *
- * (`openDiff` deliberately does NOT go through this: a Changes tab is a
- * session's own surface and belongs in its group.)
+ * `openDiff` does not go through this, and SHOULD NOT — a Changes tab is a
+ * session's own surface and belongs in that session's group. What it does today
+ * is neither: it calls `addPanel` with no `position` at all, so it lands in
+ * whatever group is active, which since this item can be the document area.
+ * That is #434's, not this one's; the note is here so the omission reads as
+ * known rather than as this function forgetting a caller.
  */
 function documentHomeGroup(api: DockviewApi): DockviewGroupPanel {
-  const grid = api.groups.filter((g) => g.api.location.type === 'grid');
+  const eligible = api.groups.filter(
+    (g) =>
+      g.api.location.type === 'grid' &&
+      g.api.isVisible &&
+      // A session's own panels, both kinds. The preference below applies the
+      // same predicate, so a viewer dragged into a session's group by hand
+      // never turns that group into the permanent document area.
+      !g.panels.some((p) => /^(session|diff)-/.test(p.id))
+  );
   return (
-    grid.find((g) => g.panels.some((p) => p.id.startsWith('doc-'))) ??
-    grid.find((g) => !g.panels.some((p) => p.id.startsWith('session-'))) ??
+    eligible.find((g) => g.panels.some((p) => p.id.startsWith('doc-'))) ??
+    eligible[0] ??
     api.addGroup()
   );
 }
@@ -1820,13 +1843,24 @@ function openDocumentPanel(
     openDocumentPanel(api, filePath, colorScheme, sessionId);
     return;
   }
-  api.addPanel({
-    id: plan.id,
-    component: 'documentViewer',
-    title: documentTabTitle(filePath),
-    params: { path: filePath, colorScheme, sessionId: sessionId ?? null, pinned: false },
-    position: { referenceGroup: documentHomeGroup(api) },
-  });
+  try {
+    api.addPanel({
+      id: plan.id,
+      component: 'documentViewer',
+      title: documentTabTitle(filePath),
+      params: { path: filePath, colorScheme, sessionId: sessionId ?? null, pinned: false },
+      position: { referenceGroup: documentHomeGroup(api) },
+    });
+  } catch (err) {
+    // `addPanel` throwing means no panel was ever created, so `onDidRemovePanel`
+    // will never fire for it — the registry would keep the peek slot pointed at
+    // nothing and drop the NEXT click too (it self-heals, but a click later).
+    // Reachable: `seq` restarts at 0 each renderer, and a `fromJSON` that throws
+    // part-way through restore can leave a `doc-1` behind for the prune to miss.
+    forgetDocumentPanel(plan.id);
+    console.error('[document] could not open a viewer', err);
+    return;
+  }
   syncDocumentPins(api);
 }
 
@@ -1841,6 +1875,12 @@ function openDocumentPanel(
  * viewer is a file on disk. Closing its window means "put it back", every time,
  * and dockview's own teardown does exactly that — the group returns to the
  * reference group it left. Nothing to disambiguate, so nothing is flagged.
+ *
+ * That reasoning is about the VIEWER, not about the window. A user can drag a
+ * session card into a viewer's window, and docking back from here then closes
+ * the window under that card too — with no `markDockingBack`, so its session
+ * suspends. Deliberate: it is bit-for-bit what pressing the window's own ✕
+ * does, and a viewer's control has no business deciding a session's fate.
  */
 export function popOutDocumentPanel(api: DockviewApi | null, panelId: string): void {
   const panel = api?.getPanel(panelId);
@@ -1918,7 +1958,13 @@ function DocumentViewerPanel(
     // renderer ROOT — there is no other boundary above a dockview panel — and
     // blanks every session pane in the window. The panel is not a contribution,
     // but the containment argument is the same one, and so is the component.
-    <ContributionBoundary id="document-viewer">
+    // KEYED ON THE PATH, and that is a P2-E16-03 consequence rather than a
+    // tidy-up: `ContributionBoundary` latches `failed` and has no reset, so
+    // under a REUSABLE peek slot one document that throws would poison the slot
+    // and every glance after it would land in a blank panel with a changing tab
+    // title. Re-pointing already resets the viewer's history, mode and scroll,
+    // so remounting on a new path costs nothing and buys the boundary its reset.
+    <ContributionBoundary id="document-viewer" key={props.params?.path ?? ''}>
       <DocumentViewer
         path={props.params?.path ?? ''}
         colorScheme={props.params?.colorScheme === 'light' ? 'light' : 'dark'}
@@ -2024,10 +2070,21 @@ export function rescueStrandedPopouts(api: DockviewApi | null): void {
       for (const panel of stranded) {
         try {
           const cardId = /^session-(.+)$/.exec(panel.id)?.[1];
-          // A DERIVED tab (a diff) went into the window with its card. It has no
-          // record and no state worth keeping — it is rebuilt from the card's
-          // Changes tab whenever it is asked for again — so it is simply
-          // dropped rather than rebuilt beside a suspended session.
+          // A DERIVED tab went into the window with its card, and both kinds are
+          // DROPPED rather than rebuilt beside a suspended session.
+          //
+          // A diff has no record and no state worth keeping — the card's
+          // Changes tab rebuilds it whenever it is asked for again.
+          //
+          // A VIEWER (P2-E16-03) could be rebuilt — the registry still knows its
+          // path — and is deliberately not. §5.30 lists display-rescue among the
+          // machinery a viewer inherits, so this is a divergence and is called
+          // one: a rescued viewer would arrive unasked AND spend the peek slot,
+          // silently replacing whatever the user was reading in the main window
+          // with a document whose window they just lost. "Restoring open
+          // viewers" is E16's *Not in scope* line, and this is the same
+          // question in miniature; the file is one click away and the click is
+          // the user's. Revisit with that item.
           if (!cardId) {
             api.removePanel(panel);
             continue;
