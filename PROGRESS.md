@@ -3,7 +3,34 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — 🎛 RUN 17 CLOSED 2026-08-13: 25 ITEMS SHIPPED,
+> # ▶▶ START HERE — 🎛 RUN 17 FULLY CLOSED 2026-08-13: 30 ITEMS, TWO
+> # TRAINS, EVERYTHING MERGED
+>
+> **TRAIN #478 (2nd, Dan-authorized "go ahead and merge the PRs") LANDED
+> → main, all five members MERGED (#457 find bar · #468 toast buttons ·
+> #474 phone push/webhook · #460 viewer peek/pin/popout · #461 openDiff
+> husk fix), issues #414 #422 #424 #411 #434 CLOSED, branches deleted.**
+> Husk-pair semantic integration resolved as TWO deliberate policies:
+> documentHomeGroup (viewers never join session groups, husk excluded) vs
+> gridRefGroup (diffs are a session's surface, husk revived) — documented
+> in SessionGrid. Train gate: 4144 unit / 258+3 e2e (one isolated-6/6-
+> green popout flake in the full run). **Post-landing cleanup: six
+> zero-byte shell-shrapnel files (and/contract/dissimilar/is/notice/
+> **Status:) rode the train in via orchestrator git add -A during
+> conflict resolution — removed in 52c6f56; lesson: check git status
+> for untracked junk before add -A on the train.** **Main @ 52c6f56,
+> out/ REBUILT + verified.** New tickets this close: **#475** paste
+> images into composer · **#476** drag-drop files · **#477** copy button
+> on session-output code (all owner requests; 12-line resize was already
+> shipped as #406) · **#479** e2e-on-secondary-monitor (owner request;
+> visual quiet only, focus theft accepted). **ONLY PR left: #437, held
+> on the #397 trust-write decision.** **NEXT SESSION: /pm sitting —
+> #397 call · #407 Events design gate (3 notice-slot tenants move
+> together) · release cut (0.4.0-unreleased is enormous) · tail triage
+> (~20 small issues) · then /orchestrate.**
+>
+> # (run-17 mid-close record follows)
+> # RUN 17 CLOSED 2026-08-13: 25 ITEMS SHIPPED,
 > # TRAIN #456 LANDED, BOARD EMPTY
 >
 > **Final state: main @ 566dea2, out/ REBUILT + stamp-verified — `npm
