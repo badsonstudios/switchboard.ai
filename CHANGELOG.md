@@ -155,6 +155,11 @@ on the floor, and say so in your PR.
   filled eight lines on screen still sat in a one-line slot with the rest
   hidden. It now grows with the text as it wraps, up to twelve lines, scrolls
   inside itself past that, and shrinks back down as you delete.
+- **Opening Changes on a popped-out session no longer buries the diff in that
+  session's window.** If a card was in its own pop-out window, "Open changes"
+  put the diff inside that window as an extra tab — behind the session you were
+  watching, and nowhere near the main window you asked from. It now always
+  opens in the main window, the same as a new session does.
 
 ### Internal
 

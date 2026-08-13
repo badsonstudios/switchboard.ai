@@ -134,6 +134,19 @@ function tempGitProject(): string {
 const diffEditor = (w: Page) => w.locator('.monaco-diff-editor');
 
 /**
+ * Pop-out tests open a real second OS window, which is reliable on Windows and
+ * macOS but flaky under Linux CI's headless xvfb (second-window creation
+ * intermittently never completes). Third local copy of this three-liner —
+ * session.spec.ts and urgency.spec.ts each carry their own; it belongs in
+ * `fixtures/app.ts`, but hoisting it is not this fix's to take.
+ */
+const skipPopoutOnLinux = (): void =>
+  test.skip(
+    process.platform === 'linux',
+    'dockview popout opens a 2nd OS window — unreliable under headless xvfb; covered on Windows + macOS'
+  );
+
+/**
  * Monaco's own words when it could not spawn a worker and ran the worker code
  * on the UI thread instead — `console.warn` in
  * monaco-editor/esm/vs/base/common/worker/webWorker.js. Matched on the stable
@@ -359,5 +372,37 @@ test.describe('Changes tab (Monaco diff pane)', () => {
     await w.locator('nav [draggable="true"]', { hasText: title }).first().click({ button: 'right' });
     await w.getByRole('menuitem', { name: 'Open changes' }).click();
     await expect(w.getByText('Not a git repository')).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('a Changes tab opens in the main window, not the active popout (E8-04, #434)', async () => {
+    skipPopoutOnLinux();
+    // #434. `openDiff` called `addPanel` with no `position`, and dockview's
+    // `addPanel` defaults to the ACTIVE group — which is the popout group the
+    // moment a card is torn off. So "Open changes" on a popped-out session
+    // (from the rail, which only exists in the MAIN window) built the tab
+    // inside that session's OS window. The mirror of the session-card
+    // assertion in session.spec.ts, for the surface that predates it.
+    const folder = tempGitProject();
+    a = await launchApp({ seedFolder: folder });
+    const { app, window: w } = a;
+    const title = path.basename(folder);
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+
+    await w.getByTitle('Pop out into its own window').click();
+    await expect.poll(() => app.windows().length, { timeout: 15_000 }).toBe(2);
+    const popout = app.windows().find((p) => p !== w)!;
+    // the card really is over there — i.e. the main grid is now empty and the
+    // popout group is the active one, which is the whole precondition
+    await expect(popout.getByTestId('card-header')).toBeVisible({ timeout: 15_000 });
+
+    await w.locator('nav [draggable="true"]', { hasText: title }).first().click({ button: 'right' });
+    await w.getByRole('menuitem', { name: 'Open changes' }).click();
+
+    // it landed HERE, in the window the user asked from...
+    await expect(w.locator('.dv-active-tab')).toContainText('· diff', { timeout: 15_000 });
+    await expect(w.getByText(FILE, { exact: true })).toBeVisible({ timeout: 15_000 });
+    // ...and NOT as a tab inside the popped-out session's window
+    await expect(popout.locator('.dv-tab').filter({ hasText: '· diff' })).toHaveCount(0);
+    expect(app.windows().length, 'the diff opened a window of its own').toBe(2);
   });
 });

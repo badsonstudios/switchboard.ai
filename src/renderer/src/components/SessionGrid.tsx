@@ -1715,6 +1715,20 @@ function documentTabTitle(filePath: string): string {
 }
 
 /**
+ * The group a NON-SESSION panel (a viewer, a Changes tab) must be added to —
+ * the E8-04 rule in one place (#434).
+ *
+ * dockview's `addPanel` defaults to the ACTIVE group, and the active group
+ * becomes a popout the moment a card is torn off — so a panel opened while a
+ * popped-out session had focus lands as a tab inside that session's OS window,
+ * where the user never asked for it and cannot find it. Pin it to a group in
+ * the main grid instead, making one when every group has been popped out.
+ */
+function gridRefGroup(api: DockviewApi): DockviewApi['groups'][number] {
+  return api.groups.find((g) => g.api.location.type === 'grid') ?? api.addGroup();
+}
+
+/**
  * Open (or focus) a document viewer on `filePath` (P2-E16-02).
  *
  * A module-level function taking the api, like every other imperative verb in
@@ -1742,9 +1756,8 @@ function openDocumentPanel(
   // popout the moment a card is torn off — so a file opened while a popped-out
   // session had focus would land as a tab inside that session's window. Pin it
   // to a group in the main grid, making one if every group has been popped out.
-  // (`openDiff` predates this rule and still has the gap; widening it is not
-  // this item's to take.)
-  const refGroup = api.groups.find((g) => g.api.location.type === 'grid') ?? api.addGroup();
+  // (`openDiff` does the same, via `gridRefGroup` — #434.)
+  const refGroup = gridRefGroup(api);
   api.addPanel({
     id,
     component: 'documentViewer',
@@ -2925,6 +2938,10 @@ export function SessionGrid(props: {
           component: 'diffPane',
           title: t('diff.tabTitle', { title }),
           params: { folder, colorScheme: props.colorScheme },
+          // A Changes tab is opened from the rail, which lives in the MAIN
+          // window — so it must open there, not inside whatever popout dockview
+          // last made active (E8-04, #434).
+          position: { referenceGroup: gridRefGroup(api) },
         });
       },
       openDocument: (filePath) => openDocumentPanel(apiRef.current, filePath, props.colorScheme),
