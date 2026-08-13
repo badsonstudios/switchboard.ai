@@ -63,8 +63,37 @@ function tempGitProject(files: string[]): string {
   for (const f of files) fs.writeFileSync(path.join(dir, f), `# ${f} as committed\n`);
   git(['add', '.']);
   git(['commit', '-m', 'fixture']);
-  for (const f of files) fs.writeFileSync(path.join(dir, f), `# ${f} now\n\nchanged\n`);
+  // A table, a fence and enough headings for an outline in every file: those
+  // are the parts that collapse first when the pane gets narrow, which is what
+  // the readable-measure test at the bottom of this file measures.
+  for (const f of files) fs.writeFileSync(path.join(dir, f), body(f));
   return dir;
+}
+
+/** The changed content of one fixture file. */
+function body(f: string): string {
+  return [
+    `# ${f} now`,
+    '',
+    'changed',
+    '',
+    '## A section',
+    '',
+    '| column | other |',
+    '|---|---|',
+    '| one | two |',
+    '',
+    '## Another',
+    '',
+    '```ts',
+    'const answer = 42;',
+    '```',
+    '',
+    '## And a third',
+    '',
+    'more prose',
+    '',
+  ].join('\n');
 }
 
 /** Open the seeded session's Changes tab, the way a user does. */
@@ -79,6 +108,25 @@ async function openChanges(w: Page, folder: string): Promise<void> {
 /** The ↗ at the end of a Changes row: "never mind the diff, show me the file". */
 async function openInViewer(w: Page, file: string): Promise<void> {
   await w.getByRole('button', { name: `Open ${file} in the document viewer` }).click();
+}
+
+/**
+ * The viewer is on screen at a size a human can read — MEASURED, not `toBeVisible`.
+ *
+ * This is not belt and braces; it is the only assertion that catches the defect
+ * it exists for. Popping out a panel that is alone in its group leaves that
+ * group behind in the grid as a hidden shell to dock back into, and a viewer
+ * opened into that shell is laid out at **1.33 px wide** — measured, on this
+ * machine, with the guard removed. A 1.33 × 561 box has a non-empty bounding
+ * rect, so Playwright calls it visible and `toBeVisible()` passes on a panel no
+ * user could see. Width is the thing that actually went wrong, so width is what
+ * gets asserted.
+ */
+async function expectReadable(w: Page): Promise<void> {
+  await expect(viewer(w)).toBeVisible();
+  const box = await viewer(w).boundingBox();
+  expect(box, 'the viewer has no box at all').not.toBeNull();
+  expect(box!.width, 'the viewer opened into a collapsed group').toBeGreaterThan(100);
 }
 
 test.describe('the peek slot and pinning (P2-E16-03)', () => {
@@ -211,11 +259,10 @@ test.describe('the viewer window (P2-E16-03)', () => {
 
     await openInViewer(w, 'TWO.md');
     await expect(docName(w)).toHaveText('TWO.md', { timeout: 15_000 });
-    // VISIBLE, not merely present. Popping a lone panel out leaves its old
-    // group in the grid, empty and hidden, as the shell it docks back into —
-    // and `addPanel` into that shell would put the new viewer in the layout at
-    // zero height. "It is in the DOM" is the assertion that misses it.
-    await expect(viewer(w)).toBeVisible();
+    // READABLE, not merely present — and not merely `toBeVisible` either; see
+    // `expectReadable`. This is the assertion that catches the hidden dock-back
+    // shell the popout above just left behind in the grid.
+    await expectReadable(w);
     // ...and the viewer window is untouched: still ONE.md, still one viewer
     await expect(viewer(popout)).toHaveCount(1);
     await expect(docName(popout)).toHaveText('ONE.md');
@@ -268,7 +315,7 @@ test.describe('the viewer window (P2-E16-03)', () => {
 
     // the Changes tab stayed behind with the grid; open a file from it
     await openInViewer(w, 'ONE.md');
-    await expect(viewer(w)).toBeVisible({ timeout: 15_000 });
+    await expectReadable(w);
     await expect(docName(w)).toHaveText('ONE.md');
     // NOT in the session's window — not as a tab, not at all
     await expect(viewer(popout)).toHaveCount(0);
@@ -371,5 +418,78 @@ test.describe('a viewer is not a session (P2-E16-03, §5.30)', () => {
         timeout: 20_000,
       })
       .toBe(0);
+  });
+});
+
+test.describe('the document area is READABLE, not merely present (P2-E16-03)', () => {
+  let a: LaunchedApp | undefined;
+  test.afterEach(async () => {
+    const launched = a;
+    a = undefined;
+    await launched?.cleanup();
+  });
+
+  /** widths of the viewer's pane and the two things competing for it */
+  async function measure(w: Page): Promise<{ pane: number; outline: number; prose: number }> {
+    return w.evaluate(() => {
+      const px = (sel: string): number => {
+        const e = document.querySelector(sel);
+        return e ? e.getBoundingClientRect().width : 0;
+      };
+      return {
+        pane: px('.doc-rendered-wrap'),
+        outline: px('.doc-outline'),
+        prose: px('[data-testid="doc-rendered"]'),
+      };
+    });
+  }
+
+  async function openAt(width: number, height: number): Promise<Page> {
+    const dir = tempGitProject(['ONE.md']);
+    a = await launchApp({ seedFolder: dir });
+    const w = a.window;
+    await a.app.evaluate(
+      ({ BrowserWindow }, box) => BrowserWindow.getAllWindows()[0]?.setBounds(box),
+      { x: 20, y: 20, width, height }
+    );
+    await openChanges(w, dir);
+    await openInViewer(w, 'ONE.md');
+    await expect(viewer(w)).toBeVisible();
+    await expect(w.locator('[data-testid="doc-rendered"] h1')).toHaveText('ONE.md now');
+    return w;
+  }
+
+  test('a CRAMPED pane keeps the document and drops the outline', async () => {
+    // THE REGRESSION THIS ITEM CAUSED, caught by CI on a smaller screen than
+    // this machine's. Giving the viewer its own group — right, and §5.30's rule
+    // — halves the width it used to get, and `.doc-outline` was a flat 220px
+    // that could not shrink. In the resulting pane `.doc-main` (`flex: 1;
+    // min-inline-size: 0`) went to nothing: the table, the code fence and every
+    // word of prose collapsed to zero width while the outline sat there at full
+    // size. Every unit test still passed, because none of them has a width.
+    const w = await openAt(900, 680);
+    const m = await measure(w);
+
+    // the outline yields — it is navigation FOR the document, so it is the one
+    // that goes when they cannot both be served
+    expect(m.outline, `outline still ${m.outline}px in a ${m.pane}px pane`).toBe(0);
+    // ...and the document gets the pane, tables and fences included
+    const rendered = w.locator('[data-testid="doc-rendered"]');
+    await expect(rendered.locator('.doc-table-wrap')).toBeVisible();
+    await expect(rendered.locator('.doc-code-lang')).toHaveText('ts');
+    expect(m.prose, `the document was starved to ${m.prose}px`).toBeGreaterThan(m.pane * 0.6);
+  });
+
+  test('a ROOMY pane shows the outline, and never at the document’s expense', async () => {
+    const w = await openAt(1700, 950);
+    const m = await measure(w);
+
+    await expect(w.locator('.doc-outline')).toBeVisible();
+    expect(m.outline).toBeGreaterThan(0);
+    // a third of the pane, no more — the cap that stops the flat 220px above
+    expect(m.outline, `outline took ${m.outline} of ${m.pane}`).toBeLessThan(m.pane / 2);
+    const rendered = w.locator('[data-testid="doc-rendered"]');
+    await expect(rendered.locator('.doc-table-wrap')).toBeVisible();
+    expect(m.prose).toBeGreaterThan(m.outline);
   });
 });

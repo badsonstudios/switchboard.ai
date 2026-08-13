@@ -1006,11 +1006,23 @@ body {
   display: flex;
   flex: 1;
   min-block-size: 0;
+  /* the outline's yield rules below measure THIS, not the window: a viewer's
+     pane is a dockview group and a popped-out one is a whole monitor */
+  container-type: inline-size;
 }
 .doc-outline {
   flex: 0 0 auto;
-  inline-size: 220px;
+  /* NEVER MORE THAN A THIRD (P2-E16-03). A flat 220px was fine while a viewer
+     filled a whole grid group; now it opens into the document area beside the
+     sessions, and in a ~380px pane a fixed 220px left `.doc-main` — which is
+     `flex: 1; min-inline-size: 0` and will happily go to nothing — with about
+     enough room for a scrollbar. The prose, the tables and the code fences all
+     collapsed to zero width while the outline sat there in full. The outline is
+     navigation FOR the document; it can never be worth more of the pane than
+     the document, at any width. */
+  inline-size: min(220px, 33%);
   overflow: auto;
+  box-sizing: border-box;
   border-inline-end: 1px solid var(--border);
   padding: 8px 6px;
   font-size: 11px;
@@ -1043,6 +1055,17 @@ body {
 }
 .doc-outline-link:hover {
   color: var(--status-working-ink);
+}
+/* ...and below a point a third is not enough either: 33% of a 420px pane is
+   140px of headings sitting beside 280px of prose, which is a navigation aid
+   that has stopped serving the thing it navigates. Under that the outline goes
+   entirely and the document gets the whole pane. A CONTAINER query, not a media
+   query — what matters is how wide this viewer's pane is, and the same window
+   can hold a 300px one beside a session and a 1600px one on a second monitor. */
+@container (max-width: 420px) {
+  .doc-outline {
+    display: none;
+  }
 }
 .doc-outline-l3 { padding-inline-start: 10px; }
 .doc-outline-l4 { padding-inline-start: 20px; }
