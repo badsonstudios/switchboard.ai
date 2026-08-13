@@ -41,7 +41,7 @@ describe('RuleActionRegistry', () => {
   it('runs the handler registered for the action type', () => {
     const reg = new RuleActionRegistry();
     const seen: string[] = [];
-    reg.register('sound', (a) => seen.push(String(a.file)));
+    reg.register('sound', (a) => void seen.push(String(a.file)));
     const rule: Rule = { id: 'r', event: 'done', actions: [{ type: 'sound', file: 'bell.wav' }] };
     expect(reg.run({ type: 'sound', file: 'bell.wav' }, ctx(rule))).toBe(true);
     expect(seen).toEqual(['bell.wav']);
@@ -91,7 +91,7 @@ describe('RuleActionRegistry', () => {
       throw new Error('no audio device');
     });
     const toasted: string[] = [];
-    reg.register(ACTION_OS_TOAST, (_a, c) => toasted.push(c.title));
+    reg.register(ACTION_OS_TOAST, (_a, c) => void toasted.push(c.title));
     const rule: Rule = {
       id: 'r',
       event: 'done',
