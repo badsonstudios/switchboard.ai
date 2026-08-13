@@ -91,6 +91,15 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **A reopened session shows its conversation again.** Since 0.3.0, quitting
+  switchboard and opening it again left every Direct-mode card looking blank —
+  no prompts, no replies, nothing — as though the session had been wiped.
+  Nothing ever was: the conversation was on disk the whole time, and Claude
+  still remembered every word of it. The Session view now reads that history
+  back when a session resumes, so the card comes back with the conversation you
+  left in it and your next prompt carries on at the bottom of it. Very long
+  conversations show their most recent stretch rather than the entire archive,
+  the same as they do while running.
 - **The manual was wrong about 🔒 ask trust in Direct mode.** It said you had to
   put a session on Terminal mode to answer Claude Code's folder-trust prompt.
   In fact Claude Code raises no trust question at all in Direct mode — it just

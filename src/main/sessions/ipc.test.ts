@@ -18,6 +18,7 @@ import { Logger } from '../log/logger';
 import { SlashCommand } from '../../shared/slash-commands';
 import { readAiTitle } from '../providers/claude';
 import { REPEAT_HEAVY, REVISED, titlesOf } from '../transcripts/fixtures/ai-title';
+import { slugForCwd } from '../transcripts/paths';
 
 type Handler = (e: unknown, ...args: unknown[]) => unknown;
 
@@ -1220,6 +1221,139 @@ describe('the Feed has two sources and one channel (P2-E18-10)', () => {
 
     expect(() => h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' })).not.toThrow();
     expect(h.call('transcripts:blocks', 'live-1')).toHaveLength(1);
+  });
+});
+
+// #395 — a RESUMED Direct session gets its history back.
+//
+// The two facts above collide here: a stream session is told `deriveFeed:
+// false`, and `--resume` re-sends nothing over the stream. So a resumed Direct
+// card had NO source of history at all and opened blank — which is what every
+// pre-existing card did on the first launch after #381. `sessions:create` now
+// replays the conversation's own transcript into the stream Feed, once, before
+// the first message can arrive.
+describe('a resumed Direct session replays its history (#395)', () => {
+  let dir: string;
+  tempDirEach('sb-ipc-replay-', (d) => (dir = d));
+  let root: string;
+  tempDirEach('sb-ipc-replay-root-', (d) => (root = d));
+
+  const NATIVE = '00000000-conv-4000-8000-000000000000';
+  const capsWith = (rootDir: () => string): ProviderCapabilities =>
+    ({
+      transcripts: { projectsRoot: () => rootDir() },
+      resume: { canResume: () => true },
+    }) as unknown as ProviderCapabilities;
+
+  /** the conversation, where the CLI would have written it */
+  function seedTranscript(id = NATIVE): void {
+    const d = path.join(root, slugForCwd(dir));
+    fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(
+      path.join(d, `${id}.jsonl`),
+      [
+        { type: 'user', sessionId: id, cwd: dir, message: { role: 'user', content: [{ type: 'text', text: 'before the relaunch' }] } },
+        { type: 'assistant', sessionId: id, cwd: dir, message: { role: 'assistant', content: [{ type: 'text', text: 'the reply you already read' }] } },
+      ]
+        .map((l) => JSON.stringify(l) + '\n')
+        .join('')
+    );
+  }
+
+  it('the prior conversation is in the Feed before the CLI says anything', () => {
+    seedTranscript();
+    const streamFeed = new StreamFeed();
+    const h = harness(capsWith(() => root), dir, {
+      transport: 'stream',
+      liveIds: ['live-1'],
+      streamFeed,
+      prior: priorCard({ folder: dir, nativeSessionId: NATIVE }),
+    });
+
+    h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
+
+    expect(streamFeed.blocks('live-1').map((b) => b.text)).toEqual([
+      'before the relaunch',
+      'the reply you already read',
+    ]);
+    // and it is what the mounting panel pulls, on the one channel there is
+    expect((h.call('transcripts:blocks', 'live-1') as Array<{ text: string }>).map((b) => b.text)).toEqual([
+      'before the relaunch',
+      'the reply you already read',
+    ]);
+  });
+
+  it('a TERMINAL session is left alone — the watcher replays it, as it always did', () => {
+    seedTranscript();
+    const streamFeed = new StreamFeed();
+    harness(capsWith(() => root), dir, {
+      transport: 'pty',
+      liveIds: ['live-1'],
+      streamFeed,
+      prior: priorCard({ folder: dir, nativeSessionId: NATIVE }),
+    }).call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
+
+    expect(streamFeed.blocks('live-1')).toEqual([]);
+  });
+
+  it('a session that is NOT resuming starts empty, whatever is on disk', () => {
+    seedTranscript();
+    const streamFeed = new StreamFeed();
+    const h = harness(
+      { transcripts: { projectsRoot: () => root }, resume: { canResume: () => false } } as unknown as ProviderCapabilities,
+      dir,
+      { transport: 'stream', liveIds: ['live-1'], streamFeed, prior: priorCard({ folder: dir, nativeSessionId: NATIVE }) }
+    );
+
+    h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
+
+    expect(streamFeed.blocks('live-1')).toEqual([]);
+  });
+
+  it('a resumed card whose transcript is gone still starts — empty, not broken', () => {
+    // nothing seeded: `canResume` said yes and the file is not there
+    const streamFeed = new StreamFeed();
+    const h = harness(capsWith(() => root), dir, {
+      transport: 'stream',
+      liveIds: ['live-1'],
+      streamFeed,
+      prior: priorCard({ folder: dir, nativeSessionId: NATIVE }),
+    });
+
+    const record = h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
+
+    expect(record).not.toBeNull();
+    expect(streamFeed.blocks('live-1')).toEqual([]);
+  });
+
+  it('does not read a root the watcher just refused', () => {
+    seedTranscript();
+    const streamFeed = new StreamFeed();
+    const h = harness(capsWith(() => root), dir, {
+      transport: 'stream',
+      liveIds: ['live-1'],
+      streamFeed,
+      // the watcher refuses a root it cannot poll safely (§5.29). A refusal has
+      // to mean the same thing on both paths, or "unusable root" quietly stops
+      // being a decision anyone can rely on.
+      watchAccepts: false,
+      prior: priorCard({ folder: dir, nativeSessionId: NATIVE }),
+    });
+
+    h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
+
+    expect(streamFeed.blocks('live-1')).toEqual([]);
+  });
+
+  it('replays nothing when there is no StreamFeed wired at all', () => {
+    seedTranscript();
+    const h = harness(capsWith(() => root), dir, {
+      transport: 'stream',
+      liveIds: ['live-1'],
+      prior: priorCard({ folder: dir, nativeSessionId: NATIVE }),
+    });
+
+    expect(() => h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' })).not.toThrow();
   });
 });
 
