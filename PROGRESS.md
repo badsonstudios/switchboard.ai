@@ -20,6 +20,41 @@
 > agent is user-stopped and unresumable). Merges on resume: #444 MERGED
 > (#419 closed) · #446 bumped, re-greening · #451 queues behind it.**
 >
+> **🚂🎉 TRAIN #456 LANDED 2026-08-13 → merge commit bc305b6. ALL SEVEN
+> member PRs MERGED (#427 #429 #431 #433 #443 #448 #452), all seven issues
+> CLOSED (#395 #406 #408 #410 #421 #425 #426), feature + train branches
+> deleted, main checkout pulled + `out/` REBUILT at bc305b6 — `npm start`
+> is current. Train CI 4/4 green, one lane.** Dan's queue is now EMPTY
+> except: the **#397 trust-write decision** (PR #437, green, draft) and
+> **PR #457** (#414 find bar — conflicts with the train, its worker is
+> resolving + may add the viewer find-registrant if cheap). Post-train
+> wave dispatched: **#411** (viewer peek/pin/popout) → sb-wt-1 · **#434**
+> (openDiff popout gap) → sb-wt-2 · #414-resolve → sb-wt-3. New issues
+> from #414's findings: **#458** (Direct jump-to-hit dead — M, product
+> gap on the default transport) · **#459** (check-nul misses untracked
+> files); **#450 upgraded** (2-of-3 red on CLEAN main — fix soon).
+> Unblocked by the train: #412 (after #411), #422 #423 #424 (rules seam),
+> #436 #442 #445 #447 (small). Still Dan-gated: #407 design sitting,
+> #397 call, #256 umbrella close. A **release cut** is now very ripe:
+> 0.4.0-unreleased holds task labels, notify-when-done, Direct resume
+> replay, the document viewer, composer growth, service health, lamp fix,
+> batch permissions + more.
+>
+> *(train build record below)*
+> **🚂 TRAIN BUILT AND PUSHED → PR #456, ONE CI LANE RUNNING; merge-commit
+> on green.** All 7 cars boarded in order; conflicts: 2× ipc.test.ts
+> additive unions (one mid-test split sharing a closing brace — resolved
+> structurally), 3× CHANGELOG unions, manual README union + **page-14
+> collision** (#425 vs #433 — viewer renumbered to 15-document-viewer.md,
+> refs fixed incl. read-scope.ts doc comment), index.ts import union
+> (net + Notification), store.ts rules+health sanitization union, and THE
+> semantic integration: #429's label-first toast titles wove into #452's
+> engine via late-bound labelForLive (cardIdForLive pattern);
+> SessionIpcHandle = { labelFor, cardIdFor }. **Train gate: lint clean ·
+> typecheck clean · unit 3826/159 · e2e 243+3skip exit 0** (lock waited
+> in-turn behind #414's worker, acquired, released). #455/#402 merged
+> pre-train (main base 68843cf).
+>
 > **🚂 TRAIN AUTHORIZED by Dan 2026-08-13: "merge all our PRs."**
 > Boarding: #429 → #452 → #431 → #427 → #443 → #448 → #433 (notifier-
 > touching pair adjacent; viewer last). **#437 EXCLUDED** — still gated on
