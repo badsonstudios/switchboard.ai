@@ -119,17 +119,15 @@ export interface SessionIpcDeps {
 }
 
 /**
- * What registering the session IPC hands BACK to the bootstrap.
- *
- * One method, and it exists because §5.11 says a session's identity renders
- * identically everywhere it appears — including in an OS toast, which is
- * composed in `index.ts` and has no other route to the live→card binding this
- * module keeps private. A getter rather than a subscription: a toast asks at
- * the moment it fires, which is the only moment the answer matters.
+ * What registering the session IPC hands BACK to the bootstrap — the joins
+ * only this closure knows about. Getters rather than subscriptions: a caller
+ * asks at the moment it fires, which is the only moment the answer matters.
  */
 export interface SessionIpcHandle {
-  /** This live session's card label, or undefined when it has none to show. */
+  /** This live session's card label, or undefined when it has none to show (§5.11). */
   labelFor: (liveSessionId: string) => string | undefined;
+  /** the durable card a live session belongs to, or null if unbound (P2-E14-03) */
+  cardIdFor: (liveSessionId: string) => string | null;
 }
 
 export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
@@ -1336,5 +1334,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     ptys.get(id)?.resize(cols, rows);
   });
 
-  return { labelFor };
+  return {
+    labelFor,
+    // The live -> card binding, read-only, for the one consumer OUTSIDE the
+    // renderer that needs it: the notification rules engine (P2-E14-03). A
+    // rule is scoped to a CARD (it has to survive the session it was written
+    // for), while a feed event carries the LIVE id — and this map is the only
+    // place that join exists. Returned rather than exported as a module-level
+    // map so it stays one-per-registration, like everything else in here.
+    cardIdFor: (liveSessionId: string) => cardOfLive.get(liveSessionId) ?? null,
+  };
 }

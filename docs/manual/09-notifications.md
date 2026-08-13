@@ -109,7 +109,58 @@ By default, when a session needs permission, needs input, finishes, or crashes:
 **Desktop pop-up notifications are off by default.** The sound plus the Events
 panel is the calm default; pop-ups are opt-in.
 
-Turn the whole lot off with the **🔔 / 🔕** chip in the title bar.
+Turn the whole lot off with the **🔔 / 🔕** chip in the title bar. That switch is
+above everything on this page: with it off, nothing pops up, nothing beeps, and
+no rule fires — including **Notify when done**, below.
+
+## Notify me when *this* session is done
+
+Long jobs are the ones worth being told about. A five-second turn is not.
+
+So finishing is **opt-in, per session**:
+
+1. Open the session's **⋯ menu** (top right of its card).
+2. Tick **☐ Notify when done**.
+
+That session — and only that session — will pop up a desktop notification when
+it finishes a turn. Every other session stays quiet on finishing, exactly as
+before. Untick it to stop.
+
+Three things worth knowing:
+
+- **It only pops up when you're not looking.** If you're currently in a
+  switchboard window, there's no pop-up: you're already here, and the Events
+  panel and the sound have already told you. Click away to another app (or
+  minimize) and the pop-ups start arriving. "A switchboard window" means any of
+  them — a session you've popped out into its own window counts, so working in a
+  pop-out keeps things quiet even if the main window is minimized behind it.
+- **It's remembered.** The tick survives closing the app, and comes back with
+  the session when you reopen it. Closing a session for good forgets its
+  setting along with the card.
+- **It's a separate switch from the global pop-up one.** Ticking the box for a
+  session is you asking for pop-ups *for that session*, so you get them whether
+  or not desktop pop-ups are on for everything else.
+
+### What still pops up on its own
+
+With desktop pop-ups turned on globally, **needs permission** and **needs
+input** pop up while you're away from the window, and a **crash** pops up even
+if you're looking right at switchboard — a session that has died is not going to
+fix itself while you read another card.
+
+## Under the hood: rules
+
+The two behaviors above aren't special cases; they're **rules**, and they all
+have the same shape:
+
+> **when** [something happens] **in** [this session, or any session], **and**
+> [the window is / isn't in front] → **do** [something]
+
+Today the only thing a rule can *do* is pop up a desktop notification, and the
+only rule you can write is the checkbox. Sounds per session, spoken
+announcements, quiet hours, notifications with **Allow** / **Deny** buttons on
+them, and phone push / webhooks are all the same machinery with more actions
+plugged in — they're coming, and they'll appear on this page as they land.
 
 ### What a pop-up says
 
@@ -130,5 +181,5 @@ appear on a shared screen.
   the session carries on regardless.
 
 TODO: quiet hours are supported internally but have no settings screen yet.
-TODO: per-session "notify when done", Events filters, and the rules engine
-(sounds per session, phone push, webhooks) are planned, not shipped.
+TODO: there is no rules *editor* yet — the per-session checkbox is the only rule
+you can write from the UI.

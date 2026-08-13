@@ -1,5 +1,15 @@
-import { describe, it, expect } from 'vitest';
-import { inQuietHours, shouldNotify, DEFAULT_PREFS } from './notifier';
+import { describe, it, expect, vi } from 'vitest';
+
+const beeps = { count: 0 };
+vi.mock('electron', () => ({
+  shell: {
+    beep: () => {
+      beeps.count++;
+    },
+  },
+}));
+
+import { inQuietHours, shouldNotify, DEFAULT_PREFS, Notifier, NotificationPrefs } from './notifier';
 import { FeedEvent } from './feed';
 
 const at = (h: number, m = 0) => new Date(2026, 6, 19, h, m);
@@ -32,5 +42,46 @@ describe('shouldNotify', () => {
     ).toBe(false);
     expect(shouldNotify({ enabled: true }, ev('needs-permission'), at(12))).toBe(true);
     expect(shouldNotify({ enabled: true }, ev('crashed'), at(12))).toBe(true);
+  });
+});
+
+// The gate sits ABOVE the rules engine (P2-E14-03): a user who turned
+// notifications off, or who is inside quiet hours, must not be reachable by a
+// rule — otherwise the master switch would be a lie the moment a rule existed.
+describe('Notifier -> rules engine', () => {
+  function notifier(prefs: NotificationPrefs) {
+    const handled: FeedEvent[] = [];
+    const n = new Notifier({
+      getWindow: () => null,
+      getPrefs: () => prefs,
+      rules: { handle: (e) => void handled.push(e) },
+    });
+    return { n, handled };
+  }
+
+  it('passes an attention event to the rules', () => {
+    const { n, handled } = notifier({ enabled: true });
+    n.handle(ev('done'));
+    expect(handled.map((e) => e.kind)).toEqual(['done']);
+  });
+
+  it('consults no rule when notifications are off', () => {
+    const { n, handled } = notifier({ enabled: false });
+    n.handle(ev('crashed'));
+    expect(handled).toEqual([]);
+  });
+
+  it('consults no rule inside quiet hours', () => {
+    const { n, handled } = notifier({ enabled: true, quietStart: '00:00', quietEnd: '23:59' });
+    n.handle(ev('done'));
+    expect(handled).toEqual([]);
+  });
+
+  it('still beeps and still runs the rules — the two are independent channels', () => {
+    beeps.count = 0;
+    const { n, handled } = notifier({ enabled: true });
+    n.handle(ev('needs-permission'));
+    expect(beeps.count).toBe(1);
+    expect(handled).toHaveLength(1);
   });
 });

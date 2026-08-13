@@ -219,7 +219,11 @@
     "transportPty": "Terminal",
     "transportStream": "Direct (beta)",
     "menuTransportSwitch": "Transport: {now} — switch to {next}",
-    "menuTransportRestart": "Restart session now"
+    "menuTransportRestart": "Restart session now",
+    "menuNotifyWhenDone": "Notify when done",
+    "menuNotifyWhenDoneHint": "Pop a desktop notification when this session finishes a turn — only while switchboard isn't the window you're looking at. Off for every session until you ask.",
+    "checkedIcon": "☑",
+    "uncheckedIcon": "☐"
   },
   "approval": {
     "title": "Allow {tool}?",

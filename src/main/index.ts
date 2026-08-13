@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, screen, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, Notification, screen, session, shell } from 'electron';
 import path from 'path';
 import { windowOptionsFrom, WindowState } from './window-state';
 import { WorkspaceStore, displayFingerprint } from './workspace/store';
@@ -23,6 +23,9 @@ import { IpcBroker } from './ipc/broker';
 import { allCapabilities, Channel } from '../shared/ipc/capabilities';
 import { EventFeed } from './events/feed';
 import { Notifier } from './events/notifier';
+import { ACTION_OS_TOAST, defaultRules, visibilityAcross } from './events/rules';
+import { RuleActionRegistry, RulesEngine } from './events/rules-engine';
+import { registerRulesIpc } from './events/rules-ipc';
 import { GitService } from './git/git-service';
 import { runPreflight } from './preflight';
 import { startStaticServer, StaticServer } from './static-server';
@@ -1116,6 +1119,78 @@ app
     snapshotPopoutBoxes(); // before the renderer can rewrite the layout (#86)
     createWindow(); // sets currentWindow; IPC/notifier read it via closure
     const feed = new EventFeed();
+
+    // ── the notification rules engine (P2-E14-03, §5.9) ──────────────────
+    //
+    // Assembled here because this is the only file allowed to touch
+    // `Notification`; everything above it (`events/rules.ts`,
+    // `events/rules-engine.ts`) is pure and testable without electron.
+    const rulesLog = createLogger(sink, 'rules');
+    const ruleActions = new RuleActionRegistry(rulesLog);
+    ruleActions.register(ACTION_OS_TOAST, (_action, ctx) => {
+      // Whether the OS can display a notification at all is an ENVIRONMENT
+      // fact, not a decision this rule made: a Linux box with no notification
+      // daemon (a CI container, say) reports `false` here forever. So the two
+      // facts are logged separately — the rule fired, and this is whether the
+      // desktop took it. A silent early return was the one outcome that could
+      // not be debugged, and "why didn't it pop?" is a real support question.
+      const shown = Notification.isSupported();
+      if (shown) {
+        new Notification({
+          title: ctx.title,
+          body: ctx.body,
+          silent: true, // the Notifier's beep is the sound cue
+        }).show();
+      }
+      // The e2e proof that a rule reached the toast action
+      // (`e2e/rules.spec.ts`) — and the line to grep after "why did/didn't it
+      // pop".
+      rulesLog.info('os toast rule fired', {
+        kind: ctx.event.kind,
+        cardId: ctx.cardId ?? '',
+        visibility: ctx.visibility,
+        ruleId: ctx.rule.id,
+        shown,
+      });
+    });
+    // Assigned the moment `registerSessionIpc` returns, a few dozen lines
+    // below; until then no session exists, so no event can ask.
+    let cardIdForLive: (liveId: string) => string | null = () => null;
+    // P2-E7-06 x P2-E14-03 integration (train/2026-08-13): toast titles
+    // prefer the card's task label over the session title — the label answers
+    // WHAT is waiting, the title answers WHICH. Late-bound exactly like
+    // cardIdForLive above; a suppressed auto label returns undefined here too.
+    let labelForLive: (sessionId: string) => string | undefined = () => undefined;
+    const rules = new RulesEngine({
+      getRules: () => workspace.listRules(),
+      getDefaultRules: () => defaultRules(workspace.getNotificationPrefs()),
+      cardIdFor: (liveId) => cardIdForLive(liveId),
+      // Every window, not just the main one: a popped-out card (E8) is a
+      // window the user can be looking at while the main one is minimized.
+      getVisibility: () => visibilityAcross([currentWindow, ...popoutWindows.map((p) => p.win)]),
+      titleFor: (e) =>
+        labelForLive(e.sessionId) ??
+        manager.get(e.sessionId)?.identity.title ??
+        'switchboard.ai',
+      bodyFor: (e) => e.kind.replace(/-/g, ' '),
+      registry: ruleActions,
+      log: rulesLog,
+    });
+    registerRulesIpc({
+      broker,
+      log: rulesLog,
+      store: workspace,
+      knownCard: (cardId) => workspace.listSessions().some((s) => s.id === cardId),
+    });
+
+    const notifier = new Notifier({
+      getWindow: () => currentWindow,
+      getPrefs: () => workspace.getNotificationPrefs(),
+      rules,
+    });
+    feed.onEvent((e) => {
+      if (e) notifier.handle(e); // null = pure removal, nothing to announce
+    });
     broker.handle('preflight:check', () => runPreflight());
     busySessions = () =>
       manager
@@ -1208,31 +1283,9 @@ app
       preferredTransport: () =>
         parsePreferredTransport(process.env[TRANSPORT_ENV_VAR], log.app.warn),
     });
-    // Built AFTER the session IPC, because its toast text reads a card's task
-    // label through the handle that registration hands back (P2-E7-06). It used
-    // to sit beside `new EventFeed()`; nothing between the two emits a Feed
-    // event — an event needs a session, and a session needs the IPC that
-    // creates one — so the only observable change is that the renderer's
-    // `events:changed` push now runs a line before the beep instead of after.
-    const notifier = new Notifier({
-      getWindow: () => currentWindow,
-      getPrefs: () => workspace.getNotificationPrefs(),
-      // The §5.11 payoff at 7–8 sessions: "Add markdown and file preview
-      // feature needs your input" instead of a third toast reading
-      // "switchboard.ai". The task label first, because it answers WHAT is
-      // waiting; the session title behind it, because it answers WHICH; and the
-      // app name last, for a toast belonging to no session at all. A suppressed
-      // auto label is suppressed here too — the toast is the surface that
-      // leaves the app window.
-      titleFor: (sessionId) =>
-        sessionIpc.labelFor(sessionId) ??
-        manager.get(sessionId)?.identity.title ??
-        'switchboard.ai',
-      bodyFor: (e) => e.kind.replace(/-/g, ' '),
-    });
-    feed.onEvent((e) => {
-      if (e) notifier.handle(e); // null = pure removal, nothing to announce
-    });
+    // the live -> card join the rules engine scopes by (P2-E14-03)
+    cardIdForLive = sessionIpc.cardIdFor;
+    labelForLive = sessionIpc.labelFor;
     app.on('quit', () => {
       ptys.killAll();
       streams.killAll();

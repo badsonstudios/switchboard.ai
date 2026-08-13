@@ -406,6 +406,20 @@ const api = {
     }): Promise<{ enabled: boolean; osToasts?: boolean; quietStart?: string; quietEnd?: string }> =>
       ipcRenderer.invoke('notifications:setPrefs', p),
   },
+  /**
+   * Notification rules (P2-E14-03, §5.9). The renderer's whole write surface
+   * in v1 is the per-session "notify when done" checkbox — main mints the rule
+   * itself, so the renderer never names an event, a condition or an action.
+   */
+  rules: {
+    list: (): Promise<unknown[]> => ipcRenderer.invoke('rules:list'),
+    /** is this card's "notify when done" box ticked? */
+    notifyWhenDone: (cardId: string): Promise<boolean> =>
+      ipcRenderer.invoke('rules:notifyWhenDone', cardId),
+    /** tick/untick it; resolves to the state the STORE now holds */
+    setNotifyWhenDone: (cardId: string, on: boolean): Promise<boolean> =>
+      ipcRenderer.invoke('rules:setNotifyWhenDone', cardId, on),
+  },
   events: {
     list: (): Promise<unknown[]> => ipcRenderer.invoke('events:list'),
     ack: (sessionId: string): Promise<void> => ipcRenderer.invoke('events:ack', sessionId),

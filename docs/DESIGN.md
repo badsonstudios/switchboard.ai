@@ -523,6 +523,14 @@ or sits idle awaiting input, and `Stop` when it finishes. On top:
 - **Per-session "notify when done" (owner request 2026-07-22):** a checkbox on
   the session card — done-toasts only for sessions the user opted into (long
   tasks), because a toast for every short turn is noise.
+  *(Shipped P2-E14-03. It lives in the card's ⋯ menu, beside the transport
+  switch — the established home for a durable per-card setting, and reachable
+  from every view, which the composer's options row is not. Implementation
+  decision, same item: a ticked box is **its own opt-in**, so it fires with the
+  global `osToasts` switch below off — a per-session control that silently did
+  nothing because of a global one elsewhere would be a lie. The master
+  notification toggle and quiet hours still sit above everything, rules
+  included.)*
 - **The default signal model (owner decision 2026-07-22):** attention events
   produce a **sound + an Events-panel item + a taskbar flash** (when
   backgrounded). **OS toast popups are OFF by default** — an opt-in

@@ -70,6 +70,18 @@ on the floor, and say so in your PR.
   out of notifications in one click — for a screen-share or a demo. Labels you
   typed yourself are never hidden, nothing is deleted, and turning it back on
   restores them instantly.
+- **Tell me when *this* one is done.** Each session's ⋯ menu now has a **Notify
+  when done** tick-box. Tick it and that session pops up a desktop notification
+  when it finishes a turn — only while you're in another window, and only for
+  the sessions you asked about. Every other session goes quiet on finishing,
+  because a pop-up for every five-second turn is noise. The tick is remembered
+  across restarts.
+- Notifications are now driven by **rules** — *when [event] in [this session or
+  any], and [the window is or isn't in front] → [do something]*. The checkbox
+  above is the first one, and rules are what make per-session sounds, spoken
+  announcements, Allow/Deny buttons on notifications and phone push possible
+  without another special case each.
+
 - When two or more sessions are waiting on **exactly the same** permission
   request, it now appears once, on a single card above the workspace, with
   every session named — answer all of them with one click, or allow one and
@@ -123,6 +135,13 @@ on the floor, and say so in your PR.
 
 ### Changed
 
+- **Desktop pop-ups got quieter** — this only affects you if you had turned them
+  on. They used to pop for every attention event regardless of what you were
+  doing. Now: **needs permission** and **needs input** pop up only while you're
+  away from the switchboard window, a **crash** still pops up even if you're
+  looking right at it, and **finishing** no longer pops up at all unless you
+  tick **Notify when done** on that session. The sound and the Events panel are
+  unchanged.
 - **New sessions now start in Direct mode** instead of Terminal mode.
   Permission requests — including the `.claude` ones that used to escape into
   the terminal and ask you twice — are answered in the card, and replies arrive

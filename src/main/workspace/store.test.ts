@@ -237,6 +237,96 @@ describe('persistent groups (P2-E12-01: durable containers, empty ≠ gone)', ()
   });
 });
 
+describe('notification rules (P2-E14-03, §5.9)', () => {
+  const rule = (id: string, session?: string) => ({
+    id,
+    event: 'done' as const,
+    ...(session ? { session } : {}),
+    visibility: ['visible' as const, 'hidden' as const],
+    actions: [{ type: 'os-toast' }],
+    source: 'notify-when-done',
+  });
+
+  it('a rule round-trips a save/load — the checkbox survives a restart', () => {
+    const a = makeStore(file);
+    a.load();
+    a.upsertRule(rule('notify-when-done:a', 'a'));
+    a.save();
+    const b = makeStore(file);
+    expect(b.load().rules).toEqual([rule('notify-when-done:a', 'a')]);
+    expect(b.listRules()).toHaveLength(1);
+  });
+
+  it('upsert replaces by id; remove answers whether there was anything to remove', () => {
+    const st = makeStore(file);
+    st.load();
+    st.upsertRule(rule('r1', 'a'));
+    st.upsertRule({ ...rule('r1', 'a'), enabled: false });
+    expect(st.listRules()).toHaveLength(1);
+    expect(st.listRules()[0].enabled).toBe(false);
+    expect(st.removeRule('r1')).toBe(true);
+    expect(st.removeRule('r1')).toBe(false);
+    expect(st.listRules()).toEqual([]);
+  });
+
+  it('refuses to store a rule it could not load back', () => {
+    const st = makeStore(file);
+    st.load();
+    expect(st.upsertRule({ id: '', event: 'done', actions: [] })).toBe(false);
+    expect(st.listRules()).toEqual([]);
+  });
+
+  it('hands out copies — a caller cannot mutate the store through its answer', () => {
+    const st = makeStore(file);
+    st.load();
+    st.upsertRule(rule('r1', 'a'));
+    st.listRules()[0].actions.push({ type: 'push' });
+    expect(st.listRules()[0].actions).toHaveLength(1);
+  });
+
+  it('closing a card takes its rules with it — nothing else ever would', () => {
+    const st = makeStore(file);
+    st.load();
+    st.upsertSession(sess('a'));
+    st.upsertRule(rule('notify-when-done:a', 'a'));
+    st.upsertRule(rule('notify-when-done:b', 'b'));
+    st.upsertRule(rule('global')); // unscoped: not this card's to delete
+    st.removeSession('a');
+    expect(st.listRules().map((r) => r.id)).toEqual(['notify-when-done:b', 'global']);
+  });
+
+  it('load drops rules this build cannot use and keeps the rest', () => {
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        sessions: [],
+        rules: [rule('r1', 'a'), { id: 7 }, 'nope', { id: 'r2', event: 'done' }, null],
+        window: null,
+      })
+    );
+    const st = makeStore(file);
+    expect(st.load().rules.map((r) => r.id)).toEqual(['r1']);
+  });
+
+  it('a rules field that is not a list costs the rules, not the workspace', () => {
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ version: 1, sessions: [sess('a')], rules: 'all of them', window: null })
+    );
+    const st = makeStore(file);
+    const s = st.load();
+    expect(s.rules).toEqual([]);
+    expect(s.sessions).toHaveLength(1);
+  });
+
+  it('a file written before rules existed loads with none, silently', () => {
+    fs.writeFileSync(file, JSON.stringify({ version: 1, sessions: [sess('a')], window: null }));
+    const st = makeStore(file);
+    expect(st.load().rules).toEqual([]);
+  });
+});
+
 describe('notification prefs merge-patch (review P1 #13)', () => {
   it('toggling enabled does not wipe osToasts or quiet hours', () => {
     const st = makeStore(file);

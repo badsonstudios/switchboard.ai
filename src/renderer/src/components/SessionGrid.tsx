@@ -346,6 +346,51 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       setTransportPending(!!r.pending);
     });
   };
+  // Per-session "notify when done" (P2-E14-03, §5.9). It lives in this menu
+  // rather than the composer's options row because it is a durable property of
+  // the CARD — like the transport switch directly above it — not a choice
+  // about the next prompt, and because the composer is gone entirely from the
+  // Terminal tab and from a collapsed card, where the setting must still be
+  // reachable. Its whole implementation in main is a RULE; the checkbox is
+  // just the rule's on/off.
+  //
+  // The state is main's, not this component's: it is read back after every
+  // write so a refused write (an unknown card, a store that cannot save)
+  // reverts the tick instead of leaving it lying about what will happen.
+  // The bridge is TYPED as always-present and is, in the shipped app — but this
+  // component also mounts against partial bridges (the renderer unit harnesses
+  // install the namespaces they need), and a preload older than this API would
+  // be another. Read it as optional and let the tick-box simply not appear:
+  // "notify when done" is a notification nicety, and P6 says our breakage never
+  // costs the user their session. A missing namespace must not throw out of an
+  // effect and take the whole card down with it — which is exactly what it did
+  // to 14 of #444's transport tests before this guard existed.
+  const rulesApi = window.switchboard?.rules as typeof window.switchboard.rules | undefined;
+  const [notifyWhenDone, setNotifyWhenDone] = React.useState(false);
+  React.useEffect(() => {
+    if (!cardId || !rulesApi) return;
+    let alive = true;
+    void rulesApi
+      .notifyWhenDone(cardId)
+      .then((on) => {
+        if (alive) setNotifyWhenDone(on === true);
+      })
+      .catch(() => {
+        /* fail-open: an unreadable rule shows as off, which is the quiet answer */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [cardId, rulesApi]);
+  const toggleNotifyWhenDone = (): void => {
+    if (!cardId || !rulesApi) return;
+    const next = !notifyWhenDone;
+    setNotifyWhenDone(next); // optimistic; the answer below is the truth
+    void rulesApi
+      .setNotifyWhenDone(cardId, next)
+      .then((on) => setNotifyWhenDone(on === true))
+      .catch(() => setNotifyWhenDone(!next));
+  };
   // held permissions awaiting decisions (E10-04) — a QUEUE, not a slot:
   // parallel tool calls each hold their own request (review P0#4)
   // The entry shape moved to `lib/held-permissions` with the rules that build
@@ -1292,6 +1337,42 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                               {t('grid.menuTransportRestart')}
                             </button>
                           </div>
+                        )}
+                        {/* A STATEFUL entry, not a command — a screen reader
+                            has to be told this one has an on/off, and the box
+                            glyph is the same fact for everyone else (never
+                            color alone, §5.32).
+
+                            `aria-pressed`, NOT `menuitemcheckbox`, and the
+                            difference is the container: this dropdown is a
+                            plain div of buttons with only Escape on it. A
+                            `menuitemcheckbox` is only valid when a `role=menu`
+                            OWNS it, and in this codebase a `role=menu` is a
+                            promise of roving arrow keys the rail's menu keeps
+                            (#197) and this one does not — claiming the role
+                            here would announce a menu that the arrows then
+                            refuse to walk. A toggle button is valid in any
+                            container and carries the same state. Promoting
+                            this whole menu to a real APG menu is worth doing,
+                            but it is a menu-wide job, not this checkbox's.
+
+                            Not locked with the session controls above: those
+                            type a slash command into a live CLI, this writes a
+                            preference, and a suspended or crashed card is
+                            exactly when you want to arm it. */}
+                        {rulesApi && (
+                          <button
+                            aria-pressed={notifyWhenDone}
+                            data-testid="card-notify-when-done"
+                            onClick={toggleNotifyWhenDone}
+                            title={t('grid.menuNotifyWhenDoneHint')}
+                            style={menuItemStyle(false)}
+                          >
+                            <span aria-hidden="true" style={{ marginInlineEnd: 6 }}>
+                              {notifyWhenDone ? t('grid.checkedIcon') : t('grid.uncheckedIcon')}
+                            </span>
+                            {t('grid.menuNotifyWhenDone')}
+                          </button>
                         )}
                         <button
                           disabled={controlsLocked}
