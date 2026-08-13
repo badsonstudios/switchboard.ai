@@ -3,6 +3,38 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ▶▶ START HERE — 🎛 RUN 17 CLOSED 2026-08-13: 25 ITEMS SHIPPED,
+> # TRAIN #456 LANDED, BOARD EMPTY
+>
+> **Final state: main @ 566dea2, out/ REBUILT + stamp-verified — `npm
+> start` is current. 13 internal items merged by the orchestrator** (#409
+> #416 #417 #418 #419 #413 #402 #435 #436 #441 #290 #432 #459 — the whole
+> #404 audit tail, the E17-01 search engine, sanitizer unification,
+> stateDir ownership, transcript-root unification, lint gates, test
+> hygiene) **+ 7 user-facing items merged via Dan-authorized train #456**
+> (#408 labels · #421 rules engine · #395 resume replay · #426 lamp cap ·
+> #406 composer · #425 service health · #410 document viewer).
+>
+> **DAN'S QUEUE (all CI 4/4 green, hand-test lists in each PR body):**
+> **PR #457** (#414 Ctrl+F find bar — note its one-line divergence:
+> find.open is the second 'typing-ok' command) · **PR #460** (#411 viewer
+> peek/pin/popout) · **PR #461** (#434 diff-from-popout fix + drive-by
+> #450 de-flake) · **PR #468** (#422 toast Allow/Deny buttons, real on
+> win32) · **PR #474** (#424 phone push + webhook; [user] step: create an
+> ntfy topic, palette → push setup, paste, test) · **+ the #397
+> trust-write DECISION** (PR #437 green, held: gate the ~/.claude.json
+> trust pre-write on transport? probe/soften-manual/park).
+>
+> **Blocked/waiting:** the small-issue tail (#412 #423 #440 #442 #445
+> #447 #458 #462 #463 #465 #466 #470 #471 #472 + older #216 #255 #268
+> #295 #323 #333 #337 #394 #440) mostly collision-parked behind Dan's
+> queue merging; Dan-gated: #397 call · #407 Events design sitting ·
+> #256 umbrella close · **a release cut (recommended: 0.4.0 is enormous)**.
+> Worktrees: sb-wt-1/3 idle+clean, sb-wt-2 holds #474's branch (PR open).
+> ~20 issues filed mid-run from worker discoveries. **NEXT SESSION: Dan
+> reviews/merges the 5-PR queue (train #2 on request), answers #397,
+> then /pm for the tail + release cut, then /orchestrate.**
+>
 > ## 🎛 ORCHESTRATION BLOCK — RUN 17 (started 2026-08-11, post-/pm refill)
 >
 > **Single-writer rule: only the orchestrator (this session) writes this
@@ -27,9 +59,90 @@
 > is current. Train CI 4/4 green, one lane.** Dan's queue is now EMPTY
 > except: the **#397 trust-write decision** (PR #437, green, draft) and
 > **PR #457** (#414 find bar — conflicts with the train, its worker is
-> resolving + may add the viewer find-registrant if cheap). Post-train
-> wave dispatched: **#411** (viewer peek/pin/popout) → sb-wt-1 · **#434**
-> (openDiff popout gap) → sb-wt-2 · #414-resolve → sb-wt-3. New issues
+> resolving + may add the viewer find-registrant if cheap).
+>
+> **POST-TRAIN WAVE ALL DONE + 4/4 GREEN 2026-08-13 → DAN'S QUEUE: PR
+> #457** (#414 find bar — train conflicts resolved as unions, manual page
+> renumbered again to 16, viewer registrant honestly NOT wired — two
+> structural blockers documented, and the viewer already has its own
+> correctly-scoped Ctrl+F so no user-visible gap; roster stays 2-of-4)
+> · **PR #460** (#411 viewer peek/pin/popout — peek is ONE pointer so two
+> unpinned viewers are unrepresentable; 3 self-caught blockers at the
+> dockview seam incl. the 1.33px "visible" husk — e2e now measures width;
+> CI caught a width-starvation regression local screens couldn't)
+> · **PR #461** (#434 openDiff — the one-liner grew honestly: the hidden
+> dock-back husk reports grid location and swallows panels at 0px; fix
+> prefers a visible group and closes the same latent hole in openDocument;
+> drive-by de-flake of diff.spec theme repaint, likely resolves #450 when
+> merged). **NEXT-TRAIN NOTE: #460 + #461 both reshape SessionGrid
+> group-picking around the husk — board adjacent, expect a semantic
+> integration.** Out-of-scope filed: **#462** (addSessionCard husk
+> blindness + document-area mirror rule — found by BOTH workers) ·
+> **#463** (ContributionBoundary has no reset). **Next wave dispatched:
+> #422 (actionable toasts) → sb-wt-1 · #290 (stateDir cleanup) → sb-wt-2 ·
+> #436 (sanitizer decision) → sb-wt-3.**
+>
+> **#436 ✅ DONE (2 rounds) → PR #464 (internal), CI re-running on 50ffa22
+> — merge on green.** Round 1: ONE frozen SANITIZE_CONFIG, style stripped
+> everywhere (corpus: 7,553 transcripts / 93 MB — 0 bare style attrs);
+> surface×payload pin table, 14-red mutation. Round 2 (its reviewer
+> subagent SURVIVED turn-end and delivered late with real findings):
+> update-dialog test row now mounts the REAL dialog (mutation 0→5 red);
+> CHANGELOG overclaim corrected (legacy color/size/face/hidden/bgcolor all
+> still pass — filed **#466**, incl. pre-hidden-with-Copy-button); config
+> Object.frozen + frozen-ness test; casts dropped; manual bullet added.
+> Worker's own confession, kept for the record: "my inline re-run checked
+> whether existing comments were accurate and never probed my own new
+> user-facing claim." Also filed from its rounds: **#465** (feed
+> data-feed-expander has the #410 forgery shape, no stripOurNamespace).
+> Handoff: 436.md. **#464/#436 MERGED 2026-08-13 → main @ d5915f1.**
+> #450 got the environment verdict (local-Windows-box-specific — CI never
+> shows it; #461 carries a drive-by de-flake to verify against local
+> repro). **#432** (one transcript-root declaration) dispatched → sb-wt-3
+> (7th occupancy).
+>
+> **#290 ✅ DONE 2026-08-13 → PR #467 (internal), bumped onto d5915f1,
+> re-greening — merge on green.** All issue premises verified TRUE against
+> current main. Lifecycle call: delete at session DEATH not card-forget —
+> resume mints a fresh UUID + settings.json per spawn, nothing carries
+> across; deletes at onExit, remove(), and spawn-failure catch; bootstrap
+> sweep per #354 conventions (UUID shape + dirent type + keep set + 24h
+> floor + 2s budget). 15/15 mutations red. Review: 5 should-fixes applied;
+> one reviewer finding REJECTED on measurement (JS $ doesn't match before
+> a trailing newline). Out-of-scope filed: **#470** (token sweep lacks a
+> name filter + failed spawn leaks the in-memory token). Handoff: 290.md.
+> **#467/#290 MERGED 2026-08-13 → main @ 5e2c424.**
+>
+> **#422 ✅ DONE → PR #468 (UF), CI 4/4 GREEN → READY, DAN'S QUEUE.**
+> Windows toast Allow/Deny buttons are REAL (Electron 43 annotates actions
+> as darwin,win32 since 40.x — verified empirically; e2e asserts buttons:2
+> + shown:true); Linux gets click-to-reveal fallback (sessions:
+> revealCard). One decision path made literal: decidePermission hoisted
+> onto SessionIpcHandle — the channel and the toast call the SAME
+> function. Toast names what Allow allows; body click reveals, never
+> decides. 7/7 mutations. Self-review caught close-unhook stranding a live
+> Allow in the Action Center. Out-of-scope filed: **#471** (main-process
+> strings have no i18n + setAppUserModelId never set). Handoff: 422.md.
+> **Dispatched: #459 (check-nul untracked, tiny) → sb-wt-1 · #424 (E14-06
+> push/webhook) → sb-wt-2.**
+>
+> **LATE-DAY SWEEP 2026-08-13: #432 ✅ DONE+MERGED** (PR #469 → main;
+> unified not pinned — 8 lines, canResume/watcher/replay all read ONE
+> resolved root; behavior trade documented in DESIGN §5.3: unresolvable
+> root = start fresh, never resumed-and-blank; **#472** filed for
+> extensibility.md contract-prose drift, broadened with #424's
+> capability-table finding + drift-pin suggestion). **#459 ✅ DONE** (PR
+> #473, bumped, re-greening — check-nul now scans untracked too, 58ms).
+> **#424 ✅ DONE → PR #474 (UF)**, windows e2e leg finishing — Dan's queue
+> on green. Push/webhook: palette modal + About entry (provisional pending
+> E14 settings); secrets via safeStorage, write-only channel; payload v1
+> pinned full-object; loopback-stub e2e proves store→switch→test→real
+> Stop-hook chain + secrets-absent-everywhere; 8 review defects fixed
+> (worst: log-once keyed on response body → Pushover would warn per event
+> forever). Quiet-hours-silences-webhook contradiction routed to **#423**.
+> Handoffs: 432.md, 459.md, 424.md (worktree-path copies corrected —
+> recent dispatch prompts dropped the absolute handoff path; restored).
+> New issues
 > from #414's findings: **#458** (Direct jump-to-hit dead — M, product
 > gap on the default transport) · **#459** (check-nul misses untracked
 > files); **#450 upgraded** (2-of-3 red on CLEAN main — fix soon).
