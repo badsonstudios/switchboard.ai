@@ -349,6 +349,10 @@ refusal can arrive, not everywhere it cannot.
 | `dialog.open` | a **native** file dialog |
 | `update.check` | contacts the release host **over the network** |
 | `update.install` | downloads an executable and runs it |
+| `provider.status` | reads the provider's **public status page** over the network — read-only and unauthenticated, it sends nothing (P2-E14-07) |
+| `push.read` | which phone-push / webhook switches are on, and **which** credentials exist — booleans, never a value |
+| `push.write` | those switches, and depositing a credential **into the OS credential store** (P2-E14-06, §5.29). Not folded into `settings.write` for the `fs.read` reason: storing a secret is strictly more power than flipping a preference |
+| `push.send` | **sends session-derived text to a third-party host** the user configured — the setup dialog's "Send test". The sharpest of the network three: the other two READ from a public host, this one writes a session's task label out of the machine |
 | `shell.openExternal` | hands a URL to the user's **browser** |
 | `shell.openPath` | hands a **local path** to the OS — "Open externally", "Reveal in folder". Split from `shell.openExternal` because a URL goes to the browser and a path goes to whatever is registered for that extension, which for `.exe` is execution. The handlers behind it re-check `fs.read`'s scope, so it can only ever be aimed at a file the caller could already have read |
 
