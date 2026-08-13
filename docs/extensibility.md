@@ -350,6 +350,7 @@ refusal can arrive, not everywhere it cannot.
 | `update.check` | contacts the release host **over the network** |
 | `update.install` | downloads an executable and runs it |
 | `shell.openExternal` | hands a URL to the user's **browser** |
+| `shell.openPath` | hands a **local path** to the OS — "Open externally", "Reveal in folder". Split from `shell.openExternal` because a URL goes to the browser and a path goes to whatever is registered for that extension, which for `.exe` is execution. The handlers behind it re-check `fs.read`'s scope, so it can only ever be aimed at a file the caller could already have read |
 
 Those are named for **what they do, not where the answer is shown**.
 `preflight:check` sat under `settings.read` until review pointed out that it

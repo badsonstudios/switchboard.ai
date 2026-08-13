@@ -443,6 +443,7 @@ function createWindow(): BrowserWindow {
         `--switchboard-version=${app.getVersion()}`,
         `--switchboard-seed-panels=${process.env.SWITCHBOARD_SEED_PANELS ?? 0}`,
         `--switchboard-seed-session=${process.env.SWITCHBOARD_SEED_SESSION ?? ''}`,
+        `--switchboard-seed-document=${process.env.SWITCHBOARD_SEED_DOCUMENT ?? ''}`,
       ],
     },
   });
@@ -1277,7 +1278,12 @@ app
       ],
       log: fsLog,
     });
-    registerFsIpc({ broker, log: fsLog, scope: readScope });
+    // P2-E16-02 hands the same object the picker: `Open file…` is the only
+    // thing that widens this scope, so the widening lives WITH the scope rather
+    // than in a second module that would need a reference to it. `getWindow` is
+    // the modal's parent, and is a thunk for the reason every other one here is
+    // — `currentWindow` is reassigned on macOS re-activate.
+    registerFsIpc({ broker, log: fsLog, scope: readScope, getWindow: () => currentWindow });
     broker.handle('notifications:getPrefs', () => workspace.getNotificationPrefs());
     broker.handle('notifications:setPrefs', (_e, p) => {
       workspace.setNotificationPrefs(p);

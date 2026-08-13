@@ -57,6 +57,7 @@ import {
 import { buildIdentity } from '../../shared/build-identity';
 import { applyTabRows, loadTabRows, syncDocumentFlags, toggleTabRows } from './lib/tab-rows';
 import { openPopoutWindows, subscribePopoutWindows } from './lib/popout-windows';
+import { setDocumentOpener } from './lib/document-open';
 
 // One stable subscribe identity for every useSyncExternalStore call below.
 // An inline arrow is a new function each render, and React unsubscribes and
@@ -368,6 +369,16 @@ export function App(): React.JSX.Element {
     new Map()
   );
   const grid = React.useRef<GridController | null>(null);
+
+  // §5.30's "opened from wherever a path already appears" (P2-E16-02). The
+  // surfaces that show a path — the Changes tab's file list today, a feed block
+  // and the §5.7 tree later — reach the dock through this module rather than
+  // through a prop each. Installed once the grid controller exists, removed on
+  // unmount so a torn-down window's dock is never called into.
+  useEffect(() => {
+    setDocumentOpener((file) => grid.current?.openDocument(file));
+    return () => setDocumentOpener(null);
+  }, []);
 
   useEffect(() => {
     const offUsage = bridge.sessions?.onUsage?.((snap) => {
@@ -897,6 +908,15 @@ export function App(): React.JSX.Element {
           jumpToNextAttention,
           openAbout: () => setAboutOpen(true),
           checkForUpdates,
+          // §5.30's `Open file…`. Picking a file in the native dialog is also
+          // what GRANTS it: main widens the `fs.read` scope with the chosen
+          // path before answering, which is the one sanctioned way that scope
+          // grows (P2-E16-02).
+          openFile: () => {
+            void bridge.files?.pickFile?.().then((file) => {
+              if (file) grid.current?.openDocument(file);
+            });
+          },
       }),
     [
       toggleRail,

@@ -20,6 +20,7 @@ import type { ServiceHealthPrefs, ServiceHealthStatus } from '../shared/service-
 const versionArg = process.argv.find((a) => a.startsWith('--switchboard-version='));
 const seedArg = process.argv.find((a) => a.startsWith('--switchboard-seed-panels='));
 const seedSessionArg = process.argv.find((a) => a.startsWith('--switchboard-seed-session='));
+const seedDocArg = process.argv.find((a) => a.startsWith('--switchboard-seed-document='));
 
 export interface SessionRecordDto {
   id: string;
@@ -56,6 +57,15 @@ const api = {
   seedPanels: seedArg ? Number(seedArg.split('=')[1]) || 0 : 0,
   /** scripted-check seam: auto-create one real session in this folder */
   seedSessionFolder: seedSessionArg ? seedSessionArg.split('=').slice(1).join('=') : '',
+  /**
+   * scripted-check seam: open one document viewer at boot (P2-E16-02).
+   *
+   * It grants NOTHING — the path still has to be inside the read scope, so a
+   * spec seeds a session folder and points this at a file within it. That is
+   * deliberate: a seam that widened the scope would be a seam that could be
+   * used to test the scope away.
+   */
+  seedDocument: seedDocArg ? seedDocArg.split('=').slice(1).join('=') : '',
   workspace: {
     getLayout: (): Promise<unknown> => ipcRenderer.invoke('workspace:getLayout'),
     setLayout: (layout: unknown): void => ipcRenderer.send('workspace:setLayout', layout),
@@ -387,8 +397,28 @@ const api = {
    * caller does not have to log it again, only render it.
    */
   files: {
-    /** absolute path in, at most `MAX_FILE_READ_BYTES` of UTF-8 out */
+    /** absolute path in, at most `MAX_FILE_READ_BYTES` of decoded text out */
     read: (p: string): Promise<FileReadResult> => ipcRenderer.invoke('fs:read', p),
+    /**
+     * The native `Open file…` dialog (P2-E16-02). Resolves the chosen path, or
+     * null if the user cancelled. Choosing a file also GRANTS it: main adds it
+     * to the read scope before answering, so the `read` that follows succeeds.
+     */
+    pickFile: (): Promise<string | null> => ipcRenderer.invoke('fs:pickFile'),
+    /**
+     * A link out of a rendered document, into the user's browser. Resolves
+     * FALSE for any scheme but `http`, `https` and `mailto` — a `javascript:`
+     * or `file:` href does nothing at all.
+     */
+    openExternal: (url: string): Promise<boolean> => ipcRenderer.invoke('fs:openExternal', url),
+    /**
+     * §5.30's escape hatch: hand the file to whatever the OS has registered for
+     * it. Scope-checked in main against the same roots as `read`, so this can
+     * only be aimed at a file the caller could already have read.
+     */
+    openPath: (p: string): Promise<boolean> => ipcRenderer.invoke('fs:openPath', p),
+    /** Show the file in the OS file manager. Scope-checked like `openPath`. */
+    reveal: (p: string): Promise<boolean> => ipcRenderer.invoke('fs:reveal', p),
   },
   git: {
     status: (folder: string): Promise<unknown> => ipcRenderer.invoke('git:status', folder),
