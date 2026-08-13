@@ -80,17 +80,19 @@ import type { Logger } from '../log/logger';
  * That is the right way round: production has exactly one producer of these
  * directories and it always uses `randomUUID`.
  *
- * Two details that look like style and are not:
+ * Two flags that are absent on purpose:
  *
  *   * NO `/i`. `randomUUID()` is lower-case, so upper case is not something we
  *     wrote — and on a case-sensitive filesystem accepting it would mean
  *     deleting a directory that is definitively somebody else's.
- *   * `$(?![\s\S])` rather than `$`, because JavaScript's `$` also matches
- *     BEFORE a trailing newline: `<uuid>\n` is a legal directory name on POSIX
- *     and a plain `$` would have made it a candidate.
+ *   * NO `/m`, which is what makes the plain `$` safe. In Perl and Python `$`
+ *     also matches BEFORE a trailing newline, and `<uuid>\n` is a legal
+ *     directory name on POSIX; in JavaScript it does not, unless `/m` is set —
+ *     measured, and pinned by a near-miss case in the tests, because "this
+ *     anchor means the end of the string" is exactly the kind of thing that is
+ *     true until someone adds a flag for an unrelated reason.
  */
-const SESSION_DIR_NAME =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$(?![\s\S])/;
+const SESSION_DIR_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** Exported for the tests that pin the guard, not for call sites. */
 export function isSessionStateDirName(name: string): boolean {

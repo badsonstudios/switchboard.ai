@@ -99,9 +99,10 @@ describe('only a session-id-shaped name is ever a candidate', () => {
       id.replace(/-/g, ''),
       `${id} `,
       `.${id}`,
-      // `$` in JS also matches BEFORE a trailing newline, and `<uuid>\n` is a
-      // legal directory name on POSIX — so a plain `$` made a directory we did
-      // not write a candidate for a recursive delete.
+      // `<uuid>\n` is a legal directory name on POSIX, and in Perl/Python `$`
+      // would match it. JavaScript's does not — unless `/m` is set, which is
+      // what this case is really guarding: the day someone adds a flag, a
+      // directory we never wrote becomes a candidate for a recursive delete.
       `${id}\n`,
       // `randomUUID()` is lower-case: upper case is not something we wrote,
       // and on a case-sensitive filesystem it is somebody else's directory.
