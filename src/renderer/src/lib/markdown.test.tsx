@@ -261,12 +261,14 @@ describe('the style attribute: one profile, and every surface uses it (#436)', (
         // `<Markdown>` directly, or the test would pass while the feed grew a
         // renderer of its own.
         mountInto(
-          renderFeedBlock(createRendererRegistry(), {
-            seq: 1,
-            kind: 'assistant',
-            sidechain: false,
-            text: markdown,
-          } as FeedBlockDto) as React.ReactElement
+          <>
+            {renderFeedBlock(createRendererRegistry(), {
+              seq: 1,
+              kind: 'assistant',
+              sidechain: false,
+              text: markdown,
+            } as FeedBlockDto)}
+          </>
         ),
     ],
     [
@@ -295,6 +297,11 @@ describe('the style attribute: one profile, and every surface uses it (#436)', (
   ];
 
   beforeAll(async () => {
+    // Set HERE rather than inherited: the `<Markdown>` block below also sets it,
+    // and describes run in file order, so this block only had it by accident of
+    // where it sits. Reordering or deleting that block would have left `act()`
+    // warning instead of acting.
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
     // The feed's registry renders real blocks, and real blocks translate.
     await initI18nForTests();
   });
