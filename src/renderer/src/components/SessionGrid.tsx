@@ -1725,7 +1725,25 @@ function documentTabTitle(filePath: string): string {
  * the main grid instead, making one when every group has been popped out.
  */
 function gridRefGroup(api: DockviewApi): DockviewApi['groups'][number] {
-  return api.groups.find((g) => g.api.location.type === 'grid') ?? api.addGroup();
+  const inGrid = api.groups.filter((g) => g.api.location.type === 'grid');
+  const visible = inGrid.find((g) => g.api.isVisible);
+  if (visible) return visible;
+  // Nothing VISIBLE is left in the grid, which is not the same as nothing being
+  // left in it. We pop a CARD out, not a whole group, and dockview's answer to
+  // that is to move the panel into a window and keep the group it came from —
+  // in the grid, still `location.type === 'grid'`, but hidden
+  // (`_doAddPopoutGroup`: `referenceGroup.api.setVisible(false)`), so the card
+  // has a slot to come home to. Its leaf is `width: 0px`, and a panel added to
+  // it is in the DOM, on the right window, and invisible — measured (#434), and
+  // exactly what a `location`-only test walks into. Show the husk again rather
+  // than adding a group beside it: it holds the geometry the card used to
+  // occupy, and the card rejoins it as a sibling tab when it docks back.
+  const husk = inGrid[0];
+  if (husk) {
+    husk.api.setVisible(true);
+    return husk;
+  }
+  return api.addGroup();
 }
 
 /**
