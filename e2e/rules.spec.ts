@@ -30,16 +30,18 @@ interface ToastLine {
   kind: string;
   visibility: string;
   ruleId: string;
+  /** did the desktop actually take it? false where the OS has no notifier */
+  shown: boolean;
 }
 
-/** every "os toast shown" line the app has written so far */
+/** every "os toast rule fired" line the app has written so far */
 function toasts(home: string): ToastLine[] {
   const f = findFile(home, 'switchboard.log');
   if (!f) return [];
   return fs
     .readFileSync(f, 'utf8')
     .split('\n')
-    .filter((l) => l.includes('"os toast shown"'))
+    .filter((l) => l.includes('"os toast rule fired"'))
     .map((l) => JSON.parse(l) as ToastLine);
 }
 
@@ -109,17 +111,24 @@ test.describe('notification rules (P2-E14-03)', () => {
     await post(names[1], { hook_event_name: 'Stop' });
     await post(names[0], { hook_event_name: 'Stop' });
 
-    const shown = await poll(() => {
+    const fired = await poll(() => {
       const t = toasts(a.home);
       return t.length > 0 ? t : null;
     }, 20_000);
-    expect(shown).toHaveLength(1);
-    expect(shown[0].kind).toBe('done');
-    expect(shown[0].visibility).not.toBe('focused');
+    expect(fired).toHaveLength(1);
+    expect(fired[0].kind).toBe('done');
+    expect(fired[0].visibility).not.toBe('focused');
+
+    // Whether the desktop DISPLAYED it is the OS's business, not the rule's: a
+    // Linux CI container has no notification daemon and reports "unsupported"
+    // forever, which is why the assertion above is about the rule firing. Where
+    // a notifier does exist, insist the toast actually went out — otherwise
+    // nothing in the suite would notice this half breaking.
+    if (process.platform === 'win32') expect(fired[0].shown).toBe(true);
 
     // …and it belongs to the card whose box is ticked
     const cards = await w.evaluate(() => window.switchboard.sessions.cards());
-    expect(shown[0].cardId).toBe(cards.find((c) => c.title === names[0])!.cardId);
+    expect(fired[0].cardId).toBe(cards.find((c) => c.title === names[0])!.cardId);
   });
 
   test('the checkbox survives a restart', async () => {

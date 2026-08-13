@@ -1128,19 +1128,29 @@ app
     const rulesLog = createLogger(sink, 'rules');
     const ruleActions = new RuleActionRegistry(rulesLog);
     ruleActions.register(ACTION_OS_TOAST, (_action, ctx) => {
-      if (!Notification.isSupported()) return;
-      new Notification({
-        title: ctx.title,
-        body: ctx.body,
-        silent: true, // the Notifier's beep is the sound cue
-      }).show();
-      // The e2e proof that a rule reached the OS (`e2e/rules.spec.ts`) — and
-      // the line to grep after "why did/didn't it pop".
-      rulesLog.info('os toast shown', {
+      // Whether the OS can display a notification at all is an ENVIRONMENT
+      // fact, not a decision this rule made: a Linux box with no notification
+      // daemon (a CI container, say) reports `false` here forever. So the two
+      // facts are logged separately — the rule fired, and this is whether the
+      // desktop took it. A silent early return was the one outcome that could
+      // not be debugged, and "why didn't it pop?" is a real support question.
+      const shown = Notification.isSupported();
+      if (shown) {
+        new Notification({
+          title: ctx.title,
+          body: ctx.body,
+          silent: true, // the Notifier's beep is the sound cue
+        }).show();
+      }
+      // The e2e proof that a rule reached the toast action
+      // (`e2e/rules.spec.ts`) — and the line to grep after "why did/didn't it
+      // pop".
+      rulesLog.info('os toast rule fired', {
         kind: ctx.event.kind,
         cardId: ctx.cardId ?? '',
         visibility: ctx.visibility,
         ruleId: ctx.rule.id,
+        shown,
       });
     });
     // Assigned the moment `registerSessionIpc` returns, a few dozen lines
