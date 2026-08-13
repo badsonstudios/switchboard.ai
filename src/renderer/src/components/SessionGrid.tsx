@@ -357,11 +357,20 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // The state is main's, not this component's: it is read back after every
   // write so a refused write (an unknown card, a store that cannot save)
   // reverts the tick instead of leaving it lying about what will happen.
+  // The bridge is TYPED as always-present and is, in the shipped app — but this
+  // component also mounts against partial bridges (the renderer unit harnesses
+  // install the namespaces they need), and a preload older than this API would
+  // be another. Read it as optional and let the tick-box simply not appear:
+  // "notify when done" is a notification nicety, and P6 says our breakage never
+  // costs the user their session. A missing namespace must not throw out of an
+  // effect and take the whole card down with it — which is exactly what it did
+  // to 14 of #444's transport tests before this guard existed.
+  const rulesApi = window.switchboard?.rules as typeof window.switchboard.rules | undefined;
   const [notifyWhenDone, setNotifyWhenDone] = React.useState(false);
   React.useEffect(() => {
-    if (!cardId) return;
+    if (!cardId || !rulesApi) return;
     let alive = true;
-    void window.switchboard.rules
+    void rulesApi
       .notifyWhenDone(cardId)
       .then((on) => {
         if (alive) setNotifyWhenDone(on === true);
@@ -372,12 +381,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     return () => {
       alive = false;
     };
-  }, [cardId]);
+  }, [cardId, rulesApi]);
   const toggleNotifyWhenDone = (): void => {
-    if (!cardId) return;
+    if (!cardId || !rulesApi) return;
     const next = !notifyWhenDone;
     setNotifyWhenDone(next); // optimistic; the answer below is the truth
-    void window.switchboard.rules
+    void rulesApi
       .setNotifyWhenDone(cardId, next)
       .then((on) => setNotifyWhenDone(on === true))
       .catch(() => setNotifyWhenDone(!next));
@@ -1331,18 +1340,20 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                             type a slash command into a live CLI, this writes a
                             preference, and a suspended or crashed card is
                             exactly when you want to arm it. */}
-                        <button
-                          aria-pressed={notifyWhenDone}
-                          data-testid="card-notify-when-done"
-                          onClick={toggleNotifyWhenDone}
-                          title={t('grid.menuNotifyWhenDoneHint')}
-                          style={menuItemStyle(false)}
-                        >
-                          <span aria-hidden="true" style={{ marginInlineEnd: 6 }}>
-                            {notifyWhenDone ? t('grid.checkedIcon') : t('grid.uncheckedIcon')}
-                          </span>
-                          {t('grid.menuNotifyWhenDone')}
-                        </button>
+                        {rulesApi && (
+                          <button
+                            aria-pressed={notifyWhenDone}
+                            data-testid="card-notify-when-done"
+                            onClick={toggleNotifyWhenDone}
+                            title={t('grid.menuNotifyWhenDoneHint')}
+                            style={menuItemStyle(false)}
+                          >
+                            <span aria-hidden="true" style={{ marginInlineEnd: 6 }}>
+                              {notifyWhenDone ? t('grid.checkedIcon') : t('grid.uncheckedIcon')}
+                            </span>
+                            {t('grid.menuNotifyWhenDone')}
+                          </button>
+                        )}
                         <button
                           disabled={controlsLocked}
                           title={
