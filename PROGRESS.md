@@ -10,12 +10,351 @@
 > those handoffs are the inputs, this block is the output. If this session
 > dies, a fresh /orchestrate session resumes from THIS block + the handoffs.
 >
-> **Active workers (wave 1):**
-> - **#408** (E7-06 auto task labels, UF) → `sb-wt-1` → `feature/408-auto-task-labels`
-> - **#409** (E16-01 markdown renderer + fs.read, internal) → `sb-wt-2` → `feature/409-markdown-fs-read`
-> - **#426** (pending-lamp cap, UF) → `sb-wt-3` → `feature/426-pending-lamp-cap`
+> **RUN PAUSED by Dan 2026-08-11 evening ("pause for now"), RESUMED
+> 2026-08-12 ("Continue"). The pause cancelled the in-flight workers.
+> Resume sweep: #413 had FINISHED (PR #451 + handoff landed; notification
+> lost; CI never triggered — kicked via close/reopen) · #421 died mid-e2e
+> gate with work COMMITTED (5665f1e) and the lock held — lock verified
+> stale (>12h, zero electron across a sampling window) and CLEARED; a
+> fresh verify-then-keep worker owns the finish (run-13 pattern; the old
+> agent is user-stopped and unresumable). Merges on resume: #444 MERGED
+> (#419 closed) · #446 bumped, re-greening · #451 queues behind it.**
 >
-> **Merge queue:** (empty) · **Dan's queue:** (empty)
+> **🚂 TRAIN AUTHORIZED by Dan 2026-08-13: "merge all our PRs."**
+> Boarding: #429 → #452 → #431 → #427 → #443 → #448 → #433 (notifier-
+> touching pair adjacent; viewer last). **#437 EXCLUDED** — still gated on
+> the #397 trust-write decision. Branch `train/2026-08-13` in the MAIN
+> checkout; orchestrator resolves conflicts (CHANGELOG unions expected in
+> all seven; manual 09 union #427+#452; index.ts three-way #429/#448/#433;
+> the one real semantic integration is notifier: #429 moved the Notifier
+> init, #452 moved `new Notification` into the rules action). Full local
+> gate incl. e2e under the machine lock (owner "train") before push; ONE
+> CI lane; merge-commit on green.
+>
+> **Active workers:**
+> - **#414** (E17-02 find bar + find-provider seam, UF) → `sb-wt-3` → `feature/414-find-bar` (off main @ 7caa0ed; registrant scope adjusted: Session + Changes + seam; viewer waits on #433's merge, Terminal is #415) — will contend for the e2e lock with the train gate
+> - (#402 done → PR #455 bumped, re-greening; sb-wt-1 holds the green
+>   #452 branch — Dan's queue; sb-wt-2 idle)
+>
+> **Merges 2026-08-12 night, continued: #454/#441 MERGED** (fake-timer net
+> live) · **#451/#413 MERGED 2026-08-13 — the E17-01 search engine is on
+> main** (issue closed, branch deleted) · #455 (#402 docs correction)
+> bumped, re-greening → merge on green. **#402 ✅ DONE → PR #455**:
+> verified against raw s07 artifacts first (negative cpuPct samples +
+> self-inflated nProcs = the sampler's fingerprint), corrected 3 sites
+> struck-not-deleted, deliberately left #111-confirmed figures alone.
+> Handoff: 402.md. **#414 (E17-02 find bar) now UNBLOCKED** — next
+> dispatch into sb-wt-3.
+>
+> **#452 (#421 rules engine) ✅ CI 4/4 GREEN → READY, DAN'S QUEUE
+> (2026-08-12 night).** The fix worker's verdict on the red: **#444's
+> selectors were fine and were NOT touched** — the root cause was #421's
+> own unguarded `window.switchboard.rules.notifyWhenDone` in a mount
+> effect, which threw against #444's partial-bridge harness and tore the
+> whole card down (a notification nicety could WHITE-SCREEN a session
+> card — P6 class; #444's 16 tests now double as the regression pin).
+> Second fix: ubuntu e2e — Notification.isSupported() is false on CI
+> containers; split the log line ('rule fired' vs shown:true, still
+> required on win32) so the reached-the-OS half can't rot. Final gate:
+> 3369 unit / 226 e2e ×2. **⚠ ORCHESTRATOR ERROR, logged for the record:
+> sb-wt-1 was double-booked** (#435 dispatched into it while the #421
+> fixer was resumed on the same tree) — the fixer detected it, verified
+> #435's work was pushed + PR open + tree clean BEFORE reclaiming the
+> branch. No loss. Rule for future dispatches: a RESUMED worker still
+> owns its worktree until its PR is green or abandoned. Handoff: 421.md.
+>
+> **Merge sweep 2026-08-12 night:** **#453/#435 MERGED** (NUL gate live in
+> `npm run lint`) · #454 bumped, re-greening → merge on green · #451's
+> infra-only red leg re-running (everything else green).
+> **#441 ✅ DONE 2026-08-12 late → PR #454 (internal), CI running.** Sweep
+> found NO live leak on main (9 fake-timer files, all already disciplined;
+> a probe measured zero carried timers) — the fix is the systemic net:
+> afterEach in src/test-setup.ts (clearAllTimers + useRealTimers; vitest
+> has no config knob; useFakeTimers() is a no-op when a clock is already
+> installed — pinned from vitest source). Demo: without #439's guard,
+> composer.test.ts carries up to 7 timers across cases; a new test reddens
+> if the net is emptied. Convention documented in startup/references/
+> testing.md. Out-of-scope: eslint-hex-rule 5s-timeout flake under load;
+> src/ root files belong to no tsconfig project unless named. Handoff:
+> 441.md. sb-wt-2 idle.
+>
+> **Late-evening state 2026-08-12:** #451 conflict RESOLVED (1 additive
+> ipc.test.ts collision, both sides kept; merge b71bffb; 3306 unit local)
+> — CI first-ever run: windows green, ubuntu red on the SAME
+> 'Electron failed to install' runner-infra error #443 hit (138/139 files
+> passed) → re-run queued once its e2e legs finish (rerun refused while
+> running). **#435 ✅ DONE → PR #453 (internal), CI pending** — check-nul
+> gate in `npm run lint` (~90ms warm, whole tracked tree via git ls-files,
+> binary-extension skip list, fail-open on no-git; demo: NUL'd file →
+> exit 1 naming file:line:offset, eslint never runs). Handoff: 435.md.
+> **#452 (#421 rules engine) CI RED — diagnosed:** #444's
+> SessionGrid.transport.test.tsx (merged under it) fails 14/16 against
+> #421's new ⋯-menu entry; worker resumed with fix-honestly orders
+> (tighten selectors OR fix the menu, never weaken the day-old transport
+> pins). sb-wt-3 idle (branch pushed, awaiting CI).
+>
+> **#421 ✅ DONE 2026-08-12 (verify-then-keep recovery) → PR #452 (UF), CI
+> running — Dan's queue on green.** Inherited 5665f1e verified sound and
+> KEPT (10/10 mutations killed); 4 real defects fixed on top: orphaned
+> menuitemcheckbox → aria-pressed toggle · visibility asked only the MAIN
+> window (a popout you were watching still toasted; visibilityAcross()
+> folds every window) · action seam made async-safe for #424 · 2 e2e
+> assumptions that never held. **DESIGN divergence recorded: "no toasts
+> while focused" was §5.9's design but NEVER the code — the base notifier
+> toasted unconditionally; this PR genuinely CHANGES osToasts behavior**
+> (needs-input/permission quiet while focused; done silent without the
+> checkbox) — CHANGELOG Changed entry replaces the wrong "nothing else
+> changes yet" line. Checkbox: card ⋯ menu under the transport switch;
+> ticked box fires even with global osToasts off (recorded in DESIGN §5.9).
+> Seam: registry.register(type, handler), async ok — #422/#424 drop-ins;
+> **#423 is NOT** (conditions need Rule fields + a clock rules.ts forbids —
+> sizing comment posted on #423). Gates: 3308 unit / 225+3 e2e (1 fail =
+> #450's known flake, passes in isolation). Handoff: 421.md.
+>
+> **Merge chain: #446/#418 MERGED 2026-08-12** (squash, issue closed) ·
+> #451 conflicted on the bump (ipc.test.ts-class additive collisions) —
+> finisher worker resolving; CI fires on its push · #452 CI pending.
+>
+> **#413 ✅ DONE 2026-08-11 19:16 (discovered on resume) → PR #451
+> (internal), CI kicked via reopen — bump + squash-merge after #446.**
+> Engine scans the transcript FILE (uncapped, §5.31 — the real corpus is
+> ~5.8 MB for the 4,697-line fixture, not the plan's display-capped
+> 1.2 MB): **42 ms typical, longest main-thread stretch 3–5 ms** via 256 KB
+> chunks + setImmediate yields; a test asserts longestBlockMs<50 and
+> another proves a 1 ms interval fires DURING a scan. Blocks derived by
+> the same deriveIntents the watcher/StreamFeed use — hit identity is
+> Feed identity (E17-02's jump works). 37 engine tests + 6 IPC. Gates:
+> 3245 unit / 224+3 e2e under lock. Handoff: 413.md (E17-02 notes inside).
+>
+> **#425 ✅ DONE 2026-08-11 (~65 min) → PR #448 (UF), CI running — Dan's
+> queue on green.** main/health/{statuspage,corroboration,service}.ts; new
+> `provider.status` capability + 4 channels; workspace pref health.poll;
+> status-bar dot registrant; ServiceHealthBanner; Events incident notice
+> (notice-slot precedent — a sessionless FeedEvent would break §5.12's
+> one-item-per-session, argued in the handoff); About toggle. Thresholds:
+> 3 distinct sessions / 5 min, named + injectable; poll clamps max-age to
+> [5,30] min (header can only slow us). **Live finding: status.anthropic.com
+> 302s → status.claude.com — redirect-follow is load-bearing.** e2e suite
+> runs with SWITCHBOARD_STATUS_FEED=off. Review: 6 should-fixes + 1
+> hand-found (polling-off left the incident card standing) all fixed+tested.
+> Gates: 3328 unit (+116) / 230+3 e2e under lock. Out-of-scope filed:
+> **#449** (StreamService.onDiagnostic wired to nothing); #407 got the
+> three-notice-slot-tenants coordination comment; PTY-can't-corroborate
+> recorded in #449's body. Handoff: 425.md.
+>
+> **#406 ✅ DONE 2026-08-11 (survived the limit kill; ~2h20m of that was
+> waiting the lock queue honestly — sampled electron 6×1min before every
+> staleness judgement) → PR #443 (UF), CI running — Dan's queue on green.**
+> New pure lib composer-size.ts (measure→clamp→overflow) + FeedView switched
+> from newline-counting rows to reset-then-measure layout effect + inline-
+> size ResizeObserver. Review round caught a real pre-merge bug: releasing
+> height to auto clamped scrollTop to 0 — every keystroke past the cap
+> scrolled the user back to line 1 (fixed + pinned in e2e). **DESIGN
+> divergence needing Dan's nod (in the PR body):** cap = 12 lines OR what
+> the panel can spare (60px feed floor) — a flat 12 on a short panel would
+> push the options row off, contradicting the same paragraph's layout
+> guard; <~350px panels only. 14 unit + 4 component + 1 e2e, mutation-
+> verified. Manual 03 updated; CHANGELOG Fixed. Gates: 3205 unit / 214+3
+> e2e under lock. Handoff: 406.md.
+> - **#406-fix** (repair #443's own cap e2e on small CI geometry) → `sb-wt-2` → `feature/406-composer-autogrow` @ 617283e (5th occupancy)
+>
+> **#419 ✅ DONE 2026-08-11 (~24 min) → PR #444 (internal), CI running —
+> bump + squash-merge on green.** 2 test files, 595 lines, ZERO product
+> files (dockview-react mocked to reach the private SessionCardPanel — no
+> export added). 21 tests: mode label both transports, toggle round-trip +
+> refusal guard, pending-restart notice, Restart respawn-on-queued-
+> transport, seed pin (behavioural + source-text, precedent always-visible-
+> notices), StreamTerminalNotice via the real registry incl. UNRESOLVED
+> transport → TerminalPane, keepMounted. 11 mutations, each surface ≥1 red.
+> Choice-vs-running split pinned as CURRENT behaviour (not unified — open
+> question stands). Out-of-scope filed: **#445** (SessionGrid:503 maps
+> missing transport → 'pty' vs shared default 'stream'). Handoff: 419.md.
+>
+> **#443 (#406, UF) CI RED ×2 — diagnosed, worker resumed in sb-wt-2:**
+> e2e windows = its OWN cap assertion vs its own available-space clamp on
+> the 655px runner window (fix the test to mirror the clamp math; both
+> branches must stay pinned) · ubuntu unit = INFRA ('Electron failed to
+> install correctly' on the runner, 3113/3114 pass — re-runs with the push).
+> **#439 bumped onto 5999964, re-green in progress → squash-merge on green.**
+>
+> **#417 ✅ DONE 2026-08-11 (survived the session-limit kill + its own
+> checkout wipe, both recovered, zero loss) → PR #439 (internal), CI running
+> — squash-merge on green.** All 8 pins landed, each mutation-proven. Two
+> product hardenings: composer.ts `mainTook()` (rejecting submitPrompt/
+> interrupt now falls back to PTY + warn instead of unhandled rejection —
+> #154 class; also fixed refusal-truthiness: broker REFUSALS RESOLVE an
+> IpcRefusal object, truthiness read it as success) · SWITCHBOARD_TRANSPORT
+> parser extracted to main/transport/preferred-transport.ts (empty string
+> now warns too). Gates: 3225 unit (+40) / 213+3 e2e under lock. Out-of-
+> scope filed: **#440** (renderer-wide refusal-truthiness audit) · **#441**
+> (fake-timer leak shape unaudited beyond composer.test.ts). Handoff: 417.md.
+> - **#413** (E17-01 transcript search engine, internal) → `sb-wt-3` → `feature/413-transcript-search` (6th occupancy, off main @ 5999964)
+>
+> **#418 ✅ DONE 2026-08-11 (~26 min) → PR #446 (internal), CI running —
+> bump if needed + squash-merge on green.** 38 tests tagged across 8 files:
+> literal `[pty]` title prefix (reporter-visible, grep-able, NOT
+> Playwright's tag:) + per-file TRANSPORT SCOPE header; rule defined once
+> on launchApp's doc comment where the fallback lives. No file renamed; CI
+> greps checked first (none). feed.spec:625 + slash-commands already honest
+> (quoted) — tags only. #416 overlap verified: Direct landing pane covered,
+> Ctrl+` reaching it is the remaining gap, header says exactly that.
+> Under-scope noted for later: 9 more xterm-dependent tests in attention/
+> palette/session/urgency whose titles don't overclaim — left untagged.
+> Out-of-scope product bug filed: **#447** (unbound-fallback string sends
+> Direct users to a Terminal tab that says "No terminal for this session").
+> Gates: 3202 unit / 224+3 e2e under lock. Handoff: 418.md.
+>
+> **#404 TAIL COMPLETE:** #416 MERGED · **#417/PR #439 MERGED 2026-08-11
+> (squash, 4/4 green post-bump, issue closed, branch deleted)** · #418→PR
+> #446 (4/4 green, awaiting its bump turn) · #419→PR #444 (4/4 green,
+> BUMPED onto post-#439 main, re-greening → merge next sweep, then #446
+> bumps). **#448 (#425 service health, UF): 4/4 GREEN → READY, DAN'S
+> QUEUE.** **#443 (#406 composer): CI 4/4 GREEN on 064f580 → READY, DAN'S
+> QUEUE** (the check:pty red was the documented #176-class flake, cleared
+> by one job re-run, no code change). Round 2 asserts the cap BY CONTRACT
+> at two window geometries; the probe caught a real clamp bug (send-button
+> 30px row floor miscounted as chrome — feed kept 74px not its 60px floor)
+> + added panel-resize re-fit. Flake sighting filed: **#450** (diff.spec.
+> ts:318 Monaco repaint, load-sensitive class). Handoff: 406.md final.
+>
+> **#430/#416 ✅ MERGED 2026-08-11 → main @ 5999964** (squash, CI 4/4 green,
+> branch deleted, issue #416 closed). The debug worker's verdict held:
+> test-side serial-state unpin (Playwright scroll-into-view inside the
+> click's gesture window on the runner's 254px feed scroller), #409
+> acquitted kid-for-kid (content heights identical at both commits). Fix:
+> +~40 lines in stream-feed.spec.ts only — wheel to bottom, assert
+> tailGap<40, wait out GESTURE_MS, then !bulk; assertions unchanged. Spec
+> 10 consecutive greens + full e2e 224/3skip. Product observation filed:
+> **#442** (FeedView pin has no way back; may fight #174 keyboard nav on
+> overflowing feeds — only manifests on small windows). Handoff: 416-fix.md.
+>
+> **#430 ROOT CAUSE (from 416-fix.md, accepted): test-side, NOT a #409
+> regression.** stream-feed.spec runs serial with one app; on the 1024x768
+> CI runner the feed scroller is 254px, a `!tools` turn overflows, and test
+> 1's click on `▸ OUT` makes Playwright scroll-into-view INSIDE the click's
+> gesture window — FeedView's pin rule (GESTURE_MS=500) correctly reads it
+> as a user scroll-away and unpins; nothing re-pins; test 4's tail assert
+> then honestly fails. Measured on the actual runner via a throwaway
+> diagnostic PR (#438, closed+deleted). One-line spec fix + comment;
+> product untouched. Merge #430 on its re-green.
+>
+> **#397 ⚠ IMPLEMENTED + GATE-GREEN but BLOCKED ON DAN → draft PR #437
+> (~69 min).** Chip-greying shipped as specced (workspace-wide — autoTrust is
+> ONE title-bar chip, not per-session; aria-disabled + title per view-tab
+> precedent; chip follows the CHOSEN transport incl. pending-restart, both
+> directions pinned; stored settings never mutated; bonus: sessions:
+> setTransport now pushes cardsChanged). **THE BLOCKER — the premise was too
+> narrow:** `sessions:create` calls `ensureFolderTrusted` on EVERY spawn
+> regardless of transport, permanently writing `hasTrustDialogAccepted:true`
+> into the user's real `~/.claude.json`. Direct suppresses the PROMPT, not
+> the WRITE — a folder's first Direct session pre-accepts trust forever, so
+> the manual's "switch to Terminal and be asked" escape hatch does nothing
+> afterwards. **Question for Dan: gate the trust pre-write on the resolved
+> spawn transport?** Worker correctly refused to decide — it changes what
+> the default transport writes to a user config file, and whether an
+> untrusted folder degrades stream-mode settings/hooks is UNMEASURED (probe
+> spends real CLI turns → Dan's authorization). PR #437 stays DRAFT pending
+> the call. #419 trim: drop title-bar-chip + disabled-with-reason coverage
+> (shipped in #437). Handoff: 397.md.
+>
+> **#410 ✅ DONE 2026-08-11 (~98 min) → PR #433 (UF), DRAFT until CI green
+> (ubuntu unit leg passed; 3 legs pending at last check) — then Dan's queue.**
+> The document viewer: header + rendered markdown + read-only Monaco source +
+> open-externally card; `Open file…` palette command; ↗ opener in Changes
+> tab; fs:pickFile/openExternal/openPath/reveal + shell.openPath capability;
+> UTF-16 BOM decode + binary sniff; manual 14-document-viewer.md; CHANGELOG.
+> Self-review caught 2 BLOCKERS: data-doc-* decoration forgery (javascript:
+> link → browser exfil, Copy button → clipboard hijack — stripOurNamespace())
+> and a CSS-selector throw on `#a%0Ab` anchors that blanked the window. 4
+> documented DESIGN divergences incl. viewer-local find bar (§5.30's own
+> correction) and Changes-tab ↗ instead of path-click (literal reading broke
+> the tab's primary gesture + 2 specs). Left for #411: peek/pin/popout/
+> attribution; for #412: live re-render (scroll already preserved on model
+> swap). Gates: 3319 unit (+123) / 217+3 e2e under lock. Out-of-scope filed:
+> **#434** (openDiff E8-04 gap) · **#435** (NUL-byte lint gate) · **#436**
+> (FeedView style-attr sanitizer drift). Handoff: 410.md.
+>
+> **#395 ✅ DONE 2026-08-11 (~90 min) → PR #431, READY, CI 4/4 green — DAN'S
+> QUEUE.** Resumed Direct sessions replay their on-disk JSONL into the Feed:
+> `StreamFeed.hydrate()` fills the SAME FeedBuffer the live stream fills —
+> deliberately NOT the issue's watcher-backlog shape (two buffers both
+> number from seq 1; the renderer upserts on seq, so the first live block
+> would have silently overwritten the first replayed one). Synchrony
+> verified not assumed (no await between spawn and replay; hydrate refuses a
+> non-empty buffer — failure mode is the old empty view, never duplication).
+> CLI contract read from the extension (ensureSessionLoaded reads
+> <sessionId>.jsonl, 2.1.226). Review round caught a second real defect: an
+> open thinking block from the OLD conversation timed against the first NEW
+> block ("Thought for 86400s") — bounded in FeedBuffer, fixes the watcher
+> path too. Gates: 3104 unit / 215+3 e2e ×2 under lock. Manual 12 updated,
+> CHANGELOG 0.4.0. Out-of-scope filed: **#432** (two-roots drift);
+> E18-13 plan note added (sidechains absent from replay). Handoff: 395.md.
+>
+> **Merge queue:** PR #430 (#416) — windows e2e leg failed TWICE post-bump
+> on SFEED_BLOCK_60 tail-pin (green at base f268ec7 incl. 2 local runs; red
+> only after #409 merged under it) — NO LONGER flake-classed: suspected
+> interaction with #409's renderer change. Debug worker in sb-wt-3; merge on
+> its green. **PR #433 (#410 viewer, UF): CI 4/4 GREEN → marked READY, in
+> DAN'S QUEUE** (2026-08-11). Dan's queue is now: #427, #429, #431, #433
+> (+ the #397 trust-write decision, PR #437 draft).
+>
+> **#416 ✅ DONE 2026-08-11 (~74 min) → PR #430 (internal), IN MERGE QUEUE:**
+> branch bumped onto main @ 5e917b5, CI re-running; squash-merge on green.
+> 11 Direct-mode e2e tests / 3 files, all on the REAL default (no transport
+> var); 3 new fake verbs + fake.test.ts pins the PTY fake's refusal (the
+> stream.spec:376 done-when). Falsified: forcing PTY → 8 fail / 3 not-run.
+> Product-file footprint ZERO; no product bugs found. Deferred ports recorded
+> in 05-transport-migration.md § E18-14. Orchestrator actions taken: #417's
+> covered line dropped (fake-refusal pin); plan note written. Handoff: 416.md.
+>
+> **Merge queue:** (empty) · **Dan's queue:** **PR #427** (#426 pending-lamp
+> cap) · **PR #429** (#408 auto task labels) — both READY, CI 4/4 green,
+> test checklists in the PR bodies
+>
+> **#409 ✅ DONE + MERGED 2026-08-11 → main @ 5e917b5** (PR #428, internal,
+> squash, CI 4/4 green, branch deleted, issue closed). lib/markdown.tsx now
+> THE renderer (named MARKED_OPTIONS + SANITIZE_CONFIG, renderMarkdown
+> export; source-scan test bans other marked/dompurify imports). fs.read
+> capability + fs:read channel; main/fs/{read-scope,read-file,ipc}.ts; scope
+> = session cards ∪ picked set, decisions on resolved real paths, 2 MiB cap.
+> Worker's own review caught an EXISTENCE ORACLE (symlink made not-found vs
+> out-of-scope distinguishable — fs.probe smuggled inside fs.read; fixed by
+> anchoring to nearest resolvable ancestor). CI caught the windows 8.3
+> short-path refusal (lexical pre-check deleted — the anchor rule already
+> carried the property). One named behaviour change: sanitizer drops raw
+> inline svg/math (§5.30-aligned). Carry-forwards INTO #410: UTF-16 →
+> dispatch table; addPicked unreachable until readScope hoisted from
+> index.ts. Gates: 3185 unit (+85) / 213+3 e2e ×2. Handoff: 409.md.
+>
+> **#408 ✅ DONE 2026-08-11 (~96 min) → PR #429.** `titles` = 5th §5.3
+> capability, per-LINE reader (`titleFrom`) so `ai-title` lives once in
+> providers/claude.ts; `labelSource: auto|user`, no store migration (absent +
+> non-blank ⇒ 'user' — an upgrade can't steal an E7-03 label); de-dupe
+> mutation-checked against a repeat-heavy REAL capture; toast text via new
+> `SessionIpcHandle.labelFor`. **Two DESIGN amendments** (both documented in
+> the PR): per-line reader shape + throw-degrades-once; and the off-switch
+> shipped as workspace setting + 🏷 title-bar chip, NOT the §5.9 preference
+> the plan named — §5.9 has no UI until E14, the doc'd location would have
+> been unreachable. Off hides, never deletes; typed labels never hidden.
+> Gates: 3137 unit (+61) / 217+3 e2e / build clean. Worker self-reported one
+> contract violation: a `git checkout --` during a mutation experiment ate an
+> uncommitted fix — caught and re-applied, final diff verified. Fixture
+> capture found: aiTitle/sessionId key order is UNSTABLE between adjacent
+> lines. Out-of-scope reports in 408.md (blank-guard on setTaskLabel now
+> meaningful; ipc.test persist stub became a real store; card-task-label
+> testid added). Handoff: 408.md.
+>
+> **#426 ✅ DONE 2026-08-11 (~61 min, first wave-1 completion) → PR #427.**
+> markLit keeps only running-deadline entries (pendings cap at 1, latest
+> wins); + a UrgencyStrip nudge the sizing missed — without it the surviving
+> mark's rAF chain died and the lamp stuck lit forever. Done-when deviation,
+> accepted by orchestrator: the "untouched" two-lamp test exercised two
+> PENDINGS (no paint between marks) — the exact case the decision caps; test
+> kept name+intent, paint inserted, + component-level twin pins the painted
+> overlap. 4 mutation checks all load-bearing. Gates: 3085 unit / 213+3 e2e
+> under lock. DESIGN §5.8 amended, CHANGELOG 0.4.0, manual 09. No e2e repro
+> possible honestly (needs a commits-but-no-rAF window — the #251/#284 flake
+> pattern); 9 unit pins instead. Handoff: 426.md.
 >
 > **Dispatch order after wave 1:** #395 + #416 (Direct coverage; e2e-heavy —
 > stagger on the lock) · #410 → #411 → #412 (E16 chain, serial) · #397 ·
