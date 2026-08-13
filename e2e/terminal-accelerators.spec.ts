@@ -6,6 +6,16 @@
 // mechanism these tests drive is a browser-process one; what they assert is the
 // user-visible half of it, plus the half that matters more: that NOTHING else
 // is taken from the CLI.
+//
+// TRANSPORT SCOPE (P2-E18-18, #404): `[pty]`, and legitimately so — the whole
+// item is about focus being INSIDE an xterm surface, which a Direct session
+// does not have (its Terminal tab renders the P2-E18-08b notice instead,
+// `extensibility/panels.tsx`). There is no Direct counterpart to write: with no
+// surface to steal a key back FROM, the two accelerators here are just ordinary
+// renderer accelerators on the default transport, and they are covered as such
+// — Ctrl+Shift+P by `palette.spec.ts`, Ctrl+Space by `attention.spec.ts` and
+// `stream-attention.spec.ts` ("Ctrl+Space jumps to the Direct session that is
+// waiting"). See `launchApp` in `fixtures/app.ts` for the tag.
 import { test, expect, ElectronApplication, Page } from '@playwright/test';
 import path from 'path';
 import {
@@ -70,7 +80,7 @@ async function focusTerminal(w: Page): Promise<void> {
     .toBe(true);
 }
 
-test.describe('terminal accelerators (#90)', () => {
+test.describe('[pty] terminal accelerators (#90)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 

@@ -2,6 +2,19 @@
 // listener: the test plays the CLI's part (PreToolUse POST with the real
 // per-session token), the UI answers, the verdict comes back in the hook
 // response. No mocks between the bar and the wire.
+//
+// TRANSPORT SCOPE (P2-E18-18, #404): `[pty]` for the whole group. The loop
+// these tests drive is the HOOK-HOLD path, and a Direct session bypasses it
+// outright — `hook-listener.ts` passes `PreToolUse` straight through for a
+// stream session, because on that transport a permission arrives as a
+// `can_use_tool` on the control channel instead. So none of this is coverage of
+// the app's default transport, however green it is. See `launchApp` in
+// `fixtures/app.ts` for the tag.
+//
+// The Direct counterpart is `stream-approval.spec.ts` (P2-E18-14), which ports
+// Deny, queueing, cross-session grouping and the crashed-renderer release. The
+// #125 test at the bottom of this file is the one behaviour whose Direct truth
+// is the OPPOSITE, not a port — see the note above it.
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
@@ -54,7 +67,7 @@ function parseVerdict(body: string): HookResponse {
   return JSON.parse(body) as HookResponse;
 }
 
-test.describe('inline approval bar (E10-04)', () => {
+test.describe('[pty] inline approval bar (E10-04)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 
@@ -296,6 +309,16 @@ test.describe('inline approval bar (E10-04)', () => {
   // CLI's own debounced Notification. The Session tab used to answer that with
   // a 10px chip in the top-left header strip while the user stared at the
   // bottom, where every permission they had ever answered appeared.
+  //
+  // THE GROUP'S `[pty]` IS AT ITS SHARPEST HERE. Everywhere else in this file
+  // it means "Direct takes a different route to the same place"; here it means
+  // the Direct behaviour is the exact OPPOSITE of what this test pins. The
+  // same `Notification` is deliberately DROPPED for a stream session (#313,
+  // `hook-listener.ts`) — with permissions riding `can_use_tool`, a debounced
+  // nudge with nothing held is a false alarm, and there is no terminal to send
+  // anyone to. That inverse is pinned by `stream.spec.ts` → "a hook
+  // Notification cannot fake a permission on Direct (#313)". Read the two
+  // together or each looks like a bug in the other.
   test('a permission the CLI KEPT gets a full bar in the Session tab, not a chip (#125)', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });

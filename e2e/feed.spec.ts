@@ -1,6 +1,18 @@
 // P2-E12-06: Feed view v1 — read-only rendered blocks from the transcript.
 // The fake provider writes no transcript, so the test plays Claude's part:
 // it writes JSONL into the isolated HOME and the watcher tails it live.
+//
+// TRANSPORT SCOPE (P2-E18-18, #404): `[pty]` for the whole group. "The watcher
+// tails it live" IS the scope — the transcript-derive pipeline is switched off
+// for a stream session (`deriveFeed: record.transport !== 'stream'`,
+// `sessions/ipc.ts`), whose conversation is built by `feed/stream-feed.ts` from
+// typed messages instead. So every rendering, scroll and keyboard assertion
+// here is about the non-default path, however green. See `launchApp` in
+// `fixtures/app.ts` for the tag.
+//
+// The Direct counterpart is `stream-feed.spec.ts` (P2-E18-14) — tool boxes,
+// Edit diff panes, verbosity presets, the #174 walk, the #196 landmark and the
+// tail pin, all built from a stream.
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
@@ -10,7 +22,7 @@ function slugForCwd(cwd: string): string {
   return cwd.replace(/[\\/:. ]/g, '-');
 }
 
-test.describe('Feed view (E12-06)', () => {
+test.describe('[pty] Feed view (E12-06)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 

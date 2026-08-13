@@ -6,6 +6,13 @@
 // "outlives the panel" is to actually destroy the panel, so these tests hide a
 // card and reveal it — and check the two things a user would notice if the
 // state had been lost: the wrong tab, and the wrong place.
+//
+// TRANSPORT SCOPE (P2-E18-18, #404): "the wrong tab" is proved by parking the
+// card on the Terminal and asserting a live `.xterm` when it comes back — which
+// only a PTY session has, so the two tab-restore tests are tagged `[pty]`. The
+// presentation store itself is transport-independent, and the two slot/close
+// tests below are untagged because they never look at a terminal. See
+// `launchApp` in `fixtures/app.ts` for the tag.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
 import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
@@ -43,7 +50,7 @@ test.describe('presentation state (P2-E15-08)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 
-  test('a hidden card keeps its session, and comes back on the tab it left', async () => {
+  test('[pty] a hidden card keeps its session, and comes back on the tab it left', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
@@ -131,7 +138,7 @@ test.describe('presentation state (P2-E15-08)', () => {
     expect(await liveCount(w)).toBe(0);
   });
 
-  test('hidden survives a relaunch — and so does the tab it was on', async () => {
+  test('[pty] hidden survives a relaunch — and so does the tab it was on', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const title = path.basename(folder);

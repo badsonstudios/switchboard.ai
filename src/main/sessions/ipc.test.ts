@@ -2570,3 +2570,76 @@ describe('transcripts:search over a stream session (P2-E17-01)', () => {
     expect(r.hits[0].seq).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// P2-E18-17 — the #404 audit's fourth finding, kept at the end of the file on
+// purpose: it is a self-contained block, so a conflict with the other branches
+// editing this suite is a trivial one.
+// ---------------------------------------------------------------------------
+
+// The env override must AIM a launch, not EDIT anybody's cards.
+//
+// `SWITCHBOARD_TRANSPORT` is per-app-instance and temporary by nature — you set
+// it to try Terminal mode for an afternoon. Writing its answer back onto every
+// card that had never chosen would make that afternoon permanent: the cards
+// would come out of population 1 ("follows the default") and into population 2
+// ("explicitly chose"), so the next launch WITHOUT the variable would still be
+// on the old transport, and the next change of default would skip them for
+// ever. The same rule as the default itself, for the same reason — absence is a
+// meaningful value here.
+describe('the env override is not written back onto the card (P2-E18-17)', () => {
+  const CARD = 'card-1';
+  let dir: string;
+  tempDirEach('sb-tr-envback-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir, CARD);
+
+  it('the override decides the spawn but leaves the card unchosen', async () => {
+    const h = harness(undefined, dir, { prior: card(), preferredTransport: () => 'pty' });
+
+    await start(h);
+
+    expect(h.created[0].transport).toBe('pty'); // it did decide...
+    // `.at(-1)?` on an EMPTY list is undefined too, so the card must be proved
+    // written at all — otherwise "stopped persisting the card" passes this as
+    // cleanly as "did not write the transport".
+    expect(h.upserted).not.toHaveLength(0);
+    expect(h.upserted.at(-1)?.transport).toBeUndefined(); // ...and recorded nothing
+  });
+
+  it('holds for a brand-new card with no record at all', async () => {
+    const h = harness(undefined, dir, { preferredTransport: () => 'pty' });
+
+    await start(h, 'fresh');
+
+    expect(h.created[0].transport).toBe('pty');
+    expect(h.upserted).not.toHaveLength(0);
+    expect(h.upserted.at(-1)?.transport).toBeUndefined();
+  });
+
+  it('and for `stream`, which is the value a lazy write-back would hide in', async () => {
+    const h = harness(undefined, dir, { prior: card(), preferredTransport: () => 'stream' });
+
+    await start(h);
+
+    // identical to what the default would have produced, which is the point:
+    // the card must still say nothing, or it silently stops following the
+    // default the day the default moves.
+    expect(h.created[0].transport).toBe('stream');
+    expect(h.upserted).not.toHaveLength(0);
+    expect(h.upserted.at(-1)?.transport).toBeUndefined();
+  });
+
+  it("a card that DID choose keeps its own value written down", async () => {
+    const h = harness(undefined, dir, {
+      prior: { ...card(), transport: 'pty' },
+      preferredTransport: () => 'stream',
+    });
+
+    await start(h);
+
+    // the card's choice beat the override at the spawn...
+    expect(h.created[0].transport).toBe('pty');
+    // ...and the override did not overwrite it on the way through either
+    expect(h.upserted.at(-1)?.transport).toBe('pty');
+  });
+});
