@@ -123,6 +123,11 @@ on the floor, and say so in your PR.
   filled with the session's own color and lettered in dark, instead of being
   written in that color. On the light theme it was barely visible against the
   card header; it is now readable on every theme and in every session color.
+- **The prompt box now grows to fit what you actually pasted.** It used to
+  count only the times you pressed Shift+Enter, so a pasted paragraph that
+  filled eight lines on screen still sat in a one-line slot with the rest
+  hidden. It now grows with the text as it wraps, up to twelve lines, scrolls
+  inside itself past that, and shrinks back down as you delete.
 
 ### Internal
 

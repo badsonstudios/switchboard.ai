@@ -651,4 +651,132 @@ test.describe('[pty] Feed view (E12-06)', () => {
     await showTerminal(w);
     await expect(w.getByText(/COMPOSER_OK_42/).first()).toBeVisible({ timeout: 15_000 });
   });
+
+  // P2-E10-08 (#406). The unit tests pin the sizing rule against a stubbed
+  // layout; only a real engine can say whether the box actually wraps, caps and
+  // stays docked. Every length below is derived from the MEASURED box, because
+  // the panel's size depends on the window the runner gives us.
+  //
+  // The cap is "twelve lines OR whatever the panel can spare, whichever is
+  // smaller" (`roomForBox` in FeedView.tsx): the composer is the bottom of a
+  // column whose conversation yields height first, so on a short panel twelve
+  // flat lines would push the options row off the bottom instead of pushing the
+  // feed up. WHICH branch a run takes is pure geometry, and a dev machine never
+  // sees the small one while CI always does — this test's own first CI red, and
+  // #416's lesson before it. So the cap is asserted through its CONTRACT (it
+  // stops; it is never more than twelve lines; what stopped it is either the cap
+  // or the conversation at its floor) and the whole check is then re-run at CI's
+  // exact window geometry, which nothing else here would reach.
+  test('the composer grows with WRAPPED text, caps at twelve lines, and shrinks back (E10-08)', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
+
+    /**
+     * Under the app's own 600px minimum, so Electron clamps to it: the SHORTEST
+     * window a user can make, and shorter than any CI runner's (Linux CI is
+     * 1008x655 on a 1024x768 desktop, measured 2026-08-11). Whatever branch a
+     * runner lands on, this reaches it or one stricter.
+     */
+    const SHORTEST_CONTENT_HEIGHT = 400;
+    /** MIN_FEED_PX in FeedView.tsx — the conversation's floor */
+    const MIN_FEED = 60;
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    const chip = w.getByTitle('Autonomy for this session (applies on next resume)');
+    const feed = w.locator('[data-feed-region]').first();
+    /** height, inner overflow and one rendered line — as the engine has them */
+    const measure = (): Promise<{ height: number; scrollHeight: number; line: number; width: number }> =>
+      box.evaluate((el) => {
+        const t = el as HTMLTextAreaElement;
+        return {
+          height: t.clientHeight,
+          scrollHeight: t.scrollHeight,
+          line: Number.parseFloat(getComputedStyle(t).lineHeight),
+          width: t.clientWidth,
+        };
+      });
+    /** one line of text, no newline in it anywhere, `chars` long */
+    const paragraph = (chars: number): string => 'lorem ipsum '.repeat(Math.ceil(chars / 12)).slice(0, chars);
+
+    /**
+     * Fill the box far past any possible cap and assert what stopped it —
+     * whatever the panel's size, and without ever asking WHICH branch it is on
+     * before making an assertion.
+     */
+    const assertItCaps = async (one: { height: number; line: number; width: number }): Promise<void> => {
+      await box.fill(paragraph(Math.round(one.width * 6)));
+      const capped = await measure();
+      // eleven lines more than the one-line box is twelve lines: never a 13th,
+      // and measuring against that box keeps padding out of the assertion
+      expect(capped.height - one.height).toBeLessThan(11.5 * one.line);
+      // ...and it is a CAP, not a coincidence: three times the text, same height
+      await box.fill(paragraph(Math.round(one.width * 18)));
+      const more = await measure();
+      expect(Math.abs(more.height - capped.height)).toBeLessThanOrEqual(1);
+      expect(more.scrollHeight).toBeGreaterThan(more.height + 2); // the rest scrolls inside
+      // What stopped it is one of the two limits and nothing else: either it
+      // reached twelve lines, or the conversation is down to its floor.
+      const reachedTwelve = more.height - one.height >= 10.5 * one.line;
+      if (!reachedTwelve) {
+        expect((await feed.boundingBox())!.height).toBeLessThan(MIN_FEED + 8);
+        expect((await feed.boundingBox())!.height).toBeGreaterThan(MIN_FEED - 8);
+      }
+      // ...and at full height the neighbours are still docked where they belong:
+      // the options row under the box, both of them inside the window
+      const boxBox = (await box.boundingBox())!;
+      const chipBox = (await chip.boundingBox())!;
+      expect(chipBox.y).toBeGreaterThanOrEqual(boxBox.y + boxBox.height - 1);
+      await expect(chip).toBeInViewport();
+      await expect(box).toBeInViewport();
+    };
+
+    const empty = await measure();
+    const feedEmpty = (await feed.boundingBox())!;
+
+    // ~0.8 characters per pixel of width: at any plausible glyph width that is
+    // between four and seven wrapped lines — inside the cap on any geometry
+    await box.fill(paragraph(Math.round(empty.width * 0.8)));
+    const grown = await measure();
+    expect(grown.height).toBeGreaterThan(empty.height + 3 * empty.line); // wrapped, and it noticed
+    expect(grown.scrollHeight).toBeLessThanOrEqual(grown.height + 2); // all of it on screen
+    // the feed gave up the room — the composer did not grow over it
+    expect((await feed.boundingBox())!.height).toBeLessThan(feedEmpty.height - 3 * empty.line);
+
+    await assertItCaps(empty);
+
+    // Typing at the bottom of a capped box must not scroll the user back to the
+    // top of their own prompt. Re-measuring RELEASES the height, which makes the
+    // content fit and would clamp the element's own scrollTop to 0 on every
+    // keystroke — the one hazard of auto-grow that only a real engine has.
+    await box.press('Control+End');
+    await box.pressSequentially('tail');
+    expect(await box.evaluate((el) => (el as HTMLTextAreaElement).scrollTop)).toBeGreaterThan(0);
+
+    // Now the shortest window the app allows, with the long draft still in the
+    // box: a panel that shrinks under a filled composer must RE-FIT it, not
+    // leave it overhanging its own options row. This is also the geometry that
+    // takes the OTHER branch of the cap — the conversation reaches its floor
+    // before the box reaches twelve lines — which no dev machine sees at its
+    // normal window size and every short runner does.
+    const tall = await measure();
+    await a.app.evaluate(({ BrowserWindow }, height) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      win.unmaximize();
+      win.setContentSize(win.getContentSize()[0], height);
+    }, SHORTEST_CONTENT_HEIGHT);
+    await expect
+      .poll(async () => (await measure()).height, { timeout: 10_000 })
+      .toBeLessThan(tall.height); // re-fitted without a keystroke
+
+    await box.fill('');
+    const oneLine = await measure();
+    expect(oneLine.height).toBe(empty.height); // deleting it all puts the one-line box back
+    await assertItCaps(oneLine);
+
+    // and it still shrinks back at this size
+    await box.fill('');
+    expect((await measure()).height).toBe(empty.height);
+  });
 });
