@@ -111,6 +111,14 @@ on the floor, and say so in your PR.
   counted from the keypress, so on a busy machine the whole beat could pass
   before the window caught up and you saw no ring at all — the flash you could
   miss on a slow machine.
+- **No more ring fireworks after a spell in a pop-out window.** `Ctrl+Space`
+  works from a pop-out, but the ring it draws lives on the main window's lamp
+  strip — so if that window was behind something, every jump you made while it
+  was hidden used to save up its ring and fire them all off the moment you came
+  back. Now only the last jump is waiting for you: one ring, on the session you
+  actually landed on. A ring that is already **up on screen** is untouched —
+  jump to one session, then a moment later to another, and both rings are there
+  together, each fading on its own count.
 - The little language badge beside a session's name (`TS`, `PY`, `JS`) is now
   filled with the session's own color and lettered in dark, instead of being
   written in that color. On the light theme it was barely visible against the

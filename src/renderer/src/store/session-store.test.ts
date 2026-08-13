@@ -605,7 +605,21 @@ describe("SessionStore — the urgency strip's delayed reset (P2-E9-04)", () => 
     store.markUrgency('card-A', T);
     expect(store.getState().urgency.has('card-A')).toBe(true); // visible already
     store.markUrgency('card-B', T);
-    expect([...store.getState().urgency.keys()]).toEqual(['card-A', 'card-B']);
+    // and the second press SAW the first: it superseded it, which is the cap
+    // (issue 426) — an unpainted mark never outlives a newer one
+    expect([...store.getState().urgency.keys()]).toEqual(['card-B']);
+  });
+
+  it('caps the marks nobody has painted at one — the latest (issue 426)', () => {
+    // the popout case: Ctrl+Space runs in THIS renderer while focus goes to a
+    // popout, so the main window can queue several jumps unpainted. Only the
+    // last one still answers "where did I just land?".
+    for (const id of ['card-A', 'card-B', 'card-C']) store.markUrgency(id, T);
+    expect([...store.getState().urgency.keys()]).toEqual(['card-C']);
+    // a lamp already counting down is not a queued mark and survives
+    store.startUrgencyBeat(['card-C'], T);
+    store.markUrgency('card-D', T + 100);
+    expect([...store.getState().urgency.keys()]).toEqual(['card-C', 'card-D']);
   });
 
   it('ignores an empty card id rather than lighting a lamp nobody owns', () => {
