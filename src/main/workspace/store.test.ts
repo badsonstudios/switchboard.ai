@@ -1725,3 +1725,93 @@ describe('fingerprint stability', () => {
     expect(displayFingerprint([primary, left])).toBe(displayFingerprint([left, primary]));
   });
 });
+
+// P2-E18-17 — the #404 audit's fifth finding.
+//
+// `transport` survives a quit and a relaunch today by deep-clone happenstance:
+// `upsertSession` and `listSessions` `JSON.parse(JSON.stringify(...))` whole
+// records and the loader hands `raw.sessions` through, so nothing ever names
+// the field. That is exactly the shape #153's follow-up already broke ONCE, on
+// this same field, in `sessions:create` — where a record rebuilt field by field
+// wiped it on every start and Direct mode could not survive a relaunch.
+//
+// What this protects is not a preference, it is the promise that makes flipping
+// the default safe (#381): a card that explicitly chose Terminal keeps Terminal.
+// Lose the field on disk and "never chose" is what comes back — which follows
+// the default, i.e. silently migrates that card to Direct.
+describe('PersistedSession.transport survives quit -> relaunch (P2-E18-17)', () => {
+  const withTransport = (id: string, transport: 'pty' | 'stream'): PersistedSession => ({
+    ...sess(id),
+    transport,
+  });
+
+  // `pty` and not `stream`: with Direct the default, a card that came back
+  // saying `stream` proves nothing — that is what an ABSENT field produces
+  // downstream too. `pty` is the value no default can supply.
+  it('an explicit Terminal choice is still Terminal after a reload', () => {
+    const a = makeStore(file);
+    a.load();
+    a.upsertSession(withTransport('one', 'pty'));
+    a.save();
+
+    const b = makeStore(file); // "relaunch"
+    expect(b.load().sessions[0].transport).toBe('pty');
+    expect(b.listSessions()[0].transport).toBe('pty'); // the path sessions:create reads
+  });
+
+  it('an explicit Direct choice round-trips as a VALUE, not as silence', () => {
+    const a = makeStore(file);
+    a.load();
+    a.upsertSession(withTransport('one', 'stream'));
+    a.save();
+
+    const b = makeStore(file);
+    b.load();
+    // `toBe('stream')` alone would pass on a record that lost the field and was
+    // re-defaulted somewhere; `in` is what says the card's own answer is there.
+    expect('transport' in b.listSessions()[0]).toBe(true);
+    expect(b.listSessions()[0].transport).toBe('stream');
+  });
+
+  // The third population, and the one a "helpful" migration would destroy:
+  // absent means "never chose" and must come back absent, so the card keeps
+  // following whatever the default is at the time it starts.
+  it('a card that never chose comes back with no transport at all', () => {
+    const a = makeStore(file);
+    a.load();
+    a.upsertSession(sess('one'));
+    a.save();
+
+    const b = makeStore(file);
+    b.load();
+    expect(b.listSessions()[0].transport).toBeUndefined();
+  });
+
+  // Named for what it actually pins: `upsertSession` REPLACES the record whole
+  // (`store.ts`: `this.state.sessions[i] = copy`), so this is de-duplication by
+  // id plus the field riding along on a FULL record — not preservation across a
+  // partial upsert, which the store does not offer and a caller must not assume.
+  it('upserting the same card replaces rather than duplicates, transport included', () => {
+    const st = makeStore(file);
+    st.load();
+    st.upsertSession(withTransport('one', 'pty'));
+    st.upsertSession({ ...withTransport('one', 'pty'), layoutSlot: 4 });
+
+    expect(st.snapshot().sessions).toHaveLength(1);
+    expect(st.snapshot().sessions[0].transport).toBe('pty');
+  });
+
+  // Not shared refs with the caller, on the field's own account: the store
+  // clones in and out, so a caller mutating its copy cannot rewrite a stored
+  // transport choice from under the next session start.
+  it('the caller cannot mutate a stored choice through its own object', () => {
+    const st = makeStore(file);
+    st.load();
+    const mine = withTransport('one', 'pty');
+    st.upsertSession(mine);
+
+    mine.transport = 'stream';
+
+    expect(st.listSessions()[0].transport).toBe('pty');
+  });
+});
