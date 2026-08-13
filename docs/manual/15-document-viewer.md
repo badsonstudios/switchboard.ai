@@ -88,6 +88,11 @@ into your own tools is always one click away.
   **Open in browser** button. This is deliberate: switchboard.ai never makes a
   network request on your behalf, and an image in a file someone else wrote is
   the easiest possible way to find out that you read it.
+- **A document is shown in your theme, not its own.** Markdown files can contain
+  raw HTML, and that HTML can carry styling of its own. The viewer ignores it, so
+  a document can't place something over the app's controls, hide text under it,
+  or paint itself a colour you didn't pick. The document's own formatting —
+  headings, tables, task lists, code blocks — is untouched.
 - **Very large files are cut short.** Above about 2 MB you get the beginning of
   the file and a note saying how much is missing. Open it externally to read the
   rest.

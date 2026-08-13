@@ -292,9 +292,8 @@ export function decorateLinks(
  * THE DECORATION IS A PROTOCOL, AND A DOCUMENT MUST NOT BE ABLE TO SPEAK IT.
  * Everything below writes `data-doc-*` attributes and `doc-*` classes that the
  * viewer's click handler then reads as instructions — and DOMPurify keeps
- * `data-*` attributes (`ALLOW_DATA_ATTR` defaults to true), `class`, and
- * `style`. So a file we did not write can arrive with the answers already
- * filled in:
+ * `data-*` attributes (`ALLOW_DATA_ATTR` defaults to true) and `class`. So a
+ * file we did not write can arrive with the answers already filled in:
  *
  *   <a href="javascript:…" data-doc-external="https://exfil.test/?leak">click</a>
  *
@@ -308,11 +307,25 @@ export function decorateLinks(
  * our namespace may survive from the input. Run FIRST, before anything writes
  * one.
  *
- * `style` goes with them, and that is not scope creep: it is what made the
- * hidden `<pre>` invisible (`style-src` allows inline styles), and a
- * `position:fixed` overlay from a document is a click-jack against the viewer's
- * own chrome. Markdown emits no inline styles; only raw embedded markup does,
- * which is exactly the input §5.30 says to distrust.
+ * `style` goes with them, and it is BELT-AND-BRACES, not the policy. The policy
+ * is `SANITIZE_CONFIG`'s `FORBID_ATTR: ['style']` in `markdown.tsx` — #436, and
+ * for the reasons this comment used to give on the viewer's behalf: an inline
+ * style is what made the hidden `<pre>` invisible (`style-src` allows inline
+ * styles), a `position:fixed` overlay from a document is a click-jack against
+ * the viewer's own chrome, and markdown emits none of it — only raw embedded
+ * markup does, which is exactly the input §5.30 says to distrust. That reasoning
+ * was never viewer-specific, and while it lived HERE the feed did not get it: one
+ * exported constant, two effective profiles, which is the drift §5.30 makes the
+ * single renderer a requirement to prevent.
+ *
+ * The line stays anyway. Not for a caller that exists — today every caller comes
+ * through `renderMarkdown`, and `markdown.test.tsx` enforces that there is no
+ * other pipeline to come through. It stays because this function's whole job is
+ * to assume nothing about where its input has been: it already takes `style`'s
+ * neighbours (`data-doc-*`, `doc-*`) back from HTML the sanitizer was perfectly
+ * happy with, and dropping `style` from that list would make it the one
+ * decoration-protocol attribute whose safety is somebody else's file. One
+ * `||`, and the layer keeps its own invariant.
  */
 export function stripOurNamespace(root: ParentNode): void {
   for (const el of root.querySelectorAll('*')) {
