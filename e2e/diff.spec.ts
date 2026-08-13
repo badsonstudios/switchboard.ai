@@ -350,10 +350,19 @@ test.describe('Changes tab (Monaco diff pane)', () => {
       // the diff is still there, still the same file, still tokenized
       await expect(diffEditor(w)).toContainText("'howdy'", { timeout: 15_000 });
       await expect(diffEditor(w).locator('.line-delete')).not.toHaveCount(0);
-      expect(
-        (await tokenClasses(w)).length,
-        `no highlighting after switching to ${theme}`
-      ).toBeGreaterThan(3);
+      // POLLED, not sampled once (drive-by, #434): Monaco re-tokenizes after a
+      // theme change asynchronously, so the classes are briefly down to one
+      // and a single `await tokenClasses(w)` catches that window. Measured on
+      // unmodified main at bc305b6: 2 of 3 runs failed with `Received: 1`;
+      // polling the same assertion is 3 of 3 and returns in ~1.7s, i.e. the
+      // highlighting really does come back — this was a race, not a repaint
+      // bug, and the assertion still demands the colours actually appear.
+      await expect
+        .poll(async () => (await tokenClasses(w)).length, {
+          timeout: 15_000,
+          message: `no highlighting after switching to ${theme}`,
+        })
+        .toBeGreaterThan(3);
     }
 
     expect(crashed, 'switching theme threw').toEqual([]);
