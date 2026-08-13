@@ -220,6 +220,19 @@ describe('Send test', () => {
     );
   });
 
+  // A control that disables itself under the cursor strands focus on <body>,
+  // and from there Escape reaches nothing — the key handler lives on the
+  // dialog. The e2e caught this; this is the cheap pin.
+  it('keeps focus inside the dialog when the button disables itself', async () => {
+    await render(true);
+    const send = button(en.push.sendTest);
+    send.focus();
+    (document.activeElement as HTMLElement).blur(); // jsdom does not blur a disabling control; do what a browser does
+    await click(send);
+    expect(document.activeElement).not.toBe(document.body);
+    expect(dialog()!.contains(document.activeElement)).toBe(true);
+  });
+
   it('a rejected call is a failure, not an unhandled rejection', async () => {
     handlers.onTest.mockImplementation(() => Promise.reject(new Error('bridge gone')));
     await render(true);

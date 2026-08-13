@@ -55,6 +55,22 @@ export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element 
     dialog.current?.focus();
   }, [props.open]);
 
+  /**
+   * Keep focus inside the dialog when a control DISABLES itself under the
+   * user's cursor — Save empties its own field, Send test greys out while it
+   * sends. The browser strands focus on `<body>` when that happens, and from
+   * there Escape reaches nothing: the key handler is on the container, and
+   * `<body>` is outside it. Found by the e2e, not by reading the code.
+   *
+   * Deliberately narrow — it acts only when focus is on `body` (or gone), never
+   * when it is on something real.
+   */
+  React.useEffect(() => {
+    if (!props.open) return;
+    const active = document.activeElement;
+    if (!active || active === document.body) dialog.current?.focus();
+  });
+
   if (!props.open) return null;
 
   const close = (): void => {

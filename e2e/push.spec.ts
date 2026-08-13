@@ -99,6 +99,10 @@ test.describe('phone push & webhooks (P2-E14-06)', () => {
     // (#421). A CI container with no keyring must show the honest refusal, and
     // that path is worth asserting rather than skipping past.
     const available = await field(w, 'ntfy.topic').isEnabled();
+    // …but Windows always has DPAPI, so there the branch below is not allowed
+    // to be the one that runs — otherwise this whole spec could go green by
+    // skipping itself and nobody would notice (the `shown === true` lesson).
+    if (process.platform === 'win32') expect(available).toBe(true);
     if (!available) {
       await expect(w.locator('[data-push-field="unavailable"]')).toBeVisible();
       await expect(field(w, 'enable-push')).toBeDisabled();
@@ -117,7 +121,14 @@ test.describe('phone push & webhooks (P2-E14-06)', () => {
     await field(w, 'webhook.url').fill(stub.url);
     await field(w, 'webhook.url').press('Enter');
     await expect(statusOf(w, 'webhook.url')).toHaveText('· saved');
-    await field(w, 'enable-webhook').check();
+    // `.click()` + `toBeChecked`, deliberately not `.check()`: this box is not
+    // optimistic. It renders what MAIN says it stored, so the DOM briefly
+    // reverts between the click and the IPC answer — and `check()` asserts the
+    // state synchronously after clicking, which is a race against a boundary we
+    // want to keep authoritative (a refused write must leave the box telling
+    // the truth, `rules-ipc.ts`'s rule).
+    await field(w, 'enable-webhook').click();
+    await expect(field(w, 'enable-webhook')).toBeChecked();
 
     // Send test — an explicit gesture, so it goes out with the switch state
     // irrelevant, and it is what Dan will click when he sets up his phone.
