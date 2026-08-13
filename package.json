@@ -21,7 +21,7 @@
     "e2e:only": "playwright test",
     "e2e:headed": "npm run build && playwright test --headed",
     "e2e:ui": "playwright test --ui",
-    "lint": "eslint .",
+    "lint": "node scripts/check-nul.js && eslint .",
     "sweep:temp": "node scripts/sweep-temp-orphans.js",
     "postinstall": "node scripts/rebuild-native.js",
     "check:pty": "node scripts/run-electron-node.js out/main/pty-check.js",

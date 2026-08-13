@@ -213,7 +213,8 @@ export default tseslint.config(
     languageOptions: {
       sourceType: 'module',
       // `ignores` on the block above strips its globals too, so restate them
-      globals: { process: 'readonly', console: 'readonly' },
+      // (`Buffer` for #435's tests, which assert on raw bytes)
+      globals: { process: 'readonly', console: 'readonly', Buffer: 'readonly' },
     },
   }
 );
