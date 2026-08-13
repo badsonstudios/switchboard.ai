@@ -7,6 +7,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   ACTION_OS_TOAST,
+  ACTION_PUSH,
+  ACTION_WEBHOOK,
   ALL_VISIBILITIES,
   NOTIFY_WHEN_DONE,
   Rule,
@@ -198,6 +200,73 @@ describe('defaultRules — the built-ins, and what they encode', () => {
     for (const v of ALL_VISIBILITIES) {
       expect(plannedActions(defaultRules(on), trigger('ready', CARD, v))).toEqual([]);
     }
+  });
+
+  // ── the two channels that leave the machine (P2-E14-06) ──────────────────
+  describe('push and webhook', () => {
+    const types = (prefs: Parameters<typeof defaultRules>[0], kind: FeedKind, v: WindowVisibility) =>
+      plannedActions(defaultRules(prefs), trigger(kind, CARD, v)).map((a) => a.action.type);
+
+    it('contribute nothing until their own switch is on', () => {
+      expect(defaultRules({ osToasts: true }).some((r) => r.actions[0].type !== ACTION_OS_TOAST)).toBe(
+        false
+      );
+      expect(defaultRules({})).toEqual([]);
+    });
+
+    // The decision the per-session checkbox already established (§5.9): a
+    // switch does what it says, whatever the switch beside it is doing.
+    it('fire with desktop pop-ups OFF — each channel is its own opt-in', () => {
+      expect(types({ push: true }, 'needs-permission', 'hidden')).toEqual([ACTION_PUSH]);
+      expect(types({ webhook: true }, 'done', 'focused')).toEqual([ACTION_WEBHOOK]);
+    });
+
+    it.each(['needs-input', 'needs-permission', 'crashed'] as FeedKind[])(
+      'pushes %s while away, and never while you are looking at the app',
+      (kind) => {
+        expect(types({ push: true }, kind, 'hidden')).toEqual([ACTION_PUSH]);
+        expect(types({ push: true }, kind, 'visible')).toEqual([ACTION_PUSH]);
+        expect(types({ push: true }, kind, 'focused')).toEqual([]);
+      }
+    );
+
+    it('does not push a finished turn — that is the per-session checkbox', () => {
+      expect(types({ push: true }, 'done', 'hidden')).toEqual([]);
+    });
+
+    // A webhook goes to a program, and a program is not distracted by being
+    // looked at. Different conditions from the phone, on purpose.
+    it.each(['needs-input', 'needs-permission', 'crashed', 'done'] as FeedKind[])(
+      'POSTs %s whatever the window is doing',
+      (kind) => {
+        for (const v of ALL_VISIBILITIES)
+          expect(types({ webhook: true }, kind, v)).toEqual([ACTION_WEBHOOK]);
+      }
+    );
+
+    it('carries NO destination in the action payload — that would be a secret in the file', () => {
+      for (const r of defaultRules({ push: true, webhook: true }))
+        for (const a of r.actions) expect(Object.keys(a)).toEqual(['type']);
+    });
+
+    it('stacks with the toasts rather than replacing them', () => {
+      expect(types({ osToasts: true, push: true, webhook: true }, 'needs-permission', 'hidden')).toEqual(
+        [ACTION_OS_TOAST, ACTION_PUSH, ACTION_WEBHOOK]
+      );
+    });
+
+    it('leaves the shipped toast rule ids untouched', () => {
+      expect(defaultRules({ osToasts: true }).map((r) => r.id)).toEqual([
+        'default:needs-input',
+        'default:needs-permission',
+        'default:crashed',
+      ]);
+    });
+
+    it('`ready` reaches neither channel', () => {
+      for (const v of ALL_VISIBILITIES)
+        expect(types({ push: true, webhook: true }, 'ready', v)).toEqual([]);
+    });
   });
 });
 

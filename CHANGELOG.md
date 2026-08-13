@@ -55,6 +55,20 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **Answer a permission from the desktop pop-up.** When a session asks
+  permission while you are in another app, the pop-up now carries **Allow** and
+  **Deny** — press one and the tool runs, or Claude is told no, without
+  switchboard ever coming to the front. The pop-up names what it would allow
+  ("Allow Bash? npm run build"), not just that something is waiting. Clicking
+  the pop-up *body* is never an answer: it brings switchboard forward onto the
+  card that is asking. Answer it anywhere else — the approval bar, the Events
+  panel, the batch bar — and the pop-up is withdrawn, so a stale **Allow** can
+  never sit in your notification centre for a settled question. Buttons on
+  notifications are the operating system's to grant: Windows and macOS get
+  them (an installed build on Windows, a signed one on macOS); Linux gets the
+  click-to-jump path instead. The approval bar in the app is unchanged and is
+  always there.
+
 - **A session's task label now fills itself in.** Claude Code gives every
   conversation a short title of its own; if you have not typed a label, the card
   shows that instead — so a screen full of sessions reads "Add markdown
@@ -81,6 +95,29 @@ on the floor, and say so in your PR.
   above is the first one, and rules are what make per-session sounds, spoken
   announcements, Allow/Deny buttons on notifications and phone push possible
   without another special case each.
+- **A session can now reach your phone.** Point switchboard at an
+  [ntfy](https://ntfy.sh) topic or a [Pushover](https://pushover.net) account
+  and it will buzz your phone when a session needs permission, needs input, or
+  crashes — but only while you are away from the app, and never at an urgency
+  that overrides your phone's do-not-disturb. Set it up with `Ctrl+Shift+P` →
+  *phone push*, or from the About panel; there is a **Send test** button so you
+  find out it works before you need it to.
+- **Webhooks.** The same events can be POSTed as JSON to a URL you own — a
+  dashboard, a Slack relay, a home automation. The body is documented in the
+  manual and carries the event type, the session and card ids, the title and a
+  timestamp, and nothing else: no folder, no file paths, no prompt text. Unlike
+  the phone push it fires whatever the window is doing, and includes finished
+  turns.
+- **Your credentials go into your operating system's credential store** —
+  Windows DPAPI, the macOS Keychain, your Linux keyring — never into a
+  switchboard file, and never into the logs. switchboard cannot show a saved
+  value back to you (a filled field reads "saved" and stays empty); paste a new
+  one over it to change it, or press Forget. On a Linux box with no keyring it
+  says so and refuses to store anything rather than writing a token to a plain
+  file. All of this is off until you set it up, and the app is entirely usable
+  with none of it configured — a phone that is off, or a webhook host that has
+  gone away, can never hold a session up, and the failure is logged once rather
+  than on every event.
 - **The app now knows when Anthropic is having a day.** A small dot at the
   right-hand end of the bottom bar reflects Anthropic's public status page —
   green for all clear, amber for degraded, red for an outage, hollow grey when
@@ -108,6 +145,21 @@ on the floor, and say so in your PR.
   header of every document too. The viewer never saves anything, never loads a
   picture from the internet, and only opens files inside a folder you already
   have a session in, or files you picked yourself.
+- **One document at a time, unless you say otherwise.** Opening a second file
+  reuses the same viewer instead of stacking up tabs — glance at six files and
+  you still have one panel, not six. When you want to keep one, click the 📌 in
+  its header: that document stays put and the next file you open gets a fresh
+  panel of its own. Click 📌 again to hand the slot back.
+- **A document can have its own window.** The ⤢ beside the pin moves the
+  document you are reading onto its own OS window — a second monitor, your
+  reference open beside the work — and the same button puts it back. Closing the
+  window puts it back too.
+- **A document opened from a session says so.** Open a file from a session's
+  Changes tab and the viewer wears that session's colour down its edge with a
+  small `↳ name` chip. It is a label, not a leash: the document is not part of
+  that session, does not appear in the sessions list, is never picked up by
+  **Close all sessions**, and stays open after the session it came from is
+  closed.
 
 - When two or more sessions are waiting on **exactly the same** permission
   request, it now appears once, on a single card above the workspace, with
@@ -115,6 +167,20 @@ on the floor, and say so in your PR.
   decline another. Requests only share a card when the tool and every argument
   match character for character, so `rm -rf build` and `rm -rf /` are never
   answered together.
+- **`Ctrl+F` finds things in a session.** A find bar, the way a browser means
+  it: type, `Enter` and `Shift+Enter` to step, a count beside the box, `Esc` to
+  close and get your cursor back. It searches the *whole* session rather than
+  what happens to be on screen — including the older part a long conversation
+  has scrolled out of memory, the tool output your detail level is hiding, and
+  anything folded — and jumping to a match opens whatever was covering it.
+  Open the results list for the matches with their surrounding text. On the
+  **Changes** tab the same key hands you the diff editor's own find rather than
+  putting a second, worse one on top of it. Two boundaries worth knowing:
+  matches from further back than the loaded view are readable in the list but
+  can't be scrolled to, and are labelled as such; and sessions in Direct mode
+  currently get the list without the jump, because their conversation and their
+  transcript can't yet be lined up. The Terminal tab greys the bar and says so
+  instead of pretending.
 
 ### Changed
 
@@ -174,6 +240,11 @@ on the floor, and say so in your PR.
   cleared out over the next few times you open the app — a day's worth at a
   time, and never more than a couple of seconds of it per launch. Nothing you
   can see changes; you get the disk space back.
+- **Opening Changes on a popped-out session no longer buries the diff in that
+  session's window.** If a card was in its own pop-out window, "Open changes"
+  put the diff inside that window as an extra tab — behind the session you were
+  watching, and nowhere near the main window you asked from. It now always
+  opens in the main window, the same as a new session does.
 
 ### Internal
 

@@ -18,8 +18,16 @@
 // FAIL-OPEN: with no opener registered, `openDocument` reports false and does
 // nothing. A click on a path before the grid is ready must not throw.
 
-/** What actually opens a panel — installed by `App` from the grid controller. */
-export type DocumentOpener = (absolutePath: string) => void;
+/**
+ * What actually opens a panel — installed by `App` from the grid controller.
+ *
+ * `sessionId` is the CARD the request came from, when there was one (P2-E16-03,
+ * §5.24): the viewer wears that session's accent and a `↳ session` chip. It is
+ * attribution, not ownership — the viewer outlives the session and belongs to
+ * no group of its own — so it is optional at every call site, and the palette's
+ * `Open file…` passes nothing on purpose.
+ */
+export type DocumentOpener = (absolutePath: string, sessionId?: string) => void;
 
 let opener: DocumentOpener | null = null;
 
@@ -39,10 +47,10 @@ export function canOpenDocuments(): boolean {
  * Returns false when nothing is listening, so a caller can leave its own
  * affordance disabled rather than offering a click that does nothing.
  */
-export function openDocument(absolutePath: string): boolean {
+export function openDocument(absolutePath: string, sessionId?: string): boolean {
   if (!opener || typeof absolutePath !== 'string' || absolutePath.length === 0) return false;
   try {
-    opener(absolutePath);
+    opener(absolutePath, sessionId);
     return true;
   } catch {
     // The grid throwing must not take the surface that asked with it.

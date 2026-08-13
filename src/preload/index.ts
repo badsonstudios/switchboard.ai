@@ -16,6 +16,13 @@ import type {
 } from '../shared/update';
 import type { WorkspaceSaveState } from '../shared/workspace';
 import type { ServiceHealthPrefs, ServiceHealthStatus } from '../shared/service-health';
+import type {
+  PushConfig,
+  PushPrefs,
+  PushSecretKey,
+  PushSendResult,
+  PushWriteResult,
+} from '../shared/push';
 
 const versionArg = process.argv.find((a) => a.startsWith('--switchboard-version='));
 const seedArg = process.argv.find((a) => a.startsWith('--switchboard-seed-panels='));
@@ -291,6 +298,19 @@ const api = {
       ipcRenderer.on('sessions:permissionResolved', h);
       return () => ipcRenderer.removeListener('sessions:permissionResolved', h);
     },
+    /**
+     * Main asks for a card to be brought to the front (P2-E14-04).
+     *
+     * Today's only sender is a click on the OS toast for a held permission —
+     * the gesture that has to work when the app is not focused, and the only
+     * gesture at all on a desktop whose toasts cannot carry buttons. It is a
+     * request to move the SCREEN; it never carries a verdict.
+     */
+    onRevealCard: (cb: (r: { cardId: string }) => void): (() => void) => {
+      const h = (_e: unknown, r: { cardId: string }) => cb(r);
+      ipcRenderer.on('sessions:revealCard', h);
+      return () => ipcRenderer.removeListener('sessions:revealCard', h);
+    },
     onExited: (cb: (e: { sessionId: string; code: number; crashed: boolean }) => void): (() => void) => {
       const h = (_e: unknown, x: { sessionId: string; code: number; crashed: boolean }) => cb(x);
       ipcRenderer.on('sessions:exited', h);
@@ -479,6 +499,27 @@ const api = {
     getPrefs: (): Promise<ServiceHealthPrefs> => ipcRenderer.invoke('health:getPrefs'),
     setPrefs: (p: { poll?: boolean }): Promise<ServiceHealthPrefs> =>
       ipcRenderer.invoke('health:setPrefs', p),
+  },
+  /**
+   * Phone push + webhook (P2-E14-06, §5.9 + §5.29).
+   *
+   * **Write-only for credentials.** `setSecret` puts a value into the OS
+   * credential store and there is no call that reads one back — `getConfig`
+   * answers with booleans. That is the point of the boundary: this side of it
+   * renders documents it did not write, and a compromise here must not be able
+   * to walk off with the user's Pushover token.
+   */
+  push: {
+    getConfig: (): Promise<PushConfig> => ipcRenderer.invoke('push:getConfig'),
+    /** answers the new config AND whether the write happened — see PushWriteResult */
+    setPrefs: (p: Partial<PushPrefs>): Promise<PushWriteResult> =>
+      ipcRenderer.invoke('push:setPrefs', p),
+    /** store one credential; an empty string forgets it */
+    setSecret: (key: PushSecretKey, value: string): Promise<PushWriteResult> =>
+      ipcRenderer.invoke('push:setSecret', key, value),
+    /** send one now, whatever the switches say — the dialog's Send test */
+    test: (channel: 'push' | 'webhook'): Promise<PushSendResult> =>
+      ipcRenderer.invoke('push:test', channel),
   },
   transcripts: {
     blocks: (liveId: string): Promise<unknown[]> => ipcRenderer.invoke('transcripts:blocks', liveId),

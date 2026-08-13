@@ -1,4 +1,14 @@
-import { app, BrowserWindow, Menu, net, Notification, screen, session, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  net,
+  Notification,
+  safeStorage,
+  screen,
+  session,
+  shell,
+} from 'electron';
 import path from 'path';
 import { windowOptionsFrom, WindowState } from './window-state';
 import { WorkspaceStore, displayFingerprint } from './workspace/store';
@@ -23,9 +33,25 @@ import { IpcBroker } from './ipc/broker';
 import { allCapabilities, Channel } from '../shared/ipc/capabilities';
 import { EventFeed } from './events/feed';
 import { Notifier } from './events/notifier';
-import { ACTION_OS_TOAST, defaultRules, visibilityAcross } from './events/rules';
+import {
+  ACTION_OS_TOAST,
+  ACTION_PUSH,
+  ACTION_WEBHOOK,
+  defaultRules,
+  visibilityAcross,
+} from './events/rules';
 import { RuleActionRegistry, RulesEngine } from './events/rules-engine';
+import {
+  DECIDE_BUTTONS,
+  DECIDE_BUTTON_LABELS,
+  PermissionToasts,
+  permissionSummary,
+  toastActionsSupported,
+} from './events/permission-toast';
 import { registerRulesIpc } from './events/rules-ipc';
+import { PushActions } from './events/push-actions';
+import { registerPushIpc } from './events/push-ipc';
+import { SecretStore } from './secrets/store';
 import { GitService } from './git/git-service';
 import { runPreflight } from './preflight';
 import { startStaticServer, StaticServer } from './static-server';
@@ -1194,8 +1220,39 @@ app
     // `Notification`; everything above it (`events/rules.ts`,
     // `events/rules-engine.ts`) is pure and testable without electron.
     const rulesLog = createLogger(sink, 'rules');
+
+    // ── P2-E14-04: the toast can ANSWER, not just announce ────────────────
+    //
+    // Late-bound onto `sessionIpc` exactly like `cardIdForLive` below, for the
+    // same reason: the toast's decision must be the app's ONE decision path
+    // (`sessions/ipc.ts`), and that closure does not exist until
+    // `registerSessionIpc` returns a few dozen lines further down. Nothing can
+    // ask before then — a toast needs a permission, a permission needs a
+    // session, and no session exists yet.
+    let sessionIpcRef: SessionIpcHandle | null = null;
+    const permissionToasts = new PermissionToasts({
+      decide: (requestId, decision) =>
+        sessionIpcRef?.decidePermission(requestId, decision) ?? false,
+      reveal: (cardId) => {
+        // Raise the window FIRST (the same helper a second launch uses, which
+        // is the one place that knows restore-then-show-then-focus is three
+        // different fixes), then tell the renderer which card to land on.
+        focusRunningWindow(currentWindow);
+        if (cardId) broker.send(currentWindow, 'sessions:revealCard', { cardId });
+      },
+      log: rulesLog,
+    });
+    // A verdict from ANY surface — the approval bar, the Events panel's inline
+    // buttons, the batch band, a session teardown releasing its holds, or the
+    // toast itself — withdraws the toast. Both routers, because a permission
+    // rides whichever transport its session is on and the toast cannot tell.
+    hooks.onPermissionResolved((requestId) => permissionToasts.withdraw(requestId));
+    streamPermissions.onPermissionResolved((requestId) =>
+      permissionToasts.withdraw(requestId)
+    );
+
     const ruleActions = new RuleActionRegistry(rulesLog);
-    ruleActions.register(ACTION_OS_TOAST, (_action, ctx) => {
+    ruleActions.register(ACTION_OS_TOAST, (action, ctx) => {
       // Whether the OS can display a notification at all is an ENVIRONMENT
       // fact, not a decision this rule made: a Linux box with no notification
       // daemon (a CI container, say) reports `false` here forever. So the two
@@ -1203,24 +1260,103 @@ app
       // desktop took it. A silent early return was the one outcome that could
       // not be debugged, and "why didn't it pop?" is a real support question.
       const shown = Notification.isSupported();
+      // P2-E14-04. The request this toast is about, if it is about one at all.
+      // Resolved HERE rather than carried on the rule, because whether a
+      // permission is still held is a fact about right now: between the event
+      // and this line the bar may already have answered it, and a toast
+      // offering Allow for a question nobody is holding is worse than no toast.
+      //
+      // The rule can opt OUT (`buttons: false`) and nothing else about the
+      // payload changes — deliberately not opt-in, because the payload is also
+      // the dedup key (`plannedActions`), and a default rule that carried
+      // `buttons` while a user's hand-written toast rule did not would produce
+      // TWO toasts for one permission. Opt-out also happens to be the right
+      // default: there is no sane rule that says "tell me, but do not let me
+      // answer".
+      const req =
+        ctx.event.kind === 'needs-permission' && action.buttons !== false
+          ? (sessionIpcRef?.pendingPermissionFor(ctx.event.sessionId) ?? null)
+          : null;
+      const decidable = !!req && toastActionsSupported(process.platform);
       if (shown) {
-        new Notification({
+        const toast = new Notification({
           title: ctx.title,
           body: ctx.body,
           silent: true, // the Notifier's beep is the sound cue
-        }).show();
+          ...(decidable
+            ? {
+                actions: DECIDE_BUTTONS.map((d) => ({
+                  type: 'button' as const,
+                  text: DECIDE_BUTTON_LABELS[d],
+                })),
+              }
+            : {}),
+        });
+        // A toast the desktop refused is not a toast: without this line the
+        // failure is invisible, and "it worked yesterday" has nowhere to look.
+        toast.on('failed', (_e, error) =>
+          rulesLog.warn('the desktop refused an OS toast', { ruleId: ctx.rule.id, error })
+        );
+        if (req) {
+          const requestId = req.requestId;
+          // `details.actionIndex` rather than the positional argument, which
+          // electron.d.ts marks deprecated.
+          if (decidable) {
+            toast.on('action', (details) => permissionToasts.press(requestId, details.actionIndex));
+          }
+          // Clicking the BODY is a shortcut, never a verdict — wired on every
+          // platform, because it is the whole gesture on Linux and the fallback
+          // wherever the buttons do not render.
+          toast.on('click', () => permissionToasts.activate(requestId, ctx.cardId));
+          // Deliberately NOT unhooked on `close`: a Windows toast that times
+          // out fires `close` and then sits in the Action Center, where
+          // `close()` still removes it. See `PermissionToasts.withdraw`.
+          permissionToasts.track(requestId, toast);
+        }
+        toast.show();
       }
       // The e2e proof that a rule reached the toast action
-      // (`e2e/rules.spec.ts`) — and the line to grep after "why did/didn't it
-      // pop".
+      // (`e2e/rules.spec.ts`, `e2e/permission-toast.spec.ts`) — and the line to
+      // grep after "why did/didn't it pop".
       rulesLog.info('os toast rule fired', {
         kind: ctx.event.kind,
         cardId: ctx.cardId ?? '',
         visibility: ctx.visibility,
         ruleId: ctx.rule.id,
         shown,
+        // How many Allow/Deny buttons went on it, and which request they
+        // answer. Zero with a requestId present means this desktop cannot
+        // carry buttons — the click path is what the user gets.
+        buttons: decidable ? DECIDE_BUTTONS.length : 0,
+        requestId: req?.requestId ?? '',
       });
     });
+    // ── the two channels that leave the machine (P2-E14-06, §5.9 + §5.29) ──
+    //
+    // Assembled here for the same reason the toast is: this file owns the
+    // electron singletons, and `safeStorage` is one. Everything below it —
+    // the store, the senders, the deciding — is plain TypeScript that a unit
+    // test drives with a fake crypto and a fake `fetch`.
+    //
+    // Both actions are registered UNCONDITIONALLY, configured or not: an
+    // unregistered type is logged as "this build has no handler for it" on
+    // every event, which is a lie about the build. The handlers themselves
+    // resolve to "not configured" in silence, which is the truth about the
+    // machine.
+    const pushLog = createLogger(sink, 'push');
+    const secretStore = new SecretStore({
+      dir: app.getPath('userData'),
+      crypto: safeStorage,
+      log: pushLog,
+    });
+    const pushActions = new PushActions({
+      secrets: secretStore,
+      getPrefs: () => workspace.getPushPrefs(),
+      log: pushLog,
+      userAgent: app.getVersion(),
+    });
+    ruleActions.register(ACTION_PUSH, pushActions.pushHandler);
+    ruleActions.register(ACTION_WEBHOOK, pushActions.webhookHandler);
     // Assigned the moment `registerSessionIpc` returns, a few dozen lines
     // below; until then no session exists, so no event can ask.
     let cardIdForLive: (liveId: string) => string | null = () => null;
@@ -1231,7 +1367,17 @@ app
     let labelForLive: (sessionId: string) => string | undefined = () => undefined;
     const rules = new RulesEngine({
       getRules: () => workspace.listRules(),
-      getDefaultRules: () => defaultRules(workspace.getNotificationPrefs()),
+      // The built-ins are synthesized per event from the switches, push and
+      // webhook included — so turning the phone on in the setup dialog takes
+      // effect on the next event with nothing to persist and no rule to write.
+      getDefaultRules: () => {
+        const push = workspace.getPushPrefs();
+        return defaultRules({
+          ...workspace.getNotificationPrefs(),
+          push: push.push,
+          webhook: push.webhook,
+        });
+      },
       cardIdFor: (liveId) => cardIdForLive(liveId),
       // Every window, not just the main one: a popped-out card (E8) is a
       // window the user can be looking at while the main one is minimized.
@@ -1240,7 +1386,19 @@ app
         labelForLive(e.sessionId) ??
         manager.get(e.sessionId)?.identity.title ??
         'switchboard.ai',
-      bodyFor: (e) => e.kind.replace(/-/g, ' '),
+      // P2-E14-04: a permission toast NAMES what it would allow. "needs
+      // permission" beside an Allow button asks the user to grant a tool call
+      // they cannot see, which is the one thing an off-screen decision path may
+      // not do — the promise is that answering from the toast is the same
+      // decision they would have made at the bar (§5.9, P6). Every other kind
+      // keeps the plain wording.
+      bodyFor: (e) => {
+        if (e.kind === 'needs-permission') {
+          const req = sessionIpcRef?.pendingPermissionFor(e.sessionId);
+          if (req) return permissionSummary(req);
+        }
+        return e.kind.replace(/-/g, ' ');
+      },
       registry: ruleActions,
       log: rulesLog,
     });
@@ -1249,6 +1407,13 @@ app
       log: rulesLog,
       store: workspace,
       knownCard: (cardId) => workspace.listSessions().some((s) => s.id === cardId),
+    });
+    registerPushIpc({
+      broker,
+      log: pushLog,
+      store: workspace,
+      secrets: secretStore,
+      actions: pushActions,
     });
 
     const notifier = new Notifier({
@@ -1359,7 +1524,13 @@ app
     // the live -> card join the rules engine scopes by (P2-E14-03)
     cardIdForLive = sessionIpc.cardIdFor;
     labelForLive = sessionIpc.labelFor;
+    // …and the permission half a toast needs to name and answer a hold
+    // (P2-E14-04). Same late binding, same reason.
+    sessionIpcRef = sessionIpc;
     app.on('quit', () => {
+      // A toast offering Allow for a session that is being torn down is a
+      // button that can only disappoint. Take them down with the app.
+      permissionToasts.withdrawAll();
       ptys.killAll();
       streams.killAll();
       hooks.stop();

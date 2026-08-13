@@ -107,6 +107,7 @@ describe('the IPC capability map (the done-when: no channel is untagged)', () =>
       'src/main/workspace/group-ipc.ts',
       'src/main/fs/ipc.ts',
       'src/main/events/rules-ipc.ts',
+      'src/main/events/push-ipc.ts',
     ]
       .map((f) => fs.readFileSync(path.join(process.cwd(), f), 'utf8'))
       .join(' ');

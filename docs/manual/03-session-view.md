@@ -109,6 +109,11 @@ Three settings, top of the Session tab:
 
 Switch any time; it applies instantly and is remembered per session.
 
+Note that **searching ignores this setting** — `Ctrl+F` looks at everything,
+including the tool output **quiet** is hiding and the thinking **normal**
+hides, and jumping to a match unfolds it. See
+[Finding something in a session](16-find.md).
+
 ## The Terminal tab
 
 The real Claude Code interface, available as the last tab on a session running

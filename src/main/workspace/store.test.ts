@@ -469,6 +469,75 @@ describe('service-health prefs (P2-E14-07)', () => {
   });
 });
 
+describe('phone-push prefs (P2-E14-06)', () => {
+  it('defaults to both channels OFF — the app is fully functional unconfigured', () => {
+    const st = makeStore(file);
+    st.load();
+    expect(st.getPushPrefs()).toEqual({ push: false, service: 'ntfy', webhook: false });
+  });
+
+  it('round-trips the switches and the server through the file', () => {
+    const a = makeStore(file);
+    a.load();
+    a.setPushPrefs({ push: true, service: 'pushover' });
+    a.setPushPrefs({ ntfyServer: 'https://ntfy.example.test' }); // merge-patch
+    a.save();
+    const b = makeStore(file);
+    b.load();
+    expect(b.getPushPrefs()).toEqual({
+      push: true,
+      service: 'pushover',
+      webhook: false,
+      ntfyServer: 'https://ntfy.example.test',
+    });
+  });
+
+  // The §5.29 claim, asserted against the BYTES. This shape has nowhere to put
+  // a credential, and this test is what keeps it that way.
+  it('cannot persist a credential, however it is handed one', () => {
+    const st = makeStore(file);
+    st.load();
+    st.setPushPrefs({
+      push: true,
+      // a caller (or a hand-edited file) trying to sneak one through
+      topic: 'topic-9f3a-SECRET',
+      token: 'app-token',
+    } as unknown as Parameters<typeof st.setPushPrefs>[0]);
+    st.save();
+    const bytes = fs.readFileSync(file, 'utf8');
+    expect(bytes).not.toContain('topic-9f3a-SECRET');
+    expect(bytes).not.toContain('app-token');
+    expect(st.getPushPrefs()).toEqual({ push: true, service: 'ntfy', webhook: false });
+  });
+
+  it('a mangled value leaves the channels OFF rather than sending something', () => {
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ version: 1, push: { push: 'yes', webhook: 1, service: 'telegram' } })
+    );
+    const st = makeStore(file);
+    st.load();
+    expect(st.getPushPrefs()).toEqual({ push: false, service: 'ntfy', webhook: false });
+  });
+
+  it('a file written before this feature existed simply gets the defaults', () => {
+    fs.writeFileSync(file, JSON.stringify({ version: 1, sessions: [], autoTrust: false }));
+    const st = makeStore(file);
+    st.load();
+    expect(st.getPushPrefs()).toEqual({ push: false, service: 'ntfy', webhook: false });
+    expect(st.getAutoTrust()).toBe(false);
+  });
+
+  it('two stores do not share the defaults object', () => {
+    const a = makeStore(file);
+    a.load();
+    a.setPushPrefs({ push: true });
+    const b = makeStore(path.join(dir, 'push-other.json'));
+    b.load();
+    expect(b.getPushPrefs().push).toBe(false);
+  });
+});
+
 describe('ui blob (P2-E12-08 focus/view-tab state)', () => {
   it('round-trips opaque ui state', () => {
     const a = makeStore(file);
@@ -1102,6 +1171,7 @@ describe('load-time repairs are audible (#344)', () => {
       autoTrust: false,
       updates: { autoCheck: false, skippedVersion: '0.2.0' },
       health: { poll: false },
+      push: { push: true, service: 'ntfy', webhook: false, ntfyServer: 'https://ntfy.example.test' },
     });
     expect(loadWarns()).toEqual([]);
   });

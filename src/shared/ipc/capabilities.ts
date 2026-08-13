@@ -70,6 +70,21 @@ export const CAPABILITIES = [
   // "settings.read". Read-only and unauthenticated — it
   // sends nothing, which is what keeps §5.14 inside the
   // local-first constraint.
+  'push.read', // which phone-push / webhook switches are on, and WHICH
+  // credentials exist (booleans — never a value; there is no
+  // channel that reads one back, see `events/push-ipc.ts`).
+  'push.write', // the switches, and writing a credential INTO the OS store
+  // (P2-E14-06, §5.29). Not folded into `settings.write`: the
+  // `fs.read` argument applies — depositing a secret in the
+  // credential store is strictly more power than flipping a
+  // preference, and a Phase-4 contribution that wants the
+  // second must not silently acquire the first.
+  'push.send', // SENDS SESSION-DERIVED TEXT TO A THIRD-PARTY HOST the user
+  // configured — the setup dialog's "Send test" (P2-E14-06).
+  // Its own capability for the `update.check` / `provider.status`
+  // reason, and it is the sharpest of the three: those two READ
+  // from a public host, this one WRITES a session's task label
+  // out of the machine.
   'shell.openExternal', // hands a URL to the user's BROWSER. Its own capability
   // for the `dialog.open` reason — putting something in
   // front of the user, outside the app, is a power in its
@@ -132,6 +147,13 @@ export const CHANNEL_CAPABILITIES = {
   'notifications:getPrefs': 'settings.read',
   'notifications:setPrefs': 'settings.write',
   'preflight:check': 'environment.probe',
+  // Phone push + webhook (P2-E14-06, §5.9 + §5.29). Three capabilities for four
+  // channels because the powers really are three: read the shape of the config,
+  // write it (credential store included), and make something leave the machine.
+  'push:getConfig': 'push.read',
+  'push:setPrefs': 'push.write',
+  'push:setSecret': 'push.write',
+  'push:test': 'push.send',
   // Notification RULES (P2-E14-03). They are notification preferences that
   // happen to be per-session, so they carry the settings capabilities rather
   // than minting a pair of their own — reading one tells you nothing a
@@ -220,6 +242,11 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:feedReset': 'transcripts.read',
   'sessions:permissionRequest': 'sessions.read',
   'sessions:permissionResolved': 'sessions.read',
+  // "bring this card to the front" — pushed when the user clicked an OS toast
+  // for a held permission (P2-E14-04). `sessions.read` and not `.write`: it
+  // moves the SCREEN, not a session. The verdict, if there is one, still goes
+  // through `sessions:decidePermission` and its `sessions.write`.
+  'sessions:revealCard': 'sessions.read',
   'sessions:status': 'sessions.read',
   // a card's task label moved, and the renderer did not do it (P2-E7-06) —
   // carries the new value, because its two readers have nothing to re-read
