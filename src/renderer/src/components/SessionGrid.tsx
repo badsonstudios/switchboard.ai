@@ -1309,17 +1309,30 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                             </button>
                           </div>
                         )}
-                        {/* A CHECKBOX, not a command: `menuitemcheckbox` +
-                            `aria-checked` is what tells a screen reader this
-                            entry has a state, and the box glyph is the same
-                            fact for everyone else — never color alone
-                            (§5.32). Not locked with the session controls
-                            above: those type a slash command into a live CLI,
-                            this writes a preference, and a suspended or
-                            crashed card is exactly when you want to arm it. */}
+                        {/* A STATEFUL entry, not a command — a screen reader
+                            has to be told this one has an on/off, and the box
+                            glyph is the same fact for everyone else (never
+                            color alone, §5.32).
+
+                            `aria-pressed`, NOT `menuitemcheckbox`, and the
+                            difference is the container: this dropdown is a
+                            plain div of buttons with only Escape on it. A
+                            `menuitemcheckbox` is only valid when a `role=menu`
+                            OWNS it, and in this codebase a `role=menu` is a
+                            promise of roving arrow keys the rail's menu keeps
+                            (#197) and this one does not — claiming the role
+                            here would announce a menu that the arrows then
+                            refuse to walk. A toggle button is valid in any
+                            container and carries the same state. Promoting
+                            this whole menu to a real APG menu is worth doing,
+                            but it is a menu-wide job, not this checkbox's.
+
+                            Not locked with the session controls above: those
+                            type a slash command into a live CLI, this writes a
+                            preference, and a suspended or crashed card is
+                            exactly when you want to arm it. */}
                         <button
-                          role="menuitemcheckbox"
-                          aria-checked={notifyWhenDone}
+                          aria-pressed={notifyWhenDone}
                           data-testid="card-notify-when-done"
                           onClick={toggleNotifyWhenDone}
                           title={t('grid.menuNotifyWhenDoneHint')}
