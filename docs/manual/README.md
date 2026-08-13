@@ -36,6 +36,7 @@ no page is an unfinished work item.
 | [13 — Updates](13-updates.md) | When it checks for a new version, what the release box offers, what Skip means | draft |
 | [14 — Is it me or is it them?](14-provider-status.md) | The status dot, provider incidents, and the "several sessions just hit errors" strip | draft |
 | [15 — Reading files in the app](15-document-viewer.md) | Opening a file, rendered Markdown, source view, find, what won't be shown | draft |
+| [16 — Finding something](16-find.md) | `Ctrl+F` over a session: the find bar, the results list, what it searches that you can't see | draft |
 
 Backfilled 2026-07-24 from the shipped app (Phase 1 + Phase 2 epics E7, E8,
 E10, E12) — written against the actual UI strings and behavior, not from

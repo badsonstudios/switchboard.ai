@@ -57,6 +57,7 @@ import {
 import { buildIdentity } from '../../shared/build-identity';
 import { applyTabRows, loadTabRows, syncDocumentFlags, toggleTabRows } from './lib/tab-rows';
 import { openPopoutWindows, subscribePopoutWindows } from './lib/popout-windows';
+import { openFindBar } from './lib/find-bar-state';
 import { setDocumentOpener } from './lib/document-open';
 
 // One stable subscribe identity for every useSyncExternalStore call below.
@@ -902,6 +903,20 @@ export function App(): React.JSX.Element {
           toggleMaximize: (cardId) => grid.current?.toggleMaximize(cardId),
           toggleRail,
           openPalette: () => setPaletteOpen(true),
+          // The bar itself is rendered by the CARD (SessionGrid) — this only
+          // publishes which card is asking, because a keydown handler has no
+          // way into another dockview panel's tree (§5.31, lib/find-bar-state).
+          //
+          // POPPED-OUT CARDS: `activeCardId()` deliberately answers null for
+          // one (a command typed in this window must never act on a card you
+          // cannot see), so `find.open` is disabled while a popout is the
+          // active panel, exactly as every other card-scoped command is. That
+          // means Ctrl+F inside a popped-out session opens the bar on the
+          // docked card instead, and the popout key bridge below raises this
+          // window with it — which is where the bar actually is. Making find
+          // window-local is a §5.8 question about which window a command acts
+          // in, not a find question, so it is not answered here.
+          openFind: (cardId) => openFindBar(cardId),
           toggleTabRows: () => {
             toggleTabRows();
           },

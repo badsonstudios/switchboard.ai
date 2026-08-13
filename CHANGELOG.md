@@ -115,6 +115,20 @@ on the floor, and say so in your PR.
   decline another. Requests only share a card when the tool and every argument
   match character for character, so `rm -rf build` and `rm -rf /` are never
   answered together.
+- **`Ctrl+F` finds things in a session.** A find bar, the way a browser means
+  it: type, `Enter` and `Shift+Enter` to step, a count beside the box, `Esc` to
+  close and get your cursor back. It searches the *whole* session rather than
+  what happens to be on screen — including the older part a long conversation
+  has scrolled out of memory, the tool output your detail level is hiding, and
+  anything folded — and jumping to a match opens whatever was covering it.
+  Open the results list for the matches with their surrounding text. On the
+  **Changes** tab the same key hands you the diff editor's own find rather than
+  putting a second, worse one on top of it. Two boundaries worth knowing:
+  matches from further back than the loaded view are readable in the list but
+  can't be scrolled to, and are labelled as such; and sessions in Direct mode
+  currently get the list without the jump, because their conversation and their
+  transcript can't yet be lined up. The Terminal tab greys the bar and says so
+  instead of pretending.
 
 ### Changed
 

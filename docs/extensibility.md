@@ -43,6 +43,8 @@ If a consumer can `import { claudeAdapter }`, the seam is decorative.
 | [renderer/src/extensibility/registry-instance.ts](../src/renderer/src/extensibility/registry-instance.ts) | The renderer's registry instance, and nothing else — consumers import this, not `bootstrap.ts`, which would close an import cycle |
 | [renderer/src/extensibility/boundary.tsx](../src/renderer/src/extensibility/boundary.tsx) | `ContributionBoundary` + `safely()`: one contribution failing costs that contribution |
 | [renderer/src/extensibility/status-bar-items.tsx](../src/renderer/src/extensibility/status-bar-items.tsx) | The five status bar items |
+| [renderer/src/extensibility/find-providers.ts](../src/renderer/src/extensibility/find-providers.ts) | The session-find providers (§5.31), their by-panel resolution, and a written registration recipe for the one registrant that does not exist yet |
+| [renderer/src/lib/find-surfaces.ts](../src/renderer/src/lib/find-surfaces.ts) | The live-surface registry a mounted panel publishes into, keyed by (card, panel) |
 | [renderer/src/extensibility/points.test.ts](../src/renderer/src/extensibility/points.test.ts) | The E15-03 done-when, executable: a new panel / block renderer / status item takes effect with no edit to any consumer |
 | [shared/…/registry.test.ts](../src/shared/extensibility/registry.test.ts) | Mechanics, against toy contracts — plus the guard that the class stays free of `main/` and `renderer/` imports |
 | [main/…/contributions.test.ts](../src/main/extensibility/contributions.test.ts) | The P1-E1-06 done-when: the Claude adapter is resolvable via the registry |
@@ -72,6 +74,7 @@ actually serve it.
 | `feed-block-renderer` | `FeedBlockRendererContribution` | `feed-block-{todos,bash,edit,tool,thinking,user,markdown}` — one per transcript block shape |
 | `status-bar-item` | `StatusBarItemContribution` | `status-{session-count,usage,service-health,cli-version,theme}` |
 | `theme` | `ThemeContribution` | `theme-{nordic,daylight,high-contrast,soft-contrast}` — the picker and the status bar list from here |
+| `find-provider` | `FindProviderContribution` | **`find-session`, `find-changes` — two of the four §5.31 names day one**; see the honest count below |
 
 `theme` (P2-E15-05) is the first **data-only** point: every other contribution
 hands over a function — build these commands, render this block — and this one
@@ -82,6 +85,29 @@ is authored as `theme/themes/high-contrast.json` and reaches the app without a
 code change, which is the proof the point is real rather than ceremony —
 and `soft-contrast`, asked for after that code was written, cost exactly one
 JSON file, one list entry and one string, with no test edited to accommodate it.
+
+`find-provider` (P2-E17-02, §5.31) is the sixth point, and the first whose
+contributions **do not all do the same job**. `find-session` searches with our
+bar (`mode: 'bar'`); `find-changes` hands the entire interaction to Monaco's own
+find widget (`mode: 'delegated'`) because §5.31 names that widget as a thing not
+to reimplement. A point whose registrants only ever varied by *which* thing they
+searched would have proved much less about the contract.
+
+**It ships with TWO of the four registrants §5.31 names, and the gap is stated
+rather than glossed.** The Terminal's provider is P2-E17-03's own work item,
+which depends on this one. The **document viewer** (§5.30) landed on main in
+the same train as this bar and is deliberately still un-joined: it already has
+a working Ctrl+F, scoped to its own container for exactly the reason this point
+exists, so the gap is a seam rather than a feature — and joining it means
+teaching the dispatcher what "the focused surface" is when it is not a session
+card, which is a §5.8 question. That is P2-E16's follow-up. Both have a written
+registration recipe at the bottom of
+[`find-providers.ts`](../src/renderer/src/extensibility/find-providers.ts) — the
+panel id to claim, the surface shape to publish, and the trap each one must not
+inherit (the Terminal must label its group "scrollback only", because xterm sees
+5,000 lines and the transcript sees everything). So the four-dissimilar-consumer
+bar §5.31 set is cleared *by design and by recipe*, and half-cleared in code.
+Two of the four is not the same as four, and the roster says so.
 
 The three renderer points added by P2-E15-03 are deliberately **dissimilar**:
 `panel` renders a whole view and has a mount lifecycle (`keepMounted`, because
@@ -120,7 +146,7 @@ it became, and re-adding it beside a real registrant (the §5.14 status monitor)
 is a smaller job than keeping a contract nothing has had to satisfy.
 
 The §5.23 roster lists nine first-party extensions, and it is **not** the same
-list as the table above. **Six points carry real registrants across two
+list as the table above. **Seven points carry real registrants across two
 processes**, but three of them — `command-set`, `panel` and `status-bar-item` —
 are seams retrofitted onto core surfaces that already existed (the palette, the
 card's view-tab strip, the workspace status bar), not roster entries.
@@ -153,8 +179,10 @@ Renderer — one per point, each the sole resolver for its own surface:
 [commands.ts:43](../src/renderer/src/extensibility/commands.ts#L43),
 [feed-render.ts:17](../src/renderer/src/extensibility/feed-render.ts#L17),
 [panels.tsx:29](../src/renderer/src/extensibility/panels.tsx#L29),
-[status-bar-items.tsx:74](../src/renderer/src/extensibility/status-bar-items.tsx#L74)
-and [themes.ts:21](../src/renderer/src/extensibility/themes.ts#L21). Each takes
+[status-bar-items.tsx:74](../src/renderer/src/extensibility/status-bar-items.tsx#L74),
+[themes.ts:21](../src/renderer/src/extensibility/themes.ts#L21) and
+[find-providers.ts](../src/renderer/src/extensibility/find-providers.ts)
+(`findProviderFor`, the sole resolver the find bar calls). Each takes
 the registry as an **argument** rather than reaching for the singleton, so a
 test can pass a fresh one; the components (`App.tsx`, `SessionGrid.tsx`,
 `FeedView.tsx`, `chrome.tsx`) import `rendererRegistry` and hand it to these
