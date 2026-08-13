@@ -728,6 +728,21 @@ Work items:
   the options row / approval bar stay correctly docked at max height; a test
   pins wrap-based growth (not newline counting).
 
+- **P2-E10-09 · Paste images into the composer — M (§5.10; owner request
+  2026-08-13). [issue #475]** A clipboard bitmap (MS Paint, screenshots)
+  pastes into the composer and the model actually sees it. Contract research
+  against the VS Code extension FIRST (reference-implementations.md) — the
+  wire mechanism is theirs, the affordance is ours. Full done-when in #475.
+- **P2-E10-10 · Drag & drop files into the composer — M (§5.10; owner
+  request 2026-08-13). [issue #476]** Any file — markdown, text, source,
+  images — drops onto the composer and reaches the session; per-type
+  behavior matches the extension. Shares the attachment affordance with
+  E10-09 (serial track — same composer region). Full done-when in #476.
+- **P2-E10-11 · Copy button on code in session output — S–M (§5.10; owner
+  request 2026-08-13). [issue #477]** Fenced code + Bash IN/OUT in the
+  Session view get the viewer's existing copy affordance (decorateCodeFences
+  pattern; #465's forgery guard applies). Full done-when in #477.
+
 **E10 exit:** a user can run a whole coding turn — prompt, watch, approve —
 without the Terminal tab even being VISIBLE; the turn reads like the VS Code
 extension reference (clean blocks, expandable detail); Terminal stays one
