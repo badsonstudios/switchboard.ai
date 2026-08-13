@@ -152,12 +152,14 @@ describe('push:setPrefs', () => {
   // Review finding: a server address that can never work used to be stored,
   // read back as "saved", and then silently never fire.
   it.each([
-    ['a bare hostname', 'ntfy.example.test'],
-    ['a credential in the URL', 'https://dan:hunter2@ntfy.example.test'],
-  ])('refuses %s as a server, saying which problem it is', (_n, server) => {
+    ['a bare hostname', 'ntfy.example.test', 'bad-url'],
+    // this field is stored in the workspace file in PLAIN TEXT, so a password
+    // in it would be a credential in that file through the side door
+    ['a credential in the URL', 'https://dan:hunter2@ntfy.example.test', 'url-userinfo'],
+  ])('refuses %s as a server, saying which problem it is', (_n, server, problem) => {
     const h = harness();
     const after = h.call('push:setPrefs', { ntfyServer: server }) as PushWriteResult;
-    expect(after).toMatchObject({ ok: false, problem: 'bad-url' });
+    expect(after).toMatchObject({ ok: false, problem });
     expect(after.config.prefs.ntfyServer).toBeUndefined();
   });
 
@@ -219,11 +221,19 @@ describe('push:setSecret', () => {
   it.each([
     ['a bare hostname', 'hooks.example.test/abc'],
     ['a file URL', 'file:///etc/passwd'],
-    ['a password in the URL', 'https://dan:hunter2@hooks.example.test/abc'],
   ])('refuses %s as a webhook URL rather than storing something dead', (_n, url) => {
     const after = h.call('push:setSecret', 'webhook.url', url) as PushWriteResult;
     expect(after).toMatchObject({ ok: false, problem: 'bad-url' });
     expect(h.values.has('webhook.url')).toBe(false);
+  });
+
+  // …but basic auth in a webhook URL IS accepted, unlike in the ntfy server
+  // field: this one goes into the credential store encrypted, it is a real
+  // setup, and there is no separate auth field to send someone to instead.
+  it('accepts basic auth in a webhook URL — that slot is encrypted', () => {
+    const url = 'https://dan:hunter2@hooks.example.test/abc';
+    expect((h.call('push:setSecret', 'webhook.url', url) as PushWriteResult).ok).toBe(true);
+    expect(h.values.get('webhook.url')).toBe(url);
   });
 
   it('stores a webhook URL that IS usable', () => {

@@ -72,19 +72,17 @@ export function registerPushIpc(deps: PushIpcDeps): void {
    * send time.
    *
    * Without this, pasting `hooks.example.com/x` (no scheme) stored fine, read
-   * back "saved", and then silently never fired — the worst shape a setting
-   * can have. Review caught it; the reason it belongs here and not only in the
+   * back "saved", and then silently never fired — the worst shape a setting can
+   * have. Review caught it; the reason it belongs here and not only in the
    * sender is that this is the moment the user is looking at the screen.
-   *
-   * Credentials in the URL (`https://user:pass@host`) are refused too: this
-   * one field is NOT in the credential store (a server address is not a
-   * secret), so accepting one would put a password in the workspace file
-   * through the side door.
    */
-  const usableUrl = (value: string): boolean => {
-    if (!isPostableUrl(value)) return false;
-    const u = new URL(value);
-    return !u.username && !u.password;
+  const hasUserinfo = (value: string): boolean => {
+    try {
+      const u = new URL(value);
+      return !!u.username || !!u.password;
+    } catch {
+      return false;
+    }
   };
 
   broker.handle('push:getConfig', (): PushConfig => config());
@@ -117,8 +115,19 @@ export function registerPushIpc(deps: PushIpcDeps): void {
       const server = patch.ntfyServer.trim();
       // Empty is meaningful — it means "use ntfy.sh" — so only a NON-empty
       // unusable one is refused.
-      if (server && !usableUrl(server))
-        return refuse('push:setPrefs', 'the ntfy server is not a usable http(s) URL', 'bad-url');
+      if (server && !isPostableUrl(server))
+        return refuse('push:setPrefs', 'the ntfy server is not an http(s) URL', 'bad-url');
+      // …and this field, unlike the webhook URL, is stored in the WORKSPACE
+      // FILE in plain text (a server address is not a secret). A password
+      // smuggled into it as `https://user:pass@host` would be a credential in
+      // that file through the side door, which is the one thing §5.29 forbids
+      // outright. Refused with its own message rather than silently stripped.
+      if (server && hasUserinfo(server))
+        return refuse(
+          'push:setPrefs',
+          'the ntfy server may not carry a username or password',
+          'url-userinfo'
+        );
       clean.ntfyServer = server;
     }
     const saved = store.setPushPrefs(clean);
@@ -150,9 +159,12 @@ export function registerPushIpc(deps: PushIpcDeps): void {
       return ok();
     }
     // The webhook URL is the one credential whose SHAPE we can check, and the
-    // one users get wrong (a bare hostname). See `usableUrl`.
-    if (key === 'webhook.url' && !usableUrl(value.trim()))
-      return refuse('push:setSecret', 'the webhook URL is not a usable http(s) URL', 'bad-url', {
+    // one users get wrong (a bare hostname). Note what is NOT checked here:
+    // `https://user:pass@host` is allowed for this field, because this one goes
+    // into the credential store encrypted — basic auth on a webhook is a real
+    // setup, and there is no separate auth field to send someone to instead.
+    if (key === 'webhook.url' && !isPostableUrl(value.trim()))
+      return refuse('push:setSecret', 'the webhook URL is not an http(s) URL', 'bad-url', {
         key,
       });
     if (!secrets.set(key, value))

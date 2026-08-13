@@ -425,7 +425,8 @@
     },
     "detail": "The service said: {detail}",
     "problem": {
-      "bad-url": "Not saved — that needs to be a full http(s) address, like https://example.com/hook (and without a username or password in it).",
+      "bad-url": "Not saved — that needs to be a full http(s) address, like https://example.com/hook.",
+      "url-userinfo": "Not saved — a server address is kept in plain text, so it may not carry a username or password.",
       "not-stored": "Not saved — this machine's credential store would not take it.",
       "refused": "Not saved."
     },

@@ -187,8 +187,12 @@ export interface WebhookPayload {
 export interface PushWriteResult {
   config: PushConfig;
   ok: boolean;
-  /** why not — `bad-url`, or `not-stored` when the credential store refused */
-  problem?: 'bad-url' | 'not-stored' | 'refused';
+  /**
+   * Why not: `bad-url` (not an http(s) address), `url-userinfo` (a password
+   * smuggled into a field that is stored in PLAIN TEXT — the ntfy server),
+   * `not-stored` (the credential store would not take it), or `refused`.
+   */
+  problem?: 'bad-url' | 'url-userinfo' | 'not-stored' | 'refused';
 }
 
 /**
