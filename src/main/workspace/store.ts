@@ -23,6 +23,7 @@ import { LogFields, Logger } from '../log/logger';
 import { SessionIdentity } from '../sessions/session-manager';
 import { WindowState, mergeState, isOnAnyDisplay } from '../window-state';
 import { UpdatePrefs } from '../../shared/update';
+import { ServiceHealthPrefs } from '../../shared/service-health';
 import { WorkspaceSaveState } from '../../shared/workspace';
 import { Rule, isSaneRule } from '../events/rules';
 
@@ -147,6 +148,12 @@ export interface WorkspaceState {
    * written.
    */
   updates: UpdatePrefs;
+  /**
+   * Provider service-health polling (P2-E14-07). A typed top-level field for
+   * the `updates` reason: MAIN is the reader — the poll timer runs with no
+   * renderer involved, and the renderer rewrites `ui` wholesale.
+   */
+  health: ServiceHealthPrefs;
 }
 
 /** The schema version this build writes. Bump it and add a MIGRATIONS entry. */
@@ -204,6 +211,7 @@ const EMPTY: WorkspaceState = {
   autoTrust: true,
   autoLabels: true,
   updates: { autoCheck: true },
+  health: { poll: true },
 };
 
 /** Stable identity for a display arrangement (§7). */
@@ -223,6 +231,7 @@ function emptyState(): WorkspaceState {
     rules: [],
     notifications: { ...EMPTY.notifications },
     updates: { ...EMPTY.updates },
+    health: { ...EMPTY.health },
   };
 }
 
@@ -377,6 +386,11 @@ export class WorkspaceStore {
       // rule would fire the wrong channel at the wrong moment, which is worse
       // than not firing (P6 fail-open cuts this way for notifications).
       const rules = keepSane(raw.rules, isSaneRule, 'rule', note);
+      const health = sanitizeHealth(raw.health);
+      if (health.repaired.length > 0)
+        note('the provider-status setting in the workspace file was unusable — leaving polling on', {
+          unusable: health.repaired,
+        });
 
       if (wrongType(raw, 'autoTrust', 'boolean'))
         note('the auto-trust setting in the workspace file was not true or false — leaving it on');
@@ -396,6 +410,7 @@ export class WorkspaceStore {
         autoTrust: raw.autoTrust !== false, // default on
         autoLabels: raw.autoLabels !== false, // default on — same shape, same reason
         updates: updates.value,
+        health: health.value,
       };
     } catch (err) {
       // corrupt/missing: back the corpse aside (post-mortem material), start fresh
@@ -834,6 +849,16 @@ export class WorkspaceStore {
   /** Merge-patch, for the reason the notification prefs are (review P1 #13). */
   setUpdatePrefs(p: Partial<UpdatePrefs>): void {
     this.state.updates = sanitizeUpdates({ ...this.state.updates, ...p }).value;
+    this.saveSoon();
+  }
+
+  getServiceHealthPrefs(): ServiceHealthPrefs {
+    return { ...this.state.health };
+  }
+
+  /** Merge-patch, like the update and notification prefs above. */
+  setServiceHealthPrefs(p: Partial<ServiceHealthPrefs>): void {
+    this.state.health = sanitizeHealth({ ...this.state.health, ...p }).value;
     this.saveSoon();
   }
 
@@ -1321,6 +1346,18 @@ function sanitizeUpdates(u: unknown): Repaired<UpdatePrefs> {
       ['pendingUpdateVersion', 'string'],
     ]),
   };
+}
+
+/**
+ * Service-health prefs (P2-E14-07). `poll` defaults ON, the `!== false` shape
+ * `autoCheck` and `autoTrust` use: a file that predates this field, or one a
+ * hand-edit mangled, leaves the feature working rather than silently off.
+ */
+function sanitizeHealth(h: unknown): Repaired<ServiceHealthPrefs> {
+  if (typeof h !== 'object' || h === null || Array.isArray(h))
+    return { value: { poll: true }, repaired: h == null ? [] : ['health'] };
+  const x = h as Partial<ServiceHealthPrefs>;
+  return { value: { poll: x.poll !== false }, repaired: badFields(h, [['poll', 'boolean']]) };
 }
 
 function sanitizeWindow(w: unknown): Repaired<PersistedWindow | null> {

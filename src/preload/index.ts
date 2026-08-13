@@ -15,6 +15,7 @@ import type {
   UpdateStatus,
 } from '../shared/update';
 import type { WorkspaceSaveState } from '../shared/workspace';
+import type { ServiceHealthPrefs, ServiceHealthStatus } from '../shared/service-health';
 
 const versionArg = process.argv.find((a) => a.startsWith('--switchboard-version='));
 const seedArg = process.argv.find((a) => a.startsWith('--switchboard-seed-panels='));
@@ -430,6 +431,24 @@ const api = {
       ipcRenderer.on('events:changed', h);
       return () => ipcRenderer.removeListener('events:changed', h);
     },
+  },
+  /**
+   * Provider service health (P2-E14-07, §5.14) — "is it me or is it them?".
+   *
+   * READ-ONLY, both halves: the status page's own verdict and this machine's
+   * corroboration arrive in one record. `get` is what a mounting window asks;
+   * everything after that arrives on `onStatus`.
+   */
+  health: {
+    get: (): Promise<ServiceHealthStatus> => ipcRenderer.invoke('health:get'),
+    onStatus: (cb: (s: ServiceHealthStatus) => void): (() => void) => {
+      const h = (_e: unknown, s: ServiceHealthStatus): void => cb(s);
+      ipcRenderer.on('health:status', h);
+      return () => ipcRenderer.removeListener('health:status', h);
+    },
+    getPrefs: (): Promise<ServiceHealthPrefs> => ipcRenderer.invoke('health:getPrefs'),
+    setPrefs: (p: { poll?: boolean }): Promise<ServiceHealthPrefs> =>
+      ipcRenderer.invoke('health:setPrefs', p),
   },
   transcripts: {
     blocks: (liveId: string): Promise<unknown[]> => ipcRenderer.invoke('transcripts:blocks', liveId),

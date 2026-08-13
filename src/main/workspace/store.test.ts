@@ -425,6 +425,50 @@ describe('update prefs (P2-E19-03)', () => {
   });
 });
 
+describe('service-health prefs (P2-E14-07)', () => {
+  it('defaults to polling ON', () => {
+    const st = makeStore(file);
+    st.load();
+    expect(st.getServiceHealthPrefs()).toEqual({ poll: true });
+  });
+
+  it('round-trips the About-panel toggle through the file', () => {
+    const a = makeStore(file);
+    a.load();
+    a.setServiceHealthPrefs({ poll: false });
+    a.save();
+    const b = makeStore(file);
+    b.load();
+    expect(b.getServiceHealthPrefs()).toEqual({ poll: false });
+  });
+
+  it('a mangled value leaves the feature working rather than silently off', () => {
+    // the claim `sanitizeHealth` makes about itself: an unusable pref must not
+    // be the way this quietly stops running
+    fs.writeFileSync(file, JSON.stringify({ version: 1, health: { poll: 'nope' } }));
+    const st = makeStore(file);
+    st.load();
+    expect(st.getServiceHealthPrefs()).toEqual({ poll: true });
+  });
+
+  it('a file written before this feature existed simply gets the default', () => {
+    fs.writeFileSync(file, JSON.stringify({ version: 1, sessions: [], autoTrust: false }));
+    const st = makeStore(file);
+    st.load();
+    expect(st.getServiceHealthPrefs()).toEqual({ poll: true });
+    expect(st.getAutoTrust()).toBe(false); // …and nothing else moved
+  });
+
+  it('two stores do not share the defaults object', () => {
+    const a = makeStore(file);
+    a.load();
+    a.setServiceHealthPrefs({ poll: false });
+    const b = makeStore(path.join(dir, 'health-other.json'));
+    b.load();
+    expect(b.getServiceHealthPrefs()).toEqual({ poll: true });
+  });
+});
+
 describe('ui blob (P2-E12-08 focus/view-tab state)', () => {
   it('round-trips opaque ui state', () => {
     const a = makeStore(file);
@@ -982,6 +1026,14 @@ describe('load-time repairs are audible (#344)', () => {
       ]);
     });
 
+    it('a mangled provider-status pref says polling stayed on', () => {
+      write({ version: 1, health: { poll: 'nope' } });
+      const warns = loadWarns();
+      expect(warns).toHaveLength(1);
+      expect(warns[0].msg).toMatch(/provider-status setting .* was unusable/);
+      expect(warns[0].fields).toMatchObject({ unusable: ['poll'] });
+    });
+
     it('a non-boolean auto-trust says it stayed on', () => {
       write({ version: 1, autoTrust: 'sure' });
       const warns = loadWarns();
@@ -1049,6 +1101,7 @@ describe('load-time repairs are audible (#344)', () => {
       notifications: { enabled: true, osToasts: false, quietStart: '22:00', quietEnd: '07:00' },
       autoTrust: false,
       updates: { autoCheck: false, skippedVersion: '0.2.0' },
+      health: { poll: false },
     });
     expect(loadWarns()).toEqual([]);
   });

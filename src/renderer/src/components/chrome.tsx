@@ -13,6 +13,7 @@ import { ThemeDefinition } from '../theme/theme';
 import { BuildIdentity, commitStamp } from '../../../shared/build-identity';
 import type { PresentationPolicy } from '../lib/presentation-policy';
 import type { LayoutMode } from '../lib/layout-mode';
+import type { ServiceHealthStatus } from '../../../shared/service-health';
 
 const barStyle: React.CSSProperties = {
   background: 'var(--titlebar-bg)',
@@ -226,6 +227,8 @@ function BuildStamp(props: {
 export function StatusBar(props: {
   count: number;
   theme: ThemeDefinition;
+  /** the provider's service health (E14-07) — the dot's whole input */
+  serviceHealth?: ServiceHealthStatus | null;
   cliVersion?: string | null;
   totalOutputTokens?: number;
   totalCostUsd?: number;

@@ -22,6 +22,7 @@ import type { Command } from '../lib/commands';
 import type { CommandDeps } from '../lib/command-set';
 import type { FeedBlockDto } from '../lib/feed';
 import type { ThemeDefinition, ThemeId } from '../theme/theme';
+import type { ServiceHealthStatus } from '../../../shared/service-health';
 
 /**
  * A set of commands. Built lazily from deps rather than supplied as a list:
@@ -233,6 +234,12 @@ export interface StatusBarContext {
   cliVersion?: string | null;
   totalOutputTokens?: number;
   totalCostUsd?: number;
+  /**
+   * The provider's service health as main last reported it (P2-E14-07, §5.14).
+   * Optional: a bar rendered before the first push — or in a test that does not
+   * care — simply has no dot.
+   */
+  serviceHealth?: ServiceHealthStatus | null;
 }
 
 /** An item in the workspace status bar (§5.10). */

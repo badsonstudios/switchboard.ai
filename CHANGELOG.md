@@ -81,6 +81,20 @@ on the floor, and say so in your PR.
   above is the first one, and rules are what make per-session sounds, spoken
   announcements, Allow/Deny buttons on notifications and phone push possible
   without another special case each.
+- **The app now knows when Anthropic is having a day.** A small dot at the
+  right-hand end of the bottom bar reflects Anthropic's public status page —
+  green for all clear, amber for degraded, red for an outage, hollow grey when
+  it could not find out. Hover it for the page's own summary, any open
+  incidents, and when it last checked. Open incidents also appear as a card at
+  the top of the Events panel, and disappear when they resolve.
+- **"Several sessions just hit errors — this may not be you."** Status pages
+  lag reality, so switchboard also watches your own window: when three
+  different sessions hit errors within about five minutes, an amber strip says
+  so. It clears itself the moment one of them completes normally, and it works
+  even with the status check turned off — that half never touches the network.
+- **Check provider status** can be turned off in About this build, next to the
+  update setting. The check is a plain read of a public page: nothing about
+  your sessions, your machine or your work is ever sent.
 
 - When two or more sessions are waiting on **exactly the same** permission
   request, it now appears once, on a single card above the workspace, with

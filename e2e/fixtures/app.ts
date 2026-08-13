@@ -416,6 +416,12 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   // overrides this with its own local stub feed; set BEFORE `opts.env`, like
   // the quit-confirm line above, so it can.
   env.SWITCHBOARD_UPDATE_FEED = 'off';
+  // Same rule for the provider status page (P2-E14-07): `off` means the poller
+  // never runs, so no spec in this suite reaches status.anthropic.com and no
+  // window grows a dot whose colour depends on somebody else's afternoon.
+  // `service-health.spec.ts` points it at its own local stub; set BEFORE
+  // `opts.env` so it can.
+  env.SWITCHBOARD_STATUS_FEED = 'off';
   if (opts.realClaude) {
     // The one env var that would make "realClaude" a lie (#384). It is set in
     // the `else` branch below and never here, so nothing in this file turns the

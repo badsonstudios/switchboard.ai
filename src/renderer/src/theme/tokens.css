@@ -275,6 +275,22 @@ body {
   padding: 4px 12px;
 }
 
+.service-health-banner {
+  /* The SAME fill/ink pair as `.preflight-banner` above, deliberately: it is
+     the only pair in the sheet with a per-theme contrast floor asserted against
+     it (#206), and a second warning strip inventing its own would be a second
+     pair to keep legible in four themes. One warning colour, two warnings. */
+  background: var(--status-needs-permission);
+  color: var(--status-needs-permission-ink-on-fill);
+  /* the roster's guard (#274, always-visible-notices.test.ts): the shell column
+   * shares negative free space out to the auto-basis children, and without this
+   * a short window squeezes the one strip that says "this may not be you"
+   * instead of the workspace it sits above. */
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 4px 12px;
+}
+
 /* ---- Grid status pill (§5.8) ----------------------------------------------
  * The session card's state in words: the status hue as a 14% tint and a 40%
  * border, with the word itself in that status's INK.

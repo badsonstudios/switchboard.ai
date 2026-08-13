@@ -62,6 +62,14 @@ export const CAPABILITIES = [
   // replacing the binary on disk are not the same power, and
   // a contribution that wants the first must not silently
   // acquire the second.
+  'provider.status', // reads the PROVIDER'S PUBLIC STATUS PAGE over the
+  // network (P2-E14-07, §5.14). Its own capability for
+  // the `update.check` reason: it is an outbound request
+  // to a third-party host, and that fact must be legible
+  // in the manifest rather than hidden under
+  // "settings.read". Read-only and unauthenticated — it
+  // sends nothing, which is what keeps §5.14 inside the
+  // local-first constraint.
   'shell.openExternal', // hands a URL to the user's BROWSER. Its own capability
   // for the `dialog.open` reason — putting something in
   // front of the user, outside the app, is a power in its
@@ -89,6 +97,11 @@ export const CHANNEL_CAPABILITIES = {
   // (P2-E16-01). Its own family, because it belongs to no session.
   'fs:read': 'fs.read',
   'git:fileVersions': 'git.read',
+  // the provider's service health as main currently understands it (P2-E14-07)
+  'health:get': 'provider.status',
+  // the polling switch is an ordinary preference, like the update auto-check
+  'health:getPrefs': 'settings.read',
+  'health:setPrefs': 'settings.write',
   'git:status': 'git.read',
   'groups:create': 'groups.write',
   'groups:delete': 'groups.write',
@@ -177,6 +190,9 @@ export const CHANNEL_CAPABILITIES = {
   'app:displaysChanged': 'app.window',
   'app:popoutGeometryChanged': 'app.window',
   'events:changed': 'events.read',
+  // a poll the renderer did not ask for finished, or the local corroboration
+  // rule raised/cleared (P2-E14-07). Same capability as reading it.
+  'health:status': 'provider.status',
   // a card gained or lost its live session — re-read `sessions:cards` (#170)
   'sessions:cardsChanged': 'sessions.read',
   'sessions:exited': 'sessions.read',
