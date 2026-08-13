@@ -826,6 +826,28 @@ app
     const manager = new SessionManager(registry, ptys, createLogger(sink, 'sessions'), stateDir, {
       stream: streams,
     });
+    // Last run's session state directories, taken NOW (#290) — before
+    // `registerSessionIpc` (far below), which is the only door a session can be
+    // spawned through, so no session of ours can exist and no directory on disk
+    // can belong to a live process. That placement is the sweep's safety
+    // argument together with the single-instance lock this bootstrap takes at
+    // its first statement, and it is NOT free to move below
+    // `registerSessionIpc`; `single-instance.test.ts` pins the order.
+    //
+    // Wrapped for the same reason the seed-root probe and `resolveHandshake`
+    // below are: this runs inside the bootstrap's promise chain, whose `.catch`
+    // exits the process. Disk housekeeping must never be the thing that stops
+    // the app from starting, and that guarantee should not depend on
+    // `session-state.ts` staying throw-free for ever.
+    //
+    // `HookListener.start` sweeps the same tree for stray `hook-token` files a
+    // beat later — that one still earns its place, for the directories this
+    // sweep is too young to take.
+    try {
+      manager.sweepOrphanStateDirs();
+    } catch (err) {
+      log.app.warn('session state dir sweep failed', { error: String(err) });
+    }
     // Is there anyone to ask? A destroyed window or a crashed renderer means no
     // (P2-E15-09). A RELOADING renderer is neither, so the pending-holds replay
     // path still gets its chance — that case must not regress.
