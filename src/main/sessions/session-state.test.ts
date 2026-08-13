@@ -377,6 +377,24 @@ describe('the bootstrap sweep takes what previous runs left (#290)', () => {
     expect(ids.filter((id) => fs.existsSync(path.join(stateDir, id)))).toHaveLength(2);
   });
 
+  it('never takes a directory it was told is live, however old it is', () => {
+    // A session left running for two days is older than any floor worth
+    // having, so the age check cannot be what protects it.
+    const log = captureLog();
+    const live = seedSessionDir(stateDir);
+    const dead = seedSessionDir(stateDir);
+    for (const id of [live, dead]) age(stateDir, id, old * 10);
+
+    expect(sweepOrphanSessionStateDirs(stateDir, { log, keep: new Set([live]) })).toEqual({
+      removed: 1,
+      kept: 0,
+      failed: 0,
+    });
+
+    expect(fs.existsSync(path.join(stateDir, live))).toBe(true);
+    expect(fs.existsSync(path.join(stateDir, dead))).toBe(false);
+  });
+
   it('a state dir that does not exist yet is not a problem worth a word', () => {
     const log = captureLog();
     expect(sweepOrphanSessionStateDirs(path.join(stateDir, 'never-made'), { log })).toEqual({
@@ -425,6 +443,20 @@ describe('the bootstrap sweep takes what previous runs left (#290)', () => {
 
 // ---- the manager's seam onto the sweep --------------------------------------
 describe('SessionManager.sweepOrphanStateDirs', () => {
+  it('hands the sweep the sessions it currently has, so a live one survives', () => {
+    const { m } = manager(new Ptys());
+    const live = m.create(identity);
+    // aged past every floor — the ONLY thing that can save it is `keep`
+    age(stateDir, live.id, DEFAULT_ORPHAN_MIN_AGE_MS * 10);
+    const dead = seedSessionDir(stateDir);
+    age(stateDir, dead, DEFAULT_ORPHAN_MIN_AGE_MS * 10);
+
+    expect(m.sweepOrphanStateDirs()).toEqual({ removed: 1, kept: 0, failed: 0 });
+
+    expect(fs.existsSync(path.join(stateDir, live.id, 'settings.json'))).toBe(true);
+    expect(fs.existsSync(path.join(stateDir, dead))).toBe(false);
+  });
+
   it('sweeps the state dir it was constructed with, and nothing else', () => {
     const other = tempDir('sb-ss-other-');
     const otherId = seedSessionDir(other);

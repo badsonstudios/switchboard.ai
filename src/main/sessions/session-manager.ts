@@ -369,7 +369,14 @@ export class SessionManager {
    * belt-and-braces for a closed hole; it is the only owner those three have.
    */
   sweepOrphanStateDirs(opts?: { minAgeMs?: number; budgetMs?: number }): SweepResult {
-    return sweepOrphanSessionStateDirs(this.stateDir, { log: this.log, ...opts });
+    return sweepOrphanSessionStateDirs(this.stateDir, {
+      log: this.log,
+      // Empty at the bootstrap call site, and passed anyway: "a live session's
+      // directory is not a candidate" should be true because the sweep was
+      // TOLD, not because of where today's only caller happens to sit.
+      keep: new Set(this.sessions.keys()),
+      ...opts,
+    });
   }
 
   // `restart()` USED TO LIVE HERE. Deleted in P2-E15-01: it was a second

@@ -163,16 +163,22 @@ export interface SweepResult {
  * before any IPC handler is registered, so no session of ours exists yet — the
  * same shape as `HookListener.sweepOrphanTokens`, one directory level up.
  *
- * A live session's directory is therefore never a candidate, and cannot become
- * one: the only ids on disk when this runs belong to processes that are gone.
+ * A live session's directory is therefore never a candidate — but `keep` says
+ * so IN THE FUNCTION rather than leaving it a property of the call site. The
+ * set is empty at bootstrap, which is the point: the only way this stays true
+ * for a future caller that sweeps at some other moment is for the guard to
+ * travel with the sweep. An age floor cannot stand in for it (a session left
+ * running for two days is older than any floor worth having), and neither can
+ * the single-instance lock, which says nothing about THIS process's sessions.
  *
- * A candidate must clear all four, in the order that costs least:
+ * A candidate must clear all five, in the order that costs least:
  *   1. it is a direct child of `stateDir` — one `readdir`, no recursion;
  *   2. it is a directory, off the dirent, so a symlink or junction pointing
  *      somewhere interesting answers `false` rather than being followed;
  *   3. its name is a UUID (`SESSION_DIR_NAME`) — which is what keeps
  *      `hook-forwarder.cjs` and anything a human put here out of it;
- *   4. it is older than `minAgeMs`.
+ *   4. it is not in `keep`;
+ *   5. it is older than `minAgeMs`.
  *
  * Nothing here throws. A directory it cannot list, stat or delete is counted,
  * named in one log line, and left for the next start.
@@ -181,6 +187,8 @@ export function sweepOrphanSessionStateDirs(
   stateDir: string,
   opts: {
     log: Logger;
+    /** ids this process is using RIGHT NOW — never candidates, whatever age */
+    keep?: ReadonlySet<string>;
     minAgeMs?: number;
     budgetMs?: number;
     /** injected in tests so the age floor can be exercised against a fixture */
@@ -188,6 +196,7 @@ export function sweepOrphanSessionStateDirs(
   }
 ): SweepResult {
   const { log } = opts;
+  const keep = opts.keep ?? new Set<string>();
   const minAgeMs = opts.minAgeMs ?? DEFAULT_ORPHAN_MIN_AGE_MS;
   const budgetMs = opts.budgetMs ?? DEFAULT_SWEEP_BUDGET_MS;
   const now = opts.now ?? Date.now;
@@ -209,6 +218,9 @@ export function sweepOrphanSessionStateDirs(
   for (const e of entries) {
     if (!e.isDirectory()) continue;
     if (!isSessionStateDirName(e.name)) continue;
+    // Before the stat and before the budget: a live session's directory is not
+    // "kept for now", it is not ours to consider at all.
+    if (keep.has(e.name)) continue;
     // Budget checked BEFORE the stat, so an exhausted sweep stops doing work
     // rather than stopping at the delete.
     if (now() - startedAt >= budgetMs) {
