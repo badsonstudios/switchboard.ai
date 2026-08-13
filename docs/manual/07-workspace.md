@@ -105,6 +105,10 @@ for a second monitor. The session keeps running throughout; nothing restarts.
 - **Closing the pop-out window** instead *suspends* the session: the card
   returns to the main window with a **Resume** button, and the conversation is
   kept.
+- **Changes and file viewers always open in the main window**, even when the
+  session they belong to is off in a pop-out. They're things you read next to
+  your work, so they go where you asked from rather than stacking up as extra
+  tabs on the second monitor.
 - **However** the window goes — the ⤡ button, its own **X**, the task bar, Task
   Manager, or a crash — the card comes back to the main window the same way. A
   window that dies without warning can take a few seconds to be noticed; the

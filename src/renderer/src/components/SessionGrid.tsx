@@ -1800,11 +1800,10 @@ function syncDocumentPins(api: DockviewApi): void {
  * sessions rather than over them.
  *
  * `openDiff` does not go through this, and SHOULD NOT — a Changes tab is a
- * session's own surface and belongs in that session's group. What it does today
- * is neither: it calls `addPanel` with no `position` at all, so it lands in
- * whatever group is active, which since this item can be the document area.
- * That is #434's, not this one's; the note is here so the omission reads as
- * known rather than as this function forgetting a caller.
+ * session's own surface. It routes through `gridRefGroup` (#434) instead,
+ * which is the same E8-04 rule with the opposite husk policy: a diff may
+ * revive a session's dock-back husk (it IS that session's surface); a viewer
+ * never does (the husk is still, unmistakably, a session's group).
  */
 function documentHomeGroup(api: DockviewApi): DockviewGroupPanel {
   const eligible = api.groups.filter(
@@ -1821,6 +1820,39 @@ function documentHomeGroup(api: DockviewApi): DockviewGroupPanel {
     eligible[0] ??
     api.addGroup()
   );
+}
+
+/**
+ * The group a NON-SESSION panel (a viewer, a Changes tab) must be added to —
+ * the E8-04 rule in one place (#434).
+ *
+ * dockview's `addPanel` defaults to the ACTIVE group, and the active group
+ * becomes a popout the moment a card is torn off — so a panel opened while a
+ * popped-out session had focus lands as a tab inside that session's OS window,
+ * where the user never asked for it and cannot find it. Pin it to a group the
+ * user can actually see in the main grid instead — reviving or making one when
+ * there is none.
+ */
+function gridRefGroup(api: DockviewApi): DockviewApi['groups'][number] {
+  const candidates = api.groups.filter((g) => g.api.location.type === 'grid');
+  const visible = candidates.find((g) => g.api.isVisible);
+  if (visible) return visible;
+  // Nothing VISIBLE is left in the grid, which is not the same as nothing being
+  // left in it. We pop a CARD out, not a whole group, and dockview's answer to
+  // that is to move the panel into a window and keep the group it came from —
+  // in the grid, still `location.type === 'grid'`, but hidden
+  // (`_doAddPopoutGroup`: `referenceGroup.api.setVisible(false)`), so the card
+  // has a slot to come home to. Its leaf is `width: 0px`, and a panel added to
+  // it is in the DOM, on the right window, and invisible — measured (#434), and
+  // exactly what a `location`-only test walks into. Show the husk again rather
+  // than adding a group beside it: it holds the geometry the card used to
+  // occupy, and the card rejoins it as a sibling tab when it docks back.
+  const husk = candidates[0];
+  if (husk) {
+    husk.api.setVisible(true);
+    return husk;
+  }
+  return api.addGroup();
 }
 
 /**
@@ -3153,11 +3185,27 @@ export function SessionGrid(props: {
         const cardId = sessionStore.cardIdForLive(liveId);
         const existing = api.getPanel(`diff-${cardId}`);
         if (existing) return existing.focus();
+        // A Changes tab is opened from the rail, which lives in the MAIN window
+        // — so it must open there, not inside whatever popout dockview last
+        // made active (E8-04, #434). Only when the active group is NOT in the
+        // grid, though: while it is, `addPanel`'s own default is the group the
+        // user is looking at, which is where a diff belongs in a split layout,
+        // and dockview reads a `position` of `undefined` as no position at all
+        // (`_doAddPanel`: `if (options.position) … else activeGroup`). So the
+        // main-window case comes out byte-identical to before.
+        //
+        // `isVisible` as well as `location`, for the reason `gridRefGroup`
+        // spells out: the group a popped-out card came from stays in the grid,
+        // hidden, and defaulting into THAT one is how the tab ends up on the
+        // right window and one pixel wide.
+        const active = api.activeGroup;
+        const inGrid = active?.api.location.type === 'grid' && active.api.isVisible;
         api.addPanel({
           id: `diff-${cardId}`,
           component: 'diffPane',
           title: t('diff.tabTitle', { title }),
           params: { folder, colorScheme: props.colorScheme },
+          position: inGrid ? undefined : { referenceGroup: gridRefGroup(api) },
         });
       },
       openDocument: (filePath, sessionId) =>

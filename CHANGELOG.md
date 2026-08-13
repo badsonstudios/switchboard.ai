@@ -240,6 +240,11 @@ on the floor, and say so in your PR.
   cleared out over the next few times you open the app — a day's worth at a
   time, and never more than a couple of seconds of it per launch. Nothing you
   can see changes; you get the disk space back.
+- **Opening Changes on a popped-out session no longer buries the diff in that
+  session's window.** If a card was in its own pop-out window, "Open changes"
+  put the diff inside that window as an extra tab — behind the session you were
+  watching, and nowhere near the main window you asked from. It now always
+  opens in the main window, the same as a new session does.
 
 ### Internal
 
