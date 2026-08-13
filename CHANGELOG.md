@@ -160,8 +160,9 @@ on the floor, and say so in your PR.
   hands the CLI, and nothing ever deleted it — one folder per session you had
   ever started, kept until you reinstalled. They now go when the session ends,
   however it ends, and the ones already piled up from earlier versions are
-  cleared out the next time you open the app. Nothing you can see changes;
-  you get the disk space back.
+  cleared out over the next few times you open the app — a day's worth at a
+  time, and never more than a couple of seconds of it per launch. Nothing you
+  can see changes; you get the disk space back.
 
 ### Internal
 

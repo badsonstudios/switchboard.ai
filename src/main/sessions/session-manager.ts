@@ -190,6 +190,18 @@ export class SessionManager {
       proc = transport.spawn({ id, command: recipe.command, args: recipe.args, cwd: identity.folder, env: recipe.env });
     } catch (err) {
       this.log.error('session spawn failed', { sessionId: id, folder: identity.folder, transport: kind, error: String(err) });
+      // The state directory is ALREADY on disk here (#290): `settingsFor` and
+      // `buildSpawn` both wrote into it above, before there was a process to
+      // spawn. There will never be an exit or a `remove()` for this id — "no
+      // orphan record" was only ever true of the map — so this is the one
+      // moment it can be taken, and without it a spawn failure is a permanent
+      // leak the startup sweep does not reach for 24 h.
+      //
+      // NOT the hook token registered by `settingsFor`: that lives in
+      // `HookListener`'s map, which this class does not own and cannot reach.
+      // A failed spawn still leaves that entry behind — #282's territory, and
+      // noted rather than half-fixed from here.
+      removeSessionStateDir(this.stateDir, id, this.log);
       throw err; // no orphan record: it was never added
     }
     this.sessions.set(id, record);
@@ -371,11 +383,14 @@ export class SessionManager {
   sweepOrphanStateDirs(opts?: { minAgeMs?: number; budgetMs?: number }): SweepResult {
     return sweepOrphanSessionStateDirs(this.stateDir, {
       log: this.log,
-      // Empty at the bootstrap call site, and passed anyway: "a live session's
-      // directory is not a candidate" should be true because the sweep was
-      // TOLD, not because of where today's only caller happens to sit.
-      keep: new Set(this.sessions.keys()),
       ...opts,
+      // AFTER the spread, deliberately. Empty at the bootstrap call site, and
+      // passed anyway: "a live session's directory is not a candidate" should
+      // be true because the sweep was TOLD, not because of where today's only
+      // caller happens to sit — and a caller must not be able to switch it off
+      // by handing in a `keep` of its own. `opts`' type does not offer one;
+      // this makes that a property of the code rather than of the types.
+      keep: new Set(this.sessions.keys()),
     });
   }
 

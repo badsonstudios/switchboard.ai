@@ -93,7 +93,20 @@ describe('only a session-id-shaped name is ever a candidate', () => {
 
   it('refuses near-misses on the UUID shape', () => {
     const id = randomUUID();
-    for (const name of [id + 'x', id.slice(0, -1), id.replace(/-/g, ''), `${id} `, `.${id}`]) {
+    for (const name of [
+      id + 'x',
+      id.slice(0, -1),
+      id.replace(/-/g, ''),
+      `${id} `,
+      `.${id}`,
+      // `$` in JS also matches BEFORE a trailing newline, and `<uuid>\n` is a
+      // legal directory name on POSIX — so a plain `$` made a directory we did
+      // not write a candidate for a recursive delete.
+      `${id}\n`,
+      // `randomUUID()` is lower-case: upper case is not something we wrote,
+      // and on a case-sensitive filesystem it is somebody else's directory.
+      id.toUpperCase(),
+    ]) {
       expect(isSessionStateDirName(name)).toBe(false);
     }
   });
@@ -260,6 +273,26 @@ describe('a live session owns its state dir; a dead one does not (#290)', () => 
     expect(fs.existsSync(path.join(stateDir, live.id, 'settings.json'))).toBe(true);
   });
 
+  it('a spawn that THROWS does not leave its directory behind', () => {
+    // The settings file is written by `buildSpawn`, before there is a process
+    // — so this id gets a complete directory and then never sees an exit or a
+    // `remove()`. Nothing else runs for it again.
+    const log = captureLog();
+    const exploding = {
+      spawn: () => {
+        throw new Error('ENOENT: no such file or directory, spawn fake-cli');
+      },
+      remove: () => {},
+    } as unknown as PtyLike;
+    const m = new SessionManager(settingsWritingRegistry(), exploding, log, stateDir);
+
+    expect(() => m.create(identity)).toThrow(/spawn fake-cli/);
+
+    // exactly the forwarder-less, session-less directory we started with
+    expect(fs.readdirSync(stateDir)).toEqual([]);
+    expect(log.warnings).toEqual([]);
+  });
+
   it('a RESUMED session gets its own fresh directory — nothing a resume needs was deleted', () => {
     // The load-bearing claim behind deleting at exit rather than at card
     // forget: `create()` mints a NEW id every spawn, and `buildSpawn` writes a
@@ -375,6 +408,12 @@ describe('the bootstrap sweep takes what previous runs left (#290)', () => {
     expect(r.removed).toBe(1);
     expect(r.kept).toBe(2);
     expect(ids.filter((id) => fs.existsSync(path.join(stateDir, id)))).toHaveLength(2);
+    // `kept` cannot tell "too young" from "out of budget" and they mean
+    // opposite things to whoever reads the log. Said once, not twice.
+    expect(log.infos).toEqual([
+      'session state dir sweep hit its budget — the rest waits for the next start',
+      'swept orphaned session state dirs',
+    ]);
   });
 
   it('never takes a directory it was told is live, however old it is', () => {

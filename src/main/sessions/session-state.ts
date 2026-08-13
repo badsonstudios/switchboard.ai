@@ -43,12 +43,14 @@
 // same two points #282's token delete is reached through. Both are idempotent:
 // the second call finds nothing and says nothing.
 //
-// WHAT IS LEFT FOR THE SWEEP. Three paths still leave a directory behind, and
+// WHAT IS LEFT FOR THE SWEEP. Two paths still leave a directory behind, and
 // they are why `sweepOrphanSessionStateDirs` exists rather than being belt and
-// braces: a spawn that THROWS (the settings file is written by `buildSpawn`,
-// before the process exists, so a failed spawn leaks a complete directory), an
-// app quit with sessions still running (the kill goes out, the exits do not
-// come back before the process is gone), and a crash or a force-quit.
+// braces: an app quit with sessions still running (the kill goes out, the
+// exits do not come back before the process is gone), and a crash or a
+// force-quit. The third — a spawn that THROWS, which leaves a complete
+// directory because `buildSpawn` writes the settings file before there is a
+// process — is taken by `create()`'s own catch, since nothing else ever runs
+// for that id again.
 //
 // FIXTURES ONLY IN TESTS. Every test in this module's suite points `stateDir`
 // at a registered temp directory (`src/test-temp-dirs.ts`). Nothing in a test
@@ -77,8 +79,18 @@ import type { Logger } from '../log/logger';
  * in `hooks/hook-check.ts`, a hand-written test id) is silently not cleaned up.
  * That is the right way round: production has exactly one producer of these
  * directories and it always uses `randomUUID`.
+ *
+ * Two details that look like style and are not:
+ *
+ *   * NO `/i`. `randomUUID()` is lower-case, so upper case is not something we
+ *     wrote — and on a case-sensitive filesystem accepting it would mean
+ *     deleting a directory that is definitively somebody else's.
+ *   * `$(?![\s\S])` rather than `$`, because JavaScript's `$` also matches
+ *     BEFORE a trailing newline: `<uuid>\n` is a legal directory name on POSIX
+ *     and a plain `$` would have made it a candidate.
  */
-const SESSION_DIR_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SESSION_DIR_NAME =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$(?![\s\S])/;
 
 /** Exported for the tests that pin the guard, not for call sites. */
 export function isSessionStateDirName(name: string): boolean {
@@ -171,14 +183,15 @@ export interface SweepResult {
  * running for two days is older than any floor worth having), and neither can
  * the single-instance lock, which says nothing about THIS process's sessions.
  *
- * A candidate must clear all five, in the order that costs least:
+ * A candidate must clear all six, in the order that costs least:
  *   1. it is a direct child of `stateDir` — one `readdir`, no recursion;
  *   2. it is a directory, off the dirent, so a symlink or junction pointing
  *      somewhere interesting answers `false` rather than being followed;
  *   3. its name is a UUID (`SESSION_DIR_NAME`) — which is what keeps
  *      `hook-forwarder.cjs` and anything a human put here out of it;
  *   4. it is not in `keep`;
- *   5. it is older than `minAgeMs`.
+ *   5. there is budget left (`budgetMs`);
+ *   6. it is older than `minAgeMs`.
  *
  * Nothing here throws. A directory it cannot list, stat or delete is counted,
  * named in one log line, and left for the next start.
@@ -215,6 +228,7 @@ export function sweepOrphanSessionStateDirs(
   }
 
   const startedAt = now();
+  let budgetSpent = false;
   for (const e of entries) {
     if (!e.isDirectory()) continue;
     if (!isSessionStateDirName(e.name)) continue;
@@ -225,6 +239,16 @@ export function sweepOrphanSessionStateDirs(
     // rather than stopping at the delete.
     if (now() - startedAt >= budgetMs) {
       result.kept++;
+      // ONE line, the first time, because `kept` cannot tell the two reasons
+      // apart and they mean opposite things to whoever reads the log: "younger
+      // than the floor" is the sweep working as designed, "ran out of budget"
+      // is the pile not draining as fast as it is filling.
+      if (!budgetSpent) {
+        budgetSpent = true;
+        log.info('session state dir sweep hit its budget — the rest waits for the next start', {
+          budgetMs,
+        });
+      }
       continue;
     }
     const dir = path.join(stateDir, e.name);
