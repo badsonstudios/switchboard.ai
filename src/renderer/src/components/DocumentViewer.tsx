@@ -66,15 +66,34 @@ function headingById(root: ParentNode | null, id: string): Element | null {
   return root.querySelector(`[id="${id}"]`);
 }
 
+/** The session a viewer was opened FROM, for §5.24's lineage convention. */
+export interface DocumentAttribution {
+  /** what that session calls itself, right now */
+  name: string;
+  /** its identity accent, or undefined while the store has not answered */
+  accent?: string;
+}
+
 export interface DocumentViewerProps {
   /** the absolute path this viewer opened on */
   path: string;
   colorScheme: 'light' | 'dark';
   /** the panel's tab title follows relative-link navigation */
   onTitleChange?: (title: string) => void;
-  /** P2-E16-03 owns what pinning DOES; this reports the control's state */
+  /**
+   * CONTROLLED (P2-E16-03). The peek slot is one pointer held outside this
+   * component (`lib/document-panels`), and pinning MOVES it — so a viewer that
+   * kept its own copy would show "pinned" for a panel the registry had since
+   * handed the slot back to. The control reports; the registry decides.
+   */
   pinned?: boolean;
   onPinnedChange?: (pinned: boolean) => void;
+  /** is this viewer currently in its own OS window? */
+  poppedOut?: boolean;
+  /** pop out, or dock back — one control, because it is one toggle */
+  onPopoutToggle?: () => void;
+  /** the session this viewer was opened from, if any (§5.24) */
+  session?: DocumentAttribution;
 }
 
 /** Bytes as a human says them. Two significant places is enough for a header. */
@@ -127,7 +146,7 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
   const [result, setResult] = React.useState<FileReadResult | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [mode, setMode] = React.useState<DocumentMode>(meta.defaultMode);
-  const [pinned, setPinned] = React.useState(props.pinned ?? false);
+  const pinned = props.pinned ?? false;
 
   React.useEffect(() => {
     setMode(meta.defaultMode);
@@ -385,8 +404,23 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
     setMode(next);
   };
 
+  // §5.24's lineage convention: the accent is a TINT on the surface (a rule
+  // down its leading edge, exactly as a card header wears it), never the ink —
+  // the eight accents span 1.8:1 to 3.1:1 on daylight and text on them cannot
+  // be read (the #5.11 finding IdentityChip records).
+  const attribution = props.session;
+  const rootStyle = attribution?.accent
+    ? ({ ['--doc-accent' as string]: attribution.accent } as React.CSSProperties)
+    : undefined;
+
   return (
-    <div className="doc-viewer" ref={rootRef} data-testid="document-viewer">
+    <div
+      className={`doc-viewer${attribution ? ' doc-attributed' : ''}`}
+      ref={rootRef}
+      style={rootStyle}
+      data-testid="document-viewer"
+      data-doc-session={attribution ? '' : undefined}
+    >
       <div className="doc-header">
         <div className="doc-nav">
           <button
@@ -417,6 +451,21 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
         <span className="doc-dir" title={current}>
           {directoryName(current)}
         </span>
+        {attribution ? (
+          // A CHIP, not a title bar: a viewer is session-ATTRIBUTED and not
+          // session-owned (§5.30), so this says where it came from and claims
+          // nothing else. `role="note"` because the chip has to carry its own
+          // accessible name — "↳ api-work" read aloud is a rune and a word.
+          <span
+            className="doc-attribution"
+            data-testid="doc-attribution"
+            role="note"
+            aria-label={t('document.openedFromLabel', { name: attribution.name })}
+            title={t('document.openedFromLabel', { name: attribution.name })}
+          >
+            <span aria-hidden="true">{t('document.icon.lineage')}</span> {attribution.name}
+          </span>
+        ) : null}
         {encoding && encoding !== 'utf-8' ? (
           <span className="doc-chip" data-testid="doc-encoding">
             {t('document.encodingNote', { encoding: encoding as FileTextEncoding })}
@@ -465,17 +514,33 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
         <button
           type="button"
           className="doc-btn doc-pin"
+          data-testid="doc-pin"
           aria-pressed={pinned}
           title={pinned ? t('document.unpin') : t('document.pin')}
           aria-label={pinned ? t('document.unpin') : t('document.pin')}
-          onClick={() => {
-            const next = !pinned;
-            setPinned(next);
-            props.onPinnedChange?.(next);
-          }}
+          onClick={() => props.onPinnedChange?.(!pinned)}
         >
           {pinned ? t('document.icon.pinned') : t('document.icon.unpinned')}
         </button>
+        {props.onPopoutToggle ? (
+          // ONE control for both directions, like the card's (E8-04): pop out
+          // and dock back are the same toggle, and two buttons that are never
+          // both meaningful is two chances to show the wrong one. Its title is
+          // deliberately NOT the card's "Pop out into its own window" — several
+          // specs reach for that string by title, and a second match would make
+          // them ambiguous rather than wrong, which is the harder failure.
+          <button
+            type="button"
+            className="doc-btn doc-popout"
+            data-testid="doc-popout"
+            aria-pressed={props.poppedOut === true}
+            title={props.poppedOut ? t('document.dockBack') : t('document.popOut')}
+            aria-label={props.poppedOut ? t('document.dockBack') : t('document.popOut')}
+            onClick={() => props.onPopoutToggle?.()}
+          >
+            {props.poppedOut ? t('document.icon.dockBack') : t('document.icon.popOut')}
+          </button>
+        ) : null}
       </div>
 
       {truncated && ok ? (

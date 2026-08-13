@@ -7,6 +7,7 @@ import {
   DockviewReact,
   DockviewReadyEvent,
   DockviewApi,
+  DockviewGroupPanel,
   DockviewTheme,
   IDockviewPanel,
   IDockviewPanelProps,
@@ -25,6 +26,13 @@ import { IdentityChip, identityBadgeStyle } from './IdentityChip';
 import { DiffPane } from './DiffPane';
 import { DocumentViewer } from './DocumentViewer';
 import { baseName } from '../lib/document-kind';
+import {
+  documentPanels,
+  forgetDocumentPanel,
+  isDocumentPinned,
+  planDocumentOpen,
+  setDocumentPinned,
+} from '../lib/document-panels';
 import { UsageStrip } from './UsageStrip';
 import { GitContext, GitStatusDto } from './GitContext';
 import { Usage, ZERO_USAGE } from '../lib/usage';
@@ -1693,6 +1701,12 @@ function DiffPanel(
     <DiffPane
       folder={props.params?.folder ?? ''}
       colorScheme={props.params?.colorScheme === 'light' ? 'light' : 'dark'}
+      // FROM THE PANEL ID, not a new param. `openDiff` already encodes the card
+      // in `diff-<cardId>` and reading it back costs nothing, where threading a
+      // `cardId` param would edit the one function another item is currently
+      // holding — and would leave every Changes tab already in a restored
+      // layout without it. The id is the fact; the param would be a copy.
+      sessionId={/^diff-(.+)$/.exec(props.api.id)?.[1]}
     />
   );
 }
@@ -1715,52 +1729,188 @@ function documentTabTitle(filePath: string): string {
 }
 
 /**
- * Open (or focus) a document viewer on `filePath` (P2-E16-02).
+ * Push each viewer's PIN state onto its panel params (P2-E16-03).
+ *
+ * Pinned is derived from one pointer in `lib/document-panels`, and moving that
+ * pointer changes the answer for TWO panels at once — the one that just took
+ * the peek slot and the one that just lost it. Rather than work out which, and
+ * be wrong the first time a third rule arrives, every open viewer is re-told
+ * after every mutation. `updateParameters` merges, so this names one key, and
+ * there are at most a handful of viewers.
+ */
+function syncDocumentPins(api: DockviewApi): void {
+  for (const entry of documentPanels()) {
+    api.getPanel(entry.id)?.api.updateParameters({ pinned: isDocumentPinned(entry.id) });
+  }
+}
+
+/**
+ * The DOCUMENT AREA: the group a viewer may open into (§5.30, P2-E16-03).
+ *
+ * "A viewer never displaces a session. It opens into the document area or its
+ * own window — never as a tab inside a session's group." Two ways to break that
+ * rule, and this closes both:
+ *
+ *  1. THE POPOUT. dockview's `addPanel` defaults to the ACTIVE group, which
+ *     becomes a popout the moment a card is torn off — so a file opened while a
+ *     popped-out session had focus would land as a tab inside that session's
+ *     window. That is the E8-04 defect in mirror image, and it now has a second
+ *     face: once a VIEWER can have its own window, a pinned viewer's popout is
+ *     just as wrong a home for the next one. Only `grid` groups are considered,
+ *     so both are excluded by the same line.
+ *  2. THE SESSION'S GROUP. P2-E16-02 took the first grid group, which with one
+ *     session open IS that session's group — the viewer arrived as a tab beside
+ *     the card, and switching to it hid the session. Group membership is the
+ *     test, not group count: a grid group holding any `session-` panel is a
+ *     session's group and is not offered.
+ *
+ * Preference order: the group already holding viewers (there IS one document
+ * area, not one per file), then any session-free grid group, then a new one —
+ * which is what puts the document area on screen the first time, beside the
+ * sessions rather than over them.
+ *
+ * (`openDiff` deliberately does NOT go through this: a Changes tab is a
+ * session's own surface and belongs in its group.)
+ */
+function documentHomeGroup(api: DockviewApi): DockviewGroupPanel {
+  const grid = api.groups.filter((g) => g.api.location.type === 'grid');
+  return (
+    grid.find((g) => g.panels.some((p) => p.id.startsWith('doc-'))) ??
+    grid.find((g) => !g.panels.some((p) => p.id.startsWith('session-'))) ??
+    api.addGroup()
+  );
+}
+
+/**
+ * Open a document viewer on `filePath` — peek slot and all (P2-E16-02/03).
  *
  * A module-level function taking the api, like every other imperative verb in
  * this file, so the scripted-check seam in `onReady` can call the same code the
  * controller does — through the controller it would race the effect that
  * installs it.
+ *
+ * The DECISION (focus / replace / create) is `lib/document-panels`'; this is
+ * only the dockview half of it. `replace` re-points an existing panel instead
+ * of closing and re-opening one, which is what makes the peek slot feel like
+ * one surface with changing content rather than a tab that blinks.
  */
 function openDocumentPanel(
   api: DockviewApi | null,
   filePath: string,
-  colorScheme: 'light' | 'dark'
+  colorScheme: 'light' | 'dark',
+  sessionId?: string
 ): void {
   if (!api || !filePath) return;
-  // One panel per FILE, not per spelling: the Changes tab joins with `/` and
-  // the native picker answers with `\`, and `C:/p/a.md` and `C:\p\a.md` are the
-  // same document. Case is left alone — it decides nothing on POSIX.
-  const id = `doc-${filePath.replace(/\\/g, '/')}`;
-  const existing = api.getPanel(id);
-  if (existing) {
-    existing.focus();
+  const plan = planDocumentOpen(filePath, sessionId);
+  if (plan.action !== 'create') {
+    const panel = api.getPanel(plan.id);
+    if (panel) {
+      if (plan.action === 'replace') {
+        panel.api.updateParameters({ path: plan.path, sessionId: plan.sessionId ?? null });
+        panel.api.setTitle(documentTabTitle(plan.path));
+      }
+      panel.focus();
+      syncDocumentPins(api);
+      return;
+    }
+    // The registry believes in a panel dockview does not have — only reachable
+    // if a removal never reported. Correct the registry and open properly
+    // rather than dropping the user's click on the floor (fail-open).
+    forgetDocumentPanel(plan.id);
+    openDocumentPanel(api, filePath, colorScheme, sessionId);
     return;
   }
-  // A VIEWER NEVER DISPLACES A SESSION (§5.30), and the mechanism is the E8-04
-  // one: dockview's `addPanel` defaults to the ACTIVE group, which becomes a
-  // popout the moment a card is torn off — so a file opened while a popped-out
-  // session had focus would land as a tab inside that session's window. Pin it
-  // to a group in the main grid, making one if every group has been popped out.
-  // (`openDiff` predates this rule and still has the gap; widening it is not
-  // this item's to take.)
-  const refGroup = api.groups.find((g) => g.api.location.type === 'grid') ?? api.addGroup();
   api.addPanel({
-    id,
+    id: plan.id,
     component: 'documentViewer',
     title: documentTabTitle(filePath),
-    params: { path: filePath, colorScheme },
-    position: { referenceGroup: refGroup },
+    params: { path: filePath, colorScheme, sessionId: sessionId ?? null, pinned: false },
+    position: { referenceGroup: documentHomeGroup(api) },
   });
+  syncDocumentPins(api);
+}
+
+/**
+ * Pop a viewer out to its own OS window, or dock it back (P2-E16-03, §5.30).
+ *
+ * "Pop it open in its own window is the same `addPopoutGroup` a session card
+ * uses" — so this is `popOutCardPanel` with the session bookkeeping removed,
+ * and the removal is the whole difference: a card's popout carries the two
+ * dock-back semantics (a button toggle keeps the session alive, a window close
+ * suspends it) because there is a CHILD PROCESS on the other end of it. A
+ * viewer is a file on disk. Closing its window means "put it back", every time,
+ * and dockview's own teardown does exactly that — the group returns to the
+ * reference group it left. Nothing to disambiguate, so nothing is flagged.
+ */
+export function popOutDocumentPanel(api: DockviewApi | null, panelId: string): void {
+  const panel = api?.getPanel(panelId);
+  if (!api || !panel) return;
+  const loc = panel.api.location;
+  if (loc.type === 'popout') {
+    loc.getWindow()?.close();
+    return;
+  }
+  const popoutUrl = new URL('popout.html', window.location.href).toString();
+  void api.addPopoutGroup(panel, { popoutUrl });
 }
 
 function DocumentViewerPanel(
-  props: IDockviewPanelProps<{ path?: string; colorScheme?: string }>
+  props: IDockviewPanelProps<{
+    path?: string;
+    colorScheme?: string;
+    sessionId?: string | null;
+    pinned?: boolean;
+  }>
 ): React.JSX.Element {
   const api = props.api;
+  const containerApi = props.containerApi;
   // Stable identity: the viewer holds this in an effect's deps, so an inline
   // arrow would re-run `setTitle` on every render of the panel.
   const setTitle = React.useCallback((title: string) => api.setTitle(title), [api]);
+
+  // Where the panel IS, kept live: the header's one control has to read "dock
+  // back" the instant the window opens, and dockview is the authority on that
+  // (the same `onDidLocationChange` a card uses for its own toggle).
+  const [poppedOut, setPoppedOut] = React.useState(() => api.location.type === 'popout');
+  React.useEffect(() => {
+    setPoppedOut(api.location.type === 'popout');
+    const d = api.onDidLocationChange(() => setPoppedOut(api.location.type === 'popout'));
+    return () => d.dispose();
+  }, [api]);
+
+  // §5.24 attribution, resolved from the STORE and not from params — the same
+  // argument `IdentityTab` records: a rename or a re-assigned accent has to
+  // reach a viewer that has been on screen for an hour, and a copy frozen into
+  // the layout blob at `addPanel` never could.
+  const sessionId = props.params?.sessionId ?? null;
+  const sessionName = React.useSyncExternalStore(subscribeStore, () =>
+    sessionId ? sessionStore.getCardTitle(sessionId) : undefined
+  );
+  const sessionAccent = React.useSyncExternalStore(subscribeStore, () =>
+    sessionId ? sessionStore.getCardAccent(sessionId) : undefined
+  );
+  // NO TITLE, NO CHIP. A viewer OUTLIVES the session it was opened from
+  // (§5.30), and once that session is closed the store stops answering for the
+  // card — at which point the lineage points at nothing and the honest thing is
+  // to stop claiming it, rather than fall back to a raw card id no user has
+  // ever seen. A live card always has a title, so this only fires on departure.
+  const session = React.useMemo(
+    () => (sessionId && sessionName ? { name: sessionName, accent: sessionAccent } : undefined),
+    [sessionId, sessionName, sessionAccent]
+  );
+
+  const onPinnedChange = React.useCallback(
+    (next: boolean) => {
+      setDocumentPinned(api.id, next);
+      syncDocumentPins(containerApi);
+    },
+    [api, containerApi]
+  );
+  const onPopoutToggle = React.useCallback(
+    () => popOutDocumentPanel(containerApi, api.id),
+    [api, containerApi]
+  );
+
   return (
     // §5.30's litmus #3, in one wrapper: "read-only and out of band, wrapped in
     // `ContributionBoundary`; a viewer that throws cannot touch a session".
@@ -1773,6 +1923,11 @@ function DocumentViewerPanel(
         path={props.params?.path ?? ''}
         colorScheme={props.params?.colorScheme === 'light' ? 'light' : 'dark'}
         onTitleChange={setTitle}
+        pinned={props.params?.pinned === true}
+        onPinnedChange={onPinnedChange}
+        poppedOut={poppedOut}
+        onPopoutToggle={onPopoutToggle}
+        session={session}
       />
     </ContributionBoundary>
   );
@@ -2552,12 +2707,14 @@ export interface GridController {
   /** open (or focus) the per-session diff tab (E5-02) */
   openDiff: (sessionId: string, folder: string, title: string) => void;
   /**
-   * Open (or focus) a §5.30 document viewer on an absolute path (P2-E16-02).
+   * Open a §5.30 document viewer on an absolute path (P2-E16-02/03).
    *
-   * One panel per path today; P2-E16-03 replaces that with the peek slot. It
-   * never lands in a session's group — see the implementation's note.
+   * ONE reusable peek slot: the next open replaces it unless it was pinned.
+   * `sessionId` attributes the viewer to the card the request came from (§5.24)
+   * — a tint and a chip, never ownership. It never lands in a session's group,
+   * nor in a popped-out viewer's window — see the implementation's note.
    */
-  openDocument: (absolutePath: string) => void;
+  openDocument: (absolutePath: string, sessionId?: string) => void;
   /** card id of the active session panel, or null (E9-01 command context) */
   activeCardId: () => string | null;
   /** close a card the way the tab ✕ does — including its confirm (E9-01) */
@@ -2927,7 +3084,8 @@ export function SessionGrid(props: {
           params: { folder, colorScheme: props.colorScheme },
         });
       },
-      openDocument: (filePath) => openDocumentPanel(apiRef.current, filePath, props.colorScheme),
+      openDocument: (filePath, sessionId) =>
+        openDocumentPanel(apiRef.current, filePath, props.colorScheme, sessionId),
     };
     // eslint's exhaustive-deps plugin isn't installed; deps kept accurate by hand
   }, [props.controller, addSessionCard, hideCard, revealCard, setLadder, stepLadder, props.colorScheme, t]);
@@ -3086,6 +3244,13 @@ export function SessionGrid(props: {
       // disposal ever firing removes).
       api.onDidRemovePanel((panel) => {
         if (sessionStore.isTearingDown()) return;
+        // A closed viewer stops holding the peek slot (P2-E16-03) — otherwise
+        // the registry keeps a pointer at a panel dockview no longer has, and
+        // the next open would try to re-point a ghost.
+        if (panel.id.startsWith('doc-')) {
+          forgetDocumentPanel(panel.id);
+          return;
+        }
         const m = /^session-(.+)$/.exec(panel.id);
         if (!m) return;
         // hiding removes the panel too, and means the opposite: keep the record

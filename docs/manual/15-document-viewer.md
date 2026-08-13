@@ -29,6 +29,65 @@ directly. Anything else has to come through **Open file…** — that dialog is 
 you tell switchboard.ai it may read a file, and it will not go looking anywhere
 you have not pointed it.
 
+The viewer opens **beside** your sessions, in its own part of the workspace —
+never as a tab on top of a session card. Reading a file never costs you sight of
+the agent that wrote it.
+
+## One viewer, not thirty tabs
+
+Open a second file and it appears **in the same panel**, replacing the first.
+Glance at six files in a row and you still have one document panel, not six.
+
+That is deliberate. Most of the time you want to read something, take the point,
+and move on — and an editor that leaves a tab behind for every one of those
+turns into a mess you have to clean up.
+
+When you want to *keep* a document — say `PROGRESS.md` open while you read the
+plan file next to it — click the **📌** in its header:
+
+- The pinned document stops moving. The next file you open gets a **new panel**
+  of its own, and that new one becomes the replaceable one.
+- Click **📌** again to unpin. That document becomes the replaceable one again,
+  and whatever was replaceable before it is kept instead — there is only ever
+  one "next file goes here" slot, and unpinning is how you move it.
+- Closing a document panel is the normal tab **✕**. Nothing is remembered; a
+  viewer is a way of looking at a file, not a thing you own.
+
+Opening a file that is **already** open just brings it to the front. It doesn't
+open twice and it doesn't spend your one replaceable slot.
+
+## Reading on a second monitor
+
+The **⤢** next to the pin moves the document into **its own window**, which you
+can drag to another monitor and leave there. It is the same window trick a
+session card does.
+
+- The same **⤢** in that window puts the document back into the main window.
+- So does simply closing the window — nothing is lost either way.
+- Popping a document out does **not** pin it. If you want it to stay put on that
+  second monitor, pin it as well; otherwise the next file you open replaces it,
+  which is often exactly what you want from a reference window.
+- Opening a file while a *session* is popped out — or while a *document* window
+  is the one you last clicked — still puts the new document in the main window's
+  document area. Files do not land in windows by accident.
+
+## Where a document came from
+
+Open a file from a session's **Changes** tab and the viewer wears that session's
+colour down its left edge, with a small **↳ name** chip in the header naming the
+session.
+
+That is a label, not a leash. The document is not part of the session:
+
+- it never appears in the sessions list on the left;
+- it is never one of the sessions waiting for you in the attention queue;
+- **Close all sessions** does not close it;
+- and it stays open after the session it came from is closed — at which point
+  the chip goes away, because there is nothing left for it to point at.
+
+Files opened from **Open file…** have no chip at all — they came from you, not
+from a session.
+
 ## Rendered or source
 
 Markdown files open **rendered**. Everything else opens as **source**.
@@ -99,6 +158,10 @@ into your own tools is always one click away.
   count towards anything, and closing sessions doesn't close it.
 - **It doesn't follow the file yet.** If the agent rewrites the file while it's
   open, close and reopen it to see the new version. Live re-rendering is coming.
+- **Open documents are not restored when you restart.** Your sessions come back
+  exactly as you left them; the documents you were reading do not. Reopening one
+  is two clicks, and reopening six you had finished with is a chore. Remembering
+  them is planned for later.
 
 ## If something goes wrong
 

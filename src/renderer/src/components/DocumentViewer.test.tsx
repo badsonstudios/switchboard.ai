@@ -7,7 +7,7 @@
 // what this file owns is that the viewer CHOOSES the source body, hands it the
 // right language and text, and gives it back the scroll position it left.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { act } from 'react';
+import React, { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import type { FileReadResult } from '../../../shared/ipc/fs';
@@ -90,12 +90,39 @@ afterEach(async () => {
   }
 });
 
-async function mount(path: string, colorScheme: 'light' | 'dark' = 'dark'): Promise<void> {
+async function mount(
+  path: string,
+  colorScheme: 'light' | 'dark' = 'dark',
+  extra: Partial<React.ComponentProps<typeof DocumentViewer>> = {}
+): Promise<void> {
   await act(async () => {
-    root!.render(<DocumentViewer path={path} colorScheme={colorScheme} />);
+    root!.render(<DocumentViewer path={path} colorScheme={colorScheme} {...extra} />);
   });
   // let the read's promise settle and the decoration effect run
   await act(async () => {});
+}
+
+/**
+ * The viewer with an owner that actually honours the pin (P2-E16-03).
+ *
+ * `pinned` is CONTROLLED — the peek slot lives in `lib/document-panels` and the
+ * panel pushes the answer back down — so mounting the viewer bare and clicking
+ * the control proves nothing but that the click was heard. This stands in for
+ * `DocumentViewerPanel` and nothing more.
+ */
+function PinHost(props: { path: string; onChange: (p: boolean) => void }): React.JSX.Element {
+  const [pinned, setPinned] = React.useState(false);
+  return (
+    <DocumentViewer
+      path={props.path}
+      colorScheme="dark"
+      pinned={pinned}
+      onPinnedChange={(next) => {
+        props.onChange(next);
+        setPinned(next);
+      }}
+    />
+  );
 }
 
 const q = (sel: string): HTMLElement | null => host.querySelector(sel);
@@ -132,8 +159,76 @@ describe('a markdown file opens RENDERED by default', () => {
     expect(name?.getAttribute('title')).toBe('/home/dan/sb/PROGRESS.md');
     const pin = q('.doc-pin');
     expect(pin?.getAttribute('aria-pressed')).toBe('false');
-    await click(pin);
+    // named for a screen reader, not just drawn (§5.32)
+    expect(pin?.getAttribute('aria-label')).toMatch(/pin/i);
+  });
+
+  it('the pin control REPORTS; the owner decides, and the button follows it', async () => {
+    answer = () => ok('# T\n');
+    const seen: boolean[] = [];
+    await act(async () => {
+      root!.render(<PinHost path="/p/PROGRESS.md" onChange={(p) => seen.push(p)} />);
+    });
+    await act(async () => {});
+
+    await click(q('.doc-pin'));
+    expect(seen).toEqual([true]);
     expect(q('.doc-pin')?.getAttribute('aria-pressed')).toBe('true');
+    expect(q('.doc-pin')?.getAttribute('aria-label')).toMatch(/unpin/i);
+
+    await click(q('.doc-pin'));
+    expect(seen).toEqual([true, false]);
+    expect(q('.doc-pin')?.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('an owner that refuses the pin leaves the control showing the TRUTH', async () => {
+    // The peek slot can move under a viewer — unpinning another panel claims
+    // it — so an optimistic local `pinned` would light a pin the registry says
+    // is not set. Controlled means the button cannot lie.
+    answer = () => ok('# T\n');
+    await mount('/p/PROGRESS.md', 'dark', { pinned: false, onPinnedChange: () => {} });
+    await click(q('.doc-pin'));
+    expect(q('.doc-pin')?.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('the pop-out control is a labelled toggle, and only exists when wired', async () => {
+    answer = () => ok('# T\n');
+    await mount('/p/PROGRESS.md');
+    expect(q('[data-testid="doc-popout"]')).toBeNull();
+
+    let toggles = 0;
+    await mount('/p/PROGRESS.md', 'dark', { onPopoutToggle: () => (toggles += 1) });
+    const out = q('[data-testid="doc-popout"]');
+    expect(out?.getAttribute('aria-pressed')).toBe('false');
+    expect(out?.getAttribute('aria-label')).toBe('Open this document in its own window');
+    await click(out);
+    expect(toggles).toBe(1);
+
+    // ...and once it IS in its own window, the same control docks it back
+    await mount('/p/PROGRESS.md', 'dark', { onPopoutToggle: () => {}, poppedOut: true });
+    const back = q('[data-testid="doc-popout"]');
+    expect(back?.getAttribute('aria-pressed')).toBe('true');
+    expect(back?.getAttribute('aria-label')).toBe('Put this document back in the main window');
+  });
+
+  it('a viewer opened from a card wears that session’s tint and names it (§5.24)', async () => {
+    answer = () => ok('# T\n');
+    await mount('/p/PROGRESS.md');
+    // no session, no chip and no tint: a viewer needs no session at all
+    expect(q('[data-testid="doc-attribution"]')).toBeNull();
+    expect(q('[data-testid="document-viewer"]')?.className).not.toContain('doc-attributed');
+
+    await mount('/p/PROGRESS.md', 'dark', { session: { name: 'api-work', accent: 'var(--accent-amber)' } });
+    const chip = q('[data-testid="doc-attribution"]');
+    expect(chip?.textContent).toContain('api-work');
+    expect(chip?.textContent).toContain('↳');
+    // the rune is decorative; the chip carries its own accessible name
+    expect(chip?.getAttribute('role')).toBe('note');
+    expect(chip?.getAttribute('aria-label')).toBe('Opened from the session api-work');
+    expect(chip?.querySelector('[aria-hidden="true"]')?.textContent).toBe('↳');
+    const viewer = q('[data-testid="document-viewer"]');
+    expect(viewer?.className).toContain('doc-attributed');
+    expect(viewer?.style.getPropertyValue('--doc-accent')).toBe('var(--accent-amber)');
   });
 
   it('Open externally and Reveal in folder go through the bridge', async () => {
