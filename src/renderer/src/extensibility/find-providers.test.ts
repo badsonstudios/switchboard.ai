@@ -51,7 +51,7 @@ function hit(over: Partial<TranscriptSearchResult['hits'][number]> = {}): Transc
 }
 
 describe('the find-provider point (P2-E17-02, §5.23)', () => {
-  it('registers the three-of-four shipped registrants', () => {
+  it('registers two of §5.31’s four named registrants — the honest count', () => {
     const ids = listFindProviders(fresh()).map((p) => p.manifest.id);
     expect(ids).toEqual(['find-session', 'find-changes']);
   });
@@ -193,6 +193,24 @@ describe('mapping the engine’s answer into the bar’s vocabulary', () => {
     expect(res.truncated).toBe(true);
   });
 
+  it('gives every hit a DISTINCT id, even several matches in one long field', () => {
+    // `matchStart` is an offset into the SNIPPET, and the engine's context
+    // window pins it at 121 for every match past the first 120 characters of a
+    // field — so an id built from it collides for exactly the case find exists
+    // for: several matches in one long tool output. They are React keys.
+    const res = hitsFromTranscript(
+      result({
+        hits: [
+          hit({ blockIndex: 12, field: 'tool.out', matchStart: 121 }),
+          hit({ blockIndex: 12, field: 'tool.out', matchStart: 121 }),
+          hit({ blockIndex: 12, field: 'tool.out', matchStart: 121 }),
+        ],
+      }),
+      's1',
+    );
+    expect(new Set(res.hits.map((h) => h.id)).size).toBe(3);
+  });
+
   it('drops hits belonging to another session in the scope', () => {
     const res = hitsFromTranscript(result({ hits: [hit(), hit({ sessionId: 'other' })] }), 's1');
     expect(res.hits).toHaveLength(1);
@@ -238,18 +256,27 @@ describe('the Changes provider delegates to Monaco (§5.31: do not reimplement i
   it('opens the editor’s OWN find, seeded with the sticky term', () => {
     const openFind = vi.fn().mockReturnValue(true);
     const ok = changesFindProvider.delegate?.(
-      { sessionId: 's1', surface: { kind: 'monaco', openFind } as FindSurface },
+      { sessionId: 's1', surface: { kind: 'monaco', ready: () => true, openFind } as FindSurface },
       { term: 'ENOENT' },
     );
     expect(ok).toBe(true);
     expect(openFind).toHaveBeenCalledWith('ENOENT');
   });
 
-  it('greys with a reason while the editor has not built yet', () => {
+  it('greys with a reason until there is a FILE open, not merely an editor', () => {
+    // The pane builds its editor on mount and selects no file, so "a surface
+    // exists" is the state the tab is in by default. Reading only that would
+    // delegate into a model-less editor, close our bar and open nothing —
+    // Ctrl+F doing visibly nothing at all.
+    const notReady = { kind: 'monaco', ready: () => false, openFind: () => false } as FindSurface;
+    const ready = { kind: 'monaco', ready: () => true, openFind: () => true } as FindSurface;
     expect(changesFindProvider.unavailableKey({ sessionId: 's1', surface: null })).toBe(
       'find.unavailable.diffNotReady',
     );
-    expect(changesFindProvider.unavailableKey({ sessionId: 's1', surface: { kind: 'monaco' } })).toBeNull();
+    expect(changesFindProvider.unavailableKey({ sessionId: 's1', surface: notReady })).toBe(
+      'find.unavailable.diffNotReady',
+    );
+    expect(changesFindProvider.unavailableKey({ sessionId: 's1', surface: ready })).toBeNull();
   });
 });
 

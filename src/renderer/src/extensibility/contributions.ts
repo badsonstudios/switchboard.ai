@@ -259,9 +259,9 @@ export interface StatusBarItemContribution {
 //
 // WHY IT IS DISSIMILAR from the five points above — the Phase-4 gate asks for
 // dissimilar consumers, and this one is the first point whose contributions
-// **do not all do the same job**. Two of the three shipped registrants search
-// with our bar and one hands the whole interaction to a surface that already
-// had a find (Monaco). See `mode` below.
+// **do not all do the same job**. Of the two that ship, one searches with our
+// bar and one hands the whole interaction to a surface that already had a find
+// (Monaco). See `mode` below.
 // ---------------------------------------------------------------------------
 
 /**
@@ -352,7 +352,7 @@ export interface FindResults {
  * that reads a surface is the provider that published it, and a discriminated
  * union here would mean every new registrant edits this file — the exact
  * coupling a contribution point exists to remove. Narrow on `kind` and cast,
- * as `find-providers.tsx` does.
+ * as `find-providers.ts` does.
  */
 export interface FindSurface {
   readonly kind: string;
@@ -366,6 +366,10 @@ export interface FindContext {
   cardId?: string;
   /** the mounted panel's published surface, or null if it has not published */
   surface: FindSurface | null;
+  /** the APP's current language tag, for a provider that formats a date or a
+   *  number into a hit's small print. Not the OS's — a surface that mixed the
+   *  two would be quietly inconsistent with every other string on screen. */
+  locale?: string;
 }
 
 /**
@@ -391,8 +395,15 @@ export interface FindProviderContribution {
   manifest: CapabilityManifest;
   /** the panel whose focused instance this provider serves */
   panelId: PanelId;
-  /** i18n key for the group label in the bar's count ("Session", "Changes") */
-  labelKey: string;
+  /**
+   * i18n key for the group label in the bar's count ("Session", "Changes").
+   *
+   * OPTIONAL because nothing reads it yet: the grouped count ("14 in Session ·
+   * 3 in Terminal") is §5.31's first decision and P2-E17-03's work, since a
+   * group is only worth drawing once there are two. Requiring it now would
+   * make every registrant invent a string with no effect.
+   */
+  labelKey?: string;
   /** ascending; decides group order once the bar counts more than one view */
   order: number;
   mode: FindMode;

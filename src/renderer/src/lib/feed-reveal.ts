@@ -16,10 +16,18 @@
 // this still renders, it just does not auto-expand.
 //
 // It is deliberately one-way: find can open a block, and the user's own toggle
-// still works afterwards, because `open || revealed` leaves `setOpen` alone.
-// (Which means a revealed block cannot be re-collapsed while the bar is still
-// on it. That is the honest trade: the alternative is find seeding state that
-// then drifts from what the user does with it.)
+// still works afterwards, because `open || revealed` leaves the renderer's own
+// state alone. Two consequences worth knowing rather than discovering:
+//
+//   • a revealed block cannot be re-collapsed while find is still on it. The
+//     alternative is find seeding a renderer's state and then drifting from
+//     whatever the user does with it, which is worse.
+//   • while revealed, a renderer's `toggle` writes `false` every time (it
+//     computes `!open`, and `open` is pinned true). For the one renderer that
+//     defaults to OPEN — the Edit block — that means clicking it twice under
+//     the bar leaves it collapsed once the bar closes. A fold, not a fact; the
+//     alternative is a second piece of state per renderer to remember what the
+//     user "really" wanted.
 import React from 'react';
 
 export interface FeedReveal {
@@ -35,7 +43,7 @@ const FeedRevealContext = React.createContext<FeedReveal>(EMPTY);
 
 export const FeedRevealProvider = FeedRevealContext.Provider;
 
-/** The neutral value: no find in progress. Exported so a test can assert it. */
+/** The neutral value: no find in progress — what the feed resets to. */
 export const NO_REVEAL = EMPTY;
 
 /**

@@ -23,8 +23,12 @@ import { registerBuiltinContributions } from '../bootstrap';
 import { rendererRegistry } from '../extensibility/registry-instance';
 import type { PanelContext } from '../extensibility/contributions';
 import type { FeedBlockDto } from '../lib/feed';
-import { findSurfaceFor, findSurfaceKey, resetFindSurfaces } from '../lib/find-surfaces';
-import type { FeedFindSurface } from '../extensibility/find-providers';
+import {
+  findSurfaceFor,
+  findSurfaceKey,
+  resetFindSurfaces,
+  type FeedFindSurface,
+} from '../lib/find-surfaces';
 import { FEED_SEQ_ATTR } from '../lib/feed-reveal';
 
 declare global {
@@ -224,6 +228,44 @@ describe('jumping to a hit expands what the view was hiding (§5.31)', () => {
     // ...but a block revealed earlier STAYS expanded: stepping back and forth
     // through a result set must not re-fold what you already looked at
     expect(blockEl(host, 3)!.textContent).toContain('npm ERR! ENOENT');
+  });
+
+  it('SCROLLS the block into view, once React has actually committed it', async () => {
+    // The scroll is a layout effect rather than a frame scheduled inside
+    // `jumpTo`, and this is the case that forces it: a verbosity-hidden block
+    // does not exist in the DOM at all until the reveal commits, so anything
+    // measuring earlier finds nothing and silently skips — having already
+    // unpinned the user from the tail.
+    const host = await mountFeed();
+    const scroller = host.querySelector<HTMLElement>('[data-feed-region]')!;
+
+    // jsdom does no layout, so both halves of the sum have to be supplied: a
+    // scrollTop that records what is written to it, and two rects to subtract.
+    let scrollTop = 0;
+    Object.defineProperty(scroller, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTop,
+      set: (v: number) => {
+        scrollTop = v;
+      },
+    });
+    // On the PROTOTYPE, because the block element is created during the very
+    // commit the layout effect measures — there is no instance to stub first.
+    const proto = Object.getPrototypeOf(scroller) as Element;
+    const original = proto.getBoundingClientRect;
+    proto.getBoundingClientRect = function (this: Element): DOMRect {
+      return { top: this === scroller ? 100 : 500 } as DOMRect;
+    };
+    try {
+      await act(async () => {
+        surface().jumpTo(2);
+      });
+    } finally {
+      proto.getBoundingClientRect = original;
+    }
+
+    // the block's 500, less the scroller's 100, less 24px of air above it
+    expect(scrollTop).toBe(376);
   });
 
   it('clear() puts the view back the way find found it', async () => {

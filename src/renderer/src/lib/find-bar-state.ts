@@ -84,10 +84,11 @@ export function subscribeFindBar(fn: () => void): () => void {
 }
 
 /**
- * Open the bar on a card. Re-opening on the card it is already open on is NOT
- * a no-op for the caller — the bar re-focuses and selects its input, which is
- * what a second Ctrl+F means in every browser — but it is a no-op for this
- * state, so the bar watches for the keystroke itself.
+ * Open the bar on a card.
+ *
+ * Re-opening on the card it is already showing on is NOT a no-op: it bumps
+ * `openNonce`, and the bar re-focuses and selects its input off that — which
+ * is what a second Ctrl+F means in every browser.
  */
 export function openFindBar(cardId: string | null): void {
   if (!cardId) return;
@@ -116,7 +117,13 @@ export function findQuery(): FindQuery {
   return { term: state.term, caseSensitive: state.caseSensitive, wholeWord: state.wholeWord };
 }
 
-/** Test hook: back to a fresh module. Never called in production. */
+/**
+ * Test hook: back to a fresh module. Never called in production.
+ *
+ * It drops SUBSCRIBERS as well as state, so call it before mounting anything
+ * in a case — calling it while a component is mounted leaves a live
+ * `useSyncExternalStore` deaf to every later change.
+ */
 export function resetFindBarState(): void {
   state = INITIAL;
   listeners.clear();

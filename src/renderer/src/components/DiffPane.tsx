@@ -15,8 +15,7 @@ import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import '../lib/monaco-languages';
 import { languageForPath } from '../lib/diff-language';
 import { defineDiffThemes, DIFF_THEME } from '../lib/monaco-theme';
-import { findSurfaceKey, publishFindSurface } from '../lib/find-surfaces';
-import type { MonacoFindSurface } from '../extensibility/find-providers';
+import { findSurfaceKey, publishFindSurface, type MonacoFindSurface } from '../lib/find-surfaces';
 
 declare global {
   interface Window {
@@ -110,11 +109,18 @@ export function DiffPane(props: {
   // opens Monaco's widget and our bar stays out of the way entirely.
   useEffect(() => {
     if (!props.cardId) return;
+    // The editor is built on mount but no file is selected until the user
+    // picks one, and a find over a model-less editor opens a widget that can
+    // never match anything. `ready()` is what lets the provider grey the bar
+    // with a reason instead of handing off into nothing.
+    const modified = (): monaco.editor.ICodeEditor | null =>
+      editorRef.current?.getModifiedEditor() ?? null;
     const surface: MonacoFindSurface = {
       kind: 'monaco',
+      ready: (): boolean => !!modified()?.getModel(),
       openFind: (term: string): boolean => {
-        const ed = editorRef.current?.getModifiedEditor();
-        if (!ed) return false;
+        const ed = modified();
+        if (!ed?.getModel()) return false;
         // focus first, or the widget opens without a caret and Enter does
         // nothing — the "it did open, it just doesn't work" failure
         ed.focus();

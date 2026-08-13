@@ -79,7 +79,7 @@ export function FindBar(props: {
   /** that panel's title key, so the greyed message can NAME the tab */
   panelTitleKey: string;
 }): React.JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const bar = React.useSyncExternalStore(subscribeFindBar, findBarState);
   // a surface appears when its panel mounts — switching to Changes has to
   // re-resolve, or the bar would still be holding the feed's
@@ -87,9 +87,10 @@ export function FindBar(props: {
   const surface = React.useSyncExternalStore(subscribeFindSurfaces, () => findSurfaceFor(surfaceKey));
 
   const provider = findProviderFor(rendererRegistry, props.panelId);
+  const locale = i18n.language;
   const ctx = React.useMemo(
-    () => ({ sessionId: props.sessionId, cardId: props.cardId, surface }),
-    [props.sessionId, props.cardId, surface],
+    () => ({ sessionId: props.sessionId, cardId: props.cardId, surface, locale }),
+    [props.sessionId, props.cardId, surface, locale],
   );
   const unavailableKey = provider ? findUnavailableKey(provider, ctx) : 'find.unavailable.noProvider';
 
@@ -97,6 +98,7 @@ export function FindBar(props: {
   const [index, setIndex] = React.useState(-1);
   const [busy, setBusy] = React.useState(false);
   const input = React.useRef<HTMLInputElement | null>(null);
+  const closeBtn = React.useRef<HTMLButtonElement | null>(null);
   const returnFocusTo = React.useRef<HTMLElement | null>(null);
   const hits = results?.hits ?? [];
 
@@ -106,12 +108,23 @@ export function FindBar(props: {
   // re-focuses and selects, which is what every browser does and the only way
   // to retype over a sticky term without reaching for the mouse.
   React.useEffect(() => {
-    const active = input.current?.ownerDocument.activeElement as HTMLElement | null;
-    // don't overwrite the anchor with the bar's own input on a re-press
-    if (active && active !== input.current) returnFocusTo.current = active;
-    input.current?.focus();
-    input.current?.select();
-  }, [bar.openNonce]);
+    const root = input.current ?? closeBtn.current;
+    const active = root?.ownerDocument.activeElement as HTMLElement | null;
+    // don't overwrite the anchor with one of the bar's own controls on a re-press
+    if (active && active !== input.current && active !== closeBtn.current) {
+      returnFocusTo.current = active;
+    }
+    // A greyed bar's input is DISABLED, and focusing a disabled element is a
+    // silent no-op — which would leave focus outside the bar, so Escape never
+    // reached `onKeyDown` and the only way out was the mouse. Focus the close
+    // button instead: still one keystroke, still the bar's own keys.
+    if (input.current && !input.current.disabled) {
+      input.current.focus();
+      input.current.select();
+    } else {
+      closeBtn.current?.focus();
+    }
+  }, [bar.openNonce, unavailableKey]);
 
   const close = React.useCallback(() => {
     if (provider?.clear) safely(provider.manifest.id, 'clear()', () => provider.clear?.(ctx), undefined);
@@ -159,6 +172,18 @@ export function FindBar(props: {
     if (ok) closeFindBar();
   }, [provider, unavailableKey, ctx, bar.openNonce]);
 
+  // A provider's `FindHit.ref` is ITS OWN private token — a Feed seq here, a
+  // document offset in the next registrant. Carrying a result set across a tab
+  // switch would hand the new provider the old one's tokens, so the results go
+  // when the provider does. (Today the only other registrant is `delegated`
+  // and never renders a list, so this is design rather than a live bug — and
+  // this is a contribution point written for registrants that do not exist.)
+  const providerId = provider?.manifest.id;
+  React.useEffect(() => {
+    setResults(null);
+    setIndex(-1);
+  }, [providerId]);
+
   // ── searching ───────────────────────────────────────────────────────────
   const reveal = React.useCallback(
     (hit: FindHit | undefined): void => {
@@ -200,7 +225,15 @@ export function FindBar(props: {
         // Land on the first match as you type — the browser rhythm. Stepping
         // from there is Enter / Shift+Enter.
         setIndex(res.hits.length > 0 ? 0 : -1);
-        reveal(res.hits[0]);
+        // Same policy `goTo` applies, written out because `hits` is still the
+        // PREVIOUS render's array here: reveal what can be revealed, and open
+        // the list when it cannot. A session whose blocks do not align (every
+        // Direct session, today) has the list as its only surface, so putting
+        // the user in front of it is the honest first move rather than a
+        // conversation that does not budge.
+        const first = res.hits[0];
+        if (first?.jumpable) reveal(first);
+        else if (first) setFindListOpen(true);
       })();
     }, DEBOUNCE_MS);
     return () => {
@@ -210,20 +243,34 @@ export function FindBar(props: {
     };
   }, [provider, unavailableKey, ctx, term, caseSensitive, wholeWord, reveal]);
 
+  /**
+   * Move to a hit — and make sure SOMETHING happens.
+   *
+   * A hit that cannot be jumped to has nothing on screen to scroll to, so
+   * stepping onto one would tick the count from "3 of 12" to "4 of 12" and
+   * leave the conversation exactly where it was. That is the same dead
+   * affordance this file refuses to render as a button, one keystroke later.
+   * So landing on one OPENS THE RESULTS LIST, where the snippet and the reason
+   * are: the only place the match exists.
+   */
+  const goTo = React.useCallback(
+    (i: number): void => {
+      setIndex(i);
+      const hit = hits[i];
+      if (!hit) return;
+      if (hit.jumpable) reveal(hit);
+      else setFindListOpen(true);
+    },
+    [hits, reveal],
+  );
+
   const step = React.useCallback(
     (delta: number): void => {
       if (hits.length === 0) return;
-      const next = (index + delta + hits.length) % hits.length;
-      setIndex(next);
-      reveal(hits[next]);
+      goTo((index + delta + hits.length) % hits.length);
     },
-    [hits, index, reveal],
+    [hits, index, goTo],
   );
-
-  const goTo = (i: number): void => {
-    setIndex(i);
-    reveal(hits[i]);
-  };
 
   // ── keys ────────────────────────────────────────────────────────────────
   const onKeyDown = (e: React.KeyboardEvent): void => {
@@ -384,6 +431,7 @@ export function FindBar(props: {
           type="button"
           title={t('find.close')}
           aria-label={t('find.close')}
+          ref={closeBtn}
           data-testid="find-close"
           onClick={close}
           style={chip}
@@ -474,6 +522,7 @@ function HitRow({
       </div>
     </>
   );
+  const whyKey = hit.earlierThanLoaded ? 'find.earlierTitle' : 'find.cannotJumpTitle';
   const box: React.CSSProperties = {
     display: 'block',
     inlineSize: '100%',
@@ -498,7 +547,13 @@ function HitRow({
     <div
       data-find-hit=""
       data-find-hit-readonly=""
-      title={t('find.earlierTitle')}
+      // WHICH reason, not a blanket one: a hit can lack a seq because it was
+      // evicted, because the watcher has not drained those lines yet, or
+      // because the session could not be aligned at all — and on a Direct
+      // session the last of those is the normal case. Asserting "further back
+      // in the session" about all three is the small lie told confidently that
+      // §5.31 exists to avoid.
+      title={t(whyKey)}
       style={{ ...box, opacity: 0.85 }}
     >
       {body}

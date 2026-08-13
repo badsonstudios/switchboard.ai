@@ -260,7 +260,11 @@ describe('the §5.31 v1 boundary, rendered', () => {
 describe('a delegated provider (the Changes tab)', () => {
   it('hands off to Monaco’s own find and takes our bar away', async () => {
     const openFind = vi.fn().mockReturnValue(true);
-    publishFindSurface(findSurfaceKey('card-1', 'diff'), { kind: 'monaco', openFind } as FindSurface);
+    publishFindSurface(findSurfaceKey('card-1', 'diff'), {
+      kind: 'monaco',
+      ready: () => true,
+      openFind,
+    } as FindSurface);
     await act(async () => setFindTerm('ENOENT'));
 
     await mount(bar('diff', 'grid.viewDiff'));
@@ -269,10 +273,82 @@ describe('a delegated provider (the Changes tab)', () => {
     expect(findBarState().openOn).toBeNull();
   });
 
-  it('greys with a reason when the editor is not there to delegate to', async () => {
+  it('greys with a reason when there is no file open to delegate over', async () => {
+    // The default state of the tab: an editor exists, no model is on it.
+    publishFindSurface(findSurfaceKey('card-1', 'diff'), {
+      kind: 'monaco',
+      ready: () => false,
+      openFind: () => false,
+    } as FindSurface);
     const host = await mount(bar('diff', 'grid.viewDiff'));
     expect(q(host, 'find-unavailable')!.textContent).toBe(en.find.unavailable.diffNotReady);
     expect(findBarState().openOn).toBe('card-1');
+  });
+});
+
+describe('the greyed bar is still operable from the keyboard', () => {
+  it('takes focus on its CLOSE button, so Esc has somewhere to be heard', async () => {
+    // The input is disabled, and focusing a disabled element is a silent
+    // no-op — which would leave focus outside the bar entirely and make the
+    // mouse the only way out of a panel that cannot even search.
+    const host = await mount(bar('terminal', 'grid.viewTerminal'));
+    const close = q<HTMLElement>(host, 'find-close')!;
+    expect(document.activeElement).toBe(close);
+
+    await act(async () => {
+      close.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(findBarState().openOn).toBeNull();
+  });
+});
+
+describe('stepping never becomes a dead affordance', () => {
+  it('opens the results list when it lands on a hit it cannot scroll to', async () => {
+    // Otherwise the count ticks from "1 of 2" to "2 of 2" and the conversation
+    // does not move — the same dead affordance a non-jumpable row refuses to
+    // be, one keystroke later.
+    search.mockResolvedValue(searchResult([hit(4, 'reachable'), hit(undefined, 'evicted', true)]));
+    const host = await mount(bar());
+    await act(async () => setFindTerm('x'));
+    await settle();
+    expect(q(host, 'find-results')).toBeNull();
+
+    const input = q<HTMLInputElement>(host, 'find-input')!;
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    expect(q(host, 'find-count')!.textContent).toBe(
+      en.find.count.replace('{index}', '2').replace('{total}', '2'),
+    );
+    expect(q(host, 'find-results')).not.toBeNull();
+  });
+
+  it('opens the list straight away when NO hit can be jumped to', async () => {
+    // Every Direct session, today: the list is the only surface the matches
+    // have, so put the user in front of it rather than in front of a
+    // conversation that does not budge.
+    search.mockResolvedValue(
+      searchResult([hit(undefined, 'a')], {
+        groups: [{ sessionId: 's1', hits: 1, blocks: 9, searched: true, aligned: false }],
+      }),
+    );
+    const host = await mount(bar());
+    await act(async () => setFindTerm('x'));
+    await settle();
+    expect(q(host, 'find-results')).not.toBeNull();
+  });
+
+  it('a non-jumpable hit that is NOT known to be earlier says only that much', async () => {
+    // Three things produce a hit with no seq and only one of them is "earlier
+    // in the session" — asserting that about the other two is the confident
+    // small lie §5.31 exists to avoid.
+    search.mockResolvedValue(searchResult([hit(undefined, 'unaligned', false)]));
+    const host = await mount(bar());
+    await act(async () => setFindTerm('x'));
+    await settle();
+    const row = host.querySelector('[data-find-hit-readonly]')!;
+    expect(row.getAttribute('title')).toBe(en.find.cannotJumpTitle);
+    expect(row.textContent).not.toContain(en.find.earlier);
   });
 });
 

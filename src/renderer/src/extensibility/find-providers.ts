@@ -8,8 +8,8 @@
 // card the bar ever names is the focused one — so "never matches another card"
 // is a property of the plumbing rather than a filter to remember.
 //
-// THREE OF FOUR REGISTRANTS SHIP HERE, and the gap is deliberate, not an
-// oversight (see docs/extensibility.md's roster):
+// TWO OF §5.31'S FOUR NAMED REGISTRANTS SHIP HERE, and the gap is deliberate,
+// not an oversight (see docs/extensibility.md's roster):
 //
 //   • `panel-session` → the E17-01 transcript engine. The flagship.
 //   • `panel-changes` → DELEGATES to Monaco's own find. §5.31 names it as a
@@ -28,9 +28,9 @@ import type {
   FindProviderContribution,
   FindQuery,
   FindResults,
-  FindSurface,
 } from './contributions';
 import { manifestFor } from './contributions';
+import type { FeedFindSurface, MonacoFindSurface } from '../lib/find-surfaces';
 import type { RendererRegistry } from './registry-instance';
 import { safely } from './boundary';
 import type { TranscriptSearchResult } from '../../../shared/transcripts';
@@ -66,26 +66,29 @@ export function findUnavailableKey(p: FindProviderContribution, ctx: FindContext
 // Session view — the transcript engine (P2-E17-01)
 // ---------------------------------------------------------------------------
 
-/** What `FeedView` publishes for this provider. */
-export interface FeedFindSurface extends FindSurface {
-  kind: 'feed';
-  /** scroll to a live Feed seq, expanding what the view was hiding.
-   *  False when that block is not in the view buffer — the caller must then
-   *  NOT pretend it jumped. */
-  jumpTo(seq: number): boolean;
-  /** drop the reveal set and the highlight */
-  clear(): void;
-}
-
 function feedSurface(ctx: FindContext): FeedFindSurface | null {
   return ctx.surface?.kind === 'feed' ? (ctx.surface as FeedFindSurface) : null;
 }
 
-/** `2026-08-13T09:41:07.113Z` → `09:41`, in the user's own locale. */
-function hitTime(ts: string | undefined): string | null {
+/**
+ * `2026-08-13T09:41:07.113Z` → `09:41`.
+ *
+ * Formatted in the APP's language, not the OS's: every other user-facing
+ * string here routes through i18next, and an interface running in `pseudo`
+ * (or, later, a real second locale) that printed OS-locale times would be
+ * quietly inconsistent with itself. Falls back to the platform default if the
+ * tag is one `Intl` will not take, which is what makes this safe to call with
+ * whatever `i18n.language` happens to be.
+ */
+function hitTime(ts: string | undefined, locale?: string): string | null {
   if (!ts) return null;
   const d = new Date(ts);
-  return Number.isNaN(d.getTime()) ? null : d.toLocaleTimeString(undefined, { timeStyle: 'short' });
+  if (Number.isNaN(d.getTime())) return null;
+  try {
+    return d.toLocaleTimeString(locale || undefined, { timeStyle: 'short' });
+  } catch {
+    return d.toLocaleTimeString(undefined, { timeStyle: 'short' });
+  }
 }
 
 /**
@@ -99,14 +102,24 @@ function hitTime(ts: string | undefined): string | null {
  * view" marker. Marking the other two would be a confident lie about where in
  * the session the user is standing.
  */
-export function hitsFromTranscript(res: TranscriptSearchResult, sessionId: string): FindResults {
+export function hitsFromTranscript(
+  res: TranscriptSearchResult,
+  sessionId: string,
+  locale?: string,
+): FindResults {
   const group = res.groups.find((g) => g.sessionId === sessionId);
   const hits: FindHit[] = res.hits
     .filter((h) => h.sessionId === sessionId)
-    .map((h) => {
-      const time = hitTime(h.ts);
+    .map((h, i) => {
+      const time = hitTime(h.ts, locale);
       const hit: FindHit = {
-        id: `${h.blockIndex}:${h.field}:${h.matchStart}`,
+        // POSITIONAL, and it has to be: `matchStart` is an offset into the
+        // SNIPPET, not into the field, so the engine's 120-character context
+        // window pins it at 121 for every match past the first 120 characters
+        // of a long tool output — three matches in one `tool.out` would share
+        // one id and collide as React keys. Unique within one result set is
+        // all this promises, and all the bar needs.
+        id: `${h.blockIndex}:${h.field}:${i}`,
         snippet: h.snippet,
         matchStart: h.matchStart,
         matchLength: h.matchLength,
@@ -164,7 +177,7 @@ export const sessionFindProvider: FindProviderContribution = {
     if (!res || !Array.isArray(res.hits)) {
       return { hits: [], total: 0, truncated: false, notice: { key: 'find.notice.failed', tone: 'error' } };
     }
-    return hitsFromTranscript(res, ctx.sessionId);
+    return hitsFromTranscript(res, ctx.sessionId, ctx.locale);
   },
   reveal(ctx: FindContext, hit: FindHit): boolean {
     if (typeof hit.ref !== 'number') return false;
@@ -179,12 +192,8 @@ export const sessionFindProvider: FindProviderContribution = {
 // Changes — Monaco's own find, delegated
 // ---------------------------------------------------------------------------
 
-/** What `DiffPane` publishes for this provider. */
-export interface MonacoFindSurface extends FindSurface {
-  kind: 'monaco';
-  /** focus the editor and open ITS find widget, seeded with `term`.
-   *  False when there is no editor yet. */
-  openFind(term: string): boolean;
+function monacoSurface(ctx: FindContext): MonacoFindSurface | null {
+  return ctx.surface?.kind === 'monaco' ? (ctx.surface as MonacoFindSurface) : null;
 }
 
 export const changesFindProvider: FindProviderContribution = {
@@ -197,11 +206,14 @@ export const changesFindProvider: FindProviderContribution = {
   // decorations down the scrollbar. Wrapping our bar around it would give the
   // user two Escape targets and two match counts over one document.
   mode: 'delegated',
-  unavailableKey: (ctx) =>
-    ctx.surface?.kind === 'monaco' ? null : 'find.unavailable.diffNotReady',
+  // The pane builds its editor on mount but selects no file, so "a surface
+  // exists" is NOT the same question as "there is something to search". Asking
+  // the surface itself is what keeps the greyed message honest — and reachable:
+  // without `ready()` the default state of the tab would delegate successfully
+  // into a model-less editor, close our bar, and open nothing at all.
+  unavailableKey: (ctx) => (monacoSurface(ctx)?.ready() ? null : 'find.unavailable.diffNotReady'),
   delegate(ctx: FindContext, query: FindQuery): boolean {
-    const s = ctx.surface?.kind === 'monaco' ? (ctx.surface as MonacoFindSurface) : null;
-    return s?.openFind(query.term) ?? false;
+    return monacoSurface(ctx)?.openFind(query.term) ?? false;
   },
 };
 

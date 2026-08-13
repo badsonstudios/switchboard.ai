@@ -14,8 +14,7 @@ import {
   NO_REVEAL,
   useCurrentHit,
 } from '../lib/feed-reveal';
-import { findSurfaceKey, publishFindSurface } from '../lib/find-surfaces';
-import type { FeedFindSurface } from '../extensibility/find-providers';
+import { findSurfaceKey, publishFindSurface, type FeedFindSurface } from '../lib/find-surfaces';
 import { emptyStateCopy } from '../lib/binding-copy';
 import { terminalHandoff, TerminalHandoff, toneToken } from '../lib/terminal-handoff';
 import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
@@ -449,23 +448,37 @@ export function FeedView(props: {
       // away from the hit they just asked for.
       markGesture();
       pinned.current = false;
-      // after the reveal has painted: an expanded block is taller than the one
-      // we measured, and scrolling first would land short of it
-      requestAnimationFrame(() => {
-        const root = scroller.current;
-        const el = root?.querySelector<HTMLElement>(`[${FEED_SEQ_ATTR}="${seq}"]`);
-        if (!root || !el) return;
-        autoPin.current = true;
-        // 24px of air above the block, so a hit at the top of the viewport
-        // still reads as being inside a conversation
-        root.scrollTop += el.getBoundingClientRect().top - root.getBoundingClientRect().top - 24;
-        lastTop.current = root.scrollTop;
-        requestAnimationFrame(() => (autoPin.current = false));
-      });
+      // The SCROLL is not done here — see the layout effect below.
       return true;
     },
     [markGesture],
   );
+  /**
+   * Take the view to the revealed block, after React has committed it.
+   *
+   * A layout effect rather than a frame scheduled inside `jumpTo`, and the
+   * difference is not cosmetic: a verbosity-hidden block does not EXIST in the
+   * DOM until the reveal commits, and an expanded one is taller than the one
+   * we would have measured. `jumpTo` is called from two places with different
+   * scheduling — a keypress (React flushes synchronously) and the continuation
+   * of an awaited search (normal priority, which React may split across
+   * frames) — so a one-frame guess is right in one of them and a silent no-op
+   * in the other, having already unpinned the tail. A layout effect runs after
+   * commit in both, by construction, which is also what makes it testable.
+   */
+  const jumpedTo = reveal.current;
+  React.useLayoutEffect(() => {
+    if (jumpedTo === null) return;
+    const root = scroller.current;
+    const el = root?.querySelector<HTMLElement>(`[${FEED_SEQ_ATTR}="${jumpedTo}"]`);
+    if (!root || !el) return;
+    autoPin.current = true;
+    // 24px of air above the block, so a hit at the top of the viewport still
+    // reads as being inside a conversation
+    root.scrollTop += el.getBoundingClientRect().top - root.getBoundingClientRect().top - 24;
+    lastTop.current = root.scrollTop;
+    requestAnimationFrame(() => (autoPin.current = false));
+  }, [jumpedTo]);
   const clearReveal = React.useCallback(() => setReveal(NO_REVEAL), []);
   React.useEffect(() => {
     if (!props.cardId) return; // a card with no durable id cannot be addressed

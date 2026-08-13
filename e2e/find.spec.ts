@@ -137,5 +137,11 @@ test.describe('[pty] Session find (E17-02)', () => {
     await expect(bar(w)).toHaveCount(1);
     await expect(w.locator('[data-testid="find-unavailable"]')).toContainText('Terminal');
     await expect(w.locator('[data-testid="find-input"]')).toBeDisabled();
+    // ...and it is still dismissable from the keyboard. The input is disabled,
+    // so focus goes to the close button instead — without that, Escape would
+    // never reach the bar and the mouse would be the only way out.
+    await expect(w.locator('[data-testid="find-close"]')).toBeFocused();
+    await w.keyboard.press('Escape');
+    await expect(bar(w)).toHaveCount(0);
   });
 });
