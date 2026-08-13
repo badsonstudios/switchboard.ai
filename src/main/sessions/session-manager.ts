@@ -375,10 +375,10 @@ export class SessionManager {
    * it to `buildSpawn`, which is what makes these directories in the first
    * place.
    *
-   * Three things still leak a directory past the two lifecycle deletes above —
-   * a spawn that throws (the settings file is written before the process
-   * exists), an app quit with sessions running, and a crash — so this is not
-   * belt-and-braces for a closed hole; it is the only owner those three have.
+   * Two things still leak a directory past the deletes above — an app quit
+   * with sessions running (the kills go out, the exits do not come back) and a
+   * crash or force-quit — so this is not belt-and-braces for a closed hole; it
+   * is the only owner either of them has.
    */
   sweepOrphanStateDirs(opts?: { minAgeMs?: number; budgetMs?: number }): SweepResult {
     return sweepOrphanSessionStateDirs(this.stateDir, {
