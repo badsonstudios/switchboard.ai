@@ -54,6 +54,8 @@ export interface CommandDeps {
   toggleRail: () => void;
   /** open the command palette (E9-02) */
   openPalette: () => void;
+  /** open the find bar on a card (E17-02, §5.31) */
+  openFind: (cardId: string) => void;
   /** wrap the tab strip onto more rows, or keep it to one (#84) */
   toggleTabRows: () => void;
   /** jump to the next session waiting on a human (E9-03 attention queue) */
@@ -117,6 +119,42 @@ export function buildCommands(deps: CommandDeps): Command[] {
       binding: 'Mod+Shift+P',
       scope: 'typing-ok',
       run: () => deps.openPalette(),
+    },
+    {
+      // Ctrl+F over the FOCUSED session (§5.31).
+      //
+      // THE SECOND 'typing-ok' COMMAND, and the first since E9-02 — a
+      // deliberate amendment to "the palette is the only one", made for the
+      // same reason the palette got the exemption. The rule's actual content
+      // is *never steal a keystroke a text surface should get*, and `Mod+F` is
+      // not a text-editing key on any platform we ship: it is Ctrl+F on
+      // Windows and Linux, where a textarea does nothing with it, and Cmd+F on
+      // macOS (Ctrl+F is the emacs forward-char there, and we do not bind it).
+      // Without this, the headline gesture of §5.31 would silently do nothing
+      // from the composer — which is where the caret sits for most of a
+      // session, and therefore where "two hours in, you know it printed that
+      // path" is actually typed.
+      //
+      // The TERMINAL is untouched by this: `dispatch` refuses every scope
+      // inside an xterm, and that rule does not bend. So Ctrl+F pressed in a
+      // focused terminal still does not reach us — the chords that do
+      // (`Mod+Shift+P`, `Mod+Space`) are claimed in the browser process, and
+      // adding this one to `shared/terminal-accelerators` belongs with
+      // E17-03's Terminal provider, which is the item that gives a focused
+      // terminal something to find.
+      //
+      // Card-scoped, so it is disabled with no focused card rather than
+      // silently opening a bar over nothing.
+      id: 'find.open',
+      titleKey: 'commands.openFind',
+      categoryKey: CATEGORY_VIEW,
+      binding: 'Mod+F',
+      scope: 'typing-ok',
+      enabled: hasActive,
+      disabledReasonKey: 'commands.disabled.noActiveSession',
+      run: (ctx: CommandContext) => {
+        if (ctx.activeCardId) deps.openFind(ctx.activeCardId);
+      },
     },
     {
       // Inbox-zero for agents (§5.8): with 7–8 sessions this, not the grid, is

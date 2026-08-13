@@ -15,6 +15,8 @@ import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import '../lib/monaco-languages';
 import { languageForPath } from '../lib/diff-language';
 import { defineDiffThemes, DIFF_THEME } from '../lib/monaco-theme';
+import { findSurfaceKey, publishFindSurface } from '../lib/find-surfaces';
+import type { MonacoFindSurface } from '../extensibility/find-providers';
 
 declare global {
   interface Window {
@@ -46,6 +48,10 @@ export function DiffPane(props: {
   /** Monaco has exactly two skins, so this takes the RESOLVED answer rather
    *  than a theme id it would have to guess a light/dark verdict from. */
   colorScheme: 'light' | 'dark';
+  /** the card this pane belongs to — how Ctrl+F reaches THIS editor and no
+   *  other (P2-E17-02). Absent on a card with no durable id: no registration,
+   *  and the bar greys with a reason. */
+  cardId?: string;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [status, setStatus] = useState<GitStatusDto | null>(null);
@@ -97,6 +103,39 @@ export function DiffPane(props: {
     // pane in a window is showing the same app theme anyway
     monaco.editor.setTheme(DIFF_THEME[props.colorScheme]);
   }, [props.colorScheme]);
+
+  // Session find, delegated (P2-E17-02, §5.31). Monaco HAS a find — a good one,
+  // with regex, whole-word, replace and match marks down the scrollbar — and
+  // §5.31 names it as a thing not to reimplement. So the Changes tab's Ctrl+F
+  // opens Monaco's widget and our bar stays out of the way entirely.
+  useEffect(() => {
+    if (!props.cardId) return;
+    const surface: MonacoFindSurface = {
+      kind: 'monaco',
+      openFind: (term: string): boolean => {
+        const ed = editorRef.current?.getModifiedEditor();
+        if (!ed) return false;
+        // focus first, or the widget opens without a caret and Enter does
+        // nothing — the "it did open, it just doesn't work" failure
+        ed.focus();
+        ed.getAction('actions.find')?.run();
+        // Seed the sticky term. `setSearchString` is the find controller's own
+        // public method; reached through `getContribution`, whose return type
+        // is opaque, so this is a narrow structural cast rather than a lie
+        // about the whole contribution. Optional at every step: if a Monaco
+        // upgrade renames it the widget still opens, merely empty — a degrade,
+        // not a break (fail-open).
+        if (term) {
+          const find = ed.getContribution('editor.contrib.findController') as unknown as {
+            setSearchString?: (s: string) => void;
+          } | null;
+          find?.setSearchString?.(term);
+        }
+        return true;
+      },
+    };
+    return publishFindSurface(findSurfaceKey(props.cardId, 'diff'), surface);
+  }, [props.cardId]);
 
   useEffect(() => {
     if (!selected || !editorRef.current) return;

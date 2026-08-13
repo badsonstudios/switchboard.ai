@@ -405,6 +405,7 @@
     "toggleChanges": "Toggle Changes view",
     "toggleRail": "Toggle the sessions rail",
     "toggleTabRows": "Toggle tabs on multiple rows",
+    "openFind": "Find in the focused session",
     "openPalette": "Show all commands",
     "goToSession": "Go to {title}",
     "jumpAttention": "Go to the next session that needs you",
@@ -441,7 +442,7 @@
       "default": "This session's group on submit: follow the default"
     },
     "checkForUpdates": "Check for updates…",
-    "focusPolicy": {
+  "focusPolicy": {
       "focus": "When any session needs you: always jump to it",
       "smart": "When any session needs you: jump if its card is on screen",
       "urgent": "When any session needs you: never jump, just light its lamp",
@@ -482,6 +483,46 @@
     "chip": "⬍ {policy}",
     "chipHint": "What happens to a session card when you submit a prompt: {policy}. Click to change.",
     "groupDefault": "Follow the default"
+  },
+  "find": {
+    "label": "Find in session",
+    "placeholder": "Find",
+    "count": "{index} of {total}",
+    "countTruncated": "{index} of {shown} shown ({total} found)",
+    "noResults": "No results",
+    "searching": "Searching…",
+    "next": "Next match",
+    "previous": "Previous match",
+    "close": "Close find",
+    "caseSensitive": "Match case",
+    "wholeWord": "Whole word",
+    "toggleResults": "Show or hide the results list",
+    "iconPrevious": "▲",
+    "iconNext": "▼",
+    "iconCase": "Aa",
+    "iconWholeWord": "ab|",
+    "iconClose": "✕",
+    "iconListOpen": "▾",
+    "iconListClosed": "▸",
+    "results": "Search results",
+    "earlier": "earlier than the loaded view",
+    "earlierTitle": "This match is further back in the session than the part currently loaded, so there is nothing on screen to scroll to. The snippet is all of it we can show.",
+    "hitMeta": "{kind, select, user {your prompt} assistant {reply} thinking {thinking} tool {tool} todos {plan} other {block}} · {time}",
+    "hitMetaNoTime": "{kind, select, user {your prompt} assistant {reply} thinking {thinking} tool {tool} todos {plan} other {block}}",
+    "unavailable": {
+      "noProvider": "Find doesn't work on the {view} tab yet.",
+      "noSession": "There is no session here to search.",
+      "diffNotReady": "The diff hasn't loaded yet — open a changed file and try again.",
+      "failed": "Find isn't available on this tab right now."
+    },
+    "notice": {
+      "badPattern": "That search term can't be used.",
+      "timedOut": "The search stopped early, so this is only part of what's there.",
+      "noTranscript": "Nothing to search yet — this session hasn't written anything down.",
+      "cannotJump": "These matches can be read here, but this session can't be scrolled to them.",
+      "truncated": "Showing the first {shown} matches.",
+      "failed": "The search couldn't run. The session is untouched."
+    }
   },
   "focusPolicy": {
     "focus": "Always jump to it",

@@ -95,7 +95,12 @@ export const sessionPanels: PanelContribution[] = [
     enabled: (ctx) => !!ctx.folder,
     badge: (ctx) => (ctx.changed > 0 ? ctx.changed : null),
     render: (ctx) =>
-      ctx.folder ? <DiffPane folder={ctx.folder} colorScheme={ctx.colorScheme} /> : null,
+      ctx.folder ? (
+        // `cardId` so the pane can publish its editor as THIS card's find
+        // surface (P2-E17-02) — Ctrl+F on the Changes tab must reach one
+        // editor, not whichever one the page happens to hold
+        <DiffPane folder={ctx.folder} colorScheme={ctx.colorScheme} cardId={ctx.cardId} />
+      ) : null,
   },
   {
     // Shown but not clickable — §5.8's rule that you can always SEE what

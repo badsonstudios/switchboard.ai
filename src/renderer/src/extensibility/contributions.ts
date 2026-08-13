@@ -47,6 +47,7 @@ export type RendererContributions = {
   'feed-block-renderer': FeedBlockRendererContribution;
   'status-bar-item': StatusBarItemContribution;
   theme: ThemeContribution;
+  'find-provider': FindProviderContribution;
 };
 
 /**
@@ -243,4 +244,173 @@ export interface StatusBarItemContribution {
   order: number;
   /** returning null renders nothing — the usage item has no total yet */
   render(ctx: StatusBarContext): React.ReactNode | null;
+}
+
+// ---------------------------------------------------------------------------
+// P2-E17-02: `find-provider` — the sixth renderer point (§5.31, §5.23).
+//
+// WHY A POINT AND NOT AN `if`. §5.31's load-bearing sentence is that
+// `webContents.findInPage` is the WRONG PRIMITIVE: it searches the whole
+// webContents, so in a four-card grid Ctrl+F would match text in the three
+// sessions you are not looking at. One keybinding dispatching to the FOCUSED
+// panel's provider is what makes the answer correct by construction rather
+// than by a filter someone has to remember to write. A guard test pins that
+// `findInPage` appears nowhere in the tree.
+//
+// WHY IT IS DISSIMILAR from the five points above — the Phase-4 gate asks for
+// dissimilar consumers, and this one is the first point whose contributions
+// **do not all do the same job**. Two of the three shipped registrants search
+// with our bar and one hands the whole interaction to a surface that already
+// had a find (Monaco). See `mode` below.
+// ---------------------------------------------------------------------------
+
+/**
+ * What the bar asks for.
+ *
+ * DELIBERATELY NO `regex` FLAG, and this is a decision rather than an
+ * oversight: the E17-01 engine runs a user-supplied pattern on the MAIN
+ * thread, where a backtracking one is unbounded — its author measured `(a+)+$`
+ * holding the process for 146 seconds, i.e. every terminal in the workspace
+ * dead. `unsafeRegexShape` + a deadline bound the accidents, neither is a
+ * proof, and the engine's own header names the condition for exposing the
+ * switch: move the scan to a terminable worker first. So v1 ships case and
+ * whole-word — which are the two a browser's find bar has anyway — and the
+ * regex toggle waits for the worker. (The wire type still carries `regex`; the
+ * bar simply never sets it.)
+ */
+export interface FindQuery {
+  term: string;
+  caseSensitive?: boolean;
+  wholeWord?: boolean;
+}
+
+/**
+ * One match, as the BAR understands it — deliberately not `TranscriptHit`.
+ *
+ * The transcript engine is one provider of three; a hit from Monaco or from
+ * xterm's scrollback has no `blockIndex` and no transcript `seq`. What every
+ * provider can honestly supply is: text to show, where the match sits inside
+ * it, and whether the surface can actually take you there.
+ */
+export interface FindHit {
+  /** stable within one result set — React key and step target */
+  id: string;
+  /** context around the match, for the results list */
+  snippet: string;
+  /** where the match starts inside `snippet`, and how long it is */
+  matchStart: number;
+  matchLength: number;
+  /**
+   * Can the surface scroll to this match IN PLACE?
+   *
+   * False is the §5.31 v1 boundary made explicit: the block is no longer in
+   * the renderer's view buffer (or the engine could not line the file up with
+   * it), so the hit is READABLE in the results list and nothing more. The bar
+   * must not render a jump affordance for it — an affordance that does nothing
+   * is the same lie as searching the DOM, one interaction later.
+   */
+  jumpable: boolean;
+  /**
+   * We KNOW this match is older than the loaded view (as opposed to "we could
+   * not tell"). Only this one earns the "earlier than the loaded view" marker;
+   * the honest answer to the other cases is silence.
+   */
+  earlierThanLoaded: boolean;
+  /** i18n key + params for the row's small print (kind, field, time) */
+  metaKey?: string;
+  metaParams?: Record<string, string | number>;
+  /** the provider's own way back to this match. Opaque to the bar. */
+  ref?: unknown;
+}
+
+/**
+ * Something the bar must SAY instead of showing a bare count.
+ *
+ * A partial scan reported as "12" is a wrong total told confidently, which is
+ * the failure mode §5.31 exists to avoid.
+ */
+export interface FindNotice {
+  key: string;
+  params?: Record<string, string | number>;
+  /** `error` means the count is not a count at all */
+  tone: 'error' | 'info';
+}
+
+export interface FindResults {
+  hits: FindHit[];
+  /** matches found in total; `hits` may be capped */
+  total: number;
+  truncated: boolean;
+  notice?: FindNotice;
+}
+
+/**
+ * The LIVE surface a mounted panel publishes for its provider
+ * (`lib/find-surfaces.ts`).
+ *
+ * The seam does not type the payload past `kind`, on purpose: the only code
+ * that reads a surface is the provider that published it, and a discriminated
+ * union here would mean every new registrant edits this file — the exact
+ * coupling a contribution point exists to remove. Narrow on `kind` and cast,
+ * as `find-providers.tsx` does.
+ */
+export interface FindSurface {
+  readonly kind: string;
+}
+
+/** What a provider is handed on every call. */
+export interface FindContext {
+  /** the LIVE session id — churns on resume, never persist it */
+  sessionId: string;
+  /** durable key for the card this panel belongs to */
+  cardId?: string;
+  /** the mounted panel's published surface, or null if it has not published */
+  surface: FindSurface | null;
+}
+
+/**
+ * How the bar and the provider divide the work.
+ *
+ * `bar` — switchboard owns the term, the count, Enter/Shift+Enter and the
+ *   results list; the provider only searches and reveals.
+ * `delegated` — the surface HAS a find of its own and we hand off to it. Our
+ *   bar does not open. §5.31 names Monaco's find specifically as a thing not
+ *   to reimplement, and half-reimplementing it (our chrome, its search) would
+ *   be the worse of the two options: two bars' worth of keybindings over one
+ *   editor.
+ */
+export type FindMode = 'bar' | 'delegated';
+
+/**
+ * A find provider for one panel (§5.31, §5.23).
+ *
+ * `panelId` is the join to `PanelContribution.id`, which is how Ctrl+F reaches
+ * "whatever the focused card is showing" without naming a single view.
+ */
+export interface FindProviderContribution {
+  manifest: CapabilityManifest;
+  /** the panel whose focused instance this provider serves */
+  panelId: PanelId;
+  /** i18n key for the group label in the bar's count ("Session", "Changes") */
+  labelKey: string;
+  /** ascending; decides group order once the bar counts more than one view */
+  order: number;
+  mode: FindMode;
+  /**
+   * Why find cannot run here RIGHT NOW — an i18n key, or null when it can.
+   *
+   * The greyed bar's whole job is to say WHICH surface it cannot search and
+   * why, so this returns a reason rather than a boolean. §5.8's rule about
+   * greyed-not-hidden, applied one level down from the tab strip.
+   */
+  unavailableKey(ctx: FindContext): string | null;
+  /** `delegated` only: open the surface's own find. False if it could not. */
+  delegate?(ctx: FindContext, query: FindQuery): boolean;
+  /** `bar` only: run a query. Never throws — see the point's fail-open rule. */
+  search?(ctx: FindContext, query: FindQuery): Promise<FindResults>;
+  /** `bar` only: scroll to a hit, expanding whatever the view was hiding.
+   *  Returns whether it actually moved. */
+  reveal?(ctx: FindContext, hit: FindHit): boolean;
+  /** `bar` only: drop highlights when the bar closes */
+  clear?(ctx: FindContext): void;
 }

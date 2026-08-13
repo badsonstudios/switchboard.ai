@@ -55,6 +55,8 @@ import { addPopoutWindow, removePopoutWindow, subscribePopoutWindows } from '../
 import { strandedByGroup } from '../lib/popout-rescue';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { setDraggedCard } from '../lib/drag-context';
+import { findBarState, subscribeFindBar } from '../lib/find-bar-state';
+import { FindBar } from './FindBar';
 import { sendSessionCommand } from '../lib/composer';
 import { DEFAULT_SESSION_TRANSPORT, type TransportKind } from '../../../shared/transport';
 import {
@@ -889,6 +891,9 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     setView,
   };
   const panels = listPanels(rendererRegistry);
+  // is the find bar open on THIS card? (P2-E17-02) — published by the Ctrl+F
+  // command, which runs in App's keydown handler and cannot reach this tree
+  const findBar = React.useSyncExternalStore(subscribeFindBar, findBarState);
   // ids for the tab <-> panel wiring (#197). `useId` because a workspace shows
   // many cards at once and every one of them renders the same four tab names —
   // hand-rolled ids would collide the moment a second card is open, and an
@@ -1442,6 +1447,20 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                   </ContributionBoundary>
                 </div>
               ) : null
+            )}
+            {/* Session find (P2-E17-02, §5.31). It lives in THIS card, over
+                THIS card's active panel — which is what makes "Ctrl+F never
+                matches text in another session" a fact about the wiring
+                rather than a filter someone has to maintain. Absolutely
+                positioned inside this already-relative box, so opening it
+                moves nothing underneath. */}
+            {findBar.openOn === cardId && active && (
+              <FindBar
+                sessionId={live.id}
+                cardId={cardId}
+                panelId={active.id}
+                panelTitleKey={active.titleKey}
+              />
             )}
             {endedOverlay && <div style={overlayBackdrop}>{endedOverlay}</div>}
           </div>

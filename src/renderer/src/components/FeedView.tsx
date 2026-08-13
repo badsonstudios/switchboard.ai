@@ -7,6 +7,15 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { blockVisible, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
 import { feedKeyAction, FEED_EXPANDER_ATTR } from '../lib/feed-keys';
+import {
+  FeedReveal,
+  FeedRevealProvider,
+  FEED_SEQ_ATTR,
+  NO_REVEAL,
+  useCurrentHit,
+} from '../lib/feed-reveal';
+import { findSurfaceKey, publishFindSurface } from '../lib/find-surfaces';
+import type { FeedFindSurface } from '../extensibility/find-providers';
 import { emptyStateCopy } from '../lib/binding-copy';
 import { terminalHandoff, TerminalHandoff, toneToken } from '../lib/terminal-handoff';
 import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
@@ -31,13 +40,28 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
   // bootstrap line, and this file is not touched.
   const inner = renderFeedBlock(rendererRegistry, b);
   const dot = showsTimelineDot(b.kind);
+  // The block find is sitting on (P2-E17-02). An OUTLINE rather than a
+  // background: the block already paints its own surfaces (tool boxes, diff
+  // rows) and tinting behind them would recolour half of them and none of the
+  // rest. `outline` also costs no layout, so landing on a hit does not reflow
+  // the conversation under the user's eye.
+  const hit = useCurrentHit(b.seq);
   return (
     <div
       data-feed-block={b.kind}
+      // how a jump finds this block's element — see `FeedFindSurface.jumpTo`
+      {...{ [FEED_SEQ_ATTR]: String(b.seq) }}
       style={{
         display: 'flex',
         gap: 8,
         padding: '4px 8px',
+        ...(hit
+          ? {
+              outline: '2px solid var(--status-working-ink)',
+              outlineOffset: -2,
+              borderRadius: 'var(--radius-chip)',
+            }
+          : {}),
         ...(b.sidechain
           ? {
               marginInlineStart: 14,
@@ -397,7 +421,69 @@ export function FeedView(props: {
     else els[action.index]?.focus();
   }, [markGesture]);
 
-  const visibleBlocks = blocks.filter((b) => blockVisible(b, verbosity));
+  // ── Session find (P2-E17-02, §5.31) ─────────────────────────────────────
+  //
+  // What the feed owes the find bar: take me to block `seq`, expanding
+  // whatever the view was hiding. The SEARCH itself is main's (E17-01) and the
+  // bar's; this is only the "and show me" half.
+  const [reveal, setReveal] = React.useState<FeedReveal>(NO_REVEAL);
+  // read by `jumpTo`, which is called from the bar OUTSIDE React's commit and
+  // must therefore not close over a render's `blocks`
+  const blocksRef = React.useRef(blocks);
+  blocksRef.current = blocks;
+  const jumpTo = React.useCallback(
+    (seq: number): boolean => {
+      // The block is not in the view buffer — evicted, or not drained yet.
+      // Refusing is the point: the caller renders the hit as snippet-only
+      // rather than scrolling somewhere arbitrary and calling it the match.
+      if (!blocksRef.current.some((b) => b.seq === seq)) return false;
+      setReveal((prev) => {
+        const next = new Set(prev.revealed);
+        next.add(seq);
+        return { revealed: next, current: seq };
+      });
+      // The tail-pin would fight us: an unattributed scroll more than 40px
+      // from the bottom is read as "layout moved it" and yanked back (see
+      // onScroll). Both halves are needed — the gesture claims the scroll as
+      // the user's, and unpinning stops the next streamed block dragging them
+      // away from the hit they just asked for.
+      markGesture();
+      pinned.current = false;
+      // after the reveal has painted: an expanded block is taller than the one
+      // we measured, and scrolling first would land short of it
+      requestAnimationFrame(() => {
+        const root = scroller.current;
+        const el = root?.querySelector<HTMLElement>(`[${FEED_SEQ_ATTR}="${seq}"]`);
+        if (!root || !el) return;
+        autoPin.current = true;
+        // 24px of air above the block, so a hit at the top of the viewport
+        // still reads as being inside a conversation
+        root.scrollTop += el.getBoundingClientRect().top - root.getBoundingClientRect().top - 24;
+        lastTop.current = root.scrollTop;
+        requestAnimationFrame(() => (autoPin.current = false));
+      });
+      return true;
+    },
+    [markGesture],
+  );
+  const clearReveal = React.useCallback(() => setReveal(NO_REVEAL), []);
+  React.useEffect(() => {
+    if (!props.cardId) return; // a card with no durable id cannot be addressed
+    const surface: FeedFindSurface = { kind: 'feed', jumpTo, clear: clearReveal };
+    return publishFindSurface(findSurfaceKey(props.cardId, 'feed'), surface);
+  }, [props.cardId, jumpTo, clearReveal]);
+  // a different session in the same card is a different conversation; its
+  // blocks do not share seqs with the one we had revealed
+  React.useEffect(() => {
+    clearReveal();
+  }, [props.sessionId, clearReveal]);
+
+  // `revealed` OVERRIDES the verbosity filter (§5.31: find searches what the
+  // view is hiding, and jumping expands it). Without this clause, jumping to a
+  // hit in a thinking block while the preset is `normal` would scroll to a
+  // block that is not in the list — the honest-looking version of doing
+  // nothing at all.
+  const visibleBlocks = blocks.filter((b) => reveal.revealed.has(b.seq) || blockVisible(b, verbosity));
   return (
     <div style={{ blockSize: '100%', display: 'flex', flexDirection: 'column', background: 'var(--card-bg)' }}>
       <div
@@ -539,15 +625,19 @@ export function FeedView(props: {
           {blocks.length === 0 && !cleared && (
             <EmptyState binding={props.binding ?? 'awaiting-prompt'} diag={props.bindingDiag ?? null} />
           )}
-          {visibleBlocks.map((b, i) => (
-            <React.Fragment key={b.seq}>
-              {/* a new prompt starts a new turn — rule it off (Dan #11) */}
-              {b.kind === 'user' && i > 0 && (
-                <div style={{ borderBlockStart: '1px solid var(--border)', marginBlock: 8, marginInline: 8 }} />
-              )}
-              <Block b={b} />
-            </React.Fragment>
-          ))}
+          {/* the find bar's reveal set reaches the collapsible renderers from
+              here — see lib/feed-reveal for why it is a context and not props */}
+          <FeedRevealProvider value={reveal}>
+            {visibleBlocks.map((b, i) => (
+              <React.Fragment key={b.seq}>
+                {/* a new prompt starts a new turn — rule it off (Dan #11) */}
+                {b.kind === 'user' && i > 0 && (
+                  <div style={{ borderBlockStart: '1px solid var(--border)', marginBlock: 8, marginInline: 8 }} />
+                )}
+                <Block b={b} />
+              </React.Fragment>
+            ))}
+          </FeedRevealProvider>
           <div ref={bottom} />
         </div>
       </div>

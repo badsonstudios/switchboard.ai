@@ -9,6 +9,17 @@ mouse trips.
 
 On a Mac, use **⌘** everywhere this page says **Ctrl**.
 
+## Find something in a session
+
+Press **`Ctrl+F`** to search the session you're looking at. Type, and `Enter` /
+`Shift+Enter` step through the matches; a count sits beside the box; `Esc`
+closes it and puts your cursor back.
+
+It searches the *whole* session, including the parts scrolled out of memory and
+the tool output your detail level is hiding, and jumping to a match opens
+whatever was folded over it. On the **Changes** tab the same key opens the diff
+editor's own find. Full details: [Finding something in a session](14-find.md).
+
 ## The command palette — everything, in one list
 
 Press **`Ctrl+Shift+P`** (or click **▸ commands** in the title bar) to open the

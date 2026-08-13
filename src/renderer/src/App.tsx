@@ -55,6 +55,7 @@ import {
 import { buildIdentity } from '../../shared/build-identity';
 import { applyTabRows, loadTabRows, syncDocumentFlags, toggleTabRows } from './lib/tab-rows';
 import { openPopoutWindows, subscribePopoutWindows } from './lib/popout-windows';
+import { openFindBar } from './lib/find-bar-state';
 
 // One stable subscribe identity for every useSyncExternalStore call below.
 // An inline arrow is a new function each render, and React unsubscribes and
@@ -850,6 +851,10 @@ export function App(): React.JSX.Element {
           toggleMaximize: (cardId) => grid.current?.toggleMaximize(cardId),
           toggleRail,
           openPalette: () => setPaletteOpen(true),
+          // the bar itself is rendered by the CARD (SessionGrid) — this only
+          // publishes which card is asking, because a keydown handler has no
+          // way into another dockview panel's tree (§5.31, lib/find-bar-state)
+          openFind: (cardId) => openFindBar(cardId),
           toggleTabRows: () => {
             toggleTabRows();
           },
