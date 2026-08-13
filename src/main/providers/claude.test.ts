@@ -4,12 +4,14 @@ import path from 'path';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import {
   claudeAdapter,
+  claudeProjectsRoot,
   readAiTitle,
   resetCliPathCache,
   scanPath,
   writeSessionSettings,
 } from './claude';
 import { LATE, REPEAT_HEAVY, REVISED } from '../transcripts/fixtures/ai-title';
+import { slugForCwd } from '../transcripts/paths';
 
 let tmp: string;
 let origPath: string | undefined;
@@ -166,5 +168,64 @@ describe('readAiTitle — the conversation title Claude writes into its transcri
     expect(read({ type: 'ai-title', aiTitle: '' })).toBeUndefined();
     expect(read({ type: 'ai-title', aiTitle: '   ' })).toBeUndefined();
     expect(read({ type: 'ai-title', aiTitle: '  spaced  ' })).toBe('spaced');
+  });
+});
+
+describe('claudeAdapter.capabilities.resume (#432 — the host declares the root)', () => {
+  const NATIVE = '11111111-2222-4333-8444-555555555555';
+  const ask = (projectsRoot: string, folder: string, nativeSessionId = NATIVE): boolean =>
+    claudeAdapter.capabilities!.resume!.canResume({ projectsRoot, folder, nativeSessionId });
+
+  /** the conversation, where the CLI would have written it under `root` */
+  function seed(root: string, folder: string): void {
+    const dir = path.join(root, slugForCwd(folder));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${NATIVE}.jsonl`), '{}\n');
+  }
+
+  it('answers about the root it is HANDED, not one it derives for itself', () => {
+    // The pin for the whole item: this used to call `claudeProjectsRoot()`, so
+    // the answer was about `~/.claude/projects` no matter what the host had
+    // resolved — a second declaration of the root the replay reads (#395).
+    const folder = path.join(tmp, 'project');
+    const root = path.join(tmp, 'roots');
+    seed(root, folder);
+    expect(ask(root, folder)).toBe(true);
+    // same conversation, a root the host would not read: not resumable, because
+    // resuming it would open a card with nothing in it
+    expect(ask(path.join(tmp, 'other-roots'), folder)).toBe(false);
+  });
+
+  it('no root means no conversation — never a fall-back to the home directory', () => {
+    // The conversation IS in `~/.claude/projects`, and the answer is still no.
+    // Asserting `false` against an unseeded home would pass under the old
+    // implementation too, which is no pin at all — so the home is pointed at a
+    // temp dir and seeded, and only a reintroduced `claudeProjectsRoot()` call
+    // inside `canResume` can turn this green.
+    const home = path.join(tmp, 'home');
+    const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+    process.env.HOME = home;
+    process.env.USERPROFILE = home; // what os.homedir() reads on win32
+    try {
+      const folder = path.join(tmp, 'project');
+      seed(claudeProjectsRoot(), folder);
+      expect(claudeProjectsRoot().startsWith(home)).toBe(true); // the seed landed
+      expect(ask('', folder)).toBe(false);
+      // and the same conversation IS found when the host hands over that root —
+      // so the `false` above is about the missing root, not a broken lookup
+      expect(ask(claudeProjectsRoot(), folder)).toBe(true);
+    } finally {
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
+  it('a missing conversation under a real root is not resumable', () => {
+    const folder = path.join(tmp, 'project');
+    const root = path.join(tmp, 'roots');
+    seed(root, folder);
+    expect(ask(root, folder, '99999999-0000-4000-8000-000000000000')).toBe(false);
   });
 });

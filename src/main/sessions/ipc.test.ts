@@ -18,7 +18,7 @@ import { Logger } from '../log/logger';
 import { SlashCommand } from '../../shared/slash-commands';
 import { readAiTitle } from '../providers/claude';
 import { REPEAT_HEAVY, REVISED, titlesOf } from '../transcripts/fixtures/ai-title';
-import { slugForCwd } from '../transcripts/paths';
+import { conversationExists, slugForCwd } from '../transcripts/paths';
 
 type Handler = (e: unknown, ...args: unknown[]) => unknown;
 
@@ -1307,6 +1307,35 @@ describe('a resumed Direct session replays its history (#395)', () => {
 
     h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
 
+    expect(streamFeed.blocks('live-1')).toEqual([]);
+  });
+
+  it('an unresolvable root starts the card FRESH, not resumed-and-blank (#432)', () => {
+    // A Claude-SHAPED adapter: one that answers `canResume` out of the root it
+    // is handed, which is what every shipped provider does. Its root comes back
+    // empty here, so the host will watch nothing and replay nothing — and the
+    // adapter therefore refuses to vouch for the conversation rather than
+    // resuming into a Session view nothing can fill. The transcript is on disk
+    // the whole time; only the declaration is missing.
+    seedTranscript();
+    const streamFeed = new StreamFeed();
+    const h = harness(
+      {
+        transcripts: { projectsRoot: () => '' },
+        resume: {
+          canResume: ({ projectsRoot, folder, nativeSessionId }) =>
+            conversationExists(projectsRoot, folder, nativeSessionId),
+        },
+      } satisfies ProviderCapabilities,
+      dir,
+      { transport: 'stream', liveIds: ['live-1'], streamFeed, prior: priorCard({ folder: dir, nativeSessionId: NATIVE }) }
+    );
+
+    const record = h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
+
+    expect(record).not.toBeNull();
+    expect(h.created[0].resumeSessionId).toBeUndefined(); // no --resume
+    expect(h.watched).toHaveLength(0); // and nothing watched
     expect(streamFeed.blocks('live-1')).toEqual([]);
   });
 

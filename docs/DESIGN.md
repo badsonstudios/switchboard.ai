@@ -230,6 +230,16 @@ contract differs in three ways, each deliberate:
   recognise it — a provider can easily have the first without the second, and
   the key that carries it is undocumented, so the one thing that must not happen
   is that spelling leaking into shared code.
+- **The HOST resolves the transcript root and supplies it to `resume`** *(#432,
+  2026-08-13)*. `resume.canResume` takes a query object carrying the root the
+  host resolved from this same provider's `transcripts.projectsRoot()` — the one
+  it hands the watcher and reads a resumed conversation back from (#395).
+  Deriving a root inside `canResume` made one contract two independent
+  declarations: an adapter answering "yes" about a directory the host never
+  reads would resume and then show an empty session. `resume` is therefore
+  deliberately NOT independent of `transcripts` for a transcript-backed
+  provider; one that resumes on some other authority ignores the root and
+  answers from its own knowledge.
 - **`transcripts` LOCATES transcripts; it does not abstract reading them.** The
   sketch names a `TranscriptReader`. Our tolerant parser, tailer and block builder
   stay host-side and are shared by every provider writing that shape; the adapter

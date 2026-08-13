@@ -153,14 +153,46 @@ export interface TrustCapability {
 
 export interface ResumeCapability {
   /**
-   * Is `nativeSessionId` actually resumable for this folder?
+   * Is this conversation actually resumable?
    *
    * Eligibility only — `buildSpawn` still owns the flag. The check exists
    * because a stale id is not harmless: Claude exits with "No conversation
    * found" and the card crashes on spawn, so the host must be able to fall back
    * to a fresh session BEFORE it commits to resuming.
+   *
+   * THE HOST SUPPLIES THE ROOT (#432). Deriving one here is what an adapter is
+   * specifically not for: `transcripts.projectsRoot()` already declares where
+   * this provider's conversations live, and that same string is what a resumed
+   * Direct session replays its history from (#395). Two declarations of one
+   * contract agree by coincidence — an adapter that ever answered "yes" from a
+   * root the host does not read would resume and then show nothing, which is
+   * exactly the blank-resume symptom #395 fixed. One resolution, handed to every
+   * consumer, cannot disagree with itself.
    */
-  canResume(folder: string, nativeSessionId: string): boolean;
+  canResume(query: ResumeQuery): boolean;
+}
+
+/** What the host is deciding about — and, load-bearingly, WHERE it will look. */
+export interface ResumeQuery {
+  /**
+   * The transcript root the host resolved for this session start, from this
+   * provider's own `transcripts.projectsRoot()`. The same string it hands the
+   * watcher and reads the resumed conversation back from, so an answer of
+   * "yes, under this root" is an answer about a file the host will really read.
+   *
+   * `''` when there is no such root at all: the provider declares no
+   * `transcripts` capability, or its call threw, or it returned an unusable
+   * empty root. All three mean the same thing to answer from — the host will
+   * watch nothing and replay nothing for this session — so a provider that
+   * resumes OUT of a transcript has nothing to say yes about. One that resumes
+   * on some other authority ignores this and answers from its own knowledge; it
+   * just may not answer from a root it invented.
+   */
+  projectsRoot: string;
+  /** the project folder the session will run in */
+  folder: string;
+  /** the provider-native conversation id persisted on the card */
+  nativeSessionId: string;
 }
 
 export interface SpawnOptions {

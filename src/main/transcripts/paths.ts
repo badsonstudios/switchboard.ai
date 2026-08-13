@@ -35,12 +35,13 @@ export function conversationExists(projectsRoot: string, folder: string, nativeI
  * the stream.
  *
  * ONE RESOLVER, so "is this resumable" and "where do I read it back from" cannot
- * answer differently for the same directory. They can still be asked about
- * DIFFERENT roots — `canResume` is a provider capability and the replay uses the
- * plan's `transcriptsRoot`, which is a second capability call — so an adapter
- * that ever declared two different roots would resume and then show nothing.
- * Identical for every shipped provider today; worth knowing before Phase 4 makes
- * these strings third-party.
+ * answer differently for the same directory — and since #432, not about two
+ * different directories either: the root is no longer something an adapter
+ * derives per question. `planSessionStart` reads `transcripts.projectsRoot()`
+ * ONCE per session start and hands that single string to `resume.canResume`
+ * (via `ResumeQuery`), to the transcript watcher, and to #395's replay. An
+ * adapter answering "yes" here is answering about a file the host will really
+ * read — which matters from Phase 4 on, when these strings become third-party.
  */
 export function conversationFile(
   projectsRoot: string,

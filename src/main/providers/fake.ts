@@ -33,8 +33,9 @@ export const fakeAdapter: ProviderAdapter = {
     titles: { titleFrom: readAiTitle },
     hooks: { settingsFor: (sessionId, host) => host.buildHookSettings(sessionId) },
     resume: {
-      canResume: (folder, nativeSessionId) =>
-        conversationExists(claudeProjectsRoot(), folder, nativeSessionId),
+      // the host's root, like the real adapter (#432)
+      canResume: ({ projectsRoot, folder, nativeSessionId }) =>
+        conversationExists(projectsRoot, folder, nativeSessionId),
     },
     trust: { ensureTrusted: (folder) => ensureFolderTrusted(folder) },
   },
