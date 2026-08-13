@@ -162,10 +162,23 @@ test.describe('[pty] actionable permission toasts (P2-E14-04)', () => {
     };
     expect(verdict.hookSpecificOutput?.permissionDecision).toBe('allow');
 
-    const withdrawn = await poll(() => {
-      const l = lines<{ requestId: string }>(a.home, 'permission toast withdrawn');
-      return l.length > 0 ? l : null;
-    }, 15_000);
-    expect(withdrawn[0].requestId).toBe(fired[0].requestId);
+    // Gated on the DESKTOP'S capability, not on the platform, and for the same
+    // reason `shown` exists at all (#421's CI lesson): a Linux CI container has
+    // no notification daemon, `Notification.isSupported()` is false there, and
+    // nothing was ever put on screen — so there is no toast to withdraw and a
+    // green assertion here would be a lie. The half that is real everywhere is
+    // the verdict above, which is asserted unconditionally; where a toast DID
+    // go out (Windows CI, and any real desktop), the withdrawal is insisted on.
+    if (fired[0].shown) {
+      const withdrawn = await poll(() => {
+        const l = lines<{ requestId: string }>(a.home, 'permission toast withdrawn');
+        return l.length > 0 ? l : null;
+      }, 15_000);
+      expect(withdrawn[0].requestId).toBe(fired[0].requestId);
+    } else {
+      // …and the complement is worth pinning too: nothing may claim to have
+      // withdrawn a toast that was never shown.
+      expect(lines(a.home, 'permission toast withdrawn')).toHaveLength(0);
+    }
   });
 });
