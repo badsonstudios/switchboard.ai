@@ -116,6 +116,15 @@ on the floor, and say so in your PR.
   match character for character, so `rm -rf build` and `rm -rf /` are never
   answered together.
 
+### Changed
+
+- **Rendered Markdown now always looks like your theme.** Anywhere the app
+  shows Markdown — the conversation feed, the document viewer, release notes —
+  hand-written styling embedded in the text is ignored, so a reply or a file
+  can no longer set its own colours, hide something behind a button, or float a
+  box over the app. Nothing Markdown itself produces changes: tables still
+  align, task lists still tick, code blocks are untouched.
+
 ### Fixed
 
 - **A reopened session shows its conversation again.** Since 0.3.0, quitting

@@ -41,15 +41,45 @@ export const STREAMING_CARET = '▌';
 export const MARKED_OPTIONS = { async: false, gfm: true, breaks: false } as const;
 
 /**
- * The ONE sanitizer configuration. §5.29 in a constant.
+ * The ONE sanitizer configuration. §5.29 in a constant. ONE — see #436 below.
  *
- * `USE_PROFILES: { html: true }` is the whole of it, and it is narrower than
+ * `USE_PROFILES: { html: true }` is the base, and it is narrower than
  * DOMPurify's default, which also allows SVG and MathML. Markdown never
  * produces either — they can only arrive as RAW EMBEDDED MARKUP in a file we
  * did not write, which is precisely the input §5.30 says to distrust. §5.30
  * also settles the SVG question directly: "SVG via `<img>` and never inlined so
  * it cannot carry script". An `<img src="x.svg">` still renders under this
- * profile; an inline `<svg>` with an `onload` does not survive it.
+ * profile; an inline `<svg>` with an `onload` does not survive it. The `<style>`
+ * TAG is already outside the profile, and that is the bigger of the two CSS
+ * holes: a stylesheet is not scoped to the block that carried it.
+ *
+ * `FORBID_ATTR: ['style']` closes the other one (#436). The viewer used to strip
+ * `style` on its own, in `document-render.ts`, which made TWO effective profiles
+ * out of one constant — the exact drift §5.30 names as the reason the single
+ * renderer is a requirement. It is settled HERE, for every surface, because:
+ *
+ *  - MARKDOWN CANNOT EMIT ONE. Every construct that looks like it might uses an
+ *    attribute instead — GFM table alignment renders `align="right"`, not
+ *    `style="text-align:right"` — and this app ships no syntax highlighter that
+ *    writes colours inline. Nothing legitimate is lost; the pinning tests below
+ *    render the whole GFM surface and prove it.
+ *  - SO AN INLINE STYLE IS ALWAYS RAW EMBEDDED MARKUP. Measured on the real
+ *    corpus before choosing (2026-08-13): 7,553 captured transcripts, 57,700
+ *    assistant text blocks, 93 MB of prose — SEVEN occurrences of `style`, all
+ *    seven inside a code fence or code span, where `marked` escapes them to text
+ *    and the sanitizer never sees an attribute at all. Bare in prose: zero.
+ *  - AND IT IS LOAD-BEARING FOR THE VIEWER. `position:fixed;inset:0` from a file
+ *    we did not write is a click-jack over the app's own chrome, and
+ *    `display:none` is what hides the `<pre>` whose Copy button then puts
+ *    something else on the clipboard. The feed is the same input class — an
+ *    agent can be talked into emitting markup — so it gets the same answer.
+ *  - AND IT FIGHTS THE THEME. `.feed-md` and `.doc-md` own how markdown looks;
+ *    an inline `color:` outranks every one of their rules and survives a theme
+ *    switch, so light-on-light is a thing a reply could do to itself.
+ *
+ * `document-render.ts` still removes `style` in `stripOurNamespace`, and that is
+ * deliberate belt-and-braces for HTML reaching `decorateDocument` from anywhere
+ * but here — not a second profile. See the note on that function.
  *
  * Everything else is DOMPurify's default and deliberately so: its allow-list,
  * its `javascript:`-scheme refusal and its `on*`-attribute stripping are the
@@ -57,7 +87,10 @@ export const MARKED_OPTIONS = { async: false, gfm: true, breaks: false } as cons
  * owning them here. What we choose is the PROFILE; what is safe inside it is
  * theirs.
  */
-export const SANITIZE_CONFIG: SanitizeConfig = { USE_PROFILES: { html: true } };
+export const SANITIZE_CONFIG: SanitizeConfig = {
+  USE_PROFILES: { html: true },
+  FORBID_ATTR: ['style'],
+};
 
 /**
  * Markdown in, sanitized HTML out. The only place either library is called.

