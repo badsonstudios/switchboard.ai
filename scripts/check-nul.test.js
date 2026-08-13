@@ -10,19 +10,26 @@
 // The one case that does touch the filesystem is the end-to-end run of the real
 // CLI against the real repo: it must be green, because a red one means this
 // repo has a NUL in it right now.
-import { describe, it, expect } from 'vitest';
+//
+// #459 added a second, and the same circularity rule shapes it: the untracked
+// case needs a REAL `git ls-files` answer, so it builds a scratch repo under
+// `os.tmpdir()` — never in this tree — and the one file there that does contain
+// a `\x00` is therefore somewhere `npm run lint` will never look.
+import { describe, it, expect, beforeAll } from 'vitest';
+import fs from 'fs';
 import path from 'path';
-import { spawnSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import {
   BINARY_EXTENSIONS,
   MAX_LISTED,
   isScannable,
-  trackedFiles,
+  filesToScan,
   findNul,
   scan,
   formatReport,
   run,
 } from './check-nul.js';
+import { tempDir } from '../src/test-temp-dirs';
 
 const ROOT = path.join(import.meta.dirname, '..');
 
@@ -169,22 +176,75 @@ describe('formatReport', () => {
   });
 });
 
-describe('trackedFiles', () => {
+describe('filesToScan', () => {
   it('lists this repo, posix-shaped, on either platform', () => {
-    const files = trackedFiles(ROOT);
+    const files = filesToScan(ROOT);
     // `git ls-files` prints forward slashes everywhere, which is why nothing
-    // downstream has to normalise. Two long-lived files, not this test file:
-    // an uncommitted test is untracked, and would fail on the run that writes it.
+    // downstream has to normalise.
     expect(files).toContain('package.json');
     expect(files).toContain('scripts/bundle-guard.js');
     expect(files.some((f) => f.includes('\\'))).toBe(false);
+  });
+
+  it('keeps `node_modules/` out of this repo’s list', () => {
+    // `--others` without `--exclude-standard` would put tens of thousands of
+    // files in here and turn a 90ms check into a minute of I/O.
+    expect(filesToScan(ROOT).some((f) => f.startsWith('node_modules/'))).toBe(false);
   });
 
   it('returns null instead of throwing when git cannot answer', () => {
     // A directory that is not a repo: the fail-open path. os.tmpdir() itself
     // could sit inside one on someone's machine; a path that does not exist
     // cannot, and git fails the same way.
-    expect(trackedFiles(path.join(ROOT, 'no-such-directory-for-check-nul'))).toBeNull();
+    expect(filesToScan(path.join(ROOT, 'no-such-directory-for-check-nul'))).toBeNull();
+  });
+});
+
+describe('a scratch repo (#459 — the untracked hole)', () => {
+  let repo;
+
+  const write = (rel, text) => fs.writeFileSync(path.join(repo, rel), text.replace(/@/g, '\0'));
+  const git = (...args) => execFileSync('git', args, { cwd: repo, stdio: 'ignore' });
+
+  beforeAll(() => {
+    // Lives for the whole FILE; `test-setup.ts`'s afterAll net deletes it (#213).
+    repo = tempDir('sb-check-nul-');
+    git('init', '-b', 'main');
+    git('config', 'user.email', 'test@test');
+    git('config', 'user.name', 'test');
+    write('.gitignore', 'ignored.md\n');
+    write('committed.md', 'clean\n');
+    git('add', '.');
+    git('commit', '-m', 'init');
+    write('untracked.md', 'oops@here\n'); // the file #414 lost a cycle to
+    write('ignored.md', 'also@bad\n');
+  });
+
+  it('lists the untracked file alongside the tracked one', () => {
+    const files = filesToScan(repo);
+    expect(files).toContain('committed.md');
+    expect(files).toContain('untracked.md');
+  });
+
+  it('still leaves an ignored file out', () => {
+    expect(filesToScan(repo)).not.toContain('ignored.md');
+  });
+
+  it('lists each path once', () => {
+    const files = filesToScan(repo);
+    expect(new Set(files).size).toBe(files.length);
+  });
+
+  it('FAILS on a NUL in a file that was never `git add`ed', () => {
+    // The whole point of #459: before it, this run was green until someone
+    // staged the file, and the gate fired in the wrong debugging session.
+    const { lines, failed } = run(repo);
+    expect(failed).toBe(true);
+    expect(lines.join('\n')).toContain('untracked.md:1:5');
+  });
+
+  it('does not fail on the ignored one', () => {
+    expect(run(repo).lines.join('\n')).not.toContain('ignored.md');
   });
 });
 
@@ -194,9 +254,9 @@ describe('run', () => {
     expect(failed, lines.join('\n')).toBe(false);
   });
 
-  it('scans the whole tracked tree, not just one directory', () => {
+  it('scans the whole tree, not just one directory', () => {
     // guards the __dirname-vs-cwd trap called out in the CLI block
-    const { scanned } = scan(ROOT, trackedFiles(ROOT) ?? []);
+    const { scanned } = scan(ROOT, filesToScan(ROOT) ?? []);
     expect(scanned).toBeGreaterThan(100);
   });
 

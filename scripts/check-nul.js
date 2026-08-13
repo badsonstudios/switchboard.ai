@@ -1,5 +1,5 @@
-// #435 — the NUL-byte gate: fail `npm run lint` when a tracked text file
-// contains a `\x00`.
+// #435 — the NUL-byte gate: fail `npm run lint` when a text file in the working
+// tree contains a `\x00`.
 //
 // #410's worker lost a debugging cycle to a single stray NUL in a source file.
 // Nothing in this repo reported it: eslint parsed the file, `tsc` typechecked
@@ -19,10 +19,14 @@
 //
 // Two deliberate choices about WHAT gets scanned:
 //
-//   • `git ls-files`, not a directory walk. Only tracked files can reach CI, and
-//     asking git means `node_modules/`, `out/`, `dist/` and every piece of
-//     untracked local junk are excluded for free rather than by a skip list that
-//     drifts.
+//   • `git ls-files --cached --others --exclude-standard`, not a directory walk.
+//     Tracked files PLUS untracked ones git is not ignoring — i.e. everything a
+//     `git add .` would stage. Tracked-only was the original list and it left a
+//     hole: a NUL lands in a NEW file at least as often as in an old one, and
+//     #414's worker lost a cycle to exactly that — lint stayed green until the
+//     `git add` that made the file tracked (#459). Asking git still means
+//     `node_modules/`, `out/`, `dist/` and every ignored piece of local junk are
+//     excluded for free rather than by a skip list that drifts.
 //   • a SKIP list of binary extensions, not an allowlist of text ones. A new
 //     text extension is then covered the day it appears; the cost is that a new
 //     BINARY extension (a font, a `.wasm`) fails loudly until someone adds it to
@@ -101,7 +105,7 @@ const BINARY_EXTENSIONS = new Set([
 const toPosix = (p) => String(p).replace(/\\/g, '/');
 
 /**
- * Should this tracked path be read and searched?
+ * Should this path be read and searched?
  *
  * @param {string} relPath path relative to the repo root, either separator
  */
@@ -110,25 +114,33 @@ function isScannable(relPath) {
 }
 
 /**
- * Every tracked file, repo-root-relative and posix-shaped, or null if git could
- * not answer (see the fail-open note in the header).
+ * Every file this check is responsible for — tracked, plus untracked ones git is
+ * not ignoring — repo-root-relative and posix-shaped, or null if git could not
+ * answer (see the fail-open note in the header).
+ *
+ * `--cached` is the index, `--others` the untracked files, `--exclude-standard`
+ * applies `.gitignore` and friends to the second half so it is the files a
+ * `git add .` would stage rather than `node_modules/`.
  *
  * `-z` because it is the only output form git does not quote or escape: a path
  * with a space, a quote or a non-ASCII character comes back verbatim.
  *
+ * De-duplicated: during a merge conflict `--cached` prints an unmerged path once
+ * per stage, and scanning one file three times would triple-count it.
+ *
  * @param {string} root
  * @returns {string[]|null}
  */
-function trackedFiles(root) {
+function filesToScan(root) {
   try {
-    const out = execFileSync('git', ['ls-files', '-z'], {
+    const out = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], {
       cwd: root,
       encoding: 'utf8',
       maxBuffer: 32 * 1024 * 1024,
       stdio: ['ignore', 'pipe', 'ignore'],
       timeout: 30_000,
     });
-    return out.split('\0').filter((p) => p !== '');
+    return [...new Set(out.split('\0').filter((p) => p !== ''))];
   } catch {
     return null;
   }
@@ -162,7 +174,10 @@ function findNul(buffer) {
  * text pipeline loses it.
  *
  * A file that disappears between `git ls-files` and the read (a staged delete,
- * a rebase mid-flight) is skipped: it cannot be the file anyone is debugging.
+ * a rebase mid-flight) is skipped, and so is anything that is not a readable
+ * file at all — `--others` lists an untracked nested repo as a DIRECTORY, and
+ * `readFileSync` on one throws `EISDIR`. Neither can be the file anyone is
+ * debugging.
  *
  * @param {string} root
  * @param {string[]} files repo-relative paths
@@ -208,14 +223,14 @@ function formatReport(result, opts = {}) {
   const ms = Math.round(opts.elapsedMs ?? 0);
   if (result.hits.length === 0) {
     return {
-      lines: [`check-nul: ${result.scanned} tracked text files, no NUL bytes (${ms}ms)`],
+      lines: [`check-nul: ${result.scanned} text files, no NUL bytes (${ms}ms)`],
       failed: false,
     };
   }
 
   const shown = result.hits.slice(0, MAX_LISTED);
   const lines = [
-    `NUL byte (\\x00) found in ${result.hits.length} tracked file(s):`,
+    `NUL byte (\\x00) found in ${result.hits.length} file(s):`,
     ...shown.map((h) => `  ${h.file}:${h.line}:${h.column}  (byte offset ${h.offset})`),
   ];
   if (result.hits.length > shown.length) {
@@ -237,7 +252,7 @@ function formatReport(result, opts = {}) {
   return { lines, failed: true };
 }
 
-/** What is printed, and exited on, when git cannot list the tracked files. */
+/** What is printed, and exited on, when git cannot list the files. */
 const NO_GIT_LINES = [
   'check-nul: skipped — `git ls-files` did not answer (no git, or not a repo).',
   'check-nul: nothing to scan against; not failing the build over it.',
@@ -253,7 +268,7 @@ const NO_GIT_LINES = [
 function run(root, deps = {}) {
   const now = deps.now ?? (() => Date.now());
   const started = now();
-  const files = trackedFiles(root);
+  const files = filesToScan(root);
   if (files === null) return { lines: [...NO_GIT_LINES], failed: false };
   return formatReport(scan(root, files), { elapsedMs: now() - started });
 }
@@ -263,7 +278,7 @@ module.exports = {
   MAX_LISTED,
   NO_GIT_LINES,
   isScannable,
-  trackedFiles,
+  filesToScan,
   findNul,
   scan,
   formatReport,
