@@ -118,11 +118,13 @@ on the floor, and say so in your PR.
 
 ### Changed
 
-- **Rendered Markdown now always looks like your theme.** Anywhere the app
-  shows Markdown — the conversation feed, the document viewer, release notes —
-  hand-written styling embedded in the text is ignored, so a reply or a file
-  can no longer set its own colours, hide something behind a button, or float a
-  box over the app. Nothing Markdown itself produces changes: tables still
+- **Rendered Markdown can no longer position itself over the app.** Anywhere
+  the app shows Markdown — the conversation feed, the document viewer, release
+  notes — an inline `style` written into the text is now ignored. So a reply or
+  a file can't float a box over the app's own controls, hide text underneath
+  one, or repaint itself in colours your theme didn't choose. A few older HTML
+  tags (`<font color>` and its relatives) can still tint text; closing those is
+  tracked separately. Nothing Markdown itself produces changes: tables still
   align, task lists still tick, code blocks are untouched.
 
 ### Fixed

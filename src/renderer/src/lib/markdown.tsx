@@ -41,7 +41,8 @@ export const STREAMING_CARET = '▌';
 export const MARKED_OPTIONS = { async: false, gfm: true, breaks: false } as const;
 
 /**
- * The ONE sanitizer configuration. §5.29 in a constant. ONE — see #436 below.
+ * The ONE sanitizer configuration. §5.29 in a constant. ONE — see the `style`
+ * note below, and `markdown.test.tsx`'s surface table, which pins it.
  *
  * `USE_PROFILES: { html: true }` is the base, and it is narrower than
  * DOMPurify's default, which also allows SVG and MathML. Markdown never
@@ -61,8 +62,8 @@ export const MARKED_OPTIONS = { async: false, gfm: true, breaks: false } as cons
  *  - MARKDOWN CANNOT EMIT ONE. Every construct that looks like it might uses an
  *    attribute instead — GFM table alignment renders `align="right"`, not
  *    `style="text-align:right"` — and this app ships no syntax highlighter that
- *    writes colours inline. Nothing legitimate is lost; the pinning tests below
- *    render the whole GFM surface and prove it.
+ *    writes colours inline. Nothing legitimate is lost; `markdown.test.tsx`
+ *    renders the whole GFM surface and proves it.
  *  - SO AN INLINE STYLE IS ALWAYS RAW EMBEDDED MARKUP. Measured on the real
  *    corpus before choosing (2026-08-13): 7,553 captured transcripts, 57,700
  *    assistant text blocks, 93 MB of prose — SEVEN occurrences of `style`, all
@@ -76,6 +77,15 @@ export const MARKED_OPTIONS = { async: false, gfm: true, breaks: false } as cons
  *  - AND IT FIGHTS THE THEME. `.feed-md` and `.doc-md` own how markdown looks;
  *    an inline `color:` outranks every one of their rules and survives a theme
  *    switch, so light-on-light is a thing a reply could do to itself.
+ *
+ * WHAT THIS DOES NOT CLOSE, so nobody reads the above as more than it is: the
+ * html profile still allows the LEGACY PRESENTATIONAL attributes and tags —
+ * `<font color size face>`, `<hr color size>`, `bgcolor`, `align`, `hidden`,
+ * `<center>`, `<marquee>` — verified against DOMPurify 3.4.12, not assumed. So
+ * "markdown can no longer colour itself" is FALSE; what is true is that it can
+ * no longer do so through `style`, and can no longer POSITION itself (there is
+ * no `position: fixed` rule anywhere in the renderer's CSS for a `class` to
+ * borrow, and `class` does survive). The legacy set is #466.
  *
  * `document-render.ts` still removes `style` in `stripOurNamespace`, and that is
  * deliberate belt-and-braces for HTML reaching `decorateDocument` from anywhere
@@ -91,6 +101,22 @@ export const SANITIZE_CONFIG: SanitizeConfig = {
   USE_PROFILES: { html: true },
   FORBID_ATTR: ['style'],
 };
+
+// FROZEN, because "one configuration" is this module's entire thesis and an
+// exported mutable object is a second one waiting to be written at runtime:
+// `SANITIZE_CONFIG.FORBID_ATTR.pop()` from anywhere in the renderer would
+// re-open the hole for every surface at once, silently, with the source still
+// reading exactly as it does here. The nested array and profile object are
+// frozen too — freezing only the top level leaves the array mutable, which is
+// where the policy actually lives.
+//
+// Frozen as statements rather than by wrapping the literal in `Object.freeze`
+// so the declared type stays `SanitizeConfig`: DOMPurify's `FORBID_ATTR` is
+// `string[]`, and a frozen literal infers `readonly string[]`, which would need
+// a cast to assign. Runtime immutability, no cast.
+Object.freeze(SANITIZE_CONFIG);
+Object.freeze(SANITIZE_CONFIG.FORBID_ATTR);
+Object.freeze(SANITIZE_CONFIG.USE_PROFILES);
 
 /**
  * Markdown in, sanitized HTML out. The only place either library is called.

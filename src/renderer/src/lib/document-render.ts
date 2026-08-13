@@ -318,10 +318,14 @@ export function decorateLinks(
  * exported constant, two effective profiles, which is the drift §5.30 makes the
  * single renderer a requirement to prevent.
  *
- * The line stays because `decorateDocument` takes HTML as a parameter and this
- * pass is the last thing standing between a caller who did not come through
- * `renderMarkdown` and a click handler that trusts what it reads. It is cheap
- * and it is one `||`.
+ * The line stays anyway. Not for a caller that exists — today every caller comes
+ * through `renderMarkdown`, and `markdown.test.tsx` enforces that there is no
+ * other pipeline to come through. It stays because this function's whole job is
+ * to assume nothing about where its input has been: it already takes `style`'s
+ * neighbours (`data-doc-*`, `doc-*`) back from HTML the sanitizer was perfectly
+ * happy with, and dropping `style` from that list would make it the one
+ * decoration-protocol attribute whose safety is somebody else's file. One
+ * `||`, and the layer keeps its own invariant.
  */
 export function stripOurNamespace(root: ParentNode): void {
   for (const el of root.querySelectorAll('*')) {

