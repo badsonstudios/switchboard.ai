@@ -181,6 +181,20 @@
 > fake the audio sink in tests, real audio only in Dan's hand-test).
 > In flight: #447/#442 (wt-1) · #470 (wt-2) · #481 (wt-3).
 >
+> **#470 ✅ DONE → PR #510 (INTERNAL, 4/4 green — my merge after cut).**
+> Sweep now clears dirent-type → shape → keep-set → budget, importing
+> #290's helpers; deliberate divergence: NO age floor (this sweep
+> exists to take tokens inside the young dirs the 24h floor keeps —
+> documented, reviewer agreed). Token release rides one abandonStart
+> that can't throw over the real error; try-scope widened ~10 lines
+> (a "leaves nothing behind" comment was false since #290). Gates
+> 4158 unit / 259+3 e2e, zero flakes locally; windows CI attempt 1
+> tripped check-nul.test's 5s timeout (7123ms actual) → **#512 filed**.
+> Minor discoveries left in 470.md (registerSession map-before-file;
+> ipc.test deps cast). **#472 dispatched → sb-wt-2** (extensibility
+> provider-contract prose + capability-table drift pin, docs+test,
+> INTERNAL). In flight: #447/#442 (wt-1) · #472 (wt-2) · #481 (wt-3).
+>
 > **MERGE POLICY THIS RUN: nothing merges before the #480 cut PR lands**
 > (Dan merges it, then pushes tag v0.4.0 — the tag is his; the cut ships
 > his #395 blank-resume fix). Feature CHANGELOG entries written pre-cut
