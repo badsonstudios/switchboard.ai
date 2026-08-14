@@ -24,10 +24,13 @@
 > green. #524 is HIGH for run 19 — a 2-of-3-red required check is a
 > merge-velocity tax.
 >
-> **RUN 19 QUEUE:** #484 resume-link FIRST · #520 find highlight +
-> #524 flake (owner-facing/velocity) · #407 Shape B · #482→#483 ·
-> #485 · #521 layer 1 · tail (#488 #490 #491 #494-#499 #502-#504
-> #506 #508 #509 #512 #517 #518 #521-design).
+> **RUN 19 QUEUE:** #484 resume-link FIRST · **#525 update never
+> restarts the app (owner report post-0.5.0; diagnosed: installer.ts
+> spawns ['/S'] without '--force-run', NSIS skips runAfterFinish when
+> silent — one-line fix + argv test; ride wave 1)** · #520 find
+> highlight + #524 flake (owner-facing/velocity) · #407 Shape B ·
+> #482→#483 · #485 · #521 layer 1 · tail (#488 #490 #491 #494-#499
+> #502-#504 #506 #508 #509 #512 #517 #518 #521-design).
 >
 > # (0.5.0 cut record follows)
 > # 🚢 0.5.0 CUT IN FLIGHT (2026-08-14, post-dogfood)
