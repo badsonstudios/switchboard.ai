@@ -36,6 +36,30 @@
  */
 export const FEED_EXPANDER_ATTR = 'data-feed-expander';
 
+/**
+ * A copy button on a block of code (#477) — the SECOND kind of control the
+ * arrow keys reach.
+ *
+ * It gets its own attribute rather than borrowing `data-feed-expander`, because
+ * that name is a claim: `feed-blocks.a11y.test.tsx` asserts every element
+ * carrying it is a real `<button aria-expanded>`, and a copy button expands
+ * nothing. What the two share is the thing the KEYS care about — being an
+ * operable control inside the conversation — and that is what
+ * `FEED_STOP_SELECTOR` names.
+ */
+export const FEED_COPY_ATTR = 'data-feed-copy';
+
+/**
+ * Everything the arrow keys stop on, in DOM order.
+ *
+ * The conversation stays ONE tab stop (see the note above): a copy button that
+ * claimed a Tab stop of its own would put the composer behind one press per
+ * code block, which is the same failure a tab-stop-per-expander would have been.
+ * So a new control inside the conversation joins THIS selector and is marked
+ * `tabindex="-1"`, and the keys keep working the way #174 designed them.
+ */
+export const FEED_STOP_SELECTOR = `[${FEED_EXPANDER_ATTR}], [${FEED_COPY_ATTR}]`;
+
 /** What a keystroke inside the conversation region means. */
 export type FeedKeyAction =
   /** move focus to the expander at this index (0-based, DOM order) */

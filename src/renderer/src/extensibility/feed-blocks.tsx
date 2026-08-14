@@ -13,7 +13,13 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { FeedBlockDto } from '../lib/feed';
-import { FEED_EXPANDER_ATTR } from '../lib/feed-keys';
+import {
+  codeForCopyButton,
+  FEED_CODE_ATTR,
+  runCopy,
+  type FeedCodeLabels,
+} from '../lib/feed-code';
+import { FEED_COPY_ATTR, FEED_EXPANDER_ATTR } from '../lib/feed-keys';
 import { useRevealed } from '../lib/feed-reveal';
 import { FeedBlockRendererContribution, manifestFor } from './contributions';
 import { decorateFeedMarkdown } from '../lib/feed-markdown';
@@ -92,6 +98,71 @@ export function FeedExpander({
       }}
     >
       {children}
+    </button>
+  );
+}
+
+/** The copy affordance's words, memoised so `decorate` stays a stable dep. */
+function useCodeLabels(): FeedCodeLabels {
+  const { t } = useTranslation();
+  return React.useMemo(
+    () => ({
+      copy: t('feedView.copy'),
+      copied: t('feedView.copied'),
+      copyCode: t('feedView.copyCode'),
+    }),
+    [t]
+  );
+}
+
+/**
+ * Copy this block of code (#477) — the React half of the one affordance.
+ *
+ * The other half is written into sanitized HTML by `decorateFeedCodeFences` and
+ * answered by a delegated handler; this is for the blocks that are components
+ * (Bash IN/OUT), where the text is already in hand and reading it back off the
+ * DOM would be a worse answer than passing it.
+ *
+ * `text` is a FUNCTION so the click reads the current value, for the same reason
+ * the rendered button reads its `<pre>` at click time: a section whose content
+ * changed under a memoised button must not copy what it used to say.
+ *
+ * The three attributes are the contract, not decoration: `data-feed-copy` puts
+ * it in the arrow-key list (`feed-keys.ts`), `tabIndex={-1}` keeps the
+ * conversation one tab stop, and `data-no-toggle` stops the click also folding
+ * the tool box it sits in. EXPORTED because renderers are contributions and may
+ * live in any module (§5.23) — a new renderer with code in it adopts this rather
+ * than growing a second copy button.
+ */
+export function FeedCopyButton({
+  text,
+  name,
+  style,
+}: {
+  text: () => string;
+  /**
+   * The accessible name, when "Copy this code" would be ambiguous. A Bash box
+   * holds TWO of these six pixels apart, and #196's lesson is that several
+   * controls with one name is the same failure as no name at all — a screen
+   * reader's button quick-nav would read "Copy this code, Copy this code" and
+   * leave the user to guess which was the command and which the output.
+   */
+  name?: string;
+  style?: React.CSSProperties;
+}): React.JSX.Element {
+  const labels = useCodeLabels();
+  return (
+    <button
+      type="button"
+      className="feed-code-copy"
+      aria-label={name ?? labels.copyCode}
+      {...{ [FEED_COPY_ATTR]: '' }}
+      {...NO_TOGGLE}
+      tabIndex={-1}
+      onClick={(e) => runCopy(e.currentTarget, text(), labels.copied)}
+      style={{ flexShrink: 0, alignSelf: 'flex-start', ...style }}
+    >
+      {labels.copy}
     </button>
   );
 }
@@ -254,7 +325,15 @@ function BashBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
   ): React.JSX.Element => (
     // IN and OUT stay INDEPENDENTLY expandable inside the box (#91) — so the
     // section owns its clicks and the box stands down for them
-    <div {...NO_TOGGLE} style={{ display: 'flex', gap: 6, alignItems: 'baseline', minInlineSize: 0 }}>
+    //
+    // `data-feed-code` marks the `<pre>` this section's copy button is for
+    // (#477), the same relationship a rendered fence expresses around its own
+    // wrapper — one rule for "which code does this button copy", both halves.
+    <div
+      {...NO_TOGGLE}
+      {...{ [FEED_CODE_ATTR]: '' }}
+      style={{ display: 'flex', gap: 6, alignItems: 'baseline', minInlineSize: 0 }}
+    >
       <FeedExpander
         open={open}
         onToggle={toggle}
@@ -283,6 +362,12 @@ function BashBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
       >
         {open ? text : text.split(String.fromCharCode(10))[0]}
       </pre>
+      {/* Only while the section is OPEN (#477). A collapsed section shows its
+          first line, so a copy button beside it would either copy something the
+          reader cannot see or copy the one line it can — and neither is the
+          command they meant. It also keeps the arrow-key walk the length the
+          conversation looks: shut sections add no stops. */}
+      {open && <FeedCopyButton text={() => text} name={t('feedView.copySection', { section: label })} />}
     </div>
   );
   // The box's own toggle (#91) is the COARSE one: Dan's ask was "click the box
@@ -523,6 +608,51 @@ function UserPill({ text, seq }: { text: string; seq: number }): React.JSX.Eleme
   );
 }
 
+/**
+ * Assistant prose (the fallback renderer), and the surface pass that goes with
+ * it.
+ *
+ * A component rather than a bare `<Markdown>` because both halves of #477 need
+ * something a contribution's `render(b)` cannot have: the copy button's WORDS
+ * (i18n is a hook) and a place for the delegated click to land.
+ *
+ * `decorate` is the feed's surface pass (#465): it takes the feed's own DOM
+ * protocol back from the reply BEFORE writing any of ours, which is the order
+ * that stops a forged copy button ever being read as one of the real ones.
+ *
+ * THE CLICK IS DELEGATED because the button lives in HTML React does not own —
+ * `<Markdown>` sets it with `dangerouslySetInnerHTML`, so there is no JSX to
+ * hang an `onClick` on. One listener on the wrapper is also the right shape for
+ * a conversation: a long reply can carry a dozen fences, and a listener each
+ * would be a dozen per block, times every block on screen.
+ */
+function MarkdownBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
+  const labels = useCodeLabels();
+  const decorate = React.useCallback(
+    (html: string) => decorateFeedMarkdown(html, labels),
+    [labels]
+  );
+  const onClick = React.useCallback(
+    (e: React.MouseEvent<HTMLDivElement>): void => {
+      const button = (e.target as Element | null)?.closest?.<HTMLElement>(`[${FEED_COPY_ATTR}]`);
+      if (!button) return;
+      const code = codeForCopyButton(button);
+      // `null` = a button outside any wrapper of ours. Doing nothing beats
+      // putting the wrong text on the clipboard.
+      if (code !== null) runCopy(button, code, labels.copied);
+    },
+    [labels]
+  );
+  // `minInlineSize: 0` so the wrapper shrinks the way `<Markdown>`'s own
+  // container did when it was the flex child — without it a wide fence stops
+  // the block ellipsising and pushes the conversation sideways.
+  return (
+    <div onClick={onClick} style={{ minInlineSize: 0 }}>
+      <Markdown text={b.text ?? ''} streaming={b.streaming} decorate={decorate} />
+    </div>
+  );
+}
+
 const manifest = (id: string, displayName: string) => manifestFor(id, displayName, 'feed.render');
 
 /** One contribution per block shape, in the order the old chain tested them. */
@@ -569,13 +699,7 @@ export const feedBlockRenderers: FeedBlockRendererContribution[] = [
     manifest: manifest('feed-block-markdown', 'Assistant prose (fallback)'),
     order: 1_000,
     matches: () => true,
-    // `decorate` is the feed's own pass over the sanitized HTML (#465). It is
-    // what stops a reply speaking the feed's DOM protocol — `data-feed-expander`
-    // and friends, which everything above writes and `FeedView` reads back off
-    // the DOM — and it is where a decoration of the feed's own goes.
-    render: (b) => (
-      <Markdown text={b.text ?? ''} streaming={b.streaming} decorate={decorateFeedMarkdown} />
-    ),
+    render: (b) => <MarkdownBlock b={b} />,
   },
 ];
 

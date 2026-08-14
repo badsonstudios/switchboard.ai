@@ -492,6 +492,10 @@
     "regionLabel": "Conversation",
     "regionLabelNamed": "Conversation — {title}",
     "keyHint": "↑ ↓ move · Enter expands · Esc leaves",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyCode": "Copy this code",
+    "copySection": "Copy {section}",
     "slashSource": {
       "builtin": "CLI",
       "project-command": "project",

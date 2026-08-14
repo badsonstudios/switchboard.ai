@@ -51,11 +51,32 @@ Two things deliberately *don't* fold the box away:
 Checklist boxes have nothing to expand — they're already showing everything —
 so clicking one does nothing.
 
+### Copying code out of a session
+
+**Code blocks in an answer have a small header with a Copy button on the
+right.** Click it and the whole block is on your clipboard — exactly the text,
+with no line numbers or extra spacing. The button says **Copied** for a moment
+so you know it worked. The language of the block, if the answer said what it
+was, sits on the left of the same strip.
+
+**Command boxes get one too, once they're open.** Open a command box and each
+**IN** and **OUT** section gets its own Copy button at the right — **IN** copies
+the command, **OUT** copies the whole output, including the lines below the one
+the collapsed box was showing you. A closed section has no button: there is
+nothing on screen yet to copy.
+
+Copying never folds the box away, and the buttons are reachable from the
+keyboard along with everything else (below). It works in a popped-out card too.
+
+The document viewer has had the same button on its code blocks since it
+shipped — it's the same affordance in both places, on purpose.
+
 ### …without the mouse
 
 Every box, every **IN** / **OUT** section and every folded prompt can be opened
 from the keyboard. `Tab` into the conversation, then `↑` and `↓` walk between
-the things that open, and `Enter` opens the one you're on. Full instructions:
+the things that open — and the Copy buttons on code — and `Enter` opens or
+presses the one you're on. Full instructions:
 [Reading the conversation with the keyboard](06-keyboard.md#reading-the-conversation-with-the-keyboard).
 
 ## When the Session tab has nothing in it
