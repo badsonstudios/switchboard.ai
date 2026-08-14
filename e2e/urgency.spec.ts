@@ -10,7 +10,14 @@
 // state the app has.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
-import { launchApp, LaunchedApp, showTerminal, tempProjectFolder, hookPoster } from './fixtures/app';
+import {
+  launchApp,
+  LaunchedApp,
+  showTerminal,
+  skipPopoutOnLinux,
+  tempProjectFolder,
+  hookPoster,
+} from './fixtures/app';
 // the ramp itself, not a copy of it (the csp spec sets the precedent for
 // importing from src/): a seventh status must be measured by #267's audit
 // below without anybody remembering to add it here
@@ -23,12 +30,6 @@ const lamps = (w: Page) => strip(w).locator('[data-urgency-lamp]');
 const lamp = (w: Page, title: string) => strip(w).locator(`[data-urgency-lamp][title^="${title}"]`);
 const activeTab = (w: Page) => w.locator('.dv-active-tab');
 const tabs = (w: Page) => w.locator('.dv-tabs-container .dv-tab');
-
-/** Popouts need a real window manager; CI's Linux runner is headless-xvfb and
- *  the popped-out BrowserWindow never materialises there (see #112 / E8 specs). */
-function skipPopoutOnLinux(): void {
-  test.skip(process.platform === 'linux', 'popout windows are unreliable under xvfb');
-}
 
 /** where the freeze below parks the real clock while it is stopped */
 interface ClockStash {

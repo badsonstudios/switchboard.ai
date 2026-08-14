@@ -24,7 +24,7 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { launchApp, LaunchedApp, registerTempDir } from './fixtures/app';
+import { launchApp, LaunchedApp, registerTempDir, skipPopoutOnLinux } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -37,12 +37,6 @@ const docTab = (w: Page, file: string) => tabs(w).filter({ hasText: file });
 const rail = (w: Page) => w.locator('nav');
 const railRows = (w: Page) => rail(w).locator('[draggable="true"]');
 const lamps = (w: Page) => w.getByTestId('urgency-strip').locator('[data-urgency-lamp]');
-
-/** Popouts need a real window manager; CI's Linux runner is headless-xvfb and
- *  the popped-out BrowserWindow never materialises there (see the E8 specs). */
-function skipPopoutOnLinux(): void {
-  test.skip(process.platform === 'linux', 'popout windows are unreliable under xvfb');
-}
 
 /**
  * A repo with `files` committed and then modified — one Changes row each.
