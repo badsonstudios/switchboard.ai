@@ -82,6 +82,14 @@ on the floor, and say so in your PR.
   empty file, or a **folder** — which cannot be attached to a prompt, though
   dropping one anywhere *else* in the window still opens it as a session, as it
   always did.
+- **Copy the code a session just gave you.** Code blocks in an answer now carry
+  a small header with the language on the left and a **Copy** button on the
+  right — one click puts the whole block on your clipboard, exactly as written.
+  Open a command box and its **IN** and **OUT** sections get one too: **OUT**
+  copies the entire output, not just the line the collapsed box was showing.
+  It's the same button the document viewer has always had on its code blocks,
+  it's reachable with the arrow keys along with everything else in a
+  conversation, and it works in a popped-out card.
 
 ### Fixed
 
@@ -246,14 +254,6 @@ on the floor, and say so in your PR.
   transcript can't yet be lined up. The Terminal tab greys the bar and says so
   instead of pretending.
 
-- **Copy the code a session just gave you.** Code blocks in an answer now carry
-  a small header with the language on the left and a **Copy** button on the
-  right — one click puts the whole block on your clipboard, exactly as written.
-  Open a command box and its **IN** and **OUT** sections get one too: **OUT**
-  copies the entire output, not just the line the collapsed box was showing.
-  It's the same button the document viewer has always had on its code blocks,
-  it's reachable with the arrow keys along with everything else in a
-  conversation, and it works in a popped-out card.
 
 ### Changed
 
