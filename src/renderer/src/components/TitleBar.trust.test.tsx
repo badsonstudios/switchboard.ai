@@ -68,6 +68,8 @@ async function bar(opts: {
       autoTrust={opts.autoTrust}
       trustReaches={opts.trustReaches}
       onToggleTrust={opts.onToggleTrust ?? noop}
+      autoLabels={true}
+      onToggleAutoLabels={noop}
       railHidden={false}
       onToggleRail={noop}
       railBinding="Ctrl+B"
