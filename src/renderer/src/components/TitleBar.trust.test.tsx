@@ -70,6 +70,10 @@ async function bar(opts: {
       onToggleTrust={opts.onToggleTrust ?? noop}
       autoLabels={true}
       onToggleAutoLabels={noop}
+      soundsOn={false}
+      onToggleSounds={noop}
+      speakOn={false}
+      onToggleSpeak={noop}
       railHidden={false}
       onToggleRail={noop}
       railBinding="Ctrl+B"
