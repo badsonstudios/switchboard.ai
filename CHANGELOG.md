@@ -53,6 +53,15 @@ on the floor, and say so in your PR.
 
 ## 0.5.0 — unreleased
 
+### Internal
+
+- The end-to-end tests can now run on a second monitor, so a local run stops
+  throwing app windows across the screen you are working on: set
+  `SWITCHBOARD_E2E_MONITOR=2` (monitor 1 is always your primary one). With it
+  unset — and on any machine with a single display, which is every CI runner —
+  nothing changes at all. It quietens the screen and not the keyboard: showing
+  a window still takes the focus wherever it is.
+
 ## 0.4.0 — 2026-08-13
 
 ### Added
@@ -249,12 +258,6 @@ on the floor, and say so in your PR.
 
 ### Internal
 
-- The end-to-end tests can now run on a second monitor, so a local run stops
-  throwing app windows across the screen you are working on: set
-  `SWITCHBOARD_E2E_MONITOR=2` (monitor 1 is always your primary one). With it
-  unset — and on any machine with a single display, which is every CI runner —
-  nothing changes at all. It quietens the screen and not the keyboard: showing
-  a window still takes the focus wherever it is.
 - The session controls (`/clear`, `/compact`, Stop, and sending a prompt) no
   longer go quiet if the internal call behind them fails outright. They used to
   ask the app to take the message and, if that request *errored* rather than
