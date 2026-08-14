@@ -627,6 +627,12 @@
     "placeholder": "Find",
     "count": "{index} of {total}",
     "countTruncated": "{index} of {shown} shown ({total} found)",
+    "groupCount": "{total} in {group}",
+    "groupSeparator": " · ",
+    "noticeInGroup": "{group}: {message}",
+    "group": {
+      "terminal": "Terminal (scrollback only)"
+    },
     "noResults": "No results",
     "searching": "Searching…",
     "next": "Next match",
@@ -648,10 +654,12 @@
     "cannotJumpTitle": "This match can't be scrolled to — the snippet is all of it we can show.",
     "hitMeta": "{kind, select, user {your prompt} assistant {reply} thinking {thinking} tool {tool} todos {plan} other {block}} · {time}",
     "hitMetaNoTime": "{kind, select, user {your prompt} assistant {reply} thinking {thinking} tool {tool} todos {plan} other {block}}",
+    "hitMetaTerminal": "terminal · line {line}",
     "unavailable": {
       "noProvider": "Find doesn't work on the {view} tab yet.",
       "noSession": "There is no session here to search.",
       "diffNotReady": "The diff hasn't loaded yet — open a changed file and try again.",
+      "noTerminal": "This session has no terminal, so there's no scrollback to search.",
       "failed": "Find isn't available on this tab right now."
     },
     "notice": {

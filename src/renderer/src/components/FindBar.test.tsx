@@ -194,19 +194,28 @@ describe('the find bar’s browser rhythm (P2-E17-02, §5.31)', () => {
 
 describe('a panel with no provider', () => {
   it('greys the bar and NAMES the tab, instead of silently searching the wrong surface', async () => {
-    // The Terminal is exactly this case until E17-03 ships its provider.
-    const host = await mount(bar('terminal', 'grid.viewTerminal'));
+    // History is the remaining case: a placeholder panel with no provider.
+    const host = await mount(bar('history', 'grid.viewHistory'));
     const input = q<HTMLInputElement>(host, 'find-input')!;
     expect(input.disabled).toBe(true);
     const why = q(host, 'find-unavailable')!;
-    expect(why.textContent).toBe(en.find.unavailable.noProvider.replace('{view}', en.grid.viewTerminal));
+    expect(why.textContent).toBe(en.find.unavailable.noProvider.replace('{view}', en.grid.viewHistory));
   });
 
   it('does not search', async () => {
-    await mount(bar('terminal', 'grid.viewTerminal'));
+    await mount(bar('history', 'grid.viewHistory'));
     await act(async () => setFindTerm('anything'));
     await settle();
     expect(search).not.toHaveBeenCalled();
+  });
+
+  it('a Terminal tab with no terminal (a Direct session) says THAT, not "no provider"', async () => {
+    // P2-E17-03: a stream session renders a notice instead of an xterm and
+    // never publishes a surface, so the reason has to name the missing
+    // terminal rather than report a confident 0 in the scrollback group.
+    const host = await mount(bar('terminal', 'grid.viewTerminal'));
+    expect(q<HTMLInputElement>(host, 'find-input')!.disabled).toBe(true);
+    expect(q(host, 'find-unavailable')!.textContent).toBe(en.find.unavailable.noTerminal);
   });
 });
 
@@ -400,5 +409,146 @@ describe('the a11y contract (§5.32, one surface later)', () => {
     // captive: a trap in a non-modal widget is a real 2.1.2 violation
     expect(host.querySelector('[aria-modal]')).toBeNull();
     expect(host.querySelector('[role="dialog"]')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P2-E17-03 — one Ctrl+F, results GROUPED BY VIEW (§5.31's first decision)
+// ---------------------------------------------------------------------------
+
+/** Publish a fake terminal surface holding `matches` copies of a line. */
+function publishTerminal(rows: number[], total = rows.length): ReturnType<typeof vi.fn> {
+  const reveal = vi.fn().mockReturnValue(true);
+  publishFindSurface(findSurfaceKey('card-1', 'terminal'), {
+    kind: 'terminal',
+    ready: () => true,
+    search: () => ({
+      matches: rows.map((row) => ({ row, col: 2, length: 6, line: `row ${row} NEEDLE`, offset: 6 })),
+      total,
+      truncated: total > rows.length,
+    }),
+    reveal,
+    clear: () => {},
+  } as unknown as FindSurface);
+  return reveal;
+}
+
+describe('grouped results (P2-E17-03)', () => {
+  it('searches EVERY registrant on the card and labels each group — including the zeros', async () => {
+    search.mockResolvedValue(searchResult([hit(4, 'a'), hit(5, 'b')]));
+    publishTerminal([]); // nothing in the scrollback
+    const host = await mount(bar());
+    await act(async () => setFindTerm('NEEDLE'));
+    await settle();
+
+    const groups = q(host, 'find-groups')!;
+    // "0 in Terminal (scrollback only)" is a DIFFERENT statement from silence,
+    // and only one of them is true — the terminal saw 5,000 lines, not the
+    // session
+    expect(groups.textContent).toContain('2 in Session');
+    expect(groups.textContent).toContain(`0 in ${en.find.group.terminal}`);
+    expect(en.find.group.terminal).toContain('scrollback only');
+  });
+
+  it('a term only in the TRANSCRIPT still shows its Session count from the Terminal tab', async () => {
+    // The item's third done-when. The Session group does not need a mounted
+    // feed to be searched — the engine reads the file in main — so switching
+    // to the Terminal tab must not zero it.
+    search.mockResolvedValue(searchResult([hit(4, 'a'), hit(5, 'b'), hit(6, 'c')]));
+    publishTerminal([]);
+    const host = await mount(bar('terminal', 'grid.viewTerminal'));
+    await act(async () => setFindTerm('ONLY_IN_TRANSCRIPT'));
+    await settle();
+
+    expect(q(host, 'find-unavailable')).toBeNull();
+    expect(q(host, 'find-groups')!.textContent).toContain('3 in Session');
+    expect(q(host, 'find-count')!.textContent).toBe('1 of 3');
+  });
+
+  it('the count is a position INSIDE one group, never a running total across two', async () => {
+    search.mockResolvedValue(searchResult([hit(4, 'a'), hit(5, 'b')]));
+    publishTerminal([10, 20]);
+    const host = await mount(bar());
+    await act(async () => setFindTerm('NEEDLE'));
+    await settle();
+
+    expect(q(host, 'find-count')!.textContent).toBe('1 of 2'); // in Session
+    await act(async () => {
+      q<HTMLElement>(host, 'find-next')!.click();
+    });
+    expect(q(host, 'find-count')!.textContent).toBe('2 of 2');
+    await act(async () => {
+      q<HTMLElement>(host, 'find-next')!.click();
+    });
+    // …into the terminal's group, which restarts at 1 of ITS own total —
+    // "3 of 4" would be one number over two depths
+    expect(q(host, 'find-count')!.textContent).toBe('1 of 2');
+  });
+
+  it('starts in the panel the user is LOOKING at', async () => {
+    search.mockResolvedValue(searchResult([hit(4, 'a')]));
+    const revealTerminal = publishTerminal([10, 20]);
+    await mount(bar('terminal', 'grid.viewTerminal'));
+    await act(async () => setFindTerm('NEEDLE'));
+    await settle();
+    // the session group sorts first, but the terminal is what is on screen
+    expect(revealTerminal).toHaveBeenCalledTimes(1);
+    expect(jumpTo).not.toHaveBeenCalled();
+  });
+
+  it('heads each run of rows in the results list with its group', async () => {
+    search.mockResolvedValue(searchResult([hit(4, 'a')]));
+    publishTerminal([10]);
+    const host = await mount(bar());
+    await act(async () => setFindTerm('NEEDLE'));
+    await settle();
+    await act(async () => {
+      q<HTMLElement>(host, 'find-results-toggle')!.click();
+    });
+    const heads = Array.from(host.querySelectorAll('[data-testid="find-group-header"]')).map(
+      (e) => e.textContent,
+    );
+    expect(heads).toEqual([en.grid.viewSession, en.find.group.terminal]);
+  });
+
+  it('a group that fails costs its own group and nothing else', async () => {
+    search.mockRejectedValue(new Error('main is gone'));
+    publishTerminal([10, 20]);
+    const host = await mount(bar());
+    await act(async () => setFindTerm('NEEDLE'));
+    await settle();
+    expect(q(host, 'find-groups')!.textContent).toContain(`2 in ${en.find.group.terminal}`);
+    expect(q(host, 'find-notice')!.textContent).toContain(en.find.notice.failed);
+  });
+
+  it('does NOT group when there is only one searchable surface', async () => {
+    // a Direct session: no terminal, so no second group and no line of noise
+    search.mockResolvedValue(searchResult([hit(4, 'a')]));
+    const host = await mount(bar());
+    await act(async () => setFindTerm('NEEDLE'));
+    await settle();
+    expect(q(host, 'find-groups')).toBeNull();
+    expect(host.querySelector('[data-testid="find-group-header"]')).toBeNull();
+    expect(q(host, 'find-count')!.textContent).toBe('1 of 1');
+  });
+
+  it('clearing on close reaches EVERY group, not just the focused one', async () => {
+    search.mockResolvedValue(searchResult([hit(4, 'a')]));
+    const clearTerminal = vi.fn();
+    publishFindSurface(findSurfaceKey('card-1', 'terminal'), {
+      kind: 'terminal',
+      ready: () => true,
+      search: () => ({ matches: [], total: 0, truncated: false }),
+      reveal: () => true,
+      clear: clearTerminal,
+    } as unknown as FindSurface);
+    const host = await mount(bar());
+    await act(async () => setFindTerm('NEEDLE'));
+    await settle();
+    await act(async () => {
+      q<HTMLElement>(host, 'find-close')!.click();
+    });
+    expect(clearFeed).toHaveBeenCalled();
+    expect(clearTerminal).toHaveBeenCalled();
   });
 });

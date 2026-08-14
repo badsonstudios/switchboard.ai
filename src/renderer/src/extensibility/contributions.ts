@@ -403,14 +403,16 @@ export interface FindProviderContribution {
   /** the panel whose focused instance this provider serves */
   panelId: PanelId;
   /**
-   * i18n key for the group label in the bar's count ("Session", "Changes").
+   * i18n key for the group label in the bar's count ("Session", "Terminal
+   * (scrollback only)").
    *
-   * OPTIONAL because nothing reads it yet: the grouped count ("14 in Session ·
-   * 3 in Terminal") is §5.31's first decision and P2-E17-03's work, since a
-   * group is only worth drawing once there are two. Requiring it now would
-   * make every registrant invent a string with no effect.
+   * REQUIRED since P2-E17-03, which is the item that started reading it: one
+   * Ctrl+F now searches every `bar` registrant on the focused card and reports
+   * them as separate groups (§5.31's first decision). A group with no name is
+   * a number the user cannot attribute — and the label is where the depth of a
+   * surface gets declared, which is why the Terminal's says "scrollback only".
    */
-  labelKey?: string;
+  labelKey: string;
   /** ascending; decides group order once the bar counts more than one view */
   order: number;
   mode: FindMode;

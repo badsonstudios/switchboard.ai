@@ -8,20 +8,30 @@
 // card the bar ever names is the focused one — so "never matches another card"
 // is a property of the plumbing rather than a filter to remember.
 //
-// TWO OF §5.31'S FOUR NAMED REGISTRANTS SHIP HERE, and the gap is deliberate,
-// not an oversight (see docs/extensibility.md's roster):
+// THREE OF §5.31'S FOUR NAMED REGISTRANTS SHIP HERE, and the gap is
+// deliberate, not an oversight (see docs/extensibility.md's roster):
 //
 //   • `panel-session` → the E17-01 transcript engine. The flagship.
 //   • `panel-changes` → DELEGATES to Monaco's own find. §5.31 names it as a
 //     thing not to reimplement, and half-reimplementing it would be worse than
 //     either whole: our chrome over its search means two sets of keybindings
 //     over one editor.
-//   • the §5.30 document viewer — its PR is not merged; the registrant is a
-//     three-line addition on top of this file (see the module footer).
-//   • the Terminal — P2-E17-03's item, which depends on this one.
+//   • `panel-terminal` → xterm's scrollback through `@xterm/addon-search`
+//     (P2-E17-03). SCROLLBACK ONLY, and its label says so.
+//   • the §5.30 document viewer — still absent, and for structural reasons
+//     rather than effort; the recipe and the two blockers are at the bottom of
+//     this file.
 //
-// Both absent registrants have a written registration recipe at the bottom of
-// this file rather than a promise in a plan.
+// GROUPS, NOT A WINNER (P2-E17-03, §5.31's first decision). One Ctrl+F covers
+// the whole session and the bar reports each `bar` registrant as its own group:
+// "14 in Session · 3 in Terminal (scrollback only)". Two providers see two
+// different depths — the transcript is the session, the terminal is 5,000
+// ring-buffered lines — so one number over both would be a small lie, and the
+// group LABEL is where each surface declares what it can see.
+//
+// The FOCUSED panel still decides whether find runs at all (its
+// `unavailableKey` is what greys the bar) and which group the first match is
+// taken from. What it no longer decides is which surfaces get searched.
 import type {
   FindContext,
   FindHit,
@@ -30,7 +40,8 @@ import type {
   FindResults,
 } from './contributions';
 import { manifestFor } from './contributions';
-import type { FeedFindSurface, MonacoFindSurface } from '../lib/find-surfaces';
+import type { FeedFindSurface, MonacoFindSurface, TerminalFindSurface } from '../lib/find-surfaces';
+import { snippetAround, type TerminalMatch } from '../lib/terminal-find';
 import type { RendererRegistry } from './registry-instance';
 import { safely } from './boundary';
 import type { TranscriptSearchResult } from '../../../shared/transcripts';
@@ -217,33 +228,129 @@ export const changesFindProvider: FindProviderContribution = {
   },
 };
 
-export const findProviders: FindProviderContribution[] = [sessionFindProvider, changesFindProvider];
+// ---------------------------------------------------------------------------
+// Terminal — xterm's scrollback (P2-E17-03)
+// ---------------------------------------------------------------------------
+
+function terminalSurface(ctx: FindContext): TerminalFindSurface | null {
+  return ctx.surface?.kind === 'terminal' ? (ctx.surface as TerminalFindSurface) : null;
+}
+
+export const terminalFindProvider: FindProviderContribution = {
+  manifest: manifest('find-terminal', 'Terminal find (scrollback)'),
+  panelId: 'terminal',
+  // NOT `grid.viewTerminal` ("Terminal"), which is what the tab is called.
+  // §5.31's done-when is that a **0 in this group never implies absence**: the
+  // terminal holds 5,000 ring-buffered lines and the transcript holds the
+  // session, so "0 in Terminal" next to "12 in Session" would read as "it
+  // isn't in the terminal" when the truth is "it isn't in the last 5,000
+  // lines". The label carries the depth.
+  labelKey: 'find.group.terminal',
+  order: 30,
+  mode: 'bar',
+  // A STREAM session has no PTY and renders a notice instead of an xterm
+  // (`panels.tsx`), so it never publishes a surface at all — there is nothing
+  // to search and the reason has to say so rather than reporting a confident 0.
+  unavailableKey: (ctx) => (terminalSurface(ctx)?.ready() ? null : 'find.unavailable.noTerminal'),
+  search(ctx: FindContext, query: FindQuery): Promise<FindResults> {
+    const surface = terminalSurface(ctx);
+    if (!surface) {
+      return Promise.resolve({
+        hits: [],
+        total: 0,
+        truncated: false,
+        notice: { key: 'find.notice.failed', tone: 'error' },
+      });
+    }
+    // Synchronous — the buffer is in this process. The promise is the seam's
+    // shape, not a round trip.
+    const out = surface.search({
+      term: query.term,
+      caseSensitive: query.caseSensitive,
+      wholeWord: query.wholeWord,
+    });
+    const hits: FindHit[] = out.matches.map((m) => {
+      const { snippet, matchStart } = snippetAround(m.line, m.offset, m.length);
+      return {
+        // (row, col) is unique per match within one buffer, and unlike the
+        // transcript's ids it is not positional — so it survives a re-search
+        // that finds one fewer match above it
+        id: `t${m.row}:${m.col}`,
+        snippet,
+        matchStart,
+        matchLength: m.length,
+        // every terminal hit IS on screen-able: xterm keeps the whole
+        // scrollback and `scrollToLine` reaches all of it. This is the one
+        // group with no §5.31 v1 boundary.
+        jumpable: true,
+        earlierThanLoaded: false,
+        metaKey: 'find.hitMetaTerminal',
+        metaParams: { line: m.row + 1 },
+        ref: m,
+      };
+    });
+    return Promise.resolve({
+      hits,
+      total: out.total,
+      truncated: out.truncated,
+      notice: out.truncated
+        ? { key: 'find.notice.truncated', params: { shown: hits.length }, tone: 'info' }
+        : undefined,
+    });
+  },
+  reveal(ctx: FindContext, hit: FindHit): boolean {
+    const m = hit.ref as TerminalMatch | undefined;
+    if (!m || typeof m.row !== 'number') return false;
+    return terminalSurface(ctx)?.reveal(m) ?? false;
+  },
+  clear(ctx: FindContext): void {
+    terminalSurface(ctx)?.clear();
+  },
+};
+
+export const findProviders: FindProviderContribution[] = [
+  sessionFindProvider,
+  changesFindProvider,
+  terminalFindProvider,
+];
 
 // ---------------------------------------------------------------------------
-// REGISTERING THE TWO THAT ARE NOT HERE YET
+// CTRL+F INSIDE A FOCUSED TERMINAL: STILL NOT CLAIMED, AND THAT IS THE ANSWER
+// (P2-E17-03, #415 — decided, not deferred).
 //
-// Both are additions to this file plus a `publishFindSurface` effect in the
+// E17-02's note here said adding `Mod+F` to `shared/terminal-accelerators.ts`
+// "belongs to E17-03". This is E17-03, and the answer is **no**: that file's
+// growth rule is written down, and Ctrl+F fails four of its five clauses.
+//
+//   Rule 2 names the control keys a terminal line editor owns and lists
+//     Ctrl+F among them, by name.
+//   Rule 1 fails on evidence, not on principle. Read off the shipped binary
+//     (claude 2.1.226, 2026-08-13) the same way #90 read it: its keybinding
+//     table contains `"ctrl+f":"scroll:fullPageDown"`, next to ctrl+b/d/u for
+//     the other three page moves. The CLI does want this key, and claiming it
+//     would silently break paging in every hosted session.
+//   Rule 3 asks that the command be otherwise unreachable from a terminal;
+//     it is not (see below).
+//   Rule 4 asks why the palette is not good enough; it is.
+//
+// "If any of the five is arguable, the answer is no." Claiming it would take a
+// working keystroke away from every hosted CLI for the rest of the product's
+// life, which is the exact tax P7 exists to refuse.
+//
+// SO WHAT REACHES THE TERMINAL GROUP INSTEAD, and it is not a consolation
+// prize: the bar searches EVERY registrant on the card, so Ctrl+F pressed
+// anywhere else on the card — the feed, the composer, the tab strip — counts
+// and steps the terminal's scrollback too. From inside the xterm itself,
+// Ctrl+Shift+P → "Find in session" is the route, which is the one chord the
+// allowlist exists to preserve. Documented in `docs/manual/16-find.md` so it
+// is a boundary the user is told about, not one they discover.
+//
+// ---------------------------------------------------------------------------
+// REGISTERING THE ONE THAT IS NOT HERE YET
+//
+// It is an addition to this file plus a `publishFindSurface` effect in the
 // panel's own component. Nothing in the bar, the point or `bootstrap.ts`
 // changes shape.
-//
-// **Terminal (P2-E17-03, #415).** `mode: 'bar'`, `panelId: 'terminal'`.
-// `TerminalPane` publishes `{ kind: 'terminal', … }` under
-// `findSurfaceKey(cardId, 'terminal')` wrapping `@xterm/addon-search` —
-// which means `TerminalPane` needs the `cardId` prop it does not take today
-// (`panels.tsx` has it on the PanelContext). Two things that item must NOT
-// inherit by accident:
-//   1. `unavailableKey` must return a reason for a STREAM session — there is
-//      no PTY, so there is no scrollback, and the panel already renders a
-//      notice instead of a terminal.
-//   2. The bar must label that group "scrollback only" (§5.31): xterm sees
-//      5,000 lines behind a byte cap and the transcript sees everything, so
-//      one number over two depths would be a small lie. `labelKey` is the
-//      hook — point it at a key that says so.
-// Note also that **Ctrl+F does not currently reach a focused xterm at all**:
-// `lib/commands.classifyTarget` gives the terminal every key it can see, and
-// only the chords claimed in the browser process (`shared/terminal-accelerators`)
-// survive that. Adding `Mod+F` to that allowlist belongs to E17-03, with the
-// find command's `dispatchAccelerator` path, and is deliberately not done here.
 //
 // **Document viewer (§5.30).** It IS on main now (#433 / P2-E16-02), and it
 // already has a working Ctrl+F of its own — correctly scoped to its own

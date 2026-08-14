@@ -141,11 +141,14 @@ export function buildCommands(deps: CommandDeps): Command[] {
       //
       // The TERMINAL is untouched by this: `dispatch` refuses every scope
       // inside an xterm, and that rule does not bend. So Ctrl+F pressed in a
-      // focused terminal still does not reach us — the chords that do
-      // (`Mod+Shift+P`, `Mod+Space`) are claimed in the browser process, and
-      // adding this one to `shared/terminal-accelerators` belongs with
-      // E17-03's Terminal provider, which is the item that gives a focused
-      // terminal something to find.
+      // focused terminal still does not reach us — and E17-03, which shipped
+      // the Terminal's find provider, DECIDED NOT to claim it in
+      // `shared/terminal-accelerators` either: that file's growth rule lists
+      // Ctrl+F among the keys a line editor owns, and the shipped claude binary
+      // binds it to `scroll:fullPageDown`. The reasoning is written out at the
+      // bottom of `extensibility/find-providers.ts`; the route from inside a
+      // terminal is Ctrl+Shift+P → "Find in session", and the terminal's
+      // scrollback is searched by Ctrl+F pressed anywhere else on the card.
       //
       // Card-scoped, so it is disabled with no focused card rather than
       // silently opening a bar over nothing.

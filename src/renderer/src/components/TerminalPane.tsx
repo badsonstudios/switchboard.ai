@@ -5,13 +5,22 @@
 import React, { useEffect, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon } from '@xterm/addon-search';
 import '@xterm/xterm/css/xterm.css';
 import { attachTerminalFeed } from '../lib/terminal-attach';
+import { findSurfaceKey, publishFindSurface, type TerminalFindSurface } from '../lib/find-surfaces';
+import { clearTerminalSearch, revealTerminalMatch, searchTerminal } from '../lib/terminal-find';
 
-export function TerminalPane(props: { sessionId: string; visible: boolean }): React.JSX.Element {
+export function TerminalPane(props: {
+  sessionId: string;
+  visible: boolean;
+  /** the card, so find can reach THIS terminal and no other (P2-E17-03) */
+  cardId?: string;
+}): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const searchRef = useRef<SearchAddon | null>(null);
   const visibleRef = useRef(props.visible);
   visibleRef.current = props.visible;
 
@@ -41,12 +50,21 @@ export function TerminalPane(props: { sessionId: string; visible: boolean }): Re
       // concrete stack: xterm can't resolve CSS custom properties
       fontFamily: "'IBM Plex Mono', Consolas, 'Cascadia Mono', monospace",
       fontSize: 13,
+      // P2-E17-03: `@xterm/addon-search`'s match highlighting goes through
+      // `registerDecoration`, which is PROPOSED API in xterm 6 — and without
+      // this flag `findNext` THROWS rather than degrading (probed 2026-08-13,
+      // see `lib/terminal-find.ts`). It gates API checks only; nothing about
+      // what the CLI prints changes.
+      allowProposedApi: true,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
+    const search = new SearchAddon();
+    term.loadAddon(search);
     term.open(hostRef.current!);
     termRef.current = term;
     fitRef.current = fit;
+    searchRef.current = search;
 
     term.onData((d) => window.switchboard.pty.input(props.sessionId, d));
 
@@ -66,8 +84,46 @@ export function TerminalPane(props: { sessionId: string; visible: boolean }): Re
       window.switchboard.pty.detach(props.sessionId);
       term.dispose();
       termRef.current = null;
+      searchRef.current = null;
     };
   }, [props.sessionId]);
+
+  // ── find (P2-E17-03, §5.31) ────────────────────────────────────────────────
+  //
+  // A SEPARATE effect from the terminal's lifecycle, keyed on the card: the
+  // registry key is (cardId, panelId) and the surface has to come and go with
+  // the pane, but re-creating the xterm because a card was renamed would throw
+  // the scrollback away. Nothing is published without a cardId — a terminal
+  // nobody can name is a terminal find must not reach.
+  //
+  // Note this publishes even while the tab is HIDDEN: the Terminal panel is
+  // `keepMounted`, precisely so the scrollback survives a tab switch, and
+  // §5.31's grouped count is only honest if the terminal group can be counted
+  // from the Session tab.
+  useEffect(() => {
+    const cardId = props.cardId;
+    if (!cardId) return;
+    const surface: TerminalFindSurface = {
+      kind: 'terminal',
+      ready: () => !!termRef.current && !!searchRef.current,
+      search: (query) => {
+        const term = termRef.current;
+        const addon = searchRef.current;
+        if (!term || !addon) return { matches: [], total: 0, truncated: false };
+        return searchTerminal(term, addon, query);
+      },
+      reveal: (match) => {
+        const term = termRef.current;
+        return term ? revealTerminalMatch(term, match) : false;
+      },
+      clear: () => {
+        const term = termRef.current;
+        const addon = searchRef.current;
+        if (term && addon) clearTerminalSearch(term, addon);
+      },
+    };
+    return publishFindSurface(findSurfaceKey(cardId, 'terminal'), surface);
+  }, [props.cardId]);
 
   // visibility drives attach/detach (hidden panes are ingest-only in main)
   useEffect(() => {
