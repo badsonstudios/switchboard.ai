@@ -14,24 +14,75 @@
 // and streamed text all reach the view.
 import { BLOCK_CAP, FeedBlock } from './blocks';
 
+/**
+ * The longest gap between two blocks that can still be read as "how long it
+ * thought for" (#395).
+ *
+ * A thinking block learns its duration from the NEXT block's timestamp, which
+ * is only a measurement while the two belong to the same turn. Across a SEAM
+ * they do not: history replayed off a transcript carries yesterday's timestamps
+ * and the first live block carries now, so a conversation that happened to end
+ * mid-thought renders "Thought for 50400s" the morning after — a number the
+ * user is being shown as fact. The same arithmetic sits behind the transcript
+ * watcher's own resume replay, which is why the bound lives here rather than in
+ * either source.
+ *
+ * Ten minutes is chosen to be far longer than any extended-thinking block the
+ * CLI produces and far shorter than the gaps a seam invents. Past it the block
+ * simply keeps no duration and renders as plain "Thinking" — no claim beats a
+ * wrong one.
+ */
+export const MAX_THINKING_GAP_MS = 10 * 60_000;
+
 export class FeedBuffer {
   private readonly items: FeedBlock[] = [];
   private seq = 0;
   /** tool_use id -> the block awaiting its result (bounded, see `remember`) */
   private readonly awaitingResult = new Map<string, FeedBlock>();
+  /** see `silently` */
+  private muted = false;
 
   constructor(
     private readonly emit: (b: FeedBlock) => void,
     private readonly cap = BLOCK_CAP
   ) {}
 
+  /**
+   * Fill the buffer with `fn`'s blocks WITHOUT telling anybody (#395).
+   *
+   * For the one caller that provably has no audience: replaying a resumed
+   * conversation happens inside `sessions:create`, before its own response has
+   * told the renderer which live id this session even is — so every push would
+   * cross the IPC boundary keyed to a session no panel is subscribed to, and be
+   * dropped on arrival. A long conversation makes thousands of those, on the
+   * boot path. The panel reads the backlog when it mounts (`transcripts:blocks`)
+   * and misses nothing.
+   *
+   * Suppresses UPDATES too, not just pushes: a replayed tool result attaching to
+   * a replayed call is the same wasted round trip.
+   */
+  silently<T>(fn: () => T): T {
+    this.muted = true;
+    try {
+      return fn();
+    } finally {
+      this.muted = false;
+    }
+  }
+
+  private fire(b: FeedBlock): void {
+    if (!this.muted) this.emit(b);
+  }
+
   /** Add a block, assign it a seq, and emit it. */
   push(b: Omit<FeedBlock, 'seq' | 'sidechain'>, sidechain: boolean): FeedBlock {
-    // a thinking block's duration becomes known when the NEXT block lands
+    // a thinking block's duration becomes known when the NEXT block lands —
+    // unless the two are separated by a seam rather than by thought
+    // (MAX_THINKING_GAP_MS)
     const prev = this.items[this.items.length - 1];
     if (prev?.kind === 'thinking' && !prev.durationMs && prev.ts && b.ts) {
       const ms = Date.parse(b.ts) - Date.parse(prev.ts);
-      if (Number.isFinite(ms) && ms > 0) {
+      if (Number.isFinite(ms) && ms > 0 && ms <= MAX_THINKING_GAP_MS) {
         prev.durationMs = ms;
         this.update(prev);
       }
@@ -39,13 +90,13 @@ export class FeedBuffer {
     const block: FeedBlock = { ...b, seq: ++this.seq, sidechain };
     this.items.push(block);
     if (this.items.length > this.cap) this.items.splice(0, this.items.length - this.cap);
-    this.emit(block);
+    this.fire(block);
     return block;
   }
 
   /** Re-emit a block that was mutated in place — same seq, new contents. */
   update(block: FeedBlock): void {
-    this.emit(block);
+    this.fire(block);
   }
 
   /**
@@ -71,7 +122,7 @@ export class FeedBuffer {
     for (const [id, held] of this.awaitingResult) {
       if (held === block) this.awaitingResult.set(id, merged);
     }
-    this.emit(merged);
+    this.fire(merged);
     return merged;
   }
 

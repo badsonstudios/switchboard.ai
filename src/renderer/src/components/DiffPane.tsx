@@ -15,6 +15,20 @@ import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import '../lib/monaco-languages';
 import { languageForPath } from '../lib/diff-language';
 import { defineDiffThemes, DIFF_THEME } from '../lib/monaco-theme';
+import { findSurfaceKey, publishFindSurface, type MonacoFindSurface } from '../lib/find-surfaces';
+import { openDocument } from '../lib/document-open';
+
+/**
+ * `folder` + git's forward-slash relative path, in the folder's own spelling.
+ *
+ * git reports `src/main/index.ts` on every platform; main resolves whatever it
+ * is handed, so the only thing that matters is that the two halves are joined
+ * with a separator the OS will accept — and both accept `/` on Windows.
+ */
+function joinPath(folder: string, relative: string): string {
+  const sep = folder.includes('\\') && !folder.includes('/') ? '\\' : '/';
+  return `${folder.replace(/[\\/]+$/, '')}${sep}${relative}`;
+}
 
 declare global {
   interface Window {
@@ -46,6 +60,19 @@ export function DiffPane(props: {
   /** Monaco has exactly two skins, so this takes the RESOLVED answer rather
    *  than a theme id it would have to guess a light/dark verdict from. */
   colorScheme: 'light' | 'dark';
+  /** the card this pane belongs to — how Ctrl+F reaches THIS editor and no
+   *  other (P2-E17-02). Absent on a card with no durable id: no registration,
+   *  and the bar greys with a reason. */
+  cardId?: string;
+  /**
+   * The card whose changes these are (P2-E16-03, §5.24).
+   *
+   * A Changes tab is a session's surface, so a file opened from one is opened
+   * FROM that session and the viewer says so — an accent tint and a `↳ session`
+   * chip. Optional because this pane is also rendered by tests and could one
+   * day be pointed at a folder with no session behind it.
+   */
+  sessionId?: string;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [status, setStatus] = useState<GitStatusDto | null>(null);
@@ -97,6 +124,46 @@ export function DiffPane(props: {
     // pane in a window is showing the same app theme anyway
     monaco.editor.setTheme(DIFF_THEME[props.colorScheme]);
   }, [props.colorScheme]);
+
+  // Session find, delegated (P2-E17-02, §5.31). Monaco HAS a find — a good one,
+  // with regex, whole-word, replace and match marks down the scrollbar — and
+  // §5.31 names it as a thing not to reimplement. So the Changes tab's Ctrl+F
+  // opens Monaco's widget and our bar stays out of the way entirely.
+  useEffect(() => {
+    if (!props.cardId) return;
+    // The editor is built on mount but no file is selected until the user
+    // picks one, and a find over a model-less editor opens a widget that can
+    // never match anything. `ready()` is what lets the provider grey the bar
+    // with a reason instead of handing off into nothing.
+    const modified = (): monaco.editor.ICodeEditor | null =>
+      editorRef.current?.getModifiedEditor() ?? null;
+    const surface: MonacoFindSurface = {
+      kind: 'monaco',
+      ready: (): boolean => !!modified()?.getModel(),
+      openFind: (term: string): boolean => {
+        const ed = modified();
+        if (!ed?.getModel()) return false;
+        // focus first, or the widget opens without a caret and Enter does
+        // nothing — the "it did open, it just doesn't work" failure
+        ed.focus();
+        ed.getAction('actions.find')?.run();
+        // Seed the sticky term. `setSearchString` is the find controller's own
+        // public method; reached through `getContribution`, whose return type
+        // is opaque, so this is a narrow structural cast rather than a lie
+        // about the whole contribution. Optional at every step: if a Monaco
+        // upgrade renames it the widget still opens, merely empty — a degrade,
+        // not a break (fail-open).
+        if (term) {
+          const find = ed.getContribution('editor.contrib.findController') as unknown as {
+            setSearchString?: (s: string) => void;
+          } | null;
+          find?.setSearchString?.(term);
+        }
+        return true;
+      },
+    };
+    return publishFindSurface(findSurfaceKey(props.cardId, 'diff'), surface);
+  }, [props.cardId]);
 
   useEffect(() => {
     if (!selected || !editorRef.current) return;
@@ -160,6 +227,43 @@ export function DiffPane(props: {
             <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)', fontSize: 10 }}>
               {f.path}
             </span>
+            {/* §5.30's "opened from wherever a path already appears", as its
+                OWN control rather than as the path's click target.
+
+                The plan line reads "a path click in the Changes tab's file
+                list", and the literal reading was written and then withdrawn:
+                the whole row already means "show me this file's diff", and
+                turning the file NAME — nearly all of the row — into "open the
+                whole file somewhere else" leaves the tab's primary gesture with
+                a status badge to aim at, and sends a user who wanted a diff to
+                a different panel. That is the calm check failing on a surface
+                that was fine. The viewer is a SECOND question about the same
+                row ("never mind the change, what does this file say now?"), so
+                it gets a second, labelled control. */}
+            <button
+              type="button"
+              className="diff-open-viewer"
+              title={t('diff.openInViewer', { file: f.path })}
+              aria-label={t('diff.openInViewer', { file: f.path })}
+              onClick={(e) => {
+                // the row's own handler would select it into the diff as well —
+                // harmless, but two things happening from one click reads as a
+                // bug even when both are wanted
+                e.stopPropagation();
+                openDocument(joinPath(props.folder, f.path), props.sessionId);
+              }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--muted)',
+                cursor: 'pointer',
+                fontSize: 10,
+                lineHeight: 1,
+                padding: '0 2px',
+              }}
+            >
+              {t('diff.openInViewerIcon')}
+            </button>
             <span
               style={{
                 fontSize: 9,

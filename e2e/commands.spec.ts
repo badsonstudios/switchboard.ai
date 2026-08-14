@@ -1,6 +1,16 @@
 // P2-E9-01: command registry + keybinding dispatcher. Proves BOTH directions of
 // the hard rule — the bindings work, and they never steal a keystroke that the
 // composer or the CLI (xterm) should get.
+//
+// TRANSPORT SCOPE (P2-E18-18, #404): the registry and the dispatcher are
+// transport-independent and most of this file is untagged for that reason. Two
+// tests read a live `.xterm` and are tagged `[pty]`: the one about the terminal
+// swallowing bindings (there is no surface to swallow them on Direct) and the
+// Ctrl+` toggle, which proves "the Terminal view" by looking for a terminal.
+// A Direct card's Terminal tab holds the P2-E18-08b notice instead — that
+// landing pane IS covered, by `stream.spec.ts` → "says there is no terminal
+// instead of showing an empty black pane"; what has no spec is the Ctrl+`
+// toggle reaching it. See `launchApp` in `fixtures/app.ts` for the tag.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
 import { launchApp, LaunchedApp, showTerminal, tempProjectFolder } from './fixtures/app';
@@ -86,7 +96,7 @@ test.describe('keyboard commands (E9-01)', () => {
   // claimed in the BROWSER process, above the renderer, so they do work from a
   // terminal. Nothing else is, which is what this test guards: Ctrl+1 and every
   // other accelerator still belong to the CLI once focus is in an xterm.
-  test('the terminal swallows every OTHER binding — the CLI owns its keys', async () => {
+  test('[pty] the terminal swallows every OTHER binding — the CLI owns its keys', async () => {
     const { w, first, second } = await twoSessions();
     await w.keyboard.press(`${MOD}+2`);
     await expect(activeTab(w)).toContainText(second);
@@ -199,7 +209,7 @@ test.describe('keyboard commands (E9-01)', () => {
     // src/main/app-menu.test.ts covers that side (no menu item claims it).
   });
 
-  test('Ctrl+` toggles the focused card between the Session and Terminal views', async () => {
+  test('[pty] Ctrl+` toggles the focused card between the Session and Terminal views', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;

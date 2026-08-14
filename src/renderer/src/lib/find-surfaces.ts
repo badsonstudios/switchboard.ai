@@ -1,0 +1,125 @@
+// The live-surface registry for §5.31's find providers (P2-E17-02).
+//
+// A `find-provider` contribution is a VALUE registered once at boot. The thing
+// it has to drive is a MOUNTED COMPONENT INSTANCE — this card's FeedView, that
+// card's Monaco diff editor — and there are N of those on screen at a time,
+// coming and going as tabs are switched and cards are popped out. The
+// contribution cannot hold a reference to any of them.
+//
+// So the mounted panel PUBLISHES a small imperative surface here, keyed by
+// (cardId, panelId), and the provider is handed the one belonging to the card
+// Ctrl+F was pressed on. That key is the reason a search can never reach into
+// another card: there is no way to ask for a surface without naming a card.
+//
+// Module-level rather than React context, following `lib/popout-windows.ts`:
+// the reader is a keydown handler and a bar rendered by a sibling subtree, not
+// a descendant of the panel that publishes.
+//
+// The concrete surface TYPES live here too, rather than beside the providers
+// that read them: `FeedView` and `DiffPane` publish, and a panel component
+// importing anything from the module that also exports `sessionFindProvider`
+// would put a consumer one auto-import away from reaching a contributor
+// directly — the one rule `docs/extensibility.md` opens with.
+import type { FindSurface } from '../extensibility/contributions';
+
+/**
+ * The registry key.
+ *
+ * `::` as the separator: a cardId is a uuid and a panelId is a kebab-case id,
+ * so neither component can contain a colon and no two distinct pairs can
+ * collapse onto one key. Exported because publishers, readers and tests all
+ * have to build the same one.
+ */
+export function findSurfaceKey(cardId: string, panelId: string): string {
+  return `${cardId}::${panelId}`;
+}
+
+/** What `FeedView` publishes — the Session view's half of jump-to-hit. */
+export interface FeedFindSurface extends FindSurface {
+  kind: 'feed';
+  /**
+   * Reveal a live Feed `seq`: force it past the verbosity filter, expand
+   * whatever was folded over it, mark it, and scroll it into view.
+   *
+   * Returns whether the block is IN the view buffer at all. False is the
+   * §5.31 v1 boundary, and the caller must not pretend it jumped.
+   */
+  jumpTo(seq: number): boolean;
+  /** drop the reveal set and the highlight — the view as find found it */
+  clear(): void;
+}
+
+/** What `DiffPane` publishes — a way into Monaco's own find, nothing more. */
+export interface MonacoFindSurface extends FindSurface {
+  kind: 'monaco';
+  /**
+   * Is there an editor with a MODEL on it? An editor is created when the pane
+   * mounts, but no file is selected until the user picks one, and a find over
+   * a model-less editor opens a widget that can never match anything.
+   */
+  ready(): boolean;
+  /** focus the editor and open ITS find widget, seeded with `term`.
+   *  False when there is nothing to search. */
+  openFind(term: string): boolean;
+}
+
+const surfaces = new Map<string, FindSurface>();
+const listeners = new Set<() => void>();
+
+function announce(): void {
+  // copy first: a listener that unsubscribes itself during the walk would
+  // otherwise mutate the set we are iterating
+  for (const fn of [...listeners]) {
+    try {
+      fn();
+    } catch {
+      /* fail-open: a bad subscriber costs its own update, not everyone's */
+    }
+  }
+}
+
+/**
+ * Publish a mounted panel's surface. Returns the unpublish, for use as an
+ * effect cleanup.
+ *
+ * Last publisher wins, deliberately: React can mount the next instance before
+ * unmounting the previous one (StrictMode, and dockview re-parenting a popout),
+ * and the newer instance is the one on screen. The cleanup only deletes the
+ * entry if it is still the one it published, so a late cleanup from the OLD
+ * instance cannot unpublish the NEW one.
+ */
+export function publishFindSurface(key: string, surface: FindSurface): () => void {
+  surfaces.set(key, surface);
+  announce();
+  return () => {
+    if (surfaces.get(key) !== surface) return;
+    surfaces.delete(key);
+    announce();
+  };
+}
+
+/** The surface for a card's panel, or null when it has not mounted/published. */
+export function findSurfaceFor(key: string): FindSurface | null {
+  return surfaces.get(key) ?? null;
+}
+
+/** Fires whenever any surface is published or withdrawn (for useSyncExternalStore). */
+export function subscribeFindSurfaces(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => {
+    listeners.delete(fn);
+  };
+}
+
+/**
+ * Test hook: forget everything. Never called in production.
+ *
+ * It drops SUBSCRIBERS as well as surfaces, so call it before mounting
+ * anything in a case — calling it while a component is mounted would leave a
+ * live `useSyncExternalStore` deaf to every later change, which reads as a
+ * component that has stopped updating for no reason.
+ */
+export function resetFindSurfaces(): void {
+  surfaces.clear();
+  listeners.clear();
+}

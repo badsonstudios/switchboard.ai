@@ -429,9 +429,13 @@ export class HookListener {
     // no teardown after this, so anything not cleaned here lingers for the
     // app's lifetime, one file per session ever started.
     //
-    // Only OUR file. `stateDir/<sessionId>/` and the `settings.json` in it
-    // (`providers/claude.ts`) are still nobody's job to remove and still
-    // accumulate — this closes one leak, not the directory's.
+    // Only OUR file. The directory around it and the `settings.json` in it
+    // (`providers/claude.ts`) are somebody else's job as of #290 —
+    // `SessionManager` deletes the whole directory when the live session ends,
+    // which is a strictly later moment than this on every path. This delete is
+    // still the one that matters for the token: it happens the instant the
+    // token dies in memory, and it does not depend on the manager knowing this
+    // session exists (`hooks/hook-check.ts` drives this class on its own).
     this.removeTokenFile(sessionId);
     // a session closed mid-hold must not leave the CLI hanging (fail-open)
     for (const [id, p] of this.pending) if (p.sessionId === sessionId) this.release(id);
@@ -492,11 +496,13 @@ export class HookListener {
    * holds `settings.json` (`providers/claude.ts`) and stateDir's root holds the
    * generated forwarder; neither is touched, and directories are left alone.
    *
-   * Sync, like everything else `start()` does, and one unlink attempt per
-   * session directory ever created. Nothing removes those directories, so that
-   * set grows for the life of the install — fine at hundreds, worth revisiting
-   * if the directory leak is ever closed by pruning rather than by never
-   * creating them.
+   * Still worth running after #290 gave the DIRECTORIES an owner
+   * (`sessions/session-state.ts`, swept from the bootstrap a beat before this).
+   * That sweep has a 24 h age floor, so a directory a crash left behind an hour
+   * ago is deliberately kept — and this is what makes sure the dead token
+   * inside it is not. The two are ordered, not redundant: by the time this
+   * runs, everything old enough is already gone, so the walk is over a set that
+   * no longer grows for the life of the install.
    */
   private sweepOrphanTokens(): void {
     let entries: fs.Dirent[];

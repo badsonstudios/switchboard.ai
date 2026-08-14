@@ -3,6 +3,245 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ▶▶ START HERE — 🎛 RUN 18 ACTIVE (started 2026-08-13, post-/pm sitting)
+>
+> **Single-writer rule: only the orchestrator (this session) writes this
+> file.** Workers report via `.claude/work_files/orchestrator/<issue#>.md`;
+> those handoffs are the inputs, this block is the output. If this session
+> dies, a fresh /orchestrate session resumes from THIS block + the handoffs.
+>
+> **BOARD:** **#480 ✅ DONE → PR #486 READY (Dan's queue, first in)** —
+> cut commit c310a09, gates 4144 unit / 259+3 e2e green, dry-run clean,
+> audit walked 108 commits (one gap closed: #432 Internal bullet, safe
+> to drop), 4 read-through wording fixes; Dan's post-merge step: push
+> tag v0.4.0 at the merge commit. Discovery filed → **#487** (lock-
+> version drift unguarded in release-notes.test.js). · **#397/PR #437**
+> → sb-wt-2, worker hit the run-3 dead-waiter trap (turn ended
+> "monitoring e2e"; sweep found lock held owner=437, zero electrons,
+> gate work uncommitted) — RESUMED with finish-in-turn instructions
+> 2026-08-13 evening. · **#458** → sb-wt-3 · `feature/458-direct-
+> find-jump`, in flight. · **#475** → sb-wt-1 ·
+> `feature/475-composer-paste-images`, dispatched (one budgeted
+> real-CLI verification turn pre-authorized per the issue; attachment
+> affordance must be #476-reusable).
+>
+> **#397/PR #437 ✅ DONE (2nd attempt, resumed worker) — READY, Dan's
+> queue #2.** Gate landed (spawnTransport resolved once, pre-write only
+> on pty), 3214 unit / 213+3 e2e green locally @ 167f224; the PR's
+> "docs already read correctly" claim was FALSE — both manual pages
+> rewritten (Terminal trust recipe now reachable any time). Follow-up
+> filed → **#488** (zero-token e2e pins: App trustReaches wiring + the
+> gate itself in stream.spec lanes).
+>
+> **GITHUB ACTIONS STALL RESOLVED ITSELF** — dead window was 00:34→
+> 00:56 UTC only (transient outage/queue, NOT billing; Dan's billing
+> check unnecessary). Everything since runs normally; PR #489 4/4
+> GREEN. **PR #437's checklessness was NEVER the stall: the PR is
+> `mergeable: CONFLICTING`** (branch based on pre-train 5e917b5; the
+> trains' manual renumbering + CHANGELOG growth conflict) **and GitHub
+> silently creates no pull_request runs for conflicted PRs.** Three
+> kicks (close/reopen ×2, empty commits ba6bfc1 + f26aa95) were
+> chasing the wrong cause. **NEXT FREED WORKTREE → resume the #437
+> worker to merge origin/main, resolve (its own diff, mostly docs/
+> CHANGELOG/ipc.ts), re-gate, push — then CI triggers naturally.**
+> #437 is NOT reviewable by Dan until then.
+>
+> **Run-book lesson (2026-08-14, #458):** the ground-truth sweep read
+> handoff-written + PR-open + tree-clean as "worker finished,
+> notification lost" — but the worker was ALIVE, lingering on CI
+> watch; its worktree got repointed under it (verified lossless, refs
+> checked). The sweep proves work is SAFE, not that the worker ENDED
+> — only the task notification proves that. Don't reuse a worktree
+> until the notification arrives OR the sweep additionally shows the
+> agent unresponsive to a SendMessage ping.
+>
+> **#479 dispatched → sb-wt-2 · `feature/479-e2e-secondary-monitor`**
+> (worker told: CI stalled, local gate is the gate; second monitor
+> present for the with-var verification).
+>
+> **#475 ✅ DONE → PR #489 READY, Dan's queue #3.** Contract read from
+> the extension bundle + verified with the ONE budgeted real-CLI turn
+> (64×64 PNG → model answered "Blue"): inline base64 image blocks,
+> jpeg/png/gif/webp, images-first-text-last; declared divergence 5 MB/
+> 8-per-turn IPC cap (reference has none — reasoning in src/shared/
+> prompt-images.ts); Direct-only, PTY submit refused honestly; canvas
+> preview keeps CSP intact; #406 height clamp coexists. Gates local:
+> 4201 unit / 262+3 e2e ×2. Discoveries filed → **#490** (envelope
+> omits uuid/origin vs extension) · **#491** (feed shows no marker an
+> image rode with a prompt). Tooling fix landed in the PR: reference-
+> implementations.md §1.1 warns grep -o -E windows >~800 chars return
+> zero silently on the webview line. **#476 dispatched → sb-wt-1 ·
+> `feature/476-composer-drag-drop`** (merges #489's branch first —
+> "builds on #489" — reuses Attachment carrier + recorded document-
+> block contract; one real-CLI turn authorized ONLY if 475's record
+> leaves doubt).
+>
+> **#479 ✅ DONE → PR #493 (INTERNAL — orchestrator merges on green CI
+> after the cut lands).** `SWITCHBOARD_E2E_MONITOR=<n>`, monitor 1 ≡
+> primary always; geometry audit: nothing exempted (Windows clamps
+> refused positions at ~21,845 — measured, corrected a wrong comment
+> in reconnect.spec); gate run caught its own double-translate defect
+> (persisted geometry) — fixed + unit-pinned; 4169 unit / 259+3 e2e
+> with =2, geometry specs green unset AND on negative-x.
+>
+> **#458 ✅ DONE → PR #492 READY, Dan's queue #4** (notification was
+> LOST — found via ground-truth sweep; run-13 pattern confirmed again).
+> Root cause was the JOIN KEY, not a missing pipeline: stream blocks
+> stamped arrival-time timestamps → alignToLoaded's kind+ts+tool key
+> never matched; fix = srcId join (`tool:<tool_use id>` / `msg:<message
+> id>`), verified against the 7.7 MB fixture AND the extension's own
+> transcript→stream converters; alignByShape untouched, runs first —
+> PTY path unchanged by construction; 4 refusal guards each mutation-
+> pinned (reviewer caught 3 vacuous refusal tests — lesson: a refusal
+> test proves nothing unless you know WHICH refusal fired). 4160 unit /
+> 261+3 e2e ×2. CHANGELOG: edited the Added bullet, no new entry
+> (find ships first in 0.4.0 — integrators look for the EDIT).
+> Discoveries filed: **#494** (document-peek flake ×2 workers) ·
+> **#495** (resumed Direct = list-only; #484's fork measurement makes
+> it reachable) · **#496** (per-hit srcId resolution) · **#497**
+> (launchDirectToolTurn e2e helper). **Wave 3 dispatched: #462 →
+> sb-wt-3 (husk-blind addSessionCard + mirror rule) · #412 → sb-wt-2
+> (viewer live re-render).** In flight: #476 #462 #412.
+>
+> **#476 ✅ DONE → PR #498 READY, Dan's queue #5** (contains #489's
+> commits — merge #489 FIRST, #498's diff shrinks). Drag-drop any file
+> → chip → typed blocks: text/md/source → `document` source.type:text
+> (contents in the clear), PDF → base64, images unchanged — asymmetry
+> IS the extension's contract (Wbe/Hbe/Zit); one budgeted CLI turn
+> verified the text path ("quibblesnatch" echo). 4 declared
+> divergences (5 MB IPC cap · UTF-8 decode · directories refused ·
+> empty refused). ⚠ TRAIN RISK: renamed shared/prompt-images.ts →
+> prompt-attachments.ts (importers updated). App.tsx E3-04
+> drop-folder-makes-session listener coexists via stopPropagation.
+> Gates 4266 unit / 266+3 e2e. Discoveries: #491 widened to
+> "attachment" (commented) · **#499 filed** (50k text truncation +
+> bidi titles). **#465→#477 serial track dispatched → sb-wt-1**
+> (#465 = feed stripOurNamespace, INTERNAL; #477 = copy button,
+> user-facing, builds on #465). In flight: #465/#477 #462 #412.
+>
+> **MERGE POLICY THIS RUN: nothing merges before the #480 cut PR lands**
+> (Dan merges it, then pushes tag v0.4.0 — the tag is his; the cut ships
+> his #395 blank-resume fix). Feature CHANGELOG entries written pre-cut
+> sit in the open unreleased section and relocate to 0.5.0 at rebase.
+> All three wave-1 items are user-facing → ALL queue for Dan; no
+> orchestrator merges expected in wave 1.
+>
+> **WAVE 2 QUEUE (dispatch as slots free):** #475→#476 composer serial
+> track (one worktree) · #465→#477 serial (forgery guard then copy
+> button) · #479 e2e secondary monitor · #407 Shape B (buildable, big) ·
+> #484 resume-link destruction (AFTER the cut lands) · smalls #447 #445
+> #462 #470 #472 #412 #415 #481 #485. Held: #420 #449 behind #407
+> shipping · #337 behind #269 · #442 serial-after #447 · #466 after #465
+> · #483 after #482 · #255 L-unsplit.
+>
+> # (pm-sitting record follows)
+> # 📋 /PM SITTING 2026-08-13 (post-run-17) DONE
+>
+> **Four agenda items, all closed:**
+> **(1) #397 DECIDED: gate the trust pre-write on the resolved spawn
+> transport.** Dan-authorized real-CLI probe ran at the sitting (untrusted
+> `C:\tmp` folder, stream-json mode, CLI 2.1.226): session runs, **project
+> hooks fire, settings load**, and the CLI writes NO projects entry — the
+> app's pre-write is the only trust grantor on Direct, so gating loses
+> nothing. Decision + probe record posted on PR #437. Next: small follow-up
+> commit on `feature/397-ask-trust-direct` (+ test pinning Direct+autoTrust
+> writes nothing), un-draft → Dan's queue.
+> **(2) #407 design gate: Dan PICKED SHAPE B** (collapsed drawer w/ badge
+> + §5.14 status-bar attention-queue count; full spec in the #407 issue
+> comment 2026-08-13; plan updated). **#420 #449 #268 #483-render now
+> unblocked behind it — #407 is buildable.**
+>
+> **POST-SITTING ADDENDUM (same day): owner-reported reset-on-relaunch
+> investigated → issue #484 filed** (resume link DESTROYED not unused:
+> quit-after-resume orphans the conversation — 2 of Dan's 7 cards are
+> orphaned on disk right now — and a declined/transient-fail canResume
+> wipes nativeSessionId at ipc.ts:1064-1066; direction = lineage fallback,
+> degrade-don't-delete, repair sweep). Dan's install is v0.3.0, so the
+> already-fixed #395 blank-on-resume is ALSO still live for him → the
+> #480 cut is his fix; run it FIRST. **#485 filed** (P2-E10-12 composer
+> draft survives restart, S; plan updated). Dan asked about session
+> history/archive browsing (VS Code parity) → designed at §5.25 "Session
+> archive" (browsable/searchable, one-click resurrect via --resume),
+> slotted PHASE 3 per 03-later-phases.md:55; pull-forward offered, no
+> decision yet.
+> **(3) Release cut AUTHORIZED → issue #480** (0.4.0; folds #394
+> package-lock refresh; ~219-line completeness audit vs v0.3.0..HEAD;
+> Dan pushes the v0.4.0 tag after merging the cut PR). **Run #480 FIRST
+> next batch, before new merges grow the section.**
+> **(4) Tail triaged; #423 SPLIT → #481 (05a sounds+TTS, drop-in) /
+> #482 (05b quiet-hours conditions + #424's webhook-applicability
+> decision) / #483 (05c digest, depends 05b), plan file updated.**
+> Priority queue: #480 → finish #437 → #458 (find jump-to-hit on Direct)
+> → composer serial track #475→#476 → #465→#477 serial (copy button rides
+> the forgery guard's plumbing) → #479 (e2e secondary monitor). Then small
+> fry #447 #445 #462(now unblocked, #461 merged) #470 #472 #412 #415 #481.
+> Collision map + full triage table in the sitting report (2026-08-13).
+> Held: #420 #449 behind #407 pick · #337 behind design-hold #269 · #442
+> serial-after #447 (same FeedView) · #466 soft-collides #465 · #255 is L,
+> campaign-vs-tranches split still undecided (only true L in the tail).
+> **NEXT SESSION: Dan picks the #407 shape, then /orchestrate (queue
+> above); #480 solo first.**
+>
+> # (run-17 close record follows)
+> # 🎛 RUN 17 FULLY CLOSED 2026-08-13: 30 ITEMS, TWO
+> # TRAINS, EVERYTHING MERGED
+>
+> **TRAIN #478 (2nd, Dan-authorized "go ahead and merge the PRs") LANDED
+> → main, all five members MERGED (#457 find bar · #468 toast buttons ·
+> #474 phone push/webhook · #460 viewer peek/pin/popout · #461 openDiff
+> husk fix), issues #414 #422 #424 #411 #434 CLOSED, branches deleted.**
+> Husk-pair semantic integration resolved as TWO deliberate policies:
+> documentHomeGroup (viewers never join session groups, husk excluded) vs
+> gridRefGroup (diffs are a session's surface, husk revived) — documented
+> in SessionGrid. Train gate: 4144 unit / 258+3 e2e (one isolated-6/6-
+> green popout flake in the full run). **Post-landing cleanup: six
+> zero-byte shell-shrapnel files (and/contract/dissimilar/is/notice/
+> **Status:) rode the train in via orchestrator git add -A during
+> conflict resolution — removed in 52c6f56; lesson: check git status
+> for untracked junk before add -A on the train.** **Main @ 52c6f56,
+> out/ REBUILT + verified.** New tickets this close: **#475** paste
+> images into composer · **#476** drag-drop files · **#477** copy button
+> on session-output code (all owner requests; 12-line resize was already
+> shipped as #406) · **#479** e2e-on-secondary-monitor (owner request;
+> visual quiet only, focus theft accepted). **ONLY PR left: #437, held
+> on the #397 trust-write decision.** **NEXT SESSION: /pm sitting —
+> #397 call · #407 Events design gate (3 notice-slot tenants move
+> together) · release cut (0.4.0-unreleased is enormous) · tail triage
+> (~20 small issues) · then /orchestrate.**
+>
+> # (run-17 mid-close record follows)
+> # RUN 17 CLOSED 2026-08-13: 25 ITEMS SHIPPED,
+> # TRAIN #456 LANDED, BOARD EMPTY
+>
+> **Final state: main @ 566dea2, out/ REBUILT + stamp-verified — `npm
+> start` is current. 13 internal items merged by the orchestrator** (#409
+> #416 #417 #418 #419 #413 #402 #435 #436 #441 #290 #432 #459 — the whole
+> #404 audit tail, the E17-01 search engine, sanitizer unification,
+> stateDir ownership, transcript-root unification, lint gates, test
+> hygiene) **+ 7 user-facing items merged via Dan-authorized train #456**
+> (#408 labels · #421 rules engine · #395 resume replay · #426 lamp cap ·
+> #406 composer · #425 service health · #410 document viewer).
+>
+> **DAN'S QUEUE (all CI 4/4 green, hand-test lists in each PR body):**
+> **PR #457** (#414 Ctrl+F find bar — note its one-line divergence:
+> find.open is the second 'typing-ok' command) · **PR #460** (#411 viewer
+> peek/pin/popout) · **PR #461** (#434 diff-from-popout fix + drive-by
+> #450 de-flake) · **PR #468** (#422 toast Allow/Deny buttons, real on
+> win32) · **PR #474** (#424 phone push + webhook; [user] step: create an
+> ntfy topic, palette → push setup, paste, test) · **+ the #397
+> trust-write DECISION** (PR #437 green, held: gate the ~/.claude.json
+> trust pre-write on transport? probe/soften-manual/park).
+>
+> **Blocked/waiting:** the small-issue tail (#412 #423 #440 #442 #445
+> #447 #458 #462 #463 #465 #466 #470 #471 #472 + older #216 #255 #268
+> #295 #323 #333 #337 #394 #440) mostly collision-parked behind Dan's
+> queue merging; Dan-gated: #397 call · #407 Events design sitting ·
+> #256 umbrella close · **a release cut (recommended: 0.4.0 is enormous)**.
+> Worktrees: sb-wt-1/3 idle+clean, sb-wt-2 holds #474's branch (PR open).
+> ~20 issues filed mid-run from worker discoveries. **NEXT SESSION: Dan
+> reviews/merges the 5-PR queue (train #2 on request), answers #397,
+> then /pm for the tail + release cut, then /orchestrate.**
+>
 > ## 🎛 ORCHESTRATION BLOCK — RUN 17 (started 2026-08-11, post-/pm refill)
 >
 > **Single-writer rule: only the orchestrator (this session) writes this
@@ -10,12 +249,467 @@
 > those handoffs are the inputs, this block is the output. If this session
 > dies, a fresh /orchestrate session resumes from THIS block + the handoffs.
 >
-> **Active workers (wave 1):**
-> - **#408** (E7-06 auto task labels, UF) → `sb-wt-1` → `feature/408-auto-task-labels`
-> - **#409** (E16-01 markdown renderer + fs.read, internal) → `sb-wt-2` → `feature/409-markdown-fs-read`
-> - **#426** (pending-lamp cap, UF) → `sb-wt-3` → `feature/426-pending-lamp-cap`
+> **RUN PAUSED by Dan 2026-08-11 evening ("pause for now"), RESUMED
+> 2026-08-12 ("Continue"). The pause cancelled the in-flight workers.
+> Resume sweep: #413 had FINISHED (PR #451 + handoff landed; notification
+> lost; CI never triggered — kicked via close/reopen) · #421 died mid-e2e
+> gate with work COMMITTED (5665f1e) and the lock held — lock verified
+> stale (>12h, zero electron across a sampling window) and CLEARED; a
+> fresh verify-then-keep worker owns the finish (run-13 pattern; the old
+> agent is user-stopped and unresumable). Merges on resume: #444 MERGED
+> (#419 closed) · #446 bumped, re-greening · #451 queues behind it.**
 >
-> **Merge queue:** (empty) · **Dan's queue:** (empty)
+> **🚂🎉 TRAIN #456 LANDED 2026-08-13 → merge commit bc305b6. ALL SEVEN
+> member PRs MERGED (#427 #429 #431 #433 #443 #448 #452), all seven issues
+> CLOSED (#395 #406 #408 #410 #421 #425 #426), feature + train branches
+> deleted, main checkout pulled + `out/` REBUILT at bc305b6 — `npm start`
+> is current. Train CI 4/4 green, one lane.** Dan's queue is now EMPTY
+> except: the **#397 trust-write decision** (PR #437, green, draft) and
+> **PR #457** (#414 find bar — conflicts with the train, its worker is
+> resolving + may add the viewer find-registrant if cheap).
+>
+> **POST-TRAIN WAVE ALL DONE + 4/4 GREEN 2026-08-13 → DAN'S QUEUE: PR
+> #457** (#414 find bar — train conflicts resolved as unions, manual page
+> renumbered again to 16, viewer registrant honestly NOT wired — two
+> structural blockers documented, and the viewer already has its own
+> correctly-scoped Ctrl+F so no user-visible gap; roster stays 2-of-4)
+> · **PR #460** (#411 viewer peek/pin/popout — peek is ONE pointer so two
+> unpinned viewers are unrepresentable; 3 self-caught blockers at the
+> dockview seam incl. the 1.33px "visible" husk — e2e now measures width;
+> CI caught a width-starvation regression local screens couldn't)
+> · **PR #461** (#434 openDiff — the one-liner grew honestly: the hidden
+> dock-back husk reports grid location and swallows panels at 0px; fix
+> prefers a visible group and closes the same latent hole in openDocument;
+> drive-by de-flake of diff.spec theme repaint, likely resolves #450 when
+> merged). **NEXT-TRAIN NOTE: #460 + #461 both reshape SessionGrid
+> group-picking around the husk — board adjacent, expect a semantic
+> integration.** Out-of-scope filed: **#462** (addSessionCard husk
+> blindness + document-area mirror rule — found by BOTH workers) ·
+> **#463** (ContributionBoundary has no reset). **Next wave dispatched:
+> #422 (actionable toasts) → sb-wt-1 · #290 (stateDir cleanup) → sb-wt-2 ·
+> #436 (sanitizer decision) → sb-wt-3.**
+>
+> **#436 ✅ DONE (2 rounds) → PR #464 (internal), CI re-running on 50ffa22
+> — merge on green.** Round 1: ONE frozen SANITIZE_CONFIG, style stripped
+> everywhere (corpus: 7,553 transcripts / 93 MB — 0 bare style attrs);
+> surface×payload pin table, 14-red mutation. Round 2 (its reviewer
+> subagent SURVIVED turn-end and delivered late with real findings):
+> update-dialog test row now mounts the REAL dialog (mutation 0→5 red);
+> CHANGELOG overclaim corrected (legacy color/size/face/hidden/bgcolor all
+> still pass — filed **#466**, incl. pre-hidden-with-Copy-button); config
+> Object.frozen + frozen-ness test; casts dropped; manual bullet added.
+> Worker's own confession, kept for the record: "my inline re-run checked
+> whether existing comments were accurate and never probed my own new
+> user-facing claim." Also filed from its rounds: **#465** (feed
+> data-feed-expander has the #410 forgery shape, no stripOurNamespace).
+> Handoff: 436.md. **#464/#436 MERGED 2026-08-13 → main @ d5915f1.**
+> #450 got the environment verdict (local-Windows-box-specific — CI never
+> shows it; #461 carries a drive-by de-flake to verify against local
+> repro). **#432** (one transcript-root declaration) dispatched → sb-wt-3
+> (7th occupancy).
+>
+> **#290 ✅ DONE 2026-08-13 → PR #467 (internal), bumped onto d5915f1,
+> re-greening — merge on green.** All issue premises verified TRUE against
+> current main. Lifecycle call: delete at session DEATH not card-forget —
+> resume mints a fresh UUID + settings.json per spawn, nothing carries
+> across; deletes at onExit, remove(), and spawn-failure catch; bootstrap
+> sweep per #354 conventions (UUID shape + dirent type + keep set + 24h
+> floor + 2s budget). 15/15 mutations red. Review: 5 should-fixes applied;
+> one reviewer finding REJECTED on measurement (JS $ doesn't match before
+> a trailing newline). Out-of-scope filed: **#470** (token sweep lacks a
+> name filter + failed spawn leaks the in-memory token). Handoff: 290.md.
+> **#467/#290 MERGED 2026-08-13 → main @ 5e2c424.**
+>
+> **#422 ✅ DONE → PR #468 (UF), CI 4/4 GREEN → READY, DAN'S QUEUE.**
+> Windows toast Allow/Deny buttons are REAL (Electron 43 annotates actions
+> as darwin,win32 since 40.x — verified empirically; e2e asserts buttons:2
+> + shown:true); Linux gets click-to-reveal fallback (sessions:
+> revealCard). One decision path made literal: decidePermission hoisted
+> onto SessionIpcHandle — the channel and the toast call the SAME
+> function. Toast names what Allow allows; body click reveals, never
+> decides. 7/7 mutations. Self-review caught close-unhook stranding a live
+> Allow in the Action Center. Out-of-scope filed: **#471** (main-process
+> strings have no i18n + setAppUserModelId never set). Handoff: 422.md.
+> **Dispatched: #459 (check-nul untracked, tiny) → sb-wt-1 · #424 (E14-06
+> push/webhook) → sb-wt-2.**
+>
+> **LATE-DAY SWEEP 2026-08-13: #432 ✅ DONE+MERGED** (PR #469 → main;
+> unified not pinned — 8 lines, canResume/watcher/replay all read ONE
+> resolved root; behavior trade documented in DESIGN §5.3: unresolvable
+> root = start fresh, never resumed-and-blank; **#472** filed for
+> extensibility.md contract-prose drift, broadened with #424's
+> capability-table finding + drift-pin suggestion). **#459 ✅ DONE** (PR
+> #473, bumped, re-greening — check-nul now scans untracked too, 58ms).
+> **#424 ✅ DONE → PR #474 (UF)**, windows e2e leg finishing — Dan's queue
+> on green. Push/webhook: palette modal + About entry (provisional pending
+> E14 settings); secrets via safeStorage, write-only channel; payload v1
+> pinned full-object; loopback-stub e2e proves store→switch→test→real
+> Stop-hook chain + secrets-absent-everywhere; 8 review defects fixed
+> (worst: log-once keyed on response body → Pushover would warn per event
+> forever). Quiet-hours-silences-webhook contradiction routed to **#423**.
+> Handoffs: 432.md, 459.md, 424.md (worktree-path copies corrected —
+> recent dispatch prompts dropped the absolute handoff path; restored).
+> New issues
+> from #414's findings: **#458** (Direct jump-to-hit dead — M, product
+> gap on the default transport) · **#459** (check-nul misses untracked
+> files); **#450 upgraded** (2-of-3 red on CLEAN main — fix soon).
+> Unblocked by the train: #412 (after #411), #422 #423 #424 (rules seam),
+> #436 #442 #445 #447 (small). Still Dan-gated: #407 design sitting,
+> #397 call, #256 umbrella close. A **release cut** is now very ripe:
+> 0.4.0-unreleased holds task labels, notify-when-done, Direct resume
+> replay, the document viewer, composer growth, service health, lamp fix,
+> batch permissions + more.
+>
+> *(train build record below)*
+> **🚂 TRAIN BUILT AND PUSHED → PR #456, ONE CI LANE RUNNING; merge-commit
+> on green.** All 7 cars boarded in order; conflicts: 2× ipc.test.ts
+> additive unions (one mid-test split sharing a closing brace — resolved
+> structurally), 3× CHANGELOG unions, manual README union + **page-14
+> collision** (#425 vs #433 — viewer renumbered to 15-document-viewer.md,
+> refs fixed incl. read-scope.ts doc comment), index.ts import union
+> (net + Notification), store.ts rules+health sanitization union, and THE
+> semantic integration: #429's label-first toast titles wove into #452's
+> engine via late-bound labelForLive (cardIdForLive pattern);
+> SessionIpcHandle = { labelFor, cardIdFor }. **Train gate: lint clean ·
+> typecheck clean · unit 3826/159 · e2e 243+3skip exit 0** (lock waited
+> in-turn behind #414's worker, acquired, released). #455/#402 merged
+> pre-train (main base 68843cf).
+>
+> **🚂 TRAIN AUTHORIZED by Dan 2026-08-13: "merge all our PRs."**
+> Boarding: #429 → #452 → #431 → #427 → #443 → #448 → #433 (notifier-
+> touching pair adjacent; viewer last). **#437 EXCLUDED** — still gated on
+> the #397 trust-write decision. Branch `train/2026-08-13` in the MAIN
+> checkout; orchestrator resolves conflicts (CHANGELOG unions expected in
+> all seven; manual 09 union #427+#452; index.ts three-way #429/#448/#433;
+> the one real semantic integration is notifier: #429 moved the Notifier
+> init, #452 moved `new Notification` into the rules action). Full local
+> gate incl. e2e under the machine lock (owner "train") before push; ONE
+> CI lane; merge-commit on green.
+>
+> **Active workers:**
+> - **#414** (E17-02 find bar + find-provider seam, UF) → `sb-wt-3` → `feature/414-find-bar` (off main @ 7caa0ed; registrant scope adjusted: Session + Changes + seam; viewer waits on #433's merge, Terminal is #415) — will contend for the e2e lock with the train gate
+> - (#402 done → PR #455 bumped, re-greening; sb-wt-1 holds the green
+>   #452 branch — Dan's queue; sb-wt-2 idle)
+>
+> **Merges 2026-08-12 night, continued: #454/#441 MERGED** (fake-timer net
+> live) · **#451/#413 MERGED 2026-08-13 — the E17-01 search engine is on
+> main** (issue closed, branch deleted) · #455 (#402 docs correction)
+> bumped, re-greening → merge on green. **#402 ✅ DONE → PR #455**:
+> verified against raw s07 artifacts first (negative cpuPct samples +
+> self-inflated nProcs = the sampler's fingerprint), corrected 3 sites
+> struck-not-deleted, deliberately left #111-confirmed figures alone.
+> Handoff: 402.md. **#414 (E17-02 find bar) now UNBLOCKED** — next
+> dispatch into sb-wt-3.
+>
+> **#452 (#421 rules engine) ✅ CI 4/4 GREEN → READY, DAN'S QUEUE
+> (2026-08-12 night).** The fix worker's verdict on the red: **#444's
+> selectors were fine and were NOT touched** — the root cause was #421's
+> own unguarded `window.switchboard.rules.notifyWhenDone` in a mount
+> effect, which threw against #444's partial-bridge harness and tore the
+> whole card down (a notification nicety could WHITE-SCREEN a session
+> card — P6 class; #444's 16 tests now double as the regression pin).
+> Second fix: ubuntu e2e — Notification.isSupported() is false on CI
+> containers; split the log line ('rule fired' vs shown:true, still
+> required on win32) so the reached-the-OS half can't rot. Final gate:
+> 3369 unit / 226 e2e ×2. **⚠ ORCHESTRATOR ERROR, logged for the record:
+> sb-wt-1 was double-booked** (#435 dispatched into it while the #421
+> fixer was resumed on the same tree) — the fixer detected it, verified
+> #435's work was pushed + PR open + tree clean BEFORE reclaiming the
+> branch. No loss. Rule for future dispatches: a RESUMED worker still
+> owns its worktree until its PR is green or abandoned. Handoff: 421.md.
+>
+> **Merge sweep 2026-08-12 night:** **#453/#435 MERGED** (NUL gate live in
+> `npm run lint`) · #454 bumped, re-greening → merge on green · #451's
+> infra-only red leg re-running (everything else green).
+> **#441 ✅ DONE 2026-08-12 late → PR #454 (internal), CI running.** Sweep
+> found NO live leak on main (9 fake-timer files, all already disciplined;
+> a probe measured zero carried timers) — the fix is the systemic net:
+> afterEach in src/test-setup.ts (clearAllTimers + useRealTimers; vitest
+> has no config knob; useFakeTimers() is a no-op when a clock is already
+> installed — pinned from vitest source). Demo: without #439's guard,
+> composer.test.ts carries up to 7 timers across cases; a new test reddens
+> if the net is emptied. Convention documented in startup/references/
+> testing.md. Out-of-scope: eslint-hex-rule 5s-timeout flake under load;
+> src/ root files belong to no tsconfig project unless named. Handoff:
+> 441.md. sb-wt-2 idle.
+>
+> **Late-evening state 2026-08-12:** #451 conflict RESOLVED (1 additive
+> ipc.test.ts collision, both sides kept; merge b71bffb; 3306 unit local)
+> — CI first-ever run: windows green, ubuntu red on the SAME
+> 'Electron failed to install' runner-infra error #443 hit (138/139 files
+> passed) → re-run queued once its e2e legs finish (rerun refused while
+> running). **#435 ✅ DONE → PR #453 (internal), CI pending** — check-nul
+> gate in `npm run lint` (~90ms warm, whole tracked tree via git ls-files,
+> binary-extension skip list, fail-open on no-git; demo: NUL'd file →
+> exit 1 naming file:line:offset, eslint never runs). Handoff: 435.md.
+> **#452 (#421 rules engine) CI RED — diagnosed:** #444's
+> SessionGrid.transport.test.tsx (merged under it) fails 14/16 against
+> #421's new ⋯-menu entry; worker resumed with fix-honestly orders
+> (tighten selectors OR fix the menu, never weaken the day-old transport
+> pins). sb-wt-3 idle (branch pushed, awaiting CI).
+>
+> **#421 ✅ DONE 2026-08-12 (verify-then-keep recovery) → PR #452 (UF), CI
+> running — Dan's queue on green.** Inherited 5665f1e verified sound and
+> KEPT (10/10 mutations killed); 4 real defects fixed on top: orphaned
+> menuitemcheckbox → aria-pressed toggle · visibility asked only the MAIN
+> window (a popout you were watching still toasted; visibilityAcross()
+> folds every window) · action seam made async-safe for #424 · 2 e2e
+> assumptions that never held. **DESIGN divergence recorded: "no toasts
+> while focused" was §5.9's design but NEVER the code — the base notifier
+> toasted unconditionally; this PR genuinely CHANGES osToasts behavior**
+> (needs-input/permission quiet while focused; done silent without the
+> checkbox) — CHANGELOG Changed entry replaces the wrong "nothing else
+> changes yet" line. Checkbox: card ⋯ menu under the transport switch;
+> ticked box fires even with global osToasts off (recorded in DESIGN §5.9).
+> Seam: registry.register(type, handler), async ok — #422/#424 drop-ins;
+> **#423 is NOT** (conditions need Rule fields + a clock rules.ts forbids —
+> sizing comment posted on #423). Gates: 3308 unit / 225+3 e2e (1 fail =
+> #450's known flake, passes in isolation). Handoff: 421.md.
+>
+> **Merge chain: #446/#418 MERGED 2026-08-12** (squash, issue closed) ·
+> #451 conflicted on the bump (ipc.test.ts-class additive collisions) —
+> finisher worker resolving; CI fires on its push · #452 CI pending.
+>
+> **#413 ✅ DONE 2026-08-11 19:16 (discovered on resume) → PR #451
+> (internal), CI kicked via reopen — bump + squash-merge after #446.**
+> Engine scans the transcript FILE (uncapped, §5.31 — the real corpus is
+> ~5.8 MB for the 4,697-line fixture, not the plan's display-capped
+> 1.2 MB): **42 ms typical, longest main-thread stretch 3–5 ms** via 256 KB
+> chunks + setImmediate yields; a test asserts longestBlockMs<50 and
+> another proves a 1 ms interval fires DURING a scan. Blocks derived by
+> the same deriveIntents the watcher/StreamFeed use — hit identity is
+> Feed identity (E17-02's jump works). 37 engine tests + 6 IPC. Gates:
+> 3245 unit / 224+3 e2e under lock. Handoff: 413.md (E17-02 notes inside).
+>
+> **#425 ✅ DONE 2026-08-11 (~65 min) → PR #448 (UF), CI running — Dan's
+> queue on green.** main/health/{statuspage,corroboration,service}.ts; new
+> `provider.status` capability + 4 channels; workspace pref health.poll;
+> status-bar dot registrant; ServiceHealthBanner; Events incident notice
+> (notice-slot precedent — a sessionless FeedEvent would break §5.12's
+> one-item-per-session, argued in the handoff); About toggle. Thresholds:
+> 3 distinct sessions / 5 min, named + injectable; poll clamps max-age to
+> [5,30] min (header can only slow us). **Live finding: status.anthropic.com
+> 302s → status.claude.com — redirect-follow is load-bearing.** e2e suite
+> runs with SWITCHBOARD_STATUS_FEED=off. Review: 6 should-fixes + 1
+> hand-found (polling-off left the incident card standing) all fixed+tested.
+> Gates: 3328 unit (+116) / 230+3 e2e under lock. Out-of-scope filed:
+> **#449** (StreamService.onDiagnostic wired to nothing); #407 got the
+> three-notice-slot-tenants coordination comment; PTY-can't-corroborate
+> recorded in #449's body. Handoff: 425.md.
+>
+> **#406 ✅ DONE 2026-08-11 (survived the limit kill; ~2h20m of that was
+> waiting the lock queue honestly — sampled electron 6×1min before every
+> staleness judgement) → PR #443 (UF), CI running — Dan's queue on green.**
+> New pure lib composer-size.ts (measure→clamp→overflow) + FeedView switched
+> from newline-counting rows to reset-then-measure layout effect + inline-
+> size ResizeObserver. Review round caught a real pre-merge bug: releasing
+> height to auto clamped scrollTop to 0 — every keystroke past the cap
+> scrolled the user back to line 1 (fixed + pinned in e2e). **DESIGN
+> divergence needing Dan's nod (in the PR body):** cap = 12 lines OR what
+> the panel can spare (60px feed floor) — a flat 12 on a short panel would
+> push the options row off, contradicting the same paragraph's layout
+> guard; <~350px panels only. 14 unit + 4 component + 1 e2e, mutation-
+> verified. Manual 03 updated; CHANGELOG Fixed. Gates: 3205 unit / 214+3
+> e2e under lock. Handoff: 406.md.
+> - **#406-fix** (repair #443's own cap e2e on small CI geometry) → `sb-wt-2` → `feature/406-composer-autogrow` @ 617283e (5th occupancy)
+>
+> **#419 ✅ DONE 2026-08-11 (~24 min) → PR #444 (internal), CI running —
+> bump + squash-merge on green.** 2 test files, 595 lines, ZERO product
+> files (dockview-react mocked to reach the private SessionCardPanel — no
+> export added). 21 tests: mode label both transports, toggle round-trip +
+> refusal guard, pending-restart notice, Restart respawn-on-queued-
+> transport, seed pin (behavioural + source-text, precedent always-visible-
+> notices), StreamTerminalNotice via the real registry incl. UNRESOLVED
+> transport → TerminalPane, keepMounted. 11 mutations, each surface ≥1 red.
+> Choice-vs-running split pinned as CURRENT behaviour (not unified — open
+> question stands). Out-of-scope filed: **#445** (SessionGrid:503 maps
+> missing transport → 'pty' vs shared default 'stream'). Handoff: 419.md.
+>
+> **#443 (#406, UF) CI RED ×2 — diagnosed, worker resumed in sb-wt-2:**
+> e2e windows = its OWN cap assertion vs its own available-space clamp on
+> the 655px runner window (fix the test to mirror the clamp math; both
+> branches must stay pinned) · ubuntu unit = INFRA ('Electron failed to
+> install correctly' on the runner, 3113/3114 pass — re-runs with the push).
+> **#439 bumped onto 5999964, re-green in progress → squash-merge on green.**
+>
+> **#417 ✅ DONE 2026-08-11 (survived the session-limit kill + its own
+> checkout wipe, both recovered, zero loss) → PR #439 (internal), CI running
+> — squash-merge on green.** All 8 pins landed, each mutation-proven. Two
+> product hardenings: composer.ts `mainTook()` (rejecting submitPrompt/
+> interrupt now falls back to PTY + warn instead of unhandled rejection —
+> #154 class; also fixed refusal-truthiness: broker REFUSALS RESOLVE an
+> IpcRefusal object, truthiness read it as success) · SWITCHBOARD_TRANSPORT
+> parser extracted to main/transport/preferred-transport.ts (empty string
+> now warns too). Gates: 3225 unit (+40) / 213+3 e2e under lock. Out-of-
+> scope filed: **#440** (renderer-wide refusal-truthiness audit) · **#441**
+> (fake-timer leak shape unaudited beyond composer.test.ts). Handoff: 417.md.
+> - **#413** (E17-01 transcript search engine, internal) → `sb-wt-3` → `feature/413-transcript-search` (6th occupancy, off main @ 5999964)
+>
+> **#418 ✅ DONE 2026-08-11 (~26 min) → PR #446 (internal), CI running —
+> bump if needed + squash-merge on green.** 38 tests tagged across 8 files:
+> literal `[pty]` title prefix (reporter-visible, grep-able, NOT
+> Playwright's tag:) + per-file TRANSPORT SCOPE header; rule defined once
+> on launchApp's doc comment where the fallback lives. No file renamed; CI
+> greps checked first (none). feed.spec:625 + slash-commands already honest
+> (quoted) — tags only. #416 overlap verified: Direct landing pane covered,
+> Ctrl+` reaching it is the remaining gap, header says exactly that.
+> Under-scope noted for later: 9 more xterm-dependent tests in attention/
+> palette/session/urgency whose titles don't overclaim — left untagged.
+> Out-of-scope product bug filed: **#447** (unbound-fallback string sends
+> Direct users to a Terminal tab that says "No terminal for this session").
+> Gates: 3202 unit / 224+3 e2e under lock. Handoff: 418.md.
+>
+> **#404 TAIL COMPLETE:** #416 MERGED · **#417/PR #439 MERGED 2026-08-11
+> (squash, 4/4 green post-bump, issue closed, branch deleted)** · #418→PR
+> #446 (4/4 green, awaiting its bump turn) · #419→PR #444 (4/4 green,
+> BUMPED onto post-#439 main, re-greening → merge next sweep, then #446
+> bumps). **#448 (#425 service health, UF): 4/4 GREEN → READY, DAN'S
+> QUEUE.** **#443 (#406 composer): CI 4/4 GREEN on 064f580 → READY, DAN'S
+> QUEUE** (the check:pty red was the documented #176-class flake, cleared
+> by one job re-run, no code change). Round 2 asserts the cap BY CONTRACT
+> at two window geometries; the probe caught a real clamp bug (send-button
+> 30px row floor miscounted as chrome — feed kept 74px not its 60px floor)
+> + added panel-resize re-fit. Flake sighting filed: **#450** (diff.spec.
+> ts:318 Monaco repaint, load-sensitive class). Handoff: 406.md final.
+>
+> **#430/#416 ✅ MERGED 2026-08-11 → main @ 5999964** (squash, CI 4/4 green,
+> branch deleted, issue #416 closed). The debug worker's verdict held:
+> test-side serial-state unpin (Playwright scroll-into-view inside the
+> click's gesture window on the runner's 254px feed scroller), #409
+> acquitted kid-for-kid (content heights identical at both commits). Fix:
+> +~40 lines in stream-feed.spec.ts only — wheel to bottom, assert
+> tailGap<40, wait out GESTURE_MS, then !bulk; assertions unchanged. Spec
+> 10 consecutive greens + full e2e 224/3skip. Product observation filed:
+> **#442** (FeedView pin has no way back; may fight #174 keyboard nav on
+> overflowing feeds — only manifests on small windows). Handoff: 416-fix.md.
+>
+> **#430 ROOT CAUSE (from 416-fix.md, accepted): test-side, NOT a #409
+> regression.** stream-feed.spec runs serial with one app; on the 1024x768
+> CI runner the feed scroller is 254px, a `!tools` turn overflows, and test
+> 1's click on `▸ OUT` makes Playwright scroll-into-view INSIDE the click's
+> gesture window — FeedView's pin rule (GESTURE_MS=500) correctly reads it
+> as a user scroll-away and unpins; nothing re-pins; test 4's tail assert
+> then honestly fails. Measured on the actual runner via a throwaway
+> diagnostic PR (#438, closed+deleted). One-line spec fix + comment;
+> product untouched. Merge #430 on its re-green.
+>
+> **#397 ⚠ IMPLEMENTED + GATE-GREEN but BLOCKED ON DAN → draft PR #437
+> (~69 min).** Chip-greying shipped as specced (workspace-wide — autoTrust is
+> ONE title-bar chip, not per-session; aria-disabled + title per view-tab
+> precedent; chip follows the CHOSEN transport incl. pending-restart, both
+> directions pinned; stored settings never mutated; bonus: sessions:
+> setTransport now pushes cardsChanged). **THE BLOCKER — the premise was too
+> narrow:** `sessions:create` calls `ensureFolderTrusted` on EVERY spawn
+> regardless of transport, permanently writing `hasTrustDialogAccepted:true`
+> into the user's real `~/.claude.json`. Direct suppresses the PROMPT, not
+> the WRITE — a folder's first Direct session pre-accepts trust forever, so
+> the manual's "switch to Terminal and be asked" escape hatch does nothing
+> afterwards. **Question for Dan: gate the trust pre-write on the resolved
+> spawn transport?** Worker correctly refused to decide — it changes what
+> the default transport writes to a user config file, and whether an
+> untrusted folder degrades stream-mode settings/hooks is UNMEASURED (probe
+> spends real CLI turns → Dan's authorization). PR #437 stays DRAFT pending
+> the call. #419 trim: drop title-bar-chip + disabled-with-reason coverage
+> (shipped in #437). Handoff: 397.md.
+>
+> **#410 ✅ DONE 2026-08-11 (~98 min) → PR #433 (UF), DRAFT until CI green
+> (ubuntu unit leg passed; 3 legs pending at last check) — then Dan's queue.**
+> The document viewer: header + rendered markdown + read-only Monaco source +
+> open-externally card; `Open file…` palette command; ↗ opener in Changes
+> tab; fs:pickFile/openExternal/openPath/reveal + shell.openPath capability;
+> UTF-16 BOM decode + binary sniff; manual 14-document-viewer.md; CHANGELOG.
+> Self-review caught 2 BLOCKERS: data-doc-* decoration forgery (javascript:
+> link → browser exfil, Copy button → clipboard hijack — stripOurNamespace())
+> and a CSS-selector throw on `#a%0Ab` anchors that blanked the window. 4
+> documented DESIGN divergences incl. viewer-local find bar (§5.30's own
+> correction) and Changes-tab ↗ instead of path-click (literal reading broke
+> the tab's primary gesture + 2 specs). Left for #411: peek/pin/popout/
+> attribution; for #412: live re-render (scroll already preserved on model
+> swap). Gates: 3319 unit (+123) / 217+3 e2e under lock. Out-of-scope filed:
+> **#434** (openDiff E8-04 gap) · **#435** (NUL-byte lint gate) · **#436**
+> (FeedView style-attr sanitizer drift). Handoff: 410.md.
+>
+> **#395 ✅ DONE 2026-08-11 (~90 min) → PR #431, READY, CI 4/4 green — DAN'S
+> QUEUE.** Resumed Direct sessions replay their on-disk JSONL into the Feed:
+> `StreamFeed.hydrate()` fills the SAME FeedBuffer the live stream fills —
+> deliberately NOT the issue's watcher-backlog shape (two buffers both
+> number from seq 1; the renderer upserts on seq, so the first live block
+> would have silently overwritten the first replayed one). Synchrony
+> verified not assumed (no await between spawn and replay; hydrate refuses a
+> non-empty buffer — failure mode is the old empty view, never duplication).
+> CLI contract read from the extension (ensureSessionLoaded reads
+> <sessionId>.jsonl, 2.1.226). Review round caught a second real defect: an
+> open thinking block from the OLD conversation timed against the first NEW
+> block ("Thought for 86400s") — bounded in FeedBuffer, fixes the watcher
+> path too. Gates: 3104 unit / 215+3 e2e ×2 under lock. Manual 12 updated,
+> CHANGELOG 0.4.0. Out-of-scope filed: **#432** (two-roots drift);
+> E18-13 plan note added (sidechains absent from replay). Handoff: 395.md.
+>
+> **Merge queue:** PR #430 (#416) — windows e2e leg failed TWICE post-bump
+> on SFEED_BLOCK_60 tail-pin (green at base f268ec7 incl. 2 local runs; red
+> only after #409 merged under it) — NO LONGER flake-classed: suspected
+> interaction with #409's renderer change. Debug worker in sb-wt-3; merge on
+> its green. **PR #433 (#410 viewer, UF): CI 4/4 GREEN → marked READY, in
+> DAN'S QUEUE** (2026-08-11). Dan's queue is now: #427, #429, #431, #433
+> (+ the #397 trust-write decision, PR #437 draft).
+>
+> **#416 ✅ DONE 2026-08-11 (~74 min) → PR #430 (internal), IN MERGE QUEUE:**
+> branch bumped onto main @ 5e917b5, CI re-running; squash-merge on green.
+> 11 Direct-mode e2e tests / 3 files, all on the REAL default (no transport
+> var); 3 new fake verbs + fake.test.ts pins the PTY fake's refusal (the
+> stream.spec:376 done-when). Falsified: forcing PTY → 8 fail / 3 not-run.
+> Product-file footprint ZERO; no product bugs found. Deferred ports recorded
+> in 05-transport-migration.md § E18-14. Orchestrator actions taken: #417's
+> covered line dropped (fake-refusal pin); plan note written. Handoff: 416.md.
+>
+> **Merge queue:** (empty) · **Dan's queue:** **PR #427** (#426 pending-lamp
+> cap) · **PR #429** (#408 auto task labels) — both READY, CI 4/4 green,
+> test checklists in the PR bodies
+>
+> **#409 ✅ DONE + MERGED 2026-08-11 → main @ 5e917b5** (PR #428, internal,
+> squash, CI 4/4 green, branch deleted, issue closed). lib/markdown.tsx now
+> THE renderer (named MARKED_OPTIONS + SANITIZE_CONFIG, renderMarkdown
+> export; source-scan test bans other marked/dompurify imports). fs.read
+> capability + fs:read channel; main/fs/{read-scope,read-file,ipc}.ts; scope
+> = session cards ∪ picked set, decisions on resolved real paths, 2 MiB cap.
+> Worker's own review caught an EXISTENCE ORACLE (symlink made not-found vs
+> out-of-scope distinguishable — fs.probe smuggled inside fs.read; fixed by
+> anchoring to nearest resolvable ancestor). CI caught the windows 8.3
+> short-path refusal (lexical pre-check deleted — the anchor rule already
+> carried the property). One named behaviour change: sanitizer drops raw
+> inline svg/math (§5.30-aligned). Carry-forwards INTO #410: UTF-16 →
+> dispatch table; addPicked unreachable until readScope hoisted from
+> index.ts. Gates: 3185 unit (+85) / 213+3 e2e ×2. Handoff: 409.md.
+>
+> **#408 ✅ DONE 2026-08-11 (~96 min) → PR #429.** `titles` = 5th §5.3
+> capability, per-LINE reader (`titleFrom`) so `ai-title` lives once in
+> providers/claude.ts; `labelSource: auto|user`, no store migration (absent +
+> non-blank ⇒ 'user' — an upgrade can't steal an E7-03 label); de-dupe
+> mutation-checked against a repeat-heavy REAL capture; toast text via new
+> `SessionIpcHandle.labelFor`. **Two DESIGN amendments** (both documented in
+> the PR): per-line reader shape + throw-degrades-once; and the off-switch
+> shipped as workspace setting + 🏷 title-bar chip, NOT the §5.9 preference
+> the plan named — §5.9 has no UI until E14, the doc'd location would have
+> been unreachable. Off hides, never deletes; typed labels never hidden.
+> Gates: 3137 unit (+61) / 217+3 e2e / build clean. Worker self-reported one
+> contract violation: a `git checkout --` during a mutation experiment ate an
+> uncommitted fix — caught and re-applied, final diff verified. Fixture
+> capture found: aiTitle/sessionId key order is UNSTABLE between adjacent
+> lines. Out-of-scope reports in 408.md (blank-guard on setTaskLabel now
+> meaningful; ipc.test persist stub became a real store; card-task-label
+> testid added). Handoff: 408.md.
+>
+> **#426 ✅ DONE 2026-08-11 (~61 min, first wave-1 completion) → PR #427.**
+> markLit keeps only running-deadline entries (pendings cap at 1, latest
+> wins); + a UrgencyStrip nudge the sizing missed — without it the surviving
+> mark's rAF chain died and the lamp stuck lit forever. Done-when deviation,
+> accepted by orchestrator: the "untouched" two-lamp test exercised two
+> PENDINGS (no paint between marks) — the exact case the decision caps; test
+> kept name+intent, paint inserted, + component-level twin pins the painted
+> overlap. 4 mutation checks all load-bearing. Gates: 3085 unit / 213+3 e2e
+> under lock. DESIGN §5.8 amended, CHANGELOG 0.4.0, manual 09. No e2e repro
+> possible honestly (needs a commits-but-no-rAF window — the #251/#284 flake
+> pattern); 9 unit pins instead. Handoff: 426.md.
 >
 > **Dispatch order after wave 1:** #395 + #416 (Direct coverage; e2e-heavy —
 > stagger on the lock) · #410 → #411 → #412 (E16 chain, serial) · #397 ·

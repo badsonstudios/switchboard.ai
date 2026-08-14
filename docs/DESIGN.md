@@ -223,6 +223,23 @@ contract differs in three ways, each deliberate:
   a capability with no implementation and no consumer is exactly what AR-P2-13 had
   us delete (`event-source`). It arrives beside its first registrant and first
   caller — as a config-writing capability, since §5.4 made the bus stdio-only.
+- **`titles` is a fifth capability** *(added by P2-E7-06, 2026-08-11)*. The CLI
+  writes a title of the conversation into its own transcript and we display it
+  as the task label (§5.11). Separate from `transcripts` because that one says
+  WHERE the file is and this one says the file contains a title and how to
+  recognise it — a provider can easily have the first without the second, and
+  the key that carries it is undocumented, so the one thing that must not happen
+  is that spelling leaking into shared code.
+- **The HOST resolves the transcript root and supplies it to `resume`** *(#432,
+  2026-08-13)*. `resume.canResume` takes a query object carrying the root the
+  host resolved from this same provider's `transcripts.projectsRoot()` — the one
+  it hands the watcher and reads a resumed conversation back from (#395).
+  Deriving a root inside `canResume` made one contract two independent
+  declarations: an adapter answering "yes" about a directory the host never
+  reads would resume and then show an empty session. `resume` is therefore
+  deliberately NOT independent of `transcripts` for a transcript-backed
+  provider; one that resumes on some other authority ignores the root and
+  answers from its own knowledge.
 - **`transcripts` LOCATES transcripts; it does not abstract reading them.** The
   sketch names a `TranscriptReader`. Our tolerant parser, tailer and block builder
   stay host-side and are shared by every provider writing that shape; the adapter
@@ -489,7 +506,15 @@ done | crashed`) fed by hooks + transcript events. The layout engine reacts to i
   after the commit that drew it (`requestAnimationFrame` twice — a commit is not
   a paint). A mark that has not painted yet therefore survives a backgrounded
   window rather than burning down unseen; once the beat has started it runs on
-  the wall clock like any other.
+  the wall clock like any other. **At most ONE mark may be waiting on a paint —
+  the latest** *(amended 2026-08-11, Dan, after #426)*: two lamps whose beats
+  are RUNNING still overlap (jump A, jump B a moment later, both rings up), but
+  an unpainted mark is discarded by a newer one. `Ctrl+Space` runs in the main
+  renderer while focus raises a POPOUT, so an operator working across popouts
+  can leave the main window occluded for jump after jump, and a queue of marks
+  drained by one paint is a fireworks show of stale "you arrived here" flashes.
+  The beat answers "where did I just land?", and after a popout stint only the
+  last landing carries that.
 - **Focus mode is a composition, with a keyboard-fail-open invariant** (research
   v2: IntelliJ Zen = Full Screen + Distraction-free; VS Code maximize-toggle):
   "focus on one agent" composes existing presentation-ladder states rather than
@@ -507,8 +532,43 @@ or sits idle awaiting input, and `Stop` when it finishes. On top:
   (per-session distinct sounds; optional TTS announcement "TradingApp needs
   permission"), flash taskbar/dock icon, restore/focus window, OS toast, phone push
   (ntfy / Pushover), webhook.
+  *(Phone push + webhook shipped P2-E14-06. Decisions taken with them, recorded
+  so they are not re-litigated: **(a)** the two are conditioned differently on
+  purpose — a push goes to a PERSON and fires only while the app is not focused,
+  a webhook goes to a PROGRAM and fires at every visibility and on `done` too;
+  **(b)** an action payload carries **no destination** (`{type:'push'}`), because
+  a destination in a rule is a credential in the workspace file — the handler
+  reads it from the credential store when it fires, which caps v1 at one
+  destination per channel and hands a future rules editor a slot NAME to
+  reference rather than a value to copy; **(c)** neither channel ever uses its
+  service's top priority, which on both ntfy and Pushover means "bypass
+  do-not-disturb" — a calm-by-design tool does not get to override the user's
+  night; **(d)** no retries and no queue, per P6: a missed push is missed, and
+  the Events panel is the durable record. The setup surface is a modal reached
+  from the palette and from About, explicitly provisional until E14's settings
+  screen exists.)*
 - **Actionable toasts**: permission toasts carry Allow / Deny buttons that send the
   verdict on that session's input route — approve without switching windows.
+  *(Shipped P2-E14-04. Three decisions worth recording. **One decision path:**
+  the buttons call `SessionIpcHandle.decidePermission` — literally the function
+  `sessions:decidePermission` calls — so the toast is a fourth button on the
+  path the approval bar, the Events panel and the batch band already share,
+  not a second route to the CLI. **The toast names what it would allow**
+  ("Allow Bash? npm run build"); an Allow beside the words "needs permission"
+  would ask the user to grant a call they cannot see, which is the one thing an
+  off-screen decision path may not do. **Clicking the body is not a verdict** —
+  it raises the window onto the asking card, because dismissing a notification
+  by reflex must not be able to grant a tool call, and because that click is the
+  whole gesture on a desktop that cannot render buttons.*
+  *Platform reality, verified against Electron 43's API docs rather than
+  assumed: `NotificationConstructorOptions.actions` and the `action` event are
+  `darwin` + `win32` (Windows toast actions landed in the 40.x line — the older
+  "macOS only" folklore is out of date); Linux has none. Where buttons cannot
+  render — Linux always, an unsigned macOS build, a Windows dev run with no
+  Start-menu AppUserModelID — the click path carries it, and the manual says so
+  per OS rather than promising a button that will not appear. A decision made on
+  any other surface withdraws the toast; a toast for a dead session decides
+  nothing and logs.)*
 - Rule conditions include visibility (research v2: Zed's `when_hidden`): fire a
   channel only when the session/app is backgrounded — no toast for a session
   already on screen. This is the calm default for S3.
@@ -516,6 +576,14 @@ or sits idle awaiting input, and `Stop` when it finishes. On top:
 - **Per-session "notify when done" (owner request 2026-07-22):** a checkbox on
   the session card — done-toasts only for sessions the user opted into (long
   tasks), because a toast for every short turn is noise.
+  *(Shipped P2-E14-03. It lives in the card's ⋯ menu, beside the transport
+  switch — the established home for a durable per-card setting, and reachable
+  from every view, which the composer's options row is not. Implementation
+  decision, same item: a ticked box is **its own opt-in**, so it fires with the
+  global `osToasts` switch below off — a per-session control that silently did
+  nothing because of a global one elsewhere would be a lie. The master
+  notification toggle and quiet hours still sit above everything, rules
+  included.)*
 - **The default signal model (owner decision 2026-07-22):** attention events
   produce a **sound + an Events-panel item + a taskbar flash** (when
   backgrounded). **OS toast popups are OFF by default** — an opt-in
@@ -811,6 +879,15 @@ Consequences worth designing for, not discovering:
   `{ transcripts, hooks, resume, trust }` — `mcp` waits for E11; see §5.3's "as
   built" note. `titles` slots in beside them, and its decision belongs in
   `sessions/start-plan.ts` with the rest.)*
+  **As built (P2-E7-06):** `titles.titleFrom(line) => string | undefined` — a
+  per-LINE reader, not "read the title out of this file". The host is already
+  tailing line by line, so handing the adapter the file would make it re-read
+  bytes we have decoded, and a per-line reader means the title tracks the
+  conversation for free. `ai-title`/`aiTitle` appears exactly once in the tree,
+  in `providers/claude.ts`. It is the only capability asked per line, so unlike
+  the other four a throw degrades it to absent **for the rest of the session**
+  and is reported once — reporting per line would flood the log at transcript
+  speed.
 - **`ai-title` is undocumented.** No Claude Code contract promises the key
   exists or keeps its name, which makes it a §5.26 version-drift item and the
   natural second customer for the transcript drift detector. Fail-open is
@@ -822,6 +899,14 @@ Consequences worth designing for, not discovering:
   leaves the app window, so a screen-sharing user needs a way to suppress it:
   notification text falls back to the title when auto labels are turned off
   (§5.9 preference, off-switch per litmus #4).
+  **As built (P2-E7-06):** the switch is a WORKSPACE setting (`autoLabels`,
+  default on, the `autoTrust` shape) surfaced as a title-bar chip, not a key in
+  the notification prefs. §5.9's prefs are about notifications; this governs the
+  card first and the toast second, and the person who needs it off needs it off
+  mid-screen-share without hunting. Off HIDES rather than deletes: every auto
+  label leaves card, rail and toast at once, a label the user TYPED is never
+  hidden (those are the user's words, not the CLI's), and flipping back restores
+  instantly from a value that was never thrown away.
 
 ### 5.12 Events — what needs the operator NOW
 
@@ -1568,6 +1653,21 @@ specified BEFORE the first listener ships — not hardening-later items.
   localhost listener ships in Phase 2.** If a future provider cannot do stdio,
   it declares no `mcp` capability (§5.3) and simply does not get the bus —
   we do not add an HTTP fallback to accommodate it.
+- **User credentials — the OS credential store (P2-E14-06, first use)**: this
+  section's "credentials live in the OS credential store, never in files" is
+  implemented with Electron's **`safeStorage`** (`src/main/secrets/store.ts`).
+  The nuance, stated rather than hidden behind the phrase: the *key* is the
+  OS's — DPAPI on Windows, the login Keychain on macOS, libsecret
+  (gnome-keyring / kwallet) on Linux — and what lands on disk beside the
+  workspace file is ciphertext only that OS user on that machine can open. Three
+  rules the store keeps and a test pins: **no plaintext fallback** (a machine
+  with no keyring is told it cannot keep a secret, and stores nothing), **no
+  read path to the renderer** (the IPC surface writes credentials and answers
+  with booleans — there is no `getSecret`, so a compromised renderer cannot
+  exfiltrate one), and **no value in any log line**. `update/token.ts` reserved
+  a slot for this store before it existed; the slot is still empty because
+  nothing yet asks the user to paste a GitHub token in, but the store it named
+  is now real.
 - **Mobile companion WebSocket (Phase 4)**: the near-isomorphic precedent is
   Cline's local Kanban WebSocket (CVE-2026-44211, CVSS 9.7): no origin check,
   no auth token → any webpage the developer visited received a full workspace

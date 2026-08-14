@@ -23,27 +23,53 @@ export function slugForCwd(cwd: string): string {
  * Slug matched case-insensitively (real paths lowercase the drive letter).
  */
 export function conversationExists(projectsRoot: string, folder: string, nativeId: string): boolean {
+  return conversationFile(projectsRoot, folder, nativeId) !== null;
+}
+
+/**
+ * WHERE that conversation's transcript is, or null if it is not there.
+ *
+ * The same question `conversationExists` asks — it is now this function's
+ * boolean — because #395 needs the PATH: a resumed Direct session replays the
+ * history off this file into its Feed, since the CLI re-sends none of it over
+ * the stream.
+ *
+ * ONE RESOLVER, so "is this resumable" and "where do I read it back from" cannot
+ * answer differently for the same directory — and since #432, not about two
+ * different directories either: the root is no longer something an adapter
+ * derives per question. `planSessionStart` reads `transcripts.projectsRoot()`
+ * ONCE per session start and hands that single string to `resume.canResume`
+ * (via `ResumeQuery`), to the transcript watcher, and to #395's replay. An
+ * adapter answering "yes" here is answering about a file the host will really
+ * read — which matters from Phase 4 on, when these strings become third-party.
+ */
+export function conversationFile(
+  projectsRoot: string,
+  folder: string,
+  nativeId: string
+): string | null {
   // The id is interpolated into a path below, and it reaches us from the
   // persisted workspace store and from hook payloads. A native id is a uuid
   // shape; anything else is not a conversation we wrote, and `..` would turn
   // this into an existence oracle for arbitrary files (§5.29 — validate where
   // the untrusted value enters, not where it lands).
-  if (!/^[A-Za-z0-9._-]+$/.test(nativeId)) return false;
+  if (!/^[A-Za-z0-9._-]+$/.test(nativeId)) return null;
   const wantSlug = slugForCwd(folder).toLowerCase();
   let dirs: fs.Dirent[];
   try {
     dirs = fs.readdirSync(projectsRoot, { withFileTypes: true });
   } catch {
-    return false;
+    return null;
   }
   for (const d of dirs) {
     if (d.isDirectory() && d.name.toLowerCase() === wantSlug) {
+      const full = path.join(projectsRoot, d.name, `${nativeId}.jsonl`);
       try {
-        if (fs.statSync(path.join(projectsRoot, d.name, `${nativeId}.jsonl`)).isFile()) return true;
+        if (fs.statSync(full).isFile()) return full;
       } catch {
         /* keep looking */
       }
     }
   }
-  return false;
+  return null;
 }

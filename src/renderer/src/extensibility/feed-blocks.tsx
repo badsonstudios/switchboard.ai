@@ -14,6 +14,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { FeedBlockDto } from '../lib/feed';
 import { FEED_EXPANDER_ATTR } from '../lib/feed-keys';
+import { useRevealed } from '../lib/feed-reveal';
 import { FeedBlockRendererContribution, manifestFor } from './contributions';
 import { Markdown } from '../lib/markdown';
 
@@ -166,11 +167,17 @@ export function ToolBox({
 /** Edit/Write block (E10-06): header + added/removed subtitle + shaded panes. */
 function EditBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const { t } = useTranslation();
-  const [open, setOpen] = React.useState(true);
+  const [expanded, setExpanded] = React.useState(true);
+  // find jumped here: the block opens whatever the user had folded (§5.31 —
+  // "jumping to a hit expands that block"). See lib/feed-reveal. Read into a
+  // const, never inlined into the `||` below: short-circuiting past a hook
+  // call is a conditional hook.
+  const revealed = useRevealed(b.seq);
+  const open = expanded || revealed;
   const diffId = React.useId();
   const added = (b.tool?.newString ?? '').split('\n').filter((l) => l.length > 0).length;
   const removed = (b.tool?.oldString ?? '').split('\n').filter((l) => l.length > 0).length;
-  const toggle = (): void => setOpen(!open);
+  const toggle = (): void => setExpanded(!open);
   return (
     // Both the box and the header toggle, and that is not the double-toggle
     // #91 removed: the header is a `FeedExpander`, which is marked
@@ -226,8 +233,14 @@ function editPane(background: string): React.CSSProperties {
 /** Bash block (E10-06): description header + independent IN/OUT sections. */
 function BashBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const { t } = useTranslation();
-  const [inOpen, setInOpen] = React.useState(false);
-  const [outOpen, setOutOpen] = React.useState(false);
+  const [inExpanded, setInExpanded] = React.useState(false);
+  const [outExpanded, setOutExpanded] = React.useState(false);
+  // find jumped here — both sections open (§5.31). A bash block's OUT is where
+  // the error strings the user is hunting actually live, so opening only the
+  // header would be the useless half of the gesture.
+  const revealed = useRevealed(b.seq);
+  const inOpen = inExpanded || revealed;
+  const outOpen = outExpanded || revealed;
   const ids = React.useId();
   const inId = `${ids}in`;
   const outId = `${ids}out`;
@@ -277,8 +290,8 @@ function BashBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
   // for the finer moves.
   const anyOpen = inOpen || outOpen;
   const toggleAll = (): void => {
-    setInOpen(!anyOpen);
-    setOutOpen(!anyOpen);
+    setInExpanded(!anyOpen);
+    setOutExpanded(!anyOpen);
   };
   const hasOut = b.tool?.out !== undefined;
   return (
@@ -296,9 +309,9 @@ function BashBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
           <span style={{ fontWeight: 700, color: 'var(--text)' }}>{b.tool?.name}</span>
           <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>{b.tool?.description ?? ''}</span>
         </FeedExpander>
-        {section(inId, t('feedView.in'), b.tool?.summary ?? '', inOpen, () => setInOpen(!inOpen))}
+        {section(inId, t('feedView.in'), b.tool?.summary ?? '', inOpen, () => setInExpanded(!inOpen))}
         {hasOut &&
-          section(outId, t('feedView.out'), b.tool?.out ?? '', outOpen, () => setOutOpen(!outOpen))}
+          section(outId, t('feedView.out'), b.tool?.out ?? '', outOpen, () => setOutExpanded(!outOpen))}
       </div>
     </ToolBox>
   );
@@ -333,10 +346,13 @@ function TodosBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
 }
 
 function ToolRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
-  const [open, setOpen] = React.useState(false);
+  const [expanded, setExpanded] = React.useState(false);
+  // find jumped here — the detail unfolds (§5.31). See lib/feed-reveal.
+  const revealed = useRevealed(b.seq);
+  const open = expanded || revealed;
   const detailId = React.useId();
   const expandable = !!b.tool?.detail;
-  const toggle = (): void => setOpen(!open);
+  const toggle = (): void => setExpanded(!open);
   const headerStyle: React.CSSProperties = {
     display: 'flex',
     gap: 6,
@@ -409,14 +425,19 @@ function ToolRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
 
 function ThinkingRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const { t } = useTranslation();
-  const [open, setOpen] = React.useState(false);
+  const [expanded, setExpanded] = React.useState(false);
+  // find jumped here — thinking unfolds (§5.31). It is folded to one line by
+  // default AND hidden outright below `firehose`, so this is the block the
+  // reveal mechanism was really built for. See lib/feed-reveal.
+  const revealed = useRevealed(b.seq);
+  const open = expanded || revealed;
   const textId = React.useId();
   const label = b.durationMs
     ? t('feedView.thoughtFor', { s: Math.max(1, Math.round(b.durationMs / 1000)) })
     : t('feedView.thinking');
   return (
     <div style={{ fontSize: 10.5, color: 'var(--faint)', fontStyle: 'italic' }}>
-      <FeedExpander open={open} onToggle={() => setOpen(!open)} controls={open ? textId : undefined}>
+      <FeedExpander open={open} onToggle={() => setExpanded(!open)} controls={open ? textId : undefined}>
         {open ? '▾' : '▸'} {label}
       </FeedExpander>
       {open && (
@@ -433,9 +454,14 @@ function ThinkingRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
  * invocations dump the whole skill body as a user message — collapse to a
  * header line with click-to-expand, like tool blocks (Dan #7).
  */
-function UserPill({ text }: { text: string }): React.JSX.Element {
+function UserPill({ text, seq }: { text: string; seq: number }): React.JSX.Element {
   const { t } = useTranslation();
-  const [open, setOpen] = React.useState(false);
+  const [expanded, setExpanded] = React.useState(false);
+  // find jumped here — a long prompt (a skill body dumped as a user message)
+  // unfolds (§5.31). `seq` is threaded in purely for this: the pill is the one
+  // renderer that took a string rather than the block. See lib/feed-reveal.
+  const revealed = useRevealed(seq);
+  const open = expanded || revealed;
   const bodyId = React.useId();
   // a skill / slash-command invocation carries a command-name tag
   const cmd = /<command-name>([^<]+)<\/command-name>/.exec(text)?.[1];
@@ -461,7 +487,7 @@ function UserPill({ text }: { text: string }): React.JSX.Element {
       {expandable && (
         <FeedExpander
           open={open}
-          onToggle={() => setOpen(!open)}
+          onToggle={() => setExpanded(!open)}
           controls={open ? bodyId : undefined}
           style={{ display: 'flex', gap: 6, alignItems: 'baseline', inlineSize: '100%' }}
         >
@@ -535,7 +561,7 @@ export const feedBlockRenderers: FeedBlockRendererContribution[] = [
     manifest: manifest('feed-block-user', 'User prompt pill'),
     order: 60,
     matches: (b) => b.kind === 'user',
-    render: (b) => <UserPill text={b.text ?? ''} />,
+    render: (b) => <UserPill text={b.text ?? ''} seq={b.seq} />,
   },
   {
     // matches everything — MUST sort last, or it shadows the whole list

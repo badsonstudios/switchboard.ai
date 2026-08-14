@@ -46,16 +46,21 @@ import { PtyService } from '../pty/pty-service';
 import { StreamPermissions } from './stream-permissions';
 import { StreamCommands } from './stream-commands';
 import { StreamFeed } from '../feed/stream-feed';
+import { replayResumedHistory } from '../feed/history';
 import { HookListener } from '../hooks/hook-listener';
 import { IpcBroker } from '../ipc/broker';
 import { Channel } from '../../shared/ipc/capabilities';
 import type { PtyAttachment, PtyChunk } from '../../shared/ipc/pty';
+import type { PermissionRequest } from '../../shared/ipc/permissions';
 import type { ProviderCapabilities } from '../extensibility/contributions';
 import { TranscriptWatcher } from '../transcripts/watcher';
+import { searchTranscripts } from '../transcripts/search';
+import type { TranscriptQuery, TranscriptSearchRequest } from '../../shared/transcripts';
 import { LogFields, Logger } from '../log/logger';
 import { assignAccent, detectProjectType } from './identity';
 import { EventFeed } from '../events/feed';
 import { planSessionStart } from './start-plan';
+import { nextAutoLabel, typedLabel, visibleTaskLabel } from './auto-label';
 import { PersistedSession } from '../workspace/store';
 import { commandsFromCli, SlashCommand } from '../../shared/slash-commands';
 import { DEFAULT_SESSION_TRANSPORT } from '../transport/transport';
@@ -81,6 +86,11 @@ export interface SessionIpcDeps {
   broker: IpcBroker;
   /** auto-trust the folder before spawning (default on; user picks folder) */
   autoTrust: () => boolean;
+  /** Fill blank task labels from the CLI's own conversation title (P2-E7-06,
+   *  §5.11; default on). Off hides every auto label and drops toast text back
+   *  to the session title — the screen-share switch. */
+  autoLabels: () => boolean;
+  setAutoLabels: (on: boolean) => void;
   /** persisted session cards (resume-on-focus across app restarts, §5.25) */
   persist: {
     list: () => PersistedSession[];
@@ -110,7 +120,32 @@ export interface SessionIpcDeps {
   preferredTransport?: () => 'pty' | 'stream' | undefined;
 }
 
-export function registerSessionIpc(deps: SessionIpcDeps): void {
+/**
+ * What registering the session IPC hands BACK to the bootstrap — the joins
+ * only this closure knows about. Getters rather than subscriptions: a caller
+ * asks at the moment it fires, which is the only moment the answer matters.
+ */
+export interface SessionIpcHandle {
+  /** This live session's card label, or undefined when it has none to show (§5.11). */
+  labelFor: (liveSessionId: string) => string | undefined;
+  /** the durable card a live session belongs to, or null if unbound (P2-E14-03) */
+  cardIdFor: (liveSessionId: string) => string | null;
+  /**
+   * The oldest permission this live session is still holding (P2-E14-04) — what
+   * an OS toast has to name before it offers to allow it, and the request its
+   * buttons answer.
+   */
+  pendingPermissionFor: (liveSessionId: string) => PermissionRequest | null;
+  /**
+   * Answer a held permission from the MAIN process — the toast's Allow/Deny.
+   * The identical call `sessions:decidePermission` makes, so the toast is a
+   * fourth button on the app's one decision path rather than a second path.
+   * Returns false when nothing holds that request any more.
+   */
+  decidePermission: (requestId: string, decision: string, reason?: string) => boolean;
+}
+
+export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   const { manager, ptys, hooks, transcripts, log, broker, streamPermissions, streamCommands } =
     deps;
   // per-session live-feed unsubscribers (attached panes only)
@@ -207,6 +242,40 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   // leak #170 declined to take and #187 removed the need for.
   const unbindLive = (liveId: string): void => {
     if (cardOfLive.delete(liveId)) cardsChanged();
+  };
+
+  /**
+   * A card's task label changed — tell the renderer (P2-E7-06).
+   *
+   * The exception to the paragraph above, and the reason it needed writing
+   * down. Every other persisted-half mutation is renderer-initiated, so the
+   * caller refreshes at its own call site; an AUTO label is initiated by a line
+   * appearing in a file nobody asked about, and there is no call site to
+   * refresh. Without this the label would be correct in the workspace file and
+   * invisible until something unrelated happened to reload the card list.
+   *
+   * Carries the VALUE rather than signalling "go and re-read", unlike
+   * `cardsChanged`. Two reasons, and both are about the two consumers: the
+   * grid's card header holds its label in local state (there is nothing to
+   * re-read), and `sessions:cards` resolves a git root per card, so a signal
+   * would turn one field moving into a directory walk per session per turn.
+   */
+  const publishLabel = (cardId: string, label: string | undefined): void =>
+    send('sessions:taskLabel', { cardId, label });
+
+  /**
+   * The task label to SHOW for a live session, or undefined when it has none
+   * (§5.9's toast text reads this — see `index.ts`).
+   *
+   * Goes through `visibleTaskLabel`, so a card whose auto label is suppressed
+   * is suppressed in the toast too. That is the whole point of the switch: the
+   * toast is the surface that leaves the app window.
+   */
+  const labelFor = (liveSessionId: string): string | undefined => {
+    const cardId = cardOfLive.get(liveSessionId);
+    if (!cardId) return undefined;
+    const card = deps.persist.list().find((s) => s.id === cardId);
+    return card ? visibleTaskLabel(card, deps.autoLabels()) : undefined;
   };
 
   /**
@@ -445,8 +514,25 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     const cardId = cardOfLive.get(snap.sessionId);
     if (!cardId) return;
     const prior = deps.persist.list().find((s) => s.id === cardId);
+    if (!prior) return;
     // keep the last real model if this snapshot hasn't seen a model line yet
-    if (prior) deps.persist.upsert({ ...prior, usage: snap.usage, model: snap.model ?? prior.model });
+    const next: PersistedSession = { ...prior, usage: snap.usage, model: snap.model ?? prior.model };
+    // ...and the CLI's own conversation title fills a blank label (P2-E7-06).
+    // ONE upsert, not two: a second `{...prior, taskLabel}` would be built from
+    // the same `prior` and would put the usage totals back to what they were
+    // before the line that triggered this.
+    //
+    // `null` on nearly every call — see `nextAutoLabel` for the four ways — and
+    // that is what makes "repeat titles cost nothing" true rather than hoped
+    // for: the CLI re-emits its settled title every turn, and every one of those
+    // lands here.
+    const label = nextAutoLabel(prior, snap.title, deps.autoLabels());
+    if (label !== null) {
+      next.taskLabel = label;
+      next.labelSource = 'auto';
+    }
+    deps.persist.upsert(next);
+    if (label !== null) publishLabel(cardId, label);
   });
 
   broker.handle('events:list', () => deps.feed.list());
@@ -481,21 +567,43 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       cardId: cardOfLive.get(r.sessionId),
     }))
   );
+  /**
+   * **The** decision path (P2-E14-04). Named and hoisted out of the channel
+   * handler because it now has more than one caller: the renderer's four
+   * surfaces come through `sessions:decidePermission` below, and the OS toast's
+   * Allow/Deny buttons come through `SessionIpcHandle.decidePermission` — from
+   * the main process, with no window in the loop at all. A toast that reached
+   * the routers itself would be a second opinion about what "allow" means.
+   */
+  const decidePermission = (requestId: string, decision: string, reason?: string): boolean => {
+    if (typeof requestId !== 'string' || (decision !== 'allow' && decision !== 'deny')) return false;
+    const clean = typeof reason === 'string' ? reason.slice(0, 500) : undefined;
+    // Ids are namespaced (`stream:<sessionId>:<native>`), so exactly one of
+    // these can own a given request and the order is not load-bearing.
+    // Falls through rather than branching on the prefix: the prefix is an
+    // implementation detail of the stream router, and asking the routers who
+    // owns it cannot go stale the way a string test would.
+    return (
+      hooks.decide(requestId, decision, clean) ||
+      (streamPermissions?.decide(requestId, decision, clean) ?? false)
+    );
+  };
   broker.handle('sessions:decidePermission',
-    (_e, requestId: string, decision: string, reason?: string) => {
-      if (typeof requestId !== 'string' || (decision !== 'allow' && decision !== 'deny')) return false;
-      const clean = typeof reason === 'string' ? reason.slice(0, 500) : undefined;
-      // Ids are namespaced (`stream:<sessionId>:<native>`), so exactly one of
-      // these can own a given request and the order is not load-bearing.
-      // Falls through rather than branching on the prefix: the prefix is an
-      // implementation detail of the stream router, and asking the routers who
-      // owns it cannot go stale the way a string test would.
-      return (
-        hooks.decide(requestId, decision, clean) ||
-        (streamPermissions?.decide(requestId, decision, clean) ?? false)
-      );
-    }
+    (_e, requestId: string, decision: string, reason?: string) =>
+      decidePermission(requestId, decision, reason)
   );
+  /**
+   * The oldest request this LIVE session is still holding, or null (E14-04).
+   *
+   * FIFO across both routers, because that is what the approval bar answers:
+   * its buttons act on `cardQueue[0]`. A toast that answered the newest request
+   * while the bar answered the oldest would make the two surfaces disagree
+   * about which question is on screen — and the user would have no way to tell.
+   */
+  const pendingPermissionFor = (liveSessionId: string): PermissionRequest | null =>
+    [...hooks.pendingRequests(), ...(streamPermissions?.pendingRequests() ?? [])].find(
+      (r) => r.sessionId === liveSessionId
+    ) ?? null;
   // Submit a prompt on the session's own transport (P2-E18-08a). Returns
   // false for a PTY session, whose composer route is a bracketed paste and a
   // delayed CR — a genuinely different operation. The renderer tries this
@@ -569,6 +677,58 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       ? deps.streamFeed.blocks(liveId)
       : transcripts.blocks(liveId);
   });
+  // Session find (P2-E17-01, §5.31): scan the transcript FILE, in main.
+  //
+  // Behind `transcripts.read` and NO new capability — the file is one we
+  // already watch and already stream to this window block by block.
+  //
+  // The scope arrives as a LIST of session ids and is resolved to files HERE,
+  // by asking the watcher which transcript each id is bound to. The caller
+  // therefore names sessions, never paths: a renderer cannot ask this channel
+  // to read a file no card is showing, which is the same rule `fs:read` enforces
+  // with a scope check and this one gets for free from the indirection.
+  //
+  // A STREAM session is searched too, and completely: the watcher still binds
+  // its transcript (usage, the native id, drift all want it — only the FEED
+  // comes from somewhere else), so the file on disk is the same complete
+  // archive. What it does not get today is a jump: `loaded` is routed the way
+  // `transcripts:blocks` routes it, and a stream block's `ts` is the moment the
+  // message reached US rather than the timestamp the CLI wrote, so the engine's
+  // alignment check refuses and every hit comes back snippet-only. Refusing is
+  // the right answer to "I cannot tell which block this is" — see E17-02's
+  // hand-off for the follow-up.
+  broker.handle('transcripts:search', async (_e, req: unknown) => {
+    const r = (req ?? {}) as Partial<TranscriptSearchRequest>;
+    // De-duped and capped: the scope is a list the caller builds, and the same
+    // id twice is the same 7.7MB file scanned twice on the thread that pumps
+    // every terminal. Neither is reachable from today's caller — which is the
+    // cheapest moment to make it unreachable from tomorrow's (§5.29: validate at
+    // the boundary).
+    const ids = Array.isArray(r.sessionIds)
+      ? [...new Set(r.sessionIds.filter((s) => typeof s === 'string'))].slice(0, 64)
+      : [];
+    const q = (r.query ?? {}) as Partial<TranscriptQuery>;
+    const request: TranscriptSearchRequest = {
+      sessionIds: ids,
+      query: {
+        term: typeof q.term === 'string' ? q.term : '',
+        caseSensitive: q.caseSensitive === true,
+        wholeWord: q.wholeWord === true,
+        regex: q.regex === true,
+      },
+      ...(typeof r.limit === 'number' && r.limit > 0 ? { limit: Math.min(r.limit, 5000) } : {}),
+    };
+    const targets = ids.map((sessionId) => ({
+      sessionId,
+      file: transcripts.transcriptFile(sessionId),
+      loaded:
+        isStream(sessionId) && deps.streamFeed
+          ? deps.streamFeed.blocks(sessionId)
+          : transcripts.blocks(sessionId),
+    }));
+    return searchTranscripts(targets, request, { ...(request.limit ? { limit: request.limit } : {}) });
+  });
+
   // Binding state on demand (P2-E15-10). Transitions ride `sessions:usage`
   // like everything else on the snapshot; this is the pull a panel needs when
   // it MOUNTS, since a session that failed to bind long ago will never push
@@ -719,7 +879,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
           priorUsage: prior?.usage,
           priorModel: prior?.model,
           autonomy: prior?.autonomy ?? running.autonomy,
-          taskLabel: prior?.taskLabel,
+          taskLabel: prior && visibleTaskLabel(prior, deps.autoLabels()),
         };
       }
       let title = (prior?.identity.title ?? (typeof opts.title === 'string' ? opts.title : opts.folder)).slice(0, 120);
@@ -871,6 +1031,12 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
           // the drift detector are all still wanted, and the CLI writes the
           // JSONL in stream mode too (S-10).
           deriveFeed: record.transport !== 'stream',
+          // Undefined for a provider that declares no `titles` capability, and
+          // the watcher then inspects no line for one — "starts no title watch
+          // at all" (P2-E7-06). Not conditional on the transport: the CLI
+          // writes the same JSONL in stream mode (S-10), and unlike the Feed
+          // there is no second source of titles to collide with.
+          readTitle: plan.readTitle,
         });
         // the watcher refuses a root it cannot poll safely. Say so against the
         // CARD — a warning keyed by a live session id, in the transcripts log,
@@ -879,6 +1045,32 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
           log.warn('provider declares transcripts but the root was refused', {
             cardId: opts.cardId,
             root: plan.transcriptsRoot,
+          });
+        }
+        // ...which leaves a RESUMED stream session with no source of history at
+        // all, and that is #395: `--resume` restores the model's context and
+        // re-sends none of it, the line above forbids the transcript from
+        // deriving, and the card opens blank as if it had been wiped. Replay the
+        // conversation into the Feed once, here, from the same JSONL the
+        // watcher would have read.
+        //
+        // HERE, and not later, is the seam: nothing has yielded to the event
+        // loop since the spawn, so `StreamFeed` has been offered no message for
+        // this session and cannot be. Everything on disk is numbered below
+        // everything the stream will say — no duplicate at the join, and no gap.
+        //
+        // Gated on `watching` as well: the watcher refuses a root it cannot
+        // poll SAFELY (a relative path it would crawl from the process cwd —
+        // §5.29's boundary check, sitting there because Phase 4 makes that
+        // string third-party). Reading a transcript out of a root the host has
+        // just declared unusable would make the refusal mean two different
+        // things on two paths.
+        if (watching && record.transport === 'stream' && plan.resumeSessionId && deps.streamFeed) {
+          replayResumedHistory(deps.streamFeed, log, {
+            sessionId: record.id,
+            projectsRoot: plan.transcriptsRoot,
+            folder: opts.folder,
+            nativeSessionId: plan.resumeSessionId,
           });
         }
       }
@@ -922,7 +1114,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
         priorUsage: prior?.usage,
         priorModel: prior?.model,
         autonomy,
-        taskLabel: prior?.taskLabel,
+        taskLabel: prior && visibleTaskLabel(prior, deps.autoLabels()),
       };
     }
   );
@@ -1055,7 +1247,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
           // asked-for value, so the chip and the write agree by construction.
           transport: card.transport ?? deps.preferredTransport?.() ?? DEFAULT_SESSION_TRANSPORT,
           autoKey: await autoKeyFor(card.identity.folder),
-          taskLabel: card.taskLabel,
+          // Through the switch (P2-E7-06): a suppressed auto label must not
+          // reach the renderer at all, or it renders in the rail for a
+          // screen-share to read.
+          taskLabel: visibleTaskLabel(card, deps.autoLabels()),
         };
       })
     );
@@ -1140,11 +1335,44 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
     if (prior) deps.persist.upsert({ ...prior, autonomy: autonomy as PersistedSession['autonomy'] });
   });
 
-  // freeform task label for a card (E7-03), persisted across restarts
+  // Freeform task label for a card (E7-03), persisted across restarts — and
+  // since P2-E7-06 the act that PINS it: typing makes the label the user's and
+  // no later `ai-title` may touch it, clearing the field hands it back to auto.
+  // `typedLabel` owns both halves of that rule.
   broker.handle('sessions:setTaskLabel', (_e, cardId: string, label: string) => {
     if (typeof cardId !== 'string' || typeof label !== 'string') return;
     const prior = deps.persist.list().find((s) => s.id === cardId);
-    if (prior) deps.persist.upsert({ ...prior, taskLabel: label.slice(0, 120) });
+    if (!prior) return;
+    const typed = typedLabel(label);
+    deps.persist.upsert({ ...prior, ...typed });
+    // Echoed even though the renderer initiated it: a card's label renders in
+    // the grid header AND the rail row, and only one of the two was the caller.
+    publishLabel(cardId, typed.taskLabel);
+  });
+
+  // The auto-label switch (P2-E7-06, §5.11 litmus #4). It lives HERE rather
+  // than beside `settings:setAutoTrust` in `index.ts` because flipping it has
+  // to move what is on screen, and the label plumbing that does that is this
+  // module's.
+  broker.handle('settings:getAutoLabels', () => deps.autoLabels());
+  broker.handle('settings:setAutoLabels', (_e, on: boolean) => {
+    deps.setAutoLabels(on === true);
+    const enabled = deps.autoLabels();
+    // Re-publish EVERY card's label under the new setting: off takes the auto
+    // ones off screen, on puts them straight back from a value we never
+    // deleted. Waiting for the next `ai-title` line would work — the CLI
+    // re-emits every turn — but "every turn" is minutes on an idle session, and
+    // a switch you flip that appears to do nothing is a switch nobody trusts.
+    //
+    // Every card, not every LIVE one. A suspended card still has a panel and a
+    // rail row, both showing the label it was left with, and neither has a live
+    // session behind it — so walking `cardOfLive` would leave exactly the cards
+    // nobody is looking at still displaying a phrase from a prompt, which is
+    // the one thing this switch exists to prevent.
+    for (const card of deps.persist.list()) {
+      publishLabel(card.id, visibleTaskLabel(card, enabled));
+    }
+    return enabled;
   });
 
   // rename a card by cardId (works for suspended cards too) — updates the
@@ -1232,4 +1460,19 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
   broker.on('pty:resize', (_e, id: string, cols: number, rows: number) => {
     ptys.get(id)?.resize(cols, rows);
   });
+
+  return {
+    labelFor,
+    // The live -> card binding, read-only, for the one consumer OUTSIDE the
+    // renderer that needs it: the notification rules engine (P2-E14-03). A
+    // rule is scoped to a CARD (it has to survive the session it was written
+    // for), while a feed event carries the LIVE id — and this map is the only
+    // place that join exists. Returned rather than exported as a module-level
+    // map so it stays one-per-registration, like everything else in here.
+    cardIdFor: (liveSessionId: string) => cardOfLive.get(liveSessionId) ?? null,
+    // The other two consumers outside the renderer, both P2-E14-04's toast:
+    // what is being asked, and the one function that answers it.
+    pendingPermissionFor,
+    decidePermission,
+  };
 }

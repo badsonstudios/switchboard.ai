@@ -510,3 +510,156 @@ describe('sessions are independent, and forgotten when they close', () => {
     expect(feed.blocks(SID)).toEqual([]);
   });
 });
+
+// #395 — a RESUMED Direct session replays what is already on disk.
+//
+// The transcript entries below are the shapes the CLI really writes (and the
+// stream fake mirrors): file metadata wrapped around an Anthropic `message`.
+// Every claim here is about the SEAM — the join between "already happened" and
+// "arriving now" — because that is the only place this can go wrong: a
+// duplicate block, a missing one, or a seq the renderer's upsert collides on.
+describe('replaying a resumed conversation (#395)', () => {
+  const line = (type: 'user' | 'assistant', content: unknown): Record<string, unknown> => ({
+    type,
+    sessionId: CONV,
+    cwd: '/repo',
+    timestamp: '2026-08-10T10:00:00.000Z',
+    isSidechain: false,
+    isMeta: false,
+    message: { role: type, content },
+  });
+  const history = [
+    line('user', [{ type: 'text', text: 'what did we decide?' }]),
+    line('assistant', [{ type: 'text', text: 'we decided to ship it' }]),
+  ];
+
+  it('puts the prior conversation in the Feed before anything streams', () => {
+    expect(feed.hydrate(SID, history)).toBe(2);
+    expect(feed.blocks(SID).map((b) => [b.kind, b.text])).toEqual([
+      ['user', 'what did we decide?'],
+      ['assistant', 'we decided to ship it'],
+    ]);
+    // replayed blocks are never "still taking tokens"
+    expect(feed.blocks(SID).some((b) => b.streaming)).toBe(false);
+    expect(feed.hasOpenBlocks(SID)).toBe(false);
+  });
+
+  it('the live tail appends above it — no duplicate at the join, and no gap', () => {
+    feed.hydrate(SID, history);
+    feed.offer(SID, { type: 'system', subtype: 'init', session_id: CONV });
+    feed.offer(SID, {
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'text', text: 'and now?' }] },
+      session_id: CONV,
+      parent_tool_use_id: null,
+    });
+    feed.offer(SID, ev({ type: 'message_start', message: { role: 'assistant', content: [] } }));
+    feed.offer(SID, ev({ type: 'content_block_start', index: 0, content_block: { type: 'text' } }));
+    feed.offer(SID, textDelta('now we '));
+    feed.offer(SID, textDelta('resume'));
+    feed.offer(SID, assistant([{ type: 'text', text: 'now we resume' }]));
+    feed.offer(SID, { type: 'result', subtype: 'success' });
+
+    expect(feed.blocks(SID).map((b) => [b.seq, b.kind, b.text])).toEqual([
+      [1, 'user', 'what did we decide?'],
+      [2, 'assistant', 'we decided to ship it'],
+      [3, 'user', 'and now?'],
+      [4, 'assistant', 'now we resume'],
+    ]);
+    // The renderer is PUSHED only the live half — the replayed half is served
+    // to it as backlog when its panel mounts (see `hydrate`) — and the pushes
+    // never reuse a seq the replay already spent, which is what would make the
+    // upsert overwrite history with the live tail.
+    const bySeq = new Map(seen.map((b) => [b.seq, b]));
+    expect([...bySeq.keys()].sort()).toEqual([3, 4]);
+    expect(bySeq.get(4)?.streaming).toBe(false);
+  });
+
+  it('replaying pushes nothing at the renderer — there is nobody there yet', () => {
+    feed.hydrate(SID, [
+      line('assistant', [
+        { type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'ls' } },
+      ]),
+      line('user', [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'a.txt' }]),
+      ...history,
+    ]);
+
+    expect(seen).toEqual([]); // not a block, and not a tool-result update either
+    expect(feed.blocks(SID)).toHaveLength(3);
+    // ...and the buffer is un-muted afterwards: the very next live block goes out
+    feed.offer(SID, assistant([{ type: 'text', text: 'live' }]));
+    expect(seen.map((b) => b.text)).toEqual(['live']);
+  });
+
+  it('a thinking block left open by the old conversation is not timed against the new one', () => {
+    // the resumed conversation ended mid-thought, yesterday
+    feed.hydrate(SID, [
+      {
+        ...line('assistant', [{ type: 'thinking', thinking: 'where was I' }]),
+        timestamp: new Date(Date.now() - 24 * 3600_000).toISOString(),
+      },
+    ]);
+    feed.offer(SID, assistant([{ type: 'text', text: '今日' }]));
+
+    // "Thought for 86400s" is a claim, and it would be a false one: the gap is
+    // the seam, not the thinking. No duration beats a wrong duration.
+    expect(feed.blocks(SID)[0].durationMs).toBeUndefined();
+  });
+
+  it('an isSidechain line replays as a sidechain, not as the main conversation', () => {
+    feed.hydrate(SID, [{ ...line('assistant', [{ type: 'text', text: 'subagent' }]), isSidechain: true }, ...history]);
+    expect(feed.blocks(SID).map((b) => b.sidechain)).toEqual([true, false, false]);
+  });
+
+  it('a tool result that was already on disk still attaches to its call', () => {
+    feed.hydrate(SID, [
+      line('assistant', [
+        { type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'ls' } },
+      ]),
+      line('user', [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'a.txt' }]),
+    ]);
+    expect(feed.blocks(SID)[0].tool?.out).toBe('a.txt');
+  });
+
+  it('the first system:init does NOT wipe it, even when --resume forked a new id', () => {
+    feed.hydrate(SID, history);
+    // hydration must not have claimed a conversation id: the CLI's first init
+    // is the only thing that may, and it is allowed to name a DIFFERENT
+    // conversation than the one we asked to resume
+    feed.offer(SID, { type: 'system', subtype: 'init', session_id: 'a-forked-conversation' });
+    expect(feed.blocks(SID)).toHaveLength(2);
+    expect(resets).toEqual([]);
+  });
+
+  it('/clear on a resumed session still resets — replayed history included', () => {
+    feed.hydrate(SID, history);
+    feed.offer(SID, { type: 'system', subtype: 'init', session_id: CONV });
+    feed.offer(SID, { type: 'system', subtype: 'init', session_id: 'after-the-clear' });
+    expect(feed.blocks(SID)).toEqual([]);
+    expect(resets).toEqual(['clear']);
+    // and the fresh conversation numbers from 1 again
+    feed.offer(SID, assistant([{ type: 'text', text: 'clean slate' }]));
+    expect(feed.blocks(SID).map((b) => b.seq)).toEqual([1]);
+  });
+
+  it('nothing to replay is an empty Feed, not an error (fail-open)', () => {
+    expect(feed.hydrate(SID, [])).toBe(0);
+    expect(feed.blocks(SID)).toEqual([]);
+  });
+
+  it('refuses to replay twice — the past must not be appended onto the present', () => {
+    feed.hydrate(SID, history);
+    feed.offer(SID, assistant([{ type: 'text', text: 'live' }]));
+    expect(feed.hydrate(SID, history)).toBe(0);
+    expect(feed.blocks(SID)).toHaveLength(3);
+  });
+
+  it('ignores CLI-internal lines the transcript source ignores too', () => {
+    feed.hydrate(SID, [
+      { ...line('user', [{ type: 'text', text: 'meta' }]), isMeta: true },
+      line('user', '<local-command-stdout>plumbing</local-command-stdout>'),
+      line('user', [{ type: 'text', text: 'real' }]),
+    ]);
+    expect(feed.blocks(SID).map((b) => b.text)).toEqual(['real']);
+  });
+});

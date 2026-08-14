@@ -16,6 +16,11 @@ import {
   UnknownTransportError,
 } from '../transport/transport';
 import { SessionEvent, SessionStatus, transition } from './state-machine';
+import {
+  removeSessionStateDir,
+  sweepOrphanSessionStateDirs,
+  SweepResult,
+} from './session-state';
 import { streamStatusEvent } from './stream-status';
 import { interruptRequest, userMessage } from '../../shared/stream-protocol';
 
@@ -185,6 +190,18 @@ export class SessionManager {
       proc = transport.spawn({ id, command: recipe.command, args: recipe.args, cwd: identity.folder, env: recipe.env });
     } catch (err) {
       this.log.error('session spawn failed', { sessionId: id, folder: identity.folder, transport: kind, error: String(err) });
+      // The state directory is ALREADY on disk here (#290): `settingsFor` and
+      // `buildSpawn` both wrote into it above, before there was a process to
+      // spawn. There will never be an exit or a `remove()` for this id — "no
+      // orphan record" was only ever true of the map — so this is the one
+      // moment it can be taken, and without it a spawn failure is a permanent
+      // leak the startup sweep does not reach for 24 h.
+      //
+      // NOT the hook token registered by `settingsFor`: that lives in
+      // `HookListener`'s map, which this class does not own and cannot reach.
+      // A failed spawn still leaves that entry behind — #282's territory, and
+      // noted rather than half-fixed from here.
+      removeSessionStateDir(this.stateDir, id, this.log);
       throw err; // no orphan record: it was never added
     }
     this.sessions.set(id, record);
@@ -272,6 +289,17 @@ export class SessionManager {
           this.log.error('exit listener threw', { sessionId: id, error: String(err) });
         }
       }
+      // The CLI is gone, so its `settings.json` and the directory holding it
+      // are dead weight (#290). This is the SELF-EXIT half of the lifecycle:
+      // a session that ends on its own and is never touched again reaches no
+      // card-level teardown at all, so anything not taken here would live for
+      // the rest of the install. The record and the binding deliberately stay
+      // (#187) — the corpse is still on screen; only its disk state goes.
+      //
+      // LAST, after the listeners: this is housekeeping and it must not sit
+      // between a process dying and the UI being told. Its own failure is a
+      // logged nuisance and cannot reach a subscriber either way.
+      removeSessionStateDir(this.stateDir, id, this.log);
     });
     this.log.info('session created', { sessionId: id, folder: identity.folder, pid: proc.pid, provider: identity.providerId });
     return { ...record };
@@ -327,7 +355,43 @@ export class SessionManager {
     } catch {
       /* already gone */
     }
+    // …and its state directory goes with it (#290), AFTER the teardown above
+    // has asked the transport to kill: the file we are deleting is the one the
+    // CLI was launched with, so the kill goes out first on the one path where
+    // the process may still be alive for a beat. It is idempotent with the
+    // delete in `onExit` — whichever lands second finds nothing and says
+    // nothing — and both are needed: this one covers a card closed on a corpse
+    // (whose exit fired long ago) and a transport that never reports one.
+    removeSessionStateDir(this.stateDir, id, this.log);
     this.log.info('session removed', { sessionId: id, transport: r.transport });
+  }
+
+  /**
+   * Drop the state directories of sessions from PREVIOUS runs (#290).
+   *
+   * Bootstrap-only, and the caller's placement is what makes it safe — see
+   * `sweepOrphanSessionStateDirs`, which holds the full argument. It lives on
+   * the manager because the manager is what owns `stateDir`: `create()` hands
+   * it to `buildSpawn`, which is what makes these directories in the first
+   * place.
+   *
+   * Two things still leak a directory past the deletes above — an app quit
+   * with sessions running (the kills go out, the exits do not come back) and a
+   * crash or force-quit — so this is not belt-and-braces for a closed hole; it
+   * is the only owner either of them has.
+   */
+  sweepOrphanStateDirs(opts?: { minAgeMs?: number; budgetMs?: number }): SweepResult {
+    return sweepOrphanSessionStateDirs(this.stateDir, {
+      log: this.log,
+      ...opts,
+      // AFTER the spread, deliberately. Empty at the bootstrap call site, and
+      // passed anyway: "a live session's directory is not a candidate" should
+      // be true because the sweep was TOLD, not because of where today's only
+      // caller happens to sit — and a caller must not be able to switch it off
+      // by handing in a `keep` of its own. `opts`' type does not offer one;
+      // this makes that a property of the code rather than of the types.
+      keep: new Set(this.sessions.keys()),
+    });
   }
 
   // `restart()` USED TO LIVE HERE. Deleted in P2-E15-01: it was a second

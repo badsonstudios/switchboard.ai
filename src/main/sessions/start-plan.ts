@@ -53,6 +53,15 @@ export interface StartPlan {
   resumeSessionId?: string;
   /** watch transcripts under this root; undefined = do not watch at all */
   transcriptsRoot?: string;
+  /**
+   * Pull a conversation title out of one transcript line (§5.11, P2-E7-06).
+   * Undefined = this provider has no titles, so no line is ever inspected for
+   * one and the task label is never auto-filled.
+   *
+   * Wrapped in the same fail-open guard as the rest: a contributor that throws
+   * on a line degrades to "this line has no title", not to a lost transcript.
+   */
+  readTitle?: (line: Record<string, unknown>) => string | undefined;
   /** build injectable settings for the spawned session; undefined = inject
    *  nothing, and do not register a hook token either */
   buildSettings?: (sessionId: string) => Record<string, unknown>;
@@ -123,25 +132,80 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
 
   const caps = safely('capabilitiesOf', () => input.capabilitiesOf(providerId));
 
-  // Resume only when the provider says this conversation is really there. The
-  // capability is asked BEFORE the id is used, because a stale id is not
-  // harmless: it makes the CLI exit at spawn and the card crash.
-  const nativeId = input.prior?.nativeSessionId;
-  const resumable =
-    !!nativeId && !!safely('resume.canResume', () => caps?.resume?.canResume(input.folder, nativeId));
-
   // An adapter that cannot say WHERE its transcripts are has, for our purposes,
   // no transcripts: watching "" would poll a directory that does not exist
   // forever and report nothing, which reads like a bug rather than a provider
   // without the feature.
+  //
+  // Resolved BEFORE the resume decision, and that order is load-bearing (#432).
+  // THIS is the session's transcript root — the one string the watcher polls,
+  // the one a resumed Direct session replays its history out of (#395), and
+  // therefore the one `canResume` is asked about below. It used to be asked
+  // about whatever root the adapter derived for itself, which made one contract
+  // two independent declarations: a provider that answered from a root the host
+  // never reads would resume and then show nothing.
   const root = caps?.transcripts
     ? safely('transcripts.projectsRoot', () => caps.transcripts!.projectsRoot())
+    : undefined;
+  const transcriptsRoot = root || undefined;
+
+  // Resume only when the provider says this conversation is really there. The
+  // capability is asked BEFORE the id is used, because a stale id is not
+  // harmless: it makes the CLI exit at spawn and the card crash.
+  //
+  // Note what this makes `resume` — unlike `titles` below — deliberately NOT
+  // independent of `transcripts`: a provider whose root could not be resolved is
+  // asked about `''`, and one that answers out of a transcript therefore says
+  // no, so the card starts FRESH. That loses a resume we might have got away
+  // with; it is the trade this item chose, because the alternative is resuming
+  // against a directory the host will not read, which is a session that looks
+  // wiped. A provider that resumes on some other authority is unaffected — it
+  // ignores the root and still gets to say yes.
+  const nativeId = input.prior?.nativeSessionId;
+  const resumable =
+    !!nativeId &&
+    !!safely('resume.canResume', () =>
+      caps?.resume?.canResume({
+        // exactly what this plan exposes, not a second reading of the
+        // capability — "" for a provider that declares no transcripts at all
+        projectsRoot: transcriptsRoot ?? '',
+        folder: input.folder,
+        nativeSessionId: nativeId,
+      })
+    );
+
+  // Deliberately NOT gated on `root`: the two are independent declarations and
+  // reading a title costs nothing extra, because the host is already tailing.
+  // A provider that declared titles but no transcripts would simply never be
+  // asked — nothing tails, so no line reaches this.
+  //
+  // The ONE capability asked per TRANSCRIPT LINE rather than once per session,
+  // so it cannot use `safely` as-is: that appends to `warnings` and calls
+  // `onDegraded` on every throw, and a provider whose reader throws would grow
+  // an unbounded array and flood the log at transcript speed. A throw here
+  // degrades `titles` to ABSENT for the rest of the session — reported once,
+  // then never asked again, which is also what `TitleCapability` promises. The
+  // session keeps its transcript, its Feed and its usage totals; it just does
+  // not get labels.
+  let titlesBroken = false;
+  const readTitle = caps?.titles
+    ? (line: Record<string, unknown>): string | undefined => {
+        if (titlesBroken) return undefined;
+        try {
+          return caps.titles!.titleFrom(line);
+        } catch (err) {
+          titlesBroken = true;
+          degraded(`provider capability "titles.titleFrom" threw: ${String(err)}`);
+          return undefined;
+        }
+      }
     : undefined;
 
   return {
     providerId,
     resumeSessionId: resumable ? nativeId : undefined,
-    transcriptsRoot: root || undefined,
+    transcriptsRoot,
+    readTitle,
     buildSettings: caps?.hooks
       ? (id) => safely('hooks.settingsFor', () => caps.hooks!.settingsFor(id, host)) ?? {}
       : undefined,

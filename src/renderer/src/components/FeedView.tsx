@@ -7,6 +7,14 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { blockVisible, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
 import { feedKeyAction, FEED_EXPANDER_ATTR } from '../lib/feed-keys';
+import {
+  FeedReveal,
+  FeedRevealProvider,
+  FEED_SEQ_ATTR,
+  NO_REVEAL,
+  useCurrentHit,
+} from '../lib/feed-reveal';
+import { findSurfaceKey, publishFindSurface, type FeedFindSurface } from '../lib/find-surfaces';
 import { emptyStateCopy } from '../lib/binding-copy';
 import { terminalHandoff, TerminalHandoff, toneToken } from '../lib/terminal-handoff';
 import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
@@ -14,6 +22,12 @@ import { rendererRegistry } from '../extensibility/registry-instance';
 import { renderFeedBlock } from '../extensibility/feed-render';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { interruptSession, submitPrompt } from '../lib/composer';
+import {
+  COMPOSER_FONT_SIZE,
+  COMPOSER_LINE_RATIO,
+  composerSize,
+  resolveLineHeight,
+} from '../lib/composer-size';
 import { argumentSummary } from '../lib/permission-batches';
 import {
   filterCommands,
@@ -31,13 +45,28 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
   // bootstrap line, and this file is not touched.
   const inner = renderFeedBlock(rendererRegistry, b);
   const dot = showsTimelineDot(b.kind);
+  // The block find is sitting on (P2-E17-02). An OUTLINE rather than a
+  // background: the block already paints its own surfaces (tool boxes, diff
+  // rows) and tinting behind them would recolour half of them and none of the
+  // rest. `outline` also costs no layout, so landing on a hit does not reflow
+  // the conversation under the user's eye.
+  const hit = useCurrentHit(b.seq);
   return (
     <div
       data-feed-block={b.kind}
+      // how a jump finds this block's element — see `FeedFindSurface.jumpTo`
+      {...{ [FEED_SEQ_ATTR]: String(b.seq) }}
       style={{
         display: 'flex',
         gap: 8,
         padding: '4px 8px',
+        ...(hit
+          ? {
+              outline: '2px solid var(--status-working-ink)',
+              outlineOffset: -2,
+              borderRadius: 'var(--radius-chip)',
+            }
+          : {}),
         ...(b.sidechain
           ? {
               marginInlineStart: 14,
@@ -397,7 +426,83 @@ export function FeedView(props: {
     else els[action.index]?.focus();
   }, [markGesture]);
 
-  const visibleBlocks = blocks.filter((b) => blockVisible(b, verbosity));
+  // ── Session find (P2-E17-02, §5.31) ─────────────────────────────────────
+  //
+  // What the feed owes the find bar: take me to block `seq`, expanding
+  // whatever the view was hiding. The SEARCH itself is main's (E17-01) and the
+  // bar's; this is only the "and show me" half.
+  const [reveal, setReveal] = React.useState<FeedReveal>(NO_REVEAL);
+  // read by `jumpTo`, which is called from the bar OUTSIDE React's commit and
+  // must therefore not close over a render's `blocks`
+  const blocksRef = React.useRef(blocks);
+  blocksRef.current = blocks;
+  const jumpTo = React.useCallback(
+    (seq: number): boolean => {
+      // The block is not in the view buffer — evicted, or not drained yet.
+      // Refusing is the point: the caller renders the hit as snippet-only
+      // rather than scrolling somewhere arbitrary and calling it the match.
+      if (!blocksRef.current.some((b) => b.seq === seq)) return false;
+      setReveal((prev) => {
+        const next = new Set(prev.revealed);
+        next.add(seq);
+        return { revealed: next, current: seq };
+      });
+      // The tail-pin would fight us: an unattributed scroll more than 40px
+      // from the bottom is read as "layout moved it" and yanked back (see
+      // onScroll). Both halves are needed — the gesture claims the scroll as
+      // the user's, and unpinning stops the next streamed block dragging them
+      // away from the hit they just asked for.
+      markGesture();
+      pinned.current = false;
+      // The SCROLL is not done here — see the layout effect below.
+      return true;
+    },
+    [markGesture],
+  );
+  /**
+   * Take the view to the revealed block, after React has committed it.
+   *
+   * A layout effect rather than a frame scheduled inside `jumpTo`, and the
+   * difference is not cosmetic: a verbosity-hidden block does not EXIST in the
+   * DOM until the reveal commits, and an expanded one is taller than the one
+   * we would have measured. `jumpTo` is called from two places with different
+   * scheduling — a keypress (React flushes synchronously) and the continuation
+   * of an awaited search (normal priority, which React may split across
+   * frames) — so a one-frame guess is right in one of them and a silent no-op
+   * in the other, having already unpinned the tail. A layout effect runs after
+   * commit in both, by construction, which is also what makes it testable.
+   */
+  const jumpedTo = reveal.current;
+  React.useLayoutEffect(() => {
+    if (jumpedTo === null) return;
+    const root = scroller.current;
+    const el = root?.querySelector<HTMLElement>(`[${FEED_SEQ_ATTR}="${jumpedTo}"]`);
+    if (!root || !el) return;
+    autoPin.current = true;
+    // 24px of air above the block, so a hit at the top of the viewport still
+    // reads as being inside a conversation
+    root.scrollTop += el.getBoundingClientRect().top - root.getBoundingClientRect().top - 24;
+    lastTop.current = root.scrollTop;
+    requestAnimationFrame(() => (autoPin.current = false));
+  }, [jumpedTo]);
+  const clearReveal = React.useCallback(() => setReveal(NO_REVEAL), []);
+  React.useEffect(() => {
+    if (!props.cardId) return; // a card with no durable id cannot be addressed
+    const surface: FeedFindSurface = { kind: 'feed', jumpTo, clear: clearReveal };
+    return publishFindSurface(findSurfaceKey(props.cardId, 'feed'), surface);
+  }, [props.cardId, jumpTo, clearReveal]);
+  // a different session in the same card is a different conversation; its
+  // blocks do not share seqs with the one we had revealed
+  React.useEffect(() => {
+    clearReveal();
+  }, [props.sessionId, clearReveal]);
+
+  // `revealed` OVERRIDES the verbosity filter (§5.31: find searches what the
+  // view is hiding, and jumping expands it). Without this clause, jumping to a
+  // hit in a thinking block while the preset is `normal` would scroll to a
+  // block that is not in the list — the honest-looking version of doing
+  // nothing at all.
+  const visibleBlocks = blocks.filter((b) => reveal.revealed.has(b.seq) || blockVisible(b, verbosity));
   return (
     <div style={{ blockSize: '100%', display: 'flex', flexDirection: 'column', background: 'var(--card-bg)' }}>
       <div
@@ -539,15 +644,19 @@ export function FeedView(props: {
           {blocks.length === 0 && !cleared && (
             <EmptyState binding={props.binding ?? 'awaiting-prompt'} diag={props.bindingDiag ?? null} />
           )}
-          {visibleBlocks.map((b, i) => (
-            <React.Fragment key={b.seq}>
-              {/* a new prompt starts a new turn — rule it off (Dan #11) */}
-              {b.kind === 'user' && i > 0 && (
-                <div style={{ borderBlockStart: '1px solid var(--border)', marginBlock: 8, marginInline: 8 }} />
-              )}
-              <Block b={b} />
-            </React.Fragment>
-          ))}
+          {/* the find bar's reveal set reaches the collapsible renderers from
+              here — see lib/feed-reveal for why it is a context and not props */}
+          <FeedRevealProvider value={reveal}>
+            {visibleBlocks.map((b, i) => (
+              <React.Fragment key={b.seq}>
+                {/* a new prompt starts a new turn — rule it off (Dan #11) */}
+                {b.kind === 'user' && i > 0 && (
+                  <div style={{ borderBlockStart: '1px solid var(--border)', marginBlock: 8, marginInline: 8 }} />
+                )}
+                <Block b={b} />
+              </React.Fragment>
+            ))}
+          </FeedRevealProvider>
           <div ref={bottom} />
         </div>
       </div>
@@ -813,6 +922,63 @@ function ApprovalBar({
 }
 
 /**
+ * An element's block-axis padding or border, in px — the parts of its height
+ * that are not rendered text.
+ *
+ * Logical longhands first (this codebase writes logical properties), physical
+ * as the fallback: jsdom resolves only the physical ones, and a measurement
+ * that silently read zero there would size a different box in tests than in
+ * the app.
+ */
+function blockEdge(cs: CSSStyleDeclaration, part: 'padding' | 'border'): number {
+  const px = (v: string): number => {
+    const n = Number.parseFloat(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const w = part === 'border' ? '-width' : '';
+  const logical =
+    px(cs.getPropertyValue(`${part}-block-start${w}`)) +
+    px(cs.getPropertyValue(`${part}-block-end${w}`));
+  // `> 0`, not `!== ''`: jsdom ANSWERS the logical longhands, with "0" — an
+  // empty-string check would take that zero for a measurement and size a
+  // different box in tests than in the app.
+  if (logical > 0) return logical;
+  return px(cs.getPropertyValue(`${part}-top${w}`)) + px(cs.getPropertyValue(`${part}-bottom${w}`));
+}
+
+/** the conversation never gives up its last 60px to make room for the box */
+const MIN_FEED_PX = 60;
+
+/**
+ * The tallest the composer's textarea may grow to without pushing anything off
+ * the panel — see `ComposerMetrics.available` for why a line cap alone is not
+ * enough. Undefined when there is no layout to measure (a hidden panel), which
+ * leaves the line cap in sole charge rather than guessing a small number.
+ *
+ * Called with the box already collapsed for measurement, so the difference
+ * between the composer and the box's own ROW is its chrome (padding, the gap,
+ * the options row) at its true size. The row, not the box: the send button
+ * holds that row 30px tall however small the box gets, and measuring against
+ * the collapsed box counted those 30px as chrome — the feed kept an extra
+ * half-line it was never owed and the box stopped that much early (caught by
+ * the e2e's floor assertion, 2026-08-11).
+ */
+function roomForBox(own: HTMLElement | null, el: HTMLElement): number | undefined {
+  const panel = own?.parentElement;
+  const row = el.parentElement ?? el;
+  if (!own || !panel || panel.clientHeight === 0) return undefined;
+  let taken = MIN_FEED_PX + (own.offsetHeight - row.offsetHeight);
+  for (const sib of Array.from(panel.children)) {
+    // everything docked around the conversation — the verbosity strip, the
+    // working banner, an approval bar — keeps the height it asked for; only the
+    // scroller (`flex: 1`) is the one that yields
+    if (sib === own || sib.hasAttribute('data-feed-region')) continue;
+    taken += (sib as HTMLElement).offsetHeight;
+  }
+  return Math.max(0, panel.clientHeight - taken);
+}
+
+/**
  * Prompt composer (P2-E10-02, §5.10): an INPUT ROUTE to the real CLI — the
  * text is written to the session's PTY exactly as if typed in the terminal
  * (multiline goes as a bracketed paste so the TUI treats it as one prompt).
@@ -833,6 +999,8 @@ function Composer({
   const { t } = useTranslation();
   const [draft, setDraft] = React.useState('');
   const box = React.useRef<HTMLTextAreaElement | null>(null);
+  /** the composer's own root — the auto-grow measures the panel through it */
+  const root = React.useRef<HTMLDivElement | null>(null);
 
   // Slash-command autocomplete (E10-07, §5.10): typing '/' as the FIRST
   // character pops the list — CLI builtins + the project's/user's own
@@ -904,6 +1072,80 @@ function Composer({
     setPendingCaret({ pos: name.length + 2 }); // after "/name "
   };
 
+  // Auto-grow (P2-E10-08, §5.10): the box is as tall as what the browser
+  // ACTUALLY RENDERED — soft wrapping included — capped at COMPOSER_MAX_LINES
+  // and scrolling inside itself past that. The arithmetic is in
+  // `composer-size.ts`; this end only measures.
+  //
+  // Reset-then-read is the whole trick: an element never reports a scrollHeight
+  // smaller than the height we last gave it, so last frame's height has to be
+  // released before the new content can be read. That is also what lets the box
+  // SHRINK again as text is deleted.
+  //
+  // Not debounced, deliberately: it is one forced layout on one small textarea
+  // per keystroke — the same cost React already pays to re-render a controlled
+  // input — and a debounce would leave the box visibly lagging the caret.
+  const grow = React.useCallback((): void => {
+    const el = box.current;
+    const view = el?.ownerDocument.defaultView;
+    if (!el || !view) return;
+    // Past the cap the box is scrolled, and the caret is usually at the bottom
+    // of it. Releasing the height makes the content fit, which clamps the
+    // element's own scrollTop to 0 — so the reset goes to ZERO rather than
+    // `auto` (max scroll only grows, nothing to clamp) and the offset is
+    // written back anyway, for engines that clamp regardless. Without this,
+    // every keystroke on line 20 scrolls the user back to line 1.
+    const top = el.scrollTop;
+    el.style.blockSize = '0px';
+    el.style.overflowY = 'hidden'; // a scrollbar appearing mid-measure re-wraps the text
+    const cs = view.getComputedStyle(el);
+    const size = composerSize({
+      scrollHeight: el.scrollHeight,
+      lineHeight: resolveLineHeight(cs.lineHeight, cs.fontSize),
+      padding: blockEdge(cs, 'padding'),
+      border: blockEdge(cs, 'border'),
+      borderBox: cs.getPropertyValue('box-sizing') === 'border-box',
+      available: roomForBox(root.current, el),
+    });
+    // ceil, not the raw float: 12 × 17.4 is 208.79999999999998, and a height a
+    // fraction short of the text clips the last line it was measured to show
+    el.style.blockSize = `${Math.ceil(size.blockSize)}px`;
+    el.style.overflowY = size.overflowY;
+    el.scrollTop = top;
+  }, []);
+  // A LAYOUT effect: the height is written in the same commit as the new text,
+  // so the box never paints a frame at the old size.
+  React.useLayoutEffect(grow, [draft, grow]);
+  // A NARROWER box wraps the same text into more lines, and a SHORTER panel has
+  // less to spare — dragging a splitter or resizing the window re-renders
+  // nothing, so without this a long draft keeps a height its panel no longer
+  // has and overhangs its own options row.
+  //
+  // Neither trigger can loop: our writes are block-axis-only (so the box's
+  // width never moves) and they redistribute space INSIDE the panel without
+  // changing the panel's own height.
+  React.useEffect(() => {
+    const el = box.current;
+    const panel = root.current?.parentElement;
+    if (!el) return;
+    let lastWidth = el.getBoundingClientRect().width;
+    let lastRoom = panel?.clientHeight ?? 0;
+    const ro = new ResizeObserver(() => {
+      const width = el.getBoundingClientRect().width;
+      // a collapsed panel measures 0 and would re-measure the draft as one
+      // empty line; it comes back at full size, and that tick does the work
+      if (width === 0) return;
+      const room = panel?.clientHeight ?? 0;
+      if (width === lastWidth && room === lastRoom) return;
+      lastWidth = width;
+      lastRoom = room;
+      grow();
+    });
+    ro.observe(el);
+    if (panel) ro.observe(panel);
+    return () => ro.disconnect();
+  }, [grow]);
+
   const submit = (): void => {
     const text = draft.replace(/\r\n/g, '\n').trimEnd();
     if (!text) return;
@@ -917,6 +1159,7 @@ function Composer({
 
   return (
     <div
+      ref={root}
       style={{
         position: 'relative',
         display: 'flex',
@@ -1044,7 +1287,14 @@ function Composer({
           }
         }}
         placeholder={t('feedView.composerPlaceholder')}
-        rows={Math.min(6, Math.max(1, draft.split('\n').length))}
+        // ONE row, always: the height is measured and written by `grow()`
+        // below. `rows` counts hard newlines and cannot see soft wrapping —
+        // that was the whole of #406. It stays at 1 so the very first paint,
+        // before any layout effect runs, is the small box the design wants.
+        rows={1}
+        // `blockSize` and `overflowY` are deliberately ABSENT and written
+        // imperatively by `grow()`: React only diffs the keys it is given, so
+        // adding either one here would have every render fight the measurement.
         style={{
           flex: 1,
           resize: 'none',
@@ -1053,9 +1303,9 @@ function Composer({
           border: '1px solid var(--border)',
           borderRadius: 8,
           padding: '7px 10px',
-          fontSize: 12,
+          fontSize: COMPOSER_FONT_SIZE,
           fontFamily: 'var(--font-ui)',
-          lineHeight: 1.45,
+          lineHeight: COMPOSER_LINE_RATIO,
           outline: 'none',
         }}
       />

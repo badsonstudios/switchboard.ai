@@ -7,6 +7,7 @@ Everything lives as chips in the title bar. There's no settings window yet.
 | Chip | Does |
 |---|---|
 | **🔓 auto-trust / 🔒 ask trust** | Whether new folders are trusted automatically. Greyed out unless a session is set to Terminal mode — see below |
+| **🏷 auto labels / 🏷 labels off** | Whether a blank task label fills itself from the title Claude gives the conversation. Turn it off before a screen-share — see below |
 | **🛡 ask / plan / auto-edit / full-auto** | The autonomy mode *new* sessions start at — click to cycle |
 | **⬍ Keep visible / Collapse on submit / Hide on submit** | What happens to a session's card when you send it a prompt — click to cycle. See below |
 | **🔔 on / 🔕 off** | All notifications |
@@ -118,18 +119,46 @@ mode:
 Once you've answered it there, the answer is remembered, and Direct mode works
 the same either way.
 
+## Auto task labels
+
+With **🏷 auto labels** on (the default), a session whose task label you have
+not filled in shows the title Claude Code gave the conversation instead of
+nothing. The full story — how it behaves, and why typing a label of your own
+always wins — is in
+[Sessions › The label writes itself](02-sessions.md#the-label-writes-itself).
+
+Switch it to **🏷 labels off** before a screen-share or a demo. The label is
+derived from what you asked, so it can put a phrase from your prompt on the
+card, in the sessions list, and in desktop notifications; off hides all of them
+at once and sends notifications back to using the session's name. **Labels you
+typed yourself stay visible** — those are your words. Nothing is deleted, so
+turning it back on restores everything instantly.
+
 ## What's remembered
 
-Your theme, language, notification setting, autonomy default, what cards do on
+Your theme, language, notification setting, auto-label setting, autonomy default, what cards do on
 submit (global, per group and per session), what a session may do when it needs
 you (global and per session), layout, groups, sessions, per-session detail
 level, and window position all persist across restarts, stored on your machine.
 
+## Phone push & webhooks
+
+Reachable with **`Ctrl+Shift+P`** → *phone push*, or from the **About** panel.
+Off until you set it up. Full walk-through in
+[Notifications](09-notifications.md#getting-told-on-your-phone).
+
+Anything you paste in there — an ntfy topic, Pushover keys, a webhook URL —
+goes into your operating system's credential store, never into a switchboard
+file, so it is **not** part of "what's remembered" above and does not travel
+with your workspace.
+
 ## Good to know
 
 - switchboard has no account, no cloud sync, and sends no telemetry anywhere.
-- Credentials are handled by Claude Code itself, on your subscription. There is
-  no API key to enter and switchboard never stores one.
+- Credentials for **Claude** are handled by Claude Code itself, on your
+  subscription. There is no API key to enter and switchboard never stores one.
+  The only credentials switchboard holds are the phone-push / webhook ones you
+  choose to give it, and those live in the OS credential store.
 
 TODO: a proper settings screen (notification rules, quiet hours, per-session
 sounds) is planned.

@@ -10,7 +10,10 @@ import { SessionManager } from './session-manager';
 import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { MainContributions, SpawnRecipe } from '../extensibility/contributions';
 import {
+  DEFAULT_SESSION_TRANSPORT,
+  DEFAULT_TRANSPORT,
   SessionTransport,
+  TransportKind,
   TransportSpawnOptions,
   UnknownTransportError,
 } from '../transport/transport';
@@ -188,6 +191,116 @@ describe('transport seam (P2-E18-02)', () => {
 
     expect(statuses).toEqual([]);
     expect(mgr.transitions(rec.id)).toEqual([]);
+  });
+});
+
+// P2-E18-17 — the ADAPTER ANSWERS, the caller only ASKS (P2-E18-08a).
+//
+// The #404 audit's first finding: `recipe.transport ?? DEFAULT_TRANSPORT` had
+// zero coverage across 42 `create()` call sites, and it is the one line keeping
+// the promise `SpawnOptions.transport` documents — "a request, not an order".
+// Every caller in the app now passes a request (`sessions:create` sends the
+// card's choice, the env override, or Direct), so if the request could win, a
+// terminal-only CLI would be handed stream-json the moment anybody's card said
+// `stream`.
+describe('a transport REQUEST loses to the adapter’s answer (P2-E18-17)', () => {
+  /** an adapter that records what it was ASKED for and answers `recipe` */
+  function recordingRegistry(
+    recipe: Partial<SpawnRecipe>,
+    asked: Array<TransportKind | undefined>
+  ): ContributionRegistry<MainContributions> {
+    const r = new ContributionRegistry<MainContributions>();
+    r.register('provider-adapter', {
+      manifest: { id: 'fake', displayName: 'Fake', version: '0', capabilities: ['sessions.spawn'] },
+      buildSpawn: (o) => {
+        asked.push(o.transport);
+        return { command: 'cli', args: [], env: {}, ...recipe };
+      },
+    });
+    return r;
+  }
+
+  function managerFor(
+    recipe: Partial<SpawnRecipe>,
+    asked: Array<TransportKind | undefined>
+  ): SessionManager {
+    const sink = new LogSink({ dir });
+    // BOTH transports registered on purpose: a request that won would then
+    // spawn on the wrong one instead of throwing, which is the failure this
+    // pins. A throw would have been caught by the P2-E18-02 tests above.
+    return new SessionManager(recordingRegistry(recipe, asked), pty, createLogger(sink, 'sessions'), dir, {
+      stream,
+    });
+  }
+
+  it('the request DOES reach the adapter — it is how the adapter can answer at all', () => {
+    const asked: Array<TransportKind | undefined> = [];
+    managerFor({ transport: 'stream' }, asked).create(identity, { transport: 'stream' });
+
+    expect(asked).toEqual(['stream']);
+  });
+
+  // The pre-E18 adapter: it has never heard of the field, so its recipe says
+  // nothing, and silence from an ADAPTER means the PTY. Ask it for stream and
+  // it still gets a terminal.
+  it('a PTY-only adapter asked for stream spawns on the PTY anyway', () => {
+    const asked: Array<TransportKind | undefined> = [];
+    const rec = managerFor({}, asked).create(identity, { transport: 'stream' });
+
+    expect(rec.transport).toBe('pty');
+    expect(pty.spawned).toHaveLength(1);
+    expect(stream.spawned).toHaveLength(0);
+  });
+
+  it('an adapter that answers `pty` outright is honoured the same way', () => {
+    const asked: Array<TransportKind | undefined> = [];
+    const rec = managerFor({ transport: 'pty' }, asked).create(identity, { transport: 'stream' });
+
+    expect(rec.transport).toBe('pty');
+    expect(stream.spawned).toHaveLength(0);
+  });
+
+  // The other direction, so this is a pin on "the answer decides" and not on
+  // "the PTY always wins": an adapter that answers `stream` gets stream even
+  // though the caller asked for a terminal. Sounds surprising until you read it
+  // as the contract it is — the adapter knows what its CLI can be driven with,
+  // and a provider whose only mode is stream-json has no PTY recipe to give.
+  it('an adapter answering `stream` beats a request for `pty`', () => {
+    const asked: Array<TransportKind | undefined> = [];
+    const rec = managerFor({ transport: 'stream' }, asked).create(identity, { transport: 'pty' });
+
+    expect(asked).toEqual(['pty']);
+    expect(rec.transport).toBe('stream');
+    expect(stream.spawned).toHaveLength(1);
+    expect(pty.spawned).toHaveLength(0);
+  });
+
+  it('no request at all is still the adapter’s answer, not the caller’s default', () => {
+    const asked: Array<TransportKind | undefined> = [];
+    const rec = managerFor({ transport: 'stream' }, asked).create(identity);
+
+    expect(asked).toEqual([undefined]);
+    expect(rec.transport).toBe('stream');
+  });
+});
+
+// P2-E18-17 — the two defaults are two DIFFERENT claims, and collapsing them
+// is a one-word change that no other test in the repo notices.
+//
+// `DEFAULT_TRANSPORT` is what an ADAPTER's silence means; `DEFAULT_SESSION_
+// TRANSPORT` is what a USER's silence means. Reading an adapter's silence as
+// "stream" hands a terminal-only CLI a protocol it cannot answer — the exact
+// failure the tests above spend their time on — so this is pinned as a VALUE
+// and as an inequality: the day the user-facing default moves again, only the
+// second assertion stops someone "tidying up" the two into one constant.
+describe('DEFAULT_TRANSPORT vs DEFAULT_SESSION_TRANSPORT (P2-E18-17)', () => {
+  it("an adapter's silence means the PTY, and must keep meaning it", () => {
+    expect(DEFAULT_TRANSPORT).toBe('pty');
+  });
+
+  it("...which is NOT what a user's silence means", () => {
+    expect(DEFAULT_SESSION_TRANSPORT).toBe('stream'); // named, so the diff explains itself if it moves
+    expect(DEFAULT_TRANSPORT).not.toBe(DEFAULT_SESSION_TRANSPORT);
   });
 });
 

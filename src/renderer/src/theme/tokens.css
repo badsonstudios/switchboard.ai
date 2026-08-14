@@ -275,6 +275,22 @@ body {
   padding: 4px 12px;
 }
 
+.service-health-banner {
+  /* The SAME fill/ink pair as `.preflight-banner` above, deliberately: it is
+     the only pair in the sheet with a per-theme contrast floor asserted against
+     it (#206), and a second warning strip inventing its own would be a second
+     pair to keep legible in four themes. One warning colour, two warnings. */
+  background: var(--status-needs-permission);
+  color: var(--status-needs-permission-ink-on-fill);
+  /* the roster's guard (#274, always-visible-notices.test.ts): the shell column
+   * shares negative free space out to the auto-basis children, and without this
+   * a short window squeezes the one strip that says "this may not be you"
+   * instead of the workspace it sits above. */
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 4px 12px;
+}
+
 /* ---- Grid status pill (§5.8) ----------------------------------------------
  * The session card's state in words: the status hue as a 14% tint and a 40%
  * border, with the word itself in that status's INK.
@@ -826,4 +842,393 @@ body {
    asking the wrong question (P2-E15-05) */
 :root[data-color-scheme='light'] .rail-group-ink {
   color: color-mix(in srgb, var(--g) 55%, #0d1424);
+}
+
+/* ─── The §5.30 document viewer (P2-E16-02) ───────────────────────────────
+ * Vars only, like every rule above it, so a fifth theme costs nothing here.
+ * `.doc-md` extends `.feed-md` rather than replacing it: the viewer's element
+ * carries BOTH classes, so every markdown rule above still applies and this
+ * block only says what a DOCUMENT needs and a chat message does not — a
+ * readable measure, larger type, real heading sizes, and the chrome the
+ * decoration pass adds. */
+.doc-viewer {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+  min-block-size: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+}
+.doc-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-block-end: 1px solid var(--border);
+  background: var(--panel);
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+.doc-nav {
+  display: flex;
+  gap: 2px;
+}
+.doc-name {
+  font-weight: 700;
+  white-space: nowrap;
+}
+.doc-dir {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl; /* keep the END of a long path, which is the useful half */
+  max-inline-size: 40ch;
+}
+.doc-header-gap {
+  flex: 1;
+}
+.doc-modes {
+  display: flex;
+}
+.doc-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.doc-btn:hover:not(:disabled) {
+  background: var(--chip);
+}
+.doc-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.doc-btn[aria-pressed='true'] {
+  background: var(--chip);
+  font-weight: 700;
+}
+.doc-chip {
+  background: var(--chip);
+  border-radius: 4px;
+  padding: 0 5px;
+  color: var(--muted);
+}
+/* §5.24 lineage (P2-E16-03): a viewer opened from a card wears that session's
+ * accent as a RULE down its leading edge and names it in a chip. The accent is
+ * the field or the edge, never the ink — see IdentityChip for the contrast
+ * measurements that settled that. `--doc-accent` is set inline by the panel
+ * only when there is a session; the fallback keeps a themed edge if it isn't. */
+.doc-attributed {
+  /* border-box because `.doc-viewer` is sized to fill its dockview pane; on a
+     content box the rule would push 3px of the panel off the right edge */
+  box-sizing: border-box;
+  border-inline-start: 3px solid var(--doc-accent, var(--faint));
+}
+.doc-attribution {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--chip);
+  border-radius: 4px;
+  padding: 0 5px;
+  color: var(--muted);
+  max-inline-size: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: inset 2px 0 0 0 var(--doc-accent, var(--faint));
+}
+.doc-notice {
+  padding: 4px 8px;
+  background: var(--chip);
+  color: var(--text);
+  font-size: 11px;
+  border-block-end: 1px solid var(--border);
+}
+.doc-find {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-block-end: 1px solid var(--border);
+  background: var(--panel);
+}
+.doc-find-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  padding: 2px 6px;
+  inline-size: 220px;
+}
+.doc-find-count {
+  color: var(--muted);
+  font-size: 11px;
+  min-inline-size: 8ch;
+}
+.doc-body-message {
+  padding: 16px 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.doc-refusal {
+  color: var(--text);
+  max-inline-size: 60ch;
+}
+.doc-card {
+  padding: 24px;
+  max-inline-size: 60ch;
+}
+.doc-card-title {
+  font-weight: 700;
+  font-size: 13px;
+  margin-block-end: 6px;
+}
+.doc-card-body {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  margin-block-end: 12px;
+}
+.doc-card-actions {
+  display: flex;
+  gap: 6px;
+}
+.doc-rendered-wrap {
+  display: flex;
+  flex: 1;
+  min-block-size: 0;
+  /* the outline's yield rules below measure THIS, not the window: a viewer's
+     pane is a dockview group and a popped-out one is a whole monitor */
+  container-type: inline-size;
+}
+.doc-outline {
+  flex: 0 0 auto;
+  /* NEVER MORE THAN A THIRD (P2-E16-03). A flat 220px was fine while a viewer
+     filled a whole grid group; now it opens into the document area beside the
+     sessions, and in a ~380px pane a fixed 220px left `.doc-main` — which is
+     `flex: 1; min-inline-size: 0` and will happily go to nothing — with about
+     enough room for a scrollbar. The prose, the tables and the code fences all
+     collapsed to zero width while the outline sat there in full. The outline is
+     navigation FOR the document; it can never be worth more of the pane than
+     the document, at any width. */
+  inline-size: min(220px, 33%);
+  overflow: auto;
+  box-sizing: border-box;
+  border-inline-end: 1px solid var(--border);
+  padding: 8px 6px;
+  font-size: 11px;
+}
+.doc-outline-title {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 9.5px;
+  margin-block-end: 4px;
+}
+.doc-outline ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.doc-outline-link {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  padding: 1px 2px;
+  text-align: start;
+  inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.doc-outline-link:hover {
+  color: var(--status-working-ink);
+}
+/* ...and below a point a third is not enough either: 33% of a 420px pane is
+   140px of headings sitting beside 280px of prose, which is a navigation aid
+   that has stopped serving the thing it navigates. Under that the outline goes
+   entirely and the document gets the whole pane. A CONTAINER query, not a media
+   query — what matters is how wide this viewer's pane is, and the same window
+   can hold a 300px one beside a session and a 1600px one on a second monitor. */
+@container (max-width: 420px) {
+  .doc-outline {
+    display: none;
+  }
+}
+.doc-outline-l3 { padding-inline-start: 10px; }
+.doc-outline-l4 { padding-inline-start: 20px; }
+.doc-outline-l5,
+.doc-outline-l6 { padding-inline-start: 28px; }
+.doc-main {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+}
+.doc-front {
+  padding: 8px 18px 0;
+}
+.doc-front-chip {
+  background: var(--chip);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  padding: 1px 8px;
+}
+.doc-front-body {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin-block-start: 6px;
+  overflow-x: auto;
+}
+.doc-body {
+  flex: 1;
+  min-block-size: 0;
+  overflow: auto;
+  padding: 12px 18px 40px;
+}
+/* A READABLE MEASURE, not a 3000-pixel line (§5.30). 78 characters is the
+ * width typography has agreed on for a century; the pane can be as wide as the
+ * monitor and the prose stays legible.
+ *
+ * On the INNER element, not on `.doc-body`: the scroll container has to fill
+ * the pane or the scrollbar ends up 78 characters in with dead space beside
+ * it. */
+.doc-md {
+  max-inline-size: 78ch;
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+.doc-md p {
+  margin: 0 0 10px;
+}
+.doc-md h1 { font-size: 19px; margin: 18px 0 8px; }
+.doc-md h2 { font-size: 16px; margin: 16px 0 7px; }
+.doc-md h3 { font-size: 14px; margin: 14px 0 6px; }
+.doc-md h4,
+.doc-md h5,
+.doc-md h6 { font-size: 12.5px; margin: 12px 0 5px; }
+.doc-md .doc-heading:first-child {
+  margin-block-start: 0;
+}
+.doc-md li {
+  margin-block-end: 3px;
+}
+.doc-md .doc-task-list {
+  list-style: none;
+  padding-inline-start: 2px;
+}
+.doc-md .doc-task-box {
+  margin-inline-end: 6px;
+}
+.doc-code {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin: 0 0 10px;
+  overflow: hidden;
+}
+.doc-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--panel);
+  border-block-end: 1px solid var(--border);
+  padding: 1px 6px;
+}
+.doc-code-lang {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.doc-code-copy {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  padding: 1px 4px;
+}
+.doc-code-copy:hover {
+  color: var(--text);
+}
+.doc-code pre {
+  border: none;
+  border-radius: 0;
+  margin: 0;
+}
+/* Wide tables scroll in their OWN container, so a 12-column table does not make
+ * the whole document scroll sideways (§5.30). */
+.doc-table-wrap {
+  overflow-x: auto;
+  margin: 0 0 10px;
+  max-inline-size: 100%;
+}
+.doc-image-chip,
+.doc-media-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--chip);
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.doc-image-open {
+  background: transparent;
+  border: none;
+  color: var(--status-working-ink);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  padding: 0;
+  text-decoration: underline;
+}
+.doc-md .doc-link {
+  color: var(--status-working-ink);
+  cursor: pointer;
+  text-decoration: underline;
+}
+/* A refused scheme renders as the words it always was — no colour, no
+ * underline, no pointer. Nothing will happen, so nothing suggests it will. */
+.doc-md .doc-link-blocked {
+  color: inherit;
+  cursor: default;
+  text-decoration: none;
+}
+.doc-md mark[data-doc-match] {
+  background: var(--chip);
+  color: var(--text);
+}
+.doc-md mark[data-doc-match-current] {
+  background: var(--status-working-ink);
+  color: var(--bg);
+}
+.doc-source-wrap {
+  padding: 0;
+  overflow: hidden;
 }

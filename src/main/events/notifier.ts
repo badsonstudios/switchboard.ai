@@ -1,8 +1,30 @@
-// Notifications v1 (P1-E4-02, §5.9): OS toast + window flash + sound on
-// attention events. Global toggle + quiet hours; prefs persist in the
-// workspace store. Speed budget: hook -> feed -> here is milliseconds
-// (S-06: Stop lands ~30ms after turn end).
-import { Notification, shell } from 'electron';
+// Notifications (P1-E4-02, §5.9): the always-on signal — sound + taskbar flash
+// on attention events — plus the global gate every channel sits behind (the
+// master toggle and quiet hours). Prefs persist in the workspace store. Speed
+// budget: hook -> feed -> here is milliseconds (S-06: Stop lands ~30ms after
+// turn end).
+//
+// **What moved out (P2-E14-03), and what CHANGED with it.** The OS toast used
+// to be an `if` right here — `if (prefs.osToasts) show()`, with no condition on
+// it at all. It is now an ACTION dispatched by the rules engine
+// (`rules-engine.ts`) under rule CONDITIONS, which is what lets the per-session
+// "notify when done" checkbox be a rule rather than a second special case.
+//
+// Note for anyone reading P2-E14-03's issue text: it describes the shipped
+// behavior as "no OS toasts while the window is focused, crashes excepted".
+// That was the DESIGN (§5.9), not the code — the focus test here only ever
+// guarded `flashFrame`, never the toast. So for a user who had turned
+// `osToasts` on, this item changed two things rather than porting them:
+// `needs-input` / `needs-permission` stop toasting while the window is
+// focused, and `done` stops toasting at all unless that session's box is
+// ticked. Both are what §5.9 asked for; neither was true before.
+//
+// The split that remains is deliberate: this class owns what happens for EVERY
+// attention event no matter what (the beep, the flash, quiet hours, the master
+// switch), the engine owns what happens only under conditions. A user who
+// turns notifications off gets nothing at all — the gate is here, above the
+// engine, so no rule can talk over it.
+import { shell } from 'electron';
 import type { BrowserWindow } from 'electron';
 import { FeedEvent } from './feed';
 
@@ -49,8 +71,9 @@ export class Notifier {
     private readonly opts: {
       getWindow: () => BrowserWindow | null;
       getPrefs: () => NotificationPrefs;
-      titleFor: (sessionId: string) => string;
-      bodyFor: (e: FeedEvent) => string;
+      /** the rules engine — every conditional channel (toast today; sound,
+       *  TTS, push, webhook as E14 lands them) goes through it */
+      rules?: { handle: (e: FeedEvent) => void };
     }
   ) {}
 
@@ -59,16 +82,8 @@ export class Notifier {
     if (!shouldNotify(prefs, e, new Date())) return;
     try {
       // The signal model (Dan 2026-07-22): SOUND always + the Events panel;
-      // taskbar flash when backgrounded; OS toast popups only when the user
-      // opted in (osToasts, default off — E14 adds the settings UI).
+      // taskbar flash when backgrounded. Everything else is a rule.
       shell.beep();
-      if (prefs.osToasts && Notification.isSupported()) {
-        new Notification({
-          title: this.opts.titleFor(e.sessionId),
-          body: this.opts.bodyFor(e),
-          silent: true, // the beep above is the sound cue
-        }).show();
-      }
       const win = this.opts.getWindow();
       if (win && !win.isDestroyed() && !win.isFocused() && !this.flashPending) {
         this.flashPending = true;
@@ -81,5 +96,11 @@ export class Notifier {
     } catch {
       // notifying is best-effort; never let it break the session flow
     }
+    // The rules LAST, and outside the try above: the unconditional signal is
+    // cheap and local, the rules reach registered handlers that will one day
+    // hit an audio device, a phone and a webhook, and neither half should be
+    // able to cost the other. `RulesEngine.handle` swallows its own failures
+    // for the same reason (P6).
+    this.opts.rules?.handle(e);
   }
 }

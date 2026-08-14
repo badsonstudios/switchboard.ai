@@ -1280,3 +1280,117 @@ test.describe('a hook Notification cannot fake a permission on Direct (#313)', (
     await expect(w.locator('aside [data-event-kind="needs-permission"]')).toHaveCount(0);
   });
 });
+
+// #395 — a resumed Direct session SHOWS the conversation it resumed.
+//
+// #404 proved the resume itself: the id off `system:init` is persisted, the
+// next boot passes `--resume`, and the CLI keeps the context. What the user
+// SAW was still nothing — `--resume` re-sends no history over the stream, and a
+// stream session's transcript is deliberately barred from deriving blocks (it
+// would interleave with the live tail). So every pre-existing card opened blank
+// after 0.3.0 and read as data loss.
+//
+// This is that journey with the missing half asserted: the prior turn is on
+// screen BEFORE anything is typed, and the live tail then appends to it with
+// nothing duplicated and nothing missing at the join. The stream fake writes
+// the same JSONL the real CLI does, so the history read here is a real
+// transcript, not a fixture.
+test.describe('a resumed Direct session replays its history (#395)', () => {
+  let a: LaunchedApp | undefined;
+  test.afterEach(async () => {
+    const launched = a;
+    a = undefined; // cleared BEFORE the close — see `teardown`
+    await teardown(launched);
+  });
+
+  test('the prior conversation is on screen before the first new prompt, and the live tail appends to it', async () => {
+    const folder = tempProjectFolder();
+    // no SWITCHBOARD_TRANSPORT: Direct is the default every user is on (#381)
+    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const first = a;
+    const w = first.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('remember this turn');
+    await box.press('Enter');
+    await expect(w.getByText('FAKE-REPLY: remember this turn')).toBeVisible({ timeout: 30_000 });
+
+    // the id has to be durable before the relaunch can resume on it (#404)
+    await expect(() => {
+      const card = readWorkspaceFile(first.home).sessions?.[0];
+      expect(card?.nativeSessionId).toBe('00000000-fake-4000-8000-000000000000');
+    }).toPass({ timeout: 15_000 });
+    await first.close();
+
+    // fresh process, same profile, NO seedFolder — seeding again would make a
+    // second card and land every assertion below on the wrong one
+    a = await launchApp({ home: first.home, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w2 = a.window;
+    await expect(w2.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
+
+    // THE ASSERTION THIS ISSUE IS ABOUT: both halves of the old turn are there,
+    // and nobody has typed anything into this launch.
+    await expect(w2.getByText('FAKE-REPLY: remember this turn')).toBeVisible({ timeout: 30_000 });
+    await expect(w2.getByText('remember this turn', { exact: true })).toHaveCount(1);
+    await expect(w2.getByText('FAKE-REPLY: remember this turn')).toHaveCount(1);
+
+    // ...and now the seam. The next turn appends BELOW the replayed history:
+    // the fake's RESUMED-FROM marker proves the flag really went out, and the
+    // block order proves nothing was duplicated or lost at the join.
+    const box2 = w2.getByPlaceholder(/Prompt this session/);
+    await box2.click();
+    await box2.fill('and one more turn');
+    await box2.press('Enter');
+    await expect(w2.getByText('FAKE-REPLY: and one more turn')).toBeVisible({ timeout: 30_000 });
+    await expect(w2.getByText(/RESUMED-FROM:00000000-fake-4000-8000-000000000000/)).toHaveCount(1);
+
+    // one copy of each prompt, in the order they were asked
+    expect(
+      (await w2.locator('[data-feed-block="user"]').allTextContents()).map((t) => t.trim())
+    ).toEqual(['remember this turn', 'and one more turn']);
+    await expect(w2.getByText('FAKE-REPLY: remember this turn')).toHaveCount(1);
+  });
+
+  test('a card whose transcript is gone resumes to an empty view, not an error', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const first = a;
+    const w = first.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('this history is about to be deleted');
+    await box.press('Enter');
+    await expect(w.getByText('FAKE-REPLY: this history is about to be deleted')).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(() => {
+      const card = readWorkspaceFile(first.home).sessions?.[0];
+      expect(card?.nativeSessionId).toBe('00000000-fake-4000-8000-000000000000');
+    }).toPass({ timeout: 15_000 });
+    await first.close();
+
+    // The user pruned `~/.claude/projects` between runs. The card still carries
+    // the id, so the next boot asks about it — `canResume` says no, the session
+    // starts fresh, and there is nothing to replay. The claim under test is that
+    // this reads as an empty session rather than a broken one: same resolver
+    // answers both questions (`paths.ts`), so "resumable" and "replayable"
+    // cannot disagree.
+    fs.rmSync(path.join(first.home, '.claude', 'projects'), { recursive: true, force: true });
+
+    a = await launchApp({ home: first.home, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w2 = a.window;
+    await expect(w2.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
+
+    // the card is alive and takes a prompt; there is simply no history to show
+    const box2 = w2.getByPlaceholder(/Prompt this session/);
+    await box2.click();
+    await box2.fill('still works');
+    await box2.press('Enter');
+    await expect(w2.getByText('FAKE-REPLY: still works')).toBeVisible({ timeout: 30_000 });
+    await expect(w2.getByText('this history is about to be deleted', { exact: true })).toHaveCount(0);
+  });
+});

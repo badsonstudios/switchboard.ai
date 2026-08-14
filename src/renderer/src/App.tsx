@@ -34,6 +34,16 @@ import { memberViews } from './lib/permission-batches';
 import type { PermissionRequestDto } from '../../shared/ipc/permissions';
 import { WorkspaceNoticeBanner } from './components/WorkspaceNoticeBanner';
 import { PreflightBanner } from './components/PreflightBanner';
+import { ServiceHealthBanner } from './components/ServiceHealthBanner';
+import type { ServiceHealthStatus } from '../../shared/service-health';
+import { PushSetupDialog } from './components/PushSetupDialog';
+import { unavailablePushConfig } from '../../shared/push';
+import type {
+  PushConfig,
+  PushSecretKey,
+  PushSendResult,
+  PushWriteResult,
+} from '../../shared/push';
 import { collapsedRows, revealTargets } from './lib/ladder';
 import { GuardedRefresh, latestWins } from './lib/latest-wins';
 import { groupChangeLanded } from './lib/groups';
@@ -56,6 +66,8 @@ import {
 import { buildIdentity } from '../../shared/build-identity';
 import { applyTabRows, loadTabRows, syncDocumentFlags, toggleTabRows } from './lib/tab-rows';
 import { openPopoutWindows, subscribePopoutWindows } from './lib/popout-windows';
+import { openFindBar } from './lib/find-bar-state';
+import { setDocumentOpener } from './lib/document-open';
 
 // One stable subscribe identity for every useSyncExternalStore call below.
 // An inline arrow is a new function each render, and React unsubscribes and
@@ -148,6 +160,22 @@ export function App(): React.JSX.Element {
   // version" is the durable answer, and conflating the two would leave a user
   // who clicked the soft option unable to find the release again.
   const ignoredVersion = React.useRef<string | null>(null);
+  // ── provider service health (E14-07, §5.14) ──────────────────────────────
+  // One record, two halves: what the status page says and what this machine
+  // has noticed. Local state, like the update status above — it is pushed, not
+  // stored, and nothing else in the app reads it.
+  const [serviceHealth, setServiceHealth] = useState<ServiceHealthStatus | null>(null);
+  const [statusPolling, setStatusPolling] = useState(true);
+  // ── phone push + webhooks (E14-06, §5.9 + §5.29) ─────────────────────────
+  // On demand, like About. The config is fetched when the dialog opens rather
+  // than at mount: it is two booleans and four "is it set" flags that nothing
+  // else on screen reads, and asking main for them on every launch would be a
+  // read of the credential store nobody asked for.
+  const [pushOpen, setPushOpen] = useState(false);
+  const [pushConfig, setPushConfig] = useState<PushConfig | null>(null);
+  // The last write main REFUSED, for the field it was aimed at. Cleared on the
+  // next successful write and on every re-open.
+  const [pushWrite, setPushWrite] = useState<{ key: string; problem: string } | null>(null);
   // Attention events (E9-03). This subscription used to live inside
   // EventsPanel; it moved up here because the queue is the SINGLE ordering
   // authority — two independent subscriptions to events:changed could hand the
@@ -361,10 +389,24 @@ export function App(): React.JSX.Element {
   // all-Direct workspace gets an inert chip that says why. The rule and the
   // measurement behind it are in `lib/trust-reach.ts`.
   const trustReaches = trustSettingReaches(sessions);
+  const [autoLabels, setAutoLabels] = useState(true);
   const [usageByLive, setUsageByLive] = useState<Map<string, { usage: Usage; model?: string }>>(
     new Map()
   );
   const grid = React.useRef<GridController | null>(null);
+
+  // §5.30's "opened from wherever a path already appears" (P2-E16-02). The
+  // surfaces that show a path — the Changes tab's file list today, a feed block
+  // and the §5.7 tree later — reach the dock through this module rather than
+  // through a prop each. Installed once the grid controller exists, removed on
+  // unmount so a torn-down window's dock is never called into.
+  useEffect(() => {
+    // `sessionId` forwarded, not swallowed (P2-E16-03): the surface that asked
+    // is the only thing that knows which session a path belongs to, and §5.24's
+    // attribution is exactly that answer travelling with the request.
+    setDocumentOpener((file, sessionId) => grid.current?.openDocument(file, sessionId));
+    return () => setDocumentOpener(null);
+  }, []);
 
   useEffect(() => {
     const offUsage = bridge.sessions?.onUsage?.((snap) => {
@@ -401,6 +443,7 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void bridge.notifications?.getPrefs?.().then((p) => setNotifEnabled(p.enabled));
     void bridge.settings?.getAutoTrust?.().then(setAutoTrust);
+    void bridge.settings?.getAutoLabels?.().then(setAutoLabels);
     void bridge.preflight?.check?.().then((r) => {
       setPreflightOk(r.ok);
       setCliVersion(r.version);
@@ -468,6 +511,28 @@ export function App(): React.JSX.Element {
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, [applyUpdateStatus]);
 
+  // ── provider service health (E14-07) ─────────────────────────────────────
+  //
+  // Subscribe FIRST, then read: main starts polling before the first window
+  // exists, so a push can land between this mount and the answer to `get`.
+  // Subscribing second would drop it and leave the dot blank until the next
+  // poll — the same lost-push shape the read-only notice fixed (#207).
+  //
+  // Every call is optional-chained and swallowed. This is a dot: a bridge
+  // without it, or a main that refuses, must cost the shell nothing.
+  useEffect(() => {
+    const off = bridge.health?.onStatus?.((s) => setServiceHealth(s));
+    void bridge.health
+      ?.get?.()
+      .then((s) => setServiceHealth((prev) => prev ?? s))
+      .catch(() => {});
+    void bridge.health
+      ?.getPrefs?.()
+      .then((p) => setStatusPolling(p.poll !== false))
+      .catch(() => {});
+    return () => off?.();
+  }, []);
+
   const checkForUpdates = React.useCallback(() => {
     void bridge.update
       ?.check?.({ manual: true })
@@ -475,6 +540,45 @@ export function App(): React.JSX.Element {
       .catch(() => {});
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, [applyUpdateStatus]);
+
+  // ── phone push + webhooks (E14-06, §5.29) ────────────────────────────────
+  //
+  // Every call is optional-chained and swallowed, and `config` stays null when
+  // the bridge has no `push` namespace — the dialog then renders with its
+  // fields disabled rather than throwing out of an event handler. #444's lesson
+  // (a notification nicety must never be able to white-screen the shell), and
+  // the reason the whole family is written this way.
+  const openPushSetup = React.useCallback(() => {
+    setPushOpen(true);
+    setPushWrite(null);
+    const answer = bridge.push?.getConfig?.();
+    // No `push` namespace at all: show the dialog as UNREACHABLE rather than as
+    // an empty working one. A Save button that silently does nothing is worse
+    // than a disabled one that says why (review finding).
+    if (!answer) return setPushConfig(unavailablePushConfig());
+    void answer.then((c) => setPushConfig(c)).catch(() => setPushConfig(unavailablePushConfig()));
+    // eslint's exhaustive-deps plugin isn't installed; bridge is stable
+  }, []);
+  const applyPushAnswer = React.useCallback(
+    (key: string, p: Promise<PushWriteResult> | undefined) => {
+      if (!p) return setPushConfig(unavailablePushConfig());
+      void p
+        .then((r) => {
+          setPushConfig(r.config);
+          // What the dialog renders beside the field: main is the authority on
+          // whether the write happened, and a credential cannot be read back to
+          // check.
+          setPushWrite(r.ok ? null : { key, problem: r.problem ?? 'refused' });
+        })
+        .catch(() => setPushWrite({ key, problem: 'refused' }));
+    },
+    []
+  );
+  const testPush = React.useCallback(
+    (channel: 'push' | 'webhook'): Promise<PushSendResult> =>
+      bridge.push?.test?.(channel) ?? Promise.resolve({ ok: false, reason: 'not-configured' }),
+    []
+  );
 
   /**
    * The Update button (E19-04).
@@ -647,10 +751,19 @@ export function App(): React.JSX.Element {
     // …and when a card gains or loses its live session without any status
     // having changed — a resume (#170). Same refresh, third trigger.
     const offCards = bridge.sessions?.onCardsChanged?.(() => void refreshSessions());
+    // A task label filled itself from the CLI's own title (P2-E7-06). Patched
+    // into the store rather than triggering the refresh above: the label is the
+    // only field that moved, and this fires on a card whose title the CLI keeps
+    // revising — a full `cards()` re-read per revision would walk a git root per
+    // session for one string.
+    const offLabel = bridge.sessions?.onTaskLabel?.((p) =>
+      sessionStore.setTaskLabel(p.cardId, p.label)
+    );
     return () => {
       offStatus?.();
       offExit?.();
       offCards?.();
+      offLabel?.();
     };
   }, [cards, refreshSessions]); // re-sync when the grid's cards change
 
@@ -774,7 +887,7 @@ export function App(): React.JSX.Element {
   const modalOpenRef = React.useRef(false);
   useEffect(() => {
     railHiddenRef.current = railHidden;
-    modalOpenRef.current = paletteOpen || aboutOpen || updateOpen;
+    modalOpenRef.current = paletteOpen || aboutOpen || updateOpen || pushOpen;
   });
 
   // Set when a command deliberately raised a DIFFERENT OS window (jumping to a
@@ -857,12 +970,36 @@ export function App(): React.JSX.Element {
           toggleMaximize: (cardId) => grid.current?.toggleMaximize(cardId),
           toggleRail,
           openPalette: () => setPaletteOpen(true),
+          // The bar itself is rendered by the CARD (SessionGrid) — this only
+          // publishes which card is asking, because a keydown handler has no
+          // way into another dockview panel's tree (§5.31, lib/find-bar-state).
+          //
+          // POPPED-OUT CARDS: `activeCardId()` deliberately answers null for
+          // one (a command typed in this window must never act on a card you
+          // cannot see), so `find.open` is disabled while a popout is the
+          // active panel, exactly as every other card-scoped command is. That
+          // means Ctrl+F inside a popped-out session opens the bar on the
+          // docked card instead, and the popout key bridge below raises this
+          // window with it — which is where the bar actually is. Making find
+          // window-local is a §5.8 question about which window a command acts
+          // in, not a find question, so it is not answered here.
+          openFind: (cardId) => openFindBar(cardId),
           toggleTabRows: () => {
             toggleTabRows();
           },
           jumpToNextAttention,
           openAbout: () => setAboutOpen(true),
+          openPushSetup,
           checkForUpdates,
+          // §5.30's `Open file…`. Picking a file in the native dialog is also
+          // what GRANTS it: main widens the `fs.read` scope with the chosen
+          // path before answering, which is the one sanctioned way that scope
+          // grows (P2-E16-02).
+          openFile: () => {
+            void bridge.files?.pickFile?.().then((file) => {
+              if (file) grid.current?.openDocument(file);
+            });
+          },
       }),
     [
       toggleRail,
@@ -874,6 +1011,7 @@ export function App(): React.JSX.Element {
       setSessionFocusPolicy,
       togglePin,
       checkForUpdates,
+      openPushSetup,
     ], // other deps read live state through refs; grid.current is stable
   );
   // chips advertise their own binding, derived from the registry so a tooltip
@@ -902,6 +1040,19 @@ export function App(): React.JSX.Element {
     };
   }, []);
   const focusCard = React.useCallback((cardId: string) => focusSession(cardId), [focusSession]);
+  // P2-E14-04: main asks for a card to be brought forward. Today's only sender
+  // is a click on the OS toast for a held permission — main has already raised
+  // the WINDOW by then, and this is the second half: land on the card that is
+  // actually asking, so the gesture ends at the approval bar rather than at
+  // whichever tab happened to be active. Defensive about the bridge for the
+  // same reason #421's checkbox is (a partial `window.switchboard` in a unit
+  // test must not throw out of a passive effect and tear the app down).
+  useEffect(() => {
+    const off = window.switchboard?.sessions?.onRevealCard?.((r) => {
+      if (r?.cardId) focusCard(r.cardId);
+    });
+    return off;
+  }, [focusCard]);
   const popoutKeysRef = React.useRef(new Map<Window, (e: KeyboardEvent) => void>());
   useEffect(() => {
     // Returns the command that ran (or null) — the popout bridge below needs
@@ -1099,6 +1250,14 @@ export function App(): React.JSX.Element {
           setAutoTrust(next);
           void bridge.settings?.setAutoTrust?.(next);
         }}
+        autoLabels={autoLabels}
+        onToggleAutoLabels={() => {
+          const next = !autoLabels;
+          setAutoLabels(next); // optimistic: the chip must move on the click…
+          // …and main answers with what it actually stored, which is also what
+          // re-publishes every visible label under the new setting.
+          void bridge.settings?.setAutoLabels?.(next).then(setAutoLabels);
+        }}
         railHidden={railHidden}
         onToggleRail={toggleRail}
         railBinding={railBindingLabel}
@@ -1122,9 +1281,32 @@ export function App(): React.JSX.Element {
             .then((p) => setAutoCheckUpdates(p.autoCheck !== false))
             .catch(() => {});
         }}
+        statusPolling={statusPolling}
+        onToggleStatusPolling={(on) => {
+          setStatusPolling(on); // optimistic, like the auto-check box above…
+          void bridge.health
+            ?.setPrefs?.({ poll: on })
+            // …then main's answer wins: it is the authority on what it will do
+            .then((p) => setStatusPolling(p.poll !== false))
+            .catch(() => {});
+        }}
         // a second dialog is above this one: two stacked `aria-modal` regions
         // is a thing screen readers disagree about, so only the top one claims it
-        dialogAbove={updateOpen}
+        dialogAbove={updateOpen || pushOpen}
+        onOpenPushSetup={openPushSetup}
+      />
+      <PushSetupDialog
+        open={pushOpen}
+        onClose={() => setPushOpen(false)}
+        config={pushConfig}
+        write={pushWrite}
+        onSetPrefs={(p) =>
+          applyPushAnswer(p.ntfyServer !== undefined ? 'ntfyServer' : 'prefs', bridge.push?.setPrefs?.(p))
+        }
+        onSetSecret={(key: PushSecretKey, value: string) =>
+          applyPushAnswer(key, bridge.push?.setSecret?.(key, value))
+        }
+        onTest={testPush}
       />
       <UpdateDialog
         open={updateOpen}
@@ -1161,6 +1343,11 @@ export function App(): React.JSX.Element {
           exist before the preflight answer lands or the warning is announced to
           nobody (#222). Same reason as its sibling above. */}
       <PreflightBanner shown={!preflightOk} />
+      {/* §5.14's local corroboration. Rendered unconditionally and gated
+          INSIDE, exactly like the two banners above: its live region has to
+          exist before the push lands or the one sentence that says "this may
+          not be you" is announced to nobody. */}
+      <ServiceHealthBanner status={serviceHealth} />
       {/* Outside the rail (which toggles) and outside the grid (whose cards
           hide, pop out and — with E9-07 — rearrange by layout mode): the only
           place a strip can be "always visible" without every one of those
@@ -1294,11 +1481,13 @@ export function App(): React.JSX.Element {
             setUpdateOpen(true);
           }}
           onDismissUpdateNotice={() => setUpdateNotice(null)}
+          incidents={serviceHealth?.incidents}
         />
       </div>
       <StatusBar
         count={cards.length}
         theme={theme}
+        serviceHealth={serviceHealth}
         cliVersion={cliVersion}
         totalOutputTokens={workspaceUsage.output}
         totalCostUsd={workspaceCost}

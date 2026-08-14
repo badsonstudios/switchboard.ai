@@ -85,7 +85,10 @@ conversations apart rather than guessing and showing you the wrong one.
 The box at the bottom sends straight to the real Claude Code session:
 
 - **Enter** sends. **Shift+Enter** starts a new line.
-- The box grows as you type.
+- The box grows to fit what you have written — including long text that wraps
+  onto several lines by itself, so a pasted paragraph is never half-hidden. It
+  stops growing at twelve lines and scrolls inside itself after that, and it
+  shrinks back down as you delete.
 - While Claude is working, the send button becomes a **■ stop** button, which
   interrupts the current turn.
 - Typing `/` at the start of a line opens command autocomplete — see
@@ -105,6 +108,11 @@ Three settings, top of the Session tab:
 | **firehose** | Everything, including thinking and sub-agent chatter |
 
 Switch any time; it applies instantly and is remembered per session.
+
+Note that **searching ignores this setting** — `Ctrl+F` looks at everything,
+including the tool output **quiet** is hiding and the thinking **normal**
+hides, and jumping to a match unfolds it. See
+[Finding something in a session](16-find.md).
 
 ## The Terminal tab
 

@@ -151,6 +151,36 @@ export function claudeProjectsRoot(): string {
   return path.join(os.homedir(), '.claude', 'projects');
 }
 
+/**
+ * The conversation title Claude Code writes into its own transcript (§5.11,
+ * P2-E7-06) — the `titles` capability's whole implementation, and the ONE place
+ * in the tree that knows this spelling:
+ *
+ * ```jsonl
+ * {"type":"ai-title","sessionId":"bd2517c3-…","aiTitle":"Add markdown and file preview feature"}
+ * ```
+ *
+ * Verified 2026-07-30 across 27 real transcripts in `~/.claude/projects/`, and
+ * again while building this item: the two keys appear in either order on the
+ * line, so nothing here may depend on their position.
+ *
+ * UNDOCUMENTED. No Claude Code contract promises the key exists or keeps its
+ * name, which makes it a §5.26 version-drift item: the day a release renames or
+ * drops it, every line simply stops carrying a title, this returns undefined
+ * for all of them, and the app reads exactly as it did before the feature
+ * existed. That is the reason it is a capability and not a branch — the failure
+ * is contained to one function that one adapter owns.
+ *
+ * Blank and whitespace-only titles are rejected here rather than downstream: a
+ * label that renders as empty is indistinguishable from no label, and letting
+ * one through would blank a label the CLI had already filled.
+ */
+export function readAiTitle(line: Record<string, unknown>): string | undefined {
+  if (line.type !== 'ai-title') return undefined;
+  const title = typeof line.aiTitle === 'string' ? line.aiTitle.trim() : '';
+  return title || undefined;
+}
+
 export const claudeAdapter: ProviderAdapter = {
   manifest: {
     id: 'claude-code',
@@ -164,12 +194,23 @@ export const claudeAdapter: ProviderAdapter = {
   // wrong (§5.23's own test).
   capabilities: {
     transcripts: { projectsRoot: claudeProjectsRoot },
+    // §5.11: the CLI already computed a description of the conversation, so we
+    // display it rather than deriving one of our own — which would spend the
+    // user's subscription tokens on chrome (P7).
+    titles: { titleFrom: readAiTitle },
     // pass the host's wiring straight through — the CLI's `settings.hooks`
     // schema IS the shape HookListener builds
     hooks: { settingsFor: (sessionId, host) => host.buildHookSettings(sessionId) },
+    // Resume eligibility (§5.3's `resume`; the feature it serves is §5.25's
+    // resume-on-relaunch): only the layout knows whether the conversation is
+    // really on disk.
+    // The ROOT is the host's — the one it resolved from `transcripts` above and
+    // will hand the watcher and the resumed-history replay — so this answer and
+    // the file that gets read back cannot be about two different directories
+    // (#432; the coupling #395 found and only documented).
     resume: {
-      canResume: (folder, nativeSessionId) =>
-        conversationExists(claudeProjectsRoot(), folder, nativeSessionId),
+      canResume: ({ projectsRoot, folder, nativeSessionId }) =>
+        conversationExists(projectsRoot, folder, nativeSessionId),
     },
     // §5.9: the CLI refuses to work in a folder the user has not accepted, and
     // it asks with a modal we cannot answer from here. Writing the acceptance

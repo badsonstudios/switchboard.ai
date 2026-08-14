@@ -135,7 +135,12 @@ costing — at a glance. Uses existing data; mostly UI wiring.*
 cost, git, and plan progress — and the rail mirrors every card. Litmus
 (PHILOSOPHY §4) checked on each visible surface. *(E7-01…05 shipped in PR #42;
 **E7-06 filed as issue #408, 2026-08-11** — the epic is
-otherwise merged, so this one item reopens it rather than starting an epic.)*
+otherwise merged, so this one item reopens it rather than starting an epic.
+**E7-06 built 2026-08-11**: `titles` is a fifth §5.3 capability with a per-LINE
+reader, `labelSource` rides the persisted card, and the off-switch landed as a
+workspace setting + title-bar chip rather than a notification pref — both "as
+built" notes are in DESIGN §5.11 and §5.3. Fixtures are REAL `ai-title` lines
+copied out of `~/.claude/projects/`, in `src/main/transcripts/fixtures/`.)*
 
 ---
 
@@ -723,6 +728,26 @@ Work items:
   the options row / approval bar stay correctly docked at max height; a test
   pins wrap-based growth (not newline counting).
 
+- **P2-E10-09 · Paste images into the composer — M (§5.10; owner request
+  2026-08-13). [issue #475]** A clipboard bitmap (MS Paint, screenshots)
+  pastes into the composer and the model actually sees it. Contract research
+  against the VS Code extension FIRST (reference-implementations.md) — the
+  wire mechanism is theirs, the affordance is ours. Full done-when in #475.
+- **P2-E10-10 · Drag & drop files into the composer — M (§5.10; owner
+  request 2026-08-13). [issue #476]** Any file — markdown, text, source,
+  images — drops onto the composer and reaches the session; per-type
+  behavior matches the extension. Shares the attachment affordance with
+  E10-09 (serial track — same composer region). Full done-when in #476.
+- **P2-E10-11 · Copy button on code in session output — S–M (§5.10; owner
+  request 2026-08-13). [issue #477]** Fenced code + Bash IN/OUT in the
+  Session view get the viewer's existing copy affordance (decorateCodeFences
+  pattern; #465's forgery guard applies). Full done-when in #477.
+- **P2-E10-12 · Composer draft survives restart — S (§5.10; owner request
+  2026-08-13). [issue #485]** Typed-but-unsent composer text is bare React
+  state today (`FeedView.tsx:1000`) and always lost on restart; persist it
+  per-session in the workspace `ui` blob (localStorage can't work here —
+  P2-E15-06's loopback-port measurement). Full done-when in #485.
+
 **E10 exit:** a user can run a whole coding turn — prompt, watch, approve —
 without the Terminal tab even being VISIBLE; the turn reads like the VS Code
 extension reference (clean blocks, expandable detail); Terminal stays one
@@ -864,9 +889,15 @@ Work items:
   space the session grid wants. Rework it smaller and/or relocated —
   candidate shapes: a slim strip across the top; a collapsed-by-default
   drawer with a badge/count button that expands on click; merging it into
-  the urgency strip's surface. **Design gate: present 2–3 concrete options
-  to Dan before building — the shape is deliberately undecided.** Whatever
-  wins must keep the §5.12 core (one item per session, resolved-means-gone),
+  the urgency strip's surface. **Design gate RAN 2026-08-13 — Dan picked
+  the collapsed drawer (Shape B): panel content unchanged but rendered as
+  an overlay drawer on the right edge, default collapsed to a slim badge
+  tab (attention-queue count in the hottest event's ink; secondary marker
+  while a notice is live); §5.14's status-bar attention-queue count ships
+  as part of this item; open via badge click + hotkey + palette; the
+  drawer overlays the grid so the 220px is reclaimed in every mode. Full
+  spec in the issue comment.** Whatever
+  ships must keep the §5.12 core (one item per session, resolved-means-gone),
   keep the queue-ordering/Ctrl+Space contract legible (E9-03: the queue is
   the authority, this panel renders it), rehome the reconnect offer and
   update notice, and honor §5.8 keyboard-fail-open — collapsing chrome never
@@ -910,13 +941,29 @@ Work items:
   *Done when:* toast-Allow runs the held tool with the app unfocused; Deny
   refuses; a permission decided elsewhere withdraws its toast; a dead
   session's toast logs instead of throwing.
-- **P2-E14-05 · Per-session sounds, TTS, quiet hours + digest — M (§5.9).
-  [issue #423]** *(depends: 03)* Distinct per-session sounds; TTS speaking
-  the task label (pairs with E7-06/#408, falls back to title); quiet hours;
-  missed-events digest on return.
-  *Done when:* two sessions ring distinguishably; TTS speaks the label;
-  quiet hours suppress and the digest lists what was suppressed; all
-  actions fail open — audio failure never delays the event.
+- **P2-E14-05 · Per-session sounds, TTS, quiet hours + digest — SPLIT
+  2026-08-13 (§5.9).** Filed as #423, split at the 2026-08-13 /pm sitting
+  per #421's sizing note (sounds/TTS are drop-in actions on the #421 seam;
+  quiet hours are *conditions* needing `Rule` schema + a clock on
+  `RuleTrigger`, which rules.ts deliberately forbids today):
+  - **P2-E14-05a · Sounds + TTS as rule actions — S/M. [issue #481]**
+    *(depends: 03, shipped)* Distinct per-session sounds; TTS speaking the
+    task label (pairs with E7-06/#408, falls back to title).
+    *Done when:* two sessions ring distinguishably; TTS falls back when
+    auto-labels are off; prefs persist; audio/TTS failure never delays the
+    event.
+  - **P2-E14-05b · Quiet hours as conditions + per-action-class
+    applicability — M. [issue #482]** *(depends: 03, shipped)* Schema +
+    evaluator changes; injected clock; the #424 decision — person-facing
+    actions honor quiet hours, webhook (machine-facing) gets an override
+    or exemption, pinned with a test; suppressed events recorded for 05c.
+    *Done when:* quiet hours silence person-facing actions only; webhook
+    semantics pinned; evaluation stays table-driven and deterministic.
+  - **P2-E14-05c · Missed-events digest — M. [issue #483]** *(depends:
+    05b's suppression record; render surface follows the 01/#407 gate)*
+    What happened while you were away, surfaced on return.
+    *Done when:* digest lists what was suppressed, clears on review,
+    fails open.
 - **P2-E14-06 · Phone push (ntfy/Pushover) + webhook — M (§5.9) [part
   user]. [issue #424]** *(depends: 03 + Dan's service pick)* Push and
   generic-webhook rule actions; credentials in the OS credential store

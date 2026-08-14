@@ -62,10 +62,43 @@ export const CAPABILITIES = [
   // replacing the binary on disk are not the same power, and
   // a contribution that wants the first must not silently
   // acquire the second.
+  'provider.status', // reads the PROVIDER'S PUBLIC STATUS PAGE over the
+  // network (P2-E14-07, §5.14). Its own capability for
+  // the `update.check` reason: it is an outbound request
+  // to a third-party host, and that fact must be legible
+  // in the manifest rather than hidden under
+  // "settings.read". Read-only and unauthenticated — it
+  // sends nothing, which is what keeps §5.14 inside the
+  // local-first constraint.
+  'push.read', // which phone-push / webhook switches are on, and WHICH
+  // credentials exist (booleans — never a value; there is no
+  // channel that reads one back, see `events/push-ipc.ts`).
+  'push.write', // the switches, and writing a credential INTO the OS store
+  // (P2-E14-06, §5.29). Not folded into `settings.write`: the
+  // `fs.read` argument applies — depositing a secret in the
+  // credential store is strictly more power than flipping a
+  // preference, and a Phase-4 contribution that wants the
+  // second must not silently acquire the first.
+  'push.send', // SENDS SESSION-DERIVED TEXT TO A THIRD-PARTY HOST the user
+  // configured — the setup dialog's "Send test" (P2-E14-06).
+  // Its own capability for the `update.check` / `provider.status`
+  // reason, and it is the sharpest of the three: those two READ
+  // from a public host, this one WRITES a session's task label
+  // out of the machine.
   'shell.openExternal', // hands a URL to the user's BROWSER. Its own capability
   // for the `dialog.open` reason — putting something in
   // front of the user, outside the app, is a power in its
   // own right and is not implied by anything else.
+  'shell.openPath', // hands a LOCAL PATH to the OS — "Open externally" and
+  // "Reveal in folder" (P2-E16-02, §5.30). Deliberately NOT
+  // folded into `shell.openExternal`, and the difference is
+  // not pedantry: a URL goes to the browser, which sandboxes
+  // it, while a path goes to whatever the OS has registered
+  // for that extension — and for `.exe`, `.bat` or `.lnk`
+  // that is EXECUTION. Sharper power, separate word. The
+  // handlers behind it re-check `fs.read`'s scope, so it can
+  // only ever be aimed at a file the caller could already
+  // have read.
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -88,7 +121,22 @@ export const CHANNEL_CAPABILITIES = {
   // read a file's contents — scope-checked, size-capped and refused in MAIN
   // (P2-E16-01). Its own family, because it belongs to no session.
   'fs:read': 'fs.read',
+  // the document viewer's `Open file…` (P2-E16-02). It is the ONE path that
+  // widens `fs.read`'s scope, and it widens it by asking the user — which is
+  // why it is tagged `dialog.open` and not `fs.read`: the power being exercised
+  // is "put an OS dialog in front of the user", and the grant is its result.
+  'fs:pickFile': 'dialog.open',
+  // a link inside a rendered document, handed to the browser (P2-E16-02)
+  'fs:openExternal': 'shell.openExternal',
+  // the §5.30 escape hatch: the file itself, in the user's own tools
+  'fs:openPath': 'shell.openPath',
+  'fs:reveal': 'shell.openPath',
   'git:fileVersions': 'git.read',
+  // the provider's service health as main currently understands it (P2-E14-07)
+  'health:get': 'provider.status',
+  // the polling switch is an ordinary preference, like the update auto-check
+  'health:getPrefs': 'settings.read',
+  'health:setPrefs': 'settings.write',
   'git:status': 'git.read',
   'groups:create': 'groups.write',
   'groups:delete': 'groups.write',
@@ -99,6 +147,21 @@ export const CHANNEL_CAPABILITIES = {
   'notifications:getPrefs': 'settings.read',
   'notifications:setPrefs': 'settings.write',
   'preflight:check': 'environment.probe',
+  // Phone push + webhook (P2-E14-06, §5.9 + §5.29). Three capabilities for four
+  // channels because the powers really are three: read the shape of the config,
+  // write it (credential store included), and make something leave the machine.
+  'push:getConfig': 'push.read',
+  'push:setPrefs': 'push.write',
+  'push:setSecret': 'push.write',
+  'push:test': 'push.send',
+  // Notification RULES (P2-E14-03). They are notification preferences that
+  // happen to be per-session, so they carry the settings capabilities rather
+  // than minting a pair of their own — reading one tells you nothing a
+  // `notifications:getPrefs` did not, and writing one changes no more than the
+  // toast toggle beside it does.
+  'rules:list': 'settings.read',
+  'rules:notifyWhenDone': 'settings.read',
+  'rules:setNotifyWhenDone': 'settings.write',
   'pty:attach': 'pty.read',
   'pty:detach': 'pty.read',
   'pty:input': 'pty.write',
@@ -122,6 +185,8 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:setAutonomy': 'sessions.write',
   'sessions:setTaskLabel': 'sessions.write',
   'sessions:slashCommands': 'sessions.read',
+  'settings:getAutoLabels': 'settings.read',
+  'settings:setAutoLabels': 'settings.write',
   'settings:getAutoTrust': 'settings.read',
   'settings:setAutoTrust': 'settings.write',
   'transcripts:binding': 'transcripts.read',
@@ -138,6 +203,15 @@ export const CHANNEL_CAPABILITIES = {
   // deserve no capability of their own.
   'update:setPrefs': 'settings.write',
   'transcripts:blocks': 'transcripts.read',
+  // Session find (P2-E17-01, §5.31). Deliberately NOT a capability of its own,
+  // unlike E16's `fs.read`, and the reason is the FILE rather than the payload:
+  // this scans the transcript the watcher already picked for that session, so it
+  // reads nothing a holder of `transcripts.read` was not already being streamed
+  // block by block from — same file, same watcher, same trust boundary. (It does
+  // return MORE of that file than `transcripts:blocks` does: past `DETAIL_CAP`,
+  // and from blocks the view buffer dropped. That is a different depth of the
+  // same conversation, not a different power.)
+  'transcripts:search': 'transcripts.read',
   'workspace:getLayout': 'workspace.read',
   'workspace:getUi': 'workspace.read',
   'workspace:isReadOnly': 'workspace.read',
@@ -158,6 +232,9 @@ export const CHANNEL_CAPABILITIES = {
   'app:displaysChanged': 'app.window',
   'app:popoutGeometryChanged': 'app.window',
   'events:changed': 'events.read',
+  // a poll the renderer did not ask for finished, or the local corroboration
+  // rule raised/cleared (P2-E14-07). Same capability as reading it.
+  'health:status': 'provider.status',
   // a card gained or lost its live session — re-read `sessions:cards` (#170)
   'sessions:cardsChanged': 'sessions.read',
   'sessions:exited': 'sessions.read',
@@ -165,7 +242,15 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:feedReset': 'transcripts.read',
   'sessions:permissionRequest': 'sessions.read',
   'sessions:permissionResolved': 'sessions.read',
+  // "bring this card to the front" — pushed when the user clicked an OS toast
+  // for a held permission (P2-E14-04). `sessions.read` and not `.write`: it
+  // moves the SCREEN, not a session. The verdict, if there is one, still goes
+  // through `sessions:decidePermission` and its `sessions.write`.
+  'sessions:revealCard': 'sessions.read',
   'sessions:status': 'sessions.read',
+  // a card's task label moved, and the renderer did not do it (P2-E7-06) —
+  // carries the new value, because its two readers have nothing to re-read
+  'sessions:taskLabel': 'sessions.read',
   'sessions:usage': 'sessions.read',
   // how far the download/verify/install has got (E19-04). Same capability as
   // starting one: a window that may not install may not watch one either.

@@ -13,6 +13,9 @@
     "trustOff": "🔒 ask trust",
     "trustHint": "Whether a folder you open is trusted for you, or Claude Code is left to ask about it. Only Terminal-mode sessions are ever asked.",
     "trustInert": "Unavailable: Claude Code only ever asks about folder trust in Terminal mode, and no session is set to run there. Switch one to Terminal from its ⋯ menu to use this setting.",
+    "autoLabelsOn": "🏷 auto labels",
+    "autoLabelsOff": "🏷 labels off",
+    "autoLabelsHint": "Fill a blank task label with the title the agent gives the conversation. Turn it off to keep those words off screen — labels you type yourself always stay.",
     "rail": "▤ rail",
     "railHint": "Show or hide the sessions rail ({binding})",
     "palette": "▸ commands",
@@ -218,7 +221,11 @@
     "transportPty": "Terminal",
     "transportStream": "Direct (beta)",
     "menuTransportSwitch": "Transport: {now} — switch to {next}",
-    "menuTransportRestart": "Restart session now"
+    "menuTransportRestart": "Restart session now",
+    "menuNotifyWhenDone": "Notify when done",
+    "menuNotifyWhenDoneHint": "Pop a desktop notification when this session finishes a turn — only while switchboard isn't the window you're looking at. Off for every session until you ask.",
+    "checkedIcon": "☑",
+    "uncheckedIcon": "☐"
   },
   "approval": {
     "title": "Allow {tool}?",
@@ -278,6 +285,62 @@
       "modified": "M",
       "staged": "S",
       "both": "SM"
+    },
+    "openInViewer": "Open {file} in the document viewer",
+    "openInViewerIcon": "↗"
+  },
+  "document": {
+    "rendered": "Rendered",
+    "source": "Source",
+    "toggleLabel": "How to show this file",
+    "renderedOnlyForMarkdown": "Only Markdown files have a rendered view",
+    "openExternally": "Open externally",
+    "revealInFolder": "Reveal in folder",
+    "pin": "Pin this document — keep it when the next file opens",
+    "unpin": "Unpin this document — the next file you open replaces it",
+    "popOut": "Open this document in its own window",
+    "dockBack": "Put this document back in the main window",
+    "openedFromLabel": "Opened from the session {name}",
+    "back": "Back",
+    "forward": "Forward",
+    "find": "Find in this document",
+    "findPlaceholder": "Find…",
+    "findNext": "Next match",
+    "findPrev": "Previous match",
+    "findCount": "{n} of {total}",
+    "findNone": "No matches",
+    "close": "Close",
+    "loading": "Opening…",
+    "outline": "Outline",
+    "frontMatter": "Front matter",
+    "copy": "Copy",
+    "copied": "Copied",
+    "icon": {
+      "back": "‹",
+      "forward": "›",
+      "close": "✕",
+      "pinned": "📌",
+      "unpinned": "📍",
+      "popOut": "⤢",
+      "dockBack": "⤡",
+      "lineage": "↳"
+    },
+    "image": "Image",
+    "openInBrowser": "Open in browser",
+    "mediaOmitted": "Media isn't shown here",
+    "truncated": "This file is large — showing the first {shown} of {size}. Open it externally to read the rest.",
+    "encodingNote": "Decoded as {encoding}",
+    "card": {
+      "title": "This file isn't shown here",
+      "body": "{name} is a {type} file ({size}). switchboard.ai doesn't render this kind of file — open it in the app you already use for it.",
+      "bodyUnknown": "{name} ({size}) isn't text, so there is nothing to show. Open it in the app you already use for it."
+    },
+    "refusal": {
+      "invalid-path": "That doesn't look like a file path.",
+      "out-of-scope": "switchboard.ai only opens files inside a session's folder, or files you picked yourself.",
+      "not-found": "That file isn't there any more.",
+      "not-a-file": "That's a folder, not a file.",
+      "unreadable": "That file couldn't be read."
     }
   },
   "events": {
@@ -304,6 +367,79 @@
       "needs-permission": "needs permission",
       "crashed": "crashed"
     }
+  },
+  "health": {
+    "state": {
+      "operational": "Anthropic: all systems operational",
+      "degraded": "Anthropic: degraded performance",
+      "outage": "Anthropic: service outage",
+      "unknown": "Anthropic status: unknown"
+    },
+    "short": {
+      "degraded": "provider degraded",
+      "outage": "provider outage"
+    },
+    "reason": {
+      "offline": "You appear to be offline, so nothing was checked.",
+      "polling-off": "Status checks are turned off.",
+      "network": "Couldn't reach the status page.",
+      "bad-response": "The status page answered something we couldn't read."
+    },
+    "page": "The status page says: {page}",
+    "incident": "{name} — {status}",
+    "corroborated": "{count, plural, one {# session here} other {# sessions here}} hit errors recently.",
+    "checkedAt": "Checked at {time}",
+    "eventsIncident": "Provider incident: {name} ({status})",
+    "banner": "{count, plural, one {# session} other {# sessions}} just hit errors in the last few minutes — this may be a problem at the provider rather than anything you did.",
+    "setting": "Check provider status",
+    "settingHint": "Ask Anthropic's public status page every few minutes whether it is having a day. Nothing is sent; turning it off changes nothing else."
+  },
+  "push": {
+    "title": "Phone push & webhooks",
+    "open": "Phone push & webhooks…",
+    "intro": "Have a session reach you when you are away from the machine, or tell another program about it. Both are off until you set one up, and neither can hold a session up.",
+    "unavailable": "This machine has no credential store available, so nothing can be saved here. On Linux that usually means no keyring (gnome-keyring or kwallet) is running.",
+    "sectionPush": "Phone push",
+    "sectionWebhook": "Webhook",
+    "service": "Push service",
+    "service_ntfy": "ntfy",
+    "service_pushover": "Pushover",
+    "ntfyTopic": "Topic",
+    "ntfyTopicHint": "Any name you like, but pick an unguessable one: anyone who knows it can read your notifications. Subscribe to the same topic in the ntfy app on your phone.",
+    "ntfyServer": "Server",
+    "ntfyServerHint": "Leave empty for ntfy.sh. Set it if you run your own ntfy.",
+    "pushoverToken": "Application token",
+    "pushoverUser": "User key",
+    "webhookUrl": "URL",
+    "webhookUrlHint": "Every event is POSTed here as JSON. Treated as a secret, because webhook URLs usually are.",
+    "enablePush": "Send events to my phone",
+    "enablePushHint": "Needs permission, needs input, and crashes — only while you are away from switchboard.",
+    "enableWebhook": "POST events to my webhook",
+    "enableWebhookHint": "All four events, whatever the window is doing: a program is not distracted by being looked at. The 🔔 switch and quiet hours still silence it.",
+    "set": "· saved",
+    "notSet": "· not set",
+    "save": "Save",
+    "forget": "Forget",
+    "sendTest": "Send test",
+    "testing": "Sending…",
+    "testOk": "Sent.",
+    "testFailed": "Not sent: {reason}",
+    "reason": {
+      "no-store": "this machine has no credential store.",
+      "not-configured": "nothing is set up yet.",
+      "bad-url": "that address is not a usable http(s) URL.",
+      "network": "it could not be reached.",
+      "refused": "the service turned it down — check the details you pasted."
+    },
+    "detail": "The service said: {detail}",
+    "problem": {
+      "bad-url": "Not saved — that needs to be a full http(s) address, like https://example.com/hook.",
+      "url-userinfo": "Not saved — a server address is kept in plain text, so it may not carry a username or password.",
+      "not-stored": "Not saved — this machine's credential store would not take it.",
+      "refused": "Not saved."
+    },
+    "secretNote": "Saved in your operating system's credential store, never in a switchboard file.",
+    "close": "Close"
   },
   "binding": {
     "awaitingPrompt": "No conversation yet",
@@ -406,10 +542,13 @@
     "toggleTerminal": "Toggle Terminal view",
     "toggleChanges": "Toggle Changes view",
     "toggleRail": "Toggle the sessions rail",
+    "openFile": "Open file… — read a file in the document viewer",
     "toggleTabRows": "Toggle tabs on multiple rows",
+    "openFind": "Find in the focused session",
     "openPalette": "Show all commands",
     "goToSession": "Go to {title}",
     "jumpAttention": "Go to the next session that needs you",
+    "pushSetup": "Phone push & webhooks… — reach me when I'm away from the machine",
     "about": "About this build — version, commit, branch",
     "category": {
       "session": "Sessions",
@@ -484,6 +623,47 @@
     "chip": "⬍ {policy}",
     "chipHint": "What happens to a session card when you submit a prompt: {policy}. Click to change.",
     "groupDefault": "Follow the default"
+  },
+  "find": {
+    "label": "Find in session",
+    "placeholder": "Find",
+    "count": "{index} of {total}",
+    "countTruncated": "{index} of {shown} shown ({total} found)",
+    "noResults": "No results",
+    "searching": "Searching…",
+    "next": "Next match",
+    "previous": "Previous match",
+    "close": "Close find",
+    "caseSensitive": "Match case",
+    "wholeWord": "Whole word",
+    "toggleResults": "Show or hide the results list",
+    "iconPrevious": "▲",
+    "iconNext": "▼",
+    "iconCase": "Aa",
+    "iconWholeWord": "ab|",
+    "iconClose": "✕",
+    "iconListOpen": "▾",
+    "iconListClosed": "▸",
+    "results": "Search results",
+    "earlier": "earlier than the loaded view",
+    "earlierTitle": "This match is further back in the session than the part currently loaded, so there is nothing on screen to scroll to. The snippet is all of it we can show.",
+    "cannotJumpTitle": "This match can't be scrolled to — the snippet is all of it we can show.",
+    "hitMeta": "{kind, select, user {your prompt} assistant {reply} thinking {thinking} tool {tool} todos {plan} other {block}} · {time}",
+    "hitMetaNoTime": "{kind, select, user {your prompt} assistant {reply} thinking {thinking} tool {tool} todos {plan} other {block}}",
+    "unavailable": {
+      "noProvider": "Find doesn't work on the {view} tab yet.",
+      "noSession": "There is no session here to search.",
+      "diffNotReady": "The diff hasn't loaded yet — open a changed file and try again.",
+      "failed": "Find isn't available on this tab right now."
+    },
+    "notice": {
+      "badPattern": "That search term can't be used.",
+      "timedOut": "The search stopped early, so this is only part of what's there.",
+      "noTranscript": "Nothing to search yet — this session hasn't written anything down.",
+      "cannotJump": "These matches can be read here, but this session can't be scrolled to them.",
+      "truncated": "Showing the first {shown} matches.",
+      "failed": "The search couldn't run. The session is untouched."
+    }
   },
   "focusPolicy": {
     "focus": "Always jump to it",

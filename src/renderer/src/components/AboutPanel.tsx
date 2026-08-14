@@ -32,6 +32,23 @@ export function AboutPanel(props: {
   autoCheck?: boolean;
   onToggleAutoCheck?: (on: boolean) => void;
   /**
+   * Provider status polling (P2-E14-07, §5.14). It lives beside the update
+   * toggle for one reason: those two are the only outbound network calls this
+   * app makes, and a user who wants to know that — or wants them off — should
+   * find both in the same place rather than one here and one nowhere.
+   * Optional, like the update pair, so a broken bridge costs the panel nothing.
+   */
+  statusPolling?: boolean;
+  onToggleStatusPolling?: (on: boolean) => void;
+  /**
+   * Phone push + webhooks (P2-E14-06). The mouse path to that dialog, and it
+   * is here for the reason the status-polling toggle above it is: this panel
+   * has become the one place that collects everything this app sends or
+   * fetches over the network, and a user looking for "what leaves my machine?"
+   * should find all of it together. Optional, like the pair above.
+   */
+  onOpenPushSetup?: () => void;
+  /**
    * Another modal is stacked ON TOP of this one (the update dialog, which is
    * reachable from here). Two nested `aria-modal="true"` regions is a case
    * screen readers handle inconsistently, so the panel underneath stops
@@ -248,6 +265,52 @@ export function AboutPanel(props: {
               {t('about.autoCheck')}
             </label>
             <AboutButton onClick={props.onCheckForUpdates}>{t('about.checkForUpdates')}</AboutButton>
+          </div>
+        )}
+        {props.onToggleStatusPolling && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '10px 14px',
+              borderBlockStart: '1px solid var(--border)',
+            }}
+          >
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 11.5,
+                color: 'var(--muted)',
+                cursor: 'pointer',
+              }}
+              title={t('health.settingHint')}
+            >
+              <input
+                type="checkbox"
+                data-about-field="statusPolling"
+                checked={props.statusPolling !== false}
+                onChange={(e) => props.onToggleStatusPolling?.(e.target.checked)}
+              />
+              {t('health.setting')}
+            </label>
+          </div>
+        )}
+        {props.onOpenPushSetup && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+              padding: '10px 14px',
+              borderBlockStart: '1px solid var(--border)',
+            }}
+          >
+            <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{t('push.sectionPush')}</span>
+            <AboutButton onClick={props.onOpenPushSetup}>{t('push.open')}</AboutButton>
           </div>
         )}
         <div

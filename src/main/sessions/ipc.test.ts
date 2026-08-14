@@ -16,6 +16,9 @@ import { StreamPermissions } from './stream-permissions';
 import { StreamFeed } from '../feed/stream-feed';
 import { Logger } from '../log/logger';
 import { SlashCommand } from '../../shared/slash-commands';
+import { readAiTitle } from '../providers/claude';
+import { REPEAT_HEAVY, REVISED, titlesOf } from '../transcripts/fixtures/ai-title';
+import { conversationExists, slugForCwd } from '../transcripts/paths';
 
 type Handler = (e: unknown, ...args: unknown[]) => unknown;
 
@@ -59,6 +62,8 @@ function harness(
     prior?: PersistedSession;
     registered?: string[];
     autoTrust?: boolean;
+    /** auto task labels (P2-E7-06) — defaults ON, which is the shipped default */
+    autoLabels?: boolean;
     /** the watcher refuses a root it cannot poll safely */
     watchAccepts?: boolean;
     /** live session ids the manager should claim to know (P2-E18-08b) */
@@ -99,6 +104,9 @@ function harness(
      *  is what empties it — so the hook half of that channel is assertable
      *  instead of being a constant `[]`. */
     hookPending?: Array<{ requestId: string; sessionId: string }>;
+    /** which transcript each live id is bound to, for `transcripts:search`
+     *  (P2-E17-01). Absent means the watcher has nothing bound for it. */
+    transcriptFiles?: Record<string, string | null>;
     /** make `SessionManager.create` BLOW UP, the way it really does for a
      *  provider adapter it does not have, a transport it cannot resolve, or a
      *  `spawn` that fails. `sessions:create` must answer `null` rather than
@@ -113,7 +121,17 @@ function harness(
     transport?: string;
   }> = [];
   const upserted: PersistedSession[] = [];
-  const watched: Array<{ sessionId: string; projectsRoot?: string; deriveFeed?: boolean }> = [];
+  /** every transcript-snapshot listener the module registered (P2-E7-06) */
+  const snapshots: Array<(snap: Record<string, unknown>) => void> = [];
+  /** the persisted store as it stands NOW, as opposed to every write ever made */
+  const cards: PersistedSession[] = opts.prior ? [{ ...opts.prior }] : [];
+  let autoLabels = opts.autoLabels ?? true;
+  const watched: Array<{
+    sessionId: string;
+    projectsRoot?: string;
+    deriveFeed?: boolean;
+    readTitle?: (line: Record<string, unknown>) => string | undefined;
+  }> = [];
   const buildHookSettings = vi.fn(() => ({ hooks: {} }));
   const warn = vi.fn();
   /** a start that should have worked and did not is an `error`, not a `warn` (#347) */
@@ -166,6 +184,8 @@ function harness(
   };
   /** the hook listener's held requests, keyed the way the real one holds them */
   const hookPending = [...(opts.hookPending ?? [])];
+  /** every verdict the HOOK router was handed, whatever surface sent it (E14-04) */
+  const hookDecisions: Array<{ requestId: string; decision: string; reason?: string }> = [];
   const spawnIds = [...(opts.spawnIds ?? [])];
   const exitCodeOf = (id: string): number | null => opts.exitCodes?.[id] ?? null;
   const asRecord = (id: string): Record<string, unknown> => ({
@@ -275,6 +295,19 @@ function harness(
           if (hookPending[i].sessionId === id) hookPending.splice(i, 1);
         }
       },
+      // The hook half of the app's ONE decision path (P2-E14-04). Recorded and
+      // real (it drops the request) rather than a no-op, because the claim
+      // under test is that `SessionIpcHandle.decidePermission` — what an OS
+      // toast's Allow/Deny button calls, with no window in the loop — lands in
+      // the same routers `sessions:decidePermission` does, and answers FALSE
+      // for a request nobody holds.
+      decide: (requestId: string, decision: string, reason?: string) => {
+        const i = hookPending.findIndex((r) => r.requestId === requestId);
+        if (i < 0) return false;
+        hookPending.splice(i, 1);
+        hookDecisions.push({ requestId, decision, reason });
+        return true;
+      },
       // the hook half of "Allow all (this session)" (#319). Recorded rather
       // than no-op'd because the claim under test is that ONE click reaches
       // BOTH channels — a fake that swallowed it could only prove the stream
@@ -283,7 +316,9 @@ function harness(
       buildHookSettings,
     },
     transcripts: {
-      onUpdate: () => {},
+      onUpdate: (l: (snap: Record<string, unknown>) => void) => {
+        snapshots.push(l);
+      },
       onBlock: () => {},
       setNativeSessionId: (sessionId: string, nativeId: string, cause?: string) => {
         nativeIdsSet.push({ sessionId, nativeId, cause });
@@ -291,12 +326,28 @@ function harness(
       onReset: (l: (sessionId: string, cause?: string) => void) => {
         resets.push(l);
       },
-      watch: (sessionId: string, s: { projectsRoot?: string; deriveFeed?: boolean }) => {
-        watched.push({ sessionId, projectsRoot: s.projectsRoot, deriveFeed: s.deriveFeed });
+      watch: (
+        sessionId: string,
+        s: {
+          projectsRoot?: string;
+          deriveFeed?: boolean;
+          readTitle?: (line: Record<string, unknown>) => string | undefined;
+        }
+      ) => {
+        watched.push({
+          sessionId,
+          projectsRoot: s.projectsRoot,
+          deriveFeed: s.deriveFeed,
+          readTitle: s.readTitle,
+        });
         trace.push(`watch:${sessionId}`);
         return watchAccepts;
       },
       blocks: (id: string) => [{ seq: 1, kind: 'assistant', text: `transcript block for ${id}` }],
+      // Which file a session is bound to — how `transcripts:search` turns a
+      // session id into something to scan (P2-E17-01). `null` is the ordinary
+      // answer for a session nobody has prompted yet.
+      transcriptFile: (id: string) => opts.transcriptFiles?.[id] ?? null,
       unwatch: (id: string) => {
         if (id === opts.throwOnUnwatch) throw new Error('teardown exploded');
         unwatched.push(id);
@@ -324,13 +375,34 @@ function harness(
     getWindow: () => null,
     broker,
     autoTrust: () => opts.autoTrust ?? false,
+    // Auto task labels (P2-E7-06). ON by default here, because off is the
+    // degraded path and a harness that defaults to it would let every label
+    // assertion pass for the wrong reason. `setAutoLabels` writes through, so
+    // the switch test drives the real handler rather than a stub of it.
+    autoLabels: () => autoLabels,
+    setAutoLabels: (on: boolean) => {
+      autoLabels = on;
+    },
     persist: {
-      list: () => (opts.prior ? [opts.prior] : []),
-      upsert: (s: PersistedSession) => upserted.push(s),
+      // A store that REMEMBERS. The label loop reads the card back after every
+      // write — "has this title already been stored?" is the de-dupe — so a
+      // list frozen at `opts.prior` would answer "no" for ever and make a
+      // repeat-heavy transcript look free when it was not.
+      list: () => cards,
+      upsert: (s: PersistedSession) => {
+        upserted.push(s);
+        const i = cards.findIndex((c) => c.id === s.id);
+        if (i < 0) cards.push(s);
+        else cards[i] = s;
+      },
       // recorded since #219: `sessions:closeCard` runs this AFTER the teardown,
       // so a teardown that threw used to skip it and the "closed" card came
       // back on the next boot
-      remove: (cardId: string) => removedCards.push(cardId),
+      remove: (cardId: string) => {
+        removedCards.push(cardId);
+        const i = cards.findIndex((c) => c.id === cardId);
+        if (i >= 0) cards.splice(i, 1);
+      },
     },
     capabilitiesOf: (id: string) => {
       askedFor.push(id); // which provider was asked about is the wiring itself
@@ -346,8 +418,14 @@ function harness(
     preferredTransport: opts.preferredTransport,
   } as unknown as SessionIpcDeps;
 
-  registerSessionIpc(deps);
+  const ipc = registerSessionIpc(deps);
   return {
+    /** what the bootstrap gets back — the toast's route to a card's label */
+    labelFor: ipc.labelFor,
+    /** …and the two halves an ACTIONABLE toast needs (P2-E14-04) */
+    pendingPermissionFor: ipc.pendingPermissionFor,
+    decidePermission: ipc.decidePermission,
+    hookDecisions,
     call,
     created,
     upserted,
@@ -356,6 +434,28 @@ function harness(
       for (const l of nativeIdListeners) l(liveId, nativeId, cause);
     },
     watched,
+    cards,
+    /**
+     * Play the transcript watcher: push a snapshot for a live session.
+     *
+     * `lines` defaults to 1 because a snapshot that has ingested nothing is
+     * ignored by design (it says nothing about usage) — passing 0 tests that
+     * rule, not the label.
+     */
+    fireSnapshot: (snap: {
+      sessionId: string;
+      title?: string;
+      lines?: number;
+      usage?: { input: number; output: number; cacheRead: number; cacheCreate: number };
+      model?: string;
+    }) => {
+      const full = {
+        lines: 1,
+        usage: { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 },
+        ...snap,
+      };
+      for (const l of snapshots) l(full);
+    },
     buildHookSettings,
     warn,
     logError,
@@ -1318,6 +1418,168 @@ describe('the Feed has two sources and one channel (P2-E18-10)', () => {
   });
 });
 
+// #395 — a RESUMED Direct session gets its history back.
+//
+// The two facts above collide here: a stream session is told `deriveFeed:
+// false`, and `--resume` re-sends nothing over the stream. So a resumed Direct
+// card had NO source of history at all and opened blank — which is what every
+// pre-existing card did on the first launch after #381. `sessions:create` now
+// replays the conversation's own transcript into the stream Feed, once, before
+// the first message can arrive.
+describe('a resumed Direct session replays its history (#395)', () => {
+  let dir: string;
+  tempDirEach('sb-ipc-replay-', (d) => (dir = d));
+  let root: string;
+  tempDirEach('sb-ipc-replay-root-', (d) => (root = d));
+
+  const NATIVE = '00000000-conv-4000-8000-000000000000';
+  const capsWith = (rootDir: () => string): ProviderCapabilities =>
+    ({
+      transcripts: { projectsRoot: () => rootDir() },
+      resume: { canResume: () => true },
+    }) as unknown as ProviderCapabilities;
+
+  /** the conversation, where the CLI would have written it */
+  function seedTranscript(id = NATIVE): void {
+    const d = path.join(root, slugForCwd(dir));
+    fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(
+      path.join(d, `${id}.jsonl`),
+      [
+        { type: 'user', sessionId: id, cwd: dir, message: { role: 'user', content: [{ type: 'text', text: 'before the relaunch' }] } },
+        { type: 'assistant', sessionId: id, cwd: dir, message: { role: 'assistant', content: [{ type: 'text', text: 'the reply you already read' }] } },
+      ]
+        .map((l) => JSON.stringify(l) + '\n')
+        .join('')
+    );
+  }
+
+  it('the prior conversation is in the Feed before the CLI says anything', () => {
+    seedTranscript();
+    const streamFeed = new StreamFeed();
+    const h = harness(capsWith(() => root), dir, {
+      transport: 'stream',
+      liveIds: ['live-1'],
+      streamFeed,
+      prior: priorCard({ folder: dir, nativeSessionId: NATIVE }),
+    });
+
+    h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
+
+    expect(streamFeed.blocks('live-1').map((b) => b.text)).toEqual([
+      'before the relaunch',
+      'the reply you already read',
+    ]);
+    // and it is what the mounting panel pulls, on the one channel there is
+    expect((h.call('transcripts:blocks', 'live-1') as Array<{ text: string }>).map((b) => b.text)).toEqual([
+      'before the relaunch',
+      'the reply you already read',
+    ]);
+  });
+
+  it('a TERMINAL session is left alone — the watcher replays it, as it always did', () => {
+    seedTranscript();
+    const streamFeed = new StreamFeed();
+    harness(capsWith(() => root), dir, {
+      transport: 'pty',
+      liveIds: ['live-1'],
+      streamFeed,
+      prior: priorCard({ folder: dir, nativeSessionId: NATIVE }),
+    }).call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
+
+    expect(streamFeed.blocks('live-1')).toEqual([]);
+  });
+
+  it('a session that is NOT resuming starts empty, whatever is on disk', () => {
+    seedTranscript();
+    const streamFeed = new StreamFeed();
+    const h = harness(
+      { transcripts: { projectsRoot: () => root }, resume: { canResume: () => false } } as unknown as ProviderCapabilities,
+      dir,
+      { transport: 'stream', liveIds: ['live-1'], streamFeed, prior: priorCard({ folder: dir, nativeSessionId: NATIVE }) }
+    );
+
+    h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
+
+    expect(streamFeed.blocks('live-1')).toEqual([]);
+  });
+
+  it('an unresolvable root starts the card FRESH, not resumed-and-blank (#432)', () => {
+    // A Claude-SHAPED adapter: one that answers `canResume` out of the root it
+    // is handed, which is what every shipped provider does. Its root comes back
+    // empty here, so the host will watch nothing and replay nothing — and the
+    // adapter therefore refuses to vouch for the conversation rather than
+    // resuming into a Session view nothing can fill. The transcript is on disk
+    // the whole time; only the declaration is missing.
+    seedTranscript();
+    const streamFeed = new StreamFeed();
+    const h = harness(
+      {
+        transcripts: { projectsRoot: () => '' },
+        resume: {
+          canResume: ({ projectsRoot, folder, nativeSessionId }) =>
+            conversationExists(projectsRoot, folder, nativeSessionId),
+        },
+      } satisfies ProviderCapabilities,
+      dir,
+      { transport: 'stream', liveIds: ['live-1'], streamFeed, prior: priorCard({ folder: dir, nativeSessionId: NATIVE }) }
+    );
+
+    const record = h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
+
+    expect(record).not.toBeNull();
+    expect(h.created[0].resumeSessionId).toBeUndefined(); // no --resume
+    expect(h.watched).toHaveLength(0); // and nothing watched
+    expect(streamFeed.blocks('live-1')).toEqual([]);
+  });
+
+  it('a resumed card whose transcript is gone still starts — empty, not broken', () => {
+    // nothing seeded: `canResume` said yes and the file is not there
+    const streamFeed = new StreamFeed();
+    const h = harness(capsWith(() => root), dir, {
+      transport: 'stream',
+      liveIds: ['live-1'],
+      streamFeed,
+      prior: priorCard({ folder: dir, nativeSessionId: NATIVE }),
+    });
+
+    const record = h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
+
+    expect(record).not.toBeNull();
+    expect(streamFeed.blocks('live-1')).toEqual([]);
+  });
+
+  it('does not read a root the watcher just refused', () => {
+    seedTranscript();
+    const streamFeed = new StreamFeed();
+    const h = harness(capsWith(() => root), dir, {
+      transport: 'stream',
+      liveIds: ['live-1'],
+      streamFeed,
+      // the watcher refuses a root it cannot poll safely (§5.29). A refusal has
+      // to mean the same thing on both paths, or "unusable root" quietly stops
+      // being a decision anyone can rely on.
+      watchAccepts: false,
+      prior: priorCard({ folder: dir, nativeSessionId: NATIVE }),
+    });
+
+    h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
+
+    expect(streamFeed.blocks('live-1')).toEqual([]);
+  });
+
+  it('replays nothing when there is no StreamFeed wired at all', () => {
+    seedTranscript();
+    const h = harness(capsWith(() => root), dir, {
+      transport: 'stream',
+      liveIds: ['live-1'],
+      prior: priorCard({ folder: dir, nativeSessionId: NATIVE }),
+    });
+
+    expect(() => h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' })).not.toThrow();
+  });
+});
+
 // The watcher keeps watching a stream session (usage, the native id, drift), so
 // it still corrects mis-binds and still notices a /clear. Its RESET must not be
 // routed there: the renderer would drop a Feed the transcript never built, and
@@ -2235,6 +2497,118 @@ describe('a session that exits on its own releases what it was holding (#271)', 
   });
 });
 
+// P2-E14-04. The OS toast's Allow/Deny answers from the MAIN process, with no
+// window in the loop — so the two things it needs (what is being asked, and how
+// to answer it) come back on `SessionIpcHandle` rather than over IPC. What is
+// pinned here is that they are the SAME routers `sessions:decidePermission`
+// reaches: a toast with its own route to the CLI would be a second opinion
+// about what "allow" means, and the two would drift the first time either
+// changed.
+describe('a toast can name and answer a held permission (P2-E14-04)', () => {
+  const CARD = 'card-1';
+  let dir: string;
+  tempDirEach('sb-toastperm-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir, CARD);
+
+  it('names the OLDEST request the live session is holding — what the bar answers', () => {
+    const h = harness(undefined, dir, {
+      prior: card(),
+      hookPending: [
+        { requestId: 'hook-1', sessionId: 'live-1' },
+        { requestId: 'hook-2', sessionId: 'live-1' },
+      ],
+    });
+    start(h);
+    // FIFO, because the approval bar's buttons act on `cardQueue[0]`. A toast
+    // that answered the newest while the bar answered the oldest would make the
+    // two surfaces disagree about which question is on screen.
+    expect(h.pendingPermissionFor('live-1')?.requestId).toBe('hook-1');
+  });
+
+  it('answers null for a session holding nothing, and for one that never existed', () => {
+    const h = harness(undefined, dir, { prior: card() });
+    start(h);
+    expect(h.pendingPermissionFor('live-1')).toBeNull();
+    expect(h.pendingPermissionFor('no-such-session')).toBeNull();
+  });
+
+  it('sees BOTH transports — a Direct session holds on the stream router', () => {
+    const { perms } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
+    start(h);
+    perms.offer('live-1', canUseTool('req-1'));
+    expect(h.pendingPermissionFor('live-1')?.requestId).toBe('stream:live-1:req-1');
+  });
+
+  it('decidePermission reaches the hook router, exactly as the channel does', () => {
+    const h = harness(undefined, dir, {
+      prior: card(),
+      hookPending: [{ requestId: 'hook-1', sessionId: 'live-1' }],
+    });
+    start(h);
+
+    expect(h.decidePermission('hook-1', 'deny')).toBe(true);
+
+    expect(h.hookDecisions).toEqual([
+      { requestId: 'hook-1', decision: 'deny', reason: undefined },
+    ]);
+    // and the request really is gone — the bar and the replay agree with the toast
+    expect(h.pendingPermissionFor('live-1')).toBeNull();
+    expect(h.call('sessions:pendingPermissions')).toEqual([]);
+  });
+
+  it('decidePermission reaches the STREAM router too', () => {
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
+    start(h);
+    perms.offer('live-1', canUseTool('req-1'));
+
+    expect(h.decidePermission('stream:live-1:req-1', 'allow')).toBe(true);
+
+    expect(sent).toHaveLength(1);
+    expect(h.pendingPermissionFor('live-1')).toBeNull();
+  });
+
+  // The dead-session half of the issue's done-when, at the seam the toast
+  // actually calls: nothing holds it, so nothing is decided and the caller is
+  // told so rather than being left to assume it worked.
+  it('answers FALSE for a request nobody holds, and for a nonsense verdict', () => {
+    const h = harness(undefined, dir, {
+      prior: card(),
+      hookPending: [{ requestId: 'hook-1', sessionId: 'live-1' }],
+    });
+    start(h);
+
+    expect(h.decidePermission('gone', 'allow')).toBe(false);
+    expect(h.decidePermission('hook-1', 'maybe')).toBe(false);
+    expect(h.decidePermission('', 'allow')).toBe(false);
+
+    expect(h.hookDecisions).toEqual([]); // nothing reached a router
+    expect(h.pendingPermissionFor('live-1')?.requestId).toBe('hook-1'); // still held
+  });
+
+  it('the channel and the handle are the same function — one path, two callers', () => {
+    const h = harness(undefined, dir, {
+      prior: card(),
+      hookPending: [
+        { requestId: 'hook-1', sessionId: 'live-1' },
+        { requestId: 'hook-2', sessionId: 'live-1' },
+      ],
+    });
+    start(h);
+
+    h.call('sessions:decidePermission', 'hook-1', 'allow', 'from the bar');
+    h.decidePermission('hook-2', 'allow', 'from the toast');
+
+    // Same shape, same clamping, same router — the only difference is who
+    // called. (`reason` is passed straight through by both.)
+    expect(h.hookDecisions).toEqual([
+      { requestId: 'hook-1', decision: 'allow', reason: 'from the bar' },
+      { requestId: 'hook-2', decision: 'allow', reason: 'from the toast' },
+    ]);
+  });
+});
+
 // #294. The rail now refuses an empty rename at the field — but the field is
 // one caller, and it is the renderer. This is the half of the rule that
 // survives a restart: `manager.rename` already declines a blank, and only for
@@ -2599,5 +2973,473 @@ describe('a learned native id reaches the card and the watcher (#404)', () => {
       { sessionId: 'live-ghost', nativeId: 'native-9', cause: undefined },
     ]);
     expect(h.upserted).toEqual([]); // no card to write
+  });
+});
+
+// Session find (P2-E17-01, §5.31). The engine has its own test file; what is
+// pinned here is the WIRING — the scope arrives as session ids, and main is what
+// turns an id into a file. A renderer that could name the path would be able to
+// read a transcript no card is showing.
+describe('transcripts:search resolves a scope of sessions to files', () => {
+  let dir: string;
+  tempDirEach('sb-ipc-find-', (d) => (dir = d));
+
+  const caps = { transcripts: { projectsRoot: () => '/root' } };
+  const line = (text: string): string =>
+    JSON.stringify({
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text }] },
+    });
+
+  const write = (name: string, texts: string[]): string => {
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, texts.map(line).join('\n') + '\n');
+    return file;
+  };
+
+  it('scans the transcript the watcher says the session is bound to', async () => {
+    const file = write('a.jsonl', ['nothing here', 'the FOUNDLING is here']);
+    const h = harness(caps, dir, { liveIds: ['live-1'], transcriptFiles: { 'live-1': file } });
+
+    const r = (await h.call('transcripts:search', {
+      sessionIds: ['live-1'],
+      query: { term: 'FOUNDLING' },
+    })) as { total: number; hits: Array<{ sessionId: string; blockIndex: number }> };
+
+    expect(r.total).toBe(1);
+    expect(r.hits[0]).toMatchObject({ sessionId: 'live-1', blockIndex: 2 });
+  });
+
+  it('answers a session with no bound transcript with an empty, unsearched group', async () => {
+    const h = harness(caps, dir, { liveIds: ['live-1'] });
+
+    const r = (await h.call('transcripts:search', {
+      sessionIds: ['live-1'],
+      query: { term: 'anything' },
+    })) as { total: number; groups: Array<{ searched: boolean }> };
+
+    expect(r.total).toBe(0);
+    expect(r.groups[0].searched).toBe(false);
+  });
+
+  it('takes a LIST — the scope §10 extends rather than replaces', async () => {
+    const a = write('a.jsonl', ['SHARED once']);
+    const b = write('b.jsonl', ['SHARED twice', 'and SHARED again']);
+    const h = harness(caps, dir, {
+      liveIds: ['live-1', 'live-2'],
+      transcriptFiles: { 'live-1': a, 'live-2': b },
+    });
+
+    const r = (await h.call('transcripts:search', {
+      sessionIds: ['live-1', 'live-2'],
+      query: { term: 'SHARED' },
+    })) as { total: number; groups: Array<{ sessionId: string; hits: number }> };
+
+    expect(r.total).toBe(3);
+    expect(r.groups.map((g) => [g.sessionId, g.hits])).toEqual([
+      ['live-1', 1],
+      ['live-2', 2],
+    ]);
+  });
+
+  it('survives a caller that sends nonsense, the way every channel here does', async () => {
+    const h = harness(caps, dir, { liveIds: ['live-1'] });
+
+    for (const bad of [undefined, null, 'a string', 42, { sessionIds: 'not-a-list' }, {}]) {
+      const r = (await h.call('transcripts:search', bad)) as { hits: unknown[]; groups: unknown[] };
+      expect(r.hits).toEqual([]);
+      expect(r.groups).toEqual([]);
+    }
+  });
+
+  it('reports a bad regex rather than rejecting the renderer’s promise', async () => {
+    const file = write('a.jsonl', ['anything at all']);
+    const h = harness(caps, dir, { liveIds: ['live-1'], transcriptFiles: { 'live-1': file } });
+
+    const r = (await h.call('transcripts:search', {
+      sessionIds: ['live-1'],
+      query: { term: '[', regex: true },
+    })) as { error?: { code: string } };
+
+    expect(r.error?.code).toBe('bad-pattern');
+  });
+});
+
+// A stream session's transcript is still on disk and still complete — only its
+// FEED comes from somewhere else (P2-E18-10). So find searches it, and says
+// plainly that it cannot offer a jump.
+describe('transcripts:search over a stream session (P2-E17-01)', () => {
+  let dir: string;
+  tempDirEach('sb-ipc-find-stream-', (d) => (dir = d));
+
+  it('searches the transcript, and reports that it cannot line it up', async () => {
+    const file = path.join(dir, 'stream.jsonl');
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        type: 'assistant',
+        timestamp: '2026-08-11T00:00:00.000Z',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'a STREAMED answer' }] },
+      }) + '\n'
+    );
+    const streamFeed = new StreamFeed();
+    const h = harness({ transcripts: { projectsRoot: () => '/root' } }, dir, {
+      transport: 'stream',
+      liveIds: ['live-1'],
+      streamFeed,
+      transcriptFiles: { 'live-1': file },
+    });
+    streamFeed.offer('live-1', {
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'a STREAMED answer' }] },
+      parent_tool_use_id: null,
+    });
+
+    const r = (await h.call('transcripts:search', {
+      sessionIds: ['live-1'],
+      query: { term: 'STREAMED' },
+    })) as {
+      total: number;
+      hits: Array<{ seq?: number; earlierThanLoaded: boolean }>;
+      groups: Array<{ searched: boolean; aligned: boolean }>;
+    };
+
+    expect(r.total).toBe(1); // complete — the file is the archive either way
+    expect(r.groups[0].searched).toBe(true);
+    // A stream block's `ts` is when the message reached US, not what the CLI
+    // wrote, so the two cannot be lined up and the engine says so.
+    expect(r.groups[0].aligned).toBe(false);
+    expect(r.hits[0].seq).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P2-E18-17 — the #404 audit's fourth finding, kept at the end of the file on
+// purpose: it is a self-contained block, so a conflict with the other branches
+// editing this suite is a trivial one.
+// ---------------------------------------------------------------------------
+
+// The env override must AIM a launch, not EDIT anybody's cards.
+//
+// `SWITCHBOARD_TRANSPORT` is per-app-instance and temporary by nature — you set
+// it to try Terminal mode for an afternoon. Writing its answer back onto every
+// card that had never chosen would make that afternoon permanent: the cards
+// would come out of population 1 ("follows the default") and into population 2
+// ("explicitly chose"), so the next launch WITHOUT the variable would still be
+// on the old transport, and the next change of default would skip them for
+// ever. The same rule as the default itself, for the same reason — absence is a
+// meaningful value here.
+describe('the env override is not written back onto the card (P2-E18-17)', () => {
+  const CARD = 'card-1';
+  let dir: string;
+  tempDirEach('sb-tr-envback-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir, CARD);
+
+  it('the override decides the spawn but leaves the card unchosen', async () => {
+    const h = harness(undefined, dir, { prior: card(), preferredTransport: () => 'pty' });
+
+    await start(h);
+
+    expect(h.created[0].transport).toBe('pty'); // it did decide...
+    // `.at(-1)?` on an EMPTY list is undefined too, so the card must be proved
+    // written at all — otherwise "stopped persisting the card" passes this as
+    // cleanly as "did not write the transport".
+    expect(h.upserted).not.toHaveLength(0);
+    expect(h.upserted.at(-1)?.transport).toBeUndefined(); // ...and recorded nothing
+  });
+
+  it('holds for a brand-new card with no record at all', async () => {
+    const h = harness(undefined, dir, { preferredTransport: () => 'pty' });
+
+    await start(h, 'fresh');
+
+    expect(h.created[0].transport).toBe('pty');
+    expect(h.upserted).not.toHaveLength(0);
+    expect(h.upserted.at(-1)?.transport).toBeUndefined();
+  });
+
+  it('and for `stream`, which is the value a lazy write-back would hide in', async () => {
+    const h = harness(undefined, dir, { prior: card(), preferredTransport: () => 'stream' });
+
+    await start(h);
+
+    // identical to what the default would have produced, which is the point:
+    // the card must still say nothing, or it silently stops following the
+    // default the day the default moves.
+    expect(h.created[0].transport).toBe('stream');
+    expect(h.upserted).not.toHaveLength(0);
+    expect(h.upserted.at(-1)?.transport).toBeUndefined();
+  });
+
+  it("a card that DID choose keeps its own value written down", async () => {
+    const h = harness(undefined, dir, {
+      prior: { ...card(), transport: 'pty' },
+      preferredTransport: () => 'stream',
+    });
+
+    await start(h);
+
+    // the card's choice beat the override at the spawn...
+    expect(h.created[0].transport).toBe('pty');
+    // ...and the override did not overwrite it on the way through either
+    expect(h.upserted.at(-1)?.transport).toBe('pty');
+  });
+});
+
+// ── P2-E7-06: auto task labels from the CLI's own title ────────────────────
+//
+// The loop under test: a line lands in the transcript, the watcher puts the
+// title on its snapshot, and this module decides what that does to the card.
+// Driven by the REAL captured `ai-title` titles, so a repeat here is a repeat
+// the CLI actually produced.
+describe('auto task labels (P2-E7-06, §5.11)', () => {
+  let dir: string;
+  tempDirEach('sb-label-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir);
+  const [FIRST, SETTLED] = titlesOf(REVISED);
+  const REPEATED = titlesOf(REPEAT_HEAVY)[0];
+
+  /** an adapter that writes transcripts AND names its conversations */
+  const claudeLike: ProviderCapabilities = {
+    transcripts: { projectsRoot: () => '/roots/claude' },
+    titles: { titleFrom: readAiTitle },
+  };
+
+  /** every task-label push the renderer was sent, in order */
+  const labels = (h: { pushed: Array<{ channel: string; payload: unknown }> }) =>
+    h.pushed
+      .filter((p) => p.channel === 'sessions:taskLabel')
+      .map((p) => p.payload as { cardId: string; label?: string });
+
+  /** the card as the store now holds it */
+  const stored = (h: { cards: PersistedSession[] }) => h.cards.find((c) => c.id === 'card-1')!;
+
+  it('a blank label fills itself from the CLI title, and says so', () => {
+    const h = harness(claudeLike, dir, { prior: card() });
+    start(h);
+
+    h.fireSnapshot({ sessionId: 'live-1', title: SETTLED });
+
+    expect(stored(h).taskLabel).toBe(SETTLED);
+    expect(stored(h).labelSource).toBe('auto');
+    // and the renderer is TOLD: nothing in it asked for this, so a silent
+    // persist would be a label that is correct on disk and invisible on screen
+    expect(labels(h)).toEqual([{ cardId: 'card-1', label: SETTLED }]);
+  });
+
+  it('keeps tracking while on auto — the CLI revises its answer', () => {
+    const h = harness(claudeLike, dir, { prior: card() });
+    start(h);
+
+    // the real pair, one line apart in a real transcript
+    h.fireSnapshot({ sessionId: 'live-1', title: FIRST });
+    h.fireSnapshot({ sessionId: 'live-1', title: SETTLED });
+
+    expect(stored(h).taskLabel).toBe(SETTLED);
+    expect(labels(h).map((l) => l.label)).toEqual([FIRST, SETTLED]);
+  });
+
+  it('a repeat costs nothing — 13 real title lines, ONE push', () => {
+    // The CLI re-emits the settled title EVERY TURN. Undeduped this is a
+    // renderer push per turn on every open session at once — so the de-dupe is
+    // asserted against the repeat-heavy capture rather than assumed.
+    const h = harness(claudeLike, dir, { prior: card() });
+    start(h);
+    const before = h.upserted.length;
+
+    for (const [, raw] of REPEAT_HEAVY.lines) {
+      const title = readAiTitle(JSON.parse(raw) as Record<string, unknown>);
+      h.fireSnapshot({ sessionId: 'live-1', title });
+    }
+
+    expect(REPEAT_HEAVY.lines.length).toBe(13); // the fixture really does repeat
+    expect(labels(h)).toEqual([{ cardId: 'card-1', label: REPEATED }]);
+    // the usage upsert still happens per snapshot — that is pre-existing — but
+    // the label written by each is the same one, set once and never flipped
+    const written = h.upserted.slice(before);
+    expect(new Set(written.map((u) => u.taskLabel))).toEqual(new Set([REPEATED]));
+    expect(new Set(written.map((u) => u.labelSource))).toEqual(new Set(['auto']));
+  });
+
+  it('typing a label pins it, and no later title may overwrite it', () => {
+    const h = harness(claudeLike, dir, { prior: card() });
+    start(h);
+    h.fireSnapshot({ sessionId: 'live-1', title: FIRST });
+
+    h.call('sessions:setTaskLabel', 'card-1', '  mine, thanks  ');
+    expect(stored(h).taskLabel).toBe('mine, thanks');
+    expect(stored(h).labelSource).toBe('user');
+
+    h.fireSnapshot({ sessionId: 'live-1', title: SETTLED });
+    expect(stored(h).taskLabel).toBe('mine, thanks');
+  });
+
+  it('a label typed BEFORE this feature shipped is the users too', () => {
+    // E7-03's label carries no `labelSource`. Treating that absence as "auto"
+    // would overwrite it on the first turn after an upgrade.
+    const h = harness(claudeLike, dir, { prior: card() });
+    h.cards[0].taskLabel = 'from an older build';
+    start(h);
+
+    h.fireSnapshot({ sessionId: 'live-1', title: SETTLED });
+
+    expect(stored(h).taskLabel).toBe('from an older build');
+    expect(labels(h)).toEqual([]);
+  });
+
+  it('clearing the field hands it back to auto', () => {
+    // "Is it empty?" is deliberately NOT the ownership test — a blank label you
+    // meant to keep would be impossible — so clearing has to say so explicitly.
+    const h = harness(claudeLike, dir, { prior: card() });
+    start(h);
+    h.call('sessions:setTaskLabel', 'card-1', 'mine');
+
+    h.call('sessions:setTaskLabel', 'card-1', '   ');
+    expect(stored(h).taskLabel).toBeUndefined();
+    expect(stored(h).labelSource).toBe('auto');
+
+    h.fireSnapshot({ sessionId: 'live-1', title: SETTLED });
+    expect(stored(h).taskLabel).toBe(SETTLED);
+  });
+
+  it('no title means no label — the folder name simply stands', () => {
+    const h = harness(claudeLike, dir, { prior: card() });
+    start(h);
+
+    h.fireSnapshot({ sessionId: 'live-1' });
+    h.fireSnapshot({ sessionId: 'live-1', title: '   ' });
+
+    expect(stored(h).taskLabel).toBeUndefined();
+    expect(labels(h)).toEqual([]);
+  });
+
+  it('an adapter that does not declare titles starts no title watch at all', () => {
+    const h = harness({ transcripts: { projectsRoot: () => '/roots/x' } }, dir, { prior: card() });
+    start(h);
+    expect(h.watched[0].readTitle).toBeUndefined();
+
+    const withTitles = harness(claudeLike, dir, { prior: card() });
+    start(withTitles);
+    expect(withTitles.watched[0].readTitle).toBeTypeOf('function');
+  });
+
+  describe('the screen-share switch', () => {
+    it('fills nothing while it is off', () => {
+      const h = harness(claudeLike, dir, { prior: card(), autoLabels: false });
+      start(h);
+
+      h.fireSnapshot({ sessionId: 'live-1', title: SETTLED });
+
+      expect(stored(h).taskLabel).toBeUndefined();
+      expect(labels(h)).toEqual([]);
+    });
+
+    it('hides a label already filled, everywhere the renderer reads one', async () => {
+      const h = harness(claudeLike, dir, { prior: card() });
+      start(h);
+      h.fireSnapshot({ sessionId: 'live-1', title: SETTLED });
+
+      h.call('settings:setAutoLabels', false);
+
+      // the card list...
+      const cards = (await h.call('sessions:cards')) as Array<{ taskLabel?: string }>;
+      expect(cards[0].taskLabel).toBeUndefined();
+      // ...the toast text (§5.9)...
+      expect(h.labelFor('live-1')).toBeUndefined();
+      // ...and the push that takes it off a card already on screen
+      expect(labels(h).at(-1)).toEqual({ cardId: 'card-1', label: undefined });
+      // but nothing was DELETED — flipping back must be lossless
+      expect(stored(h).taskLabel).toBe(SETTLED);
+    });
+
+    it('puts them straight back when it goes on again', () => {
+      // Waiting for the next `ai-title` would work — the CLI re-emits every
+      // turn — but "every turn" is minutes on an idle session, and a switch
+      // that appears to do nothing is a switch nobody trusts.
+      const h = harness(claudeLike, dir, { prior: card() });
+      start(h);
+      h.fireSnapshot({ sessionId: 'live-1', title: SETTLED });
+      h.call('settings:setAutoLabels', false);
+
+      expect(h.call('settings:setAutoLabels', true)).toBe(true);
+
+      expect(labels(h).at(-1)).toEqual({ cardId: 'card-1', label: SETTLED });
+      expect(h.labelFor('live-1')).toBe(SETTLED);
+    });
+
+    it('reaches a SUSPENDED card too — the ones nobody is looking at', () => {
+      // A suspended card has no live session but still has a panel and a rail
+      // row, both showing whatever label it was left with. Walking the live
+      // bindings would leave exactly those still displaying a prompt-derived
+      // phrase, which is the case the switch exists for.
+      const h = harness(claudeLike, dir, { prior: card() });
+      start(h);
+      h.fireSnapshot({ sessionId: 'live-1', title: SETTLED });
+      h.call('sessions:dropLive', 'card-1'); // suspended: the binding is gone
+
+      h.call('settings:setAutoLabels', false);
+
+      expect(labels(h).at(-1)).toEqual({ cardId: 'card-1', label: undefined });
+    });
+
+    it('never hides a label the user typed', () => {
+      const h = harness(claudeLike, dir, { prior: card() });
+      start(h);
+      h.call('sessions:setTaskLabel', 'card-1', 'mine');
+
+      h.call('settings:setAutoLabels', false);
+
+      expect(h.labelFor('live-1')).toBe('mine');
+    });
+
+    it('reports what it actually stored', () => {
+      const h = harness(claudeLike, dir, { prior: card() });
+      expect(h.call('settings:getAutoLabels')).toBe(true);
+      expect(h.call('settings:setAutoLabels', 'yes please')).toBe(false); // not `true`
+      expect(h.call('settings:getAutoLabels')).toBe(false);
+    });
+  });
+
+  describe('the toast route to it (§5.9)', () => {
+    it('answers the label for a live session', () => {
+      const h = harness(claudeLike, dir, { prior: card() });
+      start(h);
+      h.fireSnapshot({ sessionId: 'live-1', title: SETTLED });
+
+      expect(h.labelFor('live-1')).toBe(SETTLED);
+    });
+
+    it('answers nothing for a session with no card, and never throws', () => {
+      const h = harness(claudeLike, dir, { prior: card() });
+      expect(() => h.labelFor('live-nobody')).not.toThrow();
+      expect(h.labelFor('live-nobody')).toBeUndefined();
+    });
+  });
+
+  it('a snapshot that has ingested nothing changes no label', () => {
+    // The zeroed snapshot a /clear or a corrected mis-bind installs. It says
+    // nothing about usage and it says nothing about the title either.
+    const h = harness(claudeLike, dir, { prior: card() });
+    start(h);
+
+    h.fireSnapshot({ sessionId: 'live-1', title: SETTLED, lines: 0 });
+
+    expect(stored(h).taskLabel).toBeUndefined();
+  });
+
+  it('carries the label back to the card on a restart', () => {
+    // The persisted half: a suspended card handed back to a remounting panel.
+    const h = harness(claudeLike, dir, { prior: card() });
+    start(h);
+    h.fireSnapshot({ sessionId: 'live-1', title: SETTLED });
+
+    const again = harness(claudeLike, dir, { prior: stored(h) });
+    const rec = again.call('sessions:create', {
+      cardId: 'card-1',
+      folder: dir,
+      title: 't',
+    }) as { taskLabel?: string };
+
+    expect(rec.taskLabel).toBe(SETTLED);
   });
 });

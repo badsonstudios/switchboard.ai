@@ -98,6 +98,18 @@ export function EventsPanel(props: {
   /** the `available` notice's button: reopen the dialog */
   onUpdateNow?: () => void;
   onDismissUpdateNotice?: () => void;
+  /**
+   * Open provider incidents (P2-E14-07, §5.14) — the app's answer to "is it me
+   * or is it them?", in the panel where "something happened" already lives.
+   *
+   * §5.14 asks for incident start/resolve to reach the event surface. It rides
+   * the NOTICE slot rather than the list because `events/feed.ts` is one item
+   * per SESSION by construction (§5.12) and a provider incident belongs to no
+   * session — the same road the update notice and the reconnect offer take.
+   * Undismissable, unlike those two: it is not an offer, and it leaves on its
+   * own when the incident does.
+   */
+  incidents?: readonly { id: string; name: string; status: string }[];
 }): React.JSX.Element {
   const { t } = useTranslation();
   // the panel's heading doubles as the list's label — one "Events", not two
@@ -153,6 +165,41 @@ export function EventsPanel(props: {
           }}
         >
           {t('events.queueHint', { binding: props.queueBinding })}
+        </div>
+      )}
+      {!!props.incidents?.length && (
+        <div
+          data-events-notice="incident"
+          style={{
+            background: 'var(--panel2)',
+            border: '1px solid var(--status-crashed)',
+            borderRadius: 'var(--radius-chip)',
+            padding: '7px 9px',
+            marginBlockEnd: 6,
+            fontSize: 11,
+          }}
+        >
+          <div
+            // The panel's one announcement idiom (#314): status + polite. An
+            // incident is news about the world, and it arrives long after mount.
+            //
+            // Inserted WITH its text, unlike the corroboration strip, which
+            // holds its words back a commit so an already-existing region
+            // receives them (#222's lesson). Deliberate, not an oversight: this
+            // card is one of three notices sharing this slot and the panel's
+            // idiom is the one a reader of this file will expect — and the
+            // strip is the surface that has to be heard, because it is the one
+            // that arrives while you are busy blaming your own prompt.
+            role="status"
+            aria-live="polite"
+            style={{ color: 'var(--text)' }}
+          >
+            {props.incidents.map((i) => (
+              <div key={i.id} style={{ marginBlockEnd: 2 }}>
+                {t('health.eventsIncident', { name: i.name, status: i.status })}
+              </div>
+            ))}
+          </div>
         </div>
       )}
       {props.updateNotice && (
@@ -278,7 +325,7 @@ export function EventsPanel(props: {
           </div>
         </div>
       )}
-      {events.length === 0 && !props.reconnectOffer && !props.updateNotice && (
+      {events.length === 0 && !props.reconnectOffer && !props.updateNotice && !props.incidents?.length && (
         <div style={{ color: 'var(--muted)', fontSize: 11 }}>{t('events.empty')}</div>
       )}
       {/* A real list, so the rows read as a set and their count is announced

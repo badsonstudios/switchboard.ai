@@ -1,4 +1,14 @@
-import { app, BrowserWindow, Menu, screen, session, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  net,
+  Notification,
+  safeStorage,
+  screen,
+  session,
+  shell,
+} from 'electron';
 import path from 'path';
 import { windowOptionsFrom, WindowState } from './window-state';
 import { WorkspaceStore, displayFingerprint } from './workspace/store';
@@ -8,13 +18,14 @@ import { registerBuiltinContributions } from './bootstrap';
 import { registry } from './extensibility';
 import { PtyService } from './pty/pty-service';
 import { StreamService } from './transport/stream-service';
+import { parsePreferredTransport, TRANSPORT_ENV_VAR } from './transport/preferred-transport';
 import { StreamPermissions } from './sessions/stream-permissions';
 import { StreamCommands } from './sessions/stream-commands';
 import { StreamFeed } from './feed/stream-feed';
 import { SessionManager } from './sessions/session-manager';
 import { HookListener } from './hooks/hook-listener';
 import { TranscriptWatcher } from './transcripts/watcher';
-import { registerSessionIpc } from './sessions/ipc';
+import { registerSessionIpc, SessionIpcHandle } from './sessions/ipc';
 import { registerGroupIpc } from './workspace/group-ipc';
 import { registerFsIpc } from './fs/ipc';
 import { ReadScope } from './fs/read-scope';
@@ -22,6 +33,25 @@ import { IpcBroker } from './ipc/broker';
 import { allCapabilities, Channel } from '../shared/ipc/capabilities';
 import { EventFeed } from './events/feed';
 import { Notifier } from './events/notifier';
+import {
+  ACTION_OS_TOAST,
+  ACTION_PUSH,
+  ACTION_WEBHOOK,
+  defaultRules,
+  visibilityAcross,
+} from './events/rules';
+import { RuleActionRegistry, RulesEngine } from './events/rules-engine';
+import {
+  DECIDE_BUTTONS,
+  DECIDE_BUTTON_LABELS,
+  PermissionToasts,
+  permissionSummary,
+  toastActionsSupported,
+} from './events/permission-toast';
+import { registerRulesIpc } from './events/rules-ipc';
+import { PushActions } from './events/push-actions';
+import { registerPushIpc } from './events/push-ipc';
+import { SecretStore } from './secrets/store';
 import { GitService } from './git/git-service';
 import { runPreflight } from './preflight';
 import { startStaticServer, StaticServer } from './static-server';
@@ -33,6 +63,8 @@ import { UpdateService, FEED_ENV, isAllowedReleaseUrl } from './update/service';
 import { UpdateInstaller, UPDATE_DIR_NAME, resolveHandshake, resolveOffer } from './update/install';
 import { launchInstaller } from './update/installer';
 import type { UpdateHandshake, UpdateInstallStatus } from '../shared/update';
+import { ServiceHealthService } from './health/service';
+import { SERVICE_STATUS_FEED_ENV } from './health/statuspage';
 import { installTerminalAccelerators, makeAcceleratorDeps } from './terminal-accelerators';
 import {
   Box,
@@ -437,6 +469,7 @@ function createWindow(): BrowserWindow {
         `--switchboard-version=${app.getVersion()}`,
         `--switchboard-seed-panels=${process.env.SWITCHBOARD_SEED_PANELS ?? 0}`,
         `--switchboard-seed-session=${process.env.SWITCHBOARD_SEED_SESSION ?? ''}`,
+        `--switchboard-seed-document=${process.env.SWITCHBOARD_SEED_DOCUMENT ?? ''}`,
       ],
     },
   });
@@ -819,6 +852,28 @@ app
     const manager = new SessionManager(registry, ptys, createLogger(sink, 'sessions'), stateDir, {
       stream: streams,
     });
+    // Last run's session state directories, taken NOW (#290) — before
+    // `registerSessionIpc` (far below), which is the only door a session can be
+    // spawned through, so no session of ours can exist and no directory on disk
+    // can belong to a live process. That placement is the sweep's safety
+    // argument together with the single-instance lock this bootstrap takes at
+    // its first statement, and it is NOT free to move below
+    // `registerSessionIpc`; `single-instance.test.ts` pins the order.
+    //
+    // Wrapped for the same reason the seed-root probe and `resolveHandshake`
+    // below are: this runs inside the bootstrap's promise chain, whose `.catch`
+    // exits the process. Disk housekeeping must never be the thing that stops
+    // the app from starting, and that guarantee should not depend on
+    // `session-state.ts` staying throw-free for ever.
+    //
+    // `HookListener.start` sweeps the same tree for stray `hook-token` files a
+    // beat later — that one still earns its place, for the directories this
+    // sweep is too young to take.
+    try {
+      manager.sweepOrphanStateDirs();
+    } catch (err) {
+      log.app.warn('session state dir sweep failed', { error: String(err) });
+    }
     // Is there anyone to ask? A destroyed window or a crashed renderer means no
     // (P2-E15-09). A RELOADING renderer is neither, so the pending-holds replay
     // path still gets its chance — that case must not regress.
@@ -870,6 +925,32 @@ app
     // still be filling in (#140). The session's exit is the last honest moment
     // to say so.
     manager.onSessionExit((e) => streamFeed.finalize(e.sessionId));
+    // ── provider service health (P2-E14-07, §5.14) ────────────────────────
+    //
+    // The FOURTH subscription to the same stream, for the reason spelled out
+    // above: one listener per consumer, one blast radius each. This one reads
+    // exactly one thing — whether a turn ended in an error — because "several
+    // sessions failing at once" is the local half of "is it me or is it them?",
+    // and a failed turn is otherwise indistinguishable from a finished one.
+    const health = new ServiceHealthService({
+      getPrefs: () => workspace.getServiceHealthPrefs(),
+      // `currentWindow` is reassigned on macOS re-activate, so this reads it
+      // fresh — the convention every other push in this file follows.
+      push: (status) => pushToRenderer?.(currentWindow, 'health:status', status),
+      log: createLogger(sink, 'health'),
+      // Dev/test only, and the reason no test in this repo ever reaches the
+      // real status page. Same P2-E15-10 rule as the update feed: a packaged
+      // build has no environment variable that can move a user-visible
+      // endpoint.
+      feedOverride: app.isPackaged ? undefined : process.env[SERVICE_STATUS_FEED_ENV],
+      // "no polling when offline is detected" (§5.14). Electron's own answer,
+      // not a heuristic of ours.
+      isOnline: () => net.isOnline(),
+      probeDeps: { userAgent: app.getVersion() },
+    });
+    manager.onStreamMessage((sessionId, msg) => health.noteStreamMessage(sessionId, msg));
+    // A session that is gone stops corroborating anything.
+    manager.onSessionExit((e) => health.forgetSession(e.sessionId));
     const hooks = new HookListener({
       stateDir,
       manager,
@@ -1075,6 +1156,23 @@ app
       if (typeof p?.skippedVersion === 'string') updates.skip(p.skippedVersion);
       return workspace.getUpdatePrefs();
     });
+    // ── provider service health (P2-E14-07) ──────────────────────────────
+    //
+    // A mounting window asks once; everything after that arrives on
+    // `health:status`. `start()` polls immediately, so the first answer is on
+    // its way before the window has finished asking.
+    broker.handle('health:get', () => health.current());
+    broker.handle('health:getPrefs', () => workspace.getServiceHealthPrefs());
+    broker.handle('health:setPrefs', (_e, p: { poll?: boolean }) => {
+      if (typeof p?.poll === 'boolean') {
+        workspace.setServiceHealthPrefs({ poll: p.poll });
+        // start or stop the timer to match — turning it off must actually stop
+        // the traffic, not just grey out a checkbox
+        health.prefsChanged();
+      }
+      return workspace.getServiceHealthPrefs();
+    });
+    health.start();
     broker.handle('update:openExternal', (_e, url: string) => {
       // The strings that reach here came out of a release body we rendered, so
       // the allowlist is tight and lives next to the checker (§5.29).
@@ -1115,11 +1213,213 @@ app
     snapshotPopoutBoxes(); // before the renderer can rewrite the layout (#86)
     createWindow(); // sets currentWindow; IPC/notifier read it via closure
     const feed = new EventFeed();
+
+    // ── the notification rules engine (P2-E14-03, §5.9) ──────────────────
+    //
+    // Assembled here because this is the only file allowed to touch
+    // `Notification`; everything above it (`events/rules.ts`,
+    // `events/rules-engine.ts`) is pure and testable without electron.
+    const rulesLog = createLogger(sink, 'rules');
+
+    // ── P2-E14-04: the toast can ANSWER, not just announce ────────────────
+    //
+    // Late-bound onto `sessionIpc` exactly like `cardIdForLive` below, for the
+    // same reason: the toast's decision must be the app's ONE decision path
+    // (`sessions/ipc.ts`), and that closure does not exist until
+    // `registerSessionIpc` returns a few dozen lines further down. Nothing can
+    // ask before then — a toast needs a permission, a permission needs a
+    // session, and no session exists yet.
+    let sessionIpcRef: SessionIpcHandle | null = null;
+    const permissionToasts = new PermissionToasts({
+      decide: (requestId, decision) =>
+        sessionIpcRef?.decidePermission(requestId, decision) ?? false,
+      reveal: (cardId) => {
+        // Raise the window FIRST (the same helper a second launch uses, which
+        // is the one place that knows restore-then-show-then-focus is three
+        // different fixes), then tell the renderer which card to land on.
+        focusRunningWindow(currentWindow);
+        if (cardId) broker.send(currentWindow, 'sessions:revealCard', { cardId });
+      },
+      log: rulesLog,
+    });
+    // A verdict from ANY surface — the approval bar, the Events panel's inline
+    // buttons, the batch band, a session teardown releasing its holds, or the
+    // toast itself — withdraws the toast. Both routers, because a permission
+    // rides whichever transport its session is on and the toast cannot tell.
+    hooks.onPermissionResolved((requestId) => permissionToasts.withdraw(requestId));
+    streamPermissions.onPermissionResolved((requestId) =>
+      permissionToasts.withdraw(requestId)
+    );
+
+    const ruleActions = new RuleActionRegistry(rulesLog);
+    ruleActions.register(ACTION_OS_TOAST, (action, ctx) => {
+      // Whether the OS can display a notification at all is an ENVIRONMENT
+      // fact, not a decision this rule made: a Linux box with no notification
+      // daemon (a CI container, say) reports `false` here forever. So the two
+      // facts are logged separately — the rule fired, and this is whether the
+      // desktop took it. A silent early return was the one outcome that could
+      // not be debugged, and "why didn't it pop?" is a real support question.
+      const shown = Notification.isSupported();
+      // P2-E14-04. The request this toast is about, if it is about one at all.
+      // Resolved HERE rather than carried on the rule, because whether a
+      // permission is still held is a fact about right now: between the event
+      // and this line the bar may already have answered it, and a toast
+      // offering Allow for a question nobody is holding is worse than no toast.
+      //
+      // The rule can opt OUT (`buttons: false`) and nothing else about the
+      // payload changes — deliberately not opt-in, because the payload is also
+      // the dedup key (`plannedActions`), and a default rule that carried
+      // `buttons` while a user's hand-written toast rule did not would produce
+      // TWO toasts for one permission. Opt-out also happens to be the right
+      // default: there is no sane rule that says "tell me, but do not let me
+      // answer".
+      const req =
+        ctx.event.kind === 'needs-permission' && action.buttons !== false
+          ? (sessionIpcRef?.pendingPermissionFor(ctx.event.sessionId) ?? null)
+          : null;
+      const decidable = !!req && toastActionsSupported(process.platform);
+      if (shown) {
+        const toast = new Notification({
+          title: ctx.title,
+          body: ctx.body,
+          silent: true, // the Notifier's beep is the sound cue
+          ...(decidable
+            ? {
+                actions: DECIDE_BUTTONS.map((d) => ({
+                  type: 'button' as const,
+                  text: DECIDE_BUTTON_LABELS[d],
+                })),
+              }
+            : {}),
+        });
+        // A toast the desktop refused is not a toast: without this line the
+        // failure is invisible, and "it worked yesterday" has nowhere to look.
+        toast.on('failed', (_e, error) =>
+          rulesLog.warn('the desktop refused an OS toast', { ruleId: ctx.rule.id, error })
+        );
+        if (req) {
+          const requestId = req.requestId;
+          // `details.actionIndex` rather than the positional argument, which
+          // electron.d.ts marks deprecated.
+          if (decidable) {
+            toast.on('action', (details) => permissionToasts.press(requestId, details.actionIndex));
+          }
+          // Clicking the BODY is a shortcut, never a verdict — wired on every
+          // platform, because it is the whole gesture on Linux and the fallback
+          // wherever the buttons do not render.
+          toast.on('click', () => permissionToasts.activate(requestId, ctx.cardId));
+          // Deliberately NOT unhooked on `close`: a Windows toast that times
+          // out fires `close` and then sits in the Action Center, where
+          // `close()` still removes it. See `PermissionToasts.withdraw`.
+          permissionToasts.track(requestId, toast);
+        }
+        toast.show();
+      }
+      // The e2e proof that a rule reached the toast action
+      // (`e2e/rules.spec.ts`, `e2e/permission-toast.spec.ts`) — and the line to
+      // grep after "why did/didn't it pop".
+      rulesLog.info('os toast rule fired', {
+        kind: ctx.event.kind,
+        cardId: ctx.cardId ?? '',
+        visibility: ctx.visibility,
+        ruleId: ctx.rule.id,
+        shown,
+        // How many Allow/Deny buttons went on it, and which request they
+        // answer. Zero with a requestId present means this desktop cannot
+        // carry buttons — the click path is what the user gets.
+        buttons: decidable ? DECIDE_BUTTONS.length : 0,
+        requestId: req?.requestId ?? '',
+      });
+    });
+    // ── the two channels that leave the machine (P2-E14-06, §5.9 + §5.29) ──
+    //
+    // Assembled here for the same reason the toast is: this file owns the
+    // electron singletons, and `safeStorage` is one. Everything below it —
+    // the store, the senders, the deciding — is plain TypeScript that a unit
+    // test drives with a fake crypto and a fake `fetch`.
+    //
+    // Both actions are registered UNCONDITIONALLY, configured or not: an
+    // unregistered type is logged as "this build has no handler for it" on
+    // every event, which is a lie about the build. The handlers themselves
+    // resolve to "not configured" in silence, which is the truth about the
+    // machine.
+    const pushLog = createLogger(sink, 'push');
+    const secretStore = new SecretStore({
+      dir: app.getPath('userData'),
+      crypto: safeStorage,
+      log: pushLog,
+    });
+    const pushActions = new PushActions({
+      secrets: secretStore,
+      getPrefs: () => workspace.getPushPrefs(),
+      log: pushLog,
+      userAgent: app.getVersion(),
+    });
+    ruleActions.register(ACTION_PUSH, pushActions.pushHandler);
+    ruleActions.register(ACTION_WEBHOOK, pushActions.webhookHandler);
+    // Assigned the moment `registerSessionIpc` returns, a few dozen lines
+    // below; until then no session exists, so no event can ask.
+    let cardIdForLive: (liveId: string) => string | null = () => null;
+    // P2-E7-06 x P2-E14-03 integration (train/2026-08-13): toast titles
+    // prefer the card's task label over the session title — the label answers
+    // WHAT is waiting, the title answers WHICH. Late-bound exactly like
+    // cardIdForLive above; a suppressed auto label returns undefined here too.
+    let labelForLive: (sessionId: string) => string | undefined = () => undefined;
+    const rules = new RulesEngine({
+      getRules: () => workspace.listRules(),
+      // The built-ins are synthesized per event from the switches, push and
+      // webhook included — so turning the phone on in the setup dialog takes
+      // effect on the next event with nothing to persist and no rule to write.
+      getDefaultRules: () => {
+        const push = workspace.getPushPrefs();
+        return defaultRules({
+          ...workspace.getNotificationPrefs(),
+          push: push.push,
+          webhook: push.webhook,
+        });
+      },
+      cardIdFor: (liveId) => cardIdForLive(liveId),
+      // Every window, not just the main one: a popped-out card (E8) is a
+      // window the user can be looking at while the main one is minimized.
+      getVisibility: () => visibilityAcross([currentWindow, ...popoutWindows.map((p) => p.win)]),
+      titleFor: (e) =>
+        labelForLive(e.sessionId) ??
+        manager.get(e.sessionId)?.identity.title ??
+        'switchboard.ai',
+      // P2-E14-04: a permission toast NAMES what it would allow. "needs
+      // permission" beside an Allow button asks the user to grant a tool call
+      // they cannot see, which is the one thing an off-screen decision path may
+      // not do — the promise is that answering from the toast is the same
+      // decision they would have made at the bar (§5.9, P6). Every other kind
+      // keeps the plain wording.
+      bodyFor: (e) => {
+        if (e.kind === 'needs-permission') {
+          const req = sessionIpcRef?.pendingPermissionFor(e.sessionId);
+          if (req) return permissionSummary(req);
+        }
+        return e.kind.replace(/-/g, ' ');
+      },
+      registry: ruleActions,
+      log: rulesLog,
+    });
+    registerRulesIpc({
+      broker,
+      log: rulesLog,
+      store: workspace,
+      knownCard: (cardId) => workspace.listSessions().some((s) => s.id === cardId),
+    });
+    registerPushIpc({
+      broker,
+      log: pushLog,
+      store: workspace,
+      secrets: secretStore,
+      actions: pushActions,
+    });
+
     const notifier = new Notifier({
       getWindow: () => currentWindow,
       getPrefs: () => workspace.getNotificationPrefs(),
-      titleFor: (sessionId) => manager.get(sessionId)?.identity.title ?? 'switchboard.ai',
-      bodyFor: (e) => e.kind.replace(/-/g, ' '),
+      rules,
     });
     feed.onEvent((e) => {
       if (e) notifier.handle(e); // null = pure removal, nothing to announce
@@ -1165,7 +1465,12 @@ app
       ],
       log: fsLog,
     });
-    registerFsIpc({ broker, log: fsLog, scope: readScope });
+    // P2-E16-02 hands the same object the picker: `Open file…` is the only
+    // thing that widens this scope, so the widening lives WITH the scope rather
+    // than in a second module that would need a reference to it. `getWindow` is
+    // the modal's parent, and is a thunk for the reason every other one here is
+    // — `currentWindow` is reassigned on macOS re-activate.
+    registerFsIpc({ broker, log: fsLog, scope: readScope, getWindow: () => currentWindow });
     broker.handle('notifications:getPrefs', () => workspace.getNotificationPrefs());
     broker.handle('notifications:setPrefs', (_e, p) => {
       workspace.setNotificationPrefs(p);
@@ -1176,7 +1481,7 @@ app
       workspace.setAutoTrust(on === true);
       return workspace.getAutoTrust();
     });
-    registerSessionIpc({
+    const sessionIpc: SessionIpcHandle = registerSessionIpc({
       manager,
       ptys,
       streamPermissions,
@@ -1189,6 +1494,8 @@ app
       log: createLogger(sink, 'ipc'),
       getWindow: () => currentWindow, // reassigned on macOS re-activate
       autoTrust: () => workspace.getAutoTrust(),
+      autoLabels: () => workspace.getAutoLabels(),
+      setAutoLabels: (on) => workspace.setAutoLabels(on),
       persist: {
         list: () => workspace.listSessions(),
         upsert: (s) => workspace.upsertSession(s),
@@ -1209,27 +1516,27 @@ app
           (msg) => log.app.warn(msg)
         ),
       // The app-wide override, below a card's own choice and above the default
-      // (#381). It reads BOTH values now: `stream` was the only one worth
-      // naming while the PTY was the default, and the moment Direct became the
-      // default that spelling turned into a no-op while `pty` — the one anybody
-      // would now reach for — was silently ignored. An env var that quietly
-      // does nothing is worse than not having one.
-      preferredTransport: () => {
-        const v = process.env.SWITCHBOARD_TRANSPORT;
-        if (v === 'stream' || v === 'pty') return v;
-        // A typo used to be harmless — it fell through to the PTY, which was
-        // also the default. Now it falls through to Direct, i.e. to the exact
-        // opposite of what someone setting this variable is usually asking for.
-        if (v) log.app.warn('SWITCHBOARD_TRANSPORT ignored: expected "pty" or "stream"', { value: v });
-        return undefined;
-      },
+      // (#381). Read per call rather than once at boot; the parse itself, and
+      // the reason a typo has to warn, live in `transport/preferred-transport.ts`.
+      preferredTransport: () =>
+        parsePreferredTransport(process.env[TRANSPORT_ENV_VAR], log.app.warn),
     });
+    // the live -> card join the rules engine scopes by (P2-E14-03)
+    cardIdForLive = sessionIpc.cardIdFor;
+    labelForLive = sessionIpc.labelFor;
+    // …and the permission half a toast needs to name and answer a hold
+    // (P2-E14-04). Same late binding, same reason.
+    sessionIpcRef = sessionIpc;
     app.on('quit', () => {
+      // A toast offering Allow for a session that is being torn down is a
+      // button that can only disappoint. Take them down with the app.
+      permissionToasts.withdrawAll();
       ptys.killAll();
       streams.killAll();
       hooks.stop();
       transcripts.stop();
       updates.stop(); // kills the daily timer; a check in flight becomes a no-op
+      health.stop(); // same, for the status-page poll
       staticServer?.close();
       scheduleForcedExit();
     });

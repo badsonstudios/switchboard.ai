@@ -33,10 +33,13 @@ function noopDeps(): CommandDeps {
     toggleMaximize: () => {},
     toggleRail: () => {},
     openPalette: () => {},
+    openFind: () => {},
     toggleTabRows: () => {},
     jumpToNextAttention: () => {},
     openAbout: () => {},
     checkForUpdates: () => {},
+    openFile: () => {},
+    openPushSetup: () => {},
   };
 }
 

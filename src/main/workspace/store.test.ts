@@ -237,6 +237,96 @@ describe('persistent groups (P2-E12-01: durable containers, empty ≠ gone)', ()
   });
 });
 
+describe('notification rules (P2-E14-03, §5.9)', () => {
+  const rule = (id: string, session?: string) => ({
+    id,
+    event: 'done' as const,
+    ...(session ? { session } : {}),
+    visibility: ['visible' as const, 'hidden' as const],
+    actions: [{ type: 'os-toast' }],
+    source: 'notify-when-done',
+  });
+
+  it('a rule round-trips a save/load — the checkbox survives a restart', () => {
+    const a = makeStore(file);
+    a.load();
+    a.upsertRule(rule('notify-when-done:a', 'a'));
+    a.save();
+    const b = makeStore(file);
+    expect(b.load().rules).toEqual([rule('notify-when-done:a', 'a')]);
+    expect(b.listRules()).toHaveLength(1);
+  });
+
+  it('upsert replaces by id; remove answers whether there was anything to remove', () => {
+    const st = makeStore(file);
+    st.load();
+    st.upsertRule(rule('r1', 'a'));
+    st.upsertRule({ ...rule('r1', 'a'), enabled: false });
+    expect(st.listRules()).toHaveLength(1);
+    expect(st.listRules()[0].enabled).toBe(false);
+    expect(st.removeRule('r1')).toBe(true);
+    expect(st.removeRule('r1')).toBe(false);
+    expect(st.listRules()).toEqual([]);
+  });
+
+  it('refuses to store a rule it could not load back', () => {
+    const st = makeStore(file);
+    st.load();
+    expect(st.upsertRule({ id: '', event: 'done', actions: [] })).toBe(false);
+    expect(st.listRules()).toEqual([]);
+  });
+
+  it('hands out copies — a caller cannot mutate the store through its answer', () => {
+    const st = makeStore(file);
+    st.load();
+    st.upsertRule(rule('r1', 'a'));
+    st.listRules()[0].actions.push({ type: 'push' });
+    expect(st.listRules()[0].actions).toHaveLength(1);
+  });
+
+  it('closing a card takes its rules with it — nothing else ever would', () => {
+    const st = makeStore(file);
+    st.load();
+    st.upsertSession(sess('a'));
+    st.upsertRule(rule('notify-when-done:a', 'a'));
+    st.upsertRule(rule('notify-when-done:b', 'b'));
+    st.upsertRule(rule('global')); // unscoped: not this card's to delete
+    st.removeSession('a');
+    expect(st.listRules().map((r) => r.id)).toEqual(['notify-when-done:b', 'global']);
+  });
+
+  it('load drops rules this build cannot use and keeps the rest', () => {
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        sessions: [],
+        rules: [rule('r1', 'a'), { id: 7 }, 'nope', { id: 'r2', event: 'done' }, null],
+        window: null,
+      })
+    );
+    const st = makeStore(file);
+    expect(st.load().rules.map((r) => r.id)).toEqual(['r1']);
+  });
+
+  it('a rules field that is not a list costs the rules, not the workspace', () => {
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ version: 1, sessions: [sess('a')], rules: 'all of them', window: null })
+    );
+    const st = makeStore(file);
+    const s = st.load();
+    expect(s.rules).toEqual([]);
+    expect(s.sessions).toHaveLength(1);
+  });
+
+  it('a file written before rules existed loads with none, silently', () => {
+    fs.writeFileSync(file, JSON.stringify({ version: 1, sessions: [sess('a')], window: null }));
+    const st = makeStore(file);
+    expect(st.load().rules).toEqual([]);
+  });
+});
+
 describe('notification prefs merge-patch (review P1 #13)', () => {
   it('toggling enabled does not wipe osToasts or quiet hours', () => {
     const st = makeStore(file);
@@ -295,6 +385,34 @@ describe('update prefs (P2-E19-03)', () => {
     st.load();
     expect(st.getUpdatePrefs()).toEqual({ autoCheck: true });
     expect(st.getAutoTrust()).toBe(false); // …and nothing else moved
+    // auto labels default ON for a file that predates them (P2-E7-06): the
+    // feature is what the setting is for, and off is the exception
+    expect(st.getAutoLabels()).toBe(true);
+  });
+
+  it('the auto-label switch survives a reload (P2-E7-06)', () => {
+    const a = makeStore(file);
+    a.load();
+    expect(a.getAutoLabels()).toBe(true);
+    a.setAutoLabels(false);
+    a.save();
+
+    const b = makeStore(file);
+    b.load();
+    expect(b.getAutoLabels()).toBe(false);
+  });
+
+  it('a card remembers who set its label (P2-E7-06)', () => {
+    // `labelSource` is what makes "typing pins it forever" survive a restart.
+    const a = makeStore(file);
+    a.load();
+    a.upsertSession({ ...sess('a'), taskLabel: 'mine', labelSource: 'user' });
+    a.save();
+
+    const b = makeStore(file);
+    b.load();
+    expect(b.listSessions()[0].labelSource).toBe('user');
+    expect(b.listSessions()[0].taskLabel).toBe('mine');
   });
 
   it('two stores do not share the defaults object', () => {
@@ -304,6 +422,119 @@ describe('update prefs (P2-E19-03)', () => {
     const b = makeStore(path.join(dir, 'other.json'));
     b.load();
     expect(b.getUpdatePrefs()).toEqual({ autoCheck: true });
+  });
+});
+
+describe('service-health prefs (P2-E14-07)', () => {
+  it('defaults to polling ON', () => {
+    const st = makeStore(file);
+    st.load();
+    expect(st.getServiceHealthPrefs()).toEqual({ poll: true });
+  });
+
+  it('round-trips the About-panel toggle through the file', () => {
+    const a = makeStore(file);
+    a.load();
+    a.setServiceHealthPrefs({ poll: false });
+    a.save();
+    const b = makeStore(file);
+    b.load();
+    expect(b.getServiceHealthPrefs()).toEqual({ poll: false });
+  });
+
+  it('a mangled value leaves the feature working rather than silently off', () => {
+    // the claim `sanitizeHealth` makes about itself: an unusable pref must not
+    // be the way this quietly stops running
+    fs.writeFileSync(file, JSON.stringify({ version: 1, health: { poll: 'nope' } }));
+    const st = makeStore(file);
+    st.load();
+    expect(st.getServiceHealthPrefs()).toEqual({ poll: true });
+  });
+
+  it('a file written before this feature existed simply gets the default', () => {
+    fs.writeFileSync(file, JSON.stringify({ version: 1, sessions: [], autoTrust: false }));
+    const st = makeStore(file);
+    st.load();
+    expect(st.getServiceHealthPrefs()).toEqual({ poll: true });
+    expect(st.getAutoTrust()).toBe(false); // …and nothing else moved
+  });
+
+  it('two stores do not share the defaults object', () => {
+    const a = makeStore(file);
+    a.load();
+    a.setServiceHealthPrefs({ poll: false });
+    const b = makeStore(path.join(dir, 'health-other.json'));
+    b.load();
+    expect(b.getServiceHealthPrefs()).toEqual({ poll: true });
+  });
+});
+
+describe('phone-push prefs (P2-E14-06)', () => {
+  it('defaults to both channels OFF — the app is fully functional unconfigured', () => {
+    const st = makeStore(file);
+    st.load();
+    expect(st.getPushPrefs()).toEqual({ push: false, service: 'ntfy', webhook: false });
+  });
+
+  it('round-trips the switches and the server through the file', () => {
+    const a = makeStore(file);
+    a.load();
+    a.setPushPrefs({ push: true, service: 'pushover' });
+    a.setPushPrefs({ ntfyServer: 'https://ntfy.example.test' }); // merge-patch
+    a.save();
+    const b = makeStore(file);
+    b.load();
+    expect(b.getPushPrefs()).toEqual({
+      push: true,
+      service: 'pushover',
+      webhook: false,
+      ntfyServer: 'https://ntfy.example.test',
+    });
+  });
+
+  // The §5.29 claim, asserted against the BYTES. This shape has nowhere to put
+  // a credential, and this test is what keeps it that way.
+  it('cannot persist a credential, however it is handed one', () => {
+    const st = makeStore(file);
+    st.load();
+    st.setPushPrefs({
+      push: true,
+      // a caller (or a hand-edited file) trying to sneak one through
+      topic: 'topic-9f3a-SECRET',
+      token: 'app-token',
+    } as unknown as Parameters<typeof st.setPushPrefs>[0]);
+    st.save();
+    const bytes = fs.readFileSync(file, 'utf8');
+    expect(bytes).not.toContain('topic-9f3a-SECRET');
+    expect(bytes).not.toContain('app-token');
+    expect(st.getPushPrefs()).toEqual({ push: true, service: 'ntfy', webhook: false });
+  });
+
+  it('a mangled value leaves the channels OFF rather than sending something', () => {
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ version: 1, push: { push: 'yes', webhook: 1, service: 'telegram' } })
+    );
+    const st = makeStore(file);
+    st.load();
+    expect(st.getPushPrefs()).toEqual({ push: false, service: 'ntfy', webhook: false });
+  });
+
+  it('a file written before this feature existed simply gets the defaults', () => {
+    fs.writeFileSync(file, JSON.stringify({ version: 1, sessions: [], autoTrust: false }));
+    const st = makeStore(file);
+    st.load();
+    expect(st.getPushPrefs()).toEqual({ push: false, service: 'ntfy', webhook: false });
+    expect(st.getAutoTrust()).toBe(false);
+  });
+
+  it('two stores do not share the defaults object', () => {
+    const a = makeStore(file);
+    a.load();
+    a.setPushPrefs({ push: true });
+    const b = makeStore(path.join(dir, 'push-other.json'));
+    b.load();
+    expect(b.getPushPrefs().push).toBe(false);
   });
 });
 
@@ -864,11 +1095,26 @@ describe('load-time repairs are audible (#344)', () => {
       ]);
     });
 
+    it('a mangled provider-status pref says polling stayed on', () => {
+      write({ version: 1, health: { poll: 'nope' } });
+      const warns = loadWarns();
+      expect(warns).toHaveLength(1);
+      expect(warns[0].msg).toMatch(/provider-status setting .* was unusable/);
+      expect(warns[0].fields).toMatchObject({ unusable: ['poll'] });
+    });
+
     it('a non-boolean auto-trust says it stayed on', () => {
       write({ version: 1, autoTrust: 'sure' });
       const warns = loadWarns();
       expect(warns).toHaveLength(1);
       expect(warns[0].msg).toMatch(/auto-trust .* leaving it on/);
+    });
+
+    it('a non-boolean auto-label setting says it stayed on too (P2-E7-06)', () => {
+      write({ version: 1, autoLabels: 'sure' });
+      const warns = loadWarns();
+      expect(warns).toHaveLength(1);
+      expect(warns[0].msg).toMatch(/auto-label .* leaving it on/);
     });
   });
 
@@ -924,6 +1170,8 @@ describe('load-time repairs are audible (#344)', () => {
       notifications: { enabled: true, osToasts: false, quietStart: '22:00', quietEnd: '07:00' },
       autoTrust: false,
       updates: { autoCheck: false, skippedVersion: '0.2.0' },
+      health: { poll: false },
+      push: { push: true, service: 'ntfy', webhook: false, ntfyServer: 'https://ntfy.example.test' },
     });
     expect(loadWarns()).toEqual([]);
   });
@@ -1633,5 +1881,95 @@ describe('schema version dispatch (P2-E15-13, §5.26 / AR-P2-9)', () => {
 describe('fingerprint stability', () => {
   it('is order-independent', () => {
     expect(displayFingerprint([primary, left])).toBe(displayFingerprint([left, primary]));
+  });
+});
+
+// P2-E18-17 — the #404 audit's fifth finding.
+//
+// `transport` survives a quit and a relaunch today by deep-clone happenstance:
+// `upsertSession` and `listSessions` `JSON.parse(JSON.stringify(...))` whole
+// records and the loader hands `raw.sessions` through, so nothing ever names
+// the field. That is exactly the shape #153's follow-up already broke ONCE, on
+// this same field, in `sessions:create` — where a record rebuilt field by field
+// wiped it on every start and Direct mode could not survive a relaunch.
+//
+// What this protects is not a preference, it is the promise that makes flipping
+// the default safe (#381): a card that explicitly chose Terminal keeps Terminal.
+// Lose the field on disk and "never chose" is what comes back — which follows
+// the default, i.e. silently migrates that card to Direct.
+describe('PersistedSession.transport survives quit -> relaunch (P2-E18-17)', () => {
+  const withTransport = (id: string, transport: 'pty' | 'stream'): PersistedSession => ({
+    ...sess(id),
+    transport,
+  });
+
+  // `pty` and not `stream`: with Direct the default, a card that came back
+  // saying `stream` proves nothing — that is what an ABSENT field produces
+  // downstream too. `pty` is the value no default can supply.
+  it('an explicit Terminal choice is still Terminal after a reload', () => {
+    const a = makeStore(file);
+    a.load();
+    a.upsertSession(withTransport('one', 'pty'));
+    a.save();
+
+    const b = makeStore(file); // "relaunch"
+    expect(b.load().sessions[0].transport).toBe('pty');
+    expect(b.listSessions()[0].transport).toBe('pty'); // the path sessions:create reads
+  });
+
+  it('an explicit Direct choice round-trips as a VALUE, not as silence', () => {
+    const a = makeStore(file);
+    a.load();
+    a.upsertSession(withTransport('one', 'stream'));
+    a.save();
+
+    const b = makeStore(file);
+    b.load();
+    // `toBe('stream')` alone would pass on a record that lost the field and was
+    // re-defaulted somewhere; `in` is what says the card's own answer is there.
+    expect('transport' in b.listSessions()[0]).toBe(true);
+    expect(b.listSessions()[0].transport).toBe('stream');
+  });
+
+  // The third population, and the one a "helpful" migration would destroy:
+  // absent means "never chose" and must come back absent, so the card keeps
+  // following whatever the default is at the time it starts.
+  it('a card that never chose comes back with no transport at all', () => {
+    const a = makeStore(file);
+    a.load();
+    a.upsertSession(sess('one'));
+    a.save();
+
+    const b = makeStore(file);
+    b.load();
+    expect(b.listSessions()[0].transport).toBeUndefined();
+  });
+
+  // Named for what it actually pins: `upsertSession` REPLACES the record whole
+  // (`store.ts`: `this.state.sessions[i] = copy`), so this is de-duplication by
+  // id plus the field riding along on a FULL record — not preservation across a
+  // partial upsert, which the store does not offer and a caller must not assume.
+  it('upserting the same card replaces rather than duplicates, transport included', () => {
+    const st = makeStore(file);
+    st.load();
+    st.upsertSession(withTransport('one', 'pty'));
+    st.upsertSession({ ...withTransport('one', 'pty'), layoutSlot: 4 });
+
+    expect(st.snapshot().sessions).toHaveLength(1);
+    expect(st.snapshot().sessions[0].transport).toBe('pty');
+  });
+
+  // Not shared refs with the caller, on the field's own account: the store
+  // clones in and out, so a caller mutating its copy cannot rewrite a stored
+  // transport choice from under the next session start.
+  it('the caller cannot mutate a stored choice through its own object', () => {
+    const st = makeStore(file);
+    st.load();
+    const mine = withTransport('one', 'pty');
+    st.upsertSession(mine);
+
+    mine.transport = 'stream';
+
+    expect(st.listSessions()[0].transport).toBe('pty');
   });
 });
