@@ -195,6 +195,24 @@
 > provider-contract prose + capability-table drift pin, docs+test,
 > INTERNAL). In flight: #447/#442 (wt-1) · #472 (wt-2) · #481 (wt-3).
 >
+> **#447+#442 SERIAL TRACK ✅ DONE → PRs #511 + #513 READY, Dan's
+> queue #9/#10.** #447: emptyStateCopy(transport) — Direct wording
+> checked against code (stream feed loses only usage+resume, points
+> at the status pill, may not contain "terminal" — pinned); binding.
+> spec gained the Direct sibling; TWO manual pages carried the same
+> lie, fixed. 4149 unit / 260+3 e2e. #442: MEASURED at CI geometry —
+> the #430 hypothesis was WRONG (markGesture runs before focus moves:
+> walk UNPINS, doesn't yank; End inside the walk goes to the last
+> expander, scrollTop 0 of 2201; no way back short of a bottom-40px
+> gesture). Verdict: unpin correct, exit missing → `↓ Jump to latest`
+> chip, visible only unpinned+overflowing, one Tab from feed (§5.32).
+> 4144 unit / 264+3 e2e. Branch-base: #442 from main (hunks hundreds
+> of lines apart). **#415 dispatched → sb-wt-1** (terminal search;
+> addon-runtime-verify FIRST, stop-and-report if broken on xterm 6;
+> find.spec adjacency with unmerged #492 noted). In flight: #415
+> (wt-1) · #472 (wt-2) · #481 (wt-3). **Queue after these: Dan-gated
+> only (#484 needs cut merged, #485 needs #476, #499 needs #498).**
+>
 > **MERGE POLICY THIS RUN: nothing merges before the #480 cut PR lands**
 > (Dan merges it, then pushes tag v0.4.0 — the tag is his; the cut ships
 > his #395 blank-resume fix). Feature CHANGELOG entries written pre-cut
