@@ -3,7 +3,34 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — 🚢 0.5.0 CUT IN FLIGHT (2026-08-14, post-dogfood)
+> # ▶▶ START HERE — ✅ v0.5.0 SHIPPED 2026-08-14 (same-day as v0.4.0)
+>
+> **Release v0.5.0 PUBLISHED** — cut PR #523 (worker; folds #487's
+> lock guard) squash-merged → main @ dcd5413, tag v0.5.0 pushed,
+> release.yml success, installer + sha256 live. Issues #522 #487
+> CLOSED. out/ rebuilt + stamp-verified (dcd5413c). **Dan: update
+> in-app — everything from train #519 is now in the installed build.**
+>
+> **Incidents on the record (both recovered, nothing published wrong):**
+> (1) First merge attempt refused (branch BEHIND main — protection
+> requires up-to-date); my CHAINED merge→pull→tag command then tagged
+> v0.5.0 at the WRONG commit (b4ed36f, docs). The release gate failed
+> it by design (tag ≠ package.json), tag deleted, nothing published.
+> **LESSON: never chain merge→pull→tag; verify each rung.** (2)
+> Windows-CI e2e failed TWICE on the same test (stream-feed.spec:151
+> keyboard walk, window "inactive") on content green twice earlier —
+> **#524 filed** (two hypotheses: runner focus theft vs #442's
+> conditional Jump-to-latest Tab stop at CI geometry); third attempt
+> green. #524 is HIGH for run 19 — a 2-of-3-red required check is a
+> merge-velocity tax.
+>
+> **RUN 19 QUEUE:** #484 resume-link FIRST · #520 find highlight +
+> #524 flake (owner-facing/velocity) · #407 Shape B · #482→#483 ·
+> #485 · #521 layer 1 · tail (#488 #490 #491 #494-#499 #502-#504
+> #506 #508 #509 #512 #517 #518 #521-design).
+>
+> # (0.5.0 cut record follows)
+> # 🚢 0.5.0 CUT IN FLIGHT (2026-08-14, post-dogfood)
 >
 > **v0.4.0 shipped + train #519 landed (see the ENDGAME COMPLETE block
 > ~line 340 for the full record). Dan installed v0.4.0, dogfooded, and
