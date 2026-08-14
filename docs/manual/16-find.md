@@ -57,6 +57,9 @@ on screen to scroll to. You can still read the match and its surrounding text
 right there in the list. Being able to reach hits that no longer exist on
 screen is the whole reason the list exists.
 
+Jumping works the same whichever mode the session is in — **Direct** or
+**Terminal**.
+
 ## Other tabs
 
 `Ctrl+F` follows whichever tab the session is showing.
@@ -95,7 +98,9 @@ screen is the whole reason the list exists.
 - **"These matches can be read here, but this session can't be scrolled to
   them"** — the matches are real and the snippets are accurate, but switchboard
   couldn't line the transcript up with what's on screen for this session, so it
-  won't guess where to jump. Read them in the results list. This is currently
-  the normal state for sessions in Direct mode.
+  won't guess where to jump. Read them in the results list. This is uncommon,
+  and it means what it says: switchboard would rather show you the text than
+  scroll you to a block it isn't sure about. Clearing or resuming a session can
+  cause it. It usually clears itself as the conversation moves on.
 - **The search stopped early** — a very large session hit a time limit. What's
   shown is real, just not all of it; a narrower term will finish.

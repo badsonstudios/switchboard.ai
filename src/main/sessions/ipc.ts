@@ -702,12 +702,12 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // A STREAM session is searched too, and completely: the watcher still binds
   // its transcript (usage, the native id, drift all want it — only the FEED
   // comes from somewhere else), so the file on disk is the same complete
-  // archive. What it does not get today is a jump: `loaded` is routed the way
-  // `transcripts:blocks` routes it, and a stream block's `ts` is the moment the
-  // message reached US rather than the timestamp the CLI wrote, so the engine's
-  // alignment check refuses and every hit comes back snippet-only. Refusing is
-  // the right answer to "I cannot tell which block this is" — see E17-02's
-  // hand-off for the follow-up.
+  // archive. It gets a JUMP too, since #458: `loaded` is routed the way
+  // `transcripts:blocks` routes it, and although a stream block's `ts` is the
+  // moment the message reached US rather than what the CLI wrote, the engine
+  // now lines the two up on the API's own `tool_use` / `message` ids instead
+  // (`search.ts` → `alignBySrcId`). Refusing remains the right answer whenever
+  // those disagree — a hit that cannot be placed is listed, never guessed at.
   broker.handle('transcripts:search', async (_e, req: unknown) => {
     const r = (req ?? {}) as Partial<TranscriptSearchRequest>;
     // De-duped and capped: the scope is a list the caller builds, and the same

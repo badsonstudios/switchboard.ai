@@ -8,19 +8,20 @@
 // reach for later. So the test puts THE SAME STRING in two cards, a different
 // number of times in each, and checks the count follows the focus.
 //
-// TRANSPORT SCOPE (P2-E18-18, #404): `[pty]` for the whole group. The Session
-// view's provider searches the TRANSCRIPT FILE and maps hits onto blocks the
-// watcher derived from that same file — the pipeline that is switched off for
-// a stream session (`deriveFeed: record.transport !== 'stream'`). A Direct
-// session's transcript is still searched, but E17-01 records that its feed
-// blocks carry arrival timestamps rather than the CLI's, so nothing lines up
-// and every hit comes back snippet-only. There is no Direct counterpart to
-// write until that is fixed; the bar's behaviour on it (results readable, no
-// jump, and a notice saying so) is covered by the unit tests.
+// TRANSPORT SCOPE (P2-E18-18, #404): the first group is `[pty]` — it seeds a
+// JSONL file and lets the watcher tail it, which is how a PTY session's Feed is
+// built and is switched off for a stream one. The SECOND group is Direct, and
+// exists because the two transports used to disagree about the headline gesture:
+// a Direct session's blocks carry the moment the message reached us rather than
+// the CLI's timestamp, so the engine could not line the file up with the view
+// and every hit came back read-only (#458). It now lines them up on the API's
+// own ids instead, and that group is the proof — on the transport that has been
+// the default since #381.
 import { test, expect, Page } from '@playwright/test';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
-import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
+import { launchApp, LaunchedApp, registerTempDir, tempProjectFolder } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -143,5 +144,112 @@ test.describe('[pty] Session find (E17-02)', () => {
     await expect(w.locator('[data-testid="find-close"]')).toBeFocused();
     await w.keyboard.press('Escape');
     await expect(bar(w)).toHaveCount(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #458 — the same gesture on the DEFAULT transport.
+//
+// §5.31's flagship gesture is "click a hit, land on the block", and until this
+// item it did not work on Direct sessions: the engine scans the transcript FILE
+// and then has to say which rendered block a hit belongs to, and the join it
+// made was on the file's own timestamp — which a stream-built Feed does not
+// have. Every row came back read-only, on the transport most sessions use.
+//
+// One app, `serial`: launching a Direct session and driving a tool turn is most
+// of the cost, and both tests read the same conversation.
+// ---------------------------------------------------------------------------
+test.describe('Session find on a Direct session (#458)', () => {
+  test.describe.configure({ mode: 'serial' });
+
+  let a: LaunchedApp;
+  let folder: string;
+
+  test.beforeAll(async () => {
+    test.setTimeout(120_000);
+    // NOT `tempProjectFolder()` — that registers the folder with the sweep and
+    // the first `cleanup()` would delete it out from under the second test.
+    // Registered in `afterAll` instead (stream-feed.spec.ts's rule).
+    folder = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-find-direct-'));
+    fs.writeFileSync(path.join(folder, 'README.md'), '# e2e\n');
+    // no SWITCHBOARD_TRANSPORT: Direct is the default, and a test about the
+    // default must not name it. `stream` picks the dual-capable fake.
+    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w = a.window;
+    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+
+    // It really IS Direct — without this the whole group could quietly become a
+    // second transcript test that happens to pass.
+    await w.getByRole('tab', { name: 'Terminal' }).first().click();
+    await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 30_000 });
+    await w.getByRole('tab', { name: 'Session', exact: true }).first().click();
+
+    // A turn of real tool calls, in the shape the CLI emits them — and the fake
+    // writes the same turn to a JSONL transcript, as the real CLI does in
+    // stream mode (S-10). Those are the two sides find has to line up.
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('!tools');
+    await box.press('Enter');
+    await expect(w.locator('[data-feed-box="bash"]')).toBeVisible({ timeout: 30_000 });
+  });
+
+  test.afterAll(async () => {
+    registerTempDir(folder);
+    await a?.cleanup();
+  });
+
+  test('a hit is jumpable, not merely readable', async () => {
+    const w = a.window;
+    await w.keyboard.press(`${MOD}+f`);
+    await expect(bar(w)).toHaveCount(1);
+    await w.locator('[data-testid="find-input"]').fill('STREAM_PROSE');
+    await expect(count(w)).toHaveText('1 of 1', { timeout: 20_000 });
+
+    // The regression this whole item is: the bar used to say it could not line
+    // this session up, and every row was a read-only div.
+    await expect(w.locator('[data-testid="find-notice"]')).toHaveCount(0);
+    await w.locator('[data-testid="find-results-toggle"]').click();
+    await expect(w.locator('[data-find-hit]')).toHaveCount(1);
+    // A jumpable hit is a real `<button>`; one that is not is a plain div with
+    // the marker saying why (`FindBar.HitRow`). That asymmetry IS the fix.
+    await expect(w.locator('[data-find-hit-readonly]')).toHaveCount(0);
+    await expect(w.locator('[data-find-hit]')).toHaveJSProperty('tagName', 'BUTTON');
+
+    await w.keyboard.press('Escape');
+    await expect(bar(w)).toHaveCount(0);
+  });
+
+  test('clicking a hit opens the block that was hiding it', async () => {
+    const w = a.window;
+    // `quiet` hides tool calls entirely — and tool OUTPUT is exactly where an
+    // error string lives, which is why §5.31 says a find must see through the
+    // verbosity filter and jumping to a hit must open what was covering it.
+    await w.getByRole('button', { name: 'quiet', exact: true }).click();
+    await expect(w.locator('[data-feed-box="bash"]')).toHaveCount(0);
+
+    await w.keyboard.press(`${MOD}+f`);
+    // A string that exists ONLY in the hidden tool result — so finding it at
+    // all proves the search read the file rather than the screen.
+    await w.locator('[data-testid="find-input"]').fill('STREAM_OUT_LINE2');
+    await expect(count(w)).toHaveText('1 of 1', { timeout: 20_000 });
+
+    await w.locator('[data-testid="find-results-toggle"]').click();
+    await w.locator('[data-find-hit]').first().click();
+
+    // The block the hit belongs to is back on screen, out of the fold the
+    // verbosity preset had put it in.
+    await expect(w.locator('[data-feed-box="bash"]')).toBeVisible({ timeout: 15_000 });
+
+    // …and it is the RIGHT block, with the fold inside it opened too: the
+    // matched line is readable IN THE FEED, not only in the results list.
+    // Scoped to the box on purpose — the snippet in the list contains the same
+    // string, and an unscoped assertion would pass without a jump at all.
+    await expect(
+      w.locator('[data-feed-box="bash"]').getByText('STREAM_OUT_LINE2')
+    ).toBeVisible({ timeout: 15_000 });
+
+    await w.keyboard.press('Escape');
+    await w.getByRole('button', { name: 'normal', exact: true }).click();
   });
 });

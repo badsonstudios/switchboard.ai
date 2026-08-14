@@ -430,7 +430,23 @@ export class StreamFeed {
     if (type === 'text' || type === 'thinking') {
       seed = { kind: type === 'thinking' ? 'thinking' : 'assistant', text: '' };
     } else if (type === 'tool_use' && typeof cb?.name === 'string') {
-      seed = { kind: 'tool', tool: { name: cb.name, category: toolCategory(cb.name), summary: '' } };
+      seed = {
+        kind: 'tool',
+        tool: { name: cb.name, category: toolCategory(cb.name), summary: '' },
+        // `content_block_start` carries the tool_use id alongside the name, so
+        // the row is addressable by session find (#458) from the instant it
+        // opens rather than only once the `assistant` message supersedes it —
+        // which for a long Bash call is the whole of it. The message's own
+        // derivation sets the identical value (`blocks.ts`).
+        //
+        // INFERRED from the Anthropic streaming shape (`content_block_start`
+        // carries the whole `content_block`, and a `tool_use` block's `id` is
+        // part of it), NOT measured: the S-11 probe recorded a thinking/text
+        // turn only, so no real `tool_use` start is in our captured record. It
+        // FAILS OPEN — no id means no `srcId` until the message lands, and the
+        // alignment still has every other anchor in the window.
+        ...(typeof cb.id === 'string' ? { srcId: `tool:${cb.id}` } : {}),
+      };
     } else {
       return undefined;
     }
