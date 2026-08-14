@@ -733,6 +733,30 @@ Work items:
   pastes into the composer and the model actually sees it. Contract research
   against the VS Code extension FIRST (reference-implementations.md) — the
   wire mechanism is theirs, the affordance is ours. Full done-when in #475.
+
+  > **As built (2026-08-13) — the contract, for E10-10 to reuse.** Read out of
+  > the extension's webview bundle (2.1.226) and then **verified against the
+  > CLI on PATH in one budgeted turn**: a 64×64 blue PNG went out as one NDJSON
+  > line, came back on the `--replay-user-messages` echo intact, and the model
+  > answered "Blue".
+  > - **Inline base64, no temp file, no `@path`, no CLI flag, no settings key.**
+  >   `{"type":"image","source":{"type":"base64","media_type":"image/png",
+  >   "data":"<b64 sans data: prefix>"}}` — the Anthropic Messages API shape;
+  >   `input_image`/`image_url` count zero in both bundles.
+  > - **Order is part of it:** attachments first, the user's typed text LAST.
+  > - **Allow-list is theirs:** `image/jpeg`, `image/png`, `image/gif`,
+  >   `image/webp`, matched case-insensitively. PDFs and text files are
+  >   `document` blocks (`{"type":"document","source":{...},"title":name}`) —
+  >   **E10-10's territory**, not shipped here.
+  > - **DIVERGENCE, deliberate:** the reference enforces **no size or count
+  >   limit at all** (measured: every cap candidate is Monaco's or an SVG
+  >   path). We cap at 5 MB of base64 per image and 8 per turn, because those
+  >   bytes cross an IPC boundary in our app and an unbounded paste is an
+  >   unbounded `invoke` payload. We do NOT downscale or re-encode — that part
+  >   matches. `shared/prompt-images.ts` holds both the rule and the reasoning.
+  > - **Direct only.** A PTY takes keystrokes; there is no keystroke for a
+  >   bitmap, so `submitPrompt` refuses rather than falling back and silently
+  >   sending the words without the picture.
 - **P2-E10-10 · Drag & drop files into the composer — M (§5.10; owner
   request 2026-08-13). [issue #476]** Any file — markdown, text, source,
   images — drops onto the composer and reaches the session; per-type

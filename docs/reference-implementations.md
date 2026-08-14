@@ -61,6 +61,23 @@ Two habits worth keeping:
 - **Grep both files.** The extension host and the webview split the work; a
   concept present in one and absent in the other tells you which side owns it.
 
+**A grep window that is too wide returns NOTHING, silently** *(found 2026-08-13
+during P2-E10-09's contract research).* On `webview/index.js` — one 4.8 MB line
+— a `grep -o -E '.{400}needle.{900}'` matched **zero** while `grep -o -F
+'needle'` counted the literal as present. A zero from a wide window is a tool
+limit, not a finding, and reading it as one is how a real contract gets
+declared absent. Two rules follow:
+
+- **Confirm any zero with a plain `grep -c -F`** before you write it down.
+- **When you need a window wider than ~800 chars, use node instead of grep** —
+  it is still a pure read and it has no window limit:
+
+  ```bash
+  node -e "const s=require('fs').readFileSync('webview/index.js','utf8');
+           const i=s.indexOf('media_type');
+           console.log(s.slice(i-600,i+900))"
+  ```
+
 ### 1.2 What the bundle is good for
 
 It is a **known-correct consumer of every CLI contract we depend on**. Reach for
