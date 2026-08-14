@@ -3,7 +3,38 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — 🎛 RUN 18 ACTIVE (started 2026-08-13, post-/pm sitting)
+> # ▶▶ START HERE — 🎛 RUN 18 CLOSED 2026-08-14: 16 ITEMS, BOARD EMPTY
+> # EXCEPT DAN'S GATE
+>
+> **All 16 items DONE, all PRs green (or greening at close), zero red
+> pushes, zero lost work.** **DAN'S QUEUE (12 user-facing):** **#486**
+> (0.4.0 cut — MERGE FIRST, then push tag v0.4.0 at the merge commit;
+> ships the #395 blank-resume fix Dan hit) · #437 (trust gate) · #489
+> (paste images) · #498 (drag-drop; CONTAINS #489 — merge #489 first)
+> · #492 (Direct find jump) · #501 (husk-blind addSessionCard) · #505
+> (viewer live re-render) · #507 (copy button; based on #500 — I
+> retarget after #500 merges) · #511 (honest unbound fallback) · #513
+> (jump-to-latest chip) · #515 (sounds+TTS) · #516 (terminal search).
+> **INTERNAL, orchestrator merges AFTER the cut lands:** #493 (e2e
+> 2nd monitor) · #500 (feed forgery guard) · #510 (token sweep) ·
+> #514 (extensibility drift pin). **Dan also owes:** the #415
+> Mod+F-accelerator veto check (worker declined the #414 recipe with
+> binary evidence — one line to veto). **18 tickets filed from worker
+> discoveries** (#487 #488 #490 #491 #494-#497 #499 #502-#504 #506
+> #508 #509 #512 #517 #518) — ALL gated behind Dan's merges; they are
+> run 19's queue. **TRAIN-2 SEMANTIC NOTES for whoever integrates:**
+> #492∥#516 both reshape find.spec + FindBar (notices now render
+> PER GROUP — a naive union makes two notice regions); #498 renamed
+> shared/prompt-images.ts → prompt-attachments.ts; #458's CHANGELOG
+> change is an EDIT to the find Added-bullet, not a new entry.
+> **Main @ 90a7e02, out/ REBUILT + stamp-verified (90a7e026).**
+> Worktrees: all three idle/clean on stale branches. **NEXT SESSION:
+> Dan merges #486 + pushes the tag → orchestrator merges the 4
+> internals + retargets #507 → Dan's train-2 authorization for the
+> 11 UF PRs → /orchestrate run 19 on the ticket tail.**
+>
+> # (run-18 live board follows)
+> # 🎛 RUN 18 ACTIVE (started 2026-08-13, post-/pm sitting)
 >
 > **Single-writer rule: only the orchestrator (this session) writes this
 > file.** Workers report via `.claude/work_files/orchestrator/<issue#>.md`;
