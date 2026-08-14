@@ -101,7 +101,14 @@ test.describe('per-session sounds and announcements (P2-E14-05a)', () => {
     await entry.click();
     await w.keyboard.press('Escape');
 
-    await post(names[0], { hook_event_name: 'Stop' });
+    // A DIFFERENT kind on purpose: the feed holds one attention entry per
+    // session, so a second `Stop` for a session already sitting at `done` is
+    // not a new event and would never reach a rule.
+    await post(names[0], { hook_event_name: 'UserPromptSubmit' }); // back to working
+    await post(names[0], {
+      hook_event_name: 'Notification',
+      message: 'Claude needs input to continue',
+    });
     const after = await poll(() => {
       const mine = cues(a.home).filter((c) => c.cardId === idOf(names[0]));
       return mine.length >= 2 ? mine : null;
@@ -153,11 +160,16 @@ test.describe('per-session sounds and announcements (P2-E14-05a)', () => {
       (id) => window.switchboard.sessions.setTaskLabel(id, 'Add markdown preview'),
       cardId
     );
-    await post(name, { hook_event_name: 'Stop' });
+    // A different kind, for the reason recorded in the test above.
+    await post(name, { hook_event_name: 'UserPromptSubmit' }); // back to working
+    await post(name, {
+      hook_event_name: 'Notification',
+      message: 'Claude needs input to continue',
+    });
     const withLabel = await poll(() => {
       const s = spoken(a.home);
       return s.length > 1 ? s : null;
     }, 20_000);
-    expect(withLabel.at(-1)!.text).toBe('Add markdown preview is done');
+    expect(withLabel.at(-1)!.text).toBe('Add markdown preview needs your input');
   });
 });
