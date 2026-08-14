@@ -430,7 +430,10 @@ export function alignToLoaded(
 }
 
 /** Tail-match on kind + timestamp + tool name. Exact for a watcher-built Feed. */
-function alignByShape(trail: readonly BlockAnchor[], loadedMain: readonly FeedBlock[]): number | null {
+function alignByShape(
+  trail: readonly BlockAnchor[],
+  loadedMain: readonly FeedBlock[]
+): number | null {
   const same = (a: BlockAnchor, b: FeedBlock): boolean =>
     a.kind === b.kind && a.ts === b.ts && (a.toolName ?? undefined) === (b.tool?.name ?? undefined);
   const last = loadedMain[loadedMain.length - 1];
@@ -479,7 +482,7 @@ function alignByShape(trail: readonly BlockAnchor[], loadedMain: readonly FeedBl
  * offset is what makes every OTHER block jumpable too, prose and user prompts
  * included, none of which carry an id of their own.
  *
- * THREE THINGS IT REFUSES rather than resolves, because a jump to the wrong
+ * FOUR THINGS IT REFUSES rather than resolves, because a jump to the wrong
  * block is the lie this module exists to avoid:
  *
  *  - an id that appears TWICE in the file's trail — a message that produced
@@ -487,15 +490,25 @@ function alignByShape(trail: readonly BlockAnchor[], loadedMain: readonly FeedBl
  *    matched" then does not say which one;
  *  - two ids that imply DIFFERENT offsets — the two sequences are not the same
  *    sequence, so no single arithmetic maps them;
+ *  - an offset that would put `loadedMain[0]` BEFORE the file's first block.
+ *    Conservative rather than protective, and deliberately so: see the note on
+ *    the check itself;
  *  - an offset the surrounding blocks disagree with (`shapeAgrees`).
  *
  * `null` from any of them is the honest list-only answer §5.31 already ships.
  */
-function alignBySrcId(trail: readonly BlockAnchor[], loadedMain: readonly FeedBlock[]): number | null {
+function alignBySrcId(
+  trail: readonly BlockAnchor[],
+  loadedMain: readonly FeedBlock[]
+): number | null {
   /** srcId -> its ordinal in the file, or null once the id has been seen twice */
   const inFile = new Map<string, number | null>();
+  /** ordinal -> the anchor, for the shape check below. Built in the same pass. */
+  const byMainIndex = new Map<number, BlockAnchor>();
   for (const a of trail) {
-    if (a.srcId === undefined || a.mainIndex === undefined) continue;
+    if (a.mainIndex === undefined) continue;
+    byMainIndex.set(a.mainIndex, a);
+    if (a.srcId === undefined) continue;
     inFile.set(a.srcId, inFile.has(a.srcId) ? null : a.mainIndex);
   }
   if (inFile.size === 0) return null;
@@ -514,10 +527,19 @@ function alignBySrcId(trail: readonly BlockAnchor[], loadedMain: readonly FeedBl
     if (firstLoadedIndex === null) firstLoadedIndex = candidate;
     else if (firstLoadedIndex !== candidate) return null;
   }
-  // Below 1 would put `loadedMain[0]` before the file's first block, which no
-  // correct alignment can claim.
+  // Below 1 puts `loadedMain[0]` before the file's first block. `alignByShape`
+  // has drawn the same line since E17-01 and this matches it, but be clear
+  // about what it costs: the arithmetic downstream would in fact survive a
+  // negative offset, so this is CONSERVATIVE rather than protective. What it
+  // refuses is a view holding MORE conversation at the front than the file
+  // does — which is exactly a RESUMED Direct session, whose Feed is hydrated
+  // from the previous conversation (#395) before the new transcript has a word
+  // in it. Whether that is even reachable depends on whether `--resume` appends
+  // to the same JSONL or starts a fresh one, which is a CLI contract nobody has
+  // measured; refusing is the answer that cannot be wrong either way. See the
+  // hand-off note for #458.
   if (firstLoadedIndex === null || firstLoadedIndex < 1) return null;
-  return shapeAgrees(trail, loadedMain, firstLoadedIndex) ? firstLoadedIndex : null;
+  return shapeAgrees(byMainIndex, loadedMain, firstLoadedIndex) ? firstLoadedIndex : null;
 }
 
 /**
@@ -535,12 +557,10 @@ function alignBySrcId(trail: readonly BlockAnchor[], loadedMain: readonly FeedBl
  * alignment for the half-second that takes.
  */
 function shapeAgrees(
-  trail: readonly BlockAnchor[],
+  byMainIndex: ReadonlyMap<number, BlockAnchor>,
   loadedMain: readonly FeedBlock[],
   firstLoadedIndex: number
 ): boolean {
-  const byMainIndex = new Map<number, BlockAnchor>();
-  for (const a of trail) if (a.mainIndex !== undefined) byMainIndex.set(a.mainIndex, a);
   for (let p = 0; p < loadedMain.length; p++) {
     const b = loadedMain[p];
     if (b.streaming === true) continue;

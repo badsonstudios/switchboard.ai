@@ -321,12 +321,21 @@ function assistantIntents(
   messageId?: string
 ): BlockIntent[] {
   const out: BlockIntent[] = [];
-  // Both the transcript and the stream carry ONE content item per message
-  // (measured: 0 multi-item assistant lines in the 4,697-line real transcript;
-  // `StreamFeed.claim`'s docblock records the same for stream-json), so this id
-  // is usually a block identity. When it is not — a message split into several
-  // blocks that BOTH sides then see — the id repeats on both sides and
-  // `search.ts` refuses it as ambiguous rather than picking one.
+  // A MESSAGE id, not a block id, and the difference matters — measured on the
+  // 4,697-line real transcript this repo ships as a fixture:
+  //
+  //  * one API message is written as SEVERAL lines, one content item each (0
+  //    multi-item assistant lines; `StreamFeed.claim` records the same shape
+  //    for stream-json). All of them repeat the one `message.id`: of 884
+  //    distinct ids, **583 span more than one line**, up to 8. So this is NOT
+  //    unique per line and must not be read as though it were.
+  //  * what makes it serviceable anyway is that a TOOL block never wears it —
+  //    `toolIntent` prefers the `tool_use` id, which is unique across the whole
+  //    conversation — so a `msg:` id only ever has to tell PROSE blocks apart,
+  //    and a message rarely produces two of those. Measured: **331 prose
+  //    blocks, 330 distinct ids, exactly one id worn by two blocks.**
+  //  * and that one is not a wrong jump. A repeated id repeats on BOTH sides,
+  //    and `search.ts` refuses an ambiguous anchor rather than picking one.
   const srcId = messageId !== undefined ? { srcId: `msg:${messageId}` } : {};
   for (const [index, c] of (
     content as Array<{

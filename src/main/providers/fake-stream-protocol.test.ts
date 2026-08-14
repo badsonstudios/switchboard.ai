@@ -483,6 +483,33 @@ describe('!tools — a turn of tool calls (P2-E18-14)', () => {
     // the prompt, four tool calls, the prose, the tool result
     expect(lines).toHaveLength(7);
   });
+
+  // #458. Session find lines a Direct session's transcript up with its Feed on
+  // the ids the API puts in the message, and a `message.id` is the one that
+  // carries PROSE blocks. The real API sends one on every assistant message; a
+  // fake that did not would leave that half of the join with no e2e proof at
+  // all — the same argument this file already makes for `tool_use` ids.
+  it('stamps every assistant message with an id, the same one on both sides', () => {
+    const lines: Record<string, unknown>[] = [];
+    const p = new FakeStreamProtocol(
+      { ...host, appendTranscript: (l) => lines.push(l) },
+      (m) => out.push(m)
+    );
+    p.handle(userMsg('!tools'));
+
+    const idOf = (m: { message?: unknown }): unknown => (m.message as { id?: unknown } | undefined)?.id;
+    const streamed = out.filter((m) => m.type === 'assistant');
+    const written = lines.filter((l) => l.type === 'assistant');
+    expect(streamed.length).toBeGreaterThan(0);
+    expect(streamed.every((m) => typeof idOf(m) === 'string')).toBe(true);
+    // The file's copy of the turn and the stream's carry the SAME ids, in the
+    // same order. If these ever diverge, find goes quietly list-only on Direct.
+    expect(written.map(idOf)).toEqual(streamed.map(idOf));
+    // ...and it is ONE message split across several lines, not several
+    // messages — which is the shape the real transcript has (measured: 583 of
+    // 884 ids in the captured transcript span more than one line).
+    expect(new Set(written.map(idOf)).size).toBe(1);
+  });
 });
 
 // P2-E18-14 — enough conversation to scroll.

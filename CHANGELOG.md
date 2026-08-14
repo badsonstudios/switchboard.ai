@@ -175,12 +175,10 @@ on the floor, and say so in your PR.
   anything folded — and jumping to a match opens whatever was covering it.
   Open the results list for the matches with their surrounding text. On the
   **Changes** tab the same key hands you the diff editor's own find rather than
-  putting a second, worse one on top of it. Two boundaries worth knowing:
+  putting a second, worse one on top of it. One boundary worth knowing:
   matches from further back than the loaded view are readable in the list but
-  can't be scrolled to, and are labelled as such; and sessions in Direct mode
-  currently get the list without the jump, because their conversation and their
-  transcript can't yet be lined up. The Terminal tab greys the bar and says so
-  instead of pretending.
+  can't be scrolled to, and are labelled as such. The Terminal tab greys the
+  bar and says so instead of pretending.
 
 ### Changed
 
@@ -195,14 +193,6 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
-- **`Ctrl+F` can scroll you to a match in a Direct-mode session.** Find always
-  read the whole conversation, and on Direct sessions it would show you what it
-  had found and then refuse to take you there — every result was read-only, and
-  the bar said it couldn't line the session up. That was most sessions, since
-  Direct is the default. Clicking a result now jumps to the block it came from
-  and opens whatever was folded over it, exactly as it does in Terminal mode.
-  Matches too far back to still be on screen stay read-only in the list, which
-  is the one limit that was always intended.
 - **A reopened session shows its conversation again.** Since 0.3.0, quitting
   switchboard and opening it again left every Direct-mode card looking blank —
   no prompts, no replies, nothing — as though the session had been wiped.

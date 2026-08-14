@@ -76,6 +76,30 @@ export class FakeStreamProtocol {
   /** the resume marker goes out once, on the first turn, not per turn */
   private resumeNoted = false;
 
+  /** how many API messages this session has produced — see `newMessageId` */
+  private messages = 0;
+
+  /**
+   * A fresh `message.id`, shared by every content block of ONE API message.
+   *
+   * The real API puts an id on every `assistant` message, and the CLI passes
+   * that message through to both places we read it: the JSONL line and the
+   * stream (the VS Code extension's own transcript→stream converter copies
+   * `message` verbatim). Session find joins the file to the view on exactly
+   * that field for prose blocks (`blocks.ts` → `srcId`, #458), so a fake that
+   * omitted it left half that join with no end-to-end proof — the same
+   * "a fake missing something the real thing does is a fake that hides a bug"
+   * this file already argues for tool_use ids.
+   *
+   * ONE ID PER MESSAGE, not per block, because that is the shape: a message
+   * that produces several content blocks is written as several lines and
+   * streamed as several `assistant` messages, all carrying the one id.
+   */
+  private newMessageId(): string {
+    this.messages += 1;
+    return `msg_fake_${this.messages}`;
+  }
+
   /** Feed one decoded inbound message. */
   handle(msg: Record<string, unknown>): void {
     if (msg.type === 'control_request') return this.onControlRequest(msg);
@@ -395,7 +419,11 @@ export class FakeStreamProtocol {
       },
     ];
 
-    this.ev({ type: 'message_start', message: { role: 'assistant', content: [] } });
+    // ONE api message for the whole turn — its tool calls AND the prose below
+    // share this id, which is what a message split across several lines looks
+    // like (see `newMessageId`).
+    const id = this.newMessageId();
+    this.ev({ type: 'message_start', message: { role: 'assistant', id, content: [] } });
     let index = 0;
     for (const call of calls) {
       // the NAME arrives whole; the input does not
@@ -412,7 +440,7 @@ export class FakeStreamProtocol {
         delta: { type: 'input_json_delta', partial_json: JSON.stringify(call.input).slice(0, 8) },
       });
       const content = [{ type: 'tool_use', id: call.id, name: call.name, input: call.input }];
-      const message = { role: 'assistant', content };
+      const message = { role: 'assistant', id, content };
       this.emit({ type: 'assistant', message, session_id: FAKE_SESSION_ID, parent_tool_use_id: null });
       this.transcribe('assistant', message);
       this.ev({ type: 'content_block_stop', index });
@@ -426,7 +454,7 @@ export class FakeStreamProtocol {
     for (const piece of prose.match(/[\s\S]{1,8}/g) ?? []) {
       this.ev({ type: 'content_block_delta', index, delta: { type: 'text_delta', text: piece } });
     }
-    const proseMessage = { role: 'assistant', content: [{ type: 'text', text: prose }] };
+    const proseMessage = { role: 'assistant', id, content: [{ type: 'text', text: prose }] };
     this.emit({ type: 'assistant', message: proseMessage, session_id: FAKE_SESSION_ID, parent_tool_use_id: null });
     this.transcribe('assistant', proseMessage);
     this.ev({ type: 'content_block_stop', index });
@@ -605,7 +633,8 @@ export class FakeStreamProtocol {
    *   `assistant` entry to the JSONL at all — see the `/` branch in `onUser`.
    */
   private emitAssistantText(text: string, transcribe = true, thinking = true): void {
-    this.ev({ type: 'message_start', message: { role: 'assistant', content: [] } });
+    const id = this.newMessageId();
+    this.ev({ type: 'message_start', message: { role: 'assistant', id, content: [] } });
     let index = 0;
     if (thinking) {
       this.ev({ type: 'content_block_start', index, content_block: { type: 'thinking', thinking: '' } });
@@ -614,10 +643,14 @@ export class FakeStreamProtocol {
         index,
         delta: { type: 'signature_delta', signature: 'FAKE-SIGNATURE' },
       });
-      // the per-block assistant message, mid-stream
+      // the per-block assistant message, mid-stream — same message, same id
       this.emit({
         type: 'assistant',
-        message: { role: 'assistant', content: [{ type: 'thinking', thinking: '', signature: 'FAKE-SIGNATURE' }] },
+        message: {
+          role: 'assistant',
+          id,
+          content: [{ type: 'thinking', thinking: '', signature: 'FAKE-SIGNATURE' }],
+        },
         session_id: FAKE_SESSION_ID,
         parent_tool_use_id: null,
       });
@@ -628,7 +661,7 @@ export class FakeStreamProtocol {
     for (const piece of text.match(/[\s\S]{1,8}/g) ?? []) {
       this.ev({ type: 'content_block_delta', index, delta: { type: 'text_delta', text: piece } });
     }
-    const message = { role: 'assistant', content: [{ type: 'text', text }] };
+    const message = { role: 'assistant', id, content: [{ type: 'text', text }] };
     this.emit({
       type: 'assistant',
       message,
