@@ -90,6 +90,19 @@ on the floor, and say so in your PR.
   It's the same button the document viewer has always had on its code blocks,
   it's reachable with the arrow keys along with everything else in a
   conversation, and it works in a popped-out card.
+- **`Ctrl+F` now searches the session's terminal too, and says which is which.**
+  One press searches both the conversation and the terminal's scrollback, and
+  the bar reports them as two counts rather than one — "12 in Session · 3 in
+  Terminal (scrollback only)". A match in the terminal is highlighted where it
+  sits and `Enter` scrolls to it, reaching back through the whole scrollback and
+  not just the visible screen. The two numbers are never added together, because
+  they are not the same depth: the conversation is the whole session, the
+  terminal is the last 5,000 lines. That is why a terminal group showing **0**
+  still says "scrollback only" — it means *not in the last 5,000 lines*, not
+  *never printed*. `Ctrl+F` pressed with your cursor inside the terminal still
+  goes to the program running there, deliberately: it is a real key in the CLI.
+  From there, `Ctrl+Shift+P` → **Find in session** opens the bar.
+
 ### Changed
 
 - **The 🔓 auto-trust / 🔒 ask trust chip is now greyed out when nothing could
@@ -153,18 +166,6 @@ on the floor, and say so in your PR.
 
 ### Added
 
-- **`Ctrl+F` now searches the session's terminal too, and says which is which.**
-  One press searches both the conversation and the terminal's scrollback, and
-  the bar reports them as two counts rather than one — "12 in Session · 3 in
-  Terminal (scrollback only)". A match in the terminal is highlighted where it
-  sits and `Enter` scrolls to it, reaching back through the whole scrollback and
-  not just the visible screen. The two numbers are never added together, because
-  they are not the same depth: the conversation is the whole session, the
-  terminal is the last 5,000 lines. That is why a terminal group showing **0**
-  still says "scrollback only" — it means *not in the last 5,000 lines*, not
-  *never printed*. `Ctrl+F` pressed with your cursor inside the terminal still
-  goes to the program running there, deliberately: it is a real key in the CLI.
-  From there, `Ctrl+Shift+P` → **Find in session** opens the bar.
 
 - **Answer a permission from the desktop pop-up.** When a session asks
   permission while you are in another app, the pop-up now carries **Allow** and
