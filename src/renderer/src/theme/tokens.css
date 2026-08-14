@@ -393,6 +393,56 @@ body {
   padding: 2px 6px;
 }
 
+/* Copy button on code in the conversation (#477, P2-E10-11).
+ *
+ * The document viewer's `.doc-code*` rules, in the feed's type scale — one
+ * affordance, two surfaces, and the two blocks are deliberately adjacent in
+ * this file so a change to one is a visible non-change to the other. Always
+ * visible rather than hover-revealed, for the viewer's reason: a control that
+ * only appears under a pointer is a control a keyboard user has to already know
+ * about, and the arrow keys stop on this one (§5.32).
+ *
+ * `.feed-code-copy` is NOT scoped to `.feed-md`: the Bash IN/OUT sections wear
+ * the same button and they are components, not rendered markdown. */
+.feed-code {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin: 0 0 6px;
+  overflow: hidden;
+}
+.feed-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--panel2);
+  border-block-end: 1px solid var(--border);
+  padding: 0 4px;
+}
+.feed-code-lang {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.feed-code-copy {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 9.5px;
+  padding: 1px 4px;
+}
+.feed-code-copy:hover {
+  color: var(--text);
+}
+/* the fence keeps ONE border — the wrapper's */
+.feed-md .feed-code pre {
+  border: none;
+  border-radius: 0;
+}
+
 /* Feed keyboard navigation (#174, §5.32). A keyboard path nobody can SEE is
  * not a keyboard path, so both stops in the conversation draw a real ring:
  * the region itself (the single tab stop) and whichever expander the arrow
@@ -409,6 +459,7 @@ body {
  * PROGRAMMATIC focus() an arrow key causes, which is what makes this show up
  * for the roving navigation at all. */
 [data-feed-region]:focus-visible,
+[data-feed-copy]:focus-visible,
 [data-feed-expander]:focus-visible {
   outline: 2px solid var(--status-working-ink);
   outline-offset: 1px;
@@ -950,6 +1001,12 @@ body {
   color: var(--text);
   font-size: 11px;
   border-block-end: 1px solid var(--border);
+}
+/* The open file was deleted (P2-E16-04). A NOTICE, not an alarm: the document
+   under it is still readable and still true, so this borrows the "something
+   wants a look" ink rather than the crashed one. */
+.doc-gone {
+  box-shadow: inset 3px 0 0 0 var(--status-needs-input-ink);
 }
 .doc-find {
   display: flex;

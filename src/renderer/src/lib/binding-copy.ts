@@ -18,6 +18,20 @@ export interface EmptyStateCopy {
   /** true for the one state that means something is actually wrong — the view
    *  tints it, so "nothing has happened yet" never wears an error's clothes */
   problem: boolean;
+  /**
+   * The fail-open line, said out loud: our binding failing never stops the CLI,
+   * and a user staring at an error needs to know where the session still is.
+   * `null` for every state that is not a problem — there is nothing to reassure
+   * anyone about when nothing has gone wrong.
+   *
+   * TRANSPORT-DEPENDENT, and that is the whole of #447. The original line
+   * ("The Terminal tab is unaffected — your session is still running there.")
+   * is true only where a terminal exists. On Direct it composed with the
+   * Terminal tab's own equally-true "No terminal for this session" (P2-E18-08b)
+   * into a lie: two honest surfaces sending the user to a place that is not
+   * there. Same defect class as #261's handoff bar, one surface over.
+   */
+  fallback: string | null;
 }
 
 /**
@@ -28,11 +42,17 @@ export interface EmptyStateCopy {
  */
 export function emptyStateCopy(
   binding: BindingState,
-  diag: BindingDiagnostics | null
+  diag: BindingDiagnostics | null,
+  transport?: 'pty' | 'stream'
 ): EmptyStateCopy {
   switch (binding) {
     case 'searching':
-      return { title: 'binding.searching', detail: 'binding.searchingDetail', problem: false };
+      return {
+        title: 'binding.searching',
+        detail: 'binding.searchingDetail',
+        problem: false,
+        fallback: null,
+      };
     case 'unbound':
       // Name the contracts rather than shrugging. These are distinguishable
       // failures with DIFFERENT fixes, and one "something went wrong" would
@@ -49,6 +69,22 @@ export function emptyStateCopy(
             ? 'binding.unboundSilent' // a turn ran and wrote nothing we can see
             : 'binding.unboundNothing', // no evidence at all (defensive)
         problem: true,
+        // Where the session still IS depends on what is hosting it. A PTY
+        // session is drawing itself in the Terminal tab and the user can go
+        // read it there. A Direct session has no terminal at all — its
+        // conversation arrives in THIS window over the stream, and the
+        // transcript it cannot find is not what feeds this pane (`deriveFeed:
+        // record.transport !== 'stream'`, `sessions/ipc.ts`). So Direct gets a
+        // line about what is actually true and what the missing file actually
+        // costs, rather than a signpost to a tab that says "No terminal for
+        // this session".
+        //
+        // `problem` stays true on BOTH: the watch is still wanted on Direct for
+        // usage totals, the native id `--resume` needs, and the drift detector
+        // (same comment in `sessions/ipc.ts`), so an unbound Direct session is
+        // genuinely degraded — just not in the way the PTY line describes.
+        fallback:
+          transport === 'stream' ? 'binding.unboundFallbackDirect' : 'binding.unboundFallback',
       };
     case 'bound':
     case 'awaiting-prompt':
@@ -61,6 +97,7 @@ export function emptyStateCopy(
         title: 'binding.awaitingPrompt',
         detail: 'binding.awaitingPromptDetail',
         problem: false,
+        fallback: null,
       };
   }
 }

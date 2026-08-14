@@ -13,6 +13,7 @@ import { ThemeDefinition } from '../theme/theme';
 import { BuildIdentity, commitStamp } from '../../../shared/build-identity';
 import type { PresentationPolicy } from '../lib/presentation-policy';
 import type { LayoutMode } from '../lib/layout-mode';
+import { TRUST_INERT_REASON_KEY } from '../lib/trust-reach';
 import type { ServiceHealthStatus } from '../../../shared/service-health';
 
 const barStyle: React.CSSProperties = {
@@ -62,10 +63,21 @@ export function TitleBar(props: {
   layoutBinding: string;
   autoTrust: boolean;
   onToggleTrust: () => void;
+  /** whether the trust setting can change what any session does (#397) — false
+   *  greys the chip out, because Direct-mode sessions are never asked */
+  trustReaches: boolean;
   /** §5.11's auto task labels (P2-E7-06) — off hides every label the CLI filled
    *  in, on the card, in the rail and in OS toasts */
   autoLabels: boolean;
   onToggleAutoLabels: () => void;
+  /** §5.9's per-session cues (P2-E14-05a) — on, each card rings its own sound
+   *  instead of everything sharing one beep */
+  soundsOn: boolean;
+  onToggleSounds: () => void;
+  /** spoken announcements (P2-E14-05a). The handler is given the localized
+   *  sample sentence to say on the way ON — `t` lives here, not in App. */
+  speakOn: boolean;
+  onToggleSpeak: (sample: string) => void;
   /** sessions-rail visibility — the mouse path for the Ctrl+B command (E9-01) */
   railHidden: boolean;
   onToggleRail: () => void;
@@ -99,7 +111,24 @@ export function TitleBar(props: {
       >
         {t('titlebar.rail')}
       </Chip>
-      <Chip selected={props.autoTrust} onClick={props.onToggleTrust}>
+      {/* Folder trust. INERT unless some card will spawn on the Terminal
+          (#397): Claude Code raises no trust question at all on the Direct
+          transport — measured, and pinned by e2e/real-claude.spec.ts — and
+          Direct is the default. `lib/trust-reach.ts` carries the argument, the
+          measurement, and why the rule is workspace-wide.
+
+          The stored value is left alone when the chip is inert. Someone who
+          chose 🔒 ask trust keeps it, sees it, and gets it back the moment a
+          card goes to Terminal; flipping them to auto-trust because we had
+          decided the setting was pointless would be a silent change to a
+          security preference on their behalf. */}
+      <Chip
+        selected={props.autoTrust}
+        onClick={props.onToggleTrust}
+        disabled={!props.trustReaches}
+        title={props.trustReaches ? t('titlebar.trustHint') : t(TRUST_INERT_REASON_KEY)}
+        testId="auto-trust"
+      >
         {props.autoTrust ? t('titlebar.trustOn') : t('titlebar.trustOff')}
       </Chip>
       {/* Auto task labels (P2-E7-06, §5.11). A chip and not a buried setting
@@ -114,6 +143,27 @@ export function TitleBar(props: {
         testId="auto-labels"
       >
         {props.autoLabels ? t('titlebar.autoLabelsOn') : t('titlebar.autoLabelsOff')}
+      </Chip>
+      {/* The two audio channels (P2-E14-05a, §5.9). Chips, beside the labels
+          chip and for the same reason: what they govern is NOISE in a shared
+          room — the person who needs it off needs it off now, not after
+          finding a settings page. Each states on/off in words, never colour
+          alone (§5.32). */}
+      <Chip
+        selected={props.soundsOn}
+        onClick={props.onToggleSounds}
+        title={t('titlebar.soundsHint')}
+        testId="session-sounds"
+      >
+        {props.soundsOn ? t('titlebar.soundsOn') : t('titlebar.soundsOff')}
+      </Chip>
+      <Chip
+        selected={props.speakOn}
+        onClick={() => props.onToggleSpeak(t('titlebar.speakSample'))}
+        title={t('titlebar.speakHint')}
+        testId="speak-announcements"
+      >
+        {props.speakOn ? t('titlebar.speakOn') : t('titlebar.speakOff')}
       </Chip>
       <Chip selected={false} onClick={props.onCycleAutonomy}>
         {t(`autonomy.${props.autonomy}`)}
@@ -260,21 +310,43 @@ export function Chip(props: {
   onClick: () => void;
   children: React.ReactNode;
   title?: string;
+  /**
+   * The chip is on screen but cannot do anything (#397). `aria-disabled` and
+   * NOT the `disabled` attribute, for the reason the view tabs give in
+   * SessionGrid: `disabled` takes a control out of the tab order, and the whole
+   * point of leaving an inert chip on screen is that it can still be found. The
+   * reason travels in `title`, which is also the element's accessible
+   * DESCRIPTION once the name comes from the button's content, so assistive
+   * tech reads it out; the command palette greys unmet commands out the same
+   * way. (Chromium does not pop a native `title` on keyboard focus, so a
+   * sighted keyboard-only user still needs the mouse to read it — the gap an
+   * `aria-describedby` + visible tooltip would close, which no surface in this
+   * app has yet.)
+   *
+   * `--muted`, not the `--faint` the palette uses: these chips state what a
+   * setting currently IS, and a stored answer you can no longer read is not an
+   * answer you were shown. `--faint` is a hairline-hint token and is 2.8:1 on
+   * daylight by design (`theme/tokens.drift.test.ts`).
+   */
+  disabled?: boolean;
   /** a stable e2e handle for a chip whose LABEL is the thing under test */
   testId?: string;
 }): React.JSX.Element {
   return (
     <button
-      onClick={props.onClick}
+      onClick={() => {
+        if (!props.disabled) props.onClick();
+      }}
+      aria-disabled={props.disabled ? true : undefined}
       title={props.title}
       data-testid={props.testId}
       style={{
         background: props.selected ? 'var(--chip)' : 'transparent',
-        color: 'var(--text)',
+        color: props.disabled ? 'var(--muted)' : 'var(--text)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--radius-chip)',
         padding: '2px 9px',
-        cursor: 'pointer',
+        cursor: props.disabled ? 'default' : 'pointer',
         fontFamily: 'var(--font-ui)',
         fontSize: 11,
       }}

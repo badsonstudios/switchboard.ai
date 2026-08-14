@@ -76,6 +76,30 @@ export class FakeStreamProtocol {
   /** the resume marker goes out once, on the first turn, not per turn */
   private resumeNoted = false;
 
+  /** how many API messages this session has produced — see `newMessageId` */
+  private messages = 0;
+
+  /**
+   * A fresh `message.id`, shared by every content block of ONE API message.
+   *
+   * The real API puts an id on every `assistant` message, and the CLI passes
+   * that message through to both places we read it: the JSONL line and the
+   * stream (the VS Code extension's own transcript→stream converter copies
+   * `message` verbatim). Session find joins the file to the view on exactly
+   * that field for prose blocks (`blocks.ts` → `srcId`, #458), so a fake that
+   * omitted it left half that join with no end-to-end proof — the same
+   * "a fake missing something the real thing does is a fake that hides a bug"
+   * this file already argues for tool_use ids.
+   *
+   * ONE ID PER MESSAGE, not per block, because that is the shape: a message
+   * that produces several content blocks is written as several lines and
+   * streamed as several `assistant` messages, all carrying the one id.
+   */
+  private newMessageId(): string {
+    this.messages += 1;
+    return `msg_fake_${this.messages}`;
+  }
+
   /** Feed one decoded inbound message. */
   handle(msg: Record<string, unknown>): void {
     if (msg.type === 'control_request') return this.onControlRequest(msg);
@@ -86,8 +110,33 @@ export class FakeStreamProtocol {
 
   private onUser(msg: Record<string, unknown>): void {
     const text = extractText(msg.message);
+    const images = extractImages(msg.message);
+    const documents = extractDocuments(msg.message);
     const cwd = this.host.cwd();
-    const message = { role: 'user', content: [{ type: 'text', text }] };
+    // The attachments go back out on the echo exactly as they came in
+    // (P2-E10-09/10). A fake that quietly dropped them would be a fake that
+    // cannot tell a working attachment path from a broken one — which is the
+    // whole reason the echo exists at all (see `--replay-user-messages` below).
+    const message = {
+      role: 'user',
+      content: [
+        ...images.map((i) => ({
+          type: 'image',
+          source: { type: 'base64', media_type: i.mediaType, data: i.data },
+        })),
+        ...documents.map((d) => ({
+          type: 'document',
+          source:
+            d.kind === 'text'
+              ? { type: 'text', media_type: 'text/plain', data: d.data }
+              : { type: 'base64', media_type: 'application/pdf', data: d.data },
+          title: d.title,
+        })),
+        // omitted for an attachment-only turn, because `userMessage` omits it
+        // too — a fake that always appends one is not echoing what arrived
+        ...(text ? [{ type: 'text', text }] : []),
+      ],
+    };
     this.transcribe('user', message, cwd);
 
     // ONCE PER TURN, not once per session. S-11 measured the real CLI doing
@@ -105,6 +154,35 @@ export class FakeStreamProtocol {
     // user prompt at all — a fake missing something the real thing does is a
     // fake that hides a bug.
     this.emit({ type: 'user', message, session_id: FAKE_SESSION_ID, parent_tool_use_id: null });
+
+    // WHAT THE MODEL SAW (P2-E10-09). The real CLI answers an image by talking
+    // about it, which is not a thing a fake can do — so it answers by SAYING
+    // what arrived, in a line an e2e can assert on. Without this, every test of
+    // the image path could only prove that the composer cleared itself, which
+    // is exactly the "it looked like it worked" failure #154 was.
+    //
+    // Only when there ARE images, so a text-only turn is byte-for-byte what it
+    // has always been.
+    if (images.length > 0) {
+      this.emitAssistantText(
+        `IMAGE-SEEN:${images.map((i) => `${i.mediaType}:${i.data.length}`).join(',')}`
+      );
+    }
+
+    // The same trick for documents (P2-E10-10), and the CONTENTS are echoed for
+    // a text one rather than just its length: the failure this has to be able
+    // to catch is a text file arriving base64'd, which has a perfectly
+    // plausible length and completely wrong bytes.
+    if (documents.length > 0) {
+      this.emitAssistantText(
+        `DOC-SEEN:${documents
+          // the first line only for text: echoing a 5 MB attachment whole
+          // would put a 5 MB assistant turn in the feed, and the first line is
+          // what distinguishes real contents from base64 anyway
+          .map((d) => `${d.kind}:${d.title}:${d.kind === 'text' ? d.data.split('\n')[0] : d.data.length}`)
+          .join('|')}`
+      );
+    }
 
     // the #404 marker — see the constructor docblock
     if (this.opts.resumedFrom && !this.resumeNoted) {
@@ -395,7 +473,11 @@ export class FakeStreamProtocol {
       },
     ];
 
-    this.ev({ type: 'message_start', message: { role: 'assistant', content: [] } });
+    // ONE api message for the whole turn — its tool calls AND the prose below
+    // share this id, which is what a message split across several lines looks
+    // like (see `newMessageId`).
+    const id = this.newMessageId();
+    this.ev({ type: 'message_start', message: { role: 'assistant', id, content: [] } });
     let index = 0;
     for (const call of calls) {
       // the NAME arrives whole; the input does not
@@ -412,7 +494,7 @@ export class FakeStreamProtocol {
         delta: { type: 'input_json_delta', partial_json: JSON.stringify(call.input).slice(0, 8) },
       });
       const content = [{ type: 'tool_use', id: call.id, name: call.name, input: call.input }];
-      const message = { role: 'assistant', content };
+      const message = { role: 'assistant', id, content };
       this.emit({ type: 'assistant', message, session_id: FAKE_SESSION_ID, parent_tool_use_id: null });
       this.transcribe('assistant', message);
       this.ev({ type: 'content_block_stop', index });
@@ -426,7 +508,7 @@ export class FakeStreamProtocol {
     for (const piece of prose.match(/[\s\S]{1,8}/g) ?? []) {
       this.ev({ type: 'content_block_delta', index, delta: { type: 'text_delta', text: piece } });
     }
-    const proseMessage = { role: 'assistant', content: [{ type: 'text', text: prose }] };
+    const proseMessage = { role: 'assistant', id, content: [{ type: 'text', text: prose }] };
     this.emit({ type: 'assistant', message: proseMessage, session_id: FAKE_SESSION_ID, parent_tool_use_id: null });
     this.transcribe('assistant', proseMessage);
     this.ev({ type: 'content_block_stop', index });
@@ -605,7 +687,8 @@ export class FakeStreamProtocol {
    *   `assistant` entry to the JSONL at all — see the `/` branch in `onUser`.
    */
   private emitAssistantText(text: string, transcribe = true, thinking = true): void {
-    this.ev({ type: 'message_start', message: { role: 'assistant', content: [] } });
+    const id = this.newMessageId();
+    this.ev({ type: 'message_start', message: { role: 'assistant', id, content: [] } });
     let index = 0;
     if (thinking) {
       this.ev({ type: 'content_block_start', index, content_block: { type: 'thinking', thinking: '' } });
@@ -614,10 +697,14 @@ export class FakeStreamProtocol {
         index,
         delta: { type: 'signature_delta', signature: 'FAKE-SIGNATURE' },
       });
-      // the per-block assistant message, mid-stream
+      // the per-block assistant message, mid-stream — same message, same id
       this.emit({
         type: 'assistant',
-        message: { role: 'assistant', content: [{ type: 'thinking', thinking: '', signature: 'FAKE-SIGNATURE' }] },
+        message: {
+          role: 'assistant',
+          id,
+          content: [{ type: 'thinking', thinking: '', signature: 'FAKE-SIGNATURE' }],
+        },
         session_id: FAKE_SESSION_ID,
         parent_tool_use_id: null,
       });
@@ -628,7 +715,7 @@ export class FakeStreamProtocol {
     for (const piece of text.match(/[\s\S]{1,8}/g) ?? []) {
       this.ev({ type: 'content_block_delta', index, delta: { type: 'text_delta', text: piece } });
     }
-    const message = { role: 'assistant', content: [{ type: 'text', text }] };
+    const message = { role: 'assistant', id, content: [{ type: 'text', text }] };
     this.emit({
       type: 'assistant',
       message,
@@ -660,6 +747,67 @@ export class FakeStreamProtocol {
  * A bare string content is accepted too — the Anthropic message format permits
  * it and a hand-written test message is likely to use it.
  */
+/**
+ * Pull the image blocks out of the SDK's user envelope (P2-E10-09).
+ *
+ * The shape the VS Code extension writes and `shared/stream-protocol.ts`
+ * reproduces: `{type:"image",source:{type:"base64",media_type,data}}`. Anything
+ * that is not exactly that is ignored rather than guessed at — the fake's job
+ * is to be a strict reader of the contract, so a block we got wrong shows up as
+ * an image that vanished rather than as one the fake was kind enough to accept.
+ */
+export function extractImages(message: unknown): Array<{ mediaType: string; data: string }> {
+  const content = (message as { content?: unknown } | undefined)?.content;
+  if (!Array.isArray(content)) return [];
+  const out: Array<{ mediaType: string; data: string }> = [];
+  for (const block of content as Array<Record<string, unknown>>) {
+    if (block?.type !== 'image') continue;
+    const source = block.source as { type?: unknown; media_type?: unknown; data?: unknown } | undefined;
+    if (source?.type !== 'base64') continue;
+    if (typeof source.media_type !== 'string' || typeof source.data !== 'string') continue;
+    out.push({ mediaType: source.media_type, data: source.data });
+  }
+  return out;
+}
+
+/** A document block the fake read off the wire (P2-E10-10). */
+export interface FakeDocument {
+  /** which arm of the reference's switch produced it */
+  kind: 'text' | 'pdf';
+  title: string;
+  /** the contents for a text document, the base64 for a PDF */
+  data: string;
+}
+
+/**
+ * Pull the document blocks out of the user envelope (P2-E10-10).
+ *
+ * STRICT ABOUT THE SOURCE TYPE, which is the whole value of this function: a
+ * text document must arrive as `source.type === 'text'` carrying the contents,
+ * a PDF as `source.type === 'base64'`. A regression that base64'd a text file
+ * would still be valid JSON and would still round-trip — it would just reach
+ * the model as gibberish. Here it shows up as a document that vanished.
+ */
+export function extractDocuments(message: unknown): FakeDocument[] {
+  const content = (message as { content?: unknown } | undefined)?.content;
+  if (!Array.isArray(content)) return [];
+  const out: FakeDocument[] = [];
+  for (const block of content as Array<Record<string, unknown>>) {
+    if (block?.type !== 'document') continue;
+    const title = block.title;
+    const source = block.source as
+      | { type?: unknown; media_type?: unknown; data?: unknown }
+      | undefined;
+    if (typeof title !== 'string' || typeof source?.data !== 'string') continue;
+    if (source.type === 'text' && source.media_type === 'text/plain') {
+      out.push({ kind: 'text', title, data: source.data });
+    } else if (source.type === 'base64' && source.media_type === 'application/pdf') {
+      out.push({ kind: 'pdf', title, data: source.data });
+    }
+  }
+  return out;
+}
+
 export function extractText(message: unknown): string {
   const content = (message as { content?: unknown } | undefined)?.content;
   if (typeof content === 'string') return content;

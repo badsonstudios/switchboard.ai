@@ -51,24 +51,37 @@ function hit(over: Partial<TranscriptSearchResult['hits'][number]> = {}): Transc
 }
 
 describe('the find-provider point (P2-E17-02, §5.23)', () => {
-  it('registers two of §5.31’s four named registrants — the honest count', () => {
+  it('registers three of §5.31’s four named registrants — the honest count', () => {
+    // The fourth is the §5.30 document viewer, and its absence is structural
+    // rather than unfinished — the recipe and the two blockers are written out
+    // at the bottom of `find-providers.ts`.
     const ids = listFindProviders(fresh()).map((p) => p.manifest.id);
-    expect(ids).toEqual(['find-session', 'find-changes']);
+    expect(ids).toEqual(['find-session', 'find-changes', 'find-terminal']);
   });
 
   it('resolves a provider BY PANEL, which is how one Ctrl+F serves every view', () => {
     const r = fresh();
     expect(findProviderFor(r, 'feed')?.manifest.id).toBe('find-session');
     expect(findProviderFor(r, 'diff')?.manifest.id).toBe('find-changes');
+    expect(findProviderFor(r, 'terminal')?.manifest.id).toBe('find-terminal');
   });
 
   it('answers null for a panel with no provider — the greyed bar’s input', () => {
-    // Both are REAL cases today: History is a placeholder, and the Terminal's
-    // provider is E17-03's item. §5.31 says the bar greys with a reason rather
-    // than silently searching the wrong surface.
+    // History is a placeholder panel and has none. §5.31 says the bar greys
+    // with a reason rather than silently searching the wrong surface.
     const r = fresh();
-    expect(findProviderFor(r, 'terminal')).toBeNull();
     expect(findProviderFor(r, 'history')).toBeNull();
+  });
+
+  it('every registrant NAMES its group — labelKey is required now that it is read', () => {
+    // P2-E17-03 made it required at the same time it started reading it: a
+    // group with no name is a number the user cannot attribute, and the label
+    // is where a surface declares its DEPTH (the Terminal's says
+    // "scrollback only").
+    for (const p of listFindProviders(fresh())) {
+      expect(p.labelKey, p.manifest.id).toBeTruthy();
+    }
+    expect(findProviderFor(fresh(), 'terminal')?.labelKey).toBe('find.group.terminal');
   });
 
   it('takes a new provider with no edit to any consumer (the point is real)', () => {

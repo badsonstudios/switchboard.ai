@@ -6,6 +6,7 @@
 // 2026-07-22). Escape bytes are built from char codes: no control bytes in
 // source files.
 import { sessionStore } from '../store/session-store';
+import type { PromptAttachment } from '../../../shared/prompt-attachments';
 
 const ESC = String.fromCharCode(27);
 const CR = String.fromCharCode(13);
@@ -47,8 +48,16 @@ export async function sendSessionCommand(sessionId: string, text: string): Promi
  *
  * `sendSessionCommand` plus the one thing that separates a person pressing
  * Enter from a menu item writing a command: §5.8's auto-minimize.
+ *
+ * Resolves TRUE when the prompt went, FALSE when it did not — which only the
+ * image path can produce (see below), and which the composer uses to keep the
+ * draft on screen rather than clearing a box whose contents went nowhere.
  */
-export async function submitPrompt(sessionId: string, text: string): Promise<void> {
+export async function submitPrompt(
+  sessionId: string,
+  text: string,
+  attachments: readonly PromptAttachment[] = []
+): Promise<boolean> {
   // §5.8's auto-minimize hangs off THIS call and not off the composer component,
   // because this function is already documented as "the one way renderer
   // surfaces write a prompt into a session" — so a future second surface gets
@@ -63,7 +72,22 @@ export async function submitPrompt(sessionId: string, text: string): Promise<voi
   // the workspace folding itself away because you clicked a menu item would be
   // baffling, and §5.8 says "submitting a prompt", not "sending text".
   sessionStore.notifyPromptSubmitted(sessionId);
+
+  // NO PTY FALLBACK WHEN THERE ARE IMAGES (P2-E10-09). The whole point of
+  // try-then-fall-back is that both routes deliver the same thing; that stops
+  // being true the moment a bitmap is attached, because the PTY route is
+  // keystrokes and there is no keystroke for a picture. Falling back here would
+  // send "what's wrong with this screenshot?" with no screenshot — the prompt
+  // arrives, looks fine, and the answer is nonsense. So an image submission is
+  // stream-only, and a refusal is REPORTED rather than papered over.
+  if (attachments.length > 0) {
+    return mainTook('submitPrompt', () =>
+      window.switchboard.sessions.submitPrompt(sessionId, text, attachments)
+    );
+  }
+
   await sendSessionCommand(sessionId, text);
+  return true;
 }
 
 /**

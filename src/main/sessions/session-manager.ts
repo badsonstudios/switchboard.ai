@@ -22,7 +22,7 @@ import {
   SweepResult,
 } from './session-state';
 import { streamStatusEvent } from './stream-status';
-import { interruptRequest, userMessage } from '../../shared/stream-protocol';
+import { interruptRequest, userMessage, type PromptAttachment } from '../../shared/stream-protocol';
 
 /**
  * Why a session's native id CHANGED. 'clear' = the CLI ran /clear and minted
@@ -140,6 +140,35 @@ export class SessionManager {
     return t;
   }
 
+  /**
+   * Give back everything a start took out for an id that will never be a
+   * session (#290 for the directory, #470 for the token).
+   *
+   * "No orphan record" was only ever true of the MAP. On disk the state
+   * directory is already there — `settingsFor` writes the token into it and
+   * `buildSpawn` writes `settings.json` — and in memory the hook token is
+   * already in `HookListener`'s map. No exit and no `remove()` will ever run
+   * for this id, so this is the single moment either can be taken back:
+   * without it a failed start is a permanent in-memory leak plus a directory
+   * the startup sweep does not reach for 24 h.
+   *
+   * Both halves are best-effort and neither may throw: this runs on the way to
+   * re-throwing the REAL error, and a cleanup that threw would replace it with
+   * a housekeeping failure that tells the caller nothing about why the session
+   * did not start (P6, fail-open).
+   */
+  private abandonStart(id: string, releaseSettingsFor?: (sessionId: string) => void): void {
+    removeSessionStateDir(this.stateDir, id, this.log);
+    try {
+      releaseSettingsFor?.(id);
+    } catch (err) {
+      this.log.warn('could not release session settings after a failed start', {
+        sessionId: id,
+        error: String(err),
+      });
+    }
+  }
+
   create(
     identity: SessionIdentity,
     opts?: {
@@ -156,26 +185,55 @@ export class SessionManager {
        * config). Merged over `settings`.
        */
       settingsFor?: (sessionId: string) => Record<string, unknown>;
+      /**
+       * Undo of `settingsFor` (#470). `settingsFor` REGISTERS state against the
+       * id before there is a process — a hook token in `HookListener`'s map —
+       * and this is the only way `create` can give it back, because the map is
+       * not ours to reach. Supplied by whoever supplied `settingsFor` — the
+       * pair always travels together — and called on every path where `create`
+       * throws from the moment `settingsFor` is ENTERED, `settingsFor` itself
+       * included: `registerSession` puts the token in the map before it writes
+       * the file, so a throw in between is exactly the case that needs it.
+       * Never called once there is a record. Idempotent, and fail-open.
+       */
+      releaseSettingsFor?: (sessionId: string) => void;
     }
   ): SessionRecord {
     const adapter = this.registry.resolve('provider-adapter', identity.providerId);
     if (!adapter) throw new Error(`no provider adapter "${identity.providerId}"`);
     const id = randomUUID();
-    const settings = { ...opts?.settings, ...opts?.settingsFor?.(id) };
-    const recipe: SpawnRecipe = adapter.buildSpawn({
-      cwd: identity.folder,
-      sessionId: id,
-      stateDir: this.stateDir,
-      resumeSessionId: opts?.resumeSessionId,
-      autonomy: opts?.autonomy,
-      settings: Object.keys(settings).length > 0 ? settings : undefined,
-      transport: opts?.transport,
-    });
-    // Resolved BEFORE the record exists, so an adapter asking for a transport
-    // we do not have leaves nothing behind — same contract as the "no provider
-    // adapter" throw above.
-    const kind: TransportKind = recipe.transport ?? DEFAULT_TRANSPORT;
-    const transport = this.resolveTransport(kind, identity.providerId);
+    // FROM HERE the id owns state — a hook token the moment `settingsFor` runs,
+    // a directory with a `settings.json` in it the moment `buildSpawn` does —
+    // and there will never be an exit or a `remove()` for it if this throws.
+    // Every throw below therefore goes through `abandonStart`, which is the one
+    // moment either can be taken back.
+    let recipe: SpawnRecipe;
+    let kind: TransportKind;
+    let transport: SessionTransport;
+    try {
+      const settings = { ...opts?.settings, ...opts?.settingsFor?.(id) };
+      recipe = adapter.buildSpawn({
+        cwd: identity.folder,
+        sessionId: id,
+        stateDir: this.stateDir,
+        resumeSessionId: opts?.resumeSessionId,
+        autonomy: opts?.autonomy,
+        settings: Object.keys(settings).length > 0 ? settings : undefined,
+        transport: opts?.transport,
+      });
+      // Resolved BEFORE the record exists, so an adapter asking for a transport
+      // we do not have leaves no RECORD behind — same contract as the "no
+      // provider adapter" throw above. It used to say "nothing behind", which
+      // stopped being true when #290 gave the id a directory: by this line
+      // `buildSpawn` has already written `settings.json` into it and
+      // `settingsFor` has already registered a token, so this throw strands
+      // exactly what the failed spawn a few lines below strands (#470).
+      kind = recipe.transport ?? DEFAULT_TRANSPORT;
+      transport = this.resolveTransport(kind, identity.providerId);
+    } catch (err) {
+      this.abandonStart(id, opts?.releaseSettingsFor);
+      throw err;
+    }
     const record: SessionRecord = {
       id,
       identity,
@@ -190,18 +248,7 @@ export class SessionManager {
       proc = transport.spawn({ id, command: recipe.command, args: recipe.args, cwd: identity.folder, env: recipe.env });
     } catch (err) {
       this.log.error('session spawn failed', { sessionId: id, folder: identity.folder, transport: kind, error: String(err) });
-      // The state directory is ALREADY on disk here (#290): `settingsFor` and
-      // `buildSpawn` both wrote into it above, before there was a process to
-      // spawn. There will never be an exit or a `remove()` for this id — "no
-      // orphan record" was only ever true of the map — so this is the one
-      // moment it can be taken, and without it a spawn failure is a permanent
-      // leak the startup sweep does not reach for 24 h.
-      //
-      // NOT the hook token registered by `settingsFor`: that lives in
-      // `HookListener`'s map, which this class does not own and cannot reach.
-      // A failed spawn still leaves that entry behind — #282's territory, and
-      // noted rather than half-fixed from here.
-      removeSessionStateDir(this.stateDir, id, this.log);
+      this.abandonStart(id, opts?.releaseSettingsFor);
       throw err; // no orphan record: it was never added
     }
     this.sessions.set(id, record);
@@ -415,11 +462,17 @@ export class SessionManager {
    * The text goes through UNTOUCHED. Newlines, backticks and a leading `/` are
    * just characters: `JSON.stringify` escapes the newline so it can never be
    * read as a frame boundary — the property the PTY path had to fake.
+   *
+   * `images` (P2-E10-09) ride the same frame as inline base64 blocks, which is
+   * what the VS Code extension does — no temp file, no `@path`, no flag. They
+   * are ONLY deliverable here: a PTY takes keystrokes, so a session on that
+   * transport returns false for the whole submission rather than quietly
+   * sending the text and dropping the picture the user attached to it.
    */
-  submitPrompt(id: string, text: string): boolean {
+  submitPrompt(id: string, text: string, attachments: readonly PromptAttachment[] = []): boolean {
     const handle = this.handles.get(id);
     if (!handle?.send) return false;
-    handle.send(userMessage(text));
+    handle.send(userMessage(text, attachments));
     // We know the turn began because WE started it — no round trip, unlike the
     // PTY path waiting on a UserPromptSubmit hook.
     this.apply(id, { kind: 'prompt-sent' });

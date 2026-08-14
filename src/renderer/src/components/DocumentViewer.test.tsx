@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React, { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
-import type { FileReadResult } from '../../../shared/ipc/fs';
+import type { FileReadResult, FileWatchNotice } from '../../../shared/ipc/fs';
 
 const sourceProps: Array<Record<string, unknown>> = [];
 vi.mock('./DocumentSource', () => ({
@@ -31,6 +31,13 @@ let root: Root | null = null;
 let reads: string[] = [];
 let calls: Array<{ what: string; arg: string }> = [];
 let answer: (p: string) => FileReadResult;
+/** Every `files.watch` this mount asked for (P2-E16-04), and whether it was
+ *  released. The teardown assertion the done-when names lives on `stopped`. */
+let watches: Array<{
+  path: string;
+  notify: (n: FileWatchNotice) => void;
+  stopped: boolean;
+}> = [];
 
 function ok(text: string, extra: Partial<FileReadResult> = {}): FileReadResult {
   return {
@@ -64,6 +71,13 @@ function stubBridge(): void {
         calls.push({ what: 'openExternal', arg: u });
         return Promise.resolve(true);
       },
+      watch: (p: string, notify: (n: FileWatchNotice) => void) => {
+        const entry = { path: p, notify, stopped: false };
+        watches.push(entry);
+        return () => {
+          entry.stopped = true;
+        };
+      },
     },
   };
 }
@@ -76,6 +90,7 @@ beforeEach(async () => {
   root = createRoot(host);
   reads = [];
   calls = [];
+  watches = [];
   sourceProps.length = 0;
   answer = () => ok('');
   stubBridge();
@@ -470,6 +485,191 @@ describe('the rest of the v1 markdown scope', () => {
     expect(q('[data-testid="doc-name"]')?.textContent).toBe('b.md');
     expect(host.querySelectorAll('mark[data-doc-match]')).toHaveLength(1);
     expect(q('[data-testid="doc-find-count"]')?.textContent).toBe('1 of 1');
+  });
+});
+
+describe('following the file it has open (P2-E16-04)', () => {
+  /** Main says the file moved; the viewer answers by reading it again. */
+  const change = async (at = -1): Promise<void> => {
+    await act(async () => {
+      watches.at(at)!.notify({ token: 't', state: 'changed' });
+    });
+    await act(async () => {});
+  };
+  /** …and the reader's place in the document, as a scroll they really did. */
+  const scrollTo = async (top: number): Promise<void> => {
+    const body = q('[data-testid="doc-scroll"]')!;
+    body.scrollTop = top;
+    await act(async () => {
+      body.dispatchEvent(new Event('scroll'));
+    });
+  };
+
+  it('re-reads and re-renders when the file changes underneath it', async () => {
+    let text = '# Before\n\nold body\n';
+    answer = () => ok(text);
+    await mount('/p/PROGRESS.md');
+    expect(watches.map((w) => w.path)).toEqual(['/p/PROGRESS.md']);
+    expect(q('[data-testid="doc-rendered"]')!.querySelector('h1')?.textContent).toBe('Before');
+
+    text = '# After\n\nnew body\n';
+    await change();
+    expect(q('[data-testid="doc-rendered"]')!.querySelector('h1')?.textContent).toBe('After');
+    expect(q('[data-testid="doc-rendered"]')!.textContent).toContain('new body');
+  });
+
+  it('keeps the reader where they were — the whole point of it', async () => {
+    let text = '# Doc\n\nline\n';
+    answer = () => ok(text);
+    await mount('/p/PROGRESS.md');
+    await scrollTo(360);
+
+    text = '# Doc\n\nline\n\nand another paragraph\n';
+    await change();
+    expect(q('[data-testid="doc-scroll"]')!.scrollTop).toBe(360);
+    expect(q('[data-testid="doc-rendered"]')!.textContent).toContain('another paragraph');
+  });
+
+  it('a change that lands while the FIRST read is in flight still renders', async () => {
+    // The flagship scenario, at its most awkward: the file is already being
+    // rewritten when the panel opens, so the notice retires the open read's
+    // stamp. If only that read cleared "Opening…", the viewer would sit on the
+    // loading message for the rest of its life with a perfectly good document
+    // rendered behind it — the blank pane, arrived at from the other direction.
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((r) => {
+      release = r;
+    });
+    let first = true;
+    (window as unknown as { switchboard: { files: Record<string, unknown> } }).switchboard.files
+      .read = async (p: string): Promise<FileReadResult> => {
+      reads.push(p);
+      if (first) {
+        first = false;
+        await held;
+        return ok('# Opened\n\nthe version we started reading\n');
+      }
+      return ok('# Rewritten\n\nthe version that landed while we read\n');
+    };
+
+    await act(async () => {
+      root!.render(<DocumentViewer path="/p/PROGRESS.md" colorScheme="dark" />);
+    });
+    expect(watches).toHaveLength(1);
+    await change();
+    await act(async () => {
+      release?.();
+    });
+    await act(async () => {});
+
+    expect(q('[data-testid="doc-rendered"]')!.querySelector('h1')?.textContent).toBe('Rewritten');
+    expect(host.textContent).not.toContain('Opening…');
+  });
+
+  it('never flashes "Opening…" over a document that is already on screen', async () => {
+    answer = () => ok('# Doc\n\nbody\n');
+    await mount('/p/PROGRESS.md');
+    // the re-read is in flight for exactly as long as the promise takes; what
+    // must not happen is the body being replaced by the loading message
+    await act(async () => {
+      watches.at(-1)!.notify({ token: 't', state: 'changed' });
+    });
+    expect(q('[data-testid="doc-rendered"]')).not.toBeNull();
+    await act(async () => {});
+    expect(q('[data-testid="doc-rendered"]')).not.toBeNull();
+  });
+
+  it('a deleted file is a STRIP over what you were reading, not a blank pane', async () => {
+    answer = () => ok('# Doc\n\nthe last thing it said\n');
+    await mount('/p/PROGRESS.md');
+    await act(async () => {
+      watches.at(-1)!.notify({ token: 't', state: 'gone' });
+    });
+    expect(q('[data-testid="doc-gone"]')?.textContent).toContain('deleted or moved');
+    // …and the document is still there, still readable
+    expect(q('[data-testid="doc-rendered"]')!.textContent).toContain('the last thing it said');
+    expect(q('[data-testid="doc-refusal"]')).toBeNull();
+  });
+
+  it('a read that answers not-found on a RELOAD raises the strip, not a refusal', async () => {
+    // The delete racing the change notice: main saw a write, the file was gone
+    // by the time we read it.
+    let gone = false;
+    answer = () => (gone ? { ok: false, reason: 'not-found' } : ok('# Doc\n\nbody\n'));
+    await mount('/p/PROGRESS.md');
+    gone = true;
+    await change();
+    expect(q('[data-testid="doc-gone"]')).not.toBeNull();
+    expect(q('[data-testid="doc-rendered"]')!.textContent).toContain('body');
+  });
+
+  it('a refusal that is NOT a deletion leaves the document alone entirely', async () => {
+    // The session card this file came from was closed: the scope narrowed, the
+    // document stopped updating. It did not stop existing, and it must not
+    // vanish from under the reader.
+    let narrowed = false;
+    answer = () => (narrowed ? { ok: false, reason: 'out-of-scope' } : ok('# Doc\n\nbody\n'));
+    await mount('/p/PROGRESS.md');
+    narrowed = true;
+    await change();
+    expect(q('[data-testid="doc-gone"]')).toBeNull();
+    expect(q('[data-testid="doc-refusal"]')).toBeNull();
+    expect(q('[data-testid="doc-rendered"]')!.textContent).toContain('body');
+  });
+
+  it('the strip clears when the file comes back', async () => {
+    let text = '# Doc\n\nbody\n';
+    answer = () => ok(text);
+    await mount('/p/PROGRESS.md');
+    await act(async () => {
+      watches.at(-1)!.notify({ token: 't', state: 'gone' });
+    });
+    expect(q('[data-testid="doc-gone"]')).not.toBeNull();
+    text = '# Doc\n\nwritten again\n';
+    await change();
+    expect(q('[data-testid="doc-gone"]')).toBeNull();
+    expect(q('[data-testid="doc-rendered"]')!.textContent).toContain('written again');
+  });
+
+  it('the watch FOLLOWS a relative link, and the one it left is released', async () => {
+    answer = (p) => (p.endsWith('a.md') ? ok('# A\n\n[go](./b.md)\n') : ok('# B\n'));
+    await mount('/p/a.md');
+    await click(q('[data-doc-link="relative"]'));
+    await act(async () => {});
+    expect(watches.map((w) => w.path)).toEqual(['/p/a.md', '/p/b.md']);
+    expect(watches[0].stopped).toBe(true);
+    expect(watches[1].stopped).toBe(false);
+  });
+
+  it('closing the panel tears the watch down — no leaked watcher per file', async () => {
+    answer = () => ok('# Doc\n');
+    await mount('/p/PROGRESS.md');
+    expect(watches).toHaveLength(1);
+    const r = root!;
+    root = null;
+    await act(async () => r.unmount());
+    expect(watches[0].stopped).toBe(true);
+  });
+
+  it('an older preload with no watch is simply not live, and still opens files', async () => {
+    (window as unknown as { switchboard: { files: Record<string, unknown> } }).switchboard.files
+      .watch = undefined;
+    answer = () => ok('# Doc\n\nbody\n');
+    await mount('/p/PROGRESS.md');
+    expect(watches).toHaveLength(0);
+    expect(q('[data-testid="doc-rendered"]')!.textContent).toContain('body');
+  });
+
+  it('a source-mode document follows the file too', async () => {
+    let text = 'export const a = 1;\n';
+    answer = () => ok(text);
+    await mount('/p/src/index.ts');
+    expect(watches).toHaveLength(1);
+    text = 'export const a = 2;\n';
+    await change();
+    // Monaco keeps its own scroll across a model swap (`DocumentSource`); what
+    // this owns is that the new text reached it at all.
+    expect(sourceProps.at(-1)).toMatchObject({ text: 'export const a = 2;\n' });
   });
 });
 

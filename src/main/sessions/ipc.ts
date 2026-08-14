@@ -64,6 +64,7 @@ import { nextAutoLabel, typedLabel, visibleTaskLabel } from './auto-label';
 import { PersistedSession } from '../workspace/store';
 import { commandsFromCli, SlashCommand } from '../../shared/slash-commands';
 import { DEFAULT_SESSION_TRANSPORT } from '../transport/transport';
+import { sanitizePromptAttachments } from '../../shared/prompt-attachments';
 
 export interface SessionIpcDeps {
   manager: SessionManager;
@@ -609,9 +610,19 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // delayed CR — a genuinely different operation. The renderer tries this
   // first and falls back, which is how it stays transport-ignorant until
   // P2-E18-08b gives the user the choice.
-  broker.handle('sessions:submitPrompt', (_e, sessionId: string, text: string) => {
+  //
+  // `attachments` (P2-E10-09/10) are validated HERE and not only in the renderer: this
+  // is the boundary where a base64 string becomes a line on the CLI's stdin,
+  // and the media type, the count and the encoding are all main's to enforce
+  // rather than to trust. A payload that fails the check is refused OUTRIGHT
+  // (false), never downgraded to a text-only send — "what's wrong with this
+  // screenshot?" with the screenshot quietly removed is worse than a prompt
+  // that visibly did not go.
+  broker.handle('sessions:submitPrompt', (_e, sessionId: string, text: string, attachments?: unknown) => {
     if (typeof sessionId !== 'string' || typeof text !== 'string') return false;
-    return manager.submitPrompt(sessionId, text);
+    const clean = sanitizePromptAttachments(attachments);
+    if (clean === null) return false;
+    return manager.submitPrompt(sessionId, text, clean);
   });
   // Interrupt the running turn (#154). Returns false for a PTY session, whose
   // interrupt is an Esc keystroke — the renderer falls back, exactly as it does
@@ -691,12 +702,12 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // A STREAM session is searched too, and completely: the watcher still binds
   // its transcript (usage, the native id, drift all want it — only the FEED
   // comes from somewhere else), so the file on disk is the same complete
-  // archive. What it does not get today is a jump: `loaded` is routed the way
-  // `transcripts:blocks` routes it, and a stream block's `ts` is the moment the
-  // message reached US rather than the timestamp the CLI wrote, so the engine's
-  // alignment check refuses and every hit comes back snippet-only. Refusing is
-  // the right answer to "I cannot tell which block this is" — see E17-02's
-  // hand-off for the follow-up.
+  // archive. It gets a JUMP too, since #458: `loaded` is routed the way
+  // `transcripts:blocks` routes it, and although a stream block's `ts` is the
+  // moment the message reached US rather than what the CLI wrote, the engine
+  // now lines the two up on the API's own `tool_use` / `message` ids instead
+  // (`search.ts` → `alignBySrcId`). Refusing remains the right answer whenever
+  // those disagree — a hit that cannot be placed is listed, never guessed at.
   broker.handle('transcripts:search', async (_e, req: unknown) => {
     const r = (req ?? {}) as Partial<TranscriptSearchRequest>;
     // De-duped and capped: the scope is a list the caller builds, and the same
@@ -926,10 +937,54 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       // sessions, never silently changes a running one)
       const autonomy = prior?.autonomy ?? opts.autonomy;
 
+      // WHICH TRANSPORT THIS SPAWN ASKS FOR, most specific first:
+      //
+      //  1. the CARD's own stored choice (P2-E18-08b) — an explicit answer
+      //     from the user, and it wins over everything, including Terminal;
+      //  2. the env escape hatch, which predates the setting and can now
+      //     force EITHER transport (#381);
+      //  3. Direct, the default for a card that has never chosen (#381).
+      //
+      // Absence in the record is "never chose", not "chose Terminal": we do
+      // not write the default onto the card, so a card follows whatever the
+      // default is at the time it starts. That is what makes this one line
+      // move every untouched card, which is the point of the issue.
+      //
+      // The adapter still has the final say — it answers in the recipe, and
+      // one that cannot speak stream-json returns a PTY recipe we honour.
+      //
+      // Resolved HERE, above the trust step, because two decisions now read it
+      // and they must not be able to disagree: the trust pre-write (below) and
+      // the spawn itself. `sessions:cards` reports the same expression for the
+      // same reason (#397).
+      const spawnTransport = prior?.transport ?? deps.preferredTransport?.() ?? DEFAULT_SESSION_TRANSPORT;
+
       // Preparing the folder is the PROVIDER's business (§5.9 trust is Claude's
       // `~/.claude.json`); a provider that has never heard of it must not have
       // it written on its behalf.
-      if (deps.autoTrust() && plan.ensureTrusted && !plan.ensureTrusted(opts.folder)) {
+      //
+      // AND ONLY WHEN A PROMPT COULD ACTUALLY HAPPEN (#397). `ensureTrusted`
+      // writes `hasTrustDialogAccepted: true` into the user's real
+      // `~/.claude.json` — a permanent edit to a file that outlives the app —
+      // and its entire purpose is to pre-empt the question Claude Code would
+      // otherwise ask in its TUI. On the Direct transport there is no TUI and
+      // no question: measured at the CLI three times now (#384 twice, and the
+      // #397 probe on 2026-08-13 against claude 2.1.226), a stream-json session
+      // in a never-trusted folder simply runs — no prompt, project settings
+      // load, project hooks fire, and the CLI records nothing about the folder
+      // itself. So on Direct the write bought nothing and cost the user the
+      // only thing the trust chip governs: it accepted the folder for good,
+      // before they could ever be asked, and the manual's "open it in Terminal
+      // mode the first time" workflow could not be reached afterwards.
+      //
+      // Gated on the ASKED-FOR transport rather than the one the adapter
+      // finally resolves, because the write has to land BEFORE the spawn — by
+      // the time a recipe exists, the CLI is already running. The two differ
+      // only for an adapter that cannot speak stream-json and downgrades to a
+      // PTY (only the fake providers today, both behind the test/e2e gate);
+      // such a session would prompt in its terminal and get answered by hand,
+      // which is the fail-open direction.
+      if (spawnTransport === 'pty' && deps.autoTrust() && plan.ensureTrusted && !plan.ensureTrusted(opts.folder)) {
         log.warn('auto-trust failed — the provider may prompt in the terminal', {
           cardId: opts.cardId,
           folder: opts.folder,
@@ -951,24 +1006,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         record = manager.create(identity, {
           // no hook capability = nothing injected and no token registered
           settingsFor: plan.buildSettings,
+          // ...and the same absence means there is nothing to give back if the
+          // start throws. The pair travels together (#470).
+          releaseSettingsFor: plan.releaseSettings,
           autonomy,
           resumeSessionId: plan.resumeSessionId,
-          // Which transport to ASK for, most specific first:
-          //
-          //  1. the CARD's own stored choice (P2-E18-08b) — an explicit answer
-          //     from the user, and it wins over everything, including Terminal;
-          //  2. the env escape hatch, which predates the setting and can now
-          //     force EITHER transport (#381);
-          //  3. Direct, the default for a card that has never chosen (#381).
-          //
-          // Absence in the record is "never chose", not "chose Terminal": we do
-          // not write the default onto the card, so a card follows whatever the
-          // default is at the time it starts. That is what makes this one line
-          // move every untouched card, which is the point of the issue.
-          //
-          // The adapter still has the final say — it answers in the recipe, and
-          // one that cannot speak stream-json returns a PTY recipe we honour.
-          transport: prior?.transport ?? deps.preferredTransport?.() ?? DEFAULT_SESSION_TRANSPORT,
+          // Resolved above the trust step — see `spawnTransport` for the
+          // precedence and why it is one value rather than two.
+          transport: spawnTransport,
         });
       } catch (err) {
         // The manager adds no record when spawn fails ("no orphan record: it was
@@ -1195,6 +1240,26 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           status: rec?.status ?? 'suspended',
           liveId,
           groupId: card.groupId,
+          // The transport this card's next session will be ASKED for (#397), by
+          // the SAME precedence `sessions:create` applies (card > env override
+          // > default). Read it off `card`, above the await below, so it comes
+          // from the same synchronous snapshot as everything else here.
+          //
+          // Deliberately not `rec?.transport`, which is what a running session
+          // happens to be on: the renderer's only consumer asks "can Claude
+          // Code ever raise a trust question for this card?", and trust is
+          // consulted at SPAWN time, so the transport that answers it is the
+          // one the next spawn will use. When a pending transport change is
+          // outstanding those two differ, and the pending one is the honest
+          // answer — see `lib/trust-reach.ts`.
+          //
+          // ASKED FOR, not resolved: an adapter that cannot speak stream-json
+          // downgrades the request to a PTY (`session-manager.ts`, and only the
+          // fake providers do it today). Reading `capabilitiesOf` here would
+          // make it exact; it is not worth the coupling until a real adapter
+          // does it. `sessions:create` gates its trust pre-write on the same
+          // asked-for value, so the chip and the write agree by construction.
+          transport: card.transport ?? deps.preferredTransport?.() ?? DEFAULT_SESSION_TRANSPORT,
           autoKey: await autoKeyFor(card.identity.folder),
           // Through the switch (P2-E7-06): a suppressed auto label must not
           // reach the renderer at all, or it renders in the rail for a
@@ -1259,6 +1324,19 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       if (cid === cardId && isRunning(liveId)) pending = true;
     }
     log.info('card transport changed', { cardId, transport, pending });
+    // A card's transport is now something the SHELL renders, not just the card
+    // (#397: the trust chip greys itself out while nothing will spawn on the
+    // Terminal), so this write has to be announced.
+    //
+    // It is the exception the note above `cardsChanged` allows for. That note
+    // says a renderer-initiated change to the persisted half needs no push
+    // because "the caller refreshes at its own call site" — true of renaming a
+    // card, whose caller is the rail. It is NOT true here: the caller is the
+    // grid's ⋯ menu, which has no route to the rail's refresh. That is the same
+    // gap #170 closed for the live half, and leaving it open would mean
+    // switching a session to Terminal mode did not wake the chip up until some
+    // unrelated event happened to refresh the list.
+    cardsChanged();
     return { ok: true, pending };
   });
 

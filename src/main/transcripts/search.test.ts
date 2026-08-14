@@ -8,8 +8,9 @@
 import fs from 'fs';
 import path from 'path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { BLOCK_CAP, DETAIL_CAP, FeedBlock, deriveIntents } from '../feed/blocks';
+import { BLOCK_CAP, DETAIL_CAP, FeedBlock, TEXT_CAP, deriveIntents } from '../feed/blocks';
 import { FeedBuffer } from '../feed/buffer';
+import { StreamFeed } from '../feed/stream-feed';
 import { tempDir } from '../../test-temp-dirs';
 import {
   SESSION_TRANSCRIPT,
@@ -771,6 +772,403 @@ describe('lining the file up with the view buffer', () => {
     });
     expect(r.groups[0].aligned).toBe(false);
     expect(r.hits[0].seq).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #458 — lining a DIRECT session up, where the shape match cannot.
+//
+// The gap this closes, in one sentence: a Direct session's Feed is built from
+// the stream, whose blocks are stamped with the moment the message reached us,
+// so `alignByShape` — which reads the FILE's timestamps back off the rendered
+// blocks — never matched a single one of them, and §5.31's flagship gesture was
+// dead on the app's default transport since #381.
+//
+// Every test below runs the REAL `StreamFeed` over the REAL messages, rather
+// than hand-building blocks that would only prove the assertion I wrote.
+// ---------------------------------------------------------------------------
+describe('lining a Direct session up (#458)', () => {
+  /**
+   * What the FEED holds for a session the STREAM built.
+   *
+   * The conversion is the one the Claude Code VS Code extension performs in its
+   * own transcript→stream path (read out of the bundle 2026-08-13, per the
+   * standing rule): `message` is passed through VERBATIM and everything the FILE
+   * wrapped it in — timestamp, uuid, cwd, isSidechain — is dropped. That is what
+   * makes this a fair stand-in for the transport rather than a copy of the file
+   * path with a different name.
+   *
+   * `isMeta` lines are skipped, which is the one ASSUMPTION here: they are the
+   * CLI's own bookkeeping rather than conversation, and `deriveIntents` refuses
+   * them before it looks at anything else. If a real CLI turned out to stream
+   * them, the alignment would REFUSE (see `shapeAgrees`) and every hit would
+   * come back snippet-only — i.e. it would fail back to the behaviour this item
+   * replaced, never to a wrong jump.
+   */
+  function streamFeedOf(lines: string[]): FeedBlock[] {
+    const sf = new StreamFeed();
+    for (const line of lines) {
+      let e: Record<string, unknown>;
+      try {
+        e = JSON.parse(line) as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+      if (e.isMeta === true) continue;
+      if (e.type !== 'assistant' && e.type !== 'user') continue;
+      sf.offer('s', { type: e.type, message: e.message, parent_tool_use_id: null });
+    }
+    return sf.blocks('s');
+  }
+
+  /** An assistant turn with the id the API gives every one of them. */
+  const said = (id: string, text: string, ts?: string): unknown => ({
+    type: 'assistant',
+    ...(ts ? { timestamp: ts } : {}),
+    message: { role: 'assistant', id, content: [{ type: 'text', text }] },
+  });
+
+  /** A tool call — the one block whose id is unique across the conversation. */
+  const called = (id: string, name: string, summary: string, ts?: string): unknown => ({
+    type: 'assistant',
+    ...(ts ? { timestamp: ts } : {}),
+    message: {
+      role: 'assistant',
+      id: `msg_for_${id}`,
+      content: [{ type: 'tool_use', id, name, input: { command: summary } }],
+    },
+  });
+
+  const ask = (text: string, ts?: string): unknown => ({
+    type: 'user',
+    ...(ts ? { timestamp: ts } : {}),
+    message: { role: 'user', content: text },
+  });
+
+  // THE POINT OF THE ITEM, over the real captured transcript: a Direct session
+  // whose Feed the stream built, every block of it stamped with a time that is
+  // nowhere in the file, and the hits still resolve to the seq the renderer is
+  // showing — including the arithmetic that says which ones are too far back.
+  it('resolves hits to the seq a stream-built Feed is showing', async () => {
+    const lines = transcriptLines();
+    const loaded = streamFeedOf(lines);
+    expect(loaded).toHaveLength(BLOCK_CAP); // the same eviction as the file path
+
+    // The premise, asserted rather than assumed: not one rendered timestamp is
+    // a timestamp from the file, which is why `alignByShape` cannot help here.
+    const fileStamps = new Set(
+      lines.map((l) => (JSON.parse(l) as { timestamp?: string }).timestamp).filter(Boolean)
+    );
+    // Every block IS stamped, and no stamp is one of the file's — so `same()`'s
+    // `a.ts === b.ts` is false at every position and the shape match is dead on
+    // arrival. This is what makes the assertions below non-vacuous.
+    expect(loaded.every((b) => typeof b.ts === 'string' && !fileStamps.has(b.ts))).toBe(true);
+
+    const r = await search([{ sessionId: 's1', file: SESSION_TRANSCRIPT, loaded }], {
+      sessionIds: ['s1'],
+      query: { term: 'transcript' },
+      limit: 5000,
+    });
+
+    expect(r.error).toBeUndefined();
+    expect(r.groups[0].aligned).toBe(true);
+
+    const jumpable = r.hits.filter((h) => typeof h.seq === 'number');
+    expect(jumpable.length).toBeGreaterThan(0);
+    // Every seq it hands out is a block the renderer actually holds...
+    const held = new Map(loaded.map((b) => [b.seq, b]));
+    let proved = 0;
+    for (const h of jumpable) {
+      const block = held.get(h.seq as number);
+      expect(block).toBeDefined();
+      expect(block?.kind).toBe(h.kind);
+      expect(h.earlierThanLoaded).toBe(false);
+      // ...and it is the RIGHT one. Kind alone is far too weak to say that on a
+      // real feed: kinds repeat constantly, so a systematic off-by-a-few would
+      // survive it at most positions. For a prose hit the block's own TEXT has
+      // to contain the term, which nothing but the correct block does.
+      //
+      // Note what this test can NOT pin, so nobody reads more into it than is
+      // there: in this fixture the stream Feed's `seq` happens to equal the
+      // file's ordinal (no sidechain lines, one derivation, so both run 580 to
+      // 1,579), which means an implementation that ignored the offset
+      // arithmetic and returned `mainIndex` would satisfy every assertion here.
+      // The offset itself is pinned by the small-window cases below, where the
+      // view starts partway into the file and the two numbers differ.
+      //
+      // Blocks AT the cap are skipped: the Feed truncates prose at `TEXT_CAP`
+      // and the engine deliberately does not (§5.31 — find sees what the view is
+      // hiding), so a match past the cap is genuinely absent from what the
+      // renderer holds. (`h.matchStart` cannot answer this — it is an offset
+      // into the snippet, not into the block.)
+      const text = block?.text;
+      if (h.field === 'text' && text !== undefined && text.length < TEXT_CAP) {
+        expect(text.toLowerCase()).toContain('transcript');
+        proved++;
+      }
+    }
+    // …and that stronger check actually ran, on a real sample rather than on
+    // the one hit that happened to qualify. Observed on this fixture: 16.
+    expect(proved).toBeGreaterThanOrEqual(15);
+    // ...and the ones it will not jump to are exactly the evicted ones, still
+    // readable in the list. That boundary is §5.31's, and it stays.
+    const listOnly = r.hits.filter((h) => h.seq === undefined);
+    expect(listOnly.length).toBeGreaterThan(0);
+    expect(listOnly.every((h) => h.earlierThanLoaded)).toBe(true);
+  });
+
+  it('lands a hit on the block a stream-built Feed rendered for it', async () => {
+    const entries = [
+      ask('find me the NEEDLE', 'f1'),
+      said('msg_a', 'looking for it', 'f2'),
+      called('toolu_1', 'Bash', 'grep NEEDLE .', 'f3'),
+      said('msg_b', 'the NEEDLE is in the haystack', 'f4'),
+    ];
+    const file = transcript('direct.jsonl', entries);
+    const loaded = streamFeedOf(entries.map((e) => JSON.stringify(e)));
+
+    const r = await search([{ sessionId: 's', file, loaded }], {
+      sessionIds: ['s'],
+      query: { term: 'NEEDLE' },
+    });
+
+    expect(r.groups[0].aligned).toBe(true);
+    // The whole window maps, not just the block that carried the anchoring id:
+    // the user's prompt has no id of its own and is still jumpable.
+    const prompt = r.hits.find((h) => h.kind === 'user');
+    expect(loaded.find((b) => b.seq === prompt?.seq)?.text).toBe('find me the NEEDLE');
+    const answer = r.hits.find((h) => h.kind === 'assistant' && h.field === 'text');
+    expect(loaded.find((b) => b.seq === answer?.seq)?.text).toContain('haystack');
+  });
+
+  it('lands on the message id alone, for a session that has called no tool', async () => {
+    const entries = [ask('hello', 'f1'), said('msg_a', 'a NEEDLE in prose', 'f2')];
+    const file = transcript('prose-only.jsonl', entries);
+    const loaded = streamFeedOf(entries.map((e) => JSON.stringify(e)));
+
+    const r = await search([{ sessionId: 's', file, loaded }], {
+      sessionIds: ['s'],
+      query: { term: 'NEEDLE' },
+    });
+
+    expect(r.groups[0].aligned).toBe(true);
+    expect(loaded.find((b) => b.seq === r.hits[0].seq)?.text).toBe('a NEEDLE in prose');
+  });
+
+  // An id says WHERE; it does not say the two sequences are the same sequence.
+  // A Feed holding a block the file does not — a turn whose tokens were never
+  // written down — shifts every hit past it by one, and one wrong jump costs
+  // more trust than a hundred honest refusals earn.
+  it('refuses when the Feed holds a block the file does not', async () => {
+    // ARRANGED SO THAT ONLY `shapeAgrees` CAN REFUSE IT, which took two goes to
+    // get right and is worth writing down:
+    //
+    //  * the ghost must not sit BETWEEN two id-bearing blocks, or the ids on
+    //    either side of it imply different offsets and the disagreement check
+    //    refuses first;
+    //  * the window must not start at the file's first block, or every offset
+    //    comes out at 0 and the `firstLoadedIndex < 1` guard refuses first.
+    //
+    // So the ghost goes at the FRONT of a window that starts at file block 2,
+    // where every id still agrees on an offset of 2 — and the only thing wrong
+    // is that the ghost's `assistant` lands where the file says `tool`.
+    const entries = [
+      ask('a NEEDLE question', 'f1'),
+      called('toolu_0', 'Read', 'src/x.ts', 'f2'),
+      called('toolu_1', 'Bash', 'ls', 'f3'),
+      said('msg_b', 'two NEEDLE', 'f4'),
+      called('toolu_2', 'Grep', 'rg NEEDLE', 'f5'),
+      said('msg_c', 'three', 'f6'),
+    ];
+    const file = transcript('extra-block.jsonl', entries);
+    const loaded = streamFeedOf(
+      [
+        said('msg_ghost', 'a turn that was never written down'),
+        entries[2],
+        entries[3],
+        entries[4],
+        entries[5],
+      ].map((e) => JSON.stringify(e))
+    );
+    expect(loaded).toHaveLength(5);
+
+    const r = await search([{ sessionId: 's', file, loaded }], {
+      sessionIds: ['s'],
+      query: { term: 'NEEDLE' },
+    });
+
+    expect(r.groups[0].aligned).toBe(false);
+    expect(r.hits.every((h) => h.seq === undefined)).toBe(true);
+  });
+
+  // ...and the SAME window without the ghost aligns. Without this, the test
+  // above would pass just as well for a file shape that never lines up at all.
+  it('...and lines the same window up once the ghost is gone', async () => {
+    const entries = [
+      ask('a NEEDLE question', 'f1'),
+      called('toolu_0', 'Read', 'src/x.ts', 'f2'),
+      called('toolu_1', 'Bash', 'ls', 'f3'),
+      said('msg_b', 'two NEEDLE', 'f4'),
+      called('toolu_2', 'Grep', 'rg NEEDLE', 'f5'),
+      said('msg_c', 'three', 'f6'),
+    ];
+    const file = transcript('no-ghost.jsonl', entries);
+    const loaded = streamFeedOf(entries.slice(1).map((e) => JSON.stringify(e)));
+
+    const r = await search([{ sessionId: 's', file, loaded }], {
+      sessionIds: ['s'],
+      query: { term: 'NEEDLE' },
+    });
+
+    expect(r.groups[0].aligned).toBe(true);
+    // block 4 is the third block of the window and resolves to its seq...
+    const inWindow = r.hits.find((h) => h.blockIndex === 4);
+    expect(loaded.find((b) => b.seq === inWindow?.seq)?.text).toBe('two NEEDLE');
+    // ...while block 1, the prompt, is off the front of the view and stays
+    // list-only, marked as earlier rather than silently unjumpable.
+    const evicted = r.hits.find((h) => h.blockIndex === 1);
+    expect(evicted?.seq).toBeUndefined();
+    expect(evicted?.earlierThanLoaded).toBe(true);
+  });
+
+  it('refuses when two ids disagree about where the window starts', async () => {
+    // EVERY BLOCK THE SAME KIND, so the shape check cannot be what refuses this
+    // — otherwise the test passes with the disagreement check deleted, which is
+    // how it was written the first time. All four are prose, so all four carry
+    // a `msg:` id, and the ghost in the middle shifts the two after it.
+    const entries = [
+      said('msg_1', 'one NEEDLE', 'f1'),
+      said('msg_2', 'two', 'f2'),
+      said('msg_3', 'three NEEDLE', 'f3'),
+      said('msg_4', 'four', 'f4'),
+    ];
+    const file = transcript('disagree.jsonl', entries);
+    const loaded = streamFeedOf(
+      [
+        entries[0],
+        entries[1],
+        said('msg_ghost', 'never written down'),
+        entries[2],
+        entries[3],
+      ].map((e) => JSON.stringify(e))
+    );
+    // ids before the ghost say the window starts at 1; ids after it say 0.
+    expect(loaded).toHaveLength(5);
+
+    const r = await search([{ sessionId: 's', file, loaded }], {
+      sessionIds: ['s'],
+      query: { term: 'NEEDLE' },
+    });
+
+    expect(r.groups[0].aligned).toBe(false);
+    expect(r.hits.every((h) => h.seq === undefined)).toBe(true);
+  });
+
+  // The conservative guard, pinned so that relaxing it is a deliberate act with
+  // a failing test in front of it rather than a quiet behaviour change. A view
+  // holding MORE conversation at the front than the file does is a resumed
+  // Direct session (#395 hydrates the previous conversation into the Feed); see
+  // the note at the check in `search.ts`.
+  it('refuses a window that starts before the file’s first block', async () => {
+    const entries = [said('msg_2', 'two NEEDLE', 'f2'), said('msg_3', 'three', 'f3')];
+    const file = transcript('resumed.jsonl', entries);
+    // `msg_1` is in the view and in no file this scan can see.
+    const loaded = streamFeedOf(
+      [said('msg_1', 'one, from the replayed conversation'), ...entries].map((e) => JSON.stringify(e))
+    );
+    expect(loaded).toHaveLength(3);
+
+    const r = await search([{ sessionId: 's', file, loaded }], {
+      sessionIds: ['s'],
+      query: { term: 'NEEDLE' },
+    });
+
+    expect(r.groups[0].aligned).toBe(false);
+    expect(r.hits[0].seq).toBeUndefined();
+  });
+
+  // A message that produced several blocks stamps the same id on all of them.
+  // "It matched" then does not say WHICH, and the answers are blocks apart.
+  it('does not anchor on an id the file used more than once', async () => {
+    const entries = [
+      said('msg_twin', 'first half, NEEDLE', 'f1'),
+      said('msg_twin', 'second half', 'f2'),
+    ];
+    const file = transcript('twin-ids.jsonl', entries);
+    // Only the second survives in the view — so the id looks unique on screen
+    // and is ambiguous in the file. Position would be a coin flip.
+    const loaded = streamFeedOf([JSON.stringify(entries[1])]);
+
+    const r = await search([{ sessionId: 's', file, loaded }], {
+      sessionIds: ['s'],
+      query: { term: 'NEEDLE' },
+    });
+
+    expect(r.groups[0].aligned).toBe(false);
+  });
+
+  // A TodoWrite call opens as an ordinary `tool` row on the strength of
+  // `content_block_start` and only becomes a `todos` checklist when the message
+  // lands. Comparing a block that is still becoming itself would refuse a good
+  // alignment for as long as the model is typing — i.e. exactly while the user
+  // is most likely to be searching.
+  it('does not let a block still taking tokens veto the alignment', async () => {
+    // The case has to be one where the FILE ALREADY HAS the line — otherwise
+    // the streaming block sits past the end of the trail, `shapeAgrees` finds
+    // no anchor to compare it against, and the skip is never exercised.
+    //
+    // So: the transcript has the TodoWrite turn written down (it derives a
+    // `todos` block, no tool name), while the view still shows the `tool` row
+    // that `content_block_start` opened, because the `assistant` message that
+    // reveals it to be a checklist has not arrived. `todos` vs `tool` at the
+    // same position is exactly the disagreement the skip exists to forgive.
+    const entries = [
+      ask('a NEEDLE question', 'f1'),
+      called('toolu_1', 'Bash', 'ls', 'f2'),
+      {
+        type: 'assistant',
+        timestamp: 'f3',
+        message: {
+          role: 'assistant',
+          id: 'msg_todo',
+          content: [
+            {
+              type: 'tool_use',
+              id: 'toolu_todo',
+              name: 'TodoWrite',
+              input: { todos: [{ content: 'step', status: 'pending' }] },
+            },
+          ],
+        },
+      },
+    ];
+    const file = transcript('mid-turn.jsonl', entries);
+    const sf = new StreamFeed();
+    for (const e of entries.slice(0, 2)) {
+      const m = e as { type: string; message: unknown };
+      sf.offer('s', { type: m.type, message: m.message, parent_tool_use_id: null });
+    }
+    sf.offer('s', {
+      type: 'stream_event',
+      event: {
+        type: 'content_block_start',
+        index: 0,
+        content_block: { type: 'tool_use', id: 'toolu_todo', name: 'TodoWrite' },
+      },
+      parent_tool_use_id: null,
+    });
+    const loaded = sf.blocks('s');
+    // the disagreement is real and present: `tool` on screen, `todos` in the file
+    expect(loaded[2]).toMatchObject({ kind: 'tool', streaming: true });
+    expect(loaded[2].tool?.name).toBe('TodoWrite');
+
+    const r = await search([{ sessionId: 's', file, loaded }], {
+      sessionIds: ['s'],
+      query: { term: 'NEEDLE' },
+    });
+
+    expect(r.groups[0].aligned).toBe(true);
+    expect(r.hits[0].seq).toBe(loaded[0].seq);
   });
 });
 

@@ -300,7 +300,14 @@ export interface FindQuery {
  * it, and whether the surface can actually take you there.
  */
 export interface FindHit {
-  /** stable within one result set — React key and step target */
+  /**
+   * Stable within one result set — React key and step target.
+   *
+   * NOT what comes back to the provider: the bar searches several providers at
+   * once and NAMESPACES these ids by provider so two result sets cannot collide
+   * as React keys (`lib/find-groups.ts`). A provider must therefore route
+   * `reveal` through `ref`, never by parsing the id it is handed.
+   */
   id: string;
   /** context around the match, for the results list */
   snippet: string;
@@ -348,6 +355,16 @@ export interface FindResults {
   /** matches found in total; `hits` may be capped */
   total: number;
   truncated: boolean;
+  /**
+   * `total` is a FLOOR — "at least this many" — because the provider stopped
+   * counting before it reached the end (P2-E17-03).
+   *
+   * A provider with a hard ceiling on what it can count must set this rather
+   * than report the ceiling as a total: the bar renders "1000+" for it. A
+   * capped number presented as a count is the wrong-total-told-confidently
+   * failure §5.31 exists to avoid, one layer down from a partial scan.
+   */
+  totalIsFloor?: boolean;
   notice?: FindNotice;
 }
 
@@ -403,14 +420,16 @@ export interface FindProviderContribution {
   /** the panel whose focused instance this provider serves */
   panelId: PanelId;
   /**
-   * i18n key for the group label in the bar's count ("Session", "Changes").
+   * i18n key for the group label in the bar's count ("Session", "Terminal
+   * (scrollback only)").
    *
-   * OPTIONAL because nothing reads it yet: the grouped count ("14 in Session ·
-   * 3 in Terminal") is §5.31's first decision and P2-E17-03's work, since a
-   * group is only worth drawing once there are two. Requiring it now would
-   * make every registrant invent a string with no effect.
+   * REQUIRED since P2-E17-03, which is the item that started reading it: one
+   * Ctrl+F now searches every `bar` registrant on the focused card and reports
+   * them as separate groups (§5.31's first decision). A group with no name is
+   * a number the user cannot attribute — and the label is where the depth of a
+   * surface gets declared, which is why the Terminal's says "scrollback only".
    */
-  labelKey?: string;
+  labelKey: string;
   /** ascending; decides group order once the bar counts more than one view */
   order: number;
   mode: FindMode;

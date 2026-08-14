@@ -6,6 +6,7 @@
 // rather than through a rendered tree.
 import { describe, it, expect } from 'vitest';
 import { emptyStateCopy } from './binding-copy';
+import en from '../i18n/locales/en.json';
 import type { BindingDiagnostics } from '../../../shared/transcripts';
 
 const diag = (over: Partial<BindingDiagnostics> = {}): BindingDiagnostics => ({
@@ -64,5 +65,62 @@ describe('emptyStateCopy', () => {
     // The panel can render before the first snapshot arrives.
     expect(() => emptyStateCopy('unbound', null)).not.toThrow();
     expect(emptyStateCopy('unbound', null).detail).toBe('binding.unboundNothing');
+  });
+});
+
+// #447 — the fail-open line is the one sentence in this rule that is not true
+// on both transports, and it used to be printed on both. Reported by #418's
+// worker from `binding.spec.ts`: two honest strings composing into a lie, the
+// same defect class as #261's handoff bar one surface over.
+describe('the fail-open line follows the transport (#447)', () => {
+  const fallback = (transport?: 'pty' | 'stream'): string | null =>
+    emptyStateCopy('unbound', diag(), transport).fallback;
+
+  it('only the problem state gets one at all', () => {
+    // Nothing has gone wrong, so there is nothing to reassure anyone about —
+    // and a reassurance under "No conversation yet" would invent an alarm.
+    for (const s of ['awaiting-prompt', 'searching', 'bound'] as const) {
+      expect(emptyStateCopy(s, diag(), 'pty').fallback).toBeNull();
+      expect(emptyStateCopy(s, diag(), 'stream').fallback).toBeNull();
+    }
+    expect(emptyStateCopy('unbound', diag(), 'pty').fallback).toBeTruthy();
+    expect(emptyStateCopy('unbound', diag(), 'stream').fallback).toBeTruthy();
+  });
+
+  it('sends a PTY session to the Terminal, and a Direct session nowhere', () => {
+    expect(fallback('pty')).toBe('binding.unboundFallback');
+    expect(fallback('stream')).toBe('binding.unboundFallbackDirect');
+    expect(fallback('pty')).not.toBe(fallback('stream'));
+  });
+
+  it('defaults to the Terminal wording when the transport is not known yet', () => {
+    // The panel renders before `ctx.transport` has been resolved for a card
+    // restored from the workspace file. The PTY line is the safe default: it
+    // was the ONLY line for the whole of E15-10, and a Terminal tab that turns
+    // out to be a stream notice is a mild redundancy — where the Direct line
+    // shown to a PTY user would deny a terminal that is sitting right there,
+    // with the session running in it.
+    expect(fallback(undefined)).toBe('binding.unboundFallback');
+  });
+
+  // The keys above are indirection; these two sentences are what a user reads,
+  // and the bug was IN THE WORDS. Pin both.
+  const strings = en.binding as Record<string, string>;
+
+  it('the PTY wording still names the Terminal tab', () => {
+    expect(strings.unboundFallback).toBe(
+      'The Terminal tab is unaffected — your session is still running there.'
+    );
+  });
+
+  it('the Direct wording never sends anyone to a terminal that does not exist', () => {
+    const direct = strings.unboundFallbackDirect;
+    expect(direct).toBeTruthy();
+    // The exact failure #447 reports: the Terminal tab of a Direct session
+    // holds `terminal.streamTitle` — "No terminal for this session".
+    expect(direct.toLowerCase()).not.toContain('terminal');
+    // ...and it still does the job the line exists for — saying the session
+    // itself is fine (fail-open, said out loud).
+    expect(direct.toLowerCase()).toContain('unaffected');
   });
 });

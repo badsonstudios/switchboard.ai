@@ -53,9 +53,175 @@ on the floor, and say so in your PR.
 
 ## 0.5.0 — unreleased
 
+### Added
+
+- **Paste a picture into the prompt box.** Copy a screenshot, something from
+  Paint, or an image off a web page, press **Ctrl+V** in a session's prompt
+  box, and it attaches as a small chip with a thumbnail — then type your
+  question and press Enter, and Claude actually looks at it. The ✕ on the chip
+  removes it before you send, several images can ride one prompt, and an image
+  on its own is a perfectly good prompt. If your clipboard holds text *and* a
+  picture, you get both. Pasting ordinary text is completely unchanged.
+  Anything it cannot send it says so about, under the box, before you have
+  waited on a reply: an image that is too big, a format Claude cannot read
+  (only PNG, JPEG, GIF and WebP work — for anything else, put its file path in
+  the prompt), or a session running in **Terminal mode**, where pictures have
+  to be pasted into the Terminal tab instead. And if a prompt with a picture
+  does not go, nothing is cleared — your words and your image stay where they
+  are.
+- **Drag files onto the prompt box — not just pictures.** Drag one or more
+  files from Explorer onto a session's prompt box and they attach as chips, the
+  same ones a pasted picture uses. Markdown, plain text and source files
+  (`.md`, `.ts`, `.py`, `.json`, `.log`, `.csv`, `LICENSE`, `Makefile`,
+  `.gitignore` and a hundred-odd more), images, SVGs and PDFs all work, and
+  each one is sent in the form Claude reads best — a text file arrives as its
+  **contents**, labelled with its name, not as a path Claude has to go and open.
+  Up to eight per prompt, mixed kinds welcome, in the order you dropped them.
+  Anything it cannot use it says so about, under the box: a file too big, a
+  type Claude cannot read (it names the file-path escape hatch instead), an
+  empty file, or a **folder** — which cannot be attached to a prompt, though
+  dropping one anywhere *else* in the window still opens it as a session, as it
+  always did.
+- **Copy the code a session just gave you.** Code blocks in an answer now carry
+  a small header with the language on the left and a **Copy** button on the
+  right — one click puts the whole block on your clipboard, exactly as written.
+  Open a command box and its **IN** and **OUT** sections get one too: **OUT**
+  copies the entire output, not just the line the collapsed box was showing.
+  It's the same button the document viewer has always had on its code blocks,
+  it's reachable with the arrow keys along with everything else in a
+  conversation, and it works in a popped-out card.
+- **`Ctrl+F` now searches the session's terminal too, and says which is which.**
+  One press searches both the conversation and the terminal's scrollback, and
+  the bar reports them as two counts rather than one — "12 in Session · 3 in
+  Terminal (scrollback only)". A match in the terminal is highlighted where it
+  sits and `Enter` scrolls to it, reaching back through the whole scrollback and
+  not just the visible screen. The two numbers are never added together, because
+  they are not the same depth: the conversation is the whole session, the
+  terminal is the last 5,000 lines. That is why a terminal group showing **0**
+  still says "scrollback only" — it means *not in the last 5,000 lines*, not
+  *never printed*. `Ctrl+F` pressed with your cursor inside the terminal still
+  goes to the program running there, deliberately: it is a real key in the CLI.
+  From there, `Ctrl+Shift+P` → **Find in session** opens the bar.
+
+- **An open document updates itself.** Leave `PROGRESS.md` — or a plan, or a
+  findings note — open in the document viewer while an agent rewrites it, and
+  it re-renders on the spot instead of going stale until you close and reopen
+  it. You keep your scroll position, so you can read the middle of a file that
+  is being rewritten around you. A burst of writes (which is what one "save"
+  from an agent usually is) settles into a single update rather than ten, and a
+  file that is deleted while you are reading it gets a strip saying so with the
+  last version still on screen — not an error page, and not a blank one. If the
+  file comes back, so does the live view.
+
+- **Every session can have its own sound, and switchboard can say which one
+  wants you.** Turn on **🔊 session sounds** in the title bar and each session
+  rings a different short cue instead of everything sharing one beep — so with
+  six cards open you can tell which one needs you without looking. Sounds are
+  handed out automatically in the order you open sessions; pick a different one
+  from a session's **⋯ menu**, where each click plays the next of the eight and
+  pins it to that session for good. Turn on **🗣 announce** and it will *say* it
+  out loud — *"Add markdown preview needs your input"* — using your computer's
+  own voice, with nothing sent anywhere. The voice prefers a session's task
+  label and falls back to its title, and it only speaks while you are not in
+  switchboard, like the desktop pop-ups. Both are off until you ask for them,
+  the cue replaces the beep rather than adding to it, and if a sound cannot be
+  played you get the plain beep instead of silence.
+
+### Changed
+
+- **The 🔓 auto-trust / 🔒 ask trust chip is now greyed out when nothing could
+  ask you.** Claude Code only ever raises its folder-trust question in Terminal
+  mode, so on a workspace where every session is in Direct mode — the default —
+  picking **🔒 ask trust** could never actually get you asked. The chip is now
+  disabled there, and hovering it says why. Switch any session to Terminal mode
+  from its **⋯** menu and the chip comes straight back, including while that
+  session is still running and waiting for its restart. Whatever you had chosen
+  is kept and still shown: being greyed out takes away the switch, never your
+  answer.
+- **Direct-mode sessions no longer accept a folder on your behalf.** With
+  auto-trust on, switchboard records your acceptance in Claude Code's own
+  settings before a session starts — so that the trust prompt never interrupts
+  you. It now does that only for Terminal-mode sessions, the only ones Claude
+  Code would ever have asked. A Direct session leaves the setting exactly as it
+  found it, so a folder you have only ever run in Direct mode still has the
+  question waiting the first time you open it in Terminal mode — set the chip to
+  **🔒 ask trust** before that first Terminal start if you want to answer it
+  yourself, since auto-trust is what answers it otherwise. (Nothing is lost by
+  not writing it: measured against claude 2.1.226, an untrusted folder in Direct
+  mode runs normally, with your project settings and hooks.)
+
+### Fixed
+
+- **A reply can no longer take over a conversation's own controls.** Replies are
+  rendered Markdown, and Markdown can carry raw HTML. If that HTML happened to
+  copy the small markers switchboard.ai puts on its own expanders and blocks, the
+  app believed them — so a single message could stop the arrow keys moving
+  between the real tool blocks below it, put a fake control on the keyboard path,
+  or send **Find** to the wrong paragraph and highlight it as the match. Nothing
+  a message or a document contains counts as the app's own markup any more, on
+  every surface that renders Markdown: the conversation, the document viewer and
+  the update notes.
+- **Find can now jump in Direct-mode sessions.** Clicking a result in the
+  find bar's list scrolls to that match and opens whatever was covering it,
+  in every session — Direct mode included, which used to list matches but
+  could not take you to them. Matches from further back than the loaded view
+  are still list-only and labelled as such, exactly as before.
+- **A new session no longer opens into a sliver you cannot see, or on top of the
+  file you are reading.** Popping a session into its own window leaves a gap in
+  the main window for it to dock back into — and starting a session while every
+  card was popped out put the new one into that gap, a couple of dozen pixels
+  wide, with only its row in the sessions list to say it existed. It now opens
+  at full size in that space instead. It also stays out of the document
+  area: with a file open and the session popped out, the new card used to arrive
+  as a tab over the document instead of beside it.
+- **A Direct session that can't find its transcript no longer sends you to a
+  terminal it hasn't got.** When the Session tab gave up looking for a
+  conversation file it signed off with "The Terminal tab is unaffected — your
+  session is still running there" — which is true in Terminal mode and was
+  being said in Direct mode too, where the Terminal tab's entire content is "No
+  terminal for this session". Two honest sentences in one window adding up to a
+  wild goose chase. A Direct session now gets the sentence that fits it: its
+  replies come into that window over its own connection and were never read out
+  of that file, the status on the card header says what it's doing, and what
+  the missing file actually costs is usage totals and resuming the conversation
+  later. Terminal-mode sessions read exactly as before.
+- **A `↓ Jump to latest` button, for when the conversation has left you
+  behind.** Scrolling up in a session — or walking it with the arrow keys —
+  deliberately unsticks the view from the newest message, so that a reply
+  arriving mid-read can't drag you off what you were reading. Getting back
+  meant scrolling all the way to the bottom by hand, and nothing on screen even
+  said the view had stopped following: on a small window, where a single turn
+  can be taller than the pane, it was easy to end up parked at the top of a
+  session that looked idle and was in fact still talking. A button now appears
+  just above the prompt box whenever you're away from the bottom of a
+  conversation that has a bottom to be away from — one press and you're back at
+  the newest message and following again. It's one `Tab` from the conversation
+  and one `Shift+Tab` from the prompt box, and it takes itself away when it has
+  nothing to offer.
+
+### Internal
+
+- The end-to-end tests can now run on a second monitor, so a local run stops
+  throwing app windows across the screen you are working on: set
+  `SWITCHBOARD_E2E_MONITOR=2` (monitor 1 is always your primary one). With it
+  unset — and on any machine with a single display, which is every CI runner —
+  nothing changes at all. It quietens the screen and not the keyboard: showing
+  a window still takes the focus wherever it is.
+- Tightened up the housekeeping that clears out the files switchboard writes
+  for each session. The startup pass that removes leftover access files now
+  checks that a folder's name is one switchboard actually created before it
+  deletes anything inside it — previously anything that happened to be sitting
+  in that folder was fair game — and it leaves alone anything belonging to a
+  session that is running right now, stopping after a couple of seconds if
+  there is a large backlog so that starting the app is never held up. And when
+  a session fails to start at all, the access it had been granted is now handed
+  back immediately instead of being held until you quit. Nothing about this is
+  visible while things are working; it is the tidy-up behind the scenes.
+
 ## 0.4.0 — 2026-08-13
 
 ### Added
+
 
 - **Answer a permission from the desktop pop-up.** When a session asks
   permission while you are in another app, the pop-up now carries **Allow** and

@@ -108,6 +108,13 @@ describe('the IPC capability map (the done-when: no channel is untagged)', () =>
       'src/main/fs/ipc.ts',
       'src/main/events/rules-ipc.ts',
       'src/main/events/push-ipc.ts',
+      'src/main/events/sound-ipc.ts',
+      // `audio:play` / `audio:speak` are OUTBOUND and both ends have to agree
+      // on the name, so the two literals live in shared as constants and
+      // `events/audio-sink.ts` sends them. Listing the file that NAMES them is
+      // what this check can see; that they are really sent is
+      // `audio-sink.test.ts`'s job.
+      'src/shared/sounds.ts',
     ]
       .map((f) => fs.readFileSync(path.join(process.cwd(), f), 'utf8'))
       .join(' ');

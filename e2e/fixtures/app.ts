@@ -1,7 +1,13 @@
 // Launch the built Electron app under Playwright, fully isolated: a temp HOME
 // so it never touches the real ~/.claude.json or workspace, the fake provider
 // (shell-in-a-PTY, no claude login), and the S-01 env landmines scrubbed.
-import { _electron as electron, ElectronApplication, Locator, Page } from '@playwright/test';
+import {
+  _electron as electron,
+  ElectronApplication,
+  Locator,
+  Page,
+  test,
+} from '@playwright/test';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -223,6 +229,12 @@ export interface LaunchedApp {
   app: ElectronApplication;
   window: Page;
   home: string;
+  /**
+   * How far this app's windows were shifted off the primary display (#479).
+   * `{ x: 0, y: 0 }` unless `SWITCHBOARD_E2E_MONITOR` moved them — see
+   * `onTestDisplay`, which is how a spec writes an absolute screen box.
+   */
+  displayOffset: Point;
   /** close the app but KEEP the home (for relaunch/persistence tests) */
   close: () => Promise<void>;
   /** close the app AND delete the home */
@@ -250,6 +262,229 @@ export interface LaunchOptions {
    * SWITCHBOARD_REAL_E2E=1.
    */
   realClaude?: boolean;
+}
+
+/* ---- which monitor the suite runs on (#479) --------------------------------
+ *
+ * Local e2e runs pop ~160 app windows onto whatever screen the developer is
+ * working on. Electron has no headless mode, and a minimized or occluded window
+ * throttles rAF — which would break the specs anchored on paint and focus — so
+ * the answer is a DIFFERENT screen, not a hidden one: the window stays visible,
+ * painting and focusable, just not in the way.
+ *
+ * `SWITCHBOARD_E2E_MONITOR=<n>` turns it on. **Monitor 1 is always the PRIMARY
+ * display**, and 2..N are the rest in the order Electron reports them, so `=2`
+ * is guaranteed to be a screen that is not the primary one — `getAllDisplays()`
+ * has no documented order, and an index straight into it could land back on the
+ * working screen, which is the one outcome that makes the switch pointless.
+ * An index past the end (`=2` on a single-display machine, i.e. CI) moves
+ * nothing, and unset does not even ask the app a question.
+ *
+ * THE HONEST LIMITATION: this fixes the visual popping only. Activating a
+ * window steals keyboard focus globally on Windows however far away it is, and
+ * the focus-dependent specs preclude launching without activation — so typing
+ * can still be interrupted. What you get back is a quiet screen.
+ */
+
+/** A window rectangle in Electron's screen coordinates. */
+export interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+/** One display, reduced to what the pure helpers below need. */
+export interface DisplayInfo {
+  id: number;
+  workArea: Box;
+}
+
+/** The env var that turns the move on. One definition, named once. */
+export const E2E_MONITOR_ENV = 'SWITCHBOARD_E2E_MONITOR';
+
+// Frozen: one object is handed to every switch-off launch as its
+// `displayOffset`, and a shared mutable default is a question nobody should
+// have to ask.
+const NO_OFFSET: Point = Object.freeze({ x: 0, y: 0 });
+
+/**
+ * Resolve `SWITCHBOARD_E2E_MONITOR` against a real display list.
+ *
+ * Pure and exported so `app.test.ts` can pin the ordering rule without a
+ * machine that has two monitors — the whole point being that CI has one.
+ *
+ * Answers `null` for every "do nothing" case, and they are all the same case to
+ * the caller: unset, junk, out of range, or monitor 1 (the primary), which is a
+ * legitimate thing to ask for as an A/B and is simply the behaviour we already
+ * have.
+ */
+export function pickTestDisplay(
+  displays: DisplayInfo[],
+  primaryId: number,
+  monitor: string | undefined
+): { primary: DisplayInfo; target: DisplayInfo } | null {
+  const n = Number(monitor?.trim());
+  if (!monitor?.trim() || !Number.isInteger(n) || n < 1) return null;
+  const primary = displays.find((d) => d.id === primaryId);
+  if (!primary) return null;
+  const target = [primary, ...displays.filter((d) => d.id !== primaryId)][n - 1];
+  if (!target || target.id === primary.id) return null;
+  return { primary, target };
+}
+
+/**
+ * The same rectangle, on another display: shifted by the two work areas'
+ * offset, then clamped so it still fits if the target screen is smaller.
+ *
+ * Shift rather than centre, so a window that was centred stays centred and the
+ * relative geometry a spec asserts is untouched — with one exception worth
+ * stating, because it is a real behaviour change and not a rounding one: a
+ * SMALLER target display shrinks the window to fit, and a responsive assertion
+ * measured against a width (document-peek's cramped/roomy thresholds are the
+ * ones in this suite) can legitimately answer differently there than it does on
+ * the primary. Fitting beats hanging off the edge, but it is not free.
+ */
+export function translateToDisplay(bounds: Box, from: Box, to: Box): Box {
+  const width = Math.min(bounds.width, to.width);
+  const height = Math.min(bounds.height, to.height);
+  const clamp = (v: number, lo: number, hi: number): number =>
+    Math.round(Math.min(Math.max(v, lo), hi));
+  return {
+    x: clamp(bounds.x - from.x + to.x, to.x, to.x + to.width - width),
+    y: clamp(bounds.y - from.y + to.y, to.y, to.y + to.height - height),
+    width,
+    height,
+  };
+}
+
+/** Say which display we landed on ONCE per worker, not once per launch. */
+let announcedDisplay = false;
+
+/**
+ * Move a freshly launched app's window onto the requested display.
+ *
+ * Returns the DISPLAY's offset from the primary — which is deliberately NOT
+ * "how far this window moved". A relaunch finds the window already over there
+ * and moves it nowhere, and `onTestDisplay` still has to answer the same both
+ * times or a spec's absolute box would land somewhere different on the second
+ * launch. `{0,0}` means "there is no other display in play", nothing else.
+ *
+ * FAIL-OPEN, like everything else in this fixture: a display query that throws
+ * warns and leaves the window where it was. A developer-comfort switch must
+ * never be the reason a suite goes red.
+ *
+ * Popouts need no handling of their own — dockview opens one at
+ * `opener.screenX + position.left` (`renderer/src/lib/dock-slot.ts`), so a
+ * popout spawned from a moved main window is already on the same screen. What
+ * does need handling is a spec that sets an ABSOLUTE box; `onTestDisplay` is
+ * for those. `launchSecondInstance` opens no window at all, so it is not in
+ * scope here.
+ *
+ * NO SPEC IS EXEMPT, and that was measured rather than assumed: the audit's one
+ * real candidate was `reconnect.spec.ts`, whose margin turns out to be five
+ * figures on every monitor of this machine because Windows clamps a refused
+ * window position to a fixed ceiling and not to the desktop's edge (the numbers
+ * are in that file's header). An opt-out option existed here until that run;
+ * nothing needed it, so it is not here. Re-adding one is five lines.
+ */
+async function moveToTestDisplay(app: ElectronApplication): Promise<Point> {
+  const monitor = process.env[E2E_MONITOR_ENV];
+  // The default and the CI path: not one question asked of the app.
+  if (!monitor?.trim()) return NO_OFFSET;
+  try {
+    const info = await app.evaluate(({ BrowserWindow, screen }) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      const bounds = win?.getBounds() ?? null;
+      return {
+        displays: screen.getAllDisplays().map((d) => ({ id: d.id, workArea: d.workArea })),
+        primaryId: screen.getPrimaryDisplay().id,
+        // the only window in existence this early, but identify it by id rather
+        // than by index so the second evaluate cannot address a different one
+        winId: win?.id ?? null,
+        bounds,
+        // WHERE IT ALREADY IS — see the idempotence note below
+        onId: bounds ? screen.getDisplayMatching(bounds).id : null,
+      };
+    });
+    const picked = pickTestDisplay(info.displays, info.primaryId, monitor);
+    if (!picked) {
+      if (!announcedDisplay) {
+        announcedDisplay = true;
+        console.warn(
+          `[fixture] ${E2E_MONITOR_ENV}=${monitor} matched no secondary display ` +
+            `(${info.displays.length} display(s); monitor 1 is the primary) — not moving anything`
+        );
+      }
+      return NO_OFFSET;
+    }
+    const offset = {
+      x: picked.target.workArea.x - picked.primary.workArea.x,
+      y: picked.target.workArea.y - picked.primary.workArea.y,
+    };
+    // No window, or no bounds to reason from: nothing moved, so the offset must
+    // be zero and not the display's. Reporting the real offset here would be
+    // fail-CLOSED in a helper that promises the opposite — `onTestDisplay`
+    // would shift every spec box a screen sideways while the window it belongs
+    // to sat on the primary, and popout-geometry would fail by a display width
+    // instead of degrading to today's behaviour.
+    if (info.winId === null || !info.bounds) return NO_OFFSET;
+    // IDEMPOTENCE, and it is load-bearing (caught by session.spec's E8-02 case
+    // during this item's own gate run). The app PERSISTS window geometry, so
+    // the second launch of a relaunch spec restores a window that is already on
+    // the target display — translating that from the PRIMARY again shifted it
+    // another screen to the right, where the clamp pulled it back to the edge
+    // and left it 640px from where launch 1 had it. The popout it then restores
+    // is positioned opener-relative, so it inherited the whole error and the
+    // spec failed by exactly that 640. Translating from the display the window
+    // is ON makes a second application a no-op, whatever the window did in
+    // between.
+    const from = info.displays.find((d) => d.id === info.onId)?.workArea;
+    if (!from) return NO_OFFSET; // same reasoning as the branch above
+    if (info.onId !== picked.target.id) {
+      const box = translateToDisplay(info.bounds, from, picked.target.workArea);
+      await app.evaluate(
+        ({ BrowserWindow }, arg) => BrowserWindow.fromId(arg.id)?.setBounds(arg.box),
+        { id: info.winId, box }
+      );
+    }
+    if (!announcedDisplay) {
+      announcedDisplay = true;
+      console.log(
+        `[fixture] ${E2E_MONITOR_ENV}=${monitor}: running on the display at ` +
+          `${picked.target.workArea.x},${picked.target.workArea.y}`
+      );
+    }
+    return offset;
+  } catch (err) {
+    console.warn(`[fixture] ${E2E_MONITOR_ENV}: could not move the window — ${String(err)}`);
+    return NO_OFFSET;
+  }
+}
+
+/**
+ * An absolute screen box, written for the primary display, moved onto the one
+ * this app is actually running on (#479).
+ *
+ * A spec that parks a window at `{ x: 160, y: 240 }` means "somewhere on the
+ * screen this app lives on", not "160px from the primary monitor's corner" —
+ * and left untranslated, the box drags the window back onto the developer's
+ * working screen, which is the whole thing this switch exists to stop.
+ *
+ * Deliberately NOT clamped (`translateToDisplay` is): a spec's box is the
+ * spec's business, and reconnect.spec's deliberately-off-desktop coordinates
+ * must stay deliberately off the desktop.
+ *
+ * With the switch off — every CI run — the offset is `{0,0}` and this returns
+ * its argument's own numbers, so the specs below are byte-identical there.
+ */
+export function onTestDisplay<T extends Box>(a: LaunchedApp, box: T): T {
+  return { ...box, x: box.x + a.displayOffset.x, y: box.y + a.displayOffset.y };
 }
 
 /**
@@ -315,6 +550,7 @@ export async function launchSecondInstance(
   delete env.SWITCHBOARD_AUTOCLOSE;
   delete env.SWITCHBOARD_TRANSPORT; // the same scrub `launchApp` does (#381)
   env.SWITCHBOARD_NO_QUIT_CONFIRM = '1';
+  env.SWITCHBOARD_MUTE_AUDIO = '1'; // the same scrub `launchApp` does (P2-E14-05a)
   env.SWITCHBOARD_FAKE_PROVIDER = '1';
   applyIsolatedPaths(env, home);
 
@@ -416,6 +652,15 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   // so the one spec that exercises the dialog can turn it back off by passing
   // `SWITCHBOARD_NO_QUIT_CONFIRM: ''` (see quit-confirm.spec.ts).
   env.SWITCHBOARD_NO_QUIT_CONFIRM = '1';
+  // No spec may make a NOISE (P2-E14-05a). Per-session cues and spoken
+  // announcements reach a real speaker through the renderer, and this suite
+  // runs on the machine its owner is working at — a run that chimed eight
+  // times and read four sentences out loud is a run nobody starts twice.
+  // Muted, the sink still LOGS, so `sounds.spec.ts` proves the whole chain
+  // (right rule, right card, right cue) and only the last inch is silent. Set
+  // on every launch and BEFORE `opts.env`, like the two above, so a spec that
+  // genuinely wants audio can still ask for it.
+  env.SWITCHBOARD_MUTE_AUDIO = '1';
   // No test may talk to the real release feed (P2-E19-03). `off` disables the
   // update check entirely, so nothing in the suite makes a live call to
   // github.com or reaches for this machine's real `gh` credentials — and no
@@ -553,6 +798,12 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
     throw err;
   }
 
+  // Off the working screen, if this developer asked for that (#479). After the
+  // launch try/catch and never inside it: this cannot throw (it swallows its
+  // own failures), so it must not be able to route a launch into the reaping
+  // path either.
+  const displayOffset = await moveToTestDisplay(app);
+
   liveApps++;
   let counted = true; // close() is called twice by any spec that also cleans up
 
@@ -573,6 +824,7 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
     app,
     window,
     home,
+    displayOffset,
     close,
     cleanup: async () => {
       try {
@@ -668,6 +920,27 @@ export async function sessionStatuses(a: LaunchedApp): Promise<Map<string, strin
     status: string;
   }>;
   return new Map(records.map((r) => [r.identity.title, r.status]));
+}
+
+/**
+ * Skip a test that needs a REAL second OS window (#462, hoisted).
+ *
+ * dockview's pop-out is `window.open` -> a second BrowserWindow, which is
+ * reliable on Windows and macOS and flaky under the headless xvfb display Linux
+ * CI runs: second-window creation intermittently never completes (the E8 specs
+ * carried this skip from the day they were written). Coverage is preserved on
+ * the two platforms where multi-window works — including Windows, Dan's primary
+ * target.
+ *
+ * Lived as FOUR copy-pasted local helpers (`session`, `urgency`, `diff`,
+ * `document-peek`) with three different skip messages, so a CI report could not
+ * be searched for one of them. One place, one wording; each spec imports it.
+ */
+export function skipPopoutOnLinux(): void {
+  test.skip(
+    process.platform === 'linux',
+    'dockview popout opens a 2nd OS window — unreliable under headless xvfb; covered on Windows + macOS'
+  );
 }
 
 /** Switch to the Terminal tab (always present, last — 2026-07-22). */

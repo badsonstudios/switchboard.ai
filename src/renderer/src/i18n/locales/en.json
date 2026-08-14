@@ -11,9 +11,18 @@
     "notifOff": "🔕 off",
     "trustOn": "🔓 auto-trust",
     "trustOff": "🔒 ask trust",
+    "trustHint": "Whether a folder you open is trusted for you, or Claude Code is left to ask about it. Only Terminal-mode sessions are ever asked.",
+    "trustInert": "Unavailable: Claude Code only ever asks about folder trust in Terminal mode, and no session is set to run there. Switch one to Terminal from its ⋯ menu to use this setting.",
     "autoLabelsOn": "🏷 auto labels",
     "autoLabelsOff": "🏷 labels off",
     "autoLabelsHint": "Fill a blank task label with the title the agent gives the conversation. Turn it off to keep those words off screen — labels you type yourself always stay.",
+    "soundsOn": "🔊 session sounds",
+    "soundsOff": "🔊 one beep",
+    "soundsHint": "Give every session its own sound, so you can tell which one wants you without looking. Off, they all share the same beep. Change a session's sound from its ⋯ menu.",
+    "speakOn": "🗣 announce",
+    "speakOff": "🗣 silent",
+    "speakHint": "Say out loud which session needs you — \"Add markdown preview needs your input\" — but only while switchboard isn't the window you're in.",
+    "speakSample": "Announcements are on",
     "rail": "▤ rail",
     "railHint": "Show or hide the sessions rail ({binding})",
     "palette": "▸ commands",
@@ -222,8 +231,22 @@
     "menuTransportRestart": "Restart session now",
     "menuNotifyWhenDone": "Notify when done",
     "menuNotifyWhenDoneHint": "Pop a desktop notification when this session finishes a turn — only while switchboard isn't the window you're looking at. Off for every session until you ask.",
+    "menuSound": "Sound: {now} — switch to {next}",
+    "menuSoundHint": "The sound this session makes when it wants you. Click to hear the next one and keep it. Sessions get different sounds automatically; this pins one — keep clicking past the last to go back to automatic.",
     "checkedIcon": "☑",
     "uncheckedIcon": "☐"
+  },
+  "sounds": {
+    "auto": "Automatic",
+    "autoNow": "Automatic ({name})",
+    "chime": "Chime",
+    "bell": "Bell",
+    "knock": "Knock",
+    "rise": "Rise",
+    "blip": "Blip",
+    "fall": "Fall",
+    "ping": "Ping",
+    "thrum": "Thrum"
   },
   "approval": {
     "title": "Allow {tool}?",
@@ -328,6 +351,7 @@
     "mediaOmitted": "Media isn't shown here",
     "truncated": "This file is large — showing the first {shown} of {size}. Open it externally to read the rest.",
     "encodingNote": "Decoded as {encoding}",
+    "gone": "This file has been deleted or moved. You're reading the last version switchboard.ai saw.",
     "card": {
       "title": "This file isn't shown here",
       "body": "{name} is a {type} file ({size}). switchboard.ai doesn't render this kind of file — open it in the app you already use for it.",
@@ -449,7 +473,8 @@
     "unboundFoundQuiet": "Transcripts are being written for this folder, but none match this session — and Claude Code has not reported any activity to switchboard.ai either, which usually means its hooks aren't reaching us.",
     "unboundSilent": "This session has run at least one turn, but no transcript for it has turned up in {path}.",
     "unboundNothing": "Nothing has turned up in {path}.",
-    "unboundFallback": "The Terminal tab is unaffected — your session is still running there."
+    "unboundFallback": "The Terminal tab is unaffected — your session is still running there.",
+    "unboundFallbackDirect": "Your session is unaffected — in Direct mode the conversation arrives in this window as Claude replies, rather than being read from that file. Watch the status on the card header; the transcript is only needed for usage totals and for resuming this session later."
   },
   "handoff": {
     "permissionTitle": "Claude is asking permission in the terminal",
@@ -472,6 +497,20 @@
     "todoPending": "[ ]",
     "you": "you",
     "composerPlaceholder": "Prompt this session — Enter to send, Shift+Enter for a new line",
+    "attach": {
+      "label": "Attached to this prompt",
+      "remove": "Remove {name}",
+      "removeIcon": "×",
+      "dropHint": "Drop files to attach them to your prompt",
+      "too-large": "That file is too big to send — the limit is about {limit} for an image or PDF, and {textLimit} for a text file.",
+      "too-many": "You can attach up to {max} files to one prompt.",
+      "unreadable": "That file could not be read.",
+      "empty": "That file is empty, so there is nothing to send. (A folder dropped on the prompt box can look like this too.)",
+      "directory": "Folders cannot be attached to a prompt. Drop it outside the prompt box to open it as a session, or drop the files inside it.",
+      "unsupported": "That file type cannot be attached. Images (PNG, JPEG, GIF, WebP), text and source files, and PDFs work. For anything else, put its full file path in the prompt instead.",
+      "terminalMode": "Files can only be sent by a session in Direct mode. This one runs in Terminal mode — use the Terminal tab instead.",
+      "notSent": "That prompt wasn't sent, so nothing has been cleared. The session may have stopped, or it may not be in Direct mode."
+    },
     "autonomyHint": "Autonomy for this session (applies on next resume)",
     "modelHint": "Model last seen in this session's transcript",
     "send": "Send to the session",
@@ -492,6 +531,12 @@
     "regionLabel": "Conversation",
     "regionLabelNamed": "Conversation — {title}",
     "keyHint": "↑ ↓ move · Enter expands · Esc leaves",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyCode": "Copy this code",
+    "copySection": "Copy {section}",
+    "jumpLatest": "↓ Jump to latest",
+    "jumpLatestHint": "Go back to the newest message and follow the conversation again",
     "slashSource": {
       "builtin": "CLI",
       "project-command": "project",
@@ -627,6 +672,15 @@
     "placeholder": "Find",
     "count": "{index} of {total}",
     "countTruncated": "{index} of {shown} shown ({total} found)",
+    "countAtLeast": "{index} of {total}+",
+    "countTruncatedAtLeast": "{index} of {shown} shown ({total}+ found)",
+    "groupCount": "{total} in {group}",
+    "groupCountAtLeast": "{total}+ in {group}",
+    "groupSeparator": " · ",
+    "noticeInGroup": "{group}: {message}",
+    "group": {
+      "terminal": "Terminal (scrollback only)"
+    },
     "noResults": "No results",
     "searching": "Searching…",
     "next": "Next match",
@@ -648,10 +702,13 @@
     "cannotJumpTitle": "This match can't be scrolled to — the snippet is all of it we can show.",
     "hitMeta": "{kind, select, user {your prompt} assistant {reply} thinking {thinking} tool {tool} todos {plan} other {block}} · {time}",
     "hitMetaNoTime": "{kind, select, user {your prompt} assistant {reply} thinking {thinking} tool {tool} todos {plan} other {block}}",
+    "hitMetaTerminal": "terminal · line {line}",
     "unavailable": {
       "noProvider": "Find doesn't work on the {view} tab yet.",
       "noSession": "There is no session here to search.",
       "diffNotReady": "The diff hasn't loaded yet — open a changed file and try again.",
+      "noTerminal": "This session has no terminal, so there's no scrollback to search.",
+      "terminalNotShown": "Open the Terminal tab to search its scrollback — switchboard only keeps the terminal's view while you're looking at it.",
       "failed": "Find isn't available on this tab right now."
     },
     "notice": {

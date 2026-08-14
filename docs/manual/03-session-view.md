@@ -28,6 +28,18 @@ This is the conversation, rendered to be read rather than scrolled past:
 The view stays pinned to the newest message, including when you switch back to
 a session you'd left. Scroll up freely; it won't yank you back.
 
+**When you've scrolled away, a `↓ Jump to latest` button appears** just above
+the prompt box. Scrolling up — with the wheel, or by walking the conversation
+with the arrow keys — deliberately unsticks the view so that new output can't
+drag you off what you're reading, and that button is how you stick it back on:
+one click and the view is at the newest message and following again. It only
+shows while there's somewhere to go, so a conversation short enough to fit never
+has one. Scrolling all the way back down by hand does exactly the same thing.
+
+From the keyboard it's one `Tab` from the conversation (press `Esc` first if
+you're walking the boxes) and one `Shift+Tab` from the prompt box — see
+[Reading the conversation with the keyboard](06-keyboard.md#reading-the-conversation-with-the-keyboard).
+
 **In [Direct mode](12-direct-mode.md), replies stream in a word at a time**,
 with a small block cursor on the end while Claude is still writing. In Terminal
 mode the view waits for each finished message instead, so replies arrive in
@@ -51,11 +63,32 @@ Two things deliberately *don't* fold the box away:
 Checklist boxes have nothing to expand — they're already showing everything —
 so clicking one does nothing.
 
+### Copying code out of a session
+
+**Code blocks in an answer have a small header with a Copy button on the
+right.** Click it and the whole block is on your clipboard — exactly the text,
+with no line numbers or extra spacing. The button says **Copied** for a moment
+so you know it worked. The language of the block, if the answer said what it
+was, sits on the left of the same strip.
+
+**Command boxes get one too, once they're open.** Open a command box and each
+**IN** and **OUT** section gets its own Copy button at the right — **IN** copies
+the command, **OUT** copies the whole output, including the lines below the one
+the collapsed box was showing you. A closed section has no button: there is
+nothing on screen yet to copy.
+
+Copying never folds the box away, and the buttons are reachable from the
+keyboard along with everything else (below). It works in a popped-out card too.
+
+The document viewer has had the same button on its code blocks since it
+shipped — it's the same affordance in both places, on purpose.
+
 ### …without the mouse
 
 Every box, every **IN** / **OUT** section and every folded prompt can be opened
 from the keyboard. `Tab` into the conversation, then `↑` and `↓` walk between
-the things that open, and `Enter` opens the one you're on. Full instructions:
+the things that open — and the Copy buttons on code — and `Enter` opens or
+presses the one you're on. Full instructions:
 [Reading the conversation with the keyboard](06-keyboard.md#reading-the-conversation-with-the-keyboard).
 
 ## When the Session tab has nothing in it
@@ -72,9 +105,17 @@ is rather than leaving you guessing:
   a moment.
 - **"Couldn't find this session's transcript"** — shown in red, and the only
   one that means something is actually wrong. It tells you where it looked and
-  what it found. **Your session is unaffected** — it's still running, and the
-  **Terminal** tab shows it exactly as Claude Code renders it. See
-  [Troubleshooting](11-troubleshooting.md).
+  what it found. **Your session is unaffected** either way, and the last line
+  says where it still is — which depends on the mode the session is in:
+  - **Terminal mode** — the **Terminal** tab shows the session exactly as
+    Claude Code renders it, so go and read it there.
+  - **[Direct mode](12-direct-mode.md)** — there is no terminal to go to, and
+    you don't need one: a Direct session's replies come straight into this
+    window rather than being read out of that file. The status on the card
+    header tells you what it's doing. The missing file only costs you usage
+    totals and picking the conversation back up next time you open switchboard.
+
+  See [Troubleshooting](11-troubleshooting.md).
 
 If you have two cards open on the *same folder*, expect the second one to spend
 a little longer on "Looking for…" — switchboard waits until it can tell the two
@@ -96,6 +137,75 @@ The box at the bottom sends straight to the real Claude Code session:
 
 Under the box is a row showing this session's **autonomy mode** (click to
 cycle) and the **model** it last used.
+
+### Attaching files: paste a picture, or drag anything in
+
+Two ways to send Claude a file along with your question.
+
+**Paste a picture.** Copy an image — a screenshot, something from Paint, a
+diagram from a web page — and press **Ctrl+V** in the prompt box.
+
+**Drag files in.** Drag one or more files from Explorer (or Finder) onto the
+prompt box. A dashed outline appears saying *"Drop files to attach them to your
+prompt"*; let go and they attach.
+
+Either way, a small chip appears above the box with the file's name and size —
+and, for a picture, a thumbnail of it. Type your question next to it and press
+Enter.
+
+#### What happens to each kind of file
+
+Claude reads different files in different ways, and switchboard.ai sends each
+one in the form Claude understands best:
+
+| You attached | What Claude gets |
+|---|---|
+| A picture — PNG, JPEG, GIF or WebP | The image itself. Claude looks at it. |
+| Text and source files — `.md`, `.txt`, `.ts`, `.py`, `.json`, `.log`, `.csv`, `LICENSE`, `Makefile`, `.gitignore` and a hundred-odd others | The **contents of the file**, exactly as written, labelled with its name. Claude reads it like a document, not like a path it has to go and open. |
+| A PDF | The whole document. Claude reads it. |
+| An SVG | Its source code, which Claude reads better than a picture of it. |
+
+The full list of file types is the same one the official Claude Code extension
+for VS Code uses, so anything that works there works here.
+
+Nothing is uploaded anywhere and no copy is left on disk — the file's contents
+travel with your prompt and nowhere else.
+
+#### The rules
+
+- **The ✕ on the chip removes it** before you send. Nothing is sent until you
+  press Enter.
+- You can attach **up to eight files** to one prompt, mixing kinds freely — a
+  screenshot and two source files in the same question is fine.
+- **They stay in the order you gave them**, so "compare the first with the
+  second" means what it says.
+- **A file on its own is a valid prompt** — the send button lights up even with
+  nothing typed.
+- **If your clipboard has text *and* a picture** — copying a range of
+  spreadsheet cells does this — you get both: the text lands in the box and the
+  picture attaches beside it.
+- **Pasting ordinary text is exactly as it always was.** Nothing about this
+  changes it.
+- **Dragging files anywhere else in the window is unchanged.** Dropping a
+  *folder* on the app still opens it as a new session; only a drop that lands
+  on the prompt box itself becomes an attachment.
+
+#### When it can't
+
+It tells you, under the box, rather than failing quietly:
+
+| What you did | What you'll see under the box |
+|---|---|
+| Attached a very large file | "That file is too big to send" — about 3.8 MB for a picture or PDF, 5 MB for a text file |
+| Attached more than eight | "You can attach up to 8 files to one prompt" |
+| Attached a type Claude can't read — a video, an `.exe`, a `.zip` | It names what does work, and tells you to put the file's full path in the prompt instead, which Claude can then open itself |
+| Dropped a **folder** on the prompt box | "Folders cannot be attached to a prompt." Drop it outside the prompt box to open it as a session, or drop the files inside it |
+| Attached an empty file | It says there is nothing to send |
+| Attached to a **Terminal mode** session | Files can only be sent by a session in **Direct mode** (see [Direct mode](12-direct-mode.md)). In Terminal mode, use the Terminal tab instead |
+
+If a prompt with an attachment can't be sent — the session stopped, say —
+**nothing is cleared**. Your words and your files stay right where they are, and
+a line under the box tells you it didn't go.
 
 ## How much detail you see
 

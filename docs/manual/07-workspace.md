@@ -109,6 +109,11 @@ for a second monitor. The session keeps running throughout; nothing restarts.
   session they belong to is off in a pop-out. They're things you read next to
   your work, so they go where you asked from rather than stacking up as extra
   tabs on the second monitor.
+- **A new session always opens somewhere you can see it** — in the main window,
+  at full size in the space a popped-out session left behind rather than in the
+  sliver that space collapses to, and never on top of a document you have open.
+  Start a session with every card out on a second monitor and it turns up in the
+  main window beside whatever you were reading, not tucked into a seam.
 - **However** the window goes — the ⤡ button, its own **X**, the task bar, Task
   Manager, or a crash — the card comes back to the main window the same way. A
   window that dies without warning can take a few seconds to be noticed; the

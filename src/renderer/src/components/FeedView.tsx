@@ -6,7 +6,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { blockVisible, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
-import { feedKeyAction, FEED_EXPANDER_ATTR } from '../lib/feed-keys';
+import { feedKeyAction, FEED_STOP_SELECTOR } from '../lib/feed-keys';
 import {
   FeedReveal,
   FeedRevealProvider,
@@ -22,6 +22,20 @@ import { rendererRegistry } from '../extensibility/registry-instance';
 import { renderFeedBlock } from '../extensibility/feed-render';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { interruptSession, submitPrompt } from '../lib/composer';
+import { ComposerAttachments } from './ComposerAttachments';
+import {
+  Attachment,
+  AttachmentRejection,
+  MAX_ATTACHMENTS,
+  MAX_ATTACHMENT_PAYLOAD_BYTES,
+  MAX_ENCODED_FILE_BYTES,
+  filesFrom,
+  filesFromDrop,
+  formatBytes,
+  hasPlainText,
+  readAttachments,
+  toPromptAttachments,
+} from '../lib/composer-attachments';
 import {
   COMPOSER_FONT_SIZE,
   COMPOSER_LINE_RATIO,
@@ -111,12 +125,16 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
 function EmptyState({
   binding,
   diag,
+  transport,
 }: {
   binding: BindingState;
   diag: BindingDiagnostics | null;
+  /** which transport hosts the session (#447) — the fail-open line must not
+   *  send a Direct user to a Terminal tab that has no terminal in it */
+  transport?: 'pty' | 'stream';
 }): React.JSX.Element {
   const { t } = useTranslation();
-  const copy = emptyStateCopy(binding, diag);
+  const copy = emptyStateCopy(binding, diag, transport);
   const path = diag?.projectsRoot ?? '';
   return (
     <div
@@ -148,10 +166,9 @@ function EmptyState({
       </div>
       <div style={{ wordBreak: 'break-word' }}>{t(copy.detail, { path })}</div>
       {/* fail-open, said out loud: our binding failing never stops the CLI, and
-          a user staring at an error needs to know where the session still is */}
-      {copy.problem && (
-        <div style={{ marginBlockStart: 6 }}>{t('binding.unboundFallback')}</div>
-      )}
+          a user staring at an error needs to know where the session still is.
+          WHICH sentence that is depends on the transport — see `binding-copy` */}
+      {copy.fallback && <div style={{ marginBlockStart: 6 }}>{t(copy.fallback)}</div>}
     </div>
   );
 }
@@ -322,6 +339,35 @@ export function FeedView(props: {
   const markGesture = React.useCallback(() => {
     lastGesture.current = Date.now();
   }, []);
+  /**
+   * The way back (#442).
+   *
+   * `pinned` is a ref, so React cannot see it and nothing on screen ever said
+   * whether the view was following the conversation or had been left behind.
+   * MEASURED at the CI runner's geometry (1010x657 window, 288px feed, a
+   * 2,313px conversation): entering the #174 keyboard walk unpins the tail —
+   * `onFeedKeyDown` marks a gesture and the focus scroll is then read as the
+   * user's own, which is the rule working as designed — and after that the
+   * ONLY ways back are a scroll gesture that lands within 40px of the bottom
+   * (mouse wheel, or End/PageDown with focus on the region itself). Inside the
+   * walk there is no key that returns to the tail at all: `End` moves to the
+   * last EXPANDER, which in a conversation whose tail is prose is nowhere near
+   * the last block (measured: scrollTop stayed 0 of 2,201).
+   *
+   * None of that is wrong — unpinning on a jump is deliberate, and `jumpTo`
+   * does it explicitly — but it left a state with no visible exit. This mirror
+   * of the ref is what lets one appear.
+   */
+  const [offTail, setOffTail] = React.useState(false);
+  const syncOffTail = React.useCallback((): void => {
+    const el = scroller.current;
+    if (!el) return;
+    // Only when there is somewhere to go back TO. A conversation that fits its
+    // pane IS at its tail, so a chip there would be a control that does
+    // nothing — and 40px is the same slack the pin rule itself uses, so the
+    // two can never disagree about whether the feed overflows.
+    setOffTail(!pinned.current && el.scrollHeight > el.clientHeight + 40);
+  }, []);
   const pin = React.useCallback((): void => {
     const el = scroller.current;
     if (!el) return;
@@ -329,6 +375,25 @@ export function FeedView(props: {
     el.scrollTop = el.scrollHeight;
     requestAnimationFrame(() => (autoPin.current = false));
   }, []);
+  /**
+   * What the chip does: take the wheel back. Deliberately NOT `markGesture()` —
+   * a gesture window opened here would let the next layout scroll re-derive the
+   * pin from raw distance, which is the very trap that strands the view.
+   */
+  const jumpToLatest = React.useCallback((): void => {
+    pinned.current = true;
+    owesRestore.current = false;
+    lastTop.current = scroller.current?.scrollHeight ?? 0;
+    pin();
+    setOffTail(false);
+    // The control REMOVES ITSELF on success, so something has to catch the
+    // focus it was holding — otherwise a keyboard user lands on `<body>` and
+    // their next Tab starts from the top of the window (§5.32). The
+    // conversation is where they came from and where the news is.
+    // `preventScroll`, because focusing the scroller must not undo the scroll
+    // this function just performed.
+    scroller.current?.focus({ preventScroll: true });
+  }, [pin]);
   /** put the scroller where THIS session belongs: glued to the tail if that's
    *  where the user was, otherwise back at the offset they were reading. */
   const restore = React.useCallback((): void => {
@@ -395,26 +460,32 @@ export function FeedView(props: {
       else if (lastTop.current > 0 && s.scrollTop === 0 && s.scrollHeight > s.clientHeight) {
         restore();
       }
+      // A conversation that GROWS past its pane while the reader is parked is
+      // exactly when the way back has to appear, and no scroll event fires for
+      // it (#442).
+      syncOffTail();
     });
     ro.observe(el);
     ro.observe(inner);
     return () => ro.disconnect();
-  }, [pin, restore]);
+  }, [pin, restore, syncOffTail]);
 
   // Keyboard path into the conversation (#174, §5.32 "keyboard-complete").
   //
   // The scroller is ONE tab stop — a labelled region — and the arrow keys move
-  // between the expanders inside it, which are real buttons carrying
-  // `data-feed-expander` (see `FeedExpander`). The list is read off the DOM at
-  // keystroke time rather than kept in state: the DOM already holds every
-  // expander in exactly the order the eye reads them, and blocks stream in and
-  // out constantly, so any registry we kept would be a second copy to get wrong.
+  // between the operable controls inside it: the expanders (`FeedExpander`) and,
+  // since #477, the copy buttons on code. `FEED_STOP_SELECTOR` is that list, and
+  // it lives in `feed-keys.ts` next to the keys so a renderer adding a control
+  // has one place to look. The list is read off the DOM at keystroke time rather
+  // than kept in state: the DOM already holds every stop in exactly the order
+  // the eye reads them, and blocks stream in and out constantly, so any registry
+  // we kept would be a second copy to get wrong.
   const [inFeed, setInFeed] = React.useState(false);
   const onFeedKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLDivElement>): void => {
     markGesture();
     const root = scroller.current;
     if (!root) return;
-    const els = Array.from(root.querySelectorAll<HTMLElement>(`[${FEED_EXPANDER_ATTR}]`));
+    const els = Array.from(root.querySelectorAll<HTMLElement>(FEED_STOP_SELECTOR));
     const active = root.ownerDocument.activeElement as HTMLElement | null;
     const action = feedKeyAction(e.key, {
       count: els.length,
@@ -483,8 +554,11 @@ export function FeedView(props: {
     // reads as being inside a conversation
     root.scrollTop += el.getBoundingClientRect().top - root.getBoundingClientRect().top - 24;
     lastTop.current = root.scrollTop;
+    // `jumpTo` unpinned on purpose; say so on screen in the same commit rather
+    // than waiting for the scroll event this write will fire (#442)
+    syncOffTail();
     requestAnimationFrame(() => (autoPin.current = false));
-  }, [jumpedTo]);
+  }, [jumpedTo, syncOffTail]);
   const clearReveal = React.useCallback(() => setReveal(NO_REVEAL), []);
   React.useEffect(() => {
     if (!props.cardId) return; // a card with no durable id cannot be addressed
@@ -600,6 +674,9 @@ export function FeedView(props: {
             // up while a pin is in flight is never yanked back.
             const away = el.scrollHeight - el.scrollTop - el.clientHeight;
             if (pinned.current && away >= 40 && Date.now() - lastGesture.current > GESTURE_MS) pin();
+            // our own scrolls do not change the pin, but they are the frame in
+            // which a `jumpTo` unpin becomes visible (#442)
+            syncOffTail();
             return;
           }
           // Nobody touched anything: this scroll came from LAYOUT (the approval
@@ -608,6 +685,7 @@ export function FeedView(props: {
           // put them back on it rather than leaving output below the fold.
           if (Date.now() - lastGesture.current > GESTURE_MS) {
             if (pinned.current) pin();
+            syncOffTail();
             return;
           }
           // a real gesture, and a continuing one keeps the window alive so a
@@ -616,6 +694,7 @@ export function FeedView(props: {
           pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
           lastTop.current = el.scrollTop;
           owesRestore.current = false; // the user has taken the wheel
+          syncOffTail();
         }}
         style={{ flex: 1, minBlockSize: 0, overflowY: 'auto', fontSize: 12, lineHeight: 1.5, paddingBlock: 6 }}
       >
@@ -642,7 +721,11 @@ export function FeedView(props: {
               current verbosity filters out has plenty of conversation, and
               telling its owner there is none would be a confident lie */}
           {blocks.length === 0 && !cleared && (
-            <EmptyState binding={props.binding ?? 'awaiting-prompt'} diag={props.bindingDiag ?? null} />
+            <EmptyState
+              binding={props.binding ?? 'awaiting-prompt'}
+              diag={props.bindingDiag ?? null}
+              transport={props.transport}
+            />
           )}
           {/* the find bar's reveal set reaches the collapsible renderers from
               here — see lib/feed-reveal for why it is a context and not props */}
@@ -660,6 +743,43 @@ export function FeedView(props: {
           <div ref={bottom} />
         </div>
       </div>
+      {/* The way back to the tail (#442), and it is here for two reasons: it is
+          where the eye already is — the bottom of the conversation, right above
+          the composer — and it is the ONE place that makes the keyboard path a
+          single step. The conversation is one tab stop and the composer is the
+          next; a control between them is reached with one Tab from the feed and
+          one Shift+Tab from the composer. In the header strip it would have sat
+          behind three verbosity chips (§5.32).
+          Only while there is somewhere to go: unpinned AND overflowing. */}
+      {offTail && (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            paddingBlock: 3,
+            borderBlockStart: '1px solid var(--border)',
+            background: 'var(--panel2)',
+          }}
+        >
+          <button
+            data-feed-jump-latest=""
+            onClick={jumpToLatest}
+            title={t('feedView.jumpLatestHint')}
+            style={{
+              background: 'var(--chip)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-chip)',
+              color: 'var(--text)',
+              fontFamily: 'var(--font-ui)',
+              fontSize: 9.5,
+              padding: '1px 8px',
+              cursor: 'pointer',
+            }}
+          >
+            {t('feedView.jumpLatest')}
+          </button>
+        </div>
+      )}
       {/* the working banner — LOUD by request (Dan, twice): full-width tinted
           bar, bold LEFT-aligned label, staggered pulse dots to its right
           (Dan round 4: text left, dots right of the text, no ellipsis) */}
@@ -708,6 +828,7 @@ export function FeedView(props: {
         autonomy={props.autonomy}
         model={props.model}
         status={props.status}
+        transport={props.transport}
         onCycleAutonomy={props.onCycleAutonomy}
       />
     </div>
@@ -988,12 +1109,15 @@ function Composer({
   autonomy,
   model,
   status,
+  transport,
   onCycleAutonomy,
 }: {
   sessionId: string;
   autonomy?: string;
   model?: string;
   status?: string;
+  /** P2-E10-09: only a typed-message transport can carry a pasted image */
+  transport?: 'pty' | 'stream';
   onCycleAutonomy?: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
@@ -1001,6 +1125,212 @@ function Composer({
   const box = React.useRef<HTMLTextAreaElement | null>(null);
   /** the composer's own root — the auto-grow measures the panel through it */
   const root = React.useRef<HTMLDivElement | null>(null);
+
+  // Pasted images (P2-E10-09, §5.10). The clipboard RULES are in
+  // `lib/composer-attachments.ts`; this end only reacts to a paste event and
+  // holds what came out of it.
+  const [attachments, setAttachments] = React.useState<Attachment[]>([]);
+  /** one line of explanation for a paste that produced nothing, or null */
+  const [attachNotice, setAttachNotice] = React.useState<string | null>(null);
+  // A stream session takes typed messages and so can carry an image block; a
+  // PTY session takes KEYSTROKES, and there is no keystroke for a bitmap. The
+  // composer is otherwise deliberately transport-ignorant (`lib/composer.ts`),
+  // and this is the one thing it genuinely cannot discover by trying: the
+  // try-then-fall-back shape exists because both routes deliver the same
+  // thing, which stops being true here. Undefined — a session whose transport
+  // we have not been told — is treated as capable, because the send path
+  // reports a refusal honestly and guessing "no" would break the default.
+  const canAttach = transport !== 'pty';
+
+  /**
+   * Ctrl+V.
+   *
+   * A clipboard with NO files is not our business at all — we never call
+   * `preventDefault`, never touch the draft, and the browser pastes text
+   * exactly as it always did. That is the "plain text is completely
+   * unaffected" clause, and it is the first branch on purpose.
+   *
+   * A clipboard with BOTH text and an image keeps both: the default paste runs
+   * (so the words land at the caret) AND the image attaches beside it. A
+   * spreadsheet range or a copied web selection gives you both halves, and
+   * dropping either one silently is the bug report.
+   */
+  /**
+   * The ONE intake, shared by paste and drop.
+   *
+   * The reference's paste handler and drop handler both end in a single
+   * `onAddFiles(FileList)`, and so do ours: everything after "here are some
+   * files" — the classification, the cap, the message — must not be able to
+   * differ between the two routes, because a user who is told a `.md` is
+   * unsupported when pasted and fine when dropped has found a bug rather than a
+   * feature.
+   *
+   * `preRejected` is the one thing drop knows that paste cannot: a folder was
+   * in the transfer. It is reported only when nothing else went wrong, so a
+   * drop of "one folder and one 40 MB video" leads with the reason the FILE was
+   * refused rather than with the folder.
+   */
+  /**
+   * Every interpolation is passed to every message: ICU ignores an argument a
+   * string does not name, and a limit quoted in prose is a limit that drifts
+   * from the constant the moment either one moves.
+   */
+  const attachMessage = (reason: AttachmentRejection): string =>
+    t(`feedView.attach.${reason}`, {
+      max: MAX_ATTACHMENTS,
+      limit: formatBytes(MAX_ENCODED_FILE_BYTES),
+      textLimit: formatBytes(MAX_ATTACHMENT_PAYLOAD_BYTES),
+    });
+
+  const addFiles = (
+    files: File[],
+    origin: 'paste' | 'drop' = 'paste',
+    preRejected: AttachmentRejection | null = null
+  ): void => {
+    // A FOLDER is reported before the transport is: "files can only be sent in
+    // Direct mode — use the Terminal tab instead" is nonsense advice about a
+    // folder, which cannot be attached by any session in any mode.
+    if (preRejected === 'directory' && files.length === 0) {
+      setAttachNotice(attachMessage('directory'));
+      return;
+    }
+    if (!canAttach) {
+      setAttachNotice(t('feedView.attach.terminalMode'));
+      return;
+    }
+    if (files.length === 0) {
+      // A transfer that yielded NOTHING still has to say something. Some drag
+      // sources (Outlook, archive tools, virtual-file providers) advertise
+      // `Files` and then hand over items whose `getAsFile()` is null — and
+      // "nothing appeared and nothing was said" is the #163 failure. Note this
+      // branch never clears an existing notice with `null`: a route that did
+      // nothing has no business erasing the explanation of the last one.
+      setAttachNotice(attachMessage(preRejected ?? 'unreadable'));
+      return;
+    }
+    void (async () => {
+      try {
+        const outcome = await readAttachments(files, attachments.length, origin);
+        // The cap is re-applied inside the functional update, not just from the
+        // `attachments.length` read above: two transfers in flight at once both
+        // measured the same "before", and the state is the only thing that
+        // knows what actually landed. An overflow here is silent — the notice
+        // was computed against a stale count — which is acceptable only because
+        // reaching it needs two transfers racing into the same full draft.
+        if (outcome.attachments.length > 0)
+          setAttachments((prev) => [...prev, ...outcome.attachments].slice(0, MAX_ATTACHMENTS));
+        const reason = outcome.rejected ?? preRejected;
+        setAttachNotice(reason ? attachMessage(reason) : null);
+      } catch {
+        // `readAttachments` is DOCUMENTED not to throw, which is not the same
+        // as being unable to: a `File`-like from an exotic drag source with no
+        // `name` or `type` would throw inside the classifier. A documented
+        // invariant is not an enforced one, and "our breakage never blocks a
+        // session" is a hard constraint (PHILOSOPHY §3).
+        setAttachNotice(attachMessage('unreadable'));
+      }
+    })();
+  };
+
+  const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>): void => {
+    const files = filesFrom(e.clipboardData);
+    if (files.length === 0) return; // plain text — untouched, as if we did not exist
+    // Nothing to insert, so suppress the default paste (which would otherwise
+    // drop a file NAME into the box on some platforms). BEFORE the transport
+    // check, deliberately: a Terminal-mode session cannot take the picture, but
+    // the words on the same clipboard are still the user's and still belong in
+    // the box.
+    if (!hasPlainText(e.clipboardData)) e.preventDefault();
+    addFiles(files, 'paste');
+  };
+
+  /**
+   * Drag & drop (P2-E10-10).
+   *
+   * `dragDepth` and not a boolean: `dragenter`/`dragleave` fire for every
+   * descendant the pointer crosses, so a naive boolean flickers off the moment
+   * the cursor moves from the composer's padding onto the textarea inside it. A
+   * counter is the standard fix and the only one that survives a nested layout.
+   *
+   * THE COMPOSER SWALLOWS THE DROP — `stopPropagation`, exactly as the
+   * reference's handler does. That matters here in a way it does not there,
+   * because `App.tsx` has a WINDOW-level drop listener that turns a dropped
+   * FOLDER into a new session (E3-04). Without the stop, dropping a `.md` on
+   * the prompt box would attach the file AND ask the window to open it as a
+   * session. Every other surface is untouched: the window listener still sees
+   * every drop that does not land on a composer.
+   */
+  const [dragDepth, setDragDepth] = React.useState(0);
+  const dragging = dragDepth > 0;
+
+  /** a drag carrying FILES, as opposed to a text selection or an internal drag */
+  const hasFiles = (dt: DataTransfer | null): boolean =>
+    Array.from(dt?.types ?? []).includes('Files');
+
+  /**
+   * THE ESCAPE HATCH for the counter.
+   *
+   * Every `dragenter` is supposed to be matched by a `dragleave` or a `drop`,
+   * and if that ever fails to hold the overlay stays up over a composer the
+   * user is trying to type into. `dragend` fires on the source when a drag
+   * finishes ANY way — cancelled with Esc, dropped on another window, abandoned
+   * — and a window-level `drop` catches the case where the pointer left us and
+   * landed somewhere else. Both simply zero the counter, so a stuck overlay
+   * cannot outlive the drag that caused it.
+   */
+  React.useEffect(() => {
+    const clear = (): void => setDragDepth(0);
+    window.addEventListener('dragend', clear);
+    window.addEventListener('drop', clear);
+    return () => {
+      window.removeEventListener('dragend', clear);
+      window.removeEventListener('drop', clear);
+    };
+  }, []);
+
+  const onDragEnter = (e: React.DragEvent<HTMLDivElement>): void => {
+    if (!hasFiles(e.dataTransfer)) return;
+    e.preventDefault();
+    setDragDepth((d) => d + 1);
+  };
+
+  const onDragOver = (e: React.DragEvent<HTMLDivElement>): void => {
+    if (!hasFiles(e.dataTransfer)) return;
+    // preventDefault on dragover is what MAKES this a drop target; without it
+    // the browser refuses the drop and shows the "no entry" cursor
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+  };
+
+  /**
+   * NOT guarded on `hasFiles`, deliberately — unlike its enter twin.
+   *
+   * The counter only balances if enter and leave agree about every event, and
+   * they read the same `dataTransfer.types` at two different moments in a drag.
+   * A source that advertises `Files` on the way in and not on the way out would
+   * increment and never decrement. `Math.max(0, …)` already floors it and only
+   * one drag can be in flight, so an unconditional decrement is strictly safer
+   * than a symmetric guard.
+   */
+  const onDragLeave = (): void => setDragDepth((d) => Math.max(0, d - 1));
+
+  const onDrop = (e: React.DragEvent<HTMLDivElement>): void => {
+    // BEFORE the guard: a drop is the end of a drag however it is shaped, and a
+    // counter left standing here is exactly the stuck overlay above.
+    setDragDepth(0);
+    if (!hasFiles(e.dataTransfer)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    // SYNCHRONOUS, before any await: a DataTransfer is neutered the instant the
+    // handler returns, so the folder/file split has to happen now
+    const { files, directories } = filesFromDrop(e.dataTransfer);
+    addFiles(files, 'drop', directories.length > 0 ? 'directory' : null);
+  };
+
+  const removeAttachment = (id: string): void => {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+    setAttachNotice(null);
+  };
 
   // Slash-command autocomplete (E10-07, §5.10): typing '/' as the FIRST
   // character pops the list — CLI builtins + the project's/user's own
@@ -1115,7 +1445,12 @@ function Composer({
   }, []);
   // A LAYOUT effect: the height is written in the same commit as the new text,
   // so the box never paints a frame at the old size.
-  React.useLayoutEffect(grow, [draft, grow]);
+  // `attachments` is in here for the same reason `draft` is: the strip lives
+  // inside the composer's own root, so attaching or removing an image changes
+  // how much room `roomForBox` finds for the textarea. Without it a paste made
+  // with a twelve-line draft on screen leaves the box at a height its panel no
+  // longer has, which is #406's overhang arriving through a new door.
+  React.useLayoutEffect(grow, [draft, attachments, grow]);
   // A NARROWER box wraps the same text into more lines, and a SHORTER panel has
   // less to spare — dragging a splitter or resizing the window re-renders
   // nothing, so without this a long draft keeps a height its panel no longer
@@ -1146,20 +1481,65 @@ function Composer({
     return () => ro.disconnect();
   }, [grow]);
 
+  /** something to send: words, a picture, or both (E10-09) */
+  const sendable = draft.trim().length > 0 || attachments.length > 0;
+
   const submit = (): void => {
     const text = draft.replace(/\r\n/g, '\n').trimEnd();
-    if (!text) return;
-    // transport-agnostic (P2-E18-08a): main answers whether it took it, and
-    // this falls back to the PTY dance if not
-    void submitPrompt(sessionId, text);
-    setDraft('');
-    setDismissed(false);
+    // An attachment with nothing typed IS a prompt (§5.10's composer is an
+    // input route, and "look at this" is a thing people send), so the guard is
+    // on BOTH being empty rather than on the text alone.
+    if (!text && attachments.length === 0) return;
+
+    if (attachments.length === 0) {
+      // The path this composer has always had, byte for byte: transport-
+      // agnostic (P2-E18-08a), main answers whether it took it, and this falls
+      // back to the PTY dance if not. A text prompt cannot be refused — one of
+      // the two routes always accepts it — so the box clears immediately and
+      // the send stays as snappy as it was.
+      void submitPrompt(sessionId, text);
+      setDraft('');
+      setDismissed(false);
+      setAttachNotice(null);
+      box.current?.focus();
+      return;
+    }
+
+    // WITH ATTACHMENTS the send can genuinely fail (no PTY fallback carries a
+    // bitmap or a document block), so the draft is cleared only once we know it
+    // went.
+    // The exact set being sent, captured now. Reading a dropped file takes real
+    // time — a 4 MB log is not a clipboard bitmap — so a transfer can land
+    // BETWEEN this submit and its acknowledgement. Clearing the strip wholesale
+    // would eat that new attachment; removing only what we sent leaves it for
+    // the next prompt, which is where the user put it.
+    const sending = attachments;
+    const sent = new Set(sending.map((a) => a.id));
+    void submitPrompt(sessionId, text, toPromptAttachments(sending)).then((ok) => {
+      if (!ok) {
+        // Everything stays exactly where it was. Clearing a composer whose
+        // contents went nowhere is the one outcome the user cannot undo, and a
+        // pasted screenshot is not recoverable from the clipboard a minute
+        // later.
+        setAttachNotice(t('feedView.attach.notSent'));
+        return;
+      }
+      setDraft('');
+      setDismissed(false);
+      setAttachments((prev) => prev.filter((a) => !sent.has(a.id)));
+      setAttachNotice(null);
+    });
     box.current?.focus();
   };
 
   return (
     <div
       ref={root}
+      data-composer-dropzone={dragging ? 'active' : ''}
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
       style={{
         position: 'relative',
         display: 'flex',
@@ -1170,6 +1550,34 @@ function Composer({
         background: 'var(--panel2)',
       }}
     >
+      {/* The drop hint. `pointer-events:none` is load-bearing: an overlay that
+          takes the pointer would sit between the cursor and the composer and
+          fire `dragleave` the instant it appeared, which flickers the state and
+          then swallows the drop. Purely additive — it is absolutely positioned
+          over the composer, so it costs the height clamp nothing and a session
+          nobody is dragging onto is byte-for-byte the composer that shipped. */}
+      {dragging && (
+        <div
+          data-composer-drop-hint=""
+          style={{
+            position: 'absolute',
+            inset: 4,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: '1px dashed var(--accent)',
+            borderRadius: 'var(--radius)',
+            background: 'var(--panel)',
+            opacity: 0.94,
+            color: 'var(--muted)',
+            fontSize: 11,
+            pointerEvents: 'none',
+            zIndex: 2,
+          }}
+        >
+          {t('feedView.attach.dropHint')}
+        </div>
+      )}
       {popupOpen && (
         <div
           style={{
@@ -1231,10 +1639,20 @@ function Composer({
           })}
         </div>
       )}
+      {/* attachments (E10-09) sit INSIDE the composer's own root, above the
+          box: that is what makes `roomForBox` count them as chrome, so the
+          textarea's twelve-line cap is measured against the room actually
+          left rather than fighting the strip for it */}
+      <ComposerAttachments
+        attachments={attachments}
+        notice={attachNotice}
+        onRemove={removeAttachment}
+      />
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6 }}>
       <textarea
         ref={box}
         value={draft}
+        onPaste={onPaste}
         onChange={(e) => {
           setDraft(e.target.value);
           setDismissed(false);
@@ -1334,16 +1752,17 @@ function Composer({
       )}
       <button
         onClick={submit}
-        disabled={!draft.trim()}
+        // an attached image with nothing typed is a sendable prompt (E10-09)
+        disabled={!sendable}
         title={t('feedView.send')}
         style={{
-          background: draft.trim() ? 'var(--btn-primary-bg)' : 'var(--chip)',
-          color: draft.trim() ? 'var(--btn-primary-text)' : 'var(--faint)',
+          background: sendable ? 'var(--btn-primary-bg)' : 'var(--chip)',
+          color: sendable ? 'var(--btn-primary-text)' : 'var(--faint)',
           border: '1px solid var(--border)',
           borderRadius: 8,
           inlineSize: 30,
           blockSize: 30,
-          cursor: draft.trim() ? 'pointer' : 'default',
+          cursor: sendable ? 'pointer' : 'default',
           fontSize: 14,
           lineHeight: 1,
         }}

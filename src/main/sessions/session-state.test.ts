@@ -294,6 +294,141 @@ describe('a live session owns its state dir; a dead one does not (#290)', () => 
     expect(log.warnings).toEqual([]);
   });
 
+  // #470. The directory was only half of what a failed start strands: the hook
+  // token `settingsFor` registered lives in `HookListener`'s map, which this
+  // class cannot reach — so the undo travels in with the caller that supplied
+  // `settingsFor`, and every throw between the two goes through it.
+  describe('a start that fails gives back the IN-MEMORY half too (#470)', () => {
+    /** A registry whose `buildSpawn` writes the real settings file and then
+     *  does whatever the test needs — the window between `settingsFor` and the
+     *  spawn, where a directory and a token both already exist. */
+    function registryThat(after: (o: { sessionId: string }) => Partial<{
+      transport: 'pty' | 'stream';
+    }>): ContributionRegistry<MainContributions> {
+      const r = new ContributionRegistry<MainContributions>();
+      r.register('provider-adapter', {
+        manifest: { id: 'fake', displayName: 'Fake', version: '0', capabilities: ['sessions.spawn'] },
+        buildSpawn: (o) => {
+          const settings = writeSessionSettings(o.stateDir, o.sessionId, o.settings ?? {});
+          return { command: 'fake-cli', args: ['--settings', settings], env: {}, ...after(o) };
+        },
+      });
+      return r;
+    }
+
+    const exploding = {
+      spawn: () => {
+        throw new Error('ENOENT: no such file or directory, spawn fake-cli');
+      },
+      remove: () => {},
+    } as unknown as PtyLike;
+
+    it('a failed SPAWN releases the settings it registered, for the id it registered them under', () => {
+      const log = captureLog();
+      const released: string[] = [];
+      const registered: string[] = [];
+      const m = new SessionManager(settingsWritingRegistry(), exploding, log, stateDir);
+
+      expect(() =>
+        m.create(identity, {
+          settingsFor: (id) => {
+            registered.push(id);
+            return { hooks: {} };
+          },
+          releaseSettingsFor: (id) => released.push(id),
+        })
+      ).toThrow(/spawn fake-cli/);
+
+      expect(released).toEqual(registered);
+      expect(released).toHaveLength(1);
+      expect(fs.readdirSync(stateDir)).toEqual([]);
+      expect(log.warnings).toEqual([]);
+    });
+
+    it('so does a start that throws BEFORE the spawn — buildSpawn had already written', () => {
+      // `buildSpawn` writes `settings.json` and can throw after it; the id is
+      // just as stranded, and nothing else ever runs for it.
+      const log = captureLog();
+      const released: string[] = [];
+      const m = new SessionManager(
+        registryThat(() => {
+          throw new Error('adapter blew up after writing');
+        }),
+        new Ptys(),
+        log,
+        stateDir
+      );
+
+      expect(() =>
+        m.create(identity, {
+          settingsFor: () => ({ hooks: {} }),
+          releaseSettingsFor: (id) => released.push(id),
+        })
+      ).toThrow(/blew up after writing/);
+
+      expect(released).toHaveLength(1);
+      expect(fs.readdirSync(stateDir)).toEqual([]);
+    });
+
+    it('...and an unresolvable transport, which used to claim it left nothing behind', () => {
+      // The comment above `resolveTransport`'s call site said this throw leaves
+      // nothing behind. True of the RECORD, and it stopped being true of disk
+      // the day #290 gave the id a directory: by that line `buildSpawn` has
+      // already written into it.
+      const log = captureLog();
+      const released: string[] = [];
+      const m = new SessionManager(
+        registryThat(() => ({ transport: 'stream' })), // only the PTY is wired
+        new Ptys(),
+        log,
+        stateDir
+      );
+
+      expect(() =>
+        m.create(identity, {
+          settingsFor: () => ({ hooks: {} }),
+          releaseSettingsFor: (id) => released.push(id),
+        })
+      ).toThrow(/stream/);
+
+      expect(released).toHaveLength(1);
+      expect(fs.readdirSync(stateDir)).toEqual([]);
+      expect(m.list()).toHaveLength(0);
+    });
+
+    it('a caller with nothing to give back is not asked for anything', () => {
+      // No hooks capability = no `settingsFor` and no `releaseSettingsFor`.
+      // The directory half still happens.
+      const log = captureLog();
+      const m = new SessionManager(settingsWritingRegistry(), exploding, log, stateDir);
+
+      expect(() => m.create(identity)).toThrow(/spawn fake-cli/);
+
+      expect(fs.readdirSync(stateDir)).toEqual([]);
+      expect(log.warnings).toEqual([]);
+    });
+
+    it('a release that THROWS is one warning, and the real error still reaches the caller', () => {
+      // This runs on the way to re-throwing the reason the session did not
+      // start. A cleanup that replaced that error with its own would tell the
+      // caller nothing about the actual failure (P6).
+      const log = captureLog();
+      const m = new SessionManager(settingsWritingRegistry(), exploding, log, stateDir);
+
+      expect(() =>
+        m.create(identity, {
+          settingsFor: () => ({ hooks: {} }),
+          releaseSettingsFor: () => {
+            throw new Error('listener is gone');
+          },
+        })
+      ).toThrow(/spawn fake-cli/); // NOT "listener is gone"
+
+      expect(log.warnings).toEqual(['could not release session settings after a failed start']);
+      expect(fs.readdirSync(stateDir)).toEqual([]);
+    });
+  });
+
   it('a RESUMED session gets its own fresh directory — nothing a resume needs was deleted', () => {
     // The load-bearing claim behind deleting at exit rather than at card
     // forget: `create()` mints a NEW id every spawn, and `buildSpawn` writes a

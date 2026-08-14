@@ -222,6 +222,29 @@ describe('token-by-token assistant text', () => {
     expect(feed.blocks(SID).map((b) => b.seq)).toEqual([1, 2]);
   });
 
+  // #458. Session find lines the transcript up with the Feed on `srcId`, and a
+  // Direct session's tool row exists for as long as the tool RUNS before the
+  // `assistant` message that fills it in arrives — which for a Bash call is the
+  // whole of it. A row that only became addressable at the end would leave find
+  // refusing to jump for exactly the stretch a user is most likely to search.
+  it('a tool row is addressable from the moment it opens, not once it finishes', () => {
+    feed.offer(
+      SID,
+      ev({
+        type: 'content_block_start',
+        index: 0,
+        content_block: { type: 'tool_use', id: 'toolu_1', name: 'Read', input: {} },
+      })
+    );
+    expect(feed.blocks(SID)[0]).toMatchObject({ srcId: 'tool:toolu_1', streaming: true });
+
+    // …and the message that supersedes it derives the identical value, so the
+    // block does not change identity underneath a search in flight.
+    feed.offer(SID, assistant([{ type: 'tool_use', id: 'toolu_1', name: 'Read', input: {} }]));
+    expect(feed.blocks(SID)).toHaveLength(1);
+    expect(emitted(1)).toMatchObject({ srcId: 'tool:toolu_1', streaming: false });
+  });
+
   it('deltas with no content_block_start still render (the CLI owns that message)', () => {
     feed.offer(SID, textDelta('sudden'));
     feed.offer(SID, assistant([{ type: 'text', text: 'sudden text' }]));

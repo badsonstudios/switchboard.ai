@@ -41,7 +41,15 @@ vi.mock('child_process', async (importOriginal) => {
   return { ...real, execFileSync: h.execFileSync };
 });
 
-import { killTree, launchApp } from './app';
+import {
+  E2E_MONITOR_ENV,
+  killTree,
+  launchApp,
+  onTestDisplay,
+  pickTestDisplay,
+  translateToDisplay,
+  type DisplayInfo,
+} from './app';
 
 /**
  * A stand-in `ElectronApplication`.
@@ -67,6 +75,38 @@ function fakeApp(pid: number | undefined) {
 /** A window whose load state resolves — the happy path. */
 function fakeWindow() {
   return { waitForLoadState: vi.fn(async () => {}) };
+}
+
+/** A three-monitor desktop, in the arrangement this was developed on. */
+const FAKE_BOUNDS = { x: 100, y: 50, width: 1280, height: 800 };
+const PRIMARY: DisplayInfo = { id: 1, workArea: { x: 0, y: 0, width: 2560, height: 1392 } };
+const RIGHT: DisplayInfo = { id: 2, workArea: { x: 2560, y: 0, width: 2560, height: 1392 } };
+const LEFT: DisplayInfo = { id: 3, workArea: { x: -2560, y: 0, width: 2560, height: 1392 } };
+
+/**
+ * `app.evaluate` for the display move (#479), without an Electron process.
+ *
+ * The fixture makes exactly two calls: read the displays and the window's
+ * bounds, then apply a box. The stub answers the first from `displays` and
+ * records the second — so a test can assert WHERE the window was sent without
+ * a machine that has two monitors, which CI does not.
+ */
+function fakeDisplays(displays: DisplayInfo[], primaryId: number, on = primaryId) {
+  const applied: Array<{ id: number; box: unknown }> = [];
+  let first = true;
+  const evaluate = vi.fn((_fn: unknown, arg?: unknown) => {
+    if (first) {
+      first = false;
+      // `on` is the display the window is ALREADY on — `primaryId` for a first
+      // launch, the target for the second launch of a relaunch spec.
+      const at = displays.find((d) => d.id === on)!.workArea;
+      const bounds = { ...FAKE_BOUNDS, x: FAKE_BOUNDS.x + at.x, y: FAKE_BOUNDS.y + at.y };
+      return Promise.resolve({ displays, primaryId, winId: 7, bounds, onId: on });
+    }
+    applied.push(arg as { id: number; box: unknown });
+    return Promise.resolve(undefined);
+  });
+  return { evaluate, applied };
 }
 
 let scratch: string;
@@ -126,6 +166,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs(); // the display tests (#479) set SWITCHBOARD_E2E_MONITOR
   vi.useRealTimers();
   cleanupTempDirs();
 });
@@ -327,6 +368,233 @@ describe('killTree — both branches, on every CI leg (#235)', () => {
     // and the vitest runner included.
     expect(kill).not.toHaveBeenCalled();
     expect(h.execFileSync).not.toHaveBeenCalled();
+  });
+});
+
+/*
+ * The secondary-monitor switch (#479).
+ *
+ * The whole feature is about a machine with more than one display, and the
+ * machine that has to STAY unaffected — CI — has exactly one. So the two
+ * decisions are pure functions taking a display list as data, and they are
+ * pinned here with desktops no runner has. `launchApp`'s own wiring is then
+ * three cases: off (asks nothing), on (moves), broken (warns, carries on).
+ */
+describe('pickTestDisplay — monitor 1 is the primary, 2..N are the rest (#479)', () => {
+  const three = [RIGHT, PRIMARY, LEFT]; // deliberately NOT primary-first
+
+  it('never lands on the primary, whatever order the displays arrive in', () => {
+    // The reason for the re-ordering at all: `getAllDisplays()` has no
+    // documented order, so a raw index into it could put the suite back on the
+    // working screen — the one outcome that makes the switch pointless. Both
+    // orderings, because the primary-FIRST list is the one where a raw index
+    // would have looked correct.
+    expect(pickTestDisplay(three, PRIMARY.id, '2')?.target).toEqual(RIGHT);
+    expect(pickTestDisplay(three, PRIMARY.id, '3')?.target).toEqual(LEFT);
+    expect(pickTestDisplay([PRIMARY, RIGHT, LEFT], PRIMARY.id, '2')?.target).toEqual(RIGHT);
+    expect(pickTestDisplay([LEFT, RIGHT, PRIMARY], PRIMARY.id, '2')?.target).toEqual(LEFT);
+  });
+
+  it('reports the primary alongside the target, since the offset is the delta', () => {
+    expect(pickTestDisplay(three, PRIMARY.id, '2')?.primary).toEqual(PRIMARY);
+  });
+
+  it.each([
+    ['unset', undefined],
+    ['empty', ''],
+    ['blank', '   '],
+    ['junk', 'yes'],
+    ['a fraction', '1.5'],
+    ['zero', '0'],
+    ['negative', '-1'],
+    ['monitor 1 — the primary, i.e. today', '1'],
+    ['past the end', '4'],
+  ])('does nothing when the value is %s', (_what, value) => {
+    expect(pickTestDisplay(three, PRIMARY.id, value)).toBeNull();
+  });
+
+  it('does nothing on a single-display machine — which is every CI runner', () => {
+    expect(pickTestDisplay([PRIMARY], PRIMARY.id, '2')).toBeNull();
+  });
+
+  it('does nothing when the primary is not in the list at all', () => {
+    // Not reachable through Electron, but the offset is defined as a delta FROM
+    // the primary — with no primary there is no offset, and guessing one would
+    // put every absolute box in the suite somewhere arbitrary.
+    expect(pickTestDisplay([RIGHT, LEFT], PRIMARY.id, '2')).toBeNull();
+  });
+});
+
+describe('translateToDisplay — shift, do not re-centre (#479)', () => {
+  it('preserves the position WITHIN the display, so relative geometry survives', () => {
+    expect(translateToDisplay(FAKE_BOUNDS, PRIMARY.workArea, RIGHT.workArea)).toEqual({
+      x: 2660,
+      y: 50,
+      width: 1280,
+      height: 800,
+    });
+  });
+
+  it('handles a display to the LEFT, where the offset is negative', () => {
+    expect(translateToDisplay(FAKE_BOUNDS, PRIMARY.workArea, LEFT.workArea)).toEqual({
+      x: -2460,
+      y: 50,
+      width: 1280,
+      height: 800,
+    });
+  });
+
+  it('shrinks and pulls back a window that would not fit the target', () => {
+    const small = { x: 1000, y: 0, width: 800, height: 600 };
+    expect(translateToDisplay(FAKE_BOUNDS, PRIMARY.workArea, small)).toEqual({
+      // shrunk to the display's full width, so there is exactly one x that
+      // fits — the shift would have put it at 1100, hanging into whatever sits
+      // to the right of this screen
+      x: 1000,
+      y: 0,
+      width: 800,
+      height: 600,
+    });
+  });
+
+  it('clamps to the far edge without shrinking, when the window does fit', () => {
+    // The other half of the clamp, where "shrunk" and "moved" are separable:
+    // a 1280-wide window shifted to x=2500 on a 2000-wide screen comes back to
+    // 2000 - 1280 = 720 (plus the target's origin) at its original size.
+    const target = { x: 0, y: 0, width: 2000, height: 1000 };
+    expect(translateToDisplay({ x: 2500, y: 10, width: 1280, height: 800 }, target, target)).toEqual(
+      { x: 720, y: 10, width: 1280, height: 800 }
+    );
+  });
+});
+
+describe('onTestDisplay — the specs’ view of the switch (#479)', () => {
+  const box = { x: 160, y: 240, width: 620, height: 500 };
+  const withOffset = (displayOffset: { x: number; y: number }) =>
+    ({ displayOffset }) as unknown as Parameters<typeof onTestDisplay>[0];
+
+  it('returns the box’s own numbers when the switch is off', () => {
+    // THE hard requirement of this item: every converted spec calls this, so if
+    // it is not the identity at `{0,0}` then CI is not running what it ran
+    // before.
+    expect(onTestDisplay(withOffset({ x: 0, y: 0 }), box)).toEqual(box);
+  });
+
+  it('shifts by the offset and touches nothing else', () => {
+    expect(onTestDisplay(withOffset({ x: 2560, y: -40 }), box)).toEqual({
+      x: 2720,
+      y: 200,
+      // the size is the spec's, always — this moves a window, it does not
+      // resize one (unlike `translateToDisplay`, which has a display to fit)
+      width: 620,
+      height: 500,
+    });
+  });
+
+  it('carries extra properties through, and does not mutate the argument', () => {
+    const tagged = { ...box, label: 'viewer' };
+    expect(onTestDisplay(withOffset({ x: 10, y: 20 }), tagged).label).toBe('viewer');
+    expect(tagged.x).toBe(160);
+  });
+});
+
+describe('launchApp — the display move (#479)', () => {
+  function launchable(evaluate?: unknown) {
+    const f = fakeApp(999_479);
+    f.handle.firstWindow.mockResolvedValue(fakeWindow());
+    if (evaluate) Object.assign(f.handle, { evaluate });
+    h.launch.mockResolvedValue(f.handle);
+    return f;
+  }
+
+  it('asks the app NOTHING when the switch is off — the CI path', async () => {
+    // Stubbed to EMPTY rather than trusted to be absent. The developer most
+    // likely to have this exported in their shell is the one this feature was
+    // built for, and inheriting it here would fail their unit suite with a
+    // message naming the wrong cause — the same trap `launchApp` scrubs
+    // `SWITCHBOARD_TRANSPORT` for.
+    vi.stubEnv(E2E_MONITOR_ENV, '');
+    const displays = fakeDisplays([PRIMARY, RIGHT], PRIMARY.id);
+    launchable(displays.evaluate);
+
+    const launched = await launchApp();
+
+    // Not "moved nothing": did not evaluate at all. An `app.evaluate` per launch
+    // is a round-trip into the main process ~160 times a run, and the default
+    // has to be byte-identical to what came before.
+    expect(displays.evaluate).not.toHaveBeenCalled();
+    expect(launched.displayOffset).toEqual({ x: 0, y: 0 });
+    await launched.cleanup();
+  });
+
+  it('moves the window and reports the offset when it is on', async () => {
+    vi.stubEnv(E2E_MONITOR_ENV, '2');
+    vi.spyOn(console, 'log').mockImplementation(() => {}); // the once-per-worker banner
+    const displays = fakeDisplays([PRIMARY, RIGHT], PRIMARY.id);
+    launchable(displays.evaluate);
+
+    const launched = await launchApp();
+
+    expect(displays.applied).toEqual([
+      { id: 7, box: { x: 2660, y: 50, width: 1280, height: 800 } },
+    ]);
+    // the DELTA between the work areas, not where the window ended up — that is
+    // what `onTestDisplay` adds to a spec's absolute box
+    expect(launched.displayOffset).toEqual({ x: 2560, y: 0 });
+    await launched.cleanup();
+  });
+
+  it('does NOT move a window already on the target — the relaunch case', async () => {
+    // The bug this pins cost a red gate run: the app persists window geometry,
+    // so launch 2 of a relaunch spec restores a window that is already over
+    // there. Translating THAT from the primary again pushed it another screen
+    // right, the clamp pulled it back to the edge, and every popout restored
+    // opener-relative to it inherited the 640px error (session.spec E8-02).
+    vi.stubEnv(E2E_MONITOR_ENV, '2');
+    const displays = fakeDisplays([PRIMARY, RIGHT], PRIMARY.id, RIGHT.id);
+    launchable(displays.evaluate);
+
+    const launched = await launchApp();
+
+    expect(displays.applied).toEqual([]);
+    // ...and the offset is still reported, because it describes the DISPLAY,
+    // not the move: `onTestDisplay` has to answer the same on both launches or
+    // a spec's absolute box lands somewhere different the second time.
+    expect(launched.displayOffset).toEqual({ x: 2560, y: 0 });
+    await launched.cleanup();
+  });
+
+  it('moves nothing when the machine has one display — the switch on, in CI', async () => {
+    vi.stubEnv(E2E_MONITOR_ENV, '2');
+    const displays = fakeDisplays([PRIMARY], PRIMARY.id);
+    launchable(displays.evaluate);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const launched = await launchApp();
+
+    // It ASKS — the display list is the only way to know — and then leaves the
+    // window alone. Both halves are asserted: exactly ONE evaluate (the query,
+    // never the setBounds), which is the precise complement of the switch-off
+    // case's "not called at all".
+    expect(displays.evaluate).toHaveBeenCalledTimes(1);
+    expect(displays.applied).toEqual([]);
+    expect(launched.displayOffset).toEqual({ x: 0, y: 0 });
+    await launched.cleanup();
+  });
+
+  it('fails OPEN — a display query that throws does not fail the launch', async () => {
+    vi.stubEnv(E2E_MONITOR_ENV, '2');
+    launchable(() => Promise.reject(new Error('no screen module')));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    // The switch is developer comfort. It must never be the reason a suite goes
+    // red, and it must not route the launch into the reaping path either — the
+    // app comes back alive, with the offset it really has.
+    const launched = await launchApp();
+
+    expect(launched.displayOffset).toEqual({ x: 0, y: 0 });
+    expect(warn).toHaveBeenCalled();
+    await launched.cleanup();
   });
 });
 

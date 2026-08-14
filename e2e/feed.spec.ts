@@ -779,4 +779,74 @@ test.describe('[pty] Feed view (E12-06)', () => {
     await box.fill('');
     expect((await measure()).height).toBe(empty.height);
   });
+
+  // P2-E10-11 (#477). The one thing only the real app can settle: a click on the
+  // copy button reaches the SYSTEM clipboard. Everything else about the
+  // affordance — what the button says, which fence it belongs to, that a forged
+  // one cannot hijack it — is pinned in the unit tests; this is the round trip,
+  // read back through Electron's own `clipboard` in the main process.
+  test('copying code from the conversation reaches the system clipboard (#477)', async () => {
+    const NL = String.fromCharCode(10); // this file's idiom for a newline in a fixture
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
+
+    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
+    fs.mkdirSync(dir, { recursive: true });
+    const line = (o: Record<string, unknown>): string =>
+      JSON.stringify({ sessionId: 'native-copy', cwd: folder, timestamp: new Date().toISOString(), ...o }) + NL;
+    // two lines, so "it copied the whole fence" is a different answer from "it
+    // copied the line you could see"
+    const FENCE = ['npm run build', 'npm test', ''].join(NL);
+    const OUT = ['COPY_OUT', 'COPY_OUT_LINE2'].join(NL);
+    fs.writeFileSync(
+      path.join(dir, 'native-copy.jsonl'),
+      line({ type: 'user', message: { role: 'user', content: 'COPY_PROMPT' } }) +
+        line({
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'text', text: ['Run this:', '', '```bash', FENCE + '```', ''].join(NL) },
+              { type: 'tool_use', id: 'c1', name: 'Bash', input: { command: 'echo COPY_CMD', description: 'Copy check' } },
+            ],
+          },
+        }) +
+        line({
+          type: 'user',
+          message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'c1', content: OUT }] },
+        })
+    );
+
+    // start from a clipboard we know is not the answer
+    await a.app.evaluate(({ clipboard }) => clipboard.writeText('CLIPBOARD_UNTOUCHED'));
+    // Read back through Electron's own clipboard, with line endings normalised:
+    // the Windows clipboard stores CRLF, so the text that comes back is not
+    // byte-identical to the text that went in and never can be. Measured, not
+    // assumed — this test failed on exactly that difference first.
+    const pasted = async (): Promise<string> =>
+      (await a.app.evaluate(({ clipboard }) => clipboard.readText())).replace(/\r\n/g, String.fromCharCode(10));
+
+    // 1. the fence in the reply carries a header with its language and a Copy
+    const fence = w.locator('.feed-code').first();
+    await expect(fence).toBeVisible({ timeout: 20_000 });
+    await expect(fence.locator('.feed-code-lang')).toHaveText('bash');
+    await fence.locator('[data-feed-copy]').click();
+    await expect(fence.locator('[data-feed-copy]')).toHaveText('Copied');
+    // POLLED, not read once: the label flashes synchronously and the write is a
+    // promise, so a bare read races the clipboard by a millisecond or two — it
+    // failed exactly that way the first time this test ran.
+    await expect.poll(pasted, { timeout: 5_000 }).toBe(FENCE);
+
+    // 2. a Bash section offers one too, once it is open — and copies the WHOLE
+    //    section, not the one line a collapsed section shows
+    await expect(w.locator('[data-feed-box="bash"]')).toBeVisible();
+    await w.locator('[data-feed-box="bash"]').click({ position: { x: 3, y: 2 } });
+    const out = w.locator('[data-feed-code]', { hasText: 'COPY_OUT_LINE2' }).last();
+    await out.locator('[data-feed-copy]').click();
+    await expect.poll(pasted, { timeout: 5_000 }).toBe(OUT);
+
+    // 3. and the button says "Copied" only for a moment
+    await expect(fence.locator('[data-feed-copy]')).toHaveText('Copy');
+  });
 });

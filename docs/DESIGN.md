@@ -547,6 +547,34 @@ or sits idle awaiting input, and `Stop` when it finishes. On top:
   the Events panel is the durable record. The setup surface is a modal reached
   from the palette and from About, explicitly provisional until E14's settings
   screen exists.)*
+  *(Per-session sounds + TTS shipped P2-E14-05a. Decisions taken with them:
+  **(a)** the cue **replaces** the unconditional beep in `notifier.ts` rather
+  than joining it — one event makes one noise — so the `sound` rule fires at
+  every visibility, exactly where the beep did, while `speak` follows the
+  toast's WHEN_AWAY (reading out what the user is looking at is slow noise);
+  **(b)** the action payload carries **no cue name** (`{type:'sound'}`) for the
+  same shape of reason `push` carries no destination: which cue a card rings is
+  a property of the CARD (§5.11's identity kit), so the handler resolves it when
+  it fires — a rule written yesterday rings whatever the card sounds like today,
+  and the empty payload keeps `plannedActions`' dedup honest, which is what
+  makes "one event, one sound" true when two rules both ask; **(c)** the bank is
+  eight **synthesized** cues (Web Audio, `shared/sounds.ts`), not .wav assets —
+  data can be unit-tested, localized and shipped without a licensing question or
+  a packaging step, and the cues are chosen to be told APART on a laptop speaker
+  rather than to be pretty; **(d)** a cue is **auto-assigned by workspace
+  position** and user-overridable, mirroring the accent colour, because a hash
+  of the card id collides — with eight cues and four sessions, better than one
+  in three — and "distinguishable" cannot be a coin flip. The stated cost is
+  that deleting a card can shift the cue of the cards after it; pinning is the
+  fix and the manual says so; **(e)** the noise happens in the RENDERER: main
+  has no audio device and Chromium has both a synthesizer and a voice, so this
+  is one code path on all three platforms instead of three shell-outs
+  (`powershell`/`afplay`/`paplay`) with a process spawn on the notification
+  path. The cost — no window, no sound — is covered by the beep fallback, which
+  makes "an attention event always makes a noise" survive a broken audio
+  channel. `SWITCHBOARD_MUTE_AUDIO=1` (non-packaged builds only) makes the sink
+  log instead of sound, so the e2e suite proves the whole chain on the machine
+  its owner is working at without making a sound.)*
 - **Actionable toasts**: permission toasts carry Allow / Deny buttons that send the
   verdict on that session's input route — approve without switching windows.
   *(Shipped P2-E14-04. Three decisions worth recording. **One decision path:**
@@ -712,6 +740,31 @@ be a lie a screen reader passes on to its user. The rule §5.32 already sets
   session store rather than from the panel host: dockview is told a panel's
   title once, when the card is created.
 
+**The composer takes attachments, and only on a typed-message transport**
+*(added 2026-08-13, P2-E10-09; owner request the same day).* A clipboard bitmap
+pasted into the composer attaches as a removable chip and is delivered to the
+CLI as an **inline base64 `image` content block** on the session's stdin —
+which is what the VS Code extension does, verified against the CLI on PATH in
+one turn. No temp file, no `@path` mention, no flag. Two consequences worth
+recording because they are not obvious:
+
+- **This is the first composer capability that is transport-DEPENDENT.** The
+  §5.10 composer has always been able to stay transport-ignorant (try the typed
+  route, fall back to the PTY) precisely because both routes deliver the same
+  thing. A bitmap breaks that: a PTY takes keystrokes and there is no keystroke
+  for a picture. So an attachment submission is Direct-only, is refused rather
+  than downgraded, and the Terminal-mode case is *said out loud* instead of
+  half-sent — a half-sent prompt ("what's wrong with this screenshot?" with no
+  screenshot) is the §5.10 guardrail's own failure mode, faked interaction
+  included.
+- **The CSP holds.** `default-src 'self'` refuses a `data:`/`blob:` image, and
+  §5.30 leans on exactly that. The chip's preview is therefore painted onto a
+  `<canvas>` from bytes we already hold — nothing is fetched and no URL exists —
+  rather than by relaxing `img-src`.
+
+The same chip strip is the landing point for dropped files (P2-E10-10), where
+non-image types become `document` blocks.
+
 **The dot marks an EVENT, not an answer** *(added 2026-08-02, #91).* The
 timeline dot earns its place on things the session or the user *did* — user
 prompts, tool calls, thinking. A plain assistant reply is the answer, and Dan
@@ -833,6 +886,11 @@ Every session carries an identity that renders IDENTICALLY everywhere it appears
   Auto-edit / Full-auto, §5.9) on the card and sidebar — "will this one interrupt
   me?" answered at a glance.
 - Optional: per-session notification sound doubles as an audio identity.
+  *(Shipped P2-E14-05a. Auto-assigned from a bank of eight by workspace
+  position, user-overridable from the card's ⋯ menu, and stored on the CARD
+  (`PersistedSession.sound`) beside `transport` and `autonomy` — so it survives
+  a resume the way the rest of the identity does. Off by default: the global
+  🔊 chip is what turns the one beep into eight cues. Decisions in §5.9.)*
 
 **Auto task labels — the CLI already wrote one** *(added 2026-07-30, owner
 request; the Claude Code VS Code extension does the same thing to its tab text).*

@@ -166,7 +166,9 @@ anything:
   to this card; give it a moment.
 - *"Couldn't find this session's transcript"* — see below.
 
-The Terminal tab is the same session either way, and always works.
+In Terminal mode the Terminal tab is the same session either way, and always
+works. A **[Direct mode](12-direct-mode.md)** session has no terminal to fall
+back to — its Terminal tab says so — and doesn't need one: see below.
 
 **The Session tab says it couldn't find the transcript.**
 The conversation view reads the file Claude Code writes for each session. When
@@ -183,10 +185,19 @@ that file can't be found, the message names what switchboard did see:
   If a Claude Code update moved where conversations are stored, that's what
   this looks like; please report it with the path shown.
 
-**As long as the card is still running, the session itself is fine.** This only
-affects the rendered conversation view — the CLI is running, your work is not
-lost, and the **Terminal** tab shows the session exactly as Claude Code draws
-it. Restarting the app is safe and often enough, since matching starts fresh.
+**As long as the card is still running, the session itself is fine.** In
+**Terminal mode** this only affects the rendered conversation view — the CLI is
+running, your work is not lost, and the **Terminal** tab shows the session
+exactly as Claude Code draws it. Restarting the app is safe and often enough,
+since matching starts fresh.
+
+In **[Direct mode](12-direct-mode.md)** it costs you even less, and the message
+says so instead of pointing at a Terminal tab that has no terminal in it: a
+Direct session's conversation comes into the window over its own connection and
+never came from that file, so what you see in the Session tab is unaffected.
+What the missing file does cost is the **usage totals** for that session and
+**resuming the conversation** the next time you open switchboard — so if this
+sticks around, it is worth reporting with the path shown.
 A card that has given up — or one you simply haven't typed into yet — still
 keeps half an eye out: send it a prompt, or let a conversation file turn up,
 and it will pick it up — within a few seconds normally, and within a minute even

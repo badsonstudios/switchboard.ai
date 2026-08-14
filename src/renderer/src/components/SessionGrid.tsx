@@ -43,6 +43,8 @@ import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
 import { submitTarget } from '../lib/presentation-policy';
 import { bulkClose } from '../lib/pinning';
 import { createSweeper, SweepPort, SweepRequest } from '../lib/layout-sweep';
+import { sharedAnnouncer } from '../lib/announcer';
+import { CardSound, nextCardSound } from '../../../shared/sounds';
 import {
   cycleMode,
   isEnforced,
@@ -463,6 +465,78 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // slash command into the PTY — the CLI stays the source of truth
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [confirmClear, setConfirmClear] = React.useState(false);
+  // ── this card's notification cue (P2-E14-05a, §5.9 + §5.11) ───────────────
+  //
+  // Same defensive bridge read as `rulesApi` above and for the same reason: a
+  // namespace a partial bridge does not install must not throw out of an effect
+  // and take the card down with it (#444).
+  const soundsApi = window.switchboard?.sounds as typeof window.switchboard.sounds | undefined;
+  const [cardSound, setCardSound] = React.useState<CardSound | null>(null);
+  /** newest write wins — two fast clicks must not repaint in the wrong order */
+  const soundSeq = React.useRef(0);
+  // Read when the MENU OPENS, not once on mount. A card mounts before
+  // `sessions:create` has persisted its record, so a mount-time read asks about
+  // a card main does not have yet and is answered `null` — and with no other
+  // trigger the entry would then stay hidden for the life of the card. Opening
+  // the menu is also the only moment the answer is looked at, which makes this
+  // the cheapest possible fix for the staleness #421 flagged: nothing else in
+  // the app can change a cue behind this view without it being re-read.
+  React.useEffect(() => {
+    if (!cardId || !soundsApi || !menuOpen) return;
+    let alive = true;
+    const seq = ++soundSeq.current;
+    void soundsApi
+      .get(cardId)
+      .then((s) => {
+        if (alive && seq === soundSeq.current) setCardSound(s ?? null);
+      })
+      .catch(() => {
+        /* fail-open: an unreadable cue shows nothing rather than a wrong one */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [cardId, soundsApi, menuOpen]);
+  /**
+   * Step to the next cue and PLAY it.
+   *
+   * A cycling button, like the transport entry above and the title bar's
+   * autonomy and layout chips — this codebase's shape for "one of a short
+   * closed list". A dropdown of eight would be a second menu inside a menu that
+   * is not even a real one (see the ARIA note below).
+   *
+   * The preview is not a nicety: a list of eight words — chime, bell, knock —
+   * tells nobody what they will hear, and this is the only place in the app
+   * where a sound can be auditioned on purpose rather than waited for.
+   *
+   * The cycle has NINE steps, not eight: past the last cue it comes back to
+   * **automatic**, because a control you can only walk one way is a trap. There
+   * is no preview for that step — "automatic" is not a sound, and playing the
+   * cue it happens to resolve to would say the opposite of what was chosen.
+   */
+  /** A cue's name for the menu; `null` is the automatic step. */
+  const soundName = (id: string | null): string =>
+    id ? t(`sounds.${id}`) : t('sounds.auto');
+  const cycleSound = (): void => {
+    if (!cardId || !soundsApi) return;
+    const next = nextCardSound(cardSound);
+    setCardSound(next ? { id: next, pinned: true } : null); // optimistic
+    if (next) sharedAnnouncer().play(next);
+    const seq = ++soundSeq.current;
+    void soundsApi
+      .set(cardId, next)
+      .then((s) => {
+        if (seq !== soundSeq.current) return; // a later click already answered
+        // A REFUSED write answers `null`, which is also what "back to auto"
+        // answers — so ask rather than guess, and let the menu show the truth
+        // instead of the thing that was just clicked.
+        if (s) setCardSound(s);
+        else void soundsApi.get(cardId).then((truth) => setCardSound(truth ?? null));
+      })
+      .catch(() => {
+        /* leave the optimistic value: the next menu open re-reads the truth */
+      });
+  };
   // locked while starting (§5.10 startup-dialog rule) or once the live
   // session is gone — a PTY write to a dead session is a silent no-op
   const controlsLocked = status === 'starting' || status === 'crashed' || ended !== null;
@@ -1389,6 +1463,28 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                             {t('grid.menuNotifyWhenDone')}
                           </button>
                         )}
+                        {/* This card's sound (P2-E14-05a). A COMMAND, not a
+                            toggle — it has eight states, not two — so it says
+                            what it is now and what clicking does, the lesson
+                            #153 taught the transport entry two items up. */}
+                        {soundsApi && cardSound && (
+                          <button
+                            data-testid="card-sound"
+                            onClick={cycleSound}
+                            title={t('grid.menuSoundHint')}
+                            style={menuItemStyle(false)}
+                          >
+                            {t('grid.menuSound', {
+                              // "Automatic (Knock)" while nobody has chosen —
+                              // naming the cue you will actually hear, because
+                              // "Automatic" alone answers the wrong question.
+                              now: cardSound.pinned
+                                ? t(`sounds.${cardSound.id}`)
+                                : t('sounds.autoNow', { name: t(`sounds.${cardSound.id}`) }),
+                              next: soundName(nextCardSound(cardSound)),
+                            })}
+                          </button>
+                        )}
                         <button
                           disabled={controlsLocked}
                           title={
@@ -1764,6 +1860,18 @@ function syncDocumentPins(api: DockviewApi): void {
 }
 
 /**
+ * Is this group the document area — does a viewer live in it?
+ *
+ * Named once and read from both sides of the same sentence: a viewer PREFERS
+ * this group (there is one document area, not one per file), and a session card
+ * REFUSES it (#462, the mirror rule). One predicate so the two answers cannot
+ * drift apart — not one policy: which of them wants a `true` here is the whole
+ * difference between them.
+ */
+const isDocumentArea = (g: DockviewGroupPanel): boolean =>
+  g.panels.some((p) => p.id.startsWith('doc-'));
+
+/**
  * The DOCUMENT AREA: the group a viewer may open into (§5.30, P2-E16-03).
  *
  * "A viewer never displaces a session. It opens into the document area or its
@@ -1815,16 +1923,12 @@ function documentHomeGroup(api: DockviewApi): DockviewGroupPanel {
       // never turns that group into the permanent document area.
       !g.panels.some((p) => /^(session|diff)-/.test(p.id))
   );
-  return (
-    eligible.find((g) => g.panels.some((p) => p.id.startsWith('doc-'))) ??
-    eligible[0] ??
-    api.addGroup()
-  );
+  return eligible.find(isDocumentArea) ?? eligible[0] ?? api.addGroup();
 }
 
 /**
- * The group a NON-SESSION panel (a viewer, a Changes tab) must be added to —
- * the E8-04 rule in one place (#434).
+ * The group a panel that belongs in the MAIN WINDOW must be added to — the
+ * E8-04 rule in one place (#434, extended by #462).
  *
  * dockview's `addPanel` defaults to the ACTIVE group, and the active group
  * becomes a popout the moment a card is torn off — so a panel opened while a
@@ -1832,9 +1936,19 @@ function documentHomeGroup(api: DockviewApi): DockviewGroupPanel {
  * where the user never asked for it and cannot find it. Pin it to a group the
  * user can actually see in the main grid instead — reviving or making one when
  * there is none.
+ *
+ * `eligible` narrows WHICH grid groups will do, and is the only thing that
+ * differs between the callers: a Changes tab takes any of them (it is a
+ * session's own surface), a session card refuses the document area and — while
+ * a viewer is out in its own window — every empty shell with it (#462). It
+ * filters the husk fallback too, on purpose: that is the ONLY line the second
+ * of those rules can act on, since a shell has no panels to recognise it by.
  */
-function gridRefGroup(api: DockviewApi): DockviewApi['groups'][number] {
-  const candidates = api.groups.filter((g) => g.api.location.type === 'grid');
+function gridRefGroup(
+  api: DockviewApi,
+  eligible: (g: DockviewGroupPanel) => boolean = () => true
+): DockviewApi['groups'][number] {
+  const candidates = api.groups.filter((g) => g.api.location.type === 'grid' && eligible(g));
   const visible = candidates.find((g) => g.api.isVisible);
   if (visible) return visible;
   // Nothing VISIBLE is left in the grid, which is not the same as nothing being
@@ -1853,6 +1967,48 @@ function gridRefGroup(api: DockviewApi): DockviewApi['groups'][number] {
     return husk;
   }
   return api.addGroup();
+}
+
+/**
+ * Where a NEW OR RETURNING SESSION CARD lands (#462) — `gridRefGroup` plus the
+ * mirror of the viewer's invariant.
+ *
+ * Two rules, and a card breaks both the same way. dockview's `addPanel`
+ * defaults to the ACTIVE group, so:
+ *
+ *  * MAIN WINDOW, VISIBLY. Not a tab inside whatever popout is active, and not
+ *    the hidden dock-back shell a popout leaves behind in the grid — that husk
+ *    still reports `location.type === 'grid'`, so the location-only lookup this
+ *    replaces would put a brand new session in a 0px leaf. Measured at 1.33px
+ *    on the viewer side of the same bug (#434, #411); `toBeVisible()` passes
+ *    there, which is why the e2e measures width. Reviving the husk is right for
+ *    a card in a way it is not for a viewer: the husk IS a session's slot, it
+ *    holds the geometry the popped-out card used to occupy, and that card
+ *    rejoins as a sibling tab when it docks back.
+ *  * NOT THE DOCUMENT AREA. "A viewer never displaces a session" (§5.30) has an
+ *    obverse the day the document area became real (P2-E16-02/03): a session
+ *    must not displace what you are reading either. Without this the card would
+ *    open as a tab over the viewer — because with every card popped out, the
+ *    document area is the only VISIBLE grid group left, and #434's picker would
+ *    hand it straight over.
+ *
+ * ...and the two rules meet in the husk, which is why the second one cannot be
+ * `isDocumentArea` alone: a shell is EMPTY by construction, so nothing about it
+ * says whether the panel that left was a card or a viewer. Revive a VIEWER's
+ * shell and the card takes the document area by the back door — and dockview
+ * hands the viewer back into that same group when its window closes, i.e. as a
+ * tab beside the card. dockview does not expose which group a popout will
+ * return to, so the honest question is the coarse one: while a viewer is out in
+ * its own window, refuse every shell and pay for a fresh group instead.
+ */
+function sessionCardHome(api: DockviewApi): DockviewApi['groups'][number] {
+  const viewerIsOut = api.panels.some(
+    (p) => p.id.startsWith('doc-') && p.group.api.location.type === 'popout'
+  );
+  return gridRefGroup(
+    api,
+    (g) => !isDocumentArea(g) && !(viewerIsOut && g.panels.length === 0)
+  );
 }
 
 /**
@@ -2721,9 +2877,23 @@ async function revealNow(api: DockviewApi, cardId: string, focus = true): Promis
   );
   const target = place.groupId ? api.groups.find((g) => g.id === place.groupId) : undefined;
   // its old group may have died with it (removing a group's last panel destroys
-  // the group) — land it in the grid rather than nowhere
-  const refGroup =
-    target ?? api.groups.find((g) => g.api.location.type === 'grid') ?? api.addGroup();
+  // the group) — land it in the grid rather than nowhere. The fallback is the
+  // same one `addSessionCard` uses (#462): a card coming back from `hidden` has
+  // exactly the same claim to a VISIBLE group that is not the document area,
+  // and the old location-only `find` had the same husk blindness.
+  const refGroup = target ?? sessionCardHome(api);
+  // ...and the REMEMBERED group can be that same hidden shell: hide card A, pop
+  // its group-mate B out, and the group A calls home survives as B's dock-back
+  // husk. Revive it rather than landing A at home and 0px wide — exactly what
+  // `gridRefGroup` does with the same shell, for the same reason.
+  //
+  // NOT when the slot is a popout: the card is added here only to be torn out
+  // again below, and dockview's PANEL popout does not re-hide the group it left
+  // (`_doAddPopoutGroup` hides only in the whole-group branch), so revived-then-
+  // abandoned would leave an empty pane on screen where a hidden shell was.
+  if (!place.popout && refGroup.api.location.type === 'grid' && !refGroup.api.isVisible) {
+    refGroup.api.setVisible(true);
+  }
   const panel = api.addPanel({
     id: `session-${cardId}`,
     component: 'sessionCard',
@@ -2899,25 +3069,33 @@ export function SessionGrid(props: {
     if (!api) return;
     const title = folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? folder;
     const cardId = crypto.randomUUID();
-    // A new session must land in the MAIN window, never as a tab inside whatever
-    // popout happens to be active. dockview's addPanel defaults to the active
-    // group — which becomes the popout once a card is torn off — so pin it to a
-    // main-grid group explicitly (E8-04). If every card is popped out there is
-    // no grid group left, so make one in the main grid rather than falling back
-    // to the (popout) active group.
     // A persistent-group member clusters with its siblings (E12-02): reuse the
     // dockview group already holding another member, when one is in the grid.
-    let refGroup = api.groups.find((g) => g.api.location.type === 'grid') ?? api.addGroup();
+    let sibling: DockviewApi['groups'][number] | undefined;
     if (groupId) {
       const cards = await window.switchboard.sessions.cards();
       const siblings = new Set(
         cards.filter((c) => c.groupId === groupId).map((c) => `session-${c.cardId}`)
       );
-      const sibling = api.panels.find(
-        (p) => siblings.has(p.id) && p.group.api.location.type === 'grid'
-      );
-      if (sibling) refGroup = sibling.group;
+      // `isVisible` for the husk reason below — clustering is a reason to land
+      // BESIDE a sibling, never a reason to land somewhere invisible. The
+      // document-area rule is deliberately NOT applied here: a group holding a
+      // group-mate is a session's group whatever else was dragged into it, and
+      // an explicit group membership is the stronger of the two user intents.
+      sibling = api.panels.find(
+        (p) => siblings.has(p.id) && p.group.api.location.type === 'grid' && p.group.api.isVisible
+      )?.group;
     }
+    // A new session must land in the MAIN window, visibly, and not on top of the
+    // document you are reading — `sessionCardHome` is all three rules (E8-04,
+    // #462). It used to be a location-only `find`, which is blind to the hidden
+    // dock-back husk a popout leaves in the grid.
+    //
+    // Asked LAST, and only when the sibling lookup came up empty, because it is
+    // not a pure question: it can un-hide a group or mint one. Asked first (as
+    // the `find(...) ?? addGroup()` it replaces was) a sibling win would leave
+    // that brand new group behind in the grid, empty, for ever.
+    const refGroup = sibling ?? sessionCardHome(api);
     api.addPanel({
       id: `session-${cardId}`,
       component: 'sessionCard',

@@ -110,6 +110,21 @@ numbers (latency, CPU, memory) where the item asks for them.
      identical.** The answer is `npm run build`, not `ALLOW_STALE_BUNDLE=1`.
      Never bake the override into a runbook or a worker prompt: a guard that is
      always overridden is a guard that is not there.
+   - **Run it on another monitor: `SWITCHBOARD_E2E_MONITOR=<n>` (#479).** Local
+     runs otherwise pop ~160 app windows onto the screen you are working on.
+     **Monitor 1 is always the primary**; 2..N are the rest, in whatever order
+     Electron reports them — so `=2` is always a screen that is not your main
+     one. **Unset, the fixture does not ask the app a question**; an index past
+     the end (a single-display machine, i.e. every CI runner) reads the display
+     list and then moves nothing. Windows a spec places itself go through
+     `onTestDisplay()` from `e2e/fixtures/app.ts`, which is a no-op when the
+     switch is off. **No spec is exempt** — the audit's one candidate,
+     `reconnect.spec.ts`, was measured rather than assumed and is
+     display-independent; the numbers are in its header. **It does not stop the
+     focus theft** —
+     activating a window grabs the keyboard however far away it is, and the
+     focus-anchored specs preclude launching without activation. Your screen
+     goes quiet; your typing can still be interrupted.
    - **Add an e2e test for every new user-facing surface.** If a feature can
      only be checked by looking at the window, it needs an e2e test — not a
      PROGRESS "[Dan eyeball]" note.

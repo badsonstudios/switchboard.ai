@@ -43,7 +43,7 @@ If a consumer can `import { claudeAdapter }`, the seam is decorative.
 | [renderer/src/extensibility/registry-instance.ts](../src/renderer/src/extensibility/registry-instance.ts) | The renderer's registry instance, and nothing else — consumers import this, not `bootstrap.ts`, which would close an import cycle |
 | [renderer/src/extensibility/boundary.tsx](../src/renderer/src/extensibility/boundary.tsx) | `ContributionBoundary` + `safely()`: one contribution failing costs that contribution |
 | [renderer/src/extensibility/status-bar-items.tsx](../src/renderer/src/extensibility/status-bar-items.tsx) | The five status bar items |
-| [renderer/src/extensibility/find-providers.ts](../src/renderer/src/extensibility/find-providers.ts) | The session-find providers (§5.31), their by-panel resolution, and a written registration recipe for the one registrant that does not exist yet |
+| [renderer/src/extensibility/find-providers.ts](../src/renderer/src/extensibility/find-providers.ts) | The session-find providers (§5.31), their by-panel resolution, why Ctrl+F is deliberately NOT claimed from a focused terminal, and a written registration recipe for the one registrant that does not exist yet |
 | [renderer/src/lib/find-surfaces.ts](../src/renderer/src/lib/find-surfaces.ts) | The live-surface registry a mounted panel publishes into, keyed by (card, panel) |
 | [renderer/src/extensibility/points.test.ts](../src/renderer/src/extensibility/points.test.ts) | The E15-03 done-when, executable: a new panel / block renderer / status item takes effect with no edit to any consumer |
 | [shared/…/registry.test.ts](../src/shared/extensibility/registry.test.ts) | Mechanics, against toy contracts — plus the guard that the class stays free of `main/` and `renderer/` imports |
@@ -74,7 +74,7 @@ actually serve it.
 | `feed-block-renderer` | `FeedBlockRendererContribution` | `feed-block-{todos,bash,edit,tool,thinking,user,markdown}` — one per transcript block shape |
 | `status-bar-item` | `StatusBarItemContribution` | `status-{session-count,usage,service-health,cli-version,theme}` |
 | `theme` | `ThemeContribution` | `theme-{nordic,daylight,high-contrast,soft-contrast}` — the picker and the status bar list from here |
-| `find-provider` | `FindProviderContribution` | **`find-session`, `find-changes` — two of the four §5.31 names day one**; see the honest count below |
+| `find-provider` | `FindProviderContribution` | **`find-session`, `find-changes`, `find-terminal` — three of the four §5.31 names**; see the honest count below |
 
 `theme` (P2-E15-05) is the first **data-only** point: every other contribution
 hands over a function — build these commands, render this block — and this one
@@ -86,28 +86,35 @@ code change, which is the proof the point is real rather than ceremony —
 and `soft-contrast`, asked for after that code was written, cost exactly one
 JSON file, one list entry and one string, with no test edited to accommodate it.
 
-`find-provider` (P2-E17-02, §5.31) is the sixth point, and the first whose
+`find-provider` (P2-E17-02, §5.31) is the sixth RENDERER point — the seventh
+overall, counting main's `provider-adapter` — and the first whose
 contributions **do not all do the same job**. `find-session` searches with our
 bar (`mode: 'bar'`); `find-changes` hands the entire interaction to Monaco's own
 find widget (`mode: 'delegated'`) because §5.31 names that widget as a thing not
 to reimplement. A point whose registrants only ever varied by *which* thing they
 searched would have proved much less about the contract.
 
-**It ships with TWO of the four registrants §5.31 names, and the gap is stated
-rather than glossed.** The Terminal's provider is P2-E17-03's own work item,
-which depends on this one. The **document viewer** (§5.30) landed on main in
-the same train as this bar and is deliberately still un-joined: it already has
+**It ships with THREE of the four registrants §5.31 names, and the gap is
+stated rather than glossed.** P2-E17-03 added `find-terminal` — xterm's
+scrollback behind `@xterm/addon-search`, `mode: 'bar'` — and with it the
+grouped count the point was shaped for: one Ctrl+F now asks *every* `bar`
+registrant on the focused card and the bar reports them as separate groups
+("12 in Session · 3 in Terminal (scrollback only)"), because two providers can
+see two different depths of the same session and one number over both would be
+true of neither. That is also what made `labelKey` **required**: a group with no
+name is a number the user cannot attribute.
+
+The **document viewer** (§5.30) is deliberately still un-joined: it already has
 a working Ctrl+F, scoped to its own container for exactly the reason this point
 exists, so the gap is a seam rather than a feature — and joining it means
 teaching the dispatcher what "the focused surface" is when it is not a session
-card, which is a §5.8 question. That is P2-E16's follow-up. Both have a written
+card, which is a §5.8 question. That is P2-E16's follow-up, with a written
 registration recipe at the bottom of
 [`find-providers.ts`](../src/renderer/src/extensibility/find-providers.ts) — the
-panel id to claim, the surface shape to publish, and the trap each one must not
-inherit (the Terminal must label its group "scrollback only", because xterm sees
-5,000 lines and the transcript sees everything). So the four-dissimilar-consumer
-bar §5.31 set is cleared *by design and by recipe*, and half-cleared in code.
-Two of the four is not the same as four, and the roster says so.
+panel id to claim, the surface shape to publish, and the two structural
+blockers. So the four-dissimilar-consumer bar §5.31 set is cleared *by design
+and by recipe*, and three-quarters cleared in code. Three of the four is not
+the same as four, and the roster says so.
 
 The three renderer points added by P2-E15-03 are deliberately **dissimilar**:
 `panel` renders a whole view and has a mount lifecycle (`keepMounted`, because
@@ -163,34 +170,54 @@ arriving as in-process code that someone has to migrate afterwards.
 ### Registry consumers
 
 Production call sites resolve through the registry in **both** processes now,
-and all of them matter if you change the contracts. Main:
+and all of them matter if you change the contracts.
 
-- [session-manager.ts:156](../src/main/sessions/session-manager.ts#L156) —
-  resolves the adapter for a session's `providerId` to build its spawn recipe.
-- [index.ts:1178-1179](../src/main/index.ts#L1178-L1179) — `capabilitiesOf` and
-  `isRegisteredProvider`, which is how the session IPC asks §5.3's capability
-  objects instead of assuming Claude.
-- [index.ts:1185](../src/main/index.ts#L1185) — pulls the provider's builtin
-  `slashCommands()` for composer autocomplete (P2-E10-07).
-- [index.ts:805](../src/main/index.ts#L805) — `list('provider-adapter')[0]` is
-  the default provider for a new card, so **registration order is precedence**.
+> **Pointer convention (#472): a link into `src/` names the FILE and the
+> SYMBOL, never a line number.** All five of main's line anchors in this
+> section had rotted by the time anyone read it again — `index.ts#L1178-L1179`,
+> cited as `capabilitiesOf`, landed in the middle of `update:openExternal`, and
+> `index.ts#L805`, cited as the default-provider lookup, in the popout's bounds
+> validation. (The renderer's six had not moved far, which is the point: you
+> cannot tell the two cases apart by reading.) A rotted anchor is worse than no
+> anchor, because it reads as precision. A unit test asserts that every link
+> target in this file still exists and that no link carries an `#L` anchor
+> ([extensibility-doc.drift.test.ts](../src/shared/extensibility/extensibility-doc.drift.test.ts));
+> no test can assert that a line number is still the right one.
+
+Main:
+
+- [`SessionManager.create`](../src/main/sessions/session-manager.ts) — resolves
+  the adapter for a session's `providerId` to build its spawn recipe.
+- [`capabilitiesOf` and `isRegisteredProvider`](../src/main/index.ts), in the
+  `registerSessionIpc({…})` wiring — how the session core asks §5.3's
+  capability objects instead of assuming Claude. Where those answers are
+  actually spent is
+  [`planSessionStart`](../src/main/sessions/start-plan.ts).
+- [`slashCommands`](../src/main/index.ts), the same wiring — pulls the
+  provider's builtin `slashCommands()` for composer autocomplete (P2-E10-07).
+- [`defaultProviderId`](../src/main/index.ts) — `list('provider-adapter')[0]`
+  is the default provider for a new card, so **registration order is
+  precedence**.
 
 Renderer — one per point, each the sole resolver for its own surface:
-[commands.ts:43](../src/renderer/src/extensibility/commands.ts#L43),
-[feed-render.ts:17](../src/renderer/src/extensibility/feed-render.ts#L17),
-[panels.tsx:29](../src/renderer/src/extensibility/panels.tsx#L29),
-[status-bar-items.tsx:74](../src/renderer/src/extensibility/status-bar-items.tsx#L74),
-[themes.ts:21](../src/renderer/src/extensibility/themes.ts#L21) and
-[find-providers.ts](../src/renderer/src/extensibility/find-providers.ts)
-(`findProviderFor`, the sole resolver the find bar calls). Each takes
+[`buildContributedCommands`](../src/renderer/src/extensibility/commands.ts),
+[`renderFeedBlock`](../src/renderer/src/extensibility/feed-render.ts),
+[`listPanels`](../src/renderer/src/extensibility/panels.tsx),
+[`listStatusBarItems`](../src/renderer/src/extensibility/status-bar-items.tsx),
+[`listThemes`](../src/renderer/src/extensibility/themes.ts) and
+[`findProviderFor`](../src/renderer/src/extensibility/find-providers.ts)
+(the sole resolver the find bar calls). Each takes
 the registry as an **argument** rather than reaching for the singleton, so a
 test can pass a fresh one; the components (`App.tsx`, `SessionGrid.tsx`,
-`FeedView.tsx`, `chrome.tsx`) import `rendererRegistry` and hand it to these
+`FeedView.tsx`, `chrome.tsx`, `FindBar.tsx`) import `rendererRegistry` and hand
+it to these
 helpers, which is what keeps each point's sort / first-match rule in one place
 instead of at every call site.
 
-Plus [index.ts:796-797](../src/main/index.ts#L796-L797) and
-[bootstrap.ts:51](../src/renderer/src/bootstrap.ts#L51), which register the
+Plus [`registerBuiltinContributions`](../src/main/bootstrap.ts) (called once
+from `index.ts`, which logs `registry.manifests()` on the next line) and the
+renderer's [`initRendererContributions` /
+`logManifests`](../src/renderer/src/bootstrap.ts), which register the
 builtins at startup and log every manifest — the closest thing we have to an
 "installed extensions" view, one line per process.
 
@@ -210,9 +237,26 @@ Every contribution, at every point, carries one. `id` is the resolution key;
 
 **Manifest capabilities are declarative only — nothing enforces them yet.** (The
 IPC channel capabilities are a *different* set, and the broker does enforce
-those — see "Two vocabularies, not yet joined".) The vocabulary in use today is
-`sessions.spawn`, `sessions.resume`, `settings.inject`, and
-`slash-commands.list`. `registry.list(point, capability)` filters on them, and
+those — see "Two vocabularies, not yet joined".) The vocabulary in use today,
+by process:
+
+| Process | Strings in use |
+|---|---|
+| Main | `sessions.spawn`, `sessions.resume`, `settings.inject`, `slash-commands.list` |
+| Renderer | `commands.contribute`, `panel.render`, `feed.render`, `statusbar.item`, `theme.contribute`, `find.provide` |
+
+The renderer's are one per point, five of the six set through
+[`manifestFor`](../src/renderer/src/extensibility/contributions.ts) —
+`commands.contribute` is a literal in `bootstrap.ts`, because `core-commands` is
+the one contribution that has no module of its own. Main's four are declared
+identically by all three provider adapters.
+
+(Main's four were the *whole* list until P2-E15-02 gave the renderer a registry
+on 2026-07-28; that this paragraph still said so a fortnight and six renderer
+strings later is why the list is now pinned by a test —
+[extensibility-doc.drift.test.ts](../src/shared/extensibility/extensibility-doc.drift.test.ts).)
+
+`registry.list(point, capability)` filters on them, and
 `manifests()` reports them, but no code path checks a capability before letting
 a contributor act. When the real plugin host lands, the main process becomes the
 sole enforcer (§5.23) — declaring accurately now is what makes that transition
@@ -453,7 +497,7 @@ is one — and those sit outside the vocabulary entirely.
 
 Main's `registry` is a singleton for the app, but `ContributionRegistry` is a plain
 class and standalone tooling constructs its own — see
-[hook-check.ts:36](../src/main/hooks/hook-check.ts#L36), a CLI check that builds
+[hook-check.ts](../src/main/hooks/hook-check.ts), a CLI check that builds
 a private registry, registers the Claude adapter, and drives a `SessionManager`
 outside Electron. Keep `SessionManager` (and anything like it) taking a registry
 as a constructor argument rather than reaching for the singleton, or that stops
@@ -463,11 +507,15 @@ working.
 
 This section is the honest scoreboard. Full findings:
 `docs/architecture-review-2026-07-26.md`; the fix is **E15** in
-`docs/plans/04-phase-2-switchboard.md`, which runs next.
+`docs/plans/04-phase-2-switchboard.md`. Each bullet below carries its own
+status — the section is only worth reading if that status is true, which is why
+a stale one counts as a defect (#472) rather than as tidying.
 
-**Consumer count on the seams: 6** — `provider-adapter` in main, and
-`command-set`, `panel`, `feed-block-renderer`, `status-bar-item` and `theme` in
-the renderer. It was **1** when the review was written, and the finding was never
+**Consumer count on the seams: 7** — `provider-adapter` in main, and
+`command-set`, `panel`, `feed-block-renderer`, `status-bar-item`, `theme` and
+`find-provider` (P2-E17-02) in the renderer. It matches "Contribution points and
+their registrants" above, which is the list to change first.
+It was **1** when the review was written, and the finding was never
 the count itself but that it *could not grow*: the seam was main-only, so a
 renderer contribution had nowhere to land. P2-E15-02 removed the ceiling and
 **P2-E15-03 (done)** dogfooded three dissimilar points onto surfaces that were
@@ -491,21 +539,38 @@ not a decision to ship a plugin API.
   and the manager panes — five roster items that are code which does not exist
   yet, rather than code with nowhere to go. See "Contribution points and their
   registrants" above for the roster-by-roster count.
-- **A second registry already exists without being called one.**
-  `renderer/lib/commands.ts` + `command-set.ts` is
+- **~~A second registry already exists without being called one.~~ RESOLVED
+  (E15-02).** `renderer/lib/commands.ts` + `command-set.ts` **was**
   `{id, title, category, enabled(ctx), run(ctx)}` — exactly a contribution
-  point. **E15-02 (done)** registers it through the real registry, so there is
+  point. (It has since grown `titleKey` / `categoryKey` for i18n plus
+  `binding`, `scope` and `disabledReasonKey`; the shape above is the review's
+  2026-07-26 snapshot, not today's `Command`.)
+  **E15-02 (done)** registers it through the real registry, so there is
   one extension model rather than two: `App.tsx` resolves `command-set`
   contributions instead of importing `buildCommands`.
-- **The provider contract can't describe a non-Claude CLI.** §5.3 specifies
-  `capabilities: { transcripts, hooks, resume, mcp }`; the shipped interface is
-  `buildSpawn()` + optional `slashCommands()`, and `sessions/ipc.ts` assumes
-  Claude for everything else (hardcoded `providerId`, unconditional hook
-  settings, unconditional `~/.claude/projects` watch, resume semantics owned by
-  the IPC handler). By this document's own rule — *if our own adapter can't be
-  expressed in the contract, the contract is wrong* — the contract is wrong.
-  E15-01 fixes it. **This is the one that blocks the multi-provider goal**: you
-  would discover it by writing adapter #2 and having to edit a consumer.
+- **~~The provider contract can't describe a non-Claude CLI.~~ RESOLVED
+  (E15-01, 2026-07-30).** **Was:** §5.3 specified
+  `capabilities: { transcripts, hooks, resume, mcp }` while the shipped
+  interface was `buildSpawn()` + optional `slashCommands()`, so `sessions/ipc.ts`
+  assumed Claude for everything else — hardcoded `providerId`, unconditional
+  hook settings, an unconditional `~/.claude/projects` watch, and resume
+  semantics owned by the IPC handler. By this document's own rule — *if our own
+  adapter can't be expressed in the contract, the contract is wrong* — the
+  contract was wrong, and it was **the one blocking the multi-provider goal**:
+  you would have discovered it by writing adapter #2 and having to edit a
+  consumer. **Now:** `ProviderAdapter.capabilities` is a real object
+  ([`ProviderCapabilities`](../src/main/extensibility/contributions.ts)) and
+  those four assumptions live in
+  [`planSessionStart`](../src/main/sessions/start-plan.ts), which ASKS the
+  capability object per session and degrades where a member is absent — an
+  adapter that declares nothing spawns a PTY and nothing else.
+  **The member list is deliberately not restated here: `docs/DESIGN.md` §5.3 is
+  the source of truth**, and it carries the as-built record of every change to
+  the object (`trust` added by E15-01, `mcp` deferred to E11, `titles` added by
+  P2-E7-06, and the host-resolved transcript root `resume.canResume` now takes,
+  #432). This bullet described the pre-E15-01 world for two weeks *because* it
+  kept a second copy of that list; a pointer cannot go stale the way a copy
+  does (#472).
 - **~~Capabilities have no enforcement point at all.~~ RESOLVED for IPC
   (E15-04); still true of contribution manifests.** "The contract" above says
   manifest capabilities are "declarative only — nothing enforces them yet",
@@ -519,7 +584,7 @@ not a decision to ship a plugin API.
   a theme is a JSON token map; the implementation was two hardcoded
   `[data-theme]` blocks and a two-value `ThemeName` union that made a third
   theme a *type error*. A theme is now `{base, colorScheme, tokens}` applied to
-  `documentElement`, the 42 themeable token names are enumerated in
+  `documentElement`, the 43 themeable token names are enumerated in
   `theme/tokens.ts` (with a test that fails when they drift from `tokens.css`),
   and `high-contrast` ships as data. The `theme` point came with it rather than
   after it — the registry already existed, so it was ~20 lines, and it is the
@@ -547,7 +612,7 @@ enforces is the Phase-4 job (see "Two vocabularies, not yet joined").
 
 Every item on that list is Phase 4, and it is **gated**: the plugin API alpha
 starts only after 2–3 dissimilar internal consumers exist on the seams
-(`docs/plans/03-later-phases.md`). Current count: **six**, so that condition is
+(`docs/plans/03-later-phases.md`). Current count: **seven**, so that condition is
 met — see "Known gaps" above for what it does and does not license. Check the
 registry's actual consumer list before anyone schedules that work.
 

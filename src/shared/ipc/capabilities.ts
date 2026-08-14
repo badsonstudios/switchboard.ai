@@ -131,6 +131,13 @@ export const CHANNEL_CAPABILITIES = {
   // the §5.30 escape hatch: the file itself, in the user's own tools
   'fs:openPath': 'shell.openPath',
   'fs:reveal': 'shell.openPath',
+  // Follow the file a viewer has open, so it re-renders when an agent rewrites
+  // it (P2-E16-04). `fs.read` and not a capability of its own: it is answered by
+  // the same `ReadScope`, and what it reveals — that a file you may already read
+  // has changed — is strictly less than the bytes `fs:read` hands over. The
+  // notice carries no content, so this cannot become a second way to read.
+  'fs:watch': 'fs.read',
+  'fs:unwatch': 'fs.read',
   'git:fileVersions': 'git.read',
   // the provider's service health as main currently understands it (P2-E14-07)
   'health:get': 'provider.status',
@@ -162,6 +169,17 @@ export const CHANNEL_CAPABILITIES = {
   'rules:list': 'settings.read',
   'rules:notifyWhenDone': 'settings.read',
   'rules:setNotifyWhenDone': 'settings.write',
+  // Per-session sounds (P2-E14-05a) — the same reasoning as the rules above:
+  // which cue a card rings is a notification preference that happens to be
+  // per-session. The two PUSH channels below carry no capability of their own
+  // either; they are main talking, and `send` is not a power the renderer has.
+  'sounds:get': 'settings.read',
+  'sounds:set': 'settings.write',
+  // "I took that cue and could not play it" — the renderer's answer to
+  // `audio:play`, and the thing that lets main fall back to a beep instead of
+  // leaving an attention event silent. It reads nothing and changes nothing;
+  // `settings.read` is the narrowest tag that fits.
+  'audio:failed': 'settings.read',
   'pty:attach': 'pty.read',
   'pty:detach': 'pty.read',
   'pty:input': 'pty.write',
@@ -231,7 +249,16 @@ export const CHANNEL_CAPABILITIES = {
   'app:accelerator': 'app.window',
   'app:displaysChanged': 'app.window',
   'app:popoutGeometryChanged': 'app.window',
+  // "make this noise" / "say this" (P2-E14-05a). Main has no audio device; the
+  // renderer is where Chromium's is. `settings.read` because the payload is a
+  // cue NAME and a sentence the user has already been shown on every other
+  // channel — it grants no reach the notification prefs did not.
+  'audio:play': 'settings.read',
+  'audio:speak': 'settings.read',
   'events:changed': 'events.read',
+  // a watched file moved, or went away (P2-E16-04). Same capability as asking
+  // for the watch, and as the read the viewer answers it with.
+  'fs:changed': 'fs.read',
   // a poll the renderer did not ask for finished, or the local corroboration
   // rule raised/cleared (P2-E14-07). Same capability as reading it.
   'health:status': 'provider.status',

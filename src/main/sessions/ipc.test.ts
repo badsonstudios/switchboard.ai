@@ -117,6 +117,9 @@ function harness(
   const created: Array<{
     identity: SessionIdentity;
     settingsFor?: unknown;
+    /** the undo half of `settingsFor` (#470) — recorded so the wiring that
+     *  carries it from the plan into the manager has something behind it */
+    releaseSettingsFor?: unknown;
     resumeSessionId?: string;
     transport?: string;
   }> = [];
@@ -133,6 +136,9 @@ function harness(
     readTitle?: (line: Record<string, unknown>) => string | undefined;
   }> = [];
   const buildHookSettings = vi.fn(() => ({ hooks: {} }));
+  /** the other half of the `HookSettingsHost` slice (#470): what a start that
+   *  never produced a session hands back. */
+  const releaseHookSettings = vi.fn();
   const warn = vi.fn();
   /** a start that should have worked and did not is an `error`, not a `warn` (#347) */
   const logError = vi.fn();
@@ -259,12 +265,18 @@ function harness(
       rename: (id: string, title: string) => renamed.push({ id, title }),
       create: (
         identity: SessionIdentity,
-        o: { settingsFor?: unknown; resumeSessionId?: string; transport?: string }
+        o: {
+          settingsFor?: unknown;
+          releaseSettingsFor?: unknown;
+          resumeSessionId?: string;
+          transport?: string;
+        }
       ) => {
         if (opts.throwOnSpawn) throw new Error('spawn exploded');
         created.push({
           identity,
           settingsFor: o?.settingsFor,
+          releaseSettingsFor: o?.releaseSettingsFor,
           resumeSessionId: o?.resumeSessionId,
           transport: o?.transport,
         });
@@ -314,6 +326,7 @@ function harness(
       // half, which is the half that was already there.
       setAllowAll: (id: string) => allowedAll.push(id),
       buildHookSettings,
+      releaseHookSettings,
     },
     transcripts: {
       onUpdate: (l: (snap: Record<string, unknown>) => void) => {
@@ -457,6 +470,7 @@ function harness(
       for (const l of snapshots) l(full);
     },
     buildHookSettings,
+    releaseHookSettings,
     warn,
     logError,
     renamed,
@@ -612,6 +626,9 @@ describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
     expect(h.created[0].settingsFor).toBeUndefined();
     // no hook token registered either — buildHookSettings is what registers it
     expect(h.buildHookSettings).not.toHaveBeenCalled();
+    // and nothing to give back if the start throws (#470): the pair travels
+    // together, so a provider without hooks offers neither half
+    expect(h.created[0].releaseSettingsFor).toBeUndefined();
     // no transcript watch at all
     expect(h.watched).toHaveLength(0);
     // and no resume attempted
@@ -646,12 +663,25 @@ describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
     expect(build('live-1')).toEqual({ wrapped: { hooks: {} } });
     expect(settingsFor).toHaveBeenCalledOnce();
     expect(h.watched).toHaveLength(0); // still no transcripts
+
+    // ...and the undo reaches the manager with it (#470), going straight to
+    // the HOST — the adapter only ever shaped what the host had registered
+    const release = h.created[0].releaseSettingsFor as (id: string) => void;
+    expect(release).toBeTypeOf('function');
+    release('live-1');
+    expect(h.releaseHookSettings).toHaveBeenCalledExactlyOnceWith('live-1');
   });
 
   describe('preparing the folder belongs to the provider', () => {
+    // Every case here is on the TERMINAL transport, because that is the only
+    // one that pre-writes trust at all since #397 — the Direct half is the
+    // describe block below. `preferredTransport` rather than a card choice:
+    // most of these have no prior record.
+    const onTerminal = { preferredTransport: () => 'pty' as const };
+
     it('auto-trust on + a trust capability: asked once, for this folder', () => {
       const ensureTrusted = vi.fn(() => true);
-      const h = harness({ trust: { ensureTrusted } }, folder, { autoTrust: true });
+      const h = harness({ trust: { ensureTrusted } }, folder, { autoTrust: true, ...onTerminal });
 
       h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
 
@@ -662,7 +692,7 @@ describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
       // a provider that has never heard of ~/.claude.json must not have it
       // written on its behalf — this is the assumption that used to be
       // unconditional
-      const h = harness(undefined, folder, { autoTrust: true });
+      const h = harness(undefined, folder, { autoTrust: true, ...onTerminal });
       expect(() =>
         h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' })
       ).not.toThrow();
@@ -671,18 +701,75 @@ describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
 
     it('auto-trust off: the capability is never called', () => {
       const ensureTrusted = vi.fn(() => true);
-      const h = harness({ trust: { ensureTrusted } }, folder);
+      const h = harness({ trust: { ensureTrusted } }, folder, onTerminal);
       h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
       expect(ensureTrusted).not.toHaveBeenCalled();
     });
 
     it('a trust failure is reported rather than swallowed', () => {
-      const h = harness({ trust: { ensureTrusted: () => false } }, folder, { autoTrust: true });
+      const h = harness({ trust: { ensureTrusted: () => false } }, folder, {
+        autoTrust: true,
+        ...onTerminal,
+      });
       h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
       expect(h.warn).toHaveBeenCalledWith('auto-trust failed — the provider may prompt in the terminal', {
         cardId: 'card-1',
         folder,
       });
+    });
+  });
+
+  // #397, the follow-up: the pre-write is gated on the SPAWN TRANSPORT.
+  //
+  // `ensureTrusted` writes `hasTrustDialogAccepted: true` into the user's real
+  // `~/.claude.json`, permanently, to pre-empt a question Claude Code only ever
+  // asks in its TUI. A Direct session has no TUI and is never asked — measured
+  // at the CLI in #384 and again by the #397 probe (2026-08-13, claude 2.1.226:
+  // an untrusted folder in stream-json mode runs, loads project settings and
+  // fires project hooks, and the CLI writes nothing about the folder itself).
+  // So on Direct the write bought nothing and spent the only thing the trust
+  // chip governs — which is what made the greyed-out chip a lie rather than a
+  // statement.
+  //
+  // These tests are the executable version of that: the first two go red if the
+  // `if` in `sessions:create` is ungated, the last two if the gate is ever
+  // pointed at something other than the value the spawn itself uses.
+  describe('the trust pre-write only happens where a prompt could (#397)', () => {
+    const withTrust = (opts: Parameters<typeof harness>[2] = {}) => {
+      const ensureTrusted = vi.fn(() => true);
+      const h = harness({ trust: { ensureTrusted } }, folder, { autoTrust: true, ...opts });
+      h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
+      return { h, ensureTrusted };
+    };
+
+    it('a DEFAULT spawn (Direct, #381) writes nothing, even with auto-trust ON', () => {
+      // The whole point: this is what every untouched card does, so before the
+      // gate the first run of any new folder accepted it for good.
+      const { h, ensureTrusted } = withTrust({});
+      expect(ensureTrusted).not.toHaveBeenCalled();
+      expect(h.created[0].transport).toBe('stream'); // ...and it really did start Direct
+    });
+
+    it('a card that CHOSE Direct writes nothing either', () => {
+      const { ensureTrusted } = withTrust({ prior: priorCard({ folder, transport: 'stream' }) });
+      expect(ensureTrusted).not.toHaveBeenCalled();
+    });
+
+    it('the env override can put a spawn on the Terminal, and then it does write', () => {
+      // the same precedence the spawn itself uses — one resolved value, so the
+      // gate and the spawn cannot disagree
+      const { h, ensureTrusted } = withTrust({ preferredTransport: () => 'pty' });
+      expect(ensureTrusted).toHaveBeenCalledExactlyOnceWith(folder);
+      expect(h.created[0].transport).toBe('pty'); // the value the gate read is the value it spawned on
+    });
+
+    it("a card's own Terminal choice beats an env override aiming at Direct", () => {
+      const { h, ensureTrusted } = withTrust({
+        prior: priorCard({ folder, transport: 'pty' }),
+        preferredTransport: () => 'stream',
+      });
+      expect(ensureTrusted).toHaveBeenCalledExactlyOnceWith(folder);
+      expect(h.created[0].transport).toBe('pty');
     });
   });
 
@@ -874,6 +961,26 @@ describe('per-card transport (P2-E18-08b)', () => {
     });
   });
 
+  // #397 — the shell renders this now, so the write has to be announced.
+  it('announces the change, so surfaces outside the card re-read it', async () => {
+    const h = harness(undefined, dir, { prior: card() });
+    const before = h.pushed.filter((p) => p.channel === 'sessions:cardsChanged').length;
+
+    await h.call('sessions:setTransport', CARD, 'pty');
+
+    expect(h.pushed.filter((p) => p.channel === 'sessions:cardsChanged')).toHaveLength(before + 1);
+  });
+
+  it('says nothing when it refused — a rejected write changed no card', async () => {
+    const h = harness(undefined, dir, { prior: card() });
+    const before = h.pushed.filter((p) => p.channel === 'sessions:cardsChanged').length;
+
+    await h.call('sessions:setTransport', CARD, 'carrier-pigeon');
+    await h.call('sessions:setTransport', 'nope', 'pty');
+
+    expect(h.pushed.filter((p) => p.channel === 'sessions:cardsChanged')).toHaveLength(before);
+  });
+
   it('rejects a value that is not a transport', async () => {
     const h = harness(undefined, dir, { prior: card() });
     expect(await h.call('sessions:setTransport', CARD, 'carrier-pigeon')).toEqual({
@@ -902,6 +1009,98 @@ describe('per-card transport (P2-E18-08b)', () => {
     await start(h);
 
     expect(h.created[0].transport).toBe('pty');
+  });
+
+  // #397 — the renderer needs the same answer BEFORE the spawn.
+  //
+  // The trust chip greys itself out when no card will spawn on the Terminal,
+  // because Claude Code raises no trust question on the Direct transport
+  // (#384). That rule is only as good as the field it reads, and the field has
+  // to mean "what the NEXT session will run on" — the same three-step
+  // precedence `sessions:create` applies, not the record's raw `transport` and
+  // not what a running session happens to be hosted on.
+  describe('`sessions:cards` reports the NEXT-spawn transport (#397)', () => {
+    const transportOf = async (h: {
+      call: (c: string, ...a: unknown[]) => unknown;
+    }): Promise<string | undefined> => {
+      const cards = (await h.call('sessions:cards')) as Array<{ transport?: string }>;
+      return cards[0]?.transport;
+    };
+
+    it("reports the card's own choice", async () => {
+      const h = harness(undefined, dir, { prior: { ...card(), transport: 'pty' } });
+      expect(await transportOf(h)).toBe('pty');
+    });
+
+    it('reports the DEFAULT for a card that never chose — never `undefined`', async () => {
+      // Silence here would reach the renderer as "no answer", and the chip
+      // would have to guess. It resolves the default instead.
+      const h = harness(undefined, dir, { prior: card() });
+      expect(await transportOf(h)).toBe('stream');
+    });
+
+    it('honours the env override, exactly as the spawn does', async () => {
+      // This is how the e2e suite puts a whole app instance on the Terminal. A
+      // chip that ignored the override would sit greyed out in a run where
+      // every session really is on the Terminal and really can be asked.
+      const h = harness(undefined, dir, { prior: card(), preferredTransport: () => 'pty' });
+      expect(await transportOf(h)).toBe('pty');
+    });
+
+    // ...and the ORDER of those two, which the pair above cannot pin: each of
+    // them leaves the other input absent, so swapping the precedence keeps both
+    // green. `sessions:create` has the identical test for the identical reason.
+    it("a card's own choice still beats the env override", async () => {
+      const h = harness(undefined, dir, {
+        prior: { ...card(), transport: 'pty' },
+        preferredTransport: () => 'stream',
+      });
+      expect(await transportOf(h)).toBe('pty');
+    });
+
+    // THE DECISION, as an executable claim. Both of these run a session on one
+    // transport while the card holds a choice for the other — the state a
+    // pending restart leaves behind — and both assert the CHOICE wins. Reading
+    // the running session instead (`rec?.transport`, which is right there in
+    // the same handler) flips both.
+    it('follows a PENDING switch TO Terminal, not the Direct session still running', async () => {
+      // The workflow this protects: the manual tells someone who wants to be
+      // asked about a folder to open it in Terminal mode. They switch the card
+      // and the restart is what reads `autoTrust` — so the chip has to be
+      // reachable BEFORE the restart, not after it.
+      const prior = card(); // never chose → starts Direct
+      // `transport` here is what the fake manager REPORTS the live session is
+      // on, and it has to be set: its default is `pty`, which would have made
+      // the running and chosen answers agree and let a handler that read the
+      // running one straight through this test.
+      const h = harness(undefined, dir, { prior, liveIds: ['live-1'], transport: 'stream' });
+      await start(h);
+      expect(h.created[0].transport).toBe('stream'); // ...and really is running on it
+
+      await h.call('sessions:setTransport', CARD, 'pty');
+      // the stub's `persist.list` closes over this object, so mutating it is
+      // how the store's write becomes visible to a later read
+      prior.transport = 'pty';
+
+      expect(await transportOf(h)).toBe('pty');
+    });
+
+    it('follows a PENDING switch TO Direct, not the Terminal session still running', async () => {
+      // The other direction, and the one that costs something: the chip goes
+      // quiet while a Terminal session is still up. That is the honest answer —
+      // the next spawn cannot be asked — and it is reversible by switching the
+      // card back, which is exactly what the tooltip says to do.
+      const prior: PersistedSession = { ...card(), transport: 'pty' };
+      // ...and stated here too, for the same reason in the other direction
+      const h = harness(undefined, dir, { prior, liveIds: ['live-1'], transport: 'pty' });
+      await start(h);
+      expect(h.created[0].transport).toBe('pty');
+
+      await h.call('sessions:setTransport', CARD, 'stream');
+      prior.transport = 'stream';
+
+      expect(await transportOf(h)).toBe('stream');
+    });
   });
 });
 
@@ -2891,21 +3090,36 @@ describe('transcripts:search resolves a scope of sessions to files', () => {
 });
 
 // A stream session's transcript is still on disk and still complete — only its
-// FEED comes from somewhere else (P2-E18-10). So find searches it, and says
-// plainly that it cannot offer a jump.
-describe('transcripts:search over a stream session (P2-E17-01)', () => {
+// FEED comes from somewhere else (P2-E18-10). So find searches it, and — since
+// #458 — offers a jump into it as well, because the two are lined up on the
+// API's own message ids rather than on a timestamp only the file has.
+//
+// This is the WIRING test: the routing that hands the engine a stream session's
+// blocks instead of the watcher's. `transcripts/search.test.ts` is where the
+// alignment itself is proved, against the real captured transcript.
+describe('transcripts:search over a stream session (P2-E17-01, #458)', () => {
   let dir: string;
   tempDirEach('sb-ipc-find-stream-', (d) => (dir = d));
 
-  it('searches the transcript, and reports that it cannot line it up', async () => {
-    const file = path.join(dir, 'stream.jsonl');
+  const answer = (id: string): Record<string, unknown> => ({
+    role: 'assistant',
+    id,
+    content: [{ type: 'text', text: 'a STREAMED answer' }],
+  });
+
+  type Answer = {
+    total: number;
+    hits: Array<{ seq?: number; earlierThanLoaded: boolean }>;
+    groups: Array<{ searched: boolean; aligned: boolean }>;
+  };
+
+  /** The file the CLI wrote, and the Feed the stream built from the same turn. */
+  function directSession(message: Record<string, unknown>, name: string): ReturnType<typeof harness> {
+    const file = path.join(dir, name);
     fs.writeFileSync(
       file,
-      JSON.stringify({
-        type: 'assistant',
-        timestamp: '2026-08-11T00:00:00.000Z',
-        message: { role: 'assistant', content: [{ type: 'text', text: 'a STREAMED answer' }] },
-      }) + '\n'
+      // The FILE stamps a time. The STREAM cannot, which is the whole gap.
+      JSON.stringify({ type: 'assistant', timestamp: '2026-08-11T00:00:00.000Z', message }) + '\n'
     );
     const streamFeed = new StreamFeed();
     const h = harness({ transcripts: { projectsRoot: () => '/root' } }, dir, {
@@ -2914,25 +3128,39 @@ describe('transcripts:search over a stream session (P2-E17-01)', () => {
       streamFeed,
       transcriptFiles: { 'live-1': file },
     });
-    streamFeed.offer('live-1', {
-      type: 'assistant',
-      message: { role: 'assistant', content: [{ type: 'text', text: 'a STREAMED answer' }] },
-      parent_tool_use_id: null,
-    });
+    streamFeed.offer('live-1', { type: 'assistant', message, parent_tool_use_id: null });
+    return h;
+  }
+
+  it('searches the transcript AND hands back a seq to scroll to', async () => {
+    const h = directSession(answer('msg_01direct'), 'stream.jsonl');
 
     const r = (await h.call('transcripts:search', {
       sessionIds: ['live-1'],
       query: { term: 'STREAMED' },
-    })) as {
-      total: number;
-      hits: Array<{ seq?: number; earlierThanLoaded: boolean }>;
-      groups: Array<{ searched: boolean; aligned: boolean }>;
-    };
+    })) as Answer;
 
     expect(r.total).toBe(1); // complete — the file is the archive either way
     expect(r.groups[0].searched).toBe(true);
-    // A stream block's `ts` is when the message reached US, not what the CLI
-    // wrote, so the two cannot be lined up and the engine says so.
+    expect(r.groups[0].aligned).toBe(true);
+    // seq 1: the first (and only) block the stream feed built for this session.
+    expect(r.hits[0].seq).toBe(1);
+    expect(r.hits[0].earlierThanLoaded).toBe(false);
+  });
+
+  it('still says plainly when a turn carries no id it can line up on', async () => {
+    // The honest fallback, unchanged: no `message.id`, no tool call, nothing
+    // both sides can be joined on. A snippet the user can read beats a scroll
+    // to a block we are guessing at.
+    const h = directSession({ role: 'assistant', content: answer('x').content }, 'anon.jsonl');
+
+    const r = (await h.call('transcripts:search', {
+      sessionIds: ['live-1'],
+      query: { term: 'STREAMED' },
+    })) as Answer;
+
+    expect(r.total).toBe(1);
+    expect(r.groups[0].searched).toBe(true);
     expect(r.groups[0].aligned).toBe(false);
     expect(r.hits[0].seq).toBeUndefined();
   });

@@ -104,6 +104,75 @@ export interface FileReadRefused {
 }
 
 /**
+ * How long main waits after a write before telling the renderer (P2-E16-04).
+ *
+ * §5.30's live re-render exists for one scenario — reading `PROGRESS.md` while
+ * an agent rewrites it — and an agent's "write" is routinely several writes: a
+ * truncate, a few appends, sometimes a temp file and a rename. Announcing each
+ * one is ten re-renders of a document the reader is trying to read.
+ *
+ * Shared because the renderer's tests reason in these units, not because the
+ * renderer schedules anything: the debounce lives in MAIN, next to the events
+ * it is coalescing, so a burst costs one IPC message rather than ten.
+ */
+export const FILE_WATCH_DEBOUNCE_MS = 150;
+
+/**
+ * The longest a CONTINUOUS writer can hold the debounce off (P2-E16-04).
+ *
+ * A pure trailing debounce never fires while writes keep arriving inside the
+ * window, and an agent streaming a long file does exactly that — the reader
+ * would watch a stale document for the whole write. This is the ceiling: once a
+ * file has been dirty this long, it re-renders whether or not the writer has
+ * paused, and the debounce starts again from there.
+ */
+export const FILE_WATCH_MAX_WAIT_MS = 1_000;
+
+/**
+ * The floor under the watch: how often main stats a watched file anyway.
+ *
+ * The doctrine is `transcripts/discovery-scheduler.ts`'s, verbatim, because it
+ * is the same bet on the same API: **`fs.watch` is an ACCELERATOR, never the
+ * authority.** It is the flakiest thing in Node's standard library — unreliable
+ * over network and UNC home directories, coalescing-happy on macOS, and on some
+ * mounts silently delivering nothing at all. So a `stat` every two seconds is
+ * what actually GUARANTEES the done-when, and the watch only makes it feel
+ * instant. If every event were lost the viewer would still follow the file, two
+ * seconds behind.
+ */
+export const FILE_WATCH_POLL_MS = 2_000;
+
+/**
+ * What main tells a viewer about the file it has open (P2-E16-04, §5.30).
+ *
+ * It carries NO CONTENT, deliberately. The renderer answers a notice by calling
+ * `fs:read`, which is the one path that checks the scope, applies the cap and
+ * sniffs the encoding — pushing bytes down this channel would be a second way
+ * to get a file's contents into the renderer, with its own copy of all three
+ * rules to keep in step. A notice is a nudge, not a delivery.
+ */
+export interface FileWatchNotice {
+  /** the viewer that asked — its own opaque string, minted in the preload */
+  readonly token: string;
+  /**
+   * `changed` — re-read it. `gone` — the file is not there any more, which the
+   * viewer shows as a strip over the last thing it read rather than as an error
+   * or a blank pane (§5.30: a deleted file is news, not a failure).
+   */
+  readonly state: 'changed' | 'gone';
+}
+
+/**
+ * What `fs:watch` answers.
+ *
+ * The same refusal vocabulary as a read, and for the same reason: a watch is
+ * scope-checked by exactly the code a read is, so a path you may not read is a
+ * path you may not be told about either. Knowing that a file CHANGED is real
+ * information about it — smaller than its contents, and not nothing.
+ */
+export type FileWatchResult = { readonly ok: true; readonly path: string } | FileReadRefused;
+
+/**
  * What `fs:read` answers.
  *
  * A result union rather than the `null`-and-log convention (#347) because the

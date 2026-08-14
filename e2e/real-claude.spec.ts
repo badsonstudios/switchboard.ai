@@ -190,6 +190,12 @@ test.describe('real claude on the DEFAULT transport (#384, opt-in)', () => {
     // anything, so a visible card means that call has already been made or
     // skipped. An acceptance absent here is an acceptance that was never
     // written, not one that has yet to be.
+    //
+    // What this line pins against the REAL CLI is that the CLI does not accept
+    // the folder on its own — the app is not writing here either way. Since the
+    // #397 follow-up the app would not write with auto-trust ON either (the
+    // pre-write is gated on the Terminal transport); that half is pinned at the
+    // ipc seam in `src/main/sessions/ipc.test.ts`, where it costs no tokens.
     const cfg = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8')) as {
       projects?: Record<string, { hasTrustDialogAccepted?: boolean }>;
     };

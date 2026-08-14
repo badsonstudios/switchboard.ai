@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { SlashCommand } from '../shared/slash-commands';
+import type { PromptAttachment } from '../shared/prompt-attachments';
 import type { PtyAttachment, PtyChunk } from '../shared/ipc/pty';
 import type {
   BindingSnapshot,
@@ -7,7 +8,7 @@ import type {
   TranscriptSearchResult,
 } from '../shared/transcripts';
 import type { PermissionRequestDto } from '../shared/ipc/permissions';
-import type { FileReadResult } from '../shared/ipc/fs';
+import type { FileReadResult, FileWatchNotice } from '../shared/ipc/fs';
 import type {
   UpdateHandshake,
   UpdateInstallStatus,
@@ -23,11 +24,51 @@ import type {
   PushSendResult,
   PushWriteResult,
 } from '../shared/push';
+import type { AudioChannelName, AudioPlayCue, AudioSpeakCue, CardSound } from '../shared/sounds';
+import { AUDIO_FAILED_CHANNEL, AUDIO_PLAY_CHANNEL, AUDIO_SPEAK_CHANNEL } from '../shared/sounds';
+
+/**
+ * The notification prefs, as both directions of `notifications:*` see them.
+ * Named rather than inlined three times since P2-E14-05a added two fields —
+ * the inline copies had already drifted from main's `NotificationPrefsState`.
+ */
+interface NotifPrefs {
+  enabled: boolean;
+  osToasts?: boolean;
+  /** per-session cues instead of the plain beep (P2-E14-05a) */
+  sounds?: boolean;
+  /** spoken announcements (P2-E14-05a) */
+  speak?: boolean;
+  quietStart?: string;
+  quietEnd?: string;
+}
 
 const versionArg = process.argv.find((a) => a.startsWith('--switchboard-version='));
 const seedArg = process.argv.find((a) => a.startsWith('--switchboard-seed-panels='));
 const seedSessionArg = process.argv.find((a) => a.startsWith('--switchboard-seed-session='));
 const seedDocArg = process.argv.find((a) => a.startsWith('--switchboard-seed-document='));
+const muteAudioArg = process.argv.find((a) => a.startsWith('--switchboard-mute-audio='));
+
+/** Distinguishes one viewer's file watch from another's (P2-E16-04). Minted
+ *  here, opaque to main, and never reused — a token that came back round would
+ *  deliver a dead panel's notices to a live one. */
+let watchSeq = 0;
+
+/**
+ * Open file watches, by token (P2-E16-04).
+ *
+ * ONE `ipcRenderer` listener for the whole window, not one per viewer.
+ * `ipcRenderer` is an EventEmitter with Node's default ceiling of ten, and §5.30
+ * lets a user pin as many documents as they like — so a listener per panel is a
+ * `MaxListenersExceededWarning` in the console of anyone who reads eleven files,
+ * and a warning nobody can act on is noise that hides the ones they can.
+ */
+const fileWatchers = new Map<string, (notice: FileWatchNotice) => void>();
+ipcRenderer.on('fs:changed', (_e, notice: FileWatchNotice) => {
+  // A notice for a token that has already unsubscribed is ordinary: main may
+  // have pushed it before the unwatch landed.
+  fileWatchers.get(notice?.token)?.(notice);
+});
 
 export interface SessionRecordDto {
   id: string;
@@ -197,6 +238,11 @@ const api = {
         groupId?: string;
         autoKey?: string;
         taskLabel?: string;
+        /** the transport this card's NEXT session will run on (#397) — the
+         *  card's own choice, then the env override, then the default. NOT
+         *  what a running session is currently hosted on; the two differ while
+         *  a transport change waits for a restart. */
+        transport?: 'pty' | 'stream';
       }>
     > => ipcRenderer.invoke('sessions:cards'),
     knownCards: (): Promise<Array<{ cardId: string; identity: SessionRecordDto['identity'] }>> =>
@@ -279,9 +325,17 @@ const api = {
      * the PTY, which needs the bracketed paste and delayed CR instead. The
      * caller falls back. Deliberately shaped as try-then-fall-back so the
      * renderer never has to know which transport a session is on.
+     *
+     * `images` (P2-E10-09) are inline base64 image blocks — the shape the CLI
+     * takes on stdin. Also FALSE if main refuses them, and then the caller must
+     * NOT fall back to the PTY: a keystroke transport cannot carry a bitmap, so
+     * the fallback would send the words and silently drop the picture.
      */
-    submitPrompt: (sessionId: string, text: string): Promise<boolean> =>
-      ipcRenderer.invoke('sessions:submitPrompt', sessionId, text),
+    submitPrompt: (
+      sessionId: string,
+      text: string,
+      attachments?: readonly PromptAttachment[]
+    ): Promise<boolean> => ipcRenderer.invoke('sessions:submitPrompt', sessionId, text, attachments),
     /**
      * Interrupt the running turn (#154). Resolves FALSE for a PTY session,
      * whose interrupt is an Esc keystroke; the caller falls back.
@@ -439,6 +493,35 @@ const api = {
     openPath: (p: string): Promise<boolean> => ipcRenderer.invoke('fs:openPath', p),
     /** Show the file in the OS file manager. Scope-checked like `openPath`. */
     reveal: (p: string): Promise<boolean> => ipcRenderer.invoke('fs:reveal', p),
+    /**
+     * Follow `p` and call back when it changes or disappears (P2-E16-04, §5.30).
+     *
+     * Returns the UNSUBSCRIBE, so the caller's teardown is one call and cannot
+     * forget the second half — "the watch is torn down when the panel closes"
+     * is the done-when, and a leaked watcher per opened file is what only shows
+     * up at session 12.
+     *
+     * The notice carries no bytes: answer a `changed` by calling `read` again,
+     * which is the one path that checks the scope and applies the cap.
+     *
+     * The TOKEN is minted here rather than in main so that this function can be
+     * the whole API. Ordering is the transport's guarantee — `invoke` calls from
+     * one renderer reach main in the order they were made — so an unwatch issued
+     * immediately after a watch cannot arrive first and strand a live watch.
+     */
+    watch: (p: string, onChange: (notice: FileWatchNotice) => void): (() => void) => {
+      const token = `doc-${++watchSeq}`;
+      fileWatchers.set(token, onChange);
+      // Fire-and-forget in BOTH directions, with the rejection swallowed: a
+      // caller's teardown has nobody left to tell, and an unhandled rejection in
+      // the renderer over a file watch would be our breakage costing the user
+      // their session, which is the one thing fail-open forbids.
+      void ipcRenderer.invoke('fs:watch', { token, path: p }).catch(() => {});
+      return () => {
+        fileWatchers.delete(token);
+        void ipcRenderer.invoke('fs:unwatch', { token }).catch(() => {});
+      };
+    },
   },
   git: {
     status: (folder: string): Promise<unknown> => ipcRenderer.invoke('git:status', folder),
@@ -446,16 +529,43 @@ const api = {
       ipcRenderer.invoke('git:fileVersions', folder, file),
   },
   notifications: {
-    getPrefs: (): Promise<{ enabled: boolean; osToasts?: boolean; quietStart?: string; quietEnd?: string }> =>
-      ipcRenderer.invoke('notifications:getPrefs'),
+    getPrefs: (): Promise<NotifPrefs> => ipcRenderer.invoke('notifications:getPrefs'),
     // merge-patch: send only the prefs you're changing (review P1 #13)
-    setPrefs: (p: {
-      enabled?: boolean;
-      osToasts?: boolean;
-      quietStart?: string;
-      quietEnd?: string;
-    }): Promise<{ enabled: boolean; osToasts?: boolean; quietStart?: string; quietEnd?: string }> =>
+    setPrefs: (p: Partial<NotifPrefs>): Promise<NotifPrefs> =>
       ipcRenderer.invoke('notifications:setPrefs', p),
+  },
+  /**
+   * Per-session sounds and spoken announcements (P2-E14-05a, §5.9 + §5.11).
+   *
+   * Three of these four are ordinary asks. `onPlay` / `onSpeak` are the
+   * opposite direction — main telling THIS window to make a noise, because
+   * main has no audio device and Chromium does.
+   */
+  sounds: {
+    /**
+     * Play nothing, anywhere (P2-E14-05a). Main's own mute covers the cues it
+     * pushes; this covers the two the renderer plays by itself — the card
+     * menu's preview and the sample on switching announcements on.
+     */
+    muted: muteAudioArg?.split('=')[1] === '1',
+    /** which cue this card rings, and whether the user pinned it */
+    get: (cardId: string): Promise<CardSound | null> => ipcRenderer.invoke('sounds:get', cardId),
+    /** pin a cue, or `null` to hand the card back to auto; resolves to the truth */
+    set: (cardId: string, sound: string | null): Promise<CardSound | null> =>
+      ipcRenderer.invoke('sounds:set', cardId, sound),
+    /** "I took that and could not play it" — main answers with a plain beep */
+    failed: (channel: AudioChannelName): Promise<boolean> =>
+      ipcRenderer.invoke(AUDIO_FAILED_CHANNEL, channel),
+    onPlay: (cb: (c: AudioPlayCue) => void): (() => void) => {
+      const h = (_e: unknown, c: AudioPlayCue): void => cb(c);
+      ipcRenderer.on(AUDIO_PLAY_CHANNEL, h);
+      return () => ipcRenderer.removeListener(AUDIO_PLAY_CHANNEL, h);
+    },
+    onSpeak: (cb: (c: AudioSpeakCue) => void): (() => void) => {
+      const h = (_e: unknown, c: AudioSpeakCue): void => cb(c);
+      ipcRenderer.on(AUDIO_SPEAK_CHANNEL, h);
+      return () => ipcRenderer.removeListener(AUDIO_SPEAK_CHANNEL, h);
+    },
   },
   /**
    * Notification rules (P2-E14-03, §5.9). The renderer's whole write surface

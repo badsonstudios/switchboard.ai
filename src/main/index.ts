@@ -36,6 +36,8 @@ import { Notifier } from './events/notifier';
 import {
   ACTION_OS_TOAST,
   ACTION_PUSH,
+  ACTION_SOUND,
+  ACTION_SPEAK,
   ACTION_WEBHOOK,
   defaultRules,
   visibilityAcross,
@@ -49,6 +51,10 @@ import {
   toastActionsSupported,
 } from './events/permission-toast';
 import { registerRulesIpc } from './events/rules-ipc';
+import { DEFAULT_SOUND } from '../shared/sounds';
+import { SoundActions } from './events/sound-actions';
+import { createRendererAudioSink } from './events/audio-sink';
+import { registerSoundIpc } from './events/sound-ipc';
 import { PushActions } from './events/push-actions';
 import { registerPushIpc } from './events/push-ipc';
 import { SecretStore } from './secrets/store';
@@ -265,6 +271,19 @@ function scriptedQuit(): boolean {
   return !!process.env.SWITCHBOARD_NO_QUIT_CONFIRM || !!process.env.SWITCHBOARD_AUTOCLOSE;
 }
 
+/**
+ * `SWITCHBOARD_MUTE_AUDIO=1` — behave exactly as though the cue was played, and
+ * play nothing (P2-E14-05a). For the e2e suite, which runs on the machine its
+ * owner is sitting at.
+ *
+ * NON-PACKAGED BUILDS ONLY, the rule `SWITCHBOARD_BIND_GIVEUP_MS` and the
+ * update feed already follow: a stray variable in a user's environment must
+ * never be able to silence the shipped app's notifications.
+ */
+function audioMuted(): boolean {
+  return !app.isPackaged && !!process.env.SWITCHBOARD_MUTE_AUDIO;
+}
+
 // Quit protection (P1-E6-02): intercept the WINDOW close — on Windows the X
 // destroys the sole window before before-quit, so guarding there strands
 // headless PTYs. Prompt here, then destroy + quit only on confirm.
@@ -470,6 +489,10 @@ function createWindow(): BrowserWindow {
         `--switchboard-seed-panels=${process.env.SWITCHBOARD_SEED_PANELS ?? 0}`,
         `--switchboard-seed-session=${process.env.SWITCHBOARD_SEED_SESSION ?? ''}`,
         `--switchboard-seed-document=${process.env.SWITCHBOARD_SEED_DOCUMENT ?? ''}`,
+        // The renderer plays two cues main never sends it — the card menu's
+        // preview and the "hear what you just turned on" sample — so the mute
+        // has to reach this side too, or a muted e2e run still makes a noise.
+        `--switchboard-mute-audio=${audioMuted() ? 1 : 0}`,
       ],
     },
   });
@@ -1357,6 +1380,56 @@ app
     });
     ruleActions.register(ACTION_PUSH, pushActions.pushHandler);
     ruleActions.register(ACTION_WEBHOOK, pushActions.webhookHandler);
+    // ── the two channels that stay in the room (P2-E14-05a, §5.9 + §5.11) ──
+    //
+    // A cue that says WHICH card wants you, and a voice that says it out loud.
+    // Both are drop-ins on the same seam as the four above: no rule field, no
+    // change to the matcher. The noise itself happens in a renderer window —
+    // main has no audio device, Chromium does (`events/audio-sink.ts`).
+    //
+    // `SWITCHBOARD_MUTE_AUDIO=1` makes the sink log instead of sounding, for
+    // the e2e suite, which runs on the machine its owner is sitting at.
+    // Non-packaged builds only — the same rule `SWITCHBOARD_BIND_GIVEUP_MS`
+    // and the update feed follow, so a stray variable in a user's environment
+    // can never silence the shipped app.
+    const audioSink = createRendererAudioSink<{
+      isDestroyed: () => boolean;
+      isCrashed: () => boolean;
+      win: BrowserWindow;
+    }>({
+      // The MAIN window only, and this is not an oversight. A dockview popout
+      // (E8) loads `popout.html`, which ships no script of ours on purpose —
+      // dockview adopts the group's DOM into it from the opener, so the JS that
+      // would receive `audio:play` lives in the main window's realm and nowhere
+      // else. Listing a popout here would make the sink answer "taken" for a
+      // window that cannot play anything, which is worse than answering
+      // "nobody took it": the latter beeps.
+      windows: () => [
+        currentWindow
+          ? {
+              isDestroyed: () => currentWindow!.isDestroyed(),
+              // a renderer that died leaves this window object alive; see
+              // `AudioWindow`. Read through a wrapper because `webContents`
+              // itself throws once the window really is destroyed.
+              isCrashed: () => currentWindow!.webContents.isCrashed(),
+              win: currentWindow,
+            }
+          : null,
+      ],
+      send: (w, channel, payload) => broker.send(w.win, channel as 'audio:play', payload),
+      muted: audioMuted(),
+      log: rulesLog,
+    });
+    const soundActions = new SoundActions({
+      sink: audioSink,
+      soundFor: (cardId) => (cardId ? workspace.cardSound(cardId).id : DEFAULT_SOUND.id),
+      // The beep the notifier stopped making while cues are on. Without it, an
+      // event whose cue reached nobody would be completely silent.
+      fallback: () => shell.beep(),
+      log: rulesLog,
+    });
+    ruleActions.register(ACTION_SOUND, soundActions.soundHandler);
+    ruleActions.register(ACTION_SPEAK, soundActions.speakHandler);
     // Assigned the moment `registerSessionIpc` returns, a few dozen lines
     // below; until then no session exists, so no event can ask.
     let cardIdForLive: (liveId: string) => string | null = () => null;
@@ -1372,6 +1445,9 @@ app
       // effect on the next event with nothing to persist and no rule to write.
       getDefaultRules: () => {
         const push = workspace.getPushPrefs();
+        // `sounds` and `speak` ride in on the spread — they are notification
+        // prefs, so flipping either chip changes the next event with nothing
+        // persisted and no rule rewritten, exactly like the toast switch.
         return defaultRules({
           ...workspace.getNotificationPrefs(),
           push: push.push,
@@ -1407,6 +1483,13 @@ app
       log: rulesLog,
       store: workspace,
       knownCard: (cardId) => workspace.listSessions().some((s) => s.id === cardId),
+    });
+    registerSoundIpc({
+      broker,
+      log: rulesLog,
+      store: workspace,
+      knownCard: (cardId) => workspace.listSessions().some((s) => s.id === cardId),
+      onUnplayable: (channel) => soundActions.unplayable(channel),
     });
     registerPushIpc({
       broker,
@@ -1470,7 +1553,15 @@ app
     // than in a second module that would need a reference to it. `getWindow` is
     // the modal's parent, and is a thunk for the reason every other one here is
     // — `currentWindow` is reassigned on macOS re-activate.
-    registerFsIpc({ broker, log: fsLog, scope: readScope, getWindow: () => currentWindow });
+    // …and P2-E16-04 hands back a handle, because the live-re-render watch owns
+    // OS resources (one directory watch and one stat timer per open document)
+    // that have to go down with the app like every other watcher here.
+    const fsIpc = registerFsIpc({
+      broker,
+      log: fsLog,
+      scope: readScope,
+      getWindow: () => currentWindow,
+    });
     broker.handle('notifications:getPrefs', () => workspace.getNotificationPrefs());
     broker.handle('notifications:setPrefs', (_e, p) => {
       workspace.setNotificationPrefs(p);
@@ -1535,6 +1626,7 @@ app
       streams.killAll();
       hooks.stop();
       transcripts.stop();
+      fsIpc.stop(); // the document viewers' file watches (P2-E16-04)
       updates.stop(); // kills the daily timer; a check in flight becomes a no-op
       health.stop(); // same, for the status-page poll
       staticServer?.close();

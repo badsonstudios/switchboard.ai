@@ -4,7 +4,14 @@
 // needed the compiled CLI could only skip there. The compiled program is proven
 // end-to-end over real pipes by `npm run check:fake-stream`.
 import { describe, it, expect, beforeEach } from 'vitest';
-import { FakeStreamProtocol, FakeStreamHost, extractText, FAKE_SESSION_ID } from './fake-stream-protocol';
+import {
+  FakeStreamProtocol,
+  FakeStreamHost,
+  extractText,
+  extractDocuments,
+  extractImages,
+  FAKE_SESSION_ID,
+} from './fake-stream-protocol';
 
 let out: Record<string, unknown>[];
 let writes: Array<{ path: string; content: string }>;
@@ -483,6 +490,33 @@ describe('!tools — a turn of tool calls (P2-E18-14)', () => {
     // the prompt, four tool calls, the prose, the tool result
     expect(lines).toHaveLength(7);
   });
+
+  // #458. Session find lines a Direct session's transcript up with its Feed on
+  // the ids the API puts in the message, and a `message.id` is the one that
+  // carries PROSE blocks. The real API sends one on every assistant message; a
+  // fake that did not would leave that half of the join with no e2e proof at
+  // all — the same argument this file already makes for `tool_use` ids.
+  it('stamps every assistant message with an id, the same one on both sides', () => {
+    const lines: Record<string, unknown>[] = [];
+    const p = new FakeStreamProtocol(
+      { ...host, appendTranscript: (l) => lines.push(l) },
+      (m) => out.push(m)
+    );
+    p.handle(userMsg('!tools'));
+
+    const idOf = (m: { message?: unknown }): unknown => (m.message as { id?: unknown } | undefined)?.id;
+    const streamed = out.filter((m) => m.type === 'assistant');
+    const written = lines.filter((l) => l.type === 'assistant');
+    expect(streamed.length).toBeGreaterThan(0);
+    expect(streamed.every((m) => typeof idOf(m) === 'string')).toBe(true);
+    // The file's copy of the turn and the stream's carry the SAME ids, in the
+    // same order. If these ever diverge, find goes quietly list-only on Direct.
+    expect(written.map(idOf)).toEqual(streamed.map(idOf));
+    // ...and it is ONE message split across several lines, not several
+    // messages — which is the shape the real transcript has (measured: 583 of
+    // 884 ids in the captured transcript span more than one line).
+    expect(new Set(written.map(idOf)).size).toBe(1);
+  });
 });
 
 // P2-E18-14 — enough conversation to scroll.
@@ -658,5 +692,136 @@ describe('extractText — the inbound envelope (P2-E18-04)', () => {
     expect(extractText(undefined)).toBe('');
     expect(extractText({})).toBe('');
     expect(extractText({ content: 42 })).toBe('');
+  });
+});
+
+// P2-E10-09 — the fake has to be able to TELL that an image arrived, or every
+// test of the image path can only prove the composer cleared itself.
+describe('images on the inbound envelope (P2-E10-09)', () => {
+  const png = {
+    type: 'image',
+    source: { type: 'base64', media_type: 'image/png', data: 'AQIDBA==' },
+  };
+  const withImage = (): Record<string, unknown> => ({
+    type: 'user',
+    message: { role: 'user', content: [png, { type: 'text', text: 'what is this?' }] },
+    parent_tool_use_id: null,
+    session_id: '',
+  });
+
+  it('reads exactly the block shape the extension writes', () => {
+    expect(extractImages({ content: [png] })).toEqual([
+      { mediaType: 'image/png', data: 'AQIDBA==' },
+    ]);
+  });
+
+  // A strict reader, on purpose: a block WE got wrong should look like an image
+  // that vanished, not like one the fake was kind enough to accept.
+  it('ignores anything that is not that shape', () => {
+    expect(extractImages({ content: [{ type: 'image' }] })).toEqual([]);
+    expect(extractImages({ content: [{ type: 'image', source: { type: 'url', url: 'x' } }] })).toEqual([]);
+    expect(extractImages({ content: [{ type: 'text', text: 'a' }] })).toEqual([]);
+    expect(extractImages(undefined)).toEqual([]);
+    expect(extractImages({ content: 'plain' })).toEqual([]);
+  });
+
+  it('answers an image turn with what it decoded off the wire', () => {
+    proto.handle(withImage());
+    const said = out
+      .filter((m) => m.type === 'assistant')
+      .flatMap((m) => ((m.message as { content?: Array<{ text?: string }> })?.content ?? []))
+      .map((c) => c.text ?? '')
+      .join(' ');
+    expect(said).toContain('IMAGE-SEEN:image/png:8');
+  });
+
+  // `--replay-user-messages` echoes our own turn back. Dropping the image from
+  // that echo would be a fake that cannot distinguish a working image path from
+  // a broken one.
+  it('echoes the image block back, unchanged', () => {
+    proto.handle(withImage());
+    const echo = out.find((m) => m.type === 'user') as
+      | { message: { content: Array<Record<string, unknown>> } }
+      | undefined;
+    expect(echo?.message.content[0]).toEqual(png);
+    expect(echo?.message.content[1]).toEqual({ type: 'text', text: 'what is this?' });
+  });
+
+  it('leaves a text-only turn exactly as it was', () => {
+    proto.handle(userMsg('hello'));
+    const echo = out.find((m) => m.type === 'user') as
+      | { message: { content: Array<Record<string, unknown>> } }
+      | undefined;
+    expect(echo?.message.content).toEqual([{ type: 'text', text: 'hello' }]);
+    expect(types().filter((t) => t === 'assistant').length).toBeGreaterThan(0);
+    expect(JSON.stringify(out)).not.toContain('IMAGE-SEEN');
+  });
+});
+
+describe('documents on the inbound envelope (P2-E10-10)', () => {
+  const doc = {
+    type: 'document',
+    source: { type: 'text', media_type: 'text/plain', data: '# hello\n' },
+    title: 'notes.md',
+  };
+  const pdf = {
+    type: 'document',
+    source: { type: 'base64', media_type: 'application/pdf', data: 'AQIDBA==' },
+    title: 'spec.pdf',
+  };
+  const withDoc = (block: Record<string, unknown> = doc): Record<string, unknown> => ({
+    type: 'user',
+    message: { role: 'user', content: [block, { type: 'text', text: 'read this' }] },
+    parent_tool_use_id: null,
+    session_id: '',
+  });
+
+  it('reads both document shapes the extension writes', () => {
+    expect(extractDocuments({ content: [doc] })).toEqual([
+      { kind: 'text', title: 'notes.md', data: '# hello\n' },
+    ]);
+    expect(extractDocuments({ content: [pdf] })).toEqual([
+      { kind: 'pdf', title: 'spec.pdf', data: 'AQIDBA==' },
+    ]);
+  });
+
+  // THE REGRESSION THIS EXISTS FOR: a text document whose source says `base64`
+  // is still valid JSON and still round-trips — it just reaches the model as
+  // gibberish. A strict reader turns that into a document that vanished.
+  it('refuses a text document that claims the wrong source type', () => {
+    expect(
+      extractDocuments({
+        content: [{ type: 'document', source: { type: 'base64', media_type: 'text/plain', data: 'eA==' }, title: 'a.md' }],
+      })
+    ).toEqual([]);
+    expect(extractDocuments({ content: [{ type: 'document', title: 'a.md' }] })).toEqual([]);
+    expect(extractDocuments({ content: [{ ...doc, title: 7 }] })).toEqual([]);
+    expect(extractDocuments(undefined)).toEqual([]);
+  });
+
+  // The CONTENTS are echoed for text, not a length: a base64'd text file has a
+  // perfectly plausible length and completely wrong bytes.
+  it('answers a document turn with what it decoded off the wire', () => {
+    proto.handle(withDoc());
+    const said = out
+      .filter((m) => m.type === 'assistant')
+      .flatMap((m) => ((m.message as { content?: Array<{ text?: string }> })?.content ?? []))
+      .map((c) => c.text ?? '')
+      .join(' ');
+    expect(said).toContain('DOC-SEEN:text:notes.md:# hello');
+  });
+
+  it('echoes the document block back, unchanged', () => {
+    proto.handle(withDoc());
+    const echo = out.find((m) => m.type === 'user') as
+      | { message: { content: Array<Record<string, unknown>> } }
+      | undefined;
+    expect(echo?.message.content[0]).toEqual(doc);
+    expect(echo?.message.content[1]).toEqual({ type: 'text', text: 'read this' });
+  });
+
+  it('leaves a text-only turn exactly as it was', () => {
+    proto.handle(userMsg('hello'));
+    expect(JSON.stringify(out)).not.toContain('DOC-SEEN');
   });
 });
