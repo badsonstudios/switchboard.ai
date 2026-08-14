@@ -951,6 +951,9 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         record = manager.create(identity, {
           // no hook capability = nothing injected and no token registered
           settingsFor: plan.buildSettings,
+          // ...and the same absence means there is nothing to give back if the
+          // start throws. The pair travels together (#470).
+          releaseSettingsFor: plan.releaseSettings,
           autonomy,
           resumeSessionId: plan.resumeSessionId,
           // Which transport to ASK for, most specific first:

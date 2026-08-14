@@ -177,6 +177,16 @@ describe('the single-instance lock comes first (#289)', () => {
     expect(at('manager.sweepOrphanStateDirs()')).toBeLessThan(at('registerSessionIpc({'));
   });
 
+  // The SAME claim for the token sweep inside `hooks.start()` (#282, filters
+  // #470), which rests on it just as heavily: it deletes `hook-token` under
+  // every session-shaped directory it finds, and a token belonging to a live
+  // session of OURS is only never a candidate because none exists yet. The
+  // in-function keep-set is the belt; this is the braces, and it was a comment
+  // until #470 noticed only one of the two sweeps had it pinned.
+  it('sweeps the hook tokens before any session can be spawned (#282)', () => {
+    expect(at('hooks.start()')).toBeLessThan(at('registerSessionIpc({'));
+  });
+
   it('turns a losing instance away instead of running the bootstrap', () => {
     // `app.quit()` in the failed-lock branch...
     expect(INDEX).toMatch(/if \(!isPrimaryInstance\) \{[\s\S]{0,900}?app\.quit\(\);/);
