@@ -73,6 +73,17 @@ on the floor, and say so in your PR.
   session is still running and waiting for its restart. Whatever you had chosen
   is kept and still shown: being greyed out takes away the switch, never your
   answer.
+- **Direct-mode sessions no longer accept a folder on your behalf.** With
+  auto-trust on, switchboard records your acceptance in Claude Code's own
+  settings before a session starts — so that the trust prompt never interrupts
+  you. It now does that only for Terminal-mode sessions, the only ones Claude
+  Code would ever have asked. A Direct session leaves the setting exactly as it
+  found it, so a folder you have only ever run in Direct mode still has the
+  question waiting the first time you open it in Terminal mode — set the chip to
+  **🔒 ask trust** before that first Terminal start if you want to answer it
+  yourself, since auto-trust is what answers it otherwise. (Nothing is lost by
+  not writing it: measured against claude 2.1.226, an untrusted folder in Direct
+  mode runs normally, with your project settings and hooks.)
 
 ### Fixed
 

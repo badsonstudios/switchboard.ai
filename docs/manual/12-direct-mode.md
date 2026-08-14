@@ -97,6 +97,13 @@ broken: there is just no session there that could put the question in front of
 you. Switch a session to Terminal mode from its **⋯** menu and the chip works
 again. Full story in [Settings](10-settings.md#trusting-folders).
 
+Because nothing can ask, switchboard doesn't answer on your behalf either: a
+Direct-mode session leaves Claude Code's trust setting for that folder exactly
+as it found it, whichever way the chip is set. The question is still there to be
+asked the first time you run in Terminal mode — and with **auto-trust** on (the
+default) that is the moment switchboard answers it for you, so switch the chip
+to **🔒 ask trust** first if you want to see the prompt yourself.
+
 Everything else works the same — better, in a couple of places. Your
 conversation still appears in the Session view (and arrives faster; see
 [Replies arrive as they're written](#replies-arrive-as-theyre-written)), prompts

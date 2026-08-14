@@ -95,11 +95,28 @@ Being disabled never changes what you had chosen. If you had picked **🔒 ask
 trust**, the chip still says so, greyed out, and it is still what you get the
 moment a Terminal-mode session starts.
 
-So: if being asked matters to you for a particular folder, switch that session
-to Terminal mode **before anything runs in that folder for the first time**, and
-restart it. With **auto-trust** on, the first session in a folder — Terminal or
-Direct — records your acceptance for good, and there is nothing left to ask
-about afterwards.
+And while the chip is greyed out, **switchboard doesn't answer the question
+either.** With **auto-trust** on, switchboard records your acceptance in Claude
+Code's own settings before a Terminal-mode session starts — that's the whole
+point of the setting. It doesn't do that for Direct-mode sessions: there was
+never a question to get ahead of, and recording an answer you were never able to
+give would quietly use up the one thing this chip controls.
+
+So a folder you've only ever run in Direct mode stays un-answered, and the
+question is still there to be asked. If being asked matters for a folder, do
+this — in this order, and at any time, before or after it has run in Direct
+mode:
+
+1. Switch that session to **Terminal** mode from its **⋯** menu. The chip wakes
+   up straight away.
+2. Set it to **🔒 ask trust**.
+3. Restart the session — **Restart session now**, offered in the same **⋯**
+   menu after a mode switch, or the session's own **Restart** button if it has
+   already ended. Claude Code puts the trust question in the session's
+   **Terminal** tab.
+
+Once you've answered it there, the answer is remembered, and Direct mode works
+the same either way.
 
 ## What's remembered
 

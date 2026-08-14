@@ -766,10 +766,54 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
       // sessions, never silently changes a running one)
       const autonomy = prior?.autonomy ?? opts.autonomy;
 
+      // WHICH TRANSPORT THIS SPAWN ASKS FOR, most specific first:
+      //
+      //  1. the CARD's own stored choice (P2-E18-08b) — an explicit answer
+      //     from the user, and it wins over everything, including Terminal;
+      //  2. the env escape hatch, which predates the setting and can now
+      //     force EITHER transport (#381);
+      //  3. Direct, the default for a card that has never chosen (#381).
+      //
+      // Absence in the record is "never chose", not "chose Terminal": we do
+      // not write the default onto the card, so a card follows whatever the
+      // default is at the time it starts. That is what makes this one line
+      // move every untouched card, which is the point of the issue.
+      //
+      // The adapter still has the final say — it answers in the recipe, and
+      // one that cannot speak stream-json returns a PTY recipe we honour.
+      //
+      // Resolved HERE, above the trust step, because two decisions now read it
+      // and they must not be able to disagree: the trust pre-write (below) and
+      // the spawn itself. `sessions:cards` reports the same expression for the
+      // same reason (#397).
+      const spawnTransport = prior?.transport ?? deps.preferredTransport?.() ?? DEFAULT_SESSION_TRANSPORT;
+
       // Preparing the folder is the PROVIDER's business (§5.9 trust is Claude's
       // `~/.claude.json`); a provider that has never heard of it must not have
       // it written on its behalf.
-      if (deps.autoTrust() && plan.ensureTrusted && !plan.ensureTrusted(opts.folder)) {
+      //
+      // AND ONLY WHEN A PROMPT COULD ACTUALLY HAPPEN (#397). `ensureTrusted`
+      // writes `hasTrustDialogAccepted: true` into the user's real
+      // `~/.claude.json` — a permanent edit to a file that outlives the app —
+      // and its entire purpose is to pre-empt the question Claude Code would
+      // otherwise ask in its TUI. On the Direct transport there is no TUI and
+      // no question: measured at the CLI three times now (#384 twice, and the
+      // #397 probe on 2026-08-13 against claude 2.1.226), a stream-json session
+      // in a never-trusted folder simply runs — no prompt, project settings
+      // load, project hooks fire, and the CLI records nothing about the folder
+      // itself. So on Direct the write bought nothing and cost the user the
+      // only thing the trust chip governs: it accepted the folder for good,
+      // before they could ever be asked, and the manual's "open it in Terminal
+      // mode the first time" workflow could not be reached afterwards.
+      //
+      // Gated on the ASKED-FOR transport rather than the one the adapter
+      // finally resolves, because the write has to land BEFORE the spawn — by
+      // the time a recipe exists, the CLI is already running. The two differ
+      // only for an adapter that cannot speak stream-json and downgrades to a
+      // PTY (only the fake providers today, both behind the test/e2e gate);
+      // such a session would prompt in its terminal and get answered by hand,
+      // which is the fail-open direction.
+      if (spawnTransport === 'pty' && deps.autoTrust() && plan.ensureTrusted && !plan.ensureTrusted(opts.folder)) {
         log.warn('auto-trust failed — the provider may prompt in the terminal', {
           cardId: opts.cardId,
           folder: opts.folder,
@@ -793,22 +837,9 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
           settingsFor: plan.buildSettings,
           autonomy,
           resumeSessionId: plan.resumeSessionId,
-          // Which transport to ASK for, most specific first:
-          //
-          //  1. the CARD's own stored choice (P2-E18-08b) — an explicit answer
-          //     from the user, and it wins over everything, including Terminal;
-          //  2. the env escape hatch, which predates the setting and can now
-          //     force EITHER transport (#381);
-          //  3. Direct, the default for a card that has never chosen (#381).
-          //
-          // Absence in the record is "never chose", not "chose Terminal": we do
-          // not write the default onto the card, so a card follows whatever the
-          // default is at the time it starts. That is what makes this one line
-          // move every untouched card, which is the point of the issue.
-          //
-          // The adapter still has the final say — it answers in the recipe, and
-          // one that cannot speak stream-json returns a PTY recipe we honour.
-          transport: prior?.transport ?? deps.preferredTransport?.() ?? DEFAULT_SESSION_TRANSPORT,
+          // Resolved above the trust step — see `spawnTransport` for the
+          // precedence and why it is one value rather than two.
+          transport: spawnTransport,
         });
       } catch (err) {
         // The manager adds no record when spawn fails ("no orphan record: it was
@@ -1020,7 +1051,8 @@ export function registerSessionIpc(deps: SessionIpcDeps): void {
           // downgrades the request to a PTY (`session-manager.ts`, and only the
           // fake providers do it today). Reading `capabilitiesOf` here would
           // make it exact; it is not worth the coupling until a real adapter
-          // does it.
+          // does it. `sessions:create` gates its trust pre-write on the same
+          // asked-for value, so the chip and the write agree by construction.
           transport: card.transport ?? deps.preferredTransport?.() ?? DEFAULT_SESSION_TRANSPORT,
           autoKey: await autoKeyFor(card.identity.folder),
           taskLabel: card.taskLabel,

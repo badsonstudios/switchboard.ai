@@ -549,9 +549,15 @@ describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
   });
 
   describe('preparing the folder belongs to the provider', () => {
+    // Every case here is on the TERMINAL transport, because that is the only
+    // one that pre-writes trust at all since #397 — the Direct half is the
+    // describe block below. `preferredTransport` rather than a card choice:
+    // most of these have no prior record.
+    const onTerminal = { preferredTransport: () => 'pty' as const };
+
     it('auto-trust on + a trust capability: asked once, for this folder', () => {
       const ensureTrusted = vi.fn(() => true);
-      const h = harness({ trust: { ensureTrusted } }, folder, { autoTrust: true });
+      const h = harness({ trust: { ensureTrusted } }, folder, { autoTrust: true, ...onTerminal });
 
       h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
 
@@ -562,7 +568,7 @@ describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
       // a provider that has never heard of ~/.claude.json must not have it
       // written on its behalf — this is the assumption that used to be
       // unconditional
-      const h = harness(undefined, folder, { autoTrust: true });
+      const h = harness(undefined, folder, { autoTrust: true, ...onTerminal });
       expect(() =>
         h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' })
       ).not.toThrow();
@@ -571,18 +577,75 @@ describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
 
     it('auto-trust off: the capability is never called', () => {
       const ensureTrusted = vi.fn(() => true);
-      const h = harness({ trust: { ensureTrusted } }, folder);
+      const h = harness({ trust: { ensureTrusted } }, folder, onTerminal);
       h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
       expect(ensureTrusted).not.toHaveBeenCalled();
     });
 
     it('a trust failure is reported rather than swallowed', () => {
-      const h = harness({ trust: { ensureTrusted: () => false } }, folder, { autoTrust: true });
+      const h = harness({ trust: { ensureTrusted: () => false } }, folder, {
+        autoTrust: true,
+        ...onTerminal,
+      });
       h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
       expect(h.warn).toHaveBeenCalledWith('auto-trust failed — the provider may prompt in the terminal', {
         cardId: 'card-1',
         folder,
       });
+    });
+  });
+
+  // #397, the follow-up: the pre-write is gated on the SPAWN TRANSPORT.
+  //
+  // `ensureTrusted` writes `hasTrustDialogAccepted: true` into the user's real
+  // `~/.claude.json`, permanently, to pre-empt a question Claude Code only ever
+  // asks in its TUI. A Direct session has no TUI and is never asked — measured
+  // at the CLI in #384 and again by the #397 probe (2026-08-13, claude 2.1.226:
+  // an untrusted folder in stream-json mode runs, loads project settings and
+  // fires project hooks, and the CLI writes nothing about the folder itself).
+  // So on Direct the write bought nothing and spent the only thing the trust
+  // chip governs — which is what made the greyed-out chip a lie rather than a
+  // statement.
+  //
+  // These tests are the executable version of that: the first two go red if the
+  // `if` in `sessions:create` is ungated, the last two if the gate is ever
+  // pointed at something other than the value the spawn itself uses.
+  describe('the trust pre-write only happens where a prompt could (#397)', () => {
+    const withTrust = (opts: Parameters<typeof harness>[2] = {}) => {
+      const ensureTrusted = vi.fn(() => true);
+      const h = harness({ trust: { ensureTrusted } }, folder, { autoTrust: true, ...opts });
+      h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
+      return { h, ensureTrusted };
+    };
+
+    it('a DEFAULT spawn (Direct, #381) writes nothing, even with auto-trust ON', () => {
+      // The whole point: this is what every untouched card does, so before the
+      // gate the first run of any new folder accepted it for good.
+      const { h, ensureTrusted } = withTrust({});
+      expect(ensureTrusted).not.toHaveBeenCalled();
+      expect(h.created[0].transport).toBe('stream'); // ...and it really did start Direct
+    });
+
+    it('a card that CHOSE Direct writes nothing either', () => {
+      const { ensureTrusted } = withTrust({ prior: priorCard({ folder, transport: 'stream' }) });
+      expect(ensureTrusted).not.toHaveBeenCalled();
+    });
+
+    it('the env override can put a spawn on the Terminal, and then it does write', () => {
+      // the same precedence the spawn itself uses — one resolved value, so the
+      // gate and the spawn cannot disagree
+      const { h, ensureTrusted } = withTrust({ preferredTransport: () => 'pty' });
+      expect(ensureTrusted).toHaveBeenCalledExactlyOnceWith(folder);
+      expect(h.created[0].transport).toBe('pty'); // the value the gate read is the value it spawned on
+    });
+
+    it("a card's own Terminal choice beats an env override aiming at Direct", () => {
+      const { h, ensureTrusted } = withTrust({
+        prior: priorCard({ folder, transport: 'pty' }),
+        preferredTransport: () => 'stream',
+      });
+      expect(ensureTrusted).toHaveBeenCalledExactlyOnceWith(folder);
+      expect(h.created[0].transport).toBe('pty');
     });
   });
 

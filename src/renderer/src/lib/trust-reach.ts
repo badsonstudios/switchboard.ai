@@ -7,22 +7,24 @@
 // runs in the folder. `e2e/real-claude.spec.ts` pins that behaviour, and the
 // day the CLI starts asking, that test is what goes red.
 //
-// So on the Direct transport, choosing 🔒 ask trust cannot get you ASKED. Be
-// precise about the scope of that: the setting is not a no-op there. It still
-// decides whether `sessions:create` pre-writes `hasTrustDialogAccepted` into
-// the user's real `~/.claude.json` (`main/sessions/trust.ts`), which happens on
-// every spawn regardless of transport. What Direct removes is the question, not
-// the write.
+// So on the Direct transport, choosing 🔒 ask trust cannot get you ASKED.
 //
-// OPEN, AND IT MATTERS TO THIS RULE (#397 review): with the chip disabled and
-// auto-trust defaulting ON, a folder's FIRST Direct session pre-accepts it for
-// good — so the escape hatch this module's tooltip points at ("switch a session
-// to Terminal and you will be asked") is only available before that first run.
-// Gating the pre-write on the resolved spawn transport would make the chip's
-// inertness true rather than asserted, and is the change this file is waiting
-// on. It was not made here: it alters what the DEFAULT transport writes to the
-// user's config, and whether an untrusted folder degrades anything else in
-// stream mode has not been measured.
+// AND SINCE THE #397 FOLLOW-UP, IT CANNOT GET YOU PRE-ACCEPTED EITHER. The
+// first review of this file flagged the gap: `sessions:create` used to pre-write
+// `hasTrustDialogAccepted` into the user's real `~/.claude.json`
+// (`main/sessions/trust.ts`) on EVERY spawn, transport included — so with the
+// chip greyed out and auto-trust defaulting ON, a folder's first Direct session
+// accepted it for good, and the escape hatch this module's tooltip points at
+// ("switch a session to Terminal and you will be asked") was only reachable
+// before that first run. Dan's answer, 2026-08-13: gate the write on the
+// transport the spawn will actually use. It is measured, not assumed — the
+// probe run that day (claude 2.1.226) showed an untrusted folder in stream mode
+// running normally, loading project settings, firing project hooks, and leaving
+// no record of itself in `~/.claude.json`. Nothing is lost by not writing.
+//
+// That is what makes the greyed chip HONEST rather than merely asserted: while
+// it is inert, the setting it controls has no effect of any kind, question or
+// write.
 //
 // THE CONSEQUENCE FOR THE UI. Direct is the default transport
 // (`shared/transport.ts`), so the title bar was offering a setting that, for
