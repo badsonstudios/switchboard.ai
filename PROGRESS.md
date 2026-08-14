@@ -3,7 +3,36 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — 📋 /PM SITTING 2026-08-13 (post-run-17) DONE
+> # ▶▶ START HERE — 🎛 RUN 18 ACTIVE (started 2026-08-13, post-/pm sitting)
+>
+> **Single-writer rule: only the orchestrator (this session) writes this
+> file.** Workers report via `.claude/work_files/orchestrator/<issue#>.md`;
+> those handoffs are the inputs, this block is the output. If this session
+> dies, a fresh /orchestrate session resumes from THIS block + the handoffs.
+>
+> **WAVE 1 DISPATCHED:** **#480** release 0.4.0 cut (+ folds #394) →
+> sb-wt-1 · `feature/480-release-0.4.0` · **#397/PR #437** finish (gate
+> the trust pre-write per the sitting decision, un-draft) → sb-wt-2 ·
+> `feature/397-ask-trust-direct` (existing branch) · **#458** Direct
+> find jump-to-hit → sb-wt-3 · `feature/458-direct-find-jump`.
+>
+> **MERGE POLICY THIS RUN: nothing merges before the #480 cut PR lands**
+> (Dan merges it, then pushes tag v0.4.0 — the tag is his; the cut ships
+> his #395 blank-resume fix). Feature CHANGELOG entries written pre-cut
+> sit in the open unreleased section and relocate to 0.5.0 at rebase.
+> All three wave-1 items are user-facing → ALL queue for Dan; no
+> orchestrator merges expected in wave 1.
+>
+> **WAVE 2 QUEUE (dispatch as slots free):** #475→#476 composer serial
+> track (one worktree) · #465→#477 serial (forgery guard then copy
+> button) · #479 e2e secondary monitor · #407 Shape B (buildable, big) ·
+> #484 resume-link destruction (AFTER the cut lands) · smalls #447 #445
+> #462 #470 #472 #412 #415 #481 #485. Held: #420 #449 behind #407
+> shipping · #337 behind #269 · #442 serial-after #447 · #466 after #465
+> · #483 after #482 · #255 L-unsplit.
+>
+> # (pm-sitting record follows)
+> # 📋 /PM SITTING 2026-08-13 (post-run-17) DONE
 >
 > **Four agenda items, all closed:**
 > **(1) #397 DECIDED: gate the trust pre-write on the resolved spawn
