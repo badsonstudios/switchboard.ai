@@ -87,6 +87,22 @@
 > sb-wt-3 (husk-blind addSessionCard + mirror rule) · #412 → sb-wt-2
 > (viewer live re-render).** In flight: #476 #462 #412.
 >
+> **#476 ✅ DONE → PR #498 READY, Dan's queue #5** (contains #489's
+> commits — merge #489 FIRST, #498's diff shrinks). Drag-drop any file
+> → chip → typed blocks: text/md/source → `document` source.type:text
+> (contents in the clear), PDF → base64, images unchanged — asymmetry
+> IS the extension's contract (Wbe/Hbe/Zit); one budgeted CLI turn
+> verified the text path ("quibblesnatch" echo). 4 declared
+> divergences (5 MB IPC cap · UTF-8 decode · directories refused ·
+> empty refused). ⚠ TRAIN RISK: renamed shared/prompt-images.ts →
+> prompt-attachments.ts (importers updated). App.tsx E3-04
+> drop-folder-makes-session listener coexists via stopPropagation.
+> Gates 4266 unit / 266+3 e2e. Discoveries: #491 widened to
+> "attachment" (commented) · **#499 filed** (50k text truncation +
+> bidi titles). **#465→#477 serial track dispatched → sb-wt-1**
+> (#465 = feed stripOurNamespace, INTERNAL; #477 = copy button,
+> user-facing, builds on #465). In flight: #465/#477 #462 #412.
+>
 > **MERGE POLICY THIS RUN: nothing merges before the #480 cut PR lands**
 > (Dan merges it, then pushes tag v0.4.0 — the tag is his; the cut ships
 > his #395 blank-resume fix). Feature CHANGELOG entries written pre-cut
