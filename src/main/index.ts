@@ -1470,7 +1470,15 @@ app
     // than in a second module that would need a reference to it. `getWindow` is
     // the modal's parent, and is a thunk for the reason every other one here is
     // — `currentWindow` is reassigned on macOS re-activate.
-    registerFsIpc({ broker, log: fsLog, scope: readScope, getWindow: () => currentWindow });
+    // …and P2-E16-04 hands back a handle, because the live-re-render watch owns
+    // OS resources (one directory watch and one stat timer per open document)
+    // that have to go down with the app like every other watcher here.
+    const fsIpc = registerFsIpc({
+      broker,
+      log: fsLog,
+      scope: readScope,
+      getWindow: () => currentWindow,
+    });
     broker.handle('notifications:getPrefs', () => workspace.getNotificationPrefs());
     broker.handle('notifications:setPrefs', (_e, p) => {
       workspace.setNotificationPrefs(p);
@@ -1535,6 +1543,7 @@ app
       streams.killAll();
       hooks.stop();
       transcripts.stop();
+      fsIpc.stop(); // the document viewers' file watches (P2-E16-04)
       updates.stop(); // kills the daily timer; a check in flight becomes a no-op
       health.stop(); // same, for the status-page poll
       staticServer?.close();

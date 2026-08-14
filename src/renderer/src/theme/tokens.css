@@ -1002,6 +1002,12 @@ body {
   font-size: 11px;
   border-block-end: 1px solid var(--border);
 }
+/* The open file was deleted (P2-E16-04). A NOTICE, not an alarm: the document
+   under it is still readable and still true, so this borrows the "something
+   wants a look" ink rather than the crashed one. */
+.doc-gone {
+  box-shadow: inset 3px 0 0 0 var(--status-needs-input-ink);
+}
 .doc-find {
   display: flex;
   align-items: center;

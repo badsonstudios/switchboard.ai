@@ -103,6 +103,16 @@ on the floor, and say so in your PR.
   goes to the program running there, deliberately: it is a real key in the CLI.
   From there, `Ctrl+Shift+P` → **Find in session** opens the bar.
 
+- **An open document updates itself.** Leave `PROGRESS.md` — or a plan, or a
+  findings note — open in the document viewer while an agent rewrites it, and
+  it re-renders on the spot instead of going stale until you close and reopen
+  it. You keep your scroll position, so you can read the middle of a file that
+  is being rewritten around you. A burst of writes (which is what one "save"
+  from an agent usually is) settles into a single update rather than ten, and a
+  file that is deleted while you are reading it gets a strip saying so with the
+  last version still on screen — not an error page, and not a blank one. If the
+  file comes back, so does the live view.
+
 ### Changed
 
 - **The 🔓 auto-trust / 🔒 ask trust chip is now greyed out when nothing could

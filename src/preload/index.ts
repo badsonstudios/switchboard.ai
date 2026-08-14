@@ -8,7 +8,7 @@ import type {
   TranscriptSearchResult,
 } from '../shared/transcripts';
 import type { PermissionRequestDto } from '../shared/ipc/permissions';
-import type { FileReadResult } from '../shared/ipc/fs';
+import type { FileReadResult, FileWatchNotice } from '../shared/ipc/fs';
 import type {
   UpdateHandshake,
   UpdateInstallStatus,
@@ -29,6 +29,27 @@ const versionArg = process.argv.find((a) => a.startsWith('--switchboard-version=
 const seedArg = process.argv.find((a) => a.startsWith('--switchboard-seed-panels='));
 const seedSessionArg = process.argv.find((a) => a.startsWith('--switchboard-seed-session='));
 const seedDocArg = process.argv.find((a) => a.startsWith('--switchboard-seed-document='));
+
+/** Distinguishes one viewer's file watch from another's (P2-E16-04). Minted
+ *  here, opaque to main, and never reused — a token that came back round would
+ *  deliver a dead panel's notices to a live one. */
+let watchSeq = 0;
+
+/**
+ * Open file watches, by token (P2-E16-04).
+ *
+ * ONE `ipcRenderer` listener for the whole window, not one per viewer.
+ * `ipcRenderer` is an EventEmitter with Node's default ceiling of ten, and §5.30
+ * lets a user pin as many documents as they like — so a listener per panel is a
+ * `MaxListenersExceededWarning` in the console of anyone who reads eleven files,
+ * and a warning nobody can act on is noise that hides the ones they can.
+ */
+const fileWatchers = new Map<string, (notice: FileWatchNotice) => void>();
+ipcRenderer.on('fs:changed', (_e, notice: FileWatchNotice) => {
+  // A notice for a token that has already unsubscribed is ordinary: main may
+  // have pushed it before the unwatch landed.
+  fileWatchers.get(notice?.token)?.(notice);
+});
 
 export interface SessionRecordDto {
   id: string;
@@ -453,6 +474,35 @@ const api = {
     openPath: (p: string): Promise<boolean> => ipcRenderer.invoke('fs:openPath', p),
     /** Show the file in the OS file manager. Scope-checked like `openPath`. */
     reveal: (p: string): Promise<boolean> => ipcRenderer.invoke('fs:reveal', p),
+    /**
+     * Follow `p` and call back when it changes or disappears (P2-E16-04, §5.30).
+     *
+     * Returns the UNSUBSCRIBE, so the caller's teardown is one call and cannot
+     * forget the second half — "the watch is torn down when the panel closes"
+     * is the done-when, and a leaked watcher per opened file is what only shows
+     * up at session 12.
+     *
+     * The notice carries no bytes: answer a `changed` by calling `read` again,
+     * which is the one path that checks the scope and applies the cap.
+     *
+     * The TOKEN is minted here rather than in main so that this function can be
+     * the whole API. Ordering is the transport's guarantee — `invoke` calls from
+     * one renderer reach main in the order they were made — so an unwatch issued
+     * immediately after a watch cannot arrive first and strand a live watch.
+     */
+    watch: (p: string, onChange: (notice: FileWatchNotice) => void): (() => void) => {
+      const token = `doc-${++watchSeq}`;
+      fileWatchers.set(token, onChange);
+      // Fire-and-forget in BOTH directions, with the rejection swallowed: a
+      // caller's teardown has nobody left to tell, and an unhandled rejection in
+      // the renderer over a file watch would be our breakage costing the user
+      // their session, which is the one thing fail-open forbids.
+      void ipcRenderer.invoke('fs:watch', { token, path: p }).catch(() => {});
+      return () => {
+        fileWatchers.delete(token);
+        void ipcRenderer.invoke('fs:unwatch', { token }).catch(() => {});
+      };
+    },
   },
   git: {
     status: (folder: string): Promise<unknown> => ipcRenderer.invoke('git:status', folder),

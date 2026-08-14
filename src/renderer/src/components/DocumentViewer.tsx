@@ -11,8 +11,14 @@
 //     rendered and reports its state through `onPinnedChange`, because a header
 //     that grows a button later moves every other one; what the app does with
 //     that state is the next item's;
-//   * re-render on change (P2-E16-04) — the file is read once per open;
 //   * images, JSON/CSV bodies and a file tree (Phase 3, DESIGN §8).
+//
+// P2-E16-04 ADDED THE LIVE HALF, and it is deliberately thin here: main owns the
+// watch and the debounce (`main/fs/file-watch.ts`), and all that arrives is
+// "read it again" or "it is gone". The viewer's own share of that contract is
+// the two things a reader would notice if they were missing — the scroll
+// position survives a re-render, and a deleted file becomes a strip over what
+// you were reading rather than an error or an empty pane.
 //
 // THE SECURITY SHAPE, in one place, because it is spread across three modules:
 // main decides what may be read at all (`ReadScope`), `lib/markdown` is the
@@ -22,7 +28,7 @@
 // never survives to be clicked — see `decorateLinks`.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import type { FileReadResult, FileTextEncoding } from '../../../shared/ipc/fs';
+import type { FileReadResult, FileTextEncoding, FileWatchNotice } from '../../../shared/ipc/fs';
 import { renderMarkdown } from '../lib/markdown';
 import {
   classifyDocument,
@@ -116,6 +122,8 @@ interface FilesBridge {
   openPath?(path: string): Promise<boolean>;
   reveal?(path: string): Promise<boolean>;
   openExternal?(url: string): Promise<boolean>;
+  /** follow the file; returns the unsubscribe (P2-E16-04) */
+  watch?(path: string, onChange: (notice: FileWatchNotice) => void): () => void;
 }
 
 function files(): FilesBridge | undefined {
@@ -155,10 +163,113 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
     props.onTitleChange?.(meta.name);
   }, [meta.name, props.onTitleChange]);
 
+  /**
+   * The file was there when we opened it and is not there now (P2-E16-04).
+   *
+   * SEPARATE from `result`, because the done-when is that a deleted file shows
+   * "a strip instead of an error or a blank pane": the last good read stays on
+   * screen underneath it. Overwriting `result` with the refusal would be the
+   * blank pane, and it would also throw away the only copy of a document the
+   * reader may still be halfway through — the file is gone, their place in it
+   * need not be.
+   */
+  const [missing, setMissing] = React.useState(false);
+
+  /**
+   * Which read is the CURRENT one.
+   *
+   * A watch notice can land while the open read is still in flight, and the two
+   * resolve in whatever order the bridge feels like — so the answers are stamped
+   * and a stale one is dropped. Without it a slow first read can overwrite the
+   * fresher content that a rewrite already delivered, and the viewer shows the
+   * old document with no event left to correct it.
+   */
+  const readSeq = React.useRef(0);
+
+  /**
+   * Apply one read's answer — ONE function, because there are two readers and
+   * `loading` must be cleared by whichever of them lands last.
+   *
+   * The bug this shape exists to prevent: the open read and a change notice can
+   * be in flight at the same time (they are issued in the same commit, and the
+   * flagship scenario is opening a file an agent is *already* rewriting). The
+   * notice's read retires the open read's stamp, so if only the open read
+   * cleared `loading`, the viewer would sit on "Opening…" for the rest of the
+   * panel's life with a perfectly good document rendered behind it — the blank
+   * pane the done-when forbids, arrived at from the other direction.
+   *
+   * `keep` is what separates the two readers: a RELOAD keeps the document that
+   * is on screen when the new read fails, because it is still the last true
+   * thing anyone wrote. An OPEN has nothing to keep.
+   */
+  const applyRead = React.useCallback((mine: number, r: FileReadResult, keep: boolean): void => {
+    if (mine !== readSeq.current) return;
+    setLoading(false);
+    if (r.ok) {
+      setResult(r);
+      setMissing(false);
+      return;
+    }
+    if (!keep) {
+      setResult(r);
+      return;
+    }
+    // A read that fails on a RELOAD keeps what is on screen. `not-found` is the
+    // deletion racing us to the file and earns the strip; anything else (the
+    // scope narrowed because the session card closed, a lock, an unplugged
+    // drive) is a document that has stopped updating, not one that has stopped
+    // existing — and replacing a page of prose with a refusal message would be
+    // this item breaking what E16-02 shipped.
+    if (r.reason === 'not-found') setMissing(true);
+  }, []);
+
+  /**
+   * Follow the open file (P2-E16-04, §5.30).
+   *
+   * Main does the watching, the coalescing and the deciding; this asks, re-reads
+   * and — crucially — UNSUBSCRIBES. The effect is keyed on the path, so a
+   * relative-link navigation moves the watch with it, and unmounting a panel
+   * takes the last reference off the file in main.
+   *
+   * DECLARED BEFORE THE READ, and the order is load-bearing: effects run in
+   * declaration order, so `fs:watch` reaches main first and main seeds the
+   * file's signature BEFORE the bytes are read. The other way round leaves a
+   * window — the file being rewritten between the read and the seed — in which
+   * the change is baked into the seed and no event is ever emitted for it, so
+   * the viewer shows content it already knows is stale until something else
+   * happens to the file.
+   *
+   * A re-read deliberately does NOT set `loading`. Flashing "Opening…" over a
+   * document every time an agent saves is worse than the staleness it replaces,
+   * and there is nothing to wait for: the previous content is still correct
+   * until the new one arrives.
+   */
   React.useEffect(() => {
-    let live = true;
+    const bridge = files();
+    // A bridge without `watch` is an older preload or a test that stubbed the
+    // three methods it cared about. The viewer is simply not live; nothing else
+    // about it changes.
+    if (!bridge?.watch) return;
+    return bridge.watch(current, (notice) => {
+      if (notice.state === 'gone') {
+        setMissing(true);
+        return;
+      }
+      const mine = ++readSeq.current;
+      void bridge
+        .read(current)
+        .then((r) => applyRead(mine, r, true))
+        .catch(() => {
+          /* keep showing what we have */
+        });
+    });
+  }, [current, applyRead]);
+
+  React.useEffect(() => {
+    const mine = ++readSeq.current;
     setLoading(true);
     setResult(null);
+    setMissing(false);
     const bridge = files();
     if (!bridge) {
       // Fail-open (litmus #3): no bridge is a viewer that says so, not a throw
@@ -169,20 +280,15 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
     }
     void bridge
       .read(current)
-      .then((r) => {
-        if (!live) return;
-        setResult(r);
-        setLoading(false);
-      })
-      .catch(() => {
-        if (!live) return;
-        setResult({ ok: false, reason: 'unreadable' });
-        setLoading(false);
-      });
+      .then((r) => applyRead(mine, r, false))
+      .catch(() => applyRead(mine, { ok: false, reason: 'unreadable' }, false));
+    // Retiring the stamp is what the old `live` flag did, said once for both
+    // readers: a read still in flight when the path changes — or when the panel
+    // closes — has nothing left to apply to.
     return () => {
-      live = false;
+      readSeq.current += 1;
     };
-  }, [current]);
+  }, [current, applyRead]);
 
   const navigate = React.useCallback(
     (to: string, hash?: string) => {
@@ -542,6 +648,16 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
         ) : null}
       </div>
 
+      {/* The file went away while it was open (P2-E16-04). A STRIP over the
+          document, not in place of it: what you were reading is still the last
+          true thing anyone wrote, and losing your place as well as the file
+          would be this feature costing more than it gives. */}
+      {missing ? (
+        <div className="doc-notice doc-gone" role="status" data-testid="doc-gone">
+          {t('document.gone')}
+        </div>
+      ) : null}
+
       {truncated && ok ? (
         <div className="doc-notice" role="status" data-testid="doc-truncated">
           {t('document.truncated', {
@@ -679,6 +795,16 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
               ref={scrollRef}
               className="doc-body"
               data-testid="doc-scroll"
+              // WHERE THE READER IS, recorded as they read (P2-E16-04). The
+              // decoration effect hands this back after every re-render, which
+              // is the whole of "preserving scroll position": without it a
+              // rewrite of the file would drop the reader at the top of the
+              // document, and an agent that saves every few seconds would make
+              // the pane unreadable. `switchMode` still records it explicitly —
+              // a mode toggle is not a scroll, so no event fires for it.
+              onScroll={(e) => {
+                scrollMemo.current.rendered = e.currentTarget.scrollTop;
+              }}
               onClick={(e) => activate(e.target as HTMLElement)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
