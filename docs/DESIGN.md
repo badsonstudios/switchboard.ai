@@ -547,6 +547,34 @@ or sits idle awaiting input, and `Stop` when it finishes. On top:
   the Events panel is the durable record. The setup surface is a modal reached
   from the palette and from About, explicitly provisional until E14's settings
   screen exists.)*
+  *(Per-session sounds + TTS shipped P2-E14-05a. Decisions taken with them:
+  **(a)** the cue **replaces** the unconditional beep in `notifier.ts` rather
+  than joining it — one event makes one noise — so the `sound` rule fires at
+  every visibility, exactly where the beep did, while `speak` follows the
+  toast's WHEN_AWAY (reading out what the user is looking at is slow noise);
+  **(b)** the action payload carries **no cue name** (`{type:'sound'}`) for the
+  same shape of reason `push` carries no destination: which cue a card rings is
+  a property of the CARD (§5.11's identity kit), so the handler resolves it when
+  it fires — a rule written yesterday rings whatever the card sounds like today,
+  and the empty payload keeps `plannedActions`' dedup honest, which is what
+  makes "one event, one sound" true when two rules both ask; **(c)** the bank is
+  eight **synthesized** cues (Web Audio, `shared/sounds.ts`), not .wav assets —
+  data can be unit-tested, localized and shipped without a licensing question or
+  a packaging step, and the cues are chosen to be told APART on a laptop speaker
+  rather than to be pretty; **(d)** a cue is **auto-assigned by workspace
+  position** and user-overridable, mirroring the accent colour, because a hash
+  of the card id collides — with eight cues and four sessions, better than one
+  in three — and "distinguishable" cannot be a coin flip. The stated cost is
+  that deleting a card can shift the cue of the cards after it; pinning is the
+  fix and the manual says so; **(e)** the noise happens in the RENDERER: main
+  has no audio device and Chromium has both a synthesizer and a voice, so this
+  is one code path on all three platforms instead of three shell-outs
+  (`powershell`/`afplay`/`paplay`) with a process spawn on the notification
+  path. The cost — no window, no sound — is covered by the beep fallback, which
+  makes "an attention event always makes a noise" survive a broken audio
+  channel. `SWITCHBOARD_MUTE_AUDIO=1` (non-packaged builds only) makes the sink
+  log instead of sound, so the e2e suite proves the whole chain on the machine
+  its owner is working at without making a sound.)*
 - **Actionable toasts**: permission toasts carry Allow / Deny buttons that send the
   verdict on that session's input route — approve without switching windows.
   *(Shipped P2-E14-04. Three decisions worth recording. **One decision path:**
@@ -858,6 +886,11 @@ Every session carries an identity that renders IDENTICALLY everywhere it appears
   Auto-edit / Full-auto, §5.9) on the card and sidebar — "will this one interrupt
   me?" answered at a glance.
 - Optional: per-session notification sound doubles as an audio identity.
+  *(Shipped P2-E14-05a. Auto-assigned from a bank of eight by workspace
+  position, user-overridable from the card's ⋯ menu, and stored on the CARD
+  (`PersistedSession.sound`) beside `transport` and `autonomy` — so it survives
+  a resume the way the rest of the identity does. Off by default: the global
+  🔊 chip is what turns the one beep into eight cues. Decisions in §5.9.)*
 
 **Auto task labels — the CLI already wrote one** *(added 2026-07-30, owner
 request; the Claude Code VS Code extension does the same thing to its tab text).*

@@ -8,6 +8,8 @@ import { describe, it, expect } from 'vitest';
 import {
   ACTION_OS_TOAST,
   ACTION_PUSH,
+  ACTION_SOUND,
+  ACTION_SPEAK,
   ACTION_WEBHOOK,
   ALL_VISIBILITIES,
   NOTIFY_WHEN_DONE,
@@ -266,6 +268,85 @@ describe('defaultRules — the built-ins, and what they encode', () => {
     it('`ready` reaches neither channel', () => {
       for (const v of ALL_VISIBILITIES)
         expect(types({ push: true, webhook: true }, 'ready', v)).toEqual([]);
+    });
+  });
+
+  // ── the two channels that stay in the room (P2-E14-05a) ──────────────────
+  describe('sound and speak', () => {
+    const types = (prefs: Parameters<typeof defaultRules>[0], kind: FeedKind, v: WindowVisibility) =>
+      plannedActions(defaultRules(prefs), trigger(kind, CARD, v)).map((a) => a.action.type);
+
+    it('contribute nothing until their own switch is on', () => {
+      expect(types({ osToasts: true }, 'needs-input', 'hidden')).toEqual([ACTION_OS_TOAST]);
+    });
+
+    it('fire with desktop pop-ups OFF — each channel is its own opt-in', () => {
+      expect(types({ sounds: true }, 'needs-input', 'hidden')).toEqual([ACTION_SOUND]);
+      expect(types({ speak: true }, 'needs-input', 'hidden')).toEqual([ACTION_SPEAK]);
+    });
+
+    // The cue REPLACES the unconditional beep in `notifier.ts`, so it has to
+    // fire everywhere the beep did — focused included. A cue you only hear
+    // when you are not there is not an audio identity.
+    it.each(['needs-input', 'needs-permission', 'crashed', 'done'] as FeedKind[])(
+      'rings for %s at every visibility',
+      (kind) => {
+        for (const v of ALL_VISIBILITIES)
+          expect(types({ sounds: true }, kind, v)).toEqual([ACTION_SOUND]);
+      }
+    );
+
+    // The voice is the opposite: reading out what the user is looking at is
+    // telling them something they can already see, slowly.
+    it.each(['needs-input', 'needs-permission', 'crashed', 'done'] as FeedKind[])(
+      'announces %s while away, and never while you are looking at the app',
+      (kind) => {
+        expect(types({ speak: true }, kind, 'hidden')).toEqual([ACTION_SPEAK]);
+        expect(types({ speak: true }, kind, 'visible')).toEqual([ACTION_SPEAK]);
+        expect(types({ speak: true }, kind, 'focused')).toEqual([]);
+      }
+    );
+
+    it('carries NO cue name in the payload — the CARD owns that, not the rule', () => {
+      for (const r of defaultRules({ sounds: true, speak: true }))
+        for (const a of r.actions) expect(Object.keys(a)).toEqual(['type']);
+    });
+
+    it('one event makes one noise, however many rules asked for it', () => {
+      // `plannedActions` dedups on the whole payload, which is only true while
+      // the payload stays empty — this is the test that notices if a cue name
+      // is ever put back into it
+      const extra = { id: 'user', event: 'done' as const, actions: [{ type: ACTION_SOUND }] };
+      expect(
+        plannedActions([...defaultRules({ sounds: true }), extra], trigger('done', CARD, 'hidden'))
+      ).toHaveLength(1);
+    });
+
+    it('stacks with every other channel rather than replacing them', () => {
+      expect(
+        types(
+          { osToasts: true, push: true, webhook: true, sounds: true, speak: true },
+          'needs-permission',
+          'hidden'
+        )
+      ).toEqual([ACTION_OS_TOAST, ACTION_SOUND, ACTION_SPEAK, ACTION_PUSH, ACTION_WEBHOOK]);
+    });
+
+    it('`ready` reaches neither channel', () => {
+      for (const v of ALL_VISIBILITIES)
+        expect(types({ sounds: true, speak: true }, 'ready', v)).toEqual([]);
+    });
+
+    it('leaves the shipped toast rule ids untouched', () => {
+      expect(defaultRules({ osToasts: true, sounds: true }).map((r) => r.id)).toEqual([
+        'default:needs-input',
+        'default:needs-permission',
+        'default:crashed',
+        'default:sound:needs-input',
+        'default:sound:needs-permission',
+        'default:sound:crashed',
+        'default:sound:done',
+      ]);
     });
   });
 });

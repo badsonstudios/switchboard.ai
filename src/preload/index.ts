@@ -24,11 +24,30 @@ import type {
   PushSendResult,
   PushWriteResult,
 } from '../shared/push';
+import type { AudioChannelName, AudioPlayCue, AudioSpeakCue, CardSound } from '../shared/sounds';
+import { AUDIO_FAILED_CHANNEL, AUDIO_PLAY_CHANNEL, AUDIO_SPEAK_CHANNEL } from '../shared/sounds';
+
+/**
+ * The notification prefs, as both directions of `notifications:*` see them.
+ * Named rather than inlined three times since P2-E14-05a added two fields —
+ * the inline copies had already drifted from main's `NotificationPrefsState`.
+ */
+interface NotifPrefs {
+  enabled: boolean;
+  osToasts?: boolean;
+  /** per-session cues instead of the plain beep (P2-E14-05a) */
+  sounds?: boolean;
+  /** spoken announcements (P2-E14-05a) */
+  speak?: boolean;
+  quietStart?: string;
+  quietEnd?: string;
+}
 
 const versionArg = process.argv.find((a) => a.startsWith('--switchboard-version='));
 const seedArg = process.argv.find((a) => a.startsWith('--switchboard-seed-panels='));
 const seedSessionArg = process.argv.find((a) => a.startsWith('--switchboard-seed-session='));
 const seedDocArg = process.argv.find((a) => a.startsWith('--switchboard-seed-document='));
+const muteAudioArg = process.argv.find((a) => a.startsWith('--switchboard-mute-audio='));
 
 /** Distinguishes one viewer's file watch from another's (P2-E16-04). Minted
  *  here, opaque to main, and never reused — a token that came back round would
@@ -510,16 +529,43 @@ const api = {
       ipcRenderer.invoke('git:fileVersions', folder, file),
   },
   notifications: {
-    getPrefs: (): Promise<{ enabled: boolean; osToasts?: boolean; quietStart?: string; quietEnd?: string }> =>
-      ipcRenderer.invoke('notifications:getPrefs'),
+    getPrefs: (): Promise<NotifPrefs> => ipcRenderer.invoke('notifications:getPrefs'),
     // merge-patch: send only the prefs you're changing (review P1 #13)
-    setPrefs: (p: {
-      enabled?: boolean;
-      osToasts?: boolean;
-      quietStart?: string;
-      quietEnd?: string;
-    }): Promise<{ enabled: boolean; osToasts?: boolean; quietStart?: string; quietEnd?: string }> =>
+    setPrefs: (p: Partial<NotifPrefs>): Promise<NotifPrefs> =>
       ipcRenderer.invoke('notifications:setPrefs', p),
+  },
+  /**
+   * Per-session sounds and spoken announcements (P2-E14-05a, §5.9 + §5.11).
+   *
+   * Three of these four are ordinary asks. `onPlay` / `onSpeak` are the
+   * opposite direction — main telling THIS window to make a noise, because
+   * main has no audio device and Chromium does.
+   */
+  sounds: {
+    /**
+     * Play nothing, anywhere (P2-E14-05a). Main's own mute covers the cues it
+     * pushes; this covers the two the renderer plays by itself — the card
+     * menu's preview and the sample on switching announcements on.
+     */
+    muted: muteAudioArg?.split('=')[1] === '1',
+    /** which cue this card rings, and whether the user pinned it */
+    get: (cardId: string): Promise<CardSound | null> => ipcRenderer.invoke('sounds:get', cardId),
+    /** pin a cue, or `null` to hand the card back to auto; resolves to the truth */
+    set: (cardId: string, sound: string | null): Promise<CardSound | null> =>
+      ipcRenderer.invoke('sounds:set', cardId, sound),
+    /** "I took that and could not play it" — main answers with a plain beep */
+    failed: (channel: AudioChannelName): Promise<boolean> =>
+      ipcRenderer.invoke(AUDIO_FAILED_CHANNEL, channel),
+    onPlay: (cb: (c: AudioPlayCue) => void): (() => void) => {
+      const h = (_e: unknown, c: AudioPlayCue): void => cb(c);
+      ipcRenderer.on(AUDIO_PLAY_CHANNEL, h);
+      return () => ipcRenderer.removeListener(AUDIO_PLAY_CHANNEL, h);
+    },
+    onSpeak: (cb: (c: AudioSpeakCue) => void): (() => void) => {
+      const h = (_e: unknown, c: AudioSpeakCue): void => cb(c);
+      ipcRenderer.on(AUDIO_SPEAK_CHANNEL, h);
+      return () => ipcRenderer.removeListener(AUDIO_SPEAK_CHANNEL, h);
+    },
   },
   /**
    * Notification rules (P2-E14-03, §5.9). The renderer's whole write surface

@@ -70,6 +70,14 @@ export function TitleBar(props: {
    *  in, on the card, in the rail and in OS toasts */
   autoLabels: boolean;
   onToggleAutoLabels: () => void;
+  /** §5.9's per-session cues (P2-E14-05a) — on, each card rings its own sound
+   *  instead of everything sharing one beep */
+  soundsOn: boolean;
+  onToggleSounds: () => void;
+  /** spoken announcements (P2-E14-05a). The handler is given the localized
+   *  sample sentence to say on the way ON — `t` lives here, not in App. */
+  speakOn: boolean;
+  onToggleSpeak: (sample: string) => void;
   /** sessions-rail visibility — the mouse path for the Ctrl+B command (E9-01) */
   railHidden: boolean;
   onToggleRail: () => void;
@@ -135,6 +143,27 @@ export function TitleBar(props: {
         testId="auto-labels"
       >
         {props.autoLabels ? t('titlebar.autoLabelsOn') : t('titlebar.autoLabelsOff')}
+      </Chip>
+      {/* The two audio channels (P2-E14-05a, §5.9). Chips, beside the labels
+          chip and for the same reason: what they govern is NOISE in a shared
+          room — the person who needs it off needs it off now, not after
+          finding a settings page. Each states on/off in words, never colour
+          alone (§5.32). */}
+      <Chip
+        selected={props.soundsOn}
+        onClick={props.onToggleSounds}
+        title={t('titlebar.soundsHint')}
+        testId="session-sounds"
+      >
+        {props.soundsOn ? t('titlebar.soundsOn') : t('titlebar.soundsOff')}
+      </Chip>
+      <Chip
+        selected={props.speakOn}
+        onClick={() => props.onToggleSpeak(t('titlebar.speakSample'))}
+        title={t('titlebar.speakHint')}
+        testId="speak-announcements"
+      >
+        {props.speakOn ? t('titlebar.speakOn') : t('titlebar.speakOff')}
       </Chip>
       <Chip selected={false} onClick={props.onCycleAutonomy}>
         {t(`autonomy.${props.autonomy}`)}
