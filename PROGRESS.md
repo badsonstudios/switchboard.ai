@@ -168,6 +168,19 @@
 > MEASURE-FIRST at CI geometry). In flight: #447/#442 (wt-1) · #470
 > (wt-2) · #437-fix (wt-3).
 >
+> **#437 CONFLICT FIX ✅ DONE — PR #437 MERGEABLE + CI 4/4 GREEN (run
+> 31766551830), Dan's queue slot CONFIRMED.** Merged main @ 21d9158 →
+> af676e7; 4 conflicts all unions in its own territory; 2 semantic
+> catches the merge couldn't see (duplicate `### Changed` heading
+> merged; TitleBar.trust.test two props behind the new signature —
+> typecheck-only). Manual NOT renumbered by trains (14/15/16 are new
+> files) — rewrites stay in 10-settings/12-direct-mode. Gates on
+> merged tree: 4173 unit / 259+3 e2e. Billing-stop inference formally
+> retracted in the handoff. **#481 dispatched → sb-wt-3** (sounds+TTS
+> drop-in actions; no schema/evaluator changes allowed — that's #482;
+> fake the audio sink in tests, real audio only in Dan's hand-test).
+> In flight: #447/#442 (wt-1) · #470 (wt-2) · #481 (wt-3).
+>
 > **MERGE POLICY THIS RUN: nothing merges before the #480 cut PR lands**
 > (Dan merges it, then pushes tag v0.4.0 — the tag is his; the cut ships
 > his #395 blank-resume fix). Feature CHANGELOG entries written pre-cut
