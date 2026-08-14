@@ -51,7 +51,9 @@ on the floor, and say so in your PR.
 
 ---
 
-## 0.4.0 — unreleased
+## 0.5.0 — unreleased
+
+## 0.4.0 — 2026-08-13
 
 ### Added
 
@@ -92,9 +94,9 @@ on the floor, and say so in your PR.
   across restarts.
 - Notifications are now driven by **rules** — *when [event] in [this session or
   any], and [the window is or isn't in front] → [do something]*. The checkbox
-  above is the first one, and rules are what make per-session sounds, spoken
-  announcements, Allow/Deny buttons on notifications and phone push possible
-  without another special case each.
+  above is the first one, and the Allow/Deny buttons and the phone push below
+  are rules as well — so a per-session sound, or a spoken announcement, can be
+  added the same way later rather than each needing a setting of its own.
 - **A session can now reach your phone.** Point switchboard at an
   [ntfy](https://ntfy.sh) topic or a [Pushover](https://pushover.net) account
   and it will buzz your phone when a session needs permission, needs input, or
@@ -111,10 +113,10 @@ on the floor, and say so in your PR.
 - **Your credentials go into your operating system's credential store** —
   Windows DPAPI, the macOS Keychain, your Linux keyring — never into a
   switchboard file, and never into the logs. switchboard cannot show a saved
-  value back to you (a filled field reads "saved" and stays empty); paste a new
-  one over it to change it, or press Forget. On a Linux box with no keyring it
-  says so and refuses to store anything rather than writing a token to a plain
-  file. All of this is off until you set it up, and the app is entirely usable
+  value back to you: the box stays empty and says "saved" instead. Paste a new
+  value over it to change it, or press Forget. On a Linux box with no keyring
+  it says so and refuses to store anything rather than writing a token to a
+  plain file. All of this is off until you set it up, and the app is entirely usable
   with none of it configured — a phone that is off, or a webhook host that has
   gone away, can never hold a session up, and the failure is logged once rather
   than on every event.
@@ -189,8 +191,8 @@ on the floor, and say so in your PR.
   notes — an inline `style` written into the text is now ignored. So a reply or
   a file can't float a box over the app's own controls, hide text underneath
   one, or repaint itself in colours your theme didn't choose. A few older HTML
-  tags (`<font color>` and its relatives) can still tint text; closing those is
-  tracked separately. Nothing Markdown itself produces changes: tables still
+  tags (`<font color>` and its relatives) can still tint text; shutting those
+  down is still to come. Nothing Markdown itself produces changes: tables still
   align, task lists still tick, code blocks are untouched.
 
 ### Fixed
@@ -213,8 +215,7 @@ on the floor, and say so in your PR.
 - The ring that shows you which session `Ctrl+Space` just sent you to now lasts
   a second and a half **from the moment it appears on screen**. It used to be
   counted from the keypress, so on a busy machine the whole beat could pass
-  before the window caught up and you saw no ring at all — the flash you could
-  miss on a slow machine.
+  before the window caught up and you saw no ring at all.
 - **No more ring fireworks after a spell in a pop-out window.** `Ctrl+Space`
   works from a pop-out, but the ring it draws lives on the main window's lamp
   strip — so if that window was behind something, every jump you made while it
@@ -269,6 +270,12 @@ on the floor, and say so in your PR.
   Direct mode); this is the groundwork and the coverage. The stream test fake
   now honours `--resume`, and a new end-to-end test relaunches the app and
   proves the conversation continues.
+- Where a session's transcripts live is now worked out once and handed to
+  everything that reads them — the "can this session resume?" check, the
+  watcher, and the replay of a resumed conversation — instead of each deciding
+  for itself. Nothing changes for the sessions switchboard runs today; it
+  closes the way a future non-Claude agent could have passed the resume check
+  and then come back with an empty conversation.
 
 ## 0.3.0 — 2026-08-09
 
