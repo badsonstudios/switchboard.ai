@@ -1,7 +1,13 @@
 // Launch the built Electron app under Playwright, fully isolated: a temp HOME
 // so it never touches the real ~/.claude.json or workspace, the fake provider
 // (shell-in-a-PTY, no claude login), and the S-01 env landmines scrubbed.
-import { _electron as electron, ElectronApplication, Locator, Page } from '@playwright/test';
+import {
+  _electron as electron,
+  ElectronApplication,
+  Locator,
+  Page,
+  test,
+} from '@playwright/test';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -904,6 +910,27 @@ export async function sessionStatuses(a: LaunchedApp): Promise<Map<string, strin
     status: string;
   }>;
   return new Map(records.map((r) => [r.identity.title, r.status]));
+}
+
+/**
+ * Skip a test that needs a REAL second OS window (#462, hoisted).
+ *
+ * dockview's pop-out is `window.open` -> a second BrowserWindow, which is
+ * reliable on Windows and macOS and flaky under the headless xvfb display Linux
+ * CI runs: second-window creation intermittently never completes (the E8 specs
+ * carried this skip from the day they were written). Coverage is preserved on
+ * the two platforms where multi-window works — including Windows, Dan's primary
+ * target.
+ *
+ * Lived as FOUR copy-pasted local helpers (`session`, `urgency`, `diff`,
+ * `document-peek`) with three different skip messages, so a CI report could not
+ * be searched for one of them. One place, one wording; each spec imports it.
+ */
+export function skipPopoutOnLinux(): void {
+  test.skip(
+    process.platform === 'linux',
+    'dockview popout opens a 2nd OS window — unreliable under headless xvfb; covered on Windows + macOS'
+  );
 }
 
 /** Switch to the Terminal tab (always present, last — 2026-07-22). */

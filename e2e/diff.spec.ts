@@ -45,7 +45,7 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { launchApp, LaunchedApp, registerTempDir } from './fixtures/app';
+import { launchApp, LaunchedApp, registerTempDir, skipPopoutOnLinux } from './fixtures/app';
 
 /** Committed at HEAD. Multi-line and non-empty — see the trap above. */
 const COMMITTED = [
@@ -132,19 +132,6 @@ function tempGitProject(): string {
 }
 
 const diffEditor = (w: Page) => w.locator('.monaco-diff-editor');
-
-/**
- * Pop-out tests open a real second OS window, which is reliable on Windows and
- * macOS but flaky under Linux CI's headless xvfb (second-window creation
- * intermittently never completes). Third local copy of this three-liner —
- * session.spec.ts and urgency.spec.ts each carry their own; it belongs in
- * `fixtures/app.ts`, but hoisting it is not this fix's to take.
- */
-const skipPopoutOnLinux = (): void =>
-  test.skip(
-    process.platform === 'linux',
-    'dockview popout opens a 2nd OS window — unreliable under headless xvfb; covered on Windows + macOS'
-  );
 
 /**
  * Monaco's own words when it could not spawn a worker and ran the worker code
