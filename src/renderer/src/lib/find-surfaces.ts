@@ -21,6 +21,7 @@
 // would put a consumer one auto-import away from reaching a contributor
 // directly — the one rule `docs/extensibility.md` opens with.
 import type { FindSurface } from '../extensibility/contributions';
+import type { TerminalMatch, TerminalSearchOutcome, TerminalSearchQuery } from './terminal-find';
 
 /**
  * The registry key.
@@ -63,10 +64,45 @@ export interface MonacoFindSurface extends FindSurface {
   openFind(term: string): boolean;
 }
 
+/**
+ * What `TerminalPane` publishes — xterm's scrollback, behind the search addon
+ * (P2-E17-03).
+ *
+ * `search` is SYNCHRONOUS, unlike the session's: the buffer is already in this
+ * process, and the addon walks it in memory. The provider still returns a
+ * promise, because the seam's `search` is async for the one registrant that
+ * genuinely crosses to main.
+ */
+export interface TerminalFindSurface extends FindSurface {
+  kind: 'terminal';
+  /**
+   * Is there a live xterm with a buffer? A stream session renders a notice
+   * instead of a terminal and never publishes at all, so this is about the
+   * window between mount and `term.open()` — not about transport.
+   */
+  ready(): boolean;
+  search(query: TerminalSearchQuery): TerminalSearchOutcome;
+  /** scroll to and select a collected match */
+  reveal(match: TerminalMatch): boolean;
+  /** drop the highlights and the selection */
+  clear(): void;
+}
+
 const surfaces = new Map<string, FindSurface>();
 const listeners = new Set<() => void>();
+/**
+ * Bumped on every publish/withdraw.
+ *
+ * `useSyncExternalStore` compares snapshots by reference, so a reader that
+ * needs SEVERAL surfaces (the grouped bar asks every registered panel for its
+ * own) cannot snapshot them as an array — it would allocate a new one every
+ * render and loop. A monotonic number is the snapshot; the reader derives the
+ * surfaces from it in a memo.
+ */
+let version = 0;
 
 function announce(): void {
+  version += 1;
   // copy first: a listener that unsubscribes itself during the walk would
   // otherwise mutate the set we are iterating
   for (const fn of [...listeners]) {
@@ -103,6 +139,11 @@ export function findSurfaceFor(key: string): FindSurface | null {
   return surfaces.get(key) ?? null;
 }
 
+/** A snapshot token for readers that need more than one surface — see `version`. */
+export function findSurfacesVersion(): number {
+  return version;
+}
+
 /** Fires whenever any surface is published or withdrawn (for useSyncExternalStore). */
 export function subscribeFindSurfaces(fn: () => void): () => void {
   listeners.add(fn);
@@ -122,4 +163,5 @@ export function subscribeFindSurfaces(fn: () => void): () => void {
 export function resetFindSurfaces(): void {
   surfaces.clear();
   listeners.clear();
+  version += 1;
 }

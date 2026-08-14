@@ -21,7 +21,7 @@ import { test, expect, Page } from '@playwright/test';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { launchApp, LaunchedApp, registerTempDir, tempProjectFolder } from './fixtures/app';
+import { launchApp, LaunchedApp, registerTempDir, showTerminal, tempProjectFolder } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -47,6 +47,7 @@ function seedTranscript(home: string, folder: string, term: string, times: numbe
 
 const bar = (w: Page) => w.locator('[data-testid="find-bar"]');
 const count = (w: Page) => w.locator('[data-testid="find-count"]');
+const groups = (w: Page) => w.locator('[data-testid="find-groups"]');
 
 test.describe('[pty] Session find (E17-02)', () => {
   let a: LaunchedApp;
@@ -125,25 +126,61 @@ test.describe('[pty] Session find (E17-02)', () => {
     await expect(w.locator('[data-testid="find-input"]')).toHaveValue('STEP_ME');
   });
 
-  test('a tab with no provider greys the bar and says which tab it is', async () => {
-    // The Terminal is exactly this case until E17-03 ships its provider —
-    // §5.8's greyed-not-hidden rule, one level down from the tab strip.
+  // The Terminal used to be this file's "a tab with no provider greys the bar"
+  // case. It has one as of P2-E17-03, and the only panel left without a
+  // provider (History) is deliberately not clickable, so the greyed-bar paths —
+  // the reason text, focus landing on the close button, Escape from there —
+  // are asserted in `components/FindBar.test.tsx` instead of here.
+  test('the Terminal is a group of its own, labelled scrollback-only (E17-03)', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+    // three in the transcript, none of them ever printed to the terminal
+    seedTranscript(a.home, folder, 'TRANSCRIPT_ONLY', 3, 'GROUPED');
+    await expect(w.getByText(/GROUPED/).first()).toBeVisible({ timeout: 25_000 });
 
+    // BEFORE the Terminal has ever been shown there is no Terminal group at
+    // all — the xterm is fed only while its tab is visible (S-07), so a
+    // "0 in Terminal (scrollback only)" here would be a confident statement
+    // about a buffer that was never filled
+    await w.keyboard.press(`${MOD}+f`);
+    await w.locator('[data-testid="find-input"]').fill('TRANSCRIPT_ONLY');
+    await expect(count(w)).toHaveText('1 of 3', { timeout: 15_000 });
+    await expect(groups(w)).toHaveCount(0);
+    await w.keyboard.press('Escape');
+
+    // put something in the scrollback that is NOT in the transcript. The fake
+    // provider spawns the OS shell, so this is real PTY output.
+    await showTerminal(w);
+    await w.locator('.xterm-screen').first().click();
+    await w.keyboard.type('echo SCROLLBACK_ONLY_MARKER');
+    await w.keyboard.press('Enter');
+    await expect(w.getByText(/SCROLLBACK_ONLY_MARKER/).first()).toBeVisible({ timeout: 15_000 });
+
+    // Ctrl+F cannot come from INSIDE the xterm — the terminal owns every key it
+    // can see and E17-03 declined to claim Ctrl+F from the CLI (it is bound to
+    // scroll:fullPageDown). Clicking the tab is how a user leaves the surface.
     await w.locator('[data-testid="view-tabs"] [data-vtab="terminal"]').click();
     await w.keyboard.press(`${MOD}+f`);
     await expect(bar(w)).toHaveCount(1);
-    await expect(w.locator('[data-testid="find-unavailable"]')).toContainText('Terminal');
-    await expect(w.locator('[data-testid="find-input"]')).toBeDisabled();
-    // ...and it is still dismissable from the keyboard. The input is disabled,
-    // so focus goes to the close button instead — without that, Escape would
-    // never reach the bar and the mouse would be the only way out.
-    await expect(w.locator('[data-testid="find-close"]')).toBeFocused();
-    await w.keyboard.press('Escape');
-    await expect(bar(w)).toHaveCount(0);
+    await expect(w.locator('[data-testid="find-input"]')).toBeEnabled();
+
+    // a term that is ONLY in the scrollback: found here, zero in the session,
+    // and the session's zero is stated rather than implied by silence
+    await w.locator('[data-testid="find-input"]').fill('SCROLLBACK_ONLY_MARKER');
+    await expect(groups(w)).toContainText('scrollback only', { timeout: 15_000 });
+    await expect(groups(w)).toContainText('0 in Session');
+    await expect(groups(w)).not.toContainText('0 in Terminal');
+
+    // …and the reverse, which is the item's third done-when: a term present
+    // only in the TRANSCRIPT still shows its Session count from this tab, with
+    // the terminal's 0 labelled so it cannot be read as "not in this session"
+    await w.locator('[data-testid="find-input"]').fill('TRANSCRIPT_ONLY');
+    await expect(groups(w)).toContainText('3 in Session', { timeout: 15_000 });
+    await expect(groups(w)).toContainText('0 in Terminal (scrollback only)');
+    // the count is a position inside ONE group, never a total across two
+    await expect(count(w)).toHaveText('1 of 3');
   });
 });
 

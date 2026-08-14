@@ -43,7 +43,7 @@ If a consumer can `import { claudeAdapter }`, the seam is decorative.
 | [renderer/src/extensibility/registry-instance.ts](../src/renderer/src/extensibility/registry-instance.ts) | The renderer's registry instance, and nothing else — consumers import this, not `bootstrap.ts`, which would close an import cycle |
 | [renderer/src/extensibility/boundary.tsx](../src/renderer/src/extensibility/boundary.tsx) | `ContributionBoundary` + `safely()`: one contribution failing costs that contribution |
 | [renderer/src/extensibility/status-bar-items.tsx](../src/renderer/src/extensibility/status-bar-items.tsx) | The five status bar items |
-| [renderer/src/extensibility/find-providers.ts](../src/renderer/src/extensibility/find-providers.ts) | The session-find providers (§5.31), their by-panel resolution, and written registration recipes for the two registrants that do not exist yet |
+| [renderer/src/extensibility/find-providers.ts](../src/renderer/src/extensibility/find-providers.ts) | The session-find providers (§5.31), their by-panel resolution, why Ctrl+F is deliberately NOT claimed from a focused terminal, and a written registration recipe for the one registrant that does not exist yet |
 | [renderer/src/lib/find-surfaces.ts](../src/renderer/src/lib/find-surfaces.ts) | The live-surface registry a mounted panel publishes into, keyed by (card, panel) |
 | [renderer/src/extensibility/points.test.ts](../src/renderer/src/extensibility/points.test.ts) | The E15-03 done-when, executable: a new panel / block renderer / status item takes effect with no edit to any consumer |
 | [shared/…/registry.test.ts](../src/shared/extensibility/registry.test.ts) | Mechanics, against toy contracts — plus the guard that the class stays free of `main/` and `renderer/` imports |
@@ -74,7 +74,7 @@ actually serve it.
 | `feed-block-renderer` | `FeedBlockRendererContribution` | `feed-block-{todos,bash,edit,tool,thinking,user,markdown}` — one per transcript block shape |
 | `status-bar-item` | `StatusBarItemContribution` | `status-{session-count,usage,service-health,cli-version,theme}` |
 | `theme` | `ThemeContribution` | `theme-{nordic,daylight,high-contrast,soft-contrast}` — the picker and the status bar list from here |
-| `find-provider` | `FindProviderContribution` | **`find-session`, `find-changes` — two of the four §5.31 names day one**; see the honest count below |
+| `find-provider` | `FindProviderContribution` | **`find-session`, `find-changes`, `find-terminal` — three of the four §5.31 names**; see the honest count below |
 
 `theme` (P2-E15-05) is the first **data-only** point: every other contribution
 hands over a function — build these commands, render this block — and this one
@@ -94,21 +94,27 @@ find widget (`mode: 'delegated'`) because §5.31 names that widget as a thing no
 to reimplement. A point whose registrants only ever varied by *which* thing they
 searched would have proved much less about the contract.
 
-**It ships with TWO of the four registrants §5.31 names, and the gap is stated
-rather than glossed.** The Terminal's provider is P2-E17-03's own work item,
-which depends on this one. The **document viewer** (§5.30) landed on main in
-the same train as this bar and is deliberately still un-joined: it already has
+**It ships with THREE of the four registrants §5.31 names, and the gap is
+stated rather than glossed.** P2-E17-03 added `find-terminal` — xterm's
+scrollback behind `@xterm/addon-search`, `mode: 'bar'` — and with it the
+grouped count the point was shaped for: one Ctrl+F now asks *every* `bar`
+registrant on the focused card and the bar reports them as separate groups
+("12 in Session · 3 in Terminal (scrollback only)"), because two providers can
+see two different depths of the same session and one number over both would be
+true of neither. That is also what made `labelKey` **required**: a group with no
+name is a number the user cannot attribute.
+
+The **document viewer** (§5.30) is deliberately still un-joined: it already has
 a working Ctrl+F, scoped to its own container for exactly the reason this point
 exists, so the gap is a seam rather than a feature — and joining it means
 teaching the dispatcher what "the focused surface" is when it is not a session
-card, which is a §5.8 question. That is P2-E16's follow-up. Both have a written
+card, which is a §5.8 question. That is P2-E16's follow-up, with a written
 registration recipe at the bottom of
 [`find-providers.ts`](../src/renderer/src/extensibility/find-providers.ts) — the
-panel id to claim, the surface shape to publish, and the trap each one must not
-inherit (the Terminal must label its group "scrollback only", because xterm sees
-5,000 lines and the transcript sees everything). So the four-dissimilar-consumer
-bar §5.31 set is cleared *by design and by recipe*, and half-cleared in code.
-Two of the four is not the same as four, and the roster says so.
+panel id to claim, the surface shape to publish, and the two structural
+blockers. So the four-dissimilar-consumer bar §5.31 set is cleared *by design
+and by recipe*, and three-quarters cleared in code. Three of the four is not
+the same as four, and the roster says so.
 
 The three renderer points added by P2-E15-03 are deliberately **dissimilar**:
 `panel` renders a whole view and has a mount lifecycle (`keepMounted`, because

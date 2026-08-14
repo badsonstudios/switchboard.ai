@@ -9,11 +9,24 @@
 // so they show a generous snippet and say plainly that they are earlier than
 // the loaded view.
 //
-// WHAT THIS COMPONENT DOES NOT DO: search. It resolves the FOCUSED panel's
-// `find-provider` (§5.23) and asks it. That indirection is the correctness
+// WHAT THIS COMPONENT DOES NOT DO: search. It resolves `find-provider`
+// contributions (§5.23) and asks them. That indirection is the correctness
 // argument §5.31 makes against `webContents.findInPage` — a provider is
 // reached by naming a card and a panel, so a search cannot leak into the three
 // other cards on screen.
+//
+// ONE CTRL+F, RESULTS GROUPED BY VIEW (P2-E17-03, §5.31's first decision).
+// Since the Terminal got a provider there are two `bar` registrants on a card,
+// and the bar asks BOTH: "1 of 3" is a position inside one group, and the line
+// under it reads "12 in Session · 3 in Terminal (scrollback only)". The two
+// counts are never added together — the transcript is the whole session and
+// xterm is 5,000 ring-buffered lines, so one number over both would be true of
+// nothing. `lib/find-groups.ts` holds that arithmetic and the argument.
+//
+// The FOCUSED panel keeps two jobs: its provider's `unavailableKey` is what
+// greys the bar (E17-02's guarantee — a panel that cannot be searched says so),
+// and the first match is taken from ITS group when it has one, because find
+// starting somewhere you cannot see is not find.
 //
 // A11y (§5.32), and one deliberate departure from the modal precedents:
 //
@@ -32,11 +45,25 @@
 //    nothing is the same lie as searching the DOM, one interaction later.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import type { FindHit, FindResults, PanelId } from '../extensibility/contributions';
-import { findProviderFor, findUnavailableKey } from '../extensibility/find-providers';
+import type { FindContext, FindHit, FindResults, PanelId } from '../extensibility/contributions';
+import { findProviderFor, findUnavailableKey, listFindProviders } from '../extensibility/find-providers';
 import { rendererRegistry } from '../extensibility/registry-instance';
 import { safely } from '../extensibility/boundary';
-import { findSurfaceFor, findSurfaceKey, subscribeFindSurfaces } from '../lib/find-surfaces';
+import {
+  findSurfaceFor,
+  findSurfaceKey,
+  findSurfacesVersion,
+  subscribeFindSurfaces,
+} from '../lib/find-surfaces';
+import {
+  buildFindGroups,
+  EMPTY_GROUPS,
+  failedResults,
+  initialStep,
+  noticesOf,
+  positionIn,
+  type FindGroupsView,
+} from '../lib/find-groups';
 import {
   closeFindBar,
   findBarState,
@@ -81,26 +108,76 @@ export function FindBar(props: {
 }): React.JSX.Element {
   const { t, i18n } = useTranslation();
   const bar = React.useSyncExternalStore(subscribeFindBar, findBarState);
-  // a surface appears when its panel mounts — switching to Changes has to
-  // re-resolve, or the bar would still be holding the feed's
-  const surfaceKey = findSurfaceKey(props.cardId, props.panelId);
-  const surface = React.useSyncExternalStore(subscribeFindSurfaces, () => findSurfaceFor(surfaceKey));
+  // Surfaces come and go with their panels, and this component reads SEVERAL
+  // of them (one per group), so the snapshot is a version token rather than a
+  // surface: an array snapshot would be a new reference every render and
+  // `useSyncExternalStore` would loop.
+  const surfacesVersion = React.useSyncExternalStore(subscribeFindSurfaces, findSurfacesVersion);
+  const locale = i18n.language;
 
   const provider = findProviderFor(rendererRegistry, props.panelId);
-  const locale = i18n.language;
-  const ctx = React.useMemo(
-    () => ({ sessionId: props.sessionId, cardId: props.cardId, surface, locale }),
-    [props.sessionId, props.cardId, surface, locale],
+  const cardId = props.cardId;
+  const sessionId = props.sessionId;
+  const contextFor = React.useCallback(
+    (panelId: string): FindContext => {
+      // read through the version token deliberately: it is what makes this
+      // callback's identity — and every memo built on it — change when a panel
+      // publishes or withdraws its surface
+      void surfacesVersion;
+      return { sessionId, cardId, surface: findSurfaceFor(findSurfaceKey(cardId, panelId)), locale };
+    },
+    [sessionId, cardId, locale, surfacesVersion],
   );
+
+  const ctx = React.useMemo(() => contextFor(props.panelId), [contextFor, props.panelId]);
+
+  // The FOCUSED panel still decides whether find runs at all — §5.8's
+  // greyed-not-hidden rule, and the guarantee E17-02 shipped: a panel that
+  // cannot be searched says so instead of quietly searching something else.
+  // What it no longer decides is which surfaces get searched (see `groups`).
   const unavailableKey = provider ? findUnavailableKey(provider, ctx) : 'find.unavailable.noProvider';
 
-  const [results, setResults] = React.useState<FindResults | null>(null);
+  // Every `bar` registrant that can be searched on THIS card, in `order`.
+  // Delegated providers are absent by construction: they never render our bar,
+  // so they can never be one of its groups.
+  const groupProviders = React.useMemo(() => {
+    if (provider?.mode !== 'bar' || unavailableKey) return [];
+    return listFindProviders(rendererRegistry)
+      .filter((p) => p.mode === 'bar')
+      .map((p) => ({ p, groupCtx: contextFor(p.panelId) }))
+      .filter(({ p, groupCtx }) => !findUnavailableKey(p, groupCtx));
+  }, [provider, unavailableKey, contextFor]);
+
+  // TWO REFS, and the split is what stops a search restarting for no reason.
+  //
+  // `entries` is the CURRENT set, refreshed every render, and it is what
+  // `reveal`/`clear` read — so a surface that re-published (a tab switch, a
+  // popout re-parenting) is reached without the search knowing or caring.
+  //
+  // `searched` is the set the last query actually ran against, and it is what
+  // `clearAll` undoes. Those are not the same list: switching to the Changes
+  // tab empties the current one, and clearing "whatever is registered now"
+  // would then strand the terminal's highlights and the feed's forced-open
+  // blocks with nobody left holding a reference to them.
+  //
+  // Why refs rather than effect dependencies: `findSurfacesVersion` is
+  // PROCESS-GLOBAL, so a DiffPane mounting in another card bumps it. If the
+  // search effect depended on the derived array, that unrelated mount would
+  // re-run the query 200 ms later, re-walk the terminal, and drop the user from
+  // "7 of 12" back to the first hit. The effect keys on `groupKey` — which
+  // panels are searchable — instead.
+  const entriesRef = React.useRef<typeof groupProviders>([]);
+  entriesRef.current = groupProviders;
+  const searchedRef = React.useRef<typeof groupProviders>([]);
+
+  const [view, setView] = React.useState<FindGroupsView>(EMPTY_GROUPS);
+  const [searched, setSearched] = React.useState(false);
   const [index, setIndex] = React.useState(-1);
   const [busy, setBusy] = React.useState(false);
   const input = React.useRef<HTMLInputElement | null>(null);
   const closeBtn = React.useRef<HTMLButtonElement | null>(null);
   const returnFocusTo = React.useRef<HTMLElement | null>(null);
-  const hits = results?.hits ?? [];
+  const steps = view.steps;
 
   // ── open / close ────────────────────────────────────────────────────────
   //
@@ -126,8 +203,28 @@ export function FindBar(props: {
     }
   }, [bar.openNonce, unavailableKey]);
 
+  // Clearing is per GROUP, not per focused panel: a search that highlighted a
+  // terminal AND revealed a feed block has to undo both, and the terminal's
+  // panel is `keepMounted` so it is still there holding decorations long after
+  // the user switched tabs.
+  const clearAll = React.useCallback(() => {
+    // The UNION of what is registered now and what the last query actually ran
+    // against. Neither list alone is enough: the current one is empty on the
+    // Changes tab (where the terminal is still holding the highlights we
+    // painted), and the searched one is empty before the first query (where
+    // clearing is a harmless no-op that keeps "close always tidies up" true).
+    // Live context wins where both have an entry — a panel may have
+    // re-published, and it is the live surface that is holding the paint.
+    const byId = new Map(searchedRef.current.map((e) => [e.p.manifest.id, e]));
+    for (const e of entriesRef.current) byId.set(e.p.manifest.id, e);
+    searchedRef.current = [];
+    for (const { p, groupCtx } of byId.values()) {
+      if (p.clear) safely(p.manifest.id, 'clear()', () => p.clear?.(groupCtx), undefined);
+    }
+  }, []);
+
   const close = React.useCallback(() => {
-    if (provider?.clear) safely(provider.manifest.id, 'clear()', () => provider.clear?.(ctx), undefined);
+    clearAll();
     closeFindBar();
     const el = returnFocusTo.current;
     // rAF because the bar is still mounted synchronously (the palette's
@@ -137,7 +234,7 @@ export function FindBar(props: {
     requestAnimationFrame(() => {
       if (el?.isConnected) el.focus?.();
     });
-  }, [provider, ctx]);
+  }, [clearAll]);
 
   // Unmount is also a close: focusing another card, or closing this one, takes
   // the bar away without anyone calling `close()`, and the feed would be left
@@ -145,9 +242,7 @@ export function FindBar(props: {
   // the cleanup runs ONLY on unmount — a deps-driven version would clear the
   // reveal every time the query changed.
   const clearRef = React.useRef<() => void>(() => {});
-  clearRef.current = () => {
-    if (provider?.clear) safely(provider.manifest.id, 'clear()', () => provider.clear?.(ctx), undefined);
-  };
+  clearRef.current = clearAll;
   React.useEffect(() => {
     return () => clearRef.current();
   }, []);
@@ -172,33 +267,55 @@ export function FindBar(props: {
     if (ok) closeFindBar();
   }, [provider, unavailableKey, ctx, bar.openNonce]);
 
-  // A provider's `FindHit.ref` is ITS OWN private token — a Feed seq here, a
-  // document offset in the next registrant. Carrying a result set across a tab
-  // switch would hand the new provider the old one's tokens, so the results go
-  // when the provider does. (Today the only other registrant is `delegated`
-  // and never renders a list, so this is design rather than a live bug — and
-  // this is a contribution point written for registrants that do not exist.)
-  const providerId = provider?.manifest.id;
+  // A provider's `FindHit.ref` is ITS OWN private token — a Feed seq here, an
+  // xterm buffer position there. Carrying a result set across a change in WHICH
+  // providers are grouped would hand one of them another's tokens, so the
+  // results go when the set does.
+  const groupKey = groupProviders.map(({ p }) => p.manifest.id).join('|');
   React.useEffect(() => {
-    setResults(null);
+    // and UNDO what the previous set painted before forgetting it: switching to
+    // Changes (or onto a panel with no provider) empties the set, and the
+    // highlights it leaves behind have no other owner
+    clearAll();
+    setView(EMPTY_GROUPS);
+    setSearched(false);
     setIndex(-1);
-  }, [providerId]);
+  }, [groupKey, clearAll]);
 
   // ── searching ───────────────────────────────────────────────────────────
-  const reveal = React.useCallback(
-    (hit: FindHit | undefined): void => {
-      if (!hit?.jumpable || !provider?.reveal) return;
-      safely(provider.manifest.id, 'reveal()', () => provider.reveal?.(ctx, hit) ?? false, false);
-    },
-    [provider, ctx],
-  );
+  //
+  // EVERY group, not just the focused one (§5.31's first decision). The
+  // "never matches another card" guarantee is untouched: a group is reached by
+  // naming a card AND a panel, and the only card named here is this one.
+  const revealStep = React.useCallback((v: FindGroupsView, i: number): void => {
+    const step = v.steps[i];
+    if (!step?.hit.jumpable) {
+      if (step) setFindListOpen(true);
+      return;
+    }
+    const group = v.groups[step.groupIndex];
+    const entry = entriesRef.current.find(({ p }) => p.manifest.id === group?.id);
+    if (!entry?.p.reveal) return;
+    // a provider that says it did NOT move is not an error — the list is where
+    // that match lives, the same policy the transcript's evicted hits get
+    const moved = safely(
+      entry.p.manifest.id,
+      'reveal()',
+      () => entry.p.reveal?.(entry.groupCtx, step.hit) ?? false,
+      false,
+    );
+    if (!moved) setFindListOpen(true);
+  }, []);
 
   const term = bar.term;
   const { caseSensitive, wholeWord } = bar;
+  const focusedPanelId = props.panelId;
   React.useEffect(() => {
-    if (!provider || provider.mode !== 'bar' || unavailableKey) return;
+    if (groupKey === '') return;
     if (term === '') {
-      setResults(null);
+      clearAll();
+      setView(EMPTY_GROUPS);
+      setSearched(false);
       setIndex(-1);
       return;
     }
@@ -206,34 +323,47 @@ export function FindBar(props: {
     setBusy(true);
     const id = setTimeout(() => {
       void (async () => {
+        // pinned at the moment of the query, so `clearAll` undoes exactly what
+        // was painted even if the registered set changes underneath
+        const groupProviders = entriesRef.current;
+        searchedRef.current = groupProviders;
         // The provider contract says it never throws; belt and braces anyway,
-        // because a find that takes the window down is worse than no find.
-        let res: FindResults;
-        try {
-          res = (await provider.search?.(ctx, { term, caseSensitive, wholeWord })) ?? {
-            hits: [],
-            total: 0,
-            truncated: false,
-          };
-        } catch (err) {
-          console.error('[find] provider search failed', err);
-          res = { hits: [], total: 0, truncated: false, notice: { key: 'find.notice.failed', tone: 'error' } };
-        }
+        // because a find that takes the window down is worse than no find. One
+        // provider failing costs its own group, never the others' — the same
+        // fail-open rule the point states.
+        const settled = await Promise.all(
+          groupProviders.map(async ({ p, groupCtx }): Promise<FindResults> => {
+            try {
+              return (
+                (await p.search?.(groupCtx, { term, caseSensitive, wholeWord })) ?? {
+                  hits: [],
+                  total: 0,
+                  truncated: false,
+                }
+              );
+            } catch (err) {
+              console.error('[find] provider search failed', p.manifest.id, err);
+              return failedResults('find.notice.failed');
+            }
+          }),
+        );
         if (cancelled) return;
-        setResults(res);
+        const next = buildFindGroups(
+          groupProviders.map(({ p }, i) => ({
+            id: p.manifest.id,
+            panelId: p.panelId,
+            labelKey: p.labelKey,
+            results: settled[i],
+          })),
+        );
+        setView(next);
+        setSearched(true);
         setBusy(false);
-        // Land on the first match as you type — the browser rhythm. Stepping
-        // from there is Enter / Shift+Enter.
-        setIndex(res.hits.length > 0 ? 0 : -1);
-        // Same policy `goTo` applies, written out because `hits` is still the
-        // PREVIOUS render's array here: reveal what can be revealed, and open
-        // the list when it cannot. A session whose blocks do not align (every
-        // Direct session, today) has the list as its only surface, so putting
-        // the user in front of it is the honest first move rather than a
-        // conversation that does not budge.
-        const first = res.hits[0];
-        if (first?.jumpable) reveal(first);
-        else if (first) setFindListOpen(true);
+        // Land on the first match as you type — the browser rhythm, starting
+        // in the view the user is actually looking at.
+        const start = initialStep(next, focusedPanelId);
+        setIndex(start);
+        if (start >= 0) revealStep(next, start);
       })();
     }, DEBOUNCE_MS);
     return () => {
@@ -241,7 +371,7 @@ export function FindBar(props: {
       clearTimeout(id);
       setBusy(false);
     };
-  }, [provider, unavailableKey, ctx, term, caseSensitive, wholeWord, reveal]);
+  }, [groupKey, term, caseSensitive, wholeWord, revealStep, focusedPanelId, clearAll]);
 
   /**
    * Move to a hit — and make sure SOMETHING happens.
@@ -256,20 +386,17 @@ export function FindBar(props: {
   const goTo = React.useCallback(
     (i: number): void => {
       setIndex(i);
-      const hit = hits[i];
-      if (!hit) return;
-      if (hit.jumpable) reveal(hit);
-      else setFindListOpen(true);
+      revealStep(view, i);
     },
-    [hits, reveal],
+    [view, revealStep],
   );
 
   const step = React.useCallback(
     (delta: number): void => {
-      if (hits.length === 0) return;
-      goTo((index + delta + hits.length) % hits.length);
+      if (steps.length === 0) return;
+      goTo((index + delta + steps.length) % steps.length);
     },
-    [hits, index, goTo],
+    [steps, index, goTo],
   );
 
   // ── keys ────────────────────────────────────────────────────────────────
@@ -297,21 +424,48 @@ export function FindBar(props: {
   };
 
   // ── the count, which is where the honesty lives ──────────────────────────
-  const notice = results?.notice;
+  //
+  // "1 of 3" is a position WITHIN ONE GROUP and never across two. The transcript
+  // and the terminal see different depths of the same session, so a running
+  // total over both would be a number that is true of nothing (§5.31, and
+  // `lib/find-groups.ts`'s header). Which group it is, and what every other
+  // group found, is the line underneath.
+  const notices = noticesOf(view);
+  const at = positionIn(view, index);
+  // Every group failed is NOT "no results" — one says the session does not
+  // contain it, the other says we could not look. The status region is what a
+  // screen reader hears, so it must not be the confident one; the error notice
+  // underneath carries the truth.
+  const allFailed =
+    view.groups.length > 0 && view.groups.every((g) => g.notice?.tone === 'error');
   const countText = ((): string => {
     if (unavailableKey) return '';
     if (term === '') return '';
     if (busy) return t('find.searching');
-    if (!results) return '';
-    if (results.total === 0) return t('find.noResults');
-    if (results.truncated) {
-      return t('find.countTruncated', { index: index + 1, shown: hits.length, total: results.total });
+    if (!searched) return '';
+    if (allFailed) return '';
+    if (!view.any) return t('find.noResults');
+    if (!at) return '';
+    if (at.total > at.shown) {
+      return t(at.totalIsFloor ? 'find.countTruncatedAtLeast' : 'find.countTruncated', {
+        index: at.position,
+        shown: at.shown,
+        total: at.total,
+      });
     }
-    return t('find.count', { index: index + 1, total: results.total });
+    return t(at.totalIsFloor ? 'find.countAtLeast' : 'find.count', {
+      index: at.position,
+      total: at.total,
+    });
   })();
 
+  // Drawn once there are two of them, and then ALWAYS — including the zeros.
+  // A group that vanished at 0 would make absence look like the search never
+  // reached that surface, which is the exact thing the label is here to stop.
+  const showGroups = searched && !unavailableKey && term !== '' && view.groups.length > 1;
+
   const listId = React.useId();
-  const listOpen = bar.listOpen && hits.length > 0;
+  const listOpen = bar.listOpen && steps.length > 0;
 
   return (
     <div
@@ -375,7 +529,7 @@ export function FindBar(props: {
           type="button"
           title={t('find.previous')}
           aria-label={t('find.previous')}
-          disabled={hits.length === 0}
+          disabled={steps.length === 0}
           onClick={() => step(-1)}
           style={chip}
         >
@@ -386,7 +540,7 @@ export function FindBar(props: {
           title={t('find.next')}
           aria-label={t('find.next')}
           data-testid="find-next"
-          disabled={hits.length === 0}
+          disabled={steps.length === 0}
           onClick={() => step(1)}
           style={chip}
         >
@@ -421,7 +575,7 @@ export function FindBar(props: {
           aria-expanded={listOpen}
           aria-controls={listOpen ? listId : undefined}
           data-testid="find-results-toggle"
-          disabled={hits.length === 0}
+          disabled={steps.length === 0}
           onClick={() => setFindListOpen(!bar.listOpen)}
           style={bar.listOpen ? chipOn : chip}
         >
@@ -446,16 +600,58 @@ export function FindBar(props: {
         </div>
       )}
 
-      {notice && !unavailableKey && (
-        <div
-          data-testid="find-notice"
-          style={{
-            fontSize: 10,
-            color: notice.tone === 'error' ? 'var(--status-needs-input-ink)' : 'var(--muted)',
-            maxInlineSize: 420,
-          }}
-        >
-          {t(notice.key, notice.params)}
+      {/* §5.31's grouped count. Every group, every time — the zeros are the
+          point: "0 in Terminal (scrollback only)" is a different statement from
+          silence, and only one of them is true. */}
+      {/* NOT a second live region, deliberately: the count above is
+          `role="status"`, and two polite regions updating on the same keystroke
+          talk over each other. The compromise is that a screen reader hears
+          "1 of 3" without the group name and has to read this line for it —
+          which is why the current group is marked `aria-current` rather than
+          only bolded. Revisit if a second locale or a real screen-reader pass
+          says the number alone is too thin. */}
+      {showGroups && (
+        <div data-testid="find-groups" style={{ fontSize: 10, color: 'var(--muted)', maxInlineSize: 420 }}>
+          {view.groups.map((g, i) => (
+            <span key={g.id}>
+              {i > 0 && <span aria-hidden="true">{t('find.groupSeparator')}</span>}
+              <span
+                data-find-group={g.panelId}
+                // the group the count above is counting inside
+                aria-current={at?.groupIndex === i ? 'true' : undefined}
+                style={{
+                  color: at?.groupIndex === i ? 'var(--text)' : undefined,
+                  fontWeight: at?.groupIndex === i ? 700 : undefined,
+                }}
+              >
+                {t(g.totalIsFloor ? 'find.groupCountAtLeast' : 'find.groupCount', {
+                  total: g.total,
+                  group: t(g.labelKey),
+                })}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* One container, N lines: a group can raise its own notice and two of
+          them must not fight over one slot. Named by group once there is more
+          than one, so "showing the first 200" says WHICH surface capped. */}
+      {notices.length > 0 && !unavailableKey && (
+        <div data-testid="find-notice" style={{ fontSize: 10, maxInlineSize: 420 }}>
+          {notices.map(({ groupIndex, notice }) => (
+            <div
+              key={view.groups[groupIndex]?.id ?? groupIndex}
+              style={{ color: notice.tone === 'error' ? 'var(--status-needs-input-ink)' : 'var(--muted)' }}
+            >
+              {view.groups.length > 1
+                ? t('find.noticeInGroup', {
+                    group: t(view.groups[groupIndex]!.labelKey),
+                    message: t(notice.key, notice.params),
+                  })
+                : t(notice.key, notice.params)}
+            </div>
+          ))}
         </div>
       )}
 
@@ -474,8 +670,27 @@ export function FindBar(props: {
             paddingBlockStart: 4,
           }}
         >
-          {hits.map((h, i) => (
-            <HitRow key={h.id} hit={h} current={i === index} onGo={() => goTo(i)} />
+          {steps.map((s, i) => (
+            <React.Fragment key={s.hit.id}>
+              {/* a heading before each group's run, so a snippet is never
+                  attributed to the wrong surface. Only when there IS more than
+                  one — a lone heading over the only list is noise. */}
+              {view.groups.length > 1 && (i === 0 || steps[i - 1]!.groupIndex !== s.groupIndex) && (
+                <div
+                  data-testid="find-group-header"
+                  style={{
+                    fontSize: 9,
+                    color: 'var(--faint)',
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.4,
+                    padding: '4px 5px 2px',
+                  }}
+                >
+                  {t(view.groups[s.groupIndex]!.labelKey)}
+                </div>
+              )}
+              <HitRow hit={s.hit} current={i === index} onGo={() => goTo(i)} />
+            </React.Fragment>
           ))}
         </div>
       )}

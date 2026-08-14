@@ -132,7 +132,9 @@ export const sessionPanels: PanelContribution[] = [
       ctx.transport === 'stream' ? (
         <StreamTerminalNotice />
       ) : (
-        <TerminalPane sessionId={ctx.sessionId} visible={ctx.visible} />
+        // `cardId` so the pane can publish its scrollback as THIS card's find
+        // surface (P2-E17-03) — the same reason `DiffPane` takes it
+        <TerminalPane sessionId={ctx.sessionId} visible={ctx.visible} cardId={ctx.cardId} />
       ),
   },
 ];
