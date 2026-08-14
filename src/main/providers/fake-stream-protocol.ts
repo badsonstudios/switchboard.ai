@@ -86,8 +86,22 @@ export class FakeStreamProtocol {
 
   private onUser(msg: Record<string, unknown>): void {
     const text = extractText(msg.message);
+    const images = extractImages(msg.message);
     const cwd = this.host.cwd();
-    const message = { role: 'user', content: [{ type: 'text', text }] };
+    // The images go back out on the echo exactly as they came in (P2-E10-09).
+    // A fake that quietly dropped them would be a fake that cannot tell a
+    // working image path from a broken one — which is the whole reason the
+    // echo exists at all (see `--replay-user-messages` below).
+    const message = {
+      role: 'user',
+      content: [
+        ...images.map((i) => ({
+          type: 'image',
+          source: { type: 'base64', media_type: i.mediaType, data: i.data },
+        })),
+        { type: 'text', text },
+      ],
+    };
     this.transcribe('user', message, cwd);
 
     // ONCE PER TURN, not once per session. S-11 measured the real CLI doing
@@ -105,6 +119,20 @@ export class FakeStreamProtocol {
     // user prompt at all — a fake missing something the real thing does is a
     // fake that hides a bug.
     this.emit({ type: 'user', message, session_id: FAKE_SESSION_ID, parent_tool_use_id: null });
+
+    // WHAT THE MODEL SAW (P2-E10-09). The real CLI answers an image by talking
+    // about it, which is not a thing a fake can do — so it answers by SAYING
+    // what arrived, in a line an e2e can assert on. Without this, every test of
+    // the image path could only prove that the composer cleared itself, which
+    // is exactly the "it looked like it worked" failure #154 was.
+    //
+    // Only when there ARE images, so a text-only turn is byte-for-byte what it
+    // has always been.
+    if (images.length > 0) {
+      this.emitAssistantText(
+        `IMAGE-SEEN:${images.map((i) => `${i.mediaType}:${i.data.length}`).join(',')}`
+      );
+    }
 
     // the #404 marker — see the constructor docblock
     if (this.opts.resumedFrom && !this.resumeNoted) {
@@ -660,6 +688,29 @@ export class FakeStreamProtocol {
  * A bare string content is accepted too — the Anthropic message format permits
  * it and a hand-written test message is likely to use it.
  */
+/**
+ * Pull the image blocks out of the SDK's user envelope (P2-E10-09).
+ *
+ * The shape the VS Code extension writes and `shared/stream-protocol.ts`
+ * reproduces: `{type:"image",source:{type:"base64",media_type,data}}`. Anything
+ * that is not exactly that is ignored rather than guessed at — the fake's job
+ * is to be a strict reader of the contract, so a block we got wrong shows up as
+ * an image that vanished rather than as one the fake was kind enough to accept.
+ */
+export function extractImages(message: unknown): Array<{ mediaType: string; data: string }> {
+  const content = (message as { content?: unknown } | undefined)?.content;
+  if (!Array.isArray(content)) return [];
+  const out: Array<{ mediaType: string; data: string }> = [];
+  for (const block of content as Array<Record<string, unknown>>) {
+    if (block?.type !== 'image') continue;
+    const source = block.source as { type?: unknown; media_type?: unknown; data?: unknown } | undefined;
+    if (source?.type !== 'base64') continue;
+    if (typeof source.media_type !== 'string' || typeof source.data !== 'string') continue;
+    out.push({ mediaType: source.media_type, data: source.data });
+  }
+  return out;
+}
+
 export function extractText(message: unknown): string {
   const content = (message as { content?: unknown } | undefined)?.content;
   if (typeof content === 'string') return content;

@@ -22,7 +22,7 @@ import {
   SweepResult,
 } from './session-state';
 import { streamStatusEvent } from './stream-status';
-import { interruptRequest, userMessage } from '../../shared/stream-protocol';
+import { interruptRequest, userMessage, type PromptImage } from '../../shared/stream-protocol';
 
 /**
  * Why a session's native id CHANGED. 'clear' = the CLI ran /clear and minted
@@ -462,11 +462,17 @@ export class SessionManager {
    * The text goes through UNTOUCHED. Newlines, backticks and a leading `/` are
    * just characters: `JSON.stringify` escapes the newline so it can never be
    * read as a frame boundary — the property the PTY path had to fake.
+   *
+   * `images` (P2-E10-09) ride the same frame as inline base64 blocks, which is
+   * what the VS Code extension does — no temp file, no `@path`, no flag. They
+   * are ONLY deliverable here: a PTY takes keystrokes, so a session on that
+   * transport returns false for the whole submission rather than quietly
+   * sending the text and dropping the picture the user attached to it.
    */
-  submitPrompt(id: string, text: string): boolean {
+  submitPrompt(id: string, text: string, images: readonly PromptImage[] = []): boolean {
     const handle = this.handles.get(id);
     if (!handle?.send) return false;
-    handle.send(userMessage(text));
+    handle.send(userMessage(text, images));
     // We know the turn began because WE started it — no round trip, unlike the
     // PTY path waiting on a UserPromptSubmit hook.
     this.apply(id, { kind: 'prompt-sent' });

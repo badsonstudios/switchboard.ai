@@ -13,6 +13,11 @@ import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { MainContributions } from '../extensibility/contributions';
 import { SessionTransport } from '../transport/transport';
 import { userMessage, controlResponse } from '../../shared/stream-protocol';
+import {
+  MAX_ATTACHMENTS,
+  MAX_IMAGE_BASE64_BYTES,
+  sanitizePromptImages,
+} from '../../shared/prompt-images';
 import { NdjsonDecoder, encodeFrame } from '../transport/ndjson';
 import { FakeStreamProtocol } from '../providers/fake-stream-protocol';
 import { LogSink, createLogger } from '../log/logger';
@@ -88,7 +93,121 @@ describe('userMessage — the envelope S-10 wrote to the real CLI (P2-E18-06)', 
 
   it('passes the text through completely untouched', () => {
     const nasty = '/slash `backtick` "quote" \\backslash\nsecond line\n';
-    expect(userMessage(nasty).message.content[0].text).toBe(nasty);
+    expect(userMessage(nasty).message.content).toEqual([{ type: 'text', text: nasty }]);
+  });
+});
+
+// THE CONTRACT, PINNED (P2-E10-09). Every shape below was read out of the VS
+// Code extension's webview bundle (2.1.226) — the known-correct consumer — and
+// not invented. The greps that produced them are in the item's hand-off; what
+// this file exists to do is make a drift from them fail a test rather than a
+// turn.
+describe('userMessage with images — the extension’s own block shape', () => {
+  const png = { mediaType: 'image/png' as const, data: 'AQIDBA==' };
+  const jpg = { mediaType: 'image/jpeg' as const, data: 'BQYHCA==' };
+
+  //   case"image": a.push({type:"image",source:{type:"base64",media_type:p,data:u}});break;
+  // `p` is the lower-cased MIME, `u` is `dataUrl.split(",")[1]` — the base64
+  // payload with the `data:image/png;base64,` prefix STRIPPED.
+  it('is the Messages-API image block, base64 inline, no data: prefix', () => {
+    expect(userMessage('what is this?', [png]).message.content[0]).toEqual({
+      type: 'image',
+      source: { type: 'base64', media_type: 'image/png', data: 'AQIDBA==' },
+    });
+  });
+
+  // `input_image` and `image_url` — the OpenAI spellings — count ZERO in both
+  // bundles. This is the only shape on offer.
+  it('never uses the OpenAI spellings', () => {
+    const block = JSON.stringify(userMessage('x', [png]));
+    expect(block).not.toContain('input_image');
+    expect(block).not.toContain('image_url');
+  });
+
+  // Their builder pushes attachments and only then
+  // `a.push({type:"text",text:e})` with the typed prompt. The prompt refers to
+  // the images above it, so the order is part of the contract.
+  it('puts the images FIRST and the typed prompt LAST', () => {
+    expect(userMessage('compare these', [png, jpg]).message.content.map((c) => c.type)).toEqual([
+      'image',
+      'image',
+      'text',
+    ]);
+  });
+
+  // An image sent with nothing typed is a legitimate turn; a zero-length text
+  // block is not a thing the message format accepts.
+  it('omits the text block entirely when nothing was typed', () => {
+    expect(userMessage('', [png]).message.content).toEqual([
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AQIDBA==' } },
+    ]);
+  });
+
+  // The regression that would be invisible: every existing caller passes no
+  // images at all and must keep producing byte-identical envelopes.
+  it('is unchanged for a plain text prompt', () => {
+    expect(userMessage('hi', [])).toEqual(userMessage('hi'));
+    expect(userMessage('hi').message.content).toEqual([{ type: 'text', text: 'hi' }]);
+  });
+
+  // NDJSON is the transport, so a base64 payload has to survive framing — the
+  // same property `\n` in a prompt needed, on a string three orders of
+  // magnitude longer.
+  it('a turn carrying an image is still ONE frame', () => {
+    const big = { mediaType: 'image/png' as const, data: 'A'.repeat(200_000) };
+    const frame = encodeFrame(userMessage('look', [big]));
+    expect(frame.split('\n').filter(Boolean)).toHaveLength(1);
+    const d = new NdjsonDecoder<{ message: { content: Array<Record<string, unknown>> } }>();
+    const out = d.push(frame);
+    expect(out).toHaveLength(1);
+    expect(out[0].ok && (out[0].value.message.content[0].source as { data: string }).data).toBe(
+      big.data
+    );
+  });
+});
+
+describe('sanitizePromptImages — main’s own check, not the renderer’s (P2-E10-09)', () => {
+  const ok = { mediaType: 'image/png', data: 'AQIDBA==' };
+
+  it('lets a well-formed image through, lower-cased', () => {
+    expect(sanitizePromptImages([{ mediaType: 'IMAGE/PNG', data: 'AQIDBA==' }])).toEqual([
+      { mediaType: 'image/png', data: 'AQIDBA==' },
+    ]);
+  });
+
+  // The overwhelmingly common case: a text prompt must not be able to trip this.
+  it('reads a missing list as no images, not as a refusal', () => {
+    expect(sanitizePromptImages(undefined)).toEqual([]);
+    expect(sanitizePromptImages([])).toEqual([]);
+  });
+
+  it('refuses a media type outside the reference allow-list', () => {
+    expect(sanitizePromptImages([{ mediaType: 'image/svg+xml', data: 'AQIDBA==' }])).toBeNull();
+    expect(sanitizePromptImages([{ mediaType: 'text/html', data: 'AQIDBA==' }])).toBeNull();
+  });
+
+  // A `data:` prefix would ride into the block verbatim and be decoded as
+  // garbage by the API — the one malformation that looks plausible.
+  it('refuses anything that is not bare base64', () => {
+    expect(
+      sanitizePromptImages([{ mediaType: 'image/png', data: 'data:image/png;base64,AQIDBA==' }])
+    ).toBeNull();
+    expect(sanitizePromptImages([{ mediaType: 'image/png', data: 'AQID\nBA==' }])).toBeNull();
+    expect(sanitizePromptImages([{ mediaType: 'image/png', data: '' }])).toBeNull();
+  });
+
+  it('refuses a payload past the ceiling, and a list past the count', () => {
+    expect(
+      sanitizePromptImages([{ mediaType: 'image/png', data: 'A'.repeat(MAX_IMAGE_BASE64_BYTES + 1) }])
+    ).toBeNull();
+    expect(sanitizePromptImages(Array.from({ length: MAX_ATTACHMENTS + 1 }, () => ok))).toBeNull();
+  });
+
+  it('refuses junk rather than coercing it', () => {
+    expect(sanitizePromptImages('nope')).toBeNull();
+    expect(sanitizePromptImages([null])).toBeNull();
+    expect(sanitizePromptImages([{ mediaType: 'image/png' }])).toBeNull();
+    expect(sanitizePromptImages([{ mediaType: 7, data: 'AQIDBA==' }])).toBeNull();
   });
 });
 

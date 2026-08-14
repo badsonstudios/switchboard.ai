@@ -15,7 +15,7 @@ import { ipcRefusal } from '../../../shared/ipc/refusal';
 /** everything written to the PTY, in order, as the bridge would have seen it */
 let ptyWrites: Array<{ id: string; data: string }>;
 /** the prompts main accepted over a typed-message transport */
-let submitted: Array<{ id: string; text: string }>;
+let submitted: Array<{ id: string; text: string; images?: unknown }>;
 /** what `sessions.submitPrompt` answers — false = "no typed transport here" */
 let mainTakesPrompts = true;
 let mainTakesInterrupts = true;
@@ -39,9 +39,9 @@ beforeEach(() => {
   (window as unknown as { switchboard: unknown }).switchboard = {
     pty: { input: (id: string, data: string) => ptyWrites.push({ id, data }) },
     sessions: {
-      submitPrompt: (id: string, text: string) => {
+      submitPrompt: (id: string, text: string, images?: unknown) => {
         if (promptFailure) return Promise.reject(promptFailure);
-        if (mainTakesPrompts) submitted.push({ id, text });
+        if (mainTakesPrompts) submitted.push({ id, text, images });
         return Promise.resolve(mainTakesPrompts);
       },
       interrupt: () =>
@@ -178,7 +178,9 @@ describe('a rejecting IPC is read as "main did not take it" (P2-E18-17)', () => 
     const notify = vi.spyOn(sessionStore, 'notifyPromptSubmitted');
     promptFailure = new Error('ipc exploded');
 
-    await expect(submitPrompt('live-1', 'hello')).resolves.toBeUndefined();
+    // TRUE, not undefined: a text prompt always goes somewhere — main took it
+    // or the PTY did — and only the image path (P2-E10-09) can answer false.
+    await expect(submitPrompt('live-1', 'hello')).resolves.toBe(true);
 
     expect(notify).toHaveBeenCalledWith('live-1');
     expect(ptyWrites[0]).toEqual({ id: 'live-1', data: 'hello' });
@@ -289,6 +291,59 @@ describe('submitPrompt on the PTY route writes the same bytes (P2-E18-17)', () =
 
     vi.advanceTimersByTime(SUBMIT_DELAY_MS);
     expect(ptyWrites).toEqual([]);
-    expect(submitted).toEqual([{ id: 'live-1', text: 'hello' }]);
+    // no third argument at all on the text-only route — it goes through
+    // `sendSessionCommand`, which is unchanged by P2-E10-09
+    expect(submitted).toEqual([{ id: 'live-1', text: 'hello', images: undefined }]);
+  });
+});
+
+// The one place the try-then-fall-back rule is deliberately NOT followed
+// (P2-E10-09). Everywhere else the two routes deliver the same thing, which is
+// what makes falling back safe. A bitmap breaks that: the PTY route is
+// keystrokes, and there is no keystroke for a picture — so falling back would
+// send "what's wrong with this screenshot?" with no screenshot, the prompt
+// would arrive looking perfectly fine, and the answer would be nonsense.
+describe('submitPrompt WITH IMAGES is stream-only (P2-E10-09)', () => {
+  const png = { mediaType: 'image/png' as const, data: 'AQIDBA==' };
+
+  it('hands the images to main alongside the text', async () => {
+    await expect(submitPrompt('live-1', 'what is this?', [png])).resolves.toBe(true);
+
+    expect(submitted).toEqual([{ id: 'live-1', text: 'what is this?', images: [png] }]);
+    expect(ptyWrites).toEqual([]);
+  });
+
+  // THE DEFECT THIS PREVENTS: a silent half-send. Nothing may reach the PTY,
+  // and the caller must be told it failed so the draft and the attachments stay
+  // on screen instead of being cleared into nowhere.
+  it('reports failure instead of sending the words without the picture', async () => {
+    mainTakesPrompts = false;
+
+    await expect(submitPrompt('live-1', 'what is this?', [png])).resolves.toBe(false);
+
+    vi.advanceTimersByTime(SUBMIT_DELAY_MS);
+    expect(ptyWrites).toEqual([]);
+    expect(submitted).toEqual([]);
+  });
+
+  it('reports failure on a REJECTING ipc too, still without a PTY write', async () => {
+    promptFailure = new Error('ipc exploded');
+
+    await expect(submitPrompt('live-1', 'what is this?', [png])).resolves.toBe(false);
+
+    vi.advanceTimersByTime(SUBMIT_DELAY_MS);
+    expect(ptyWrites).toEqual([]);
+  });
+
+  // §5.8's auto-minimize is about the USER submitting, not about which
+  // transport took it — an image prompt is still a prompt.
+  it('still counts as the user submitting a prompt', async () => {
+    const notify = vi.spyOn(sessionStore, 'notifyPromptSubmitted');
+    mainTakesPrompts = false;
+
+    await submitPrompt('live-1', 'look', [png]);
+
+    expect(notify).toHaveBeenCalledWith('live-1');
+    notify.mockRestore();
   });
 });
