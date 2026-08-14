@@ -17,6 +17,8 @@
 // live in an inert document with no browsing context, so nothing loads while
 // we work — by the time the nodes reach the page the `<img>` elements are
 // gone.
+import { DOC_DECORATION, stripDecorationNamespace } from './decoration-guard';
+
 export interface OutlineEntry {
   readonly id: string;
   readonly text: string;
@@ -287,13 +289,13 @@ export function decorateLinks(
 }
 
 /**
- * Take back the attributes and classes that are OURS.
+ * Take back the attributes and classes that are OURS — the viewer's half of the
+ * shared guard.
  *
  * THE DECORATION IS A PROTOCOL, AND A DOCUMENT MUST NOT BE ABLE TO SPEAK IT.
  * Everything below writes `data-doc-*` attributes and `doc-*` classes that the
- * viewer's click handler then reads as instructions — and DOMPurify keeps
- * `data-*` attributes (`ALLOW_DATA_ATTR` defaults to true) and `class`. So a
- * file we did not write can arrive with the answers already filled in:
+ * viewer's click handler then reads as instructions, so a file we did not write
+ * can arrive with the answers already filled in:
  *
  *   <a href="javascript:…" data-doc-external="https://exfil.test/?leak">click</a>
  *
@@ -307,37 +309,16 @@ export function decorateLinks(
  * our namespace may survive from the input. Run FIRST, before anything writes
  * one.
  *
- * `style` goes with them, and it is BELT-AND-BRACES, not the policy. The policy
- * is `SANITIZE_CONFIG`'s `FORBID_ATTR: ['style']` in `markdown.tsx` — #436, and
- * for the reasons this comment used to give on the viewer's behalf: an inline
- * style is what made the hidden `<pre>` invisible (`style-src` allows inline
- * styles), a `position:fixed` overlay from a document is a click-jack against
- * the viewer's own chrome, and markdown emits none of it — only raw embedded
- * markup does, which is exactly the input §5.30 says to distrust. That reasoning
- * was never viewer-specific, and while it lived HERE the feed did not get it: one
- * exported constant, two effective profiles, which is the drift §5.30 makes the
- * single renderer a requirement to prevent.
- *
- * The line stays anyway. Not for a caller that exists — today every caller comes
- * through `renderMarkdown`, and `markdown.test.tsx` enforces that there is no
- * other pipeline to come through. It stays because this function's whole job is
- * to assume nothing about where its input has been: it already takes `style`'s
- * neighbours (`data-doc-*`, `doc-*`) back from HTML the sanitizer was perfectly
- * happy with, and dropping `style` from that list would make it the one
- * decoration-protocol attribute whose safety is somebody else's file. One
- * `||`, and the layer keeps its own invariant.
+ * THE RULE, AND THE `style` LINE WITH IT, NOW LIVE IN `decoration-guard.ts`
+ * (#465). They were written here, for this surface, with the justification in
+ * this comment — and the feed, which has exactly the same DOM-as-protocol
+ * design, silently did not get them. This function stays as the viewer's NAME
+ * for the guard (it has callers and tests, and `decorateDocument`'s ordering
+ * comment reads better with it); the implementation is shared, and the
+ * namespace it takes back is `DOC_DECORATION`.
  */
 export function stripOurNamespace(root: ParentNode): void {
-  for (const el of root.querySelectorAll('*')) {
-    for (const attr of [...el.attributes]) {
-      if (attr.name.startsWith('data-doc') || attr.name === 'style') {
-        el.removeAttribute(attr.name);
-      }
-    }
-    for (const cls of [...el.classList]) {
-      if (cls.startsWith('doc-')) el.classList.remove(cls);
-    }
-  }
+  stripDecorationNamespace(root, DOC_DECORATION);
 }
 
 /**

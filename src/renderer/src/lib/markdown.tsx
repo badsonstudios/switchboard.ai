@@ -87,9 +87,33 @@ export const MARKED_OPTIONS = { async: false, gfm: true, breaks: false } as cons
  * no `position: fixed` rule anywhere in the renderer's CSS for a `class` to
  * borrow, and `class` does survive). The legacy set is #466.
  *
- * `document-render.ts` still removes `style` in `stripOurNamespace`, and that is
- * deliberate belt-and-braces for HTML reaching `decorateDocument` from anywhere
- * but here — not a second profile. See the note on that function.
+ * `decoration-guard.ts` still removes `style` in every surface's take-back pass,
+ * and that is deliberate belt-and-braces for HTML that reaches a decoration pass
+ * from anywhere but here — not a second profile. See the note in that file.
+ *
+ * `ALLOW_DATA_ATTR: false` closes the THIRD one, and it is the same argument one
+ * step further out (#465). DOMPurify keeps every `data-*` attribute by default,
+ * and this app's surfaces decorate with data attributes and then read them back
+ * off the DOM as instructions: the viewer's `data-doc-*` (#410) and the feed's
+ * `data-feed-expander` / `data-feed-seq` / `data-no-toggle` (#465). The DOM does
+ * not remember who wrote an attribute, so a reply carrying a forged one is
+ * giving the surface orders — it wedges the feed's arrow-key navigation on a
+ * phantom expander, and captures a find jump, because `querySelector` answers
+ * with the first match in document order and the forgery can sit above the real
+ * block. MARKDOWN EMITS NO DATA ATTRIBUTES AT ALL — every `data-*` that reaches
+ * a surface is therefore raw embedded markup, the input §5.30 says to distrust —
+ * so nothing legitimate is lost, and the whole class of decoration forgery is
+ * closed here, once, for surfaces that do not exist yet.
+ *
+ * It is the FIRST of two layers, not the only one: `decoration-guard.ts` is the
+ * per-surface take-back, and it is what still covers `class` (which DOMPurify
+ * keeps and no config flag filters by prefix) and any caller that builds HTML
+ * without coming through this function. Consequence worth knowing before you
+ * read a green test as proof: pipeline-level forgery tests that enter through
+ * `renderMarkdown` now stay green even if a surface's guard is deleted, because
+ * this line got there first. `decoration-guard.test.ts` and
+ * `document-render.test.ts` therefore call the guard DIRECTLY, so removing it
+ * still reds.
  *
  * Everything else is DOMPurify's default and deliberately so: its allow-list,
  * its `javascript:`-scheme refusal and its `on*`-attribute stripping are the
@@ -100,6 +124,7 @@ export const MARKED_OPTIONS = { async: false, gfm: true, breaks: false } as cons
 export const SANITIZE_CONFIG: SanitizeConfig = {
   USE_PROFILES: { html: true },
   FORBID_ATTR: ['style'],
+  ALLOW_DATA_ATTR: false,
 };
 
 // FROZEN, because "one configuration" is this module's entire thesis and an
@@ -149,17 +174,36 @@ export function renderMarkdown(text: string): string {
  * which is where every markdown rule in this app already lives. A second
  * surface that wants different type passes its own and adds rules of its own —
  * it does not fork the pipeline.
+ *
+ * `decorate` is the surface's own pass over the sanitized HTML, run inside the
+ * same `useMemo` (#465). The document viewer has had one since P2-E16-02
+ * (`decorateDocument`) but does not render through this component; the feed's
+ * (`decorateFeedMarkdown`) needs somewhere to hang, and this is the ONE place
+ * a `<Markdown>` surface's HTML exists before it reaches the page.
+ *
+ * A surface that forgets to pass one is not thereby forgeable — `SANITIZE_CONFIG`
+ * closes `data-*` for every surface whether it decorates or not, which is the
+ * layer that does not depend on remembering. The pass is what a surface needs
+ * once it decorates: it takes its OWN namespace back first (see
+ * `decoration-guard.ts`), and only then writes its markup.
  */
 export function Markdown({
   text,
   streaming,
   className = 'feed-md',
+  decorate,
 }: {
   text: string;
   streaming?: boolean;
   className?: string;
+  /** must be a stable module-level function — it is a `useMemo` dependency */
+  decorate?: (html: string) => string;
 }): React.JSX.Element {
-  const html = React.useMemo(() => (streaming ? '' : renderMarkdown(text)), [text, streaming]);
+  const html = React.useMemo(() => {
+    if (streaming) return '';
+    const sanitized = renderMarkdown(text);
+    return decorate ? decorate(sanitized) : sanitized;
+  }, [text, streaming, decorate]);
   if (streaming) {
     return (
       <div className={className} style={{ whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>
