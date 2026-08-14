@@ -33,15 +33,11 @@
 > filed → **#488** (zero-token e2e pins: App trustReaches wiring + the
 > gate itself in stream.spec lanes).
 >
-> **⚠ GITHUB ACTIONS STOPPED CREATING RUNS repo-wide since 2026-08-14
-> 00:34 UTC** (suspected account spending limit — private-repo minutes,
-> Windows e2e all day; billing scope needed to confirm = DAN). PR #486
-> got 4/4 green BEFORE the stop → mergeable. PR #437 has NO checks (not
-> red — no runs exist for its commits; local gate is the evidence;
-> empty-commit kick ba6bfc1 also produced nothing). **DAN ACTION: check
-> github.com/settings/billing → Actions. Until it revives: nothing
-> internal merges (green-CI rule unmeetable), user-facing PRs queue with
-> local-gate evidence, re-kick CI on open PRs after revival.**
+> **GITHUB ACTIONS STALL RESOLVED ITSELF** — dead window was 00:34→
+> 00:56 UTC only (transient outage/queue, NOT billing; Dan's billing
+> check unnecessary). Everything since runs normally; PR #489 4/4
+> GREEN. PR #437's pushes fell in the dead window → re-kicked via
+> close/reopen 2026-08-14 ~02:00 UTC, CI now due on it.
 >
 > **#479 dispatched → sb-wt-2 · `feature/479-e2e-secondary-monitor`**
 > (worker told: CI stalled, local gate is the gate; second monitor
@@ -63,6 +59,33 @@
 > "builds on #489" — reuses Attachment carrier + recorded document-
 > block contract; one real-CLI turn authorized ONLY if 475's record
 > leaves doubt).
+>
+> **#479 ✅ DONE → PR #493 (INTERNAL — orchestrator merges on green CI
+> after the cut lands).** `SWITCHBOARD_E2E_MONITOR=<n>`, monitor 1 ≡
+> primary always; geometry audit: nothing exempted (Windows clamps
+> refused positions at ~21,845 — measured, corrected a wrong comment
+> in reconnect.spec); gate run caught its own double-translate defect
+> (persisted geometry) — fixed + unit-pinned; 4169 unit / 259+3 e2e
+> with =2, geometry specs green unset AND on negative-x.
+>
+> **#458 ✅ DONE → PR #492 READY, Dan's queue #4** (notification was
+> LOST — found via ground-truth sweep; run-13 pattern confirmed again).
+> Root cause was the JOIN KEY, not a missing pipeline: stream blocks
+> stamped arrival-time timestamps → alignToLoaded's kind+ts+tool key
+> never matched; fix = srcId join (`tool:<tool_use id>` / `msg:<message
+> id>`), verified against the 7.7 MB fixture AND the extension's own
+> transcript→stream converters; alignByShape untouched, runs first —
+> PTY path unchanged by construction; 4 refusal guards each mutation-
+> pinned (reviewer caught 3 vacuous refusal tests — lesson: a refusal
+> test proves nothing unless you know WHICH refusal fired). 4160 unit /
+> 261+3 e2e ×2. CHANGELOG: edited the Added bullet, no new entry
+> (find ships first in 0.4.0 — integrators look for the EDIT).
+> Discoveries filed: **#494** (document-peek flake ×2 workers) ·
+> **#495** (resumed Direct = list-only; #484's fork measurement makes
+> it reachable) · **#496** (per-hit srcId resolution) · **#497**
+> (launchDirectToolTurn e2e helper). **Wave 3 dispatched: #462 →
+> sb-wt-3 (husk-blind addSessionCard + mirror rule) · #412 → sb-wt-2
+> (viewer live re-render).** In flight: #476 #462 #412.
 >
 > **MERGE POLICY THIS RUN: nothing merges before the #480 cut PR lands**
 > (Dan merges it, then pushes tag v0.4.0 — the tag is his; the cut ships
