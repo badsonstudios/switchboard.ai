@@ -57,9 +57,10 @@ export function listFindProviders(registry: RendererRegistry): FindProviderContr
 /**
  * The provider for a panel, or null when that panel has none.
  *
- * Null is a REAL and expected answer — the History placeholder has no provider
- * and the Terminal has none until E17-03 — and it is what greys the bar with a
- * reason instead of letting Ctrl+F silently search the wrong surface.
+ * Null is a REAL and expected answer — the History placeholder has no provider,
+ * and neither will the §5.30 document viewer until its panel is a card tab —
+ * and it is what greys the bar with a reason instead of letting Ctrl+F silently
+ * search the wrong surface.
  */
 export function findProviderFor(
   registry: RendererRegistry,
@@ -248,10 +249,24 @@ export const terminalFindProvider: FindProviderContribution = {
   labelKey: 'find.group.terminal',
   order: 30,
   mode: 'bar',
-  // A STREAM session has no PTY and renders a notice instead of an xterm
-  // (`panels.tsx`), so it never publishes a surface at all — there is nothing
-  // to search and the reason has to say so rather than reporting a confident 0.
-  unavailableKey: (ctx) => (terminalSurface(ctx)?.ready() ? null : 'find.unavailable.noTerminal'),
+  // TWO reasons, because they are two different truths and one of them is the
+  // whole point of this provider being careful:
+  //
+  //  • no surface at all — a STREAM session has no PTY and renders a notice
+  //    instead of an xterm (`panels.tsx`). There is no terminal.
+  //  • a surface that is not LIVE — the pane is mounted (it is `keepMounted`)
+  //    but its tab has not been shown, so the xterm holds nothing. Counting it
+  //    would print "0 in Terminal (scrollback only)" about a buffer that was
+  //    never filled, which says "not in the last 5,000 lines" when the truth
+  //    is "we have not looked". See `TerminalPane`'s find effect.
+  //
+  // Either way the group is ABSENT with a reason rather than present with a
+  // number. §5.8's greyed-not-hidden rule reaches this far down.
+  unavailableKey: (ctx) => {
+    const surface = terminalSurface(ctx);
+    if (!surface) return 'find.unavailable.noTerminal';
+    return surface.ready() ? null : 'find.unavailable.terminalNotShown';
+  },
   search(ctx: FindContext, query: FindQuery): Promise<FindResults> {
     const surface = terminalSurface(ctx);
     if (!surface) {
@@ -279,9 +294,12 @@ export const terminalFindProvider: FindProviderContribution = {
         snippet,
         matchStart,
         matchLength: m.length,
-        // every terminal hit IS on screen-able: xterm keeps the whole
-        // scrollback and `scrollToLine` reaches all of it. This is the one
-        // group with no §5.31 v1 boundary.
+        // every terminal hit starts out reachable: xterm keeps the whole
+        // scrollback and `scrollToLine` reaches all of it, so there is no
+        // evicted-block boundary here the way there is in the transcript. It
+        // can still go stale — the buffer is a ring, and a busy session can
+        // evict the row under a recorded match — which `revealTerminalMatch`
+        // detects and refuses, and the bar then treats like any unreachable hit.
         jumpable: true,
         earlierThanLoaded: false,
         metaKey: 'find.hitMetaTerminal',
@@ -293,6 +311,7 @@ export const terminalFindProvider: FindProviderContribution = {
       hits,
       total: out.total,
       truncated: out.truncated,
+      totalIsFloor: out.totalIsFloor,
       notice: out.truncated
         ? { key: 'find.notice.truncated', params: { shown: hits.length }, tone: 'info' }
         : undefined,

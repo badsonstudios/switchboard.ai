@@ -21,6 +21,10 @@ export function TerminalPane(props: {
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const searchRef = useRef<SearchAddon | null>(null);
+  // Is this xterm holding a CURRENT view of the PTY right now? See the find
+  // effect below — this is the difference between "0 matches in the terminal"
+  // and "a confident 0 about a buffer we never filled".
+  const liveRef = useRef(false);
   const visibleRef = useRef(props.visible);
   visibleRef.current = props.visible;
 
@@ -96,20 +100,33 @@ export function TerminalPane(props: {
   // the scrollback away. Nothing is published without a cardId — a terminal
   // nobody can name is a terminal find must not reach.
   //
-  // Note this publishes even while the tab is HIDDEN: the Terminal panel is
-  // `keepMounted`, precisely so the scrollback survives a tab switch, and
-  // §5.31's grouped count is only honest if the terminal group can be counted
-  // from the Session tab.
+  // THE SURFACE PUBLISHES ALWAYS; `ready()` IS WHAT GATES THE GROUP, and the
+  // distinction is the difference between an honest answer and the exact lie
+  // §5.31 wrote this item's done-when about.
+  //
+  // S-07's verdict is that a hidden pane is ingest-only: main keeps the ring
+  // buffer, the renderer's xterm is attached (and fed) ONLY while the tab is
+  // showing, and re-attach replays the snapshot. The Session view is the
+  // DEFAULT tab, so on a card whose Terminal tab has never been opened this
+  // xterm holds nothing at all — and a grouped count that read
+  // "12 in Session · 0 in Terminal (scrollback only)" there would be stating
+  // "not in the last 5,000 lines" about a buffer that has no lines, for output
+  // that may have been printed thirty seconds ago. The same goes, more weakly,
+  // for a terminal that was shown an hour ago and has been frozen since.
+  //
+  // So the group participates only while this pane is LIVE. Everywhere else it
+  // is absent with a reason ("open the Terminal tab") rather than present with
+  // a number. An absent group asks a question; a false zero answers one.
   useEffect(() => {
     const cardId = props.cardId;
     if (!cardId) return;
     const surface: TerminalFindSurface = {
       kind: 'terminal',
-      ready: () => !!termRef.current && !!searchRef.current,
+      ready: () => !!termRef.current && !!searchRef.current && liveRef.current,
       search: (query) => {
         const term = termRef.current;
         const addon = searchRef.current;
-        if (!term || !addon) return { matches: [], total: 0, truncated: false };
+        if (!term || !addon) return { matches: [], total: 0, truncated: false, totalIsFloor: false };
         return searchTerminal(term, addon, query);
       },
       reveal: (match) => {
@@ -130,6 +147,7 @@ export function TerminalPane(props: {
     const term = termRef.current;
     if (!term) return;
     if (!props.visible) {
+      liveRef.current = false;
       // The feed owns the subscribe/detach pair (#117) — but there is no feed on
       // this path: either the previous run's cleanup already detached, or the
       // pane rendered hidden and never attached, where main treats this as a
@@ -158,11 +176,17 @@ export function TerminalPane(props: {
       detach: () => window.switchboard.pty.detach(props.sessionId),
       reset: () => term.reset(),
       write: (d) => term.write(d),
-      onReady: () => tryFit(10),
+      onReady: () => {
+        // the snapshot and the gap chunks are on screen: from here the xterm
+        // is a current view of the PTY, which is what find is allowed to count
+        liveRef.current = true;
+        tryFit(10);
+      },
       onError: (err) => console.warn('[terminal] feed problem', props.sessionId, err),
     });
     return () => {
       cancelled = true;
+      liveRef.current = false;
       raf.forEach((h) => cancelAnimationFrame(h));
       feed.off(); // unsubscribes AND detaches, in that order
     };

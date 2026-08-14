@@ -300,7 +300,14 @@ export interface FindQuery {
  * it, and whether the surface can actually take you there.
  */
 export interface FindHit {
-  /** stable within one result set — React key and step target */
+  /**
+   * Stable within one result set — React key and step target.
+   *
+   * NOT what comes back to the provider: the bar searches several providers at
+   * once and NAMESPACES these ids by provider so two result sets cannot collide
+   * as React keys (`lib/find-groups.ts`). A provider must therefore route
+   * `reveal` through `ref`, never by parsing the id it is handed.
+   */
   id: string;
   /** context around the match, for the results list */
   snippet: string;
@@ -348,6 +355,16 @@ export interface FindResults {
   /** matches found in total; `hits` may be capped */
   total: number;
   truncated: boolean;
+  /**
+   * `total` is a FLOOR — "at least this many" — because the provider stopped
+   * counting before it reached the end (P2-E17-03).
+   *
+   * A provider with a hard ceiling on what it can count must set this rather
+   * than report the ceiling as a total: the bar renders "1000+" for it. A
+   * capped number presented as a count is the wrong-total-told-confidently
+   * failure §5.31 exists to avoid, one layer down from a partial scan.
+   */
+  totalIsFloor?: boolean;
   notice?: FindNotice;
 }
 

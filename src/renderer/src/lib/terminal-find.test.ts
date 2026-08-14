@@ -133,10 +133,11 @@ describe('@xterm/addon-search 0.16.0 against @xterm/xterm 6.0.0', () => {
     make();
     await write('Needle needles NEEDLE\r\n');
 
-    // …and the calls run BACK TO BACK on one addon on purpose: the addon
-    // caches its result set per search term, so a toggle of Aa or ab| that
-    // reused the previous set would be the bar reporting a stale count with
-    // full confidence. Each line below changes only the options.
+    // …and the calls run BACK TO BACK on one addon on purpose: the addon skips
+    // re-highlighting when neither the term nor the options changed, so a
+    // toggle of Aa or ab| that failed to invalidate would have the bar
+    // reporting a stale count with full confidence. Each line below changes
+    // only the options.
     expect(searchTerminal(term, addon, { term: 'needle' }).total).toBe(3);
     // "needles" contains a lower-case "needle"; "Needle" and "NEEDLE" do not
     expect(searchTerminal(term, addon, { term: 'needle', caseSensitive: true }).total).toBe(1);
@@ -167,6 +168,36 @@ describe('@xterm/addon-search 0.16.0 against @xterm/xterm 6.0.0', () => {
     expect(out.total).toBe(2); // the honest answer is 3
   });
 
+  it('a walk that hits its CEILING reports a floor, never a total', async () => {
+    // The addon's own tally is capped at its `highlightLimit` (1000) and the
+    // walk is capped with it, so past that point NOBODY knows the answer.
+    // Reporting the cap as a count would be the wrong-total-told-confidently
+    // failure the whole item is built around. Driven here with a tiny ceiling
+    // rather than 1,000 matches; the arithmetic is the same.
+    make();
+    await seed(); // 10 matches
+    const out = searchTerminal(term, addon, { term: 'NEEDLE' }, 200, 4);
+
+    expect(out.totalIsFloor).toBe(true);
+    expect(out.total).toBe(4); // "4+", which the bar renders with a plus
+    expect(out.matches).toHaveLength(4);
+
+    // …and a walk that DOES close the loop is exact, not a floor
+    expect(searchTerminal(term, addon, { term: 'NEEDLE' }).totalIsFloor).toBe(false);
+  });
+
+  it('refuses to reveal a match whose row has been evicted under it', async () => {
+    // the buffer is a RING: on a busy session, a row recorded a minute ago now
+    // holds different text, and selecting it would jump to something that is
+    // not the match while the list still showed the old snippet
+    make();
+    await seed();
+    const out = searchTerminal(term, addon, { term: 'NEEDLE' });
+    const stale = { ...out.matches[1], line: 'line 4 SOMETHINGELSE', offset: 7, length: 13 };
+    expect(revealTerminalMatch(term, stale)).toBe(false);
+    expect(revealTerminalMatch(term, out.matches[1])).toBe(true);
+  });
+
   it('a term that is not there is zero matches, not an error', async () => {
     make();
     await seed();
@@ -174,6 +205,7 @@ describe('@xterm/addon-search 0.16.0 against @xterm/xterm 6.0.0', () => {
       matches: [],
       total: 0,
       truncated: false,
+      totalIsFloor: false,
     });
     expect(searchTerminal(term, addon, { term: '' }).total).toBe(0);
   });

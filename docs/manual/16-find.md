@@ -86,8 +86,19 @@ group you're currently in is the bold one.
 The results list is grouped the same way, with a heading over each run of
 matches, so a snippet is never attributed to the wrong place.
 
-If a group can't be searched at all it simply isn't listed — a session in
-Direct mode has no terminal, so it has no Terminal group.
+**A group that can't be searched isn't listed at all**, rather than listed with
+a zero. Two cases:
+
+- a session in **Direct mode** has no terminal, so it has no Terminal group;
+- a session whose **Terminal tab you have never opened** has no Terminal group
+  either. switchboard only keeps the terminal's picture while you are looking
+  at it — behind the scenes the output is still being recorded, but this
+  window's copy is empty until you open the tab. Showing "0" there would be
+  answering a question we hadn't asked. Open the Terminal tab once and the
+  group appears.
+
+Same rule after a long time away: what the terminal group searches is what the
+terminal held when you last looked at it.
 
 ## Other tabs
 
@@ -143,9 +154,12 @@ match-case searches are exact.
   (click it), and that your cursor isn't inside the terminal. The terminal gets
   every key it can see, by design, so `Ctrl+F` there goes to the program
   running in it. `Ctrl+Shift+P` → **Find in session** always works.
-- **The terminal group says 0 and you're sure it printed that** — it very
-  likely did, more than 5,000 lines ago. The terminal only keeps that much.
-  Look at the Session count instead: the conversation keeps everything.
+- **There's no Terminal group** — open the Terminal tab once (see above), and
+  it will be there next time.
+- **The terminal group says 0 and you're sure it printed that** — either it was
+  more than 5,000 lines ago (that's all the terminal keeps), or it was printed
+  since you last looked at the Terminal tab. Open the tab and search again.
+  Either way, the Session count is the one that sees everything.
 - **"Nothing to search yet"** — the session hasn't written anything down. That
   happens before the first prompt; ask it something and try again.
 - **"These matches can be read here, but this session can't be scrolled to

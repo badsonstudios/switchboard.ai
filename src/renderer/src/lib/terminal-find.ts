@@ -72,6 +72,16 @@ export interface TerminalSearchOutcome {
   /** matches in the scrollback; `matches` may be capped below this */
   total: number;
   truncated: boolean;
+  /**
+   * `total` is a FLOOR, not a count — we stopped walking before the end.
+   *
+   * The addon's own tally is hard-capped at its `highlightLimit` (1000), and
+   * so is our walk, so past that point neither of us knows the answer.
+   * Reporting the cap as the total would be a wrong number told confidently,
+   * which is the one thing §5.31 says find must never do — so the bar renders
+   * it as "1000+" instead.
+   */
+  totalIsFloor: boolean;
 }
 
 export interface TerminalSearchQuery {
@@ -81,12 +91,12 @@ export interface TerminalSearchQuery {
 }
 
 /**
- * How many matches we collect positions for.
+ * How many matches we collect POSITIONS for.
  *
- * The walk costs one `findNext` per match, so this bounds the work a keystroke
- * can do on a 5,000-line buffer. Anything past it is still COUNTED (the
- * decorated pass gives the real total) and the bar says "showing the first N" —
- * a capped list with an honest total, never a wrong count.
+ * Not the same limit as `WALK_CEILING`, and the difference is the point: the
+ * walk keeps counting past this, so a capped list still carries an honest
+ * total and the bar says "showing the first 200 of 640". Only when the WALK
+ * stops (`WALK_CEILING`) does the total stop being a count.
  */
 export const TERMINAL_MATCH_LIMIT = 200;
 
@@ -210,20 +220,28 @@ const WALK_CEILING = 1000;
  *
  * COST, MEASURED rather than assumed (jsdom, 5,000 rows × 120 cols, 200
  * matches, 2026-08-13): the FIRST `findNext` for a term is ~17 ms — it is the
- * one that scans the buffer and builds the decorations — and every subsequent
- * call for the same term is ~0.06 ms, because the addon caches its result set.
- * So walking 200 matches costs about 30 ms in total, not 200 scans. That
- * measurement is what makes an eager list affordable at all; if a future
- * version drops the cache, this walk is the thing that becomes O(N × buffer)
- * and the design has to change with it.
+ * one that scans the whole buffer and builds the decorations — and every
+ * subsequent call for the same term and options is ~0.06 ms, because the addon
+ * re-highlights only when the term or the options CHANGED and otherwise just
+ * runs its engine forward from the current selection to the next match. So
+ * walking 200 matches costs about 30 ms in total, not 200 buffer scans.
+ *
+ * That measurement is what makes an eager list affordable at all. Two caveats
+ * recorded rather than hidden: it was taken in jsdom, where `--chip` does not
+ * resolve and the walk therefore ran UNDECORATED, so the cost of up to 1,000
+ * `registerDecoration` calls in Chromium is on top of it; and if a future
+ * version re-highlights on every call, this walk becomes O(N × buffer) and the
+ * design has to change with it.
  */
 export function searchTerminal(
   term: Terminal,
   addon: SearchAddon,
   q: TerminalSearchQuery,
   limit: number = TERMINAL_MATCH_LIMIT,
+  /** exposed for the test that drives the ceiling; production never passes it */
+  ceiling: number = WALK_CEILING,
 ): TerminalSearchOutcome {
-  const empty: TerminalSearchOutcome = { matches: [], total: 0, truncated: false };
+  const empty: TerminalSearchOutcome = { matches: [], total: 0, truncated: false, totalIsFloor: false };
   if (!q.term) return empty;
   const base: ISearchOptions = {
     caseSensitive: !!q.caseSensitive,
@@ -238,10 +256,12 @@ export function searchTerminal(
   /**
    * One walk of the buffer.
    *
-   * `decorations` on EVERY step, not just the first: the addon calls
-   * `clearDecorations()` at the top of each search, so an undecorated step
-   * would wipe the highlights the previous one painted. It measures the same
-   * either way (see above).
+   * `decorations` on EVERY step, not just the first — read off the shipped
+   * bundle rather than assumed: the addon only enters `_highlightAllMatches`
+   * (and only fires `onDidChangeResults`) when the call CARRIES the option, so
+   * an undecorated step neither repaints nor reports. Passing it every time is
+   * what keeps the highlights on the screen for the whole walk. It measures the
+   * same either way (see above).
    */
   const walk = (decorated: boolean): TerminalSearchOutcome => {
     const deco = decorated ? decorations(term.element ?? null) : undefined;
@@ -257,7 +277,7 @@ export function searchTerminal(
     let wrapped = false;
     try {
       term.clearSelection();
-      for (let i = 0; i < WALK_CEILING; i += 1) {
+      for (let i = 0; i < ceiling; i += 1) {
         if (!addon.findNext(q.term, opts)) break;
         const m = toMatch(term, q);
         if (!m) break;
@@ -275,17 +295,20 @@ export function searchTerminal(
     } finally {
       sub.dispose();
     }
-    if (matches.length === 0) return empty;
+    if (matches.length === 0) return { ...empty, total: Math.max(counted, 0) };
 
     // back to the first match, which is where the user expects to be standing
     term.clearSelection();
     addon.findNext(q.term, opts);
 
     // Our own count when the walk closed the loop — that is exact and owes
-    // nothing to an event that may not have fired. Only a walk that hit the
-    // ceiling has to fall back on the addon's tally.
+    // nothing to an event that may not have fired. A walk that hit the ceiling
+    // has no exact answer available to it AT ALL: `resultCount` comes from
+    // `updateResults(s, highlightLimit)`, which slices at the same 1000, so the
+    // addon's tally is capped too. That is reported as a FLOOR ("1000+"), never
+    // as a total.
     const total = wrapped ? seen.size : Math.max(counted, seen.size);
-    return { matches, total, truncated: total > matches.length };
+    return { matches, total, truncated: total > matches.length, totalIsFloor: !wrapped };
   };
 
   try {
@@ -304,10 +327,23 @@ export function searchTerminal(
   }
 }
 
-/** Scroll a collected match into view and select it. Returns whether it moved. */
+/**
+ * Scroll a collected match into view and select it. Returns whether it moved.
+ *
+ * A `row` is an ABSOLUTE buffer index and the buffer is a RING: once the
+ * scrollback is full, new output evicts the oldest lines and every row already
+ * recorded now names different text. So the row is re-read and the match
+ * re-checked before we move — otherwise a busy session would have find select
+ * and scroll to text that is not the match, while the results list still showed
+ * the old snippet. Refusing is safe: the bar treats `false` the same way it
+ * treats any hit it cannot reach, and opens the results list instead.
+ */
 export function revealTerminalMatch(term: Terminal, m: TerminalMatch): boolean {
   try {
     if (m.row < 0 || m.row >= term.buffer.active.length) return false;
+    const now = term.buffer.active.getLine(m.row)?.translateToString(true) ?? '';
+    const was = m.line.slice(m.offset, m.offset + m.length);
+    if (was && now.slice(m.offset, m.offset + was.length) !== was) return false;
     term.select(m.col, m.row, Math.max(1, m.length));
     term.scrollToLine(Math.max(0, m.row - Math.floor(term.rows / 2)));
     return true;

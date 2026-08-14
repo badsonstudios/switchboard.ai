@@ -33,6 +33,8 @@ export interface FindGroup {
   labelKey: string;
   /** matches found; `hits` may be fewer when the provider capped itself */
   total: number;
+  /** `total` is "at least this many" — the provider stopped counting */
+  totalIsFloor: boolean;
   hits: FindHit[];
   notice?: FindNotice;
 }
@@ -67,6 +69,7 @@ export function buildFindGroups(inputs: FindGroupInput[]): FindGroupsView {
     panelId: input.panelId,
     labelKey: input.labelKey,
     total: input.results.total,
+    totalIsFloor: !!input.results.totalIsFloor,
     notice: input.results.notice,
     hits: input.results.hits.map((h) => ({ ...h, id: `${input.id}::${h.id}` })),
   }));
@@ -99,6 +102,8 @@ export interface FindPosition {
   position: number;
   /** the group's honest total (may exceed `shown`) */
   total: number;
+  /** `total` is a floor — render it as "N+" */
+  totalIsFloor: boolean;
   /** how many of that total are actually in the list */
   shown: number;
 }
@@ -109,7 +114,13 @@ export function positionIn(view: FindGroupsView, index: number): FindPosition | 
   const group = view.groups[step.groupIndex];
   if (!group) return null;
   const position = group.hits.findIndex((h) => h.id === step.hit.id) + 1;
-  return { groupIndex: step.groupIndex, position, total: group.total, shown: group.hits.length };
+  return {
+    groupIndex: step.groupIndex,
+    position,
+    total: group.total,
+    totalIsFloor: group.totalIsFloor,
+    shown: group.hits.length,
+  };
 }
 
 /** Every notice any group raised, tagged with the group that raised it. */

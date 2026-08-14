@@ -139,6 +139,16 @@ test.describe('[pty] Session find (E17-02)', () => {
     seedTranscript(a.home, folder, 'TRANSCRIPT_ONLY', 3, 'GROUPED');
     await expect(w.getByText(/GROUPED/).first()).toBeVisible({ timeout: 25_000 });
 
+    // BEFORE the Terminal has ever been shown there is no Terminal group at
+    // all — the xterm is fed only while its tab is visible (S-07), so a
+    // "0 in Terminal (scrollback only)" here would be a confident statement
+    // about a buffer that was never filled
+    await w.keyboard.press(`${MOD}+f`);
+    await w.locator('[data-testid="find-input"]').fill('TRANSCRIPT_ONLY');
+    await expect(count(w)).toHaveText('1 of 3', { timeout: 15_000 });
+    await expect(groups(w)).toHaveCount(0);
+    await w.keyboard.press('Escape');
+
     // put something in the scrollback that is NOT in the transcript. The fake
     // provider spawns the OS shell, so this is real PTY output.
     await showTerminal(w);

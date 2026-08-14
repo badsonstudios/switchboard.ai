@@ -532,6 +532,111 @@ describe('grouped results (P2-E17-03)', () => {
     expect(q(host, 'find-count')!.textContent).toBe('1 of 1');
   });
 
+  it('a terminal that has never been SHOWN is not a group at all — never a false 0', async () => {
+    // The blocker this guards: the Terminal panel is `keepMounted` and mounts
+    // with the card, but S-07 says a hidden pane is ingest-only — the xterm is
+    // fed only while its tab is showing. On a card whose Terminal has never
+    // been opened the buffer is EMPTY, so "0 in Terminal (scrollback only)"
+    // would state "not in the last 5,000 lines" about a buffer with no lines,
+    // for output printed thirty seconds ago. An absent group asks a question;
+    // a false zero answers one.
+    search.mockResolvedValue(searchResult([hit(4, 'a')]));
+    publishFindSurface(findSurfaceKey('card-1', 'terminal'), {
+      kind: 'terminal',
+      ready: () => false, // mounted, never attached
+      search: () => ({ matches: [], total: 0, truncated: false, totalIsFloor: false }),
+      reveal: () => true,
+      clear: () => {},
+    } as unknown as FindSurface);
+    const host = await mount(bar());
+    await act(async () => setFindTerm('NEEDLE'));
+    await settle();
+
+    expect(q(host, 'find-groups')).toBeNull();
+    expect(host.textContent).not.toContain(en.find.group.terminal);
+    expect(q(host, 'find-count')!.textContent).toBe('1 of 1');
+  });
+
+  it('…and says so when that is the tab you are on', async () => {
+    publishFindSurface(findSurfaceKey('card-1', 'terminal'), {
+      kind: 'terminal',
+      ready: () => false,
+      search: () => ({ matches: [], total: 0, truncated: false, totalIsFloor: false }),
+      reveal: () => true,
+      clear: () => {},
+    } as unknown as FindSurface);
+    const host = await mount(bar('terminal', 'grid.viewTerminal'));
+    expect(q(host, 'find-unavailable')!.textContent).toBe(en.find.unavailable.terminalNotShown);
+  });
+
+  it('renders a floor as "N+" rather than presenting a ceiling as a count', async () => {
+    search.mockResolvedValue(searchResult([hit(4, 'a')]));
+    publishFindSurface(findSurfaceKey('card-1', 'terminal'), {
+      kind: 'terminal',
+      ready: () => true,
+      search: () => ({
+        matches: [{ row: 1, col: 0, length: 6, line: 'NEEDLE here', offset: 0 }],
+        total: 1000,
+        truncated: true,
+        totalIsFloor: true,
+      }),
+      reveal: () => true,
+      clear: () => {},
+    } as unknown as FindSurface);
+    const host = await mount(bar('terminal', 'grid.viewTerminal'));
+    await act(async () => setFindTerm('NEEDLE'));
+    await settle();
+    expect(q(host, 'find-groups')!.textContent).toContain(`1000+ in ${en.find.group.terminal}`);
+    expect(q(host, 'find-count')!.textContent).toBe('1 of 1 shown (1000+ found)');
+  });
+
+  it('says nothing rather than "No results" when every group FAILED', async () => {
+    // "we could not look" and "it is not there" are different answers, and the
+    // live region is what a screen reader hears
+    search.mockRejectedValue(new Error('main is gone'));
+    const host = await mount(bar());
+    await act(async () => setFindTerm('NEEDLE'));
+    await settle();
+    expect(q(host, 'find-count')!.textContent).toBe('');
+    expect(q(host, 'find-notice')!.textContent).toContain(en.find.notice.failed);
+  });
+
+  it('undoes what it painted when the searchable set EMPTIES under it', async () => {
+    // switch to Changes mid-search: the terminal is `keepMounted` and would sit
+    // there holding decorations with nobody left holding a reference to it
+    search.mockResolvedValue(searchResult([hit(4, 'a')]));
+    const clearTerminal = vi.fn();
+    publishFindSurface(findSurfaceKey('card-1', 'terminal'), {
+      kind: 'terminal',
+      ready: () => true,
+      search: () => ({ matches: [], total: 0, truncated: false, totalIsFloor: false }),
+      reveal: () => true,
+      clear: clearTerminal,
+    } as unknown as FindSurface);
+    publishFindSurface(findSurfaceKey('card-1', 'diff'), {
+      kind: 'monaco',
+      ready: () => true,
+      openFind: () => true,
+    } as FindSurface);
+
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => root!.render(bar()));
+    await act(async () => setFindTerm('NEEDLE'));
+    await settle();
+    // (clearing is idempotent and also runs when the bar opens, so this counts
+    // the DELTA rather than asserting nothing has happened yet)
+    const before = clearTerminal.mock.calls.length;
+    const beforeFeed = clearFeed.mock.calls.length;
+
+    // the same bar, now told the focused panel is Changes (a delegated
+    // provider), which empties the bar-mode set
+    await act(async () => root!.render(bar('diff', 'grid.viewDiff')));
+    expect(clearTerminal.mock.calls.length).toBeGreaterThan(before);
+    expect(clearFeed.mock.calls.length).toBeGreaterThan(beforeFeed);
+  });
+
   it('clearing on close reaches EVERY group, not just the focused one', async () => {
     search.mockResolvedValue(searchResult([hit(4, 'a')]));
     const clearTerminal = vi.fn();

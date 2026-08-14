@@ -89,15 +89,15 @@ describe('where stepping starts', () => {
 describe('the position the bar shows', () => {
   it('is a position INSIDE one group', () => {
     const view = buildFindGroups([session([hit('a'), hit('b')]), terminal([hit('c'), hit('d')])]);
-    expect(positionIn(view, 1)).toEqual({ groupIndex: 0, position: 2, total: 2, shown: 2 });
+    expect(positionIn(view, 1)).toEqual({ groupIndex: 0, position: 2, total: 2, totalIsFloor: false, shown: 2 });
     // …and stepping into the next group restarts at 1 of ITS total, rather
     // than reading "3 of 4" across two surfaces that saw different depths
-    expect(positionIn(view, 2)).toEqual({ groupIndex: 1, position: 1, total: 2, shown: 2 });
+    expect(positionIn(view, 2)).toEqual({ groupIndex: 1, position: 1, total: 2, totalIsFloor: false, shown: 2 });
   });
 
   it('reports the group’s honest total even when its list was capped', () => {
     const view = buildFindGroups([terminal([hit('a'), hit('b')], { total: 900, truncated: true })]);
-    expect(positionIn(view, 0)).toEqual({ groupIndex: 0, position: 1, total: 900, shown: 2 });
+    expect(positionIn(view, 0)).toEqual({ groupIndex: 0, position: 1, total: 900, totalIsFloor: false, shown: 2 });
   });
 });
 

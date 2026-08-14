@@ -148,6 +148,28 @@ export function FindBar(props: {
       .filter(({ p, groupCtx }) => !findUnavailableKey(p, groupCtx));
   }, [provider, unavailableKey, contextFor]);
 
+  // TWO REFS, and the split is what stops a search restarting for no reason.
+  //
+  // `entries` is the CURRENT set, refreshed every render, and it is what
+  // `reveal`/`clear` read — so a surface that re-published (a tab switch, a
+  // popout re-parenting) is reached without the search knowing or caring.
+  //
+  // `searched` is the set the last query actually ran against, and it is what
+  // `clearAll` undoes. Those are not the same list: switching to the Changes
+  // tab empties the current one, and clearing "whatever is registered now"
+  // would then strand the terminal's highlights and the feed's forced-open
+  // blocks with nobody left holding a reference to them.
+  //
+  // Why refs rather than effect dependencies: `findSurfacesVersion` is
+  // PROCESS-GLOBAL, so a DiffPane mounting in another card bumps it. If the
+  // search effect depended on the derived array, that unrelated mount would
+  // re-run the query 200 ms later, re-walk the terminal, and drop the user from
+  // "7 of 12" back to the first hit. The effect keys on `groupKey` — which
+  // panels are searchable — instead.
+  const entriesRef = React.useRef<typeof groupProviders>([]);
+  entriesRef.current = groupProviders;
+  const searchedRef = React.useRef<typeof groupProviders>([]);
+
   const [view, setView] = React.useState<FindGroupsView>(EMPTY_GROUPS);
   const [searched, setSearched] = React.useState(false);
   const [index, setIndex] = React.useState(-1);
@@ -186,10 +208,20 @@ export function FindBar(props: {
   // panel is `keepMounted` so it is still there holding decorations long after
   // the user switched tabs.
   const clearAll = React.useCallback(() => {
-    for (const { p, groupCtx } of groupProviders) {
+    // The UNION of what is registered now and what the last query actually ran
+    // against. Neither list alone is enough: the current one is empty on the
+    // Changes tab (where the terminal is still holding the highlights we
+    // painted), and the searched one is empty before the first query (where
+    // clearing is a harmless no-op that keeps "close always tidies up" true).
+    // Live context wins where both have an entry — a panel may have
+    // re-published, and it is the live surface that is holding the paint.
+    const byId = new Map(searchedRef.current.map((e) => [e.p.manifest.id, e]));
+    for (const e of entriesRef.current) byId.set(e.p.manifest.id, e);
+    searchedRef.current = [];
+    for (const { p, groupCtx } of byId.values()) {
       if (p.clear) safely(p.manifest.id, 'clear()', () => p.clear?.(groupCtx), undefined);
     }
-  }, [groupProviders]);
+  }, []);
 
   const close = React.useCallback(() => {
     clearAll();
@@ -241,42 +273,47 @@ export function FindBar(props: {
   // results go when the set does.
   const groupKey = groupProviders.map(({ p }) => p.manifest.id).join('|');
   React.useEffect(() => {
+    // and UNDO what the previous set painted before forgetting it: switching to
+    // Changes (or onto a panel with no provider) empties the set, and the
+    // highlights it leaves behind have no other owner
+    clearAll();
     setView(EMPTY_GROUPS);
     setSearched(false);
     setIndex(-1);
-  }, [groupKey]);
+  }, [groupKey, clearAll]);
 
   // ── searching ───────────────────────────────────────────────────────────
   //
   // EVERY group, not just the focused one (§5.31's first decision). The
   // "never matches another card" guarantee is untouched: a group is reached by
   // naming a card AND a panel, and the only card named here is this one.
-  const revealStep = React.useCallback(
-    (v: FindGroupsView, i: number): void => {
-      const step = v.steps[i];
-      if (!step?.hit.jumpable) {
-        if (step) setFindListOpen(true);
-        return;
-      }
-      const group = v.groups[step.groupIndex];
-      const entry = groupProviders.find(({ p }) => p.manifest.id === group?.id);
-      if (!entry?.p.reveal) return;
-      safely(
-        entry.p.manifest.id,
-        'reveal()',
-        () => entry.p.reveal?.(entry.groupCtx, step.hit) ?? false,
-        false,
-      );
-    },
-    [groupProviders],
-  );
+  const revealStep = React.useCallback((v: FindGroupsView, i: number): void => {
+    const step = v.steps[i];
+    if (!step?.hit.jumpable) {
+      if (step) setFindListOpen(true);
+      return;
+    }
+    const group = v.groups[step.groupIndex];
+    const entry = entriesRef.current.find(({ p }) => p.manifest.id === group?.id);
+    if (!entry?.p.reveal) return;
+    // a provider that says it did NOT move is not an error — the list is where
+    // that match lives, the same policy the transcript's evicted hits get
+    const moved = safely(
+      entry.p.manifest.id,
+      'reveal()',
+      () => entry.p.reveal?.(entry.groupCtx, step.hit) ?? false,
+      false,
+    );
+    if (!moved) setFindListOpen(true);
+  }, []);
 
   const term = bar.term;
   const { caseSensitive, wholeWord } = bar;
   const focusedPanelId = props.panelId;
   React.useEffect(() => {
-    if (groupProviders.length === 0) return;
+    if (groupKey === '') return;
     if (term === '') {
+      clearAll();
       setView(EMPTY_GROUPS);
       setSearched(false);
       setIndex(-1);
@@ -286,6 +323,10 @@ export function FindBar(props: {
     setBusy(true);
     const id = setTimeout(() => {
       void (async () => {
+        // pinned at the moment of the query, so `clearAll` undoes exactly what
+        // was painted even if the registered set changes underneath
+        const groupProviders = entriesRef.current;
+        searchedRef.current = groupProviders;
         // The provider contract says it never throws; belt and braces anyway,
         // because a find that takes the window down is worse than no find. One
         // provider failing costs its own group, never the others' — the same
@@ -330,7 +371,7 @@ export function FindBar(props: {
       clearTimeout(id);
       setBusy(false);
     };
-  }, [groupProviders, term, caseSensitive, wholeWord, revealStep, focusedPanelId]);
+  }, [groupKey, term, caseSensitive, wholeWord, revealStep, focusedPanelId, clearAll]);
 
   /**
    * Move to a hit — and make sure SOMETHING happens.
@@ -391,17 +432,31 @@ export function FindBar(props: {
   // group found, is the line underneath.
   const notices = noticesOf(view);
   const at = positionIn(view, index);
+  // Every group failed is NOT "no results" — one says the session does not
+  // contain it, the other says we could not look. The status region is what a
+  // screen reader hears, so it must not be the confident one; the error notice
+  // underneath carries the truth.
+  const allFailed =
+    view.groups.length > 0 && view.groups.every((g) => g.notice?.tone === 'error');
   const countText = ((): string => {
     if (unavailableKey) return '';
     if (term === '') return '';
     if (busy) return t('find.searching');
     if (!searched) return '';
+    if (allFailed) return '';
     if (!view.any) return t('find.noResults');
     if (!at) return '';
     if (at.total > at.shown) {
-      return t('find.countTruncated', { index: at.position, shown: at.shown, total: at.total });
+      return t(at.totalIsFloor ? 'find.countTruncatedAtLeast' : 'find.countTruncated', {
+        index: at.position,
+        shown: at.shown,
+        total: at.total,
+      });
     }
-    return t('find.count', { index: at.position, total: at.total });
+    return t(at.totalIsFloor ? 'find.countAtLeast' : 'find.count', {
+      index: at.position,
+      total: at.total,
+    });
   })();
 
   // Drawn once there are two of them, and then ALWAYS — including the zeros.
@@ -569,7 +624,10 @@ export function FindBar(props: {
                   fontWeight: at?.groupIndex === i ? 700 : undefined,
                 }}
               >
-                {t('find.groupCount', { total: g.total, group: t(g.labelKey) })}
+                {t(g.totalIsFloor ? 'find.groupCountAtLeast' : 'find.groupCount', {
+                  total: g.total,
+                  group: t(g.labelKey),
+                })}
               </span>
             </span>
           ))}

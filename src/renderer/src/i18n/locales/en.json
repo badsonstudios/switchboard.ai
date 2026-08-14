@@ -627,7 +627,10 @@
     "placeholder": "Find",
     "count": "{index} of {total}",
     "countTruncated": "{index} of {shown} shown ({total} found)",
+    "countAtLeast": "{index} of {total}+",
+    "countTruncatedAtLeast": "{index} of {shown} shown ({total}+ found)",
     "groupCount": "{total} in {group}",
+    "groupCountAtLeast": "{total}+ in {group}",
     "groupSeparator": " · ",
     "noticeInGroup": "{group}: {message}",
     "group": {
@@ -660,6 +663,7 @@
       "noSession": "There is no session here to search.",
       "diffNotReady": "The diff hasn't loaded yet — open a changed file and try again.",
       "noTerminal": "This session has no terminal, so there's no scrollback to search.",
+      "terminalNotShown": "Open the Terminal tab to search its scrollback — switchboard only keeps the terminal's view while you're looking at it.",
       "failed": "Find isn't available on this tab right now."
     },
     "notice": {
