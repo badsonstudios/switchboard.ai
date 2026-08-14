@@ -119,8 +119,69 @@ By default, when a session needs permission, needs input, finishes, or crashes:
 panel is the calm default; pop-ups are opt-in.
 
 Turn the whole lot off with the **🔔 / 🔕** chip in the title bar. That switch is
-above everything on this page: with it off, nothing pops up, nothing beeps, and
-no rule fires — including **Notify when done**, below.
+above everything on this page: with it off, nothing pops up, nothing beeps,
+nothing is spoken, and no rule fires — including **Notify when done**, below.
+
+That one beep can become a **different sound per session**, and switchboard can
+**say out loud** which session needs you. Both are off until you ask — the next
+two sections.
+
+## Giving each session its own sound
+
+By default every session shares one plain beep, which tells you *something*
+happened but not *what*. Turn on **🔊 session sounds** in the title bar and each
+session gets its own short cue instead — so with six cards open you can tell
+which one wants you without looking away from what you're doing.
+
+Sessions get different sounds **automatically**, in the order you opened them,
+so you don't have to set anything up. There are eight, and they're chosen to be
+easy to tell apart rather than to be pretty: Chime, Bell, Knock, Rise, Blip,
+Fall, Ping and Thrum.
+
+**To pick a session's sound yourself:**
+
+1. Open the session's **⋯ menu** (top right of its card).
+2. Click **Sound: <name> — switch to <next>**.
+
+Each click moves to the next sound in the list **and plays it**, so you can keep
+clicking until you hear one you like. Once you've picked one by hand it's
+*pinned*: it stays with that session for good, and it won't shift when you close
+other sessions. (A sound the app assigned automatically *can* shift if you close
+a session ahead of it. Pinning is the fix.)
+
+Your choice is remembered and comes back with the session when you reopen the
+app.
+
+Two more things:
+
+- **The cue replaces the beep — it doesn't add to it.** One event, one sound.
+- **If a sound can't be played** — no audio device, or the window is gone — you
+  get the plain beep instead. You'll never get silence where you used to get a
+  noise.
+
+## Having switchboard tell you out loud
+
+Turn on **🗣 announce** in the title bar and switchboard will *say* which session
+needs you: *"Add markdown preview needs your input."*
+
+It uses your computer's built-in voice — nothing is sent anywhere, and nothing
+is downloaded.
+
+- **It says the session's task label** if it has one — the short "what am I
+  doing" line under the title (see [Sessions](02-sessions.md)). That's the
+  useful half: it answers *what* is waiting, not just *which*.
+- **If there's no label, it says the session's title instead.** Same if you've
+  turned auto labels off with the **🏷** chip — the voice falls back to the
+  title rather than going quiet.
+- **It only speaks when you're not in switchboard.** Reading out something
+  you're looking straight at is slow and annoying, so the voice waits until
+  you've clicked away or minimized — the same rule the desktop pop-ups follow.
+- **It never reads out a tool call or a long label.** Long labels are cut short;
+  permission announcements say "needs permission" and leave the details on
+  screen where you can read them.
+
+If your computer has no voice installed (some Linux setups), nothing is said and
+nothing breaks — the sound and the Events entry still happen.
 
 ## Notify me when *this* session is done
 

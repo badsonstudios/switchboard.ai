@@ -16,6 +16,7 @@ import {
   PLACEHOLDER_GROUP_NAME,
 } from './store';
 import { Logger } from '../log/logger';
+import { SOUND_IDS } from '../../shared/sounds';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 
 let dir: string;
@@ -336,11 +337,92 @@ describe('notification prefs merge-patch (review P1 #13)', () => {
     expect(st.getNotificationPrefs()).toEqual({
       enabled: false,
       osToasts: true,
+      // P2-E14-05a's two switches survive the same patch, for the same reason
+      sounds: false,
+      speak: false,
       quietStart: '22:00',
       quietEnd: '07:00',
     });
     st.setNotificationPrefs({ osToasts: false });
     expect(st.getNotificationPrefs()).toMatchObject({ enabled: false, osToasts: false });
+  });
+});
+
+describe('per-session sounds (P2-E14-05a, §5.11)', () => {
+  it('gives the first cards different cues without anyone configuring one', () => {
+    // the done-when — "two sessions ring distinguishably" — before any UI
+    const st = makeStore(file);
+    st.load();
+    st.upsertSession(sess('one'));
+    st.upsertSession(sess('two'));
+    st.upsertSession(sess('three'));
+    const ids = ['one', 'two', 'three'].map((id) => st.cardSound(id).id);
+    expect(new Set(ids).size).toBe(3);
+    for (const id of ids) expect(SOUND_IDS).toContain(id);
+  });
+
+  it('an auto cue is not pinned, and a chosen one is', () => {
+    const st = makeStore(file);
+    st.load();
+    st.upsertSession(sess('one'));
+    expect(st.cardSound('one').pinned).toBe(false);
+    st.setCardSound('one', 'bell');
+    expect(st.cardSound('one')).toEqual({ id: 'bell', pinned: true });
+  });
+
+  it('a pinned cue survives quit -> relaunch', () => {
+    const a = makeStore(file);
+    a.load();
+    a.upsertSession(sess('one'));
+    a.setCardSound('one', 'knock');
+    a.save();
+    const b = makeStore(file);
+    b.load();
+    expect(b.cardSound('one')).toEqual({ id: 'knock', pinned: true });
+  });
+
+  it('null hands the card back to auto', () => {
+    const st = makeStore(file);
+    st.load();
+    st.upsertSession(sess('one'));
+    st.setCardSound('one', 'knock');
+    st.setCardSound('one', null);
+    expect(st.cardSound('one').pinned).toBe(false);
+  });
+
+  it('a cue this build cannot play is refused rather than stored', () => {
+    // a hand-edited file or a newer renderer must not leave a name behind that
+    // resolves to nothing
+    const st = makeStore(file);
+    st.load();
+    st.upsertSession(sess('one'));
+    st.setCardSound('one', 'airhorn');
+    expect(st.cardSound('one').pinned).toBe(false);
+  });
+
+  it('setting a cue on a card that is not there is a no-op, not a throw', () => {
+    const st = makeStore(file);
+    st.load();
+    expect(() => st.setCardSound('ghost', 'bell')).not.toThrow();
+    expect(st.listSessions()).toEqual([]);
+  });
+
+  it('an unknown card still gets a cue — silence is the wrong failure', () => {
+    const st = makeStore(file);
+    st.load();
+    expect(SOUND_IDS).toContain(st.cardSound('ghost').id);
+    expect(st.cardSound('ghost').pinned).toBe(false);
+  });
+
+  it('a pinned cue does not move when the card ahead of it is closed', () => {
+    // the stated cost of assigning by position, and the reason pinning exists
+    const st = makeStore(file);
+    st.load();
+    st.upsertSession(sess('one'));
+    st.upsertSession(sess('two'));
+    st.setCardSound('two', 'ping');
+    st.removeSession('one');
+    expect(st.cardSound('two')).toEqual({ id: 'ping', pinned: true });
   });
 });
 

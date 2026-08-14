@@ -315,6 +315,7 @@ export async function launchSecondInstance(
   delete env.SWITCHBOARD_AUTOCLOSE;
   delete env.SWITCHBOARD_TRANSPORT; // the same scrub `launchApp` does (#381)
   env.SWITCHBOARD_NO_QUIT_CONFIRM = '1';
+  env.SWITCHBOARD_MUTE_AUDIO = '1'; // the same scrub `launchApp` does (P2-E14-05a)
   env.SWITCHBOARD_FAKE_PROVIDER = '1';
   applyIsolatedPaths(env, home);
 
@@ -416,6 +417,15 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   // so the one spec that exercises the dialog can turn it back off by passing
   // `SWITCHBOARD_NO_QUIT_CONFIRM: ''` (see quit-confirm.spec.ts).
   env.SWITCHBOARD_NO_QUIT_CONFIRM = '1';
+  // No spec may make a NOISE (P2-E14-05a). Per-session cues and spoken
+  // announcements reach a real speaker through the renderer, and this suite
+  // runs on the machine its owner is working at — a run that chimed eight
+  // times and read four sentences out loud is a run nobody starts twice.
+  // Muted, the sink still LOGS, so `sounds.spec.ts` proves the whole chain
+  // (right rule, right card, right cue) and only the last inch is silent. Set
+  // on every launch and BEFORE `opts.env`, like the two above, so a spec that
+  // genuinely wants audio can still ask for it.
+  env.SWITCHBOARD_MUTE_AUDIO = '1';
   // No test may talk to the real release feed (P2-E19-03). `off` disables the
   // update check entirely, so nothing in the suite makes a live call to
   // github.com or reaches for this machine's real `gh` credentials — and no

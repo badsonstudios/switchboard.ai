@@ -77,6 +77,24 @@ export const ACTION_OS_TOAST = 'os-toast';
 export const ACTION_PUSH = 'push';
 export const ACTION_WEBHOOK = 'webhook';
 
+/**
+ * The two audio channels (P2-E14-05a, §5.9): a per-session cue, and a spoken
+ * announcement of what wants you.
+ *
+ * **Both carry an empty payload, and for the same reason `push` does** — the
+ * destination is not the rule's business. Which cue a card rings is a property
+ * of the CARD (§5.11 files it with the identity kit, beside the title and the
+ * accent), so the handler resolves it from the workspace when it fires. Putting
+ * the cue name in the action would mean every rule scoped to a session carried
+ * a copy of that session's sound, and changing the sound would mean rewriting
+ * rules — the same trap, one aisle over.
+ *
+ * It also keeps the DEDUP key right (`plannedActions`): two rules that both ask
+ * for "the sound" are one sound, which is what a person hearing it expects.
+ */
+export const ACTION_SOUND = 'sound';
+export const ACTION_SPEAK = 'speak';
+
 export interface Rule {
   id: string;
   /** which event fires it */
@@ -166,6 +184,10 @@ export function defaultRules(prefs: {
   push?: boolean;
   /** the generic webhook is configured AND switched on (P2-E14-06) */
   webhook?: boolean;
+  /** per-session cues instead of the plain beep (P2-E14-05a) */
+  sounds?: boolean;
+  /** spoken announcements (P2-E14-05a) */
+  speak?: boolean;
 }): Rule[] {
   const rule = (
     channel: string,
@@ -189,6 +211,23 @@ export function defaultRules(prefs: {
       toast('crashed', ALL_VISIBILITIES)
     );
   }
+  // Per-session sounds (P2-E14-05a). EVERY visibility, on purpose: this cue
+  // REPLACES the unconditional beep in `notifier.ts` rather than joining it
+  // (two sounds for one event is a bug, not a feature), so it has to fire
+  // everywhere the beep did — including while the window is focused, where the
+  // sound is the thing that tells you WHICH of eight cards just moved without
+  // you looking away from the one you are reading.
+  if (prefs.sounds)
+    for (const kind of ['needs-input', 'needs-permission', 'crashed', 'done'] as const)
+      out.push(rule('sound:', ACTION_SOUND, kind, ALL_VISIBILITIES));
+  // Spoken announcements (P2-E14-05a) — WHEN AWAY, like the toast and unlike
+  // the sound. A voice reading "Add markdown preview needs your input" at
+  // someone who is looking straight at that card is telling them something they
+  // can already see, in the slowest possible medium. The cue above is for the
+  // desk; this one is for the other side of the room.
+  if (prefs.speak)
+    for (const kind of ['needs-input', 'needs-permission', 'crashed', 'done'] as const)
+      out.push(rule('speak:', ACTION_SPEAK, kind, WHEN_AWAY));
   // Phone push (P2-E14-06). The same three events the toasts cover, and only
   // WHEN AWAY — including `crashed`, which the toast excepts. The exception is
   // right for a popup on the screen you are already looking at and wrong for a

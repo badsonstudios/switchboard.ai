@@ -36,6 +36,17 @@ export interface NotificationPrefs {
   /** OS toast popups — OFF by default (Dan 2026-07-22: sound + Events
    *  panel are the signal; popups are opt-in via settings, E14 adds UI) */
   osToasts?: boolean;
+  /**
+   * Per-session cues (P2-E14-05a, §5.9) — OFF by default.
+   *
+   * Read HERE for one reason: when it is on, the beep below steps aside for the
+   * `sound` rule action, which fires on the same four events at every
+   * visibility (`rules.ts` → `defaultRules`). One event has to make one noise.
+   */
+  sounds?: boolean;
+  /** spoken announcements (P2-E14-05a) — OFF by default, and read only by the
+   *  rules engine; the notifier has nothing unconditional to say */
+  speak?: boolean;
 }
 
 export const DEFAULT_PREFS: NotificationPrefs = { enabled: true, osToasts: false };
@@ -83,7 +94,14 @@ export class Notifier {
     try {
       // The signal model (Dan 2026-07-22): SOUND always + the Events panel;
       // taskbar flash when backgrounded. Everything else is a rule.
-      shell.beep();
+      //
+      // P2-E14-05a: with per-session cues switched on, the cue IS this sound —
+      // a distinguishable one that says which card moved — so the beep steps
+      // aside rather than doubling it. It is not merely muted: if the cue
+      // cannot be handed to a renderer, `SoundActions` beeps instead, so the
+      // "an attention event always makes a noise" promise survives an audio
+      // channel that is broken or a window that is gone.
+      if (!prefs.sounds) shell.beep();
       const win = this.opts.getWindow();
       if (win && !win.isDestroyed() && !win.isFocused() && !this.flashPending) {
         this.flashPending = true;

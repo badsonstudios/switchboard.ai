@@ -26,6 +26,7 @@ import { UpdatePrefs } from '../../shared/update';
 import { ServiceHealthPrefs } from '../../shared/service-health';
 import { DEFAULT_PUSH_PREFS, PushPrefs } from '../../shared/push';
 import { WorkspaceSaveState } from '../../shared/workspace';
+import { DEFAULT_SOUND, isSoundId, soundForIndex } from '../../shared/sounds';
 import { Rule, isSaneRule } from '../events/rules';
 
 export interface PersistedSession {
@@ -73,6 +74,18 @@ export interface PersistedSession {
   labelSource?: 'auto' | 'user';
   /** persistent-group membership (E12); absent/null = ungrouped */
   groupId?: string;
+  /**
+   * The notification cue this card rings (P2-E14-05a, §5.9 + §5.11) — a name
+   * from `shared/sounds.ts`, never a file path or a recipe.
+   *
+   * **Absent means "auto", not "silent".** A card with nothing here takes the
+   * cue at its position in the workspace (`soundForIndex`), which is what makes
+   * two sessions ring differently before anyone configures anything; a card
+   * with a value keeps it wherever it moves and whatever is deleted around it.
+   * Same shape and same reasoning as `transport` above: stored per CARD, so the
+   * choice survives a resume.
+   */
+  sound?: string;
 }
 
 /**
@@ -99,6 +112,17 @@ export interface NotificationPrefsState {
   quietEnd?: string;
   /** OS toast popups — opt-in, default OFF (Dan 2026-07-22) */
   osToasts?: boolean;
+  /**
+   * Per-session cues instead of the one plain beep (P2-E14-05a, §5.9).
+   *
+   * Opt-in, default OFF — E14's exit criterion is that each channel is opt-in,
+   * and OFF is also what makes this item cost an existing user nothing: with it
+   * off the beep in `notifier.ts` is exactly the sound they have today.
+   */
+  sounds?: boolean;
+  /** Spoken announcements (P2-E14-05a). Opt-in, default OFF, and of the two
+   *  this is the one nobody should ever meet without asking for it. */
+  speak?: boolean;
 }
 
 export interface WorkspaceState {
@@ -221,7 +245,10 @@ const EMPTY: WorkspaceState = {
   window: null,
   layout: null,
   ui: null,
-  notifications: { enabled: true, osToasts: false },
+  // Every boolean pref spelled out, not left absent: `sanitizeNotifications`
+  // fills each one in on load, so an EMPTY that omitted them would fail the
+  // "quit -> relaunch reproduces exactly" round-trip on the first launch.
+  notifications: { enabled: true, osToasts: false, sounds: false, speak: false },
   rules: [],
   autoTrust: true,
   autoLabels: true,
@@ -841,6 +868,33 @@ export class WorkspaceStore {
     this.saveSoon();
   }
 
+  /**
+   * The cue this card rings (P2-E14-05a) and whether the user pinned it.
+   *
+   * Resolved HERE rather than at write time because "auto" has to stay auto: a
+   * card that took cue 3 by position must keep taking whatever its position
+   * hands it, not have that answer frozen into its record the first time
+   * anything asks. An unknown card gets the bank's first cue rather than
+   * silence — a sound is a fail-open channel (P6), and the one outcome worth
+   * avoiding is the user hearing nothing and concluding the app is broken.
+   */
+  cardSound(cardId: string): { id: string; pinned: boolean } {
+    const i = this.state.sessions.findIndex((s) => s.id === cardId);
+    if (i < 0) return { id: DEFAULT_SOUND.id, pinned: false };
+    const own = this.state.sessions[i].sound;
+    if (isSoundId(own)) return { id: own, pinned: true };
+    return { id: soundForIndex(i).id, pinned: false };
+  }
+
+  /** Pin a card's cue, or hand it back to auto with `null`. */
+  setCardSound(cardId: string, sound: string | null): void {
+    const s = this.state.sessions.find((x) => x.id === cardId);
+    if (!s) return;
+    if (sound !== null && !isSoundId(sound)) return; // a cue this build cannot play: no-op
+    s.sound = sound ?? undefined;
+    this.saveSoon();
+  }
+
   /** The USER rules (P2-E14-03). The built-ins are not in here — see the field. */
   listRules(): Rule[] {
     return this.state.rules.map((r) => JSON.parse(JSON.stringify(r)) as Rule);
@@ -1333,12 +1387,16 @@ function sanitizeNotifications(n: unknown): Repaired<NotificationPrefsState> {
     value: {
       enabled: x.enabled !== false,
       osToasts: x.osToasts === true, // default OFF
+      sounds: x.sounds === true, // default OFF (P2-E14-05a)
+      speak: x.speak === true, // default OFF
       ...(typeof x.quietStart === 'string' ? { quietStart: x.quietStart } : {}),
       ...(typeof x.quietEnd === 'string' ? { quietEnd: x.quietEnd } : {}),
     },
     repaired: badFields(n, [
       ['enabled', 'boolean'],
       ['osToasts', 'boolean'],
+      ['sounds', 'boolean'],
+      ['speak', 'boolean'],
       ['quietStart', 'string'],
       ['quietEnd', 'string'],
     ]),

@@ -36,6 +36,8 @@ import { WorkspaceNoticeBanner } from './components/WorkspaceNoticeBanner';
 import { PreflightBanner } from './components/PreflightBanner';
 import { ServiceHealthBanner } from './components/ServiceHealthBanner';
 import type { ServiceHealthStatus } from '../../shared/service-health';
+import { installAnnouncer, setAudioMuted, sharedAnnouncer } from './lib/announcer';
+import { DEFAULT_SOUND } from '../../shared/sounds';
 import { PushSetupDialog } from './components/PushSetupDialog';
 import { unavailablePushConfig } from '../../shared/push';
 import type {
@@ -124,6 +126,13 @@ export function App(): React.JSX.Element {
   const groups = useSyncExternalStore(subscribeStore, () => sessionStore.getState().groups);
   const [palette, setPalette] = useState<string[]>([]);
   const [notifEnabled, setNotifEnabled] = useState(true);
+  // Per-session cues and spoken announcements (P2-E14-05a, §5.9). Both start
+  // FALSE and are corrected by the read below — the safe direction for a chip
+  // that governs noise: a moment showing "off" for something that is on is a
+  // wrong label, a moment showing "on" for something that is off is a user
+  // waiting for a sound that never comes.
+  const [soundsOn, setSoundsOn] = useState(false);
+  const [speakOn, setSpeakOn] = useState(false);
   // gate the shell on the persisted UI state (E12-08): reads are sync after
   const [uiReady, setUiReady] = useState(false);
   const [autonomy, setAutonomy] = useState<string>('ask');
@@ -434,8 +443,20 @@ export function App(): React.JSX.Element {
     0
   );
 
+  // The speaker for main's cues (P2-E14-05a). This window and no other: a
+  // dockview popout ships no script of ours, so `main/events/audio-sink.ts`
+  // only ever sends here.
   useEffect(() => {
-    void bridge.notifications?.getPrefs?.().then((p) => setNotifEnabled(p.enabled));
+    setAudioMuted(bridge.sounds?.muted === true);
+    return installAnnouncer(bridge.sounds, sharedAnnouncer());
+  }, []);
+
+  useEffect(() => {
+    void bridge.notifications?.getPrefs?.().then((p) => {
+      setNotifEnabled(p.enabled);
+      setSoundsOn(p.sounds === true);
+      setSpeakOn(p.speak === true);
+    });
     void bridge.settings?.getAutoTrust?.().then(setAutoTrust);
     void bridge.settings?.getAutoLabels?.().then(setAutoLabels);
     void bridge.preflight?.check?.().then((r) => {
@@ -1236,6 +1257,32 @@ export function App(): React.JSX.Element {
           const next = !autoTrust;
           setAutoTrust(next);
           void bridge.settings?.setAutoTrust?.(next);
+        }}
+        soundsOn={soundsOn}
+        onToggleSounds={() => {
+          const next = !soundsOn;
+          setSoundsOn(next); // optimistic; main answers with what it stored
+          void bridge.notifications?.setPrefs?.({ sounds: next }).then((p) => {
+            const on = p?.sounds === true;
+            setSoundsOn(on);
+            if (on) sharedAnnouncer().play(DEFAULT_SOUND.id); // hear what you turned on
+          });
+        }}
+        speakOn={speakOn}
+        // The sample sentence is handed UP from the title bar because that is
+        // the component holding `t`; App has no translator of its own.
+        onToggleSpeak={(sample) => {
+          const next = !speakOn;
+          setSpeakOn(next);
+          void bridge.notifications?.setPrefs?.({ speak: next }).then((p) => {
+            const on = p?.speak === true;
+            setSpeakOn(on);
+            // A voice switch you cannot hear until the next event is a switch
+            // you cannot test. Saying the words on the way ON is the whole
+            // demonstration; saying anything on the way OFF would be a joke at
+            // the user's expense.
+            if (on) sharedAnnouncer().say(sample);
+          });
         }}
         autoLabels={autoLabels}
         onToggleAutoLabels={() => {

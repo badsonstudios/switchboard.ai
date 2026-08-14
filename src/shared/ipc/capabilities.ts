@@ -162,6 +162,12 @@ export const CHANNEL_CAPABILITIES = {
   'rules:list': 'settings.read',
   'rules:notifyWhenDone': 'settings.read',
   'rules:setNotifyWhenDone': 'settings.write',
+  // Per-session sounds (P2-E14-05a) — the same reasoning as the rules above:
+  // which cue a card rings is a notification preference that happens to be
+  // per-session. The two PUSH channels below carry no capability of their own
+  // either; they are main talking, and `send` is not a power the renderer has.
+  'sounds:get': 'settings.read',
+  'sounds:set': 'settings.write',
   'pty:attach': 'pty.read',
   'pty:detach': 'pty.read',
   'pty:input': 'pty.write',
@@ -231,6 +237,12 @@ export const CHANNEL_CAPABILITIES = {
   'app:accelerator': 'app.window',
   'app:displaysChanged': 'app.window',
   'app:popoutGeometryChanged': 'app.window',
+  // "make this noise" / "say this" (P2-E14-05a). Main has no audio device; the
+  // renderer is where Chromium's is. `settings.read` because the payload is a
+  // cue NAME and a sentence the user has already been shown on every other
+  // channel — it grants no reach the notification prefs did not.
+  'audio:play': 'settings.read',
+  'audio:speak': 'settings.read',
   'events:changed': 'events.read',
   // a poll the renderer did not ask for finished, or the local corroboration
   // rule raised/cleared (P2-E14-07). Same capability as reading it.

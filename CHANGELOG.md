@@ -55,6 +55,20 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **Every session can have its own sound, and switchboard can say which one
+  wants you.** Turn on **🔊 session sounds** in the title bar and each session
+  rings a different short cue instead of everything sharing one beep — so with
+  six cards open you can tell which one needs you without looking. Sounds are
+  handed out automatically in the order you open sessions; pick a different one
+  from a session's **⋯ menu**, where each click plays the next of the eight and
+  pins it to that session for good. Turn on **🗣 announce** and it will *say* it
+  out loud — *"Add markdown preview needs your input"* — using your computer's
+  own voice, with nothing sent anywhere. The voice prefers a session's task
+  label and falls back to its title, and it only speaks while you are not in
+  switchboard, like the desktop pop-ups. Both are off until you ask for them,
+  the cue replaces the beep rather than adding to it, and if a sound cannot be
+  played you get the plain beep instead of silence.
+
 - **Answer a permission from the desktop pop-up.** When a session asks
   permission while you are in another app, the pop-up now carries **Allow** and
   **Deny** — press one and the tool runs, or Claude is told no, without

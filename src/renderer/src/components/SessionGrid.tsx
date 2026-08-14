@@ -43,6 +43,8 @@ import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
 import { submitTarget } from '../lib/presentation-policy';
 import { bulkClose } from '../lib/pinning';
 import { createSweeper, SweepPort, SweepRequest } from '../lib/layout-sweep';
+import { sharedAnnouncer } from '../lib/announcer';
+import { CardSound, nextSoundId } from '../../../shared/sounds';
 import {
   cycleMode,
   isEnforced,
@@ -394,6 +396,53 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       alive = false;
     };
   }, [cardId, rulesApi]);
+  // This card's notification cue (P2-E14-05a, §5.9 + §5.11). Same defensive
+  // read as `rulesApi` above and for the same reason: a namespace a partial
+  // bridge does not install must not throw out of a mount effect and take the
+  // card down with it.
+  const soundsApi = window.switchboard?.sounds as typeof window.switchboard.sounds | undefined;
+  const [cardSound, setCardSound] = React.useState<CardSound | null>(null);
+  React.useEffect(() => {
+    if (!cardId || !soundsApi) return;
+    let alive = true;
+    void soundsApi
+      .get(cardId)
+      .then((s) => {
+        if (alive && s) setCardSound(s);
+      })
+      .catch(() => {
+        /* fail-open: an unreadable cue shows nothing rather than a wrong one */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [cardId, soundsApi]);
+  /**
+   * Step to the next cue in the bank and PLAY it.
+   *
+   * A cycling button, like the transport entry above and the title bar's
+   * autonomy and layout chips — this codebase's shape for "one of a short
+   * closed list". A dropdown of eight would be a second menu inside a menu that
+   * is not even a real one (see the ARIA note below).
+   *
+   * The preview is not a nicety: a list of eight words — chime, bell, knock —
+   * tells nobody what they will hear, and this is the only place in the app
+   * where a sound can be auditioned on purpose rather than waited for.
+   */
+  const cycleSound = (): void => {
+    if (!cardId || !soundsApi) return;
+    const next = nextSoundId(cardSound?.id);
+    setCardSound({ id: next, pinned: true }); // optimistic; the answer is the truth
+    sharedAnnouncer().play(next);
+    void soundsApi
+      .set(cardId, next)
+      .then((s) => {
+        if (s) setCardSound(s);
+      })
+      .catch(() => {
+        /* leave the optimistic value: the next mount re-reads the truth */
+      });
+  };
   const toggleNotifyWhenDone = (): void => {
     if (!cardId || !rulesApi) return;
     const next = !notifyWhenDone;
@@ -1387,6 +1436,23 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                               {notifyWhenDone ? t('grid.checkedIcon') : t('grid.uncheckedIcon')}
                             </span>
                             {t('grid.menuNotifyWhenDone')}
+                          </button>
+                        )}
+                        {/* This card's sound (P2-E14-05a). A COMMAND, not a
+                            toggle — it has eight states, not two — so it says
+                            what it is now and what clicking does, the lesson
+                            #153 taught the transport entry two items up. */}
+                        {soundsApi && cardSound && (
+                          <button
+                            data-testid="card-sound"
+                            onClick={cycleSound}
+                            title={t('grid.menuSoundHint')}
+                            style={menuItemStyle(false)}
+                          >
+                            {t('grid.menuSound', {
+                              now: t(`sounds.${cardSound.id}`),
+                              next: t(`sounds.${nextSoundId(cardSound.id)}`),
+                            })}
                           </button>
                         )}
                         <button
