@@ -337,6 +337,28 @@
 > # 🎛 RUN 17 FULLY CLOSED 2026-08-13: 30 ITEMS, TWO
 > # TRAINS, EVERYTHING MERGED
 >
+> # ✅ RUN 18 ENDGAME COMPLETE 2026-08-14: v0.4.0 RELEASED, TRAIN #519
+> # LANDED, BOARD FULLY CLEAR
+>
+> **Everything Dan authorized is done: v0.4.0 is a published GitHub
+> Release** (installer + sha256, release.yml success, tag at cut commit
+> dfd0db4) **and train #519 merged → main @ 0bca627** — all 15 member
+> PRs MERGED (one cosmetic anomaly: #507 shows CLOSED not MERGED
+> because its base branch was deleted when #500 merged first; its
+> commits are on main — verified by file presence — and #477 closed
+> via the train body). **All 17 issues CLOSED** (#397 #412 #415 #442
+> #447 #458 #462 #465 #470 #472 #475 #476 #477 #479 #481 + #480 #394).
+> All 15 feature branches + train branch deleted. Train CI 4/4 green,
+> one lane. **out/ REBUILT + stamp-verified (0bca627f) — `npm start`
+> is the full new build.** Worktrees idle on stale branches (recycle
+> next run). **RUN 19 QUEUE (~20 tickets, all now unblocked):** #484
+> resume-link destruction FIRST (owner-reported data loss; repair
+> sweep reattaches Dan's 2 orphaned cards) · #407 Shape B build ·
+> #482→#483 quiet-hours track · #485 composer draft · #488 #490 #491
+> #494-#497 #499 #502-#504 #506 #508 #509 #512 #517 #518 tail. Dan's
+> only open decision: none — the board is his to hand-test.
+>
+> # (endgame log follows)
 > # 🚀 2026-08-14: v0.4.0 IS RELEASED + TRAIN #519 IN FLIGHT
 >
 > **Dan authorized the full endgame ("merge, push, create release,
