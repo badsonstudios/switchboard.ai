@@ -10,6 +10,8 @@
 // registers as a paste and never submits" workaround — replaced by a struct.
 // That entire class of timing bug does not exist on this transport.
 
+import type { PromptAttachment } from './prompt-attachments';
+
 /** A block of prose in a user turn. */
 export interface StreamTextBlock {
   type: 'text';
@@ -47,7 +49,44 @@ export interface StreamImageBlock {
   source: { type: 'base64'; media_type: string; data: string };
 }
 
-export type StreamContentBlock = StreamTextBlock | StreamImageBlock;
+/**
+ * A FILE the model is shown, inline (P2-E10-10).
+ *
+ * Also not invented — the other two arms of the same `switch` in the same
+ * webview builder (2.1.226), quoted whole so the asymmetry is visible:
+ *
+ *   case"text": {let g=atob(u);
+ *     a.push({type:"document",source:{type:"text",media_type:"text/plain",data:g},title:c.file.name});break}
+ *   case"pdf":
+ *     a.push({type:"document",source:{type:"base64",media_type:"application/pdf",data:u},title:c.file.name});break;
+ *
+ * THE TWO SOURCES ARE DIFFERENT AND THAT IS THE POINT. A PDF travels as base64
+ * (`source.type:"base64"`). A text file travels as **the decoded text itself**
+ * (`source.type:"text"`) — the reference reads every file as a data URL and
+ * then `atob`s the text ones straight back, so what lands in `data` is the
+ * file's contents in the clear, not base64 of them. Sending base64 in a
+ * `type:"text"` source would be accepted by JSON and read by the model as a
+ * wall of gibberish, which is exactly the kind of failure that looks like the
+ * model being unhelpful rather than like a bug.
+ *
+ * `title` is the bare `File.name` on both, and is NOT set on image blocks —
+ * `title` counts zero in the image arm above.
+ *
+ * VERIFIED AGAINST THE CLI ON PATH, 2026-08-13 (claude 2.1.226) — the one
+ * budgeted turn for this item, for the same reason #475 spent one on the image
+ * block: the extension ships its own binary and their behaviour is not our
+ * guarantee, and this is a block type we had never sent. See the item's
+ * findings note for the transcript.
+ */
+export interface StreamDocumentBlock {
+  type: 'document';
+  source:
+    | { type: 'base64'; media_type: 'application/pdf'; data: string }
+    | { type: 'text'; media_type: 'text/plain'; data: string };
+  title: string;
+}
+
+export type StreamContentBlock = StreamTextBlock | StreamImageBlock | StreamDocumentBlock;
 
 /** One user turn, as the CLI expects it on stdin. */
 export interface StreamUserMessage {
@@ -57,11 +96,12 @@ export interface StreamUserMessage {
   session_id: string;
 }
 
-/** An image on its way into a turn — base64 WITHOUT a `data:` prefix. */
-export interface PromptImage {
-  mediaType: string;
-  data: string;
-}
+/**
+ * What may ride a turn. Defined in `shared/prompt-attachments.ts` with the
+ * rules that decide what is allowed to become one, and re-exported here so a
+ * caller building a frame has one import rather than two.
+ */
+export type { PromptAttachment };
 
 /**
  * Build a user turn.
@@ -77,22 +117,45 @@ export interface PromptImage {
  * never be mistaken for a frame boundary, which is exactly the property the PTY
  * path had to fake with bracketed paste.
  *
- * IMAGES COME FIRST, THE TEXT LAST — the extension's assembly order, not a
- * preference of ours. Its builder pushes IDE context, then attachments, then
+ * ATTACHMENTS COME FIRST, THE TEXT LAST — the extension's assembly order, not
+ * a preference of ours. Its builder pushes IDE context, then attachments, then
  * `@terminal` and `@browser` blocks, and only then `a.push({type:"text",text:e})`
- * with the user's typed prompt. The prompt refers to the images above it, so
+ * with the user's typed prompt. The prompt refers to the files above it, so
  * the order is part of the contract rather than a detail.
  *
+ * MIXED KINDS KEEP THE USER'S ORDER. The reference walks one list and switches
+ * per file, so a drop of `diagram.png` then `server.log` arrives in that order;
+ * grouping by kind here would silently re-order a prompt that says "compare the
+ * first with the second".
+ *
  * An EMPTY prompt contributes no text block at all, rather than an empty one:
- * an image pasted and sent with nothing typed is a legitimate turn, and a
+ * a file dropped and sent with nothing typed is a legitimate turn, and a
  * zero-length text block is not a thing the message format accepts.
  */
-export function userMessage(text: string, images: readonly PromptImage[] = []): StreamUserMessage {
-  const content: StreamContentBlock[] = images.map((img) => ({
-    type: 'image',
-    source: { type: 'base64', media_type: img.mediaType, data: img.data },
-  }));
-  // no images -> exactly the one-text-block array this function has always
+export function userMessage(
+  text: string,
+  attachments: readonly PromptAttachment[] = []
+): StreamUserMessage {
+  const content: StreamContentBlock[] = attachments.map((a) => {
+    if (a.kind === 'image')
+      return {
+        type: 'image',
+        source: { type: 'base64', media_type: a.mediaType, data: a.data },
+      };
+    if (a.kind === 'pdf')
+      return {
+        type: 'document',
+        source: { type: 'base64', media_type: 'application/pdf', data: a.data },
+        title: a.title,
+      };
+    // text: the CONTENTS in the clear, never base64 — see StreamDocumentBlock
+    return {
+      type: 'document',
+      source: { type: 'text', media_type: 'text/plain', data: a.text },
+      title: a.title,
+    };
+  });
+  // no attachments -> exactly the one-text-block array this function has always
   // returned, so every existing caller and every pinned shape is unchanged
   if (text.length > 0 || content.length === 0) content.push({ type: 'text', text });
   return {

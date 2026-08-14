@@ -753,7 +753,8 @@ Work items:
   >   path). We cap at 5 MB of base64 per image and 8 per turn, because those
   >   bytes cross an IPC boundary in our app and an unbounded paste is an
   >   unbounded `invoke` payload. We do NOT downscale or re-encode — that part
-  >   matches. `shared/prompt-images.ts` holds both the rule and the reasoning.
+  >   matches. `shared/prompt-attachments.ts` (named `prompt-images.ts` until
+  >   #476 renamed it) holds both the rule and the reasoning.
   > - **Direct only.** A PTY takes keystrokes; there is no keystroke for a
   >   bitmap, so `submitPrompt` refuses rather than falling back and silently
   >   sending the words without the picture.
@@ -762,6 +763,38 @@ Work items:
   images — drops onto the composer and reaches the session; per-type
   behavior matches the extension. Shares the attachment affordance with
   E10-09 (serial track — same composer region). Full done-when in #476.
+  > **As built (PR for #476).** Reuses E10-09's `Attachment` carrier and chip
+  > strip — one intake (`addFiles`) shared by paste and drop, as the reference
+  > does. `shared/prompt-images.ts` became **`shared/prompt-attachments.ts`**:
+  > it now owns the three-way classifier as well as the image allow-list.
+  > - **The contract, read out of webview 2.1.226 and VERIFIED against the CLI
+  >   on PATH (one budgeted turn, 2026-08-13):** three kinds, from `Hbe`/`Zit`.
+  >   `image` → the E10-09 block. `pdf` → `{type:"document",source:{type:
+  >   "base64",media_type:"application/pdf",data},title:file.name}`. `text` →
+  >   `{type:"document",source:{type:"text",media_type:"text/plain",data},
+  >   title:file.name}` where **`data` is the file's CONTENTS in the clear, not
+  >   base64** (the reference reads every file as a data URL then `atob`s the
+  >   text ones straight back). The probe sent a markdown file holding a
+  >   nonsense passphrase; the echo carried `source.type=text` intact and the
+  >   model replied with the passphrase — so both "the CLI parsed it" and "the
+  >   model READ it" are asserted, per S-09.
+  > - **Classification is MIME first, filename second**, images by MIME ONLY.
+  >   `text/*` prefix → 14 `application/*` types → a ~130-entry extension set →
+  >   whole-filename match plus six bare names (`license`, `readme`, …). The
+  >   extension set carries the weight: Windows types most source files as `""`.
+  >   SVG falls through to `text` and is sent as source — the reference's
+  >   behaviour, and the right one.
+  > - **Divergences, all declared.** (1) Size ceiling: one 5 MB number on what
+  >   crosses IPC, where the reference caps NOTHING (re-measured narrowly for
+  >   text — `readAsText`, `MAX_CHARS`, `file.size` all zero in the webview).
+  >   (2) **UTF-8, not latin1** — their `atob` mojibakes any non-ASCII text
+  >   file; same wire shape, correct characters. (3) **Directories refused**,
+  >   which the reference cannot do at all (`webkitGetAsEntry` counts zero in
+  >   both bundles, so a folder named `readme` is sent there as an empty
+  >   document). (4) Empty files refused rather than sent as hollow blocks.
+  > - **The composer swallows its drop** (`stopPropagation`), because
+  >   `App.tsx` has a WINDOW-level listener that turns a dropped folder into a
+  >   session (E3-04). Every other surface is untouched.
 - **P2-E10-11 · Copy button on code in session output — S–M (§5.10; owner
   request 2026-08-13). [issue #477]** Fenced code + Bash IN/OUT in the
   Session view get the viewer's existing copy affordance (decorateCodeFences

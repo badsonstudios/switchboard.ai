@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { SlashCommand } from '../shared/slash-commands';
-import type { PromptImage } from '../shared/prompt-images';
+import type { PromptAttachment } from '../shared/prompt-attachments';
 import type { PtyAttachment, PtyChunk } from '../shared/ipc/pty';
 import type {
   BindingSnapshot,
@@ -289,8 +289,8 @@ const api = {
     submitPrompt: (
       sessionId: string,
       text: string,
-      images?: readonly PromptImage[]
-    ): Promise<boolean> => ipcRenderer.invoke('sessions:submitPrompt', sessionId, text, images),
+      attachments?: readonly PromptAttachment[]
+    ): Promise<boolean> => ipcRenderer.invoke('sessions:submitPrompt', sessionId, text, attachments),
     /**
      * Interrupt the running turn (#154). Resolves FALSE for a PTY session,
      * whose interrupt is an Esc keystroke; the caller falls back.

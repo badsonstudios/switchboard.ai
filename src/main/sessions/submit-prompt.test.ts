@@ -15,9 +15,9 @@ import { SessionTransport } from '../transport/transport';
 import { userMessage, controlResponse } from '../../shared/stream-protocol';
 import {
   MAX_ATTACHMENTS,
-  MAX_IMAGE_BASE64_BYTES,
-  sanitizePromptImages,
-} from '../../shared/prompt-images';
+  MAX_ATTACHMENT_PAYLOAD_BYTES,
+  sanitizePromptAttachments,
+} from '../../shared/prompt-attachments';
 import { NdjsonDecoder, encodeFrame } from '../transport/ndjson';
 import { FakeStreamProtocol } from '../providers/fake-stream-protocol';
 import { LogSink, createLogger } from '../log/logger';
@@ -103,8 +103,8 @@ describe('userMessage — the envelope S-10 wrote to the real CLI (P2-E18-06)', 
 // this file exists to do is make a drift from them fail a test rather than a
 // turn.
 describe('userMessage with images — the extension’s own block shape', () => {
-  const png = { mediaType: 'image/png' as const, data: 'AQIDBA==' };
-  const jpg = { mediaType: 'image/jpeg' as const, data: 'BQYHCA==' };
+  const png = { kind: 'image' as const, mediaType: 'image/png' as const, data: 'AQIDBA==' };
+  const jpg = { kind: 'image' as const, mediaType: 'image/jpeg' as const, data: 'BQYHCA==' };
 
   //   case"image": a.push({type:"image",source:{type:"base64",media_type:p,data:u}});break;
   // `p` is the lower-cased MIME, `u` is `dataUrl.split(",")[1]` — the base64
@@ -154,7 +154,7 @@ describe('userMessage with images — the extension’s own block shape', () => 
   // same property `\n` in a prompt needed, on a string three orders of
   // magnitude longer.
   it('a turn carrying an image is still ONE frame', () => {
-    const big = { mediaType: 'image/png' as const, data: 'A'.repeat(200_000) };
+    const big = { kind: 'image' as const, mediaType: 'image/png' as const, data: 'A'.repeat(200_000) };
     const frame = encodeFrame(userMessage('look', [big]));
     expect(frame.split('\n').filter(Boolean)).toHaveLength(1);
     const d = new NdjsonDecoder<{ message: { content: Array<Record<string, unknown>> } }>();
@@ -166,48 +166,227 @@ describe('userMessage with images — the extension’s own block shape', () => 
   });
 });
 
-describe('sanitizePromptImages — main’s own check, not the renderer’s (P2-E10-09)', () => {
-  const ok = { mediaType: 'image/png', data: 'AQIDBA==' };
+describe('sanitizePromptAttachments — main’s own check, not the renderer’s (P2-E10-09)', () => {
+  const ok = { kind: 'image', mediaType: 'image/png', data: 'AQIDBA==' };
 
   it('lets a well-formed image through, lower-cased', () => {
-    expect(sanitizePromptImages([{ mediaType: 'IMAGE/PNG', data: 'AQIDBA==' }])).toEqual([
-      { mediaType: 'image/png', data: 'AQIDBA==' },
+    expect(sanitizePromptAttachments([{ kind: 'image', mediaType: 'IMAGE/PNG', data: 'AQIDBA==' }])).toEqual([
+      { kind: 'image', mediaType: 'image/png', data: 'AQIDBA==' },
     ]);
   });
 
   // The overwhelmingly common case: a text prompt must not be able to trip this.
   it('reads a missing list as no images, not as a refusal', () => {
-    expect(sanitizePromptImages(undefined)).toEqual([]);
-    expect(sanitizePromptImages([])).toEqual([]);
+    expect(sanitizePromptAttachments(undefined)).toEqual([]);
+    expect(sanitizePromptAttachments([])).toEqual([]);
   });
 
   it('refuses a media type outside the reference allow-list', () => {
-    expect(sanitizePromptImages([{ mediaType: 'image/svg+xml', data: 'AQIDBA==' }])).toBeNull();
-    expect(sanitizePromptImages([{ mediaType: 'text/html', data: 'AQIDBA==' }])).toBeNull();
+    expect(sanitizePromptAttachments([{ kind: 'image', mediaType: 'image/svg+xml', data: 'AQIDBA==' }])).toBeNull();
+    expect(sanitizePromptAttachments([{ kind: 'image', mediaType: 'text/html', data: 'AQIDBA==' }])).toBeNull();
   });
 
   // A `data:` prefix would ride into the block verbatim and be decoded as
   // garbage by the API — the one malformation that looks plausible.
   it('refuses anything that is not bare base64', () => {
     expect(
-      sanitizePromptImages([{ mediaType: 'image/png', data: 'data:image/png;base64,AQIDBA==' }])
+      sanitizePromptAttachments([{ kind: 'image', mediaType: 'image/png', data: 'data:image/png;base64,AQIDBA==' }])
     ).toBeNull();
-    expect(sanitizePromptImages([{ mediaType: 'image/png', data: 'AQID\nBA==' }])).toBeNull();
-    expect(sanitizePromptImages([{ mediaType: 'image/png', data: '' }])).toBeNull();
+    expect(
+      sanitizePromptAttachments([{ kind: 'image', mediaType: 'image/png', data: 'AQID\nBA==' }])
+    ).toBeNull();
+    expect(sanitizePromptAttachments([{ kind: 'image', mediaType: 'image/png', data: '' }])).toBeNull();
   });
 
   it('refuses a payload past the ceiling, and a list past the count', () => {
     expect(
-      sanitizePromptImages([{ mediaType: 'image/png', data: 'A'.repeat(MAX_IMAGE_BASE64_BYTES + 1) }])
+      sanitizePromptAttachments([{ kind: 'image', mediaType: 'image/png', data: 'A'.repeat(MAX_ATTACHMENT_PAYLOAD_BYTES + 1) }])
     ).toBeNull();
-    expect(sanitizePromptImages(Array.from({ length: MAX_ATTACHMENTS + 1 }, () => ok))).toBeNull();
+    expect(sanitizePromptAttachments(Array.from({ length: MAX_ATTACHMENTS + 1 }, () => ok))).toBeNull();
   });
 
   it('refuses junk rather than coercing it', () => {
-    expect(sanitizePromptImages('nope')).toBeNull();
-    expect(sanitizePromptImages([null])).toBeNull();
-    expect(sanitizePromptImages([{ mediaType: 'image/png' }])).toBeNull();
-    expect(sanitizePromptImages([{ mediaType: 7, data: 'AQIDBA==' }])).toBeNull();
+    expect(sanitizePromptAttachments('nope')).toBeNull();
+    expect(sanitizePromptAttachments([null])).toBeNull();
+    expect(sanitizePromptAttachments([{ kind: 'image', mediaType: 'image/png' }])).toBeNull();
+    expect(sanitizePromptAttachments([{ kind: 'image', mediaType: 7, data: 'AQIDBA==' }])).toBeNull();
+  });
+});
+
+// THE DOCUMENT CONTRACT, PINNED (P2-E10-10). Same provenance as the image
+// block above: read out of the 2.1.226 webview bundle's `Wbe` builder, and
+// verified against the CLI on PATH once. The asymmetry between the two sources
+// is the thing most likely to be "tidied up" by someone who has not read the
+// reference, so it gets its own tests.
+describe('userMessage with documents — the extension’s own block shape', () => {
+  const md = { kind: 'text' as const, title: 'notes.md', text: '# hello\n' };
+  const pdf = { kind: 'pdf' as const, title: 'spec.pdf', data: 'AQIDBA==' };
+  const png = { kind: 'image' as const, mediaType: 'image/png' as const, data: 'AQIDBA==' };
+
+  //   case"text": {let g=atob(u);
+  //     a.push({type:"document",source:{type:"text",media_type:"text/plain",data:g},title:c.file.name});break}
+  it('sends a text file as a document whose source is the CONTENTS, in the clear', () => {
+    expect(userMessage('read this', [md]).message.content[0]).toEqual({
+      type: 'document',
+      source: { type: 'text', media_type: 'text/plain', data: '# hello\n' },
+      title: 'notes.md',
+    });
+  });
+
+  // The failure this exists to prevent: base64 in a `type:"text"` source is
+  // valid JSON, is accepted, and reaches the model as a wall of gibberish. A
+  // regression here would look like the model being unhelpful, not like a bug.
+  it('never base64s a text attachment', () => {
+    const data = (
+      userMessage('x', [{ kind: 'text', title: 'a.txt', text: 'plain words' }]).message
+        .content[0] as { source: { data: string } }
+    ).source.data;
+    expect(data).toBe('plain words');
+    expect(data).not.toBe(btoa('plain words'));
+  });
+
+  //   case"pdf": a.push({type:"document",source:{type:"base64",media_type:"application/pdf",data:u},title:…});
+  it('sends a PDF as a document whose source IS base64', () => {
+    expect(userMessage('read this', [pdf]).message.content[0]).toEqual({
+      type: 'document',
+      source: { type: 'base64', media_type: 'application/pdf', data: 'AQIDBA==' },
+      title: 'spec.pdf',
+    });
+  });
+
+  // `title` is on both document arms and on NEITHER image arm — verified by
+  // grep, not assumed.
+  it('titles documents and never titles an image', () => {
+    const [image, text] = userMessage('x', [png, md]).message.content;
+    expect(image).not.toHaveProperty('title');
+    expect(text).toHaveProperty('title', 'notes.md');
+  });
+
+  // Mixed kinds keep the USER'S order, not a per-kind grouping — "compare the
+  // first with the second" has to mean what it says.
+  it('preserves the order across kinds, with the typed prompt still last', () => {
+    expect(userMessage('compare', [md, png, pdf]).message.content.map((c) => c.type)).toEqual([
+      'document',
+      'image',
+      'document',
+      'text',
+    ]);
+  });
+
+  it('omits the text block entirely when only a file was sent', () => {
+    expect(userMessage('', [md]).message.content).toHaveLength(1);
+  });
+
+  // A text attachment carrying newlines is the ordinary case, and NDJSON is the
+  // transport — the same framing property the prompt text needed, on a payload
+  // that is nothing but newlines.
+  it('a multi-line text attachment is still ONE frame', () => {
+    const doc = { kind: 'text' as const, title: 'a.log', text: 'l1\nl2\nl3\n'.repeat(5_000) };
+    const frame = encodeFrame(userMessage('look', [doc]));
+    expect(frame.split('\n').filter(Boolean)).toHaveLength(1);
+    const d = new NdjsonDecoder<{ message: { content: Array<Record<string, unknown>> } }>();
+    const out = d.push(frame);
+    expect(out[0].ok && (out[0].value.message.content[0].source as { data: string }).data).toBe(
+      doc.text
+    );
+  });
+
+  // Non-ASCII is the DIVERGENCE from the reference made visible: theirs
+  // `atob`s to latin1 and mojibakes this; ours carries the characters.
+  it('carries non-ASCII text through verbatim', () => {
+    const text = 'em—dash, café, 日本語';
+    const d = new NdjsonDecoder<{ message: { content: Array<{ source: { data: string } }> } }>();
+    const out = d.push(encodeFrame(userMessage('x', [{ kind: 'text', title: 'u.md', text }])));
+    expect(out[0].ok && out[0].value.message.content[0].source.data).toBe(text);
+  });
+});
+
+describe('sanitizePromptAttachments — documents (P2-E10-10)', () => {
+  it('lets a well-formed text and pdf attachment through', () => {
+    expect(
+      sanitizePromptAttachments([
+        { kind: 'text', title: 'a.md', text: 'hi' },
+        { kind: 'pdf', title: 'b.pdf', data: 'AQIDBA==' },
+      ])
+    ).toEqual([
+      { kind: 'text', title: 'a.md', text: 'hi' },
+      { kind: 'pdf', title: 'b.pdf', data: 'AQIDBA==' },
+    ]);
+  });
+
+  it('refuses an unknown kind rather than guessing one', () => {
+    expect(sanitizePromptAttachments([{ kind: 'video', title: 'a.mp4', data: 'AQ==' }])).toBeNull();
+    expect(sanitizePromptAttachments([{ title: 'a.md', text: 'hi' }])).toBeNull();
+  });
+
+  // A title is a LABEL. Letting a renderer put a path or a control character in
+  // a field the model reads is a seam with no upside — the reference only ever
+  // sends `File.name`, and `webkitRelativePath` counts zero in both bundles.
+  it('refuses a title that is not a bare file name', () => {
+    expect(sanitizePromptAttachments([{ kind: 'text', title: '../etc/pw', text: 'x' }])).toBeNull();
+    expect(
+      sanitizePromptAttachments([{ kind: 'text', title: 'a\\b.md', text: 'x' }])
+    ).toBeNull();
+    expect(sanitizePromptAttachments([{ kind: 'text', title: 'a\nb.md', text: 'x' }])).toBeNull();
+    expect(sanitizePromptAttachments([{ kind: 'text', title: '', text: 'x' }])).toBeNull();
+    expect(sanitizePromptAttachments([{ kind: 'pdf', title: 'a/b.pdf', data: 'AQ==' }])).toBeNull();
+  });
+
+  // An empty document block claims to carry a file and carries nothing — which
+  // the model cannot tell apart from a genuinely empty file, and whose far more
+  // likely cause is that we failed to read it.
+  it('refuses an empty text attachment', () => {
+    expect(sanitizePromptAttachments([{ kind: 'text', title: 'a.md', text: '' }])).toBeNull();
+  });
+
+  it('refuses a pdf payload that is not bare base64, and one past the ceiling', () => {
+    expect(
+      sanitizePromptAttachments([{ kind: 'pdf', title: 'a.pdf', data: 'data:x;base64,AQ==' }])
+    ).toBeNull();
+    expect(
+      sanitizePromptAttachments([
+        { kind: 'pdf', title: 'a.pdf', data: 'A'.repeat(MAX_ATTACHMENT_PAYLOAD_BYTES + 1) },
+      ])
+    ).toBeNull();
+  });
+
+  // The ceiling on text is measured in UTF-8 BYTES, not characters: a string of
+  // multi-byte characters costs more on the wire than its `.length` suggests.
+  it('measures the text ceiling in UTF-8 bytes', () => {
+    const justUnder = 'a'.repeat(MAX_ATTACHMENT_PAYLOAD_BYTES);
+    expect(sanitizePromptAttachments([{ kind: 'text', title: 'a.md', text: justUnder }])).toEqual([
+      { kind: 'text', title: 'a.md', text: justUnder },
+    ]);
+    // three bytes each, so half the character count is one and a half ceilings
+    const multibyte = '日'.repeat(Math.floor(MAX_ATTACHMENT_PAYLOAD_BYTES / 2));
+    expect(sanitizePromptAttachments([{ kind: 'text', title: 'a.md', text: multibyte }])).toBeNull();
+  });
+
+  // THE SEAM. The check short-circuits: anything shorter than a third of the
+  // ceiling is provably fine (UTF-8 is at most 3 bytes per UTF-16 code unit) and
+  // is never encoded to find out. A wrong constant there would silently start
+  // refusing perfectly valid files, and both tests above sit far away from it.
+  it('accepts a string just past the short-circuit whose UTF-8 still fits', () => {
+    const justPast = 'a'.repeat(Math.floor(MAX_ATTACHMENT_PAYLOAD_BYTES / 3) + 1000);
+    const out = sanitizePromptAttachments([{ kind: 'text', title: 'a.md', text: justPast }]);
+    expect(out).toHaveLength(1);
+  });
+
+  it('refuses a string under the character ceiling whose UTF-8 is over the byte one', () => {
+    // 2 bytes each in UTF-8, 1 UTF-16 unit each: 60% of the ceiling in
+    // characters is 120% of it in bytes — the exact case a character-count
+    // check would wave through.
+    const chars = Math.floor(MAX_ATTACHMENT_PAYLOAD_BYTES * 0.6);
+    const text = 'é'.repeat(chars);
+    expect(text.length).toBeLessThan(MAX_ATTACHMENT_PAYLOAD_BYTES);
+    expect(sanitizePromptAttachments([{ kind: 'text', title: 'a.md', text }])).toBeNull();
+  });
+
+  it('refuses base64 whose length is not a multiple of four', () => {
+    expect(sanitizePromptAttachments([{ kind: 'pdf', title: 'a.pdf', data: 'AQI' }])).toBeNull();
+    expect(
+      sanitizePromptAttachments([{ kind: 'image', mediaType: 'image/png', data: 'AQI' }])
+    ).toBeNull();
   });
 });
 
