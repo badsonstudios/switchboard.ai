@@ -27,7 +27,10 @@
 > **RUN 19 QUEUE:** #484 resume-link FIRST · **#525 update never
 > restarts the app (owner report post-0.5.0; diagnosed: installer.ts
 > spawns ['/S'] without '--force-run', NSIS skips runAfterFinish when
-> silent — one-line fix + argv test; ride wave 1)** · #520 find
+> silent — one-line fix + argv test; ride wave 1)** · **#526 no
+> right-click context menu anywhere (owner report; Electron default,
+> never wired; menu-paste must ride #475's attachment pipeline; S–M,
+> wave 1 candidate)** · #520 find
 > highlight + #524 flake (owner-facing/velocity) · #407 Shape B ·
 > #482→#483 · #485 · #521 layer 1 · tail (#488 #490 #491 #494-#499
 > #502-#504 #506 #508 #509 #512 #517 #518 #521-design).
