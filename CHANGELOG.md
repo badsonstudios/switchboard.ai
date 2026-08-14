@@ -90,6 +90,44 @@ on the floor, and say so in your PR.
   It's the same button the document viewer has always had on its code blocks,
   it's reachable with the arrow keys along with everything else in a
   conversation, and it works in a popped-out card.
+- **`Ctrl+F` finds things in a session.** A find bar, the way a browser means
+  it: type, `Enter` and `Shift+Enter` to step, a count beside the box, `Esc` to
+  close and get your cursor back. It searches the *whole* session rather than
+  what happens to be on screen — including the older part a long conversation
+  has scrolled out of memory, the tool output your detail level is hiding, and
+  anything folded — and jumping to a match opens whatever was covering it.
+  Open the results list for the matches with their surrounding text. On the
+  **Changes** tab the same key hands you the diff editor's own find rather than
+  putting a second, worse one on top of it. Two boundaries worth knowing:
+  matches from further back than the loaded view are readable in the list but
+  can't be scrolled to, and are labelled as such; and sessions in Direct mode
+  currently get the list without the jump, because their conversation and their
+  transcript can't yet be lined up. The Terminal tab greys the bar and says so
+  instead of pretending.
+
+
+### Changed
+
+- **The 🔓 auto-trust / 🔒 ask trust chip is now greyed out when nothing could
+  ask you.** Claude Code only ever raises its folder-trust question in Terminal
+  mode, so on a workspace where every session is in Direct mode — the default —
+  picking **🔒 ask trust** could never actually get you asked. The chip is now
+  disabled there, and hovering it says why. Switch any session to Terminal mode
+  from its **⋯** menu and the chip comes straight back, including while that
+  session is still running and waiting for its restart. Whatever you had chosen
+  is kept and still shown: being greyed out takes away the switch, never your
+  answer.
+- **Direct-mode sessions no longer accept a folder on your behalf.** With
+  auto-trust on, switchboard records your acceptance in Claude Code's own
+  settings before a session starts — so that the trust prompt never interrupts
+  you. It now does that only for Terminal-mode sessions, the only ones Claude
+  Code would ever have asked. A Direct session leaves the setting exactly as it
+  found it, so a folder you have only ever run in Direct mode still has the
+  question waiting the first time you open it in Terminal mode — set the chip to
+  **🔒 ask trust** before that first Terminal start if you want to answer it
+  yourself, since auto-trust is what answers it otherwise. (Nothing is lost by
+  not writing it: measured against claude 2.1.226, an untrusted folder in Direct
+  mode runs normally, with your project settings and hooks.)
 
 ### Fixed
 
@@ -239,21 +277,6 @@ on the floor, and say so in your PR.
   decline another. Requests only share a card when the tool and every argument
   match character for character, so `rm -rf build` and `rm -rf /` are never
   answered together.
-- **`Ctrl+F` finds things in a session.** A find bar, the way a browser means
-  it: type, `Enter` and `Shift+Enter` to step, a count beside the box, `Esc` to
-  close and get your cursor back. It searches the *whole* session rather than
-  what happens to be on screen — including the older part a long conversation
-  has scrolled out of memory, the tool output your detail level is hiding, and
-  anything folded — and jumping to a match opens whatever was covering it.
-  Open the results list for the matches with their surrounding text. On the
-  **Changes** tab the same key hands you the diff editor's own find rather than
-  putting a second, worse one on top of it. Two boundaries worth knowing:
-  matches from further back than the loaded view are readable in the list but
-  can't be scrolled to, and are labelled as such; and sessions in Direct mode
-  currently get the list without the jump, because their conversation and their
-  transcript can't yet be lined up. The Terminal tab greys the bar and says so
-  instead of pretending.
-
 
 ### Changed
 
@@ -265,26 +288,6 @@ on the floor, and say so in your PR.
   tags (`<font color>` and its relatives) can still tint text; shutting those
   down is still to come. Nothing Markdown itself produces changes: tables still
   align, task lists still tick, code blocks are untouched.
-- **The 🔓 auto-trust / 🔒 ask trust chip is now greyed out when nothing could
-  ask you.** Claude Code only ever raises its folder-trust question in Terminal
-  mode, so on a workspace where every session is in Direct mode — the default —
-  picking **🔒 ask trust** could never actually get you asked. The chip is now
-  disabled there, and hovering it says why. Switch any session to Terminal mode
-  from its **⋯** menu and the chip comes straight back, including while that
-  session is still running and waiting for its restart. Whatever you had chosen
-  is kept and still shown: being greyed out takes away the switch, never your
-  answer.
-- **Direct-mode sessions no longer accept a folder on your behalf.** With
-  auto-trust on, switchboard records your acceptance in Claude Code's own
-  settings before a session starts — so that the trust prompt never interrupts
-  you. It now does that only for Terminal-mode sessions, the only ones Claude
-  Code would ever have asked. A Direct session leaves the setting exactly as it
-  found it, so a folder you have only ever run in Direct mode still has the
-  question waiting the first time you open it in Terminal mode — set the chip to
-  **🔒 ask trust** before that first Terminal start if you want to answer it
-  yourself, since auto-trust is what answers it otherwise. (Nothing is lost by
-  not writing it: measured against claude 2.1.226, an untrusted folder in Direct
-  mode runs normally, with your project settings and hooks.)
 
 ### Fixed
 
