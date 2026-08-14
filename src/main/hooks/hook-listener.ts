@@ -75,6 +75,11 @@ export interface HookListenerOptions {
    *  default (`DEFAULT_SWEEP_BUDGET_MS`). A test seam, and the only reason it
    *  is an option at all: the sweep is private and runs inside `start()`. */
   sweepBudgetMs?: number;
+  /** The sweep's clock, injected so a test can exercise a PARTIALLY spent
+   *  budget — some tokens taken, then the stop — which a real clock cannot
+   *  produce reliably and `sweepBudgetMs: 0` cannot reach at all. Mirrors
+   *  `sweepOrphanSessionStateDirs`'s `now`. Absent = `Date.now`. */
+  sweepNow?: () => number;
 }
 
 // The in-flight permission request (E10-03) now lives in
@@ -553,13 +558,14 @@ export class HookListener {
     }
     const keep = new Set(this.tokens.values());
     const budgetMs = this.opts.sweepBudgetMs ?? DEFAULT_SWEEP_BUDGET_MS;
-    const startedAt = Date.now();
+    const now = this.opts.sweepNow ?? Date.now;
+    const startedAt = now();
     let swept = 0;
     for (const e of entries) {
       if (!e.isDirectory()) continue;
       if (!isSessionStateDirName(e.name)) continue;
       if (keep.has(e.name)) continue;
-      if (Date.now() - startedAt >= budgetMs) {
+      if (now() - startedAt >= budgetMs) {
         // `break`, not `continue`: unlike the directory sweep there is no
         // second reason to keep an entry, so there is nothing left to count and
         // no cheaper check further down the loop. One line, and the rest is

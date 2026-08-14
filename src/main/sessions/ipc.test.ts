@@ -117,6 +117,9 @@ function harness(
   const created: Array<{
     identity: SessionIdentity;
     settingsFor?: unknown;
+    /** the undo half of `settingsFor` (#470) — recorded so the wiring that
+     *  carries it from the plan into the manager has something behind it */
+    releaseSettingsFor?: unknown;
     resumeSessionId?: string;
     transport?: string;
   }> = [];
@@ -133,6 +136,9 @@ function harness(
     readTitle?: (line: Record<string, unknown>) => string | undefined;
   }> = [];
   const buildHookSettings = vi.fn(() => ({ hooks: {} }));
+  /** the other half of the `HookSettingsHost` slice (#470): what a start that
+   *  never produced a session hands back. */
+  const releaseHookSettings = vi.fn();
   const warn = vi.fn();
   /** a start that should have worked and did not is an `error`, not a `warn` (#347) */
   const logError = vi.fn();
@@ -259,12 +265,18 @@ function harness(
       rename: (id: string, title: string) => renamed.push({ id, title }),
       create: (
         identity: SessionIdentity,
-        o: { settingsFor?: unknown; resumeSessionId?: string; transport?: string }
+        o: {
+          settingsFor?: unknown;
+          releaseSettingsFor?: unknown;
+          resumeSessionId?: string;
+          transport?: string;
+        }
       ) => {
         if (opts.throwOnSpawn) throw new Error('spawn exploded');
         created.push({
           identity,
           settingsFor: o?.settingsFor,
+          releaseSettingsFor: o?.releaseSettingsFor,
           resumeSessionId: o?.resumeSessionId,
           transport: o?.transport,
         });
@@ -314,6 +326,7 @@ function harness(
       // half, which is the half that was already there.
       setAllowAll: (id: string) => allowedAll.push(id),
       buildHookSettings,
+      releaseHookSettings,
     },
     transcripts: {
       onUpdate: (l: (snap: Record<string, unknown>) => void) => {
@@ -457,6 +470,7 @@ function harness(
       for (const l of snapshots) l(full);
     },
     buildHookSettings,
+    releaseHookSettings,
     warn,
     logError,
     renamed,
@@ -612,6 +626,9 @@ describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
     expect(h.created[0].settingsFor).toBeUndefined();
     // no hook token registered either — buildHookSettings is what registers it
     expect(h.buildHookSettings).not.toHaveBeenCalled();
+    // and nothing to give back if the start throws (#470): the pair travels
+    // together, so a provider without hooks offers neither half
+    expect(h.created[0].releaseSettingsFor).toBeUndefined();
     // no transcript watch at all
     expect(h.watched).toHaveLength(0);
     // and no resume attempted
@@ -646,6 +663,13 @@ describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
     expect(build('live-1')).toEqual({ wrapped: { hooks: {} } });
     expect(settingsFor).toHaveBeenCalledOnce();
     expect(h.watched).toHaveLength(0); // still no transcripts
+
+    // ...and the undo reaches the manager with it (#470), going straight to
+    // the HOST — the adapter only ever shaped what the host had registered
+    const release = h.created[0].releaseSettingsFor as (id: string) => void;
+    expect(release).toBeTypeOf('function');
+    release('live-1');
+    expect(h.releaseHookSettings).toHaveBeenCalledExactlyOnceWith('live-1');
   });
 
   describe('preparing the folder belongs to the provider', () => {

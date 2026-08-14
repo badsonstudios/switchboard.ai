@@ -94,7 +94,13 @@ import type { Logger } from '../log/logger';
  */
 const SESSION_DIR_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-/** Exported for the tests that pin the guard, not for call sites. */
+/**
+ * The shared answer to "is this a name we minted?", for BOTH sweeps over this
+ * tree: this module's directory sweep and `HookListener.sweepOrphanTokens` one
+ * level in (#470). Two sweeps that disagreed about which names are ours is the
+ * drift this export exists to prevent — do not inline it, and do not narrow it
+ * to one caller.
+ */
 export function isSessionStateDirName(name: string): boolean {
   return SESSION_DIR_NAME.test(name);
 }

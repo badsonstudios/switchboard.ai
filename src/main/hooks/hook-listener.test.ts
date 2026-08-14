@@ -995,11 +995,42 @@ describe('hook-token files follow their session (#282)', () => {
       expect(fs.existsSync(path.join(stateDir, OLD_1, 'hook-token'))).toBe(true);
       expect(fs.existsSync(path.join(stateDir, OLD_2, 'hook-token'))).toBe(true);
       const hit = logged.filter((l) => /sweep hit its budget/.test(l.msg));
-      expect(hit).toHaveLength(1); // one line for the whole sweep, not one per entry
+      // One line for the whole sweep. `break` makes a second impossible today,
+      // so this guards the refactor that turns it into a `continue` (which is
+      // what the directory sweep does, and why that one needs a latch).
+      expect(hit).toHaveLength(1);
       expect(hit[0].fields?.budgetMs).toBe(0);
       // ...and a token left behind is dead weight, never a live credential:
       // nothing in memory can authenticate it.
       expect(logged.some((l) => l.msg === 'swept orphaned hook tokens')).toBe(false);
+    });
+
+    it('a budget spent PART WAY takes what it reached and stops there', async () => {
+      // The case a zero budget cannot reach: the sweep does real work, then
+      // stops. The clock is injected because a real one cannot be made to run
+      // out between two `unlink`s on demand.
+      const stateDir = tempDir('sb-token-');
+      const ids = [OLD_1, OLD_2, LIVE]; // LIVE is registered with nobody here
+      for (const id of ids) {
+        fs.mkdirSync(path.join(stateDir, id), { recursive: true });
+        fs.writeFileSync(path.join(stateDir, id, 'hook-token'), 'dead');
+      }
+      // startedAt, then one reading per candidate: the first is inside the
+      // budget, the second is not.
+      const readings = [0, 10, 500, 500];
+      own = new HookListener({
+        stateDir,
+        log: capturingLog(),
+        manager: { apply: () => {}, setNativeSessionId: () => {} },
+        sweepBudgetMs: 100,
+        sweepNow: () => readings.shift() ?? 500,
+      });
+      await own.start();
+
+      const left = ids.filter((id) => fs.existsSync(path.join(stateDir, id, 'hook-token')));
+      expect(left).toHaveLength(2); // one taken, the rest waiting
+      expect(logged.find((l) => l.msg === 'swept orphaned hook tokens')?.fields?.count).toBe(1);
+      expect(logged.filter((l) => /sweep hit its budget/.test(l.msg))).toHaveLength(1);
     });
   });
 

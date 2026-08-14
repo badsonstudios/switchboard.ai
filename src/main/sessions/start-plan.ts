@@ -217,7 +217,15 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
       : undefined,
     releaseSettings: caps?.hooks
       ? (id) => {
-          safely('hooks.releaseSettings', () => host.releaseHookSettings(id));
+          // NOT `safely`: its wording blames a "provider capability", and this
+          // call deliberately bypasses the adapter — a provider that declared
+          // hooks would be named for a fault entirely inside the host's
+          // listener. Same sink, same fail-open, honest culprit.
+          try {
+            host.releaseHookSettings(id);
+          } catch (err) {
+            degraded(`hook host "releaseHookSettings" threw: ${String(err)}`);
+          }
         }
       : undefined,
     ensureTrusted: caps?.trust

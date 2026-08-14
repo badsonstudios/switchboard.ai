@@ -189,9 +189,12 @@ export class SessionManager {
        * Undo of `settingsFor` (#470). `settingsFor` REGISTERS state against the
        * id before there is a process — a hook token in `HookListener`'s map —
        * and this is the only way `create` can give it back, because the map is
-       * not ours to reach. Supplied by whoever supplied `settingsFor`; called
-       * on every path where `create` throws after `settingsFor` ran, and never
-       * otherwise. Idempotent, and treated as fail-open.
+       * not ours to reach. Supplied by whoever supplied `settingsFor` — the
+       * pair always travels together — and called on every path where `create`
+       * throws from the moment `settingsFor` is ENTERED, `settingsFor` itself
+       * included: `registerSession` puts the token in the map before it writes
+       * the file, so a throw in between is exactly the case that needs it.
+       * Never called once there is a record. Idempotent, and fail-open.
        */
       releaseSettingsFor?: (sessionId: string) => void;
     }

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, beforeEach, it, expect, vi } from 'vitest';
 import { planSessionStart, StartPlanInput } from './start-plan';
 import { ProviderCapabilities, ResumeQuery } from '../extensibility/contributions';
 
@@ -42,6 +42,10 @@ function planWithSink(over: Partial<StartPlanInput> = {}) {
   const p = planSessionStart(input({ onDegraded: (r) => reported.push(r), ...over }), host);
   return { plan: p, reported };
 }
+
+beforeEach(() => {
+  released.length = 0;
+});
 
 describe('planSessionStart', () => {
   describe('a provider that declares NOTHING degrades to PTY-only', () => {
@@ -364,7 +368,6 @@ describe('planSessionStart', () => {
       // The adapter only ever shaped what the host had already registered, so
       // an adapter that translates settings has nothing to undo. Pinned with a
       // capability whose settingsFor never touches the host at all.
-      released.length = 0;
       const p = plan({ capabilitiesOf: () => ({ hooks: { settingsFor: () => ({ mine: 1 }) } }) });
       p.releaseSettings?.('sess-9');
       expect(released).toEqual(['sess-9']);
@@ -382,7 +385,11 @@ describe('planSessionStart', () => {
       };
       const withBoom = planSessionStart(input({ capabilitiesOf: () => fullCaps() }), boomHost);
       expect(() => withBoom.releaseSettings?.('sess-9')).not.toThrow();
-      expect(withBoom.warnings.join()).toMatch(/hooks.releaseSettings/);
+      // named as the HOST's fault, not the provider's: the release never went
+      // near the adapter, and `safely`'s "provider capability" wording would
+      // send the next reader hunting through an adapter with no code in it
+      expect(withBoom.warnings.join()).toMatch(/hook host "releaseHookSettings" threw/);
+      expect(withBoom.warnings.join()).not.toMatch(/provider capability/);
       // and the ordinary host says nothing
       p.releaseSettings?.('sess-9');
       expect(reported).toEqual([]);
