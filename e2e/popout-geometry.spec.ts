@@ -13,6 +13,7 @@ import {
   findFile,
   launchApp,
   LaunchedApp,
+  onTestDisplay,
   PersistedPopoutGroup,
   readWorkspaceFile,
   registeredPopouts,
@@ -86,8 +87,15 @@ test.describe('popout geometry (#86)', () => {
     await waitForRegisteredPopouts(first, 1);
 
     // move it the way a user drags it somewhere else, then quit at once — NO
-    // settling time, which is what made this fail before
-    const target = { x: 160, y: 240, width: 620, height: 500 };
+    // settling time, which is what made this fail before.
+    //
+    // `onTestDisplay` only shifts these coordinates onto whichever monitor the
+    // run was pointed at (#479) — `{0,0}` and therefore a no-op unless
+    // SWITCHBOARD_E2E_MONITOR is set. Every assertion below is against `target`
+    // itself or against a before/after pair, so what this test measures is
+    // unchanged either way; what it stops is the popout being yanked back onto
+    // the developer's own screen halfway through.
+    const target = onTestDisplay(first, { x: 160, y: 240, width: 620, height: 500 });
     const moved = await first.app.evaluate(({ BrowserWindow }, box) => {
       const popout = BrowserWindow.getAllWindows().find((win) =>
         win.webContents.getURL().includes('popout.html')
@@ -146,16 +154,18 @@ test.describe('popout geometry (#86)', () => {
     // both windows exist; wait until both are in the layout that gets saved
     await waitForRegisteredPopouts(first, 2);
 
-    // park them far apart, tagged by the session each one hosts
-    const placed = await first.app.evaluate(async ({ BrowserWindow }) => {
+    // park them far apart, tagged by the session each one hosts. The spots are
+    // computed OUT HERE now (they used to be literals inside the evaluate) so
+    // they can be shifted onto the run's display — see the first test.
+    const spots = [
+      onTestDisplay(first, { x: 60, y: 80, width: 520, height: 420 }),
+      onTestDisplay(first, { x: 700, y: 420, width: 560, height: 460 }),
+    ];
+    const placed = await first.app.evaluate(async ({ BrowserWindow }, boxes) => {
       const popouts = BrowserWindow.getAllWindows().filter((win) =>
         win.webContents.getURL().includes('popout.html')
       );
-      const spots = [
-        { x: 60, y: 80, width: 520, height: 420 },
-        { x: 700, y: 420, width: 560, height: 460 },
-      ];
-      popouts.forEach((p, i) => p.setBounds(spots[i]));
+      popouts.forEach((p, i) => p.setBounds(boxes[i]));
       // identify each window by the session title it shows, so the assertion
       // survives any reordering of the window list itself
       return Promise.all(
@@ -169,7 +179,7 @@ test.describe('popout geometry (#86)', () => {
           ),
         }))
       );
-    });
+    }, spots);
     expect(placed).toHaveLength(2);
 
     await first.close();
@@ -215,7 +225,7 @@ test.describe('popout geometry (#86)', () => {
     // opened, or it opened but was never registered (both above); the resize
     // didn't take (here); the quit didn't persist it, or the restore didn't
     // reopen it (both below); or it came back mis-measured (last).
-    const size = { x: 200, y: 200, width: 700, height: 560 };
+    const size = onTestDisplay(first, { x: 200, y: 200, width: 700, height: 560 });
     const applied = await first.app.evaluate(({ BrowserWindow }, box) => {
       const popout = BrowserWindow.getAllWindows().find((win) =>
         win.webContents.getURL().includes('popout.html')

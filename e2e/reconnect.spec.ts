@@ -3,6 +3,23 @@
 // rescues it into the grid + stashes it), then replays the display-added
 // signal with a synthetic work-area list that "contains" the lost monitor.
 // Accepting re-pops the card; the offer itself is never automatic.
+//
+// DISPLAY SCOPE (#479): runs on whatever monitor `SWITCHBOARD_E2E_MONITOR`
+// picked, unmodified. The one assertion here that could plausibly have cared is
+// 5b's — accepting the offer asks for x=90,100, the OS refuses it, and the test
+// asserts the window travelled >1000px from where it was. If the OS clamped
+// that to the edge of the VIRTUAL DESKTOP, then starting further right would
+// eat the margin. MEASURED on this 3-monitor machine instead of assumed:
+//
+//   monitor  main window at    beforeX   afterX   margin over the +1000 bar
+//   unset    0,0 (primary)         640   21,845   20,205
+//   2        2560,0              3,840   21,845   17,005
+//   3        -2560,0            -2,560   21,845   23,405
+//
+// The landing spot does not move: Windows clamps a window position to a fixed
+// coordinate ceiling (~21,845, the 16-bit-ish limit), NOT to the desktop's
+// right edge. So the margin is five figures in every arrangement and the only
+// display-dependent term is where the window started. Nothing to exempt.
 import { test, expect } from '@playwright/test';
 import {
   launchApp,
@@ -83,9 +100,11 @@ test.describe('display reconnect offer (E8-06)', () => {
 
     // 5b. offer again and ACCEPT -> the popout window is moved toward its old
     // spot. The fake display can't exist at the OS level, so Windows clamps
-    // the final position to the real virtual desktop — assert the move
-    // happened (large x jump) and the stash was consumed; exact placement on
-    // a REAL returned display is plain BrowserWindow.setBounds semantics.
+    // the final position to a fixed coordinate ceiling (~21,845 — measured for
+    // #479; this used to say "the real virtual desktop", which the numbers in
+    // the header disprove) — assert the move happened (large x jump) and the
+    // stash was consumed; exact placement on a REAL returned display is plain
+    // BrowserWindow.setBounds semantics.
     const beforeX = (await popoutX())[0];
     await signalDisplays();
     await w.getByRole('button', { name: 'Restore' }).click();
