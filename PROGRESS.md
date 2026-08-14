@@ -119,6 +119,23 @@
 > (#465 = feed stripOurNamespace, INTERNAL; #477 = copy button,
 > user-facing, builds on #465). In flight: #465/#477 #462 #412.
 >
+> **#462 ✅ DONE → PR #501 READY, Dan's queue #6.** `sessionCardHome()`
+> = #461's `gridRefGroup` picker (shared via predicate, not copied)
+> minus the document area; mirror rule named ONCE (`isDocumentArea`,
+> read from both sides); also fixed `revealNow`'s same blindness; 3
+> self-caught defects incl. a popped-out-viewer's-shell back door
+> (third e2e); e2e MEASURES width (husk = 22.67px vs >100 required);
+> `skipPopoutOnLinux` hoisted (was FOUR copies). Gates 4144 unit /
+> 262+3 e2e. Discoveries filed: **#502** (moveHome husk blindness) ·
+> **#503** (moveCardToGroup un-hardened twin) · **#504** (openDiff →
+> document area; #411 discovery 3, was unfiled). One unidentified
+> unit flake 1-of-4 full runs under load (name scrolled off; 4143/1;
+> green either side) — recorded in 462.md, not ticketed without a
+> name. **#437 CONFLICT FIX DISPATCHED → resumed worker in sb-wt-3**
+> (branch checked out @ f26aa95; merge origin/main, resolve manual-
+> renumber/CHANGELOG/ipc.ts, re-gate, push → CI triggers naturally).
+> In flight: #465/#477 (wt-1) · #412 (wt-2) · #437-fix (wt-3).
+>
 > **MERGE POLICY THIS RUN: nothing merges before the #480 cut PR lands**
 > (Dan merges it, then pushes tag v0.4.0 — the tag is his; the cut ships
 > his #395 blank-resume fix). Feature CHANGELOG entries written pre-cut
