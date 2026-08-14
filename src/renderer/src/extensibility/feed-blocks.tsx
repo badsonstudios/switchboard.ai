@@ -16,6 +16,7 @@ import { FeedBlockDto } from '../lib/feed';
 import { FEED_EXPANDER_ATTR } from '../lib/feed-keys';
 import { useRevealed } from '../lib/feed-reveal';
 import { FeedBlockRendererContribution, manifestFor } from './contributions';
+import { decorateFeedMarkdown } from '../lib/feed-markdown';
 import { Markdown } from '../lib/markdown';
 
 /**
@@ -568,7 +569,13 @@ export const feedBlockRenderers: FeedBlockRendererContribution[] = [
     manifest: manifest('feed-block-markdown', 'Assistant prose (fallback)'),
     order: 1_000,
     matches: () => true,
-    render: (b) => <Markdown text={b.text ?? ''} streaming={b.streaming} />,
+    // `decorate` is the feed's own pass over the sanitized HTML (#465). It is
+    // what stops a reply speaking the feed's DOM protocol — `data-feed-expander`
+    // and friends, which everything above writes and `FeedView` reads back off
+    // the DOM — and it is where a decoration of the feed's own goes.
+    render: (b) => (
+      <Markdown text={b.text ?? ''} streaming={b.streaming} decorate={decorateFeedMarkdown} />
+    ),
   },
 ];
 

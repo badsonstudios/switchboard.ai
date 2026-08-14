@@ -489,6 +489,71 @@ describe('the style attribute: one profile, and every surface uses it (#436)', (
   });
 });
 
+describe('data attributes: no surface’s protocol is speakable (#465)', () => {
+  // The layer that does not depend on remembering. Every decorating surface in
+  // this app writes data attributes and then reads them back off the live DOM as
+  // instructions — the viewer's `data-doc-*` (#410) and the feed's
+  // `data-feed-*` / `data-no-toggle` (#465) — and the DOM does not remember who
+  // wrote what. `ALLOW_DATA_ATTR: false` means the question never reaches a
+  // surface: markdown emits no data attributes at all, so every one that would
+  // arrive is raw embedded markup, which is the input §5.30 says to distrust.
+  //
+  // The per-surface take-back (`decoration-guard.ts`) still exists and still has
+  // its own tests, because it covers `class` and callers that build HTML another
+  // way. This block is the profile, and the profile alone.
+
+  it('the profile refuses them — one constant, for surfaces that do not exist yet', () => {
+    expect(SANITIZE_CONFIG.ALLOW_DATA_ATTR).toBe(false);
+  });
+
+  // Real protocol forgeries, each one an instruction to a handler that exists.
+  const forged: Array<[string, string, string]> = [
+    [
+      'a phantom stop in the feed’s arrow-key list',
+      '<button data-feed-expander aria-expanded="false">▾ OUT</button>',
+      '▾ OUT',
+    ],
+    [
+      'a block id that would capture a find jump',
+      '<span data-feed-seq="4">not the block you searched for</span>',
+      'not the block you searched for',
+    ],
+    ['a stand-down mark that deadens a tool box', '<div data-no-toggle>inert</div>', 'inert'],
+    [
+      'the viewer’s external-open instruction',
+      '<a href="https://ok.test/x" data-doc-external="https://exfil.test/?leak">click</a>',
+      'click',
+    ],
+    ['an attribute in a namespace nobody has claimed yet', '<p data-future="x">later</p>', 'later'],
+  ];
+
+  for (const [what, payload, survives] of forged) {
+    it(`strips ${what}`, () => {
+      const html = renderMarkdown(payload);
+      expect(html).not.toContain('data-');
+      // …and the message itself is untouched: this strips attributes, not text
+      expect(html).toContain(survives);
+    });
+  }
+
+  it('loses nothing markdown can emit — it never writes a data attribute', () => {
+    // The whole GFM surface, for the same reason the `style` block renders it:
+    // "nothing legitimate is lost" is a claim, and this is the only way to hold
+    // it. `marked` writes `class="language-ts"` on a fence and `align` on a
+    // table cell; it has no construct that produces `data-*`.
+    const html = renderMarkdown(
+      '# H\n\n| a | b |\n|:--|--:|\n| 1 | 2 |\n\n- [x] done\n- [ ] todo\n\n' +
+        '```ts\nconst x = 1;\n```\n\n~~gone~~ and `code`\n\n![alt](./local.png)\n\n<https://auto.link/>\n'
+    );
+    expect(html).not.toContain('data-');
+    expect(html).toContain('language-ts');
+    expect(html).toContain('align="right"');
+    expect(html).toContain('type="checkbox"');
+    expect(html).toContain('src="./local.png"');
+    expect(html).toContain('href="https://auto.link/"');
+  });
+});
+
 describe('there is exactly one markdown pipeline', () => {
   it('no other production file imports marked or dompurify', () => {
     // §5.30 states the shared renderer as a REQUIREMENT: "The viewer uses the

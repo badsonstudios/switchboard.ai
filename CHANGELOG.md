@@ -216,6 +216,16 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **A reply can no longer take over a conversation's own controls.** Replies are
+  rendered Markdown, and Markdown can carry raw HTML. If that HTML happened to
+  copy the small markers switchboard.ai puts on its own expanders and blocks, the
+  app believed them — so a single message could stop the arrow keys moving
+  between the real tool blocks below it, put a fake control on the keyboard path,
+  or send **Find** to the wrong paragraph and highlight it as the match. Nothing
+  a message or a document contains counts as the app's own markup any more, on
+  every surface that renders Markdown: the conversation, the document viewer and
+  the update notes.
+
 - **A reopened session shows its conversation again.** Since 0.3.0, quitting
   switchboard and opening it again left every Direct-mode card looking blank —
   no prompts, no replies, nothing — as though the session had been wiped.
