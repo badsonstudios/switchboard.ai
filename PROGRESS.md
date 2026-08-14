@@ -10,11 +10,20 @@
 > those handoffs are the inputs, this block is the output. If this session
 > dies, a fresh /orchestrate session resumes from THIS block + the handoffs.
 >
-> **WAVE 1 DISPATCHED:** **#480** release 0.4.0 cut (+ folds #394) →
-> sb-wt-1 · `feature/480-release-0.4.0` · **#397/PR #437** finish (gate
-> the trust pre-write per the sitting decision, un-draft) → sb-wt-2 ·
-> `feature/397-ask-trust-direct` (existing branch) · **#458** Direct
-> find jump-to-hit → sb-wt-3 · `feature/458-direct-find-jump`.
+> **BOARD:** **#480 ✅ DONE → PR #486 READY (Dan's queue, first in)** —
+> cut commit c310a09, gates 4144 unit / 259+3 e2e green, dry-run clean,
+> audit walked 108 commits (one gap closed: #432 Internal bullet, safe
+> to drop), 4 read-through wording fixes; Dan's post-merge step: push
+> tag v0.4.0 at the merge commit. Discovery filed → **#487** (lock-
+> version drift unguarded in release-notes.test.js). · **#397/PR #437**
+> → sb-wt-2, worker hit the run-3 dead-waiter trap (turn ended
+> "monitoring e2e"; sweep found lock held owner=437, zero electrons,
+> gate work uncommitted) — RESUMED with finish-in-turn instructions
+> 2026-08-13 evening. · **#458** → sb-wt-3 · `feature/458-direct-
+> find-jump`, in flight. · **#475** → sb-wt-1 ·
+> `feature/475-composer-paste-images`, dispatched (one budgeted
+> real-CLI verification turn pre-authorized per the issue; attachment
+> affordance must be #476-reusable).
 >
 > **MERGE POLICY THIS RUN: nothing merges before the #480 cut PR lands**
 > (Dan merges it, then pushes tag v0.4.0 — the tag is his; the cut ships
