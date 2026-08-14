@@ -213,6 +213,18 @@
 > (wt-1) · #472 (wt-2) · #481 (wt-3). **Queue after these: Dan-gated
 > only (#484 needs cut merged, #485 needs #476, #499 needs #498).**
 >
+> **#472 ✅ DONE → PR #514 (INTERNAL, my merge after cut).** Headline
+> claim was ALREADY fixed on main — the drift PIN was the real
+> deliverable: extensibility-doc.drift.test.ts, 11 cases (IPC table ↔
+> CAPABILITIES both directions + order, manifest vocab per process,
+> every ../src/ link resolves, NO #L anchors — new convention: file +
+> symbol, never line numbers; all five existing #Lnnn anchors pointed
+> at unrelated code). +5 reviewer-caught drifts fixed. 4155 unit;
+> e2e deliberately skipped (docs+unit-test diff only — lock never
+> taken). Carry-forward in the test header: tokens.ts:29 stale "42";
+> #415 will re-stale the uncounted roster lines. wt-2 IDLE (queue
+> Dan-gated). In flight: #415 (wt-1) · #481 (wt-3).
+>
 > **MERGE POLICY THIS RUN: nothing merges before the #480 cut PR lands**
 > (Dan merges it, then pushes tag v0.4.0 — the tag is his; the cut ships
 > his #395 blank-resume fix). Feature CHANGELOG entries written pre-cut
