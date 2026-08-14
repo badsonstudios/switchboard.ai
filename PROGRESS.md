@@ -337,6 +337,25 @@
 > # 🎛 RUN 17 FULLY CLOSED 2026-08-13: 30 ITEMS, TWO
 > # TRAINS, EVERYTHING MERGED
 >
+> # 🚀 2026-08-14: v0.4.0 IS RELEASED + TRAIN #519 IN FLIGHT
+>
+> **Dan authorized the full endgame ("merge, push, create release,
+> everything"). DONE SO FAR: PR #486 squash-merged → main @ dfd0db4 ·
+> tag v0.4.0 pushed · release.yml completed SUCCESS → GitHub Release
+> v0.4.0 PUBLISHED with switchboard-Setup-0.4.0.exe + .sha256.**
+> **TRAIN #519 open: all 15 member PRs merged into train/2026-08-14,
+> full local gate green (4663 unit / 284+3 e2e / lint / typecheck /
+> build), CI running — merge with --merge (NOT squash) on green, then
+> delete member branches, verify 15 issues closed, pull main, rebuild
+> out/.** Integration notes live in PR #519's body (CHANGELOG
+> relocation to 0.5.0 with released 0.4.0 byte-exact to tag; find-
+> surface unions; TitleBar cross-branch prop drift; lock reconcile).
+> Integration incidents ON THE RECORD: relocator overreach moved the
+> released Ctrl+F bullet (caught, rebuilt from tag); one conflicted
+> merge got committed with markers via a chained git add -A (caught
+> by HEAD audit, fixed in-train) — lesson: NEVER chain past a merge,
+> one member at a time, audit HEAD for markers after each.
+>
 > **TRAIN #478 (2nd, Dan-authorized "go ahead and merge the PRs") LANDED
 > → main, all five members MERGED (#457 find bar · #468 toast buttons ·
 > #474 phone push/webhook · #460 viewer peek/pin/popout · #461 openDiff
