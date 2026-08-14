@@ -742,6 +742,11 @@ Work items:
   request 2026-08-13). [issue #477]** Fenced code + Bash IN/OUT in the
   Session view get the viewer's existing copy affordance (decorateCodeFences
   pattern; #465's forgery guard applies). Full done-when in #477.
+- **P2-E10-12 · Composer draft survives restart — S (§5.10; owner request
+  2026-08-13). [issue #485]** Typed-but-unsent composer text is bare React
+  state today (`FeedView.tsx:1000`) and always lost on restart; persist it
+  per-session in the workspace `ui` blob (localStorage can't work here —
+  P2-E15-06's loopback-port measurement). Full done-when in #485.
 
 **E10 exit:** a user can run a whole coding turn — prompt, watch, approve —
 without the Terminal tab even being VISIBLE; the turn reads like the VS Code
@@ -884,9 +889,15 @@ Work items:
   space the session grid wants. Rework it smaller and/or relocated —
   candidate shapes: a slim strip across the top; a collapsed-by-default
   drawer with a badge/count button that expands on click; merging it into
-  the urgency strip's surface. **Design gate: present 2–3 concrete options
-  to Dan before building — the shape is deliberately undecided.** Whatever
-  wins must keep the §5.12 core (one item per session, resolved-means-gone),
+  the urgency strip's surface. **Design gate RAN 2026-08-13 — Dan picked
+  the collapsed drawer (Shape B): panel content unchanged but rendered as
+  an overlay drawer on the right edge, default collapsed to a slim badge
+  tab (attention-queue count in the hottest event's ink; secondary marker
+  while a notice is live); §5.14's status-bar attention-queue count ships
+  as part of this item; open via badge click + hotkey + palette; the
+  drawer overlays the grid so the 220px is reclaimed in every mode. Full
+  spec in the issue comment.** Whatever
+  ships must keep the §5.12 core (one item per session, resolved-means-gone),
   keep the queue-ordering/Ctrl+Space contract legible (E9-03: the queue is
   the authority, this panel renders it), rehome the reconnect offer and
   update notice, and honor §5.8 keyboard-fail-open — collapsing chrome never

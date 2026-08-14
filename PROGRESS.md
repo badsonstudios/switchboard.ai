@@ -14,10 +14,24 @@
 > nothing. Decision + probe record posted on PR #437. Next: small follow-up
 > commit on `feature/397-ask-trust-direct` (+ test pinning Direct+autoTrust
 > writes nothing), un-draft → Dan's queue.
-> **(2) #407 design gate: three shapes presented to Dan** (A merge into
-> urgency strip · B collapsed drawer w/ badge + status-bar queue count —
-> RECOMMENDED · C full dissolution into existing surfaces). **Awaiting
-> Dan's pick; #420 #449 #268 #483-render held behind it.**
+> **(2) #407 design gate: Dan PICKED SHAPE B** (collapsed drawer w/ badge
+> + §5.14 status-bar attention-queue count; full spec in the #407 issue
+> comment 2026-08-13; plan updated). **#420 #449 #268 #483-render now
+> unblocked behind it — #407 is buildable.**
+>
+> **POST-SITTING ADDENDUM (same day): owner-reported reset-on-relaunch
+> investigated → issue #484 filed** (resume link DESTROYED not unused:
+> quit-after-resume orphans the conversation — 2 of Dan's 7 cards are
+> orphaned on disk right now — and a declined/transient-fail canResume
+> wipes nativeSessionId at ipc.ts:1064-1066; direction = lineage fallback,
+> degrade-don't-delete, repair sweep). Dan's install is v0.3.0, so the
+> already-fixed #395 blank-on-resume is ALSO still live for him → the
+> #480 cut is his fix; run it FIRST. **#485 filed** (P2-E10-12 composer
+> draft survives restart, S; plan updated). Dan asked about session
+> history/archive browsing (VS Code parity) → designed at §5.25 "Session
+> archive" (browsable/searchable, one-click resurrect via --resume),
+> slotted PHASE 3 per 03-later-phases.md:55; pull-forward offered, no
+> decision yet.
 > **(3) Release cut AUTHORIZED → issue #480** (0.4.0; folds #394
 > package-lock refresh; ~219-line completeness audit vs v0.3.0..HEAD;
 > Dan pushes the v0.4.0 tag after merging the cut PR). **Run #480 FIRST
