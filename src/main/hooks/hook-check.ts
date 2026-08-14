@@ -60,7 +60,11 @@ async function main(): Promise<number> {
   // THE integrated path: create() wires hook settings itself
   const record = manager.create(
     { title: 'hook-check', folder: workDir, providerId: 'claude-code' },
-    { settingsFor: (id) => listener.buildHookSettings(id), autonomy: 'ask' }
+    {
+      settingsFor: (id) => listener.buildHookSettings(id),
+      releaseSettingsFor: (id) => listener.releaseHookSettings(id),
+      autonomy: 'ask',
+    }
   );
   console.log(`[hook-check] session ${record.id} spawned interactively (pid ${record.pid})`);
 
@@ -103,7 +107,10 @@ async function main(): Promise<number> {
   // user kill of a live session must not read as crashed
   const record2 = manager.create(
     { title: 'kill-check', folder: workDir, providerId: 'claude-code' },
-    { settingsFor: (id) => listener.buildHookSettings(id) }
+    {
+      settingsFor: (id) => listener.buildHookSettings(id),
+      releaseSettingsFor: (id) => listener.releaseHookSettings(id),
+    }
   );
   await sleep(5000); // let it reach the TUI
   manager.kill(record2.id);

@@ -65,6 +65,12 @@ export interface StartPlan {
   /** build injectable settings for the spawned session; undefined = inject
    *  nothing, and do not register a hook token either */
   buildSettings?: (sessionId: string) => Record<string, unknown>;
+  /** Undo `buildSettings` for a session that never started (#470). Present
+   *  exactly when `buildSettings` is — the pair is the hooks capability being
+   *  declared at all — and it releases the HOST's state (the token), which is
+   *  why it goes straight to the host and never through the adapter: the
+   *  adapter only ever shaped what the host had already registered. */
+  releaseSettings?: (sessionId: string) => void;
   /** Prepare the folder for this provider (Claude's trust prompt, §5.9).
    *  Undefined = this provider needs nothing done to the folder. Returns false
    *  when the provider could not do it, so the caller can say so — a silent
@@ -208,6 +214,11 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
     readTitle,
     buildSettings: caps?.hooks
       ? (id) => safely('hooks.settingsFor', () => caps.hooks!.settingsFor(id, host)) ?? {}
+      : undefined,
+    releaseSettings: caps?.hooks
+      ? (id) => {
+          safely('hooks.releaseSettings', () => host.releaseHookSettings(id));
+        }
       : undefined,
     ensureTrusted: caps?.trust
       ? (folder) => safely('trust.ensureTrusted', () => caps.trust!.ensureTrusted(folder)) ?? false

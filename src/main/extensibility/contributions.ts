@@ -141,6 +141,21 @@ export interface HookCapability {
 /** The slice of the host's hook listener an adapter may use. */
 export interface HookSettingsHost {
   buildHookSettings(sessionId: string): Record<string, unknown>;
+  /**
+   * Give back what `buildHookSettings` took out, for a session that will never
+   * exist (#470).
+   *
+   * Building settings REGISTERS state against the id — a token in the
+   * listener's map — and every ordinary release of it hangs off the session
+   * ending. A start that throws before the process exists has no session and
+   * therefore no ending, so without this the entry is stranded for the app's
+   * lifetime, one per failed start.
+   *
+   * Not called by adapters: it is on this interface because the host object is
+   * what `planSessionStart` holds, and the plan is what carries the undo down
+   * to `SessionManager.create`. Must be idempotent and must not throw.
+   */
+  releaseHookSettings(sessionId: string): void;
 }
 
 export interface TrustCapability {

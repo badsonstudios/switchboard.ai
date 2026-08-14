@@ -28,6 +28,10 @@ function findNodeOnPath(): string | null {
 }
 import { Logger } from '../log/logger';
 import { SessionManager } from '../sessions/session-manager';
+// The sweep's name filter and its budget, shared with the directory sweep one
+// level up rather than re-spelled here (#470): two sweeps over the SAME tree
+// that disagree about which names are ours is the drift worth designing out.
+import { isSessionStateDirName, DEFAULT_SWEEP_BUDGET_MS } from '../sessions/session-state';
 import { SessionEvent, isPermissionNotification } from '../sessions/state-machine';
 import {
   SHELLISH,
@@ -67,6 +71,10 @@ export interface HookListenerOptions {
    *  permissions ride `can_use_tool`, so PreToolUse is never held for it.
    *  Absent = PTY, which is every pre-E18 caller. */
   transportFor?: (sessionId: string) => 'pty' | 'stream' | undefined;
+  /** How long `sweepOrphanTokens` may spend, in ms. Absent = the shared
+   *  default (`DEFAULT_SWEEP_BUDGET_MS`). A test seam, and the only reason it
+   *  is an option at all: the sweep is private and runs inside `start()`. */
+  sweepBudgetMs?: number;
 }
 
 // The in-flight permission request (E10-03) now lives in
@@ -503,6 +511,32 @@ export class HookListener {
    * inside it is not. The two are ordered, not redundant: by the time this
    * runs, everything old enough is already gone, so the walk is over a set that
    * no longer grows for the life of the install.
+   *
+   * A candidate must clear four checks, the same conventions and the same order
+   * as the directory sweep (#470 — that sweep grew them in #290 and this one
+   * was left behind, which is #354's lesson exactly: a sweep with no shape
+   * filter is one mount-point surprise away from deleting the wrong thing):
+   *   1. it is a directory, off the dirent, so a symlink or junction pointing
+   *      somewhere interesting answers `false` rather than being followed;
+   *   2. its name is a session id (`isSessionStateDirName` — the shared
+   *      helper), which is what keeps `hook-forwarder.cjs` and anything a human
+   *      or another tool put in this root out of it. Note the filter is on the
+   *      SWEEP only, not on `removeTokenFile`: the sweep's names come off the
+   *      filesystem, a targeted removal's name comes out of our own map, and
+   *      filtering the latter would strand for ever any token registered under
+   *      an id `randomUUID` did not mint;
+   *   3. no live token of ours belongs to it — empty at the one call site,
+   *      which is the point of stating it here rather than leaving it a
+   *      property of the call site (#290's argument, unchanged): the guard has
+   *      to travel with the sweep for a future caller that sweeps later;
+   *   4. there is budget left.
+   *
+   * NO AGE FLOOR, deliberately, and this is the one convention that does NOT
+   * cross over. An mtime cutoff would delete exactly the wrong half: the whole
+   * reason this runs after the directory sweep is to take the tokens inside the
+   * young directories that sweep's 24 h floor deliberately keeps. It is no
+   * safety mechanism here either — see the paragraph above, where a concurrent
+   * instance's LIVE tokens are precisely the ones written before we booted.
    */
   private sweepOrphanTokens(): void {
     let entries: fs.Dirent[];
@@ -517,12 +551,44 @@ export class HookListener {
       });
       return;
     }
+    const keep = new Set(this.tokens.values());
+    const budgetMs = this.opts.sweepBudgetMs ?? DEFAULT_SWEEP_BUDGET_MS;
+    const startedAt = Date.now();
     let swept = 0;
     for (const e of entries) {
       if (!e.isDirectory()) continue;
+      if (!isSessionStateDirName(e.name)) continue;
+      if (keep.has(e.name)) continue;
+      if (Date.now() - startedAt >= budgetMs) {
+        // `break`, not `continue`: unlike the directory sweep there is no
+        // second reason to keep an entry, so there is nothing left to count and
+        // no cheaper check further down the loop. One line, and the rest is
+        // still there for the next start — a token file we do not reach is
+        // dead weight, never a live credential.
+        this.opts.log.info('hook token sweep hit its budget — the rest waits for the next start', {
+          budgetMs,
+        });
+        break;
+      }
       if (this.removeTokenFile(e.name)) swept++;
     }
     if (swept > 0) this.opts.log.info('swept orphaned hook tokens', { count: swept });
+  }
+
+  /**
+   * The undo of `buildHookSettings`, and the name the `HookSettingsHost` slice
+   * knows it by (#470).
+   *
+   * Same release as `unregisterSession` — a token dies the same death whether
+   * its session ran for an hour or never spawned at all. It has its own name
+   * because the caller that needs THIS half is `SessionManager.create`'s
+   * start-failure path, which has no session to "unregister": nothing was ever
+   * registered with it, and a host that is not a full listener should be able
+   * to implement the build/release pair without implementing a session
+   * lifecycle it has no part in.
+   */
+  releaseHookSettings(sessionId: string): void {
+    this.unregisterSession(sessionId);
   }
 
   /**

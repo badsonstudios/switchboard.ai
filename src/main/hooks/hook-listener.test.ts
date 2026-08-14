@@ -750,6 +750,13 @@ describe('buildHookSettings', () => {
 });
 
 describe('hook-token files follow their session (#282)', () => {
+  // Session ids the sweep will look at: `randomUUID()`'s exact shape, which is
+  // the only name it deletes under (#470). Fixed rather than generated so a
+  // failure names the same directory every time.
+  const OLD_1 = '11111111-2222-4333-8444-555555555555';
+  const OLD_2 = '66666666-7777-4888-8999-aaaaaaaaaaaa';
+  const LIVE = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff';
+
   // Listeners in this block own their stateDir so the sweep under test can
   // never see another test's leavings — and are stopped HERE, before the
   // file-level `cleanupTempDirs()` removes the directory out from under them.
@@ -891,7 +898,7 @@ describe('hook-token files follow their session (#282)', () => {
 
   it('start() sweeps the tokens a previous run left behind', async () => {
     const stateDir = tempDir('sb-token-');
-    for (const id of ['s-old-1', 's-old-2']) {
+    for (const id of [OLD_1, OLD_2]) {
       fs.mkdirSync(path.join(stateDir, id), { recursive: true });
       fs.writeFileSync(path.join(stateDir, id, 'hook-token'), 'deadbeefdeadbeef');
     }
@@ -899,29 +906,101 @@ describe('hook-token files follow their session (#282)', () => {
     await own.start();
     // Dead weight by definition: the token map is memory, so a file this
     // process did not write can never authenticate again.
-    expect(fs.existsSync(path.join(stateDir, 's-old-1', 'hook-token'))).toBe(false);
-    expect(fs.existsSync(path.join(stateDir, 's-old-2', 'hook-token'))).toBe(false);
+    expect(fs.existsSync(path.join(stateDir, OLD_1, 'hook-token'))).toBe(false);
+    expect(fs.existsSync(path.join(stateDir, OLD_2, 'hook-token'))).toBe(false);
     const swept = logged.find((l) => l.msg === 'swept orphaned hook tokens');
     expect(swept?.fields?.count).toBe(2);
   });
 
   it('the sweep takes hook-token files and NOTHING else', async () => {
     const stateDir = tempDir('sb-token-');
-    fs.mkdirSync(path.join(stateDir, 's-old'), { recursive: true });
-    fs.writeFileSync(path.join(stateDir, 's-old', 'hook-token'), 'deadbeef');
-    fs.writeFileSync(path.join(stateDir, 's-old', 'settings.json'), '{}'); // providers/claude.ts
-    fs.writeFileSync(path.join(stateDir, 's-old', 'notes.txt'), 'x');
-    fs.mkdirSync(path.join(stateDir, 's-empty'));
+    fs.mkdirSync(path.join(stateDir, OLD_1), { recursive: true });
+    fs.writeFileSync(path.join(stateDir, OLD_1, 'hook-token'), 'deadbeef');
+    fs.writeFileSync(path.join(stateDir, OLD_1, 'settings.json'), '{}'); // providers/claude.ts
+    fs.writeFileSync(path.join(stateDir, OLD_1, 'notes.txt'), 'x');
+    fs.mkdirSync(path.join(stateDir, OLD_2));
     fs.writeFileSync(path.join(stateDir, 'loose-file'), 'x');
     own = listenerOn(stateDir);
     await own.start();
-    expect(fs.existsSync(path.join(stateDir, 's-old', 'hook-token'))).toBe(false);
-    expect(fs.existsSync(path.join(stateDir, 's-old', 'settings.json'))).toBe(true);
-    expect(fs.existsSync(path.join(stateDir, 's-old', 'notes.txt'))).toBe(true);
-    expect(fs.existsSync(path.join(stateDir, 's-old'))).toBe(true); // dirs stay
-    expect(fs.existsSync(path.join(stateDir, 's-empty'))).toBe(true);
+    expect(fs.existsSync(path.join(stateDir, OLD_1, 'hook-token'))).toBe(false);
+    expect(fs.existsSync(path.join(stateDir, OLD_1, 'settings.json'))).toBe(true);
+    expect(fs.existsSync(path.join(stateDir, OLD_1, 'notes.txt'))).toBe(true);
+    expect(fs.existsSync(path.join(stateDir, OLD_1))).toBe(true); // dirs stay
+    expect(fs.existsSync(path.join(stateDir, OLD_2))).toBe(true);
     expect(fs.existsSync(path.join(stateDir, 'loose-file'))).toBe(true);
     expect(fs.existsSync(path.join(stateDir, 'hook-forwarder.cjs'))).toBe(true);
+  });
+
+  // #470. The sweep used to delete `<anything>/hook-token` for every directory
+  // in the root — no check that the name was one WE minted. Same lesson as
+  // #354: a sweep with no shape filter is one mount-point surprise away from
+  // deleting somebody else's file.
+  describe('the sweep only touches names we minted (#470)', () => {
+    it('leaves a hook-token under a directory that is not a session id', async () => {
+      const stateDir = tempDir('sb-token-');
+      // Three ways a non-session name lands in this root: a human, another
+      // tool, and the near-misses a loose regex would accept.
+      const strangers = [
+        'notes',
+        'Documents',
+        `${OLD_1}-backup`,
+        // randomUUID is lower-case, so upper case is somebody else's. Its OWN
+        // uuid, not OLD_1's: Windows would treat the two as one directory and
+        // the fixture would be testing itself.
+        'CCCCCCCC-DDDD-4EEE-8FFF-999999999999',
+        OLD_1.replaceAll('-', ''), // right characters, no dashes
+      ];
+      for (const name of strangers) {
+        fs.mkdirSync(path.join(stateDir, name), { recursive: true });
+        fs.writeFileSync(path.join(stateDir, name, 'hook-token'), 'not-ours');
+      }
+      fs.mkdirSync(path.join(stateDir, OLD_1), { recursive: true });
+      fs.writeFileSync(path.join(stateDir, OLD_1, 'hook-token'), 'ours');
+      own = listenerOn(stateDir);
+      await own.start();
+      for (const name of strangers) {
+        expect(fs.existsSync(path.join(stateDir, name, 'hook-token'))).toBe(true);
+      }
+      expect(fs.existsSync(path.join(stateDir, OLD_1, 'hook-token'))).toBe(false);
+      expect(logged.find((l) => l.msg === 'swept orphaned hook tokens')?.fields?.count).toBe(1);
+    });
+
+    it('never takes a token this process is holding', async () => {
+      // Empty at the real call site — `start()` sweeps before anything can
+      // register — but the guard travels with the sweep so that stays true for
+      // a caller that ever sweeps at some other moment (#290's argument).
+      const stateDir = tempDir('sb-token-');
+      own = listenerOn(stateDir);
+      const { tokenPath } = own.registerSession(LIVE);
+      fs.mkdirSync(path.join(stateDir, OLD_1), { recursive: true });
+      fs.writeFileSync(path.join(stateDir, OLD_1, 'hook-token'), 'dead');
+      await own.start();
+      expect(fs.existsSync(tokenPath)).toBe(true);
+      expect(fs.existsSync(path.join(stateDir, OLD_1, 'hook-token'))).toBe(false);
+    });
+
+    it('stops at its budget and says so, leaving the rest for the next start', async () => {
+      const stateDir = tempDir('sb-token-');
+      for (const id of [OLD_1, OLD_2]) {
+        fs.mkdirSync(path.join(stateDir, id), { recursive: true });
+        fs.writeFileSync(path.join(stateDir, id, 'hook-token'), 'dead');
+      }
+      own = new HookListener({
+        stateDir,
+        log: capturingLog(),
+        manager: { apply: () => {}, setNativeSessionId: () => {} },
+        sweepBudgetMs: 0, // spent before the first candidate
+      });
+      await own.start();
+      expect(fs.existsSync(path.join(stateDir, OLD_1, 'hook-token'))).toBe(true);
+      expect(fs.existsSync(path.join(stateDir, OLD_2, 'hook-token'))).toBe(true);
+      const hit = logged.filter((l) => /sweep hit its budget/.test(l.msg));
+      expect(hit).toHaveLength(1); // one line for the whole sweep, not one per entry
+      expect(hit[0].fields?.budgetMs).toBe(0);
+      // ...and a token left behind is dead weight, never a live credential:
+      // nothing in memory can authenticate it.
+      expect(logged.some((l) => l.msg === 'swept orphaned hook tokens')).toBe(false);
+    });
   });
 
   it('a first run has nothing to sweep and says nothing about it', async () => {

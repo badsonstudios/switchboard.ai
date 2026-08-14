@@ -2,7 +2,14 @@ import { describe, it, expect, vi } from 'vitest';
 import { planSessionStart, StartPlanInput } from './start-plan';
 import { ProviderCapabilities, ResumeQuery } from '../extensibility/contributions';
 
-const host = { buildHookSettings: (id: string) => ({ hooks: { seen: id } }) };
+/** Ids the host was asked to release, so the undo half is assertable (#470). */
+const released: string[] = [];
+const host = {
+  buildHookSettings: (id: string) => ({ hooks: { seen: id } }),
+  releaseHookSettings: (id: string) => {
+    released.push(id);
+  },
+};
 
 /** An adapter that declares everything, the way Claude does. */
 function fullCaps(over: Partial<ProviderCapabilities> = {}): ProviderCapabilities {
@@ -335,6 +342,51 @@ describe('planSessionStart', () => {
     expect(settingsFor).not.toHaveBeenCalled();
     expect(p.buildSettings?.('late-id')).toEqual({ id: 'late-id' });
     expect(settingsFor).toHaveBeenCalledWith('late-id', host);
+  });
+
+  // #470: building settings registers a token against the id, so the plan has
+  // to carry the way to give it back — for the start that throws before there
+  // is a session to end.
+  describe('the undo of buildSettings travels with it (#470)', () => {
+    it('a provider with no hooks capability offers neither half', () => {
+      const p = plan({ capabilitiesOf: () => ({ transcripts: { projectsRoot: () => '/r' } }) });
+      expect(p.buildSettings).toBeUndefined();
+      expect(p.releaseSettings).toBeUndefined();
+    });
+
+    it('declaring hooks gets both halves', () => {
+      const p = plan({ capabilitiesOf: () => fullCaps() });
+      expect(p.buildSettings).toBeTypeOf('function');
+      expect(p.releaseSettings).toBeTypeOf('function');
+    });
+
+    it('releases against the HOST, not the adapter — the token is the host’s', () => {
+      // The adapter only ever shaped what the host had already registered, so
+      // an adapter that translates settings has nothing to undo. Pinned with a
+      // capability whose settingsFor never touches the host at all.
+      released.length = 0;
+      const p = plan({ capabilitiesOf: () => ({ hooks: { settingsFor: () => ({ mine: 1 }) } }) });
+      p.releaseSettings?.('sess-9');
+      expect(released).toEqual(['sess-9']);
+    });
+
+    it('a host that throws is reported, not propagated — this runs on a failure path', () => {
+      const { plan: p, reported } = planWithSink({
+        capabilitiesOf: () => fullCaps(),
+      });
+      const boomHost = {
+        buildHookSettings: () => ({}),
+        releaseHookSettings: () => {
+          throw new Error('nope');
+        },
+      };
+      const withBoom = planSessionStart(input({ capabilitiesOf: () => fullCaps() }), boomHost);
+      expect(() => withBoom.releaseSettings?.('sess-9')).not.toThrow();
+      expect(withBoom.warnings.join()).toMatch(/hooks.releaseSettings/);
+      // and the ordinary host says nothing
+      p.releaseSettings?.('sess-9');
+      expect(reported).toEqual([]);
+    });
   });
 });
 
