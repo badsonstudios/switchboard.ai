@@ -74,7 +74,11 @@ function installBridge(withSounds = true): void {
     },
     set: (cardId: string, sound: string | null) => {
       soundCalls.set.push([cardId, sound]);
-      return setThrows ? Promise.reject(new Error('store said no')) : Promise.resolve(setReply);
+      if (setThrows) return Promise.reject(new Error('store said no'));
+      // the real store un-pins on `null`, and a later `get` has to say so —
+      // otherwise the re-read below would keep answering the old truth
+      if (sound === null && currentSound) currentSound = { ...currentSound, pinned: false };
+      return Promise.resolve(setReply);
     },
     onPlay: () => off,
     onSpeak: () => off,
@@ -141,6 +145,9 @@ const soundItem = (): HTMLButtonElement | null =>
 const label = (now: string, next: string): string =>
   en.grid.menuSound.replace('{now}', now).replace('{next}', next);
 
+/** the "nobody has chosen yet" reading of the current cue */
+const auto = (name: string): string => en.sounds.autoNow.replace('{name}', name);
+
 async function click(el: HTMLElement): Promise<void> {
   await act(async () => {
     el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -205,12 +212,33 @@ describe('the entry says which cue this card rings', () => {
   it('names the current cue and the one a click lands on', async () => {
     await mountCard();
     await openMenu();
-    expect(soundItem()?.textContent).toBe(label(en.sounds.chime, en.sounds.bell));
+    expect(soundItem()?.textContent).toBe(label(auto(en.sounds.chime), en.sounds.bell));
   });
 
-  it('reads the card it is actually on', async () => {
+  it('says which cue an unchosen card will actually ring', async () => {
+    // "Automatic" alone answers the wrong question — the user wants to know
+    // what they are about to hear
     await mountCard();
+    await openMenu();
+    expect(soundItem()?.textContent).toContain(en.sounds.chime);
+  });
+
+  it('reads the card when the MENU OPENS, not once at mount', async () => {
+    // A card mounts before `sessions:create` has persisted it, so a mount-time
+    // read asks about a card main does not have yet — and with no other
+    // trigger the entry would stay hidden for the life of the card.
+    await mountCard();
+    expect(soundCalls.get).toEqual([]);
+    await openMenu();
     expect(soundCalls.get).toEqual(['c1']);
+  });
+
+  it('re-reads every time it is opened, so it cannot go stale', async () => {
+    await mountCard();
+    await openMenu();
+    await openMenu(); // close
+    await openMenu();
+    expect(soundCalls.get).toEqual(['c1', 'c1']);
   });
 
   it('states the cue and the ACTION separately, never one word alone', async () => {
@@ -253,13 +281,28 @@ describe('clicking it', () => {
     expect(previewed).toEqual(['bell', 'knock']);
   });
 
+  it('past the last cue it goes back to automatic, and previews nothing', async () => {
+    // the ninth step. "Automatic" is not a sound, so playing the cue it happens
+    // to resolve to would say the opposite of what was just chosen.
+    currentSound = { id: 'thrum', pinned: true };
+    setReply = null; // "back to auto" and "refused" answer the same thing…
+    await mountCard();
+    await openMenu();
+    await click(soundItem()!);
+    expect(soundCalls.set).toEqual([['c1', null]]);
+    expect(previewed).toEqual([]);
+    // …so the menu asks rather than guessing, and shows what it is told
+    expect(soundCalls.get.length).toBeGreaterThan(1);
+    expect(soundItem()?.textContent).toBe(label(auto(en.sounds.thrum), en.sounds.chime));
+  });
+
   it('repaints to what the STORE answered, not to what was clicked', async () => {
     // a refused or corrected write must leave the menu showing the truth
     setReply = { id: 'thrum', pinned: true };
     await mountCard();
     await openMenu();
     await click(soundItem()!);
-    expect(soundItem()?.textContent).toBe(label(en.sounds.thrum, en.sounds.chime));
+    expect(soundItem()?.textContent).toBe(label(en.sounds.thrum, en.sounds.auto));
   });
 
   it('a rejected write leaves the optimistic value rather than throwing', async () => {

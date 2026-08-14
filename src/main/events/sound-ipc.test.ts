@@ -49,15 +49,17 @@ function harness(knownCards: string[] = [CARD]) {
     child: () => log,
   } as unknown as Logger;
 
+  const unplayable: string[] = [];
   registerSoundIpc({
     broker,
     log,
     store,
     knownCard: (id) => knownCards.includes(id),
+    onUnplayable: (c) => unplayable.push(c),
   });
   const call = (channel: string, ...args: unknown[]): unknown =>
     handlers.get(channel)!(null, ...args);
-  return { call, logs, writes, handlers, pinned };
+  return { call, logs, writes, handlers, pinned, unplayable };
 }
 
 describe('reading a card sound', () => {
@@ -70,6 +72,16 @@ describe('reading a card sound', () => {
     const h = harness();
     h.call('sounds:set', CARD, 'bell');
     expect(h.call('sounds:get', CARD)).toEqual({ id: 'bell', pinned: true });
+  });
+
+  it('answers NULL for a card main has never heard of', () => {
+    // A card mounts before `sessions:create` has persisted it. Answering the
+    // store's fallback cue there would tell the menu this card rings "chime"
+    // when it will really ring the cue its position hands it — and offer a
+    // write `sounds:set` is about to refuse. The renderer draws no entry for
+    // `null` and re-reads each time the menu opens.
+    const h = harness([]);
+    expect(h.call('sounds:get', CARD)).toBeNull();
   });
 
   it('refuses a non-string card without throwing', () => {
@@ -133,8 +145,25 @@ describe('writing a card sound', () => {
     expect(info[0].fields).toMatchObject({ cardId: CARD, sound: 'bell', pinned: true });
   });
 
-  it('registers exactly the two channels the capability map tags', () => {
+  it('registers exactly the channels the capability map tags', () => {
     const h = harness();
-    expect([...h.handlers.keys()].sort()).toEqual(['sounds:get', 'sounds:set']);
+    expect([...h.handlers.keys()].sort()).toEqual(['audio:failed', 'sounds:get', 'sounds:set']);
+  });
+});
+
+describe('the window could not play what it was sent', () => {
+  it('passes the channel through, so main can beep instead', () => {
+    const h = harness();
+    expect(h.call('audio:failed', 'sound')).toBe(true);
+    expect(h.call('audio:failed', 'speak')).toBe(true);
+    expect(h.unplayable).toEqual(['sound', 'speak']);
+  });
+
+  it('refuses anything that is not one of the two channels', () => {
+    const h = harness();
+    expect(h.call('audio:failed', 'trumpet')).toBe(false);
+    expect(h.call('audio:failed', null)).toBe(false);
+    expect(h.unplayable).toEqual([]);
+    expect(h.logs.filter((l) => l.level === 'warn')).toHaveLength(2);
   });
 });

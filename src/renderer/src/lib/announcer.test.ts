@@ -10,6 +10,7 @@ import {
   CUE_GAIN,
   GainLike,
   OscillatorLike,
+  browserSpeech,
   createAnnouncer,
   installAnnouncer,
   setAudioMuted,
@@ -206,6 +207,49 @@ describe('the announcer', () => {
   });
 });
 
+describe('the real voice refuses a backlog', () => {
+  // `browserSpeech` is the only non-trivial logic here that the injected fakes
+  // above never touch, and the claim it carries is load-bearing: without the
+  // `pending` check, eight events while the user is at lunch queue up and are
+  // read out, in order, to an empty room, minutes after they were true.
+  const install = (synth: Partial<SpeechSynthesis>): { spoken: string[] } => {
+    const spoken: string[] = [];
+    const g = globalThis as unknown as Record<string, unknown>;
+    g.speechSynthesis = { pending: false, speaking: false, ...synth };
+    g.SpeechSynthesisUtterance = class {
+      constructor(public text: string) {
+        spoken.push(text);
+      }
+    };
+    return { spoken };
+  };
+  afterEach(() => {
+    const g = globalThis as unknown as Record<string, unknown>;
+    delete g.speechSynthesis;
+    delete g.SpeechSynthesisUtterance;
+  });
+
+  it('speaks when nothing is waiting', () => {
+    const speak = vi.fn();
+    const { spoken } = install({ speak });
+    expect(browserSpeech()('Trading app is done')).toBe(true);
+    expect(spoken).toEqual(['Trading app is done']);
+    expect(speak).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses while something is already WAITING behind the current one', () => {
+    const speak = vi.fn();
+    install({ speak, pending: true });
+    expect(browserSpeech()('Trading app is done')).toBe(false);
+    expect(speak).not.toHaveBeenCalled();
+  });
+
+  it('answers false on a machine with no voice at all', () => {
+    // Linux without speech-dispatcher. `false` is what sends main its beep.
+    expect(browserSpeech()('anything')).toBe(false);
+  });
+});
+
 describe('subscribing to main', () => {
   it('plays and speaks what main pushes', () => {
     const played: string[] = [];
@@ -246,6 +290,86 @@ describe('subscribing to main', () => {
     );
     off();
     expect(offs).toEqual({ play: 1, speak: 1 });
+  });
+
+  it('tells main when it could NOT play — the other half of fail-open', () => {
+    // Main sent this fire-and-forget and has already stood its own beep down.
+    // Without this report the event is silent while every log line says
+    // "taken", which is the exact outcome §5.9 promises cannot happen.
+    const failed: string[] = [];
+    let onPlay: ((c: { sound: string }) => void) | null = null;
+    let onSpeak: ((c: { text: string }) => void) | null = null;
+    installAnnouncer(
+      {
+        onPlay: (cb) => {
+          onPlay = cb;
+          return () => {};
+        },
+        onSpeak: (cb) => {
+          onSpeak = cb;
+          return () => {};
+        },
+        failed: (c) => {
+          failed.push(c);
+          return Promise.resolve();
+        },
+      },
+      { play: () => false, say: () => false }
+    );
+    onPlay!({ sound: 'knock' });
+    onSpeak!({ text: 'anything' });
+    expect(failed).toEqual(['sound', 'speak']);
+  });
+
+  it('says nothing to main when it DID play', () => {
+    const failed: string[] = [];
+    let onPlay: ((c: { sound: string }) => void) | null = null;
+    installAnnouncer(
+      {
+        onPlay: (cb) => {
+          onPlay = cb;
+          return () => {};
+        },
+        failed: (c) => {
+          failed.push(c);
+          return Promise.resolve();
+        },
+      },
+      { play: () => true, say: () => true }
+    );
+    onPlay!({ sound: 'knock' });
+    expect(failed).toEqual([]);
+  });
+
+  it('a report that rejects is not the event handler’s problem', () => {
+    let onPlay: ((c: { sound: string }) => void) | null = null;
+    installAnnouncer(
+      {
+        onPlay: (cb) => {
+          onPlay = cb;
+          return () => {};
+        },
+        failed: () => Promise.reject(new Error('main is gone')),
+      },
+      { play: () => false, say: () => false }
+    );
+    expect(() => onPlay!({ sound: 'knock' })).not.toThrow();
+  });
+
+  it('an older preload with no `failed` still plays, it just cannot report', () => {
+    let onPlay: ((c: { sound: string }) => void) | null = null;
+    const played: string[] = [];
+    installAnnouncer(
+      {
+        onPlay: (cb) => {
+          onPlay = cb;
+          return () => {};
+        },
+      },
+      { play: (id) => (played.push(id), false), say: () => false }
+    );
+    expect(() => onPlay!({ sound: 'knock' })).not.toThrow();
+    expect(played).toEqual(['knock']);
   });
 
   it('does nothing at all without a sounds namespace', () => {

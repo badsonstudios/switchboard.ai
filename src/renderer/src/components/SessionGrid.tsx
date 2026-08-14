@@ -44,7 +44,7 @@ import { submitTarget } from '../lib/presentation-policy';
 import { bulkClose } from '../lib/pinning';
 import { createSweeper, SweepPort, SweepRequest } from '../lib/layout-sweep';
 import { sharedAnnouncer } from '../lib/announcer';
-import { CardSound, nextSoundId } from '../../../shared/sounds';
+import { CardSound, nextCardSound } from '../../../shared/sounds';
 import {
   cycleMode,
   isEnforced,
@@ -396,53 +396,6 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       alive = false;
     };
   }, [cardId, rulesApi]);
-  // This card's notification cue (P2-E14-05a, §5.9 + §5.11). Same defensive
-  // read as `rulesApi` above and for the same reason: a namespace a partial
-  // bridge does not install must not throw out of a mount effect and take the
-  // card down with it.
-  const soundsApi = window.switchboard?.sounds as typeof window.switchboard.sounds | undefined;
-  const [cardSound, setCardSound] = React.useState<CardSound | null>(null);
-  React.useEffect(() => {
-    if (!cardId || !soundsApi) return;
-    let alive = true;
-    void soundsApi
-      .get(cardId)
-      .then((s) => {
-        if (alive && s) setCardSound(s);
-      })
-      .catch(() => {
-        /* fail-open: an unreadable cue shows nothing rather than a wrong one */
-      });
-    return () => {
-      alive = false;
-    };
-  }, [cardId, soundsApi]);
-  /**
-   * Step to the next cue in the bank and PLAY it.
-   *
-   * A cycling button, like the transport entry above and the title bar's
-   * autonomy and layout chips — this codebase's shape for "one of a short
-   * closed list". A dropdown of eight would be a second menu inside a menu that
-   * is not even a real one (see the ARIA note below).
-   *
-   * The preview is not a nicety: a list of eight words — chime, bell, knock —
-   * tells nobody what they will hear, and this is the only place in the app
-   * where a sound can be auditioned on purpose rather than waited for.
-   */
-  const cycleSound = (): void => {
-    if (!cardId || !soundsApi) return;
-    const next = nextSoundId(cardSound?.id);
-    setCardSound({ id: next, pinned: true }); // optimistic; the answer is the truth
-    sharedAnnouncer().play(next);
-    void soundsApi
-      .set(cardId, next)
-      .then((s) => {
-        if (s) setCardSound(s);
-      })
-      .catch(() => {
-        /* leave the optimistic value: the next mount re-reads the truth */
-      });
-  };
   const toggleNotifyWhenDone = (): void => {
     if (!cardId || !rulesApi) return;
     const next = !notifyWhenDone;
@@ -512,6 +465,78 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // slash command into the PTY — the CLI stays the source of truth
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [confirmClear, setConfirmClear] = React.useState(false);
+  // ── this card's notification cue (P2-E14-05a, §5.9 + §5.11) ───────────────
+  //
+  // Same defensive bridge read as `rulesApi` above and for the same reason: a
+  // namespace a partial bridge does not install must not throw out of an effect
+  // and take the card down with it (#444).
+  const soundsApi = window.switchboard?.sounds as typeof window.switchboard.sounds | undefined;
+  const [cardSound, setCardSound] = React.useState<CardSound | null>(null);
+  /** newest write wins — two fast clicks must not repaint in the wrong order */
+  const soundSeq = React.useRef(0);
+  // Read when the MENU OPENS, not once on mount. A card mounts before
+  // `sessions:create` has persisted its record, so a mount-time read asks about
+  // a card main does not have yet and is answered `null` — and with no other
+  // trigger the entry would then stay hidden for the life of the card. Opening
+  // the menu is also the only moment the answer is looked at, which makes this
+  // the cheapest possible fix for the staleness #421 flagged: nothing else in
+  // the app can change a cue behind this view without it being re-read.
+  React.useEffect(() => {
+    if (!cardId || !soundsApi || !menuOpen) return;
+    let alive = true;
+    const seq = ++soundSeq.current;
+    void soundsApi
+      .get(cardId)
+      .then((s) => {
+        if (alive && seq === soundSeq.current) setCardSound(s ?? null);
+      })
+      .catch(() => {
+        /* fail-open: an unreadable cue shows nothing rather than a wrong one */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [cardId, soundsApi, menuOpen]);
+  /**
+   * Step to the next cue and PLAY it.
+   *
+   * A cycling button, like the transport entry above and the title bar's
+   * autonomy and layout chips — this codebase's shape for "one of a short
+   * closed list". A dropdown of eight would be a second menu inside a menu that
+   * is not even a real one (see the ARIA note below).
+   *
+   * The preview is not a nicety: a list of eight words — chime, bell, knock —
+   * tells nobody what they will hear, and this is the only place in the app
+   * where a sound can be auditioned on purpose rather than waited for.
+   *
+   * The cycle has NINE steps, not eight: past the last cue it comes back to
+   * **automatic**, because a control you can only walk one way is a trap. There
+   * is no preview for that step — "automatic" is not a sound, and playing the
+   * cue it happens to resolve to would say the opposite of what was chosen.
+   */
+  /** A cue's name for the menu; `null` is the automatic step. */
+  const soundName = (id: string | null): string =>
+    id ? t(`sounds.${id}`) : t('sounds.auto');
+  const cycleSound = (): void => {
+    if (!cardId || !soundsApi) return;
+    const next = nextCardSound(cardSound);
+    setCardSound(next ? { id: next, pinned: true } : null); // optimistic
+    if (next) sharedAnnouncer().play(next);
+    const seq = ++soundSeq.current;
+    void soundsApi
+      .set(cardId, next)
+      .then((s) => {
+        if (seq !== soundSeq.current) return; // a later click already answered
+        // A REFUSED write answers `null`, which is also what "back to auto"
+        // answers — so ask rather than guess, and let the menu show the truth
+        // instead of the thing that was just clicked.
+        if (s) setCardSound(s);
+        else void soundsApi.get(cardId).then((truth) => setCardSound(truth ?? null));
+      })
+      .catch(() => {
+        /* leave the optimistic value: the next menu open re-reads the truth */
+      });
+  };
   // locked while starting (§5.10 startup-dialog rule) or once the live
   // session is gone — a PTY write to a dead session is a silent no-op
   const controlsLocked = status === 'starting' || status === 'crashed' || ended !== null;
@@ -1450,8 +1475,13 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                             style={menuItemStyle(false)}
                           >
                             {t('grid.menuSound', {
-                              now: t(`sounds.${cardSound.id}`),
-                              next: t(`sounds.${nextSoundId(cardSound.id)}`),
+                              // "Automatic (Knock)" while nobody has chosen —
+                              // naming the cue you will actually hear, because
+                              // "Automatic" alone answers the wrong question.
+                              now: cardSound.pinned
+                                ? t(`sounds.${cardSound.id}`)
+                                : t('sounds.autoNow', { name: t(`sounds.${cardSound.id}`) }),
+                              next: soundName(nextCardSound(cardSound)),
                             })}
                           </button>
                         )}

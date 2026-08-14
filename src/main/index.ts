@@ -1392,7 +1392,11 @@ app
     // Non-packaged builds only — the same rule `SWITCHBOARD_BIND_GIVEUP_MS`
     // and the update feed follow, so a stray variable in a user's environment
     // can never silence the shipped app.
-    const audioSink = createRendererAudioSink<BrowserWindow>({
+    const audioSink = createRendererAudioSink<{
+      isDestroyed: () => boolean;
+      isCrashed: () => boolean;
+      win: BrowserWindow;
+    }>({
       // The MAIN window only, and this is not an oversight. A dockview popout
       // (E8) loads `popout.html`, which ships no script of ours on purpose —
       // dockview adopts the group's DOM into it from the opener, so the JS that
@@ -1400,8 +1404,19 @@ app
       // else. Listing a popout here would make the sink answer "taken" for a
       // window that cannot play anything, which is worse than answering
       // "nobody took it": the latter beeps.
-      windows: () => [currentWindow],
-      send: (win, channel, payload) => broker.send(win, channel as 'audio:play', payload),
+      windows: () => [
+        currentWindow
+          ? {
+              isDestroyed: () => currentWindow!.isDestroyed(),
+              // a renderer that died leaves this window object alive; see
+              // `AudioWindow`. Read through a wrapper because `webContents`
+              // itself throws once the window really is destroyed.
+              isCrashed: () => currentWindow!.webContents.isCrashed(),
+              win: currentWindow,
+            }
+          : null,
+      ],
+      send: (w, channel, payload) => broker.send(w.win, channel as 'audio:play', payload),
       muted: audioMuted(),
       log: rulesLog,
     });
@@ -1474,6 +1489,7 @@ app
       log: rulesLog,
       store: workspace,
       knownCard: (cardId) => workspace.listSessions().some((s) => s.id === cardId),
+      onUnplayable: (channel) => soundActions.unplayable(channel),
     });
     registerPushIpc({
       broker,

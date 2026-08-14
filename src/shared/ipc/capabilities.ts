@@ -168,6 +168,11 @@ export const CHANNEL_CAPABILITIES = {
   // either; they are main talking, and `send` is not a power the renderer has.
   'sounds:get': 'settings.read',
   'sounds:set': 'settings.write',
+  // "I took that cue and could not play it" — the renderer's answer to
+  // `audio:play`, and the thing that lets main fall back to a beep instead of
+  // leaving an attention event silent. It reads nothing and changes nothing;
+  // `settings.read` is the narrowest tag that fits.
+  'audio:failed': 'settings.read',
   'pty:attach': 'pty.read',
   'pty:detach': 'pty.read',
   'pty:input': 'pty.write',

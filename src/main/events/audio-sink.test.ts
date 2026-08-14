@@ -15,16 +15,18 @@ interface Sent {
   payload: unknown;
 }
 
-function win(name: string, destroyed = false) {
-  return { name, isDestroyed: () => destroyed };
+function win(name: string, destroyed = false, crashed = false) {
+  return { name, isDestroyed: () => destroyed, isCrashed: () => crashed };
 }
 
+type FakeWindow = { name: string; isDestroyed: () => boolean; isCrashed?: () => boolean };
+
 function harness(
-  windows: Array<{ name: string; isDestroyed: () => boolean }>,
+  windows: FakeWindow[],
   muted = false
 ): { sink: ReturnType<typeof createRendererAudioSink>; sent: Sent[] } {
   const sent: Sent[] = [];
-  const sink = createRendererAudioSink<{ name: string; isDestroyed: () => boolean }>({
+  const sink = createRendererAudioSink<FakeWindow>({
     windows: () => windows,
     send: (w, channel, payload) => sent.push({ win: w.name, channel, payload }),
     muted,
@@ -60,6 +62,31 @@ describe('picking a speaker', () => {
     expect(h.sent[0].win).toBe('main');
   });
 
+  it('skips a CRASHED window, whose object is still perfectly alive', () => {
+    // `render-process-gone` leaves the BrowserWindow undestroyed for ever, so a
+    // destroyed-only check would answer "taken" on every event afterwards while
+    // the notifier's beep has already stood down — silence, logged as success.
+    const h = harness([win('main', false, true), win('second')]);
+    expect(h.sink.play('chime')).toBe(true);
+    expect(h.sent[0].win).toBe('second');
+  });
+
+  it('answers false when the only window is crashed', () => {
+    const h = harness([win('main', false, true)]);
+    expect(h.sink.play('chime')).toBe(false);
+  });
+
+  it('a window that cannot answer whether it crashed is still usable', () => {
+    // `AudioWindow.isCrashed` is optional — an older caller passing a bare
+    // BrowserWindow-shaped object must not lose its speaker
+    const sent: Sent[] = [];
+    const sink = createRendererAudioSink<FakeWindow>({
+      windows: () => [{ name: 'main', isDestroyed: () => false }],
+      send: (w, channel, payload) => sent.push({ win: w.name, channel, payload }),
+    });
+    expect(sink.play('chime')).toBe(true);
+  });
+
   it('skips a destroyed window for the next live one', () => {
     const h = harness([win('main', true), win('second')]);
     expect(h.sink.play('chime')).toBe(true);
@@ -73,7 +100,7 @@ describe('picking a speaker', () => {
         throw new Error('Object has been destroyed');
       },
     };
-    const h = harness([angry, win('second')]);
+    const h = harness([angry as FakeWindow, win('second')]);
     expect(h.sink.play('chime')).toBe(true);
     expect(h.sent[0].win).toBe('second');
   });
@@ -81,7 +108,7 @@ describe('picking a speaker', () => {
   it('re-reads the window list per cue, so a relaunched window is found', () => {
     const list = [win('main', true)];
     const sent: Sent[] = [];
-    const sink = createRendererAudioSink<{ name: string; isDestroyed: () => boolean }>({
+    const sink = createRendererAudioSink<FakeWindow>({
       windows: () => list,
       send: (w, channel, payload) => sent.push({ win: w.name, channel, payload }),
     });
@@ -106,7 +133,7 @@ describe('nobody to play it (the case the beep fallback exists for)', () => {
 
   it('tolerates a list with holes in it', () => {
     const sent: Sent[] = [];
-    const sink = createRendererAudioSink<{ name: string; isDestroyed: () => boolean }>({
+    const sink = createRendererAudioSink<FakeWindow>({
       windows: () => [null, undefined, win('main')],
       send: (w, channel, payload) => sent.push({ win: w.name, channel, payload }),
     });

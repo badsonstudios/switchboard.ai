@@ -245,6 +245,56 @@ describe('a standing failure is logged once, not once per event', () => {
   });
 });
 
+// The hole a fire-and-forget send leaves, and the thing that closes it. Main
+// stands the notifier's beep down while cues are on, so a window that TAKES a
+// cue and cannot play it — no audio device, an AudioContext the platform
+// refused — would otherwise be silence that every log line called success.
+describe('the window took it and could not play it', () => {
+  it('beeps, every time, because that is the half a person hears', () => {
+    const h = harness();
+    h.actions.unplayable('sound');
+    h.actions.unplayable('sound');
+    h.actions.unplayable('sound');
+    expect(h.beeps.count).toBe(3);
+  });
+
+  it('warns ONCE per channel — "no audio device" does not come and go', () => {
+    const h = harness();
+    for (let i = 0; i < 4; i++) h.actions.unplayable('sound');
+    expect(h.line('a window took an audio notification and could not play it')).toHaveLength(1);
+  });
+
+  it('does not beep for a sentence nobody could say', () => {
+    // the cue has usually just beeped; a second one adds no information
+    const h = harness();
+    h.actions.unplayable('speak');
+    expect(h.beeps.count).toBe(0);
+    expect(h.line('a window took an audio notification and could not play it')[0].fields).toEqual({
+      channel: 'speak',
+    });
+  });
+
+  it('counts the two channels separately', () => {
+    const h = harness();
+    h.actions.unplayable('sound');
+    h.actions.unplayable('speak');
+    expect(h.line('a window took an audio notification and could not play it')).toHaveLength(2);
+  });
+
+  it('a fallback that throws is still not anyone else problem', () => {
+    const log = { debug() {}, info() {}, warn() {}, error() {}, child: () => log };
+    const actions = new SoundActions({
+      sink: { play: () => true, speak: () => true },
+      soundFor: () => 'chime',
+      fallback: () => {
+        throw new Error('shell.beep exploded');
+      },
+      log: log as never,
+    });
+    expect(() => actions.unplayable('sound')).not.toThrow();
+  });
+});
+
 describe('the registry contract it is registered under', () => {
   it('the handlers are plain RuleActionHandlers — no extra argument, no return', () => {
     const h = harness();

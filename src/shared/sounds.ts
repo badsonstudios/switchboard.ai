@@ -31,6 +31,21 @@
 export const AUDIO_PLAY_CHANNEL = 'audio:play';
 export const AUDIO_SPEAK_CHANNEL = 'audio:speak';
 
+/**
+ * The way back: "I took it and could not play it" (P2-E14-05a).
+ *
+ * Without this the fail-open promise has a hole you can drive a truck through.
+ * `broker.send` is fire-and-forget, so main learns nothing about a machine with
+ * no audio device or an AudioContext the platform refused — and with cues on,
+ * the beep in `notifier.ts` has already stepped aside. Main would think the cue
+ * was delivered while the user heard nothing at all, which is exactly the
+ * outcome §5.9 and the manual promise cannot happen.
+ */
+export const AUDIO_FAILED_CHANNEL = 'audio:failed';
+
+/** Which channel could not be played. */
+export type AudioChannelName = 'sound' | 'speak';
+
 /** What main sends on `audio:play`. */
 export interface AudioPlayCue {
   sound: string;
@@ -138,10 +153,24 @@ export function soundForIndex(index: number): SoundDef {
   return SOUND_BANK[index % SOUND_BANK.length];
 }
 
-/** The next cue in the bank — what the card menu's cycling entry lands on. */
+/** The next cue in the bank. */
 export function nextSoundId(id: string | null | undefined): string {
   const i = SOUND_BANK.findIndex((s) => s.id === id);
   return SOUND_BANK[(i + 1) % SOUND_BANK.length].id;
+}
+
+/**
+ * What the card menu's cycling entry lands on next — `null` meaning "back to
+ * automatic".
+ *
+ * NINE steps, not eight: from automatic it walks the bank, and past the last
+ * cue it returns to automatic. A control you can only walk one way is a trap —
+ * without the ninth step, one stray click pins a card's cue for ever with no
+ * way back short of editing the workspace file.
+ */
+export function nextCardSound(current: CardSound | null | undefined): string | null {
+  if (!current?.pinned) return nextSoundId(current?.id);
+  return current.id === SOUND_BANK[SOUND_BANK.length - 1].id ? null : nextSoundId(current.id);
 }
 
 /**

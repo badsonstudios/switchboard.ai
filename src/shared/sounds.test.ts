@@ -14,6 +14,7 @@ import {
   SPOKEN_TITLE_MAX,
   announcementFor,
   isSoundId,
+  nextCardSound,
   nextSoundId,
   soundById,
   soundDurationMs,
@@ -92,6 +93,31 @@ describe('assigning a cue to a card', () => {
     // dropped — it must not strand the user outside the bank
     expect(nextSoundId('not-a-sound')).toBe(SOUND_BANK[0].id);
     expect(nextSoundId(undefined)).toBe(SOUND_BANK[0].id);
+  });
+
+  it('the menu cycle has a way BACK to automatic', () => {
+    // nine steps, not eight. Without the last one a stray click pins a cue for
+    // ever and the only way out is editing the workspace file by hand.
+    const last = SOUND_BANK[SOUND_BANK.length - 1].id;
+    expect(nextCardSound({ id: last, pinned: true })).toBeNull();
+  });
+
+  it('walks the bank from automatic, pinning as it goes', () => {
+    expect(nextCardSound({ id: 'chime', pinned: false })).toBe('bell');
+    expect(nextCardSound({ id: 'bell', pinned: true })).toBe('knock');
+  });
+
+  it('an automatic card sitting on the LAST cue still steps forward', () => {
+    // "automatic" is not a step you can be on and re-select; it is where the
+    // cycle ENDS. A card auto-assigned the last cue must move into the bank,
+    // not sit still.
+    const last = SOUND_BANK[SOUND_BANK.length - 1].id;
+    expect(nextCardSound({ id: last, pinned: false })).toBe(SOUND_BANK[0].id);
+  });
+
+  it('a card with nothing read yet starts at the first cue', () => {
+    expect(nextCardSound(null)).toBe(SOUND_BANK[0].id);
+    expect(nextCardSound(undefined)).toBe(SOUND_BANK[0].id);
   });
 
   it('an unknown name resolves to a real cue', () => {

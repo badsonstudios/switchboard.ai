@@ -24,9 +24,18 @@ import { AUDIO_PLAY_CHANNEL, AUDIO_SPEAK_CHANNEL } from '../../shared/sounds';
 import type { Logger } from '../log/logger';
 import type { AudioSink } from './sound-actions';
 
-/** The only thing this module needs to know about a window. */
+/**
+ * The only things this module needs to know about a window.
+ *
+ * `isCrashed` matters as much as `isDestroyed` and is easier to forget: a
+ * renderer that died to `render-process-gone` leaves its BrowserWindow object
+ * perfectly alive, so a destroyed-only check answers "yes, it took the cue"
+ * forever afterwards — and with cues on, the beep has already stepped aside.
+ * Same predicate `hasLiveWindow` uses in `main/index.ts`.
+ */
 export interface AudioWindow {
   isDestroyed(): boolean;
+  isCrashed?(): boolean;
 }
 
 export interface RendererAudioSinkDeps<W extends AudioWindow> {
@@ -55,7 +64,7 @@ export function createRendererAudioSink<W extends AudioWindow>(
   const target = (): W | null => {
     for (const w of deps.windows()) {
       try {
-        if (w && !w.isDestroyed()) return w;
+        if (w && !w.isDestroyed() && !w.isCrashed?.()) return w;
       } catch {
         // a window that throws when asked whether it is dead is dead
       }

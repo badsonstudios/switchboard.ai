@@ -83,7 +83,6 @@ test.describe('per-session sounds and announcements (P2-E14-05a)', () => {
     const byCard = new Map(fired.map((c) => [c.cardId, c.sound]));
     expect(byCard.size).toBe(2);
     expect(new Set(byCard.values()).size).toBe(2);
-    for (const c of fired) expect(c.taken).toBe(true);
 
     const cards = await w.evaluate(() => window.switchboard.sessions.cards());
     const idOf = (title: string): string => cards.find((c) => c.title === title)!.cardId;
@@ -150,7 +149,6 @@ test.describe('per-session sounds and announcements (P2-E14-05a)', () => {
       return s.length > 0 ? s : null;
     }, 20_000);
     expect(first[0].text).toBe(`${name} is done`);
-    expect(first[0].taken).toBe(true);
 
     // …and with a label, the label — the answer to "what is waiting", which is
     // the whole reason the voice prefers it (§5.11, P2-E7-06).

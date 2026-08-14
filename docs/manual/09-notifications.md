@@ -149,6 +149,10 @@ clicking until you hear one you like. Once you've picked one by hand it's
 other sessions. (A sound the app assigned automatically *can* shift if you close
 a session ahead of it. Pinning is the fix.)
 
+Keep clicking past the last sound and it comes back round to **Automatic** —
+that's how you undo a choice. While a session is on automatic the entry names
+the sound it will actually make, like *"Sound: Automatic (Knock)"*.
+
 Your choice is remembered and comes back with the session when you reopen the
 app.
 

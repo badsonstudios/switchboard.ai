@@ -23,8 +23,8 @@ import type {
   PushSendResult,
   PushWriteResult,
 } from '../shared/push';
-import type { AudioPlayCue, AudioSpeakCue, CardSound } from '../shared/sounds';
-import { AUDIO_PLAY_CHANNEL, AUDIO_SPEAK_CHANNEL } from '../shared/sounds';
+import type { AudioChannelName, AudioPlayCue, AudioSpeakCue, CardSound } from '../shared/sounds';
+import { AUDIO_FAILED_CHANNEL, AUDIO_PLAY_CHANNEL, AUDIO_SPEAK_CHANNEL } from '../shared/sounds';
 
 /**
  * The notification prefs, as both directions of `notifications:*` see them.
@@ -489,6 +489,9 @@ const api = {
     /** pin a cue, or `null` to hand the card back to auto; resolves to the truth */
     set: (cardId: string, sound: string | null): Promise<CardSound | null> =>
       ipcRenderer.invoke('sounds:set', cardId, sound),
+    /** "I took that and could not play it" — main answers with a plain beep */
+    failed: (channel: AudioChannelName): Promise<boolean> =>
+      ipcRenderer.invoke(AUDIO_FAILED_CHANNEL, channel),
     onPlay: (cb: (c: AudioPlayCue) => void): (() => void) => {
       const h = (_e: unknown, c: AudioPlayCue): void => cb(c);
       ipcRenderer.on(AUDIO_PLAY_CHANNEL, h);

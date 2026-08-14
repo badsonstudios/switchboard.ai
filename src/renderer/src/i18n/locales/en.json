@@ -230,11 +230,13 @@
     "menuNotifyWhenDone": "Notify when done",
     "menuNotifyWhenDoneHint": "Pop a desktop notification when this session finishes a turn — only while switchboard isn't the window you're looking at. Off for every session until you ask.",
     "menuSound": "Sound: {now} — switch to {next}",
-    "menuSoundHint": "The sound this session makes when it wants you. Click to hear the next one and keep it. Sessions get different sounds automatically; this pins one.",
+    "menuSoundHint": "The sound this session makes when it wants you. Click to hear the next one and keep it. Sessions get different sounds automatically; this pins one — keep clicking past the last to go back to automatic.",
     "checkedIcon": "☑",
     "uncheckedIcon": "☐"
   },
   "sounds": {
+    "auto": "Automatic",
+    "autoNow": "Automatic ({name})",
     "chime": "Chime",
     "bell": "Bell",
     "knock": "Knock",

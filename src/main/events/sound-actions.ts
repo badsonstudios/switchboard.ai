@@ -23,8 +23,12 @@
 //      `notifier.ts` steps aside, so a silent failure here would mean an
 //      attention event made no sound AT ALL. Degrading to the plain beep says
 //      "something happened" even when it cannot say which session.
+//   4. …and the same beep runs when the window took the cue and then could not
+//      play it (`unplayable`, driven by the renderer's `audio:failed`). Sending
+//      to a window is fire-and-forget, so without that report a machine with no
+//      audio device would be silent while every log line said "taken".
 import type { Logger } from '../log/logger';
-import { announcementFor } from '../../shared/sounds';
+import { AudioChannelName, announcementFor } from '../../shared/sounds';
 import type { RuleActionContext, RuleActionHandler } from './rules-engine';
 
 /** Somewhere that can make a noise. The app's is a renderer window; a test's
@@ -47,13 +51,35 @@ export interface SoundActionsDeps {
   log?: Logger;
 }
 
-type AudioChannel = 'sound' | 'speak';
+type AudioChannel = AudioChannelName;
 
 export class SoundActions {
   /** channel -> was the last attempt taken? Only CHANGES are worth a warn. */
   private lastOk = new Map<AudioChannel, boolean>();
+  /** channels the window has already told us it cannot play */
+  private readonly rendererCannotPlay = new Set<AudioChannel>();
 
   constructor(private readonly deps: SoundActionsDeps) {}
+
+  /**
+   * The window TOOK the cue and then could not play it (`audio:failed`).
+   *
+   * This is the other half of fail-open, and the half a fire-and-forget send
+   * cannot see: no audio device, an AudioContext the platform refused, a voice
+   * the machine does not have. `sink.play` answered `true` — it really did hand
+   * the cue over — so nothing above this line knows the user heard nothing.
+   *
+   * The BEEP runs every time, because that is the half a person experiences and
+   * one missed sound per event is exactly the thing being repaired. The LOG
+   * line does not: "this machine has no audio" does not come and go inside a
+   * run, so it is worth saying once per channel and not once per event.
+   */
+  unplayable(channel: AudioChannel): void {
+    if (channel === 'sound') this.safe(() => this.deps.fallback?.(), undefined);
+    if (this.rendererCannotPlay.has(channel)) return;
+    this.rendererCannotPlay.add(channel);
+    this.deps.log?.warn('a window took an audio notification and could not play it', { channel });
+  }
 
   /** The `sound` action, ready for `registry.register`. */
   get soundHandler(): RuleActionHandler {

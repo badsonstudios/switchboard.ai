@@ -85,3 +85,44 @@ describe('Notifier -> rules engine', () => {
     expect(handled).toHaveLength(1);
   });
 });
+
+// One event, one noise (P2-E14-05a). With per-session cues on, the `sound` rule
+// action fires on the same four events at every visibility — so if the beep
+// below did not step aside, every attention event would make TWO sounds. This
+// is the whole contract of a one-line guard, and it is invisible in every other
+// test in the suite.
+describe('the beep steps aside for per-session cues', () => {
+  function notifier(prefs: NotificationPrefs) {
+    const handled: FeedEvent[] = [];
+    const n = new Notifier({
+      getWindow: () => null,
+      getPrefs: () => prefs,
+      rules: { handle: (e) => void handled.push(e) },
+    });
+    return { n, handled };
+  }
+
+  it('beeps while cues are OFF — the shipped behaviour, unchanged', () => {
+    beeps.count = 0;
+    const { n } = notifier({ enabled: true });
+    n.handle(ev('done'));
+    expect(beeps.count).toBe(1);
+  });
+
+  it('does NOT beep while cues are on', () => {
+    beeps.count = 0;
+    const { n, handled } = notifier({ enabled: true, sounds: true });
+    n.handle(ev('done'));
+    expect(beeps.count).toBe(0);
+    // …and the rules still run: the cue itself is one of them, so standing the
+    // beep down without them would be silence rather than a better sound
+    expect(handled).toHaveLength(1);
+  });
+
+  it('an explicit false is the same as off', () => {
+    beeps.count = 0;
+    const { n } = notifier({ enabled: true, sounds: false });
+    n.handle(ev('crashed'));
+    expect(beeps.count).toBe(1);
+  });
+});

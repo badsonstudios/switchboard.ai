@@ -208,6 +208,8 @@ export function setSharedAnnouncer(a: Announcer | null): void {
 interface SoundBridge {
   onPlay?: (cb: (c: { sound: string }) => void) => () => void;
   onSpeak?: (cb: (c: { text: string }) => void) => () => void;
+  /** tell main we could not play it, so it can beep instead */
+  failed?: (channel: 'sound' | 'speak') => Promise<unknown>;
 }
 
 /**
@@ -217,9 +219,22 @@ interface SoundBridge {
  */
 export function installAnnouncer(bridge: SoundBridge | undefined, announcer: Announcer): () => void {
   const offs: Array<() => void> = [];
+  // Report a cue we could not play. Main sent it fire-and-forget and has
+  // already stood its own beep down, so if this answer never goes back the
+  // event is silent — see `AUDIO_FAILED_CHANNEL`. Best-effort in both
+  // directions: a bridge without `failed` (an older preload) just means the
+  // old behaviour, never a throw out of an event handler.
+  const report = (channel: 'sound' | 'speak', played: boolean): void => {
+    if (played) return;
+    try {
+      void bridge?.failed?.(channel)?.catch(() => {});
+    } catch {
+      /* the report is a courtesy; failing to send it must cost nothing */
+    }
+  };
   try {
-    if (bridge?.onPlay) offs.push(bridge.onPlay((c) => void announcer.play(c?.sound)));
-    if (bridge?.onSpeak) offs.push(bridge.onSpeak((c) => void announcer.say(c?.text)));
+    if (bridge?.onPlay) offs.push(bridge.onPlay((c) => report('sound', announcer.play(c?.sound))));
+    if (bridge?.onSpeak) offs.push(bridge.onSpeak((c) => report('speak', announcer.say(c?.text))));
   } catch {
     /* a bridge that throws on subscribe leaves the app silent, not broken */
   }
