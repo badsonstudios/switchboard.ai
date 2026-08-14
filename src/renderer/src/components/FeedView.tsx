@@ -322,6 +322,35 @@ export function FeedView(props: {
   const markGesture = React.useCallback(() => {
     lastGesture.current = Date.now();
   }, []);
+  /**
+   * The way back (#442).
+   *
+   * `pinned` is a ref, so React cannot see it and nothing on screen ever said
+   * whether the view was following the conversation or had been left behind.
+   * MEASURED at the CI runner's geometry (1010x657 window, 288px feed, a
+   * 2,313px conversation): entering the #174 keyboard walk unpins the tail —
+   * `onFeedKeyDown` marks a gesture and the focus scroll is then read as the
+   * user's own, which is the rule working as designed — and after that the
+   * ONLY ways back are a scroll gesture that lands within 40px of the bottom
+   * (mouse wheel, or End/PageDown with focus on the region itself). Inside the
+   * walk there is no key that returns to the tail at all: `End` moves to the
+   * last EXPANDER, which in a conversation whose tail is prose is nowhere near
+   * the last block (measured: scrollTop stayed 0 of 2,201).
+   *
+   * None of that is wrong — unpinning on a jump is deliberate, and `jumpTo`
+   * does it explicitly — but it left a state with no visible exit. This mirror
+   * of the ref is what lets one appear.
+   */
+  const [offTail, setOffTail] = React.useState(false);
+  const syncOffTail = React.useCallback((): void => {
+    const el = scroller.current;
+    if (!el) return;
+    // Only when there is somewhere to go back TO. A conversation that fits its
+    // pane IS at its tail, so a chip there would be a control that does
+    // nothing — and 40px is the same slack the pin rule itself uses, so the
+    // two can never disagree about whether the feed overflows.
+    setOffTail(!pinned.current && el.scrollHeight > el.clientHeight + 40);
+  }, []);
   const pin = React.useCallback((): void => {
     const el = scroller.current;
     if (!el) return;
@@ -329,6 +358,25 @@ export function FeedView(props: {
     el.scrollTop = el.scrollHeight;
     requestAnimationFrame(() => (autoPin.current = false));
   }, []);
+  /**
+   * What the chip does: take the wheel back. Deliberately NOT `markGesture()` —
+   * a gesture window opened here would let the next layout scroll re-derive the
+   * pin from raw distance, which is the very trap that strands the view.
+   */
+  const jumpToLatest = React.useCallback((): void => {
+    pinned.current = true;
+    owesRestore.current = false;
+    lastTop.current = scroller.current?.scrollHeight ?? 0;
+    pin();
+    setOffTail(false);
+    // The control REMOVES ITSELF on success, so something has to catch the
+    // focus it was holding — otherwise a keyboard user lands on `<body>` and
+    // their next Tab starts from the top of the window (§5.32). The
+    // conversation is where they came from and where the news is.
+    // `preventScroll`, because focusing the scroller must not undo the scroll
+    // this function just performed.
+    scroller.current?.focus({ preventScroll: true });
+  }, [pin]);
   /** put the scroller where THIS session belongs: glued to the tail if that's
    *  where the user was, otherwise back at the offset they were reading. */
   const restore = React.useCallback((): void => {
@@ -395,11 +443,15 @@ export function FeedView(props: {
       else if (lastTop.current > 0 && s.scrollTop === 0 && s.scrollHeight > s.clientHeight) {
         restore();
       }
+      // A conversation that GROWS past its pane while the reader is parked is
+      // exactly when the way back has to appear, and no scroll event fires for
+      // it (#442).
+      syncOffTail();
     });
     ro.observe(el);
     ro.observe(inner);
     return () => ro.disconnect();
-  }, [pin, restore]);
+  }, [pin, restore, syncOffTail]);
 
   // Keyboard path into the conversation (#174, §5.32 "keyboard-complete").
   //
@@ -483,8 +535,11 @@ export function FeedView(props: {
     // reads as being inside a conversation
     root.scrollTop += el.getBoundingClientRect().top - root.getBoundingClientRect().top - 24;
     lastTop.current = root.scrollTop;
+    // `jumpTo` unpinned on purpose; say so on screen in the same commit rather
+    // than waiting for the scroll event this write will fire (#442)
+    syncOffTail();
     requestAnimationFrame(() => (autoPin.current = false));
-  }, [jumpedTo]);
+  }, [jumpedTo, syncOffTail]);
   const clearReveal = React.useCallback(() => setReveal(NO_REVEAL), []);
   React.useEffect(() => {
     if (!props.cardId) return; // a card with no durable id cannot be addressed
@@ -600,6 +655,9 @@ export function FeedView(props: {
             // up while a pin is in flight is never yanked back.
             const away = el.scrollHeight - el.scrollTop - el.clientHeight;
             if (pinned.current && away >= 40 && Date.now() - lastGesture.current > GESTURE_MS) pin();
+            // our own scrolls do not change the pin, but they are the frame in
+            // which a `jumpTo` unpin becomes visible (#442)
+            syncOffTail();
             return;
           }
           // Nobody touched anything: this scroll came from LAYOUT (the approval
@@ -608,6 +666,7 @@ export function FeedView(props: {
           // put them back on it rather than leaving output below the fold.
           if (Date.now() - lastGesture.current > GESTURE_MS) {
             if (pinned.current) pin();
+            syncOffTail();
             return;
           }
           // a real gesture, and a continuing one keeps the window alive so a
@@ -616,6 +675,7 @@ export function FeedView(props: {
           pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
           lastTop.current = el.scrollTop;
           owesRestore.current = false; // the user has taken the wheel
+          syncOffTail();
         }}
         style={{ flex: 1, minBlockSize: 0, overflowY: 'auto', fontSize: 12, lineHeight: 1.5, paddingBlock: 6 }}
       >
@@ -660,6 +720,43 @@ export function FeedView(props: {
           <div ref={bottom} />
         </div>
       </div>
+      {/* The way back to the tail (#442), and it is here for two reasons: it is
+          where the eye already is — the bottom of the conversation, right above
+          the composer — and it is the ONE place that makes the keyboard path a
+          single step. The conversation is one tab stop and the composer is the
+          next; a control between them is reached with one Tab from the feed and
+          one Shift+Tab from the composer. In the header strip it would have sat
+          behind three verbosity chips (§5.32).
+          Only while there is somewhere to go: unpinned AND overflowing. */}
+      {offTail && (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            paddingBlock: 3,
+            borderBlockStart: '1px solid var(--border)',
+            background: 'var(--panel2)',
+          }}
+        >
+          <button
+            data-feed-jump-latest=""
+            onClick={jumpToLatest}
+            title={t('feedView.jumpLatestHint')}
+            style={{
+              background: 'var(--chip)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-chip)',
+              color: 'var(--text)',
+              fontFamily: 'var(--font-ui)',
+              fontSize: 9.5,
+              padding: '1px 8px',
+              cursor: 'pointer',
+            }}
+          >
+            {t('feedView.jumpLatest')}
+          </button>
+        </div>
+      )}
       {/* the working banner — LOUD by request (Dan, twice): full-width tinted
           bar, bold LEFT-aligned label, staggered pulse dots to its right
           (Dan round 4: text left, dots right of the text, no ellipsis) */}

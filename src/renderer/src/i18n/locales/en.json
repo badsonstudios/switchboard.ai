@@ -492,6 +492,8 @@
     "regionLabel": "Conversation",
     "regionLabelNamed": "Conversation — {title}",
     "keyHint": "↑ ↓ move · Enter expands · Esc leaves",
+    "jumpLatest": "↓ Jump to latest",
+    "jumpLatestHint": "Go back to the newest message and follow the conversation again",
     "slashSource": {
       "builtin": "CLI",
       "project-command": "project",

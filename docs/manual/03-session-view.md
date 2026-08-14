@@ -28,6 +28,18 @@ This is the conversation, rendered to be read rather than scrolled past:
 The view stays pinned to the newest message, including when you switch back to
 a session you'd left. Scroll up freely; it won't yank you back.
 
+**When you've scrolled away, a `↓ Jump to latest` button appears** just above
+the prompt box. Scrolling up — with the wheel, or by walking the conversation
+with the arrow keys — deliberately unsticks the view so that new output can't
+drag you off what you're reading, and that button is how you stick it back on:
+one click and the view is at the newest message and following again. It only
+shows while there's somewhere to go, so a conversation short enough to fit never
+has one. Scrolling all the way back down by hand does exactly the same thing.
+
+From the keyboard it's one `Tab` from the conversation (press `Esc` first if
+you're walking the boxes) and one `Shift+Tab` from the prompt box — see
+[Reading the conversation with the keyboard](06-keyboard.md#reading-the-conversation-with-the-keyboard).
+
 **In [Direct mode](12-direct-mode.md), replies stream in a word at a time**,
 with a small block cursor on the end while Claude is still writing. In Terminal
 mode the view waits for each finished message instead, so replies arrive in
