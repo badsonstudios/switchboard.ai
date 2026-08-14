@@ -70,6 +70,8 @@ session card does.
 - Opening a file while a *session* is popped out — or while a *document* window
   is the one you last clicked — still puts the new document in the main window's
   document area. Files do not land in windows by accident.
+- And the other way round: starting a **new session** never lands it on top of
+  the document you are reading. It opens beside it.
 
 ## Where a document came from
 

@@ -681,13 +681,14 @@ export async function sessionStatuses(a: LaunchedApp): Promise<Map<string, strin
  *
  * dockview's pop-out is `window.open` -> a second BrowserWindow, which is
  * reliable on Windows and macOS and flaky under the headless xvfb display Linux
- * CI runs: second-window creation intermittently never completes (#112 and the
- * E8 specs). Coverage is preserved on the two platforms where multi-window
- * works — including Windows, Dan's primary target.
+ * CI runs: second-window creation intermittently never completes (the E8 specs
+ * carried this skip from the day they were written). Coverage is preserved on
+ * the two platforms where multi-window works — including Windows, Dan's primary
+ * target.
  *
- * Lived as three copy-pasted local helpers (`session`, `urgency`, `diff`) with
- * three different skip messages, so a CI report could not be searched for one
- * of them. One place, one wording; each spec imports it.
+ * Lived as FOUR copy-pasted local helpers (`session`, `urgency`, `diff`,
+ * `document-peek`) with three different skip messages, so a CI report could not
+ * be searched for one of them. One place, one wording; each spec imports it.
  */
 export function skipPopoutOnLinux(): void {
   test.skip(

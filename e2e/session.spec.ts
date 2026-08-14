@@ -493,9 +493,10 @@ test.describe('a session card', () => {
   // The two tests below are the E8-04 rule's second and third holes, both found
   // while fixing the viewer's mirror of it (#434/#461, #411/#460). They assert
   // GEOMETRY, and that is the whole lesson: popping a card out leaves its group
-  // behind in the grid as a hidden dock-back shell, a panel added to that shell
-  // lays out at ~1px, and `toBeVisible()` passes on a 1px box. Width is what
-  // actually goes wrong, so width is what is asserted.
+  // behind in the grid as a hidden dock-back shell, and a panel added to that
+  // shell is on screen at a width nobody could use — measured here at 22.67px
+  // for a card, 1.33px for a viewer — while `toBeVisible()` passes on both.
+  // Width is what actually goes wrong, so width is what is asserted.
 
   /** the card whose header says `title`, in this window */
   const cardFor = (w: Page, title: string): Locator =>
@@ -505,13 +506,38 @@ test.describe('a session card', () => {
    * On screen at a size a human could use it — MEASURED, not `toBeVisible`.
    *
    * The twin of `expectReadable` in `document-peek.spec.ts`, which caught the
-   * same defect from the viewer's side at a measured 1.33px.
+   * same defect from the viewer's side. Polled, because reviving a hidden group
+   * is a dockview re-layout: the box is allowed to arrive a frame after the
+   * element does.
    */
   async function expectWideEnough(target: Locator, what: string): Promise<void> {
     await expect(target).toBeVisible({ timeout: 20_000 });
-    const box = await target.boundingBox();
-    expect(box, `${what} has no box at all`).not.toBeNull();
-    expect(box!.width, `${what} landed in a collapsed group`).toBeGreaterThan(100);
+    await expect
+      .poll(async () => (await target.boundingBox())?.width ?? 0, {
+        timeout: 10_000,
+        message: `${what} landed in a collapsed group`,
+      })
+      .toBeGreaterThan(100);
+  }
+
+  /**
+   * Open `file` in a document viewer through §5.30's `Open file…` command.
+   *
+   * The palette rather than a Changes tab's ↗, because this file's fixtures are
+   * plain folders: `Open file…` needs no git repo, and stubbing the native
+   * dialog is the same trick the `+ session` tests already use for the folder
+   * picker (main widens the read scope with whatever the dialog returns, so the
+   * stub grants the file too).
+   */
+  async function openFileInViewer(launched: LaunchedApp, file: string): Promise<void> {
+    await launched.app.evaluate(({ dialog }, f) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [f] });
+    }, file);
+    const w = launched.window;
+    await w.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+Shift+P`);
+    await w.getByPlaceholder('Type a command or a session name…').fill('Open file');
+    await w.keyboard.press('Enter');
+    await expect(w.getByTestId('document-viewer')).toBeVisible({ timeout: 20_000 });
   }
 
   /** Hand every pop-out window back before teardown (popout e2e convention). */
@@ -546,8 +572,8 @@ test.describe('a session card', () => {
     await window.getByRole('button', { name: '+ session' }).click();
 
     // THE ASSERTION: the card is in the main window AND it has a width. With the
-    // husk-blind lookup it is in the main window at ~1px, and every rail-level
-    // assertion in this file passes anyway.
+    // husk-blind lookup it is in the main window at 22.67px (measured), and
+    // every rail-level assertion in this file passes anyway.
     await expectWideEnough(cardFor(window, path.basename(folder2)), 'the new session card');
     await closePopouts(a);
   });
@@ -563,14 +589,8 @@ test.describe('a session card', () => {
     // A viewer, opened the palette way (`Open file…`), so the document area is
     // real and on screen. §5.30 says a viewer never displaces a session; this is
     // the obverse — a session must not displace what you are reading.
-    await app.evaluate(({ dialog }, f) => {
-      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [f] });
-    }, path.join(folder, 'README.md'));
-    await window.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+Shift+P`);
-    await window.getByPlaceholder('Type a command or a session name…').fill('Open file');
-    await window.keyboard.press('Enter');
     const viewer = window.getByTestId('document-viewer');
-    await expect(viewer).toBeVisible({ timeout: 20_000 });
+    await openFileInViewer(a, path.join(folder, 'README.md'));
 
     // ...and now pop the session out, which leaves the document area as the only
     // VISIBLE grid group in the window. #461's picker prefers a visible group,
@@ -601,6 +621,64 @@ test.describe('a session card', () => {
     await expect(docStrip).toHaveCount(1);
     await expect(docStrip.locator('.dv-tab', { hasText: path.basename(folder2) })).toHaveCount(0);
     await closePopouts(a);
+  });
+
+  test('a new session never takes over a popped-out VIEWER\'s way home (#462)', async () => {
+    skipPopoutOnLinux();
+    // The rule above, read through the husk — and the reason the document-area
+    // test is not enough. A dock-back shell is EMPTY, so nothing about it says
+    // whether the panel that left was a card or a viewer; revive a viewer's and
+    // the session takes the document area by the back door, with dockview
+    // handing the viewer back into that group — beside the card — the moment its
+    // window closes. No session is seeded at all, which is what leaves the
+    // viewer's shell as the only grid group there is.
+    const folder = tempProjectFolder();
+    const folder2 = tempProjectFolder();
+    a = await launchApp({});
+    const { app, window } = a;
+    // With nothing seeded there is no card to wait for, and the palette's
+    // Ctrl+Shift+P goes nowhere until the shell has rendered — wait on the one
+    // control that is there whether or not a session is.
+    await expect(window.getByRole('button', { name: '+ session' })).toBeVisible({
+      timeout: 25_000,
+    });
+    await openFileInViewer(a, path.join(folder, 'README.md'));
+
+    await window.getByTitle('Open this document in its own window').click();
+    await expect
+      .poll(() => app.windows().filter((p) => p.url().includes('popout.html')).length, {
+        timeout: 15_000,
+      })
+      .toBe(1);
+    const popout = app.windows().find((p) => p.url().includes('popout.html'))!;
+    await popout.waitForLoadState('domcontentloaded');
+    await expect(window.getByTestId('document-viewer')).toHaveCount(0);
+
+    await app.evaluate(({ dialog }, f) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [f] });
+    }, folder2);
+    await window.getByRole('button', { name: '+ session' }).click();
+    await expectWideEnough(cardFor(window, path.basename(folder2)), 'the new session card');
+
+    // Now send the document home. It must come back to a place of its own — if
+    // the card took its shell, dockview docks it back as a tab BESIDE the card,
+    // which is the §5.30 invariant the whole document area exists to keep.
+    await popout.evaluate(() => window.close());
+    await expect(window.getByTestId('document-viewer')).toBeVisible({ timeout: 15_000 });
+    const docStrip = window
+      .locator('.dv-tabs-container')
+      .filter({ has: window.locator('.dv-tab', { hasText: 'README.md' }) });
+    await expect(docStrip).toHaveCount(1);
+    await expect(docStrip.locator('.dv-tab', { hasText: path.basename(folder2) })).toHaveCount(0);
+    // The card is still its own surface, in its own group, on screen.
+    //
+    // No width assertion HERE, deliberately: a group returning from a pop-out
+    // reclaims the share of the grid it had when it left — which was all of it,
+    // since it was the only group — so the card is squeezed to ~98px (measured)
+    // until the divider is dragged. That is dockview's sizing policy for a
+    // dock-back, the same it applies to two cards, and not what this rule is
+    // about. The width that matters was asserted above, when the card opened.
+    await expect(cardFor(window, path.basename(folder2))).toBeVisible();
   });
 
   test('strip is Session·Changes·History·Terminal, Terminal LAST and always present (2026-07-22)', async () => {

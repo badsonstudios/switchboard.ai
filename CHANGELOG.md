@@ -245,6 +245,14 @@ on the floor, and say so in your PR.
   put the diff inside that window as an extra tab — behind the session you were
   watching, and nowhere near the main window you asked from. It now always
   opens in the main window, the same as a new session does.
+- **A new session no longer opens into a sliver you cannot see, or on top of the
+  file you are reading.** Popping a session into its own window leaves a gap in
+  the main window for it to dock back into — and starting a session while every
+  card was popped out put the new one into that gap, a couple of dozen pixels
+  wide, with only its row in the sessions list to say it existed. It now opens
+  at full size in that space instead. It also stays out of the document
+  area: with a file open and the session popped out, the new card used to arrive
+  as a tab over the document instead of beside it.
 
 ### Internal
 

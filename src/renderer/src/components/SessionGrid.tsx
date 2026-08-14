@@ -1843,9 +1843,10 @@ function documentHomeGroup(api: DockviewApi): DockviewGroupPanel {
  *
  * `eligible` narrows WHICH grid groups will do, and is the only thing that
  * differs between the callers: a Changes tab takes any of them (it is a
- * session's own surface), a session card refuses the document area (#462). It
- * filters the husk fallback too, on purpose — a card must not be dropped into
- * the document area by the last line of this function either.
+ * session's own surface), a session card refuses the document area and — while
+ * a viewer is out in its own window — every empty shell with it (#462). It
+ * filters the husk fallback too, on purpose: that is the ONLY line the second
+ * of those rules can act on, since a shell has no panels to recognise it by.
  */
 function gridRefGroup(
   api: DockviewApi,
@@ -1894,9 +1895,24 @@ function gridRefGroup(
  *    open as a tab over the viewer — because with every card popped out, the
  *    document area is the only VISIBLE grid group left, and #434's picker would
  *    hand it straight over.
+ *
+ * ...and the two rules meet in the husk, which is why the second one cannot be
+ * `isDocumentArea` alone: a shell is EMPTY by construction, so nothing about it
+ * says whether the panel that left was a card or a viewer. Revive a VIEWER's
+ * shell and the card takes the document area by the back door — and dockview
+ * hands the viewer back into that same group when its window closes, i.e. as a
+ * tab beside the card. dockview does not expose which group a popout will
+ * return to, so the honest question is the coarse one: while a viewer is out in
+ * its own window, refuse every shell and pay for a fresh group instead.
  */
 function sessionCardHome(api: DockviewApi): DockviewApi['groups'][number] {
-  return gridRefGroup(api, (g) => !isDocumentArea(g));
+  const viewerIsOut = api.panels.some(
+    (p) => p.id.startsWith('doc-') && p.group.api.location.type === 'popout'
+  );
+  return gridRefGroup(
+    api,
+    (g) => !isDocumentArea(g) && !(viewerIsOut && g.panels.length === 0)
+  );
 }
 
 /**
@@ -2774,7 +2790,12 @@ async function revealNow(api: DockviewApi, cardId: string, focus = true): Promis
   // its group-mate B out, and the group A calls home survives as B's dock-back
   // husk. Revive it rather than landing A at home and 0px wide — exactly what
   // `gridRefGroup` does with the same shell, for the same reason.
-  if (refGroup.api.location.type === 'grid' && !refGroup.api.isVisible) {
+  //
+  // NOT when the slot is a popout: the card is added here only to be torn out
+  // again below, and dockview's PANEL popout does not re-hide the group it left
+  // (`_doAddPopoutGroup` hides only in the whole-group branch), so revived-then-
+  // abandoned would leave an empty pane on screen where a hidden shell was.
+  if (!place.popout && refGroup.api.location.type === 'grid' && !refGroup.api.isVisible) {
     refGroup.api.setVisible(true);
   }
   const panel = api.addPanel({
@@ -2952,29 +2973,33 @@ export function SessionGrid(props: {
     if (!api) return;
     const title = folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? folder;
     const cardId = crypto.randomUUID();
-    // A new session must land in the MAIN window, visibly, and not on top of the
-    // document you are reading — `sessionCardHome` is all three rules (E8-04,
-    // #462). It used to be a location-only `find`, which is blind to the hidden
-    // dock-back husk a popout leaves in the grid.
     // A persistent-group member clusters with its siblings (E12-02): reuse the
     // dockview group already holding another member, when one is in the grid.
-    let refGroup = sessionCardHome(api);
+    let sibling: DockviewApi['groups'][number] | undefined;
     if (groupId) {
       const cards = await window.switchboard.sessions.cards();
       const siblings = new Set(
         cards.filter((c) => c.groupId === groupId).map((c) => `session-${c.cardId}`)
       );
-      // `isVisible` for the husk reason above — clustering is a reason to land
+      // `isVisible` for the husk reason below — clustering is a reason to land
       // BESIDE a sibling, never a reason to land somewhere invisible. The
       // document-area rule is deliberately NOT applied here: a group holding a
       // group-mate is a session's group whatever else was dragged into it, and
       // an explicit group membership is the stronger of the two user intents.
-      const sibling = api.panels.find(
-        (p) =>
-          siblings.has(p.id) && p.group.api.location.type === 'grid' && p.group.api.isVisible
-      );
-      if (sibling) refGroup = sibling.group;
+      sibling = api.panels.find(
+        (p) => siblings.has(p.id) && p.group.api.location.type === 'grid' && p.group.api.isVisible
+      )?.group;
     }
+    // A new session must land in the MAIN window, visibly, and not on top of the
+    // document you are reading — `sessionCardHome` is all three rules (E8-04,
+    // #462). It used to be a location-only `find`, which is blind to the hidden
+    // dock-back husk a popout leaves in the grid.
+    //
+    // Asked LAST, and only when the sibling lookup came up empty, because it is
+    // not a pure question: it can un-hide a group or mint one. Asked first (as
+    // the `find(...) ?? addGroup()` it replaces was) a sibling win would leave
+    // that brand new group behind in the grid, empty, for ever.
+    const refGroup = sibling ?? sessionCardHome(api);
     api.addPanel({
       id: `session-${cardId}`,
       component: 'sessionCard',
