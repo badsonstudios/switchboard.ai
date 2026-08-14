@@ -36,8 +36,24 @@
 > **GITHUB ACTIONS STALL RESOLVED ITSELF** — dead window was 00:34→
 > 00:56 UTC only (transient outage/queue, NOT billing; Dan's billing
 > check unnecessary). Everything since runs normally; PR #489 4/4
-> GREEN. PR #437's pushes fell in the dead window → re-kicked via
-> close/reopen 2026-08-14 ~02:00 UTC, CI now due on it.
+> GREEN. **PR #437's checklessness was NEVER the stall: the PR is
+> `mergeable: CONFLICTING`** (branch based on pre-train 5e917b5; the
+> trains' manual renumbering + CHANGELOG growth conflict) **and GitHub
+> silently creates no pull_request runs for conflicted PRs.** Three
+> kicks (close/reopen ×2, empty commits ba6bfc1 + f26aa95) were
+> chasing the wrong cause. **NEXT FREED WORKTREE → resume the #437
+> worker to merge origin/main, resolve (its own diff, mostly docs/
+> CHANGELOG/ipc.ts), re-gate, push — then CI triggers naturally.**
+> #437 is NOT reviewable by Dan until then.
+>
+> **Run-book lesson (2026-08-14, #458):** the ground-truth sweep read
+> handoff-written + PR-open + tree-clean as "worker finished,
+> notification lost" — but the worker was ALIVE, lingering on CI
+> watch; its worktree got repointed under it (verified lossless, refs
+> checked). The sweep proves work is SAFE, not that the worker ENDED
+> — only the task notification proves that. Don't reuse a worktree
+> until the notification arrives OR the sweep additionally shows the
+> agent unresponsive to a SendMessage ping.
 >
 > **#479 dispatched → sb-wt-2 · `feature/479-e2e-secondary-monitor`**
 > (worker told: CI stalled, local gate is the gate; second monitor
