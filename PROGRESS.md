@@ -47,6 +47,23 @@
 > (worker told: CI stalled, local gate is the gate; second monitor
 > present for the with-var verification).
 >
+> **#475 ✅ DONE → PR #489 READY, Dan's queue #3.** Contract read from
+> the extension bundle + verified with the ONE budgeted real-CLI turn
+> (64×64 PNG → model answered "Blue"): inline base64 image blocks,
+> jpeg/png/gif/webp, images-first-text-last; declared divergence 5 MB/
+> 8-per-turn IPC cap (reference has none — reasoning in src/shared/
+> prompt-images.ts); Direct-only, PTY submit refused honestly; canvas
+> preview keeps CSP intact; #406 height clamp coexists. Gates local:
+> 4201 unit / 262+3 e2e ×2. Discoveries filed → **#490** (envelope
+> omits uuid/origin vs extension) · **#491** (feed shows no marker an
+> image rode with a prompt). Tooling fix landed in the PR: reference-
+> implementations.md §1.1 warns grep -o -E windows >~800 chars return
+> zero silently on the webview line. **#476 dispatched → sb-wt-1 ·
+> `feature/476-composer-drag-drop`** (merges #489's branch first —
+> "builds on #489" — reuses Attachment carrier + recorded document-
+> block contract; one real-CLI turn authorized ONLY if 475's record
+> leaves doubt).
+>
 > **MERGE POLICY THIS RUN: nothing merges before the #480 cut PR lands**
 > (Dan merges it, then pushes tag v0.4.0 — the tag is his; the cut ships
 > his #395 blank-resume fix). Feature CHANGELOG entries written pre-cut
