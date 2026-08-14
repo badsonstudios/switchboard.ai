@@ -52,6 +52,30 @@ export interface FeedBlock {
   sidechain: boolean;
   ts?: string;
   /**
+   * The identity the MESSAGE gave this block, when it gave it one (P2-E17,
+   * #458): `tool:<tool_use id>` or `msg:<message id>`.
+   *
+   * WHAT IT IS FOR. Session find scans the transcript FILE and then has to say
+   * which block on screen a hit belongs to. That join used to be made on
+   * kind + timestamp + tool name, which works only while both sides read the
+   * same file: a Direct session's Feed is built from the STREAM, where the only
+   * timestamp available is the moment the message reached us, so nothing lined
+   * up and §5.31's flagship gesture — click a hit, land on the block — was dead
+   * on the app's default transport.
+   *
+   * These two ids are the fields that are the SAME on both sides, and neither is
+   * ours: `tool_use.id` and `message.id` are the Anthropic API's, written into
+   * the JSONL and handed to us over stream-json inside the very same `message`
+   * object (verified against the Claude Code VS Code extension, whose own
+   * transcript→stream converter passes `message` through verbatim).
+   *
+   * OPTIONAL ON PURPOSE, and safe when absent. A user prompt carries no id, and
+   * a source that stopped sending one would take jumping back to where it was
+   * rather than send a hit anywhere wrong — `search.ts` refuses an ambiguous or
+   * disagreeing id rather than resolving it.
+   */
+  srcId?: string;
+  /**
    * Tokens are still arriving into this block (P2-E18-10, stream sources only).
    *
    * A transcript block is never streaming: the watcher only ever sees a line
@@ -81,9 +105,11 @@ export const TEXT_CAP = 20_000;
  *
  * A PARAMETER rather than a second extractor, deliberately: the caps change how
  * LONG a field is and nothing else, so every derivation produces the same
- * intents, in the same order, with the same `toolUseId`s — which is the whole of
- * what block identity rests on. A search that re-derived blocks its own way
- * could not hand E17-02 a seq the Feed agrees with.
+ * intents, in the same order, with the same `toolUseId`s and the same `srcId`s —
+ * which is the whole of what block identity rests on. A search that re-derived
+ * blocks its own way could not hand E17-02 a seq the Feed agrees with. Note
+ * `srcId` is NOT capped by any of these: it is identity, not text, and an
+ * identity-only pass that dropped it would be identity-only in name.
  */
 export interface DerivationCaps {
   /** user / assistant / thinking prose, and local-command output */
@@ -230,12 +256,21 @@ export function deriveIntents(
     return [{ t: 'block', block: { kind: 'assistant', text: local.slice(0, caps.text), ts } }];
   }
 
-  const message = entry.message as { content?: unknown; role?: string } | undefined;
+  const message = entry.message as { content?: unknown; role?: string; id?: unknown } | undefined;
   if (!message) return [];
 
   if (entry.type === 'user') return userIntents(message, ts, caps);
   if (entry.type === 'assistant' && Array.isArray(message.content)) {
-    return assistantIntents(message.content, ts, caps);
+    // The API message's own id, and the reason it is read HERE rather than by
+    // either caller: it is the one field a prose block can be identified by
+    // across the two transports, and both callers hand this function the same
+    // `message` object (see `FeedBlock.srcId`).
+    return assistantIntents(
+      message.content,
+      ts,
+      caps,
+      typeof message.id === 'string' ? message.id : undefined
+    );
   }
   return [];
 }
@@ -282,9 +317,17 @@ function userIntents(
 function assistantIntents(
   content: unknown[],
   ts: string | undefined,
-  caps: DerivationCaps
+  caps: DerivationCaps,
+  messageId?: string
 ): BlockIntent[] {
   const out: BlockIntent[] = [];
+  // Both the transcript and the stream carry ONE content item per message
+  // (measured: 0 multi-item assistant lines in the 4,697-line real transcript;
+  // `StreamFeed.claim`'s docblock records the same for stream-json), so this id
+  // is usually a block identity. When it is not — a message split into several
+  // blocks that BOTH sides then see — the id repeats on both sides and
+  // `search.ts` refuses it as ambiguous rather than picking one.
+  const srcId = messageId !== undefined ? { srcId: `msg:${messageId}` } : {};
   for (const [index, c] of (
     content as Array<{
       type?: string;
@@ -298,13 +341,13 @@ function assistantIntents(
     if (c?.type === 'text' && c.text?.trim()) {
       out.push({
         t: 'block',
-        block: { kind: 'assistant', text: c.text.slice(0, caps.text), ts },
+        block: { kind: 'assistant', text: c.text.slice(0, caps.text), ts, ...srcId },
         index,
       });
     } else if (c?.type === 'thinking' && c.thinking?.trim()) {
       out.push({
         t: 'block',
-        block: { kind: 'thinking', text: c.thinking.slice(0, caps.text), ts },
+        block: { kind: 'thinking', text: c.thinking.slice(0, caps.text), ts, ...srcId },
         index,
       });
     } else if (c?.type === 'tool_use' && typeof c.name === 'string') {
@@ -323,12 +366,18 @@ function toolIntent(
   const name = String(c.name);
   const input = c.input ?? {};
   const toolUseId = typeof c.id === 'string' ? c.id : undefined;
+  // A tool call's id in preference to its message's: it is unique across the
+  // whole conversation, so it identifies this block even when the message it
+  // belongs to produced several (see `FeedBlock.srcId`).
+  const srcId = toolUseId !== undefined ? { srcId: `tool:${toolUseId}` } : {};
   // TodoWrite renders as a checklist block, not a raw tool row (E10-06)
   if (name === 'TodoWrite' && Array.isArray(input.todos)) {
     const todos = (input.todos as Array<{ content?: unknown; status?: unknown }>)
       .slice(0, caps.todos)
       .map((td) => ({ content: String(td?.content ?? ''), status: String(td?.status ?? '') }));
-    return { t: 'block', block: { kind: 'todos', todos, ts }, index };
+    // No `toolUseId` on the intent (a checklist has no OUT section to await),
+    // but it still gets the identity: it is a block find can be asked to reach.
+    return { t: 'block', block: { kind: 'todos', todos, ts, ...srcId }, index };
   }
   const primary =
     input.file_path ??
@@ -363,5 +412,5 @@ function toolIntent(
   if (name === 'Write' && typeof input.content === 'string') {
     tool.newString = input.content.slice(0, caps.edit);
   }
-  return { t: 'block', block: { kind: 'tool', tool, ts }, index, toolUseId };
+  return { t: 'block', block: { kind: 'tool', tool, ts, ...srcId }, index, toolUseId };
 }

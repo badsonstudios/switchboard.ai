@@ -2891,21 +2891,36 @@ describe('transcripts:search resolves a scope of sessions to files', () => {
 });
 
 // A stream session's transcript is still on disk and still complete — only its
-// FEED comes from somewhere else (P2-E18-10). So find searches it, and says
-// plainly that it cannot offer a jump.
-describe('transcripts:search over a stream session (P2-E17-01)', () => {
+// FEED comes from somewhere else (P2-E18-10). So find searches it, and — since
+// #458 — offers a jump into it as well, because the two are lined up on the
+// API's own message ids rather than on a timestamp only the file has.
+//
+// This is the WIRING test: the routing that hands the engine a stream session's
+// blocks instead of the watcher's. `transcripts/search.test.ts` is where the
+// alignment itself is proved, against the real captured transcript.
+describe('transcripts:search over a stream session (P2-E17-01, #458)', () => {
   let dir: string;
   tempDirEach('sb-ipc-find-stream-', (d) => (dir = d));
 
-  it('searches the transcript, and reports that it cannot line it up', async () => {
-    const file = path.join(dir, 'stream.jsonl');
+  const answer = (id: string): Record<string, unknown> => ({
+    role: 'assistant',
+    id,
+    content: [{ type: 'text', text: 'a STREAMED answer' }],
+  });
+
+  type Answer = {
+    total: number;
+    hits: Array<{ seq?: number; earlierThanLoaded: boolean }>;
+    groups: Array<{ searched: boolean; aligned: boolean }>;
+  };
+
+  /** The file the CLI wrote, and the Feed the stream built from the same turn. */
+  function directSession(message: Record<string, unknown>, name: string): ReturnType<typeof harness> {
+    const file = path.join(dir, name);
     fs.writeFileSync(
       file,
-      JSON.stringify({
-        type: 'assistant',
-        timestamp: '2026-08-11T00:00:00.000Z',
-        message: { role: 'assistant', content: [{ type: 'text', text: 'a STREAMED answer' }] },
-      }) + '\n'
+      // The FILE stamps a time. The STREAM cannot, which is the whole gap.
+      JSON.stringify({ type: 'assistant', timestamp: '2026-08-11T00:00:00.000Z', message }) + '\n'
     );
     const streamFeed = new StreamFeed();
     const h = harness({ transcripts: { projectsRoot: () => '/root' } }, dir, {
@@ -2914,25 +2929,39 @@ describe('transcripts:search over a stream session (P2-E17-01)', () => {
       streamFeed,
       transcriptFiles: { 'live-1': file },
     });
-    streamFeed.offer('live-1', {
-      type: 'assistant',
-      message: { role: 'assistant', content: [{ type: 'text', text: 'a STREAMED answer' }] },
-      parent_tool_use_id: null,
-    });
+    streamFeed.offer('live-1', { type: 'assistant', message, parent_tool_use_id: null });
+    return h;
+  }
+
+  it('searches the transcript AND hands back a seq to scroll to', async () => {
+    const h = directSession(answer('msg_01direct'), 'stream.jsonl');
 
     const r = (await h.call('transcripts:search', {
       sessionIds: ['live-1'],
       query: { term: 'STREAMED' },
-    })) as {
-      total: number;
-      hits: Array<{ seq?: number; earlierThanLoaded: boolean }>;
-      groups: Array<{ searched: boolean; aligned: boolean }>;
-    };
+    })) as Answer;
 
     expect(r.total).toBe(1); // complete — the file is the archive either way
     expect(r.groups[0].searched).toBe(true);
-    // A stream block's `ts` is when the message reached US, not what the CLI
-    // wrote, so the two cannot be lined up and the engine says so.
+    expect(r.groups[0].aligned).toBe(true);
+    // seq 1: the first (and only) block the stream feed built for this session.
+    expect(r.hits[0].seq).toBe(1);
+    expect(r.hits[0].earlierThanLoaded).toBe(false);
+  });
+
+  it('still says plainly when a turn carries no id it can line up on', async () => {
+    // The honest fallback, unchanged: no `message.id`, no tool call, nothing
+    // both sides can be joined on. A snippet the user can read beats a scroll
+    // to a block we are guessing at.
+    const h = directSession({ role: 'assistant', content: answer('x').content }, 'anon.jsonl');
+
+    const r = (await h.call('transcripts:search', {
+      sessionIds: ['live-1'],
+      query: { term: 'STREAMED' },
+    })) as Answer;
+
+    expect(r.total).toBe(1);
+    expect(r.groups[0].searched).toBe(true);
     expect(r.groups[0].aligned).toBe(false);
     expect(r.hits[0].seq).toBeUndefined();
   });

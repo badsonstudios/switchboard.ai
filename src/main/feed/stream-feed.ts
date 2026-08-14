@@ -430,7 +430,15 @@ export class StreamFeed {
     if (type === 'text' || type === 'thinking') {
       seed = { kind: type === 'thinking' ? 'thinking' : 'assistant', text: '' };
     } else if (type === 'tool_use' && typeof cb?.name === 'string') {
-      seed = { kind: 'tool', tool: { name: cb.name, category: toolCategory(cb.name), summary: '' } };
+      seed = {
+        kind: 'tool',
+        tool: { name: cb.name, category: toolCategory(cb.name), summary: '' },
+        // `content_block_start` carries the tool_use id whole, like the name —
+        // so the row is addressable by session find (#458) from the instant it
+        // opens, not only once the `assistant` message supersedes it. The
+        // message's own derivation sets the identical value (`blocks.ts`).
+        ...(typeof cb.id === 'string' ? { srcId: `tool:${cb.id}` } : {}),
+      };
     } else {
       return undefined;
     }

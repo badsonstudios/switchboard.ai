@@ -24,7 +24,9 @@
 //    `alignToLoaded` knows to count them apart.
 //  * a hit in a block the renderer has evicted is READABLE here but not
 //    jump-to-able in place (the v1 boundary §5.31 records): it carries a snippet
-//    and `earlierThanLoaded: true`, and no `seq`.
+//    and `earlierThanLoaded: true`, and no `seq`. This is the one remaining
+//    reason a hit cannot be jumped to; the OTHER one — "this session's Feed came
+//    from the stream, so nothing lines up" — is closed by `alignBySrcId` (#458).
 //  * a `tool_result` whose `tool_use` has fallen out of the 200-entry
 //    `AWAITING_CAP` map is not searched. It is not attached in the Feed either,
 //    so a hit there would advertise output the user cannot reach.
@@ -356,6 +358,8 @@ export interface BlockAnchor {
   kind: FeedBlock['kind'];
   ts?: string;
   toolName?: string;
+  /** the message's own id for this block, when it had one — `FeedBlock.srcId` */
+  srcId?: string;
 }
 
 /** A hit, plus the ordinal that resolves its `seq` once the file is aligned. */
@@ -390,13 +394,25 @@ function pushTrail(state: ScanState, a: BlockAnchor): void {
  * scan just derived. Anchoring on the newest of them and verifying a few more is
  * what turns that from an assumption into a check — and the check matters,
  * because the two readers are independent: the watcher may not have drained the
- * lines we just read, a `/clear` may have reset its buffer mid-scan, or the
- * session may be one whose Feed comes from a stream rather than this file.
+ * lines we just read, or a `/clear` may have reset its buffer mid-scan.
  *
  * Both sides are counted in NON-SIDECHAIN ordinals — `trail` holds only those
  * (see `pushTrail`) and `loadedMain` is the renderer's blocks with the sidechain
  * ones removed. The two sequences are then the same sequence, which is the whole
  * basis for the arithmetic below.
+ *
+ * TWO WAYS TO LINE THEM UP, tried in that order (#458).
+ *
+ * `alignByShape` is the original and reads the file's own timestamps back off
+ * the rendered blocks. It is exact for a Feed the WATCHER built, and it cannot
+ * work at all for one the STREAM built: a Direct session's blocks are stamped
+ * with the moment the message reached us, because stream-json carries no
+ * timestamp of its own. Since #381 Direct is the default transport, that made
+ * §5.31's flagship gesture dead for most sessions.
+ *
+ * `alignBySrcId` is the answer, and it is a stronger join than the one it backs
+ * up rather than a looser one: it matches on the ids the ANTHROPIC API put in
+ * the message — which both sources receive, unchanged, in the same field.
  *
  * Returns the non-sidechain ordinal that `loadedMain[0]` corresponds to, or null
  * when the two cannot be lined up — in which case every hit is snippet-only.
@@ -409,6 +425,12 @@ export function alignToLoaded(
 ): { firstLoadedIndex: number; loadedMain: FeedBlock[] } | null {
   const loadedMain = loaded.filter((b) => !b.sidechain);
   if (loadedMain.length === 0 || trail.length === 0) return null;
+  const found = alignByShape(trail, loadedMain) ?? alignBySrcId(trail, loadedMain);
+  return found === null ? null : { firstLoadedIndex: found, loadedMain };
+}
+
+/** Tail-match on kind + timestamp + tool name. Exact for a watcher-built Feed. */
+function alignByShape(trail: readonly BlockAnchor[], loadedMain: readonly FeedBlock[]): number | null {
   const same = (a: BlockAnchor, b: FeedBlock): boolean =>
     a.kind === b.kind && a.ts === b.ts && (a.toolName ?? undefined) === (b.tool?.name ?? undefined);
   const last = loadedMain[loadedMain.length - 1];
@@ -440,7 +462,94 @@ export function alignToLoaded(
     if (found !== null) return null;
     found = firstLoadedIndex;
   }
-  return found === null ? null : { firstLoadedIndex: found, loadedMain };
+  return found;
+}
+
+/**
+ * Line the two up on BLOCK IDENTITY — the join that works on both transports.
+ *
+ * `FeedBlock.srcId` is `tool:<tool_use id>` or `msg:<message id>`: fields the
+ * model's own API put in the message, which the CLI writes into the JSONL and
+ * hands to a Direct session over stream-json inside the same `message` object.
+ * Neither is ours and neither is a timestamp, which is exactly why they survive
+ * the transport the shape match cannot.
+ *
+ * ONE MATCH IS AN ANCHOR, not a vote. A `tool_use` id is unique across the whole
+ * conversation, so finding it on both sides fixes the offset outright — and the
+ * offset is what makes every OTHER block jumpable too, prose and user prompts
+ * included, none of which carry an id of their own.
+ *
+ * THREE THINGS IT REFUSES rather than resolves, because a jump to the wrong
+ * block is the lie this module exists to avoid:
+ *
+ *  - an id that appears TWICE in the file's trail — a message that produced
+ *    several blocks, with only some of them still inside the window. "It
+ *    matched" then does not say which one;
+ *  - two ids that imply DIFFERENT offsets — the two sequences are not the same
+ *    sequence, so no single arithmetic maps them;
+ *  - an offset the surrounding blocks disagree with (`shapeAgrees`).
+ *
+ * `null` from any of them is the honest list-only answer §5.31 already ships.
+ */
+function alignBySrcId(trail: readonly BlockAnchor[], loadedMain: readonly FeedBlock[]): number | null {
+  /** srcId -> its ordinal in the file, or null once the id has been seen twice */
+  const inFile = new Map<string, number | null>();
+  for (const a of trail) {
+    if (a.srcId === undefined || a.mainIndex === undefined) continue;
+    inFile.set(a.srcId, inFile.has(a.srcId) ? null : a.mainIndex);
+  }
+  if (inFile.size === 0) return null;
+
+  let firstLoadedIndex: number | null = null;
+  for (let p = 0; p < loadedMain.length; p++) {
+    const id = loadedMain[p].srcId;
+    if (id === undefined) continue;
+    const at = inFile.get(id);
+    // `undefined`: not in the file's window at all — evicted from the trail, or
+    // newer than the bytes we read, which for a stream session is ordinary (the
+    // CLI writes the JSONL a beat after it says the same thing down the pipe).
+    // `null`: ambiguous, see the docblock.
+    if (at === undefined || at === null) continue;
+    const candidate = at - p;
+    if (firstLoadedIndex === null) firstLoadedIndex = candidate;
+    else if (firstLoadedIndex !== candidate) return null;
+  }
+  // Below 1 would put `loadedMain[0]` before the file's first block, which no
+  // correct alignment can claim.
+  if (firstLoadedIndex === null || firstLoadedIndex < 1) return null;
+  return shapeAgrees(trail, loadedMain, firstLoadedIndex) ? firstLoadedIndex : null;
+}
+
+/**
+ * Does every block the offset lines up actually look like its counterpart?
+ *
+ * The id fixes one position; this checks the rest of the window, on the two
+ * properties both sources derive identically (`blocks.ts`). It is what catches a
+ * Feed that holds a block the file does not — an interrupted turn whose tokens
+ * were never written down, say — instead of shifting every hit past it by one.
+ *
+ * A block still taking tokens is SKIPPED, not compared: it has not finished
+ * becoming itself. A `TodoWrite` call opens as an ordinary `tool` row on the
+ * strength of `content_block_start` and only the message that follows reveals it
+ * to be a `todos` checklist, so comparing mid-turn would refuse a perfectly good
+ * alignment for the half-second that takes.
+ */
+function shapeAgrees(
+  trail: readonly BlockAnchor[],
+  loadedMain: readonly FeedBlock[],
+  firstLoadedIndex: number
+): boolean {
+  const byMainIndex = new Map<number, BlockAnchor>();
+  for (const a of trail) if (a.mainIndex !== undefined) byMainIndex.set(a.mainIndex, a);
+  for (let p = 0; p < loadedMain.length; p++) {
+    const b = loadedMain[p];
+    if (b.streaming === true) continue;
+    const a = byMainIndex.get(firstLoadedIndex + p);
+    if (!a) continue; // outside the window the file gave us — nothing to check
+    if (a.kind !== b.kind) return false;
+    if ((a.toolName ?? undefined) !== (b.tool?.name ?? undefined)) return false;
+  }
+  return true;
 }
 
 const defaultYield = (): Promise<void> => new Promise<void>((r) => setImmediate(r));
@@ -590,6 +699,8 @@ async function scanOne(
         kind: b.kind,
         ...(b.ts ? { ts: b.ts } : {}),
         ...(b.tool?.name ? { toolName: b.tool.name } : {}),
+        // Carried whatever the caps were: identity is not text (`blocks.ts`).
+        ...(b.srcId ? { srcId: b.srcId } : {}),
       };
       pushTrail(state, anchor);
       if (intent.toolUseId) remember(intent.toolUseId, anchor);
