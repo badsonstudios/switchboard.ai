@@ -53,6 +53,36 @@ on the floor, and say so in your PR.
 
 ## 0.5.0 — unreleased
 
+### Added
+
+- **Paste a picture into the prompt box.** Copy a screenshot, something from
+  Paint, or an image off a web page, press **Ctrl+V** in a session's prompt
+  box, and it attaches as a small chip with a thumbnail — then type your
+  question and press Enter, and Claude actually looks at it. The ✕ on the chip
+  removes it before you send, several images can ride one prompt, and an image
+  on its own is a perfectly good prompt. If your clipboard holds text *and* a
+  picture, you get both. Pasting ordinary text is completely unchanged.
+  Anything it cannot send it says so about, under the box, before you have
+  waited on a reply: an image that is too big, a format Claude cannot read
+  (only PNG, JPEG, GIF and WebP work — for anything else, put its file path in
+  the prompt), or a session running in **Terminal mode**, where pictures have
+  to be pasted into the Terminal tab instead. And if a prompt with a picture
+  does not go, nothing is cleared — your words and your image stay where they
+  are.
+- **Drag files onto the prompt box — not just pictures.** Drag one or more
+  files from Explorer onto a session's prompt box and they attach as chips, the
+  same ones a pasted picture uses. Markdown, plain text and source files
+  (`.md`, `.ts`, `.py`, `.json`, `.log`, `.csv`, `LICENSE`, `Makefile`,
+  `.gitignore` and a hundred-odd more), images, SVGs and PDFs all work, and
+  each one is sent in the form Claude reads best — a text file arrives as its
+  **contents**, labelled with its name, not as a path Claude has to go and open.
+  Up to eight per prompt, mixed kinds welcome, in the order you dropped them.
+  Anything it cannot use it says so about, under the box: a file too big, a
+  type Claude cannot read (it names the file-path escape hatch instead), an
+  empty file, or a **folder** — which cannot be attached to a prompt, though
+  dropping one anywhere *else* in the window still opens it as a session, as it
+  always did.
+
 ### Fixed
 
 - **A reply can no longer take over a conversation's own controls.** Replies are
@@ -88,34 +118,6 @@ on the floor, and say so in your PR.
 
 ### Added
 
-- **Paste a picture into the prompt box.** Copy a screenshot, something from
-  Paint, or an image off a web page, press **Ctrl+V** in a session's prompt
-  box, and it attaches as a small chip with a thumbnail — then type your
-  question and press Enter, and Claude actually looks at it. The ✕ on the chip
-  removes it before you send, several images can ride one prompt, and an image
-  on its own is a perfectly good prompt. If your clipboard holds text *and* a
-  picture, you get both. Pasting ordinary text is completely unchanged.
-  Anything it cannot send it says so about, under the box, before you have
-  waited on a reply: an image that is too big, a format Claude cannot read
-  (only PNG, JPEG, GIF and WebP work — for anything else, put its file path in
-  the prompt), or a session running in **Terminal mode**, where pictures have
-  to be pasted into the Terminal tab instead. And if a prompt with a picture
-  does not go, nothing is cleared — your words and your image stay where they
-  are.
-
-- **Drag files onto the prompt box — not just pictures.** Drag one or more
-  files from Explorer onto a session's prompt box and they attach as chips, the
-  same ones a pasted picture uses. Markdown, plain text and source files
-  (`.md`, `.ts`, `.py`, `.json`, `.log`, `.csv`, `LICENSE`, `Makefile`,
-  `.gitignore` and a hundred-odd more), images, SVGs and PDFs all work, and
-  each one is sent in the form Claude reads best — a text file arrives as its
-  **contents**, labelled with its name, not as a path Claude has to go and open.
-  Up to eight per prompt, mixed kinds welcome, in the order you dropped them.
-  Anything it cannot use it says so about, under the box: a file too big, a
-  type Claude cannot read (it names the file-path escape hatch instead), an
-  empty file, or a **folder** — which cannot be attached to a prompt, though
-  dropping one anywhere *else* in the window still opens it as a session, as it
-  always did.
 
 - **Answer a permission from the desktop pop-up.** When a session asks
   permission while you are in another app, the pop-up now carries **Allow** and
