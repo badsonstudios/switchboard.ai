@@ -147,6 +147,18 @@ describe('CHANGELOG parsing', () => {
     );
     expect(versions[1], 'only one section may sit above the current version').toBe(version);
   });
+
+  it('pins package-lock.json to the same version as package.json', () => {
+    // #487. Nothing else reads the lock's version, so a cut that forgets
+    // `npm install --package-lock-only` (cut step 1) is silent: the lock sat on
+    // 0.1.0 through four releases before #394 caught it. Both copies are
+    // checked — npm writes the number twice and refreshes them together.
+    const { version } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+    const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
+    const stale = 'package-lock.json is stale — run `npm install --package-lock-only`';
+    expect(lock.version, stale).toBe(version);
+    expect(lock.packages[''].version, stale).toBe(version);
+  });
 });
 
 describe('tag vs package.json version', () => {

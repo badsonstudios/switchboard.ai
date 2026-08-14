@@ -37,21 +37,27 @@ on the floor, and say so in your PR.
 1. Bump `version` in `package.json` — patch for fixes, minor for features,
    major for a break. Pre-1.0, a minor is what a "release" normally is. If the
    open unreleased section's placeholder version is not the number you landed
-   on, rename its heading to match.
+   on, rename its heading to match. Then refresh the lock —
+   `npm install --package-lock-only` — so `package-lock.json`'s root and
+   `packages.""` versions follow it; the diff should be those lines and
+   nothing else. `release-notes.test.js` fails if they disagree (#487): the
+   lock sat four releases behind before anyone noticed (#394).
 2. Replace that version's `— unreleased` with the release date, and open a new
    `## <next version> — unreleased` section above it. **Always** — not "if work
    continues". That empty section is the only place the next work item is
    allowed to file, so skipping it blocks every item until the following cut.
    Guess the next number; step 1 corrects it. `release-notes.test.js` fails if
    you forget — that is deliberate, and it is why this step is not optional.
-3. Commit both together. The version and its notes arriving in one commit is
-   what makes "this tag has no changelog section" a bug worth failing a build
-   over — which is exactly what P2-E19-02's workflow does.
+3. Commit all three together. The version and its notes arriving in one
+   commit is what makes "this tag has no changelog section" a bug worth
+   failing a build over — which is exactly what P2-E19-02's workflow does.
 4. Tag `v<version>`; the tag must equal `package.json`'s version.
 
 ---
 
-## 0.5.0 — unreleased
+## 0.6.0 — unreleased
+
+## 0.5.0 — 2026-08-14
 
 ### Added
 
@@ -102,17 +108,15 @@ on the floor, and say so in your PR.
   *never printed*. `Ctrl+F` pressed with your cursor inside the terminal still
   goes to the program running there, deliberately: it is a real key in the CLI.
   From there, `Ctrl+Shift+P` → **Find in session** opens the bar.
-
-- **An open document updates itself.** Leave `PROGRESS.md` — or a plan, or a
-  findings note — open in the document viewer while an agent rewrites it, and
+- **An open document updates itself.** Leave a file open in the document
+  viewer — a README, a plan, a running log — while a session rewrites it, and
   it re-renders on the spot instead of going stale until you close and reopen
   it. You keep your scroll position, so you can read the middle of a file that
   is being rewritten around you. A burst of writes (which is what one "save"
-  from an agent usually is) settles into a single update rather than ten, and a
+  from a session usually is) settles into a single update rather than ten, and a
   file that is deleted while you are reading it gets a strip saying so with the
   last version still on screen — not an error page, and not a blank one. If the
   file comes back, so does the live view.
-
 - **Every session can have its own sound, and switchboard can say which one
   wants you.** Turn on **🔊 session sounds** in the title bar and each session
   rings a different short cue instead of everything sharing one beep — so with
