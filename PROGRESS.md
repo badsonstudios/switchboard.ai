@@ -35,6 +35,11 @@
 > highlight + #524 flake (owner-facing/velocity) · #407 Shape B ·
 > #482→#483 · #485 · #521 layer 1 · tail (#488 #490 #491 #494-#499
 > #502-#504 #506 #508 #509 #512 #517 #518 #521-design).
+> **Dan-gated design sittings filed 2026-08-14: #528** (attention
+> coloring/behavior not intuitive — fold in #268 #269 #337 + the
+> #407 badge as ONE signal system) **· #529** (focused-card border
+> not prevalent enough — same sitting if scheduling allows). Both
+> [user]: placeholders for working WITH Dan, not to pre-build.
 >
 > # (0.5.0 cut record follows)
 > # 🚢 0.5.0 CUT IN FLIGHT (2026-08-14, post-dogfood)
