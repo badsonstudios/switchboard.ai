@@ -195,6 +195,21 @@ box underneath would be a hundred presses away. So `Tab` gets you *into* the
 conversation, the arrows move *within* it, and one more `Tab` takes you out to
 the prompt box.
 
+**Getting back to the newest message.** Walking the boxes scrolls the view to
+whatever you're on, so after a walk the conversation is no longer stuck to the
+bottom and new output won't move you. Two ways back, both keyboard-only:
+
+- `Esc` to step out to the conversation as a whole, then `End` or `Page Down` —
+  scrolling all the way to the bottom re-sticks it.
+- `Esc`, then one `Tab` onto the **`↓ Jump to latest`** button that appears just
+  above the prompt box while you're away from the bottom, and `Enter`. Focus
+  comes straight back to the conversation afterwards, so the next `Tab` is the
+  prompt box as usual.
+
+Note that `End` *inside* the walk goes to the last **box**, which is not the
+same as the end of the conversation — a session whose latest activity is plain
+text has no box down there to land on. That's what the button is for.
+
 Screen readers are told the truth about all of this: each opener announces
 itself as a button and says whether it's currently open or closed, and reading
 the conversation with a screen reader's own navigation keys reaches every one of

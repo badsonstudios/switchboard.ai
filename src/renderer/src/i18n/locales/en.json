@@ -514,6 +514,8 @@
     "copied": "Copied",
     "copyCode": "Copy this code",
     "copySection": "Copy {section}",
+    "jumpLatest": "↓ Jump to latest",
+    "jumpLatestHint": "Go back to the newest message and follow the conversation again",
     "slashSource": {
       "builtin": "CLI",
       "project-command": "project",

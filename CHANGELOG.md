@@ -336,6 +336,19 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **A `↓ Jump to latest` button, for when the conversation has left you
+  behind.** Scrolling up in a session — or walking it with the arrow keys —
+  deliberately unsticks the view from the newest message, so that a reply
+  arriving mid-read can't drag you off what you were reading. Getting back
+  meant scrolling all the way to the bottom by hand, and nothing on screen even
+  said the view had stopped following: on a small window, where a single turn
+  can be taller than the pane, it was easy to end up parked at the top of a
+  session that looked idle and was in fact still talking. A button now appears
+  just above the prompt box whenever you're away from the bottom of a
+  conversation that has a bottom to be away from — one press and you're back at
+  the newest message and following again. It's one `Tab` from the conversation
+  and one `Shift+Tab` from the prompt box, and it takes itself away when it has
+  nothing to offer.
 - **A reopened session shows its conversation again.** Since 0.3.0, quitting
   switchboard and opening it again left every Direct-mode card looking blank —
   no prompts, no replies, nothing — as though the session had been wiped.
