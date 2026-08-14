@@ -225,6 +225,20 @@
 > #415 will re-stale the uncounted roster lines. wt-2 IDLE (queue
 > Dan-gated). In flight: #415 (wt-1) · #481 (wt-3).
 >
+> **#481 ✅ DONE → PR #515 READY, Dan's queue #11 (4/4 green).** Cue +
+> sentence are data (src/shared/sounds.ts); noise happens in the
+> renderer (Web Audio + Web Speech, no process spawn on the event
+> path); cue lives on the CARD not the rule. Self-review blocker was
+> the headline promise: fire-and-forget send = silent event while the
+> log said "taken" — fixed with audio:failed round trip + crashed-
+> window check, NOT doc softening. Riskiest line (shell.beep
+> fallback) had no test — pinned. NO test makes noise ever:
+> SWITCHBOARD_MUTE_AUDIO=1 in launchApp. Label→title fallback had
+> ALREADY shipped in the train — tested, not rebuilt. 4298 unit
+> (+152) / 261+3 e2e ×2, zero flakes. Design-pressure note (11 title-
+> bar chips; 05b/05c should weigh the Shape B drawer badge) commented
+> on #482. In flight: #415 (wt-1) only.
+>
 > **MERGE POLICY THIS RUN: nothing merges before the #480 cut PR lands**
 > (Dan merges it, then pushes tag v0.4.0 — the tag is his; the cut ships
 > his #395 blank-resume fix). Feature CHANGELOG entries written pre-cut
