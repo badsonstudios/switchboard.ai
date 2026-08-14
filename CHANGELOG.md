@@ -90,22 +90,6 @@ on the floor, and say so in your PR.
   It's the same button the document viewer has always had on its code blocks,
   it's reachable with the arrow keys along with everything else in a
   conversation, and it works in a popped-out card.
-- **`Ctrl+F` finds things in a session.** A find bar, the way a browser means
-  it: type, `Enter` and `Shift+Enter` to step, a count beside the box, `Esc` to
-  close and get your cursor back. It searches the *whole* session rather than
-  what happens to be on screen — including the older part a long conversation
-  has scrolled out of memory, the tool output your detail level is hiding, and
-  anything folded — and jumping to a match opens whatever was covering it.
-  Open the results list for the matches with their surrounding text. On the
-  **Changes** tab the same key hands you the diff editor's own find rather than
-  putting a second, worse one on top of it. Two boundaries worth knowing:
-  matches from further back than the loaded view are readable in the list but
-  can't be scrolled to, and are labelled as such; and sessions in Direct mode
-  currently get the list without the jump, because their conversation and their
-  transcript can't yet be lined up. The Terminal tab greys the bar and says so
-  instead of pretending.
-
-
 ### Changed
 
 - **The 🔓 auto-trust / 🔒 ask trust chip is now greyed out when nothing could
@@ -140,6 +124,11 @@ on the floor, and say so in your PR.
   a message or a document contains counts as the app's own markup any more, on
   every surface that renders Markdown: the conversation, the document viewer and
   the update notes.
+- **Find can now jump in Direct-mode sessions.** Clicking a result in the
+  find bar's list scrolls to that match and opens whatever was covering it,
+  in every session — Direct mode included, which used to list matches but
+  could not take you to them. Matches from further back than the loaded view
+  are still list-only and labelled as such, exactly as before.
 
 ### Internal
 
@@ -163,7 +152,6 @@ on the floor, and say so in your PR.
 ## 0.4.0 — 2026-08-13
 
 ### Added
-
 
 - **Answer a permission from the desktop pop-up.** When a session asks
   permission while you are in another app, the pop-up now carries **Allow** and
@@ -277,8 +265,6 @@ on the floor, and say so in your PR.
   decline another. Requests only share a card when the tool and every argument
   match character for character, so `rm -rf build` and `rm -rf /` are never
   answered together.
-<<<<<<< HEAD
-=======
 - **`Ctrl+F` finds things in a session.** A find bar, the way a browser means
   it: type, `Enter` and `Shift+Enter` to step, a count beside the box, `Esc` to
   close and get your cursor back. It searches the *whole* session rather than
@@ -287,11 +273,12 @@ on the floor, and say so in your PR.
   anything folded — and jumping to a match opens whatever was covering it.
   Open the results list for the matches with their surrounding text. On the
   **Changes** tab the same key hands you the diff editor's own find rather than
-  putting a second, worse one on top of it. One boundary worth knowing:
+  putting a second, worse one on top of it. Two boundaries worth knowing:
   matches from further back than the loaded view are readable in the list but
-  can't be scrolled to, and are labelled as such. The Terminal tab greys the
-  bar and says so instead of pretending.
->>>>>>> origin/feature/458-direct-find-jump
+  can't be scrolled to, and are labelled as such; and sessions in Direct mode
+  currently get the list without the jump, because their conversation and their
+  transcript can't yet be lined up. The Terminal tab greys the bar and says so
+  instead of pretending.
 
 ### Changed
 
