@@ -7,28 +7,39 @@
 //
 // The fake broker is `sessions/ipc.test.ts`'s, for the same reason it exists
 // there: it lets a channel be called without an Electron process.
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { tempDir } from '../../test-temp-dirs';
 import { Logger } from '../log/logger';
 import { FileReadResult } from '../../shared/ipc/fs';
-import { registerFsIpc } from './ipc';
+import { FsIpcHandle, registerFsIpc } from './ipc';
 import { ReadScope } from './read-scope';
 
 type Handler = (e: unknown, ...args: unknown[]) => unknown;
 
 function fakeBroker() {
   const handlers = new Map<string, Handler>();
+  const sent: Array<{ channel: string; payload: unknown }> = [];
   return {
     broker: {
       handle: (channel: string, fn: Handler) => handlers.set(channel, fn),
+      // P2-E16-04 pushes; the real broker gates that on the window's grant, and
+      // this records it so a test can read what a viewer would have been told.
+      send: (_win: unknown, channel: string, payload: unknown) => sent.push({ channel, payload }),
     } as never,
+    sent,
     channels: () => [...handlers.keys()],
     call: (channel: string, ...args: unknown[]): Promise<FileReadResult> => {
       const fn = handlers.get(channel);
       if (!fn) throw new Error(`nothing registered on ${channel}`);
       return Promise.resolve(fn({}, ...args) as FileReadResult);
+    },
+    /** …the same, from a NAMED caller — P2-E16-04 keys its watches by sender. */
+    callAs: (event: unknown, channel: string, ...args: unknown[]): Promise<unknown> => {
+      const fn = handlers.get(channel);
+      if (!fn) throw new Error(`nothing registered on ${channel}`);
+      return Promise.resolve(fn(event, ...args));
     },
   };
 }
@@ -79,6 +90,8 @@ describe('fs:read', () => {
       'fs:openExternal',
       'fs:openPath',
       'fs:reveal',
+      'fs:watch',
+      'fs:unwatch',
     ]);
   });
 
@@ -280,5 +293,118 @@ describe('the document viewer’s shell channels (P2-E16-02)', () => {
       expect(await bus.call('fs:pickFile')).toBe(null);
       expect(scope.pickedPaths()).toEqual([]);
     });
+  });
+});
+
+// ─── P2-E16-04: following the open file ────────────────────────────────────
+
+describe('fs:watch / fs:unwatch (P2-E16-04)', () => {
+  const FILE = path.join(ROOT, 'PROGRESS.md');
+
+  let bus: ReturnType<typeof fakeBroker>;
+  let rec: ReturnType<typeof recordingLog>;
+  let scope: ReadScope;
+  let handle: FsIpcHandle;
+  let fire: (filename: string | null) => void;
+  let closed: number;
+
+  /** A renderer, as `callerOf` sees one: an id and a one-shot `destroyed`. */
+  function sender(id: number) {
+    const listeners: Array<() => void> = [];
+    return {
+      event: { sender: { id, once: (_e: string, fn: () => void) => listeners.push(fn) } },
+      destroy: () => listeners.forEach((fn) => fn()),
+    };
+  }
+
+  beforeEach(() => {
+    bus = fakeBroker();
+    rec = recordingLog();
+    scope = new ReadScope({ sessionFolders: () => [ROOT], log: rec.log });
+    closed = 0;
+    fire = () => {};
+    handle = registerFsIpc({
+      broker: bus.broker,
+      log: rec.log,
+      scope,
+      cap: 100,
+      getWindow: () => null,
+      watch: {
+        // The rules the debounce and the stat floor enforce are
+        // `file-watch.test.ts`'s; what this file owns is the WIRING, so both
+        // are turned down to nothing and the events are driven by hand.
+        debounceMs: 0,
+        pollMs: 1_000_000,
+        watchFactory: (_dir, onChange) => {
+          fire = onChange;
+          return {
+            close: () => {
+              closed += 1;
+            },
+          };
+        },
+        probe: () => ({ mtimeMs: Date.now(), size: 1, ino: 1 }),
+      },
+    });
+  });
+
+  afterEach(() => handle.stop());
+
+  it('watches a file in scope and pushes its change on fs:changed', async () => {
+    expect(await bus.callAs({}, 'fs:watch', { token: 'v1', path: FILE })).toMatchObject({
+      ok: true,
+    });
+    fire('PROGRESS.md');
+    await new Promise((r) => setTimeout(r, 5));
+    expect(bus.sent).toEqual([
+      { channel: 'fs:changed', payload: { token: 'v1', state: 'changed' } },
+    ]);
+  });
+
+  it('refuses to watch what it would refuse to read, and logs it', async () => {
+    const target = path.join(OUTSIDE, 'id_rsa');
+    expect(await bus.callAs({}, 'fs:watch', { token: 'v1', path: target })).toEqual({
+      ok: false,
+      reason: 'out-of-scope',
+    });
+    expect(handle.watchStats().files).toBe(0);
+    expect(rec.lines.some((l) => l.msg === 'fs:watch refused: out-of-scope')).toBe(true);
+  });
+
+  it('unwatching closes the watch — the panel-close path, asserted', async () => {
+    await bus.callAs({}, 'fs:watch', { token: 'v1', path: FILE });
+    expect(handle.watchStats()).toMatchObject({ files: 1, viewers: 1 });
+    await bus.callAs({}, 'fs:unwatch', { token: 'v1' });
+    expect(handle.watchStats()).toMatchObject({ files: 0, viewers: 0 });
+    expect(closed).toBe(1);
+  });
+
+  it('survives the shapes an untyped caller can send', async () => {
+    for (const req of [undefined, null, {}, { token: 42, path: FILE }, { token: 'v', path: 7 }]) {
+      await expect(bus.callAs({}, 'fs:watch', req)).resolves.toMatchObject({ ok: false });
+    }
+    for (const req of [undefined, null, {}, { token: 42 }]) {
+      await expect(bus.callAs({}, 'fs:unwatch', req)).resolves.toBe(true);
+    }
+    expect(handle.watchStats().files).toBe(0);
+  });
+
+  it('a destroyed window takes its watches with it, and hooks the sender ONCE', async () => {
+    const a = sender(7);
+    await bus.callAs(a.event, 'fs:watch', { token: 'v1', path: FILE });
+    await bus.callAs(a.event, 'fs:watch', { token: 'v2', path: FILE });
+    expect(handle.watchStats()).toMatchObject({ files: 1, viewers: 2 });
+    a.destroy();
+    expect(handle.watchStats()).toMatchObject({ files: 0, viewers: 0 });
+    // one listener, not one per call: a viewer per glance would otherwise stack
+    // a `destroyed` handler for the life of the window
+    expect(closed).toBe(1);
+  });
+
+  it('stop() releases everything at quit', async () => {
+    await bus.callAs({}, 'fs:watch', { token: 'v1', path: FILE });
+    handle.stop();
+    expect(handle.watchStats()).toMatchObject({ files: 0, viewers: 0 });
+    expect(closed).toBe(1);
   });
 });

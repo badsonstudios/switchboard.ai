@@ -328,6 +328,7 @@
     "mediaOmitted": "Media isn't shown here",
     "truncated": "This file is large — showing the first {shown} of {size}. Open it externally to read the rest.",
     "encodingNote": "Decoded as {encoding}",
+    "gone": "This file has been deleted or moved. You're reading the last version switchboard.ai saw.",
     "card": {
       "title": "This file isn't shown here",
       "body": "{name} is a {type} file ({size}). switchboard.ai doesn't render this kind of file — open it in the app you already use for it.",

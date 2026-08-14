@@ -55,6 +55,16 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **An open document updates itself.** Leave `PROGRESS.md` — or a plan, or a
+  findings note — open in the document viewer while an agent rewrites it, and
+  it re-renders on the spot instead of going stale until you close and reopen
+  it. You keep your scroll position, so you can read the middle of a file that
+  is being rewritten around you. A burst of writes (which is what one "save"
+  from an agent usually is) settles into a single update rather than ten, and a
+  file that is deleted while you are reading it gets a strip saying so with the
+  last version still on screen — not an error page, and not a blank one. If the
+  file comes back, so does the live view.
+
 - **Answer a permission from the desktop pop-up.** When a session asks
   permission while you are in another app, the pop-up now carries **Allow** and
   **Deny** — press one and the tool runs, or Claude is told no, without

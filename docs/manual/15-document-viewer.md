@@ -116,6 +116,30 @@ What you get in the rendered view:
   switchboard.ai it could read one file, not a folder. Pick the neighbour the
   same way, or open a session in that folder.
 
+## It follows the file
+
+This is the reason the viewer exists rather than a Markdown preview you could
+get anywhere: **an open document updates itself.**
+
+Leave `PROGRESS.md` open in the viewer while an agent rewrites it and you watch
+it change — no reopening, no refresh button. Three things worth knowing:
+
+- **You keep your place.** The document re-renders where you were scrolled to,
+  not back at the top. You can read the middle of a file that is being rewritten
+  around you.
+- **A burst of writes is one update.** An agent saving a file usually writes it
+  several times in a second. The viewer waits for the writing to settle rather
+  than flickering through every intermediate version. A file being written
+  continuously updates about once a second; one that is written and left alone
+  updates immediately.
+- **If the file is deleted**, a strip appears at the top saying so, and the last
+  version switchboard.ai read stays on screen. You are not thrown back to an
+  error page and you do not lose what you were reading. If the file comes back —
+  a `git checkout`, a rename that lands — the strip disappears and the document
+  updates again.
+
+It works in **Source** view as well, and there too you keep your scroll position.
+
 ## Finding text
 
 With a rendered document on screen, press `Ctrl+F` (`Cmd+F` on a Mac). A small
@@ -161,8 +185,12 @@ into your own tools is always one click away.
   binary file, so it gets the "open externally" card.
 - **The viewer is not a session.** It doesn't appear in the sidebar, it doesn't
   count towards anything, and closing sessions doesn't close it.
-- **It doesn't follow the file yet.** If the agent rewrites the file while it's
-  open, close and reopen it to see the new version. Live re-rendering is coming.
+- **A document stops updating if the session it came from is closed** and the
+  file was inside that session's folder. Nothing disappears — you keep reading
+  what is on screen — but switchboard.ai may no longer look at that folder, so
+  it stops following the file. To get it live again, close the document panel
+  and open the file afresh (through a session in that folder, or **Open
+  file…**); bringing the existing panel back to the front is not enough.
 - **Open documents are not restored when you restart.** Your sessions come back
   exactly as you left them; the documents you were reading do not. Reopening one
   is two clicks, and reopening six you had finished with is a chore. Remembering

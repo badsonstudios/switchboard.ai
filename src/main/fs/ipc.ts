@@ -12,12 +12,13 @@
 // in the app. That matters more here than for a mutation: a refused read is
 // either a link pointing somewhere it should not, or a scope that is wrong —
 // and both are things you only find out about if they are written down.
-import { BrowserWindow, dialog, shell } from 'electron';
+import { BrowserWindow, dialog, shell, IpcMainInvokeEvent } from 'electron';
 import { IpcBroker } from '../ipc/broker';
 import type { Logger } from '../log/logger';
-import { MAX_FILE_READ_BYTES, FileReadResult } from '../../shared/ipc/fs';
+import { MAX_FILE_READ_BYTES, FileReadResult, FileWatchResult } from '../../shared/ipc/fs';
 import { readCappedText } from './read-file';
 import { ReadScope } from './read-scope';
+import { FileWatchDeps, FileWatchService } from './file-watch';
 
 /**
  * Schemes a link inside a rendered document may be opened with (§5.30).
@@ -71,9 +72,22 @@ export interface FsIpcDeps {
   getWindow?: () => BrowserWindow | null;
   /** electron's shell + dialog, swapped out in tests */
   shell?: FsShell;
+  /** timing + injection knobs for the live-re-render watch (P2-E16-04) */
+  watch?: Pick<
+    FileWatchDeps,
+    'debounceMs' | 'maxWaitMs' | 'pollMs' | 'watchFactory' | 'probe'
+  >;
 }
 
-export function registerFsIpc(deps: FsIpcDeps): void {
+/** What the caller keeps hold of after registration (P2-E16-04). */
+export interface FsIpcHandle {
+  /** release every open file watch — quit, and the teardown assertion */
+  stop(): void;
+  /** what is being watched right now, for tests and diagnostics */
+  watchStats(): { files: number; viewers: number; watched: string[] };
+}
+
+export function registerFsIpc(deps: FsIpcDeps): FsIpcHandle {
   const cap = deps.cap ?? MAX_FILE_READ_BYTES;
 
   deps.broker.handle('fs:read', async (_e, target: unknown): Promise<FileReadResult> => {
@@ -178,4 +192,66 @@ export function registerFsIpc(deps: FsIpcDeps): void {
     });
   });
   scoped('fs:reveal', (real) => sh.showItemInFolder(real));
+
+  // --- P2-E16-04: following the open file ----------------------------------
+  //
+  // Pushed to `getWindow()`, like every other outbound channel in the app, and
+  // that is correct for a POPPED-OUT viewer too: dockview's popout is a window
+  // whose DOM was adopted from the opener, and the panel's JavaScript — this
+  // bridge, these listeners — still runs in the main window's context. There is
+  // no second renderer to route to. `callerId` is carried anyway so the service
+  // can drop a dead window's watches without knowing what a window is.
+  const watches = new FileWatchService({
+    log: deps.log,
+    scope: deps.scope,
+    push: (_callerId, notice) => deps.broker.send(deps.getWindow?.() ?? null, 'fs:changed', notice),
+    ...deps.watch,
+  });
+
+  // Callers we have already hooked, so one window's `destroyed` listener is not
+  // stacked once per `fs:watch` call — a viewer per glance would otherwise add
+  // one every time a file is opened.
+  const hooked = new Set<number>();
+  const callerOf = (e: unknown): number => {
+    const sender = (e as IpcMainInvokeEvent | undefined)?.sender;
+    const id = sender?.id ?? 0;
+    if (sender && typeof sender.once === 'function' && !hooked.has(id)) {
+      hooked.add(id);
+      sender.once('destroyed', () => {
+        hooked.delete(id);
+        watches.releaseCaller(id);
+      });
+    }
+    return id;
+  };
+
+  /**
+   * Follow a file, on behalf of one viewer.
+   *
+   * The TOKEN is the renderer's, not ours: a viewer mints one when it mounts and
+   * hands the same string back to `fs:unwatch`. Main never has to know what a
+   * panel is, and two panels reading the same file are two tokens rather than
+   * one shared subscription that the first one to close would cancel.
+   */
+  deps.broker.handle('fs:watch', (e, req: unknown): FileWatchResult => {
+    const { token, path: target } = (req ?? {}) as { token?: unknown; path?: unknown };
+    return watches.watch(callerOf(e), token, target);
+  });
+
+  /**
+   * Stop following. Answers nothing useful on purpose — the renderer calls this
+   * from an effect's cleanup, where there is nobody left to read a reply, and
+   * unwatching a token that was never registered is an ordinary outcome of a
+   * viewer that unmounted before its watch call landed.
+   */
+  deps.broker.handle('fs:unwatch', (e, req: unknown): boolean => {
+    const { token } = (req ?? {}) as { token?: unknown };
+    watches.unwatch(callerOf(e), token);
+    return true;
+  });
+
+  return {
+    stop: () => watches.stop(),
+    watchStats: () => watches.stats(),
+  };
 }
