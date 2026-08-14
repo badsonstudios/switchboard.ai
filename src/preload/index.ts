@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { SlashCommand } from '../shared/slash-commands';
+import type { PromptImage } from '../shared/prompt-images';
 import type { PtyAttachment, PtyChunk } from '../shared/ipc/pty';
 import type {
   BindingSnapshot,
@@ -279,9 +280,17 @@ const api = {
      * the PTY, which needs the bracketed paste and delayed CR instead. The
      * caller falls back. Deliberately shaped as try-then-fall-back so the
      * renderer never has to know which transport a session is on.
+     *
+     * `images` (P2-E10-09) are inline base64 image blocks — the shape the CLI
+     * takes on stdin. Also FALSE if main refuses them, and then the caller must
+     * NOT fall back to the PTY: a keystroke transport cannot carry a bitmap, so
+     * the fallback would send the words and silently drop the picture.
      */
-    submitPrompt: (sessionId: string, text: string): Promise<boolean> =>
-      ipcRenderer.invoke('sessions:submitPrompt', sessionId, text),
+    submitPrompt: (
+      sessionId: string,
+      text: string,
+      images?: readonly PromptImage[]
+    ): Promise<boolean> => ipcRenderer.invoke('sessions:submitPrompt', sessionId, text, images),
     /**
      * Interrupt the running turn (#154). Resolves FALSE for a PTY session,
      * whose interrupt is an Esc keystroke; the caller falls back.

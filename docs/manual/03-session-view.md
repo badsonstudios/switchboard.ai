@@ -97,6 +97,37 @@ The box at the bottom sends straight to the real Claude Code session:
 Under the box is a row showing this session's **autonomy mode** (click to
 cycle) and the **model** it last used.
 
+### Pasting a picture
+
+Copy an image — a screenshot, something from Paint, a diagram from a web page —
+and press **Ctrl+V** in the prompt box. A small chip appears above the box with
+a thumbnail, the name and the size. Type your question next to it and press
+Enter, and Claude actually looks at the picture.
+
+- **The ✕ on the chip removes it** before you send. Nothing is sent until you
+  press Enter.
+- You can paste **several** images into one prompt (up to eight).
+- **An image on its own is a valid prompt** — the send button lights up even
+  with nothing typed.
+- **If your clipboard has text *and* a picture** — copying a range of
+  spreadsheet cells does this — you get both: the text lands in the box and
+  the picture attaches beside it.
+- **Pasting ordinary text is exactly as it always was.** Nothing about this
+  changes it.
+
+Some things it will tell you it cannot do, rather than failing quietly:
+
+| What you did | What you'll see under the box |
+|---|---|
+| Pasted a very large image | "That image is too big to send" — about 3.8 MB per image is the ceiling |
+| Pasted more than eight | "You can attach up to 8 images to one prompt" |
+| Pasted a format Claude can't read | Only PNG, JPEG, GIF and WebP work. For anything else, put its full file path in the prompt and Claude will open it |
+| Pasted into a **Terminal mode** session | Pictures can only be sent by a session in **Direct mode** (see [Direct mode](12-direct-mode.md)). In Terminal mode, paste it in the Terminal tab instead |
+
+If a prompt with a picture can't be sent — the session stopped, say — **nothing
+is cleared**. Your words and your image stay right where they are, and a line
+under the box tells you it didn't go.
+
 ## How much detail you see
 
 Three settings, top of the Session tab:

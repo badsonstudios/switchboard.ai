@@ -55,6 +55,21 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **Paste a picture into the prompt box.** Copy a screenshot, something from
+  Paint, or an image off a web page, press **Ctrl+V** in a session's prompt
+  box, and it attaches as a small chip with a thumbnail — then type your
+  question and press Enter, and Claude actually looks at it. The ✕ on the chip
+  removes it before you send, several images can ride one prompt, and an image
+  on its own is a perfectly good prompt. If your clipboard holds text *and* a
+  picture, you get both. Pasting ordinary text is completely unchanged.
+  Anything it cannot send it says so about, under the box, before you have
+  waited on a reply: an image that is too big, a format Claude cannot read
+  (only PNG, JPEG, GIF and WebP work — for anything else, put its file path in
+  the prompt), or a session running in **Terminal mode**, where pictures have
+  to be pasted into the Terminal tab instead. And if a prompt with a picture
+  does not go, nothing is cleared — your words and your image stay where they
+  are.
+
 - **Answer a permission from the desktop pop-up.** When a session asks
   permission while you are in another app, the pop-up now carries **Allow** and
   **Deny** — press one and the tool runs, or Claude is told no, without

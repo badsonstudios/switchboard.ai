@@ -472,6 +472,17 @@
     "todoPending": "[ ]",
     "you": "you",
     "composerPlaceholder": "Prompt this session — Enter to send, Shift+Enter for a new line",
+    "attach": {
+      "label": "Attached to this prompt",
+      "remove": "Remove {name}",
+      "removeIcon": "×",
+      "too-large": "That image is too big to send — the limit is about {limit} per image.",
+      "too-many": "You can attach up to {max} images to one prompt.",
+      "unreadable": "That image couldn't be read from the clipboard.",
+      "unsupported": "Only PNG, JPEG, GIF and WebP images can be attached. For anything else, put its full file path in the prompt instead.",
+      "terminalMode": "Images can only be sent by a session in Direct mode. This one runs in Terminal mode — paste it in the Terminal tab instead.",
+      "notSent": "That prompt wasn't sent, so nothing has been cleared. The session may have stopped, or it may not be in Direct mode."
+    },
     "autonomyHint": "Autonomy for this session (applies on next resume)",
     "modelHint": "Model last seen in this session's transcript",
     "send": "Send to the session",

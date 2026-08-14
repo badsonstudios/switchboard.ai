@@ -22,6 +22,16 @@ import { rendererRegistry } from '../extensibility/registry-instance';
 import { renderFeedBlock } from '../extensibility/feed-render';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { interruptSession, submitPrompt } from '../lib/composer';
+import { ComposerAttachments } from './ComposerAttachments';
+import {
+  Attachment,
+  MAX_ATTACHMENTS,
+  MAX_IMAGE_FILE_BYTES,
+  filesFrom,
+  formatBytes,
+  hasPlainText,
+  readImageAttachments,
+} from '../lib/composer-attachments';
 import {
   COMPOSER_FONT_SIZE,
   COMPOSER_LINE_RATIO,
@@ -708,6 +718,7 @@ export function FeedView(props: {
         autonomy={props.autonomy}
         model={props.model}
         status={props.status}
+        transport={props.transport}
         onCycleAutonomy={props.onCycleAutonomy}
       />
     </div>
@@ -988,12 +999,15 @@ function Composer({
   autonomy,
   model,
   status,
+  transport,
   onCycleAutonomy,
 }: {
   sessionId: string;
   autonomy?: string;
   model?: string;
   status?: string;
+  /** P2-E10-09: only a typed-message transport can carry a pasted image */
+  transport?: 'pty' | 'stream';
   onCycleAutonomy?: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
@@ -1001,6 +1015,75 @@ function Composer({
   const box = React.useRef<HTMLTextAreaElement | null>(null);
   /** the composer's own root — the auto-grow measures the panel through it */
   const root = React.useRef<HTMLDivElement | null>(null);
+
+  // Pasted images (P2-E10-09, §5.10). The clipboard RULES are in
+  // `lib/composer-attachments.ts`; this end only reacts to a paste event and
+  // holds what came out of it.
+  const [attachments, setAttachments] = React.useState<Attachment[]>([]);
+  /** one line of explanation for a paste that produced nothing, or null */
+  const [attachNotice, setAttachNotice] = React.useState<string | null>(null);
+  // A stream session takes typed messages and so can carry an image block; a
+  // PTY session takes KEYSTROKES, and there is no keystroke for a bitmap. The
+  // composer is otherwise deliberately transport-ignorant (`lib/composer.ts`),
+  // and this is the one thing it genuinely cannot discover by trying: the
+  // try-then-fall-back shape exists because both routes deliver the same
+  // thing, which stops being true here. Undefined — a session whose transport
+  // we have not been told — is treated as capable, because the send path
+  // reports a refusal honestly and guessing "no" would break the default.
+  const canAttach = transport !== 'pty';
+
+  /**
+   * Ctrl+V.
+   *
+   * A clipboard with NO files is not our business at all — we never call
+   * `preventDefault`, never touch the draft, and the browser pastes text
+   * exactly as it always did. That is the "plain text is completely
+   * unaffected" clause, and it is the first branch on purpose.
+   *
+   * A clipboard with BOTH text and an image keeps both: the default paste runs
+   * (so the words land at the caret) AND the image attaches beside it. A
+   * spreadsheet range or a copied web selection gives you both halves, and
+   * dropping either one silently is the bug report.
+   */
+  const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>): void => {
+    const files = filesFrom(e.clipboardData);
+    if (files.length === 0) return; // plain text — untouched, as if we did not exist
+    // Nothing to insert, so suppress the default paste (which would otherwise
+    // drop a file NAME into the box on some platforms). BEFORE the transport
+    // check, deliberately: a Terminal-mode session cannot take the picture, but
+    // the words on the same clipboard are still the user's and still belong in
+    // the box.
+    if (!hasPlainText(e.clipboardData)) e.preventDefault();
+    if (!canAttach) {
+      setAttachNotice(t('feedView.attach.terminalMode'));
+      return;
+    }
+    void (async () => {
+      const outcome = await readImageAttachments(files, attachments.length);
+      // The cap is re-applied inside the functional update, not just from the
+      // `attachments.length` read above: two pastes in flight at once both
+      // measured the same "before", and the state is the only thing that knows
+      // what actually landed.
+      if (outcome.attachments.length > 0)
+        setAttachments((prev) => [...prev, ...outcome.attachments].slice(0, MAX_ATTACHMENTS));
+      // both interpolations are passed to every message: ICU ignores an
+      // argument a string does not name, and a limit quoted in prose is a limit
+      // that drifts from the constant the moment either one moves
+      setAttachNotice(
+        outcome.rejected
+          ? t(`feedView.attach.${outcome.rejected}`, {
+              max: MAX_ATTACHMENTS,
+              limit: formatBytes(MAX_IMAGE_FILE_BYTES),
+            })
+          : null
+      );
+    })();
+  };
+
+  const removeAttachment = (id: string): void => {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+    setAttachNotice(null);
+  };
 
   // Slash-command autocomplete (E10-07, §5.10): typing '/' as the FIRST
   // character pops the list — CLI builtins + the project's/user's own
@@ -1115,7 +1198,12 @@ function Composer({
   }, []);
   // A LAYOUT effect: the height is written in the same commit as the new text,
   // so the box never paints a frame at the old size.
-  React.useLayoutEffect(grow, [draft, grow]);
+  // `attachments` is in here for the same reason `draft` is: the strip lives
+  // inside the composer's own root, so attaching or removing an image changes
+  // how much room `roomForBox` finds for the textarea. Without it a paste made
+  // with a twelve-line draft on screen leaves the box at a height its panel no
+  // longer has, which is #406's overhang arriving through a new door.
+  React.useLayoutEffect(grow, [draft, attachments, grow]);
   // A NARROWER box wraps the same text into more lines, and a SHORTER panel has
   // less to spare — dragging a splitter or resizing the window re-renders
   // nothing, so without this a long draft keeps a height its panel no longer
@@ -1146,14 +1234,47 @@ function Composer({
     return () => ro.disconnect();
   }, [grow]);
 
+  /** something to send: words, a picture, or both (E10-09) */
+  const sendable = draft.trim().length > 0 || attachments.length > 0;
+
   const submit = (): void => {
     const text = draft.replace(/\r\n/g, '\n').trimEnd();
-    if (!text) return;
-    // transport-agnostic (P2-E18-08a): main answers whether it took it, and
-    // this falls back to the PTY dance if not
-    void submitPrompt(sessionId, text);
-    setDraft('');
-    setDismissed(false);
+    // An image with nothing typed IS a prompt (§5.10's composer is an input
+    // route, and "look at this" is a thing people send), so the guard is on
+    // BOTH being empty rather than on the text alone.
+    if (!text && attachments.length === 0) return;
+
+    if (attachments.length === 0) {
+      // The path this composer has always had, byte for byte: transport-
+      // agnostic (P2-E18-08a), main answers whether it took it, and this falls
+      // back to the PTY dance if not. A text prompt cannot be refused — one of
+      // the two routes always accepts it — so the box clears immediately and
+      // the send stays as snappy as it was.
+      void submitPrompt(sessionId, text);
+      setDraft('');
+      setDismissed(false);
+      setAttachNotice(null);
+      box.current?.focus();
+      return;
+    }
+
+    // WITH IMAGES the send can genuinely fail (no PTY fallback carries a
+    // bitmap), so the draft is cleared only once we know it went.
+    const images = attachments.map((a) => ({ mediaType: a.mediaType, data: a.data }));
+    void submitPrompt(sessionId, text, images).then((ok) => {
+      if (!ok) {
+        // Everything stays exactly where it was. Clearing a composer whose
+        // contents went nowhere is the one outcome the user cannot undo, and a
+        // pasted screenshot is not recoverable from the clipboard a minute
+        // later.
+        setAttachNotice(t('feedView.attach.notSent'));
+        return;
+      }
+      setDraft('');
+      setDismissed(false);
+      setAttachments([]);
+      setAttachNotice(null);
+    });
     box.current?.focus();
   };
 
@@ -1231,10 +1352,20 @@ function Composer({
           })}
         </div>
       )}
+      {/* attachments (E10-09) sit INSIDE the composer's own root, above the
+          box: that is what makes `roomForBox` count them as chrome, so the
+          textarea's twelve-line cap is measured against the room actually
+          left rather than fighting the strip for it */}
+      <ComposerAttachments
+        attachments={attachments}
+        notice={attachNotice}
+        onRemove={removeAttachment}
+      />
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6 }}>
       <textarea
         ref={box}
         value={draft}
+        onPaste={onPaste}
         onChange={(e) => {
           setDraft(e.target.value);
           setDismissed(false);
@@ -1334,16 +1465,17 @@ function Composer({
       )}
       <button
         onClick={submit}
-        disabled={!draft.trim()}
+        // an attached image with nothing typed is a sendable prompt (E10-09)
+        disabled={!sendable}
         title={t('feedView.send')}
         style={{
-          background: draft.trim() ? 'var(--btn-primary-bg)' : 'var(--chip)',
-          color: draft.trim() ? 'var(--btn-primary-text)' : 'var(--faint)',
+          background: sendable ? 'var(--btn-primary-bg)' : 'var(--chip)',
+          color: sendable ? 'var(--btn-primary-text)' : 'var(--faint)',
           border: '1px solid var(--border)',
           borderRadius: 8,
           inlineSize: 30,
           blockSize: 30,
-          cursor: draft.trim() ? 'pointer' : 'default',
+          cursor: sendable ? 'pointer' : 'default',
           fontSize: 14,
           lineHeight: 1,
         }}

@@ -4,7 +4,13 @@
 // needed the compiled CLI could only skip there. The compiled program is proven
 // end-to-end over real pipes by `npm run check:fake-stream`.
 import { describe, it, expect, beforeEach } from 'vitest';
-import { FakeStreamProtocol, FakeStreamHost, extractText, FAKE_SESSION_ID } from './fake-stream-protocol';
+import {
+  FakeStreamProtocol,
+  FakeStreamHost,
+  extractText,
+  extractImages,
+  FAKE_SESSION_ID,
+} from './fake-stream-protocol';
 
 let out: Record<string, unknown>[];
 let writes: Array<{ path: string; content: string }>;
@@ -658,5 +664,68 @@ describe('extractText — the inbound envelope (P2-E18-04)', () => {
     expect(extractText(undefined)).toBe('');
     expect(extractText({})).toBe('');
     expect(extractText({ content: 42 })).toBe('');
+  });
+});
+
+// P2-E10-09 — the fake has to be able to TELL that an image arrived, or every
+// test of the image path can only prove the composer cleared itself.
+describe('images on the inbound envelope (P2-E10-09)', () => {
+  const png = {
+    type: 'image',
+    source: { type: 'base64', media_type: 'image/png', data: 'AQIDBA==' },
+  };
+  const withImage = (): Record<string, unknown> => ({
+    type: 'user',
+    message: { role: 'user', content: [png, { type: 'text', text: 'what is this?' }] },
+    parent_tool_use_id: null,
+    session_id: '',
+  });
+
+  it('reads exactly the block shape the extension writes', () => {
+    expect(extractImages({ content: [png] })).toEqual([
+      { mediaType: 'image/png', data: 'AQIDBA==' },
+    ]);
+  });
+
+  // A strict reader, on purpose: a block WE got wrong should look like an image
+  // that vanished, not like one the fake was kind enough to accept.
+  it('ignores anything that is not that shape', () => {
+    expect(extractImages({ content: [{ type: 'image' }] })).toEqual([]);
+    expect(extractImages({ content: [{ type: 'image', source: { type: 'url', url: 'x' } }] })).toEqual([]);
+    expect(extractImages({ content: [{ type: 'text', text: 'a' }] })).toEqual([]);
+    expect(extractImages(undefined)).toEqual([]);
+    expect(extractImages({ content: 'plain' })).toEqual([]);
+  });
+
+  it('answers an image turn with what it decoded off the wire', () => {
+    proto.handle(withImage());
+    const said = out
+      .filter((m) => m.type === 'assistant')
+      .flatMap((m) => ((m.message as { content?: Array<{ text?: string }> })?.content ?? []))
+      .map((c) => c.text ?? '')
+      .join(' ');
+    expect(said).toContain('IMAGE-SEEN:image/png:8');
+  });
+
+  // `--replay-user-messages` echoes our own turn back. Dropping the image from
+  // that echo would be a fake that cannot distinguish a working image path from
+  // a broken one.
+  it('echoes the image block back, unchanged', () => {
+    proto.handle(withImage());
+    const echo = out.find((m) => m.type === 'user') as
+      | { message: { content: Array<Record<string, unknown>> } }
+      | undefined;
+    expect(echo?.message.content[0]).toEqual(png);
+    expect(echo?.message.content[1]).toEqual({ type: 'text', text: 'what is this?' });
+  });
+
+  it('leaves a text-only turn exactly as it was', () => {
+    proto.handle(userMsg('hello'));
+    const echo = out.find((m) => m.type === 'user') as
+      | { message: { content: Array<Record<string, unknown>> } }
+      | undefined;
+    expect(echo?.message.content).toEqual([{ type: 'text', text: 'hello' }]);
+    expect(types().filter((t) => t === 'assistant').length).toBeGreaterThan(0);
+    expect(JSON.stringify(out)).not.toContain('IMAGE-SEEN');
   });
 });
