@@ -24,7 +24,7 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { launchApp, LaunchedApp, registerTempDir } from './fixtures/app';
+import { launchApp, LaunchedApp, onTestDisplay, registerTempDir } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -448,9 +448,13 @@ test.describe('the document area is READABLE, not merely present (P2-E16-03)', (
     const dir = tempGitProject(['ONE.md']);
     a = await launchApp({ seedFolder: dir });
     const w = a.window;
+    // Only the WIDTH is under test; the corner is just "somewhere sane". So it
+    // rides `onTestDisplay` (#479) — otherwise this is the one place in the
+    // suite that drags the main window back onto the primary monitor. A no-op
+    // unless SWITCHBOARD_E2E_MONITOR is set.
     await a.app.evaluate(
       ({ BrowserWindow }, box) => BrowserWindow.getAllWindows()[0]?.setBounds(box),
-      { x: 20, y: 20, width, height }
+      onTestDisplay(a, { x: 20, y: 20, width, height })
     );
     await openChanges(w, dir);
     await openInViewer(w, 'ONE.md');
