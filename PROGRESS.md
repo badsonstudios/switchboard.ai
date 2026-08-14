@@ -3,7 +3,26 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — 🎛 RUN 18 CLOSED 2026-08-14: 16 ITEMS, BOARD EMPTY
+> # ▶▶ START HERE — 🚢 0.5.0 CUT IN FLIGHT (2026-08-14, post-dogfood)
+>
+> **v0.4.0 shipped + train #519 landed (see the ENDGAME COMPLETE block
+> ~line 340 for the full record). Dan installed v0.4.0, dogfooded, and
+> hit the version gap** (tested 0.5.0 features — paste/drag/announce —
+> against the 0.4.0 build that predates them). **Real findings filed:
+> #520** (find jump paints NO highlight — verified: FeedView jumpTo
+> scrolls+reveals, draws nothing; affects both builds) · **#521** (no
+> discoverable file-open; palette "Open file…" + Changes-tab ↗ exist
+> unadvertised; Files-tab request → design gate like #407's).
+> **Dan ordered the 0.5.0 cut → issue #522 (folds #487's lock guard),
+> worker in sb-wt-1 · `feature/522-release-0.5.0`.** On green PR:
+> orchestrator merges, tags v0.5.0 at the cut commit (Dan-authorized),
+> release.yml publishes. **THEN run 19:** #484 resume-link FIRST ·
+> #520 high (owner-reported) · #407 Shape B build · #482→#483 ·
+> #485 · #521 layer 1 · tail (#488 #490 #491 #494-#499 #502-#504
+> #506 #508 #509 #512 #517 #518 #521-design).
+>
+> # (run-18 close record follows)
+> # 🎛 RUN 18 CLOSED 2026-08-14: 16 ITEMS, BOARD EMPTY
 > # EXCEPT DAN'S GATE
 >
 > **All 16 items DONE, all PRs green (or greening at close), zero red
