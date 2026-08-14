@@ -136,6 +136,19 @@
 > renumber/CHANGELOG/ipc.ts, re-gate, push → CI triggers naturally).
 > In flight: #465/#477 (wt-1) · #412 (wt-2) · #437-fix (wt-3).
 >
+> **#412 ✅ DONE → PR #505 READY, Dan's queue #7.** Viewer follows the
+> file: main-owned watch (`src/main/fs/file-watch.ts`, discovery-
+> scheduler doctrine — fs.watch accelerates, 2s stat floor decides,
+> DIRECTORY watched to survive write-temp-rename, refcounted), 150ms/
+> 1s-ceiling coalesce in main, notice carries NO bytes, fs.read-scoped,
+> directory targets refused. Self-review caught a real blocker (change
+> mid-first-read = permanent "Opening…" — the flagship scenario); 4
+> mutation checks kill exactly the intended tests. Gates 4181 unit /
+> 263+3 e2e. Discovery filed → **#506** (closing source card silently
+> stops following; wants a third notice state). **#470 dispatched →
+> sb-wt-2** (token-sweep shape filter + spawn-fail release; INTERNAL).
+> In flight: #465/#477 (wt-1) · #470 (wt-2) · #437-fix (wt-3).
+>
 > **MERGE POLICY THIS RUN: nothing merges before the #480 cut PR lands**
 > (Dan merges it, then pushes tag v0.4.0 — the tag is his; the cut ships
 > his #395 blank-resume fix). Feature CHANGELOG entries written pre-cut
