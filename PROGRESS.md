@@ -25,6 +25,28 @@
 > real-CLI verification turn pre-authorized per the issue; attachment
 > affordance must be #476-reusable).
 >
+> **#397/PR #437 ✅ DONE (2nd attempt, resumed worker) — READY, Dan's
+> queue #2.** Gate landed (spawnTransport resolved once, pre-write only
+> on pty), 3214 unit / 213+3 e2e green locally @ 167f224; the PR's
+> "docs already read correctly" claim was FALSE — both manual pages
+> rewritten (Terminal trust recipe now reachable any time). Follow-up
+> filed → **#488** (zero-token e2e pins: App trustReaches wiring + the
+> gate itself in stream.spec lanes).
+>
+> **⚠ GITHUB ACTIONS STOPPED CREATING RUNS repo-wide since 2026-08-14
+> 00:34 UTC** (suspected account spending limit — private-repo minutes,
+> Windows e2e all day; billing scope needed to confirm = DAN). PR #486
+> got 4/4 green BEFORE the stop → mergeable. PR #437 has NO checks (not
+> red — no runs exist for its commits; local gate is the evidence;
+> empty-commit kick ba6bfc1 also produced nothing). **DAN ACTION: check
+> github.com/settings/billing → Actions. Until it revives: nothing
+> internal merges (green-CI rule unmeetable), user-facing PRs queue with
+> local-gate evidence, re-kick CI on open PRs after revival.**
+>
+> **#479 dispatched → sb-wt-2 · `feature/479-e2e-secondary-monitor`**
+> (worker told: CI stalled, local gate is the gate; second monitor
+> present for the with-var verification).
+>
 > **MERGE POLICY THIS RUN: nothing merges before the #480 cut PR lands**
 > (Dan merges it, then pushes tag v0.4.0 — the tag is his; the cut ships
 > his #395 blank-resume fix). Feature CHANGELOG entries written pre-cut
