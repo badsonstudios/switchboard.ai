@@ -173,11 +173,11 @@ these keys appears in the strip above the conversation while you're in it. Then:
 
 | Key | What it does |
 |---|---|
-| `↓` | Move to the next thing that opens |
+| `↓` | Move to the next control — something that opens, or a Copy button on code |
 | `↑` | Move to the previous one |
 | `Home` | Jump to the first one in the conversation |
 | `End` | Jump to the last one |
-| `Enter` or `Space` | Open or close the one you're on |
+| `Enter` or `Space` | Open or close the one you're on — or copy, on a Copy button |
 | `Esc` | Step back out to the conversation as a whole |
 | `Page Up` / `Page Down` | Scroll, as usual |
 

@@ -6,7 +6,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { blockVisible, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
-import { feedKeyAction, FEED_EXPANDER_ATTR } from '../lib/feed-keys';
+import { feedKeyAction, FEED_STOP_SELECTOR } from '../lib/feed-keys';
 import {
   FeedReveal,
   FeedRevealProvider,
@@ -418,17 +418,19 @@ export function FeedView(props: {
   // Keyboard path into the conversation (#174, §5.32 "keyboard-complete").
   //
   // The scroller is ONE tab stop — a labelled region — and the arrow keys move
-  // between the expanders inside it, which are real buttons carrying
-  // `data-feed-expander` (see `FeedExpander`). The list is read off the DOM at
-  // keystroke time rather than kept in state: the DOM already holds every
-  // expander in exactly the order the eye reads them, and blocks stream in and
-  // out constantly, so any registry we kept would be a second copy to get wrong.
+  // between the operable controls inside it: the expanders (`FeedExpander`) and,
+  // since #477, the copy buttons on code. `FEED_STOP_SELECTOR` is that list, and
+  // it lives in `feed-keys.ts` next to the keys so a renderer adding a control
+  // has one place to look. The list is read off the DOM at keystroke time rather
+  // than kept in state: the DOM already holds every stop in exactly the order
+  // the eye reads them, and blocks stream in and out constantly, so any registry
+  // we kept would be a second copy to get wrong.
   const [inFeed, setInFeed] = React.useState(false);
   const onFeedKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLDivElement>): void => {
     markGesture();
     const root = scroller.current;
     if (!root) return;
-    const els = Array.from(root.querySelectorAll<HTMLElement>(`[${FEED_EXPANDER_ATTR}]`));
+    const els = Array.from(root.querySelectorAll<HTMLElement>(FEED_STOP_SELECTOR));
     const active = root.ownerDocument.activeElement as HTMLElement | null;
     const action = feedKeyAction(e.key, {
       count: els.length,
