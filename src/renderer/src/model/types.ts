@@ -25,6 +25,16 @@ export interface RailSession {
   liveId?: string;
   /** freeform task label (shown under the title in the Events panel) */
   taskLabel?: string;
+  /**
+   * The transport this card's NEXT session will run on (#397): its own choice,
+   * else the env override, else the default. `undefined` means main did not
+   * say, and callers must read that as the default — never as "Terminal".
+   *
+   * This is the CHOSEN transport, not the running one. They differ while a
+   * transport change waits for a restart; `lib/trust-reach.ts` says why the
+   * chosen one is the answer its question wants.
+   */
+  transport?: 'pty' | 'stream';
 }
 
 /** A persistent group (E12). */

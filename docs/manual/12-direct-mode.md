@@ -86,13 +86,23 @@ show, and the tab says so. That means you lose:
   request from the command line
 - Anything else that only exists as a full-screen terminal interface
 
-**And the folder-trust question is never asked.** If you've turned auto-trust
-off (**🔒 ask trust** in the title bar — see [Settings](10-settings.md#trusting-folders)),
-a Terminal-mode session shows you Claude Code's trust prompt for a new folder
-and waits. A Direct-mode session doesn't: Claude Code raises no trust question
-at all outside its own terminal, so it just runs in the folder. Nothing hangs
-and nothing is hidden from you — but if being asked matters for a folder, open
-it once in Terminal mode.
+**And the folder-trust question is never asked.** A Terminal-mode session shows
+you Claude Code's trust prompt for a new folder and waits. A Direct-mode session
+doesn't: Claude Code raises no trust question at all outside its own terminal,
+so it just runs in the folder. Nothing hangs and nothing is hidden from you.
+
+That is why the **🔓 auto-trust / 🔒 ask trust** chip in the title bar is greyed
+out while every session is in Direct mode — hover it and it says so. It is not
+broken: there is just no session there that could put the question in front of
+you. Switch a session to Terminal mode from its **⋯** menu and the chip works
+again. Full story in [Settings](10-settings.md#trusting-folders).
+
+Because nothing can ask, switchboard doesn't answer on your behalf either: a
+Direct-mode session leaves Claude Code's trust setting for that folder exactly
+as it found it, whichever way the chip is set. The question is still there to be
+asked the first time you run in Terminal mode — and with **auto-trust** on (the
+default) that is the moment switchboard answers it for you, so switch the chip
+to **🔒 ask trust** first if you want to see the prompt yourself.
 
 Everything else works the same — better, in a couple of places. Your
 conversation still appears in the Session view (and arrives faster; see

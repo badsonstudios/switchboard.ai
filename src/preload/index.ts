@@ -198,6 +198,11 @@ const api = {
         groupId?: string;
         autoKey?: string;
         taskLabel?: string;
+        /** the transport this card's NEXT session will run on (#397) — the
+         *  card's own choice, then the env override, then the default. NOT
+         *  what a running session is currently hosted on; the two differ while
+         *  a transport change waits for a restart. */
+        transport?: 'pty' | 'stream';
       }>
     > => ipcRenderer.invoke('sessions:cards'),
     knownCards: (): Promise<Array<{ cardId: string; identity: SessionRecordDto['identity'] }>> =>
