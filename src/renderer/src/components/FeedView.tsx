@@ -125,12 +125,16 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
 function EmptyState({
   binding,
   diag,
+  transport,
 }: {
   binding: BindingState;
   diag: BindingDiagnostics | null;
+  /** which transport hosts the session (#447) — the fail-open line must not
+   *  send a Direct user to a Terminal tab that has no terminal in it */
+  transport?: 'pty' | 'stream';
 }): React.JSX.Element {
   const { t } = useTranslation();
-  const copy = emptyStateCopy(binding, diag);
+  const copy = emptyStateCopy(binding, diag, transport);
   const path = diag?.projectsRoot ?? '';
   return (
     <div
@@ -162,10 +166,9 @@ function EmptyState({
       </div>
       <div style={{ wordBreak: 'break-word' }}>{t(copy.detail, { path })}</div>
       {/* fail-open, said out loud: our binding failing never stops the CLI, and
-          a user staring at an error needs to know where the session still is */}
-      {copy.problem && (
-        <div style={{ marginBlockStart: 6 }}>{t('binding.unboundFallback')}</div>
-      )}
+          a user staring at an error needs to know where the session still is.
+          WHICH sentence that is depends on the transport — see `binding-copy` */}
+      {copy.fallback && <div style={{ marginBlockStart: 6 }}>{t(copy.fallback)}</div>}
     </div>
   );
 }
@@ -658,7 +661,11 @@ export function FeedView(props: {
               current verbosity filters out has plenty of conversation, and
               telling its owner there is none would be a confident lie */}
           {blocks.length === 0 && !cleared && (
-            <EmptyState binding={props.binding ?? 'awaiting-prompt'} diag={props.bindingDiag ?? null} />
+            <EmptyState
+              binding={props.binding ?? 'awaiting-prompt'}
+              diag={props.bindingDiag ?? null}
+              transport={props.transport}
+            />
           )}
           {/* the find bar's reveal set reaches the collapsible renderers from
               here — see lib/feed-reveal for why it is a context and not props */}

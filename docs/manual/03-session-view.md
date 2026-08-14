@@ -93,9 +93,17 @@ is rather than leaving you guessing:
   a moment.
 - **"Couldn't find this session's transcript"** — shown in red, and the only
   one that means something is actually wrong. It tells you where it looked and
-  what it found. **Your session is unaffected** — it's still running, and the
-  **Terminal** tab shows it exactly as Claude Code renders it. See
-  [Troubleshooting](11-troubleshooting.md).
+  what it found. **Your session is unaffected** either way, and the last line
+  says where it still is — which depends on the mode the session is in:
+  - **Terminal mode** — the **Terminal** tab shows the session exactly as
+    Claude Code renders it, so go and read it there.
+  - **[Direct mode](12-direct-mode.md)** — there is no terminal to go to, and
+    you don't need one: a Direct session's replies come straight into this
+    window rather than being read out of that file. The status on the card
+    header tells you what it's doing. The missing file only costs you usage
+    totals and picking the conversation back up next time you open switchboard.
+
+  See [Troubleshooting](11-troubleshooting.md).
 
 If you have two cards open on the *same folder*, expect the second one to spend
 a little longer on "Looking for…" — switchboard waits until it can tell the two

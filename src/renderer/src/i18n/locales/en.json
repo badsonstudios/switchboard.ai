@@ -452,7 +452,8 @@
     "unboundFoundQuiet": "Transcripts are being written for this folder, but none match this session — and Claude Code has not reported any activity to switchboard.ai either, which usually means its hooks aren't reaching us.",
     "unboundSilent": "This session has run at least one turn, but no transcript for it has turned up in {path}.",
     "unboundNothing": "Nothing has turned up in {path}.",
-    "unboundFallback": "The Terminal tab is unaffected — your session is still running there."
+    "unboundFallback": "The Terminal tab is unaffected — your session is still running there.",
+    "unboundFallbackDirect": "Your session is unaffected — in Direct mode the conversation arrives in this window as Claude replies, rather than being read from that file. Watch the status on the card header; the transcript is only needed for usage totals and for resuming this session later."
   },
   "handoff": {
     "permissionTitle": "Claude is asking permission in the terminal",

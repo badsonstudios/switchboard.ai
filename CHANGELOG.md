@@ -325,6 +325,17 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **A Direct session that can't find its transcript no longer sends you to a
+  terminal it hasn't got.** When the Session tab gave up looking for a
+  conversation file it signed off with "The Terminal tab is unaffected — your
+  session is still running there" — which is true in Terminal mode and was
+  being said in Direct mode too, where the Terminal tab's entire content is "No
+  terminal for this session". Two honest sentences in one window adding up to a
+  wild goose chase. A Direct session now gets the sentence that fits it: its
+  replies come into that window over its own connection and were never read out
+  of that file, the status on the card header says what it's doing, and what
+  the missing file actually costs is usage totals and resuming the conversation
+  later. Terminal-mode sessions read exactly as before.
 - **A reopened session shows its conversation again.** Since 0.3.0, quitting
   switchboard and opening it again left every Direct-mode card looking blank —
   no prompts, no replies, nothing — as though the session had been wiped.
