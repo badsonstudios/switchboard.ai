@@ -149,6 +149,25 @@
 > sb-wt-2** (token-sweep shape filter + spawn-fail release; INTERNAL).
 > In flight: #465/#477 (wt-1) · #470 (wt-2) · #437-fix (wt-3).
 >
+> **#465+#477 SERIAL TRACK ✅ DONE.** **#465 → PR #500 (INTERNAL, my
+> merge after cut + green)** — audit verdict NOT benign: forged
+> expander markup wedges arrow-key nav permanently, captures the
+> keyboard walk, hijacks find jumps (bounded, no script, but real).
+> Fix two-layered: ALLOW_DATA_ATTR:false at the ONE sanitizer profile
+> + decoration-guard.ts (viewer's stripOurNamespace extracted,
+> DOC_/FEED_DECORATION frozen); mutation: 6/1/12 red per layer. 4173
+> unit / 259+3 e2e. **#477 → PR #507 READY, Dan's queue #8** (based on
+> #500's branch — merge #500 first, then retarget #507 to main).
+> Copy on fenced code + Bash IN/OUT, guard-first decoration, runCopy
+> uses the BUTTON'S OWN window (popped-out cards work), one Tab stop
+> kept, real-clipboard e2e (polled read; Windows normalizes CRLF).
+> 4202 unit / 260+3 e2e. Discoveries filed: **#508** (viewer's own
+> copy button vs popped-out window) · **#509** (ALLOW_ARIA_ATTR still
+> true — announced-never-obeyed channel). **#447→#442 serial track
+> dispatched → sb-wt-1** (transport-honest unbound fallback; tail-pin
+> MEASURE-FIRST at CI geometry). In flight: #447/#442 (wt-1) · #470
+> (wt-2) · #437-fix (wt-3).
+>
 > **MERGE POLICY THIS RUN: nothing merges before the #480 cut PR lands**
 > (Dan merges it, then pushes tag v0.4.0 — the tag is his; the cut ships
 > his #395 blank-resume fix). Feature CHANGELOG entries written pre-cut
