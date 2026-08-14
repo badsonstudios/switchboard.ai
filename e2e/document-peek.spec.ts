@@ -24,11 +24,7 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-<<<<<<< HEAD
-import { launchApp, LaunchedApp, onTestDisplay, registerTempDir } from './fixtures/app';
-=======
-import { launchApp, LaunchedApp, registerTempDir, skipPopoutOnLinux } from './fixtures/app';
->>>>>>> origin/feature/462-addsessioncard-husk
+import { launchApp, LaunchedApp, onTestDisplay, registerTempDir, skipPopoutOnLinux } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
