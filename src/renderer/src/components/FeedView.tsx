@@ -25,12 +25,16 @@ import { interruptSession, submitPrompt } from '../lib/composer';
 import { ComposerAttachments } from './ComposerAttachments';
 import {
   Attachment,
+  AttachmentRejection,
   MAX_ATTACHMENTS,
-  MAX_IMAGE_FILE_BYTES,
+  MAX_ATTACHMENT_PAYLOAD_BYTES,
+  MAX_ENCODED_FILE_BYTES,
   filesFrom,
+  filesFromDrop,
   formatBytes,
   hasPlainText,
-  readImageAttachments,
+  readAttachments,
+  toPromptAttachments,
 } from '../lib/composer-attachments';
 import {
   COMPOSER_FONT_SIZE,
@@ -1045,6 +1049,83 @@ function Composer({
    * spreadsheet range or a copied web selection gives you both halves, and
    * dropping either one silently is the bug report.
    */
+  /**
+   * The ONE intake, shared by paste and drop.
+   *
+   * The reference's paste handler and drop handler both end in a single
+   * `onAddFiles(FileList)`, and so do ours: everything after "here are some
+   * files" — the classification, the cap, the message — must not be able to
+   * differ between the two routes, because a user who is told a `.md` is
+   * unsupported when pasted and fine when dropped has found a bug rather than a
+   * feature.
+   *
+   * `preRejected` is the one thing drop knows that paste cannot: a folder was
+   * in the transfer. It is reported only when nothing else went wrong, so a
+   * drop of "one folder and one 40 MB video" leads with the reason the FILE was
+   * refused rather than with the folder.
+   */
+  /**
+   * Every interpolation is passed to every message: ICU ignores an argument a
+   * string does not name, and a limit quoted in prose is a limit that drifts
+   * from the constant the moment either one moves.
+   */
+  const attachMessage = (reason: AttachmentRejection): string =>
+    t(`feedView.attach.${reason}`, {
+      max: MAX_ATTACHMENTS,
+      limit: formatBytes(MAX_ENCODED_FILE_BYTES),
+      textLimit: formatBytes(MAX_ATTACHMENT_PAYLOAD_BYTES),
+    });
+
+  const addFiles = (
+    files: File[],
+    origin: 'paste' | 'drop' = 'paste',
+    preRejected: AttachmentRejection | null = null
+  ): void => {
+    // A FOLDER is reported before the transport is: "files can only be sent in
+    // Direct mode — use the Terminal tab instead" is nonsense advice about a
+    // folder, which cannot be attached by any session in any mode.
+    if (preRejected === 'directory' && files.length === 0) {
+      setAttachNotice(attachMessage('directory'));
+      return;
+    }
+    if (!canAttach) {
+      setAttachNotice(t('feedView.attach.terminalMode'));
+      return;
+    }
+    if (files.length === 0) {
+      // A transfer that yielded NOTHING still has to say something. Some drag
+      // sources (Outlook, archive tools, virtual-file providers) advertise
+      // `Files` and then hand over items whose `getAsFile()` is null — and
+      // "nothing appeared and nothing was said" is the #163 failure. Note this
+      // branch never clears an existing notice with `null`: a route that did
+      // nothing has no business erasing the explanation of the last one.
+      setAttachNotice(attachMessage(preRejected ?? 'unreadable'));
+      return;
+    }
+    void (async () => {
+      try {
+        const outcome = await readAttachments(files, attachments.length, origin);
+        // The cap is re-applied inside the functional update, not just from the
+        // `attachments.length` read above: two transfers in flight at once both
+        // measured the same "before", and the state is the only thing that
+        // knows what actually landed. An overflow here is silent — the notice
+        // was computed against a stale count — which is acceptable only because
+        // reaching it needs two transfers racing into the same full draft.
+        if (outcome.attachments.length > 0)
+          setAttachments((prev) => [...prev, ...outcome.attachments].slice(0, MAX_ATTACHMENTS));
+        const reason = outcome.rejected ?? preRejected;
+        setAttachNotice(reason ? attachMessage(reason) : null);
+      } catch {
+        // `readAttachments` is DOCUMENTED not to throw, which is not the same
+        // as being unable to: a `File`-like from an exotic drag source with no
+        // `name` or `type` would throw inside the classifier. A documented
+        // invariant is not an enforced one, and "our breakage never blocks a
+        // session" is a hard constraint (PHILOSOPHY §3).
+        setAttachNotice(attachMessage('unreadable'));
+      }
+    })();
+  };
+
   const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>): void => {
     const files = filesFrom(e.clipboardData);
     if (files.length === 0) return; // plain text — untouched, as if we did not exist
@@ -1054,30 +1135,90 @@ function Composer({
     // the words on the same clipboard are still the user's and still belong in
     // the box.
     if (!hasPlainText(e.clipboardData)) e.preventDefault();
-    if (!canAttach) {
-      setAttachNotice(t('feedView.attach.terminalMode'));
-      return;
-    }
-    void (async () => {
-      const outcome = await readImageAttachments(files, attachments.length);
-      // The cap is re-applied inside the functional update, not just from the
-      // `attachments.length` read above: two pastes in flight at once both
-      // measured the same "before", and the state is the only thing that knows
-      // what actually landed.
-      if (outcome.attachments.length > 0)
-        setAttachments((prev) => [...prev, ...outcome.attachments].slice(0, MAX_ATTACHMENTS));
-      // both interpolations are passed to every message: ICU ignores an
-      // argument a string does not name, and a limit quoted in prose is a limit
-      // that drifts from the constant the moment either one moves
-      setAttachNotice(
-        outcome.rejected
-          ? t(`feedView.attach.${outcome.rejected}`, {
-              max: MAX_ATTACHMENTS,
-              limit: formatBytes(MAX_IMAGE_FILE_BYTES),
-            })
-          : null
-      );
-    })();
+    addFiles(files, 'paste');
+  };
+
+  /**
+   * Drag & drop (P2-E10-10).
+   *
+   * `dragDepth` and not a boolean: `dragenter`/`dragleave` fire for every
+   * descendant the pointer crosses, so a naive boolean flickers off the moment
+   * the cursor moves from the composer's padding onto the textarea inside it. A
+   * counter is the standard fix and the only one that survives a nested layout.
+   *
+   * THE COMPOSER SWALLOWS THE DROP — `stopPropagation`, exactly as the
+   * reference's handler does. That matters here in a way it does not there,
+   * because `App.tsx` has a WINDOW-level drop listener that turns a dropped
+   * FOLDER into a new session (E3-04). Without the stop, dropping a `.md` on
+   * the prompt box would attach the file AND ask the window to open it as a
+   * session. Every other surface is untouched: the window listener still sees
+   * every drop that does not land on a composer.
+   */
+  const [dragDepth, setDragDepth] = React.useState(0);
+  const dragging = dragDepth > 0;
+
+  /** a drag carrying FILES, as opposed to a text selection or an internal drag */
+  const hasFiles = (dt: DataTransfer | null): boolean =>
+    Array.from(dt?.types ?? []).includes('Files');
+
+  /**
+   * THE ESCAPE HATCH for the counter.
+   *
+   * Every `dragenter` is supposed to be matched by a `dragleave` or a `drop`,
+   * and if that ever fails to hold the overlay stays up over a composer the
+   * user is trying to type into. `dragend` fires on the source when a drag
+   * finishes ANY way — cancelled with Esc, dropped on another window, abandoned
+   * — and a window-level `drop` catches the case where the pointer left us and
+   * landed somewhere else. Both simply zero the counter, so a stuck overlay
+   * cannot outlive the drag that caused it.
+   */
+  React.useEffect(() => {
+    const clear = (): void => setDragDepth(0);
+    window.addEventListener('dragend', clear);
+    window.addEventListener('drop', clear);
+    return () => {
+      window.removeEventListener('dragend', clear);
+      window.removeEventListener('drop', clear);
+    };
+  }, []);
+
+  const onDragEnter = (e: React.DragEvent<HTMLDivElement>): void => {
+    if (!hasFiles(e.dataTransfer)) return;
+    e.preventDefault();
+    setDragDepth((d) => d + 1);
+  };
+
+  const onDragOver = (e: React.DragEvent<HTMLDivElement>): void => {
+    if (!hasFiles(e.dataTransfer)) return;
+    // preventDefault on dragover is what MAKES this a drop target; without it
+    // the browser refuses the drop and shows the "no entry" cursor
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+  };
+
+  /**
+   * NOT guarded on `hasFiles`, deliberately — unlike its enter twin.
+   *
+   * The counter only balances if enter and leave agree about every event, and
+   * they read the same `dataTransfer.types` at two different moments in a drag.
+   * A source that advertises `Files` on the way in and not on the way out would
+   * increment and never decrement. `Math.max(0, …)` already floors it and only
+   * one drag can be in flight, so an unconditional decrement is strictly safer
+   * than a symmetric guard.
+   */
+  const onDragLeave = (): void => setDragDepth((d) => Math.max(0, d - 1));
+
+  const onDrop = (e: React.DragEvent<HTMLDivElement>): void => {
+    // BEFORE the guard: a drop is the end of a drag however it is shaped, and a
+    // counter left standing here is exactly the stuck overlay above.
+    setDragDepth(0);
+    if (!hasFiles(e.dataTransfer)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    // SYNCHRONOUS, before any await: a DataTransfer is neutered the instant the
+    // handler returns, so the folder/file split has to happen now
+    const { files, directories } = filesFromDrop(e.dataTransfer);
+    addFiles(files, 'drop', directories.length > 0 ? 'directory' : null);
   };
 
   const removeAttachment = (id: string): void => {
@@ -1239,9 +1380,9 @@ function Composer({
 
   const submit = (): void => {
     const text = draft.replace(/\r\n/g, '\n').trimEnd();
-    // An image with nothing typed IS a prompt (§5.10's composer is an input
-    // route, and "look at this" is a thing people send), so the guard is on
-    // BOTH being empty rather than on the text alone.
+    // An attachment with nothing typed IS a prompt (§5.10's composer is an
+    // input route, and "look at this" is a thing people send), so the guard is
+    // on BOTH being empty rather than on the text alone.
     if (!text && attachments.length === 0) return;
 
     if (attachments.length === 0) {
@@ -1258,10 +1399,17 @@ function Composer({
       return;
     }
 
-    // WITH IMAGES the send can genuinely fail (no PTY fallback carries a
-    // bitmap), so the draft is cleared only once we know it went.
-    const images = attachments.map((a) => ({ mediaType: a.mediaType, data: a.data }));
-    void submitPrompt(sessionId, text, images).then((ok) => {
+    // WITH ATTACHMENTS the send can genuinely fail (no PTY fallback carries a
+    // bitmap or a document block), so the draft is cleared only once we know it
+    // went.
+    // The exact set being sent, captured now. Reading a dropped file takes real
+    // time — a 4 MB log is not a clipboard bitmap — so a transfer can land
+    // BETWEEN this submit and its acknowledgement. Clearing the strip wholesale
+    // would eat that new attachment; removing only what we sent leaves it for
+    // the next prompt, which is where the user put it.
+    const sending = attachments;
+    const sent = new Set(sending.map((a) => a.id));
+    void submitPrompt(sessionId, text, toPromptAttachments(sending)).then((ok) => {
       if (!ok) {
         // Everything stays exactly where it was. Clearing a composer whose
         // contents went nowhere is the one outcome the user cannot undo, and a
@@ -1272,7 +1420,7 @@ function Composer({
       }
       setDraft('');
       setDismissed(false);
-      setAttachments([]);
+      setAttachments((prev) => prev.filter((a) => !sent.has(a.id)));
       setAttachNotice(null);
     });
     box.current?.focus();
@@ -1281,6 +1429,11 @@ function Composer({
   return (
     <div
       ref={root}
+      data-composer-dropzone={dragging ? 'active' : ''}
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
       style={{
         position: 'relative',
         display: 'flex',
@@ -1291,6 +1444,34 @@ function Composer({
         background: 'var(--panel2)',
       }}
     >
+      {/* The drop hint. `pointer-events:none` is load-bearing: an overlay that
+          takes the pointer would sit between the cursor and the composer and
+          fire `dragleave` the instant it appeared, which flickers the state and
+          then swallows the drop. Purely additive — it is absolutely positioned
+          over the composer, so it costs the height clamp nothing and a session
+          nobody is dragging onto is byte-for-byte the composer that shipped. */}
+      {dragging && (
+        <div
+          data-composer-drop-hint=""
+          style={{
+            position: 'absolute',
+            inset: 4,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: '1px dashed var(--accent)',
+            borderRadius: 'var(--radius)',
+            background: 'var(--panel)',
+            opacity: 0.94,
+            color: 'var(--muted)',
+            fontSize: 11,
+            pointerEvents: 'none',
+            zIndex: 2,
+          }}
+        >
+          {t('feedView.attach.dropHint')}
+        </div>
+      )}
       {popupOpen && (
         <div
           style={{

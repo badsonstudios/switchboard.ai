@@ -6,7 +6,7 @@
 // with the IPC argument dropped in the preload, the validator rejecting
 // everything in main, or the transport never writing the frame. The bytes have
 // to make the whole trip: paste event -> renderer state -> contextBridge ->
-// broker -> `sanitizePromptImages` -> `userMessage` -> NDJSON on stdin -> the
+// broker -> `sanitizePromptAttachments` -> `userMessage` -> NDJSON on stdin -> the
 // provider decoding it. Only an e2e crosses all of those.
 //
 // The fake answers an image turn with `IMAGE-SEEN:<media_type>:<base64 len>`

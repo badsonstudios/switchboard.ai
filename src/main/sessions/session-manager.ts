@@ -22,7 +22,7 @@ import {
   SweepResult,
 } from './session-state';
 import { streamStatusEvent } from './stream-status';
-import { interruptRequest, userMessage, type PromptImage } from '../../shared/stream-protocol';
+import { interruptRequest, userMessage, type PromptAttachment } from '../../shared/stream-protocol';
 
 /**
  * Why a session's native id CHANGED. 'clear' = the CLI ran /clear and minted
@@ -422,10 +422,10 @@ export class SessionManager {
    * transport returns false for the whole submission rather than quietly
    * sending the text and dropping the picture the user attached to it.
    */
-  submitPrompt(id: string, text: string, images: readonly PromptImage[] = []): boolean {
+  submitPrompt(id: string, text: string, attachments: readonly PromptAttachment[] = []): boolean {
     const handle = this.handles.get(id);
     if (!handle?.send) return false;
-    handle.send(userMessage(text, images));
+    handle.send(userMessage(text, attachments));
     // We know the turn began because WE started it — no round trip, unlike the
     // PTY path waiting on a UserPromptSubmit hook.
     this.apply(id, { kind: 'prompt-sent' });

@@ -97,36 +97,74 @@ The box at the bottom sends straight to the real Claude Code session:
 Under the box is a row showing this session's **autonomy mode** (click to
 cycle) and the **model** it last used.
 
-### Pasting a picture
+### Attaching files: paste a picture, or drag anything in
 
-Copy an image — a screenshot, something from Paint, a diagram from a web page —
-and press **Ctrl+V** in the prompt box. A small chip appears above the box with
-a thumbnail, the name and the size. Type your question next to it and press
-Enter, and Claude actually looks at the picture.
+Two ways to send Claude a file along with your question.
+
+**Paste a picture.** Copy an image — a screenshot, something from Paint, a
+diagram from a web page — and press **Ctrl+V** in the prompt box.
+
+**Drag files in.** Drag one or more files from Explorer (or Finder) onto the
+prompt box. A dashed outline appears saying *"Drop files to attach them to your
+prompt"*; let go and they attach.
+
+Either way, a small chip appears above the box with the file's name and size —
+and, for a picture, a thumbnail of it. Type your question next to it and press
+Enter.
+
+#### What happens to each kind of file
+
+Claude reads different files in different ways, and switchboard.ai sends each
+one in the form Claude understands best:
+
+| You attached | What Claude gets |
+|---|---|
+| A picture — PNG, JPEG, GIF or WebP | The image itself. Claude looks at it. |
+| Text and source files — `.md`, `.txt`, `.ts`, `.py`, `.json`, `.log`, `.csv`, `LICENSE`, `Makefile`, `.gitignore` and a hundred-odd others | The **contents of the file**, exactly as written, labelled with its name. Claude reads it like a document, not like a path it has to go and open. |
+| A PDF | The whole document. Claude reads it. |
+| An SVG | Its source code, which Claude reads better than a picture of it. |
+
+The full list of file types is the same one the official Claude Code extension
+for VS Code uses, so anything that works there works here.
+
+Nothing is uploaded anywhere and no copy is left on disk — the file's contents
+travel with your prompt and nowhere else.
+
+#### The rules
 
 - **The ✕ on the chip removes it** before you send. Nothing is sent until you
   press Enter.
-- You can paste **several** images into one prompt (up to eight).
-- **An image on its own is a valid prompt** — the send button lights up even
-  with nothing typed.
+- You can attach **up to eight files** to one prompt, mixing kinds freely — a
+  screenshot and two source files in the same question is fine.
+- **They stay in the order you gave them**, so "compare the first with the
+  second" means what it says.
+- **A file on its own is a valid prompt** — the send button lights up even with
+  nothing typed.
 - **If your clipboard has text *and* a picture** — copying a range of
-  spreadsheet cells does this — you get both: the text lands in the box and
-  the picture attaches beside it.
+  spreadsheet cells does this — you get both: the text lands in the box and the
+  picture attaches beside it.
 - **Pasting ordinary text is exactly as it always was.** Nothing about this
   changes it.
+- **Dragging files anywhere else in the window is unchanged.** Dropping a
+  *folder* on the app still opens it as a new session; only a drop that lands
+  on the prompt box itself becomes an attachment.
 
-Some things it will tell you it cannot do, rather than failing quietly:
+#### When it can't
+
+It tells you, under the box, rather than failing quietly:
 
 | What you did | What you'll see under the box |
 |---|---|
-| Pasted a very large image | "That image is too big to send" — about 3.8 MB per image is the ceiling |
-| Pasted more than eight | "You can attach up to 8 images to one prompt" |
-| Pasted a format Claude can't read | Only PNG, JPEG, GIF and WebP work. For anything else, put its full file path in the prompt and Claude will open it |
-| Pasted into a **Terminal mode** session | Pictures can only be sent by a session in **Direct mode** (see [Direct mode](12-direct-mode.md)). In Terminal mode, paste it in the Terminal tab instead |
+| Attached a very large file | "That file is too big to send" — about 3.8 MB for a picture or PDF, 5 MB for a text file |
+| Attached more than eight | "You can attach up to 8 files to one prompt" |
+| Attached a type Claude can't read — a video, an `.exe`, a `.zip` | It names what does work, and tells you to put the file's full path in the prompt instead, which Claude can then open itself |
+| Dropped a **folder** on the prompt box | "Folders cannot be attached to a prompt." Drop it outside the prompt box to open it as a session, or drop the files inside it |
+| Attached an empty file | It says there is nothing to send |
+| Attached to a **Terminal mode** session | Files can only be sent by a session in **Direct mode** (see [Direct mode](12-direct-mode.md)). In Terminal mode, use the Terminal tab instead |
 
-If a prompt with a picture can't be sent — the session stopped, say — **nothing
-is cleared**. Your words and your image stay right where they are, and a line
-under the box tells you it didn't go.
+If a prompt with an attachment can't be sent — the session stopped, say —
+**nothing is cleared**. Your words and your files stay right where they are, and
+a line under the box tells you it didn't go.
 
 ## How much detail you see
 

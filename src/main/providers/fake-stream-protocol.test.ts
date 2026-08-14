@@ -8,6 +8,7 @@ import {
   FakeStreamProtocol,
   FakeStreamHost,
   extractText,
+  extractDocuments,
   extractImages,
   FAKE_SESSION_ID,
 } from './fake-stream-protocol';
@@ -727,5 +728,73 @@ describe('images on the inbound envelope (P2-E10-09)', () => {
     expect(echo?.message.content).toEqual([{ type: 'text', text: 'hello' }]);
     expect(types().filter((t) => t === 'assistant').length).toBeGreaterThan(0);
     expect(JSON.stringify(out)).not.toContain('IMAGE-SEEN');
+  });
+});
+
+describe('documents on the inbound envelope (P2-E10-10)', () => {
+  const doc = {
+    type: 'document',
+    source: { type: 'text', media_type: 'text/plain', data: '# hello\n' },
+    title: 'notes.md',
+  };
+  const pdf = {
+    type: 'document',
+    source: { type: 'base64', media_type: 'application/pdf', data: 'AQIDBA==' },
+    title: 'spec.pdf',
+  };
+  const withDoc = (block: Record<string, unknown> = doc): Record<string, unknown> => ({
+    type: 'user',
+    message: { role: 'user', content: [block, { type: 'text', text: 'read this' }] },
+    parent_tool_use_id: null,
+    session_id: '',
+  });
+
+  it('reads both document shapes the extension writes', () => {
+    expect(extractDocuments({ content: [doc] })).toEqual([
+      { kind: 'text', title: 'notes.md', data: '# hello\n' },
+    ]);
+    expect(extractDocuments({ content: [pdf] })).toEqual([
+      { kind: 'pdf', title: 'spec.pdf', data: 'AQIDBA==' },
+    ]);
+  });
+
+  // THE REGRESSION THIS EXISTS FOR: a text document whose source says `base64`
+  // is still valid JSON and still round-trips — it just reaches the model as
+  // gibberish. A strict reader turns that into a document that vanished.
+  it('refuses a text document that claims the wrong source type', () => {
+    expect(
+      extractDocuments({
+        content: [{ type: 'document', source: { type: 'base64', media_type: 'text/plain', data: 'eA==' }, title: 'a.md' }],
+      })
+    ).toEqual([]);
+    expect(extractDocuments({ content: [{ type: 'document', title: 'a.md' }] })).toEqual([]);
+    expect(extractDocuments({ content: [{ ...doc, title: 7 }] })).toEqual([]);
+    expect(extractDocuments(undefined)).toEqual([]);
+  });
+
+  // The CONTENTS are echoed for text, not a length: a base64'd text file has a
+  // perfectly plausible length and completely wrong bytes.
+  it('answers a document turn with what it decoded off the wire', () => {
+    proto.handle(withDoc());
+    const said = out
+      .filter((m) => m.type === 'assistant')
+      .flatMap((m) => ((m.message as { content?: Array<{ text?: string }> })?.content ?? []))
+      .map((c) => c.text ?? '')
+      .join(' ');
+    expect(said).toContain('DOC-SEEN:text:notes.md:# hello');
+  });
+
+  it('echoes the document block back, unchanged', () => {
+    proto.handle(withDoc());
+    const echo = out.find((m) => m.type === 'user') as
+      | { message: { content: Array<Record<string, unknown>> } }
+      | undefined;
+    expect(echo?.message.content[0]).toEqual(doc);
+    expect(echo?.message.content[1]).toEqual({ type: 'text', text: 'read this' });
+  });
+
+  it('leaves a text-only turn exactly as it was', () => {
+    proto.handle(userMsg('hello'));
+    expect(JSON.stringify(out)).not.toContain('DOC-SEEN');
   });
 });

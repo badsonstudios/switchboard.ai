@@ -87,11 +87,12 @@ export class FakeStreamProtocol {
   private onUser(msg: Record<string, unknown>): void {
     const text = extractText(msg.message);
     const images = extractImages(msg.message);
+    const documents = extractDocuments(msg.message);
     const cwd = this.host.cwd();
-    // The images go back out on the echo exactly as they came in (P2-E10-09).
-    // A fake that quietly dropped them would be a fake that cannot tell a
-    // working image path from a broken one — which is the whole reason the
-    // echo exists at all (see `--replay-user-messages` below).
+    // The attachments go back out on the echo exactly as they came in
+    // (P2-E10-09/10). A fake that quietly dropped them would be a fake that
+    // cannot tell a working attachment path from a broken one — which is the
+    // whole reason the echo exists at all (see `--replay-user-messages` below).
     const message = {
       role: 'user',
       content: [
@@ -99,7 +100,17 @@ export class FakeStreamProtocol {
           type: 'image',
           source: { type: 'base64', media_type: i.mediaType, data: i.data },
         })),
-        { type: 'text', text },
+        ...documents.map((d) => ({
+          type: 'document',
+          source:
+            d.kind === 'text'
+              ? { type: 'text', media_type: 'text/plain', data: d.data }
+              : { type: 'base64', media_type: 'application/pdf', data: d.data },
+          title: d.title,
+        })),
+        // omitted for an attachment-only turn, because `userMessage` omits it
+        // too — a fake that always appends one is not echoing what arrived
+        ...(text ? [{ type: 'text', text }] : []),
       ],
     };
     this.transcribe('user', message, cwd);
@@ -131,6 +142,21 @@ export class FakeStreamProtocol {
     if (images.length > 0) {
       this.emitAssistantText(
         `IMAGE-SEEN:${images.map((i) => `${i.mediaType}:${i.data.length}`).join(',')}`
+      );
+    }
+
+    // The same trick for documents (P2-E10-10), and the CONTENTS are echoed for
+    // a text one rather than just its length: the failure this has to be able
+    // to catch is a text file arriving base64'd, which has a perfectly
+    // plausible length and completely wrong bytes.
+    if (documents.length > 0) {
+      this.emitAssistantText(
+        `DOC-SEEN:${documents
+          // the first line only for text: echoing a 5 MB attachment whole
+          // would put a 5 MB assistant turn in the feed, and the first line is
+          // what distinguishes real contents from base64 anyway
+          .map((d) => `${d.kind}:${d.title}:${d.kind === 'text' ? d.data.split('\n')[0] : d.data.length}`)
+          .join('|')}`
       );
     }
 
@@ -707,6 +733,44 @@ export function extractImages(message: unknown): Array<{ mediaType: string; data
     if (source?.type !== 'base64') continue;
     if (typeof source.media_type !== 'string' || typeof source.data !== 'string') continue;
     out.push({ mediaType: source.media_type, data: source.data });
+  }
+  return out;
+}
+
+/** A document block the fake read off the wire (P2-E10-10). */
+export interface FakeDocument {
+  /** which arm of the reference's switch produced it */
+  kind: 'text' | 'pdf';
+  title: string;
+  /** the contents for a text document, the base64 for a PDF */
+  data: string;
+}
+
+/**
+ * Pull the document blocks out of the user envelope (P2-E10-10).
+ *
+ * STRICT ABOUT THE SOURCE TYPE, which is the whole value of this function: a
+ * text document must arrive as `source.type === 'text'` carrying the contents,
+ * a PDF as `source.type === 'base64'`. A regression that base64'd a text file
+ * would still be valid JSON and would still round-trip — it would just reach
+ * the model as gibberish. Here it shows up as a document that vanished.
+ */
+export function extractDocuments(message: unknown): FakeDocument[] {
+  const content = (message as { content?: unknown } | undefined)?.content;
+  if (!Array.isArray(content)) return [];
+  const out: FakeDocument[] = [];
+  for (const block of content as Array<Record<string, unknown>>) {
+    if (block?.type !== 'document') continue;
+    const title = block.title;
+    const source = block.source as
+      | { type?: unknown; media_type?: unknown; data?: unknown }
+      | undefined;
+    if (typeof title !== 'string' || typeof source?.data !== 'string') continue;
+    if (source.type === 'text' && source.media_type === 'text/plain') {
+      out.push({ kind: 'text', title, data: source.data });
+    } else if (source.type === 'base64' && source.media_type === 'application/pdf') {
+      out.push({ kind: 'pdf', title, data: source.data });
+    }
   }
   return out;
 }

@@ -15,7 +15,7 @@ import { ipcRefusal } from '../../../shared/ipc/refusal';
 /** everything written to the PTY, in order, as the bridge would have seen it */
 let ptyWrites: Array<{ id: string; data: string }>;
 /** the prompts main accepted over a typed-message transport */
-let submitted: Array<{ id: string; text: string; images?: unknown }>;
+let submitted: Array<{ id: string; text: string; attachments?: unknown }>;
 /** what `sessions.submitPrompt` answers — false = "no typed transport here" */
 let mainTakesPrompts = true;
 let mainTakesInterrupts = true;
@@ -39,9 +39,9 @@ beforeEach(() => {
   (window as unknown as { switchboard: unknown }).switchboard = {
     pty: { input: (id: string, data: string) => ptyWrites.push({ id, data }) },
     sessions: {
-      submitPrompt: (id: string, text: string, images?: unknown) => {
+      submitPrompt: (id: string, text: string, attachments?: unknown) => {
         if (promptFailure) return Promise.reject(promptFailure);
-        if (mainTakesPrompts) submitted.push({ id, text, images });
+        if (mainTakesPrompts) submitted.push({ id, text, attachments });
         return Promise.resolve(mainTakesPrompts);
       },
       interrupt: () =>
@@ -293,7 +293,7 @@ describe('submitPrompt on the PTY route writes the same bytes (P2-E18-17)', () =
     expect(ptyWrites).toEqual([]);
     // no third argument at all on the text-only route — it goes through
     // `sendSessionCommand`, which is unchanged by P2-E10-09
-    expect(submitted).toEqual([{ id: 'live-1', text: 'hello', images: undefined }]);
+    expect(submitted).toEqual([{ id: 'live-1', text: 'hello', attachments: undefined }]);
   });
 });
 
@@ -304,12 +304,12 @@ describe('submitPrompt on the PTY route writes the same bytes (P2-E18-17)', () =
 // send "what's wrong with this screenshot?" with no screenshot, the prompt
 // would arrive looking perfectly fine, and the answer would be nonsense.
 describe('submitPrompt WITH IMAGES is stream-only (P2-E10-09)', () => {
-  const png = { mediaType: 'image/png' as const, data: 'AQIDBA==' };
+  const png = { kind: 'image' as const, mediaType: 'image/png' as const, data: 'AQIDBA==' };
 
-  it('hands the images to main alongside the text', async () => {
+  it('hands the attachments to main alongside the text', async () => {
     await expect(submitPrompt('live-1', 'what is this?', [png])).resolves.toBe(true);
 
-    expect(submitted).toEqual([{ id: 'live-1', text: 'what is this?', images: [png] }]);
+    expect(submitted).toEqual([{ id: 'live-1', text: 'what is this?', attachments: [png] }]);
     expect(ptyWrites).toEqual([]);
   });
 

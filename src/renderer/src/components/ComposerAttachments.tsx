@@ -91,6 +91,59 @@ function useThumbnail(
   return ref;
 }
 
+/**
+ * The square at the head of the chip.
+ *
+ * An IMAGE gets its own pixels — that is the whole reason the canvas dance
+ * above exists. A text file or a PDF has no pixels to show, so it gets a glyph
+ * instead: rendering a page of source into a 28px square would be a smudge, and
+ * the useful signal at this size is "this is a text file", which two letters
+ * carry better than a thumbnail would.
+ */
+function AttachmentIcon({ attachment }: { attachment: Attachment }): React.JSX.Element {
+  const box: React.CSSProperties = {
+    inlineSize: THUMB,
+    blockSize: THUMB,
+    borderRadius: 4,
+    background: 'var(--chip)',
+    flexShrink: 0,
+  };
+  // The union is what makes this safe: `data` only exists on the two kinds that
+  // have bytes to decode, so the canvas cannot be handed a text file's contents.
+  if (attachment.kind === 'image')
+    return <ImageThumbnail data={attachment.data} mediaType={attachment.mediaType} style={box} />;
+  return (
+    <span
+      aria-hidden="true"
+      data-attachment-icon={attachment.kind}
+      style={{
+        ...box,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 9,
+        fontFamily: 'var(--font-mono)',
+        color: 'var(--muted)',
+      }}
+    >
+      {attachment.kind === 'pdf' ? 'PDF' : 'TXT'}
+    </span>
+  );
+}
+
+function ImageThumbnail({
+  data,
+  mediaType,
+  style,
+}: {
+  data: string;
+  mediaType: string;
+  style: React.CSSProperties;
+}): React.JSX.Element {
+  const canvas = useThumbnail(data, mediaType);
+  return <canvas ref={canvas} aria-hidden="true" style={style} />;
+}
+
 function AttachmentChip({
   attachment,
   onRemove,
@@ -99,11 +152,11 @@ function AttachmentChip({
   onRemove: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
-  const canvas = useThumbnail(attachment.data, attachment.mediaType);
   const label = `${attachment.name} · ${formatBytes(attachment.bytes)}`;
   return (
     <span
       data-composer-attachment={attachment.name}
+      data-attachment-kind={attachment.kind}
       title={label}
       style={{
         display: 'inline-flex',
@@ -116,17 +169,7 @@ function AttachmentChip({
         background: 'var(--panel)',
       }}
     >
-      <canvas
-        ref={canvas}
-        aria-hidden="true"
-        style={{
-          inlineSize: THUMB,
-          blockSize: THUMB,
-          borderRadius: 4,
-          background: 'var(--chip)',
-          flexShrink: 0,
-        }}
-      />
+      <AttachmentIcon attachment={attachment} />
       <span
         style={{
           fontSize: 10,

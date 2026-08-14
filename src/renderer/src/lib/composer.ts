@@ -6,7 +6,7 @@
 // 2026-07-22). Escape bytes are built from char codes: no control bytes in
 // source files.
 import { sessionStore } from '../store/session-store';
-import type { PromptImage } from '../../../shared/prompt-images';
+import type { PromptAttachment } from '../../../shared/prompt-attachments';
 
 const ESC = String.fromCharCode(27);
 const CR = String.fromCharCode(13);
@@ -56,7 +56,7 @@ export async function sendSessionCommand(sessionId: string, text: string): Promi
 export async function submitPrompt(
   sessionId: string,
   text: string,
-  images: readonly PromptImage[] = []
+  attachments: readonly PromptAttachment[] = []
 ): Promise<boolean> {
   // §5.8's auto-minimize hangs off THIS call and not off the composer component,
   // because this function is already documented as "the one way renderer
@@ -80,9 +80,9 @@ export async function submitPrompt(
   // send "what's wrong with this screenshot?" with no screenshot — the prompt
   // arrives, looks fine, and the answer is nonsense. So an image submission is
   // stream-only, and a refusal is REPORTED rather than papered over.
-  if (images.length > 0) {
+  if (attachments.length > 0) {
     return mainTook('submitPrompt', () =>
-      window.switchboard.sessions.submitPrompt(sessionId, text, images)
+      window.switchboard.sessions.submitPrompt(sessionId, text, attachments)
     );
   }
 

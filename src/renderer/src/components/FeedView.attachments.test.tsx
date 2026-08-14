@@ -21,7 +21,7 @@ declare global {
 }
 
 /** what main was asked to send, in order */
-let submitted: Array<{ text: string; images?: Array<{ mediaType: string; data: string }> }>;
+let submitted: Array<{ text: string; attachments?: Array<Record<string, unknown>> }>;
 /** what main answers — false is "no typed-message transport / refused" */
 let mainTakes = true;
 
@@ -40,9 +40,9 @@ function stubBridge(): void {
       submitPrompt: (
         _id: string,
         text: string,
-        images?: Array<{ mediaType: string; data: string }>
+        attachments?: Array<Record<string, unknown>>
       ) => {
-        if (mainTakes) submitted.push({ text, images });
+        if (mainTakes) submitted.push({ text, attachments });
         return Promise.resolve(mainTakes);
       },
     },
@@ -110,6 +110,73 @@ async function paste(
     await Promise.resolve();
   });
   return ev;
+}
+
+/** a text file of real bytes — the content IS decoded on this path */
+const textFile = (body: string, name = 'notes.md', type = ''): File =>
+  new File([body], name, { type });
+
+/** the composer's root, which is the drop target */
+const zone = (host: HTMLElement): HTMLElement =>
+  host.querySelector('[data-composer-dropzone]') as HTMLElement;
+
+const dropHint = (host: HTMLElement): boolean =>
+  host.querySelector('[data-composer-drop-hint]') !== null;
+
+/**
+ * Build the `dataTransfer` the drop handlers actually read.
+ *
+ * jsdom's `DataTransfer` cannot hold files and has no `webkitGetAsEntry`, so —
+ * exactly as `paste` does above — this is a plain object hung off the event.
+ * `items` is the interesting half: it is what `filesFromDrop` interrogates to
+ * tell a FOLDER from a file, so a fake that omitted it would silently exercise
+ * the fallback path instead of the real one.
+ */
+function transferOf(files: File[], directories: string[] = []): unknown {
+  const items = [
+    ...directories.map((name) => ({
+      kind: 'file',
+      webkitGetAsEntry: () => ({ isDirectory: true, isFile: false, name }),
+      getAsFile: () => null,
+    })),
+    ...files.map((file) => ({
+      kind: 'file',
+      webkitGetAsEntry: () => ({ isDirectory: false, isFile: true, name: file.name }),
+      getAsFile: () => file,
+    })),
+  ];
+  return { types: ['Files'], files, items, dropEffect: 'none' };
+}
+
+/** fire one drag event at the composer root with a files-carrying transfer */
+async function fire(
+  host: HTMLElement,
+  type: 'dragenter' | 'dragover' | 'dragleave' | 'drop',
+  dataTransfer: unknown
+): Promise<Event> {
+  const ev = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(ev, 'dataTransfer', { value: dataTransfer });
+  await act(async () => {
+    zone(host).dispatchEvent(ev);
+  });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  return ev;
+}
+
+/** the whole gesture: enter, over, drop */
+async function drop(
+  host: HTMLElement,
+  files: File[],
+  directories: string[] = []
+): Promise<Event> {
+  const dt = transferOf(files, directories);
+  await fire(host, 'dragenter', dt);
+  await fire(host, 'dragover', dt);
+  return fire(host, 'drop', dt);
 }
 
 /** type into the CONTROLLED textarea, through the setter React's tracker patched */
@@ -224,7 +291,7 @@ describe('pasting plain text is completely unaffected', () => {
 });
 
 describe('submitting', () => {
-  it('sends the image blocks alongside the text, then clears', async () => {
+  it('sends the attachment blocks alongside the text, then clears', async () => {
     const host = await mount();
     await paste(host, { files: [png()] });
     await type(host, 'what is this?');
@@ -233,7 +300,9 @@ describe('submitting', () => {
 
     expect(submitted).toHaveLength(1);
     expect(submitted[0].text).toBe('what is this?');
-    expect(submitted[0].images).toEqual([{ mediaType: 'image/png', data: 'AAAAAA==' }]);
+    expect(submitted[0].attachments).toEqual([
+      { kind: 'image', mediaType: 'image/png', data: 'AAAAAA==' },
+    ]);
     expect(chips(host)).toEqual([]);
     expect(boxOf(host).value).toBe('');
   });
@@ -294,5 +363,275 @@ describe('a paste that produces nothing says why', () => {
 
     expect(chips(host)).toEqual([]);
     expect(notice(host)).toContain('full file path');
+  });
+});
+
+// P2-E10-10 — DRAG & DROP. Same intake, second entry point.
+//
+// What these prove that the rule tests cannot: that the handlers are attached
+// to the composer's ROOT (not the textarea, which is a smaller target than
+// anyone aims at), that `dragover` is prevented so the drop is allowed at all,
+// and that a drop is swallowed rather than left to bubble to `App.tsx`'s
+// window listener — which would otherwise ALSO try to open the drop as a
+// session.
+describe('dropping files onto the composer (P2-E10-10)', () => {
+  it('attaches a dropped markdown file as a removable chip', async () => {
+    const host = await mount();
+
+    await drop(host, [textFile('# hello\n', 'notes.md')]);
+
+    expect(chips(host)).toEqual(['notes.md']);
+    expect(notice(host)).toBe('');
+  });
+
+  // The whole point of the item: NOT just images.
+  it('attaches text, source, image and PDF from ONE drop, in order', async () => {
+    const host = await mount();
+
+    await drop(host, [
+      textFile('# doc\n', 'README.md'),
+      textFile('const a = 1\n', 'main.ts'),
+      png(4, 'diagram.png'),
+      new File([new Uint8Array([1, 2, 3, 4])], 'spec.pdf', { type: 'application/pdf' }),
+    ]);
+
+    expect(chips(host)).toEqual(['README.md', 'main.ts', 'diagram.png', 'spec.pdf']);
+  });
+
+  // The per-type wire shape, end to end through the real component.
+  it('sends each type as the block its type calls for', async () => {
+    const host = await mount();
+    await drop(host, [textFile('# hi\n', 'a.md'), png(4, 'b.png')]);
+
+    await send(host);
+
+    expect(submitted[0].attachments).toEqual([
+      { kind: 'text', title: 'a.md', text: '# hi\n' },
+      { kind: 'image', mediaType: 'image/png', data: 'AAAAAA==' },
+    ]);
+  });
+
+  // A source file with NO MIME type — the ordinary case on Windows, and the one
+  // the extension's filename fallback exists for.
+  it('recognises a source file the OS gave no MIME type', async () => {
+    const host = await mount();
+
+    await drop(host, [textFile('fn main() {}\n', 'main.rs', '')]);
+
+    expect(chips(host)).toEqual(['main.rs']);
+  });
+
+  it('shows a drop hint while a file is over the composer, and clears it after', async () => {
+    const host = await mount();
+    const dt = transferOf([textFile('x\n', 'a.md')]);
+
+    await fire(host, 'dragenter', dt);
+    expect(dropHint(host)).toBe(true);
+
+    await fire(host, 'drop', dt);
+    expect(dropHint(host)).toBe(false);
+  });
+
+  // Without preventDefault on dragover the browser refuses the drop outright,
+  // which is the "nothing happens and nothing is said" failure.
+  it('prevents dragover so the drop is allowed at all', async () => {
+    const host = await mount();
+    const ev = await fire(host, 'dragover', transferOf([textFile('x\n', 'a.md')]));
+    expect(ev.defaultPrevented).toBe(true);
+  });
+
+  // `App.tsx` listens on the WINDOW for a dropped folder and opens it as a
+  // session. A drop on the composer must not reach it.
+  it('swallows the drop instead of letting the window open it as a session', async () => {
+    const host = await mount();
+    const seen: Event[] = [];
+    const onWindowDrop = (e: Event): void => void seen.push(e);
+    window.addEventListener('drop', onWindowDrop);
+
+    await drop(host, [textFile('x\n', 'a.md')]);
+
+    window.removeEventListener('drop', onWindowDrop);
+    expect(seen).toEqual([]);
+  });
+
+  // A drag that carries no files at all — selecting text and dragging it — is
+  // none of our business, and claiming it would break ordinary text dragging.
+  it('ignores a drag that carries no files', async () => {
+    const host = await mount();
+    const ev = new Event('dragover', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', { value: { types: ['text/plain'] } });
+    await act(async () => {
+      zone(host).dispatchEvent(ev);
+    });
+    expect(ev.defaultPrevented).toBe(false);
+    expect(dropHint(host)).toBe(false);
+  });
+});
+
+describe('a drop that cannot be used says why (P2-E10-10)', () => {
+  it('refuses a folder and names the alternative', async () => {
+    const host = await mount();
+
+    await drop(host, [], ['src']);
+
+    expect(chips(host)).toEqual([]);
+    expect(notice(host)).toContain('Folders cannot be attached');
+  });
+
+  // A mixed drop keeps what it can and reports what it could not.
+  it('attaches the files from a drop that also contained a folder', async () => {
+    const host = await mount();
+
+    await drop(host, [textFile('x\n', 'a.md')], ['src']);
+
+    expect(chips(host)).toEqual(['a.md']);
+    expect(notice(host)).toContain('Folders cannot be attached');
+  });
+
+  it('refuses a binary the model cannot read, naming the path escape hatch', async () => {
+    const host = await mount();
+
+    await drop(host, [new File([new Uint8Array(8)], 'app.exe', { type: '' })]);
+
+    expect(chips(host)).toEqual([]);
+    expect(notice(host)).toContain('full file path');
+  });
+
+  it('refuses an empty file rather than sending a hollow block', async () => {
+    const host = await mount();
+
+    await drop(host, [textFile('', 'empty.md')]);
+
+    expect(chips(host)).toEqual([]);
+    expect(notice(host)).toContain('empty');
+  });
+
+  // Terminal mode has no typed-message transport, so it cannot carry any of
+  // this — and must say so rather than dropping the file silently.
+  it('refuses a drop in Terminal mode and explains why', async () => {
+    const host = await mount('pty');
+
+    await drop(host, [textFile('x\n', 'a.md')]);
+
+    expect(chips(host)).toEqual([]);
+    expect(notice(host)).toContain('Direct mode');
+  });
+});
+
+describe('the drop overlay cannot outlive its drag (P2-E10-10)', () => {
+  it('clears on dragleave, not only on drop', async () => {
+    const host = await mount();
+    const dt = transferOf([textFile('x\n', 'a.md')]);
+
+    await fire(host, 'dragenter', dt);
+    expect(dropHint(host)).toBe(true);
+
+    await fire(host, 'dragleave', dt);
+    expect(dropHint(host)).toBe(false);
+  });
+
+  // dragenter/dragleave fire for every descendant the pointer crosses, so the
+  // counter has to survive moving from the composer's padding onto the box.
+  it('survives a nested enter/leave pair without flickering', async () => {
+    const host = await mount();
+    const dt = transferOf([textFile('x\n', 'a.md')]);
+
+    await fire(host, 'dragenter', dt);
+    await fire(host, 'dragenter', dt);
+    await fire(host, 'dragleave', dt);
+    expect(dropHint(host)).toBe(true);
+
+    await fire(host, 'dragleave', dt);
+    expect(dropHint(host)).toBe(false);
+  });
+
+  // A drag cancelled with Esc, or dropped on another window, never sends us a
+  // leave. Without the window-level reset the overlay would sit there for ever.
+  it('clears when the drag ends anywhere at all', async () => {
+    const host = await mount();
+
+    await fire(host, 'dragenter', transferOf([textFile('x\n', 'a.md')]));
+    expect(dropHint(host)).toBe(true);
+
+    await act(async () => {
+      window.dispatchEvent(new Event('dragend'));
+    });
+    expect(dropHint(host)).toBe(false);
+  });
+
+  // A drop that carries no files still ENDS the drag.
+  it('clears on a drop it does not claim', async () => {
+    const host = await mount();
+    await fire(host, 'dragenter', transferOf([textFile('x\n', 'a.md')]));
+
+    const ev = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', { value: { types: ['text/plain'] } });
+    await act(async () => {
+      zone(host).dispatchEvent(ev);
+    });
+
+    expect(dropHint(host)).toBe(false);
+    expect(ev.defaultPrevented).toBe(false);
+  });
+});
+
+describe('a transfer that yields nothing still says something', () => {
+  // Outlook, archive tools and virtual-file providers advertise `Files` and
+  // then hand over items whose `getAsFile()` is null. "Nothing appeared and
+  // nothing was said" is the #163 failure.
+  it('reports a drop whose items produced no file at all', async () => {
+    const host = await mount();
+    const dt = {
+      types: ['Files'],
+      files: [],
+      items: [{ kind: 'file', webkitGetAsEntry: () => null, getAsFile: () => null }],
+    };
+
+    await fire(host, 'drop', dt);
+
+    expect(chips(host)).toEqual([]);
+    expect(notice(host)).not.toBe('');
+  });
+});
+
+describe('paste and drop differ ONLY where they must', () => {
+  // Chromium names every pasted bitmap `image.png`, so a paste gets a generated
+  // name — but a DROPPED file called `image.png` is an ordinary file whose real
+  // name must survive.
+  it('keeps a dropped file’s real name even when it is image.png', async () => {
+    const host = await mount();
+
+    await drop(host, [png(4, 'image.png')]);
+
+    expect(chips(host)).toEqual(['image.png']);
+  });
+
+  it('still renames an anonymous PASTED bitmap', async () => {
+    const host = await mount();
+
+    await paste(host, { files: [png(4, 'image.png')] });
+
+    expect(chips(host)[0]).toMatch(/^pasted-\d{8}-\d{6}\.png$/);
+  });
+
+  // The documented precedence: a drop of "one folder and one unusable file"
+  // leads with the reason the FILE was refused, not with the folder.
+  it('leads with the file’s reason when both a folder and a bad file were dropped', async () => {
+    const host = await mount();
+
+    await drop(host, [new File([new Uint8Array(8)], 'clip.mp4', { type: 'video/mp4' })], ['src']);
+
+    expect(chips(host)).toEqual([]);
+    expect(notice(host)).toContain('full file path');
+  });
+
+  // ...but a folder ON ITS OWN is reported as a folder even in Terminal mode,
+  // where "use the Terminal tab instead" would be nonsense advice.
+  it('reports a folder as a folder even in Terminal mode', async () => {
+    const host = await mount('pty');
+
+    await drop(host, [], ['src']);
+
+    expect(notice(host)).toContain('Folders cannot be attached');
   });
 });

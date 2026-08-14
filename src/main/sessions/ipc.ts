@@ -64,7 +64,7 @@ import { nextAutoLabel, typedLabel, visibleTaskLabel } from './auto-label';
 import { PersistedSession } from '../workspace/store';
 import { commandsFromCli, SlashCommand } from '../../shared/slash-commands';
 import { DEFAULT_SESSION_TRANSPORT } from '../transport/transport';
-import { sanitizePromptImages } from '../../shared/prompt-images';
+import { sanitizePromptAttachments } from '../../shared/prompt-attachments';
 
 export interface SessionIpcDeps {
   manager: SessionManager;
@@ -611,16 +611,16 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // first and falls back, which is how it stays transport-ignorant until
   // P2-E18-08b gives the user the choice.
   //
-  // `images` (P2-E10-09) are validated HERE and not only in the renderer: this
+  // `attachments` (P2-E10-09/10) are validated HERE and not only in the renderer: this
   // is the boundary where a base64 string becomes a line on the CLI's stdin,
   // and the media type, the count and the encoding are all main's to enforce
   // rather than to trust. A payload that fails the check is refused OUTRIGHT
   // (false), never downgraded to a text-only send — "what's wrong with this
   // screenshot?" with the screenshot quietly removed is worse than a prompt
   // that visibly did not go.
-  broker.handle('sessions:submitPrompt', (_e, sessionId: string, text: string, images?: unknown) => {
+  broker.handle('sessions:submitPrompt', (_e, sessionId: string, text: string, attachments?: unknown) => {
     if (typeof sessionId !== 'string' || typeof text !== 'string') return false;
-    const clean = sanitizePromptImages(images);
+    const clean = sanitizePromptAttachments(attachments);
     if (clean === null) return false;
     return manager.submitPrompt(sessionId, text, clean);
   });
