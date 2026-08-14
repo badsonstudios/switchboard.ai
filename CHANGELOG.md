@@ -61,6 +61,16 @@ on the floor, and say so in your PR.
   unset — and on any machine with a single display, which is every CI runner —
   nothing changes at all. It quietens the screen and not the keyboard: showing
   a window still takes the focus wherever it is.
+- Tightened up the housekeeping that clears out the files switchboard writes
+  for each session. The startup pass that removes leftover access files now
+  checks that a folder's name is one switchboard actually created before it
+  deletes anything inside it — previously anything that happened to be sitting
+  in that folder was fair game — and it leaves alone anything belonging to a
+  session that is running right now, stopping after a couple of seconds if
+  there is a large backlog so that starting the app is never held up. And when
+  a session fails to start at all, the access it had been granted is now handed
+  back immediately instead of being held until you quit. Nothing about this is
+  visible while things are working; it is the tidy-up behind the scenes.
 
 ## 0.4.0 — 2026-08-13
 
@@ -271,16 +281,6 @@ on the floor, and say so in your PR.
   `SWITCHBOARD_TRANSPORT` warns instead of silently landing on the opposite
   transport; and a card that explicitly chose Terminal still comes back on
   Terminal after a restart.
-- Tightened up the housekeeping that clears out the files switchboard writes
-  for each session. The startup pass that removes leftover access files now
-  checks that a folder's name is one switchboard actually created before it
-  deletes anything inside it — previously anything that happened to be sitting
-  in that folder was fair game — and it leaves alone anything belonging to a
-  session that is running right now, stopping after a couple of seconds if
-  there is a large backlog so that starting the app is never held up. And when
-  a session fails to start at all, the access it had been granted is now handed
-  back immediately instead of being held until you quit. Nothing about this is
-  visible while things are working; it is the tidy-up behind the scenes.
 - A Direct-mode session now learns the conversation id it will resume with
   from the stream itself (`system:init`), instead of only from hook events —
   so "reopen the same conversation after an app restart" no longer depends on
