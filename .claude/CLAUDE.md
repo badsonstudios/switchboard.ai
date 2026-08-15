@@ -107,6 +107,16 @@ the moment it finishes, and when anything notable happens between (blocker,
 scope change, half-done state at session end). A fresh session must be able to
 read PROGRESS.md and know *exactly* where things stand without asking.
 
+**Dogfood test tracker (standing rule, added 2026-08-15 at Dan's request):**
+`docs/plans/dogfood-testing.md` records what Dan has and hasn't hand-tested.
+**Update it automatically, without asking**, whenever: a user-facing feature
+merges to main (add it as UNTESTED with a how-to-test line); Dan reports a
+hand-test result (move to TESTED, or to the found-a-bug log with the ticket
+number); or a fix for a logged bug ships (move it to RE-TEST). When Dan asks
+"what should I test?", answer from this file — the UNTESTED and RE-TEST
+sections, as numbered steps with expected results. Commit tracker updates
+with the same rhythm as PROGRESS.md.
+
 ---
 
 ## Environment & Shell

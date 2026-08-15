@@ -32,6 +32,17 @@
 > never wired; menu-paste must ride #475's attachment pipeline; S–M,
 > wave 1 candidate)** · **#527 links in replies dead (will-navigate
 > blocks, no anchor routing to fs:openExternal; S, wave 1)** · #520 find
+> **2026-08-15 dogfood pass (Dan, full list):** results recorded in
+> the NEW tracker `docs/plans/dogfood-testing.md` (standing rule in
+> .claude/CLAUDE.md: auto-maintained, answer what-to-test from it).
+> New tickets: **#530** (remove viewer pin — always-new-tab, owner
+> decision, supersedes #460's slot model) · **#531** (new session
+> from a popout, tab-beside) · **#532** (diff side-by-side toggle)
+> · **#533** (viewer find-in-file — the missing 4th registrant).
+> Widened: **#485** (popout remount eats draft — owner hit live,
+> priority up) · **#496** (busy session goes all-list-only — owner
+> repro, priority up). Toast path UNTESTED (no toast arrived —
+> investigate OS settings/AppUserModelId before re-test).
 > highlight + #524 flake (owner-facing/velocity) · #407 Shape B ·
 > #482→#483 · #485 · #521 layer 1 · tail (#488 #490 #491 #494-#499
 > #502-#504 #506 #508 #509 #512 #517 #518 #521-design).
