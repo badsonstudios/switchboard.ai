@@ -876,6 +876,68 @@ export async function retype(box: Locator, text: string): Promise<void> {
 }
 
 /**
+ * Tab out of the focused conversation region and land on the composer — past
+ * the ONE control that is allowed to sit between them (#524).
+ *
+ * WHY THIS EXISTS. `#174` says the conversation is a single tab stop and the
+ * composer is the next one, so a long transcript can never bury it. `#442` then
+ * put the "↓ Jump to latest" control in exactly that gap, on purpose:
+ * `FeedView.tsx` — "the conversation is one tab stop and the composer is the
+ * next; a control between them is reached with one Tab from the feed and one
+ * Shift+Tab from the composer". It renders only while the feed is unpinned AND
+ * overflowing, so whether it is in the tab order is a function of the WINDOW
+ * SIZE — and the #174 walks were written before it existed.
+ *
+ * That is the whole of #524, measured in this worktree on 2026-08-15:
+ *
+ *   * window 1024x686 (the windows-latest desktop, 1024x768 less its taskbar —
+ *     the geometry `feed-tail-pin.spec.ts` states to the pixel): the `!tools`
+ *     turn is 337px in a 254px feed, the walk's `Home` leaves it off-tail, the
+ *     control renders, and the final Tab lands on it. `toBeFocused()` on the
+ *     composer then reports the CI failure verbatim — "Received: inactive".
+ *   * the same walk at 1024x768 (feed 336px, nothing overflows): no control, no
+ *     extra stop, green. Which is why one machine saw it and the other did not.
+ *
+ * So the walk has to know which order it is in. It does NOT get to relax the
+ * destination: callers still assert `toBeFocused()` on the composer themselves,
+ * and anything other than the jump control landing in the gap throws here
+ * rather than being tabbed past — a NEW stop between the conversation and the
+ * composer is the #174 regression this helper must never hide.
+ *
+ * NOT A WINDOW-ACTIVATION GUARD, and #524 was dispatched as one — the reading
+ * being that "inactive" meant the runner had stolen OS focus. It cannot mean
+ * that: Playwright sends `Emulation.setFocusEmulationEnabled` to every main
+ * frame it attaches to, including Electron's (it only skips it for
+ * `connectOverCDP({ noDefaults })`, which `electron.launch()` does not use), so
+ * `document.hasFocus()` — the second half of its `toBeFocused` — is pinned true
+ * whatever the desktop is doing. Measured the same day: with the window
+ * MINIMIZED, `BrowserWindow.isFocused()` is false and `document.hasFocus()` is
+ * still true. Re-activating the window before a focus assertion would therefore
+ * be dead code; please do not add it back.
+ *
+ * @returns which order this run was in — for a caller that wants to say so.
+ */
+export async function tabFromFeedToComposer(w: Page): Promise<'direct' | 'past-jump'> {
+  await w.keyboard.press('Tab');
+  const landed = await w.evaluate(() => {
+    const el = document.activeElement as HTMLElement | null;
+    if (el?.hasAttribute('data-feed-jump-latest')) return 'jump';
+    if (el instanceof HTMLTextAreaElement && /Prompt this session/.test(el.placeholder))
+      return 'composer';
+    return `${el?.tagName ?? 'NONE'} "${(el?.textContent ?? '').trim().slice(0, 40)}"`;
+  });
+  if (landed === 'composer') return 'direct';
+  if (landed !== 'jump')
+    throw new Error(
+      `Tab out of the conversation region landed on ${landed} — expected the composer, or ` +
+        `#442's "↓ Jump to latest" control and then the composer. A new tab stop between the ` +
+        `conversation and the composer is the #174 regression this helper exists NOT to hide.`
+    );
+  await w.keyboard.press('Tab');
+  return 'past-jump';
+}
+
+/**
  * How many popped-out groups the app would PERSIST right now.
  *
  * Not the same thing as `app.windows().length`, and a test that quits without

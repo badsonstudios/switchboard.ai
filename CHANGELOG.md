@@ -57,6 +57,19 @@ on the floor, and say so in your PR.
 
 ## 0.6.0 — unreleased
 
+### Internal
+
+- Fixed the end-to-end test that kept failing on the Windows CI machine and
+  nowhere else — five red runs in two days, on branches that had not touched
+  anything near it. The tests walk the conversation with the keyboard and then
+  expect one more Tab to land in the prompt box, which was true until the
+  "↓ Jump to latest" button was added between the two. That button only appears
+  when the conversation has scrolled off the bottom *and* is taller than its
+  pane — true on the CI machine's small screen, false on a developer's — so the
+  Tab landed on the button there and in the prompt box here. The walks now
+  expect either order, and a test that states the CI machine's screen size pins
+  the two-step one down everywhere.
+
 ## 0.5.0 — 2026-08-14
 
 ### Added

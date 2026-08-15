@@ -25,7 +25,7 @@ import { test, expect, Page } from '@playwright/test';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { launchApp, LaunchedApp, registerTempDir } from './fixtures/app';
+import { launchApp, LaunchedApp, registerTempDir, tabFromFeedToComposer } from './fixtures/app';
 
 /** the dual-capable fake, asked for nothing — i.e. the app's own default */
 const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
@@ -191,11 +191,18 @@ test.describe('the Feed renders a Direct turn (P2-E18-14)', () => {
     await w.keyboard.press('Home');
     expect((await focusedInfo()).label).toContain('Stream check');
 
-    // Escape hands focus back to the region, and one more Tab reaches the
-    // composer: a long conversation must never bury it
+    // Escape hands focus back to the region, and tabbing out of it reaches the
+    // composer: a long conversation must never bury it.
+    //
+    // #524 — "one more Tab" was true when this was written and is true only on
+    // a big enough window. #442's "↓ Jump to latest" sits in that gap by design
+    // whenever the feed is unpinned AND overflowing, which the walk's own `Home`
+    // makes true at the windows-latest geometry and false on a dev screen; the
+    // helper walks whichever order this window is in and refuses any stop that
+    // is not that one. The destination is asserted here, unchanged.
     await w.keyboard.press('Escape');
     expect((await focusedInfo()).region).toBe(true);
-    await w.keyboard.press('Tab');
+    await tabFromFeedToComposer(w);
     await expect(w.getByPlaceholder(/Prompt this session/)).toBeFocused();
   });
 
