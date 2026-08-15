@@ -64,6 +64,23 @@
 > #535 and its check heals).** In flight: #524 (wt-1) · #530/#533
 > (wt-2) · #526/#485 (wt-3). Queued next: #532, #531, #520, #407.
 >
+> **#524 ✅ SOLVED → PR #541 (INTERNAL, merge on green → then
+> update-branch #535).** THE DISPATCHED DIAGNOSIS WAS WRONG and the
+> worker DISPROVED it: focus theft is measurably impossible
+> (Playwright focus emulation keeps document.hasFocus() true even
+> minimized — measured). REAL cause = hypothesis 2: #442's ↓ Jump
+> to latest is a CONDITIONAL Tab stop; feed-tail-pin.spec has
+> asserted the OPPOSITE order since #442 — two specs contradicted
+> each other and runner geometry picked the winner. Repro'd exactly
+> at 1024x686 (3 fail + serial skip), fixed via
+> tabFromFeedToComposer() fixture helper (throws on any UNKNOWN
+> stop — strictness kept), deterministic small-geometry regression
+> case, identical latent bug fixed in feed.spec:555. 4664 unit /
+> 284+3 e2e. Corrections to the record: :151 skips ONE neighbour
+> not two; #494 shares NO mechanism (zero toBeFocused there).
+> Run-book lesson: 'window inactive' in Playwright-Electron means
+> WRONG ELEMENT, never window activation — focus emulation is on.
+>
 > # (0.5.0 ship record follows)
 > # ✅ v0.5.0 SHIPPED 2026-08-14 (same-day as v0.4.0)
 >
