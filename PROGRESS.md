@@ -3,7 +3,30 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — ✅ v0.5.0 SHIPPED 2026-08-14 (same-day as v0.4.0)
+> # ▶▶ START HERE — 🎛 RUN 19 ACTIVE (started 2026-08-15)
+>
+> **Single-writer rule: only the orchestrator (this session) writes this
+> file.** Workers report via `.claude/work_files/orchestrator/<issue#>.md`;
+> a fresh /orchestrate session resumes from THIS block + the handoffs.
+>
+> **WAVE 1 (all owner-reported bugs, all → Dan's queue/train):**
+> **#484** resume-link lineage (degrade-don't-delete + repair sweep) →
+> sb-wt-1 · `feature/484-resume-link-lineage` · **#525→#527 serial**
+> (update --force-run, then reply-link routing) → sb-wt-2 ·
+> `feature/525-update-force-run` then `feature/527-reply-links` ·
+> **#526→#485 serial** (context menus, then composer-draft persistence
+> — SAME worker because both live in the composer region) → sb-wt-3 ·
+> `feature/526-context-menus` then `feature/485-composer-draft`.
+> **WAVE 2 QUEUE:** #520 find marks + #524 flake (FeedView/find/spec
+> territory — after wave 1's FeedView items land) · #533 viewer find ·
+> #532 diff toggle · #530 pin removal · #531 popout new-session ·
+> #407 Shape B · #482→#483 · #521 layer 1 · tail. **CHANGELOG note
+> for workers: the open section is `## 0.6.0 — unreleased`.**
+> Dogfood tracker rule active: fixes shipping → move tracker rows to
+> RE-TEST (orchestrator does it at train time).
+>
+> # (0.5.0 ship record follows)
+> # ✅ v0.5.0 SHIPPED 2026-08-14 (same-day as v0.4.0)
 >
 > **Release v0.5.0 PUBLISHED** — cut PR #523 (worker; folds #487's
 > lock guard) squash-merged → main @ dcd5413, tag v0.5.0 pushed,
