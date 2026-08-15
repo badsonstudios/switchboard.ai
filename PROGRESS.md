@@ -25,6 +25,26 @@
 > Dogfood tracker rule active: fixes shipping → move tracker rows to
 > RE-TEST (orchestrator does it at train time).
 >
+> **#525+#527 ✅ DONE → PRs #535 + #536 READY (Dan/train queue).**
+> #525: diagnosis confirmed against the GENERATED NSIS script
+> (${ifNot} ${Silent} guard), '/S --force-run' argv test-pinned.
+> #527: worker CORRECTED the issue body — viewer + update dialog
+> already handled links (different, deliberate policies); only the
+> feed was dead; fix = lib/markdown-links.ts on the feed's delegated
+> handler + ONE shared scheme allowlist (shared/link-schemes.ts —
+> two renderer copies were already drifting); hostile-href table
+> forces payloads past the sanitizer so a DOMPurify bump goes red;
+> fragments pinned both ways; popout delegated-event uncertainty
+> settled (works, no native listener). Gates: 4664/4701 unit, 284/
+> 286+3 e2e. ⚠ #535 windows-e2e hit **#524 AGAIN** (3rd sighting,
+> same spec) — rerun kicked by worker, VERIFY GREEN before train.
+> Worktree note: sb-wt-2 node_modules was stale (missing xterm
+> addon) — wt-1/wt-3 workers may hit same; npm install fixes.
+> **Wave 2 dispatch: #530→#533 viewer serial track → sb-wt-2**
+> (pin removal FIRST as the structural change, find-in-file on the
+> new model second; #533 marks must be visible per #520's lesson).
+> In flight: #484 (wt-1) · #530/#533 (wt-2) · #526/#485 (wt-3).
+>
 > # (0.5.0 ship record follows)
 > # ✅ v0.5.0 SHIPPED 2026-08-14 (same-day as v0.4.0)
 >
