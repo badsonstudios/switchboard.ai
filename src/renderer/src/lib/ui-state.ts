@@ -41,11 +41,74 @@ export function uiGet<T>(key: string, fallback: T): T {
 
 export function uiSet(key: string, value: unknown): void {
   cache[key] = value;
+  push();
+}
+
+/**
+ * How long a `uiSetSoon` write waits before it leaves the renderer.
+ *
+ * Short enough that a quit a moment after the last keystroke still carries it
+ * (main's store then debounces the DISK write behind its own timer and flushes
+ * on close), long enough that a fast typist does not send the whole blob on
+ * every character.
+ */
+export const UI_PUSH_DELAY_MS = 400;
+let pushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function push(): void {
+  if (pushTimer) {
+    clearTimeout(pushTimer); // whatever was pending is in this same blob
+    pushTimer = null;
+  }
   try {
     window.switchboard.workspace.setUi(cache);
   } catch {
-    /* fail-open */
+    /* fail-open: prefs are nice-to-have, never a reason to break a gesture */
   }
+}
+
+/**
+ * Write the cache NOW; push to main SOON — for values that change on every
+ * keystroke, like the composer draft (#485).
+ *
+ * THE SPLIT IS THE POINT, and it is what makes a remount survivable. The cache
+ * is a module-level object in this bundle, so it is correct the instant the
+ * value changes: a component that unmounts and mounts again a tick later — a
+ * card popped out, a view tab switched — reads back exactly what the user
+ * typed, with no round trip to wait for. Only the IPC is delayed, and only the
+ * relaunch case depends on it.
+ *
+ * The delay is measured from the FIRST unsent change, not reset by each new
+ * one: a trailing debounce can be starved for ever by someone who keeps typing,
+ * and "your draft is safe once you pause" is a worse promise than "your draft
+ * is safe within 400ms, always".
+ *
+ * `undefined` DELETES the key rather than storing an explicit undefined, so a
+ * draft the user emptied leaves nothing behind (JSON would drop it on the way
+ * out anyway, but reads in THIS session would still see the key).
+ */
+export function uiSetSoon(key: string, value: unknown): void {
+  if (value === undefined) delete cache[key];
+  else cache[key] = value;
+  if (pushTimer) return; // already scheduled; this write rides it
+  pushTimer = setTimeout(() => {
+    pushTimer = null;
+    try {
+      window.switchboard.workspace.setUi(cache);
+    } catch {
+      /* fail-open */
+    }
+  }, UI_PUSH_DELAY_MS);
+}
+
+/**
+ * Send anything `uiSetSoon` is still holding, now.
+ *
+ * For the moments where waiting is a risk rather than an economy — the composer
+ * losing focus, which is what a click on the window's ✕ starts with.
+ */
+export function uiFlush(): void {
+  if (pushTimer) push();
 }
 
 /** The whole blob, for readers that migrate keys they can't name up front
@@ -60,9 +123,5 @@ export function uiAll(): Readonly<Record<string, unknown>> {
 export function uiDelete(keys: string[]): void {
   if (keys.length === 0) return;
   for (const k of keys) delete cache[k];
-  try {
-    window.switchboard.workspace.setUi(cache);
-  } catch {
-    /* fail-open */
-  }
+  push();
 }

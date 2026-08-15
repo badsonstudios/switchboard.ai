@@ -57,6 +57,17 @@ on the floor, and say so in your PR.
 
 ## 0.6.0 — unreleased
 
+### Fixed
+
+- **A prompt you started writing is no longer thrown away.** Text typed into a
+  session's prompt box and not yet sent used to vanish the moment the view went
+  away — switching that card to the Terminal or Changes tab, **popping the card
+  out into its own window**, or quitting. It is now kept per session, saved as
+  you type, and it comes back: in the popped-out window, when you dock the card
+  back in, and after you quit and reopen switchboard — including for a session
+  that was suspended and resumes later. Sending the prompt clears it, as you
+  would expect, and a box you emptied stores nothing.
+
 ## 0.5.0 — 2026-08-14
 
 ### Added

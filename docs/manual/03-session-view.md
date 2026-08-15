@@ -138,6 +138,12 @@ The box at the bottom sends straight to the real Claude Code session:
 Under the box is a row showing this session's **autonomy mode** (click to
 cycle) and the **model** it last used.
 
+**A prompt you haven't sent yet is kept.** Start writing, then switch that card
+to the Terminal tab, pop it out into its own window, dock it back, or quit
+switchboard entirely — the words are still in the box when you come back to it.
+Each session keeps its own; sending clears it. If you empty the box, nothing is
+kept. A session you left suspended gets its draft back when it resumes.
+
 ### Attaching files: paste a picture, or drag anything in
 
 Two ways to send Claude a file along with your question.
