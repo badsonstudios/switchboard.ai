@@ -81,6 +81,23 @@
 > Run-book lesson: 'window inactive' in Playwright-Electron means
 > WRONG ELEMENT, never window activation — focus emulation is on.
 >
+> **#530 ✅ DONE → PR #542 READY (Dan/train).** Peek slot + pin
+> GONE; planDocumentOpen = focus|create; DESIGN §5.30 + manual +
+> competitive-research note REWRITTEN (records the ergonomic was
+> built, used, rejected — don't revive for sessions on IDE
+> precedent alone). Self-caught: popped-out re-open was a silent
+> no-op (now raises the window, e2e'd); documentKey folds case on
+> win/mac (two casings = two tabs bug preempted). 4666 unit /
+> 285+3 e2e, ZERO flakes. Discoveries → **#543** (✕ tooltip lies
+> on doc tabs + Close-all-documents) · **#544** (file-watch lost
+> its bound — N tabs = N handles/timers). **#533 investigation
+> delivered, implementation deliberately NOT started** — premise
+> corrected (find EXISTS, unreachable for TWO reasons: find.open's
+> /^session-/ gate + unfocusable subtree); verified plan in
+> 533.md; **fresh worker dispatched → sb-wt-2 on the prepared
+> branch (builds on #542)**. In flight: #533 (wt-2) · #526/#485
+> (wt-3) · wt-1 idle pending #541 merge → then #532→#531 dispatch.
+>
 > # (0.5.0 ship record follows)
 > # ✅ v0.5.0 SHIPPED 2026-08-14 (same-day as v0.4.0)
 >
