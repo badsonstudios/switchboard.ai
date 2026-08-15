@@ -76,6 +76,13 @@ Four steps, all in the app, all of them visible:
    and you'll see **"You're now on v0.3.0"** in the events panel. That's the app
    confirming the update actually landed, not just that it tried.
 
+The window coming back on its own is the installer's doing, and it takes a few
+seconds — the app is fully closed for that moment, which is normal. If it ever
+*doesn't* come back, the update is still installed: start switchboard.ai from
+the Start menu or the desktop shortcut as usual and you'll be on the new
+version. Nothing is lost either way; your sessions and settings are untouched
+by an install.
+
 If you have sessions mid-task when you press Update, you'll get the same "are
 you sure?" question you'd get from closing the window. Say no and nothing is
 installed — the release stays on offer.

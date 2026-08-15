@@ -57,6 +57,16 @@ on the floor, and say so in your PR.
 
 ## 0.6.0 — unreleased
 
+### Fixed
+
+- **An update now actually brings the app back.** Installing a release from
+  inside switchboard.ai did everything it said it would — downloaded, checked,
+  installed — and then left you staring at a closed app, having promised on
+  screen that it "will close and reopen on the new version". The update was
+  fine; only the reopening was missing. The silent installer is now told to
+  relaunch us, so pressing **Update** ends with the app back on your screen on
+  the new version, as it always claimed it would.
+
 ## 0.5.0 — 2026-08-14
 
 ### Added
