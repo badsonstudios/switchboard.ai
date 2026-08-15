@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import type { ContextMenuLabels } from '../shared/context-menu';
 import type { SlashCommand } from '../shared/slash-commands';
 import type { PromptAttachment } from '../shared/prompt-attachments';
 import type { PtyAttachment, PtyChunk } from '../shared/ipc/pty';
@@ -141,6 +142,16 @@ const api = {
       return () => ipcRenderer.removeListener('workspace:saveStateChanged', h);
     },
   },
+  /**
+   * Hand main the four right-click menu labels, translated (#526).
+   *
+   * The menu itself is built in the browser process — only it can offer a real
+   * Cut/Copy/Paste — but only the renderer has i18next, so the strings travel
+   * the other way. Sent at boot and again on every language change; main keeps
+   * the last set and falls back to English before the first one arrives.
+   */
+  setContextMenuLabels: (labels: ContextMenuLabels): void =>
+    ipcRenderer.send('app:contextMenuLabels', labels),
   /** display work areas, for popout-position rescue on restore (E8-02) */
   workAreas: (): Promise<Array<{ x: number; y: number; width: number; height: number }>> =>
     ipcRenderer.invoke('app:workAreas'),

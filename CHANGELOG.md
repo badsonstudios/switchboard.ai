@@ -57,6 +57,19 @@ on the floor, and say so in your PR.
 
 ## 0.6.0 — unreleased
 
+### Added
+
+- **Right-click menus.** Right-clicking anywhere in switchboard used to do
+  nothing at all. Now a right-click in the prompt box — or any other text box —
+  gives you **Cut, Copy, Paste and Select All**, greyed out when they would do
+  nothing (no Cut with nothing selected, no Paste with an empty clipboard).
+  Right-clicking text you have selected in a session's conversation, or in a
+  document, offers **Copy**. Pasting from the menu works exactly like Ctrl+V,
+  pictures included: a screenshot pasted from the menu becomes the same chip
+  under the box. Popped-out session windows get the menus too. Right-clicking
+  in the **Terminal** tab is left alone deliberately — the terminal has its own
+  conventions and they are the CLI's, not ours.
+
 ## 0.5.0 — 2026-08-14
 
 ### Added

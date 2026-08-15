@@ -480,6 +480,14 @@ export function SessionsRail(props: {
           setDraft(s.title);
         }}
         onContextMenu={(e) => {
+          // The RENAME BOX is inside this row, and a text box owes its user the
+          // edit menu before it owes anyone a session menu (#526). Chromium
+          // stops emitting the browser-process `context-menu` event the moment
+          // the page calls `preventDefault`, so without this early return the
+          // one place in the app you cannot Cut/Copy/Paste with the mouse is a
+          // field whose entire purpose is editing text.
+          if ((e.target as HTMLElement).closest?.('input, textarea, [contenteditable="true"]'))
+            return;
           e.preventDefault();
           // Shift+F10 and the ContextMenu key fire this same event, which is
           // what gives the menu a keyboard path at all — but they carry no

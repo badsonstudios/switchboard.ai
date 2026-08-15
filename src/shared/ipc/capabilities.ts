@@ -113,6 +113,12 @@ export const CHANNEL_CAPABILITIES = {
   // the renderer is listening for claimed chords (#90); until it says so, the
   // browser process claims none of them
   'app:acceleratorReady': 'app.window',
+  // The four Cut/Copy/Paste/Select All labels for the right-click menu (#526),
+  // already translated. `app.window` because that is what it is: chrome for a
+  // window this caller already owns. It reads nothing and starts nothing — the
+  // menu it names is built from Electron ROLES, so a caller cannot smuggle an
+  // action in through a label.
+  'app:contextMenuLabels': 'app.window',
   'app:movePopout': 'app.window',
   'app:workAreas': 'app.window',
   'events:ack': 'events.write',

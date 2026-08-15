@@ -72,6 +72,10 @@ import type { UpdateHandshake, UpdateInstallStatus } from '../shared/update';
 import { ServiceHealthService } from './health/service';
 import { SERVICE_STATUS_FEED_ENV } from './health/statuspage';
 import { installTerminalAccelerators, makeAcceleratorDeps } from './terminal-accelerators';
+import type { ContextMenuDeps } from './context-menu';
+import { installContextMenu, makeContextMenuDeps, sanitizeContextMenuLabels } from './context-menu';
+import type { ContextMenuLabels } from '../shared/context-menu';
+import { DEFAULT_CONTEXT_MENU_LABELS } from '../shared/context-menu';
 import {
   Box,
   groupIdFromFrameName,
@@ -334,6 +338,25 @@ const acceleratorDeps = makeAcceleratorDeps({
   onError: (err) => log.app.warn('terminal accelerator failed', { error: String(err) }),
 });
 
+/**
+ * Right-click edit menus (#526).
+ *
+ * The labels are the renderer's — it owns i18next — and arrive on
+ * `app:contextMenuLabels` at boot and on every language change. English until
+ * then: a window exists before its renderer has mounted, and a right-click in
+ * that gap must still get a working menu.
+ */
+let contextMenuLabels: ContextMenuLabels = DEFAULT_CONTEXT_MENU_LABELS;
+// The menu is anchored to the window that was clicked. The ROLES act on the
+// FOCUSED webContents — which is that same window, popout included, because
+// clicking it focused it.
+const contextMenuDeps: ContextMenuDeps = makeContextMenuDeps({
+  labels: () => contextMenuLabels,
+  windowFor: (contents) => BrowserWindow.fromWebContents(contents),
+  build: (template) => Menu.buildFromTemplate(template),
+  onError: (err) => log.ui.warn('context menu failed', { error: String(err) }),
+});
+
 function trackWindowGeometry(win: BrowserWindow): void {
   let lastNormalBounds = win.getNormalBounds();
   const save = () => {
@@ -516,6 +539,9 @@ function createWindow(): BrowserWindow {
   // The two chords that must survive terminal focus (#90). Installed on the
   // window's contents, so the claim ends at our own windows.
   installTerminalAccelerators(win.webContents, acceleratorDeps(false));
+  // Cut/Copy/Paste/Select All on right-click (#526). Electron provides no
+  // default menu, so without this every right-click in the app does nothing.
+  installContextMenu(win.webContents, contextMenuDeps);
   // A navigating renderer has torn its listener down; nothing may be claimed
   // again until the new one says it is listening.
   win.webContents.on('did-start-loading', () => {
@@ -664,6 +690,10 @@ function createWindow(): BrowserWindow {
     // must not remove capability). The claim is per-window, so this window
     // needs its own.
     installTerminalAccelerators(child.webContents, acceleratorDeps(true));
+    // ...and its right-click menus (#526). `context-menu` is per-webContents
+    // too, so a popped-out composer would otherwise be the one text box in the
+    // app you cannot paste into with the mouse.
+    installContextMenu(child.webContents, contextMenuDeps);
     child.on('closed', () => {
       const i = popoutWindows.indexOf(entry);
       if (i >= 0) popoutWindows.splice(i, 1);
@@ -799,6 +829,17 @@ app
     // nothing is taken from the page
     broker.on('app:acceleratorReady', (e) => {
       acceleratorReadyFor = e.sender.id;
+    });
+    // The four right-click labels, already translated (#526). Main has no
+    // i18n; the renderer publishes them at boot and on every language change.
+    // Sanitized rather than trusted — they become items in a NATIVE menu.
+    broker.on('app:contextMenuLabels', (_e, raw: unknown) => {
+      contextMenuLabels = sanitizeContextMenuLabels(raw);
+      // Said out loud because the failure is otherwise SILENT: a renamed
+      // channel, a caller without `app.window`, a preload that did not load —
+      // every one of them leaves the menus in English for ever with nothing
+      // anywhere to read. One line at boot answers "did the labels arrive?".
+      log.ui.info('context menu labels received', { paste: contextMenuLabels.paste });
     });
     // display work areas — for popout-position rescue on restore (E8-02)
     broker.handle('app:workAreas', () => screen.getAllDisplays().map((d) => d.workArea));
