@@ -57,6 +57,32 @@ on the floor, and say so in your PR.
 
 ## 0.6.0 — unreleased
 
+### Fixed
+
+- **A card can no longer forget which conversation it was in.** switchboard
+  records a session's conversation the moment Claude Code names one — but Claude
+  Code doesn't write that conversation to disk until you actually send
+  something. Open a session, close it again without typing, and the card was
+  left pointing at a conversation that had never been written down; the next
+  launch found nothing there, gave up, and **erased the card's only pointer to
+  the conversation it really had**. The same thing happened if the lookup simply
+  failed for a moment — one antivirus scan or file-indexer at the wrong instant
+  and a working card was reset for good. Both are gone. A card now remembers the
+  conversations it has been in, not just the latest one: if the newest has
+  nothing on disk it falls back to the one that does, and a lookup that fails is
+  treated as "not right now" instead of "gone for ever". Nothing about your
+  history is ever deleted on the strength of a failed look.
+- **Cards that were already orphaned repair themselves on the next launch.** If
+  a card lost its conversation to the bug above, switchboard now notices at
+  start-up that its conversation isn't on disk, looks in that project's own
+  history for the one it walked away from, and reattaches it — you get your
+  session back with its transcript, and the app writes a line in the log saying
+  what it reattached and why. It only ever does this for a card that *had* a
+  conversation and lost it, it never takes one another card is already in, and
+  it never guesses off a folder it couldn't read, and it leaves alone anything
+  written to in the last few minutes — that's far more likely to be a `claude`
+  session you have open in a terminal than a conversation a card mislaid.
+
 ## 0.5.0 — 2026-08-14
 
 ### Added

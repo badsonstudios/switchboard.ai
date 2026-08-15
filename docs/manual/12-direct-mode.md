@@ -163,6 +163,44 @@ Two details worth knowing:
   (some people prune it). The card still works; it just starts a fresh
   conversation, because there is nothing left to resume.
 
+### A card remembers more than its latest conversation
+
+Claude Code only writes a conversation to disk once you actually **send
+something**. So a session you open and close again without typing has a name but
+no file behind it — and if that were the only thing a card remembered, the card
+would come back next launch with nowhere to go.
+
+It isn't. Each card keeps a short list of the conversations it has been in, and
+when it starts it takes **the most recent one that's really on disk**. In
+practice that means:
+
+- Open a session, change your mind, close it without typing — next launch you're
+  back in the conversation you were in before, not a blank one.
+- Use `/clear`, then quit before sending anything at all — you come back in the
+  conversation you cleared. Send `/clear` again and it's cleared again; nothing
+  is stuck.
+- If switchboard can't read `~/.claude/projects` for a moment — an antivirus
+  scan, a file indexer, a network drive reconnecting — the card starts fresh
+  **for that one launch only**. It does not forget the conversation, and the next
+  launch picks it straight back up.
+
+**switchboard never deletes your link to a conversation because a lookup
+failed.** That's the rule the whole thing runs on.
+
+### Getting a lost session back
+
+Cards orphaned by an older version — where the app really did throw the pointer
+away — repair themselves. When a card starts and the conversation it recorded
+isn't on disk, switchboard looks in that project folder's own history and
+reattaches the most recent conversation nothing else is using. Your session comes
+back with its transcript, and the app writes what it did into the log.
+
+It's careful about it: a **brand-new** card is never given someone else's
+history, it never takes a conversation another card is already in, and it never
+guesses from a folder it couldn't read. If it does pick the wrong one, nothing is
+destroyed — the old pointer is kept underneath, and you can start a fresh session
+on the card whenever you like.
+
 > **Fixed in 0.4.0.** Before this, a resumed Direct-mode session came back
 > *blank*: the conversation was still there and Claude still remembered every
 > word of it, but the Session view showed none of it, which looked exactly like
