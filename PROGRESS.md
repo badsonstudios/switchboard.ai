@@ -45,6 +45,25 @@
 > new model second; #533 marks must be visible per #520's lesson).
 > In flight: #484 (wt-1) · #530/#533 (wt-2) · #526/#485 (wt-3).
 >
+> **#484 ✅ DONE → PR #537 READY (Dan/train).** ROOT CAUSE
+> CORRECTED: plain --resume does NOT fork (measured, 6,747
+> transcripts: re-adopts id, appends; fork = --fork-session which we
+> never pass) — real killer = ids recorded before their transcript
+> exists. Fix: identity CHAIN (nativeSessionLineage), start never
+> erases only pushes down, absent-vs-couldn't-look split, 4-guarded
+> repair sweep. Review caught a real adoption-precondition hole —
+> fixed pre-push. 4730 unit / 284 e2e. #495 premise corrected by
+> comment (may be moot post-#537). Exposes resumeCandidates() for
+> #495. Discoveries → **#538** (sounds.spec:119 new flake) ·
+> **#539** (adoption invisible + duplicate-pointer cards — incl.
+> Dan's real Switchboard.ai/-2 pair). ⚠ **#524 ESCALATED: 5
+> failures/2 days, now BLOCKS #535's required check; new evidence =
+> WINDOW 'inactive' (runner focus theft, not Tab-stop). FIX
+> DISPATCHED → sb-wt-1 · feature/524-streamfeed-activation-guard
+> (INTERNAL — orchestrator merges on green, then update-branch
+> #535 and its check heals).** In flight: #524 (wt-1) · #530/#533
+> (wt-2) · #526/#485 (wt-3). Queued next: #532, #531, #520, #407.
+>
 > # (0.5.0 ship record follows)
 > # ✅ v0.5.0 SHIPPED 2026-08-14 (same-day as v0.4.0)
 >
