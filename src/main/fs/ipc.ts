@@ -16,6 +16,7 @@ import { BrowserWindow, dialog, shell, IpcMainInvokeEvent } from 'electron';
 import { IpcBroker } from '../ipc/broker';
 import type { Logger } from '../log/logger';
 import { MAX_FILE_READ_BYTES, FileReadResult, FileWatchResult } from '../../shared/ipc/fs';
+import { isAllowedLinkUrl } from '../../shared/link-schemes';
 import { readCappedText } from './read-file';
 import { ReadScope } from './read-scope';
 import { FileWatchDeps, FileWatchService } from './file-watch';
@@ -23,23 +24,20 @@ import { FileWatchDeps, FileWatchService } from './file-watch';
 /**
  * Schemes a link inside a rendered document may be opened with (§5.30).
  *
- * An ALLOW-list, and a short one: "`http`/`https`/`mailto` links open in the OS
- * browser via `shell.openExternal` against a scheme allowlist; every other
- * scheme is refused." A deny-list would be the wrong shape here — the input is
- * a string from a file we did not write, and the set of schemes an OS has a
- * handler for is open-ended and includes several that are "run this" in a
- * trench coat.
+ * THE LIST MOVED TO `shared/link-schemes.ts` (#527) and is re-exported here
+ * under the name this module's callers and its own log lines already use. It
+ * moved because the renderer's two markdown surfaces need the same answer to
+ * decide what to OFFER, and three copies of a security list are three lists.
+ *
+ * WHAT DID NOT MOVE IS THE GUARD. This side re-checks every string it is
+ * handed and always will: the renderer's copy exists so a link that looks
+ * clickable is one main will actually open, not so this handler can trust it.
  */
-export const ALLOWED_LINK_SCHEMES = ['http:', 'https:', 'mailto:'] as const;
+export { ALLOWED_LINK_SCHEMES } from '../../shared/link-schemes';
 
 /** Is this a link a document may hand to the user's browser? */
 export function isAllowedDocumentLink(url: unknown): boolean {
-  if (typeof url !== 'string' || url.length === 0) return false;
-  try {
-    return (ALLOWED_LINK_SCHEMES as readonly string[]).includes(new URL(url).protocol);
-  } catch {
-    return false;
-  }
+  return isAllowedLinkUrl(url);
 }
 
 /** The bits of electron these handlers touch, injectable so tests need no app. */

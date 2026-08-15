@@ -634,6 +634,153 @@ test.describe('[pty] Feed view (E12-06)', () => {
     await popout.evaluate(() => window.close());
   });
 
+  // #527. The one thing only the real app can settle: a click on a link in a
+  // reply reaches `shell.openExternal` IN MAIN — across the preload bridge,
+  // through the IPC broker's capability check, past main's scheme allowlist.
+  // Everything about WHICH hrefs are allowed is a table in
+  // `markdown-links.test.ts`; this is the round trip, and it is the half that
+  // was missing (the renderer never called the seam at all, and
+  // `will-navigate` swallowed the click in silence).
+  //
+  // `shell.openExternal` is REPLACED in the main process rather than allowed
+  // to run: the real one launches the machine's actual browser, and a CI run
+  // that opens a browser window per test is a bad neighbour.
+  test('clicking a link in a reply reaches the browser seam (#527)', async () => {
+    const NL = String.fromCharCode(10);
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
+
+    const opened = async (): Promise<string[]> =>
+      a.app.evaluate(() => (globalThis as unknown as { __opened?: string[] }).__opened ?? []);
+    await a.app.evaluate(({ shell }) => {
+      const g = globalThis as unknown as { __opened: string[] };
+      g.__opened = [];
+      // `defineProperty`, not assignment: electron's module objects use getters
+      // for their members, and a plain `shell.openExternal = …` is silently
+      // dropped on one.
+      Object.defineProperty(shell, 'openExternal', {
+        configurable: true,
+        value: (url: string): Promise<void> => {
+          g.__opened.push(url);
+          return Promise.resolve();
+        },
+      });
+    });
+
+    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
+    fs.mkdirSync(dir, { recursive: true });
+    const line = (o: Record<string, unknown>): string =>
+      JSON.stringify({ sessionId: 'links', cwd: folder, timestamp: new Date().toISOString(), ...o }) + NL;
+    fs.writeFileSync(
+      path.join(dir, 'links.jsonl'),
+      line({ type: 'user', message: { role: 'user', content: 'LINK_PROMPT' } }) +
+        line({
+          type: 'assistant',
+          message: {
+            content: [
+              {
+                type: 'text',
+                text: [
+                  'See [the docs](https://links.test/docs) for more.',
+                  '',
+                  'And [do not open this](javascript:globalThis.__pwned=1) either,',
+                  'nor [this one](file:///C:/Windows/System32/calc.exe).',
+                ].join(NL),
+              },
+            ],
+          },
+        })
+    );
+
+    const feed = w.getByRole('region', { name: /^Conversation/ });
+    const link = feed.getByText('the docs', { exact: true });
+    await expect(link).toBeVisible({ timeout: 20_000 });
+
+    // 1. the good one goes to the OS browser
+    const before = w.url();
+    await link.click();
+    await expect.poll(opened, { timeout: 5_000 }).toEqual(['https://links.test/docs']);
+    // 2. and the app is still the app — no in-app navigation happened
+    expect(w.url()).toBe(before);
+
+    // 3. the hostile ones do nothing at all, and never ran
+    await feed.getByText('do not open this', { exact: true }).click();
+    await feed.getByText('this one', { exact: true }).click();
+    await expect.poll(opened, { timeout: 2_000 }).toEqual(['https://links.test/docs']);
+    expect(w.url()).toBe(before);
+    expect(await w.evaluate(() => (window as unknown as { __pwned?: unknown }).__pwned)).toBe(
+      undefined
+    );
+  });
+
+  // The per-window half (#477's lesson, and #477 is why the copy button in a
+  // reply is delegated at all): dockview ADOPTS the group's DOM into the
+  // popped-out window, so a handler that only works because of where the main
+  // window's listeners sit stops working the moment the card is torn off.
+  test('a link still opens the browser from a popped-out card (#527)', async () => {
+    test.skip(
+      process.platform === 'linux',
+      'popout opens a 2nd OS window — unreliable under headless xvfb'
+    );
+    const NL = String.fromCharCode(10);
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.locator('nav [draggable="true"]')).toHaveCount(1, { timeout: 25_000 });
+
+    await a.app.evaluate(({ shell }) => {
+      const g = globalThis as unknown as { __opened: string[] };
+      g.__opened = [];
+      Object.defineProperty(shell, 'openExternal', {
+        configurable: true,
+        value: (url: string): Promise<void> => {
+          g.__opened.push(url);
+          return Promise.resolve();
+        },
+      });
+    });
+
+    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
+    fs.mkdirSync(dir, { recursive: true });
+    const line = (o: Record<string, unknown>): string =>
+      JSON.stringify({ sessionId: 'poplink', cwd: folder, timestamp: new Date().toISOString(), ...o }) + NL;
+    fs.writeFileSync(
+      path.join(dir, 'poplink.jsonl'),
+      line({ type: 'user', message: { role: 'user', content: 'POP_LINK' } }) +
+        line({
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: 'See [popped docs](https://popped.test/x).' }] },
+        })
+    );
+    await expect(w.getByText('popped docs', { exact: true })).toBeVisible({ timeout: 20_000 });
+
+    await w.getByTitle('Pop out into its own window').click();
+    await expect
+      .poll(() => a.app.windows().filter((p) => p.url().includes('popout.html')).length, {
+        timeout: 15_000,
+      })
+      .toBe(1);
+    const popout = a.app.windows().find((p) => p.url().includes('popout.html'))!;
+    await popout.waitForLoadState('domcontentloaded');
+
+    const link = popout.getByText('popped docs', { exact: true });
+    await expect(link).toBeVisible({ timeout: 15_000 });
+    await link.click();
+    await expect
+      .poll(
+        async () =>
+          a.app.evaluate(() => (globalThis as unknown as { __opened?: string[] }).__opened ?? []),
+        { timeout: 5_000 }
+      )
+      .toEqual(['https://popped.test/x']);
+
+    // hand the second OS window back before teardown rather than leaving it to
+    // the tree-kill: a live popout has outlived cleanup on CI before
+    await popout.evaluate(() => window.close());
+  });
+
   test('the composer drives the real CLI over the PTY (E10-02)', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });

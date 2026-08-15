@@ -377,6 +377,18 @@ body {
 .feed-md a {
   color: var(--status-working-ink);
 }
+/* An anchor with NO href is not a link — HTML says so, and #527 says why it
+   matters here. The sanitizer removes the href from every scheme outside its
+   URI policy (`javascript:`, `data:`, `file:`, `vbscript:` …), which leaves an
+   `<a>` that would otherwise still be painted in link colours and do nothing
+   when clicked. That is the exact complaint #527 was filed over, so the
+   affordance goes with the destination: it renders as the words it always was.
+   The document viewer says the same thing with `.doc-link-blocked`. */
+.feed-md a:not([href]) {
+  color: inherit;
+  text-decoration: none;
+  cursor: default;
+}
 .feed-md blockquote {
   border-inline-start: 2px solid var(--border);
   margin: 0 0 6px;

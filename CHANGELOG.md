@@ -57,6 +57,18 @@ on the floor, and say so in your PR.
 
 ## 0.6.0 — unreleased
 
+### Fixed
+
+- **Links in a session's answers open in your browser.** A link in a reply
+  looked like a link, went blue like a link, and did absolutely nothing when
+  you clicked it — the click was swallowed on the way out and never reached
+  anything. Now it opens in your normal web browser, including from a
+  popped-out card, and switchboard.ai itself never navigates away from the
+  session you were reading. Ordinary web links only (`http`, `https`,
+  `mailto`): anything else in a link — a scheme that would run a program or
+  open a file off your disk — still does nothing at all, on purpose, because
+  the text of an answer is written by whatever the session was reading.
+
 ## 0.5.0 — 2026-08-14
 
 ### Added
