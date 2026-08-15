@@ -1062,7 +1062,10 @@ Phase 2 is overfull, so the scope is drawn tight on purpose — see *Not in scop
 
 **Decisions taken up front** (owner, 2026-07-30 — recorded so the items don't
 re-litigate them): rendered-by-default with a source toggle, defaulted **per file
-type** · **one reusable peek slot, pin to keep**, not a tab per file · mermaid
+type** · ~~**one reusable peek slot, pin to keep**, not a tab per file~~
+(**REVERSED by the owner on 2026-08-15, #530** — it shipped in E16-03, was used,
+and was rejected in use: every file now opens its own tab and there is no pin.
+DESIGN §5.30 carries the reasoning) · mermaid
 **deferred** to a code fence (DESIGN §10 carries it with its CSP cost) ·
 `fs.read` scoped to **open session folders plus user-picked paths**, nothing
 wider · **read-only forever** (PHILOSOPHY §5's rejected-editor precedent).
@@ -1106,6 +1109,10 @@ Work items:
   `<script>` and an `onerror` attribute renders inert (sanitizer test with real
   hostile input, not a smoke test).
 - **P2-E16-03 · Peek slot, pinning, and the viewer window — M (§5.30, §5.8).**
+  **The peek/pin half of this item was REMOVED again by #530 (owner decision,
+  2026-08-15): every file opens its own tab. The window, attribution and
+  never-in-a-session's-group halves stand. Left here as shipped so the reversal
+  has something to point at — do not rebuild from this paragraph.**
   *(depends: 02)* One reusable viewer whose content is replaced by the next
   glance; pin promotes it to a permanent tab and sends the next open to a fresh
   peek slot. The pop-out control opens it as its own OS window through E8's

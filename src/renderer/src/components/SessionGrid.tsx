@@ -26,13 +26,7 @@ import { IdentityChip, identityBadgeStyle } from './IdentityChip';
 import { DiffPane } from './DiffPane';
 import { DocumentViewer } from './DocumentViewer';
 import { baseName } from '../lib/document-kind';
-import {
-  documentPanels,
-  forgetDocumentPanel,
-  isDocumentPinned,
-  planDocumentOpen,
-  setDocumentPinned,
-} from '../lib/document-panels';
+import { forgetDocumentPanel, planDocumentOpen } from '../lib/document-panels';
 import { UsageStrip } from './UsageStrip';
 import { GitContext, GitStatusDto } from './GitContext';
 import { Usage, ZERO_USAGE } from '../lib/usage';
@@ -1844,22 +1838,6 @@ function documentTabTitle(filePath: string): string {
 }
 
 /**
- * Push each viewer's PIN state onto its panel params (P2-E16-03).
- *
- * Pinned is derived from one pointer in `lib/document-panels`, and moving that
- * pointer changes the answer for TWO panels at once — the one that just took
- * the peek slot and the one that just lost it. Rather than work out which, and
- * be wrong the first time a third rule arrives, every open viewer is re-told
- * after every mutation. `updateParameters` merges, so this names one key, and
- * there are at most a handful of viewers.
- */
-function syncDocumentPins(api: DockviewApi): void {
-  for (const entry of documentPanels()) {
-    api.getPanel(entry.id)?.api.updateParameters({ pinned: isDocumentPinned(entry.id) });
-  }
-}
-
-/**
  * Is this group the document area — does a viewer live in it?
  *
  * Named once and read from both sides of the same sentence: a viewer PREFERS
@@ -1882,9 +1860,9 @@ const isDocumentArea = (g: DockviewGroupPanel): boolean =>
  *     becomes a popout the moment a card is torn off — so a file opened while a
  *     popped-out session had focus would land as a tab inside that session's
  *     window. That is the E8-04 defect in mirror image, and it now has a second
- *     face: once a VIEWER can have its own window, a pinned viewer's popout is
- *     just as wrong a home for the next one. Only `grid` groups are considered,
- *     so both are excluded by the same line.
+ *     face: once a VIEWER can have its own window, that viewer's popout is just
+ *     as wrong a home for the next one. Only `grid` groups are considered, so
+ *     both are excluded by the same line.
  *  2. THE SESSION'S GROUP. P2-E16-02 took the first grid group, which with one
  *     session open IS that session's group — the viewer arrived as a tab beside
  *     the card, and switching to it hid the session. Group membership is the
@@ -2012,17 +1990,19 @@ function sessionCardHome(api: DockviewApi): DockviewApi['groups'][number] {
 }
 
 /**
- * Open a document viewer on `filePath` — peek slot and all (P2-E16-02/03).
+ * Open a document viewer on `filePath` — a NEW TAB every time (#530, §5.30).
  *
  * A module-level function taking the api, like every other imperative verb in
  * this file, so the scripted-check seam in `onReady` can call the same code the
  * controller does — through the controller it would race the effect that
  * installs it.
  *
- * The DECISION (focus / replace / create) is `lib/document-panels`'; this is
- * only the dockview half of it. `replace` re-points an existing panel instead
- * of closing and re-opening one, which is what makes the peek slot feel like
- * one surface with changing content rather than a tab that blinks.
+ * The DECISION (focus / create) is `lib/document-panels`'; this is only the
+ * dockview half of it, and since #530 removed the peek slot the dockview half
+ * is a `focus` or an `addPanel` and nothing else. No panel is ever re-pointed,
+ * so a viewer shows one document for its whole life and closes by its own ✕.
+ * `documentHomeGroup` is what makes the new tab land BESIDE the ones already
+ * open rather than in a group of its own each time.
  */
 function openDocumentPanel(
   api: DockviewApi | null,
@@ -2032,15 +2012,19 @@ function openDocumentPanel(
 ): void {
   if (!api || !filePath) return;
   const plan = planDocumentOpen(filePath, sessionId);
-  if (plan.action !== 'create') {
+  if (plan.action === 'focus') {
     const panel = api.getPanel(plan.id);
     if (panel) {
-      if (plan.action === 'replace') {
-        panel.api.updateParameters({ path: plan.path, sessionId: plan.sessionId ?? null });
-        panel.api.setTitle(documentTabTitle(plan.path));
-      }
       panel.focus();
-      syncDocumentPins(api);
+      // ...AND RAISE THE WINDOW IT LIVES IN, if that is not this one. `focus()`
+      // ends in "make this panel active in its group", and a popped-out viewer
+      // is alone in its group and therefore already active — so asking for a
+      // file that is open in a viewer WINDOW used to be a literal no-op: no new
+      // tab (correct), and nothing whatsoever on screen (not). That is the only
+      // rule this registry still exists for, failing in the one case where the
+      // document the user asked for is somewhere they may not be looking.
+      const loc = panel.api.location;
+      if (loc.type === 'popout') loc.getWindow()?.focus();
       return;
     }
     // The registry believes in a panel dockview does not have — only reachable
@@ -2055,20 +2039,20 @@ function openDocumentPanel(
       id: plan.id,
       component: 'documentViewer',
       title: documentTabTitle(filePath),
-      params: { path: filePath, colorScheme, sessionId: sessionId ?? null, pinned: false },
+      params: { path: filePath, colorScheme, sessionId: sessionId ?? null },
       position: { referenceGroup: documentHomeGroup(api) },
     });
   } catch (err) {
     // `addPanel` throwing means no panel was ever created, so `onDidRemovePanel`
-    // will never fire for it — the registry would keep the peek slot pointed at
-    // nothing and drop the NEXT click too (it self-heals, but a click later).
-    // Reachable: `seq` restarts at 0 each renderer, and a `fromJSON` that throws
-    // part-way through restore can leave a `doc-1` behind for the prune to miss.
+    // will never fire for it — the registry would keep an entry for a panel that
+    // does not exist, and the next request for that same file would `focus` a
+    // ghost instead of opening it (it self-heals through the branch above, but a
+    // click later). Reachable: `seq` restarts at 0 each renderer, and a
+    // `fromJSON` that throws part-way through restore can leave a `doc-1` behind
+    // for the prune to miss.
     forgetDocumentPanel(plan.id);
     console.error('[document] could not open a viewer', err);
-    return;
   }
-  syncDocumentPins(api);
 }
 
 /**
@@ -2106,7 +2090,13 @@ function DocumentViewerPanel(
     path?: string;
     colorScheme?: string;
     sessionId?: string | null;
-    pinned?: boolean;
+    // NO `pinned`, and its absence is a decision (#530). A saved layout written
+    // before this change carries one, and `fromJSON` hands the whole params
+    // blob back verbatim — so the key still ARRIVES here. It is simply never
+    // read: dockview does not validate params, nothing draws a pin any more,
+    // and the restore drops every `doc-` panel moments later anyway (see
+    // `onReady`). A stale pin therefore cannot crash and cannot resurrect the
+    // behaviour, which `document-peek.spec` proves by planting one.
   }>
 ): React.JSX.Element {
   const api = props.api;
@@ -2146,13 +2136,6 @@ function DocumentViewerPanel(
     [sessionId, sessionName, sessionAccent]
   );
 
-  const onPinnedChange = React.useCallback(
-    (next: boolean) => {
-      setDocumentPinned(api.id, next);
-      syncDocumentPins(containerApi);
-    },
-    [api, containerApi]
-  );
   const onPopoutToggle = React.useCallback(
     () => popOutDocumentPanel(containerApi, api.id),
     [api, containerApi]
@@ -2165,19 +2148,27 @@ function DocumentViewerPanel(
     // renderer ROOT — there is no other boundary above a dockview panel — and
     // blanks every session pane in the window. The panel is not a contribution,
     // but the containment argument is the same one, and so is the component.
-    // KEYED ON THE PATH, and that is a P2-E16-03 consequence rather than a
-    // tidy-up: `ContributionBoundary` latches `failed` and has no reset, so
-    // under a REUSABLE peek slot one document that throws would poison the slot
-    // and every glance after it would land in a blank panel with a changing tab
-    // title. Re-pointing already resets the viewer's history, mode and scroll,
-    // so remounting on a new path costs nothing and buys the boundary its reset.
-    <ContributionBoundary id="document-viewer" key={props.params?.path ?? ''}>
+    // NOT KEYED ANY MORE (#530). P2-E16-03 keyed this on the path because
+    // `ContributionBoundary` latches `failed` with no reset, and under a
+    // REUSABLE peek slot one document that threw would poison the slot for
+    // every glance after it. Nothing re-points a panel now — `path` is fixed
+    // for the panel's life, the only later `updateParameters` on a `doc-` panel
+    // being the theme heal, which merges — so the key could never change and
+    // the remount it bought is unreachable.
+    //
+    // WHAT THAT COSTS, said plainly rather than left to be discovered: the
+    // boundary renders NOTHING on failure (see `boundary.tsx`), so a viewer
+    // that throws is a BLANK panel with a live tab title, and it stays blank
+    // for the life of the panel. The recovery is the same gesture as before —
+    // close the tab and open the file again, which is now a fresh panel and a
+    // fresh boundary — it just is not automatic any more. A reset affordance on
+    // `ContributionBoundary` would fix this for every consumer at once (#411
+    // noted the same gap); it is not this issue's to add.
+    <ContributionBoundary id="document-viewer">
       <DocumentViewer
         path={props.params?.path ?? ''}
         colorScheme={props.params?.colorScheme === 'light' ? 'light' : 'dark'}
         onTitleChange={setTitle}
-        pinned={props.params?.pinned === true}
-        onPinnedChange={onPinnedChange}
         poppedOut={poppedOut}
         onPopoutToggle={onPopoutToggle}
         session={session}
@@ -2286,12 +2277,14 @@ export function rescueStrandedPopouts(api: DockviewApi | null): void {
           // A VIEWER (P2-E16-03) could be rebuilt — the registry still knows its
           // path — and is deliberately not. §5.30 lists display-rescue among the
           // machinery a viewer inherits, so this is a divergence and is called
-          // one: a rescued viewer would arrive unasked AND spend the peek slot,
-          // silently replacing whatever the user was reading in the main window
-          // with a document whose window they just lost. "Restoring open
-          // viewers" is E16's *Not in scope* line, and this is the same
-          // question in miniature; the file is one click away and the click is
-          // the user's. Revisit with that item.
+          // one: a rescued viewer would arrive UNASKED, a tab appearing in the
+          // main window because a monitor went away. (Until #530 it was worse
+          // than unasked — it would also have spent the peek slot, replacing
+          // whatever the user was reading. That half of the argument is gone
+          // with the slot; the unasked half is the whole of it now, and it is
+          // enough.) "Restoring open viewers" is E16's *Not in scope* line, and
+          // this is the same question in miniature; the file is one click away
+          // and the click is the user's. Revisit with that item.
           if (!cardId) {
             api.removePanel(panel);
             continue;
@@ -2985,9 +2978,10 @@ export interface GridController {
   /** open (or focus) the per-session diff tab (E5-02) */
   openDiff: (sessionId: string, folder: string, title: string) => void;
   /**
-   * Open a §5.30 document viewer on an absolute path (P2-E16-02/03).
+   * Open a §5.30 document viewer on an absolute path (P2-E16-02/03, #530).
    *
-   * ONE reusable peek slot: the next open replaces it unless it was pinned.
+   * A NEW TAB every time, docked beside the documents already open; a file that
+   * is already open is focused rather than opened twice. Nothing is replaced.
    * `sessionId` attributes the viewer to the card the request came from (§5.24)
    * — a tint and a chip, never ownership. It never lands in a session's group,
    * nor in a popped-out viewer's window — see the implementation's note.
@@ -3546,9 +3540,9 @@ export function SessionGrid(props: {
       // disposal ever firing removes).
       api.onDidRemovePanel((panel) => {
         if (sessionStore.isTearingDown()) return;
-        // A closed viewer stops holding the peek slot (P2-E16-03) — otherwise
-        // the registry keeps a pointer at a panel dockview no longer has, and
-        // the next open would try to re-point a ghost.
+        // A closed viewer leaves the registry (P2-E16-03) — otherwise it keeps
+        // an entry for a panel dockview no longer has, and asking for that file
+        // again would `focus` a ghost instead of opening it.
         if (panel.id.startsWith('doc-')) {
           forgetDocumentPanel(panel.id);
           return;

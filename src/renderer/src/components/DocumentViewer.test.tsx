@@ -117,29 +117,6 @@ async function mount(
   await act(async () => {});
 }
 
-/**
- * The viewer with an owner that actually honours the pin (P2-E16-03).
- *
- * `pinned` is CONTROLLED — the peek slot lives in `lib/document-panels` and the
- * panel pushes the answer back down — so mounting the viewer bare and clicking
- * the control proves nothing but that the click was heard. This stands in for
- * `DocumentViewerPanel` and nothing more.
- */
-function PinHost(props: { path: string; onChange: (p: boolean) => void }): React.JSX.Element {
-  const [pinned, setPinned] = React.useState(false);
-  return (
-    <DocumentViewer
-      path={props.path}
-      colorScheme="dark"
-      pinned={pinned}
-      onPinnedChange={(next) => {
-        props.onChange(next);
-        setPinned(next);
-      }}
-    />
-  );
-}
-
 const q = (sel: string): HTMLElement | null => host.querySelector(sel);
 const buttonByText = (text: string): HTMLButtonElement | undefined =>
   [...host.querySelectorAll('button')].find((b) => b.textContent?.trim() === text);
@@ -166,44 +143,25 @@ describe('a markdown file opens RENDERED by default', () => {
     expect(q('[data-testid="doc-source"]')).toBeNull();
   });
 
-  it('the header carries the name, the full path on hover, and the pin control', async () => {
+  it('the header carries the name and the full path on hover', async () => {
     answer = () => ok('# T\n');
     await mount('/home/dan/sb/PROGRESS.md');
     const name = q('[data-testid="doc-name"]');
     expect(name?.textContent).toBe('PROGRESS.md');
     expect(name?.getAttribute('title')).toBe('/home/dan/sb/PROGRESS.md');
-    const pin = q('.doc-pin');
-    expect(pin?.getAttribute('aria-pressed')).toBe('false');
-    // named for a screen reader, not just drawn (§5.32)
-    expect(pin?.getAttribute('aria-label')).toMatch(/pin/i);
   });
 
-  it('the pin control REPORTS; the owner decides, and the button follows it', async () => {
+  it('there is NO pin control (#530)', async () => {
+    // The owner removed the pin outright, and with it the peek slot it existed
+    // to escape from: every file opens its own tab, so there is nothing to
+    // protect a document from. Asserted rather than assumed, because "the
+    // button is gone" is the whole user-visible half of that change — and
+    // because a stale param cannot bring it back if there is no code to draw it.
     answer = () => ok('# T\n');
-    const seen: boolean[] = [];
-    await act(async () => {
-      root!.render(<PinHost path="/p/PROGRESS.md" onChange={(p) => seen.push(p)} />);
-    });
-    await act(async () => {});
-
-    await click(q('.doc-pin'));
-    expect(seen).toEqual([true]);
-    expect(q('.doc-pin')?.getAttribute('aria-pressed')).toBe('true');
-    expect(q('.doc-pin')?.getAttribute('aria-label')).toMatch(/unpin/i);
-
-    await click(q('.doc-pin'));
-    expect(seen).toEqual([true, false]);
-    expect(q('.doc-pin')?.getAttribute('aria-pressed')).toBe('false');
-  });
-
-  it('an owner that refuses the pin leaves the control showing the TRUTH', async () => {
-    // The peek slot can move under a viewer — unpinning another panel claims
-    // it — so an optimistic local `pinned` would light a pin the registry says
-    // is not set. Controlled means the button cannot lie.
-    answer = () => ok('# T\n');
-    await mount('/p/PROGRESS.md', 'dark', { pinned: false, onPinnedChange: () => {} });
-    await click(q('.doc-pin'));
-    expect(q('.doc-pin')?.getAttribute('aria-pressed')).toBe('false');
+    await mount('/p/PROGRESS.md');
+    expect(q('.doc-pin')).toBeNull();
+    expect(q('[data-testid="doc-pin"]')).toBeNull();
+    expect(host.textContent).not.toMatch(/📌|📍/);
   });
 
   it('the pop-out control is a labelled toggle, and only exists when wired', async () => {
