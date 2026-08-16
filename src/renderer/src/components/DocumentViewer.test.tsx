@@ -334,6 +334,23 @@ describe('links inside a rendered document', () => {
     expect(calls).toEqual([{ what: 'openExternal', arg: 'https://example.test/a' }]);
   });
 
+  it('a same-document #fragment SCROLLS — it does not go to the browser (#527)', async () => {
+    // The decision, pinned: the viewer and the conversation answer a bare
+    // `#fragment` differently ON PURPOSE. A document has headings with ids to
+    // land on, so this scrolls; a reply has none, so `markdown-links.ts` drops
+    // it. Neither hands it to a browser, which is what a live href would do.
+    answer = () => ok('[jump](#the-plan)\n\n## The plan\n\nbody\n');
+    await mount('/p/PROGRESS.md');
+    const heading = q('[data-testid="doc-rendered"]')?.querySelector('h2');
+    const scrolled = vi.fn();
+    (heading as unknown as { scrollIntoView: unknown }).scrollIntoView = scrolled;
+    await click(q('[data-doc-link="anchor"]'));
+    expect(scrolled).toHaveBeenCalled();
+    // and nothing left the app: no browser, no second read
+    expect(calls).toEqual([]);
+    expect(reads).toEqual(['/p/PROGRESS.md']);
+  });
+
   it('a link whose fragment is not a slug is ignored, not thrown on', async () => {
     // `#a%0Ab` decodes to a raw newline, which is a CSS parse error inside an
     // attribute selector — and the lookup happens in an EFFECT, where a throw

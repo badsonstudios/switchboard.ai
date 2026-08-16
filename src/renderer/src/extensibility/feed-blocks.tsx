@@ -24,6 +24,7 @@ import { useRevealed } from '../lib/feed-reveal';
 import { FeedBlockRendererContribution, manifestFor } from './contributions';
 import { decorateFeedMarkdown } from '../lib/feed-markdown';
 import { Markdown } from '../lib/markdown';
+import { handleMarkdownLinkClick, openExternalBridge } from '../lib/markdown-links';
 
 /**
  * Marks a subtree that owns its own clicks (#91). `ToolBox` walks up from the
@@ -625,6 +626,11 @@ function UserPill({ text, seq }: { text: string; seq: number }): React.JSX.Eleme
  * hang an `onClick` on. One listener on the wrapper is also the right shape for
  * a conversation: a long reply can carry a dozen fences, and a listener each
  * would be a dozen per block, times every block on screen.
+ *
+ * IT IS ALSO WHERE LINKS ARE ANSWERED (#527), and for the same reason: an
+ * `<a>` in a reply is markup this component did not write either. The decision
+ * itself is `lib/markdown-links.ts` — one guard, and the surfaces that do not
+ * share this policy are named there.
  */
 function MarkdownBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const labels = useCodeLabels();
@@ -635,19 +641,32 @@ function MarkdownBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const onClick = React.useCallback(
     (e: React.MouseEvent<HTMLDivElement>): void => {
       const button = (e.target as Element | null)?.closest?.<HTMLElement>(`[${FEED_COPY_ATTR}]`);
-      if (!button) return;
-      const code = codeForCopyButton(button);
-      // `null` = a button outside any wrapper of ours. Doing nothing beats
-      // putting the wrong text on the clipboard.
-      if (code !== null) runCopy(button, code, labels.copied);
+      if (button) {
+        const code = codeForCopyButton(button);
+        // `null` = a button outside any wrapper of ours. Doing nothing beats
+        // putting the wrong text on the clipboard.
+        if (code !== null) runCopy(button, code, labels.copied);
+        return;
+      }
+      // A link in a reply goes to the OS browser (#527). `void`, because the
+      // answer is a log line either way: this handler has nothing to tell the
+      // user that main's own refusal line does not already say.
+      void handleMarkdownLinkClick(e, { openExternal: openExternalBridge() });
     },
     [labels]
   );
+  // Chromium dispatches `auxclick`, not `click`, for the middle button, so a
+  // middle-click on a link would miss `onClick` entirely and fall through to
+  // main's much broader window-open rule (#527). The update dialog's notes
+  // learned this first; the same two listeners, for the same reason.
+  const onAuxClick = React.useCallback((e: React.MouseEvent<HTMLDivElement>): void => {
+    void handleMarkdownLinkClick(e, { openExternal: openExternalBridge() });
+  }, []);
   // `minInlineSize: 0` so the wrapper shrinks the way `<Markdown>`'s own
   // container did when it was the flex child — without it a wide fence stops
   // the block ellipsising and pushes the conversation sideways.
   return (
-    <div onClick={onClick} style={{ minInlineSize: 0 }}>
+    <div onClick={onClick} onAuxClick={onAuxClick} style={{ minInlineSize: 0 }}>
       <Markdown text={b.text ?? ''} streaming={b.streaming} decorate={decorate} />
     </div>
   );

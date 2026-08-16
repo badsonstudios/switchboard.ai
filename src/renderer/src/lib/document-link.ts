@@ -13,6 +13,7 @@
 // every scheme nobody has thought of yet land in `blocked` and do NOTHING —
 // not "open a warning", not "open in the browser". Nothing.
 import { directoryName } from './document-kind';
+import { ALLOWED_LINK_SCHEMES } from '../../../shared/link-schemes';
 
 export type LinkKind =
   /** `#heading` — scroll this document */
@@ -32,8 +33,16 @@ export interface LinkTarget {
   readonly hash?: string;
 }
 
-/** The schemes a document may send to the browser. Mirrors main's allowlist. */
-const EXTERNAL_SCHEMES = new Set(['http:', 'https:', 'mailto:']);
+/**
+ * The schemes a document may send to the browser.
+ *
+ * IS main's allowlist since #527, rather than mirroring it: the list lives in
+ * `shared/link-schemes.ts` and main re-exports the same constant. A mirror is
+ * a copy that drifts, and the drift shows up as a link that looks live and
+ * does nothing (or the reverse) — see that file for why the renderer holds a
+ * copy of a list it is not the guard for.
+ */
+const EXTERNAL_SCHEMES = new Set<string>(ALLOWED_LINK_SCHEMES);
 
 /**
  * Does this href name a scheme at all?
