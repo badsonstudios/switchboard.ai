@@ -380,7 +380,7 @@ describe('find-document — the §5.30 viewer (#533)', () => {
     const clear = vi.fn();
     const ctx = ctxFor(surfaceFor('rendered', { reveal, clear }));
     const hit = { id: 'd1', snippet: 'x', matchStart: 0, matchLength: 1, jumpable: true, earlierThanLoaded: false, ref: 1 };
-    expect(documentFindProvider.reveal!(ctx, hit)).toBe(true);
+    expect(documentFindProvider.reveal!(ctx, hit, { term: 'x' })).toBe(true);
     expect(reveal).toHaveBeenCalledWith(1);
     documentFindProvider.clear!(ctx);
     expect(clear).toHaveBeenCalled();
