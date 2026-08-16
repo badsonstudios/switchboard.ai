@@ -175,7 +175,12 @@ test.describe('Changes tab (Monaco diff pane)', () => {
    * two interesting acts — spawning the worker and injecting <style> elements
    * — both happen when the tab opens, well after that, so nothing is missed.
    */
-  async function openChanges(): Promise<{ w: Page; logged: string[]; crashed: string[] }> {
+  async function openChanges(): Promise<{
+    w: Page;
+    logged: string[];
+    crashed: string[];
+    folder: string;
+  }> {
     const folder = tempGitProject();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
@@ -197,7 +202,7 @@ test.describe('Changes tab (Monaco diff pane)', () => {
     await w.locator('nav [draggable="true"]', { hasText: title }).first().click({ button: 'right' });
     await w.getByRole('menuitem', { name: 'Open changes' }).click();
     await expect(w.locator('.dv-active-tab')).toContainText('· diff', { timeout: 15_000 });
-    return { w, logged, crashed };
+    return { w, logged, crashed, folder };
   }
 
   test('renders a real diff, computed in a real worker', async () => {
@@ -353,6 +358,84 @@ test.describe('Changes tab (Monaco diff pane)', () => {
     }
 
     expect(crashed, 'switching theme threw').toEqual([]);
+  });
+
+  test('the side-by-side / inline toggle switches live and is remembered', async () => {
+    // #532. Two things this can only be proved with a real Monaco:
+    //
+    //   1. the `side-by-side` class on `.monaco-diff-editor` is toggled by the
+    //      widget itself, from the option AND its own width rule together
+    //      (diffEditorWidget.js: `classList.toggle('side-by-side', showSash)`).
+    //      That makes it the one assertion that catches the actual bug —
+    //      `useInlineViewWhenSpaceIsLimited` silently overriding a pane that
+    //      had asked for two columns since P1-E5-02. A unit test on the
+    //      preference cannot see it, which is why the bug lived this long.
+    //   2. `updateOptions` changes the shape of a LIVE editor. The pane must
+    //      not be rebuilt for it — that is the #191 blanking bug — so the
+    //      assertions below re-check the diff is still on screen afterwards.
+    const { w, folder, crashed } = await openChanges();
+    const first = a!;
+    const title = path.basename(folder);
+
+    await w.getByText(FILE, { exact: true }).click();
+    await expect(diffEditor(w)).toContainText("'howdy'", { timeout: 15_000 });
+
+    // the default, on a pane with room for it: two columns
+    await expect(diffEditor(w)).toHaveClass(/side-by-side/);
+    await expect(w.getByTestId('diff-layout-side-by-side')).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+
+    // ...and it switches LIVE, without losing the file or the diff
+    await w.getByTestId('diff-layout-inline').click();
+    await expect(diffEditor(w)).not.toHaveClass(/side-by-side/);
+    await expect(w.getByTestId('diff-layout-inline')).toHaveAttribute('aria-pressed', 'true');
+    await expect(diffEditor(w)).toContainText("'howdy'", { timeout: 15_000 });
+    await expect(
+      diffEditor(w).locator('.line-delete'),
+      'switching layout blanked the diff instead of re-laying it out'
+    ).not.toHaveCount(0);
+
+    // ...and back, from the keyboard this time — §5.32 rule 1 is that these
+    // are real buttons, so Enter is the platform's job and not ours
+    await w.getByTestId('diff-layout-side-by-side').focus();
+    await w.keyboard.press('Enter');
+    await expect(diffEditor(w)).toHaveClass(/side-by-side/);
+
+    // the preference lives in the workspace `ui` blob, so it survives a
+    // restart — the half of #532 that localStorage could not have delivered
+    // (the packaged renderer's origin changes port every launch, P2-E15-06)
+    await w.getByTestId('diff-layout-inline').click();
+    await expect(w.getByTestId('diff-layout-inline')).toHaveAttribute('aria-pressed', 'true');
+    await w.waitForTimeout(900); // debounced store save
+    await first.close();
+
+    a = await launchApp({ home: first.home });
+    const w2 = a.window;
+    const crashed2: string[] = [];
+    w2.on('pageerror', (e) => crashed2.push(e.message));
+    await expect(w2.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+    // Opened the same deterministic way `openChanges` does, NOT conditionally
+    // on whether one was restored: `SessionGrid.restoreLayout` drops every
+    // diff panel on purpose, so a "reuse it if it is there" branch is dead
+    // today and a two-DiffPane strict-mode violation the day that changes.
+    await w2
+      .locator('nav [draggable="true"]', { hasText: title })
+      .first()
+      .click({ button: 'right' });
+    await w2.getByRole('menuitem', { name: 'Open changes' }).click();
+    await expect(w2.locator('.dv-active-tab')).toContainText('· diff', { timeout: 15_000 });
+    await expect(w2.getByTestId('diff-layout-inline')).toHaveAttribute('aria-pressed', 'true', {
+      timeout: 20_000,
+    });
+    // and the editor really came up that way, not just the button
+    await w2.getByText(FILE, { exact: true }).click();
+    await expect(diffEditor(w2)).toContainText("'howdy'", { timeout: 15_000 });
+    await expect(diffEditor(w2)).not.toHaveClass(/side-by-side/);
+
+    expect(crashed, 'the layout toggle threw').toEqual([]);
+    expect(crashed2, 'restoring the layout preference threw').toEqual([]);
   });
 
   test('a folder that is not a repo says so instead of failing', async () => {

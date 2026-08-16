@@ -57,6 +57,22 @@ on the floor, and say so in your PR.
 
 ## 0.6.0 — unreleased
 
+### Fixed
+
+- **The Changes tab shows side-by-side diffs again, and now lets you say so.**
+  A diff was arriving in one column no matter how much room it had, with no
+  visible way to ask for two. The tab had in fact been asking for side-by-side
+  all along — Monaco quietly overrides that below 900 pixels of editor width,
+  and a Changes tab in a normal window sits just under it, so the override
+  fired every time and said nothing. That silent rule is gone. There is now a
+  **Side by side / Inline** pair of buttons above the diff, side by side is the
+  default, your choice applies to every Changes tab and is remembered across
+  restarts, and the command palette has *Toggle side-by-side / inline diff*.
+  Genuinely tiny panes — under 400 pixels, where two columns hold about 18
+  characters each — still fall back to one column, but the tab says so in
+  words, the button stays selected, and the second column returns the moment
+  there is room for it.
+
 ### Internal
 
 - Fixed the end-to-end test that kept failing on the Windows CI machine and

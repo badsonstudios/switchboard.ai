@@ -30,6 +30,7 @@ function deps(): CommandDeps & { focusCard: ReturnType<typeof vi.fn> } {
     openPalette: vi.fn(),
     openFind: vi.fn(),
     toggleTabRows: vi.fn(),
+    toggleDiffLayout: vi.fn(),
     jumpToNextAttention: vi.fn(),
     openAbout: vi.fn(),
     checkForUpdates: vi.fn(),
@@ -192,6 +193,18 @@ describe('seed command set (E9-01)', () => {
     expect(byId(cmds, 'view.tabRows').binding).toBeUndefined();
     byId(cmds, 'view.tabRows').run(ctxWith([]));
     expect(d.toggleTabRows).toHaveBeenCalledOnce();
+  });
+
+  it('the diff-layout command routes to its dep, and needs no card (#532)', () => {
+    const d = deps();
+    const cmds = buildCommands(d);
+    const cmd = byId(cmds, 'view.diffLayout');
+    expect(cmd.binding).toBeUndefined(); // palette-only, like the tab-rows one
+    // the preference is the WORKSPACE's — every open Changes tab changes with
+    // it — so an empty workspace must still be able to run it
+    expect(cmd.enabled).toBeUndefined();
+    cmd.run(ctxWith([]));
+    expect(d.toggleDiffLayout).toHaveBeenCalledOnce();
   });
 
   it('rail toggle and new session need no session at all', () => {

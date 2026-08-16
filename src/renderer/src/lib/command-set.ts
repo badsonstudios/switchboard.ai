@@ -58,6 +58,8 @@ export interface CommandDeps {
   openFind: (cardId: string) => void;
   /** wrap the tab strip onto more rows, or keep it to one (#84) */
   toggleTabRows: () => void;
+  /** show a diff in two columns or one — every Changes tab at once (#532) */
+  toggleDiffLayout: () => void;
   /** jump to the next session waiting on a human (E9-03 attention queue) */
   jumpToNextAttention: () => void;
   /** show the build identity — version, commit, branch, build age (E15-15) */
@@ -593,6 +595,19 @@ export function buildCommands(deps: CommandDeps): Command[] {
       categoryKey: CATEGORY_VIEW,
       scope: 'app', // palette-only: a preference, not a per-minute action
       run: () => deps.toggleTabRows(),
+    },
+    {
+      // #532's keyboard route. In VIEW and not SESSION even though a Changes
+      // tab belongs to a card: the preference is the workspace's, and every
+      // open Changes tab changes with it — a card-scoped command would promise
+      // otherwise. Palette-only and unbound, like the tab-rows toggle above:
+      // it is a habit you set once, and the visible control on the tab is
+      // where you set it the other 99% of the time.
+      id: 'view.diffLayout',
+      titleKey: 'commands.toggleDiffLayout',
+      categoryKey: CATEGORY_VIEW,
+      scope: 'app',
+      run: () => deps.toggleDiffLayout(),
     },
     {
       // The keyboard route to the build identity (E15-15). Palette-only and no
