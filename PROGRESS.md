@@ -167,6 +167,14 @@
 > clean redispatch #482. **Standing rule: all worker e2e runs set
 > SWITCHBOARD_E2E_MONITOR=2.** Dan/train queue now NINE: + #548.
 >
+> **RESUME AUTHORIZED by Dan ("Resume the wave") — redispatched:**
+> #407 verify-then-keep → wt-2 (stash checkpoint first, WIP
+> re-verified against the Shape B spec, RECOVERY section in
+> handoff) · #531 verify-then-keep → wt-1 (same discipline;
+> branch may need creating) · #482 clean restart → wt-3 (stray
+> orchestrator/ junk removed first). All three prompts carry the
+> SWITCHBOARD_E2E_MONITOR=2 standing rule.
+>
 > # (0.5.0 ship record follows)
 > # ✅ v0.5.0 SHIPPED 2026-08-14 (same-day as v0.4.0)
 >
