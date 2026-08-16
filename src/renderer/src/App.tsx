@@ -39,6 +39,8 @@ import type { ServiceHealthStatus } from '../../shared/service-health';
 import { installAnnouncer, setAudioMuted, sharedAnnouncer } from './lib/announcer';
 import { DEFAULT_SOUND } from '../../shared/sounds';
 import { PushSetupDialog } from './components/PushSetupDialog';
+import { QuietHoursDialog } from './components/QuietHoursDialog';
+import type { QuietState } from '../../shared/suppressed';
 import { unavailablePushConfig } from '../../shared/push';
 import type {
   PushConfig,
@@ -185,6 +187,11 @@ export function App(): React.JSX.Element {
   // The last write main REFUSED, for the field it was aimed at. Cleared on the
   // next successful write and on every re-open.
   const [pushWrite, setPushWrite] = useState<{ key: string; problem: string } | null>(null);
+  // Quiet hours (E14-05b) — the same on-demand shape as push above: nothing
+  // else on screen reads the window, so it is fetched when the dialog opens
+  // rather than held at mount.
+  const [quietOpen, setQuietOpen] = useState(false);
+  const [quietState, setQuietState] = useState<QuietState | null>(null);
   // Attention events (E9-03). This subscription used to live inside
   // EventsPanel; it moved up here because the queue is the SINGLE ordering
   // authority — two independent subscriptions to events:changed could hand the
@@ -580,6 +587,42 @@ export function App(): React.JSX.Element {
     void answer.then((c) => setPushConfig(c)).catch(() => setPushConfig(unavailablePushConfig()));
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, []);
+  // ── quiet hours (E14-05b, §5.9) ──────────────────────────────────────────
+  //
+  // Optional-chained and swallowed like the push family above, and for the same
+  // #444 reason: a notification nicety must never be able to white-screen the
+  // shell. A bridge with no `quietState` leaves the state null, which the dialog
+  // renders as "cannot tell" rather than as a working empty form.
+  const refreshQuiet = React.useCallback(() => {
+    const answer = bridge.notifications?.quietState?.();
+    if (!answer) return setQuietState(null);
+    void answer.then((s) => setQuietState(s)).catch(() => setQuietState(null));
+    // eslint's exhaustive-deps plugin isn't installed; bridge is stable
+  }, []);
+  const openQuietHours = React.useCallback(() => {
+    setQuietOpen(true);
+    refreshQuiet();
+  }, [refreshQuiet]);
+  const setQuietWindow = React.useCallback(
+    (win: { start: string; end: string } | null) => {
+      // Both ends go together, because half a window is not a window. Clearing
+      // sends EMPTY STRINGS rather than `undefined`: the store's sanitizer
+      // drops anything that is not an "HH:MM" either way, and an empty string
+      // survives every serializer between here and main without my having to be
+      // right about how this one treats `undefined` in an object.
+      const patch = win
+        ? { quietStart: win.start, quietEnd: win.end }
+        : { quietStart: '', quietEnd: '' };
+      const answer = bridge.notifications?.setPrefs?.(patch);
+      if (!answer) return;
+      // Re-read AFTER the write: main is the authority on what it stored and on
+      // whether the window is open right now, and the dialog's status line is
+      // only worth showing if it is main's answer rather than the renderer's
+      // hope.
+      void answer.then(() => refreshQuiet()).catch(() => {});
+    },
+    [refreshQuiet]
+  );
   const applyPushAnswer = React.useCallback(
     (key: string, p: Promise<PushWriteResult> | undefined) => {
       if (!p) return setPushConfig(unavailablePushConfig());
@@ -908,7 +951,7 @@ export function App(): React.JSX.Element {
   const modalOpenRef = React.useRef(false);
   useEffect(() => {
     railHiddenRef.current = railHidden;
-    modalOpenRef.current = paletteOpen || aboutOpen || updateOpen || pushOpen;
+    modalOpenRef.current = paletteOpen || aboutOpen || updateOpen || pushOpen || quietOpen;
   });
 
   // Set when a command deliberately raised a DIFFERENT OS window (jumping to a
@@ -1011,6 +1054,7 @@ export function App(): React.JSX.Element {
           jumpToNextAttention,
           openAbout: () => setAboutOpen(true),
           openPushSetup,
+          openQuietHours,
           checkForUpdates,
           // §5.30's `Open file…`. Picking a file in the native dialog is also
           // what GRANTS it: main widens the `fs.read` scope with the chosen
@@ -1033,6 +1077,7 @@ export function App(): React.JSX.Element {
       togglePin,
       checkForUpdates,
       openPushSetup,
+      openQuietHours,
     ], // other deps read live state through refs; grid.current is stable
   );
   // chips advertise their own binding, derived from the registry so a tooltip
@@ -1339,8 +1384,9 @@ export function App(): React.JSX.Element {
         }}
         // a second dialog is above this one: two stacked `aria-modal` regions
         // is a thing screen readers disagree about, so only the top one claims it
-        dialogAbove={updateOpen || pushOpen}
+        dialogAbove={updateOpen || pushOpen || quietOpen}
         onOpenPushSetup={openPushSetup}
+        onOpenQuietHours={openQuietHours}
       />
       <PushSetupDialog
         open={pushOpen}
@@ -1354,6 +1400,12 @@ export function App(): React.JSX.Element {
           applyPushAnswer(key, bridge.push?.setSecret?.(key, value))
         }
         onTest={testPush}
+      />
+      <QuietHoursDialog
+        open={quietOpen}
+        onClose={() => setQuietOpen(false)}
+        state={quietState}
+        onSet={setQuietWindow}
       />
       <UpdateDialog
         open={updateOpen}

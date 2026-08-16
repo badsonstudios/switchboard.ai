@@ -32,7 +32,7 @@ import { ReadScope } from './fs/read-scope';
 import { IpcBroker } from './ipc/broker';
 import { allCapabilities, Channel } from '../shared/ipc/capabilities';
 import { EventFeed } from './events/feed';
-import { Notifier } from './events/notifier';
+import { Notifier, quietWindowOf } from './events/notifier';
 import {
   ACTION_OS_TOAST,
   ACTION_PUSH,
@@ -40,8 +40,10 @@ import {
   ACTION_SPEAK,
   ACTION_WEBHOOK,
   defaultRules,
+  inQuietWindow,
   visibilityAcross,
 } from './events/rules';
+import type { QuietState } from '../shared/suppressed';
 import { RuleActionRegistry, RulesEngine } from './events/rules-engine';
 import {
   DECIDE_BUTTONS,
@@ -212,6 +214,17 @@ function isPopoutUrl(url: string): boolean {
 
 let workspace: WorkspaceStore;
 let currentWindow: BrowserWindow | null = null;
+/**
+ * **The notification stack's one clock** (P2-E14-05b).
+ *
+ * Quiet hours made time a rule CONDITION, and a condition that each consumer
+ * read from its own `new Date()` would be a condition that three code paths can
+ * disagree about — the beep, the rules and the record all deciding
+ * independently whether it is 06:59 or 07:00. `RulesEngine` and `Notifier` both
+ * take this function, and the trigger carries the Date it returned, so the pure
+ * evaluator never calls a clock at all and every case is a table test.
+ */
+const clock = (): Date => new Date();
 // Called when the main window's renderer is gone — closed OR crashed. Module-
 // level rather than wired once in the bootstrap because createWindow() runs
 // again on macOS `activate`, and the second window needs the same teardown as
@@ -1440,6 +1453,17 @@ app
     let labelForLive: (sessionId: string) => string | undefined = () => undefined;
     const rules = new RulesEngine({
       getRules: () => workspace.listRules(),
+      // ── quiet hours (P2-E14-05b, §5.9) ──
+      //
+      // The window is read per event like the rules are, so editing it in the
+      // dialog takes effect on the next event with nothing to restart. WHICH
+      // channels it holds is not decided here — it is per action audience, in
+      // `rules.ts` (`quietHolds`), where a table test can reach it.
+      getQuietWindow: () => quietWindowOf(workspace.getNotificationPrefs()),
+      now: clock,
+      // Held events are written down for #483's missed-events digest. Bounded
+      // FIFO in the store; the engine only hands over the record.
+      onSuppressed: (record) => workspace.recordSuppressed(record),
       // The built-ins are synthesized per event from the switches, push and
       // webhook included — so turning the phone on in the setup dialog takes
       // effect on the next event with nothing to persist and no rule to write.
@@ -1503,6 +1527,10 @@ app
       getWindow: () => currentWindow,
       getPrefs: () => workspace.getNotificationPrefs(),
       rules,
+      // The same `clock` the engine got: the beep and the rules deciding it is
+      // a different time of day is the kind of bug nobody would think to look
+      // for (P2-E14-05b).
+      now: clock,
     });
     feed.onEvent((e) => {
       if (e) notifier.handle(e); // null = pure removal, nothing to announce
@@ -1566,6 +1594,19 @@ app
     broker.handle('notifications:setPrefs', (_e, p) => {
       workspace.setNotificationPrefs(p);
       return workspace.getNotificationPrefs();
+    });
+    // P2-E14-05b. Quiet hours' whole job is to do nothing, which makes it the
+    // one feature a user cannot tell is working — so the dialog can ask whether
+    // the window is open RIGHT NOW (main owns the clock) and how many events it
+    // has held. The list itself belongs to #483's digest; this is the count.
+    broker.handle('notifications:quietState', (): QuietState => {
+      const prefs = workspace.getNotificationPrefs();
+      const window = quietWindowOf(prefs);
+      return {
+        window,
+        active: inQuietWindow(window, clock()),
+        heldCount: workspace.countSuppressed(),
+      };
     });
     broker.handle('settings:getAutoTrust', () => workspace.getAutoTrust());
     broker.handle('settings:setAutoTrust', (_e, on: boolean) => {

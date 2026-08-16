@@ -271,11 +271,11 @@ have the same shape:
 > [the window is / isn't in front] → **do** [something]
 
 A rule can pop up a desktop notification — with **Allow** / **Deny** on it
-when the thing that happened was a permission request, as above — send a
-notification to your **phone**, or **POST an event to a webhook** (both
-below). Sounds per session, spoken announcements and quiet hours are the same
-machinery with more actions plugged in — they're coming, and they'll appear
-on this page as they land.
+when the thing that happened was a permission request, as above — play a
+**per-session sound**, **say it out loud**, send a notification to your
+**phone**, or **POST an event to a webhook** (all below). **Quiet hours** are a
+condition on the same machinery: a time of day the rules check before they act
+(see below).
 
 The only rule you can *write* by hand is the checkbox; the rest are switched on
 
@@ -404,10 +404,86 @@ a full `http://` or `https://` address — a bare `example.com/hook` is refused
 when you save it, with a note saying so, rather than accepted and then never
 fired.
 
-**One thing the webhook is *not* louder than:** the 🔔 title-bar switch and
-quiet hours sit above every channel on this page, webhooks included. With
-notifications off, or inside a quiet-hours window, nothing is sent — your
-dashboard goes quiet too. (Quiet hours have no settings screen yet.)
+**One thing the webhook is *not* louder than:** the 🔔 title-bar switch sits
+above every channel on this page, webhooks included. With notifications off,
+nothing is sent — your dashboard goes quiet too.
+
+**Quiet hours are different, and this is worth knowing before you wire a
+dashboard up:** they do **not** stop the webhook. A webhook goes to a program,
+and a program isn't asleep — a log with a hole in it every night from 22:00 to
+07:00 is a broken log. If yours flashes a lamp or pages you, see
+[Quiet hours](#quiet-hours) for how to make one rule obey them anyway.
+
+## Quiet hours
+
+Hours of the day when switchboard won't make a noise at you.
+
+Open it with **Ctrl+Shift+P → "Quiet hours…"**, or from the **About** panel
+(the same place the phone-push button lives). Tick **Keep quiet between these
+times**, set a **From** and an **Until**, and close the dialog. That's the whole
+setting.
+
+- **Times are your machine's clock**, and they mean the numbers on the clock on
+  the wall. They follow you if you change timezone, and they need no special
+  handling for daylight saving: an hour that happens twice in autumn is quiet
+  twice, and an hour that doesn't happen at all in spring is skipped, exactly
+  as if you'd read your own clock.
+- **A window can run past midnight.** `22:00` until `07:00` means overnight —
+  you don't have to split it into two.
+- **The end is exclusive.** `22:00`–`07:00` is quiet at 06:59 and not at 07:00.
+- **Both ends go together.** Two identical times would be a window of zero
+  length, which is refused with a note rather than accepted and ignored.
+
+### What stops, and what doesn't
+
+**Stops — everything aimed at you:**
+
+| | |
+|---|---|
+| Desktop pop-ups | held |
+| The beep, and per-session sounds | held |
+| Spoken announcements | held |
+| **Phone push** | held — a phone buzzing on a nightstand is the *most* person-facing channel here, not the least |
+
+**Doesn't stop — the one thing aimed at a machine:**
+
+| | |
+|---|---|
+| **Webhooks** | still sent |
+
+That last row is a deliberate decision, not an oversight. A webhook goes to a
+program you pointed at this app precisely so that something would be watching
+while you're not. Silencing it overnight would put a hole in a log or a
+dashboard every night, and the cause — a *notification* setting on another
+screen — is not something anyone diagnoses successfully at 9am.
+
+If your webhook really *is* a person-facing channel (it flashes a lamp, it pages
+you), a rule can be marked to obey quiet hours anyway. There's no rules editor
+yet, so today that means hand-editing `quietHours: "obey"` onto the rule in the
+workspace file; the same field set to `"ignore"` does the opposite — it fires a
+pop-up at 3am for the one session whose crash is worth waking up for.
+
+### Nothing is lost while it's quiet
+
+Sessions keep running, and everything still lands in the **Events panel** —
+you're just not told about it until the window is over. Anything the window
+holds back is **written down**: what happened, when, which session, and which
+channels were held. That list survives closing the app, and a *missed-events
+digest* that shows it to you on return is the next item on this page's roadmap.
+
+The list is capped at the **200 most recent** held events; past that, the oldest
+drop off.
+
+### Telling that it's working
+
+A feature whose entire job is to do nothing is hard to trust. The dialog's
+bottom line answers both questions: whether the window is open **right now**,
+and how many notifications it has held so far. If it says *"Cannot tell right
+now"*, this window couldn't reach the app's settings — see
+[Troubleshooting](11-troubleshooting.md).
+
+The 🔔 title-bar switch is still above all of this. Quiet hours are a schedule;
+🔔 off is "not now, at all", and it silences the webhook too.
 
 ## Where your credentials are kept
 
@@ -439,7 +515,9 @@ Consequences worth knowing:
   with the phone off doesn't bury everything else in there.
 - The 🔔 title-bar switch is still above all of this. With notifications off,
   nothing is sent anywhere.
+- **Quiet hours don't stop webhooks** — see [Quiet hours](#quiet-hours) above
+  for why, and how to override it per rule.
 
-TODO: quiet hours are supported internally but have no settings screen yet.
 TODO: there is no rules *editor* yet — the per-session checkbox is the only rule
-you can write from the UI.
+you can write from the UI, so the `quietHours` override is a hand-edit for now.
+TODO: the missed-events digest that reads the held list is not built yet.

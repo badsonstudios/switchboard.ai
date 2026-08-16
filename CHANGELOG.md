@@ -57,6 +57,41 @@ on the floor, and say so in your PR.
 
 ## 0.6.0 — unreleased
 
+### Added
+
+- **Quiet hours.** Set two times — press **Ctrl+Shift+P** and type *quiet
+  hours*, or use the button in **About** — and between them switchboard will not
+  make a noise at you. Pop-ups, session sounds, spoken announcements and phone
+  push all stop; your sessions keep running and everything still lands in the
+  Events panel, you just are not told about it until the window is over. A
+  window that runs past midnight is fine (`22:00` until `07:00` means
+  overnight), the times are your machine's clock so they follow you across
+  timezones, and daylight saving needs no thought: they mean the numbers on the
+  clock on the wall. The dialog's bottom line tells you whether the window is
+  open right now and how many notifications it has held, because a feature whose
+  whole job is to do nothing is otherwise impossible to trust.
+- **Nothing is lost while it is quiet.** Every notification the window holds
+  back is written down — what happened, when, which session, and which channels
+  were held — and that list survives closing the app. The *missed-events digest*
+  that shows it to you on return is the next thing to land; this release is what
+  fills it. The list keeps the 200 most recent.
+
+### Changed
+
+- **Quiet hours no longer silence webhooks.** They used to stop every channel
+  including the webhook; now they stop everything aimed at *you* and let the
+  webhook through. A webhook goes to a program — usually the very program you
+  set up so that something would be watching while you are not — and a
+  dashboard or log with a hole in it every night from 22:00 to 07:00 is a broken
+  one, in a way whose cause (a notification setting on another screen) is
+  miserable to track down. If your webhook really is person-facing — it flashes
+  a lamp, it pages you — a rule can be marked to obey quiet hours anyway; see
+  the manual. The 🔔 title-bar switch is unchanged and still silences
+  everything, webhooks included.
+- **A quiet-hours time that switchboard cannot read is now refused** rather than
+  stored. A workspace file carrying something like `"10pm"` used to look
+  configured while silencing nothing at all.
+
 ### Internal
 
 - Fixed the end-to-end test that kept failing on the Windows CI machine and

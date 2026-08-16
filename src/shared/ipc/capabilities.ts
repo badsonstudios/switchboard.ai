@@ -152,6 +152,10 @@ export const CHANNEL_CAPABILITIES = {
   'groups:setSessionGroup': 'groups.write',
   'groups:update': 'groups.write',
   'notifications:getPrefs': 'settings.read',
+  // Whether the quiet window is open right now, and how many events it has held
+  // (P2-E14-05b). Reads settings plus a count of the app's own held list —
+  // nothing a `notifications:getPrefs` plus a clock would not already tell you.
+  'notifications:quietState': 'settings.read',
   'notifications:setPrefs': 'settings.write',
   'preflight:check': 'environment.probe',
   // Phone push + webhook (P2-E14-06, §5.9 + §5.29). Three capabilities for four

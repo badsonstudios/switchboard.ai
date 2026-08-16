@@ -20,13 +20,24 @@
 // ticked. Both are what §5.9 asked for; neither was true before.
 //
 // The split that remains is deliberate: this class owns what happens for EVERY
-// attention event no matter what (the beep, the flash, quiet hours, the master
-// switch), the engine owns what happens only under conditions. A user who
-// turns notifications off gets nothing at all — the gate is here, above the
-// engine, so no rule can talk over it.
+// attention event no matter what (the beep, the flash, the master switch), the
+// engine owns what happens only under conditions. A user who turns
+// notifications off gets nothing at all — that gate is here, above the engine,
+// so no rule can talk over it.
+//
+// **What moved out (P2-E14-05b): quiet hours.** They used to sit right beside
+// the master switch, above everything, and returning early from `handle` meant
+// the rules engine was never even consulted between 22:00 and 07:00. That was
+// the right shape while every channel was a person's ears — and the wrong one
+// the moment `webhook` shipped, because a program watching the workspace
+// overnight is precisely what a webhook is for. Quiet hours are now a rule
+// CONDITION evaluated per action (`rules.ts` → `quietHolds`), and what stays
+// here is only their effect on the two unconditional local signals below: the
+// beep and the taskbar flash, both of which are aimed squarely at a person.
 import { shell } from 'electron';
 import type { BrowserWindow } from 'electron';
-import { FeedEvent } from './feed';
+import { FeedEvent, FeedKind } from './feed';
+import { QuietWindow, inQuietWindow } from './rules';
 
 export interface NotificationPrefs {
   enabled: boolean;
@@ -51,28 +62,55 @@ export interface NotificationPrefs {
 
 export const DEFAULT_PREFS: NotificationPrefs = { enabled: true, osToasts: false };
 
-/** Pure gate: is `now` inside the quiet window? Overnight ranges supported. */
-export function inQuietHours(prefs: NotificationPrefs, now: Date): boolean {
-  if (!prefs.quietStart || !prefs.quietEnd) return false;
-  const toMin = (s: string): number | null => {
-    const m = /^(\d{1,2}):(\d{2})$/.exec(s);
-    if (!m) return null;
-    const h = Number(m[1]);
-    const min = Number(m[2]);
-    return h >= 0 && h < 24 && min >= 0 && min < 60 ? h * 60 + min : null;
-  };
-  const start = toMin(prefs.quietStart);
-  const end = toMin(prefs.quietEnd);
-  if (start === null || end === null || start === end) return false;
-  const cur = now.getHours() * 60 + now.getMinutes();
-  return start < end ? cur >= start && cur < end : cur >= start || cur < end;
+/**
+ * The prefs' quiet window as the rules engine wants it, or null.
+ *
+ * One converter, so "is quiet hours configured?" has a single answer: both
+ * fields, both parseable, and not equal (`inQuietWindow` refuses that pair —
+ * an empty window and a 24-hour one look identical to a reader).
+ */
+export function quietWindowOf(prefs: NotificationPrefs): QuietWindow | null {
+  if (!prefs.quietStart || !prefs.quietEnd) return null;
+  return { start: prefs.quietStart, end: prefs.quietEnd };
 }
 
-/** Pure gate: should this event notify at all? */
+/** Pure gate: is `now` inside the quiet window? Overnight ranges supported. */
+export function inQuietHours(prefs: NotificationPrefs, now: Date): boolean {
+  return inQuietWindow(quietWindowOf(prefs), now);
+}
+
+/** The four kinds worth a signal at all. `ready` is a transition, not a summons. */
+function isAttention(kind: FeedKind): boolean {
+  return kind === 'needs-input' || kind === 'needs-permission' || kind === 'done' || kind === 'crashed';
+}
+
+/**
+ * Pure gate: should the UNCONDITIONAL local signal happen — the beep and the
+ * taskbar flash?
+ *
+ * Both are aimed at a person in the room, so both still stop dead inside quiet
+ * hours. What changed in P2-E14-05b is what this function no longer decides:
+ * it is not the gate on the rules engine any more (`shouldConsultRules`).
+ */
 export function shouldNotify(prefs: NotificationPrefs, e: FeedEvent, now: Date): boolean {
   if (!prefs.enabled) return false;
   if (inQuietHours(prefs, now)) return false;
-  return e.kind === 'needs-input' || e.kind === 'needs-permission' || e.kind === 'done' || e.kind === 'crashed';
+  return isAttention(e.kind);
+}
+
+/**
+ * Pure gate: should the rules engine see this event at all?
+ *
+ * The master switch and the kind, and deliberately NOT the clock: quiet hours
+ * are decided per action inside the engine now, because a webhook has no ears
+ * (`rules.ts` → `quietHolds`), and because an event the engine never sees is an
+ * event that can never reach the missed-events digest (#483).
+ *
+ * The master switch still cuts everything, rules included — it is a person
+ * saying "not now, at all", not a schedule, and §5.9 promises exactly that.
+ */
+export function shouldConsultRules(prefs: NotificationPrefs, e: FeedEvent): boolean {
+  return prefs.enabled && isAttention(e.kind);
 }
 
 export class Notifier {
@@ -85,12 +123,27 @@ export class Notifier {
       /** the rules engine — every conditional channel (toast today; sound,
        *  TTS, push, webhook as E14 lands them) goes through it */
       rules?: { handle: (e: FeedEvent) => void };
+      /** the app's ONE clock (P2-E14-05b) — the same function the engine gets,
+       *  so the beep and the rules can never disagree about what time it is */
+      now?: () => Date;
     }
   ) {}
 
   handle(e: FeedEvent): void {
     const prefs = this.opts.getPrefs();
-    if (!shouldNotify(prefs, e, new Date())) return;
+    if (!shouldConsultRules(prefs, e)) return;
+    const now = (this.opts.now ?? (() => new Date()))();
+    // The local signal, under quiet hours. The rules run either way, below.
+    if (shouldNotify(prefs, e, now)) this.localSignal(prefs);
+    // The rules LAST, and outside the try above: the unconditional signal is
+    // cheap and local, the rules reach registered handlers that will one day
+    // hit an audio device, a phone and a webhook, and neither half should be
+    // able to cost the other. `RulesEngine.handle` swallows its own failures
+    // for the same reason (P6).
+    this.opts.rules?.handle(e);
+  }
+
+  private localSignal(prefs: NotificationPrefs): void {
     try {
       // The signal model (Dan 2026-07-22): SOUND always + the Events panel;
       // taskbar flash when backgrounded. Everything else is a rule.
@@ -114,11 +167,5 @@ export class Notifier {
     } catch {
       // notifying is best-effort; never let it break the session flow
     }
-    // The rules LAST, and outside the try above: the unconditional signal is
-    // cheap and local, the rules reach registered handlers that will one day
-    // hit an audio device, a phone and a webhook, and neither half should be
-    // able to cost the other. `RulesEngine.handle` swallows its own failures
-    // for the same reason (P6).
-    this.opts.rules?.handle(e);
   }
 }
