@@ -26,7 +26,7 @@ import { IdentityChip, identityBadgeStyle } from './IdentityChip';
 import { DiffPane } from './DiffPane';
 import { DocumentViewer } from './DocumentViewer';
 import { baseName } from '../lib/document-kind';
-import { forgetDocumentPanel, planDocumentOpen } from '../lib/document-panels';
+import { forgetDocumentPanel, isDocumentPanelId, planDocumentOpen } from '../lib/document-panels';
 import { UsageStrip } from './UsageStrip';
 import { GitContext, GitStatusDto } from './GitContext';
 import { Usage, ZERO_USAGE } from '../lib/usage';
@@ -2141,6 +2141,12 @@ function DocumentViewerPanel(
     [api, containerApi]
   );
 
+  // Is the find bar open on THIS viewer (#533)? Published by `find.open`, which
+  // runs in App's keydown handler and cannot reach this tree — the same
+  // publish/subscribe a session card uses, with the `doc-` panel id in the
+  // cardId role.
+  const findBar = React.useSyncExternalStore(subscribeFindBar, findBarState);
+
   return (
     // §5.30's litmus #3, in one wrapper: "read-only and out of band, wrapped in
     // `ContributionBoundary`; a viewer that throws cannot touch a session".
@@ -2164,16 +2170,31 @@ function DocumentViewerPanel(
     // fresh boundary — it just is not automatic any more. A reset affordance on
     // `ContributionBoundary` would fix this for every consumer at once (#411
     // noted the same gap); it is not this issue's to add.
-    <ContributionBoundary id="document-viewer">
-      <DocumentViewer
-        path={props.params?.path ?? ''}
-        colorScheme={props.params?.colorScheme === 'light' ? 'light' : 'dark'}
-        onTitleChange={setTitle}
-        poppedOut={poppedOut}
-        onPopoutToggle={onPopoutToggle}
-        session={session}
-      />
-    </ContributionBoundary>
+    // POSITIONED, because the bar is absolute and must move nothing underneath
+    // it (§5.31 litmus 5) — the same box `SessionCardPanel` puts it in.
+    <div style={{ position: 'relative', blockSize: '100%' }}>
+      <ContributionBoundary id="document-viewer">
+        <DocumentViewer
+          path={props.params?.path ?? ''}
+          panelId={api.id}
+          colorScheme={props.params?.colorScheme === 'light' ? 'light' : 'dark'}
+          onTitleChange={setTitle}
+          poppedOut={poppedOut}
+          onPopoutToggle={onPopoutToggle}
+          session={session}
+        />
+      </ContributionBoundary>
+      {/* Document find (#533, §5.31). NO `sessionId`: a viewer is
+          session-ATTRIBUTED and not session-owned, so there is no live session
+          to search and `find-session` excludes itself from the groups. OUTSIDE
+          the boundary, like the card's is: the bar is ours, not the viewer's,
+          and a viewer that throws withdraws its surface — which the bar already
+          knows how to say out loud (a greyed "nothing to search here") rather
+          than vanishing along with it. */}
+      {findBar.openOn === api.id && (
+        <FindBar cardId={api.id} panelId="document" panelTitleKey="find.group.document" />
+      )}
+    </div>
   );
 }
 
@@ -2989,6 +3010,16 @@ export interface GridController {
   openDocument: (absolutePath: string, sessionId?: string) => void;
   /** card id of the active session panel, or null (E9-01 command context) */
   activeCardId: () => string | null;
+  /**
+   * Panel id of the active DOCUMENT viewer, or null (#533 command context).
+   *
+   * The §5.8 question `find-providers.ts` used to record as a blocker: what is
+   * "the focused surface" when it is not a session card? A `doc-` panel, and
+   * this is how a command names one.
+   */
+  activeDocumentId: () => string | null;
+  /** is this panel in its own OS window right now? (#533 — see App's openFind) */
+  isPanelPoppedOut: (panelId: string) => boolean;
   /** close a card the way the tab ✕ does — including its confirm (E9-01) */
   closeCard: (cardId: string) => void;
   /** close EVERY session at once, sparing the pinned ones (§5.8's pinning
@@ -3264,6 +3295,21 @@ export function SessionGrid(props: {
         const m = /^session-(.+)$/.exec(panel.id);
         return m ? m[1] : null;
       },
+      // A DOCUMENT, unlike a card, is reachable in EITHER window (#533).
+      //
+      // `activeCardId` refuses a popped-out panel because a card command acts
+      // on things that live in THIS window — you would confirm-close a card you
+      // cannot see. Every reason for that rule is absent here: find acts on the
+      // viewer's own DOM, and the bar renders inside the same panel, which
+      // dockview has re-parented into the popout window along with it. Refusing
+      // would mean Ctrl+F in a viewer's own window did nothing, which is the
+      // exact bug this issue closed.
+      activeDocumentId: () => {
+        const panel = apiRef.current?.activePanel;
+        return panel && isDocumentPanelId(panel.id) ? panel.id : null;
+      },
+      isPanelPoppedOut: (panelId) =>
+        apiRef.current?.getPanel(panelId)?.api.location.type === 'popout',
       closeCard: (cardId) => {
         const panel = apiRef.current?.getPanel(`session-${cardId}`);
         // same contract as the tab ✕ (Dan 2026-07-22): confirm, because this

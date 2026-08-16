@@ -40,6 +40,20 @@ export interface CommandContext {
   /** card id of the currently focused session card, if any */
   activeCardId: string | null;
   /**
+   * Panel id of the focused §5.30 DOCUMENT viewer, if any (#533).
+   *
+   * A second answer to "what has the user's attention", not a replacement for
+   * the first: the two are mutually exclusive (one panel is active) and every
+   * card-scoped command still reads `activeCardId` alone. Only `find.open`
+   * takes either, because find is the one command whose subject is a SURFACE
+   * rather than a session.
+   *
+   * Optional, and the one optional member here: adding it as required would
+   * make every command that has nothing to do with documents — and every test
+   * that builds a context — declare a document it does not have.
+   */
+  activeDocumentId?: string | null;
+  /**
    * The persistent group the focused card belongs to, or null.
    *
    * Here rather than looked up inside a command because the palette and the

@@ -1004,7 +1004,19 @@ export function App(): React.JSX.Element {
           // window with it — which is where the bar actually is. Making find
           // window-local is a §5.8 question about which window a command acts
           // in, not a find question, so it is not answered here.
-          openFind: (cardId) => openFindBar(cardId),
+          //
+          // POPPED-OUT DOCUMENTS ARE THE EXCEPTION, and #533 had to answer that
+          // §5.8 question for them: `activeDocumentId()` DOES claim a popped-out
+          // viewer, because its bar renders inside the panel dockview moved into
+          // that window — the bar really is over there. So the raise the bridge
+          // does by default would bury the window the user is reading in, and
+          // this borrows the "we already put the right window in front" flag to
+          // suppress it. In the main window the flag costs nothing: the call it
+          // suppresses is `window.focus()` on the window that already has focus.
+          openFind: (targetId) => {
+            openFindBar(targetId);
+            if (grid.current?.isPanelPoppedOut(targetId)) raisedOtherWindowRef.current = true;
+          },
           toggleTabRows: () => {
             toggleTabRows();
           },
@@ -1052,6 +1064,10 @@ export function App(): React.JSX.Element {
     return {
       sessions: sessionStore.getRailOrder().flat,
       activeCardId,
+      // The other thing that can have the user's attention (#533): a §5.30
+      // document viewer is its own panel with no session behind it, and
+      // `find.open` is the one command that takes either.
+      activeDocumentId: grid.current?.activeDocumentId() ?? null,
       // resolved HERE, once, so the palette's enabled state and the keyboard's
       // both come from the same read (E9-06's group-level commands)
       activeGroupId: activeCardId

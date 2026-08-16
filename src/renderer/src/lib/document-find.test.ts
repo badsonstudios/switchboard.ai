@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
-// Find-in-page, scoped to one panel's subtree (P2-E16-02, §5.30 as corrected).
+// Find-in-page, scoped to one panel's subtree (P2-E16-02, §5.30 as corrected;
+// the body of the `find-document` provider since #533).
 import { describe, it, expect, beforeEach } from 'vitest';
-import { applyMatches, clearMatches, focusMatch } from './document-find';
+import { applyMatches, clearMatches, focusMatch, MATCH_CAP } from './document-find';
+
+/** The count, which is what most of these cases are actually about. */
+const count = (root: HTMLElement, query: string, opts?: { caseSensitive?: boolean; wholeWord?: boolean }): number =>
+  applyMatches(root, query, opts).matches.length;
 
 let host: HTMLElement;
 
@@ -14,7 +19,7 @@ beforeEach(() => {
 describe('applyMatches', () => {
   it('wraps every case-insensitive occurrence and counts them', () => {
     host.innerHTML = '<p>The Feed feeds the feed.</p>';
-    expect(applyMatches(host, 'feed')).toBe(3);
+    expect(count(host, 'feed')).toBe(3);
     expect(host.querySelectorAll('mark[data-doc-match]')).toHaveLength(3);
     // the text is untouched — only the wrapping changed
     expect(host.textContent).toBe('The Feed feeds the feed.');
@@ -22,21 +27,21 @@ describe('applyMatches', () => {
 
   it('finds matches across elements, and leaves the markup intact', () => {
     host.innerHTML = '<p>alpha <strong>beta</strong> alpha</p>';
-    expect(applyMatches(host, 'alpha')).toBe(2);
+    expect(count(host, 'alpha')).toBe(2);
     expect(host.querySelector('strong')?.textContent).toBe('beta');
   });
 
   it('an empty or blank query matches nothing rather than everything', () => {
     host.innerHTML = '<p>text</p>';
-    expect(applyMatches(host, '')).toBe(0);
-    expect(applyMatches(host, '   ')).toBe(0);
+    expect(count(host, '')).toBe(0);
+    expect(count(host, '   ')).toBe(0);
     expect(host.querySelectorAll('mark')).toHaveLength(0);
   });
 
   it('searching twice does not match inside its own highlights', () => {
     host.innerHTML = '<p>aaa</p>';
-    expect(applyMatches(host, 'a')).toBe(3);
-    expect(applyMatches(host, 'a')).toBe(3);
+    expect(count(host, 'a')).toBe(3);
+    expect(count(host, 'a')).toBe(3);
     expect(host.querySelectorAll('mark')).toHaveLength(3);
   });
 
@@ -50,7 +55,53 @@ describe('applyMatches', () => {
 
   it('searches inside code fences — that is where the command is', () => {
     host.innerHTML = '<pre><code>npm run e2e</code></pre>';
-    expect(applyMatches(host, 'npm run')).toBe(1);
+    expect(count(host, 'npm run')).toBe(1);
+  });
+
+  // --- what the shared bar needs that the private one did not (#533) --------
+
+  it('reports each match with enough context for the results list', () => {
+    host.innerHTML = '<p>the needle is here</p>';
+    const { matches, truncated } = applyMatches(host, 'needle');
+    expect(truncated).toBe(false);
+    expect(matches).toEqual([{ text: 'the needle is here', offset: 4, length: 6 }]);
+  });
+
+  it('honours the bar’s Match case chip', () => {
+    host.innerHTML = '<p>Feed feed FEED</p>';
+    expect(count(host, 'feed', { caseSensitive: true })).toBe(1);
+    expect(count(host, 'feed')).toBe(3);
+  });
+
+  it('honours Whole word — including a term with no word boundary of its own', () => {
+    host.innerHTML = '<p>feed feeds prefeed</p>';
+    expect(count(host, 'feed', { wholeWord: true })).toBe(1);
+    // `\\b--force\\b` would match NOTHING here; the lookarounds this uses do the
+    // thing the user means. The regression that argument exists to prevent.
+    host.innerHTML = '<p>run --force now, not --forced</p>';
+    expect(count(host, '--force', { wholeWord: true })).toBe(1);
+  });
+
+  it('takes a term full of regex metacharacters literally', () => {
+    host.innerHTML = '<p>a.b and axb</p>';
+    expect(count(host, 'a.b')).toBe(1);
+  });
+
+  it('stops at the cap and SAYS it stopped, rather than marking a whole book', () => {
+    host.innerHTML = `<p>${'x'.repeat(MATCH_CAP + 50)}</p>`;
+    const { matches, truncated } = applyMatches(host, 'x');
+    expect(matches).toHaveLength(MATCH_CAP);
+    expect(truncated).toBe(true);
+  });
+
+  // #477's copy path: `activate()` copies a code block by reading
+  // `pre.textContent`, and a search running WHILE the user copies must not put
+  // its own chrome in their clipboard.
+  it('marks do not leak into the text a code block copies', () => {
+    host.innerHTML = '<pre><code>npm run e2e</code></pre>';
+    applyMatches(host, 'run');
+    expect(host.querySelectorAll('mark')).toHaveLength(1);
+    expect(host.querySelector('pre')?.textContent).toBe('npm run e2e');
   });
 });
 

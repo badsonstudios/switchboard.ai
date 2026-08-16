@@ -46,7 +46,12 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { FindContext, FindHit, FindResults, PanelId } from '../extensibility/contributions';
-import { findProviderFor, findUnavailableKey, listFindProviders } from '../extensibility/find-providers';
+import {
+  findMode,
+  findProviderFor,
+  findUnavailableKey,
+  listFindProviders,
+} from '../extensibility/find-providers';
 import { rendererRegistry } from '../extensibility/registry-instance';
 import { safely } from '../extensibility/boundary';
 import {
@@ -97,9 +102,25 @@ const chipOn: React.CSSProperties = {
 };
 
 export function FindBar(props: {
-  /** the LIVE session id of the card this bar belongs to */
-  sessionId: string;
-  /** the card — half of the key that makes "this card only" structural */
+  /**
+   * The LIVE session id of the card this bar belongs to — ABSENT over a
+   * document (#533).
+   *
+   * A §5.30 viewer is session-ATTRIBUTED and not session-owned: it outlives any
+   * session and needs none, so there is no live id to pass and inventing one
+   * would be a lie the session provider would then act on. Absent reads through
+   * as `''`, which `find-session`'s `unavailableKey` already refuses with
+   * `find.unavailable.noSession` — so the Session group is simply not one of
+   * this bar's groups, by the check that was already there.
+   */
+  sessionId?: string;
+  /**
+   * The card — half of the key that makes "this card only" structural.
+   *
+   * Over a document this is the `doc-` PANEL id, which plays the same role: it
+   * is still true that a surface cannot be reached without naming the thing it
+   * belongs to.
+   */
   cardId: string;
   /** the panel that has the user's attention right now */
   panelId: PanelId;
@@ -117,7 +138,7 @@ export function FindBar(props: {
 
   const provider = findProviderFor(rendererRegistry, props.panelId);
   const cardId = props.cardId;
-  const sessionId = props.sessionId;
+  const sessionId = props.sessionId ?? '';
   const contextFor = React.useCallback(
     (panelId: string): FindContext => {
       // read through the version token deliberately: it is what makes this
@@ -136,17 +157,23 @@ export function FindBar(props: {
   // cannot be searched says so instead of quietly searching something else.
   // What it no longer decides is which surfaces get searched (see `groups`).
   const unavailableKey = provider ? findUnavailableKey(provider, ctx) : 'find.unavailable.noProvider';
+  // Per SURFACE, not per registrant (#533): the document provider is `bar` over
+  // rendered markdown and `delegated` over its Monaco source body, and which
+  // one is on screen is a question only the live surface can answer.
+  const mode = provider ? findMode(provider, ctx) : null;
 
   // Every `bar` registrant that can be searched on THIS card, in `order`.
   // Delegated providers are absent by construction: they never render our bar,
-  // so they can never be one of its groups.
+  // so they can never be one of its groups — asked of each provider with ITS
+  // OWN context, for the same reason `unavailableKey` is.
   const groupProviders = React.useMemo(() => {
-    if (provider?.mode !== 'bar' || unavailableKey) return [];
+    if (mode !== 'bar' || unavailableKey) return [];
     return listFindProviders(rendererRegistry)
-      .filter((p) => p.mode === 'bar')
       .map((p) => ({ p, groupCtx: contextFor(p.panelId) }))
-      .filter(({ p, groupCtx }) => !findUnavailableKey(p, groupCtx));
-  }, [provider, unavailableKey, contextFor]);
+      .filter(
+        ({ p, groupCtx }) => findMode(p, groupCtx) === 'bar' && !findUnavailableKey(p, groupCtx)
+      );
+  }, [mode, unavailableKey, contextFor]);
 
   // TWO REFS, and the split is what stops a search restarting for no reason.
   //
@@ -254,7 +281,7 @@ export function FindBar(props: {
   // and wrapping our chrome around it would give one editor two bars' worth of
   // Escape targets and two match counts.
   React.useEffect(() => {
-    if (!provider || provider.mode !== 'delegated' || unavailableKey) return;
+    if (!provider || mode !== 'delegated' || unavailableKey) return;
     const ok = safely(
       provider.manifest.id,
       'delegate()',
@@ -265,7 +292,7 @@ export function FindBar(props: {
     // surface owns the keyboard now, so we close without restoring focus —
     // the editor's find widget is where the user wants to be.
     if (ok) closeFindBar();
-  }, [provider, unavailableKey, ctx, bar.openNonce]);
+  }, [provider, mode, unavailableKey, ctx, bar.openNonce]);
 
   // A provider's `FindHit.ref` is ITS OWN private token — a Feed seq here, an
   // xterm buffer position there. Carrying a result set across a change in WHICH

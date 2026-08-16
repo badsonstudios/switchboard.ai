@@ -20,6 +20,7 @@ import * as monaco from 'monaco-editor/esm/vs/editor/edcore.main';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import '../lib/monaco-languages';
 import { defineDiffThemes, DIFF_THEME } from '../lib/monaco-theme';
+import type { FindableEditor } from '../lib/monaco-find';
 
 declare global {
   interface Window {
@@ -40,6 +41,17 @@ export interface DocumentSourceProps {
   initialScrollTop?: number;
   /** reported on every scroll, so the parent can hand it back on remount */
   onScrollTop?: (top: number) => void;
+  /**
+   * The editor, as it is built and again (as `null`) as it is disposed (#533).
+   *
+   * The viewer's find provider needs it — §5.31 delegates the SOURCE body's
+   * find to Monaco's own widget rather than reimplementing it — and the viewer
+   * cannot reach in and take it: this component is lazily imported precisely so
+   * the ~4 MB of editor stays out of the viewer's jsdom unit tests. So the
+   * editor is handed UP, structurally typed (`lib/monaco-find`), and the parent
+   * never imports monaco to hold it.
+   */
+  onEditor?: (editor: FindableEditor | null) => void;
 }
 
 export default function DocumentSource(props: DocumentSourceProps): React.JSX.Element {
@@ -50,6 +62,8 @@ export default function DocumentSource(props: DocumentSourceProps): React.JSX.El
   // editor on every render, which is the bug DiffPane's header warns about.
   const onScroll = useRef(props.onScrollTop);
   onScroll.current = props.onScrollTop;
+  const onEditor = useRef(props.onEditor);
+  onEditor.current = props.onEditor;
   const initialTop = useRef(props.initialScrollTop ?? 0);
 
   useEffect(() => {
@@ -69,12 +83,16 @@ export default function DocumentSource(props: DocumentSourceProps): React.JSX.El
       theme: DIFF_THEME[props.colorScheme],
     });
     editorRef.current = editor;
+    onEditor.current?.(editor);
     const sub = editor.onDidScrollChange((e) => onScroll.current?.(e.scrollTop));
     return () => {
       sub.dispose();
       editor.getModel()?.dispose();
       editor.dispose();
       editorRef.current = null;
+      // Hand back the null too: the mode toggle unmounts this, and a parent
+      // still holding a disposed editor would delegate find into nothing.
+      onEditor.current?.(null);
     };
     // Built ONCE. Theme and content are applied by the effects below; rebuilding
     // on either would throw away the user's scroll and selection.

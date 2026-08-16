@@ -8,11 +8,12 @@
 // docked viewer registers a §5.31 find provider like every other panel; only
 // the popped-out case may use `findInPage`."
 //
-// §5.31's find bar is E17-02 and does not exist yet, and a docked viewer is
-// the only viewer this item ships (the popped-out one is P2-E16-03). So the
-// viewer brings its own, scoped to its own container — which is the behaviour
-// the §5.31 provider will have to implement anyway. When E17-02 lands, this
-// becomes the body of the viewer's provider and the bar above it is deleted.
+// §5.31's find bar was E17-02, and #533 joined the two: this module IS the
+// body of the `find-document` provider now (`extensibility/find-providers.ts`),
+// and the private bar the viewer used to draw above it is gone. The prediction
+// in the paragraph above held — what changed on the way in is only what a
+// match has to REPORT, because the shared bar shows a results list and the
+// private one only ever showed a count.
 //
 // The DOM is the index: matches are wrapped in `<mark>`, which is what a
 // screen reader announces as a match and what a stylesheet can highlight
@@ -21,6 +22,67 @@
 /** The attribute a wrapped match carries, so unwrapping finds only ours. */
 const MATCH_ATTR = 'data-doc-match';
 const CURRENT_ATTR = 'data-doc-match-current';
+
+/**
+ * How many matches we will mark.
+ *
+ * §5.30 budgets for a 2 MiB document, and a one-letter term over one of those
+ * is tens of thousands of `<mark>` elements — enough DOM to make the pane stop
+ * responding, which is the "never 'the app froze'" line this file already
+ * respects with its debounce. Stopping at a cap and SAYING so (the bar prints
+ * "showing the first N") is the honest version of the same protection.
+ */
+export const MATCH_CAP = 2000;
+
+/** One match, in the vocabulary a `FindHit` is built from. */
+export interface DocumentMatch {
+  /** the whole text node the match sits in — the provider windows it */
+  text: string;
+  /** where the match starts inside `text`, and how long it is */
+  offset: number;
+  length: number;
+}
+
+export interface DocumentSearchResult {
+  matches: DocumentMatch[];
+  /** we stopped at `MATCH_CAP`; there are more, and `matches` is not all */
+  truncated: boolean;
+}
+
+/** Options a query carries down from the bar's two chips. */
+export interface DocumentSearchOptions {
+  caseSensitive?: boolean;
+  wholeWord?: boolean;
+}
+
+const EMPTY: DocumentSearchResult = { matches: [], truncated: false };
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * The term as a regex, or null when there is nothing to search for.
+ *
+ * LOOKAROUNDS RATHER THAN `\b` for whole-word: `\b` is a boundary between a
+ * word character and a non-word one, so `--force` or `x)` — both ordinary
+ * things to search a document for — have no boundary at the end that carries
+ * the flag, and `\b--force\b` matches nothing at all. Asserting "no letter,
+ * digit or underscore on either side" is what a user means by whole word, and
+ * it degrades to the same answer as `\b` for an ordinary word.
+ */
+function matcher(term: string, opts?: DocumentSearchOptions): RegExp | null {
+  if (term.trim().length === 0) return null;
+  const body = escapeRegExp(term);
+  const source = opts?.wholeWord ? `(?<![\\p{L}\\p{N}_])${body}(?![\\p{L}\\p{N}_])` : body;
+  try {
+    return new RegExp(source, opts?.caseSensitive ? 'gu' : 'giu');
+  } catch {
+    // fail-open: a term we cannot compile searches nothing rather than
+    // throwing out of the provider and taking the bar with it
+    return null;
+  }
+}
 
 /** Remove every mark this module added, leaving the text exactly as it was. */
 export function clearMatches(root: HTMLElement): void {
@@ -36,16 +98,30 @@ export function clearMatches(root: HTMLElement): void {
 }
 
 /**
- * Wrap every case-insensitive occurrence of `query` in a `<mark>`.
+ * Wrap every occurrence of `query` in a `<mark>`, and describe them.
  *
- * Returns the number of matches. An empty or whitespace-only query clears and
- * matches nothing — searching for "" would otherwise wrap every character in
- * the document, which is both useless and slow.
+ * An empty or whitespace-only query clears and matches nothing — searching for
+ * "" would otherwise wrap every character in the document, which is both
+ * useless and slow.
+ *
+ * The returned matches are in DOCUMENT ORDER, which is the contract `focusMatch`
+ * relies on: the provider hands the bar an index into this array and gets back
+ * the same index into `querySelectorAll`'s node order.
+ *
+ * ONE LIMIT WORTH KNOWING: a match cannot straddle two text nodes, so a term
+ * broken by inline markup (`**find**ing`) is not found. That was true of this
+ * function before the bar reached it and is inherent to marking the DOM in
+ * place; the alternative is a flattened text index and a second coordinate
+ * system to keep in sync, which is the thing the header refuses.
  */
-export function applyMatches(root: HTMLElement, query: string): number {
+export function applyMatches(
+  root: HTMLElement,
+  query: string,
+  opts?: DocumentSearchOptions
+): DocumentSearchResult {
   clearMatches(root);
-  const needle = query.toLowerCase();
-  if (needle.trim().length === 0) return 0;
+  const re = matcher(query, opts);
+  if (!re) return EMPTY;
 
   const doc = root.ownerDocument;
   const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
@@ -67,28 +143,40 @@ export function applyMatches(root: HTMLElement, query: string): number {
   const texts: Text[] = [];
   for (let n = walker.nextNode(); n; n = walker.nextNode()) texts.push(n as Text);
 
-  let count = 0;
+  const matches: DocumentMatch[] = [];
+  let truncated = false;
   for (const node of texts) {
+    if (truncated) break;
     const value = node.nodeValue ?? '';
-    const hay = value.toLowerCase();
+    re.lastIndex = 0;
     let from = 0;
-    let at = hay.indexOf(needle, from);
-    if (at < 0) continue;
+    let hit = re.exec(value);
+    if (!hit) continue;
     const frag = doc.createDocumentFragment();
-    while (at >= 0) {
+    while (hit) {
+      // A zero-length match cannot happen with a literal term, but a regex that
+      // matched empty would spin here forever — one guard is cheaper than the
+      // reasoning about why it cannot.
+      if (hit[0].length === 0) break;
+      const at = hit.index;
       if (at > from) frag.append(doc.createTextNode(value.slice(from, at)));
       const mark = doc.createElement('mark');
-      mark.setAttribute(MATCH_ATTR, String(count));
-      mark.textContent = value.slice(at, at + needle.length);
+      mark.setAttribute(MATCH_ATTR, String(matches.length));
+      mark.textContent = hit[0];
       frag.append(mark);
-      count += 1;
-      from = at + needle.length;
-      at = hay.indexOf(needle, from);
+      matches.push({ text: value, offset: at, length: hit[0].length });
+      from = at + hit[0].length;
+      if (matches.length >= MATCH_CAP) {
+        truncated = true;
+        break;
+      }
+      re.lastIndex = from;
+      hit = re.exec(value);
     }
     if (from < value.length) frag.append(doc.createTextNode(value.slice(from)));
     node.replaceWith(frag);
   }
-  return count;
+  return { matches, truncated };
 }
 
 /**

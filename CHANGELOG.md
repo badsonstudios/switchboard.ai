@@ -57,6 +57,18 @@ on the floor, and say so in your PR.
 
 ## 0.6.0 — unreleased
 
+### Fixed
+
+- **`Ctrl+F` now works in a document.** Press it with a document tab in front of
+  you and switchboard's find bar opens over that document: type and matches
+  light up, `Enter` and `Shift+Enter` step, the count reads "3 of 12", `Esc`
+  closes it and takes the highlights with it, and the ▸ button lists every
+  match. It was silently doing nothing before. Only the document you are
+  reading is searched — never another document, never a session — and it works
+  the same in a popped-out document window. Any file that is not Markdown (and
+  Markdown under **Source**) hands you to the editor's own find box instead,
+  which is the fuller one, exactly as the **Changes** tab does.
+
 ### Changed
 
 - **Every file you open now gets its own tab, and the 📌 is gone.** Opening a

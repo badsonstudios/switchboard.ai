@@ -16,6 +16,7 @@ import '../lib/monaco-languages';
 import { languageForPath } from '../lib/diff-language';
 import { defineDiffThemes, DIFF_THEME } from '../lib/monaco-theme';
 import { findSurfaceKey, publishFindSurface, type MonacoFindSurface } from '../lib/find-surfaces';
+import { openMonacoFind } from '../lib/monaco-find';
 import { openDocument } from '../lib/document-open';
 
 /**
@@ -140,27 +141,10 @@ export function DiffPane(props: {
     const surface: MonacoFindSurface = {
       kind: 'monaco',
       ready: (): boolean => !!modified()?.getModel(),
-      openFind: (term: string): boolean => {
-        const ed = modified();
-        if (!ed?.getModel()) return false;
-        // focus first, or the widget opens without a caret and Enter does
-        // nothing — the "it did open, it just doesn't work" failure
-        ed.focus();
-        ed.getAction('actions.find')?.run();
-        // Seed the sticky term. `setSearchString` is the find controller's own
-        // public method; reached through `getContribution`, whose return type
-        // is opaque, so this is a narrow structural cast rather than a lie
-        // about the whole contribution. Optional at every step: if a Monaco
-        // upgrade renames it the widget still opens, merely empty — a degrade,
-        // not a break (fail-open).
-        if (term) {
-          const find = ed.getContribution('editor.contrib.findController') as unknown as {
-            setSearchString?: (s: string) => void;
-          } | null;
-          find?.setSearchString?.(term);
-        }
-        return true;
-      },
+      // `lib/monaco-find`, shared with the document viewer's source body since
+      // #533: two surfaces in this app are Monaco editors and both delegate
+      // find to it, so the hand-off is written once.
+      openFind: (term: string): boolean => openMonacoFind(modified(), term),
     };
     return publishFindSurface(findSurfaceKey(props.cardId, 'diff'), surface);
   }, [props.cardId]);

@@ -31,6 +31,15 @@
 // rather than as two more `let`s in a 3,000-line component file is what makes
 // the rule below testable as a rule, without a dockview.
 
+/**
+ * What every viewer's dockview panel id starts with.
+ *
+ * A CONTRACT since #533, not a formatting detail: the command context asks
+ * "is the active panel a document?" by this prefix, exactly as it asks "is it a
+ * card?" by `session-`. Two spellings of it would be two answers.
+ */
+export const DOCUMENT_PANEL_PREFIX = 'doc-';
+
 /** One open viewer, as the open/focus rule sees it. */
 export interface DocumentPanelEntry {
   /** the dockview panel id (`doc-<n>`) */
@@ -129,9 +138,23 @@ export function planDocumentOpen(path: string, sessionId?: string): DocumentOpen
     }
   }
   seq += 1;
-  const id = `doc-${seq}`;
+  const id = `${DOCUMENT_PANEL_PREFIX}${seq}`;
   entries.set(id, { id, path, sessionId });
   return { action: 'create', id, path, sessionId };
+}
+
+/**
+ * Is this a document viewer's panel id?
+ *
+ * The PREFIX, not a lookup in `entries`: this answers for a panel dockview
+ * actually has, and the registry can lag it in one direction (a removal that
+ * never reported, a layout restored from disk). A command that asked the
+ * registry would then quietly do nothing for a viewer the user is looking at —
+ * which is the failure mode #533 exists to remove — so the id is the authority
+ * and `planDocumentOpen` is the only thing that mints one.
+ */
+export function isDocumentPanelId(id: string): boolean {
+  return id.startsWith(DOCUMENT_PANEL_PREFIX);
 }
 
 /** The panel is gone. Drop it. */

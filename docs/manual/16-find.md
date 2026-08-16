@@ -116,6 +116,26 @@ hands off entirely.
   scrollbar). Our bar gets out of the way rather than putting a second, worse
   find on top of a good one. Nothing else is searched while you're on this tab.
 
+## Documents
+
+A [document tab](15-document-viewer.md) gets the same `Ctrl+F` — press it with
+one in front of you and the bar opens over that document. It behaves exactly as
+it does over a session: type, `Enter` and `Shift+Enter` step, matches are
+highlighted where they are, the count says "3 of 12", `Esc` closes it and takes
+the highlights with it.
+
+Two things are different, and both follow from a document not being a session:
+
+- **Only the document is searched.** There's no session behind a document tab —
+  it's a file on disk — so there is no Session or Terminal group, just the one
+  count.
+- **Source view hands off**, like the Changes tab does. Any file that isn't
+  Markdown opens in the editor, and so does Markdown when you press **Source**;
+  `Ctrl+F` there opens the editor's own find box.
+
+This works in a popped-out document window too — the bar opens in that window,
+where the document is.
+
 ### Finding things in the terminal
 
 A match in the terminal is **highlighted in place** and selected; `Enter` and

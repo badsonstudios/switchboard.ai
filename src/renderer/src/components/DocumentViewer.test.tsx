@@ -21,6 +21,13 @@ vi.mock('./DocumentSource', () => ({
 }));
 
 import { DocumentViewer, formatBytes } from './DocumentViewer';
+import {
+  findSurfaceFor,
+  findSurfaceKey,
+  resetFindSurfaces,
+  type DocumentFindSurface,
+} from '../lib/find-surfaces';
+import { openFindBar, resetFindBarState, setFindTerm } from '../lib/find-bar-state';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -94,6 +101,11 @@ beforeEach(async () => {
   sourceProps.length = 0;
   answer = () => ok('');
   stubBridge();
+  // BEFORE anything mounts, both of them: each drops SUBSCRIBERS as well as
+  // state, so calling one with a component already up leaves a live
+  // `useSyncExternalStore` deaf to every later change.
+  resetFindSurfaces();
+  resetFindBarState();
   await initI18nForTests();
 });
 
@@ -120,12 +132,6 @@ async function mount(
 const q = (sel: string): HTMLElement | null => host.querySelector(sel);
 const buttonByText = (text: string): HTMLButtonElement | undefined =>
   [...host.querySelectorAll('button')].find((b) => b.textContent?.trim() === text);
-/** Let the find debounce fire. Real timers: `act` already flushes microtasks. */
-const settleFind = async (): Promise<void> => {
-  await act(async () => {
-    await new Promise((r) => setTimeout(r, 200));
-  });
-};
 const click = async (el: Element | null | undefined): Promise<void> => {
   await act(async () => {
     (el as HTMLElement)?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -378,71 +384,93 @@ describe('the rest of the v1 markdown scope', () => {
     expect(q('.doc-front-body')?.textContent).toBe('title: Hi');
   });
 
-  it('Ctrl+F opens a find bar scoped to this panel, and Escape closes it', async () => {
+  // --- find, now that the viewer only PUBLISHES it (#533) -------------------
+  //
+  // The private bar is gone: the viewer hands the shared §5.31 bar a
+  // `FindSurface` and that bar drives it. So what is left to prove here is the
+  // viewer's half of the contract — the surface exists, it says which body is
+  // on screen, and it marks / steps / clears the rendered one. The bar's own
+  // behaviour is `FindBar.test.tsx`'s, and the keystroke that opens it is
+  // `find.spec.ts`'s.
+
+  const surface = (): DocumentFindSurface | null =>
+    findSurfaceFor(findSurfaceKey('doc-9', 'document')) as DocumentFindSurface | null;
+
+  it('publishes a find surface named by its PANEL, and withdraws it on unmount', async () => {
     answer = () => ok('# Feed\n\nthe feed feeds the feed\n');
+    await mount('/p/PROGRESS.md', 'dark', { panelId: 'doc-9' });
+    expect(surface()?.kind).toBe('document');
+    expect(surface()?.view()).toBe('rendered');
+    const r = root!;
+    root = null;
+    await act(async () => r.unmount());
+    expect(surface()).toBeNull();
+  });
+
+  it('publishes NOTHING for a viewer nobody can name', async () => {
+    // The key is what makes "a search cannot reach another panel" structural,
+    // so a viewer with no panel id has no way to be named and does not publish.
+    answer = () => ok('# Feed\n');
     await mount('/p/PROGRESS.md');
-    await act(async () => {
-      q('[data-testid="document-viewer"]')?.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true })
-      );
-    });
-    const input = q('.doc-find-input') as HTMLInputElement;
-    expect(input).not.toBeNull();
-    await act(async () => {
-      // React's own value tracker swallows a plain `input.value = …` followed
-      // by a dispatched event — it sees no change. The native setter is what
-      // every React testing library reaches for, for exactly this reason.
-      const setValue = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype,
-        'value'
-      )!.set!;
-      setValue.call(input, 'feed');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    // the search is debounced — one pass per pause, not one per keystroke
-    await settleFind();
-    expect(host.querySelectorAll('mark[data-doc-match]').length).toBe(4);
-    expect(q('[data-testid="doc-find-count"]')?.textContent).toBe('1 of 4');
+    expect(surface()).toBeNull();
+  });
+
+  it('marks, steps and clears the rendered body through the surface', async () => {
+    answer = () => ok('# Feed\n\nthe feed feeds the feed\n');
+    await mount('/p/PROGRESS.md', 'dark', { panelId: 'doc-9' });
+    const s = surface()!;
 
     await act(async () => {
-      q('[data-testid="document-viewer"]')?.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
-      );
+      expect(s.search({ term: 'feed' }).matches).toHaveLength(4);
     });
-    expect(q('.doc-find-input')).toBeNull();
+    expect(host.querySelectorAll('mark[data-doc-match]')).toHaveLength(4);
+
+    // stepping marks exactly one as current — #520's lesson: a jump with no
+    // visible mark reads as broken
+    await act(async () => {
+      expect(s.reveal(1)).toBe(true);
+    });
+    const current = [...host.querySelectorAll('mark[data-doc-match-current]')];
+    expect(current).toHaveLength(1);
+    expect([...host.querySelectorAll('mark[data-doc-match]')].indexOf(current[0])).toBe(1);
+
+    // closing the bar clears — the marks are real nodes, and leaving them
+    // behind would make the next search match inside its own highlights
+    await act(async () => s.clear());
     expect(host.querySelectorAll('mark[data-doc-match]')).toHaveLength(0);
   });
 
-  it('the find bar re-searches the NEW document after a link, not the old count', async () => {
+  it('re-marks the NEW document after a link, so the highlights are never stale', async () => {
     answer = (p) =>
       p.endsWith('a.md')
         ? ok('# feed\n\nfeed feed feed\n\n[go](./b.md)\n')
         : ok('# feed once\n');
-    await mount('/p/a.md');
+    await mount('/p/a.md', 'dark', { panelId: 'doc-9' });
+    openFindBar('doc-9');
+    setFindTerm('feed');
     await act(async () => {
-      q('[data-testid="document-viewer"]')?.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true })
-      );
+      expect(surface()!.search({ term: 'feed' }).matches).toHaveLength(4);
     });
-    const input = q('.doc-find-input') as HTMLInputElement;
-    await act(async () => {
-      const setValue = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype,
-        'value'
-      )!.set!;
-      setValue.call(input, 'feed');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    await settleFind();
-    expect(q('[data-testid="doc-find-count"]')?.textContent).toBe('1 of 4');
 
-    // `replaceChildren` destroys every mark; without the re-run the bar would
-    // still read "1 of 4" over a document with nothing highlighted in it
+    // `replaceChildren` destroys every mark; without the re-mark the bar would
+    // sit over a document with nothing highlighted in it
     await click(q('[data-doc-link="relative"]'));
     await act(async () => {});
     expect(q('[data-testid="doc-name"]')?.textContent).toBe('b.md');
     expect(host.querySelectorAll('mark[data-doc-match]')).toHaveLength(1);
-    expect(q('[data-testid="doc-find-count"]')?.textContent).toBe('1 of 1');
+  });
+
+  it('says which body is on screen — the source one is Monaco’s to search', async () => {
+    // `modeFor` reads this: rendered markdown is ours to mark, and the source
+    // body is a Monaco editor §5.31 says not to reimplement a find over. The
+    // editor is stubbed in jsdom, so `none` is the honest answer here — what is
+    // being pinned is that it STOPS saying `rendered` the moment the toggle
+    // moves, which is what keeps the bar from marking a body that is not there.
+    answer = () => ok('# Feed\n');
+    await mount('/p/PROGRESS.md', 'dark', { panelId: 'doc-9' });
+    expect(surface()!.view()).toBe('rendered');
+    await click(buttonByText('Source'));
+    expect(surface()!.view()).not.toBe('rendered');
   });
 });
 

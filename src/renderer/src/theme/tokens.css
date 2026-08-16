@@ -1008,29 +1008,10 @@ body {
 .doc-gone {
   box-shadow: inset 3px 0 0 0 var(--status-needs-input-ink);
 }
-.doc-find {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
-  border-block-end: 1px solid var(--border);
-  background: var(--panel);
-}
-.doc-find-input {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text);
-  font-family: var(--font-ui);
-  font-size: 11px;
-  padding: 2px 6px;
-  inline-size: 220px;
-}
-.doc-find-count {
-  color: var(--muted);
-  font-size: 11px;
-  min-inline-size: 8ch;
-}
+/* The viewer's private find bar is gone (#533) — it publishes a find surface
+   and the shared §5.31 bar draws itself over the panel. The MARK styles it
+   painted with are still below, under `.doc-md mark[data-doc-match]`, because
+   the marking is the half that moved into the provider rather than away. */
 .doc-body-message {
   padding: 16px 18px;
   color: var(--muted);

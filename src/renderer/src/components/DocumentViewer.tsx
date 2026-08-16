@@ -46,6 +46,9 @@ import {
   OutlineEntry,
 } from '../lib/document-render';
 import { applyMatches, clearMatches, focusMatch } from '../lib/document-find';
+import { findBarState, findQuery } from '../lib/find-bar-state';
+import { findSurfaceKey, publishFindSurface, type DocumentFindSurface } from '../lib/find-surfaces';
+import { openMonacoFind, type FindableEditor } from '../lib/monaco-find';
 
 const DocumentSource = React.lazy(() => import('./DocumentSource'));
 
@@ -85,6 +88,16 @@ export interface DocumentAttribution {
 export interface DocumentViewerProps {
   /** the absolute path this viewer opened on */
   path: string;
+  /**
+   * The dockview panel this viewer is the content of (`doc-3`), which is how
+   * the §5.31 find bar names it (#533).
+   *
+   * Optional because a unit test mounts the component with no panel around it.
+   * Absent means the find surface is not published, and Ctrl+F over this viewer
+   * finds nothing to search — which is the correct answer for a viewer nobody
+   * can name.
+   */
+  panelId?: string;
   colorScheme: 'light' | 'dark';
   /** the panel's tab title follows relative-link navigation */
   onTitleChange?: (title: string) => void;
@@ -356,9 +369,16 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollMemo.current.rendered;
     // The marks belonged to the OLD document — `replaceChildren` just deleted
     // them, so the bar would sit there reading "1 of 5" over a document with no
-    // highlights in it. Re-run against the new body instead of pretending.
-    if (findOpenRef.current) runFindRef.current(queryRef.current);
-  }, [showRendered, renderedHtml, labels, current]);
+    // highlights in it. Re-mark against the new body instead of pretending.
+    //
+    // The bar's own state is READ, not driven: there is no way to ask it to
+    // re-run its query, so a rewrite that changes how many matches there are
+    // leaves its COUNT one keystroke stale. The highlights are the thing the
+    // reader is looking at (#520 — a jump with no visible mark reads as broken),
+    // and they are right; the number catches up on the next keystroke.
+    const q = findQuery();
+    if (findBarState().openOn === props.panelId && q.term) applyMatches(host, q.term, q);
+  }, [showRendered, renderedHtml, labels, current, props.panelId]);
 
   // The `#fragment` a relative link carried, applied once the body exists.
   React.useEffect(() => {
@@ -368,95 +388,72 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
     setPendingHash(undefined);
   }, [pendingHash, showRendered, renderedHtml]);
 
-  // --- find ---------------------------------------------------------------
-  const [findOpen, setFindOpen] = React.useState(false);
-  const [query, setQuery] = React.useState('');
-  const [matches, setMatches] = React.useState(0);
-  const [matchAt, setMatchAt] = React.useState(-1);
-  const findInputRef = React.useRef<HTMLInputElement | null>(null);
+  // --- find (#533) ---------------------------------------------------------
+  //
+  // THE VIEWER NO LONGER OWNS A FIND BAR. It publishes a `FindSurface` and the
+  // shared §5.31 bar drives it — same Ctrl+F, same chrome and same sticky term
+  // as every other panel in the app, with a results list the private bar never
+  // had. What used to live here (a bar, four pieces of state, a debounce and a
+  // keydown listener) is `extensibility/find-providers.ts`'s `find-document`
+  // and `components/FindBar.tsx` now.
+  //
+  // THE KEYDOWN LISTENER IS GONE ON PURPOSE, and it is worth knowing why rather
+  // than re-adding it: it was attached to this component's ROOT DIV and nothing
+  // in that subtree is focusable, so unless the user had first clicked a button
+  // in the header the keydown's target was `document.body` and the event never
+  // bubbled through here at all. It was dead code, and the reason Ctrl+F looked
+  // broken over a document. The keystroke arrives through the app's dispatcher
+  // now (`find.open` + `GridController.activeDocumentId`), which works wherever
+  // focus happens to be — including in a popped-out viewer's own window.
+  const sourceEditor = React.useRef<FindableEditor | null>(null);
+  // Read by the surface's methods, which are called from OUTSIDE React's render
+  // (a keydown, then the bar's effects) and must see what is true now.
+  const showRenderedRef = React.useRef(false);
+  showRenderedRef.current = showRendered;
+  // The editor's ARRIVAL, as state rather than only as a ref — see the effect's
+  // deps below for why a ref alone would leave the bar greyed.
+  const [sourceReady, setSourceReady] = React.useState(false);
 
-  const runFind = React.useCallback((q: string) => {
-    const host = bodyRef.current;
-    if (!host) return;
-    const count = applyMatches(host, q);
-    setMatches(count);
-    setMatchAt(count > 0 ? focusMatch(host, 0) : -1);
-  }, []);
-
-  // Read by the decorate effect, which must not re-run when a keystroke changes
-  // the query — it would re-parse and re-decorate the whole document per letter.
-  const findOpenRef = React.useRef(false);
-  const queryRef = React.useRef('');
-  const runFindRef = React.useRef(runFind);
-  runFindRef.current = runFind;
-
-  // The search walks and rewrites every text node in the document, and §5.30
-  // budgets for 2 MiB of them. One pass per keystroke is how "never 'the app
-  // froze'" stops being true; one pass per pause in typing is not felt.
-  const findTimer = React.useRef<number | null>(null);
-  const scheduleFind = React.useCallback(
-    (q: string) => {
-      if (findTimer.current !== null) window.clearTimeout(findTimer.current);
-      findTimer.current = window.setTimeout(() => {
-        findTimer.current = null;
-        runFind(q);
-      }, 120);
-    },
-    [runFind]
-  );
+  const panelId = props.panelId;
   React.useEffect(() => {
-    return () => {
-      if (findTimer.current !== null) window.clearTimeout(findTimer.current);
+    // No panel id means nobody can name this viewer — a unit test mounting the
+    // component directly, and the one case where publishing would be wrong: the
+    // key is what makes "a search cannot reach another panel" structural.
+    if (!panelId) return;
+    const surface: DocumentFindSurface = {
+      kind: 'document',
+      view: () => {
+        if (showRenderedRef.current && bodyRef.current) return 'rendered';
+        if (!showRenderedRef.current && sourceEditor.current?.getModel()) return 'source';
+        // loading, refused, binary (the card), or the editor has not built yet
+        return 'none';
+      },
+      search: (query) => {
+        const host = bodyRef.current;
+        if (!host) return { matches: [], truncated: false };
+        return applyMatches(host, query.term, query);
+      },
+      reveal: (index) => {
+        const host = bodyRef.current;
+        return host ? focusMatch(host, index) >= 0 : false;
+      },
+      clear: () => {
+        if (bodyRef.current) clearMatches(bodyRef.current);
+      },
+      openFind: (term) => openMonacoFind(sourceEditor.current, term),
     };
-  }, []);
+    return publishFindSurface(findSurfaceKey(panelId, 'document'), surface);
+    // RE-PUBLISHED whenever `view()` would answer differently, and that is the
+    // point of the deps rather than an accident of them: the bar is a SIBLING
+    // subtree, so nothing here re-renders it, and a publish is the only signal
+    // it gets (`findSurfacesVersion`). Without this, toggling to Source would
+    // leave the bar still driving a rendered body that has been unmounted, and
+    // the editor arriving a moment later would leave it greyed with "hasn't
+    // finished opening" over an editor that had. Re-publishing is cheap and
+    // explicitly supported — last publisher wins, and the cleanup only deletes
+    // the entry if it is still the one it published.
+  }, [panelId, showRendered, sourceReady]);
 
-  const step = React.useCallback(
-    (delta: number) => {
-      const host = bodyRef.current;
-      if (!host || matches === 0) return;
-      setMatchAt(focusMatch(host, matchAt + delta));
-    },
-    [matches, matchAt]
-  );
-
-  // Clearing on close is not cosmetic: the marks are real nodes, and leaving
-  // them behind would make the next search match inside its own highlights.
-  const closeFind = React.useCallback(() => {
-    if (findTimer.current !== null) window.clearTimeout(findTimer.current);
-    findTimer.current = null;
-    setFindOpen(false);
-    setQuery('');
-    setMatches(0);
-    setMatchAt(-1);
-    findOpenRef.current = false;
-    queryRef.current = '';
-    if (bodyRef.current) clearMatches(bodyRef.current);
-  }, []);
-
-  const rootRef = React.useRef<HTMLDivElement | null>(null);
-  React.useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const onKey = (e: KeyboardEvent): void => {
-      // Scoped to THIS panel's subtree, which is the whole argument against
-      // `webContents.findInPage` in a docked viewer (§5.30 as corrected): the
-      // main window holds other sessions' panes, and a find that reaches them
-      // is a find that lies about where its matches are.
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && mode === 'rendered') {
-        e.preventDefault();
-        e.stopPropagation();
-        setFindOpen(true);
-        findOpenRef.current = true;
-        // after paint, so the input exists
-        requestAnimationFrame(() => findInputRef.current?.focus());
-      } else if (e.key === 'Escape' && findOpen) {
-        e.preventDefault();
-        closeFind();
-      }
-    };
-    root.addEventListener('keydown', onKey);
-    return () => root.removeEventListener('keydown', onKey);
-  }, [mode, findOpen, closeFind]);
 
   // --- clicks inside the rendered body ------------------------------------
   const activate = React.useCallback(
@@ -503,7 +500,12 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
     if (mode === 'rendered' && scrollRef.current) {
       scrollMemo.current.rendered = scrollRef.current.scrollTop;
     }
-    if (findOpen) closeFind();
+    // Leaving the rendered body takes its marks with it — they are real nodes
+    // in a tree that is about to be unmounted, and the next search would
+    // otherwise match inside its own highlights. The BAR stays open across the
+    // toggle, and switches from driving us to delegating to Monaco, because
+    // `modeFor` is asked of the live surface on every render.
+    if (bodyRef.current) clearMatches(bodyRef.current);
     setMode(next);
   };
 
@@ -519,7 +521,6 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
   return (
     <div
       className={`doc-viewer${attribution ? ' doc-attributed' : ''}`}
-      ref={rootRef}
       style={rootStyle}
       data-testid="document-viewer"
     >
@@ -653,62 +654,6 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
         </div>
       ) : null}
 
-      {findOpen && showRendered ? (
-        <div className="doc-find" role="search">
-          <input
-            ref={findInputRef}
-            className="doc-find-input"
-            type="text"
-            value={query}
-            placeholder={t('document.findPlaceholder')}
-            aria-label={t('document.find')}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              queryRef.current = e.target.value;
-              scheduleFind(e.target.value);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                step(e.shiftKey ? -1 : 1);
-              }
-            }}
-          />
-          <span className="doc-find-count" data-testid="doc-find-count">
-            {matches === 0
-              ? t('document.findNone')
-              : t('document.findCount', { n: matchAt + 1, total: matches })}
-          </span>
-          <button
-            type="button"
-            className="doc-btn"
-            onClick={() => step(-1)}
-            title={t('document.findPrev')}
-            aria-label={t('document.findPrev')}
-          >
-            {t('document.icon.back')}
-          </button>
-          <button
-            type="button"
-            className="doc-btn"
-            onClick={() => step(1)}
-            title={t('document.findNext')}
-            aria-label={t('document.findNext')}
-          >
-            {t('document.icon.forward')}
-          </button>
-          <button
-            type="button"
-            className="doc-btn"
-            onClick={closeFind}
-            title={t('document.close')}
-            aria-label={t('document.close')}
-          >
-            {t('document.icon.close')}
-          </button>
-        </div>
-      ) : null}
-
       {loading ? (
         <div className="doc-body-message" role="status">
           {t('document.loading')}
@@ -820,6 +765,13 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
               initialScrollTop={scrollMemo.current.source}
               onScrollTop={(top) => {
                 scrollMemo.current.source = top;
+              }}
+              // §5.31 delegates the source body's find to Monaco's own widget
+              // rather than reimplementing it (#533). Held structurally, so the
+              // viewer still never imports monaco.
+              onEditor={(editor) => {
+                sourceEditor.current = editor;
+                setSourceReady(!!editor);
               }}
             />
           </React.Suspense>

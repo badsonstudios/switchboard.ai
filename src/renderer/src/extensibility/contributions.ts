@@ -434,6 +434,21 @@ export interface FindProviderContribution {
   order: number;
   mode: FindMode;
   /**
+   * The mode for THIS surface, when one registrant can be both (#533).
+   *
+   * Optional, and three of the four registrants do not define it: a Session
+   * view is a Session view. The document viewer is not — its header toggles
+   * between rendered markdown, which our bar marks and steps, and a Monaco
+   * source body, which §5.31 says to hand over whole. One panel, one provider,
+   * and which body is on screen is a runtime question; `mode` is the answer
+   * when this is absent or throws, so the static declaration stays the contract
+   * and this is the exception it may claim.
+   *
+   * Read through `findMode()` (find-providers), never directly — like every
+   * other predicate at this point it is called through the boundary.
+   */
+  modeFor?(ctx: FindContext): FindMode;
+  /**
    * Why find cannot run here RIGHT NOW — an i18n key, or null when it can.
    *
    * The greyed bar's whole job is to say WHICH surface it cannot search and
