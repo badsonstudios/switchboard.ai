@@ -175,6 +175,21 @@
 > orchestrator/ junk removed first). All three prompts carry the
 > SWITCHBOARD_E2E_MONITOR=2 standing rule.
 >
+> **#531 ✅ RECOVERED + DONE → PR #551 READY (Dan/train, queue
+> #10).** ALL dead-worker WIP survived verification (kept, diffed
+> line-by-line); TWO rewrites beyond it: the popout key bridge
+> raised main over the just-parented dialog (raisedOtherWindowRef
+> opt-out), and — review-found BLOCKER — **dock-back killed the
+> live session in the neighbouring tab** (dockview returns every
+> member of a closing popout unflagged → dropLive+suspend; ⤴ now
+> moves the panel when the window has company). 3 popout-lane e2e
+> incl. dialog-parent assertions read from the stub. 4672 unit /
+> 287+3 e2e zero flakes, monitor-2 throughout. Checkpoint stash
+> dropped. Accepted limitation flagged: failing Ctrl+N in a popout
+> reports via the main window's banner. Dead-waiter trap hit AGAIN
+> mid-item (ended turn on a lock waiter) — resumed in-turn, run-3
+> lesson holds. In flight: #407 (wt-2) · #482 (wt-3, holds lock).
+>
 > # (0.5.0 ship record follows)
 > # ✅ v0.5.0 SHIPPED 2026-08-14 (same-day as v0.4.0)
 >
