@@ -190,6 +190,22 @@
 > mid-item (ended turn on a lock waiter) — resumed in-turn, run-3
 > lesson holds. In flight: #407 (wt-2) · #482 (wt-3, holds lock).
 >
+> **#482 ✅ DONE → PR #552 READY (Dan/train, queue #11).** Decision
+> pinned: classification per ACTION by AUDIENCE — webhook is
+> machine-facing and DELIVERS during quiet hours (mutation-tested:
+> flipping it reds the e2e); unknown types count as person;
+> Rule.quietHours obey|ignore escape hatch both ways. Quiet hours
+> moved from notifier's global gate into the engine per-action —
+> BEHAVIOR CHANGE (webhooks now fire overnight), CHANGELOG Changed
+> + manual + dialog hint all say so. Clock injected from ONE place;
+> rules.ts stays clock-free; DST pinned under forced
+> America/Chicago. Suppression record = shared/suppressed.ts,
+> FIFO 200, #483's IPC needs documented in 482.md. Six defects
+> fixed pre-push incl. a dialog DATA-LOSS bug and a vacuous test.
+> 4778 unit (+112) / 286+3 e2e, zero flakes. UI = palette + About
+> button, NO twelfth chip. **In flight: #407 ONLY (wt-2, retook
+> the lock — endgame).**
+>
 > # (0.5.0 ship record follows)
 > # ✅ v0.5.0 SHIPPED 2026-08-14 (same-day as v0.4.0)
 >
