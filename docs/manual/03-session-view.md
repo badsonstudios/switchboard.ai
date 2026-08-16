@@ -159,6 +159,13 @@ The box at the bottom sends straight to the real Claude Code session:
 Under the box is a row showing this session's **autonomy mode** (click to
 cycle) and the **model** it last used.
 
+**A prompt you haven't sent yet is kept.** Start writing, then switch that card
+to the Terminal tab and back, pop it out into its own window, dock it back, or
+quit switchboard entirely — the words are still in the box when you return to
+it. Each session keeps its own; sending clears it. If you empty the box, nothing
+is kept, and a draft is forgotten when you close the session for good. A session
+you left suspended gets its draft back when it resumes.
+
 ### Right-click menus
 
 **Right-click in the prompt box** for **Cut**, **Copy**, **Paste** and **Select

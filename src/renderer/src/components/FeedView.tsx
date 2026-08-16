@@ -22,7 +22,8 @@ import { terminalHandoff, TerminalHandoff, toneToken } from '../lib/terminal-han
 import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
 import { rendererRegistry } from '../extensibility/registry-instance';
 import { renderFeedBlock } from '../extensibility/feed-render';
-import { uiGet, uiSet } from '../lib/ui-state';
+import { uiFlush, uiGet, uiSet } from '../lib/ui-state';
+import { clearDraft, loadDraft, saveDraft } from '../lib/composer-draft';
 import { interruptSession, submitPrompt } from '../lib/composer';
 import { ComposerAttachments } from './ComposerAttachments';
 import {
@@ -879,7 +880,16 @@ export function FeedView(props: {
           so the two can never appear together. */}
       {handoff && <TerminalHandoffBar handoff={handoff} onJump={props.onJumpToTerminal} />}
       <Composer
+        // The saved draft is seeded ONCE, on mount (#485), so a Composer whose
+        // card id changed under it would carry the old card's words onto the
+        // new one at the first keystroke. Nothing calls `updateParameters` with
+        // a new `cardId` today — but `sessionId` DOES churn on resume, the two
+        // sit next to each other, and the next reader will not know which is
+        // which. `key` makes the hazard structurally impossible for one word.
+        key={props.cardId}
         sessionId={props.sessionId}
+        // the durable key the saved draft is filed under (#485)
+        cardId={props.cardId}
         autonomy={props.autonomy}
         model={props.model}
         status={props.status}
@@ -1161,6 +1171,7 @@ function roomForBox(own: HTMLElement | null, el: HTMLElement): number | undefine
  */
 function Composer({
   sessionId,
+  cardId,
   autonomy,
   model,
   status,
@@ -1168,6 +1179,8 @@ function Composer({
   onCycleAutonomy,
 }: {
   sessionId: string;
+  /** durable key for this card's saved draft (#485) — the live id churns */
+  cardId?: string;
   autonomy?: string;
   model?: string;
   status?: string;
@@ -1176,7 +1189,19 @@ function Composer({
   onCycleAutonomy?: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
-  const [draft, setDraft] = React.useState('');
+  // The draft OUTLIVES this component (#485). It is seeded from the workspace
+  // `ui` blob on mount and written back on every change, because the component
+  // dies far more often than the user's intent does: switching to the Terminal
+  // tab unmounts this panel, the stranded-popout rescue rebuilds the card, and
+  // quitting ends it. `composer-draft.ts` has the whole argument.
+  const [draft, setDraftState] = React.useState(() => loadDraft(cardId));
+  const setDraft = React.useCallback(
+    (text: string): void => {
+      setDraftState(text);
+      saveDraft(cardId, text);
+    },
+    [cardId]
+  );
   const box = React.useRef<HTMLTextAreaElement | null>(null);
   /** the composer's own root — the auto-grow measures the panel through it */
   const root = React.useRef<HTMLDivElement | null>(null);
@@ -1539,6 +1564,19 @@ function Composer({
   /** something to send: words, a picture, or both (E10-09) */
   const sendable = draft.trim().length > 0 || attachments.length > 0;
 
+  /**
+   * The prompt went — empty the box AND forget the saved copy, at once.
+   *
+   * Not `setDraft('')`: that would leave the deletion on `uiSetSoon`'s timer,
+   * and a quit or a remount inside that window would restore a prompt the user
+   * has already sent onto an empty composer. Late-to-save costs keystrokes;
+   * late-to-clear looks like the app un-sending your message.
+   */
+  const clearComposerDraft = (): void => {
+    setDraftState('');
+    clearDraft(cardId);
+  };
+
   const submit = (): void => {
     const text = draft.replace(/\r\n/g, '\n').trimEnd();
     // An attachment with nothing typed IS a prompt (§5.10's composer is an
@@ -1553,7 +1591,7 @@ function Composer({
       // the two routes always accepts it — so the box clears immediately and
       // the send stays as snappy as it was.
       void submitPrompt(sessionId, text);
-      setDraft('');
+      clearComposerDraft();
       setDismissed(false);
       setAttachNotice(null);
       box.current?.focus();
@@ -1579,7 +1617,7 @@ function Composer({
         setAttachNotice(t('feedView.attach.notSent'));
         return;
       }
-      setDraft('');
+      clearComposerDraft();
       setDismissed(false);
       setAttachments((prev) => prev.filter((a) => !sent.has(a.id)));
       setAttachNotice(null);
@@ -1715,6 +1753,13 @@ function Composer({
         }}
         onClick={syncCaret}
         onKeyUp={syncCaret}
+        // Leaving the box is the moment waiting stops being an economy (#485):
+        // clicking anywhere else in the app, or alt-tabbing away, sends the
+        // draft immediately instead of letting it ride the debounce. It does
+        // NOT cover the window's ✕ — that is OS chrome and fires no DOM blur —
+        // so the residual hole is "type and quit within 400ms without leaving
+        // the box", which is the tolerance `composer-draft.ts` argues for.
+        onBlur={uiFlush}
         onKeyDown={(e) => {
           // confirming an IME candidate (CJK input) also fires Enter — never
           // submit a half-composed draft (keyCode 229 covers WebKit quirks)
