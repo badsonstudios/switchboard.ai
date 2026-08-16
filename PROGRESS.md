@@ -135,6 +135,23 @@
 > adjacency with #531 noted). In flight: #407 (wt-2) · #532/#531
 > (wt-1) · #520 (wt-3).
 >
+> **#520 ✅ DONE → PR #549 READY (Dan/train).** Session view marks
+> the term: current match bright (--status-working-ink), others
+> quiet; shared idiom extracted (lib/text-marks.ts, viewer keeps
+> its attrs); jumpTo carries the query; ALSO fixes the tall-block
+> case (scroll-to-mark within the block). Load-bearing constraint
+> documented: never split React-TRACKED text nodes (streaming
+> branch would freeze + throw). Review caught marks on our own
+> chrome (searching 'copy' painted UI words) + matcher duplication
+> (now shared/find-matching.ts both sides of the process boundary).
+> Copy purity pinned. 4715 unit / 284 e2e. New flake sighting →
+> **#550** (commands.spec:212 boot timeout). **#482 quiet-hours
+> dispatched → wt-3** (suppression record = #483's data seam;
+> webhook-applicability decision delegated to worker; NO twelfth
+> title-bar chip). In flight: #407 (wt-2) · #532/#531 (wt-1) ·
+> #482 (wt-3). Dan/train queue (8): #535 #536 #537 #540 #542 #545
+> #547 #549.
+>
 > # (0.5.0 ship record follows)
 > # ✅ v0.5.0 SHIPPED 2026-08-14 (same-day as v0.4.0)
 >
