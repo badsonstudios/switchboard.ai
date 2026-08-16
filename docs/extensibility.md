@@ -132,7 +132,7 @@ puts a thing on a bar. A contract that has only ever seen one shape of consumer
 has not been tested, and the Phase-4 gate asks for dissimilar consumers for
 exactly that reason.
 
-Three rules those points established, worth knowing before you add another:
+Four rules those points established, worth knowing before you add another:
 
 - **A contribution never takes the window down.** Predicates (`enabled`,
   `badge`, `matches`) are called through `safely()` and a throw counts as the
@@ -149,6 +149,18 @@ Three rules those points established, worth knowing before you add another:
   Session view's arrow-key navigation walks. A renderer that wraps in `ToolBox`
   and skips the expander ships with no keyboard path at all — and nothing will
   fail to tell you, which is why it is written down here.
+- **A feed block's body text gets its own element** (#520). Find MARKS the
+  searched term by splitting text nodes inside the block it jumped to, and it
+  only splits text React does not track: an element whose lone child is a
+  string, or anything below a `dangerouslySetInnerHTML` container. So
+  `<pre>{text}</pre>` is marked and `<span>{a}{b}</span>` is skipped —
+  deliberately, and safely. The shape to avoid is the one that looks like the
+  first and behaves like the second: `<span>{label}{flag && <b/>}</span>`
+  renders one DOM child when `flag` is false while React still holds a
+  reference to that text node, and marking it is a lost update or a
+  `removeChild` on a detached node mid-conversation. The rule, and why those
+  two shapes and no others, is in
+  [`lib/feed-marks.ts`](../src/renderer/src/lib/feed-marks.ts).
 - **A panel is greyed, never hidden.** `PanelContribution` has `enabled` and
   deliberately no "hide me": §5.8 says the user can always see what exists. A
   tab that vanishes teaches them the app is unpredictable; a greyed one tells

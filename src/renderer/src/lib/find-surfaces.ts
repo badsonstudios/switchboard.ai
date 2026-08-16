@@ -41,13 +41,20 @@ export interface FeedFindSurface extends FindSurface {
   kind: 'feed';
   /**
    * Reveal a live Feed `seq`: force it past the verbosity filter, expand
-   * whatever was folded over it, mark it, and scroll it into view.
+   * whatever was folded over it, ring it, MARK THE TERM inside it, and scroll
+   * it into view.
+   *
+   * `query` is what the bar is looking for, and it is what the marks are
+   * painted from (#520): before it, the feed knew where to scroll and not what
+   * to point at, so a jump landed you near the match with nothing highlighted.
+   * Optional because a caller with no query still gets the reveal — the marks
+   * are the part that needs the term, not the jump.
    *
    * Returns whether the block is IN the view buffer at all. False is the
    * §5.31 v1 boundary, and the caller must not pretend it jumped.
    */
-  jumpTo(seq: number): boolean;
-  /** drop the reveal set and the highlight — the view as find found it */
+  jumpTo(seq: number, query?: FindQuery): boolean;
+  /** drop the reveal set, the ring and the marks — the view as find found it */
   clear(): void;
 }
 

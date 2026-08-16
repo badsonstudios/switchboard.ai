@@ -279,6 +279,30 @@ const FILLED_RULES: Array<[string, number]> = [
 ];
 
 /**
+ * FIND MARKS (#520) — the same measurement, a separate list for one reason:
+ * nothing puts these on screen with a `className`.
+ *
+ * A mark is an ELEMENT the find code creates (`lib/text-marks.ts` writes
+ * `<mark data-…-match>`), so the "is applied by a component" scan below — which
+ * looks for the class inside a `className=` prop — would fail on a rule that is
+ * perfectly live. The attribute IS the selector, and the thing that proves it
+ * is applied is `feed-marks.test.ts` / `document-find.test.ts`, which assert on
+ * the marked DOM.
+ *
+ * Held to AA rather than the banners' floor for the same reason they are: a
+ * highlight nobody can read is not a subtler highlight, it is the bug #520 was
+ * filed over with more colour in it. Both surfaces are on the list because they
+ * deliberately share the two token pairs, and a list with one of them on it
+ * would let the other drift.
+ */
+const MARK_RULES: Array<[string, number]> = [
+  ['mark[data-feed-match]', 4.5],
+  ['mark[data-feed-match-current]', 4.5],
+  ['.doc-md mark[data-doc-match]', 4.5],
+  ['.doc-md mark[data-doc-match-current]', 4.5],
+];
+
+/**
  * The rules whose background is a color-mix of a hue into a surface. Declared
  * up here with FILLED_RULES because the applied-by-a-component scan below
  * reads both — vitest collects describe() bodies lazily so a later const
@@ -392,7 +416,7 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))(
   (id, theme) => {
     const tokens = resolved(theme);
 
-    it.each(FILLED_RULES)('%s clears %s:1', (selector, min) => {
+    it.each([...FILLED_RULES, ...MARK_RULES])('%s clears %s:1', (selector, min) => {
       const [ink, fill] = pair(selector);
       for (const token of [ink, fill]) {
         expect(tokens[token], `${id} ${token} must be #rrggbb to be measured`).toMatch(

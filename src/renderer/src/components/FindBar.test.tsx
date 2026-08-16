@@ -129,22 +129,26 @@ describe('the find bar’s browser rhythm (P2-E17-02, §5.31)', () => {
     await act(async () => setFindTerm('x'));
     await settle();
 
-    expect(jumpTo).toHaveBeenLastCalledWith(4); // the first, automatically
+    // ...and every step hands the feed the QUERY as well as the seq (#520),
+    // because a surface that MARKS what it reveals cannot know the term any
+    // other way. Asserted once, in full, here; the steps below check the seq.
+    expect(jumpTo).toHaveBeenLastCalledWith(4, { term: 'x', caseSensitive: false, wholeWord: false });
 
     const input = q<HTMLInputElement>(host, 'find-input')!;
     const enter = (shift: boolean): Promise<void> =>
       act(async () => {
         input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: shift, bubbles: true }));
       });
+    const landedOn = (): unknown => jumpTo.mock.lastCall?.[0];
 
     await enter(false);
-    expect(jumpTo).toHaveBeenLastCalledWith(9);
+    expect(landedOn()).toBe(9);
     await enter(false);
-    expect(jumpTo).toHaveBeenLastCalledWith(12);
+    expect(landedOn()).toBe(12);
     await enter(false); // wraps
-    expect(jumpTo).toHaveBeenLastCalledWith(4);
+    expect(landedOn()).toBe(4);
     await enter(true); // and back
-    expect(jumpTo).toHaveBeenLastCalledWith(12);
+    expect(landedOn()).toBe(12);
   });
 
   it('counts honestly when there is nothing there', async () => {
@@ -262,7 +266,7 @@ describe('the §5.31 v1 boundary, rendered', () => {
     });
     const rows = Array.from(host.querySelectorAll<HTMLElement>('[data-find-hit]'));
     await act(async () => rows[1].click());
-    expect(jumpTo).toHaveBeenLastCalledWith(11);
+    expect(jumpTo).toHaveBeenLastCalledWith(11, { term: 'x', caseSensitive: false, wholeWord: false });
   });
 });
 

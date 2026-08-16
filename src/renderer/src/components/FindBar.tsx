@@ -335,10 +335,25 @@ export function FindBar(props: {
     if (!entry?.p.reveal) return;
     // a provider that says it did NOT move is not an error — the list is where
     // that match lives, the same policy the transcript's evicted hits get
+    //
+    // `findQuery()` rather than a closed-over term (#520): a surface that
+    // decorates what it reveals needs the term, and reading the LIVE bar state
+    // here keeps this callback dependency-free — closing over the three query
+    // fields would rebuild it on every keystroke and re-run the search effect
+    // that depends on it.
+    //
+    // For the AUTO-reveal the two cannot disagree: the effect checks
+    // `cancelled` before it reveals, so a term that changed under the await has
+    // already abandoned this step. For an Enter or a row click inside the
+    // debounce window they can, briefly — `view` still holds the previous
+    // term's hits — and the surface then jumps to the old hit and decorates the
+    // new term. It is one keystroke's worth of wrong and the next search
+    // corrects it; carrying the query on the step set is the fix if it ever
+    // reads as a bug rather than as latency.
     const moved = safely(
       entry.p.manifest.id,
       'reveal()',
-      () => entry.p.reveal?.(entry.groupCtx, step.hit) ?? false,
+      () => entry.p.reveal?.(entry.groupCtx, step.hit, findQuery()) ?? false,
       false,
     );
     if (!moved) setFindListOpen(true);

@@ -26,7 +26,7 @@ Last updated: 2026-08-15 (Dan's first full pass over v0.4.0 + v0.5.0).
 
 | What | Blocked on | Re-test |
 |---|---|---|
-| Find highlight in session view | #520 | Jump must visibly mark the term |
+| Find highlight in session view | #520 (fix landed) | Ctrl+F a word: current match brightly marked, others quietly, marks gone on Esc, Copy on a fence with a match still copies clean text |
 | Update auto-restart | #525 | Next release install should close + reopen itself |
 | Right-click menus | #526 | Composer paste (text AND image→chip), copy on feed selection |
 | Links in replies | #527 | Click https link → default browser; javascript: inert |

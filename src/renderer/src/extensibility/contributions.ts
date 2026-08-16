@@ -217,6 +217,21 @@ export interface PanelContribution {
  * `kind === 'tool'`, and the first match wins — exactly as the hand-written
  * ternary chain did. A renderer that matches everything (the markdown
  * fallback) must therefore sort last.
+ *
+ * ONE RULE ABOUT TEXT, because find writes into what you render (#520). The
+ * Session view marks the searched term by splitting the text nodes of the block
+ * it jumped to, and it only splits text React does not TRACK: an element whose
+ * lone child is a string, or anything below a `dangerouslySetInnerHTML`
+ * container. So render a block's body text as `<pre>{text}</pre>` — one string
+ * child — and it gets marked. Compose it out of several children
+ * (`<span>{a}{b}</span>`) and it is skipped, deliberately and safely.
+ *
+ * The shape to avoid is the one that LOOKS like the first and is the second:
+ * `<span>{label}{flag && <b/>}</span>` renders one DOM child when `flag` is
+ * false while React still tracks the text node. Marking that one is a lost
+ * update, or a `removeChild` on a detached node mid-conversation. If a
+ * renderer's body text is conditional, give the text its own element. The rule
+ * and its reasoning live in `lib/feed-marks.ts`.
  */
 export interface FeedBlockRendererContribution {
   manifest: CapabilityManifest;
@@ -460,9 +475,16 @@ export interface FindProviderContribution {
   delegate?(ctx: FindContext, query: FindQuery): boolean;
   /** `bar` only: run a query. Never throws — see the point's fail-open rule. */
   search?(ctx: FindContext, query: FindQuery): Promise<FindResults>;
-  /** `bar` only: scroll to a hit, expanding whatever the view was hiding.
-   *  Returns whether it actually moved. */
-  reveal?(ctx: FindContext, hit: FindHit): boolean;
+  /**
+   * `bar` only: scroll to a hit, expanding whatever the view was hiding.
+   * Returns whether it actually moved.
+   *
+   * `query` is the search the hit came from, handed back so a surface can
+   * DECORATE what it reveals (#520 — the Session view marks the term in the
+   * block it lands in, which is what the Terminal group has done through the
+   * search addon since #516). A provider that only scrolls ignores it.
+   */
+  reveal?(ctx: FindContext, hit: FindHit, query: FindQuery): boolean;
   /** `bar` only: drop highlights when the bar closes */
   clear?(ctx: FindContext): void;
 }

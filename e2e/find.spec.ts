@@ -48,6 +48,11 @@ function seedTranscript(home: string, folder: string, term: string, times: numbe
 const bar = (w: Page) => w.locator('[data-testid="find-bar"]');
 const count = (w: Page) => w.locator('[data-testid="find-count"]');
 const groups = (w: Page) => w.locator('[data-testid="find-groups"]');
+// #520's marks. The attribute, not the tag: the results list renders a plain
+// `<mark>` around each snippet's match, and a bare `mark` locator would count
+// the bar's own chrome as feed paint and pass with nothing highlighted at all.
+const marks = (w: Page) => w.locator('mark[data-feed-match]');
+const currentMark = (w: Page) => w.locator('mark[data-feed-match-current]');
 
 test.describe('[pty] Session find (E17-02)', () => {
   let a: LaunchedApp;
@@ -124,6 +129,45 @@ test.describe('[pty] Session find (E17-02)', () => {
     // the term is STICKY: re-opening finds it still there
     await w.keyboard.press(`${MOD}+f`);
     await expect(w.locator('[data-testid="find-input"]')).toHaveValue('STEP_ME');
+  });
+
+  // #520, reported by the owner against a shipped build: "stepping through
+  // matches scrolls the session up and down, but I just don't see where the
+  // word is that I'm searching for." Everything the bar did was correct and
+  // nothing on screen pointed at the match, which the Terminal group's real
+  // decorations (#516) made read as broken rather than as bounded.
+  test('the matched term is MARKED in the feed, and the marks go when the bar does', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+    seedTranscript(a.home, folder, 'MARK_ME', 3, 'ONE_CARD');
+    await expect(w.getByText(/ONE_CARD/).first()).toBeVisible({ timeout: 25_000 });
+
+    await w.keyboard.press(`${MOD}+f`);
+    await w.locator('[data-testid="find-input"]').fill('MARK_ME');
+    await expect(count(w)).toHaveText('1 of 3', { timeout: 15_000 });
+
+    // every occurrence on screen is marked...
+    await expect(marks(w)).toHaveCount(3);
+    // ...exactly ONE of them is the current match, and it is the term itself
+    // rather than the block it sits in
+    await expect(currentMark(w)).toHaveCount(1);
+    await expect(currentMark(w)).toHaveText('MARK_ME');
+    // and it is where the jump left the viewport — the done-when in one line
+    await expect(currentMark(w)).toBeInViewport();
+
+    // stepping moves the current mark and never grows a second one
+    await w.keyboard.press('Enter');
+    await expect(count(w)).toHaveText('2 of 3');
+    await expect(currentMark(w)).toHaveCount(1);
+    await expect(currentMark(w)).toBeInViewport();
+
+    // closing puts the conversation back exactly as find found it
+    await w.keyboard.press('Escape');
+    await expect(bar(w)).toHaveCount(0);
+    await expect(marks(w)).toHaveCount(0);
+    await expect(w.getByText(/MARK_ME/).first()).toBeVisible();
   });
 
   // The Terminal used to be this file's "a tab with no provider greys the bar"
@@ -285,6 +329,13 @@ test.describe('Session find on a Direct session (#458)', () => {
     await expect(
       w.locator('[data-feed-box="bash"]').getByText('STREAM_OUT_LINE2')
     ).toBeVisible({ timeout: 15_000 });
+
+    // …and it is MARKED (#520), on this transport too. The mark is the part
+    // that makes the jump legible: without it the block opens and the eye still
+    // has to re-read four lines of tool output to find the word.
+    await expect(w.locator('[data-feed-box="bash"]').locator('mark[data-feed-match-current]')).toHaveCount(1);
+    await expect(currentMark(w)).toHaveText('STREAM_OUT_LINE2');
+    await expect(currentMark(w)).toBeInViewport();
 
     await w.keyboard.press('Escape');
     await w.getByRole('button', { name: 'normal', exact: true }).click();

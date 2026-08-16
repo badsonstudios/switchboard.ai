@@ -393,6 +393,36 @@ body {
   padding: 2px 6px;
 }
 
+/* Find marks in the conversation (#520, §5.31).
+ *
+ * The document viewer's `.doc-md mark[data-doc-*]` pair, in the feed — one mark
+ * idiom over two surfaces, deliberately the same two token pairs so a change to
+ * either is a visible non-change to the other (`lib/text-marks.ts` holds the
+ * mechanism they share).
+ *
+ * NOT scoped to `.feed-md`, and that is the difference from the viewer: a match
+ * is as likely to be in a tool's output or a folded thought — components, not
+ * rendered markdown — as in assistant prose. The attribute is the scope, and it
+ * is one the conversation cannot forge: `data-feed-match*` sits inside
+ * `FEED_DECORATION`'s `data-feed` prefix, so the guard-first pass in
+ * `decorateFeedMarkdown` takes it back off assistant HTML before any of ours is
+ * written (#465).
+ *
+ * The CURRENT match is the loud one — it is the answer to "where is the word",
+ * and it wears the same ink as the ring `FeedView` draws round the block it
+ * landed in, so the two read as one gesture. The others are the quiet chip
+ * fill: present enough to count by eye, quiet enough that a term occurring
+ * thirty times does not repaint the session. */
+mark[data-feed-match] {
+  color: var(--text);
+  background: var(--chip);
+  border-radius: 2px;
+}
+mark[data-feed-match-current] {
+  color: var(--bg);
+  background: var(--status-working-ink);
+}
+
 /* Copy button on code in the conversation (#477, P2-E10-11).
  *
  * The document viewer's `.doc-code*` rules, in the feed's type scale — one

@@ -15,6 +15,8 @@ import {
   useCurrentHit,
 } from '../lib/feed-reveal';
 import { findSurfaceKey, publishFindSurface, type FeedFindSurface } from '../lib/find-surfaces';
+import { clearFeedMarks, markFeedMatches, moveCurrentMark, sameFindQuery } from '../lib/feed-marks';
+import type { FindQuery } from '../extensibility/contributions';
 import { emptyStateCopy } from '../lib/binding-copy';
 import { terminalHandoff, TerminalHandoff, toneToken } from '../lib/terminal-handoff';
 import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
@@ -503,16 +505,27 @@ export function FeedView(props: {
   // whatever the view was hiding. The SEARCH itself is main's (E17-01) and the
   // bar's; this is only the "and show me" half.
   const [reveal, setReveal] = React.useState<FeedReveal>(NO_REVEAL);
+  // What the marks are painted from (#520). NOT in `FeedReveal`, which is a
+  // context every block renderer reads: the term changes on every keystroke and
+  // putting it there would re-render the whole conversation to repaint marks
+  // the DOM pass writes anyway. Held as state rather than a ref because the
+  // layout effect below has to re-run when it changes — a new term over the
+  // same landed block is the common case while typing.
+  const [markQuery, setMarkQuery] = React.useState<FindQuery | null>(null);
   // read by `jumpTo`, which is called from the bar OUTSIDE React's commit and
   // must therefore not close over a render's `blocks`
   const blocksRef = React.useRef(blocks);
   blocksRef.current = blocks;
   const jumpTo = React.useCallback(
-    (seq: number): boolean => {
+    (seq: number, query?: FindQuery): boolean => {
       // The block is not in the view buffer — evicted, or not drained yet.
       // Refusing is the point: the caller renders the hit as snippet-only
       // rather than scrolling somewhere arbitrary and calling it the match.
       if (!blocksRef.current.some((b) => b.seq === seq)) return false;
+      // same question, same object: React bails out of an identical state, so
+      // stepping between hits of ONE search does not re-run the marking pass
+      // for the term half — only for the block it moved to
+      setMarkQuery((prev) => (sameFindQuery(prev, query ?? null) ? prev : (query ?? null)));
       setReveal((prev) => {
         const next = new Set(prev.revealed);
         next.add(seq);
@@ -544,22 +557,64 @@ export function FeedView(props: {
    * commit in both, by construction, which is also what makes it testable.
    */
   const jumpedTo = reveal.current;
+  // what the marks on the page were painted from, so a STEP does not repeat a
+  // pass whose only different answer is which mark is current
+  const painted = React.useRef<FindQuery | null>(null);
   React.useLayoutEffect(() => {
-    if (jumpedTo === null) return;
     const root = scroller.current;
-    const el = root?.querySelector<HTMLElement>(`[${FEED_SEQ_ATTR}="${jumpedTo}"]`);
-    if (!root || !el) return;
+    if (!root) return;
+    // Marking happens HERE and nowhere else (#520). This effect is the single
+    // writer of feed marks, so "the bar closed" (`jumpedTo` back to null) and
+    // "the term changed" are the same code path as "we jumped", and no exit
+    // leaves paint behind. In the layout phase rather than an effect CLEANUP on
+    // purpose: cleanups run inside React's mutation phase, interleaved with the
+    // DOM writes of the very children whose text we would be un-splitting.
+    if (jumpedTo === null) {
+      clearFeedMarks(root);
+      painted.current = null;
+      return;
+    }
+    const el = root.querySelector<HTMLElement>(`[${FEED_SEQ_ATTR}="${jumpedTo}"]`);
+    // Marks left in place rather than cleared: the block we were told to jump
+    // to is not on the page (evicted between the search and the commit), and
+    // the paint that IS there still answers to the term the bar is showing.
+    if (!el) return;
+    // The step case first: same question, marks already on the page, and the
+    // only thing to do is move the current one. A full pass is a tree walk over
+    // every rendered block, and Enter is a key somebody holds down.
+    // `moveCurrentMark` returns null when the landed block has no marks yet —
+    // it was hidden when the last pass ran — and that is the full pass's cue.
+    const current =
+      (sameFindQuery(painted.current, markQuery) && moveCurrentMark(root, el)) ||
+      markFeedMatches(root, markQuery, el);
+    painted.current = markQuery;
     autoPin.current = true;
     // 24px of air above the block, so a hit at the top of the viewport still
     // reads as being inside a conversation
     root.scrollTop += el.getBoundingClientRect().top - root.getBoundingClientRect().top - 24;
+    // ...and then the MARK, if putting the block's top on screen did not also
+    // put the match on screen. A tool output can be four screens tall, and a
+    // jump that lands on the top of it while the word is below the fold is the
+    // bug this item was filed over, one step less bad. Measured after the first
+    // write, so it is the position the user will actually see — and moved by
+    // the MINIMUM that brings the mark in, so the block's ring stays on screen
+    // with it wherever that is possible.
+    if (current) {
+      const view = root.getBoundingClientRect();
+      const mark = current.getBoundingClientRect();
+      if (mark.bottom > view.bottom) root.scrollTop += mark.bottom - view.bottom + 24;
+      else if (mark.top < view.top) root.scrollTop += mark.top - view.top - 24;
+    }
     lastTop.current = root.scrollTop;
     // `jumpTo` unpinned on purpose; say so on screen in the same commit rather
     // than waiting for the scroll event this write will fire (#442)
     syncOffTail();
     requestAnimationFrame(() => (autoPin.current = false));
-  }, [jumpedTo, syncOffTail]);
-  const clearReveal = React.useCallback(() => setReveal(NO_REVEAL), []);
+  }, [jumpedTo, markQuery, syncOffTail]);
+  const clearReveal = React.useCallback(() => {
+    setReveal(NO_REVEAL);
+    setMarkQuery(null);
+  }, []);
   React.useEffect(() => {
     if (!props.cardId) return; // a card with no durable id cannot be addressed
     const surface: FeedFindSurface = { kind: 'feed', jumpTo, clear: clearReveal };

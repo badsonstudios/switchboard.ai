@@ -30,6 +30,7 @@ import {
   type FeedFindSurface,
 } from '../lib/find-surfaces';
 import { FEED_SEQ_ATTR } from '../lib/feed-reveal';
+import { FEED_MATCH_ATTR, FEED_MATCH_CURRENT_ATTR } from '../lib/feed-marks';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -280,5 +281,126 @@ describe('jumping to a hit expands what the view was hiding (§5.31)', () => {
     });
     expect(blockEl(host, 2)).toBeNull();
     expect(blockEl(host, 3)!.textContent).not.toContain('npm ERR! ENOENT');
+  });
+});
+
+// #520 — the half that was missing. Everything above proves the view MOVES to
+// the hit and OPENS what covered it; the owner's report was that after all that
+// movement nothing on screen said where the word was. These are about the word.
+describe('jumping MARKS the term it landed on (#520)', () => {
+  const marksIn = (el: HTMLElement): string[] =>
+    [...el.querySelectorAll(`mark[${FEED_MATCH_ATTR}]`)].map((m) => m.textContent ?? '');
+  const currentIn = (el: HTMLElement): Element | null =>
+    el.querySelector(`mark[${FEED_MATCH_CURRENT_ATTR}]`);
+
+  it('marks the term inside the block it opened, and calls that one current', async () => {
+    // seq 3's OUT is collapsed AND the error string is on its second line, so
+    // this is the reveal and the mark in one gesture: the block has to be
+    // expanded before there is any text to mark at all.
+    const host = await mountFeed();
+    await act(async () => {
+      surface().jumpTo(3, { term: 'ENOENT' });
+    });
+    const landed = blockEl(host, 3)!;
+    expect(marksIn(landed)).toEqual(['ENOENT']);
+    expect(currentIn(landed)).not.toBeNull();
+    // and the block ring is still there — the two read as one gesture
+    expect(landed.style.outline).not.toBe('');
+  });
+
+  it('marks the other occurrences on screen too, and only ONE is current', async () => {
+    const host = await mountFeed();
+    await act(async () => {
+      surface().jumpTo(4, { term: 'build' });
+    });
+    // seq 1 ("run the build") and seq 3 ("npm run build") are marked as well
+    expect(marksIn(blockEl(host, 1)!)).toEqual(['build']);
+    expect(marksIn(blockEl(host, 3)!).length).toBeGreaterThan(0);
+    // ...but the one find is SITTING on is in the block it jumped to, and it is
+    // the only one wearing the current attribute
+    expect(currentIn(blockEl(host, 4)!)).not.toBeNull();
+    expect(host.querySelectorAll(`[${FEED_MATCH_CURRENT_ATTR}]`)).toHaveLength(1);
+  });
+
+  it('marks inside rendered markdown, which is most of what an answer is', async () => {
+    const host = await mountFeed();
+    await act(async () => {
+      surface().jumpTo(4, { term: 'failed' });
+    });
+    const md = blockEl(host, 4)!.querySelector<HTMLElement>('.feed-md')!;
+    expect(marksIn(md)).toEqual(['failed']);
+  });
+
+  it('stepping moves the current mark and leaves the rest standing', async () => {
+    const host = await mountFeed();
+    await act(async () => {
+      surface().jumpTo(1, { term: 'build' });
+    });
+    expect(currentIn(blockEl(host, 1)!)).not.toBeNull();
+
+    await act(async () => {
+      surface().jumpTo(4, { term: 'build' });
+    });
+    expect(currentIn(blockEl(host, 4)!)).not.toBeNull();
+    // block 1 is still marked — just not current. Stepping is a move, not a
+    // repaint: the marks the eye has already learned must not flicker.
+    expect(marksIn(blockEl(host, 1)!)).toEqual(['build']);
+    expect(currentIn(blockEl(host, 1)!)).toBeNull();
+    expect(host.querySelectorAll(`[${FEED_MATCH_CURRENT_ATTR}]`)).toHaveLength(1);
+  });
+
+  it('steps into a block that was HIDDEN when the last pass ran', async () => {
+    // the cheap step path has nothing to move onto here — seq 2 is dropped by
+    // the verbosity preset, so it held no marks until this jump revealed it,
+    // and the full pass has to run after all
+    const host = await mountFeed();
+    await act(async () => {
+      surface().jumpTo(1, { term: 'ENOENT' });
+    });
+    expect(host.querySelectorAll(`mark[${FEED_MATCH_ATTR}]`)).toHaveLength(0);
+
+    await act(async () => {
+      surface().jumpTo(2, { term: 'ENOENT' });
+    });
+    expect(marksIn(blockEl(host, 2)!)).toEqual(['ENOENT']);
+    expect(currentIn(blockEl(host, 2)!)).not.toBeNull();
+  });
+
+  it('re-marks when the term changes under the same landed block', async () => {
+    const host = await mountFeed();
+    await act(async () => {
+      surface().jumpTo(1, { term: 'build' });
+    });
+    expect(marksIn(blockEl(host, 1)!)).toEqual(['build']);
+    await act(async () => {
+      surface().jumpTo(1, { term: 'run' });
+    });
+    expect(marksIn(blockEl(host, 1)!)).toEqual(['run']);
+  });
+
+  it('clear() takes the marks with it — and the text is exactly as it was', async () => {
+    const host = await mountFeed();
+    const before = blockEl(host, 1)!.textContent;
+    await act(async () => {
+      surface().jumpTo(1, { term: 'build' });
+    });
+    expect(host.querySelectorAll(`mark[${FEED_MATCH_ATTR}]`).length).toBeGreaterThan(0);
+
+    await act(async () => {
+      surface().clear();
+    });
+    expect(host.querySelectorAll(`mark[${FEED_MATCH_ATTR}]`)).toHaveLength(0);
+    expect(blockEl(host, 1)!.textContent).toBe(before);
+  });
+
+  it('a jump with no query still jumps, and paints nothing', async () => {
+    // the query is optional on the surface: a caller that only wants the reveal
+    // gets it, and gets no marks rather than a guess at a term
+    const host = await mountFeed();
+    await act(async () => {
+      surface().jumpTo(3);
+    });
+    expect(blockEl(host, 3)!.textContent).toContain('npm ERR! ENOENT');
+    expect(host.querySelectorAll(`mark[${FEED_MATCH_ATTR}]`)).toHaveLength(0);
   });
 });

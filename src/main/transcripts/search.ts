@@ -56,6 +56,9 @@ import {
   TranscriptSearchRequest,
   TranscriptSearchResult,
 } from '../../shared/transcripts';
+// shared, because the renderer builds the same two clauses to PAINT what this
+// counts (#520) — see `shared/find-matching.ts`
+import { escapeLiteral, wholeWordBody } from '../../shared/find-matching';
 import { BLOCK_CAP, FeedBlock, FULL_CAPS, IDENTITY_ONLY_CAPS, deriveIntents } from '../feed/blocks';
 
 /** One session to scan, and what the renderer is holding for it. */
@@ -118,10 +121,6 @@ const DEADLINE_MESSAGE = 'the search ran out of time — these results are parti
  */
 const AWAITING_CAP = 200;
 
-/** Regex metacharacters, for a literal term. */
-function escapeLiteral(term: string): string {
-  return term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 /**
  * Does this pattern have the shape that backtracks exponentially?
@@ -238,14 +237,8 @@ export function compileMatcher(q: TranscriptQuery): {
   }
   const flags = q.caseSensitive ? 'g' : 'gi';
   let body = q.regex ? term : escapeLiteral(term);
-  if (q.wholeWord) {
-    // Lookarounds, not `\b`: `\b` is defined against what is on BOTH sides, so
-    // a term that starts or ends with punctuation (`--force`, `foo()`) gets the
-    // opposite of the intended meaning from it. `(?<!\w)…(?!\w)` says the one
-    // thing the option promises — the match is not inside a longer word —
-    // whatever the term itself begins with.
-    body = `(?<!\\w)(?:${body})(?!\\w)`;
-  }
+  // Lookarounds rather than `\b`, and the reason is in `wholeWordBody`.
+  if (q.wholeWord) body = wholeWordBody(body);
   try {
     return { re: new RegExp(body, flags) };
   } catch (err) {
