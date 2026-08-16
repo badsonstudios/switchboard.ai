@@ -309,8 +309,8 @@ const FILLED_RULES: Array<[string, number]> = [
 const MARK_RULES: Array<[string, number]> = [
   ['mark[data-feed-match]', 4.5],
   ['mark[data-feed-match-current]', 4.5],
-  ['.doc-md mark[data-doc-match]', 4.5],
-  ['.doc-md mark[data-doc-match-current]', 4.5],
+  ['.doc-main mark[data-doc-match]', 4.5],
+  ['.doc-main mark[data-doc-match-current]', 4.5],
 ];
 
 /**
