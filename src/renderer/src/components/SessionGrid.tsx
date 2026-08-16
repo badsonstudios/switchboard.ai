@@ -67,6 +67,7 @@ import { findBarState, subscribeFindBar } from '../lib/find-bar-state';
 import { FindBar } from './FindBar';
 import { sendSessionCommand } from '../lib/composer';
 import { DEFAULT_SESSION_TRANSPORT, type TransportKind } from '../../../shared/transport';
+import { srOnly } from './sr-only';
 import {
   dropRetired,
   dropAnswered,
@@ -1816,21 +1817,9 @@ function vtabStyle(active: boolean, disabled: boolean, accent?: string): React.C
   };
 }
 
-/** A live region that must be INVISIBLE rather than absent (#358) — the card's
- *  overlay announcer. Same declarations as the rail's (SessionsRail's `srOnly`,
- *  #253), and kept local for the same reason that one is: both files hold their
- *  look inline, and two copies of six lines is not yet a module. Copy 2 of 2 —
- *  a THIRD copy is the signal to extract a shared module instead (#367). */
-const srOnly: React.CSSProperties = {
-  position: 'absolute',
-  inlineSize: 1,
-  blockSize: 1,
-  margin: -1,
-  padding: 0,
-  overflow: 'hidden',
-  clipPath: 'inset(50%)',
-  whiteSpace: 'nowrap',
-};
+/* The card's overlay announcer is invisible rather than absent (#358). The
+   declarations moved to `./sr-only` when P2-E14-01 became the third copy, which
+   is what #367 said would happen. */
 
 const overlayBackdrop: React.CSSProperties = {
   position: 'absolute',

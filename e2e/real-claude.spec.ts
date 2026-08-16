@@ -17,6 +17,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import {
+  expectTurnCompleted,
   launchApp,
   LaunchedApp,
   readWorkspaceFile,
@@ -127,11 +128,12 @@ test.describe('real claude on the DEFAULT transport (#384, opt-in)', () => {
     // #384; this asserts the outcome rather than trusting the scrub.)
     await expect(w.getByText(/FAKE-REPLY/)).toHaveCount(0);
 
-    // ...and the turn COMPLETED. "Done." is the Events panel reporting a
-    // `result` message off the stream, i.e. the CLI closed the turn rather
-    // than the text merely arriving — the lifecycle half of what the PTY test
-    // gets from its idle pill.
-    await expect(w.getByText('Done.').first()).toBeVisible({ timeout: 60_000 });
+    // ...and the turn COMPLETED: a `done` event on the attention queue is the
+    // state machine reporting a `result` message off the stream, i.e. the CLI
+    // closed the turn rather than the text merely arriving — the lifecycle half
+    // of what the PTY test gets from its idle pill. Read off the always-visible
+    // events tab since P2-E14-01 shut the panel by default (`expectTurnCompleted`).
+    await expectTurnCompleted(w, 60_000);
 
     // #404: a Direct card persists its `--resume` identity. This pins the
     // OUTCOME, not the writer — against the real CLI both writers are live
@@ -212,6 +214,6 @@ test.describe('real claude on the DEFAULT transport (#384, opt-in)', () => {
       w.locator('[data-feed-block="assistant"]', { hasText: 'REAL_TRUST_OK' })
     ).toBeVisible({ timeout: 120_000 });
     await expect(w.getByText(/FAKE-REPLY/)).toHaveCount(0); // see the test above
-    await expect(w.getByText('Done.').first()).toBeVisible({ timeout: 60_000 });
+    await expectTurnCompleted(w, 60_000);
   });
 });

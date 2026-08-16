@@ -12,7 +12,7 @@
 import { test, expect, Page } from '@playwright/test';
 import http from 'http';
 import { AddressInfo } from 'net';
-import { launchApp, LaunchedApp } from './fixtures/app';
+import { launchApp, LaunchedApp, openEventsDrawer } from './fixtures/app';
 
 /** The shell is mounted and listening (the reason is in about.spec.ts). */
 const stamp = (w: Page) =>
@@ -94,6 +94,10 @@ test.describe('provider service health (E14-07)', () => {
     // and the corroboration strip is up but empty — the live region that has to
     // exist before it ever has anything to say
     await expect(banner(w)).toHaveText('');
+    // opened first: the incidents card lives in the events drawer, which is
+    // collapsed by default (P2-E14-01) — "no incident card" read off a shut
+    // drawer would be true even during an outage
+    await openEventsDrawer(w);
     await expect(incidentNotice(w)).toHaveCount(0);
   });
 
@@ -116,7 +120,13 @@ test.describe('provider service health (E14-07)', () => {
     await expect(dot(w)).toHaveAttribute('data-state', 'outage');
     await expect(dot(w)).toContainText('provider outage');
     await expect(dot(w)).toHaveAttribute('title', /Elevated API errors/);
-    // §5.14's "incidents become Events entries"
+    // §5.14's "incidents become Events entries". The card is in the events
+    // drawer, so before opening it the COLLAPSED tab has to say that something
+    // is behind it — that secondary marker is the whole reason a notice can
+    // live in a surface that is shut by default (P2-E14-01, and the #425
+    // coordination note that put this card here).
+    await expect(w.getByTestId('events-tab')).toHaveAttribute('data-notice', 'true');
+    await openEventsDrawer(w);
     await expect(incidentNotice(w)).toContainText('Elevated API errors');
     await expect(incidentNotice(w)).toContainText('investigating');
   });

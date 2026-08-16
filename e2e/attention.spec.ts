@@ -10,6 +10,7 @@ import {
   showTerminal,
   tempProjectFolder,
   hookPoster,
+  openEventsDrawer,
 } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -59,6 +60,12 @@ test.describe('attention queue (E9-03)', () => {
       hook_event_name: 'Notification',
       message: 'Claude needs input to continue',
     });
+    // The drawer is collapsed by default (P2-E14-01) and every assertion in
+    // this file is about what it LISTS — the queue's order, and the marker on
+    // the row the hotkey will take next. So it is opened once here, in the
+    // scene-setting, and stays open: closing chrome is E14-01's business and
+    // EventsDrawer.test.tsx's; this file is still about the queue.
+    await openEventsDrawer(w);
     await expect(eventRows(w)).toHaveCount(3, { timeout: 15_000 });
     return { w, post, titles };
   }
@@ -124,6 +131,10 @@ test.describe('attention queue (E9-03)', () => {
     const w = a.window;
     const title = path.basename(folder);
     await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+    // opened deliberately, and this is the one test in the file where that is
+    // load-bearing rather than scene-setting: "no rows" read off a SHUT drawer
+    // is true of an empty queue and of a full one alike
+    await openEventsDrawer(w);
     await expect(eventRows(w)).toHaveCount(0);
 
     await w.keyboard.press(`${MOD}+Space`);

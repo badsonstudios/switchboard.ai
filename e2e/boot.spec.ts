@@ -14,7 +14,17 @@ test.describe('app boots', () => {
     await expect(window.getByRole('button', { name: '+ session' })).toBeVisible();
     // empty-state messages (distinctive, unambiguous)
     await expect(window.getByText('No sessions yet')).toBeVisible();
-    await expect(window.getByText('Nothing needs you right now')).toBeVisible();
+    // The events drawer is collapsed at boot (P2-E14-01), so its empty-state
+    // sentence is not what the shell shows any more — its TAB is, saying the
+    // same thing in the same breath as the count it exists to carry. Opening
+    // it here would test the drawer rather than the boot, and
+    // events-drawer.spec.ts does that properly.
+    await expect(window.getByTestId('events-tab')).toBeVisible();
+    await expect(window.getByTestId('events-tab')).toHaveAttribute('data-count', '0');
+    await expect(window.getByTestId('events-tab')).toHaveAttribute(
+      'aria-label',
+      /nothing waiting/
+    );
     // status bar shows the zero-session count — scoped, because the rail has
     // its own footer count now and both read "no sessions" when empty
     await expect(

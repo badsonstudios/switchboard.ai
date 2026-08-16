@@ -23,6 +23,7 @@ import type { CommandDeps } from '../lib/command-set';
 import type { FeedBlockDto } from '../lib/feed';
 import type { ThemeDefinition, ThemeId } from '../theme/theme';
 import type { ServiceHealthStatus } from '../../../shared/service-health';
+import type { EventDto } from '../model/types';
 
 /**
  * A set of commands. Built lazily from deps rather than supplied as a list:
@@ -256,6 +257,25 @@ export interface StatusBarContext {
    * care — simply has no dot.
    */
   serviceHealth?: ServiceHealthStatus | null;
+  /**
+   * How many sessions are waiting on a human — §5.14's fourth status-bar
+   * readout, built with P2-E14-01 because that item is what took the always-on
+   * Events column away. `lib/queue.ts` is the authority; this is its depth, the
+   * same number the drawer's tab shows.
+   *
+   * Optional for the same reason `serviceHealth` is: a bar rendered by a test
+   * that does not care simply has no count.
+   */
+  attentionCount?: number;
+  /** the accelerator that walks that queue, already formatted (e.g. 'Ctrl+Space') */
+  attentionBinding?: string;
+  /**
+   * The kind at the HEAD of that queue — the worst thing waiting — so the bar
+   * can be tinted by the same fact the drawer's tab is tinted by. Without it
+   * the two readouts sit inches apart saying the same number in different
+   * colours, which makes the status inks stop being a vocabulary.
+   */
+  attentionHottest?: EventDto['kind'] | null;
 }
 
 /** An item in the workspace status bar (§5.10). */

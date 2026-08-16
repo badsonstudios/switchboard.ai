@@ -379,6 +379,13 @@
     "nextUp": "next",
     "nextUpHint": "Next stop for the go-to-next-session shortcut",
     "reviewed": "Already seen",
+    "drawer": {
+      "label": "Events",
+      "waiting": "{count, plural, =0 {nothing waiting} one {# session waiting} other {# sessions waiting}}",
+      "notices": "{count, plural, one {# notice} other {# notices}}",
+      "announce": "{count, plural, one {# notice} other {# notices}} in the events drawer — press {binding} to open",
+      "announceNoBinding": "{count, plural, one {# notice} other {# notices}} in the events drawer"
+    },
     "kind": {
       "done": "Done.",
       "ready": "Ready",
@@ -568,6 +575,8 @@
   "statusbar": {
     "sessions": "{count, plural, =0 {no sessions} one {# session} other {# sessions}}",
     "usage": "↓{tokens} · ~{cost} est",
+    "attention": "{count, plural, =0 {none waiting} other {# waiting}}",
+    "attentionTitle": "Sessions waiting on you — {binding} goes to the next one",
     "theme": "theme: {theme}"
   },
   "usage": {
@@ -605,6 +614,7 @@
     "toggleTerminal": "Toggle Terminal view",
     "toggleChanges": "Toggle Changes view",
     "toggleRail": "Toggle the sessions rail",
+    "toggleEvents": "Show or hide the events drawer",
     "openFile": "Open file… — read a file in the document viewer",
     "toggleTabRows": "Toggle tabs on multiple rows",
     "toggleDiffLayout": "Toggle side-by-side / inline diff",

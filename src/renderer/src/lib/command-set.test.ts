@@ -27,6 +27,7 @@ function deps(): CommandDeps & { focusCard: ReturnType<typeof vi.fn> } {
     cycleLayoutMode: vi.fn(),
     toggleMaximize: vi.fn(),
     toggleRail: vi.fn(),
+    toggleEventsDrawer: vi.fn(),
     openPalette: vi.fn(),
     openFind: vi.fn(),
     toggleTabRows: vi.fn(),

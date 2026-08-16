@@ -217,7 +217,8 @@ come back.
 
 **I'm hearing notification sounds and don't know why.**
 Every session that needs permission, needs input, finishes, or crashes makes a
-sound. Check the Events panel on the right — it names the session. Silence
+sound. Open the Events drawer — the tab on the right edge, or `Ctrl+E` — and it
+names the session. Silence
 everything with the 🔔 chip in the title bar.
 
 **A banner says nothing in this workspace will be saved.**

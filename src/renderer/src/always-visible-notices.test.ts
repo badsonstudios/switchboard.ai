@@ -275,6 +275,74 @@ describe('the roster covers the shell column', () => {
   });
 });
 
+// --- The events drawer, classified on purpose (P2-E14-01) -------------------
+//
+// Shape B put an always-visible thing on screen — the drawer's tab — and the
+// roster above does not mention it. That is a DECISION, not an omission, and
+// this block is where it is written down and held.
+//
+// WHY IT IS NOT ON THE ROSTER. Every entry above is an in-flow child of the
+// shell COLUMN, and `flexShrink: 0` is a promise about how negative free space
+// is shared out among such children. The tab is neither: it lives inside the
+// workspace row, one level down, and it is `position: absolute` — out of flow
+// entirely, so it has no flex basis to be shrunk against and the guard would be
+// an inert declaration. Adding it above would put a line in the roster that
+// checks nothing, which is precisely the failure the file's header warns about
+// ("a green test over a dead declaration").
+//
+// WHAT REPLACES THE GUARD. Out of flow, the drawer's one way of hurting the
+// bars is the opposite one: escaping its container and covering them. It is
+// positioned against the nearest positioned ancestor, which App makes the
+// workspace row on purpose — drop that one declaration and the containing block
+// becomes the viewport, so the drawer resolves `insetBlockEnd: 0` to the bottom
+// of the WINDOW and hangs over the status bar, the urgency strip and every
+// notice below it. Same defect class as the roster's (an always-visible surface
+// silently loses its space to a neighbour), same witness (the source text), one
+// level down. So the pair is pinned instead: the row is positioned, and the
+// drawer is what needs it to be.
+describe('the events drawer stays inside the workspace row', () => {
+  const DRAWER = read('components/EventsDrawer.tsx');
+
+  it('the workspace row is a positioned ancestor', () => {
+    const workspace = styleBlock(
+      APP,
+      'App.tsx',
+      "<div style={{ flex: 1, display: 'flex', minBlockSize: 0",
+      // the whole opening tag is one line, so the newline closes the block
+      '\n'
+    );
+    expect(
+      workspace,
+      "App's workspace row no longer declares `position: relative`, so the " +
+        'events drawer is positioned against the VIEWPORT instead — it now ' +
+        'hangs over the status bar and every strip above it, which is exactly ' +
+        'the space those surfaces are guaranteed'
+    ).toMatch(/position:\s*'relative'/);
+  });
+
+  it('...which is only load-bearing while the drawer is out of flow', () => {
+    // the other half of the pair: if the drawer stopped being absolute, the
+    // test above would be guarding nothing — and the drawer would be back to
+    // taking a column out of the grid, which is the whole thing this item
+    // removed
+    expect(
+      DRAWER,
+      'the events drawer is no longer `position: absolute`. If it has become an ' +
+        'in-flow child again it costs the session grid its width — the 220px ' +
+        'this item reclaimed — and it belongs on a roster rather than here'
+    ).toMatch(/position:\s*'absolute'/);
+  });
+
+  it('does not sit in the shell column', () => {
+    expect(
+      shellChildren,
+      'EventsDrawer was moved up into the shell column. There it is an in-flow ' +
+        'child like every rostered bar: give it `flexShrink: 0` and a NOTICES ' +
+        'entry, and delete this block — the reasoning above no longer applies'
+    ).not.toContain('EventsDrawer');
+  });
+});
+
 // --- The popped-out document ------------------------------------------------
 //
 // A popped-out group is its OWN document, and #168's read-only notice follows

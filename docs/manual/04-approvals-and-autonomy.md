@@ -17,7 +17,7 @@ Three buttons:
 - **Allow all (this session)** — stop asking for this session. It means it:
   from that click on, switchboard answers for you the moment Claude asks.
   Nothing appears on screen, nothing beeps, the taskbar doesn't flash, and no
-  entry lands in the Events panel. It also keeps working with the window
+  entry lands in the Events drawer. It also keeps working with the window
   minimised or closed — the answer is given inside switchboard, not by the part
   of it you can see. Resets when the session restarts.
 - **Deny** — refuse. Claude is told you made the call deliberately, and that it

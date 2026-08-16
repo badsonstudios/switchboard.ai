@@ -217,6 +217,17 @@ const PAIRS: Array<[string, string, number]> = [
   ['--status-idle-ink', '--rail-card', 4.5],
   ['--status-done-ink', '--rail-card', 4.5],
   ['--status-crashed-ink', '--rail-card', 4.5],
+  // the events drawer's tab (P2-E14-01) tints its edge with the queue's hottest
+  // kind and its notice dot with `--status-working-ink`. Both are non-text
+  // objects that carry meaning, so 1.4.11's 3:1 — and against `--panel`, which
+  // is the tab's own background. The RAW `--status-*` hues are one set of
+  // values for every theme and measure 1.9–2.5:1 here, which is exactly why the
+  // tab uses the per-theme inks; these lines are what keeps it that way.
+  ['--status-working-ink', '--panel', 3],
+  ['--status-needs-input-ink', '--panel', 3],
+  ['--status-needs-permission-ink', '--panel', 3],
+  ['--status-done-ink', '--panel', 3],
+  ['--status-crashed-ink', '--panel', 3],
   ['--link', '--panel', 4.5],
   ['--subagent', '--panel', 4.5],
   ['--diff-added', '--panel', 4.5],

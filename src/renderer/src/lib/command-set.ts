@@ -52,6 +52,8 @@ export interface CommandDeps {
   toggleMaximize: (cardId: string) => void;
   /** show/hide the sessions rail */
   toggleRail: () => void;
+  /** open or shut the events drawer (P2-E14-01, Shape B) */
+  toggleEventsDrawer: () => void;
   /** open the command palette (E9-02) */
   openPalette: () => void;
   /** open the find bar on a card (E17-02, §5.31) */
@@ -615,6 +617,27 @@ export function buildCommands(deps: CommandDeps): Command[] {
       binding: 'Mod+B',
       scope: 'app',
       run: () => deps.toggleRail(),
+    },
+    {
+      // The keyboard half of P2-E14-01. The drawer is collapsed by default, so
+      // §5.8's invariant — collapsing chrome never removes capability — is only
+      // kept if there is a route in that does not need a mouse. There are two:
+      // this chord, and the palette entry this same command provides.
+      //
+      // Scope 'app', like every other view toggle: Ctrl+E is `end-of-line` in
+      // readline and the terminal owns every key it can see. That is not a hole
+      // in the promise — the palette is reachable from inside a terminal
+      // (Ctrl+Shift+P is claimed above the page, #90), and it lists this.
+      //
+      // Categorised under Attention rather than View: what it opens is the
+      // queue, and "what needs me?" is the question a user is asking when they
+      // go looking for it.
+      id: 'view.events',
+      titleKey: 'commands.toggleEvents',
+      categoryKey: CATEGORY_ATTENTION,
+      binding: 'Mod+E',
+      scope: 'app',
+      run: () => deps.toggleEventsDrawer(),
     },
     {
       id: 'view.tabRows',

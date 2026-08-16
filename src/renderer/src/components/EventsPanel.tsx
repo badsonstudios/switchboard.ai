@@ -7,6 +7,15 @@
 // their order. App owns the subscription and lib/queue owns the ordering, so
 // what you read top-to-bottom here is exactly what Ctrl+Space will walk —
 // "the feed is the log, the queue is the to-do list" (§5.12).
+//
+// P2-E14-01 (Shape B): this is no longer a 220px column in the workspace row —
+// it is the BODY of `EventsDrawer`, which overlays the grid and is collapsed by
+// default. Nothing about the content changed: the same queue-ordered rows, the
+// same three notice tenants, the same dismiss and open gestures. What changed
+// is that it now fills its container instead of claiming a fixed width from the
+// session grid, and the drawer above it owns the edge, the shadow and the
+// open/close. App still owns the subscription and the cursor — the drawer is a
+// shape, not a new home for state.
 import { EventDto } from '../model/types';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -53,7 +62,12 @@ const KIND_INK: Record<EventDto['kind'], string> = {
   crashed: 'var(--status-crashed-ink)',
 };
 
-export function EventsPanel(props: {
+/**
+ * Exported so `EventsDrawer` can take exactly these and add its own open/close
+ * to them. One prop contract for the content, wherever it is mounted — and the
+ * drawer cannot quietly drop one on the way through.
+ */
+export interface EventsPanelProps {
   sessions: readonly RailSession[];
   /** the feed's current items — App owns the subscription (E9-03) */
   events: readonly EventDto[];
@@ -110,7 +124,9 @@ export function EventsPanel(props: {
    * own when the incident does.
    */
   incidents?: readonly { id: string; name: string; status: string }[];
-}): React.JSX.Element {
+}
+
+export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
   const { t } = useTranslation();
   // the panel's heading doubles as the list's label — one "Events", not two
   const eyebrowId = React.useId();
@@ -131,15 +147,25 @@ export function EventsPanel(props: {
 
   return (
     <aside
+      // Named, because it is a complementary landmark a keyboard user now
+      // ARRIVES at rather than one that was simply always on screen (§5.32).
+      // The eyebrow below still labels the LIST — one "Events" for the region
+      // and one for the set of rows inside it, which is what a screen reader's
+      // landmark menu and its list summary each want.
+      aria-label={t('events.eyebrow')}
       style={{
-        inlineSize: 220,
+        // fills the drawer instead of claiming a column from the grid: the
+        // 220px this used to reserve in every layout mode is the whole point
+        // of P2-E14-01. The drawer owns the width, the edge and the shadow.
+        inlineSize: '100%',
+        blockSize: '100%',
         background: 'var(--panel)',
-        borderInlineStart: '1px solid var(--border)',
         paddingInline: 7,
         paddingBlock: 8,
         overflowY: 'auto',
         display: 'flex',
         flexDirection: 'column',
+        boxSizing: 'border-box',
       }}
     >
       <div

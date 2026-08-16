@@ -48,8 +48,9 @@ Three buttons:
 Escape, clicking outside the box, or **Ignore** all do the same thing: nothing
 is remembered, and you'll be asked again next time. The difference is that
 Escape and clicking away leave a small **"v0.3.0 is ready to install"** note in
-the events panel on the right, so you can come back to it without hunting for
-the menu. **Ignore** and **Skip** don't — those are answers, and re-asking in
+the Events drawer, so you can come back to it without hunting for the menu. The
+drawer is closed by default, so what you'll actually see is a **dot on the tab
+at the right edge** — open it with that tab or `Ctrl+E` and the note is inside. **Ignore** and **Skip** don't — those are answers, and re-asking in
 the corner would be nagging.
 
 If you use a screen reader, you don't have to keep checking Events for that
@@ -73,8 +74,9 @@ Four steps, all in the app, all of them visible:
    (switchboard.ai installs into your own user folder, so it doesn't need one).
    switchboard.ai closes.
 4. **Back on the new version.** The installer reopens the app when it's done,
-   and you'll see **"You're now on v0.3.0"** in the events panel. That's the app
-   confirming the update actually landed, not just that it tried.
+   and the tab at the right edge picks up a dot. Open the Events drawer (click
+   the tab, or `Ctrl+E`) and you'll see **"You're now on v0.3.0"**. That's the
+   app confirming the update actually landed, not just that it tried.
 
 The window coming back on its own is the installer's doing, and it takes a few
 seconds — the app is fully closed for that moment, which is normal. If it ever
