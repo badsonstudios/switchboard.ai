@@ -98,6 +98,27 @@
 > branch (builds on #542)**. In flight: #533 (wt-2) · #526/#485
 > (wt-3) · wt-1 idle pending #541 merge → then #532→#531 dispatch.
 >
+> **#526+#485 ✅ DONE → PRs #540 + #545 READY.** #526: per-
+> webContents context-menu (main window + every popout), Electron
+> ROLES so menu-paste = the same trusted DOM paste (#475 chips work
+> free); terminal needs NO guard (xterm's helper textarea is
+> offscreen — both rules answer no-menu, pinned); drive-by fix:
+> rail rename box suppressed contextmenu. #485: per-card draft in
+> ui blob, sync cache + debounced IPC, prune sweep, 100k cap;
+> PREMISE CORRECTED (measured control): plain popout/dock-back
+> NEVER lost the draft — tab-switch + relaunch did; Dan likely hit
+> the #292 stranded-popout rescue. Gates 4688/4682 unit, 287+3 e2e
+> ×2 zero flakes. Discovery → **#546** (chips don't persist —
+> image-only draft still vanishes). **#541 (#524 fix) MERGED**
+> (internal). ⚠ CHANGELOG-0.6.0 first-entry collision: #535 #540
+> #545 (+likely #536 #537 #542) now DIRTY vs main — DON'T heal
+> per-PR; the TRAIN resolves all unions in one sitting (run-18
+> pattern). #535 stays conflicted-checkless until then — its
+> evidence is the local gate. **Dispatched: #532→#531 serial →
+> wt-1 · #520 find marks → wt-3.** In flight: #533 (wt-2) ·
+> #532/#531 (wt-1) · #520 (wt-3). Dan/train queue: #535 #536 #537
+> #540 #542 #545.
+>
 > # (0.5.0 ship record follows)
 > # ✅ v0.5.0 SHIPPED 2026-08-14 (same-day as v0.4.0)
 >
