@@ -80,6 +80,11 @@ async function poppedOut(
 ): Promise<{ w: Page; popout: Page }> {
   const w = a.window;
   await expect(w.getByText(name).first()).toBeVisible({ timeout: 25_000 });
+  // Asserted HERE, while the card is still docked, because this is the only
+  // moment it means anything: once the card is torn off, its DOM leaves the
+  // main window entirely and "no ＋ in the main window" would pass whether the
+  // `poppedOut` guard existed or not.
+  await expect(w.getByTestId('card-new-session')).toHaveCount(0);
   await w.getByTitle('Pop out into its own window').click();
   const popout = await popoutWindow(a);
   // the card's DOM is ADOPTED into the popout, so it LEAVES the main window —
@@ -100,10 +105,6 @@ test.describe('new session from a popped-out window (#531)', () => {
     const nameB = path.basename(folderB);
     a = await launchApp({ seedFolder: folderA });
     const { w, popout } = await poppedOut(a, nameA);
-
-    // the ＋ exists ONLY out here: the main window has `+ session` in its own
-    // chrome, and a second one per card header there would be clutter
-    await expect(w.getByTestId('card-new-session')).toHaveCount(0);
 
     await answerFolderDialog(a, folderB);
     await popout.getByTestId('card-new-session').click();
@@ -141,10 +142,18 @@ test.describe('new session from a popped-out window (#531)', () => {
     // and Playwright's keys arrive over CDP, which does not move focus itself.
     // Asserted separately so that a machine which simply refuses to raise the
     // window says so, instead of failing below as if placement were wrong.
+    // A machine whose window manager simply refuses to raise the window cannot
+    // run this test at all — that is an environment fact, not a regression, so
+    // it SKIPS rather than going red. (The release right above this one in the
+    // CHANGELOG was a Windows-CI e2e flake; this is that lesson applied.)
     await popout.bringToFront();
-    await expect
-      .poll(() => popout.evaluate(() => document.hasFocus()), { timeout: 10_000 })
-      .toBe(true);
+    let focused = false;
+    for (let i = 0; i < 20 && !focused; i++) {
+      focused = await popout.evaluate(() => document.hasFocus());
+      if (!focused) await popout.waitForTimeout(250);
+    }
+    test.skip(!focused, 'window manager would not focus the popout; the keyboard route needs real OS focus');
+
     await answerFolderDialog(a, folderB);
     await popout.keyboard.press(`${MOD}+N`);
 
@@ -152,6 +161,13 @@ test.describe('new session from a popped-out window (#531)', () => {
     await expect(tabs(popout).filter({ hasText: nameB })).toHaveCount(1);
     await expect(tabs(w).filter({ hasText: nameB })).toHaveCount(0);
     expect(await dialogParent(a)).toContain('popout.html');
+
+    // ── and the main window did NOT yank itself in front ────────────────────
+    // App's popout key bridge raises the main window after any command that
+    // ran in a popout, which here would bury the window the user is working in
+    // — underneath the dialog we just parented to it. `newSessionTargetsPopout`
+    // is the opt-out; without it this is false and the whole point is lost.
+    expect(await popout.evaluate(() => document.hasFocus())).toBe(true);
   });
 
   test('a session created in a popout docks back into the grid like any other', async () => {

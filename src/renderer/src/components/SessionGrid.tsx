@@ -2166,10 +2166,20 @@ async function newSessionIn(
   onError: (message: string) => void
 ): Promise<void> {
   if (!api) return;
-  const folder = await window.switchboard.sessions.pickFolder(into?.id);
-  if (!folder) return;
   try {
-    await addSessionCardTo(api, folder, { into });
+    // INSIDE the try, unlike the `addCard` this replaces: both call sites drive
+    // this with `void`, so a rejection out here was an unhandled rejection
+    // rather than a message anyone saw.
+    const folder = await window.switchboard.sessions.pickFolder(into?.id);
+    if (!folder) return;
+    // `into` was sampled BEFORE the picker opened, and a group can die while it
+    // is up: the dialog is modal to that popout, so the user cannot close it
+    // from there, but a command or a layout mode driven from the main window
+    // can dock the card back and dispose the group under us. A disposed group
+    // is not a destination — fall through to the grid's own placement rules
+    // rather than handing `addPanel` a corpse.
+    const stillOpen = into && api.groups.includes(into) ? into : null;
+    await addSessionCardTo(api, folder, { into: stillOpen });
   } catch (e) {
     // our breakage must be visible, not mute (fail-open)
     onError(String(e));
@@ -2384,6 +2394,37 @@ export function popOutCardPanel(api: DockviewApi | null, cardId: string): void {
   const loc = panel.api.location;
   if (loc.type === 'popout') {
     const w = loc.getWindow();
+    // ── ⤡ WITH COMPANY MEANS "BRING THIS CARD HOME", NOT "CLOSE THE WINDOW" ──
+    //
+    // Dock-back is normally a window close, and that was exact while a session
+    // popout held exactly one card. It is not any more (#531): dockview hands
+    // EVERY member of a closing popout back to the grid, and each one arrives
+    // at the location handler above with no `markDockingBack` of its own — so
+    // it is indistinguishable from the user closing the window, and gets
+    // `dropLive`d and suspended. Docking one card back would tear down the live
+    // session sitting next to it. #531 made that the ordinary shape rather than
+    // something you could only reach by dragging a tab across windows.
+    //
+    // So when this card has company, move the PANEL and leave the window
+    // standing. The question asked is "would closing this drag anyone else
+    // home?", which is about the WINDOW and not this panel's group — a split
+    // inside a popout, or a document viewer sharing it, counts the same way.
+    //
+    // `sessionCardHome` picks where it lands, so #501's placement rules stay in
+    // one place: a card coming home arrives where a new one would, never in the
+    // document area and never inside a hidden husk.
+    const company =
+      !!w &&
+      api.panels.some((p) => {
+        if (p === panel) return false;
+        const l = p.api.location;
+        return l.type === 'popout' && l.getWindow() === w;
+      });
+    if (company) {
+      sessionStore.markDockingBack(cardId); // a move, not a close: stay alive
+      panel.api.moveTo({ group: sessionCardHome(api) });
+      return;
+    }
     // only arm the "stay alive" flag when a window actually exists to close —
     // else a stale flag would later mis-classify a genuine user close as a
     // toggle and skip the suspend (E8-04 review).
@@ -3268,6 +3309,13 @@ export function SessionGrid(props: {
     const api = apiRef.current;
     await newSessionIn(api, api ? focusedPopoutGroup(api) : null, setError);
   }, []);
+  // The main window's own chrome does not INFER a destination — it knows one.
+  // `newSession` above has to ask which window has focus because a keystroke
+  // carries no such information; a click on a button that only exists in this
+  // window carries it, and asking anyway would put #434/#462's regression back
+  // within reach of a window manager that reports focus a moment late. Same
+  // argument the card ＋ makes by naming its own group (lib/new-session-target).
+  const newSessionInGrid = useCallback(() => newSessionIn(apiRef.current, null, setError), []);
 
   // §5.8's presentation ladder (P2-E9-05). The verbs are MODULE functions on
   // (api, cardId) — see setCardLadder — for the reason popOutCardPanel is one:
@@ -3875,7 +3923,7 @@ export function SessionGrid(props: {
           </span>
         )}
         <button
-          onClick={() => void newSession()}
+          onClick={() => void newSessionInGrid()}
           style={{
             background: 'var(--chip)',
             color: 'var(--text)',
