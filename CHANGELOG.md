@@ -57,6 +57,19 @@ on the floor, and say so in your PR.
 
 ## 0.6.0 — unreleased
 
+### Fixed
+
+- **Find now shows you where the word is.** Stepping through matches in a
+  session used to scroll the conversation up and down without highlighting
+  anything, so you had to re-read the block to find the word you searched for.
+  The match you are standing on is now highlighted brightly, the other
+  occurrences on screen get a quieter highlight, and if the match is buried
+  a long way down a tall tool output the view scrolls again so the word itself
+  is on screen. Closing the bar takes the highlights with it, and they are
+  never part of what you copy — selecting highlighted text, or pressing
+  **Copy** on a code block containing a match, gives you the text exactly as
+  the session wrote it.
+
 ### Internal
 
 - Fixed the end-to-end test that kept failing on the Windows CI machine and

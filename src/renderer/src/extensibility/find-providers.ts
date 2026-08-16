@@ -191,9 +191,11 @@ export const sessionFindProvider: FindProviderContribution = {
     }
     return hitsFromTranscript(res, ctx.sessionId, ctx.locale);
   },
-  reveal(ctx: FindContext, hit: FindHit): boolean {
+  reveal(ctx: FindContext, hit: FindHit, query: FindQuery): boolean {
     if (typeof hit.ref !== 'number') return false;
-    return feedSurface(ctx)?.jumpTo(hit.ref) ?? false;
+    // the query goes with the seq: the feed scrolls to the block AND marks the
+    // term inside it (#520), and it has no other way to know what the term is
+    return feedSurface(ctx)?.jumpTo(hit.ref, query) ?? false;
   },
   clear(ctx: FindContext): void {
     feedSurface(ctx)?.clear();

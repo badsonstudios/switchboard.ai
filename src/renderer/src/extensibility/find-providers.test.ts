@@ -156,21 +156,26 @@ describe('the Session view provider (the E17-01 engine behind the bar)', () => {
   it('jumps through the mounted feed’s surface, and only for a hit that HAS a seq', () => {
     const jumpTo = vi.fn().mockReturnValue(true);
     const ctx = { sessionId: 's1', surface: { kind: 'feed', jumpTo, clear: vi.fn() } };
+    const query = { term: 'ENOENT', caseSensitive: false, wholeWord: false };
     const jumpable = hitsFromTranscript(result({ hits: [hit({ seq: 12 })] }), 's1').hits[0];
     const evicted = hitsFromTranscript(
       result({ hits: [hit({ seq: undefined, earlierThanLoaded: true })] }),
       's1',
     ).hits[0];
 
-    expect(sessionFindProvider.reveal?.(ctx, jumpable)).toBe(true);
-    expect(jumpTo).toHaveBeenCalledWith(12);
-    expect(sessionFindProvider.reveal?.(ctx, evicted)).toBe(false);
+    expect(sessionFindProvider.reveal?.(ctx, jumpable, query)).toBe(true);
+    // the QUERY goes with the seq (#520): the feed marks the term in the block
+    // it lands in, and this call is the only way it learns what the term is
+    expect(jumpTo).toHaveBeenCalledWith(12, query);
+    expect(sessionFindProvider.reveal?.(ctx, evicted, query)).toBe(false);
     expect(jumpTo).toHaveBeenCalledTimes(1);
   });
 
   it('reveals nothing when the panel has not published a surface', () => {
     const h = hitsFromTranscript(result({ hits: [hit()] }), 's1').hits[0];
-    expect(sessionFindProvider.reveal?.({ sessionId: 's1', surface: null }, h)).toBe(false);
+    expect(sessionFindProvider.reveal?.({ sessionId: 's1', surface: null }, h, { term: 'x' })).toBe(
+      false,
+    );
   });
 });
 

@@ -43,8 +43,17 @@ trustworthy.
   where error messages live. Find looks at all of it anyway.
 - **It ignores folds.** A collapsed tool box, a folded thinking block, a long
   prompt shown as one line — all searched.
-- **Jumping to a match opens whatever was hiding it.** Land on a match inside a
-  collapsed Bash block and the block opens, with the matched line visible.
+- **Jumping to a match opens whatever was hiding it, and highlights the
+  match.** Land on a match inside a collapsed Bash block and the block opens,
+  with the matched line visible — and the word itself is highlighted, so you
+  can see where it is without re-reading the block. The match you're standing
+  on is the bright one; the other occurrences on screen get a quieter
+  highlight, so you can see at a glance how the word is spread through the
+  conversation. Both go the moment you close the bar.
+
+  If the match is buried a long way down a tall block, switchboard scrolls
+  again so the highlighted word itself is on screen, not just the top of the
+  block it's in.
 
 ## The results list
 
@@ -147,6 +156,14 @@ match-case searches are exact.
 - **It never touches the session.** Searching is read-only and happens
   out of the way of the agent; if it fails, it says so and the session carries
   on untouched.
+- **Highlights are never part of what you copy.** Select highlighted text, or
+  press **Copy** on a code block that contains a match, and what lands on the
+  clipboard is the text as the session wrote it — no markers, no stray
+  characters.
+- **A few places don't highlight.** Highlights land on the body of a block —
+  prose, tool input and output, thinking, prompts. Short composed labels, like
+  the one-line summary on a collapsed box, are left alone. The count still
+  includes those matches, and jumping still takes you to the right block.
 - **No regular expressions yet.** Deliberate: a badly-shaped pattern can lock
   up the app for minutes, and that's a bigger problem than the feature is
   worth until the search runs somewhere it can be stopped.

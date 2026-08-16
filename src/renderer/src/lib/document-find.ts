@@ -17,22 +17,30 @@
 // The DOM is the index: matches are wrapped in `<mark>`, which is what a
 // screen reader announces as a match and what a stylesheet can highlight
 // without a second coordinate system to keep in sync.
+//
+// THE WALK ITSELF IS SHARED (`text-marks.ts`, #520). It was written here first
+// and the Session view then needed the same thing — same `<mark>`, same
+// attribute-in-my-own-namespace, same current-vs-other pair in `tokens.css` —
+// so the tree walk that splits text nodes moved out and this file kept what is
+// the viewer's: its attributes, its substring matching, and `focusMatch`.
+import { unwrapMarks, wrapMatches } from './text-marks';
 
 /** The attribute a wrapped match carries, so unwrapping finds only ours. */
 const MATCH_ATTR = 'data-doc-match';
 const CURRENT_ATTR = 'data-doc-match-current';
 
-/** Remove every mark this module added, leaving the text exactly as it was. */
+/**
+ * Remove every mark this module added, leaving the text exactly as it was.
+ *
+ * The shared unwrap normalizes the parents it touched rather than the whole
+ * body, which this used to do. Identical for the viewer as it stands — the body
+ * is set by `innerHTML` and HTML parsing never yields adjacent text nodes, and
+ * `document-render.ts` only ever WRAPS elements — but worth knowing: if that
+ * pass ever removed an element from between two text nodes, a match straddling
+ * the join would have been found before and would not be now.
+ */
 export function clearMatches(root: HTMLElement): void {
-  for (const mark of [...root.querySelectorAll(`mark[${MATCH_ATTR}]`)]) {
-    const parent = mark.parentNode;
-    if (!parent) continue;
-    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
-    parent.removeChild(mark);
-  }
-  // Adjacent text nodes left by the unwrap would make the NEXT search miss a
-  // match that straddles the join. One call, and the tree is as it started.
-  root.normalize();
+  unwrapMarks(root, MATCH_ATTR);
 }
 
 /**
@@ -46,49 +54,17 @@ export function applyMatches(root: HTMLElement, query: string): number {
   clearMatches(root);
   const needle = query.toLowerCase();
   if (needle.trim().length === 0) return 0;
-
-  const doc = root.ownerDocument;
-  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode: (node) => {
-      const parent = node.parentElement;
-      if (!parent) return NodeFilter.FILTER_REJECT;
-      // A `<pre>` is searchable; a `<script>` cannot exist here (DOMPurify) but
-      // costs nothing to name, and our own chrome must not match itself.
-      const tag = parent.tagName;
-      if (tag === 'SCRIPT' || tag === 'STYLE') return NodeFilter.FILTER_REJECT;
-      return node.nodeValue && node.nodeValue.length > 0
-        ? NodeFilter.FILTER_ACCEPT
-        : NodeFilter.FILTER_REJECT;
+  return wrapMatches(root, {
+    attr: MATCH_ATTR,
+    ranges: (value) => {
+      const hay = value.toLowerCase();
+      const out: Array<readonly [number, number]> = [];
+      for (let at = hay.indexOf(needle); at >= 0; at = hay.indexOf(needle, at + needle.length)) {
+        out.push([at, at + needle.length]);
+      }
+      return out;
     },
-  });
-
-  // Collected first, mutated after: splitting a text node while the walker is
-  // standing on it is how you get a walker that visits its own output.
-  const texts: Text[] = [];
-  for (let n = walker.nextNode(); n; n = walker.nextNode()) texts.push(n as Text);
-
-  let count = 0;
-  for (const node of texts) {
-    const value = node.nodeValue ?? '';
-    const hay = value.toLowerCase();
-    let from = 0;
-    let at = hay.indexOf(needle, from);
-    if (at < 0) continue;
-    const frag = doc.createDocumentFragment();
-    while (at >= 0) {
-      if (at > from) frag.append(doc.createTextNode(value.slice(from, at)));
-      const mark = doc.createElement('mark');
-      mark.setAttribute(MATCH_ATTR, String(count));
-      mark.textContent = value.slice(at, at + needle.length);
-      frag.append(mark);
-      count += 1;
-      from = at + needle.length;
-      at = hay.indexOf(needle, from);
-    }
-    if (from < value.length) frag.append(doc.createTextNode(value.slice(from)));
-    node.replaceWith(frag);
-  }
-  return count;
+  }).length;
 }
 
 /**
