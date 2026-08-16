@@ -68,6 +68,7 @@ import {
   focusOverride,
   resolveFocusPolicy,
 } from '../lib/focus-policy';
+import { srOnly } from './sr-only';
 
 export type { RailSession, RailGroup } from '../model/types';
 
@@ -121,22 +122,9 @@ const menuSectionStyle: React.CSSProperties = {
   letterSpacing: 0.4,
 };
 
-/** A live region that must be INVISIBLE rather than absent (#253). Inline, like
- *  the rest of this file — the rail keeps its look in the component and only
- *  the states CSS can express (hover, the working ring) in the stylesheet.
- *  Copy 1 of 2: SessionGrid.tsx has the same declarations (#358). Two is the
- *  stated convention; a THIRD copy is the signal to extract a shared module
- *  rather than paste it again (#367). */
-const srOnly: React.CSSProperties = {
-  position: 'absolute',
-  inlineSize: 1,
-  blockSize: 1,
-  margin: -1,
-  padding: 0,
-  overflow: 'hidden',
-  clipPath: 'inset(50%)',
-  whiteSpace: 'nowrap',
-};
+/* The rail's live region is invisible rather than absent (#253). The
+   declarations moved to `./sr-only` when P2-E14-01 became the third copy, which
+   is what #367 said would happen. */
 
 /**
  * One per-session OVERRIDE choice in the rail's context menu: a labelled radio
@@ -480,6 +468,14 @@ export function SessionsRail(props: {
           setDraft(s.title);
         }}
         onContextMenu={(e) => {
+          // The RENAME BOX is inside this row, and a text box owes its user the
+          // edit menu before it owes anyone a session menu (#526). Chromium
+          // stops emitting the browser-process `context-menu` event the moment
+          // the page calls `preventDefault`, so without this early return the
+          // one place in the app you cannot Cut/Copy/Paste with the mouse is a
+          // field whose entire purpose is editing text.
+          if ((e.target as HTMLElement).closest?.('input, textarea, [contenteditable="true"]'))
+            return;
           e.preventDefault();
           // Shift+F10 and the ContextMenu key fire this same event, which is
           // what gives the menu a keyboard path at all — but they carry no

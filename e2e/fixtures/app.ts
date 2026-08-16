@@ -4,6 +4,7 @@
 import {
   _electron as electron,
   ElectronApplication,
+  expect,
   Locator,
   Page,
   test,
@@ -1011,6 +1012,56 @@ export async function showTerminal(window: Page): Promise<void> {
 }
 
 /**
+ * Open the events drawer (P2-E14-01, Shape B).
+ *
+ * The Events panel is no longer a permanent column: it is a drawer, collapsed
+ * by default to a tab on the workspace's right edge. So every spec that asserts
+ * anything about the queue's ROWS has to open it first — and, importantly, has
+ * to keep doing so for the assertions that count rows DOWN. `toHaveCount(0)`
+ * against a shut drawer passes for the wrong reason: there is nothing in the
+ * DOM to count, whatever the feed thinks.
+ *
+ * Idempotent, because several specs open it inside a helper that a test may
+ * have already called. Clicking a second time would shut it again.
+ */
+/**
+ * "The turn completed" — the state machine reporting a `result` message off the
+ * stream, i.e. the CLI closed the turn rather than the text merely arriving.
+ *
+ * This used to be read as the word **"Done."** on the Events panel's row, in
+ * both the fake-stream specs and the real-CLI lane. The word is still there,
+ * but the panel is a drawer now and shut by default (P2-E14-01), so a page-text
+ * match for it fails in the positive case and passes vacuously in the negative
+ * one. The same fact is on the collapsed tab, which is always on screen: a
+ * `done` event is the only thing a one-session turn queues, so it is both the
+ * whole count and the hottest kind.
+ *
+ * Opening the drawer instead would be worse — these tests go on to type into
+ * the composer, and the drawer overlays the workspace.
+ *
+ * Shared out of `stream.spec.ts` rather than copied because the copy is exactly
+ * what went wrong: `real-claude.spec.ts` is opt-in behind `SWITCHBOARD_REAL_E2E`
+ * and its two assertions were missed by the first sweep, so nothing caught them.
+ */
+export async function expectTurnCompleted(window: Page, timeout = 30_000): Promise<void> {
+  const tab = window.getByTestId('events-tab');
+  await expect(tab).toHaveAttribute('data-count', '1', { timeout });
+  await expect(tab).toHaveAttribute('data-hottest', 'done');
+}
+
+/** ...and its negative: nothing has been queued at all, so no turn has ended */
+export async function expectTurnStillRunning(window: Page): Promise<void> {
+  await expect(window.getByTestId('events-tab')).toHaveAttribute('data-count', '0');
+}
+
+export async function openEventsDrawer(window: Page): Promise<void> {
+  const tab = window.getByTestId('events-tab');
+  await tab.waitFor({ state: 'visible', timeout: 25_000 });
+  if ((await tab.getAttribute('aria-expanded')) !== 'true') await tab.click();
+  await window.getByTestId('events-drawer').waitFor({ state: 'visible', timeout: 15_000 });
+}
+
+/**
  * Set §5.8's global presentation policy from the titlebar chip (P2-E9-06).
  *
  * The chip CYCLES, so this walks it to the label rather than guessing a click
@@ -1086,6 +1137,16 @@ export interface PersistedLayout {
   /** dockview wraps even a single panel, so the ROOT is always a branch */
   grid: { width: number; height?: number; orientation?: string; root: PersistedGridBranch };
   popoutGroups?: PersistedPopoutGroup[];
+  /**
+   * Panel records by id, each with the `params` blob `addPanel` was given.
+   *
+   * Reached for by specs that need to doctor a saved panel's params into a
+   * shape THIS version of the app would never write — `document-peek.spec`
+   * plants a `pinned: true` on a viewer, which is what a layout saved before
+   * #530 looks like. `params` is deliberately open (`unknown` values): the
+   * whole point of these tests is fields the current code does not have.
+   */
+  panels?: Record<string, { id?: string; params?: Record<string, unknown> }>;
 }
 
 export interface PersistedPopoutGroup {

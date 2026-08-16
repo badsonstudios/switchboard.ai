@@ -13,7 +13,8 @@ import { LanguageChoice, loadLanguage, setLanguage } from './i18n';
 import { TitleBar, StatusBar } from './components/chrome';
 import { SessionsRail, RailGroup } from './components/SessionsRail';
 import { SessionGrid, GridController } from './components/SessionGrid';
-import { EventsPanel, EventDto } from './components/EventsPanel';
+import { EventDto } from './components/EventsPanel';
+import { EventsDrawer } from './components/EventsDrawer';
 import { Usage, addUsage, estimateCostUsd, ZERO_USAGE } from './lib/usage';
 import { loadUiState, uiGet, uiSet } from './lib/ui-state';
 import { initPresentation } from './lib/presentation-boot';
@@ -39,6 +40,8 @@ import type { ServiceHealthStatus } from '../../shared/service-health';
 import { installAnnouncer, setAudioMuted, sharedAnnouncer } from './lib/announcer';
 import { DEFAULT_SOUND } from '../../shared/sounds';
 import { PushSetupDialog } from './components/PushSetupDialog';
+import { QuietHoursDialog } from './components/QuietHoursDialog';
+import type { QuietState } from '../../shared/quiet-hours';
 import { unavailablePushConfig } from '../../shared/push';
 import type {
   PushConfig,
@@ -67,9 +70,11 @@ import {
 } from './lib/focus-policy';
 import { buildIdentity } from '../../shared/build-identity';
 import { applyTabRows, loadTabRows, syncDocumentFlags, toggleTabRows } from './lib/tab-rows';
+import { toggleDiffLayout } from './lib/diff-layout';
 import { openPopoutWindows, subscribePopoutWindows } from './lib/popout-windows';
 import { openFindBar } from './lib/find-bar-state';
 import { setDocumentOpener } from './lib/document-open';
+import { isDocumentPanelId } from './lib/document-panels';
 
 // One stable subscribe identity for every useSyncExternalStore call below.
 // An inline arrow is a new function each render, and React unsubscribes and
@@ -140,6 +145,13 @@ export function App(): React.JSX.Element {
   // rail visibility (E9-01 'toggle rail' command) — persisted like the other
   // renderer prefs, read once the ui blob has loaded
   const [railHidden, setRailHidden] = useState(false);
+  // The events drawer (P2-E14-01, Shape B). Collapsed by default and, unlike
+  // the rail, DELIBERATELY NOT PERSISTED: the rail is a layout preference, this
+  // is a surface you open to read the queue and shut again — the same category
+  // as the find bar and the palette, neither of which comes back on relaunch.
+  // Not persisting is also what makes "default collapsed" true of every launch
+  // rather than only of the first one.
+  const [eventsOpen, setEventsOpen] = useState(false);
   // command palette (E9-02) — deliberately NOT persisted: it opens on demand
   const [paletteOpen, setPaletteOpen] = useState(false);
   // About / build identity (E15-15) — same deal, on demand only
@@ -185,6 +197,11 @@ export function App(): React.JSX.Element {
   // The last write main REFUSED, for the field it was aimed at. Cleared on the
   // next successful write and on every re-open.
   const [pushWrite, setPushWrite] = useState<{ key: string; problem: string } | null>(null);
+  // Quiet hours (E14-05b) — the same on-demand shape as push above: nothing
+  // else on screen reads the window, so it is fetched when the dialog opens
+  // rather than held at mount.
+  const [quietOpen, setQuietOpen] = useState(false);
+  const [quietState, setQuietState] = useState<QuietState | null>(null);
   // Attention events (E9-03). This subscription used to live inside
   // EventsPanel; it moved up here because the queue is the SINGLE ordering
   // authority — two independent subscriptions to events:changed could hand the
@@ -202,6 +219,22 @@ export function App(): React.JSX.Element {
   // row Ctrl+Space will skip. The panel still LISTS them: the feed is the log.
   const attentionFeed = useSyncExternalStore(subscribeStore, () =>
     sessionStore.getAttentionEvents()
+  );
+  // ...and its DEPTH, for §5.14's status-bar readout (P2-E14-01). The store's
+  // own memoized queue rather than a length counted here, so the bar, the
+  // drawer's tab and `commandContext`'s `attentionCount` are all the same
+  // number from the same authority — the identity is stable between pushes,
+  // which is what useSyncExternalStore requires.
+  const attentionDepth = useSyncExternalStore(
+    subscribeStore,
+    () => sessionStore.getQueue().length
+  );
+  // ...and its HEAD's kind, so the bar is tinted by the same fact the drawer's
+  // tab is. Both snapshots are primitives off the one memoized queue, so
+  // neither can hand useSyncExternalStore a fresh identity on every render.
+  const attentionHottest = useSyncExternalStore(
+    subscribeStore,
+    () => sessionStore.getQueue()[0]?.kind ?? null
   );
   // The urgency strip (E9-04). It renders from RAIL ORDER, not the raw session
   // list, so the Nth lamp is the Nth Ctrl+1..9 target — the derived value has a
@@ -580,6 +613,47 @@ export function App(): React.JSX.Element {
     void answer.then((c) => setPushConfig(c)).catch(() => setPushConfig(unavailablePushConfig()));
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, []);
+  // ── quiet hours (E14-05b, §5.9) ──────────────────────────────────────────
+  //
+  // Optional-chained and swallowed like the push family above, and for the same
+  // #444 reason: a notification nicety must never be able to white-screen the
+  // shell. A bridge with no `quietState` leaves the state null, which the dialog
+  // renders as "cannot tell" rather than as a working empty form.
+  const refreshQuiet = React.useCallback(() => {
+    const answer = bridge.notifications?.quietState?.();
+    if (!answer) return setQuietState(null);
+    void answer.then((s) => setQuietState(s)).catch(() => setQuietState(null));
+    // eslint's exhaustive-deps plugin isn't installed; bridge is stable
+  }, []);
+  const openQuietHours = React.useCallback(() => {
+    // Cleared FIRST, so the dialog's one-shot seeding cannot take a stale
+    // answer from the last time it was open: null means "main has not said
+    // yet", and the dialog waits for the real one rather than showing default
+    // times over somebody's configured window.
+    setQuietState(null);
+    setQuietOpen(true);
+    refreshQuiet();
+  }, [refreshQuiet]);
+  const setQuietWindow = React.useCallback(
+    (win: { start: string; end: string } | null) => {
+      // Both ends go together, because half a window is not a window. Clearing
+      // sends EMPTY STRINGS rather than `undefined`: the store's sanitizer
+      // drops anything that is not an "HH:MM" either way, and an empty string
+      // survives every serializer between here and main without my having to be
+      // right about how this one treats `undefined` in an object.
+      const patch = win
+        ? { quietStart: win.start, quietEnd: win.end }
+        : { quietStart: '', quietEnd: '' };
+      const answer = bridge.notifications?.setPrefs?.(patch);
+      if (!answer) return;
+      // Re-read AFTER the write: main is the authority on what it stored and on
+      // whether the window is open right now, and the dialog's status line is
+      // only worth showing if it is main's answer rather than the renderer's
+      // hope.
+      void answer.then(() => refreshQuiet()).catch(() => {});
+    },
+    [refreshQuiet]
+  );
   const applyPushAnswer = React.useCallback(
     (key: string, p: Promise<PushWriteResult> | undefined) => {
       if (!p) return setPushConfig(unavailablePushConfig());
@@ -908,7 +982,7 @@ export function App(): React.JSX.Element {
   const modalOpenRef = React.useRef(false);
   useEffect(() => {
     railHiddenRef.current = railHidden;
-    modalOpenRef.current = paletteOpen || aboutOpen || updateOpen || pushOpen;
+    modalOpenRef.current = paletteOpen || aboutOpen || updateOpen || pushOpen || quietOpen;
   });
 
   // Set when a command deliberately raised a DIFFERENT OS window (jumping to a
@@ -968,10 +1042,22 @@ export function App(): React.JSX.Element {
     () =>
       buildContributedCommands(rendererRegistry, {
           focusCard: (cardId) => focusSession(cardId),
+          // The whole gesture belongs to the grid (#531): picking a folder and
+          // placing the card are one decision, because BOTH depend on which
+          // window the ask came from — the dialog is parented to it and the
+          // card lands in it. Mod+N pressed inside a popped-out session
+          // arrives here through the popout key bridge below, so this is not a
+          // main-window-only path however much it looks like one.
           newSession: () => {
-            void bridge.sessions?.pickFolder?.().then((folder) => {
-              if (folder) void grid.current?.addSessionCard(folder);
-            });
+            // ...and when that window is a popout, say so BEFORE starting, the
+            // same way `focusSession` does. The key bridge pulls this window
+            // forward after any command that ran, which here would bury the
+            // popout the user is working in — underneath the folder dialog we
+            // deliberately parented to it. Asked synchronously because the
+            // bridge reads the flag the moment `run` returns, long before the
+            // dialog resolves.
+            if (grid.current?.newSessionTargetsPopout()) raisedOtherWindowRef.current = true;
+            void grid.current?.newSession();
           },
           closeCard: (cardId) => grid.current?.closeCard(cardId),
           closeAllCards: () => grid.current?.closeAllCards(),
@@ -990,6 +1076,9 @@ export function App(): React.JSX.Element {
           cycleLayoutMode: () => grid.current?.cycleLayoutMode(),
           toggleMaximize: (cardId) => grid.current?.toggleMaximize(cardId),
           toggleRail,
+          // A toggle, not an open: the same chord that shows the queue puts it
+          // away again, which is what every other view toggle in this set does.
+          toggleEventsDrawer: () => setEventsOpen((v) => !v),
           openPalette: () => setPaletteOpen(true),
           // The bar itself is rendered by the CARD (SessionGrid) — this only
           // publishes which card is asking, because a keydown handler has no
@@ -1004,13 +1093,40 @@ export function App(): React.JSX.Element {
           // window with it — which is where the bar actually is. Making find
           // window-local is a §5.8 question about which window a command acts
           // in, not a find question, so it is not answered here.
-          openFind: (cardId) => openFindBar(cardId),
+          //
+          // POPPED-OUT DOCUMENTS ARE THE EXCEPTION, and #533 had to answer that
+          // §5.8 question for them: `activeDocumentId()` DOES claim a popped-out
+          // viewer, because its bar renders inside the panel dockview moved into
+          // that window — the bar really is over there. So the raise the bridge
+          // does by default would bury the window the user is reading in, and
+          // this borrows the "we already put the right window in front" flag to
+          // suppress it. In the main window the flag costs nothing: the call it
+          // suppresses is `window.focus()` on the window that already has focus.
+          openFind: (targetId) => {
+            openFindBar(targetId);
+            // Asked ONLY of a document, because only a document's id is a panel
+            // id: a card's is the bare uuid and its panel is `session-<uuid>`,
+            // so passing one here would be a lookup that can only ever miss.
+            // (It would answer "not popped out", which is accidentally right —
+            // `activeCardId` already refuses a popped-out card — and being
+            // right by accident is how the next reader gets misled.)
+            if (isDocumentPanelId(targetId) && grid.current?.isPanelPoppedOut(targetId)) {
+              raisedOtherWindowRef.current = true;
+            }
+          },
           toggleTabRows: () => {
             toggleTabRows();
+          },
+          // Every open Changes tab, in this window and in any popout, reads
+          // the one workspace value — so this needs no card and takes none
+          // (#532, lib/diff-layout).
+          toggleDiffLayout: () => {
+            toggleDiffLayout();
           },
           jumpToNextAttention,
           openAbout: () => setAboutOpen(true),
           openPushSetup,
+          openQuietHours,
           checkForUpdates,
           // §5.30's `Open file…`. Picking a file in the native dialog is also
           // what GRANTS it: main widens the `fs.read` scope with the chosen
@@ -1033,6 +1149,7 @@ export function App(): React.JSX.Element {
       togglePin,
       checkForUpdates,
       openPushSetup,
+      openQuietHours,
     ], // other deps read live state through refs; grid.current is stable
   );
   // chips advertise their own binding, derived from the registry so a tooltip
@@ -1040,18 +1157,29 @@ export function App(): React.JSX.Element {
   const railBindingLabel = formatBinding(bindingFor(commands, 'view.rail'), platform);
   const paletteBindingLabel = formatBinding(bindingFor(commands, 'palette.open'), platform);
   const queueBindingLabel = formatBinding(bindingFor(commands, 'attention.next'), platform);
+  const eventsBindingLabel = formatBinding(bindingFor(commands, 'view.events'), platform);
   const layoutBindingLabel = formatBinding(bindingFor(commands, 'layout.cycleMode'), platform);
   // the palette reads the SAME context the dispatcher does, at open time
   // ONE builder for both readers (the palette at open time, the dispatcher at
   // keypress time). They used to construct this separately, which is how a
   // command ends up enabled in the palette and dead on the keyboard.
-  const commandContext = React.useCallback(() => {
+  const commandContext = React.useCallback((sourceWindow?: Window) => {
     // read from the store, not a ref: this runs on KEYDOWN, outside React's
     // commit, so it has to see what is true now
     const activeCardId = grid.current?.activeCardId() ?? null;
     return {
       sessions: sessionStore.getRailOrder().flat,
       activeCardId,
+      // The other thing that can have the user's attention (#533): a §5.30
+      // document viewer is its own panel with no session behind it, and
+      // `find.open` is the one command that takes either.
+      //
+      // `sourceWindow` is the one argument this builder takes, and only a
+      // popped-out DOCUMENT needs it: dockview's active panel does not follow
+      // the user into another OS window, so a keystroke typed in a viewer's own
+      // window has to say where it came from. Absent (this window, and the
+      // palette) means "the active panel", which is the answer it always was.
+      activeDocumentId: grid.current?.activeDocumentId(sourceWindow) ?? null,
       // resolved HERE, once, so the palette's enabled state and the keyboard's
       // both come from the same read (E9-06's group-level commands)
       activeGroupId: activeCardId
@@ -1080,7 +1208,7 @@ export function App(): React.JSX.Element {
     // the REAL answer, not a guess from e.defaultPrevented: the composer
     // preventDefaults its own Enter, and mistaking that for a command would
     // yank this window in front of the one being typed in.
-    const onKey = (e: KeyboardEvent): unknown => {
+    const onKey = (e: KeyboardEvent, sourceWindow?: Window): unknown => {
       // while a modal owns the screen, nothing underneath it fires —
       // regardless of where focus ended up inside the modal
       if (modalOpenRef.current) return null;
@@ -1098,7 +1226,7 @@ export function App(): React.JSX.Element {
           preventDefault: () => e.preventDefault(),
         },
         commands,
-        commandContext(),
+        commandContext(sourceWindow),
         platform,
         // fail-open: a broken command logs and is forgotten, never an uncaught
         // error in the keydown handler (the main process tails this console)
@@ -1133,7 +1261,10 @@ export function App(): React.JSX.Element {
       if (popoutKeys.has(win)) return;
       const handler = (e: KeyboardEvent): void => {
         raisedOtherWindowRef.current = false;
-        if (onKey(e) && !raisedOtherWindowRef.current) window.focus();
+        // `win` — which window this was typed in. A popped-out DOCUMENT is the
+        // one thing a command can act on THERE rather than here (#533), and
+        // dockview's active panel cannot tell us which window that is.
+        if (onKey(e, win) && !raisedOtherWindowRef.current) window.focus();
       };
       popoutKeys.set(win, handler);
       win.addEventListener('keydown', handler);
@@ -1210,10 +1341,18 @@ export function App(): React.JSX.Element {
       // focused.
       const target = fromPopout ? focusedElementIn(openPopoutWindows(), document) : document.activeElement;
       raisedOtherWindowRef.current = false;
+      // The SAME source window the keydown bridge passes (#533), so the two
+      // routes to a command cannot disagree about which surface it acts on:
+      // Ctrl+Shift+P → "Find in session" from inside a popped-out viewer has to
+      // reach that viewer, not whatever is sitting in the grid behind it. Only
+      // when the keystroke really came from a popout — `document.activeElement`
+      // in THIS window would name a window that is not one, and
+      // `activeDocumentId` would answer null for a docked viewer.
+      const sourceWindow = fromPopout ? (target?.ownerDocument.defaultView ?? undefined) : undefined;
       const ran = dispatchAccelerator(
         commandId,
         commands,
-        commandContext(),
+        commandContext(sourceWindow),
         target,
         (err, id) => console.error(`[commands] ${id} failed`, err),
       );
@@ -1339,8 +1478,9 @@ export function App(): React.JSX.Element {
         }}
         // a second dialog is above this one: two stacked `aria-modal` regions
         // is a thing screen readers disagree about, so only the top one claims it
-        dialogAbove={updateOpen || pushOpen}
+        dialogAbove={updateOpen || pushOpen || quietOpen}
         onOpenPushSetup={openPushSetup}
+        onOpenQuietHours={openQuietHours}
       />
       <PushSetupDialog
         open={pushOpen}
@@ -1354,6 +1494,12 @@ export function App(): React.JSX.Element {
           applyPushAnswer(key, bridge.push?.setSecret?.(key, value))
         }
         onTest={testPush}
+      />
+      <QuietHoursDialog
+        open={quietOpen}
+        onClose={() => setQuietOpen(false)}
+        state={quietState}
+        onSet={setQuietWindow}
       />
       <UpdateDialog
         open={updateOpen}
@@ -1432,7 +1578,13 @@ export function App(): React.JSX.Element {
           squeezed), and it is also why every one of those bars has to opt out
           by hand with `flexShrink: 0`. always-visible-notices.test.ts rosters
           them; this is the line that makes the roster necessary. */}
-      <div style={{ flex: 1, display: 'flex', minBlockSize: 0 }}>
+      {/* `position: relative` is load-bearing (P2-E14-01): it is what the
+          events drawer's `position: absolute` is measured against. Without it
+          the drawer would resolve to the nearest positioned ancestor — the
+          viewport — and hang over the status bar and the strips, covering the
+          very readouts that are supposed to stay legible while it is open.
+          `always-visible-notices.test.ts` pins the pair. */}
+      <div style={{ flex: 1, display: 'flex', minBlockSize: 0, position: 'relative' }}>
         {!railHidden && (
           <SessionsRail
             sessions={sessions}
@@ -1508,7 +1660,17 @@ export function App(): React.JSX.Element {
           onActiveCardChanged={(c) => sessionStore.setActiveCard(c)}
           controller={grid}
         />
-        <EventsPanel
+        {/* Shape B: the panel's content, in an overlay drawer that is shut by
+            default. It is the LAST child of the workspace row and out of flow,
+            so the grid above it is laid out as if it were not there — which is
+            the item: the 220px this used to hold goes to the session grid in
+            every layout mode. App still owns the subscription and the walk
+            cursor (E9-03); the drawer is a shape, not a new home for state. */}
+        <EventsDrawer
+          open={eventsOpen}
+          onOpen={() => setEventsOpen(true)}
+          onClose={() => setEventsOpen(false)}
+          drawerBinding={eventsBindingLabel}
           sessions={sessions}
           events={events}
           queueEvents={attentionFeed}
@@ -1538,6 +1700,9 @@ export function App(): React.JSX.Element {
         cliVersion={cliVersion}
         totalOutputTokens={workspaceUsage.output}
         totalCostUsd={workspaceCost}
+        attentionCount={attentionDepth}
+        attentionHottest={attentionHottest}
+        attentionBinding={queueBindingLabel}
       />
     </div>
   );

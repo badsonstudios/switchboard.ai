@@ -62,8 +62,9 @@ Planning notes:
   "share plumbing with ClaudeMon integration"; the third leg is now our own
   usage engine.)
 - **Document viewer v2 belongs with the file tree** (added 2026-07-30). Phase 2's
-  E16 ships the markdown half — rendered view, source toggle, peek slot, viewer
-  window, the `fs.read` capability (DESIGN §5.30). What is left is the same
+  E16 ships the markdown half — rendered view, source toggle, a tab per file
+  (the peek slot it shipped with was removed by #530), viewer window, the
+  `fs.read` capability (DESIGN §5.30). What is left is the same
   surface as §5.7's file tree and should be planned as one epic, not two: the
   **Files** tab + tree with VCS decorations, the full file-type dispatch
   (code / image / JSON / JSONL / CSV, and a card for binaries), follow-tail for

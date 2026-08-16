@@ -18,7 +18,12 @@ import { Logger } from '../log/logger';
 import { SlashCommand } from '../../shared/slash-commands';
 import { readAiTitle } from '../providers/claude';
 import { REPEAT_HEAVY, REVISED, titlesOf } from '../transcripts/fixtures/ai-title';
-import { conversationExists, slugForCwd } from '../transcripts/paths';
+import {
+  conversationExists,
+  listConversations,
+  locateConversation,
+  slugForCwd,
+} from '../transcripts/paths';
 
 type Handler = (e: unknown, ...args: unknown[]) => unknown;
 
@@ -60,6 +65,8 @@ function harness(
   folder: string,
   opts: {
     prior?: PersistedSession;
+    /** other cards already in the workspace, beside the one under test (#484) */
+    otherCards?: PersistedSession[];
     registered?: string[];
     autoTrust?: boolean;
     /** auto task labels (P2-E7-06) — defaults ON, which is the shipped default */
@@ -127,7 +134,14 @@ function harness(
   /** every transcript-snapshot listener the module registered (P2-E7-06) */
   const snapshots: Array<(snap: Record<string, unknown>) => void> = [];
   /** the persisted store as it stands NOW, as opposed to every write ever made */
-  const cards: PersistedSession[] = opts.prior ? [{ ...opts.prior }] : [];
+  const cards: PersistedSession[] = [
+    ...(opts.prior ? [{ ...opts.prior }] : []),
+    // OTHER cards in the same workspace (#484). The repair sweep reads every
+    // card's conversation ids so it cannot hand one card a conversation another
+    // is already in, and a store that only ever holds the card under test
+    // cannot express that.
+    ...(opts.otherCards ?? []).map((c) => ({ ...c })),
+  ];
   let autoLabels = opts.autoLabels ?? true;
   const watched: Array<{
     sessionId: string;
@@ -837,17 +851,26 @@ describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
       expect(h.upserted[0].nativeSessionId).toBe('native-7');
     });
 
-    it('declining a resume CLEARS the stale id rather than persisting it again', () => {
+    it('declining a resume starts fresh but KEEPS the id (#484)', () => {
+      // This test used to assert the opposite — "declining a resume CLEARS the
+      // stale id rather than persisting it again" — and that assertion was the
+      // data loss. It read a declined resume as proof the conversation was
+      // gone, when the two ways a decline actually happens are (a) the id is a
+      // fork the CLI has not written a file for yet and (b) the lookup failed
+      // for a moment. Both left the card with `undefined` and no way back to a
+      // transcript still sitting on disk.
+      //
+      // The worry behind it was real: keeping the id makes every future start
+      // retry a conversation that may not be there. That retry costs one
+      // `statSync`, and it is what lets a fork that materializes later be found.
       const h = harness({ resume: { canResume: () => false } }, folder, {
         prior: priorCard({ folder, nativeSessionId: 'stale-id' }),
       });
 
       h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
 
-      expect(h.created[0].resumeSessionId).toBeUndefined();
-      // keeping it would make every future start retry a conversation that is
-      // not there; the fresh session's own id arrives via onNativeSessionId
-      expect(h.upserted[0].nativeSessionId).toBeUndefined();
+      expect(h.created[0].resumeSessionId).toBeUndefined(); // no --resume, as before
+      expect(h.upserted[0].nativeSessionId).toBe('stale-id'); // but the link survives
     });
 
     it('whose provider is GONE falls back to the default instead of bricking', () => {
@@ -1238,17 +1261,20 @@ describe('starting a session preserves the card (#153 follow-up)', () => {
     expect(saved.layoutSlot).toBe(3);
   });
 
-  // The one field a start DOES deliberately replace: a stale conversation id we
-  // just declined to resume must not be carried forward.
-  it('still replaces the native session id rather than carrying a stale one', async () => {
+  // This used to be the ONE field a start deliberately replaced — "a stale
+  // conversation id we just declined to resume must not be carried forward" —
+  // and #484 showed that clearing it was the loss, not the hygiene. A provider
+  // with no `resume` capability at all plans no resume, which is exactly the
+  // shape that used to wipe a working card the day an adapter stopped declaring
+  // one. Nothing about this start is evidence the conversation is gone.
+  it('keeps the native session id even when nothing planned a resume (#484)', async () => {
     const h = harness(undefined, dir, {
       prior: priorWith({ nativeSessionId: 'old-conversation' }),
     });
 
     await start(h);
 
-    // no transcripts capability => no resume planned => the id is cleared
-    expect(h.upserted.at(-1)?.nativeSessionId).toBeUndefined();
+    expect(h.upserted.at(-1)?.nativeSessionId).toBe('old-conversation');
   });
 
   it('a brand-new card with no prior still saves cleanly', async () => {
@@ -1601,6 +1627,242 @@ describe('a resumed Direct session replays its history (#395)', () => {
     });
 
     expect(() => h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' })).not.toThrow();
+  });
+});
+
+// #484 — THE RESUME LINK IS NEVER DESTROYED.
+//
+// The two shapes of loss the owner hit, end to end, against real files:
+//
+//   A. A card's id is recorded the moment the CLI announces one, and the CLI
+//      writes no transcript for a conversation until a REAL TURN happens
+//      (S-07). A session that announced an id and then got no prompt therefore
+//      left the card pointing at a file that would never exist — over the top
+//      of the id that DID have the history. Two of the owner's cards were found
+//      in exactly that state.
+//   B. One `readdirSync` that fails for a second and the card was reset the same
+//      way, permanently, over a conversation sitting on disk the whole time.
+//
+// (`B` below stands for "the id whose transcript was never written". Measured
+// 2026-08-15: plain `--resume` does not fork — it appends to the resumed file —
+// so the new id really comes from a fresh spawn, a `/clear`, or a resume this
+// app declined. Which is `B` again, and why the two halves compound.)
+//
+// The adapter here is Claude-SHAPED — it answers out of the real transcript
+// layout — because both defects live in the join between the layout and the
+// persisted card, and a stubbed `canResume` cannot express either of them.
+describe('the resume link degrades but is never destroyed (#484)', () => {
+  let dir: string;
+  tempDirEach('sb-ipc-lineage-', (d) => (dir = d));
+  let root: string;
+  tempDirEach('sb-ipc-lineage-root-', (d) => (root = d));
+
+  const A = '00000000-aaaa-4000-8000-000000000000'; // the real conversation
+  const B = '00000000-bbbb-4000-8000-000000000000'; // announced, never got a turn
+
+  const claudeShaped = (): ProviderCapabilities => ({
+    transcripts: { projectsRoot: () => root },
+    resume: {
+      canResume: ({ projectsRoot, folder, nativeSessionId }) =>
+        conversationExists(projectsRoot, folder, nativeSessionId),
+      findOrphaned: ({ projectsRoot, folder, claimed, ownIds }) => {
+        for (const id of ownIds) {
+          if (locateConversation(projectsRoot, folder, id).status !== 'absent') return null;
+        }
+        const listing = listConversations(projectsRoot, folder);
+        if (listing.status !== 'ok') return null;
+        const taken = new Set([...claimed, ...ownIds]);
+        return listing.conversations.find((c) => !taken.has(c.nativeId))?.nativeId ?? null;
+      },
+    },
+  });
+
+  /** the conversation, where the CLI would really have written it */
+  function seedTranscript(id: string, text = 'the history that must not be lost'): void {
+    const d = path.join(root, slugForCwd(dir));
+    fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(
+      path.join(d, `${id}.jsonl`),
+      JSON.stringify({
+        type: 'user',
+        sessionId: id,
+        cwd: dir,
+        message: { role: 'user', content: [{ type: 'text', text }] },
+      }) + '\n'
+    );
+  }
+
+  const start = (prior?: PersistedSession, streamFeed?: StreamFeed) => {
+    const h = harness(claudeShaped(), dir, {
+      transport: 'stream',
+      liveIds: ['live-1'],
+      streamFeed,
+      prior,
+    });
+    h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
+    return h;
+  };
+
+  it('a new id announced, quit without a turn, relaunch — back in the SAME conversation', () => {
+    seedTranscript(A);
+
+    // launch 1: the card resumes A, then the CLI announces a new conversation
+    // (a /clear, or the app having declined the resume and started fresh)
+    const first = start(priorCard({ folder: dir, id: 'card-1', nativeSessionId: A }));
+    expect(first.created[0].resumeSessionId).toBe(A);
+    first.fireNativeId('live-1', B);
+
+    // what the workspace file now holds. B is the head — that part was always
+    // right — but A is KEPT beneath it, which is the whole fix.
+    const afterNewId = first.cards.find((c) => c.id === 'card-1')!;
+    expect(afterNewId.nativeSessionId).toBe(B);
+    expect(afterNewId.nativeSessionLineage).toEqual([A]);
+
+    // the user quits here without prompting, so `B.jsonl` is never written.
+    // Launch 2:
+    const streamFeed = new StreamFeed();
+    const second = start(afterNewId, streamFeed);
+
+    // back in A — not a fresh session over the top of it
+    expect(second.created[0].resumeSessionId).toBe(A);
+    expect(streamFeed.blocks('live-1').map((b) => b.text)).toEqual([
+      'the history that must not be lost',
+    ]);
+    // ...and the card says so, with B kept in case it ever gets a turn and lands
+    const afterRecovery = second.cards.find((c) => c.id === 'card-1')!;
+    expect(afterRecovery.nativeSessionId).toBe(A);
+    expect(afterRecovery.nativeSessionLineage).toEqual([B]);
+  });
+
+  it('a /clear keeps the cleared conversation too, and can fall back to it', () => {
+    // A deliberate, user-visible call. `/clear` mints a new conversation, and
+    // NOT keeping the cleared one would be this bug wearing a different hat: if
+    // the post-clear session then gets no turn, its transcript is never written
+    // and the card resets over the top of history nobody asked to lose. The
+    // cost is narrow and recoverable — a `/clear` followed by a quit with no
+    // prompt at all comes back in the pre-clear conversation, one keystroke
+    // from being cleared again.
+    seedTranscript(A);
+    const first = start(priorCard({ folder: dir, id: 'card-1', nativeSessionId: A }));
+    first.fireNativeId('live-1', B, 'clear');
+
+    const cleared = first.cards.find((c) => c.id === 'card-1')!;
+    expect(cleared.nativeSessionId).toBe(B);
+    expect(cleared.nativeSessionLineage).toEqual([A]);
+
+    // quit with no prompt, so `B.jsonl` was never written
+    const second = start(cleared);
+    expect(second.created[0].resumeSessionId).toBe(A);
+  });
+
+  it('before the fix this exact sequence wiped the id — it now survives', () => {
+    // the minimal statement of mechanism A, with no transcript anywhere: the
+    // card had B, B is not on disk, and B must still be on the card afterwards
+    const h = start(priorCard({ folder: dir, id: 'card-1', nativeSessionId: B }));
+
+    expect(h.created[0].resumeSessionId).toBeUndefined(); // still starts fresh
+    expect(h.cards.find((c) => c.id === 'card-1')!.nativeSessionId).toBe(B);
+  });
+
+  it('a transient FS failure declines THIS spawn and leaves the card alone (mechanism B)', () => {
+    seedTranscript(A);
+    // one antivirus scan, one indexer oplock, one network drive reconnecting
+    const readdir = vi.spyOn(fs, 'readdirSync').mockImplementation(() => {
+      throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' });
+    });
+    try {
+      const h = start(priorCard({ folder: dir, id: 'card-1', nativeSessionId: A }));
+
+      expect(h.created[0].resumeSessionId).toBeUndefined(); // declined, correctly
+      // but NOT forgotten — this is the assertion that used to fail
+      expect(h.cards.find((c) => c.id === 'card-1')!.nativeSessionId).toBe(A);
+    } finally {
+      readdir.mockRestore();
+    }
+
+    // and the next launch, with the directory readable again, resumes it
+    const h = start(priorCard({ folder: dir, id: 'card-1', nativeSessionId: A }));
+    expect(h.created[0].resumeSessionId).toBe(A);
+  });
+
+  it('a card that could not be looked up is never handed a replacement conversation', () => {
+    // the dangerous compound of mechanism B: if a failed look could reach the
+    // repair sweep, a file lock would move a healthy card into a DIFFERENT
+    // conversation. The listing answers `unknown` rather than "empty", so it
+    // cannot.
+    seedTranscript(A);
+    seedTranscript('00000000-cccc-4000-8000-000000000000', 'somebody else');
+    const readdir = vi.spyOn(fs, 'readdirSync').mockImplementation(() => {
+      throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+    });
+    try {
+      const h = start(priorCard({ folder: dir, id: 'card-1', nativeSessionId: A }));
+      expect(h.created[0].resumeSessionId).toBeUndefined();
+    } finally {
+      readdir.mockRestore();
+    }
+  });
+
+  // The owner's two live cards are in this shape RIGHT NOW: a forked id, no
+  // ancestors (the chain did not exist when they were orphaned), and the real
+  // history on disk under an id nothing refers to any more.
+  describe('the repair sweep reattaches a card orphaned before the lineage existed', () => {
+    it('adopts the conversation lying unclaimed in its own folder', () => {
+      seedTranscript(A, 'sixty-seven kilobytes of real work');
+      const h = start(priorCard({ folder: dir, id: 'card-1', nativeSessionId: B }));
+
+      expect(h.created[0].resumeSessionId).toBe(A);
+      const card = h.cards.find((c) => c.id === 'card-1')!;
+      expect(card.nativeSessionId).toBe(A);
+      // the dead id is kept, so the repair is inspectable and reversible
+      expect(card.nativeSessionLineage).toEqual([B]);
+    });
+
+    it('and the history really comes back into the Feed', () => {
+      seedTranscript(A, 'sixty-seven kilobytes of real work');
+      const streamFeed = new StreamFeed();
+      start(priorCard({ folder: dir, id: 'card-1', nativeSessionId: B }), streamFeed);
+      expect(streamFeed.blocks('live-1').map((b) => b.text)).toEqual([
+        'sixty-seven kilobytes of real work',
+      ]);
+    });
+
+    it('takes the NEWEST unclaimed conversation, which is the one it walked away from', () => {
+      const older = '00000000-0000-4000-8000-000000000000';
+      seedTranscript(older, 'last month');
+      seedTranscript(A, 'this morning');
+      const d = path.join(root, slugForCwd(dir));
+      fs.utimesSync(path.join(d, `${older}.jsonl`), new Date(1_000_000), new Date(1_000_000));
+      fs.utimesSync(path.join(d, `${A}.jsonl`), new Date(2_000_000), new Date(2_000_000));
+
+      const h = start(priorCard({ folder: dir, id: 'card-1', nativeSessionId: B }));
+      expect(h.created[0].resumeSessionId).toBe(A);
+    });
+
+    it('never steals a conversation another card is already in', () => {
+      seedTranscript(A);
+      const mine = priorCard({ folder: dir, id: 'card-1', nativeSessionId: B });
+      const theirs = priorCard({ folder: dir, id: 'card-2', nativeSessionId: A });
+      const h = harness(claudeShaped(), dir, {
+        transport: 'stream',
+        liveIds: ['live-1'],
+        prior: mine,
+        otherCards: [theirs],
+      });
+
+      h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
+
+      expect(h.created[0].resumeSessionId).toBeUndefined();
+      expect(h.cards.find((c) => c.id === 'card-1')!.nativeSessionId).toBe(B);
+    });
+
+    it('a BRAND NEW card in a folder full of history adopts nothing', () => {
+      // the guard that makes the guess safe: no prior conversation, no offer
+      seedTranscript(A);
+      const h = start(undefined);
+      expect(h.created[0].resumeSessionId).toBeUndefined();
+      expect(h.cards.find((c) => c.id === 'card-1')!.nativeSessionId).toBeUndefined();
+    });
   });
 });
 

@@ -135,7 +135,14 @@ test.describe('[pty] terminal accelerators (#90)', () => {
       hook_event_name: 'Notification',
       message: 'Claude needs your permission to use Bash',
     });
-    await expect(w.locator('aside [data-event-kind]')).toHaveCount(2, { timeout: 15_000 });
+    // Read off the events TAB, not the drawer's rows: the drawer is collapsed
+    // by default (P2-E14-01) and this test is about a keystroke typed INTO a
+    // terminal — opening an overlay across the right edge of the workspace
+    // first would be staging the wrong scene. The tab's count is the same
+    // queue depth, permanently on screen.
+    await expect(w.getByTestId('events-tab')).toHaveAttribute('data-count', '2', {
+      timeout: 15_000,
+    });
 
     // focus the session that is NOT waiting, and dig into its terminal —
     // exactly where the hotkey used to be dead
@@ -175,7 +182,11 @@ test.describe('[pty] terminal accelerators (#90)', () => {
       hook_event_name: 'Notification',
       message: 'Claude needs your permission to use Bash',
     });
-    await expect(w.locator('aside [data-event-kind]')).toHaveCount(1, { timeout: 15_000 });
+    // the tab again, for the reason above — this one is Ctrl+Space from a
+    // terminal, so the terminal has to be the only thing in the way
+    await expect(w.getByTestId('events-tab')).toHaveAttribute('data-count', '1', {
+      timeout: 15_000,
+    });
 
     await w.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+1`);
     await expect(activeTab(w)).toContainText(first);

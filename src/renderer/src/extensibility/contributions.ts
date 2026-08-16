@@ -23,6 +23,7 @@ import type { CommandDeps } from '../lib/command-set';
 import type { FeedBlockDto } from '../lib/feed';
 import type { ThemeDefinition, ThemeId } from '../theme/theme';
 import type { ServiceHealthStatus } from '../../../shared/service-health';
+import type { EventDto } from '../model/types';
 
 /**
  * A set of commands. Built lazily from deps rather than supplied as a list:
@@ -217,6 +218,21 @@ export interface PanelContribution {
  * `kind === 'tool'`, and the first match wins — exactly as the hand-written
  * ternary chain did. A renderer that matches everything (the markdown
  * fallback) must therefore sort last.
+ *
+ * ONE RULE ABOUT TEXT, because find writes into what you render (#520). The
+ * Session view marks the searched term by splitting the text nodes of the block
+ * it jumped to, and it only splits text React does not TRACK: an element whose
+ * lone child is a string, or anything below a `dangerouslySetInnerHTML`
+ * container. So render a block's body text as `<pre>{text}</pre>` — one string
+ * child — and it gets marked. Compose it out of several children
+ * (`<span>{a}{b}</span>`) and it is skipped, deliberately and safely.
+ *
+ * The shape to avoid is the one that LOOKS like the first and is the second:
+ * `<span>{label}{flag && <b/>}</span>` renders one DOM child when `flag` is
+ * false while React still tracks the text node. Marking that one is a lost
+ * update, or a `removeChild` on a detached node mid-conversation. If a
+ * renderer's body text is conditional, give the text its own element. The rule
+ * and its reasoning live in `lib/feed-marks.ts`.
  */
 export interface FeedBlockRendererContribution {
   manifest: CapabilityManifest;
@@ -241,6 +257,25 @@ export interface StatusBarContext {
    * care — simply has no dot.
    */
   serviceHealth?: ServiceHealthStatus | null;
+  /**
+   * How many sessions are waiting on a human — §5.14's fourth status-bar
+   * readout, built with P2-E14-01 because that item is what took the always-on
+   * Events column away. `lib/queue.ts` is the authority; this is its depth, the
+   * same number the drawer's tab shows.
+   *
+   * Optional for the same reason `serviceHealth` is: a bar rendered by a test
+   * that does not care simply has no count.
+   */
+  attentionCount?: number;
+  /** the accelerator that walks that queue, already formatted (e.g. 'Ctrl+Space') */
+  attentionBinding?: string;
+  /**
+   * The kind at the HEAD of that queue — the worst thing waiting — so the bar
+   * can be tinted by the same fact the drawer's tab is tinted by. Without it
+   * the two readouts sit inches apart saying the same number in different
+   * colours, which makes the status inks stop being a vocabulary.
+   */
+  attentionHottest?: EventDto['kind'] | null;
 }
 
 /** An item in the workspace status bar (§5.10). */
@@ -434,6 +469,21 @@ export interface FindProviderContribution {
   order: number;
   mode: FindMode;
   /**
+   * The mode for THIS surface, when one registrant can be both (#533).
+   *
+   * Optional, and three of the four registrants do not define it: a Session
+   * view is a Session view. The document viewer is not — its header toggles
+   * between rendered markdown, which our bar marks and steps, and a Monaco
+   * source body, which §5.31 says to hand over whole. One panel, one provider,
+   * and which body is on screen is a runtime question; `mode` is the answer
+   * when this is absent or throws, so the static declaration stays the contract
+   * and this is the exception it may claim.
+   *
+   * Read through `findMode()` (find-providers), never directly — like every
+   * other predicate at this point it is called through the boundary.
+   */
+  modeFor?(ctx: FindContext): FindMode;
+  /**
    * Why find cannot run here RIGHT NOW — an i18n key, or null when it can.
    *
    * The greyed bar's whole job is to say WHICH surface it cannot search and
@@ -445,9 +495,16 @@ export interface FindProviderContribution {
   delegate?(ctx: FindContext, query: FindQuery): boolean;
   /** `bar` only: run a query. Never throws — see the point's fail-open rule. */
   search?(ctx: FindContext, query: FindQuery): Promise<FindResults>;
-  /** `bar` only: scroll to a hit, expanding whatever the view was hiding.
-   *  Returns whether it actually moved. */
-  reveal?(ctx: FindContext, hit: FindHit): boolean;
+  /**
+   * `bar` only: scroll to a hit, expanding whatever the view was hiding.
+   * Returns whether it actually moved.
+   *
+   * `query` is the search the hit came from, handed back so a surface can
+   * DECORATE what it reveals (#520 — the Session view marks the term in the
+   * block it lands in, which is what the Terminal group has done through the
+   * search addon since #516). A provider that only scrolls ignores it.
+   */
+  reveal?(ctx: FindContext, hit: FindHit, query: FindQuery): boolean;
   /** `bar` only: drop highlights when the bar closes */
   clear?(ctx: FindContext): void;
 }

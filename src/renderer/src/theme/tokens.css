@@ -377,6 +377,18 @@ body {
 .feed-md a {
   color: var(--status-working-ink);
 }
+/* An anchor with NO href is not a link — HTML says so, and #527 says why it
+   matters here. The sanitizer removes the href from every scheme outside its
+   URI policy (`javascript:`, `data:`, `file:`, `vbscript:` …), which leaves an
+   `<a>` that would otherwise still be painted in link colours and do nothing
+   when clicked. That is the exact complaint #527 was filed over, so the
+   affordance goes with the destination: it renders as the words it always was.
+   The document viewer says the same thing with `.doc-link-blocked`. */
+.feed-md a:not([href]) {
+  color: inherit;
+  text-decoration: none;
+  cursor: default;
+}
 .feed-md blockquote {
   border-inline-start: 2px solid var(--border);
   margin: 0 0 6px;
@@ -391,6 +403,36 @@ body {
 .feed-md td {
   border: 1px solid var(--border);
   padding: 2px 6px;
+}
+
+/* Find marks in the conversation (#520, §5.31).
+ *
+ * The document viewer's `.doc-md mark[data-doc-*]` pair, in the feed — one mark
+ * idiom over two surfaces, deliberately the same two token pairs so a change to
+ * either is a visible non-change to the other (`lib/text-marks.ts` holds the
+ * mechanism they share).
+ *
+ * NOT scoped to `.feed-md`, and that is the difference from the viewer: a match
+ * is as likely to be in a tool's output or a folded thought — components, not
+ * rendered markdown — as in assistant prose. The attribute is the scope, and it
+ * is one the conversation cannot forge: `data-feed-match*` sits inside
+ * `FEED_DECORATION`'s `data-feed` prefix, so the guard-first pass in
+ * `decorateFeedMarkdown` takes it back off assistant HTML before any of ours is
+ * written (#465).
+ *
+ * The CURRENT match is the loud one — it is the answer to "where is the word",
+ * and it wears the same ink as the ring `FeedView` draws round the block it
+ * landed in, so the two read as one gesture. The others are the quiet chip
+ * fill: present enough to count by eye, quiet enough that a term occurring
+ * thirty times does not repaint the session. */
+mark[data-feed-match] {
+  color: var(--text);
+  background: var(--chip);
+  border-radius: 2px;
+}
+mark[data-feed-match-current] {
+  color: var(--bg);
+  background: var(--status-working-ink);
 }
 
 /* Copy button on code in the conversation (#477, P2-E10-11).
@@ -496,6 +538,11 @@ body {
 .collapsed-row:focus-visible,
 .event-open:focus-visible,
 .event-dismiss:focus-visible,
+/* the small chips in the document viewer's header and the Changes tab's
+ * toolbar — both were taking Chromium's default ring, which is not "the same
+ * ring" §5.32 rule 4 names (#532, drive-by for `.doc-btn`) */
+.doc-btn:focus-visible,
+.diff-btn:focus-visible,
 [data-vtab]:focus-visible {
   /* outline only — deliberately NOT border-radius. Chromium's outline already
    * follows whatever radius the element has, and these controls have five
@@ -943,7 +990,29 @@ body {
 .doc-modes {
   display: flex;
 }
-.doc-btn {
+/* The Changes tab's side-by-side / inline pair (#532). Its own class so the
+ * pane does not reach into the document viewer's chrome, but deliberately the
+ * SAME chip as `.doc-btn`: two "which way do you want to read this file"
+ * toggles in one app that looked different would read as two features. */
+.diff-toolbar {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 4px 6px;
+  border-block-end: 1px solid var(--border);
+  /* the editor beside it is `flex: 1` with a zero basis and will happily take
+   * every pixel; without this the toolbar is what a short pane squashes */
+  flex: 0 0 auto;
+}
+.diff-narrow-note {
+  margin-inline-end: auto; /* pushes the buttons back to the trailing edge */
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 10px;
+}
+.doc-btn,
+.diff-btn {
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -953,14 +1022,17 @@ body {
   padding: 2px 6px;
   cursor: pointer;
 }
-.doc-btn:hover:not(:disabled) {
+.doc-btn:hover:not(:disabled),
+.diff-btn:hover:not(:disabled) {
   background: var(--chip);
 }
-.doc-btn:disabled {
+.doc-btn:disabled,
+.diff-btn:disabled {
   opacity: 0.45;
   cursor: default;
 }
-.doc-btn[aria-pressed='true'] {
+.doc-btn[aria-pressed='true'],
+.diff-btn[aria-pressed='true'] {
   background: var(--chip);
   font-weight: 700;
 }
@@ -1008,29 +1080,10 @@ body {
 .doc-gone {
   box-shadow: inset 3px 0 0 0 var(--status-needs-input-ink);
 }
-.doc-find {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
-  border-block-end: 1px solid var(--border);
-  background: var(--panel);
-}
-.doc-find-input {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text);
-  font-family: var(--font-ui);
-  font-size: 11px;
-  padding: 2px 6px;
-  inline-size: 220px;
-}
-.doc-find-count {
-  color: var(--muted);
-  font-size: 11px;
-  min-inline-size: 8ch;
-}
+/* The viewer's private find bar is gone (#533) — it publishes a find surface
+   and the shared §5.31 bar draws itself over the panel. The MARK styles it
+   painted with are still below, under `.doc-main mark[data-doc-match]`, because
+   the marking is the half that moved into the provider rather than away. */
 .doc-body-message {
   padding: 16px 18px;
   color: var(--muted);
@@ -1277,11 +1330,11 @@ body {
   cursor: default;
   text-decoration: none;
 }
-.doc-md mark[data-doc-match] {
+.doc-main mark[data-doc-match] {
   background: var(--chip);
   color: var(--text);
 }
-.doc-md mark[data-doc-match-current] {
+.doc-main mark[data-doc-match-current] {
   background: var(--status-working-ink);
   color: var(--bg);
 }

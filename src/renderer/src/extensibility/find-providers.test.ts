@@ -3,12 +3,14 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { ContributionRegistry } from '../../../shared/extensibility/registry';
-import type { FindSurface, RendererContributions } from './contributions';
+import type { FindContext, FindSurface, RendererContributions } from './contributions';
 import { manifestFor } from './contributions';
 import type { RendererRegistry } from './registry-instance';
 import { registerBuiltinContributions } from '../bootstrap';
 import {
   changesFindProvider,
+  documentFindProvider,
+  findMode,
   findProviderFor,
   findUnavailableKey,
   hitsFromTranscript,
@@ -51,12 +53,11 @@ function hit(over: Partial<TranscriptSearchResult['hits'][number]> = {}): Transc
 }
 
 describe('the find-provider point (P2-E17-02, §5.23)', () => {
-  it('registers three of §5.31’s four named registrants — the honest count', () => {
-    // The fourth is the §5.30 document viewer, and its absence is structural
-    // rather than unfinished — the recipe and the two blockers are written out
-    // at the bottom of `find-providers.ts`.
+  it('registers all four of §5.31’s named registrants (#533)', () => {
+    // Three of four for two milestones; the fourth was blocked on the dispatch
+    // half rather than on this file — see `find-providers.ts`'s closing note.
     const ids = listFindProviders(fresh()).map((p) => p.manifest.id);
-    expect(ids).toEqual(['find-session', 'find-changes', 'find-terminal']);
+    expect(ids).toEqual(['find-session', 'find-changes', 'find-terminal', 'find-document']);
   });
 
   it('resolves a provider BY PANEL, which is how one Ctrl+F serves every view', () => {
@@ -64,6 +65,7 @@ describe('the find-provider point (P2-E17-02, §5.23)', () => {
     expect(findProviderFor(r, 'feed')?.manifest.id).toBe('find-session');
     expect(findProviderFor(r, 'diff')?.manifest.id).toBe('find-changes');
     expect(findProviderFor(r, 'terminal')?.manifest.id).toBe('find-terminal');
+    expect(findProviderFor(r, 'document')?.manifest.id).toBe('find-document');
   });
 
   it('answers null for a panel with no provider — the greyed bar’s input', () => {
@@ -156,21 +158,26 @@ describe('the Session view provider (the E17-01 engine behind the bar)', () => {
   it('jumps through the mounted feed’s surface, and only for a hit that HAS a seq', () => {
     const jumpTo = vi.fn().mockReturnValue(true);
     const ctx = { sessionId: 's1', surface: { kind: 'feed', jumpTo, clear: vi.fn() } };
+    const query = { term: 'ENOENT', caseSensitive: false, wholeWord: false };
     const jumpable = hitsFromTranscript(result({ hits: [hit({ seq: 12 })] }), 's1').hits[0];
     const evicted = hitsFromTranscript(
       result({ hits: [hit({ seq: undefined, earlierThanLoaded: true })] }),
       's1',
     ).hits[0];
 
-    expect(sessionFindProvider.reveal?.(ctx, jumpable)).toBe(true);
-    expect(jumpTo).toHaveBeenCalledWith(12);
-    expect(sessionFindProvider.reveal?.(ctx, evicted)).toBe(false);
+    expect(sessionFindProvider.reveal?.(ctx, jumpable, query)).toBe(true);
+    // the QUERY goes with the seq (#520): the feed marks the term in the block
+    // it lands in, and this call is the only way it learns what the term is
+    expect(jumpTo).toHaveBeenCalledWith(12, query);
+    expect(sessionFindProvider.reveal?.(ctx, evicted, query)).toBe(false);
     expect(jumpTo).toHaveBeenCalledTimes(1);
   });
 
   it('reveals nothing when the panel has not published a surface', () => {
     const h = hitsFromTranscript(result({ hits: [hit()] }), 's1').hits[0];
-    expect(sessionFindProvider.reveal?.({ sessionId: 's1', surface: null }, h)).toBe(false);
+    expect(sessionFindProvider.reveal?.({ sessionId: 's1', surface: null }, h, { term: 'x' })).toBe(
+      false,
+    );
   });
 });
 
@@ -290,6 +297,108 @@ describe('the Changes provider delegates to Monaco (§5.31: do not reimplement i
       'find.unavailable.diffNotReady',
     );
     expect(changesFindProvider.unavailableKey({ sessionId: 's1', surface: ready })).toBeNull();
+  });
+});
+
+describe('find-document — the §5.30 viewer (#533)', () => {
+  /** A stand-in viewer. `view` is what makes one surface two providers. */
+  const surfaceFor = (
+    view: 'rendered' | 'source' | 'none',
+    over: Partial<Record<string, unknown>> = {}
+  ): FindSurface =>
+    ({
+      kind: 'document',
+      view: () => view,
+      search: () => ({ matches: [], truncated: false }),
+      reveal: () => true,
+      clear: () => {},
+      openFind: () => true,
+      ...over,
+    }) as unknown as FindSurface;
+
+  const ctxFor = (surface: FindSurface | null): FindContext => ({ sessionId: '', cardId: 'doc-1', surface });
+
+  it('drives our bar over rendered markdown and DELEGATES over the source body', () => {
+    // The reason `modeFor` exists: one panel, one provider, two bodies —
+    // and §5.31 says Monaco's find is not to be reimplemented, so the half
+    // that IS a Monaco editor is handed over whole.
+    expect(findMode(documentFindProvider, ctxFor(surfaceFor('rendered')))).toBe('bar');
+    expect(findMode(documentFindProvider, ctxFor(surfaceFor('source')))).toBe('delegated');
+  });
+
+  it('falls back to the declared mode when modeFor throws', () => {
+    const angry = surfaceFor('rendered', {
+      view: () => {
+        throw new Error('the viewer exploded');
+      },
+    });
+    expect(findMode(documentFindProvider, ctxFor(angry))).toBe('bar');
+  });
+
+  it('greys with a REASON when there is no document, or not one yet', () => {
+    expect(findUnavailableKey(documentFindProvider, ctxFor(null))).toBe('find.unavailable.noDocument');
+    expect(findUnavailableKey(documentFindProvider, ctxFor(surfaceFor('none')))).toBe(
+      'find.unavailable.documentNotReady'
+    );
+    expect(findUnavailableKey(documentFindProvider, ctxFor(surfaceFor('rendered')))).toBeNull();
+    // the source body is searchable — by Monaco, which is the delegation above
+    expect(findUnavailableKey(documentFindProvider, ctxFor(surfaceFor('source')))).toBeNull();
+  });
+
+  it('turns marked matches into hits the bar can show and step', async () => {
+    const surface = surfaceFor('rendered', {
+      search: () => ({
+        matches: [
+          { text: 'the needle is here', offset: 4, length: 6 },
+          { text: 'another needle', offset: 8, length: 6 },
+        ],
+        truncated: false,
+      }),
+    });
+    const res = await documentFindProvider.search!(ctxFor(surface), { term: 'needle' });
+    expect(res.total).toBe(2);
+    expect(res.hits.map((h) => h.snippet)).toEqual(['the needle is here', 'another needle']);
+    expect(res.hits.map((h) => h.matchStart)).toEqual([4, 8]);
+    // every match is a `<mark>` in the body, so all of them are reachable —
+    // the transcript's evicted-block boundary has no equivalent here
+    expect(res.hits.every((h) => h.jumpable)).toBe(true);
+    expect(res.hits.map((h) => h.ref)).toEqual([0, 1]);
+  });
+
+  it('calls the total a FLOOR when it stopped marking at the cap', async () => {
+    const surface = surfaceFor('rendered', {
+      search: () => ({ matches: [{ text: 'x', offset: 0, length: 1 }], truncated: true }),
+    });
+    const res = await documentFindProvider.search!(ctxFor(surface), { term: 'x' });
+    expect(res.truncated).toBe(true);
+    expect(res.totalIsFloor).toBe(true);
+    expect(res.notice?.key).toBe('find.notice.truncated');
+  });
+
+  it('reveals by the provider’s own ref, and clears what it painted', () => {
+    const reveal = vi.fn().mockReturnValue(true);
+    const clear = vi.fn();
+    const ctx = ctxFor(surfaceFor('rendered', { reveal, clear }));
+    const hit = { id: 'd1', snippet: 'x', matchStart: 0, matchLength: 1, jumpable: true, earlierThanLoaded: false, ref: 1 };
+    expect(documentFindProvider.reveal!(ctx, hit, { term: 'x' })).toBe(true);
+    expect(reveal).toHaveBeenCalledWith(1);
+    documentFindProvider.clear!(ctx);
+    expect(clear).toHaveBeenCalled();
+  });
+
+  it('hands the source body’s find to Monaco, seeded', () => {
+    const openFind = vi.fn().mockReturnValue(true);
+    const ctx = ctxFor(surfaceFor('source', { openFind }));
+    expect(documentFindProvider.delegate!(ctx, { term: 'ENOENT' })).toBe(true);
+    expect(openFind).toHaveBeenCalledWith('ENOENT');
+  });
+
+  it('never reaches a surface belonging to another panel', () => {
+    // the guarantee the whole point rests on, stated for the newest registrant:
+    // a feed surface handed to this provider is not a document
+    expect(findUnavailableKey(documentFindProvider, ctxFor({ kind: 'feed' } as FindSurface))).toBe(
+      'find.unavailable.noDocument'
+    );
   });
 });
 

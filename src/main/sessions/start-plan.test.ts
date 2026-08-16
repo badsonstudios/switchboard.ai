@@ -29,6 +29,8 @@ function input(over: Partial<StartPlanInput> = {}): StartPlanInput {
     isRegistered: (id) => id === 'p',
     defaultProviderId: () => 'p',
     folder: '/work/app',
+    // no other card holds anything, unless the test says so (#484)
+    claimedNativeIds: () => [],
     ...over,
   };
 }
@@ -268,6 +270,219 @@ describe('planSessionStart', () => {
       const defaultProviderId = vi.fn(() => 'p');
       plan({ isRegistered: () => true, defaultProviderId, prior: { providerId: 'codex' } });
       expect(defaultProviderId).not.toHaveBeenCalled();
+    });
+  });
+
+  // #484 — a card's id is recorded when the CLI announces one, and the CLI
+  // writes no transcript for a conversation until a real turn happens (S-07).
+  // A session that got no prompt therefore leaves the card pointing at a file
+  // that will never exist, over the top of the id that has the history. Resume
+  // walks the CHAIN, not one id.
+  describe('resume falls back through the lineage (#484)', () => {
+    const onlyOnDisk = (...present: string[]) =>
+      fullCaps({ resume: { canResume: ({ nativeSessionId }) => present.includes(nativeSessionId) } });
+
+    it('takes the head when the head is really there', () => {
+      const p = plan({
+        capabilitiesOf: () => onlyOnDisk('b', 'a'),
+        prior: { nativeSessionId: 'b', nativeSessionLineage: ['a'] },
+      });
+      expect(p.resumeSessionId).toBe('b');
+      expect(p.resumedVia).toBe('stored');
+    });
+
+    it('falls back to the ancestor when the head has no transcript', () => {
+      // THE bug, as a single assertion: new id announced, quit without
+      // prompting, relaunch
+      const p = plan({
+        capabilitiesOf: () => onlyOnDisk('a'),
+        prior: { nativeSessionId: 'b', nativeSessionLineage: ['a'] },
+      });
+      expect(p.resumeSessionId).toBe('a');
+      expect(p.resumedVia).toBe('lineage');
+    });
+
+    it('walks the whole chain, nearest ancestor first', () => {
+      const canResume = vi.fn<(q: ResumeQuery) => boolean>(({ nativeSessionId }) => nativeSessionId === 'a');
+      const p = plan({
+        capabilitiesOf: () => fullCaps({ resume: { canResume } }),
+        prior: { nativeSessionId: 'd', nativeSessionLineage: ['c', 'b', 'a'] },
+      });
+      expect(canResume.mock.calls.map((c) => c[0].nativeSessionId)).toEqual(['d', 'c', 'b', 'a']);
+      expect(p.resumeSessionId).toBe('a');
+    });
+
+    it('stops asking as soon as one answers yes', () => {
+      const canResume = vi.fn<(q: ResumeQuery) => boolean>(() => true);
+      plan({
+        capabilitiesOf: () => fullCaps({ resume: { canResume } }),
+        prior: { nativeSessionId: 'b', nativeSessionLineage: ['a'] },
+      });
+      expect(canResume).toHaveBeenCalledTimes(1);
+    });
+
+    it('a chain with nothing on disk starts fresh, as it always did', () => {
+      const p = plan({
+        capabilitiesOf: () => onlyOnDisk(),
+        prior: { nativeSessionId: 'b', nativeSessionLineage: ['a'] },
+      });
+      expect(p.resumeSessionId).toBeUndefined();
+      expect(p.resumedVia).toBeUndefined();
+    });
+
+    it('a capability that throws is reported ONCE, not once per ancestor', () => {
+      // `safely` reports on every call, so a broken adapter would otherwise post
+      // eleven identical warnings for one fault
+      const canResume = vi.fn(() => {
+        throw new Error('adapter is broken');
+      });
+      const { plan: p, reported } = planWithSink({
+        capabilitiesOf: () => fullCaps({ resume: { canResume } }),
+        prior: { nativeSessionId: 'd', nativeSessionLineage: ['c', 'b', 'a'] },
+      });
+      expect(canResume).toHaveBeenCalledTimes(1);
+      expect(reported.filter((r) => r.includes('resume.canResume'))).toHaveLength(1);
+      expect(p.resumeSessionId).toBeUndefined();
+    });
+  });
+
+  // The other half of #484: cards orphaned BEFORE the lineage existed carry an
+  // id with no transcript, no ancestors, and their real history under an id
+  // nothing now refers to. The chain prevents the next one; only a look in the
+  // folder recovers the ones already made.
+  describe('a card whose whole chain is gone can be reattached (#484)', () => {
+    const gone = { canResume: () => false };
+
+    it('adopts the conversation the provider found, and says so', () => {
+      const { plan: p, reported } = planWithSink({
+        capabilitiesOf: () => fullCaps({ resume: { ...gone, findOrphaned: () => 'orphan-1' } }),
+        prior: { nativeSessionId: 'announced-never-written' },
+      });
+      expect(p.resumeSessionId).toBe('orphan-1');
+      expect(p.resumedVia).toBe('adopted');
+      // a recovery the user might disagree with is never silent
+      expect(reported.join()).toMatch(/orphan-1/);
+    });
+
+    it('is NEVER offered to a card that has no conversation to lose', () => {
+      // the whole safety of the guess: a brand-new session in a folder full of
+      // old transcripts cannot adopt a stranger's
+      const findOrphaned = vi.fn(() => 'orphan-1');
+      const p = plan({
+        capabilitiesOf: () => fullCaps({ resume: { ...gone, findOrphaned } }),
+        prior: {},
+      });
+      expect(findOrphaned).not.toHaveBeenCalled();
+      expect(p.resumeSessionId).toBeUndefined();
+    });
+
+    it('is not reached at all when the chain resolved', () => {
+      const findOrphaned = vi.fn(() => 'orphan-1');
+      const p = plan({
+        capabilitiesOf: () =>
+          fullCaps({ resume: { canResume: ({ nativeSessionId }) => nativeSessionId === 'a', findOrphaned } }),
+        prior: { nativeSessionId: 'b', nativeSessionLineage: ['a'] },
+      });
+      expect(findOrphaned).not.toHaveBeenCalled();
+      expect(p.resumeSessionId).toBe('a');
+    });
+
+    it('hands over other cards ids and its OWN separately', () => {
+      const findOrphaned =
+        vi.fn<(q: { claimed: string[]; ownIds: string[] }) => string | null>(() => null);
+      plan({
+        capabilitiesOf: () => fullCaps({ resume: { ...gone, findOrphaned } }),
+        prior: { nativeSessionId: 'b', nativeSessionLineage: ['a'] },
+        claimedNativeIds: () => ['someone-elses', 'b'],
+      });
+      // Split, not merged: both are unofferable, but only `ownIds` is the list
+      // the provider must RE-VERIFY before answering — `canResume` said no,
+      // which does not distinguish "not there" from "could not look" — and
+      // merged in it could not tell which ids were the card's own.
+      const q = findOrphaned.mock.calls[0][0];
+      expect(q.claimed).toEqual(['someone-elses']);
+      expect(q.ownIds).toEqual(['b', 'a']);
+    });
+
+    it('is skipped entirely when the claimed list cannot be read', () => {
+      // that list is the guarantee that two cards cannot end up in one
+      // conversation. Performing the repair with it silently empty would be a
+      // guarantee in the comments only.
+      const findOrphaned = vi.fn(() => 'orphan-1');
+      const { plan: p, reported } = planWithSink({
+        capabilitiesOf: () => fullCaps({ resume: { ...gone, findOrphaned } }),
+        prior: { nativeSessionId: 'b' },
+        claimedNativeIds: () => {
+          throw new Error('the workspace would not read');
+        },
+      });
+      expect(findOrphaned).not.toHaveBeenCalled();
+      expect(p.resumeSessionId).toBeUndefined();
+      expect(reported.join()).toMatch(/claimedNativeIds/);
+    });
+
+    it('a provider that does not offer the capability simply starts fresh', () => {
+      const p = plan({
+        capabilitiesOf: () => fullCaps({ resume: gone }),
+        prior: { nativeSessionId: 'b' },
+      });
+      expect(p.resumeSessionId).toBeUndefined();
+    });
+
+    it('is not attempted when the resume CHECK broke — a guess needs a real no', () => {
+      // `canResume` threw, so we never learned that the chain is missing. Asking
+      // for a replacement on the strength of an error is how a working card gets
+      // moved into someone else's conversation.
+      const findOrphaned = vi.fn(() => 'orphan-1');
+      plan({
+        capabilitiesOf: () =>
+          fullCaps({
+            resume: {
+              canResume: () => {
+                throw new Error('adapter is broken');
+              },
+              findOrphaned,
+            },
+          }),
+        prior: { nativeSessionId: 'b' },
+      });
+      expect(findOrphaned).not.toHaveBeenCalled();
+    });
+
+    it('a finder that throws degrades to a fresh start, not a failed session', () => {
+      const { plan: p, reported } = planWithSink({
+        capabilitiesOf: () =>
+          fullCaps({
+            resume: {
+              ...gone,
+              findOrphaned: () => {
+                throw new Error('adapter is broken');
+              },
+            },
+          }),
+        prior: { nativeSessionId: 'b' },
+      });
+      expect(p.resumeSessionId).toBeUndefined();
+      expect(p.providerId).toBe('p'); // still startable
+      expect(reported.join()).toMatch(/resume.findOrphaned/);
+    });
+
+    it('asks about the one root this plan declares, like every other resume question', () => {
+      const findOrphaned = vi.fn<(q: { projectsRoot: string; folder: string }) => string | null>(
+        () => null
+      );
+      const p = plan({
+        capabilitiesOf: () =>
+          fullCaps({
+            transcripts: { projectsRoot: () => '/roots/somewhere-else' },
+            resume: { ...gone, findOrphaned },
+          }),
+        prior: { nativeSessionId: 'b' },
+      });
+      expect(findOrphaned.mock.calls[0][0]).toMatchObject({
+        projectsRoot: p.transcriptsRoot,
+        folder: '/work/app',
+      });
     });
   });
 

@@ -185,6 +185,61 @@ export interface ResumeCapability {
    * consumer, cannot disagree with itself.
    */
   canResume(query: ResumeQuery): boolean;
+  /**
+   * OPTIONAL. This card lost its conversation — is one of yours lying in this
+   * folder unclaimed? (#484)
+   *
+   * Asked only for a card that ONCE HAD a native id and whose whole chain
+   * `canResume` has just declined. That is a weaker precondition than it looks,
+   * which is why `ownIds` is handed over separately below: `canResume` is a
+   * boolean, so "definitely not on disk" and "could not look just now" reach
+   * this function as the same no. RE-CHECK `ownIds` and answer `null` unless
+   * every one of them is DEFINITIVELY absent — otherwise a file lock that
+   * cleared between the two calls would move a card with a perfectly good
+   * transcript into a different conversation, which is the very defect this
+   * capability was added to repair.
+   *
+   * The other half of the precondition is the host's and is real: a card that
+   * has never held a conversation is never offered one, so a brand-new session
+   * in a folder full of history cannot adopt a stranger's.
+   *
+   * Answering is a guess and the host knows it — the id it hands back is
+   * promoted onto the card, and the id the card came in with is kept beneath it,
+   * so a wrong guess costs the user one relaunch and destroys nothing. Answer
+   * `null` whenever you are not reasonably sure, and NEVER answer from a
+   * directory you could not read: "the folder is empty" and "the folder would
+   * not open" must not become the same answer, since the second one is
+   * temporary and this decision is written down.
+   *
+   * Absent: a card whose conversation is not where it was recorded simply
+   * starts fresh, which is how the app behaved before this existed.
+   */
+  findOrphaned?(query: OrphanQuery): string | null;
+}
+
+/** What the host is asking a provider to look for on a card's behalf (#484). */
+export interface OrphanQuery {
+  /** the transcript root the host resolved for this session start — the same
+   *  string `ResumeQuery` carries, for the same reason */
+  projectsRoot: string;
+  /** the project folder the session will run in */
+  folder: string;
+  /**
+   * Every id already spoken for by ANOTHER card in the workspace — heads and
+   * ancestors alike. Never hand back one of these: two cards pointing at one
+   * conversation is a second, quieter kind of loss.
+   */
+  claimed: string[];
+  /**
+   * This card's own chain — the ids that were just looked for and not found.
+   *
+   * Two jobs. It is `claimed` as far as the answer goes ("reattach to the file
+   * that is not there" must not be expressible), and it is the list to
+   * RE-VERIFY before answering at all: see `findOrphaned`. Separate from
+   * `claimed` precisely so the re-verification is possible — merged in, the
+   * provider could not tell which ids were its own to check.
+   */
+  ownIds: string[];
 }
 
 /** What the host is deciding about — and, load-bearingly, WHERE it will look. */

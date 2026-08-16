@@ -20,13 +20,17 @@
 // exactly as it does today.
 import type { Logger } from '../log/logger';
 import type { FeedEvent } from './feed';
+import type { SuppressedEvent } from '../../shared/suppressed';
 import {
   MatchedAction,
+  QuietWindow,
   Rule,
   RuleAction,
   RuleTrigger,
   WindowVisibility,
   plannedActions,
+  splitQuiet,
+  triggerIsQuiet,
 } from './rules';
 
 /** What a handler is told, beyond its own action payload. */
@@ -119,29 +123,82 @@ export interface RulesEngineDeps {
   titleFor: (event: FeedEvent, cardId: string | null) => string;
   bodyFor: (event: FeedEvent) => string;
   registry: RuleActionRegistry;
+  /**
+   * The configured quiet window, or null (P2-E14-05b). Read per event like the
+   * rules are, so changing it in the dialog takes effect on the next event.
+   */
+  getQuietWindow?: () => QuietWindow | null;
+  /**
+   * **The one clock in the notification stack.** Everything downstream —
+   * `RuleTrigger.now`, `inQuietWindow`, the record's timestamp — reads the Date
+   * this returns, so a test sets the time in one argument and the evaluator
+   * stays a table. Defaults to the wall clock.
+   */
+  now?: () => Date;
+  /**
+   * Where a held event goes (P2-E14-05b). The engine builds the record and
+   * hands it over; persisting it is the store's job (`recordSuppressed`), and
+   * reading it is #483's.
+   *
+   * Optional and never awaited: a digest that cannot be written must not cost
+   * the webhook that was going out anyway (P6).
+   */
+  onSuppressed?: (record: SuppressedEvent) => void;
   log?: Logger;
 }
+
+/** What a plan came to: what runs, what quiet hours held, and whether it is quiet. */
+export interface RulePlan {
+  trigger: RuleTrigger;
+  /** actions that will run */
+  actions: MatchedAction[];
+  /** actions that matched and were held by quiet hours */
+  held: MatchedAction[];
+  quiet: boolean;
+}
+
+/**
+ * Disambiguates two suppression records written in the same millisecond.
+ *
+ * MODULE level, not per engine: a second window, a test harness or any future
+ * per-workspace engine would each start their own counter at zero and collide
+ * on a shared millisecond, and `clearSuppressed` filters by id — a duplicate
+ * would clear the wrong digest row. The store refuses a duplicate id as a
+ * second line of defence, which is also what covers a clock stepped backwards.
+ */
+let suppressionSeq = 0;
 
 export class RulesEngine {
   constructor(private readonly deps: RulesEngineDeps) {}
 
-  /** What WOULD run for this event — exposed for tests and for #422's preview. */
-  plan(event: FeedEvent): { trigger: RuleTrigger; actions: MatchedAction[] } {
+  /**
+   * What WOULD run for this event, without running it — for tests and for
+   * #422's preview.
+   *
+   * **`actions` means "will run", not "matched", since P2-E14-05b.** Anything
+   * quiet hours held is in `held`, not in `actions`. A preview that renders
+   * `actions` alone will show an empty plan at 3am and be telling the truth
+   * about tonight while looking like a broken rule — render both.
+   */
+  plan(event: FeedEvent): RulePlan {
     const trigger: RuleTrigger = {
       kind: event.kind,
       cardId: this.deps.cardIdFor(event.sessionId),
       visibility: this.deps.getVisibility(),
+      now: (this.deps.now ?? (() => new Date()))(),
+      quiet: this.deps.getQuietWindow?.() ?? null,
     };
     const rules = [...this.deps.getDefaultRules(), ...this.deps.getRules()];
-    return { trigger, actions: plannedActions(rules, trigger) };
+    const { run, held } = splitQuiet(plannedActions(rules, trigger), trigger);
+    return { trigger, actions: run, held, quiet: triggerIsQuiet(trigger) };
   }
 
   /** Match and run. Returns how many actions actually ran (tests, logging). */
   handle(event: FeedEvent): number {
     let ran = 0;
     try {
-      const { trigger, actions } = this.plan(event);
-      if (actions.length === 0) return 0;
+      const { trigger, actions, held, quiet } = this.plan(event);
+      if (actions.length === 0 && held.length === 0) return 0;
       const title = this.deps.titleFor(event, trigger.cardId);
       const body = this.deps.bodyFor(event);
       for (const { rule, action } of actions) {
@@ -155,17 +212,60 @@ export class RulesEngine {
         };
         if (this.deps.registry.run(action, ctx)) ran++;
       }
+      // Held actions are written down BEFORE the log line, so a digest entry
+      // and the line that explains it cannot disagree about what happened.
+      if (held.length > 0) this.record(trigger, held, title, body);
       this.deps.log?.info('notification rules fired', {
         kind: event.kind,
         cardId: trigger.cardId ?? '',
         visibility: trigger.visibility,
         ran,
         rules: actions.map((a) => a.rule.id).join(','),
+        // The two facts P2-E14-05b adds, and the pair the e2e reads: was the
+        // window open, and which channels did it hold. `quiet=true` with an
+        // empty `held` is the interesting case, not a contradiction — it is a
+        // webhook going out at 3am exactly as designed.
+        quiet,
+        held: held.map((a) => a.action.type).join(','),
       });
     } catch (err) {
       // notifying is best-effort; never let it break the session flow
       this.deps.log?.warn('the notification rules engine threw', { error: String(err) });
     }
     return ran;
+  }
+
+  /**
+   * Write down one held event (P2-E14-05b) — one record per EVENT, listing the
+   * channels, because that is the shape a digest line has.
+   *
+   * Its own try/catch: `handle`'s already covers this, but a store that refuses
+   * to grow must not be able to cost the log line below it — the line is the
+   * only thing left saying anything happened at all.
+   */
+  private record(
+    trigger: RuleTrigger,
+    held: readonly MatchedAction[],
+    title: string,
+    body: string
+  ): void {
+    try {
+      const at = (trigger.now ?? new Date()).getTime();
+      this.deps.onSuppressed?.({
+        id: `${at}-${++suppressionSeq}`,
+        at,
+        kind: trigger.kind,
+        cardId: trigger.cardId,
+        title,
+        body,
+        actions: [...new Set(held.map((h) => h.action.type))],
+        ruleIds: [...new Set(held.map((h) => h.rule.id))],
+        reason: 'quiet-hours',
+      });
+    } catch (err) {
+      this.deps.log?.warn('a suppressed notification could not be recorded', {
+        error: String(err),
+      });
+    }
   }
 }

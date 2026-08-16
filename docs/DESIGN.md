@@ -240,6 +240,24 @@ contract differs in three ways, each deliberate:
   deliberately NOT independent of `transcripts` for a transcript-backed
   provider; one that resumes on some other authority ignores the root and
   answers from its own knowledge.
+- **A card's native id is a CHAIN, and `resume` gained an optional
+  `findOrphaned`** *(#484, 2026-08-15)*. The host records a conversation id the
+  moment the CLI announces one, and the CLI writes no transcript for it until a
+  real turn happens — so an id can name a conversation that does not exist yet
+  and may never. Overwriting the previous id at that moment, and then clearing
+  the new one when it proved unresumable, destroyed the card's only pointer to a
+  conversation still on disk (owner-reported; two live cards). A card therefore
+  persists `nativeSessionId` plus `nativeSessionLineage`, and `canResume` is
+  asked about the head and then each ancestor in turn — **the stored id is never
+  erased by a start, only pushed down the chain**. `findOrphaned` is the repair
+  for cards orphaned before the chain existed: given the root, the folder, the
+  ids other cards hold and this card's OWN ids, name the conversation it lost or
+  answer null. It is optional (absent = such a card just starts fresh), and it
+  is asked ONLY for a card that once held an id whose whole chain `canResume`
+  declined. That precondition is deliberately weak on the host's side —
+  `canResume` is a boolean and cannot distinguish "not on disk" from "could not
+  look" — so the contract puts the re-verification of `ownIds` on the adapter,
+  which is the only party that can tell those apart.
 - **`transcripts` LOCATES transcripts; it does not abstract reading them.** The
   sketch names a `TranscriptReader`. Our tolerant parser, tailer and block builder
   stay host-side and are shared by every provider writing that shape; the adapter
@@ -601,6 +619,30 @@ or sits idle awaiting input, and `Stop` when it finishes. On top:
   channel only when the session/app is backgrounded — no toast for a session
   already on screen. This is the calm default for S3.
 - Quiet hours / do-not-disturb; missed-events digest per session.
+  *(Quiet hours shipped P2-E14-05b. Three decisions worth recording.
+  **Quiet hours are a rule CONDITION, not a gate above the engine.** They used
+  to sit beside the master switch in `notifier.ts`, returning early — so
+  between 22:00 and 07:00 the rules engine was never consulted at all. That was
+  right while every channel was a person's ears and wrong the moment `webhook`
+  shipped. **The applicability decision (delegated here from #424):
+  classification is per ACTION, by AUDIENCE.** `os-toast`, `sound`, `speak` and
+  `push` are `person` and are held; `webhook` is `machine` and is delivered — a
+  webhook goes to a program the user pointed at this app so that something would
+  be watching while they are not, and a log with a hole in it every night is a
+  broken log whose cause nobody diagnoses at 9am. A per-rule `quietHours:
+  'obey' | 'ignore'` override covers both exceptions (a webhook that flashes a
+  lamp; a crash worth waking up for). An unknown action type counts as `person`
+  — the two errors are not symmetric. **The clock enters `RuleTrigger`
+  explicitly**, injected from one place (`RulesEngineDeps.now`), because
+  `rules.ts` is deliberately clock-free and a condition each consumer timed
+  independently is a condition three code paths can disagree about. Windows are
+  local WALL-CLOCK, so DST resolves the way a person reading their own clock
+  would: the autumn hour that repeats is quiet twice, the spring hour that never
+  happens is never inside. **Held events are recorded as data** — a bounded FIFO
+  (200, oldest dropped) in the workspace store, carrying what/when/which
+  card/which channels/why, with the title and body captured at the time rather
+  than re-derived later. That list is P2-E14-05c's input. UI: a palette command
+  and an About-panel button, deliberately not a twelfth title-bar chip.)*
 - **Per-session "notify when done" (owner request 2026-07-22):** a checkbox on
   the session card — done-toasts only for sessions the user opted into (long
   tasks), because a toast for every short turn is noise.
@@ -1765,11 +1807,23 @@ attention queue, or any bulk session operation.
   display-rescue are the §5.8 + E8 machinery already shipped, not new code.
   "Pop it open in its own window" is the same `addPopoutGroup` a session card
   uses; a popped-out viewer is a **viewer window**.
-- **One peek slot, pin to keep** (promoted from §10's IntelliJ preview-tab
-  idea): glancing at a file REPLACES the current viewer's content; pinning
-  promotes it to a permanent tab and sends the next glance to a fresh peek slot.
-  Without this rule the app accumulates thirty stale document tabs and fails the
-  calm check by accretion.
+- **Every file opens its own tab** (owner decision, 2026-08-15 — #530). Opening
+  a file always adds a viewer beside the ones already open; nothing is ever
+  replaced, and a document closes by its ✕ and nothing else. Opening a file
+  that is already open focuses its tab rather than opening a second copy.
+  **This supersedes "one peek slot, pin to keep"** — the IntelliJ preview-tab
+  rule promoted from §10 and shipped in P2-E16-03 (#460), where a second glance
+  re-pointed the panel you were reading and a 📌 was how you kept it. That rule
+  was defended as the calm check applied to accretion: without it "the app
+  accumulates thirty stale document tabs". The owner's answer, having used it:
+  *"when a file opens it should just open a new tab automatically… it doesn't
+  close the previous file window. That's what I want as standard behavior. Let's
+  get rid of that pin altogether."* Recorded rather than smoothed over, because
+  the calm-check argument was real and is being consciously outweighed — thirty
+  stale tabs are a mess the user can see and close, while a document that
+  vanishes because they glanced at something else is a thing taken away that
+  they never asked to lose. The pin affordance is gone entirely; there is no
+  setting behind it.
 - **A viewer never displaces a session.** It opens into the document area or its
   own window — never as a tab inside a session's group. This is the E8-04 "new
   sessions land in whatever popout is active" defect in mirror image, and the
@@ -2280,8 +2334,9 @@ context transfer, and the attention queue work across monitors.
 - Approval surfaces v1: PreToolUse interception spike, approval cards w/ Monaco
   diffs, session-flip mode, review queue pane, deny-with-feedback
 - Document viewer v1 (§5.30, added 2026-07-30): rendered markdown with a source
-  toggle, the peek slot + pin, viewer-in-its-own-window, the shared markdown
-  renderer, and the `fs.read` capability (epic E16)
+  toggle, a tab per file (the peek slot + pin shipped here and were **removed**
+  by owner decision on 2026-08-15, #530), viewer-in-its-own-window, the shared
+  markdown renderer, and the `fs.read` capability (epic E16)
 - Session find (§5.31, added 2026-07-30): Ctrl+F over a session — transcript
   search engine in main, one find bar over per-panel providers, terminal
   scrollback search, grouped results (epic E17)
@@ -2492,11 +2547,17 @@ mode + session archive v1; fleet snapshots + layout DSL.)*
   (resurrectable), NEVER kill; never evicts running or pinned sessions. Open:
   the right eviction ranking (idle-and-reviewed first? least-recently-attended?)
   — IDE policies key on file modification, which has no live-agent analogue.
-- ~~Peek slot~~ (IntelliJ preview-tab) — **PROMOTED** to core for documents
-  (§5.30, 2026-07-30): one reusable transient viewer, pin to keep. The original
-  idea — a peek slot for glancing at archived/background *sessions* without
-  opening N cards — is still unscheduled, and §5.30 is the proof the ergonomic
-  works before it is applied to something as heavy as a session.
+- ~~Peek slot~~ (IntelliJ preview-tab) — promoted to core for documents (§5.30,
+  2026-07-30), shipped in P2-E16-03, and **removed again by owner decision on
+  2026-08-15** (#530, §5.30): every file now opens its own tab. This is the
+  entry's most useful state, because it is the only one with evidence in it:
+  the ergonomic was built, used, and rejected in use — a surface that silently
+  replaces what you were reading costs more than the tabs it saves. The
+  original idea — a peek slot for glancing at archived/background *sessions*
+  without opening N cards — was unscheduled pending exactly this proof, and now
+  has its answer. **Do not revive it for sessions on the strength of the IDE
+  precedent alone**; a session is heavier than a document, and the lighter case
+  already failed.
 - **Mermaid diagram rendering in the document viewer** (§5.30, deferred
   2026-07-30): agents emit ```mermaid constantly and v1 renders it as a labeled
   code fence. Cost that kept it out: a ~megabyte dependency plus an

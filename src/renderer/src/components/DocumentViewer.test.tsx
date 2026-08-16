@@ -21,6 +21,13 @@ vi.mock('./DocumentSource', () => ({
 }));
 
 import { DocumentViewer, formatBytes } from './DocumentViewer';
+import {
+  findSurfaceFor,
+  findSurfaceKey,
+  resetFindSurfaces,
+  type DocumentFindSurface,
+} from '../lib/find-surfaces';
+import { openFindBar, resetFindBarState, setFindTerm } from '../lib/find-bar-state';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -94,6 +101,11 @@ beforeEach(async () => {
   sourceProps.length = 0;
   answer = () => ok('');
   stubBridge();
+  // BEFORE anything mounts, both of them: each drops SUBSCRIBERS as well as
+  // state, so calling one with a component already up leaves a live
+  // `useSyncExternalStore` deaf to every later change.
+  resetFindSurfaces();
+  resetFindBarState();
   await initI18nForTests();
 });
 
@@ -117,38 +129,9 @@ async function mount(
   await act(async () => {});
 }
 
-/**
- * The viewer with an owner that actually honours the pin (P2-E16-03).
- *
- * `pinned` is CONTROLLED — the peek slot lives in `lib/document-panels` and the
- * panel pushes the answer back down — so mounting the viewer bare and clicking
- * the control proves nothing but that the click was heard. This stands in for
- * `DocumentViewerPanel` and nothing more.
- */
-function PinHost(props: { path: string; onChange: (p: boolean) => void }): React.JSX.Element {
-  const [pinned, setPinned] = React.useState(false);
-  return (
-    <DocumentViewer
-      path={props.path}
-      colorScheme="dark"
-      pinned={pinned}
-      onPinnedChange={(next) => {
-        props.onChange(next);
-        setPinned(next);
-      }}
-    />
-  );
-}
-
 const q = (sel: string): HTMLElement | null => host.querySelector(sel);
 const buttonByText = (text: string): HTMLButtonElement | undefined =>
   [...host.querySelectorAll('button')].find((b) => b.textContent?.trim() === text);
-/** Let the find debounce fire. Real timers: `act` already flushes microtasks. */
-const settleFind = async (): Promise<void> => {
-  await act(async () => {
-    await new Promise((r) => setTimeout(r, 200));
-  });
-};
 const click = async (el: Element | null | undefined): Promise<void> => {
   await act(async () => {
     (el as HTMLElement)?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -166,44 +149,25 @@ describe('a markdown file opens RENDERED by default', () => {
     expect(q('[data-testid="doc-source"]')).toBeNull();
   });
 
-  it('the header carries the name, the full path on hover, and the pin control', async () => {
+  it('the header carries the name and the full path on hover', async () => {
     answer = () => ok('# T\n');
     await mount('/home/dan/sb/PROGRESS.md');
     const name = q('[data-testid="doc-name"]');
     expect(name?.textContent).toBe('PROGRESS.md');
     expect(name?.getAttribute('title')).toBe('/home/dan/sb/PROGRESS.md');
-    const pin = q('.doc-pin');
-    expect(pin?.getAttribute('aria-pressed')).toBe('false');
-    // named for a screen reader, not just drawn (§5.32)
-    expect(pin?.getAttribute('aria-label')).toMatch(/pin/i);
   });
 
-  it('the pin control REPORTS; the owner decides, and the button follows it', async () => {
+  it('there is NO pin control (#530)', async () => {
+    // The owner removed the pin outright, and with it the peek slot it existed
+    // to escape from: every file opens its own tab, so there is nothing to
+    // protect a document from. Asserted rather than assumed, because "the
+    // button is gone" is the whole user-visible half of that change — and
+    // because a stale param cannot bring it back if there is no code to draw it.
     answer = () => ok('# T\n');
-    const seen: boolean[] = [];
-    await act(async () => {
-      root!.render(<PinHost path="/p/PROGRESS.md" onChange={(p) => seen.push(p)} />);
-    });
-    await act(async () => {});
-
-    await click(q('.doc-pin'));
-    expect(seen).toEqual([true]);
-    expect(q('.doc-pin')?.getAttribute('aria-pressed')).toBe('true');
-    expect(q('.doc-pin')?.getAttribute('aria-label')).toMatch(/unpin/i);
-
-    await click(q('.doc-pin'));
-    expect(seen).toEqual([true, false]);
-    expect(q('.doc-pin')?.getAttribute('aria-pressed')).toBe('false');
-  });
-
-  it('an owner that refuses the pin leaves the control showing the TRUTH', async () => {
-    // The peek slot can move under a viewer — unpinning another panel claims
-    // it — so an optimistic local `pinned` would light a pin the registry says
-    // is not set. Controlled means the button cannot lie.
-    answer = () => ok('# T\n');
-    await mount('/p/PROGRESS.md', 'dark', { pinned: false, onPinnedChange: () => {} });
-    await click(q('.doc-pin'));
-    expect(q('.doc-pin')?.getAttribute('aria-pressed')).toBe('false');
+    await mount('/p/PROGRESS.md');
+    expect(q('.doc-pin')).toBeNull();
+    expect(q('[data-testid="doc-pin"]')).toBeNull();
+    expect(host.textContent).not.toMatch(/📌|📍/);
   });
 
   it('the pop-out control is a labelled toggle, and only exists when wired', async () => {
@@ -370,6 +334,23 @@ describe('links inside a rendered document', () => {
     expect(calls).toEqual([{ what: 'openExternal', arg: 'https://example.test/a' }]);
   });
 
+  it('a same-document #fragment SCROLLS — it does not go to the browser (#527)', async () => {
+    // The decision, pinned: the viewer and the conversation answer a bare
+    // `#fragment` differently ON PURPOSE. A document has headings with ids to
+    // land on, so this scrolls; a reply has none, so `markdown-links.ts` drops
+    // it. Neither hands it to a browser, which is what a live href would do.
+    answer = () => ok('[jump](#the-plan)\n\n## The plan\n\nbody\n');
+    await mount('/p/PROGRESS.md');
+    const heading = q('[data-testid="doc-rendered"]')?.querySelector('h2');
+    const scrolled = vi.fn();
+    (heading as unknown as { scrollIntoView: unknown }).scrollIntoView = scrolled;
+    await click(q('[data-doc-link="anchor"]'));
+    expect(scrolled).toHaveBeenCalled();
+    // and nothing left the app: no browser, no second read
+    expect(calls).toEqual([]);
+    expect(reads).toEqual(['/p/PROGRESS.md']);
+  });
+
   it('a link whose fragment is not a slug is ignored, not thrown on', async () => {
     // `#a%0Ab` decodes to a raw newline, which is a CSS parse error inside an
     // attribute selector — and the lookup happens in an EFFECT, where a throw
@@ -420,71 +401,113 @@ describe('the rest of the v1 markdown scope', () => {
     expect(q('.doc-front-body')?.textContent).toBe('title: Hi');
   });
 
-  it('Ctrl+F opens a find bar scoped to this panel, and Escape closes it', async () => {
+  // --- find, now that the viewer only PUBLISHES it (#533) -------------------
+  //
+  // The private bar is gone: the viewer hands the shared §5.31 bar a
+  // `FindSurface` and that bar drives it. So what is left to prove here is the
+  // viewer's half of the contract — the surface exists, it says which body is
+  // on screen, and it marks / steps / clears the rendered one. The bar's own
+  // behaviour is `FindBar.test.tsx`'s, and the keystroke that opens it is
+  // `find.spec.ts`'s.
+
+  const surface = (): DocumentFindSurface | null =>
+    findSurfaceFor(findSurfaceKey('doc-9', 'document')) as DocumentFindSurface | null;
+
+  it('publishes a find surface named by its PANEL, and withdraws it on unmount', async () => {
     answer = () => ok('# Feed\n\nthe feed feeds the feed\n');
+    await mount('/p/PROGRESS.md', 'dark', { panelId: 'doc-9' });
+    expect(surface()?.kind).toBe('document');
+    expect(surface()?.view()).toBe('rendered');
+    const r = root!;
+    root = null;
+    await act(async () => r.unmount());
+    expect(surface()).toBeNull();
+  });
+
+  it('publishes NOTHING for a viewer nobody can name', async () => {
+    // The key is what makes "a search cannot reach another panel" structural,
+    // so a viewer with no panel id has no way to be named and does not publish.
+    answer = () => ok('# Feed\n');
     await mount('/p/PROGRESS.md');
-    await act(async () => {
-      q('[data-testid="document-viewer"]')?.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true })
-      );
-    });
-    const input = q('.doc-find-input') as HTMLInputElement;
-    expect(input).not.toBeNull();
-    await act(async () => {
-      // React's own value tracker swallows a plain `input.value = …` followed
-      // by a dispatched event — it sees no change. The native setter is what
-      // every React testing library reaches for, for exactly this reason.
-      const setValue = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype,
-        'value'
-      )!.set!;
-      setValue.call(input, 'feed');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    // the search is debounced — one pass per pause, not one per keystroke
-    await settleFind();
-    expect(host.querySelectorAll('mark[data-doc-match]').length).toBe(4);
-    expect(q('[data-testid="doc-find-count"]')?.textContent).toBe('1 of 4');
+    expect(surface()).toBeNull();
+  });
+
+  it('marks, steps and clears the rendered body through the surface', async () => {
+    answer = () => ok('# Feed\n\nthe feed feeds the feed\n');
+    await mount('/p/PROGRESS.md', 'dark', { panelId: 'doc-9' });
+    const s = surface()!;
 
     await act(async () => {
-      q('[data-testid="document-viewer"]')?.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
-      );
+      expect(s.search({ term: 'feed' }).matches).toHaveLength(4);
     });
-    expect(q('.doc-find-input')).toBeNull();
+    expect(host.querySelectorAll('mark[data-doc-match]')).toHaveLength(4);
+
+    // stepping marks exactly one as current — #520's lesson: a jump with no
+    // visible mark reads as broken
+    await act(async () => {
+      expect(s.reveal(1)).toBe(true);
+    });
+    const current = [...host.querySelectorAll('mark[data-doc-match-current]')];
+    expect(current).toHaveLength(1);
+    expect([...host.querySelectorAll('mark[data-doc-match]')].indexOf(current[0])).toBe(1);
+
+    // closing the bar clears — the marks are real nodes, and leaving them
+    // behind would make the next search match inside its own highlights
+    await act(async () => s.clear());
     expect(host.querySelectorAll('mark[data-doc-match]')).toHaveLength(0);
   });
 
-  it('the find bar re-searches the NEW document after a link, not the old count', async () => {
+  it('re-marks the NEW document after a link, so the highlights are never stale', async () => {
     answer = (p) =>
       p.endsWith('a.md')
         ? ok('# feed\n\nfeed feed feed\n\n[go](./b.md)\n')
         : ok('# feed once\n');
-    await mount('/p/a.md');
+    await mount('/p/a.md', 'dark', { panelId: 'doc-9' });
+    openFindBar('doc-9');
+    setFindTerm('feed');
     await act(async () => {
-      q('[data-testid="document-viewer"]')?.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true })
-      );
+      expect(surface()!.search({ term: 'feed' }).matches).toHaveLength(4);
     });
-    const input = q('.doc-find-input') as HTMLInputElement;
-    await act(async () => {
-      const setValue = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype,
-        'value'
-      )!.set!;
-      setValue.call(input, 'feed');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    await settleFind();
-    expect(q('[data-testid="doc-find-count"]')?.textContent).toBe('1 of 4');
 
-    // `replaceChildren` destroys every mark; without the re-run the bar would
-    // still read "1 of 4" over a document with nothing highlighted in it
+    // `replaceChildren` destroys every mark; without the re-mark the bar would
+    // sit over a document with nothing highlighted in it
     await click(q('[data-doc-link="relative"]'));
     await act(async () => {});
     expect(q('[data-testid="doc-name"]')?.textContent).toBe('b.md');
     expect(host.querySelectorAll('mark[data-doc-match]')).toHaveLength(1);
-    expect(q('[data-testid="doc-find-count"]')?.textContent).toBe('1 of 1');
+  });
+
+  it('searches EXPANDED front matter — it is on screen, so a 0 over it would lie', async () => {
+    answer = () => ok('---\ntitle: the needle\n---\n\n# Body\n');
+    await mount('/p/PROGRESS.md', 'dark', { panelId: 'doc-9' });
+    const s = surface()!;
+    // collapsed: the block is not in the DOM at all, so not searching it is
+    // honest rather than a gap
+    await act(async () => {
+      expect(s.search({ term: 'needle' }).matches).toHaveLength(0);
+    });
+    await click(buttonByText('Front matter'));
+    await act(async () => {
+      expect(s.search({ term: 'needle' }).matches).toHaveLength(1);
+    });
+    expect(host.querySelectorAll('.doc-front-body mark[data-doc-match]')).toHaveLength(1);
+    // ...and the chip that opens it is OUR chrome, never a match
+    await act(async () => {
+      expect(s.search({ term: 'Front matter' }).matches).toHaveLength(0);
+    });
+  });
+
+  it('says which body is on screen — the source one is Monaco’s to search', async () => {
+    // `modeFor` reads this: rendered markdown is ours to mark, and the source
+    // body is a Monaco editor §5.31 says not to reimplement a find over. The
+    // editor is stubbed in jsdom, so `none` is the honest answer here — what is
+    // being pinned is that it STOPS saying `rendered` the moment the toggle
+    // moves, which is what keeps the bar from marking a body that is not there.
+    answer = () => ok('# Feed\n');
+    await mount('/p/PROGRESS.md', 'dark', { panelId: 'doc-9' });
+    expect(surface()!.view()).toBe('rendered');
+    await click(buttonByText('Source'));
+    expect(surface()!.view()).not.toBe('rendered');
   });
 });
 

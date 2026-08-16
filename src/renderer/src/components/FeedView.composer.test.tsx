@@ -21,6 +21,7 @@ import { initI18nForTests } from '../i18n/test-i18n';
 import { sessionPanels } from '../extensibility/panels';
 import { PanelContext } from '../extensibility/contributions';
 import { COMPOSER_MAX_LINES, resolveLineHeight } from '../lib/composer-size';
+import { loadUiState } from '../lib/ui-state';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -45,6 +46,11 @@ function stubBridge(): void {
       onReset: () => () => {},
     },
     sessions: { slashCommands: () => Promise.resolve([]) },
+    // The composer now SAVES its draft (#485), keyed by card, into the ui blob
+    // — which is module state in this bundle and therefore shared by every test
+    // in this file. Each one mounts the same `card-1`, so without an empty blob
+    // per test the second one starts life holding the first one's paragraph.
+    workspace: { getUi: () => Promise.resolve({}), setUi: () => {} },
   };
 }
 
@@ -141,6 +147,7 @@ beforeEach(async () => {
     }
   );
   stubWrappingLayout();
+  await loadUiState(); // see stubBridge: an empty draft blob per test
   await initI18nForTests();
 });
 

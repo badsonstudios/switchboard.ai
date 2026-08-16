@@ -32,7 +32,7 @@ import { ReadScope } from './fs/read-scope';
 import { IpcBroker } from './ipc/broker';
 import { allCapabilities, Channel } from '../shared/ipc/capabilities';
 import { EventFeed } from './events/feed';
-import { Notifier } from './events/notifier';
+import { Notifier, quietWindowOf } from './events/notifier';
 import {
   ACTION_OS_TOAST,
   ACTION_PUSH,
@@ -40,8 +40,10 @@ import {
   ACTION_SPEAK,
   ACTION_WEBHOOK,
   defaultRules,
+  inQuietWindow,
   visibilityAcross,
 } from './events/rules';
+import type { QuietState } from '../shared/quiet-hours';
 import { RuleActionRegistry, RulesEngine } from './events/rules-engine';
 import {
   DECIDE_BUTTONS,
@@ -72,6 +74,10 @@ import type { UpdateHandshake, UpdateInstallStatus } from '../shared/update';
 import { ServiceHealthService } from './health/service';
 import { SERVICE_STATUS_FEED_ENV } from './health/statuspage';
 import { installTerminalAccelerators, makeAcceleratorDeps } from './terminal-accelerators';
+import type { ContextMenuDeps } from './context-menu';
+import { installContextMenu, makeContextMenuDeps, sanitizeContextMenuLabels } from './context-menu';
+import type { ContextMenuLabels } from '../shared/context-menu';
+import { DEFAULT_CONTEXT_MENU_LABELS } from '../shared/context-menu';
 import {
   Box,
   groupIdFromFrameName,
@@ -212,6 +218,17 @@ function isPopoutUrl(url: string): boolean {
 
 let workspace: WorkspaceStore;
 let currentWindow: BrowserWindow | null = null;
+/**
+ * **The notification stack's one clock** (P2-E14-05b).
+ *
+ * Quiet hours made time a rule CONDITION, and a condition that each consumer
+ * read from its own `new Date()` would be a condition that three code paths can
+ * disagree about — the beep, the rules and the record all deciding
+ * independently whether it is 06:59 or 07:00. `RulesEngine` and `Notifier` both
+ * take this function, and the trigger carries the Date it returned, so the pure
+ * evaluator never calls a clock at all and every case is a table test.
+ */
+const clock = (): Date => new Date();
 // Called when the main window's renderer is gone — closed OR crashed. Module-
 // level rather than wired once in the bootstrap because createWindow() runs
 // again on macOS `activate`, and the second window needs the same teardown as
@@ -332,6 +349,25 @@ const acceleratorDeps = makeAcceleratorDeps({
     return true;
   },
   onError: (err) => log.app.warn('terminal accelerator failed', { error: String(err) }),
+});
+
+/**
+ * Right-click edit menus (#526).
+ *
+ * The labels are the renderer's — it owns i18next — and arrive on
+ * `app:contextMenuLabels` at boot and on every language change. English until
+ * then: a window exists before its renderer has mounted, and a right-click in
+ * that gap must still get a working menu.
+ */
+let contextMenuLabels: ContextMenuLabels = DEFAULT_CONTEXT_MENU_LABELS;
+// The menu is anchored to the window that was clicked. The ROLES act on the
+// FOCUSED webContents — which is that same window, popout included, because
+// clicking it focused it.
+const contextMenuDeps: ContextMenuDeps = makeContextMenuDeps({
+  labels: () => contextMenuLabels,
+  windowFor: (contents) => BrowserWindow.fromWebContents(contents),
+  build: (template) => Menu.buildFromTemplate(template),
+  onError: (err) => log.ui.warn('context menu failed', { error: String(err) }),
 });
 
 function trackWindowGeometry(win: BrowserWindow): void {
@@ -516,6 +552,9 @@ function createWindow(): BrowserWindow {
   // The two chords that must survive terminal focus (#90). Installed on the
   // window's contents, so the claim ends at our own windows.
   installTerminalAccelerators(win.webContents, acceleratorDeps(false));
+  // Cut/Copy/Paste/Select All on right-click (#526). Electron provides no
+  // default menu, so without this every right-click in the app does nothing.
+  installContextMenu(win.webContents, contextMenuDeps);
   // A navigating renderer has torn its listener down; nothing may be claimed
   // again until the new one says it is listening.
   win.webContents.on('did-start-loading', () => {
@@ -664,6 +703,10 @@ function createWindow(): BrowserWindow {
     // must not remove capability). The claim is per-window, so this window
     // needs its own.
     installTerminalAccelerators(child.webContents, acceleratorDeps(true));
+    // ...and its right-click menus (#526). `context-menu` is per-webContents
+    // too, so a popped-out composer would otherwise be the one text box in the
+    // app you cannot paste into with the mouse.
+    installContextMenu(child.webContents, contextMenuDeps);
     child.on('closed', () => {
       const i = popoutWindows.indexOf(entry);
       if (i >= 0) popoutWindows.splice(i, 1);
@@ -799,6 +842,17 @@ app
     // nothing is taken from the page
     broker.on('app:acceleratorReady', (e) => {
       acceleratorReadyFor = e.sender.id;
+    });
+    // The four right-click labels, already translated (#526). Main has no
+    // i18n; the renderer publishes them at boot and on every language change.
+    // Sanitized rather than trusted — they become items in a NATIVE menu.
+    broker.on('app:contextMenuLabels', (_e, raw: unknown) => {
+      contextMenuLabels = sanitizeContextMenuLabels(raw);
+      // Said out loud because the failure is otherwise SILENT: a renamed
+      // channel, a caller without `app.window`, a preload that did not load —
+      // every one of them leaves the menus in English for ever with nothing
+      // anywhere to read. One line at boot answers "did the labels arrive?".
+      log.ui.info('context menu labels received', { paste: contextMenuLabels.paste });
     });
     // display work areas — for popout-position rescue on restore (E8-02)
     broker.handle('app:workAreas', () => screen.getAllDisplays().map((d) => d.workArea));
@@ -1440,6 +1494,17 @@ app
     let labelForLive: (sessionId: string) => string | undefined = () => undefined;
     const rules = new RulesEngine({
       getRules: () => workspace.listRules(),
+      // ── quiet hours (P2-E14-05b, §5.9) ──
+      //
+      // The window is read per event like the rules are, so editing it in the
+      // dialog takes effect on the next event with nothing to restart. WHICH
+      // channels it holds is not decided here — it is per action audience, in
+      // `rules.ts` (`quietHolds`), where a table test can reach it.
+      getQuietWindow: () => quietWindowOf(workspace.getNotificationPrefs()),
+      now: clock,
+      // Held events are written down for #483's missed-events digest. Bounded
+      // FIFO in the store; the engine only hands over the record.
+      onSuppressed: (record) => workspace.recordSuppressed(record),
       // The built-ins are synthesized per event from the switches, push and
       // webhook included — so turning the phone on in the setup dialog takes
       // effect on the next event with nothing to persist and no rule to write.
@@ -1503,6 +1568,10 @@ app
       getWindow: () => currentWindow,
       getPrefs: () => workspace.getNotificationPrefs(),
       rules,
+      // The same `clock` the engine got: the beep and the rules deciding it is
+      // a different time of day is the kind of bug nobody would think to look
+      // for (P2-E14-05b).
+      now: clock,
     });
     feed.onEvent((e) => {
       if (e) notifier.handle(e); // null = pure removal, nothing to announce
@@ -1567,6 +1636,19 @@ app
       workspace.setNotificationPrefs(p);
       return workspace.getNotificationPrefs();
     });
+    // P2-E14-05b. Quiet hours' whole job is to do nothing, which makes it the
+    // one feature a user cannot tell is working — so the dialog can ask whether
+    // the window is open RIGHT NOW (main owns the clock) and how many events it
+    // has held. The list itself belongs to #483's digest; this is the count.
+    broker.handle('notifications:quietState', (): QuietState => {
+      const prefs = workspace.getNotificationPrefs();
+      const window = quietWindowOf(prefs);
+      return {
+        window,
+        active: inQuietWindow(window, clock()),
+        heldCount: workspace.countSuppressed(),
+      };
+    });
     broker.handle('settings:getAutoTrust', () => workspace.getAutoTrust());
     broker.handle('settings:setAutoTrust', (_e, on: boolean) => {
       workspace.setAutoTrust(on === true);
@@ -1584,6 +1666,15 @@ app
       broker,
       log: createLogger(sink, 'ipc'),
       getWindow: () => currentWindow, // reassigned on macOS re-activate
+      // #531: a folder picker opened from a popped-out session is parented to
+      // THAT window. `popoutWindows` is main's own registry, filled from
+      // `did-create-window` and keyed by the dockview group in the frame name
+      // — so a renderer-supplied id can only ever select a window we already
+      // made, or nothing.
+      getPopoutWindow: (groupId) => {
+        const hit = popoutWindows.find((p) => p.groupId === groupId);
+        return hit && !hit.win.isDestroyed() ? hit.win : null;
+      },
       autoTrust: () => workspace.getAutoTrust(),
       autoLabels: () => workspace.getAutoLabels(),
       setAutoLabels: (on) => workspace.setAutoLabels(on),

@@ -3,7 +3,17 @@
 // into a CARD-scoped decision.
 import { describe, it, expect, vi } from 'vitest';
 import { RuleActionRegistry, RulesEngine, RuleActionContext } from './rules-engine';
-import { ACTION_OS_TOAST, Rule, defaultRules, notifyWhenDoneRule } from './rules';
+import {
+  ACTION_OS_TOAST,
+  ACTION_PUSH,
+  ACTION_SOUND,
+  ACTION_SPEAK,
+  ACTION_WEBHOOK,
+  Rule,
+  defaultRules,
+  notifyWhenDoneRule,
+} from './rules';
+import type { SuppressedEvent } from '../../shared/suppressed';
 import type { FeedEvent } from './feed';
 import type { Logger } from '../log/logger';
 
@@ -185,7 +195,12 @@ describe('RulesEngine', () => {
     const h = harness();
     h.rules.push(notifyWhenDoneRule(CARD));
     const { trigger, actions } = h.engine.plan(event('done'));
-    expect(trigger).toEqual({ kind: 'done', cardId: CARD, visibility: 'hidden' });
+    expect(trigger).toMatchObject({ kind: 'done', cardId: CARD, visibility: 'hidden' });
+    // The clock is on the trigger since P2-E14-05b, and it is the ENGINE that
+    // put it there — a trigger without one would mean quiet hours could never
+    // be evaluated, so it is asserted rather than ignored.
+    expect(trigger.now).toBeInstanceOf(Date);
+    expect(trigger.quiet).toBeNull(); // no window configured in this harness
     expect(actions.map((a) => a.action.type)).toEqual([ACTION_OS_TOAST]);
     expect(h.toasts).toEqual([]);
   });
@@ -244,5 +259,194 @@ describe('RulesEngine', () => {
     });
     expect(engine.handle(event('done'))).toBe(2);
     expect(titleFor).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── quiet hours, at the ENGINE level (P2-E14-05b) ──────────────────────────
+//
+// The matrix lives in `rules.quiet.test.ts`; what only the engine can show is
+// the two things it owns: that the clock reaches the pure evaluator from ONE
+// injected place, and that a held event becomes a RECORD for #483's digest
+// rather than vanishing.
+describe('RulesEngine and quiet hours', () => {
+  const NIGHT = { start: '22:00', end: '07:00' };
+  const at = (h: number): Date => new Date(2026, 7, 14, h, 0, 0);
+
+  function quietHarness(now: Date, quiet: { start: string; end: string } | null = NIGHT) {
+    const ran: string[] = [];
+    const held: SuppressedEvent[] = [];
+    const log = fakeLog();
+    const registry = new RuleActionRegistry(log);
+    for (const type of [ACTION_OS_TOAST, ACTION_SOUND, ACTION_SPEAK, ACTION_PUSH, ACTION_WEBHOOK])
+      registry.register(type, (a) => void ran.push(a.type));
+    const rules: Rule[] = [];
+    const engine = new RulesEngine({
+      getRules: () => rules,
+      getDefaultRules: () => [],
+      cardIdFor: () => CARD,
+      getVisibility: () => 'hidden',
+      titleFor: () => 'TradingApp',
+      bodyFor: (e) => e.kind,
+      getQuietWindow: () => quiet,
+      now: () => now,
+      onSuppressed: (r) => void held.push(r),
+      registry,
+      log,
+    });
+    return { engine, ran, held, rules, log };
+  }
+
+  const everything: Rule = {
+    id: 'r',
+    event: 'any',
+    actions: [
+      { type: ACTION_OS_TOAST },
+      { type: ACTION_SOUND },
+      { type: ACTION_SPEAK },
+      { type: ACTION_PUSH },
+      { type: ACTION_WEBHOOK },
+    ],
+  };
+
+  it('at 3am runs only the webhook, and no handler is even called for the rest', () => {
+    // Not merely "the toast did nothing": the HANDLER must not run at all, or a
+    // future handler with a side effect before its own guard would still fire.
+    const h = quietHarness(at(3));
+    h.rules.push(everything);
+    expect(h.engine.handle(event('done'))).toBe(1);
+    expect(h.ran).toEqual([ACTION_WEBHOOK]);
+  });
+
+  it('at noon runs all five', () => {
+    const h = quietHarness(at(12));
+    h.rules.push(everything);
+    expect(h.engine.handle(event('done'))).toBe(5);
+    expect(h.ran).toHaveLength(5);
+  });
+
+  it('with no window configured, 3am is an ordinary hour', () => {
+    const h = quietHarness(at(3), null);
+    h.rules.push(everything);
+    expect(h.engine.handle(event('done'))).toBe(5);
+  });
+
+  it('writes ONE record per event, listing the channels it held', () => {
+    const h = quietHarness(at(3));
+    h.rules.push(everything);
+    h.engine.handle(event('needs-input'));
+    expect(h.held).toHaveLength(1);
+    expect(h.held[0]).toMatchObject({
+      kind: 'needs-input',
+      cardId: CARD,
+      title: 'TradingApp',
+      body: 'needs-input',
+      reason: 'quiet-hours',
+      ruleIds: ['r'],
+    });
+    // the webhook is NOT in the held list — it went out
+    expect(h.held[0].actions).toEqual([ACTION_OS_TOAST, ACTION_SOUND, ACTION_SPEAK, ACTION_PUSH]);
+    // the record's timestamp is the injected clock's, not the wall clock's
+    expect(h.held[0].at).toBe(at(3).getTime());
+  });
+
+  it('gives two events in the same millisecond different ids', () => {
+    // The digest clears BY ID; two rows sharing one would clear each other.
+    const h = quietHarness(at(3));
+    h.rules.push(everything);
+    h.engine.handle(event('done'));
+    h.engine.handle(event('crashed'));
+    expect(h.held).toHaveLength(2);
+    expect(h.held[0].id).not.toBe(h.held[1].id);
+  });
+
+  it('records nothing when nothing was held', () => {
+    const h = quietHarness(at(12));
+    h.rules.push(everything);
+    h.engine.handle(event('done'));
+    expect(h.held).toEqual([]);
+  });
+
+  it('a rule that never MATCHED is not recorded as held', () => {
+    // Suppression is not matching: a digest that listed rules the visibility
+    // condition rejected would be reporting events that were never going to
+    // fire in the first place.
+    const h = quietHarness(at(3));
+    h.rules.push({ ...everything, visibility: ['focused'] }); // we are 'hidden'
+    expect(h.engine.handle(event('done'))).toBe(0);
+    expect(h.held).toEqual([]);
+  });
+
+  it('a store that throws while recording costs the digest and nothing else', () => {
+    const h = quietHarness(at(3));
+    h.rules.push(everything);
+    const engine = new RulesEngine({
+      getRules: () => h.rules,
+      getDefaultRules: () => [],
+      cardIdFor: () => CARD,
+      getVisibility: () => 'hidden',
+      titleFor: () => 'TradingApp',
+      bodyFor: (e) => e.kind,
+      getQuietWindow: () => NIGHT,
+      now: () => at(3),
+      onSuppressed: () => {
+        throw new Error('the workspace file is read-only');
+      },
+      registry: (() => {
+        const reg = new RuleActionRegistry(h.log);
+        reg.register(ACTION_WEBHOOK, () => void h.ran.push(ACTION_WEBHOOK));
+        return reg;
+      })(),
+      log: h.log,
+    });
+    // the webhook still went out (P6) …
+    expect(engine.handle(event('done'))).toBe(1);
+    // … and the failure is written down rather than swallowed
+    expect(h.log.lines.some(([lvl, m]) => lvl === 'warn' && m.includes('could not be recorded'))).toBe(
+      true
+    );
+  });
+
+  it('logs the quiet flag and the held channels — the line the e2e reads', () => {
+    // The e2e asserts on `quiet` and `held` by name. Asserting only that SOME
+    // info line exists would pass with both fields deleted — which is a test
+    // whose failure mode is a red e2e ten minutes later.
+    const fields: Array<Record<string, unknown>> = [];
+    const log = {
+      info: (_m: string, f?: Record<string, unknown>) => void fields.push(f ?? {}),
+      warn: () => {},
+      error: () => {},
+      debug: () => {},
+    } as unknown as Logger;
+    const registry = new RuleActionRegistry();
+    registry.register(ACTION_WEBHOOK, () => {});
+    registry.register(ACTION_OS_TOAST, () => {});
+    new RulesEngine({
+      getRules: () => [everything],
+      getDefaultRules: () => [],
+      cardIdFor: () => CARD,
+      getVisibility: () => 'hidden',
+      titleFor: () => 'TradingApp',
+      bodyFor: (e) => e.kind,
+      getQuietWindow: () => NIGHT,
+      now: () => at(3),
+      registry,
+      log,
+    }).handle(event('done'));
+    expect(fields).toHaveLength(1);
+    expect(fields[0].quiet).toBe(true);
+    expect(String(fields[0].held).split(',')).toContain(ACTION_OS_TOAST);
+    expect(String(fields[0].held).split(',')).not.toContain(ACTION_WEBHOOK);
+    expect(fields[0].ran).toBe(1); // the webhook did go
+  });
+
+  it('an event whose every action is held still gets a record and a log line', () => {
+    // The `actions.length === 0` early return used to mean "nothing matched".
+    // With quiet hours it can also mean "everything was held", and returning
+    // early there would lose the whole digest entry.
+    const h = quietHarness(at(3));
+    h.rules.push({ id: 'r', event: 'any', actions: [{ type: ACTION_OS_TOAST }] });
+    expect(h.engine.handle(event('done'))).toBe(0);
+    expect(h.held).toHaveLength(1);
+    expect(h.log.lines).not.toEqual([]);
   });
 });

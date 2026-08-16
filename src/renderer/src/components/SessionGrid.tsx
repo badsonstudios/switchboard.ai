@@ -26,13 +26,7 @@ import { IdentityChip, identityBadgeStyle } from './IdentityChip';
 import { DiffPane } from './DiffPane';
 import { DocumentViewer } from './DocumentViewer';
 import { baseName } from '../lib/document-kind';
-import {
-  documentPanels,
-  forgetDocumentPanel,
-  isDocumentPinned,
-  planDocumentOpen,
-  setDocumentPinned,
-} from '../lib/document-panels';
+import { forgetDocumentPanel, isDocumentPanelId, planDocumentOpen } from '../lib/document-panels';
 import { UsageStrip } from './UsageStrip';
 import { GitContext, GitStatusDto } from './GitContext';
 import { Usage, ZERO_USAGE } from '../lib/usage';
@@ -42,6 +36,7 @@ import { captureSlot, openerRelative, placeAt } from '../lib/dock-slot';
 import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
 import { submitTarget } from '../lib/presentation-policy';
 import { bulkClose } from '../lib/pinning';
+import { newSessionHostGroup } from '../lib/new-session-target';
 import { createSweeper, SweepPort, SweepRequest } from '../lib/layout-sweep';
 import { sharedAnnouncer } from '../lib/announcer';
 import { CardSound, nextCardSound } from '../../../shared/sounds';
@@ -66,11 +61,13 @@ import { pickAdoptedGroupId } from '../lib/groups';
 import { addPopoutWindow, removePopoutWindow, subscribePopoutWindows } from '../lib/popout-windows';
 import { strandedByGroup } from '../lib/popout-rescue';
 import { uiGet, uiSet } from '../lib/ui-state';
+import { pruneDrafts } from '../lib/composer-draft';
 import { setDraggedCard } from '../lib/drag-context';
 import { findBarState, subscribeFindBar } from '../lib/find-bar-state';
 import { FindBar } from './FindBar';
 import { sendSessionCommand } from '../lib/composer';
 import { DEFAULT_SESSION_TRANSPORT, type TransportKind } from '../../../shared/transport';
+import { srOnly } from './sr-only';
 import {
   dropRetired,
   dropAnswered,
@@ -465,6 +462,16 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // slash command into the PTY — the CLI stays the source of truth
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [confirmClear, setConfirmClear] = React.useState(false);
+  /**
+   * Whatever went wrong creating a session from THIS card's ＋ (#531).
+   *
+   * Local to the card and not the grid's `error`, because the grid's banner is
+   * painted in the MAIN window — and the ＋ only exists while this card is out
+   * in a popout, i.e. exactly when the user cannot see that banner. Our
+   * breakage has to be visible where it happened (fail-open), which means in
+   * the window that asked.
+   */
+  const [cardError, setCardError] = React.useState<string | null>(null);
   // ── this card's notification cue (P2-E14-05a, §5.9 + §5.11) ───────────────
   //
   // Same defensive bridge read as `rulesApi` above and for the same reason: a
@@ -1305,6 +1312,45 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             >
               {t('ladder.collapseIcon')}
             </button>
+            {/* #531. ONLY while this card is out in its own window: the main
+                window has `+ session` in its own chrome, and a second ⊕ on
+                every card header there would be clutter offering nothing new.
+                A popout has no chrome of ours at all — dockview adopts the
+                group's DOM into an otherwise empty document — so the card
+                header is the only surface in that window we can put it on.
+
+                It names its OWN group rather than asking which window has
+                focus: a click IS the answer to "where", and inferring it back
+                from focus would be strictly worse information. */}
+            {poppedOut && (
+              <>
+                {/* The error rides WITH the ＋, inside the same guard: dock the
+                    card back and this header is in the main window, where the
+                    grid's own banner is the right surface and a leftover line
+                    about a folder you picked in another window is noise. */}
+                {cardError && (
+                  <span
+                    role="status"
+                    data-testid="card-new-session-error"
+                    style={{ color: 'var(--status-crashed-ink)', fontSize: 10 }}
+                  >
+                    {cardError}
+                  </span>
+                )}
+                <button
+                  data-testid="card-new-session"
+                  onClick={() => {
+                    setCardError(null); // a retry starts clean
+                    void newSessionIn(props.containerApi, props.api.group, setCardError);
+                  }}
+                  title={t('grid.newSessionHere')}
+                  aria-label={t('grid.newSessionHere')}
+                  style={cheadBtn}
+                >
+                  {t('grid.newSessionHereIcon')}
+                </button>
+              </>
+            )}
             <button onClick={popOutToggle} title={poppedOut ? t('grid.dockIn') : t('grid.popOut')} style={cheadBtn}>
               {poppedOut ? t('grid.dockInIcon') : t('grid.popOutIcon')}
             </button>
@@ -1771,21 +1817,9 @@ function vtabStyle(active: boolean, disabled: boolean, accent?: string): React.C
   };
 }
 
-/** A live region that must be INVISIBLE rather than absent (#358) — the card's
- *  overlay announcer. Same declarations as the rail's (SessionsRail's `srOnly`,
- *  #253), and kept local for the same reason that one is: both files hold their
- *  look inline, and two copies of six lines is not yet a module. Copy 2 of 2 —
- *  a THIRD copy is the signal to extract a shared module instead (#367). */
-const srOnly: React.CSSProperties = {
-  position: 'absolute',
-  inlineSize: 1,
-  blockSize: 1,
-  margin: -1,
-  padding: 0,
-  overflow: 'hidden',
-  clipPath: 'inset(50%)',
-  whiteSpace: 'nowrap',
-};
+/* The card's overlay announcer is invisible rather than absent (#358). The
+   declarations moved to `./sr-only` when P2-E14-01 became the third copy, which
+   is what #367 said would happen. */
 
 const overlayBackdrop: React.CSSProperties = {
   position: 'absolute',
@@ -1844,22 +1878,6 @@ function documentTabTitle(filePath: string): string {
 }
 
 /**
- * Push each viewer's PIN state onto its panel params (P2-E16-03).
- *
- * Pinned is derived from one pointer in `lib/document-panels`, and moving that
- * pointer changes the answer for TWO panels at once — the one that just took
- * the peek slot and the one that just lost it. Rather than work out which, and
- * be wrong the first time a third rule arrives, every open viewer is re-told
- * after every mutation. `updateParameters` merges, so this names one key, and
- * there are at most a handful of viewers.
- */
-function syncDocumentPins(api: DockviewApi): void {
-  for (const entry of documentPanels()) {
-    api.getPanel(entry.id)?.api.updateParameters({ pinned: isDocumentPinned(entry.id) });
-  }
-}
-
-/**
  * Is this group the document area — does a viewer live in it?
  *
  * Named once and read from both sides of the same sentence: a viewer PREFERS
@@ -1882,9 +1900,9 @@ const isDocumentArea = (g: DockviewGroupPanel): boolean =>
  *     becomes a popout the moment a card is torn off — so a file opened while a
  *     popped-out session had focus would land as a tab inside that session's
  *     window. That is the E8-04 defect in mirror image, and it now has a second
- *     face: once a VIEWER can have its own window, a pinned viewer's popout is
- *     just as wrong a home for the next one. Only `grid` groups are considered,
- *     so both are excluded by the same line.
+ *     face: once a VIEWER can have its own window, that viewer's popout is just
+ *     as wrong a home for the next one. Only `grid` groups are considered, so
+ *     both are excluded by the same line.
  *  2. THE SESSION'S GROUP. P2-E16-02 took the first grid group, which with one
  *     session open IS that session's group — the viewer arrived as a tab beside
  *     the card, and switching to it hid the session. Group membership is the
@@ -2012,17 +2030,144 @@ function sessionCardHome(api: DockviewApi): DockviewApi['groups'][number] {
 }
 
 /**
- * Open a document viewer on `filePath` — peek slot and all (P2-E16-02/03).
+ * The popped-out group whose OS window has focus, or null (#531).
+ *
+ * The rule is `lib/new-session-target`'s and is unit-pinned there; this is the
+ * dockview half — asking each popout group's own Window whether the OS is
+ * pointing at it. `hasFocus()` and not `api.activeGroup`, for the reason that
+ * module's header gives: a group can be dockview-active while its window sits
+ * behind three others, and #434 is precisely the bug of trusting that.
+ */
+function focusedPopoutGroup(api: DockviewApi): DockviewApi['groups'][number] | null {
+  const shapes = api.groups.map((g) => {
+    const loc = g.api.location;
+    let focused = false;
+    if (loc.type === 'popout') {
+      try {
+        focused = loc.getWindow()?.document?.hasFocus() === true;
+      } catch {
+        // a window closing under us — fail open, it simply is not the target
+      }
+    }
+    return { id: g.id, isPopout: loc.type === 'popout', focused, group: g };
+  });
+  return newSessionHostGroup(shapes)?.group ?? null;
+}
+
+/**
+ * Create a session in `folder` and add its card.
+ *
+ * Module-level, like `popOutCardPanel` and `setCardLadder`, and for the same
+ * reason: three surfaces drive it now — the `+ session` button, the palette,
+ * and (since #531) a popped-out card's own header — and a `useCallback` closed
+ * over the component cannot be reached from a panel that dockview renders.
+ *
+ * `into` is an EXPLICIT destination group and beats every inference below it.
+ * That is #531: a card asked for from inside a popped-out window lands as a
+ * tab in that window. Everything else still goes through `sessionCardHome`,
+ * which is #434/#462's rule and stays exactly as strict as it was — the
+ * difference is that this destination was NAMED, not guessed from whichever
+ * group dockview happened to have activated.
+ */
+async function addSessionCardTo(
+  api: DockviewApi | null,
+  folder: string,
+  opts: { groupId?: string; into?: DockviewApi['groups'][number] | null } = {}
+): Promise<void> {
+  if (!api) return;
+  const { groupId, into } = opts;
+  const title = folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? folder;
+  const cardId = crypto.randomUUID();
+  // A persistent-group member clusters with its siblings (E12-02): reuse the
+  // dockview group already holding another member, when one is in the grid.
+  let sibling: DockviewApi['groups'][number] | undefined;
+  if (groupId && !into) {
+    const cards = await window.switchboard.sessions.cards();
+    const siblings = new Set(
+      cards.filter((c) => c.groupId === groupId).map((c) => `session-${c.cardId}`)
+    );
+    // `isVisible` for the husk reason below — clustering is a reason to land
+    // BESIDE a sibling, never a reason to land somewhere invisible. The
+    // document-area rule is deliberately NOT applied here: a group holding a
+    // group-mate is a session's group whatever else was dragged into it, and
+    // an explicit group membership is the stronger of the two user intents.
+    sibling = api.panels.find(
+      (p) => siblings.has(p.id) && p.group.api.location.type === 'grid' && p.group.api.isVisible
+    )?.group;
+  }
+  // A new session must land in the MAIN window, visibly, and not on top of the
+  // document you are reading — `sessionCardHome` is all three rules (E8-04,
+  // #462). It used to be a location-only `find`, which is blind to the hidden
+  // dock-back husk a popout leaves in the grid.
+  //
+  // Asked LAST, and only when the sibling lookup came up empty, because it is
+  // not a pure question: it can un-hide a group or mint one. Asked first (as
+  // the `find(...) ?? addGroup()` it replaces was) a sibling win would leave
+  // that brand new group behind in the grid, empty, for ever.
+  const refGroup = into ?? sibling ?? sessionCardHome(api);
+  api.addPanel({
+    id: `session-${cardId}`,
+    component: 'sessionCard',
+    title,
+    params: { cardId, folder, title, groupId } satisfies CardParams,
+    // NO `direction` — `within` (the default) is the only target dockview
+    // resolves against the reference group itself. Any of the four directions
+    // sends it through `getGridLocation(referenceGroup.element)` against the
+    // MAIN gridview, and a popout group's element is not in that grid
+    // (dockviewComponent.js `addPanel`, the `center` branch vs the rest).
+    position: { referenceGroup: refGroup },
+  });
+}
+
+/**
+ * The whole ⊕ gesture: pick a folder, then put the card somewhere (#531).
+ *
+ * `into` is the window the ASK came from — a popped-out card's own group, or
+ * null for the main window. It is used twice and both matter: it places the
+ * card, and it parents the folder dialog. A dialog parented to the main window
+ * while the user is working in a popout yanks the whole app forward and
+ * answers a question they asked somewhere else.
+ */
+async function newSessionIn(
+  api: DockviewApi | null,
+  into: DockviewApi['groups'][number] | null,
+  onError: (message: string) => void
+): Promise<void> {
+  if (!api) return;
+  try {
+    // INSIDE the try, unlike the `addCard` this replaces: both call sites drive
+    // this with `void`, so a rejection out here was an unhandled rejection
+    // rather than a message anyone saw.
+    const folder = await window.switchboard.sessions.pickFolder(into?.id);
+    if (!folder) return;
+    // `into` was sampled BEFORE the picker opened, and a group can die while it
+    // is up: the dialog is modal to that popout, so the user cannot close it
+    // from there, but a command or a layout mode driven from the main window
+    // can dock the card back and dispose the group under us. A disposed group
+    // is not a destination — fall through to the grid's own placement rules
+    // rather than handing `addPanel` a corpse.
+    const stillOpen = into && api.groups.includes(into) ? into : null;
+    await addSessionCardTo(api, folder, { into: stillOpen });
+  } catch (e) {
+    // our breakage must be visible, not mute (fail-open)
+    onError(String(e));
+  }
+}
+
+/**
+ * Open a document viewer on `filePath` — a NEW TAB every time (#530, §5.30).
  *
  * A module-level function taking the api, like every other imperative verb in
  * this file, so the scripted-check seam in `onReady` can call the same code the
  * controller does — through the controller it would race the effect that
  * installs it.
  *
- * The DECISION (focus / replace / create) is `lib/document-panels`'; this is
- * only the dockview half of it. `replace` re-points an existing panel instead
- * of closing and re-opening one, which is what makes the peek slot feel like
- * one surface with changing content rather than a tab that blinks.
+ * The DECISION (focus / create) is `lib/document-panels`'; this is only the
+ * dockview half of it, and since #530 removed the peek slot the dockview half
+ * is a `focus` or an `addPanel` and nothing else. No panel is ever re-pointed,
+ * so a viewer shows one document for its whole life and closes by its own ✕.
+ * `documentHomeGroup` is what makes the new tab land BESIDE the ones already
+ * open rather than in a group of its own each time.
  */
 function openDocumentPanel(
   api: DockviewApi | null,
@@ -2032,15 +2177,19 @@ function openDocumentPanel(
 ): void {
   if (!api || !filePath) return;
   const plan = planDocumentOpen(filePath, sessionId);
-  if (plan.action !== 'create') {
+  if (plan.action === 'focus') {
     const panel = api.getPanel(plan.id);
     if (panel) {
-      if (plan.action === 'replace') {
-        panel.api.updateParameters({ path: plan.path, sessionId: plan.sessionId ?? null });
-        panel.api.setTitle(documentTabTitle(plan.path));
-      }
       panel.focus();
-      syncDocumentPins(api);
+      // ...AND RAISE THE WINDOW IT LIVES IN, if that is not this one. `focus()`
+      // ends in "make this panel active in its group", and a popped-out viewer
+      // is alone in its group and therefore already active — so asking for a
+      // file that is open in a viewer WINDOW used to be a literal no-op: no new
+      // tab (correct), and nothing whatsoever on screen (not). That is the only
+      // rule this registry still exists for, failing in the one case where the
+      // document the user asked for is somewhere they may not be looking.
+      const loc = panel.api.location;
+      if (loc.type === 'popout') loc.getWindow()?.focus();
       return;
     }
     // The registry believes in a panel dockview does not have — only reachable
@@ -2055,20 +2204,20 @@ function openDocumentPanel(
       id: plan.id,
       component: 'documentViewer',
       title: documentTabTitle(filePath),
-      params: { path: filePath, colorScheme, sessionId: sessionId ?? null, pinned: false },
+      params: { path: filePath, colorScheme, sessionId: sessionId ?? null },
       position: { referenceGroup: documentHomeGroup(api) },
     });
   } catch (err) {
     // `addPanel` throwing means no panel was ever created, so `onDidRemovePanel`
-    // will never fire for it — the registry would keep the peek slot pointed at
-    // nothing and drop the NEXT click too (it self-heals, but a click later).
-    // Reachable: `seq` restarts at 0 each renderer, and a `fromJSON` that throws
-    // part-way through restore can leave a `doc-1` behind for the prune to miss.
+    // will never fire for it — the registry would keep an entry for a panel that
+    // does not exist, and the next request for that same file would `focus` a
+    // ghost instead of opening it (it self-heals through the branch above, but a
+    // click later). Reachable: `seq` restarts at 0 each renderer, and a
+    // `fromJSON` that throws part-way through restore can leave a `doc-1` behind
+    // for the prune to miss.
     forgetDocumentPanel(plan.id);
     console.error('[document] could not open a viewer', err);
-    return;
   }
-  syncDocumentPins(api);
 }
 
 /**
@@ -2106,7 +2255,13 @@ function DocumentViewerPanel(
     path?: string;
     colorScheme?: string;
     sessionId?: string | null;
-    pinned?: boolean;
+    // NO `pinned`, and its absence is a decision (#530). A saved layout written
+    // before this change carries one, and `fromJSON` hands the whole params
+    // blob back verbatim — so the key still ARRIVES here. It is simply never
+    // read: dockview does not validate params, nothing draws a pin any more,
+    // and the restore drops every `doc-` panel moments later anyway (see
+    // `onReady`). A stale pin therefore cannot crash and cannot resurrect the
+    // behaviour, which `document-peek.spec` proves by planting one.
   }>
 ): React.JSX.Element {
   const api = props.api;
@@ -2146,17 +2301,16 @@ function DocumentViewerPanel(
     [sessionId, sessionName, sessionAccent]
   );
 
-  const onPinnedChange = React.useCallback(
-    (next: boolean) => {
-      setDocumentPinned(api.id, next);
-      syncDocumentPins(containerApi);
-    },
-    [api, containerApi]
-  );
   const onPopoutToggle = React.useCallback(
     () => popOutDocumentPanel(containerApi, api.id),
     [api, containerApi]
   );
+
+  // Is the find bar open on THIS viewer (#533)? Published by `find.open`, which
+  // runs in App's keydown handler and cannot reach this tree — the same
+  // publish/subscribe a session card uses, with the `doc-` panel id in the
+  // cardId role.
+  const findBar = React.useSyncExternalStore(subscribeFindBar, findBarState);
 
   return (
     // §5.30's litmus #3, in one wrapper: "read-only and out of band, wrapped in
@@ -2165,24 +2319,54 @@ function DocumentViewerPanel(
     // renderer ROOT — there is no other boundary above a dockview panel — and
     // blanks every session pane in the window. The panel is not a contribution,
     // but the containment argument is the same one, and so is the component.
-    // KEYED ON THE PATH, and that is a P2-E16-03 consequence rather than a
-    // tidy-up: `ContributionBoundary` latches `failed` and has no reset, so
-    // under a REUSABLE peek slot one document that throws would poison the slot
-    // and every glance after it would land in a blank panel with a changing tab
-    // title. Re-pointing already resets the viewer's history, mode and scroll,
-    // so remounting on a new path costs nothing and buys the boundary its reset.
-    <ContributionBoundary id="document-viewer" key={props.params?.path ?? ''}>
-      <DocumentViewer
-        path={props.params?.path ?? ''}
-        colorScheme={props.params?.colorScheme === 'light' ? 'light' : 'dark'}
-        onTitleChange={setTitle}
-        pinned={props.params?.pinned === true}
-        onPinnedChange={onPinnedChange}
-        poppedOut={poppedOut}
-        onPopoutToggle={onPopoutToggle}
-        session={session}
-      />
-    </ContributionBoundary>
+    // NOT KEYED ANY MORE (#530). P2-E16-03 keyed this on the path because
+    // `ContributionBoundary` latches `failed` with no reset, and under a
+    // REUSABLE peek slot one document that threw would poison the slot for
+    // every glance after it. Nothing re-points a panel now — `path` is fixed
+    // for the panel's life, the only later `updateParameters` on a `doc-` panel
+    // being the theme heal, which merges — so the key could never change and
+    // the remount it bought is unreachable.
+    //
+    // WHAT THAT COSTS, said plainly rather than left to be discovered: the
+    // boundary renders NOTHING on failure (see `boundary.tsx`), so a viewer
+    // that throws is a BLANK panel with a live tab title, and it stays blank
+    // for the life of the panel. The recovery is the same gesture as before —
+    // close the tab and open the file again, which is now a fresh panel and a
+    // fresh boundary — it just is not automatic any more. A reset affordance on
+    // `ContributionBoundary` would fix this for every consumer at once (#411
+    // noted the same gap); it is not this issue's to add.
+    // POSITIONED, because the bar is absolute and must move nothing underneath
+    // it (§5.31 litmus 5) — the same box `SessionCardPanel` puts it in.
+    <div style={{ position: 'relative', blockSize: '100%' }}>
+      <ContributionBoundary id="document-viewer">
+        <DocumentViewer
+          path={props.params?.path ?? ''}
+          panelId={api.id}
+          colorScheme={props.params?.colorScheme === 'light' ? 'light' : 'dark'}
+          onTitleChange={setTitle}
+          poppedOut={poppedOut}
+          onPopoutToggle={onPopoutToggle}
+          session={session}
+        />
+      </ContributionBoundary>
+      {/* Document find (#533, §5.31). NO `sessionId`: a viewer is
+          session-ATTRIBUTED and not session-owned, so there is no live session
+          to search and `find-session` excludes itself from the groups. OUTSIDE
+          the boundary, like the card's is: the bar is ours, not the viewer's,
+          and a viewer that throws withdraws its surface — which the bar already
+          knows how to say out loud (a greyed "nothing to search here") rather
+          than vanishing along with it. */}
+      {findBar.openOn === api.id && (
+        <FindBar
+          cardId={api.id}
+          panelId="document"
+          panelTitleKey="find.group.document"
+          // clear of `.doc-header`, whose controls are the only ones this
+          // surface has — see the prop's own note
+          insetBlockStart={34}
+        />
+      )}
+    </div>
   );
 }
 
@@ -2219,6 +2403,37 @@ export function popOutCardPanel(api: DockviewApi | null, cardId: string): void {
   const loc = panel.api.location;
   if (loc.type === 'popout') {
     const w = loc.getWindow();
+    // ── ⤡ WITH COMPANY MEANS "BRING THIS CARD HOME", NOT "CLOSE THE WINDOW" ──
+    //
+    // Dock-back is normally a window close, and that was exact while a session
+    // popout held exactly one card. It is not any more (#531): dockview hands
+    // EVERY member of a closing popout back to the grid, and each one arrives
+    // at the location handler above with no `markDockingBack` of its own — so
+    // it is indistinguishable from the user closing the window, and gets
+    // `dropLive`d and suspended. Docking one card back would tear down the live
+    // session sitting next to it. #531 made that the ordinary shape rather than
+    // something you could only reach by dragging a tab across windows.
+    //
+    // So when this card has company, move the PANEL and leave the window
+    // standing. The question asked is "would closing this drag anyone else
+    // home?", which is about the WINDOW and not this panel's group — a split
+    // inside a popout, or a document viewer sharing it, counts the same way.
+    //
+    // `sessionCardHome` picks where it lands, so #501's placement rules stay in
+    // one place: a card coming home arrives where a new one would, never in the
+    // document area and never inside a hidden husk.
+    const company =
+      !!w &&
+      api.panels.some((p) => {
+        if (p === panel) return false;
+        const l = p.api.location;
+        return l.type === 'popout' && l.getWindow() === w;
+      });
+    if (company) {
+      sessionStore.markDockingBack(cardId); // a move, not a close: stay alive
+      panel.api.moveTo({ group: sessionCardHome(api) });
+      return;
+    }
     // only arm the "stay alive" flag when a window actually exists to close —
     // else a stale flag would later mis-classify a genuine user close as a
     // toggle and skip the suspend (E8-04 review).
@@ -2286,12 +2501,14 @@ export function rescueStrandedPopouts(api: DockviewApi | null): void {
           // A VIEWER (P2-E16-03) could be rebuilt — the registry still knows its
           // path — and is deliberately not. §5.30 lists display-rescue among the
           // machinery a viewer inherits, so this is a divergence and is called
-          // one: a rescued viewer would arrive unasked AND spend the peek slot,
-          // silently replacing whatever the user was reading in the main window
-          // with a document whose window they just lost. "Restoring open
-          // viewers" is E16's *Not in scope* line, and this is the same
-          // question in miniature; the file is one click away and the click is
-          // the user's. Revisit with that item.
+          // one: a rescued viewer would arrive UNASKED, a tab appearing in the
+          // main window because a monitor went away. (Until #530 it was worse
+          // than unasked — it would also have spent the peek slot, replacing
+          // whatever the user was reading. That half of the argument is gone
+          // with the slot; the unasked half is the whole of it now, and it is
+          // enough.) "Restoring open viewers" is E16's *Not in scope* line, and
+          // this is the same question in miniature; the file is one click away
+          // and the click is the user's. Revisit with that item.
           if (!cardId) {
             api.removePanel(panel);
             continue;
@@ -2973,6 +3190,24 @@ export interface GridController {
   /** create a session in `folder` and add its card (drag-drop, rail actions);
    *  groupId places it clustered with its persistent group (E12) */
   addSessionCard: (folder: string, groupId?: string) => Promise<void>;
+  /**
+   * The whole ⊕ gesture — pick a folder, then add the card (E3-02/E3-04).
+   *
+   * Lands in the popped-out window the user is IN, when there is one, and in
+   * the grid otherwise (#531). The palette's `New session…` runs this, so the
+   * command is window-aware without a second entry in the list whose title
+   * would also read "new session".
+   */
+  newSession: () => Promise<void>;
+  /**
+   * Would `newSession()` land its card in a popped-out window right now?
+   *
+   * Synchronous on purpose, and asked BEFORE the gesture starts: App's popout
+   * key bridge pulls the main window forward after any command that ran, and
+   * it reads that decision the instant `run` returns — long before a folder
+   * dialog could resolve. Answering late would be answering never (#531).
+   */
+  newSessionTargetsPopout: () => boolean;
   /** move an existing card's PANEL next to its persistent-group siblings
    *  after a rail drop set its membership (E12-04) */
   moveCardToGroup: (cardId: string, groupId: string | null) => void;
@@ -2985,9 +3220,10 @@ export interface GridController {
   /** open (or focus) the per-session diff tab (E5-02) */
   openDiff: (sessionId: string, folder: string, title: string) => void;
   /**
-   * Open a §5.30 document viewer on an absolute path (P2-E16-02/03).
+   * Open a §5.30 document viewer on an absolute path (P2-E16-02/03, #530).
    *
-   * ONE reusable peek slot: the next open replaces it unless it was pinned.
+   * A NEW TAB every time, docked beside the documents already open; a file that
+   * is already open is focused rather than opened twice. Nothing is replaced.
    * `sessionId` attributes the viewer to the card the request came from (§5.24)
    * — a tint and a chip, never ownership. It never lands in a session's group,
    * nor in a popped-out viewer's window — see the implementation's note.
@@ -2995,6 +3231,20 @@ export interface GridController {
   openDocument: (absolutePath: string, sessionId?: string) => void;
   /** card id of the active session panel, or null (E9-01 command context) */
   activeCardId: () => string | null;
+  /**
+   * Panel id of the active DOCUMENT viewer, or null (#533 command context).
+   *
+   * The §5.8 question `find-providers.ts` used to record as a blocker: what is
+   * "the focused surface" when it is not a session card? A `doc-` panel, and
+   * this is how a command names one.
+   *
+   * `sourceWindow` is the OS window the keystroke was typed in, when it was not
+   * this one — see the implementation for why that is passed rather than
+   * inferred.
+   */
+  activeDocumentId: (sourceWindow?: Window) => string | null;
+  /** is this panel in its own OS window right now? (#533 — see App's openFind) */
+  isPanelPoppedOut: (panelId: string) => boolean;
   /** close a card the way the tab ✕ does — including its confirm (E9-01) */
   closeCard: (cardId: string) => void;
   /** close EVERY session at once, sparing the pinned ones (§5.8's pinning
@@ -3062,48 +3312,36 @@ export function SessionGrid(props: {
   const apiRef = useRef<DockviewApi | null>(null);
   const counter = useRef(0);
 
-  // Add a NEW card. It gets a stable id and spawns its session lazily when it
-  // becomes visible (which, as the newly-active tab, is immediately).
-  const addSessionCard = useCallback(async (folder: string, groupId?: string) => {
+  // Add a NEW card in the main window's grid — the drag-drop / rail path,
+  // where the folder is already known. `newSession` is the ⊕ gesture.
+  const addSessionCard = useCallback(
+    (folder: string, groupId?: string) => addSessionCardTo(apiRef.current, folder, { groupId }),
+    []
+  );
+
+  // Declared HERE and not beside the `+ session` button that calls it: the
+  // controller effect below lists it in a dep array, which is evaluated during
+  // render, and a `const` further down the component would still be in its
+  // temporal dead zone when that array is built.
+  const [error, setError] = React.useState<string | null>(null);
+  // ⊕ flow: pick a folder, spawn, bind the card (E3-02/E3-04) — in whichever
+  // window the ask came from (#531). The `+ session` button is in the MAIN
+  // window's chrome, so from it `focusedPopoutGroup` is null by construction
+  // and nothing about that path changes; what can answer otherwise is Mod+N
+  // pressed inside a popped-out session, which App's key bridge dispatches
+  // here, and the ＋ on a popped-out card's header — which does not ask this
+  // question at all, because it already knows its own group.
+  const newSession = useCallback(async () => {
     const api = apiRef.current;
-    if (!api) return;
-    const title = folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? folder;
-    const cardId = crypto.randomUUID();
-    // A persistent-group member clusters with its siblings (E12-02): reuse the
-    // dockview group already holding another member, when one is in the grid.
-    let sibling: DockviewApi['groups'][number] | undefined;
-    if (groupId) {
-      const cards = await window.switchboard.sessions.cards();
-      const siblings = new Set(
-        cards.filter((c) => c.groupId === groupId).map((c) => `session-${c.cardId}`)
-      );
-      // `isVisible` for the husk reason below — clustering is a reason to land
-      // BESIDE a sibling, never a reason to land somewhere invisible. The
-      // document-area rule is deliberately NOT applied here: a group holding a
-      // group-mate is a session's group whatever else was dragged into it, and
-      // an explicit group membership is the stronger of the two user intents.
-      sibling = api.panels.find(
-        (p) => siblings.has(p.id) && p.group.api.location.type === 'grid' && p.group.api.isVisible
-      )?.group;
-    }
-    // A new session must land in the MAIN window, visibly, and not on top of the
-    // document you are reading — `sessionCardHome` is all three rules (E8-04,
-    // #462). It used to be a location-only `find`, which is blind to the hidden
-    // dock-back husk a popout leaves in the grid.
-    //
-    // Asked LAST, and only when the sibling lookup came up empty, because it is
-    // not a pure question: it can un-hide a group or mint one. Asked first (as
-    // the `find(...) ?? addGroup()` it replaces was) a sibling win would leave
-    // that brand new group behind in the grid, empty, for ever.
-    const refGroup = sibling ?? sessionCardHome(api);
-    api.addPanel({
-      id: `session-${cardId}`,
-      component: 'sessionCard',
-      title,
-      params: { cardId, folder, title, groupId } satisfies CardParams,
-      position: { referenceGroup: refGroup },
-    });
+    await newSessionIn(api, api ? focusedPopoutGroup(api) : null, setError);
   }, []);
+  // The main window's own chrome does not INFER a destination — it knows one.
+  // `newSession` above has to ask which window has focus because a keystroke
+  // carries no such information; a click on a button that only exists in this
+  // window carries it, and asking anyway would put #434/#462's regression back
+  // within reach of a window manager that reports focus a moment late. Same
+  // argument the card ＋ makes by naming its own group (lib/new-session-target).
+  const newSessionInGrid = useCallback(() => newSessionIn(apiRef.current, null, setError), []);
 
   // §5.8's presentation ladder (P2-E9-05). The verbs are MODULE functions on
   // (api, cardId) — see setCardLadder — for the reason popOutCardPanel is one:
@@ -3190,6 +3428,14 @@ export function SessionGrid(props: {
     if (!props.controller) return;
     props.controller.current = {
       addSessionCard,
+      newSession,
+      // Reads `apiRef` at call time rather than closing over an api, so it
+      // cannot answer from a stale grid; `focusedPopoutGroup` is the same
+      // question `newSession` itself asks a tick later.
+      newSessionTargetsPopout: () => {
+        const api = apiRef.current;
+        return !!api && focusedPopoutGroup(api) !== null;
+      },
       moveCardToGroup: (cardId, groupId) => {
         const api = apiRef.current;
         if (!api || !groupId) return; // ungrouping keeps the panel where it sits
@@ -3270,6 +3516,58 @@ export function SessionGrid(props: {
         const m = /^session-(.+)$/.exec(panel.id);
         return m ? m[1] : null;
       },
+      // A DOCUMENT, unlike a card, is reachable in EITHER window (#533).
+      //
+      // `activeCardId` refuses a popped-out panel because a card command acts
+      // on things that live in THIS window — you would confirm-close a card you
+      // cannot see. Every reason for that rule is absent here: find acts on the
+      // viewer's own DOM, and the bar renders inside the same panel, which
+      // dockview has re-parented into the popout window along with it. Refusing
+      // would mean Ctrl+F in a viewer's own window did nothing, which is the
+      // exact bug this issue closed.
+      //
+      // WHICH WINDOW THE KEYSTROKE CAME FROM IS AN ARGUMENT, not a guess, and
+      // that is the whole subtlety here. `activePanel` does NOT follow the user
+      // into another OS window: pop a viewer out and dockview leaves the grid's
+      // own panel active, so a Ctrl+F typed in the viewer's window would
+      // resolve to whatever is sitting behind it. Proven, not assumed — the
+      // popped-out case of `document-find.spec` failed exactly that way first.
+      //
+      // `document.hasFocus()` was the obvious fix and is the wrong one: it is
+      // what `isCardOnScreen` asks a popout, but here it decides which of two
+      // windows a keystroke belongs to, and getting that backwards would send a
+      // Ctrl+F typed over a session card to a document in another window. The
+      // popout key bridge already knows the answer — it attached the listener
+      // to that window — so it passes it, and there is nothing to infer.
+      //
+      // A source window we cannot place among the popout groups answers null,
+      // NOT "the grid's active panel": a keystroke from a window holding a
+      // session card must keep behaving exactly as it did before (#533 changed
+      // documents, not cards).
+      activeDocumentId: (sourceWindow) => {
+        const api = apiRef.current;
+        if (!api) return null;
+        if (sourceWindow) {
+          for (const group of api.groups) {
+            const loc = group.api.location;
+            if (loc.type !== 'popout') continue;
+            let win: Window | null = null;
+            try {
+              win = loc.getWindow() ?? null;
+            } catch {
+              win = null; // torn down between the lookup and the read
+            }
+            if (win !== sourceWindow) continue;
+            const shown = group.activePanel;
+            return shown && isDocumentPanelId(shown.id) ? shown.id : null;
+          }
+          return null;
+        }
+        const panel = api.activePanel;
+        return panel && isDocumentPanelId(panel.id) ? panel.id : null;
+      },
+      isPanelPoppedOut: (panelId) =>
+        apiRef.current?.getPanel(panelId)?.api.location.type === 'popout',
       closeCard: (cardId) => {
         const panel = apiRef.current?.getPanel(`session-${cardId}`);
         // same contract as the tab ✕ (Dan 2026-07-22): confirm, because this
@@ -3390,7 +3688,7 @@ export function SessionGrid(props: {
         openDocumentPanel(apiRef.current, filePath, props.colorScheme, sessionId),
     };
     // eslint's exhaustive-deps plugin isn't installed; deps kept accurate by hand
-  }, [props.controller, addSessionCard, hideCard, revealCard, setLadder, stepLadder, props.colorScheme, t]);
+  }, [props.controller, addSessionCard, newSession, hideCard, revealCard, setLadder, stepLadder, props.colorScheme, t]);
 
   // Dockview learns the light/dark verdict in onReady, which runs ONCE — so a
   // theme switch after mount left it on the scheme the app booted with. Every
@@ -3414,19 +3712,6 @@ export function SessionGrid(props: {
       }
     }
   }, [props.colorScheme]);
-
-  const [error, setError] = React.useState<string | null>(null);
-  const addCard = useCallback(async () => {
-    // ⊕ flow: pick a folder, spawn, bind the card (E3-02/E3-04)
-    const folder = await window.switchboard.sessions.pickFolder();
-    if (!folder) return;
-    try {
-      await addSessionCard(folder);
-    } catch (e) {
-      // our breakage must be visible, not mute (fail-open)
-      setError(String(e));
-    }
-  }, [addSessionCard]);
 
   const onReady = useCallback(
     async (event: DockviewReadyEvent) => {
@@ -3546,9 +3831,9 @@ export function SessionGrid(props: {
       // disposal ever firing removes).
       api.onDidRemovePanel((panel) => {
         if (sessionStore.isTearingDown()) return;
-        // A closed viewer stops holding the peek slot (P2-E16-03) — otherwise
-        // the registry keeps a pointer at a panel dockview no longer has, and
-        // the next open would try to re-point a ghost.
+        // A closed viewer leaves the registry (P2-E16-03) — otherwise it keeps
+        // an entry for a panel dockview no longer has, and asking for that file
+        // again would `focus` a ghost instead of opening it.
         if (panel.id.startsWith('doc-')) {
           forgetDocumentPanel(panel.id);
           return;
@@ -3639,6 +3924,9 @@ export function SessionGrid(props: {
             // and E9-09's pins, keyed the same way and outliving their cards
             // the same way.
             sessionStore.prunePins(known);
+            // ...and #485's unsent prompts. The same rule, and the one with the
+            // biggest payload: a draft is whatever the user pasted.
+            pruneDrafts(known);
             for (const p of [...api.panels]) {
               const s = /^session-(.+)$/.exec(p.id);
               // Diff panes and document viewers are both DERIVED — drop them
@@ -3716,7 +4004,7 @@ export function SessionGrid(props: {
           </span>
         )}
         <button
-          onClick={() => void addCard()}
+          onClick={() => void newSessionInGrid()}
           style={{
             background: 'var(--chip)',
             color: 'var(--text)',

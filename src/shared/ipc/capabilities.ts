@@ -113,6 +113,12 @@ export const CHANNEL_CAPABILITIES = {
   // the renderer is listening for claimed chords (#90); until it says so, the
   // browser process claims none of them
   'app:acceleratorReady': 'app.window',
+  // The four Cut/Copy/Paste/Select All labels for the right-click menu (#526),
+  // already translated. `app.window` because that is what it is: chrome for a
+  // window this caller already owns. It reads nothing and starts nothing — the
+  // menu it names is built from Electron ROLES, so a caller cannot smuggle an
+  // action in through a label.
+  'app:contextMenuLabels': 'app.window',
   'app:movePopout': 'app.window',
   'app:workAreas': 'app.window',
   'events:ack': 'events.write',
@@ -152,6 +158,10 @@ export const CHANNEL_CAPABILITIES = {
   'groups:setSessionGroup': 'groups.write',
   'groups:update': 'groups.write',
   'notifications:getPrefs': 'settings.read',
+  // Whether the quiet window is open right now, and how many events it has held
+  // (P2-E14-05b). Reads settings plus a count of the app's own held list —
+  // nothing a `notifications:getPrefs` plus a clock would not already tell you.
+  'notifications:quietState': 'settings.read',
   'notifications:setPrefs': 'settings.write',
   'preflight:check': 'environment.probe',
   // Phone push + webhook (P2-E14-06, §5.9 + §5.29). Three capabilities for four

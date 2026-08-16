@@ -57,6 +57,181 @@ on the floor, and say so in your PR.
 
 ## 0.6.0 — unreleased
 
+### Added
+
+- **Right-click menus.** Right-clicking anywhere in switchboard used to do
+  nothing at all. Now a right-click in the prompt box — or any other text box —
+  gives you **Cut, Copy, Paste and Select All**, greyed out when they would do
+  nothing (no Cut with nothing selected, no Paste with an empty clipboard).
+  Right-clicking text you have selected in a session's conversation, or in a
+  document, offers **Copy**. Pasting from the menu works exactly like Ctrl+V,
+  pictures included: a screenshot pasted from the menu becomes the same chip
+  under the box. Popped-out session windows get the menus too. Right-clicking
+  in the **Terminal** tab is left alone deliberately — the terminal has its own
+  conventions and they are the CLI's, not ours.
+- **Start a new session without leaving a popped-out window.** Tearing a session
+  into its own window used to leave you with no way to start another one from
+  there: every "new session" control lives in the main window's sidebar, so a
+  second monitor meant going back to the first one to ask. A popped-out card's
+  header now has a **＋** next to the pop-out button, and **Ctrl+N** works in
+  that window too. The new session opens as a tab right beside the one you asked
+  from, on the monitor you are already looking at, and the folder picker opens
+  over that window instead of dragging the main window in front of you. It is an
+  ordinary session in every other way — it gets a row in the Sessions list, it
+  can ask for your attention, and **⤡** docks it back into the main window on
+  its own. Sessions started from the main window are unchanged: they still open
+  there, at full size, and never on top of a document you have open.
+- **Quiet hours.** Set two times — press **Ctrl+Shift+P** and type *quiet
+  hours*, or use the button in **About** — and between them switchboard will not
+  make a noise at you. Pop-ups, session sounds, spoken announcements and phone
+  push all stop; your sessions keep running and everything still lands in the
+  Events panel, you just are not told about it until the window is over. A
+  window that runs past midnight is fine (`22:00` until `07:00` means
+  overnight), the times are your machine's clock so they follow you across
+  timezones, and daylight saving needs no thought: they mean the numbers on the
+  clock on the wall. The dialog's bottom line tells you whether the window is
+  open right now and how many notifications it has held, because a feature whose
+  whole job is to do nothing is otherwise impossible to trust.
+- **Nothing is lost while it is quiet.** Every notification the window holds
+  back is written down — what happened, when, which session, and which channels
+  were held — and that list survives closing the app. The *missed-events digest*
+  that shows it to you on return is the next thing to land; this release is what
+  fills it. The list keeps the 200 most recent.
+
+### Changed
+
+- **Every file you open now gets its own tab, and the 📌 is gone.** Opening a
+  second document used to *replace* the one you were reading, and the pin was
+  how you stopped it. That is over: a new file opens beside the ones already
+  open, nothing closes on its own, and a document goes away only when you close
+  its tab with the **✕**. Opening a file that is already open still just brings
+  its tab to the front. If you liked a tidy tab strip, closing the ones you are
+  done with is now your call rather than the app's.
+- **Quiet hours no longer silence webhooks.** They used to stop every channel
+  including the webhook; now they stop everything aimed at *you* and let the
+  webhook through. A webhook goes to a program — usually the very program you
+  set up so that something would be watching while you are not — and a
+  dashboard or log with a hole in it every night from 22:00 to 07:00 is a broken
+  one, in a way whose cause (a notification setting on another screen) is
+  miserable to track down. If your webhook really is person-facing — it flashes
+  a lamp, it pages you — a rule can be marked to obey quiet hours anyway; see
+  the manual. The 🔔 title-bar switch is unchanged and still silences
+  everything, webhooks included.
+- **A quiet-hours time that switchboard cannot read is now refused** rather than
+  stored. A workspace file carrying something like `"10pm"` used to look
+  configured while silencing nothing at all.
+- **The Events panel is a drawer now, and your sessions get the space back.**
+  It used to be a permanent column down the right-hand side, about an inch wide,
+  present in every layout whether or not anything was in it. That inch now
+  belongs to your sessions — in every layout, all the time. What is left on the
+  right edge is a **narrow tab with a number on it**: how many sessions are
+  waiting on you. Click it — or press **Ctrl+E**, or find *"Show or hide the
+  events drawer"* in the command palette — and the drawer slides out over the
+  workspace with exactly what the panel always held: one entry per session, in
+  the order you should deal with them. **Esc** closes it and puts your cursor
+  back where it was.
+
+  Nothing inside it changed and nothing moved out of it: the same rows with the
+  same **✕**, the same click-to-jump, and the same three notices — a new version
+  is ready, a monitor came back and your pop-outs can be restored, or Anthropic
+  is having an incident. It opens *over* your sessions rather than shoving them
+  aside, so glancing at the queue never re-lays-out the window you were reading.
+  And it starts closed each time you launch.
+
+  You do not have to open it to know whether it is worth opening. The tab
+  carries the count, tints itself with the most urgent thing waiting, and grows
+  **a small dot when there is a notice inside** — so an update or an incident
+  still catches your eye from behind a closed drawer. If you use a screen
+  reader, the tab reads all three out in words, and a notice arriving behind a
+  closed drawer is announced when it lands rather than waiting to be found.
+- **The status bar now says how many sessions are waiting on you.** Bottom
+  right, next to the session count, permanently: *"3 waiting"*. It never needs
+  opening and never moves, so the question the Events column used to answer just
+  by being there is still answerable with a glance — and it is the same number
+  **Ctrl+Space** walks through.
+
+### Fixed
+
+- **`Ctrl+F` now works in a document.** Press it with a document tab in front of
+  you and switchboard's find bar opens over that document: type and matches
+  light up, `Enter` and `Shift+Enter` step, the count reads "3 of 12", `Esc`
+  closes it and takes the highlights with it, and the ▸ button lists every
+  match. It was silently doing nothing before. Only the document you are
+  reading is searched — never another document, never a session — and it works
+  the same in a popped-out document window. Any file that is not Markdown (and
+  Markdown under **Source**) hands you to the editor's own find box instead,
+  which is the fuller one, exactly as the **Changes** tab does.
+- **Find now shows you where the word is.** Stepping through matches in a
+  session used to scroll the conversation up and down without highlighting
+  anything, so you had to re-read the block to find the word you searched for.
+  The match you are standing on is now highlighted brightly, the other
+  occurrences on screen get a quieter highlight, and if the match is buried
+  a long way down a tall tool output the view scrolls again so the word itself
+  is on screen. Closing the bar takes the highlights with it, and they are
+  never part of what you copy — selecting highlighted text, or pressing
+  **Copy** on a code block containing a match, gives you the text exactly as
+  the session wrote it.
+- **An update now actually brings the app back.** Installing a release from
+  inside switchboard.ai did everything it said it would — downloaded, checked,
+  installed — and then left you staring at a closed app, having promised on
+  screen that it "will close and reopen on the new version". The update was
+  fine; only the reopening was missing. The silent installer is now told to
+  relaunch us, so pressing **Update** ends with the app back on your screen on
+  the new version, as it always claimed it would.
+- **Links in a session's answers open in your browser.** A link in a reply
+  looked like a link, went blue like a link, and did absolutely nothing when
+  you clicked it — the click was swallowed on the way out and never reached
+  anything. Now it opens in your normal web browser, including from a
+  popped-out card, and switchboard.ai itself never navigates away from the
+  session you were reading. Ordinary web links only (`http`, `https`,
+  `mailto`): anything else in a link — a scheme that would run a program or
+  open a file off your disk — still does nothing at all, on purpose, because
+  the text of an answer is written by whatever the session was reading.
+- **A card can no longer forget which conversation it was in.** switchboard
+  records a session's conversation the moment Claude Code names one — but Claude
+  Code doesn't write that conversation to disk until you actually send
+  something. Open a session, close it again without typing, and the card was
+  left pointing at a conversation that had never been written down; the next
+  launch found nothing there, gave up, and **erased the card's only pointer to
+  the conversation it really had**. The same thing happened if the lookup simply
+  failed for a moment — one antivirus scan or file-indexer at the wrong instant
+  and a working card was reset for good. Both are gone. A card now remembers the
+  conversations it has been in, not just the latest one: if the newest has
+  nothing on disk it falls back to the one that does, and a lookup that fails is
+  treated as "not right now" instead of "gone for ever". Nothing about your
+  history is ever deleted on the strength of a failed look.
+- **Cards that were already orphaned repair themselves on the next launch.** If
+  a card lost its conversation to the bug above, switchboard now notices at
+  start-up that its conversation isn't on disk, looks in that project's own
+  history for the one it walked away from, and reattaches it — you get your
+  session back with its transcript, and the app writes a line in the log saying
+  what it reattached and why. It only ever does this for a card that *had* a
+  conversation and lost it, it never takes one another card is already in, and
+  it never guesses off a folder it couldn't read, and it leaves alone anything
+  written to in the last few minutes — that's far more likely to be a `claude`
+  session you have open in a terminal than a conversation a card mislaid.
+- **A prompt you started writing is no longer thrown away.** Text typed into a
+  session's prompt box and not yet sent used to vanish the moment that view went
+  away — switching the card to its **Terminal** or **Changes** tab and back, or
+  quitting switchboard. It is now kept per session, saved as you type, and it
+  comes back: on the Session tab, in a popped-out window and when you dock the
+  card back in, and after you quit and reopen — including for a session that was
+  suspended and resumes later. Sending the prompt clears it, as you would
+  expect, and a box you emptied stores nothing.
+- **The Changes tab shows side-by-side diffs again, and now lets you say so.**
+  A diff was arriving in one column no matter how much room it had, with no
+  visible way to ask for two. The tab had in fact been asking for side-by-side
+  all along — Monaco quietly overrides that below 900 pixels of editor width,
+  and a Changes tab in a normal window sits just under it, so the override
+  fired every time and said nothing. That silent rule is gone. There is now a
+  **Side by side / Inline** pair of buttons above the diff, side by side is the
+  default, your choice applies to every Changes tab and is remembered across
+  restarts, and the command palette has *Toggle side-by-side / inline diff*.
+  Genuinely tiny panes — under 400 pixels, where two columns hold about 18
+  characters each — still fall back to one column, but the tab says so in
+  words, the button stays selected, and the second column returns the moment
+  there is room for it.
+
 ### Internal
 
 - Fixed the end-to-end test that kept failing on the Windows CI machine and

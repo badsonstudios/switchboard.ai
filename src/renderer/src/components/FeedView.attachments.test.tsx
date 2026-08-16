@@ -15,6 +15,7 @@ import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { sessionPanels } from '../extensibility/panels';
 import { PanelContext } from '../extensibility/contributions';
+import { loadUiState } from '../lib/ui-state';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -35,6 +36,12 @@ function stubBridge(): void {
       onReset: () => () => {},
     },
     pty: { input: () => {} },
+    // The composer SAVES its draft now (#485), into a module-level cache every
+    // test in this file shares — and they all mount the same `card-1`. Without
+    // an empty blob per test, the "keeps the draft AND the image when main
+    // refuses" case (which ends on purpose with the draft UNCLEARED) leaves its
+    // text in every composer mounted after it.
+    workspace: { getUi: () => Promise.resolve({}), setUi: () => {} },
     sessions: {
       slashCommands: () => Promise.resolve([]),
       submitPrompt: (
@@ -219,6 +226,7 @@ beforeEach(async () => {
   );
   await initI18nForTests();
   stubBridge();
+  await loadUiState(); // see stubBridge: an empty draft blob per test
 });
 
 afterEach(async () => {

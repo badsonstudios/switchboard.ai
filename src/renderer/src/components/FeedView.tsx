@@ -15,12 +15,15 @@ import {
   useCurrentHit,
 } from '../lib/feed-reveal';
 import { findSurfaceKey, publishFindSurface, type FeedFindSurface } from '../lib/find-surfaces';
+import { clearFeedMarks, markFeedMatches, moveCurrentMark, sameFindQuery } from '../lib/feed-marks';
+import type { FindQuery } from '../extensibility/contributions';
 import { emptyStateCopy } from '../lib/binding-copy';
 import { terminalHandoff, TerminalHandoff, toneToken } from '../lib/terminal-handoff';
 import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
 import { rendererRegistry } from '../extensibility/registry-instance';
 import { renderFeedBlock } from '../extensibility/feed-render';
-import { uiGet, uiSet } from '../lib/ui-state';
+import { uiFlush, uiGet, uiSet } from '../lib/ui-state';
+import { clearDraft, loadDraft, saveDraft } from '../lib/composer-draft';
 import { interruptSession, submitPrompt } from '../lib/composer';
 import { ComposerAttachments } from './ComposerAttachments';
 import {
@@ -503,16 +506,27 @@ export function FeedView(props: {
   // whatever the view was hiding. The SEARCH itself is main's (E17-01) and the
   // bar's; this is only the "and show me" half.
   const [reveal, setReveal] = React.useState<FeedReveal>(NO_REVEAL);
+  // What the marks are painted from (#520). NOT in `FeedReveal`, which is a
+  // context every block renderer reads: the term changes on every keystroke and
+  // putting it there would re-render the whole conversation to repaint marks
+  // the DOM pass writes anyway. Held as state rather than a ref because the
+  // layout effect below has to re-run when it changes — a new term over the
+  // same landed block is the common case while typing.
+  const [markQuery, setMarkQuery] = React.useState<FindQuery | null>(null);
   // read by `jumpTo`, which is called from the bar OUTSIDE React's commit and
   // must therefore not close over a render's `blocks`
   const blocksRef = React.useRef(blocks);
   blocksRef.current = blocks;
   const jumpTo = React.useCallback(
-    (seq: number): boolean => {
+    (seq: number, query?: FindQuery): boolean => {
       // The block is not in the view buffer — evicted, or not drained yet.
       // Refusing is the point: the caller renders the hit as snippet-only
       // rather than scrolling somewhere arbitrary and calling it the match.
       if (!blocksRef.current.some((b) => b.seq === seq)) return false;
+      // same question, same object: React bails out of an identical state, so
+      // stepping between hits of ONE search does not re-run the marking pass
+      // for the term half — only for the block it moved to
+      setMarkQuery((prev) => (sameFindQuery(prev, query ?? null) ? prev : (query ?? null)));
       setReveal((prev) => {
         const next = new Set(prev.revealed);
         next.add(seq);
@@ -544,22 +558,64 @@ export function FeedView(props: {
    * commit in both, by construction, which is also what makes it testable.
    */
   const jumpedTo = reveal.current;
+  // what the marks on the page were painted from, so a STEP does not repeat a
+  // pass whose only different answer is which mark is current
+  const painted = React.useRef<FindQuery | null>(null);
   React.useLayoutEffect(() => {
-    if (jumpedTo === null) return;
     const root = scroller.current;
-    const el = root?.querySelector<HTMLElement>(`[${FEED_SEQ_ATTR}="${jumpedTo}"]`);
-    if (!root || !el) return;
+    if (!root) return;
+    // Marking happens HERE and nowhere else (#520). This effect is the single
+    // writer of feed marks, so "the bar closed" (`jumpedTo` back to null) and
+    // "the term changed" are the same code path as "we jumped", and no exit
+    // leaves paint behind. In the layout phase rather than an effect CLEANUP on
+    // purpose: cleanups run inside React's mutation phase, interleaved with the
+    // DOM writes of the very children whose text we would be un-splitting.
+    if (jumpedTo === null) {
+      clearFeedMarks(root);
+      painted.current = null;
+      return;
+    }
+    const el = root.querySelector<HTMLElement>(`[${FEED_SEQ_ATTR}="${jumpedTo}"]`);
+    // Marks left in place rather than cleared: the block we were told to jump
+    // to is not on the page (evicted between the search and the commit), and
+    // the paint that IS there still answers to the term the bar is showing.
+    if (!el) return;
+    // The step case first: same question, marks already on the page, and the
+    // only thing to do is move the current one. A full pass is a tree walk over
+    // every rendered block, and Enter is a key somebody holds down.
+    // `moveCurrentMark` returns null when the landed block has no marks yet —
+    // it was hidden when the last pass ran — and that is the full pass's cue.
+    const current =
+      (sameFindQuery(painted.current, markQuery) && moveCurrentMark(root, el)) ||
+      markFeedMatches(root, markQuery, el);
+    painted.current = markQuery;
     autoPin.current = true;
     // 24px of air above the block, so a hit at the top of the viewport still
     // reads as being inside a conversation
     root.scrollTop += el.getBoundingClientRect().top - root.getBoundingClientRect().top - 24;
+    // ...and then the MARK, if putting the block's top on screen did not also
+    // put the match on screen. A tool output can be four screens tall, and a
+    // jump that lands on the top of it while the word is below the fold is the
+    // bug this item was filed over, one step less bad. Measured after the first
+    // write, so it is the position the user will actually see — and moved by
+    // the MINIMUM that brings the mark in, so the block's ring stays on screen
+    // with it wherever that is possible.
+    if (current) {
+      const view = root.getBoundingClientRect();
+      const mark = current.getBoundingClientRect();
+      if (mark.bottom > view.bottom) root.scrollTop += mark.bottom - view.bottom + 24;
+      else if (mark.top < view.top) root.scrollTop += mark.top - view.top - 24;
+    }
     lastTop.current = root.scrollTop;
     // `jumpTo` unpinned on purpose; say so on screen in the same commit rather
     // than waiting for the scroll event this write will fire (#442)
     syncOffTail();
     requestAnimationFrame(() => (autoPin.current = false));
-  }, [jumpedTo, syncOffTail]);
-  const clearReveal = React.useCallback(() => setReveal(NO_REVEAL), []);
+  }, [jumpedTo, markQuery, syncOffTail]);
+  const clearReveal = React.useCallback(() => {
+    setReveal(NO_REVEAL);
+    setMarkQuery(null);
+  }, []);
   React.useEffect(() => {
     if (!props.cardId) return; // a card with no durable id cannot be addressed
     const surface: FeedFindSurface = { kind: 'feed', jumpTo, clear: clearReveal };
@@ -824,7 +880,16 @@ export function FeedView(props: {
           so the two can never appear together. */}
       {handoff && <TerminalHandoffBar handoff={handoff} onJump={props.onJumpToTerminal} />}
       <Composer
+        // The saved draft is seeded ONCE, on mount (#485), so a Composer whose
+        // card id changed under it would carry the old card's words onto the
+        // new one at the first keystroke. Nothing calls `updateParameters` with
+        // a new `cardId` today — but `sessionId` DOES churn on resume, the two
+        // sit next to each other, and the next reader will not know which is
+        // which. `key` makes the hazard structurally impossible for one word.
+        key={props.cardId}
         sessionId={props.sessionId}
+        // the durable key the saved draft is filed under (#485)
+        cardId={props.cardId}
         autonomy={props.autonomy}
         model={props.model}
         status={props.status}
@@ -1106,6 +1171,7 @@ function roomForBox(own: HTMLElement | null, el: HTMLElement): number | undefine
  */
 function Composer({
   sessionId,
+  cardId,
   autonomy,
   model,
   status,
@@ -1113,6 +1179,8 @@ function Composer({
   onCycleAutonomy,
 }: {
   sessionId: string;
+  /** durable key for this card's saved draft (#485) — the live id churns */
+  cardId?: string;
   autonomy?: string;
   model?: string;
   status?: string;
@@ -1121,7 +1189,19 @@ function Composer({
   onCycleAutonomy?: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
-  const [draft, setDraft] = React.useState('');
+  // The draft OUTLIVES this component (#485). It is seeded from the workspace
+  // `ui` blob on mount and written back on every change, because the component
+  // dies far more often than the user's intent does: switching to the Terminal
+  // tab unmounts this panel, the stranded-popout rescue rebuilds the card, and
+  // quitting ends it. `composer-draft.ts` has the whole argument.
+  const [draft, setDraftState] = React.useState(() => loadDraft(cardId));
+  const setDraft = React.useCallback(
+    (text: string): void => {
+      setDraftState(text);
+      saveDraft(cardId, text);
+    },
+    [cardId]
+  );
   const box = React.useRef<HTMLTextAreaElement | null>(null);
   /** the composer's own root — the auto-grow measures the panel through it */
   const root = React.useRef<HTMLDivElement | null>(null);
@@ -1484,6 +1564,19 @@ function Composer({
   /** something to send: words, a picture, or both (E10-09) */
   const sendable = draft.trim().length > 0 || attachments.length > 0;
 
+  /**
+   * The prompt went — empty the box AND forget the saved copy, at once.
+   *
+   * Not `setDraft('')`: that would leave the deletion on `uiSetSoon`'s timer,
+   * and a quit or a remount inside that window would restore a prompt the user
+   * has already sent onto an empty composer. Late-to-save costs keystrokes;
+   * late-to-clear looks like the app un-sending your message.
+   */
+  const clearComposerDraft = (): void => {
+    setDraftState('');
+    clearDraft(cardId);
+  };
+
   const submit = (): void => {
     const text = draft.replace(/\r\n/g, '\n').trimEnd();
     // An attachment with nothing typed IS a prompt (§5.10's composer is an
@@ -1498,7 +1591,7 @@ function Composer({
       // the two routes always accepts it — so the box clears immediately and
       // the send stays as snappy as it was.
       void submitPrompt(sessionId, text);
-      setDraft('');
+      clearComposerDraft();
       setDismissed(false);
       setAttachNotice(null);
       box.current?.focus();
@@ -1524,7 +1617,7 @@ function Composer({
         setAttachNotice(t('feedView.attach.notSent'));
         return;
       }
-      setDraft('');
+      clearComposerDraft();
       setDismissed(false);
       setAttachments((prev) => prev.filter((a) => !sent.has(a.id)));
       setAttachNotice(null);
@@ -1660,6 +1753,13 @@ function Composer({
         }}
         onClick={syncCaret}
         onKeyUp={syncCaret}
+        // Leaving the box is the moment waiting stops being an economy (#485):
+        // clicking anywhere else in the app, or alt-tabbing away, sends the
+        // draft immediately instead of letting it ride the debounce. It does
+        // NOT cover the window's ✕ — that is OS chrome and fires no DOM blur —
+        // so the residual hole is "type and quit within 400ms without leaving
+        // the box", which is the tolerance `composer-draft.ts` argues for.
+        onBlur={uiFlush}
         onKeyDown={(e) => {
           // confirming an IME candidate (CJK input) also fires Enter — never
           // submit a half-composed draft (keyCode 229 covers WebKit quirks)

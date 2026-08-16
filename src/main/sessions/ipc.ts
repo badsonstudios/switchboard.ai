@@ -60,6 +60,7 @@ import { LogFields, Logger } from '../log/logger';
 import { assignAccent, detectProjectType } from './identity';
 import { EventFeed } from '../events/feed';
 import { planSessionStart } from './start-plan';
+import { recordNativeId, resumeCandidates } from './lineage';
 import { nextAutoLabel, typedLabel, visibleTaskLabel } from './auto-label';
 import { PersistedSession } from '../workspace/store';
 import { commandsFromCli, SlashCommand } from '../../shared/slash-commands';
@@ -83,6 +84,14 @@ export interface SessionIpcDeps {
   feed: EventFeed;
   log: Logger;
   getWindow: () => BrowserWindow | null;
+  /**
+   * A live popped-out window, by the dockview GROUP id it hosts (#531).
+   *
+   * Only `sessions:pickFolder` uses it, to parent its dialog to the window the
+   * user clicked in. Optional so a wiring that has no popout registry (the
+   * unit harness) simply always answers the main window.
+   */
+  getPopoutWindow?: (groupId: string) => BrowserWindow | null;
   /** the IPC choke point — every channel, both directions (P2-E15-04) */
   broker: IpcBroker;
   /** auto-trust the folder before spawning (default on; user picks folder) */
@@ -166,7 +175,24 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     const cardId = cardOfLive.get(liveId);
     if (!cardId) return;
     const existing = deps.persist.list().find((s) => s.id === cardId);
-    if (existing) deps.persist.upsert({ ...existing, nativeSessionId: nativeId });
+    // NOT an overwrite (#484). The id arrives here the moment the CLI announces
+    // one — before any turn has happened, and the CLI writes no transcript until
+    // one does (S-07). So this line used to replace a card's pointer to a
+    // conversation that IS on disk with a pointer to a file that may never be
+    // written, and the next launch would then find the new id unresumable and
+    // clear it. `recordNativeId` moves the old id down the chain instead, so
+    // that launch has somewhere to fall back to.
+    //
+    // INCLUDING on `cause === 'clear'`, deliberately. A `/clear` mints a new
+    // conversation, and not keeping the cleared one would be this exact bug
+    // wearing a different hat: if the post-clear session then gets no turn its
+    // transcript is never written, and the card would reset over the top of
+    // history the user never asked to lose. The cost of keeping it is narrow
+    // and recoverable — a `/clear` followed by a quit with NO prompt at all
+    // comes back in the pre-clear conversation, one keystroke from being
+    // cleared again. The moment a single turn happens the new transcript exists
+    // and the chain is never walked past its head.
+    if (existing) deps.persist.upsert({ ...existing, ...recordNativeId(existing, nativeId) });
   });
 
   // outbound goes through the broker too: it checks what the TARGET window
@@ -758,9 +784,19 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     }
   });
 
-  broker.handle('sessions:pickFolder', async () => {
-    const win = deps.getWindow();
-    if (!win) return null;
+  broker.handle('sessions:pickFolder', async (_e, popoutGroupId?: unknown) => {
+    // Parent the dialog to the window that ASKED (#531). A renderer-supplied
+    // id is untrusted input (§5.29), but it is only ever a LOOKUP KEY into a
+    // list main built itself from `did-create-window` — it can name a window
+    // we already own or nothing at all, and nothing else.
+    const popout =
+      typeof popoutGroupId === 'string' && popoutGroupId
+        ? deps.getPopoutWindow?.(popoutGroupId) ?? null
+        : null;
+    // ...and fall back to the main window rather than refusing: a popout that
+    // closed between the click and this handler must still get a picker.
+    const win = popout ?? deps.getWindow();
+    if (!win || win.isDestroyed()) return null;
     const r = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
     return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0];
   });
@@ -915,7 +951,22 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           isRegistered: deps.isRegisteredProvider,
           defaultProviderId: deps.defaultProviderId,
           folder: opts.folder,
-          prior: { providerId: prior?.identity.providerId, nativeSessionId: prior?.nativeSessionId },
+          prior: {
+            providerId: prior?.identity.providerId,
+            nativeSessionId: prior?.nativeSessionId,
+            // the ancestors this card forked from, so a resume that never got a
+            // turn can fall back to the conversation that is really there (#484)
+            nativeSessionLineage: prior?.nativeSessionLineage,
+          },
+          // Only read when the chain came up empty and the provider offers to
+          // look — every id every card points at, heads and ancestors alike, so
+          // the search cannot hand back a conversation someone else is in. The
+          // plan splits this card's own ids back out of it.
+          //
+          // Safe to read as one synchronous snapshot: nothing yields between the
+          // plan and the `persist.upsert` below, so two orphaned cards in the
+          // same folder cannot both be told about the same conversation.
+          claimedNativeIds: () => deps.persist.list().flatMap((s) => resumeCandidates(s)),
           // a degraded capability is never silent — the card still starts. A
           // callback rather than reading plan.warnings: two of the decisions
           // are lazy and fire long after this line.
@@ -1106,9 +1157,30 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         id: opts.cardId,
         identity,
         layoutSlot: prior?.layoutSlot ?? 0,
-        // don't keep a stale id we just declined to resume — the fresh
-        // session's onNativeSessionId will fill in the new one
-        nativeSessionId: plan.resumeSessionId,
+        // THE LINK IS NEVER DESTROYED HERE (#484).
+        //
+        // This line used to be `nativeSessionId: plan.resumeSessionId` —
+        // "don't keep a stale id we just declined to resume". It was the wrong
+        // conclusion from the right observation: a declined resume means we
+        // could not resume that id THIS TIME, and the two reasons it can happen
+        // are not the same. One is an id the CLI announced for a session that
+        // never got a turn, so its transcript was never written; the other is a
+        // `readdir` that failed for a second because something else had the
+        // directory open. Writing `undefined`
+        // turned either into a permanent severance — the card started fresh and
+        // the only pointer to a conversation still sitting on disk was gone.
+        //
+        // So: resume resolved to an id (the head, an ancestor, or an adopted
+        // conversation) → that id becomes the head and everything else drops
+        // into the chain beneath it. Nothing resolved → the card keeps exactly
+        // what it had, and the fresh session's `onNativeSessionId` will push
+        // that down the chain when it announces its own id.
+        ...(plan.resumeSessionId
+          ? recordNativeId(prior, plan.resumeSessionId)
+          : {
+              nativeSessionId: prior?.nativeSessionId,
+              nativeSessionLineage: prior?.nativeSessionLineage,
+            }),
         suspendedAt: prior?.suspendedAt ?? '',
         autonomy,
         // an existing card keeps its membership; a new card takes the caller's
@@ -1119,6 +1191,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         cardId: opts.cardId,
         folder: opts.folder,
         resumed: canResume,
+        // `stored` is the ordinary resume; `lineage` and `adopted` are
+        // recoveries, and which one it was is the difference between "came back
+        // in the right conversation" and "came back in a plausible one" (#484)
+        resumedVia: plan.resumedVia,
       });
       // seed the card's display from the persisted record so nothing reads
       // empty while resuming

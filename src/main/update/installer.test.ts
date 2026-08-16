@@ -39,7 +39,7 @@ describe('what may be executed', () => {
 });
 
 describe('the launch', () => {
-  it('runs it SILENTLY, detached, with no shell', () => {
+  it('runs it SILENTLY, detached, with no shell — and asks it to relaunch us', () => {
     const child = { unref: vi.fn() };
     const spawnImpl = vi.fn(() => child);
     expect(launchInstaller(GOOD, { updateDir: DIR, spawnImpl: spawnImpl as never, platform: 'win32' })).toBe(true);
@@ -52,7 +52,14 @@ describe('the launch', () => {
     expect(file).toBe(GOOD);
     // `/S` is NSIS's silent switch — without it the user gets a wizard they
     // did not ask for from an app that just told them it was updating.
-    expect(args).toEqual(['/S']);
+    //
+    // `--force-run` is the fix for #525 and is pinned here BY NAME because the
+    // bug was invisible in code review: electron-builder's oneClick relaunch is
+    // guarded by `${ifNot} ${Silent} ${orIf} ${isForceRun}`, so `/S` alone
+    // installs the update and never brings the app back. Delete this argument
+    // and the app quits for good on every update — with no failing behaviour
+    // anywhere else to catch you. That is what this assertion is for.
+    expect(args).toEqual(['/S', '--force-run']);
     expect(options).toMatchObject({ detached: true, stdio: 'ignore', shell: false });
     // Detached AND unref'd: the caller quits next, and a child in our process
     // group would be killed by the very quit it is meant to survive.

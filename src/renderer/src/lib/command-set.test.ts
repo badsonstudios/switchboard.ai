@@ -27,14 +27,17 @@ function deps(): CommandDeps & { focusCard: ReturnType<typeof vi.fn> } {
     cycleLayoutMode: vi.fn(),
     toggleMaximize: vi.fn(),
     toggleRail: vi.fn(),
+    toggleEventsDrawer: vi.fn(),
     openPalette: vi.fn(),
     openFind: vi.fn(),
     toggleTabRows: vi.fn(),
+    toggleDiffLayout: vi.fn(),
     jumpToNextAttention: vi.fn(),
     openAbout: vi.fn(),
     checkForUpdates: vi.fn(),
     openFile: vi.fn(),
     openPushSetup: vi.fn(),
+    openQuietHours: vi.fn(),
   } as CommandDeps & {
     focusCard: ReturnType<typeof vi.fn>;
     jumpToNextAttention: ReturnType<typeof vi.fn>;
@@ -194,15 +197,27 @@ describe('seed command set (E9-01)', () => {
     expect(d.toggleTabRows).toHaveBeenCalledOnce();
   });
 
+  it('the diff-layout command routes to its dep, and needs no card (#532)', () => {
+    const d = deps();
+    const cmds = buildCommands(d);
+    const cmd = byId(cmds, 'view.diffLayout');
+    expect(cmd.binding).toBeUndefined(); // palette-only, like the tab-rows one
+    // the preference is the WORKSPACE's — every open Changes tab changes with
+    // it — so an empty workspace must still be able to run it
+    expect(cmd.enabled).toBeUndefined();
+    cmd.run(ctxWith([]));
+    expect(d.toggleDiffLayout).toHaveBeenCalledOnce();
+  });
+
   it('rail toggle and new session need no session at all', () => {
     const cmds = buildCommands(deps());
     expect(byId(cmds, 'view.rail').enabled).toBeUndefined();
     expect(byId(cmds, 'session.new').enabled).toBeUndefined();
   });
 
-  it('find.open opens the bar on the FOCUSED card, and is dead without one', () => {
-    // Card-scoped: §5.31's bar belongs to a session, and opening one over
-    // nothing is worse than the key doing nothing.
+  it('find.open opens the bar on the FOCUSED card, and is dead with nothing focused', () => {
+    // Surface-scoped: §5.31's bar belongs to whatever is being read, and
+    // opening one over nothing is worse than the key doing nothing.
     const d = deps();
     const cmds = buildCommands(d);
     const find = byId(cmds, 'find.open');
@@ -212,6 +227,24 @@ describe('seed command set (E9-01)', () => {
     );
     find.run({ sessions: [], activeCardId: 'card-7', activeGroupId: null, attentionCount: 0 });
     expect(d.openFind).toHaveBeenCalledWith('card-7');
+  });
+
+  it('find.open also takes a focused DOCUMENT — the #533 half of that sentence', () => {
+    // The bug this closed: `enabled` was `activeCardId !== null`, and a `doc-`
+    // panel answers null — so Ctrl+F over a document was a DISABLED command
+    // that ran nothing at all, however good the viewer's own find was.
+    const d = deps();
+    const find = byId(buildCommands(d), 'find.open');
+    const overDoc = {
+      sessions: [],
+      activeCardId: null,
+      activeDocumentId: 'doc-3',
+      activeGroupId: null,
+      attentionCount: 0,
+    };
+    expect(find.enabled?.(overDoc)).toBe(true);
+    find.run(overDoc);
+    expect(d.openFind).toHaveBeenCalledWith('doc-3');
   });
 
   it('exactly TWO commands may fire while the user is typing, and they are named', () => {

@@ -141,6 +141,16 @@ submit (global, per group and per session), what a session may do when it needs
 you (global and per session), layout, groups, sessions, per-session detail
 level, and window position all persist across restarts, stored on your machine.
 
+## Quiet hours
+
+Reachable with **`Ctrl+Shift+P`** → *quiet hours*, or from the **About** panel.
+Off until you set a window. Two times on your machine's clock, between which
+nothing pops up, beeps, speaks or reaches your phone — webhooks keep going,
+deliberately. Full walk-through in
+[Notifications](09-notifications.md#quiet-hours).
+
+Stored with your workspace, so it survives restarts like everything above.
+
 ## Phone push & webhooks
 
 Reachable with **`Ctrl+Shift+P`** → *phone push*, or from the **About** panel.
@@ -160,5 +170,8 @@ with your workspace.
   The only credentials switchboard holds are the phone-push / webhook ones you
   choose to give it, and those live in the OS credential store.
 
-TODO: a proper settings screen (notification rules, quiet hours, per-session
-sounds) is planned.
+TODO: a proper settings screen is planned. Until it lands, the settings that
+have no chip live behind palette commands and the About panel — quiet hours and
+phone push are both reached that way, and they will move into it when it exists.
+TODO: a notification-rules editor (which would replace hand-editing the
+`quietHours` override) is not built yet.

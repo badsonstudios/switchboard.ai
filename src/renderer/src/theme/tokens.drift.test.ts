@@ -217,6 +217,17 @@ const PAIRS: Array<[string, string, number]> = [
   ['--status-idle-ink', '--rail-card', 4.5],
   ['--status-done-ink', '--rail-card', 4.5],
   ['--status-crashed-ink', '--rail-card', 4.5],
+  // the events drawer's tab (P2-E14-01) tints its edge with the queue's hottest
+  // kind and its notice dot with `--status-working-ink`. Both are non-text
+  // objects that carry meaning, so 1.4.11's 3:1 — and against `--panel`, which
+  // is the tab's own background. The RAW `--status-*` hues are one set of
+  // values for every theme and measure 1.9–2.5:1 here, which is exactly why the
+  // tab uses the per-theme inks; these lines are what keeps it that way.
+  ['--status-working-ink', '--panel', 3],
+  ['--status-needs-input-ink', '--panel', 3],
+  ['--status-needs-permission-ink', '--panel', 3],
+  ['--status-done-ink', '--panel', 3],
+  ['--status-crashed-ink', '--panel', 3],
   ['--link', '--panel', 4.5],
   ['--subagent', '--panel', 4.5],
   ['--diff-added', '--panel', 4.5],
@@ -276,6 +287,30 @@ const FILLED_RULES: Array<[string, number]> = [
   // the list for the same reason: a warning nobody can read is a warning that
   // did not arrive.
   ['.service-health-banner', 4.5],
+];
+
+/**
+ * FIND MARKS (#520) — the same measurement, a separate list for one reason:
+ * nothing puts these on screen with a `className`.
+ *
+ * A mark is an ELEMENT the find code creates (`lib/text-marks.ts` writes
+ * `<mark data-…-match>`), so the "is applied by a component" scan below — which
+ * looks for the class inside a `className=` prop — would fail on a rule that is
+ * perfectly live. The attribute IS the selector, and the thing that proves it
+ * is applied is `feed-marks.test.ts` / `document-find.test.ts`, which assert on
+ * the marked DOM.
+ *
+ * Held to AA rather than the banners' floor for the same reason they are: a
+ * highlight nobody can read is not a subtler highlight, it is the bug #520 was
+ * filed over with more colour in it. Both surfaces are on the list because they
+ * deliberately share the two token pairs, and a list with one of them on it
+ * would let the other drift.
+ */
+const MARK_RULES: Array<[string, number]> = [
+  ['mark[data-feed-match]', 4.5],
+  ['mark[data-feed-match-current]', 4.5],
+  ['.doc-main mark[data-doc-match]', 4.5],
+  ['.doc-main mark[data-doc-match-current]', 4.5],
 ];
 
 /**
@@ -392,7 +427,7 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))(
   (id, theme) => {
     const tokens = resolved(theme);
 
-    it.each(FILLED_RULES)('%s clears %s:1', (selector, min) => {
+    it.each([...FILLED_RULES, ...MARK_RULES])('%s clears %s:1', (selector, min) => {
       const [ink, fill] = pair(selector);
       for (const token of [ink, fill]) {
         expect(tokens[token], `${id} ${token} must be #rrggbb to be measured`).toMatch(

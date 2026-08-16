@@ -20,7 +20,8 @@
 // importing anything from the module that also exports `sessionFindProvider`
 // would put a consumer one auto-import away from reaching a contributor
 // directly — the one rule `docs/extensibility.md` opens with.
-import type { FindSurface } from '../extensibility/contributions';
+import type { FindQuery, FindSurface } from '../extensibility/contributions';
+import type { DocumentSearchResult } from './document-find';
 import type { TerminalMatch, TerminalSearchOutcome, TerminalSearchQuery } from './terminal-find';
 
 /**
@@ -40,13 +41,20 @@ export interface FeedFindSurface extends FindSurface {
   kind: 'feed';
   /**
    * Reveal a live Feed `seq`: force it past the verbosity filter, expand
-   * whatever was folded over it, mark it, and scroll it into view.
+   * whatever was folded over it, ring it, MARK THE TERM inside it, and scroll
+   * it into view.
+   *
+   * `query` is what the bar is looking for, and it is what the marks are
+   * painted from (#520): before it, the feed knew where to scroll and not what
+   * to point at, so a jump landed you near the match with nothing highlighted.
+   * Optional because a caller with no query still gets the reveal — the marks
+   * are the part that needs the term, not the jump.
    *
    * Returns whether the block is IN the view buffer at all. False is the
    * §5.31 v1 boundary, and the caller must not pretend it jumped.
    */
-  jumpTo(seq: number): boolean;
-  /** drop the reveal set and the highlight — the view as find found it */
+  jumpTo(seq: number, query?: FindQuery): boolean;
+  /** drop the reveal set, the ring and the marks — the view as find found it */
   clear(): void;
 }
 
@@ -86,6 +94,42 @@ export interface TerminalFindSurface extends FindSurface {
   reveal(match: TerminalMatch): boolean;
   /** drop the highlights and the selection */
   clear(): void;
+}
+
+/**
+ * What `DocumentViewer` publishes — the §5.30 viewer's two bodies (#533).
+ *
+ * THE ONE SURFACE WITH TWO HALVES, because the viewer has two bodies and they
+ * want opposite treatment:
+ *
+ *  • RENDERED markdown is our own DOM, and `lib/document-find` marks matches in
+ *    it — so the bar drives it (`search` / `reveal` / `clear`).
+ *  • SOURCE is a Monaco editor, and §5.31 says not to reimplement Monaco's
+ *    find — so that half DELEGATES, exactly as the Changes tab does
+ *    (`openFind`).
+ *
+ * `view()` is how the provider tells them apart, and it is also why
+ * `FindProviderContribution.modeFor` exists: one panel, one provider, and which
+ * half is on screen is a runtime question the toggle in its own header answers.
+ *
+ * The KEY this publishes under is `findSurfaceKey(<the doc- panel id>, 'document')`
+ * — the panel id plays the cardId role. A viewer is not a session card and has
+ * no card to name, and the guarantee the key exists for ("a search can never
+ * reach another card") holds by the same argument: there is no way to ask for a
+ * surface without naming the panel it belongs to.
+ */
+export interface DocumentFindSurface extends FindSurface {
+  kind: 'document';
+  /** which body is on screen: ours, Monaco's, or nothing searchable yet */
+  view(): 'rendered' | 'source' | 'none';
+  /** rendered only: mark every match and describe them, in document order */
+  search(query: FindQuery): DocumentSearchResult;
+  /** rendered only: make the `index`-th mark current and scroll to it */
+  reveal(index: number): boolean;
+  /** rendered only: drop every mark, leaving the text as it was */
+  clear(): void;
+  /** source only: focus the editor and open Monaco's own find, seeded */
+  openFind(term: string): boolean;
 }
 
 const surfaces = new Map<string, FindSurface>();

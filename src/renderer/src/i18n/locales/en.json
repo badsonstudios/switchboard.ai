@@ -187,6 +187,8 @@
     "popOutIcon": "⤢",
     "dockIn": "Pop back into the main window",
     "dockInIcon": "⤡",
+    "newSessionHere": "New session in this window",
+    "newSessionHereIcon": "＋",
     "menu": "Session menu",
     "menuIcon": "⋯",
     "menuClear": "Clear conversation",
@@ -308,7 +310,12 @@
       "both": "SM"
     },
     "openInViewer": "Open {file} in the document viewer",
-    "openInViewerIcon": "↗"
+    "openInViewerIcon": "↗",
+    "layoutLabel": "How to show this diff",
+    "sideBySide": "Side by side",
+    "inline": "Inline",
+    "tooNarrow": "Side by side — this pane is too narrow for two columns, so the diff is shown inline until you widen it",
+    "tooNarrowNote": "Too narrow for two columns"
   },
   "document": {
     "rendered": "Rendered",
@@ -317,19 +324,11 @@
     "renderedOnlyForMarkdown": "Only Markdown files have a rendered view",
     "openExternally": "Open externally",
     "revealInFolder": "Reveal in folder",
-    "pin": "Pin this document — keep it when the next file opens",
-    "unpin": "Unpin this document — the next file you open replaces it",
     "popOut": "Open this document in its own window",
     "dockBack": "Put this document back in the main window",
     "openedFromLabel": "Opened from the session {name}",
     "back": "Back",
     "forward": "Forward",
-    "find": "Find in this document",
-    "findPlaceholder": "Find…",
-    "findNext": "Next match",
-    "findPrev": "Previous match",
-    "findCount": "{n} of {total}",
-    "findNone": "No matches",
     "close": "Close",
     "loading": "Opening…",
     "outline": "Outline",
@@ -340,8 +339,6 @@
       "back": "‹",
       "forward": "›",
       "close": "✕",
-      "pinned": "📌",
-      "unpinned": "📍",
       "popOut": "⤢",
       "dockBack": "⤡",
       "lineage": "↳"
@@ -382,6 +379,13 @@
     "nextUp": "next",
     "nextUpHint": "Next stop for the go-to-next-session shortcut",
     "reviewed": "Already seen",
+    "drawer": {
+      "label": "Events",
+      "waiting": "{count, plural, =0 {nothing waiting} one {# session waiting} other {# sessions waiting}}",
+      "notices": "{count, plural, one {# notice} other {# notices}}",
+      "announce": "{count, plural, one {# notice} other {# notices}} in the events drawer — press {binding} to open",
+      "announceNoBinding": "{count, plural, one {# notice} other {# notices}} in the events drawer"
+    },
     "kind": {
       "done": "Done.",
       "ready": "Ready",
@@ -416,6 +420,29 @@
     "setting": "Check provider status",
     "settingHint": "Ask Anthropic's public status page every few minutes whether it is having a day. Nothing is sent; turning it off changes nothing else."
   },
+  "quiet": {
+    "title": "Quiet hours",
+    "open": "Quiet hours…",
+    "intro": "Hours of the day when switchboard will not make a noise at you. Sessions keep running and everything still lands in the Events panel — you just are not told about it until the window is over.",
+    "enable": "Keep quiet between these times",
+    "start": "From",
+    "end": "Until",
+    "overnightHint": "A window that runs past midnight is fine — 22:00 until 07:00 means overnight. Times are your machine's clock, so they follow you if you change timezone.",
+    "problem": {
+      "same": "Those are the same time, which is a window of zero length. Pick two different times.",
+      "missing": "Both a start and an end are needed before quiet hours can be switched on."
+    },
+    "whatHappens": "What quiet hours stop",
+    "personFacing": "Stopped: pop-up notifications, session sounds, spoken announcements, and phone push. Anything aimed at you.",
+    "machineFacing": "Not stopped: webhooks. They go to a program, and a program is not asleep — that is usually the reason you set one up. A rule can be told to obey quiet hours anyway.",
+    "status": {
+      "unknown": "Cannot tell right now.",
+      "off": "Quiet hours are off.",
+      "active": "Quiet hours are on right now · {count, plural, =0 {nothing held yet} one {# notification held so far} other {# notifications held so far}}",
+      "idle": "Not quiet at the moment · {count, plural, =0 {nothing held yet} one {# notification held so far} other {# notifications held so far}}"
+    },
+    "close": "Close"
+  },
   "push": {
     "title": "Phone push & webhooks",
     "open": "Phone push & webhooks…",
@@ -437,7 +464,7 @@
     "enablePush": "Send events to my phone",
     "enablePushHint": "Needs permission, needs input, and crashes — only while you are away from switchboard.",
     "enableWebhook": "POST events to my webhook",
-    "enableWebhookHint": "All four events, whatever the window is doing: a program is not distracted by being looked at. The 🔔 switch and quiet hours still silence it.",
+    "enableWebhookHint": "All four events, whatever the window is doing: a program is not distracted by being looked at. Quiet hours do NOT stop it — a webhook has no ears. The 🔔 switch does.",
     "set": "· saved",
     "notSet": "· not set",
     "save": "Save",
@@ -548,6 +575,8 @@
   "statusbar": {
     "sessions": "{count, plural, =0 {no sessions} one {# session} other {# sessions}}",
     "usage": "↓{tokens} · ~{cost} est",
+    "attention": "{count, plural, =0 {none waiting} other {# waiting}}",
+    "attentionTitle": "Sessions waiting on you — {binding} goes to the next one",
     "theme": "theme: {theme}"
   },
   "usage": {
@@ -585,13 +614,16 @@
     "toggleTerminal": "Toggle Terminal view",
     "toggleChanges": "Toggle Changes view",
     "toggleRail": "Toggle the sessions rail",
+    "toggleEvents": "Show or hide the events drawer",
     "openFile": "Open file… — read a file in the document viewer",
     "toggleTabRows": "Toggle tabs on multiple rows",
+    "toggleDiffLayout": "Toggle side-by-side / inline diff",
     "openFind": "Find in the focused session",
     "openPalette": "Show all commands",
     "goToSession": "Go to {title}",
     "jumpAttention": "Go to the next session that needs you",
     "pushSetup": "Phone push & webhooks… — reach me when I'm away from the machine",
+    "quietHours": "Quiet hours… — the times of day nothing may make a noise",
     "about": "About this build — version, commit, branch",
     "category": {
       "session": "Sessions",
@@ -604,6 +636,7 @@
       "noSuchSession": "There is no session in that slot",
       "noSessions": "No sessions are open",
       "noActiveSession": "No session is focused",
+      "noFindTarget": "No session or document is focused",
       "emptyQueue": "Nothing is waiting on you",
       "noActiveGroup": "The focused session is not in a group"
     },
@@ -655,6 +688,12 @@
     "en": "en",
     "pseudo": "pseudo"
   },
+  "contextMenu": {
+    "cut": "Cut",
+    "copy": "Copy",
+    "paste": "Paste",
+    "selectAll": "Select All"
+  },
   "terminal": {
     "streamTitle": "No terminal for this session",
     "streamBody": "This session talks to Claude Code directly instead of through a terminal, so there is nothing to show here. In exchange, permission requests appear in this window — including the ones that used to escape into the terminal and ask you twice. Switch this session to Terminal mode from the ⋯ menu if you need the terminal itself."
@@ -679,7 +718,8 @@
     "groupSeparator": " · ",
     "noticeInGroup": "{group}: {message}",
     "group": {
-      "terminal": "Terminal (scrollback only)"
+      "terminal": "Terminal (scrollback only)",
+      "document": "Document"
     },
     "noResults": "No results",
     "searching": "Searching…",
@@ -709,6 +749,8 @@
       "diffNotReady": "The diff hasn't loaded yet — open a changed file and try again.",
       "noTerminal": "This session has no terminal, so there's no scrollback to search.",
       "terminalNotShown": "Open the Terminal tab to search its scrollback — switchboard only keeps the terminal's view while you're looking at it.",
+      "noDocument": "There is no document here to search.",
+      "documentNotReady": "This document hasn't finished opening, so there's nothing to search yet.",
       "failed": "Find isn't available on this tab right now."
     },
     "notice": {

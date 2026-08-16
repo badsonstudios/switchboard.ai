@@ -1,9 +1,11 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import i18next from 'i18next';
 import { App } from './App';
 import { initI18n } from './i18n';
 import { initRendererContributions } from './bootstrap';
 import { loadUiState } from './lib/ui-state';
+import { publishContextMenuLabels } from './lib/context-menu-labels';
 import './theme/tokens.css';
 
 // register the built-in contributions (and log what registered) BEFORE the
@@ -18,6 +20,9 @@ initRendererContributions();
 void loadUiState()
   .then(initI18n)
   .then(() => {
+  // Right-click menus are built in main and labelled from here (#526). Before
+  // the first render, so a right-click on the boot screen already has words.
+  publishContextMenuLabels(i18next);
   createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <App />

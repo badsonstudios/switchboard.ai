@@ -83,6 +83,27 @@ keyboard along with everything else (below). It works in a popped-out card too.
 The document viewer has had the same button on its code blocks since it
 shipped — it's the same affordance in both places, on purpose.
 
+### Opening a link a session gives you
+
+**Click a link in an answer and it opens in your normal web browser.** It never
+opens inside switchboard.ai — the app doesn't turn into a web page, and you
+don't lose the session you were reading. It works in a popped-out card too.
+
+Only ordinary web links work: `http`, `https` and `mailto` addresses. Anything
+else in a link — a scheme that would run a program, open a file on your disk, or
+launch another app — does **nothing at all** when clicked, and isn't painted as
+a link in the first place: it reads as the plain words it always was. That's
+deliberate:
+the text of an answer is written by whatever the session was reading, so a link
+in it is not automatically something worth trusting, and "nothing happened" is
+the right answer for anything that isn't plainly a web page.
+
+Two other things a link in an answer can't do, for the same reason: a link to a
+file path (`./notes.md`) doesn't open anything from the conversation — open it
+in the [document viewer](15-document-viewer.md) instead, where links between
+files do work — and a link that just points at a spot in a page (`#somewhere`)
+does nothing, because a conversation isn't a document with places to jump to.
+
 ### …without the mouse
 
 Every box, every **IN** / **OUT** section and every folded prompt can be opened
@@ -137,6 +158,29 @@ The box at the bottom sends straight to the real Claude Code session:
 
 Under the box is a row showing this session's **autonomy mode** (click to
 cycle) and the **model** it last used.
+
+**A prompt you haven't sent yet is kept.** Start writing, then switch that card
+to the Terminal tab and back, pop it out into its own window, dock it back, or
+quit switchboard entirely — the words are still in the box when you return to
+it. Each session keeps its own; sending clears it. If you empty the box, nothing
+is kept, and a draft is forgotten when you close the session for good. A session
+you left suspended gets its draft back when it resumes.
+
+### Right-click menus
+
+**Right-click in the prompt box** for **Cut**, **Copy**, **Paste** and **Select
+All**. Items that would do nothing are greyed out — Cut and Copy with nothing
+selected, Paste with an empty clipboard. Pasting from the menu is the same as
+pressing Ctrl+V, pictures included: a screenshot pasted this way becomes the
+same chip described below.
+
+**Right-click text you've selected in the conversation** — or in a document —
+for **Copy**. There is no Cut or Paste there: it isn't text you can edit.
+
+The menus work in popped-out session windows too. Right-clicking in the
+**Terminal** tab does nothing, deliberately: the terminal belongs to the CLI
+and has its own habits, so switchboard.ai stays out of it. Use the Terminal's
+own keys, or the Session tab, to move text around there.
 
 ### Attaching files: paste a picture, or drag anything in
 

@@ -8,14 +8,23 @@
 // language services, which demand their own web workers and throw uncaught
 // against the single plain worker below. The full reasoning, and the numbers,
 // are in `lib/monaco-languages.ts` — read that before changing this import.
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as monaco from 'monaco-editor/esm/vs/editor/edcore.main';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import '../lib/monaco-languages';
 import { languageForPath } from '../lib/diff-language';
+import {
+  effectiveDiffLayout,
+  getDiffLayout,
+  isTooNarrowForColumns,
+  setDiffLayout,
+  subscribeDiffLayout,
+  type DiffLayout,
+} from '../lib/diff-layout';
 import { defineDiffThemes, DIFF_THEME } from '../lib/monaco-theme';
 import { findSurfaceKey, publishFindSurface, type MonacoFindSurface } from '../lib/find-surfaces';
+import { openMonacoFind } from '../lib/monaco-find';
 import { openDocument } from '../lib/document-open';
 
 /**
@@ -79,6 +88,17 @@ export function DiffPane(props: {
   const [selected, setSelected] = useState<string | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
+  // Workspace-wide, not per-card (#532): "how I read a diff" is a habit, not a
+  // property of one session, and the palette command has no card in hand.
+  const layoutPref = useSyncExternalStore(subscribeDiffLayout, getDiffLayout);
+  // The VERDICT, not the pixel count: a splitter drag then re-renders this
+  // component (file list, badges, every row's button) only when the answer
+  // flips, rather than on every frame. See `isTooNarrowForColumns`.
+  const [tooNarrow, setTooNarrow] = useState(false);
+  const layout = effectiveDiffLayout(layoutPref, tooNarrow);
+  /** the preference is side-by-side but the pane cannot carry it — the toggle
+   *  has to SAY so, or it reads as a button that does nothing (#532) */
+  const narrowed = layoutPref === 'side-by-side' && layout === 'inline';
 
   useEffect(() => {
     void window.switchboard.git.status(props.folder).then((s) => setStatus(s as GitStatusDto));
@@ -103,7 +123,14 @@ export function DiffPane(props: {
     defineDiffThemes(monaco.editor);
     const editor = monaco.editor.createDiffEditor(hostRef.current, {
       readOnly: true,
-      renderSideBySide: true,
+      renderSideBySide: layout === 'side-by-side',
+      // WE own the narrow-pane rule, not Monaco (#532). Left on — its default —
+      // this quietly forces the inline view under 900px, which is where an
+      // ordinary Changes tab in a 1280px window lives, so the pane had asked
+      // for side-by-side since P1-E5-02 and never once got it. The full
+      // reckoning is in lib/diff-layout's header; the short version is that a
+      // rule the user cannot see is worse than one drawn a little narrow.
+      useInlineViewWhenSpaceIsLimited: false,
       automaticLayout: true,
       minimap: { enabled: false },
       theme: DIFF_THEME[props.colorScheme],
@@ -115,8 +142,40 @@ export function DiffPane(props: {
       editor.dispose();
       editorRef.current = null;
     };
-    // deliberately empty: `colorScheme` is READ here for the initial paint but
-    // is not a dependency — the effect below owns every change to it
+    // deliberately empty: `colorScheme` and `layout` are READ here for the
+    // initial paint but are not dependencies — the effects below own every
+    // change to them, and rebuilding this editor would drop both models
+  }, []);
+
+  // Live, in place — `updateOptions` is how a diff editor changes shape without
+  // being rebuilt, and rebuilding would blank the pane (see the note above).
+  useEffect(() => {
+    editorRef.current?.updateOptions({ renderSideBySide: layout === 'side-by-side' });
+  }, [layout]);
+
+  // How wide the DIFF is, which is not how wide the card is — the file list
+  // takes its 200px off the front first. Measured rather than derived, because
+  // the same pane renders in a full-width card, a half-width one and a popout.
+  useEffect(() => {
+    const host = hostRef.current;
+    // jsdom and older embedders have no ResizeObserver; without it the verdict
+    // stays `false` and the preference is simply honoured — a degrade, not a
+    // break (fail-open)
+    if (!host || typeof ResizeObserver === 'undefined') return;
+    const measure = (widthPx: number): void => {
+      // A HIDDEN dockview tab observes 0×0 (`content.js` sets `display: none`
+      // on the inactive panel). Treating that as a measurement would clear the
+      // narrow verdict while the tab is away and paint one frame of two
+      // columns on the way back — so a non-measurement leaves the last real
+      // answer standing.
+      if (widthPx > 0) setTooNarrow(isTooNarrowForColumns(Math.round(widthPx)));
+    };
+    const ro = new ResizeObserver((entries) => {
+      measure(entries[0]?.contentRect.width ?? host.clientWidth);
+    });
+    ro.observe(host);
+    measure(host.clientWidth);
+    return () => ro.disconnect();
   }, []);
 
   useEffect(() => {
@@ -140,27 +199,10 @@ export function DiffPane(props: {
     const surface: MonacoFindSurface = {
       kind: 'monaco',
       ready: (): boolean => !!modified()?.getModel(),
-      openFind: (term: string): boolean => {
-        const ed = modified();
-        if (!ed?.getModel()) return false;
-        // focus first, or the widget opens without a caret and Enter does
-        // nothing — the "it did open, it just doesn't work" failure
-        ed.focus();
-        ed.getAction('actions.find')?.run();
-        // Seed the sticky term. `setSearchString` is the find controller's own
-        // public method; reached through `getContribution`, whose return type
-        // is opaque, so this is a narrow structural cast rather than a lie
-        // about the whole contribution. Optional at every step: if a Monaco
-        // upgrade renames it the widget still opens, merely empty — a degrade,
-        // not a break (fail-open).
-        if (term) {
-          const find = ed.getContribution('editor.contrib.findController') as unknown as {
-            setSearchString?: (s: string) => void;
-          } | null;
-          find?.setSearchString?.(term);
-        }
-        return true;
-      },
+      // `lib/monaco-find`, shared with the document viewer's source body since
+      // #533: two surfaces in this app are Monaco editors and both delegate
+      // find to it, so the hand-off is written once.
+      openFind: (term: string): boolean => openMonacoFind(modified(), term),
     };
     return publishFindSurface(findSurfaceKey(props.cardId, 'diff'), surface);
   }, [props.cardId]);
@@ -279,7 +321,42 @@ export function DiffPane(props: {
           </div>
         ))}
       </div>
-      <div ref={hostRef} style={{ flex: 1, minInlineSize: 0 }} />
+      <div style={{ flex: 1, minInlineSize: 0, display: 'flex', flexDirection: 'column' }}>
+        {/* §5.32 rule 1: real `<button>`s, so Enter, Space, focus and the
+            announcement all come from the platform. NOT a `radiogroup` — the
+            pair is styled and behaves exactly like the document viewer's
+            Rendered/Source toggle, and a composite role would oblige a roving
+            tabindex and arrow keys the surface does not implement (rule 3:
+            composite roles only where they are true). A plain `group` with a
+            name is what both of them earn: it names the pair without taking
+            over the buttons inside it. */}
+        <div className="diff-toolbar" role="group" aria-label={t('diff.layoutLabel')}>
+          {/* VISIBLE, not just a tooltip: Chromium never shows `title` on
+              keyboard focus, so a sighted keyboard user would have had no way
+              at all to learn why the pressed button is not what is on screen. */}
+          {narrowed && <span className="diff-narrow-note">{t('diff.tooNarrowNote')}</span>}
+          {(['side-by-side', 'inline'] as const).map((mode: DiffLayout) => {
+            // the ONE case where the pressed button is not what is on screen:
+            // say why, rather than let it read as a control that does nothing
+            const reason = mode === 'side-by-side' && narrowed ? t('diff.tooNarrow') : undefined;
+            return (
+              <button
+                key={mode}
+                type="button"
+                className="diff-btn"
+                data-testid={`diff-layout-${mode}`}
+                aria-pressed={layoutPref === mode}
+                aria-label={reason}
+                title={reason}
+                onClick={() => setDiffLayout(mode)}
+              >
+                {t(mode === 'side-by-side' ? 'diff.sideBySide' : 'diff.inline')}
+              </button>
+            );
+          })}
+        </div>
+        <div ref={hostRef} style={{ flex: 1, minBlockSize: 0 }} />
+      </div>
     </div>
   );
 }

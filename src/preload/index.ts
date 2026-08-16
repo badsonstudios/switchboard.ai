@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import type { ContextMenuLabels } from '../shared/context-menu';
 import type { SlashCommand } from '../shared/slash-commands';
 import type { PromptAttachment } from '../shared/prompt-attachments';
 import type { PtyAttachment, PtyChunk } from '../shared/ipc/pty';
@@ -24,6 +25,7 @@ import type {
   PushSendResult,
   PushWriteResult,
 } from '../shared/push';
+import type { QuietState } from '../shared/quiet-hours';
 import type { AudioChannelName, AudioPlayCue, AudioSpeakCue, CardSound } from '../shared/sounds';
 import { AUDIO_FAILED_CHANNEL, AUDIO_PLAY_CHANNEL, AUDIO_SPEAK_CHANNEL } from '../shared/sounds';
 
@@ -141,6 +143,16 @@ const api = {
       return () => ipcRenderer.removeListener('workspace:saveStateChanged', h);
     },
   },
+  /**
+   * Hand main the four right-click menu labels, translated (#526).
+   *
+   * The menu itself is built in the browser process — only it can offer a real
+   * Cut/Copy/Paste — but only the renderer has i18next, so the strings travel
+   * the other way. Sent at boot and again on every language change; main keeps
+   * the last set and falls back to English before the first one arrives.
+   */
+  setContextMenuLabels: (labels: ContextMenuLabels): void =>
+    ipcRenderer.send('app:contextMenuLabels', labels),
   /** display work areas, for popout-position rescue on restore (E8-02) */
   workAreas: (): Promise<Array<{ x: number; y: number; width: number; height: number }>> =>
     ipcRenderer.invoke('app:workAreas'),
@@ -193,7 +205,18 @@ const api = {
    * answers `{ ok, reason }`, `submitPrompt` and `interrupt` answer `false`.
    */
   sessions: {
-    pickFolder: (): Promise<string | null> => ipcRenderer.invoke('sessions:pickFolder'),
+    /**
+     * Pick a project folder.
+     *
+     * `popoutGroupId` is the dockview group id of a popped-out window, and it
+     * parents the dialog to THAT window instead of the main one (#531): a
+     * modal that opens behind the window you clicked in — or drags the whole
+     * app forward on top of it — is not a dialog, it is a jump scare. Main
+     * falls back to the main window when the id names nothing it knows, so a
+     * window that closed mid-click still gets a usable picker.
+     */
+    pickFolder: (popoutGroupId?: string): Promise<string | null> =>
+      ipcRenderer.invoke('sessions:pickFolder', popoutGroupId),
     isDirectory: (p: string): Promise<boolean> => ipcRenderer.invoke('sessions:isDirectory', p),
     /**
      * Start (or `--resume`) the live session for a card.
@@ -533,6 +556,16 @@ const api = {
     // merge-patch: send only the prefs you're changing (review P1 #13)
     setPrefs: (p: Partial<NotifPrefs>): Promise<NotifPrefs> =>
       ipcRenderer.invoke('notifications:setPrefs', p),
+    /**
+     * Is the quiet window open right now, and how much has it held
+     * (P2-E14-05b)?
+     *
+     * Asked of MAIN rather than worked out in the renderer from `getPrefs`,
+     * even though the arithmetic is four lines: main owns the clock the rules
+     * are actually evaluated against, and a dialog that computed its own answer
+     * would be free to disagree with the engine about whether it is 07:00 yet.
+     */
+    quietState: (): Promise<QuietState> => ipcRenderer.invoke('notifications:quietState'),
   },
   /**
    * Per-session sounds and spoken announcements (P2-E14-05a, §5.9 + §5.11).

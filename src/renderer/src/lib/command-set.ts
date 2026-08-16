@@ -52,12 +52,17 @@ export interface CommandDeps {
   toggleMaximize: (cardId: string) => void;
   /** show/hide the sessions rail */
   toggleRail: () => void;
+  /** open or shut the events drawer (P2-E14-01, Shape B) */
+  toggleEventsDrawer: () => void;
   /** open the command palette (E9-02) */
   openPalette: () => void;
   /** open the find bar on a card (E17-02, §5.31) */
-  openFind: (cardId: string) => void;
+  /** open the find bar on a card — or, since #533, on a `doc-` viewer panel */
+  openFind: (targetId: string) => void;
   /** wrap the tab strip onto more rows, or keep it to one (#84) */
   toggleTabRows: () => void;
+  /** show a diff in two columns or one — every Changes tab at once (#532) */
+  toggleDiffLayout: () => void;
   /** jump to the next session waiting on a human (E9-03 attention queue) */
   jumpToNextAttention: () => void;
   /** show the build identity — version, commit, branch, build age (E15-15) */
@@ -68,6 +73,8 @@ export interface CommandDeps {
   openFile: () => void;
   /** set up phone push / webhooks — the credential surface (E14-06, §5.29) */
   openPushSetup: () => void;
+  /** set the quiet-hours window — when nothing person-facing fires (E14-05b) */
+  openQuietHours: () => void;
 }
 
 const CATEGORY_SESSION = 'commands.category.session';
@@ -150,17 +157,30 @@ export function buildCommands(deps: CommandDeps): Command[] {
       // terminal is Ctrl+Shift+P → "Find in session", and the terminal's
       // scrollback is searched by Ctrl+F pressed anywhere else on the card.
       //
-      // Card-scoped, so it is disabled with no focused card rather than
-      // silently opening a bar over nothing.
+      // SURFACE-scoped, not card-scoped (#533). Every other command in this
+      // file acts on a session, so "the focused card, or nothing" is the whole
+      // of its context; find acts on whatever is being READ, and since §5.30 a
+      // document viewer is one of those — its own dockview panel, with no
+      // session behind it and no card id to answer with. So this takes either,
+      // and is disabled only when neither is focused rather than silently
+      // opening a bar over nothing.
+      //
+      // THE DOCUMENT WINS when both are live, and that is not arbitrary: the
+      // only way both are is that the user is typing in a popped-out VIEWER
+      // window while a card is active back in the grid (`activeDocumentId`
+      // asks the focused window first). The document is the thing in front of
+      // them; opening the bar on the card would put it in a window they are not
+      // looking at — which is the bug in mirror image.
       id: 'find.open',
       titleKey: 'commands.openFind',
       categoryKey: CATEGORY_VIEW,
       binding: 'Mod+F',
       scope: 'typing-ok',
-      enabled: hasActive,
-      disabledReasonKey: 'commands.disabled.noActiveSession',
+      enabled: (ctx: CommandContext) => hasActive(ctx) || !!ctx.activeDocumentId,
+      disabledReasonKey: 'commands.disabled.noFindTarget',
       run: (ctx: CommandContext) => {
-        if (ctx.activeCardId) deps.openFind(ctx.activeCardId);
+        const target = ctx.activeDocumentId ?? ctx.activeCardId;
+        if (target) deps.openFind(target);
       },
     },
     {
@@ -203,6 +223,17 @@ export function buildCommands(deps: CommandDeps): Command[] {
       categoryKey: CATEGORY_ATTENTION,
       scope: 'app',
       run: () => deps.openPushSetup(),
+    },
+    {
+      // Quiet hours (E14-05b). Under Attention beside push for the same reason
+      // — it answers "how, and when, does a session reach me?" — and
+      // palette-only, unbound: a window you set once does not earn a chord, and
+      // the title bar's eleven chips are not getting a twelfth.
+      id: 'attention.quietHours',
+      titleKey: 'commands.quietHours',
+      categoryKey: CATEGORY_ATTENTION,
+      scope: 'app',
+      run: () => deps.openQuietHours(),
     },
     ...jumps,
     {
@@ -588,11 +619,45 @@ export function buildCommands(deps: CommandDeps): Command[] {
       run: () => deps.toggleRail(),
     },
     {
+      // The keyboard half of P2-E14-01. The drawer is collapsed by default, so
+      // §5.8's invariant — collapsing chrome never removes capability — is only
+      // kept if there is a route in that does not need a mouse. There are two:
+      // this chord, and the palette entry this same command provides.
+      //
+      // Scope 'app', like every other view toggle: Ctrl+E is `end-of-line` in
+      // readline and the terminal owns every key it can see. That is not a hole
+      // in the promise — the palette is reachable from inside a terminal
+      // (Ctrl+Shift+P is claimed above the page, #90), and it lists this.
+      //
+      // Categorised under Attention rather than View: what it opens is the
+      // queue, and "what needs me?" is the question a user is asking when they
+      // go looking for it.
+      id: 'view.events',
+      titleKey: 'commands.toggleEvents',
+      categoryKey: CATEGORY_ATTENTION,
+      binding: 'Mod+E',
+      scope: 'app',
+      run: () => deps.toggleEventsDrawer(),
+    },
+    {
       id: 'view.tabRows',
       titleKey: 'commands.toggleTabRows',
       categoryKey: CATEGORY_VIEW,
       scope: 'app', // palette-only: a preference, not a per-minute action
       run: () => deps.toggleTabRows(),
+    },
+    {
+      // #532's keyboard route. In VIEW and not SESSION even though a Changes
+      // tab belongs to a card: the preference is the workspace's, and every
+      // open Changes tab changes with it — a card-scoped command would promise
+      // otherwise. Palette-only and unbound, like the tab-rows toggle above:
+      // it is a habit you set once, and the visible control on the tab is
+      // where you set it the other 99% of the time.
+      id: 'view.diffLayout',
+      titleKey: 'commands.toggleDiffLayout',
+      categoryKey: CATEGORY_VIEW,
+      scope: 'app',
+      run: () => deps.toggleDiffLayout(),
     },
     {
       // The keyboard route to the build identity (E15-15). Palette-only and no

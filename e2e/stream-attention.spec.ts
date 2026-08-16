@@ -19,7 +19,13 @@
 // since #381, and a spec about the default must not name it.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
-import { launchApp, LaunchedApp, streamPrompter, tempProjectFolder } from './fixtures/app';
+import {
+  launchApp,
+  LaunchedApp,
+  openEventsDrawer,
+  streamPrompter,
+  tempProjectFolder,
+} from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 /** the dual-capable fake, asked for nothing — i.e. the app's own default */
@@ -83,7 +89,11 @@ test.describe('a Direct hold raises attention (P2-E18-14)', () => {
     // assertion below could be satisfied by the app simply doing nothing
     await expect(lamp(w, title)).toHaveAttribute('data-needs-you', 'false');
     await expect(w.getByTestId('urgency-count')).toHaveAttribute('data-needing', '0');
-    await expect(eventRows(w)).toHaveCount(0);
+    // read off the TAB, not the rows: the drawer is shut here (it is not opened
+    // until after the hold arrives), and "no rows" in a drawer with no DOM is
+    // true of a full queue too — which would gut the baseline this comment
+    // says is load-bearing
+    await expect(w.getByTestId('events-tab')).toHaveAttribute('data-count', '0');
 
     const box = w.getByPlaceholder(/Prompt this session/);
     await box.click();
@@ -98,21 +108,33 @@ test.describe('a Direct hold raises attention (P2-E18-14)', () => {
     await expect(w.getByTestId('urgency-count')).toHaveAttribute('data-needing', '1');
 
     // 2. the Events panel, and the attention QUEUE's head marker — the thing
-    //    Ctrl+Space walks. A row with no `data-next` is a log entry, not a queue.
+    //    Ctrl+Space walks. A row with no `data-next` is a log entry, not a
+    //    queue. The drawer is collapsed by default now (P2-E14-01), so it is
+    //    opened to read them and shut again before step 3 goes back to the
+    //    card: it OVERLAYS the right edge of the workspace, and the Allow
+    //    button below is a real click on a surface underneath it.
+    await openEventsDrawer(w);
     await expect(eventRows(w)).toHaveCount(1, { timeout: 15_000 });
     await expect(w.locator('aside [data-next="true"]')).toHaveAttribute(
       'data-event-kind',
       'needs-permission'
     );
+    await w.getByTestId('events-tab').click();
+    await expect(w.getByTestId('events-drawer')).toHaveCount(0);
 
     // 3. answering it takes the whole apparatus back down, live. The bar
     //    carries the CLI's own prose, which is how we know this question came
     //    off `can_use_tool` and not off a hook payload.
     await expect(w.getByText(/sensitive file/)).toBeVisible();
     await w.getByRole('button', { name: 'Allow', exact: true }).click();
-    await expect(w.locator('aside [data-event-kind="needs-permission"]')).toHaveCount(0, {
-      timeout: 20_000,
-    });
+    // read off the collapsed tab, which is always on screen: `needs-permission`
+    // is the top of the priority ladder, so it would be the hottest thing there
+    // if the hold had survived
+    await expect(w.getByTestId('events-tab')).not.toHaveAttribute(
+      'data-hottest',
+      'needs-permission',
+      { timeout: 20_000 }
+    );
     await expect(lamp(w, title)).not.toHaveAttribute('data-status', 'needs-permission');
   });
 

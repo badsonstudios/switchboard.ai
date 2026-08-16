@@ -33,40 +33,37 @@ The viewer opens **beside** your sessions, in its own part of the workspace —
 never as a tab on top of a session card. Reading a file never costs you sight of
 the agent that wrote it.
 
-## One viewer, not thirty tabs
+## Every file gets its own tab
 
-Open a second file and it appears **in the same panel**, replacing the first.
-Glance at six files in a row and you still have one document panel, not six.
+Open a second file and it opens **in its own tab**, next to the first. The
+document you were reading stays exactly where it was. Open six files and you
+have six tabs, all still there.
 
-That is deliberate. Most of the time you want to read something, take the point,
-and move on — and an editor that leaves a tab behind for every one of those
-turns into a mess you have to clean up.
+- **Nothing closes on its own.** A document panel goes away when *you* close it,
+  with the normal tab **✕**. That is the only thing that closes one.
+- **Opening a file that is already open just brings it to the front** — and if
+  it is out in its own window, that window comes forward instead. (One
+  exception: if you have followed a *link* inside a document, that panel is
+  still filed under the file you originally opened, so asking for the linked
+  file by name opens it in a tab of its own.)
+- **Nothing is remembered.** A viewer is a way of looking at a file, not a thing
+  you own — close it and there is nothing left behind.
 
-When you want to *keep* a document — say `PROGRESS.md` open while you read the
-plan file next to it — click the **📌** in its header:
-
-- The pinned document stops moving. The next file you open gets a **new panel**
-  of its own, and that new one becomes the replaceable one.
-- Click **📌** again to unpin. That document becomes the replaceable one again,
-  and whatever was replaceable before it is kept instead — there is only ever
-  one "next file goes here" slot, and unpinning is how you move it.
-- Closing a document panel is the normal tab **✕**. Nothing is remembered; a
-  viewer is a way of looking at a file, not a thing you own.
-
-Opening a file that is **already** open just brings it to the front. It doesn't
-open twice and it doesn't spend your one replaceable slot.
+Earlier versions worked the other way round: there was one "replaceable" viewer
+that the next file you opened took over, and a **📌** to keep a document out of
+its way. That is gone, pin and all. If you like a tidy tab strip, close the ones
+you're done with — the app will not make that decision for you.
 
 ## Reading on a second monitor
 
-The **⤢** next to the pin moves the document into **its own window**, which you
+The **⤢** in the document's header moves it into **its own window**, which you
 can drag to another monitor and leave there. It is the same window trick a
 session card does.
 
 - The same **⤢** in that window puts the document back into the main window.
 - So does simply closing the window — nothing is lost either way.
-- Popping a document out does **not** pin it. If you want it to stay put on that
-  second monitor, pin it as well; otherwise the next file you open replaces it,
-  which is often exactly what you want from a reference window.
+- A document out on its own monitor stays on what it is showing. Opening more
+  files in the main window never touches it.
 - Opening a file while a *session* is popped out — or while a *document* window
   is the one you last clicked — still puts the new document in the main window's
   document area. Files do not land in windows by accident.
@@ -144,14 +141,26 @@ It works in **Source** view as well, and there too you keep your scroll position
 
 ## Finding text
 
-With a rendered document on screen, press `Ctrl+F` (`Cmd+F` on a Mac). A small
-find bar appears above the document; type, and matches light up. `Enter` goes to
-the next one, `Shift+Enter` the previous, `Esc` closes it.
+Press `Ctrl+F` (`Cmd+F` on a Mac) with a document tab in front of you. This is
+the same find bar the rest of switchboard uses — see
+[Finding things](16-find.md) — so it looks and behaves exactly as it does over a
+session: type, and matches light up; `Enter` goes to the next one,
+`Shift+Enter` the previous; the count reads "3 of 12"; `Esc` closes it and the
+highlights go with it. The ▸ button opens a list of every match, if you'd rather
+pick one than step through them.
 
-The search only ever looks at the document in front of you — never at other
-panels.
+The search only ever looks at the document in front of you — never at another
+document, and never at a session. It searches the whole file, including code
+blocks, and copying a code block while the bar is open still copies the plain
+code, highlights and all left behind.
 
-In **Source** view, use the editor's own find box (also `Ctrl+F`).
+In **Source** view — which is what you get for any file that isn't Markdown —
+`Ctrl+F` hands you to the editor's own find box instead: a fuller one, with
+regular expressions and match marks down the scrollbar. Our bar steps out of the
+way rather than putting a second, worse find on top of a good one.
+
+It works the same in a popped-out document window. Press `Ctrl+F` there and the
+bar opens in *that* window, over the document you're reading.
 
 ## Files it won't show you
 

@@ -32,14 +32,17 @@ function noopDeps(): CommandDeps {
     cycleLayoutMode: () => {},
     toggleMaximize: () => {},
     toggleRail: () => {},
+    toggleEventsDrawer: () => {},
     openPalette: () => {},
     openFind: () => {},
     toggleTabRows: () => {},
+    toggleDiffLayout: () => {},
     jumpToNextAttention: () => {},
     openAbout: () => {},
     checkForUpdates: () => {},
     openFile: () => {},
     openPushSetup: () => {},
+    openQuietHours: () => {},
   };
 }
 

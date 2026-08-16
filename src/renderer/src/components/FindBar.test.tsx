@@ -129,22 +129,26 @@ describe('the find bar’s browser rhythm (P2-E17-02, §5.31)', () => {
     await act(async () => setFindTerm('x'));
     await settle();
 
-    expect(jumpTo).toHaveBeenLastCalledWith(4); // the first, automatically
+    // ...and every step hands the feed the QUERY as well as the seq (#520),
+    // because a surface that MARKS what it reveals cannot know the term any
+    // other way. Asserted once, in full, here; the steps below check the seq.
+    expect(jumpTo).toHaveBeenLastCalledWith(4, { term: 'x', caseSensitive: false, wholeWord: false });
 
     const input = q<HTMLInputElement>(host, 'find-input')!;
     const enter = (shift: boolean): Promise<void> =>
       act(async () => {
         input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: shift, bubbles: true }));
       });
+    const landedOn = (): unknown => jumpTo.mock.lastCall?.[0];
 
     await enter(false);
-    expect(jumpTo).toHaveBeenLastCalledWith(9);
+    expect(landedOn()).toBe(9);
     await enter(false);
-    expect(jumpTo).toHaveBeenLastCalledWith(12);
+    expect(landedOn()).toBe(12);
     await enter(false); // wraps
-    expect(jumpTo).toHaveBeenLastCalledWith(4);
+    expect(landedOn()).toBe(4);
     await enter(true); // and back
-    expect(jumpTo).toHaveBeenLastCalledWith(12);
+    expect(landedOn()).toBe(12);
   });
 
   it('counts honestly when there is nothing there', async () => {
@@ -262,7 +266,7 @@ describe('the §5.31 v1 boundary, rendered', () => {
     });
     const rows = Array.from(host.querySelectorAll<HTMLElement>('[data-find-hit]'));
     await act(async () => rows[1].click());
-    expect(jumpTo).toHaveBeenLastCalledWith(11);
+    expect(jumpTo).toHaveBeenLastCalledWith(11, { term: 'x', caseSensitive: false, wholeWord: false });
   });
 });
 
@@ -655,5 +659,104 @@ describe('grouped results (P2-E17-03)', () => {
     });
     expect(clearFeed).toHaveBeenCalled();
     expect(clearTerminal).toHaveBeenCalled();
+  });
+});
+
+describe('the bar over a DOCUMENT viewer (#533)', () => {
+  /** A viewer's surface, keyed by its `doc-` panel id in the cardId role. */
+  function publishDoc(
+    view: 'rendered' | 'source' | 'none',
+    over: Record<string, unknown> = {}
+  ): { search: ReturnType<typeof vi.fn>; reveal: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn>; openFind: ReturnType<typeof vi.fn> } {
+    const spies = {
+      search: vi.fn().mockReturnValue({
+        matches: [
+          { text: 'the needle is here', offset: 4, length: 6 },
+          { text: 'another needle', offset: 8, length: 6 },
+        ],
+        truncated: false,
+      }),
+      reveal: vi.fn().mockReturnValue(true),
+      clear: vi.fn(),
+      openFind: vi.fn().mockReturnValue(true),
+    };
+    publishFindSurface(findSurfaceKey('doc-9', 'document'), {
+      kind: 'document',
+      view: () => view,
+      ...spies,
+      ...over,
+    } as unknown as FindSurface);
+    return spies;
+  }
+
+  /** NO sessionId — a viewer is session-attributed, not session-owned. */
+  const docBar = (): React.JSX.Element => (
+    <FindBar cardId="doc-9" panelId="document" panelTitleKey="find.group.document" />
+  );
+
+  beforeEach(() => {
+    openFindBar('doc-9');
+  });
+
+  it('searches the document and NOTHING else — no session, no terminal group', async () => {
+    publishDoc('rendered');
+    // a feed surface for card-1 is published by the outer beforeEach and stays
+    // published; naming a different panel is what keeps it out of reach
+    const host = await mount(docBar());
+    await act(async () => setFindTerm('needle'));
+    await settle();
+    expect(q<HTMLElement>(host, 'find-count')!.textContent).toBe('1 of 2');
+    // the transcript engine is never asked: with no session the Session group
+    // excludes itself through the `noSession` check that was already there
+    expect(search).not.toHaveBeenCalled();
+    // one group, so no group line — the zeros only matter when there are two
+    expect(q(host, 'find-groups')).toBeNull();
+  });
+
+  it('steps the matches through the surface, marking each one', async () => {
+    const doc = publishDoc('rendered');
+    const host = await mount(docBar());
+    await act(async () => setFindTerm('needle'));
+    await settle();
+    expect(doc.reveal).toHaveBeenLastCalledWith(0);
+    await act(async () => {
+      q<HTMLElement>(host, 'find-next')!.click();
+    });
+    expect(doc.reveal).toHaveBeenLastCalledWith(1);
+    expect(q<HTMLElement>(host, 'find-count')!.textContent).toBe('2 of 2');
+  });
+
+  it('closing the bar clears the marks it painted', async () => {
+    const doc = publishDoc('rendered');
+    const host = await mount(docBar());
+    await act(async () => setFindTerm('needle'));
+    await settle();
+    await act(async () => {
+      q<HTMLElement>(host, 'find-close')!.click();
+    });
+    expect(doc.clear).toHaveBeenCalled();
+    expect(findBarState().openOn).toBeNull();
+  });
+
+  it('hands the SOURCE body to Monaco and gets out of the way', async () => {
+    // §5.31 names Monaco's find as a thing not to reimplement, so the viewer's
+    // source body is delegated exactly as the Changes tab is — decided per
+    // surface (`modeFor`), because it is one panel with two bodies.
+    const doc = publishDoc('source');
+    await act(async () => setFindTerm('ENOENT'));
+    await mount(docBar());
+    expect(doc.openFind).toHaveBeenCalledWith('ENOENT');
+    expect(doc.search).not.toHaveBeenCalled();
+    // our bar closes: the widget owns the keyboard now
+    expect(findBarState().openOn).toBeNull();
+  });
+
+  it('greys with a reason while the document is still opening', async () => {
+    publishDoc('none');
+    const host = await mount(docBar());
+    expect(q<HTMLElement>(host, 'find-unavailable')!.textContent).toBe(
+      en.find.unavailable.documentNotReady
+    );
+    expect(q<HTMLInputElement>(host, 'find-input')!.disabled).toBe(true);
   });
 });

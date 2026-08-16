@@ -21,19 +21,38 @@ import path from 'path';
 import { Rectangle } from 'electron';
 import { LogFields, Logger } from '../log/logger';
 import { SessionIdentity } from '../sessions/session-manager';
+import { sanitizeLineage } from '../sessions/lineage';
 import { WindowState, mergeState, isOnAnyDisplay } from '../window-state';
 import { UpdatePrefs } from '../../shared/update';
 import { ServiceHealthPrefs } from '../../shared/service-health';
 import { DEFAULT_PUSH_PREFS, PushPrefs } from '../../shared/push';
 import { WorkspaceSaveState } from '../../shared/workspace';
 import { DEFAULT_SOUND, isSoundId, soundForIndex } from '../../shared/sounds';
+import {
+  SUPPRESSED_CAP,
+  SuppressedEvent,
+  clampSuppressed,
+  isSaneSuppressedEvent,
+} from '../../shared/suppressed';
 import { Rule, isSaneRule } from '../events/rules';
+import { isUsableQuietWindow } from '../../shared/quiet-hours';
 
 export interface PersistedSession {
   id: string;
   identity: SessionIdentity;
   layoutSlot: number;
   nativeSessionId?: string;
+  /**
+   * The conversations this card descends from, newest first (#484).
+   *
+   * A card's id is recorded when the CLI announces one, and the CLI writes no
+   * transcript until a real turn happens — so a card whose last session got no
+   * prompt points at a file that does not exist. Keeping the ids it was known
+   * by before is what lets the next launch fall back to the conversation that
+   * IS on disk instead of starting fresh over the top of it. See
+   * `sessions/lineage.ts` — that module is the only thing that writes this.
+   */
+  nativeSessionLineage?: string[];
   suspendedAt: string;
   /** last-known token totals + model, so usage survives a resume/restart */
   usage?: { input: number; output: number; cacheRead: number; cacheCreate: number };
@@ -193,6 +212,20 @@ export interface WorkspaceState {
    * it.
    */
   push: PushPrefs;
+  /**
+   * Attention events quiet hours held back (P2-E14-05b, §5.9) — the input to
+   * the missed-events digest (#483).
+   *
+   * **Persisted, and that is the point.** Quiet hours run overnight; the app
+   * gets closed, the machine gets rebooted. A held list that lived in memory
+   * would be empty exactly when the digest is supposed to have something to
+   * say. Bounded at `SUPPRESSED_CAP`, oldest dropped first, so leaving quiet
+   * hours on for a month cannot grow this file without limit.
+   *
+   * A top-level TYPED field for the `rules` reason: main is the writer, with no
+   * renderer involved, and the renderer rewrites the opaque `ui` blob wholesale.
+   */
+  suppressed: SuppressedEvent[];
 }
 
 /** The schema version this build writes. Bump it and add a MIGRATIONS entry. */
@@ -255,6 +288,7 @@ const EMPTY: WorkspaceState = {
   updates: { autoCheck: true },
   health: { poll: true },
   push: { ...DEFAULT_PUSH_PREFS },
+  suppressed: [],
 };
 
 /** Stable identity for a display arrangement (§7). */
@@ -272,6 +306,7 @@ function emptyState(): WorkspaceState {
     sessions: [],
     groups: [],
     rules: [],
+    suppressed: [],
     notifications: { ...EMPTY.notifications },
     updates: { ...EMPTY.updates },
     health: { ...EMPTY.health },
@@ -391,9 +426,18 @@ export class WorkspaceStore {
       // a dangling groupId (group gone, e.g. hand-edited file) degrades to ungrouped
       const orphaned: string[] = [];
       const sessions = keepSane(raw.sessions, isSaneSession, 'session', note).map((s) => {
-        if (!s.groupId || groupIds.has(s.groupId)) return s;
-        orphaned.push(s.id);
-        return { ...s, groupId: undefined };
+        // Normalized on the way IN, once, so nothing downstream has to defend
+        // against a hand-edited chain (#484). Silent rather than `note`d: an
+        // absent or ragged lineage is the NORMAL state of every card written
+        // before the field existed, and warning about it would fire on every
+        // launch for months.
+        const withLineage =
+          s.nativeSessionLineage === undefined
+            ? s
+            : { ...s, nativeSessionLineage: sanitizeLineage(s.nativeSessionLineage) };
+        if (!withLineage.groupId || groupIds.has(withLineage.groupId)) return withLineage;
+        orphaned.push(withLineage.id);
+        return { ...withLineage, groupId: undefined };
       });
       if (orphaned.length > 0)
         note(
@@ -430,6 +474,15 @@ export class WorkspaceStore {
       // rule would fire the wrong channel at the wrong moment, which is worse
       // than not firing (P6 fail-open cuts this way for notifications).
       const rules = keepSane(raw.rules, isSaneRule, 'rule', note);
+      // Trimmed on the way IN as well as on the way out: a hand-edited or
+      // older-build file could carry more than the cap, and the digest is not
+      // the place to discover that the workspace file grew unbounded.
+      const suppressed = keepSane(
+        raw.suppressed,
+        isSaneSuppressedEvent,
+        'held notification',
+        note
+      ).slice(-SUPPRESSED_CAP);
       const health = sanitizeHealth(raw.health);
       if (health.repaired.length > 0)
         note('the provider-status setting in the workspace file was unusable — leaving polling on', {
@@ -462,6 +515,7 @@ export class WorkspaceStore {
         updates: updates.value,
         health: health.value,
         push: push.value,
+        suppressed,
       };
     } catch (err) {
       // corrupt/missing: back the corpse aside (post-mortem material), start fresh
@@ -920,6 +974,57 @@ export class WorkspaceStore {
     return true;
   }
 
+  /**
+   * Write down one attention event quiet hours held (P2-E14-05b).
+   *
+   * FIFO at `SUPPRESSED_CAP`: append, drop from the front. Silently — a digest
+   * losing its oldest line is the cap working, not a fault, and a warn per
+   * event once the list is full would be a log flood every night.
+   *
+   * `saveSoon`, never a synchronous write: this runs on the event path, which
+   * an overnight batch of them must not slow down.
+   */
+  recordSuppressed(e: SuppressedEvent): void {
+    if (!isSaneSuppressedEvent(e)) return; // an unloadable record is not worth writing
+    // Ids must stay unique because #483 CLEARS BY ID — a duplicate would take
+    // the wrong digest row with it. The engine's counter makes that true in the
+    // ordinary case; this covers the ones it cannot see (a clock stepped
+    // backwards, a record replayed).
+    if (this.state.suppressed.some((s) => s.id === e.id)) return;
+    this.state.suppressed.push(clampSuppressed(e));
+    if (this.state.suppressed.length > SUPPRESSED_CAP)
+      this.state.suppressed.splice(0, this.state.suppressed.length - SUPPRESSED_CAP);
+    this.saveSoon();
+  }
+
+  /** The held list, oldest first. Copies out — #483 renders it, never mutates it. */
+  listSuppressed(): SuppressedEvent[] {
+    return this.state.suppressed.map((e) => ({ ...e, actions: [...e.actions], ruleIds: [...e.ruleIds] }));
+  }
+
+  /** Just how many. The quiet-hours dialog wants the number, not 200 copies. */
+  countSuppressed(): number {
+    return this.state.suppressed.length;
+  }
+
+  /**
+   * Clear held events — all of them, or the named ids (#483's "mark as read").
+   *
+   * Returns how many went, so a caller can tell "there was nothing" from "it
+   * did not work".
+   */
+  clearSuppressed(ids?: readonly string[]): number {
+    const before = this.state.suppressed.length;
+    if (ids === undefined) this.state.suppressed = [];
+    else {
+      const drop = new Set(ids);
+      this.state.suppressed = this.state.suppressed.filter((e) => !drop.has(e.id));
+    }
+    const gone = before - this.state.suppressed.length;
+    if (gone > 0) this.saveSoon();
+    return gone;
+  }
+
   getUpdatePrefs(): UpdatePrefs {
     return { ...this.state.updates };
   }
@@ -1290,10 +1395,13 @@ const MAX_HELD_POST_MORTEM_BYTES = 4 * 1024 * 1024;
 const MAX_LISTED_ERRORS = 3;
 
 /** What each list costs the user when entries in it cannot be read. */
-const LOST: Record<'session' | 'group' | 'rule', string> = {
+type SaneList = 'session' | 'group' | 'rule' | 'held notification';
+
+const LOST: Record<SaneList, string> = {
   session: 'those cards do not come back',
   group: 'any sessions in them load ungrouped',
   rule: 'those notifications stop firing',
+  'held notification': 'they will not appear in the missed-events digest',
 };
 
 /**
@@ -1307,7 +1415,7 @@ const LOST: Record<'session' | 'group' | 'rule', string> = {
 function keepSane<T>(
   raw: unknown,
   sane: (v: unknown) => v is T,
-  what: 'session' | 'group' | 'rule',
+  what: SaneList,
   note: (msg: string, fields?: LogFields) => void
 ): T[] {
   if (raw === undefined || raw === null) return [];
@@ -1383,23 +1491,43 @@ function sanitizeNotifications(n: unknown): Repaired<NotificationPrefsState> {
   if (typeof n !== 'object' || n === null || Array.isArray(n))
     return { value: { enabled: true }, repaired: n == null ? [] : ['notifications'] };
   const x = n as Partial<NotificationPrefsState>;
+  const usable = isUsableQuietWindow(x.quietStart, x.quietEnd);
   return {
     value: {
       enabled: x.enabled !== false,
       osToasts: x.osToasts === true, // default OFF
       sounds: x.sounds === true, // default OFF (P2-E14-05a)
       speak: x.speak === true, // default OFF
-      ...(typeof x.quietStart === 'string' ? { quietStart: x.quietStart } : {}),
-      ...(typeof x.quietEnd === 'string' ? { quietEnd: x.quietEnd } : {}),
+      // The window is all-or-nothing (P2-E14-05b), and the test is the SAME one
+      // the dialog and the evaluator use: both ends present, both parseable,
+      // and not equal. Half a window is not a window — a `quietEnd` sitting
+      // alone would read as "configured" to anyone inspecting the file while
+      // silencing nothing. Neither is `"10pm"`, which used to survive here, nor
+      // an equal pair, which is a window of zero length wearing the costume of
+      // a 24-hour one.
+      ...(usable ? { quietStart: x.quietStart as string, quietEnd: x.quietEnd as string } : {}),
     },
-    repaired: badFields(n, [
-      ['enabled', 'boolean'],
-      ['osToasts', 'boolean'],
-      ['sounds', 'boolean'],
-      ['speak', 'boolean'],
-      ['quietStart', 'string'],
-      ['quietEnd', 'string'],
-    ]),
+    repaired: [
+      ...badFields(n, [
+        ['enabled', 'boolean'],
+        ['osToasts', 'boolean'],
+        ['sounds', 'boolean'],
+        ['speak', 'boolean'],
+        ['quietStart', 'string'],
+        ['quietEnd', 'string'],
+      ]),
+      // Everything the all-or-nothing rule above THREW AWAY, named — #344's
+      // rule is that no repair is silent, and the two interesting cases are
+      // both silent without this: a string that is not "HH:MM" (which
+      // `badFields` cannot see, since it IS a string), and a perfectly good
+      // time dropped because its partner was missing or unusable.
+      //
+      // Cannot double-report: `badFields` fires only for a non-string, and the
+      // filter below requires a string.
+      ...(usable
+        ? []
+        : (['quietStart', 'quietEnd'] as const).filter((k) => typeof x[k] === 'string')),
+    ],
   };
 }
 
