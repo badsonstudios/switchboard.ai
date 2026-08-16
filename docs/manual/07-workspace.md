@@ -109,11 +109,22 @@ for a second monitor. The session keeps running throughout; nothing restarts.
   session they belong to is off in a pop-out. They're things you read next to
   your work, so they go where you asked from rather than stacking up as extra
   tabs on the second monitor.
-- **A new session always opens somewhere you can see it** — in the main window,
-  at full size in the space a popped-out session left behind rather than in the
-  sliver that space collapses to, and never on top of a document you have open.
-  Start a session with every card out on a second monitor and it turns up in the
-  main window beside whatever you were reading, not tucked into a seam.
+- **Click ＋ to start a new session in the pop-out itself.** It sits next to ⤢
+  in the card header and only appears once the card is out in its own window —
+  the main window already has **+ session** in its sidebar. The new session
+  arrives as a tab right beside the one you asked from, on the same monitor, and
+  the folder picker opens over that window rather than yanking the main window
+  in front of you. `Ctrl+N` (`Cmd+N` on a Mac) does the same thing when you
+  press it in a pop-out.
+
+  The new session is an ordinary one in every other way: it gets a row in the
+  Sessions list, it can ask for your attention, and **⤡** docks it back into
+  the main window on its own — it isn't tied to the window it started in.
+- **A new session always opens somewhere you can see it.** Started from the main
+  window, it opens there: at full size in the space a popped-out session left
+  behind rather than in the sliver that space collapses to, and never on top of
+  a document you have open. Started from a pop-out, it opens in that pop-out.
+  Either way it lands where you were looking, not tucked into a seam.
 - **However** the window goes — the ⤡ button, its own **X**, the task bar, Task
   Manager, or a crash — the card comes back to the main window the same way. A
   window that dies without warning can take a few seconds to be noticed; the

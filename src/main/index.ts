@@ -1625,6 +1625,15 @@ app
       broker,
       log: createLogger(sink, 'ipc'),
       getWindow: () => currentWindow, // reassigned on macOS re-activate
+      // #531: a folder picker opened from a popped-out session is parented to
+      // THAT window. `popoutWindows` is main's own registry, filled from
+      // `did-create-window` and keyed by the dockview group in the frame name
+      // — so a renderer-supplied id can only ever select a window we already
+      // made, or nothing.
+      getPopoutWindow: (groupId) => {
+        const hit = popoutWindows.find((p) => p.groupId === groupId);
+        return hit && !hit.win.isDestroyed() ? hit.win : null;
+      },
       autoTrust: () => workspace.getAutoTrust(),
       autoLabels: () => workspace.getAutoLabels(),
       setAutoLabels: (on) => workspace.setAutoLabels(on),

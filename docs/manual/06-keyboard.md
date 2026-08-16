@@ -99,7 +99,7 @@ back to the first.
 
 | Shortcut | What it does |
 |---|---|
-| `Ctrl+N` | New session — opens the folder picker |
+| `Ctrl+N` | New session — opens the folder picker, in whichever window you press it (see [pop-out windows](07-workspace.md#pop-out-windows)) |
 | `Ctrl+W` | Close the focused session (asks first) |
 | ``Ctrl+` `` | Switch the focused session between its Session and Terminal views |
 | `Ctrl+Shift+O` | Pop the focused session out into its own window, or dock it back |

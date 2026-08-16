@@ -36,6 +36,7 @@ import { captureSlot, openerRelative, placeAt } from '../lib/dock-slot';
 import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
 import { submitTarget } from '../lib/presentation-policy';
 import { bulkClose } from '../lib/pinning';
+import { newSessionHostGroup } from '../lib/new-session-target';
 import { createSweeper, SweepPort, SweepRequest } from '../lib/layout-sweep';
 import { sharedAnnouncer } from '../lib/announcer';
 import { CardSound, nextCardSound } from '../../../shared/sounds';
@@ -460,6 +461,16 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // slash command into the PTY — the CLI stays the source of truth
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [confirmClear, setConfirmClear] = React.useState(false);
+  /**
+   * Whatever went wrong creating a session from THIS card's ＋ (#531).
+   *
+   * Local to the card and not the grid's `error`, because the grid's banner is
+   * painted in the MAIN window — and the ＋ only exists while this card is out
+   * in a popout, i.e. exactly when the user cannot see that banner. Our
+   * breakage has to be visible where it happened (fail-open), which means in
+   * the window that asked.
+   */
+  const [cardError, setCardError] = React.useState<string | null>(null);
   // ── this card's notification cue (P2-E14-05a, §5.9 + §5.11) ───────────────
   //
   // Same defensive bridge read as `rulesApi` above and for the same reason: a
@@ -1300,6 +1311,45 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             >
               {t('ladder.collapseIcon')}
             </button>
+            {/* #531. ONLY while this card is out in its own window: the main
+                window has `+ session` in its own chrome, and a second ⊕ on
+                every card header there would be clutter offering nothing new.
+                A popout has no chrome of ours at all — dockview adopts the
+                group's DOM into an otherwise empty document — so the card
+                header is the only surface in that window we can put it on.
+
+                It names its OWN group rather than asking which window has
+                focus: a click IS the answer to "where", and inferring it back
+                from focus would be strictly worse information. */}
+            {poppedOut && (
+              <>
+                {/* The error rides WITH the ＋, inside the same guard: dock the
+                    card back and this header is in the main window, where the
+                    grid's own banner is the right surface and a leftover line
+                    about a folder you picked in another window is noise. */}
+                {cardError && (
+                  <span
+                    role="status"
+                    data-testid="card-new-session-error"
+                    style={{ color: 'var(--status-crashed-ink)', fontSize: 10 }}
+                  >
+                    {cardError}
+                  </span>
+                )}
+                <button
+                  data-testid="card-new-session"
+                  onClick={() => {
+                    setCardError(null); // a retry starts clean
+                    void newSessionIn(props.containerApi, props.api.group, setCardError);
+                  }}
+                  title={t('grid.newSessionHere')}
+                  aria-label={t('grid.newSessionHere')}
+                  style={cheadBtn}
+                >
+                  {t('grid.newSessionHereIcon')}
+                </button>
+              </>
+            )}
             <button onClick={popOutToggle} title={poppedOut ? t('grid.dockIn') : t('grid.popOut')} style={cheadBtn}>
               {poppedOut ? t('grid.dockInIcon') : t('grid.popOutIcon')}
             </button>
@@ -1991,6 +2041,131 @@ function sessionCardHome(api: DockviewApi): DockviewApi['groups'][number] {
 }
 
 /**
+ * The popped-out group whose OS window has focus, or null (#531).
+ *
+ * The rule is `lib/new-session-target`'s and is unit-pinned there; this is the
+ * dockview half — asking each popout group's own Window whether the OS is
+ * pointing at it. `hasFocus()` and not `api.activeGroup`, for the reason that
+ * module's header gives: a group can be dockview-active while its window sits
+ * behind three others, and #434 is precisely the bug of trusting that.
+ */
+function focusedPopoutGroup(api: DockviewApi): DockviewApi['groups'][number] | null {
+  const shapes = api.groups.map((g) => {
+    const loc = g.api.location;
+    let focused = false;
+    if (loc.type === 'popout') {
+      try {
+        focused = loc.getWindow()?.document?.hasFocus() === true;
+      } catch {
+        // a window closing under us — fail open, it simply is not the target
+      }
+    }
+    return { id: g.id, isPopout: loc.type === 'popout', focused, group: g };
+  });
+  return newSessionHostGroup(shapes)?.group ?? null;
+}
+
+/**
+ * Create a session in `folder` and add its card.
+ *
+ * Module-level, like `popOutCardPanel` and `setCardLadder`, and for the same
+ * reason: three surfaces drive it now — the `+ session` button, the palette,
+ * and (since #531) a popped-out card's own header — and a `useCallback` closed
+ * over the component cannot be reached from a panel that dockview renders.
+ *
+ * `into` is an EXPLICIT destination group and beats every inference below it.
+ * That is #531: a card asked for from inside a popped-out window lands as a
+ * tab in that window. Everything else still goes through `sessionCardHome`,
+ * which is #434/#462's rule and stays exactly as strict as it was — the
+ * difference is that this destination was NAMED, not guessed from whichever
+ * group dockview happened to have activated.
+ */
+async function addSessionCardTo(
+  api: DockviewApi | null,
+  folder: string,
+  opts: { groupId?: string; into?: DockviewApi['groups'][number] | null } = {}
+): Promise<void> {
+  if (!api) return;
+  const { groupId, into } = opts;
+  const title = folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? folder;
+  const cardId = crypto.randomUUID();
+  // A persistent-group member clusters with its siblings (E12-02): reuse the
+  // dockview group already holding another member, when one is in the grid.
+  let sibling: DockviewApi['groups'][number] | undefined;
+  if (groupId && !into) {
+    const cards = await window.switchboard.sessions.cards();
+    const siblings = new Set(
+      cards.filter((c) => c.groupId === groupId).map((c) => `session-${c.cardId}`)
+    );
+    // `isVisible` for the husk reason below — clustering is a reason to land
+    // BESIDE a sibling, never a reason to land somewhere invisible. The
+    // document-area rule is deliberately NOT applied here: a group holding a
+    // group-mate is a session's group whatever else was dragged into it, and
+    // an explicit group membership is the stronger of the two user intents.
+    sibling = api.panels.find(
+      (p) => siblings.has(p.id) && p.group.api.location.type === 'grid' && p.group.api.isVisible
+    )?.group;
+  }
+  // A new session must land in the MAIN window, visibly, and not on top of the
+  // document you are reading — `sessionCardHome` is all three rules (E8-04,
+  // #462). It used to be a location-only `find`, which is blind to the hidden
+  // dock-back husk a popout leaves in the grid.
+  //
+  // Asked LAST, and only when the sibling lookup came up empty, because it is
+  // not a pure question: it can un-hide a group or mint one. Asked first (as
+  // the `find(...) ?? addGroup()` it replaces was) a sibling win would leave
+  // that brand new group behind in the grid, empty, for ever.
+  const refGroup = into ?? sibling ?? sessionCardHome(api);
+  api.addPanel({
+    id: `session-${cardId}`,
+    component: 'sessionCard',
+    title,
+    params: { cardId, folder, title, groupId } satisfies CardParams,
+    // NO `direction` — `within` (the default) is the only target dockview
+    // resolves against the reference group itself. Any of the four directions
+    // sends it through `getGridLocation(referenceGroup.element)` against the
+    // MAIN gridview, and a popout group's element is not in that grid
+    // (dockviewComponent.js `addPanel`, the `center` branch vs the rest).
+    position: { referenceGroup: refGroup },
+  });
+}
+
+/**
+ * The whole ⊕ gesture: pick a folder, then put the card somewhere (#531).
+ *
+ * `into` is the window the ASK came from — a popped-out card's own group, or
+ * null for the main window. It is used twice and both matter: it places the
+ * card, and it parents the folder dialog. A dialog parented to the main window
+ * while the user is working in a popout yanks the whole app forward and
+ * answers a question they asked somewhere else.
+ */
+async function newSessionIn(
+  api: DockviewApi | null,
+  into: DockviewApi['groups'][number] | null,
+  onError: (message: string) => void
+): Promise<void> {
+  if (!api) return;
+  try {
+    // INSIDE the try, unlike the `addCard` this replaces: both call sites drive
+    // this with `void`, so a rejection out here was an unhandled rejection
+    // rather than a message anyone saw.
+    const folder = await window.switchboard.sessions.pickFolder(into?.id);
+    if (!folder) return;
+    // `into` was sampled BEFORE the picker opened, and a group can die while it
+    // is up: the dialog is modal to that popout, so the user cannot close it
+    // from there, but a command or a layout mode driven from the main window
+    // can dock the card back and dispose the group under us. A disposed group
+    // is not a destination — fall through to the grid's own placement rules
+    // rather than handing `addPanel` a corpse.
+    const stillOpen = into && api.groups.includes(into) ? into : null;
+    await addSessionCardTo(api, folder, { into: stillOpen });
+  } catch (e) {
+    // our breakage must be visible, not mute (fail-open)
+    onError(String(e));
+  }
+}
+
+/**
  * Open a document viewer on `filePath` — a NEW TAB every time (#530, §5.30).
  *
  * A module-level function taking the api, like every other imperative verb in
@@ -2239,6 +2414,37 @@ export function popOutCardPanel(api: DockviewApi | null, cardId: string): void {
   const loc = panel.api.location;
   if (loc.type === 'popout') {
     const w = loc.getWindow();
+    // ── ⤡ WITH COMPANY MEANS "BRING THIS CARD HOME", NOT "CLOSE THE WINDOW" ──
+    //
+    // Dock-back is normally a window close, and that was exact while a session
+    // popout held exactly one card. It is not any more (#531): dockview hands
+    // EVERY member of a closing popout back to the grid, and each one arrives
+    // at the location handler above with no `markDockingBack` of its own — so
+    // it is indistinguishable from the user closing the window, and gets
+    // `dropLive`d and suspended. Docking one card back would tear down the live
+    // session sitting next to it. #531 made that the ordinary shape rather than
+    // something you could only reach by dragging a tab across windows.
+    //
+    // So when this card has company, move the PANEL and leave the window
+    // standing. The question asked is "would closing this drag anyone else
+    // home?", which is about the WINDOW and not this panel's group — a split
+    // inside a popout, or a document viewer sharing it, counts the same way.
+    //
+    // `sessionCardHome` picks where it lands, so #501's placement rules stay in
+    // one place: a card coming home arrives where a new one would, never in the
+    // document area and never inside a hidden husk.
+    const company =
+      !!w &&
+      api.panels.some((p) => {
+        if (p === panel) return false;
+        const l = p.api.location;
+        return l.type === 'popout' && l.getWindow() === w;
+      });
+    if (company) {
+      sessionStore.markDockingBack(cardId); // a move, not a close: stay alive
+      panel.api.moveTo({ group: sessionCardHome(api) });
+      return;
+    }
     // only arm the "stay alive" flag when a window actually exists to close —
     // else a stale flag would later mis-classify a genuine user close as a
     // toggle and skip the suspend (E8-04 review).
@@ -2995,6 +3201,24 @@ export interface GridController {
   /** create a session in `folder` and add its card (drag-drop, rail actions);
    *  groupId places it clustered with its persistent group (E12) */
   addSessionCard: (folder: string, groupId?: string) => Promise<void>;
+  /**
+   * The whole ⊕ gesture — pick a folder, then add the card (E3-02/E3-04).
+   *
+   * Lands in the popped-out window the user is IN, when there is one, and in
+   * the grid otherwise (#531). The palette's `New session…` runs this, so the
+   * command is window-aware without a second entry in the list whose title
+   * would also read "new session".
+   */
+  newSession: () => Promise<void>;
+  /**
+   * Would `newSession()` land its card in a popped-out window right now?
+   *
+   * Synchronous on purpose, and asked BEFORE the gesture starts: App's popout
+   * key bridge pulls the main window forward after any command that ran, and
+   * it reads that decision the instant `run` returns — long before a folder
+   * dialog could resolve. Answering late would be answering never (#531).
+   */
+  newSessionTargetsPopout: () => boolean;
   /** move an existing card's PANEL next to its persistent-group siblings
    *  after a rail drop set its membership (E12-04) */
   moveCardToGroup: (cardId: string, groupId: string | null) => void;
@@ -3099,48 +3323,36 @@ export function SessionGrid(props: {
   const apiRef = useRef<DockviewApi | null>(null);
   const counter = useRef(0);
 
-  // Add a NEW card. It gets a stable id and spawns its session lazily when it
-  // becomes visible (which, as the newly-active tab, is immediately).
-  const addSessionCard = useCallback(async (folder: string, groupId?: string) => {
+  // Add a NEW card in the main window's grid — the drag-drop / rail path,
+  // where the folder is already known. `newSession` is the ⊕ gesture.
+  const addSessionCard = useCallback(
+    (folder: string, groupId?: string) => addSessionCardTo(apiRef.current, folder, { groupId }),
+    []
+  );
+
+  // Declared HERE and not beside the `+ session` button that calls it: the
+  // controller effect below lists it in a dep array, which is evaluated during
+  // render, and a `const` further down the component would still be in its
+  // temporal dead zone when that array is built.
+  const [error, setError] = React.useState<string | null>(null);
+  // ⊕ flow: pick a folder, spawn, bind the card (E3-02/E3-04) — in whichever
+  // window the ask came from (#531). The `+ session` button is in the MAIN
+  // window's chrome, so from it `focusedPopoutGroup` is null by construction
+  // and nothing about that path changes; what can answer otherwise is Mod+N
+  // pressed inside a popped-out session, which App's key bridge dispatches
+  // here, and the ＋ on a popped-out card's header — which does not ask this
+  // question at all, because it already knows its own group.
+  const newSession = useCallback(async () => {
     const api = apiRef.current;
-    if (!api) return;
-    const title = folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? folder;
-    const cardId = crypto.randomUUID();
-    // A persistent-group member clusters with its siblings (E12-02): reuse the
-    // dockview group already holding another member, when one is in the grid.
-    let sibling: DockviewApi['groups'][number] | undefined;
-    if (groupId) {
-      const cards = await window.switchboard.sessions.cards();
-      const siblings = new Set(
-        cards.filter((c) => c.groupId === groupId).map((c) => `session-${c.cardId}`)
-      );
-      // `isVisible` for the husk reason below — clustering is a reason to land
-      // BESIDE a sibling, never a reason to land somewhere invisible. The
-      // document-area rule is deliberately NOT applied here: a group holding a
-      // group-mate is a session's group whatever else was dragged into it, and
-      // an explicit group membership is the stronger of the two user intents.
-      sibling = api.panels.find(
-        (p) => siblings.has(p.id) && p.group.api.location.type === 'grid' && p.group.api.isVisible
-      )?.group;
-    }
-    // A new session must land in the MAIN window, visibly, and not on top of the
-    // document you are reading — `sessionCardHome` is all three rules (E8-04,
-    // #462). It used to be a location-only `find`, which is blind to the hidden
-    // dock-back husk a popout leaves in the grid.
-    //
-    // Asked LAST, and only when the sibling lookup came up empty, because it is
-    // not a pure question: it can un-hide a group or mint one. Asked first (as
-    // the `find(...) ?? addGroup()` it replaces was) a sibling win would leave
-    // that brand new group behind in the grid, empty, for ever.
-    const refGroup = sibling ?? sessionCardHome(api);
-    api.addPanel({
-      id: `session-${cardId}`,
-      component: 'sessionCard',
-      title,
-      params: { cardId, folder, title, groupId } satisfies CardParams,
-      position: { referenceGroup: refGroup },
-    });
+    await newSessionIn(api, api ? focusedPopoutGroup(api) : null, setError);
   }, []);
+  // The main window's own chrome does not INFER a destination — it knows one.
+  // `newSession` above has to ask which window has focus because a keystroke
+  // carries no such information; a click on a button that only exists in this
+  // window carries it, and asking anyway would put #434/#462's regression back
+  // within reach of a window manager that reports focus a moment late. Same
+  // argument the card ＋ makes by naming its own group (lib/new-session-target).
+  const newSessionInGrid = useCallback(() => newSessionIn(apiRef.current, null, setError), []);
 
   // §5.8's presentation ladder (P2-E9-05). The verbs are MODULE functions on
   // (api, cardId) — see setCardLadder — for the reason popOutCardPanel is one:
@@ -3227,6 +3439,14 @@ export function SessionGrid(props: {
     if (!props.controller) return;
     props.controller.current = {
       addSessionCard,
+      newSession,
+      // Reads `apiRef` at call time rather than closing over an api, so it
+      // cannot answer from a stale grid; `focusedPopoutGroup` is the same
+      // question `newSession` itself asks a tick later.
+      newSessionTargetsPopout: () => {
+        const api = apiRef.current;
+        return !!api && focusedPopoutGroup(api) !== null;
+      },
       moveCardToGroup: (cardId, groupId) => {
         const api = apiRef.current;
         if (!api || !groupId) return; // ungrouping keeps the panel where it sits
@@ -3479,7 +3699,7 @@ export function SessionGrid(props: {
         openDocumentPanel(apiRef.current, filePath, props.colorScheme, sessionId),
     };
     // eslint's exhaustive-deps plugin isn't installed; deps kept accurate by hand
-  }, [props.controller, addSessionCard, hideCard, revealCard, setLadder, stepLadder, props.colorScheme, t]);
+  }, [props.controller, addSessionCard, newSession, hideCard, revealCard, setLadder, stepLadder, props.colorScheme, t]);
 
   // Dockview learns the light/dark verdict in onReady, which runs ONCE — so a
   // theme switch after mount left it on the scheme the app booted with. Every
@@ -3503,19 +3723,6 @@ export function SessionGrid(props: {
       }
     }
   }, [props.colorScheme]);
-
-  const [error, setError] = React.useState<string | null>(null);
-  const addCard = useCallback(async () => {
-    // ⊕ flow: pick a folder, spawn, bind the card (E3-02/E3-04)
-    const folder = await window.switchboard.sessions.pickFolder();
-    if (!folder) return;
-    try {
-      await addSessionCard(folder);
-    } catch (e) {
-      // our breakage must be visible, not mute (fail-open)
-      setError(String(e));
-    }
-  }, [addSessionCard]);
 
   const onReady = useCallback(
     async (event: DockviewReadyEvent) => {
@@ -3808,7 +4015,7 @@ export function SessionGrid(props: {
           </span>
         )}
         <button
-          onClick={() => void addCard()}
+          onClick={() => void newSessionInGrid()}
           style={{
             background: 'var(--chip)',
             color: 'var(--text)',

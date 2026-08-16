@@ -204,7 +204,18 @@ const api = {
    * answers `{ ok, reason }`, `submitPrompt` and `interrupt` answer `false`.
    */
   sessions: {
-    pickFolder: (): Promise<string | null> => ipcRenderer.invoke('sessions:pickFolder'),
+    /**
+     * Pick a project folder.
+     *
+     * `popoutGroupId` is the dockview group id of a popped-out window, and it
+     * parents the dialog to THAT window instead of the main one (#531): a
+     * modal that opens behind the window you clicked in — or drags the whole
+     * app forward on top of it — is not a dialog, it is a jump scare. Main
+     * falls back to the main window when the id names nothing it knows, so a
+     * window that closed mid-click still gets a usable picker.
+     */
+    pickFolder: (popoutGroupId?: string): Promise<string | null> =>
+      ipcRenderer.invoke('sessions:pickFolder', popoutGroupId),
     isDirectory: (p: string): Promise<boolean> => ipcRenderer.invoke('sessions:isDirectory', p),
     /**
      * Start (or `--resume`) the live session for a card.
