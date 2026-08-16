@@ -23,7 +23,11 @@
 > **Incidents this run:** Dan's click cancelled 3 workers (all
 > recovered, verify-then-keep vindicated — #531's review found the
 > dock-back-kills-neighbour blocker, #553's found 3 shippable bugs);
-> dead-waiter trap ×2; FIVE issue premises corrected by measurement
+> dead-waiter trap ×2 + a ZOMBIE-waiter variant (#482's abandoned
+> background waiter WON the mkdir race post-completion and squatted
+> ~10 min — lesson: falling back to foreground polling means
+> TaskStop the background waiter first; they don't always die);
+> FIVE issue premises corrected by measurement
 > (#527 surfaces, #484 no-fork, #485 popout-innocent, #524 not-
 > focus-theft, #532 Monaco-default — pattern: file tickets with
 > mechanisms, workers verify before building). **Main @ 616dfab,
