@@ -159,8 +159,12 @@ export function buildCommands(deps: CommandDeps): Command[] {
       // and is disabled only when neither is focused rather than silently
       // opening a bar over nothing.
       //
-      // The card WINS when both are somehow live, which cannot happen today
-      // (one panel is active at a time) and costs nothing to state.
+      // THE DOCUMENT WINS when both are live, and that is not arbitrary: the
+      // only way both are is that the user is typing in a popped-out VIEWER
+      // window while a card is active back in the grid (`activeDocumentId`
+      // asks the focused window first). The document is the thing in front of
+      // them; opening the bar on the card would put it in a window they are not
+      // looking at — which is the bug in mirror image.
       id: 'find.open',
       titleKey: 'commands.openFind',
       categoryKey: CATEGORY_VIEW,
@@ -169,7 +173,7 @@ export function buildCommands(deps: CommandDeps): Command[] {
       enabled: (ctx: CommandContext) => hasActive(ctx) || !!ctx.activeDocumentId,
       disabledReasonKey: 'commands.disabled.noFindTarget',
       run: (ctx: CommandContext) => {
-        const target = ctx.activeCardId ?? ctx.activeDocumentId;
+        const target = ctx.activeDocumentId ?? ctx.activeCardId;
         if (target) deps.openFind(target);
       },
     },

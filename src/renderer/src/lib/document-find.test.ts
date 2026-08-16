@@ -53,6 +53,22 @@ describe('applyMatches', () => {
     expect(host.innerHTML).toBe(before);
   });
 
+  it('never matches the viewer’s OWN chrome (#533)', () => {
+    // `lib/document-render` injects text into this subtree — a fence's language
+    // label and its Copy button — and the shared bar LISTS what it finds, so a
+    // search for "copy" used to turn up three of our own buttons. The copy
+    // button is also the one whose textContent `activate()` overwrites, which
+    // would delete a mark behind `clearMatches`' back.
+    host.innerHTML =
+      '<div class="doc-code"><div class="doc-code-head">' +
+      '<span class="doc-code-lang">ts</span>' +
+      '<button data-doc-copy="">Copy</button></div>' +
+      '<pre><code>const copy = 1;</code></pre></div>';
+    expect(count(host, 'copy')).toBe(1); // the code, not the button
+    expect(count(host, 'ts')).toBe(0);
+    expect(host.querySelector('[data-doc-copy]')?.textContent).toBe('Copy');
+  });
+
   it('searches inside code fences — that is where the command is', () => {
     host.innerHTML = '<pre><code>npm run e2e</code></pre>';
     expect(count(host, 'npm run')).toBe(1);
@@ -94,6 +110,16 @@ describe('applyMatches', () => {
     expect(truncated).toBe(true);
   });
 
+  it('a document with EXACTLY the cap is not called truncated', () => {
+    // the flag is raised holding a match we declined, so "2000+" is only ever
+    // printed when there is a 2001st — a capped number reported as a total is
+    // the wrong-total-told-confidently failure one layer down
+    host.innerHTML = `<p>${'x'.repeat(MATCH_CAP)}</p>`;
+    const { matches, truncated } = applyMatches(host, 'x');
+    expect(matches).toHaveLength(MATCH_CAP);
+    expect(truncated).toBe(false);
+  });
+
   // #477's copy path: `activate()` copies a code block by reading
   // `pre.textContent`, and a search running WHILE the user copies must not put
   // its own chrome in their clipboard.
@@ -118,9 +144,16 @@ describe('focusMatch', () => {
     expect([...host.querySelectorAll('mark')].indexOf(current[0])).toBe(1);
   });
 
-  it('wraps in both directions, like every find bar ever built', () => {
-    expect(focusMatch(host, 3)).toBe(0);
-    expect(focusMatch(host, -1)).toBe(2);
+  it('REFUSES an index that is not there, rather than wrapping onto some other match', () => {
+    // #533: the index is a snapshot position from the last `search`, and a
+    // document rewritten under an open bar is re-marked without the bar
+    // re-querying. Wrapping would answer "yes, I jumped" while highlighting an
+    // unrelated match — the confident lie §5.31 exists to refuse. The bar wraps
+    // its own index across groups; this one only ever answers for what is here.
+    expect(focusMatch(host, 3)).toBe(-1);
+    expect(focusMatch(host, -1)).toBe(-1);
+    expect(host.querySelectorAll('mark[data-doc-match-current]')).toHaveLength(0);
+    expect(focusMatch(host, 2)).toBe(2);
   });
 
   it('answers -1 rather than throwing when there is nothing to focus', () => {

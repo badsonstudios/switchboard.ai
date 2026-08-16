@@ -70,6 +70,7 @@ import { applyTabRows, loadTabRows, syncDocumentFlags, toggleTabRows } from './l
 import { openPopoutWindows, subscribePopoutWindows } from './lib/popout-windows';
 import { openFindBar } from './lib/find-bar-state';
 import { setDocumentOpener } from './lib/document-open';
+import { isDocumentPanelId } from './lib/document-panels';
 
 // One stable subscribe identity for every useSyncExternalStore call below.
 // An inline arrow is a new function each render, and React unsubscribes and
@@ -1015,7 +1016,15 @@ export function App(): React.JSX.Element {
           // suppresses is `window.focus()` on the window that already has focus.
           openFind: (targetId) => {
             openFindBar(targetId);
-            if (grid.current?.isPanelPoppedOut(targetId)) raisedOtherWindowRef.current = true;
+            // Asked ONLY of a document, because only a document's id is a panel
+            // id: a card's is the bare uuid and its panel is `session-<uuid>`,
+            // so passing one here would be a lookup that can only ever miss.
+            // (It would answer "not popped out", which is accidentally right —
+            // `activeCardId` already refuses a popped-out card — and being
+            // right by accident is how the next reader gets misled.)
+            if (isDocumentPanelId(targetId) && grid.current?.isPanelPoppedOut(targetId)) {
+              raisedOtherWindowRef.current = true;
+            }
           },
           toggleTabRows: () => {
             toggleTabRows();
@@ -1057,7 +1066,7 @@ export function App(): React.JSX.Element {
   // ONE builder for both readers (the palette at open time, the dispatcher at
   // keypress time). They used to construct this separately, which is how a
   // command ends up enabled in the palette and dead on the keyboard.
-  const commandContext = React.useCallback(() => {
+  const commandContext = React.useCallback((sourceWindow?: Window) => {
     // read from the store, not a ref: this runs on KEYDOWN, outside React's
     // commit, so it has to see what is true now
     const activeCardId = grid.current?.activeCardId() ?? null;
@@ -1067,7 +1076,13 @@ export function App(): React.JSX.Element {
       // The other thing that can have the user's attention (#533): a §5.30
       // document viewer is its own panel with no session behind it, and
       // `find.open` is the one command that takes either.
-      activeDocumentId: grid.current?.activeDocumentId() ?? null,
+      //
+      // `sourceWindow` is the one argument this builder takes, and only a
+      // popped-out DOCUMENT needs it: dockview's active panel does not follow
+      // the user into another OS window, so a keystroke typed in a viewer's own
+      // window has to say where it came from. Absent (this window, and the
+      // palette) means "the active panel", which is the answer it always was.
+      activeDocumentId: grid.current?.activeDocumentId(sourceWindow) ?? null,
       // resolved HERE, once, so the palette's enabled state and the keyboard's
       // both come from the same read (E9-06's group-level commands)
       activeGroupId: activeCardId
@@ -1096,7 +1111,7 @@ export function App(): React.JSX.Element {
     // the REAL answer, not a guess from e.defaultPrevented: the composer
     // preventDefaults its own Enter, and mistaking that for a command would
     // yank this window in front of the one being typed in.
-    const onKey = (e: KeyboardEvent): unknown => {
+    const onKey = (e: KeyboardEvent, sourceWindow?: Window): unknown => {
       // while a modal owns the screen, nothing underneath it fires —
       // regardless of where focus ended up inside the modal
       if (modalOpenRef.current) return null;
@@ -1114,7 +1129,7 @@ export function App(): React.JSX.Element {
           preventDefault: () => e.preventDefault(),
         },
         commands,
-        commandContext(),
+        commandContext(sourceWindow),
         platform,
         // fail-open: a broken command logs and is forgotten, never an uncaught
         // error in the keydown handler (the main process tails this console)
@@ -1149,7 +1164,10 @@ export function App(): React.JSX.Element {
       if (popoutKeys.has(win)) return;
       const handler = (e: KeyboardEvent): void => {
         raisedOtherWindowRef.current = false;
-        if (onKey(e) && !raisedOtherWindowRef.current) window.focus();
+        // `win` — which window this was typed in. A popped-out DOCUMENT is the
+        // one thing a command can act on THERE rather than here (#533), and
+        // dockview's active panel cannot tell us which window that is.
+        if (onKey(e, win) && !raisedOtherWindowRef.current) window.focus();
       };
       popoutKeys.set(win, handler);
       win.addEventListener('keydown', handler);
@@ -1226,10 +1244,18 @@ export function App(): React.JSX.Element {
       // focused.
       const target = fromPopout ? focusedElementIn(openPopoutWindows(), document) : document.activeElement;
       raisedOtherWindowRef.current = false;
+      // The SAME source window the keydown bridge passes (#533), so the two
+      // routes to a command cannot disagree about which surface it acts on:
+      // Ctrl+Shift+P → "Find in session" from inside a popped-out viewer has to
+      // reach that viewer, not whatever is sitting in the grid behind it. Only
+      // when the keystroke really came from a popout — `document.activeElement`
+      // in THIS window would name a window that is not one, and
+      // `activeDocumentId` would answer null for a docked viewer.
+      const sourceWindow = fromPopout ? (target?.ownerDocument.defaultView ?? undefined) : undefined;
       const ran = dispatchAccelerator(
         commandId,
         commands,
-        commandContext(),
+        commandContext(sourceWindow),
         target,
         (err, id) => console.error(`[commands] ${id} failed`, err),
       );

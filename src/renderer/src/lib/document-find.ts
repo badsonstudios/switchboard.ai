@@ -34,6 +34,13 @@ const CURRENT_ATTR = 'data-doc-match-current';
  */
 export const MATCH_CAP = 2000;
 
+/**
+ * The decoration chrome `lib/document-render` adds, which is OURS and not the
+ * document's — see the walker's `acceptNode`. The class names are that module's
+ * own protocol; this is a consumer of it, not a second copy of the markup.
+ */
+const CHROME = '.doc-code-head, [data-doc-copy], .doc-image-chip, .doc-media-chip, .doc-front-chip';
+
 /** One match, in the vocabulary a `FindHit` is built from. */
 export interface DocumentMatch {
   /** the whole text node the match sits in — the provider windows it */
@@ -129,9 +136,21 @@ export function applyMatches(
       const parent = node.parentElement;
       if (!parent) return NodeFilter.FILTER_REJECT;
       // A `<pre>` is searchable; a `<script>` cannot exist here (DOMPurify) but
-      // costs nothing to name, and our own chrome must not match itself.
+      // costs nothing to name.
       const tag = parent.tagName;
       if (tag === 'SCRIPT' || tag === 'STYLE') return NodeFilter.FILTER_REJECT;
+      // OUR OWN CHROME MUST NOT MATCH ITSELF, and it took the shared bar to
+      // make that visible: `lib/document-render` injects text INTO this
+      // subtree — a fence's language label, its `Copy` button, an image chip's
+      // "Open in browser" — and the private bar only ever counted those, while
+      // this one lists them with a snippet and scrolls to them. Searching a
+      // document with three code fences for "copy" found three buttons.
+      //
+      // The copy button is the one that could also corrupt the mark list:
+      // `activate()` overwrites its `textContent` for 1200 ms, which would
+      // delete a mark behind `clearMatches`' back and leave the bar's indices
+      // pointing at a list that has shifted under them.
+      if (parent.closest(CHROME)) return NodeFilter.FILTER_REJECT;
       return node.nodeValue && node.nodeValue.length > 0
         ? NodeFilter.FILTER_ACCEPT
         : NodeFilter.FILTER_REJECT;
@@ -158,6 +177,14 @@ export function applyMatches(
       // matched empty would spin here forever — one guard is cheaper than the
       // reasoning about why it cannot.
       if (hit[0].length === 0) break;
+      // THE CAP IS CHECKED HOLDING A MATCH WE ARE DECLINING, which is what
+      // makes `truncated` exact: a document with exactly `MATCH_CAP` matches
+      // marks all of them and reports a real total, because this branch is
+      // never reached. "2000+" is only ever printed when there is a 2001st.
+      if (matches.length >= MATCH_CAP) {
+        truncated = true;
+        break;
+      }
       const at = hit.index;
       if (at > from) frag.append(doc.createTextNode(value.slice(from, at)));
       const mark = doc.createElement('mark');
@@ -166,10 +193,6 @@ export function applyMatches(
       frag.append(mark);
       matches.push({ text: value, offset: at, length: hit[0].length });
       from = at + hit[0].length;
-      if (matches.length >= MATCH_CAP) {
-        truncated = true;
-        break;
-      }
       re.lastIndex = from;
       hit = re.exec(value);
     }
@@ -182,13 +205,27 @@ export function applyMatches(
 /**
  * Mark the `index`-th match as current and scroll it into view.
  *
- * Returns the index actually used — it wraps, so "next" from the last match is
- * the first one, which is what every find bar in every editor does.
+ * Returns the index used, or **-1 when there is no such match** — and the
+ * refusal is the whole contract, not an edge case (#533).
+ *
+ * IT USED TO WRAP, back when it drove the viewer's own next/prev buttons and
+ * "next past the last" genuinely meant "the first". Under the shared bar the
+ * index is a SNAPSHOT position handed back from the last `search`, and the two
+ * snapshots can diverge — a file rewritten under an open bar is re-marked
+ * without the bar re-querying (see `DocumentViewer`'s decoration effect). A
+ * wrap would then take `reveal(7)` over three marks, highlight the second one
+ * and answer "yes, I jumped": a confident lie about where the user is standing,
+ * which is exactly what §5.31 refuses. Answering -1 makes the bar do what it
+ * already does for a hit it cannot reach — open the results list.
+ *
+ * The bar wraps its own index across groups (`FindBar`'s `step`), so nothing
+ * was lost by taking the wrap out.
  */
 export function focusMatch(root: HTMLElement, index: number): number {
   const marks = [...root.querySelectorAll<HTMLElement>(`mark[${MATCH_ATTR}]`)];
   if (marks.length === 0) return -1;
-  const at = ((index % marks.length) + marks.length) % marks.length;
+  const at = index;
+  if (!Number.isInteger(at) || at < 0 || at >= marks.length) return -1;
   for (const m of marks) m.removeAttribute(CURRENT_ATTR);
   const current = marks[at];
   current.setAttribute(CURRENT_ATTR, '');

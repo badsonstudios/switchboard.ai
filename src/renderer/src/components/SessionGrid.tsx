@@ -2192,7 +2192,14 @@ function DocumentViewerPanel(
           knows how to say out loud (a greyed "nothing to search here") rather
           than vanishing along with it. */}
       {findBar.openOn === api.id && (
-        <FindBar cardId={api.id} panelId="document" panelTitleKey="find.group.document" />
+        <FindBar
+          cardId={api.id}
+          panelId="document"
+          panelTitleKey="find.group.document"
+          // clear of `.doc-header`, whose controls are the only ones this
+          // surface has — see the prop's own note
+          insetBlockStart={34}
+        />
       )}
     </div>
   );
@@ -3016,8 +3023,12 @@ export interface GridController {
    * The §5.8 question `find-providers.ts` used to record as a blocker: what is
    * "the focused surface" when it is not a session card? A `doc-` panel, and
    * this is how a command names one.
+   *
+   * `sourceWindow` is the OS window the keystroke was typed in, when it was not
+   * this one — see the implementation for why that is passed rather than
+   * inferred.
    */
-  activeDocumentId: () => string | null;
+  activeDocumentId: (sourceWindow?: Window) => string | null;
   /** is this panel in its own OS window right now? (#533 — see App's openFind) */
   isPanelPoppedOut: (panelId: string) => boolean;
   /** close a card the way the tab ✕ does — including its confirm (E9-01) */
@@ -3304,8 +3315,45 @@ export function SessionGrid(props: {
       // dockview has re-parented into the popout window along with it. Refusing
       // would mean Ctrl+F in a viewer's own window did nothing, which is the
       // exact bug this issue closed.
-      activeDocumentId: () => {
-        const panel = apiRef.current?.activePanel;
+      //
+      // WHICH WINDOW THE KEYSTROKE CAME FROM IS AN ARGUMENT, not a guess, and
+      // that is the whole subtlety here. `activePanel` does NOT follow the user
+      // into another OS window: pop a viewer out and dockview leaves the grid's
+      // own panel active, so a Ctrl+F typed in the viewer's window would
+      // resolve to whatever is sitting behind it. Proven, not assumed — the
+      // popped-out case of `document-find.spec` failed exactly that way first.
+      //
+      // `document.hasFocus()` was the obvious fix and is the wrong one: it is
+      // what `isCardOnScreen` asks a popout, but here it decides which of two
+      // windows a keystroke belongs to, and getting that backwards would send a
+      // Ctrl+F typed over a session card to a document in another window. The
+      // popout key bridge already knows the answer — it attached the listener
+      // to that window — so it passes it, and there is nothing to infer.
+      //
+      // A source window we cannot place among the popout groups answers null,
+      // NOT "the grid's active panel": a keystroke from a window holding a
+      // session card must keep behaving exactly as it did before (#533 changed
+      // documents, not cards).
+      activeDocumentId: (sourceWindow) => {
+        const api = apiRef.current;
+        if (!api) return null;
+        if (sourceWindow) {
+          for (const group of api.groups) {
+            const loc = group.api.location;
+            if (loc.type !== 'popout') continue;
+            let win: Window | null = null;
+            try {
+              win = loc.getWindow() ?? null;
+            } catch {
+              win = null; // torn down between the lookup and the read
+            }
+            if (win !== sourceWindow) continue;
+            const shown = group.activePanel;
+            return shown && isDocumentPanelId(shown.id) ? shown.id : null;
+          }
+          return null;
+        }
+        const panel = api.activePanel;
         return panel && isDocumentPanelId(panel.id) ? panel.id : null;
       },
       isPanelPoppedOut: (panelId) =>

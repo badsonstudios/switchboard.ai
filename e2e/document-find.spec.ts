@@ -124,6 +124,15 @@ test.describe('find in a document (#533)', () => {
     await popout.waitForLoadState('domcontentloaded');
     await expect(viewer(popout)).toBeVisible({ timeout: 15_000 });
 
+    // CLICK THE WINDOW FIRST, and it is the harness that needs it rather than
+    // the app: `page.keyboard.press` on a popout Page that has never been
+    // interacted with delivers NOTHING — a probe recorded zero keydowns
+    // reaching that window's own listener. One click and the very same press
+    // arrives. (It is also what a user does: you click the window you are
+    // reading before you type in it.) The header name is a safe target — it is
+    // not a control, so nothing but focus happens.
+    await popout.locator('[data-testid="doc-name"]').click();
+
     // The command context claims a popped-out DOCUMENT where it refuses a
     // popped-out card, and the difference is that the bar renders inside the
     // panel — which dockview moved into this window along with the viewer.

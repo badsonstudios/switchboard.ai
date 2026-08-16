@@ -334,8 +334,14 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
   // scrolls and `bodyRef` is the column of prose inside it, capped at a
   // readable measure (§5.30). One element doing both puts the scrollbar 78
   // characters in, with dead pane to the right of it.
+  //
+  // `mainRef` is a third and belongs to FIND (#533): it wraps the prose AND the
+  // front-matter block, which is what the reader can see and therefore what a
+  // search has to cover. The decoration effect still writes into `bodyRef` —
+  // the rendered document is the only thing React does not own here.
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
   const bodyRef = React.useRef<HTMLDivElement | null>(null);
+  const mainRef = React.useRef<HTMLDivElement | null>(null);
   const [outline, setOutline] = React.useState<readonly OutlineEntry[]>([]);
   const [frontOpen, setFrontOpen] = React.useState(false);
 
@@ -377,7 +383,9 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
     // reader is looking at (#520 — a jump with no visible mark reads as broken),
     // and they are right; the number catches up on the next keystroke.
     const q = findQuery();
-    if (findBarState().openOn === props.panelId && q.term) applyMatches(host, q.term, q);
+    if (findBarState().openOn === props.panelId && q.term && mainRef.current) {
+      applyMatches(mainRef.current, q.term, q);
+    }
   }, [showRendered, renderedHtml, labels, current, props.panelId]);
 
   // The `#fragment` a relative link carried, applied once the body exists.
@@ -409,7 +417,6 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
   // Read by the surface's methods, which are called from OUTSIDE React's render
   // (a keydown, then the bar's effects) and must see what is true now.
   const showRenderedRef = React.useRef(false);
-  showRenderedRef.current = showRendered;
   // The editor's ARRIVAL, as state rather than only as a ref — see the effect's
   // deps below for why a ref alone would leave the bar greyed.
   const [sourceReady, setSourceReady] = React.useState(false);
@@ -419,26 +426,30 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
     // No panel id means nobody can name this viewer — a unit test mounting the
     // component directly, and the one case where publishing would be wrong: the
     // key is what makes "a search cannot reach another panel" structural.
+    // In the EFFECT rather than during render: a ref written while rendering
+    // can hold a value from a render React went on to throw away, and the deps
+    // below already re-run this whenever the answer changes.
+    showRenderedRef.current = showRendered;
     if (!panelId) return;
     const surface: DocumentFindSurface = {
       kind: 'document',
       view: () => {
-        if (showRenderedRef.current && bodyRef.current) return 'rendered';
+        if (showRenderedRef.current && mainRef.current) return 'rendered';
         if (!showRenderedRef.current && sourceEditor.current?.getModel()) return 'source';
         // loading, refused, binary (the card), or the editor has not built yet
         return 'none';
       },
       search: (query) => {
-        const host = bodyRef.current;
+        const host = mainRef.current;
         if (!host) return { matches: [], truncated: false };
         return applyMatches(host, query.term, query);
       },
       reveal: (index) => {
-        const host = bodyRef.current;
+        const host = mainRef.current;
         return host ? focusMatch(host, index) >= 0 : false;
       },
       clear: () => {
-        if (bodyRef.current) clearMatches(bodyRef.current);
+        if (mainRef.current) clearMatches(mainRef.current);
       },
       openFind: (term) => openMonacoFind(sourceEditor.current, term),
     };
@@ -505,7 +516,7 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
     // otherwise match inside its own highlights. The BAR stays open across the
     // toggle, and switches from driving us to delegating to Monaco, because
     // `modeFor` is asked of the live surface on every render.
-    if (bodyRef.current) clearMatches(bodyRef.current);
+    if (mainRef.current) clearMatches(mainRef.current);
     setMode(next);
   };
 
@@ -708,7 +719,14 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
               </ul>
             </nav>
           ) : null}
-          <div className="doc-main">
+          {/* THE SEARCH ROOT, not just a layout box (#533). The find surface
+              marks inside THIS element rather than inside `.doc-md`, so that
+              expanded front matter — text the reader can see — is searchable
+              too. A zero over something on screen is the same lie §5.31 refuses
+              one level up, and the chrome inside it (the "Front matter" chip)
+              is excluded by `document-find`'s own walker. Collapsed front
+              matter is not in the DOM at all, so it is honestly not searched. */}
+          <div className="doc-main" ref={mainRef}>
             {front.frontMatter !== undefined ? (
               <div className="doc-front">
                 <button

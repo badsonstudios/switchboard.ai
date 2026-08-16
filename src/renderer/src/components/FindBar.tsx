@@ -126,6 +126,16 @@ export function FindBar(props: {
   panelId: PanelId;
   /** that panel's title key, so the greyed message can NAME the tab */
   panelTitleKey: string;
+  /**
+   * How far down the surface the bar hangs, in px (default 6).
+   *
+   * A card's chrome above the bar is a tab strip, which the bar may sit over —
+   * it names the tab it is searching, so covering the strip costs nothing. A
+   * §5.30 document's chrome is its only CONTROLS (the mode toggle, Open
+   * externally, Reveal, pop out), and a bar parked on top of them takes them
+   * away for as long as find is open.
+   */
+  insetBlockStart?: number;
 }): React.JSX.Element {
   const { t, i18n } = useTranslation();
   const bar = React.useSyncExternalStore(subscribeFindBar, findBarState);
@@ -504,7 +514,7 @@ export function FindBar(props: {
       // the conversation underneath keeps its scroll position and its layout
       style={{
         position: 'absolute',
-        insetBlockStart: 6,
+        insetBlockStart: props.insetBlockStart ?? 6,
         insetInlineEnd: 12,
         zIndex: 5,
         maxInlineSize: 'min(560px, calc(100% - 24px))',

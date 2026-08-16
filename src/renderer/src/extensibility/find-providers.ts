@@ -408,7 +408,18 @@ export const documentFindProvider: FindProviderContribution = {
     // why `clear` matters as much as it does.
     const out = surface.search(query);
     const hits: FindHit[] = out.matches.map((m, i) => {
-      const { snippet, matchStart } = snippetAround(m.text, m.offset, m.length);
+      // NEWLINES FLATTENED TO SPACES, one character for one, so every offset
+      // below still points where it did. A match inside a code fence sits in a
+      // text node that is the whole fence, and the results list renders with
+      // `pre-wrap` — so without this a single hit is a twelve-line row and the
+      // list stops being scannable. Collapsing RUNS of whitespace would read
+      // better still and would move `matchStart`, which is not worth a lie
+      // about where the match starts.
+      const { snippet, matchStart } = snippetAround(
+        m.text.replace(/[\n\r\t]/g, ' '),
+        m.offset,
+        m.length
+      );
       return {
         // POSITIONAL, and safe to be: `reveal` takes the same index back into
         // the mark list that `search` just built, so the two are one snapshot.

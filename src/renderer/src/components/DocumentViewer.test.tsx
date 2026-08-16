@@ -460,6 +460,26 @@ describe('the rest of the v1 markdown scope', () => {
     expect(host.querySelectorAll('mark[data-doc-match]')).toHaveLength(1);
   });
 
+  it('searches EXPANDED front matter — it is on screen, so a 0 over it would lie', async () => {
+    answer = () => ok('---\ntitle: the needle\n---\n\n# Body\n');
+    await mount('/p/PROGRESS.md', 'dark', { panelId: 'doc-9' });
+    const s = surface()!;
+    // collapsed: the block is not in the DOM at all, so not searching it is
+    // honest rather than a gap
+    await act(async () => {
+      expect(s.search({ term: 'needle' }).matches).toHaveLength(0);
+    });
+    await click(buttonByText('Front matter'));
+    await act(async () => {
+      expect(s.search({ term: 'needle' }).matches).toHaveLength(1);
+    });
+    expect(host.querySelectorAll('.doc-front-body mark[data-doc-match]')).toHaveLength(1);
+    // ...and the chip that opens it is OUR chrome, never a match
+    await act(async () => {
+      expect(s.search({ term: 'Front matter' }).matches).toHaveLength(0);
+    });
+  });
+
   it('says which body is on screen — the source one is Monaco’s to search', async () => {
     // `modeFor` reads this: rendered markdown is ours to mark, and the source
     // body is a Monaco editor §5.31 says not to reimplement a find over. The
