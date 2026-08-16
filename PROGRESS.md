@@ -152,6 +152,21 @@
 > #482 (wt-3). Dan/train queue (8): #535 #536 #537 #540 #542 #545
 > #547 #549.
 >
+> **⚠ 2026-08-15 ~21:00: DAN'S CLICK CANCELLED ALL THREE WORKERS**
+> (accidental interaction with e2e test windows + agent stops).
+> State: **#532 ✅ survived complete → PR #548 READY** (4681+18
+> unit / 285+3 e2e; real cause = Monaco useInlineViewWhenSpace-
+> IsLimited default — pane 506px < 900px breakpoint, side-by-side
+> NEVER showed despite on since P1-E5-02; floor recalibrated 400px
+> after e2e caught 640 reproducing the bug). **#531 WIP UNCOMMITTED
+> wt-1** (new-session-target.ts + App/SessionGrid/ipc, mid-item).
+> **#407 WIP UNCOMMITTED wt-2** (manual + e2e specs, deep mid-item,
+> no commit/PR/handoff). **#482 barely started wt-3.** Orphaned e2e
+> lock (owner 407) CLEARED. **Recovery awaits Dan's explicit go**
+> (stop policy): verify-then-keep workers for #531 + #407 WIP,
+> clean redispatch #482. **Standing rule: all worker e2e runs set
+> SWITCHBOARD_E2E_MONITOR=2.** Dan/train queue now NINE: + #548.
+>
 > # (0.5.0 ship record follows)
 > # ✅ v0.5.0 SHIPPED 2026-08-14 (same-day as v0.4.0)
 >
