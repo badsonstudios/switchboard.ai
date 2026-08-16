@@ -6,6 +6,11 @@
 let cache: Record<string, unknown> = {};
 
 export async function loadUiState(): Promise<void> {
+  // A pending `uiSetSoon` would otherwise outlive the object it was written
+  // into and then push the RELOADED blob, silently dropping the change it was
+  // scheduled for. Unreachable today — the shell is gated on `uiReady`, so no
+  // composer exists before the second call — and one line to keep it that way.
+  cancelPendingPush();
   try {
     const raw = await window.switchboard.workspace.getUi();
     cache = raw && typeof raw === 'object' ? { ...(raw as Record<string, unknown>) } : {};
@@ -55,11 +60,14 @@ export function uiSet(key: string, value: unknown): void {
 export const UI_PUSH_DELAY_MS = 400;
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 
+function cancelPendingPush(): void {
+  if (!pushTimer) return;
+  clearTimeout(pushTimer);
+  pushTimer = null;
+}
+
 function push(): void {
-  if (pushTimer) {
-    clearTimeout(pushTimer); // whatever was pending is in this same blob
-    pushTimer = null;
-  }
+  cancelPendingPush(); // whatever was pending is in this same blob
   try {
     window.switchboard.workspace.setUi(cache);
   } catch {
@@ -81,7 +89,11 @@ function push(): void {
  * The delay is measured from the FIRST unsent change, not reset by each new
  * one: a trailing debounce can be starved for ever by someone who keeps typing,
  * and "your draft is safe once you pause" is a worse promise than "your draft
- * is safe within 400ms, always".
+ * reaches main within 400ms, always". MAIN, note, not disk — main's own
+ * `saveSoon()` is a RESETTING 500ms debounce, so a continuous typist keeps
+ * pushing it out and the file is written when the window closes. That is the
+ * right trade for a quit and the wrong one for a power cut; nothing here
+ * promises to survive the second.
  *
  * `undefined` DELETES the key rather than storing an explicit undefined, so a
  * draft the user emptied leaves nothing behind (JSON would drop it on the way
@@ -99,6 +111,9 @@ export function uiSetSoon(key: string, value: unknown): void {
       /* fail-open */
     }
   }, UI_PUSH_DELAY_MS);
+  // and note the bonus: any ordinary `uiSet` — a focus change, a tab switch —
+  // pushes the whole cache and cancels this timer, so 400ms is the worst case
+  // rather than the usual one.
 }
 
 /**

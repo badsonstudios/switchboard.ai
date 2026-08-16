@@ -6,7 +6,15 @@
 // A test that only checked "it eventually saves" would stay green if the write
 // were moved onto the timer, and the popout would still lose the draft.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { clearDraft, draftKey, loadDraft, saveDraft } from './composer-draft';
+import {
+  clearDraft,
+  draftKey,
+  loadDraft,
+  MAX_DRAFT_CHARS,
+  pruneDrafts,
+  saveDraft,
+  staleDraftKeys,
+} from './composer-draft';
 import { loadUiState, uiFlush, uiGet, UI_PUSH_DELAY_MS } from './ui-state';
 
 let sent: Array<Record<string, unknown>>;
@@ -89,6 +97,24 @@ describe('saveDraft', () => {
     expect(loadDraft('card-1')).toBe('');
   });
 
+  it('treats whitespace as empty, like the send button already does', () => {
+    saveDraft('card-1', '   \n  ');
+    vi.advanceTimersByTime(UI_PUSH_DELAY_MS);
+    expect(loadDraft('card-1')).toBe('');
+  });
+
+  it('refuses a draft past the ceiling rather than parking it in the workspace file', () => {
+    // The whole blob is cloned to main on every push and re-serialized on every
+    // save, so one card's paste must not be a tax on every other preference.
+    // It stays in the BOX — this only declines to persist it.
+    saveDraft('card-1', 'x'.repeat(MAX_DRAFT_CHARS + 1));
+    vi.advanceTimersByTime(UI_PUSH_DELAY_MS);
+    expect(loadDraft('card-1')).toBe('');
+    saveDraft('card-2', 'x'.repeat(MAX_DRAFT_CHARS));
+    vi.advanceTimersByTime(UI_PUSH_DELAY_MS);
+    expect(loadDraft('card-2')).toHaveLength(MAX_DRAFT_CHARS);
+  });
+
   it('does nothing at all without a card id — never files a draft under a guess', () => {
     saveDraft(undefined, 'homeless');
     vi.advanceTimersByTime(UI_PUSH_DELAY_MS);
@@ -115,6 +141,43 @@ describe('clearDraft', () => {
     // the pending timer must not resurrect the draft it was going to save
     expect(sent).toHaveLength(1);
     expect(loadDraft('card-1')).toBe('');
+  });
+});
+
+describe('staleDraftKeys / pruneDrafts', () => {
+  const blob = {
+    [draftKey('gone')]: 'orphan',
+    [draftKey('alive')]: 'still typing',
+    railHidden: true,
+    'feedVerbosity.gone': 'quiet',
+  };
+
+  it('names only the draft keys whose card is gone', () => {
+    expect(staleDraftKeys(blob, new Set(['alive']))).toEqual([draftKey('gone')]);
+  });
+
+  it('leaves everything that is not a draft alone', () => {
+    // the sweep runs beside five siblings that own the other prefixes; a
+    // prefix match that was too loose would delete their records too
+    const stale = staleDraftKeys(blob, new Set(['alive']));
+    expect(stale).not.toContain('railHidden');
+    expect(stale).not.toContain('feedVerbosity.gone');
+  });
+
+  it('deletes NOTHING when the card list came back empty', () => {
+    // "the IPC failed" and "you have no cards" are the same value here, and
+    // only one of them makes it safe to throw away unsent prompts.
+    expect(staleDraftKeys(blob, new Set())).toEqual([]);
+  });
+
+  it('pruneDrafts writes the survivors back through the store', async () => {
+    bridge(blob);
+    await loadUiState();
+    pruneDrafts(new Set(['alive']));
+    expect(loadDraft('gone')).toBe('');
+    expect(loadDraft('alive')).toBe('still typing');
+    expect(persisted(draftKey('gone'))).toBeUndefined();
+    expect(persisted('railHidden')).toBe(true);
   });
 });
 

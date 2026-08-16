@@ -23,11 +23,53 @@
 // is supposed to survive. `cardId` is the durable key (the same reason
 // `feedVerbosity.<cardId>` uses it), which is also what makes "a suspended card
 // gets its draft back when it resumes" true for free.
-import { uiDelete, uiGet, uiSetSoon } from './ui-state';
+//
+// ...and therefore it is PRUNED with everything else that is card-keyed, at the
+// boot sweep in `SessionGrid.tsx` beside `prunePresentation`, `prunePins` and
+// the rest. This one earns its place there more than its neighbours do: a
+// verbosity is a short enum written when someone deliberately changes a
+// setting, while a draft is written by TYPING — everyone, on every card — and
+// its payload is whatever they pasted.
+import { uiAll, uiDelete, uiGet, uiSetSoon } from './ui-state';
+
+const PREFIX = 'composerDraft.';
 
 /** One key per card. Namespaced, like every other per-card ui key. */
 export function draftKey(cardId: string): string {
-  return `composerDraft.${cardId}`;
+  return `${PREFIX}${cardId}`;
+}
+
+/**
+ * A ceiling on what one card may park in the workspace file.
+ *
+ * The whole blob is structure-cloned to main on every push and re-serialized on
+ * every save, so an unbounded value here is an unbounded cost paid by every
+ * OTHER preference too. 100k characters is around thirty pages — far past any
+ * prompt anyone types and far short of a workspace file that hurts. Past it the
+ * draft simply is not persisted: it stays in the box for as long as the view
+ * lives, which is exactly where it was before this feature existed.
+ */
+export const MAX_DRAFT_CHARS = 100_000;
+
+/**
+ * The draft keys in `blob` whose card is gone — the pure half, so the sweep is
+ * testable without a grid. Same shape as `prunePresentation`'s.
+ *
+ * An EMPTY known-set returns nothing rather than everything: "the card list
+ * failed to load" and "you have no cards" are the same value here, and only one
+ * of them means it is safe to delete someone's unsent prompts.
+ */
+export function staleDraftKeys(
+  blob: Readonly<Record<string, unknown>>,
+  known: ReadonlySet<string>
+): string[] {
+  if (known.size === 0) return [];
+  return Object.keys(blob).filter((k) => k.startsWith(PREFIX) && !known.has(k.slice(PREFIX.length)));
+}
+
+/** Retire the drafts of cards that no longer exist. */
+export function pruneDrafts(known: ReadonlySet<string>): void {
+  uiDelete(staleDraftKeys(uiAll(), known));
 }
 
 /**
@@ -50,6 +92,8 @@ export function loadDraft(cardId: string | undefined): string {
  * An EMPTY draft deletes the key rather than storing '', so a workspace with
  * forty cards nobody has typed into carries forty fewer entries — the "an empty
  * draft doesn't bloat the store" clause, enforced here rather than by a sweep.
+ * WHITESPACE counts as empty, matching what the composer's own `sendable`
+ * already thinks: three spaces is not a draft anyone wants back.
  *
  * A card with no id (a view rendered without one) simply does not persist:
  * there is no durable name to file it under, and inventing one would put a
@@ -57,7 +101,8 @@ export function loadDraft(cardId: string | undefined): string {
  */
 export function saveDraft(cardId: string | undefined, text: string): void {
   if (!cardId) return;
-  uiSetSoon(draftKey(cardId), text.length > 0 ? text : undefined);
+  const keep = text.trim().length > 0 && text.length <= MAX_DRAFT_CHARS;
+  uiSetSoon(draftKey(cardId), keep ? text : undefined);
 }
 
 /**

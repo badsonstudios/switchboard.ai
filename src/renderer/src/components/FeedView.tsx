@@ -825,6 +825,13 @@ export function FeedView(props: {
           so the two can never appear together. */}
       {handoff && <TerminalHandoffBar handoff={handoff} onJump={props.onJumpToTerminal} />}
       <Composer
+        // The saved draft is seeded ONCE, on mount (#485), so a Composer whose
+        // card id changed under it would carry the old card's words onto the
+        // new one at the first keystroke. Nothing calls `updateParameters` with
+        // a new `cardId` today — but `sessionId` DOES churn on resume, the two
+        // sit next to each other, and the next reader will not know which is
+        // which. `key` makes the hazard structurally impossible for one word.
+        key={props.cardId}
         sessionId={props.sessionId}
         // the durable key the saved draft is filed under (#485)
         cardId={props.cardId}
@@ -1692,8 +1699,11 @@ function Composer({
         onClick={syncCaret}
         onKeyUp={syncCaret}
         // Leaving the box is the moment waiting stops being an economy (#485):
-        // clicking the window's ✕ starts with a blur, and the saved draft has
-        // to be on its way to main before the quit path reads the store.
+        // clicking anywhere else in the app, or alt-tabbing away, sends the
+        // draft immediately instead of letting it ride the debounce. It does
+        // NOT cover the window's ✕ — that is OS chrome and fires no DOM blur —
+        // so the residual hole is "type and quit within 400ms without leaving
+        // the box", which is the tolerance `composer-draft.ts` argues for.
         onBlur={uiFlush}
         onKeyDown={(e) => {
           // confirming an IME candidate (CJK input) also fires Enter — never
