@@ -119,6 +119,22 @@
 > #532/#531 (wt-1) · #520 (wt-3). Dan/train queue: #535 #536 #537
 > #540 #542 #545.
 >
+> **#533 ✅ DONE → PR #547 READY (builds on #542 — train orders
+> them).** Both planned blockers real; roster 4-of-4; TWO seam
+> decisions beyond the plan: modeFor(ctx) on FindProviderContribution
+> (bar over rendered Markdown, DELEGATED to Monaco over source —
+> §5.31), and activeDocumentId(sourceWindow) because activePanel
+> doesn't follow the user into a popout (e2e proved it). Review
+> round: 4 real defects fixed (stale-index false success, marks on
+> our own Copy buttons, front-matter No-results, accelerator route
+> divergence). 4694 unit / full e2e green (one #494 flake, profiled
+> in its own header). New document-find.spec + harness trap noted
+> (popout Page needs one click before keyboard.press). Leftover for
+> Dan: bar stickiness across tab switches (consistent w/ cards).
+> **#407 SHAPE B DISPATCHED → wt-2** (the run's big one; App.tsx
+> adjacency with #531 noted). In flight: #407 (wt-2) · #532/#531
+> (wt-1) · #520 (wt-3).
+>
 > # (0.5.0 ship record follows)
 > # ✅ v0.5.0 SHIPPED 2026-08-14 (same-day as v0.4.0)
 >
