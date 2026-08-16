@@ -177,6 +177,16 @@ describe('the quiet-hours dialog', () => {
       expect(field('start').value).toBe('21:00');
     });
 
+    it('never eats a keystroke that beat the answer', async () => {
+      // One IPC round trip is not long, but it is long enough for someone who
+      // opened this to change one number and started typing at once — and a
+      // form that swallows the first thing you type is one you stop trusting.
+      await render(true, null);
+      await type(field('start'), '21:00');
+      await render(true, state({ window: { start: '23:00', end: '06:00' } }));
+      expect(field('start').value).toBe('21:00');
+    });
+
     it('re-seeds on the NEXT opening', async () => {
       await render(true, state({ window: { start: '23:00', end: '06:00' } }));
       await render(false, null);

@@ -54,10 +54,13 @@ export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Elemen
   const [end, setEnd] = React.useState(DEFAULT_END);
   /** have the drafts taken main's answer for THIS opening yet? */
   const seeded = React.useRef(false);
+  /** …or has the user already typed, making the answer no longer theirs to take? */
+  const touched = React.useRef(false);
 
   React.useEffect(() => {
     if (!props.open) {
       seeded.current = false;
+      touched.current = false;
       return;
     }
     returnFocusTo.current = document.activeElement as HTMLElement | null;
@@ -79,9 +82,15 @@ export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Elemen
    * - **Only once.** Every write triggers a re-read, so re-seeding on each
    *   answer would overwrite whatever the user was typing the instant their
    *   previous keystroke landed.
+   * - **And never over a keystroke.** The answer is one IPC round trip away,
+   *   which is not long — but it is long enough for someone who opened this
+   *   dialog to change one number and started typing immediately, and a form
+   *   that eats the first thing you type is a form you stop trusting. Once the
+   *   user has touched a field, the drafts are theirs and the answer only ever
+   *   feeds the status line.
    */
   React.useEffect(() => {
-    if (!props.open || seeded.current || props.state === null) return;
+    if (!props.open || seeded.current || touched.current || props.state === null) return;
     seeded.current = true;
     setStart(props.state.window?.start ?? DEFAULT_START);
     setEnd(props.state.window?.end ?? DEFAULT_END);
@@ -125,6 +134,7 @@ export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Elemen
         type="time"
         value={value}
         onChange={(e) => {
+          touched.current = true;
           set(e.target.value);
           // Write through on every valid edit rather than behind a Save button:
           // there are two fields, both always valid or obviously not, and the
@@ -210,7 +220,10 @@ export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Elemen
               type="checkbox"
               data-quiet-field="enabled"
               checked={on}
-              onChange={(e) => apply(e.target.checked)}
+              onChange={(e) => {
+                touched.current = true;
+                apply(e.target.checked);
+              }}
             />
             {t('quiet.enable')}
           </label>

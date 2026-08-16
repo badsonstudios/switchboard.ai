@@ -166,6 +166,13 @@ test.describe('quiet hours (P2-E14-05b)', () => {
     const win = await windowAroundNow(w);
     await openFromPalette(w, 'quiet hours', 'attention.quietHours');
     await expect(quietDialog(w)).toBeVisible();
+    // Wait for MAIN's answer before typing. The dialog seeds its fields from it
+    // once, and while it says "cannot tell" that answer has not landed — typing
+    // first is a race in the spec, not in the product (the dialog will not
+    // overwrite a touched field), but a spec that races is a spec that flakes.
+    await expect(w.locator('[data-quiet-status]')).toContainText('Quiet hours are off', {
+      timeout: 10_000,
+    });
     await quietField(w, 'start').fill(win.start);
     await quietField(w, 'end').fill(win.end);
     await quietField(w, 'enabled').click();
@@ -263,6 +270,9 @@ test.describe('quiet hours (P2-E14-05b)', () => {
       return { start: hhmm(new Date(now + 4 * 3600_000)), end: hhmm(new Date(now + 6 * 3600_000)) };
     });
     await openFromPalette(w, 'quiet hours', 'attention.quietHours');
+    await expect(w.locator('[data-quiet-status]')).toContainText('Quiet hours are off', {
+      timeout: 10_000,
+    });
     await quietField(w, 'start').fill(away.start);
     await quietField(w, 'end').fill(away.end);
     await quietField(w, 'enabled').click();
