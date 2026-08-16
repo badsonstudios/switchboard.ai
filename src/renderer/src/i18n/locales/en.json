@@ -308,7 +308,12 @@
       "both": "SM"
     },
     "openInViewer": "Open {file} in the document viewer",
-    "openInViewerIcon": "↗"
+    "openInViewerIcon": "↗",
+    "layoutLabel": "How to show this diff",
+    "sideBySide": "Side by side",
+    "inline": "Inline",
+    "tooNarrow": "Side by side — this pane is too narrow for two columns, so the diff is shown inline until you widen it",
+    "tooNarrowNote": "Too narrow for two columns"
   },
   "document": {
     "rendered": "Rendered",
@@ -577,6 +582,7 @@
     "toggleRail": "Toggle the sessions rail",
     "openFile": "Open file… — read a file in the document viewer",
     "toggleTabRows": "Toggle tabs on multiple rows",
+    "toggleDiffLayout": "Toggle side-by-side / inline diff",
     "openFind": "Find in the focused session",
     "openPalette": "Show all commands",
     "goToSession": "Go to {title}",

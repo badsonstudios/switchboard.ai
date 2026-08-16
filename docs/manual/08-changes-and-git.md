@@ -22,10 +22,29 @@ to your files: a list of changed files with a badge for each —
 | **S** | Staged |
 | **SM** | Staged, with further unstaged changes |
 
-Click a file to see it side by side, before and after.
+Click a file to see it before and after.
 
 When there's nothing to show you'll see **Working tree clean**, or **Not a git
 repository** if that's the situation.
+
+## Side by side, or inline
+
+Above the diff there's a pair of buttons: **Side by side** shows the old file
+and the new one in two columns; **Inline** stacks the changes in a single
+column, with removed lines above the ones that replaced them.
+
+Side by side is the default. Your choice applies to every Changes tab — this
+session's and every other one's, including any in a popped-out window — and
+it's remembered, so the app comes back the way you left it. You can also
+change it from the command palette (**Ctrl+K** / **⌘K**) with *Toggle
+side-by-side / inline diff*.
+
+One exception, and only for genuinely tiny panes: squeeze the Changes tab below
+about 400 pixels and two columns would hold roughly 18 characters each, which
+isn't a diff. Below that width it's drawn inline whatever you chose, and the
+tab tells you so — *Too narrow for two columns*. The button stays selected;
+widen the card, hide the sessions rail with **Ctrl+B**, or pop the session out
+into its own window, and the second column comes back on its own.
 
 ## Syntax colouring
 

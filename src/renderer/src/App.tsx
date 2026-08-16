@@ -67,6 +67,7 @@ import {
 } from './lib/focus-policy';
 import { buildIdentity } from '../../shared/build-identity';
 import { applyTabRows, loadTabRows, syncDocumentFlags, toggleTabRows } from './lib/tab-rows';
+import { toggleDiffLayout } from './lib/diff-layout';
 import { openPopoutWindows, subscribePopoutWindows } from './lib/popout-windows';
 import { openFindBar } from './lib/find-bar-state';
 import { setDocumentOpener } from './lib/document-open';
@@ -1028,6 +1029,12 @@ export function App(): React.JSX.Element {
           },
           toggleTabRows: () => {
             toggleTabRows();
+          },
+          // Every open Changes tab, in this window and in any popout, reads
+          // the one workspace value — so this needs no card and takes none
+          // (#532, lib/diff-layout).
+          toggleDiffLayout: () => {
+            toggleDiffLayout();
           },
           jumpToNextAttention,
           openAbout: () => setAboutOpen(true),

@@ -538,6 +538,11 @@ mark[data-feed-match-current] {
 .collapsed-row:focus-visible,
 .event-open:focus-visible,
 .event-dismiss:focus-visible,
+/* the small chips in the document viewer's header and the Changes tab's
+ * toolbar — both were taking Chromium's default ring, which is not "the same
+ * ring" §5.32 rule 4 names (#532, drive-by for `.doc-btn`) */
+.doc-btn:focus-visible,
+.diff-btn:focus-visible,
 [data-vtab]:focus-visible {
   /* outline only — deliberately NOT border-radius. Chromium's outline already
    * follows whatever radius the element has, and these controls have five
@@ -985,7 +990,29 @@ mark[data-feed-match-current] {
 .doc-modes {
   display: flex;
 }
-.doc-btn {
+/* The Changes tab's side-by-side / inline pair (#532). Its own class so the
+ * pane does not reach into the document viewer's chrome, but deliberately the
+ * SAME chip as `.doc-btn`: two "which way do you want to read this file"
+ * toggles in one app that looked different would read as two features. */
+.diff-toolbar {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 4px 6px;
+  border-block-end: 1px solid var(--border);
+  /* the editor beside it is `flex: 1` with a zero basis and will happily take
+   * every pixel; without this the toolbar is what a short pane squashes */
+  flex: 0 0 auto;
+}
+.diff-narrow-note {
+  margin-inline-end: auto; /* pushes the buttons back to the trailing edge */
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 10px;
+}
+.doc-btn,
+.diff-btn {
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -995,14 +1022,17 @@ mark[data-feed-match-current] {
   padding: 2px 6px;
   cursor: pointer;
 }
-.doc-btn:hover:not(:disabled) {
+.doc-btn:hover:not(:disabled),
+.diff-btn:hover:not(:disabled) {
   background: var(--chip);
 }
-.doc-btn:disabled {
+.doc-btn:disabled,
+.diff-btn:disabled {
   opacity: 0.45;
   cursor: default;
 }
-.doc-btn[aria-pressed='true'] {
+.doc-btn[aria-pressed='true'],
+.diff-btn[aria-pressed='true'] {
   background: var(--chip);
   font-weight: 700;
 }

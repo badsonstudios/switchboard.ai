@@ -35,6 +35,7 @@ function noopDeps(): CommandDeps {
     openPalette: () => {},
     openFind: () => {},
     toggleTabRows: () => {},
+    toggleDiffLayout: () => {},
     jumpToNextAttention: () => {},
     openAbout: () => {},
     checkForUpdates: () => {},
