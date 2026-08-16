@@ -434,7 +434,7 @@ refusal can arrive, not everywhere it cannot.
 | `settings.read` / `.write` | preferences, notification prefs, preflight |
 | `workspace.read` / `.write` | layout and ui blob |
 | `groups.read` / `.write` | session groups |
-| `app.window` | display geometry, popout movement |
+| `app.window` | display geometry, popout movement, and the right-click menu's labels (#526) — note the labels are one **app-wide** setting, applied to every window, last writer wins |
 | `environment.probe` | runs the CLI to read its version; stats the user's home config |
 | `fs.probe` | existence/type of an arbitrary caller-supplied path |
 | `fs.read` | the **contents** of a file, scope-checked and size-capped in main |

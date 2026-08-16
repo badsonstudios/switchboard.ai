@@ -159,6 +159,22 @@ The box at the bottom sends straight to the real Claude Code session:
 Under the box is a row showing this session's **autonomy mode** (click to
 cycle) and the **model** it last used.
 
+### Right-click menus
+
+**Right-click in the prompt box** for **Cut**, **Copy**, **Paste** and **Select
+All**. Items that would do nothing are greyed out — Cut and Copy with nothing
+selected, Paste with an empty clipboard. Pasting from the menu is the same as
+pressing Ctrl+V, pictures included: a screenshot pasted this way becomes the
+same chip described below.
+
+**Right-click text you've selected in the conversation** — or in a document —
+for **Copy**. There is no Cut or Paste there: it isn't text you can edit.
+
+The menus work in popped-out session windows too. Right-clicking in the
+**Terminal** tab does nothing, deliberately: the terminal belongs to the CLI
+and has its own habits, so switchboard.ai stays out of it. Use the Terminal's
+own keys, or the Session tab, to move text around there.
+
 ### Attaching files: paste a picture, or drag anything in
 
 Two ways to send Claude a file along with your question.
