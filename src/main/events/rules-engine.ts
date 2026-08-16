@@ -157,13 +157,29 @@ export interface RulePlan {
   quiet: boolean;
 }
 
-export class RulesEngine {
-  /** disambiguates two records written in the same millisecond */
-  private seq = 0;
+/**
+ * Disambiguates two suppression records written in the same millisecond.
+ *
+ * MODULE level, not per engine: a second window, a test harness or any future
+ * per-workspace engine would each start their own counter at zero and collide
+ * on a shared millisecond, and `clearSuppressed` filters by id — a duplicate
+ * would clear the wrong digest row. The store refuses a duplicate id as a
+ * second line of defence, which is also what covers a clock stepped backwards.
+ */
+let suppressionSeq = 0;
 
+export class RulesEngine {
   constructor(private readonly deps: RulesEngineDeps) {}
 
-  /** What WOULD run for this event — exposed for tests and for #422's preview. */
+  /**
+   * What WOULD run for this event, without running it — for tests and for
+   * #422's preview.
+   *
+   * **`actions` means "will run", not "matched", since P2-E14-05b.** Anything
+   * quiet hours held is in `held`, not in `actions`. A preview that renders
+   * `actions` alone will show an empty plan at 3am and be telling the truth
+   * about tonight while looking like a broken rule — render both.
+   */
   plan(event: FeedEvent): RulePlan {
     const trigger: RuleTrigger = {
       kind: event.kind,
@@ -236,7 +252,7 @@ export class RulesEngine {
     try {
       const at = (trigger.now ?? new Date()).getTime();
       this.deps.onSuppressed?.({
-        id: `${at}-${++this.seq}`,
+        id: `${at}-${++suppressionSeq}`,
         at,
         kind: trigger.kind,
         cardId: trigger.cardId,

@@ -2182,3 +2182,48 @@ describe('PersistedSession.transport survives quit -> relaunch (P2-E18-17)', () 
     expect(st.listSessions()[0].transport).toBe('pty');
   });
 });
+
+// Found in review of P2-E14-05b: the sanitizer's all-or-nothing rule was doing
+// the right thing silently, which #344 says a repair may not do — and it was
+// still letting an EQUAL pair through, which is the exact "looks configured,
+// silences nothing" failure the item set out to close.
+describe('the quiet window is all-or-nothing, and says when it dropped one', () => {
+  const load = (notifications: unknown): { prefs: ReturnType<WorkspaceStore['getNotificationPrefs']>; notes: string[] } => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ version: CURRENT_VERSION, notifications }));
+    const notes: string[] = [];
+    const st = makeStore(file, {
+      warn: (m: string) => void notes.push(m),
+      info: () => {},
+      error: () => {},
+      debug: () => {},
+    } as unknown as Logger);
+    st.load();
+    return { prefs: st.getNotificationPrefs(), notes };
+  };
+
+  it('refuses an equal pair — a zero-length window, not a 24-hour one', () => {
+    const { prefs } = load({ enabled: true, quietStart: '09:00', quietEnd: '09:00' });
+    expect(prefs.quietStart).toBeUndefined();
+    expect(prefs.quietEnd).toBeUndefined();
+  });
+
+  it('drops a lone end, and NAMES the good half it took with it (#344)', () => {
+    const { prefs, notes } = load({ enabled: true, quietStart: '22:00' });
+    expect(prefs.quietStart).toBeUndefined();
+    expect(notes.some((n) => n.includes('notification settings'))).toBe(true);
+  });
+
+  it('names both ends when one is unparseable, because both are lost', () => {
+    const { prefs, notes } = load({ enabled: true, quietStart: '22:00', quietEnd: '10pm' });
+    expect(prefs.quietStart).toBeUndefined();
+    expect(prefs.quietEnd).toBeUndefined();
+    expect(notes.some((n) => n.includes('notification settings'))).toBe(true);
+  });
+
+  it('a good pair is kept and says nothing', () => {
+    const { prefs, notes } = load({ enabled: true, quietStart: '22:00', quietEnd: '07:00' });
+    expect(prefs).toMatchObject({ quietStart: '22:00', quietEnd: '07:00' });
+    expect(notes.filter((n) => n.includes('notification settings'))).toEqual([]);
+  });
+});

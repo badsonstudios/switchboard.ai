@@ -15,7 +15,7 @@
 // differently is a bug report waiting to happen.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import type { QuietState } from '../../../shared/suppressed';
+import { QuietState, isQuietTime, isUsableQuietWindow } from '../../../shared/quiet-hours';
 
 export interface QuietHoursDialogProps {
   open: boolean;
@@ -31,8 +31,14 @@ export interface QuietHoursDialogProps {
   onSet: (window: { start: string; end: string } | null) => void;
 }
 
-/** `"22:00"` — what an `<input type="time">` emits and the store accepts. */
-const isTime = (s: string): boolean => /^\d{1,2}:\d{2}$/.test(s);
+/**
+ * `"22:00"` — what an `<input type="time">` emits and the store accepts.
+ *
+ * The SAME predicate main validates with (`events/rules.ts`), imported rather
+ * than re-written: a looser copy here would accept `99:99`, write it, and have
+ * main drop it — leaving the field reverting with nothing on screen to say why.
+ */
+const isTime = isQuietTime;
 
 const DEFAULT_START = '22:00';
 const DEFAULT_END = '07:00';
@@ -46,18 +52,40 @@ export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Elemen
   // store and re-render the field out from under the user's next keystroke.
   const [start, setStart] = React.useState(DEFAULT_START);
   const [end, setEnd] = React.useState(DEFAULT_END);
+  /** have the drafts taken main's answer for THIS opening yet? */
+  const seeded = React.useRef(false);
 
   React.useEffect(() => {
-    if (!props.open) return;
-    setStart(configured?.start ?? DEFAULT_START);
-    setEnd(configured?.end ?? DEFAULT_END);
+    if (!props.open) {
+      seeded.current = false;
+      return;
+    }
     returnFocusTo.current = document.activeElement as HTMLElement | null;
     dialog.current?.focus();
-    // Deliberately keyed on `open` alone (the exhaustive-deps plugin is not
-    // installed in this repo, so this is a convention, not a suppression):
-    // re-seeding whenever main answers would overwrite what the user is typing
-    // the moment the write lands.
   }, [props.open]);
+
+  /**
+   * Seed the drafts from main's answer — ONCE per opening, and not before the
+   * answer arrives.
+   *
+   * Both halves of that matter, and getting either wrong is a data-loss bug
+   * rather than a cosmetic one:
+   *
+   * - **Not on `open` alone.** `App` fetches the state when the dialog opens,
+   *   so `props.state` is null on the first render. Seeding then would show
+   *   22:00–07:00 to someone whose window is 23:00–06:00 — and the moment they
+   *   nudged one field, the write-through below would send the OTHER field's
+   *   default and silently move a time they never touched.
+   * - **Only once.** Every write triggers a re-read, so re-seeding on each
+   *   answer would overwrite whatever the user was typing the instant their
+   *   previous keystroke landed.
+   */
+  React.useEffect(() => {
+    if (!props.open || seeded.current || props.state === null) return;
+    seeded.current = true;
+    setStart(props.state.window?.start ?? DEFAULT_START);
+    setEnd(props.state.window?.end ?? DEFAULT_END);
+  }, [props.open, props.state]);
 
   if (!props.open) return null;
 
@@ -68,12 +96,14 @@ export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Elemen
   };
 
   const on = configured !== null;
-  // Equal ends is an EMPTY window, not a 24-hour one, and the two are
-  // indistinguishable by looking — so it is refused here as well as in the
-  // store, with the reason on screen rather than a control that silently
-  // does nothing.
-  const sameEnds = isTime(start) && isTime(end) && start === end;
-  const usable = isTime(start) && isTime(end) && !sameEnds;
+  // Why the pair is unusable, if it is — `null` when it is fine. Both branches
+  // put a REASON on screen: a control that refuses silently is the thing this
+  // dialog is least allowed to be, since its whole subject is a feature you
+  // cannot see working. (An `<input type="time">` can be cleared to `''`, which
+  // is how `missing` happens.)
+  const problem: 'same' | 'missing' | null =
+    !isTime(start) || !isTime(end) ? 'missing' : start === end ? 'same' : null;
+  const usable = problem === null;
 
   const apply = (nextOn: boolean): void => {
     if (!nextOn) return props.onSet(null);
@@ -100,9 +130,10 @@ export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Elemen
           // there are two fields, both always valid or obviously not, and the
           // status line below reports what main actually stored — so there is
           // nothing a Save button would add except a state to forget to press.
+          // The SAME gate main's sanitizer applies, so a write that reaches it
+          // is never one it will silently drop.
           const next = id === 'start' ? { start: e.target.value, end } : { start, end: e.target.value };
-          if (on && isTime(next.start) && isTime(next.end) && next.start !== next.end)
-            props.onSet(next);
+          if (on && isUsableQuietWindow(next.start, next.end)) props.onSet(next);
         }}
         style={{
           background: 'var(--panel2)',
@@ -187,9 +218,12 @@ export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Elemen
             {timeField('start', start, setStart)}
             {timeField('end', end, setEnd)}
           </div>
-          {sameEnds && (
-            <span data-quiet-problem="same" style={{ fontSize: 11, color: 'var(--status-needs-input-ink)' }}>
-              {t('quiet.sameEnds')}
+          {problem && (
+            <span
+              data-quiet-problem={problem}
+              style={{ fontSize: 11, color: 'var(--status-needs-input-ink)' }}
+            >
+              {t(`quiet.problem.${problem}`)}
             </span>
           )}
           <span style={{ fontSize: 11, color: 'var(--faint)' }}>{t('quiet.overnightHint')}</span>

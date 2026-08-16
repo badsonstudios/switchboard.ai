@@ -134,6 +134,11 @@ describe('inQuietWindow — local wall clock, end exclusive', () => {
     const realTZ = process.env.TZ;
     // Node re-reads `process.env.TZ` for Dates created after it changes (v16+),
     // which is what makes a deterministic DST test possible at all.
+    //
+    // CAVEAT for whoever changes the vitest pool: the timezone cache is
+    // PROCESS-wide, and this restores it in `afterAll` — safe while files run
+    // one at a time per worker (the default), a cross-file flake vector the day
+    // two files share a process concurrently.
     beforeAll(() => {
       process.env.TZ = 'America/Chicago';
     });

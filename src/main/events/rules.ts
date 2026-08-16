@@ -23,6 +23,18 @@
 // would stop matching the moment the user restarted the session, which is
 // exactly the population the "notify when done" checkbox exists for.
 import type { FeedKind } from './feed';
+import {
+  QUIET_HOURS_MODES,
+  QuietHoursMode,
+  QuietWindow,
+  inQuietWindow,
+} from '../../shared/quiet-hours';
+
+// Re-exported so main-side callers keep one import for "the rules vocabulary".
+// The definitions live in `shared/` because the renderer validates against the
+// same predicate the evaluator reads (`shared/quiet-hours.ts`).
+export type { QuietHoursMode, QuietWindow };
+export { QUIET_HOURS_MODES, inQuietWindow, isQuietTime, isUsableQuietWindow } from '../../shared/quiet-hours';
 
 /** Which feed event a rule listens for; `any` matches every attention event. */
 export type RuleEventMatch = FeedKind | 'any';
@@ -145,60 +157,6 @@ export function audienceOf(type: string): ActionAudience {
   return ACTION_AUDIENCE[type] ?? 'person';
 }
 
-/**
- * A quiet-hours window: local wall-clock, `"HH:MM"` 24h, end exclusive.
- *
- * **Wall clock, not instants** (§5.9). "22:00–07:00" means those numbers on the
- * clock on the wall, whatever the calendar is doing underneath — so it needs no
- * timezone field, follows the machine if the user flies somewhere, and resolves
- * across a DST boundary by the same rule a person would use reading a clock:
- * the hour that repeats in autumn is quiet twice, and the hour that does not
- * exist in spring is simply never inside the window. That is the honest reading
- * of what the user typed, and it is the only one that needs no explanation in
- * the manual.
- *
- * `start === end` is not a 24-hour window — it is an empty one, and the pref
- * writer refuses it, because a user cannot tell those two apart by looking.
- */
-export interface QuietWindow {
-  /** "HH:MM" 24h local */
-  start: string;
-  end: string;
-}
-
-/** Minutes since local midnight, or null if it is not an `"HH:MM"` at all. */
-function minutesOfDay(s: string): number | null {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(s);
-  if (!m) return null;
-  const h = Number(m[1]);
-  const min = Number(m[2]);
-  return h >= 0 && h < 24 && min >= 0 && min < 60 ? h * 60 + min : null;
-}
-
-/**
- * Is this a wall-clock time a quiet window can use? `"22:00"`, not `"10pm"`.
- *
- * Exported because the pref WRITER has to refuse what the evaluator cannot
- * read: a `quietStart` of `"night"` that survived into the workspace file would
- * show as configured in the dialog and silence nothing at all, which is the
- * worst of the three possible outcomes.
- */
-export function isQuietTime(s: unknown): s is string {
-  return typeof s === 'string' && minutesOfDay(s) !== null;
-}
-
-/** Is `now` (a LOCAL Date) inside the window? Windows crossing midnight work. */
-export function inQuietWindow(win: QuietWindow | null | undefined, now: Date): boolean {
-  if (!win) return false;
-  const start = minutesOfDay(win.start);
-  const end = minutesOfDay(win.end);
-  if (start === null || end === null || start === end) return false;
-  // `getHours`/`getMinutes` are local by definition — the wall clock, which is
-  // exactly what was configured. Never `getUTCHours`.
-  const cur = now.getHours() * 60 + now.getMinutes();
-  return start < end ? cur >= start && cur < end : cur >= start || cur < end;
-}
-
 export interface Rule {
   id: string;
   /** which event fires it */
@@ -233,11 +191,6 @@ export interface Rule {
    */
   source?: string;
 }
-
-/** The per-rule quiet-hours override (`Rule.quietHours`). */
-export type QuietHoursMode = 'obey' | 'ignore';
-
-export const QUIET_HOURS_MODES: readonly QuietHoursMode[] = ['obey', 'ignore'];
 
 /** What just happened, resolved into the things a rule asks about. */
 export interface RuleTrigger {

@@ -110,19 +110,3 @@ export function isSaneSuppressedEvent(v: unknown): v is SuppressedEvent {
     SUPPRESSION_REASONS.includes(x.reason as SuppressionReason)
   );
 }
-
-/**
- * What the notifications settings surface shows about quiet hours right now.
- *
- * The `heldCount` is here for one honest reason: a feature whose entire job is
- * to do nothing is a feature the user cannot tell is working. A number that
- * goes up proves it did.
- */
-export interface QuietState {
-  /** the configured window, or null */
-  window: { start: string; end: string } | null;
-  /** is the window open at this instant? */
-  active: boolean;
-  /** how many events are on the held list */
-  heldCount: number;
-}

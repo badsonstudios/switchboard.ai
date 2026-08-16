@@ -43,7 +43,7 @@ import {
   inQuietWindow,
   visibilityAcross,
 } from './events/rules';
-import type { QuietState } from '../shared/suppressed';
+import type { QuietState } from '../shared/quiet-hours';
 import { RuleActionRegistry, RulesEngine } from './events/rules-engine';
 import {
   DECIDE_BUTTONS,

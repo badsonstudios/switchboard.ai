@@ -1,6 +1,7 @@
 // Notifications (P1-E4-02, §5.9): the always-on signal — sound + taskbar flash
-// on attention events — plus the global gate every channel sits behind (the
-// master toggle and quiet hours). Prefs persist in the workspace store. Speed
+// on attention events — plus the master toggle every channel sits behind.
+// (Quiet hours used to sit here too; since P2-E14-05b they are a rule
+// condition — see the note below.) Prefs persist in the workspace store. Speed
 // budget: hook -> feed -> here is milliseconds (S-06: Stop lands ~30ms after
 // turn end).
 //
@@ -65,9 +66,11 @@ export const DEFAULT_PREFS: NotificationPrefs = { enabled: true, osToasts: false
 /**
  * The prefs' quiet window as the rules engine wants it, or null.
  *
- * One converter, so "is quiet hours configured?" has a single answer: both
- * fields, both parseable, and not equal (`inQuietWindow` refuses that pair —
- * an empty window and a 24-hour one look identical to a reader).
+ * Shape only — the CONTENT is validated where it is used and where it is
+ * written: `inQuietWindow` refuses anything that is not two parseable, unequal
+ * times, and the store's sanitizer refuses to persist such a pair in the first
+ * place (`isUsableQuietWindow`). One predicate, applied at both ends, rather
+ * than a third copy of it here.
  */
 export function quietWindowOf(prefs: NotificationPrefs): QuietWindow | null {
   if (!prefs.quietStart || !prefs.quietEnd) return null;

@@ -40,7 +40,7 @@ import { installAnnouncer, setAudioMuted, sharedAnnouncer } from './lib/announce
 import { DEFAULT_SOUND } from '../../shared/sounds';
 import { PushSetupDialog } from './components/PushSetupDialog';
 import { QuietHoursDialog } from './components/QuietHoursDialog';
-import type { QuietState } from '../../shared/suppressed';
+import type { QuietState } from '../../shared/quiet-hours';
 import { unavailablePushConfig } from '../../shared/push';
 import type {
   PushConfig,
@@ -600,6 +600,11 @@ export function App(): React.JSX.Element {
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, []);
   const openQuietHours = React.useCallback(() => {
+    // Cleared FIRST, so the dialog's one-shot seeding cannot take a stale
+    // answer from the last time it was open: null means "main has not said
+    // yet", and the dialog waits for the real one rather than showing default
+    // times over somebody's configured window.
+    setQuietState(null);
     setQuietOpen(true);
     refreshQuiet();
   }, [refreshQuiet]);

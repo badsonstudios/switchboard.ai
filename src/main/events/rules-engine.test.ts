@@ -407,12 +407,36 @@ describe('RulesEngine and quiet hours', () => {
   });
 
   it('logs the quiet flag and the held channels — the line the e2e reads', () => {
-    const h = quietHarness(at(3));
-    h.rules.push(everything);
-    h.engine.handle(event('done'));
-    expect(h.log.lines.some(([lvl, m]) => lvl === 'info' && m === 'notification rules fired')).toBe(
-      true
-    );
+    // The e2e asserts on `quiet` and `held` by name. Asserting only that SOME
+    // info line exists would pass with both fields deleted — which is a test
+    // whose failure mode is a red e2e ten minutes later.
+    const fields: Array<Record<string, unknown>> = [];
+    const log = {
+      info: (_m: string, f?: Record<string, unknown>) => void fields.push(f ?? {}),
+      warn: () => {},
+      error: () => {},
+      debug: () => {},
+    } as unknown as Logger;
+    const registry = new RuleActionRegistry();
+    registry.register(ACTION_WEBHOOK, () => {});
+    registry.register(ACTION_OS_TOAST, () => {});
+    new RulesEngine({
+      getRules: () => [everything],
+      getDefaultRules: () => [],
+      cardIdFor: () => CARD,
+      getVisibility: () => 'hidden',
+      titleFor: () => 'TradingApp',
+      bodyFor: (e) => e.kind,
+      getQuietWindow: () => NIGHT,
+      now: () => at(3),
+      registry,
+      log,
+    }).handle(event('done'));
+    expect(fields).toHaveLength(1);
+    expect(fields[0].quiet).toBe(true);
+    expect(String(fields[0].held).split(',')).toContain(ACTION_OS_TOAST);
+    expect(String(fields[0].held).split(',')).not.toContain(ACTION_WEBHOOK);
+    expect(fields[0].ran).toBe(1); // the webhook did go
   });
 
   it('an event whose every action is held still gets a record and a log line', () => {

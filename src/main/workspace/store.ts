@@ -33,7 +33,8 @@ import {
   clampSuppressed,
   isSaneSuppressedEvent,
 } from '../../shared/suppressed';
-import { Rule, isQuietTime, isSaneRule } from '../events/rules';
+import { Rule, isSaneRule } from '../events/rules';
+import { isUsableQuietWindow } from '../../shared/quiet-hours';
 
 export interface PersistedSession {
   id: string;
@@ -964,6 +965,11 @@ export class WorkspaceStore {
    */
   recordSuppressed(e: SuppressedEvent): void {
     if (!isSaneSuppressedEvent(e)) return; // an unloadable record is not worth writing
+    // Ids must stay unique because #483 CLEARS BY ID — a duplicate would take
+    // the wrong digest row with it. The engine's counter makes that true in the
+    // ordinary case; this covers the ones it cannot see (a clock stepped
+    // backwards, a record replayed).
+    if (this.state.suppressed.some((s) => s.id === e.id)) return;
     this.state.suppressed.push(clampSuppressed(e));
     if (this.state.suppressed.length > SUPPRESSED_CAP)
       this.state.suppressed.splice(0, this.state.suppressed.length - SUPPRESSED_CAP);
@@ -1464,20 +1470,21 @@ function sanitizeNotifications(n: unknown): Repaired<NotificationPrefsState> {
   if (typeof n !== 'object' || n === null || Array.isArray(n))
     return { value: { enabled: true }, repaired: n == null ? [] : ['notifications'] };
   const x = n as Partial<NotificationPrefsState>;
+  const usable = isUsableQuietWindow(x.quietStart, x.quietEnd);
   return {
     value: {
       enabled: x.enabled !== false,
       osToasts: x.osToasts === true, // default OFF
       sounds: x.sounds === true, // default OFF (P2-E14-05a)
       speak: x.speak === true, // default OFF
-      // Both ends, or neither: half a window is not a window, and a `quietEnd`
-      // sitting alone in the file would read as "configured" to anyone
-      // inspecting it while silencing nothing. Each end must also be a time
-      // this build can PARSE (P2-E14-05b) — `"10pm"` used to survive here and
-      // then quietly disable the feature it looked like it enabled.
-      ...(isQuietTime(x.quietStart) && isQuietTime(x.quietEnd)
-        ? { quietStart: x.quietStart, quietEnd: x.quietEnd }
-        : {}),
+      // The window is all-or-nothing (P2-E14-05b), and the test is the SAME one
+      // the dialog and the evaluator use: both ends present, both parseable,
+      // and not equal. Half a window is not a window — a `quietEnd` sitting
+      // alone would read as "configured" to anyone inspecting the file while
+      // silencing nothing. Neither is `"10pm"`, which used to survive here, nor
+      // an equal pair, which is a window of zero length wearing the costume of
+      // a 24-hour one.
+      ...(usable ? { quietStart: x.quietStart as string, quietEnd: x.quietEnd as string } : {}),
     },
     repaired: [
       ...badFields(n, [
@@ -1488,11 +1495,17 @@ function sanitizeNotifications(n: unknown): Repaired<NotificationPrefsState> {
         ['quietStart', 'string'],
         ['quietEnd', 'string'],
       ]),
-      // A string that is not "HH:MM" is not caught by the type check above, and
-      // dropping it silently is exactly the repair #344 says must be named.
-      ...(['quietStart', 'quietEnd'] as const).filter(
-        (k) => typeof x[k] === 'string' && !isQuietTime(x[k])
-      ),
+      // Everything the all-or-nothing rule above THREW AWAY, named — #344's
+      // rule is that no repair is silent, and the two interesting cases are
+      // both silent without this: a string that is not "HH:MM" (which
+      // `badFields` cannot see, since it IS a string), and a perfectly good
+      // time dropped because its partner was missing or unusable.
+      //
+      // Cannot double-report: `badFields` fires only for a non-string, and the
+      // filter below requires a string.
+      ...(usable
+        ? []
+        : (['quietStart', 'quietEnd'] as const).filter((k) => typeof x[k] === 'string')),
     ],
   };
 }

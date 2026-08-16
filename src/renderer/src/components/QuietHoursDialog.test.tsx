@@ -17,7 +17,7 @@ import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { QuietHoursDialog } from './QuietHoursDialog';
-import type { QuietState } from '../../../shared/suppressed';
+import type { QuietState } from '../../../shared/quiet-hours';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -123,6 +123,67 @@ describe('the quiet-hours dialog', () => {
     await type(field('end'), '22:00');
     expect(handlers.onSet).not.toHaveBeenCalled();
     expect(host.querySelector('[data-quiet-problem="same"]')).not.toBeNull();
+  });
+
+  it('says why when a time box has been cleared, rather than refusing in silence', async () => {
+    // `<input type="time">` can be emptied. Found in review: the checkbox sprang
+    // back with nothing on screen — the exact failure the "same times" message
+    // exists to prevent, one branch over.
+    await render(true, state({ window: null }));
+    await type(field('start'), '');
+    expect(host.querySelector('[data-quiet-problem="missing"]')).not.toBeNull();
+    // …and turning quiet hours ON is refused rather than silently doing nothing
+    await click(field('enabled'));
+    expect(handlers.onSet).not.toHaveBeenCalled();
+  });
+
+  it('rejects a time main would reject, rather than writing one that vanishes', async () => {
+    // The renderer used to carry its own looser regex, so `99:99` was written
+    // here and dropped there — the field reverting with no explanation.
+    await render(true);
+    await type(field('end'), '99:99');
+    expect(handlers.onSet).not.toHaveBeenCalled();
+  });
+
+  // ── the seeding blocker (found in review) ────────────────────────────────
+  //
+  // `App` fetches the state when the dialog opens, so `props.state` is null on
+  // the first render. Seeding the drafts then showed 22:00-07:00 over somebody
+  // else's configured window — and the write-through would then send that
+  // default as the OTHER end the moment they nudged one field, silently moving
+  // a time they never touched.
+  describe('seeding when main answers late', () => {
+    it('waits for the answer instead of showing defaults over a real window', async () => {
+      await render(true, null); // main has not answered yet
+      await render(true, state({ window: { start: '23:00', end: '06:00' } }));
+      expect(field('start').value).toBe('23:00');
+      expect(field('end').value).toBe('06:00');
+    });
+
+    it('and then a nudge to one end leaves the other alone', async () => {
+      await render(true, null);
+      await render(true, state({ window: { start: '23:00', end: '06:00' } }));
+      await type(field('end'), '05:00');
+      expect(handlers.onSet).toHaveBeenLastCalledWith({ start: '23:00', end: '05:00' });
+    });
+
+    it('does not re-seed on later answers, which would eat what is being typed', async () => {
+      await render(true, null);
+      await render(true, state({ window: { start: '23:00', end: '06:00' } }));
+      await type(field('start'), '21:00');
+      // the write triggers a re-read in App; main answers with the OLD window
+      // for a frame. The draft must survive it.
+      await render(true, state({ window: { start: '23:00', end: '06:00' } }));
+      expect(field('start').value).toBe('21:00');
+    });
+
+    it('re-seeds on the NEXT opening', async () => {
+      await render(true, state({ window: { start: '23:00', end: '06:00' } }));
+      await render(false, null);
+      await render(true, null);
+      await render(true, state({ window: { start: '01:00', end: '02:00' } }));
+      expect(field('start').value).toBe('01:00');
+    });
   });
 
   it('writes nothing while quiet hours are OFF, however the times are edited', async () => {

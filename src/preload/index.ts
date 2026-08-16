@@ -24,7 +24,7 @@ import type {
   PushSendResult,
   PushWriteResult,
 } from '../shared/push';
-import type { QuietState } from '../shared/suppressed';
+import type { QuietState } from '../shared/quiet-hours';
 import type { AudioChannelName, AudioPlayCue, AudioSpeakCue, CardSound } from '../shared/sounds';
 import { AUDIO_FAILED_CHANNEL, AUDIO_PLAY_CHANNEL, AUDIO_SPEAK_CHANNEL } from '../shared/sounds';
 
