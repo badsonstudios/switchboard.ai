@@ -6,7 +6,8 @@
 > # ▶▶ START HERE — ✅ #555 DONE → PR #560 AWAITING DAN (2026-08-16)
 >
 > **PR: https://github.com/badsonstudios/switchboard.ai/pull/560** —
-> `feature/555-feed-tail-after-dock-move` @ e85dacf. Dan reviews and merges.
+> `feature/555-feed-tail-after-dock-move` @ dd557c9. **CI GREEN 4/4** (unit +
+> e2e on windows-latest and ubuntu-latest). Dan reviews and merges.
 >
 > **NEXT UP:** the rest of run 20's wave 1 from the v0.6.0 dogfood — **#557**
 > (find bar-only, no results list) · **#495**-verify (fix with #496 + #557
@@ -16,13 +17,13 @@
 > #521-layer-1, #488 #490 #491 #494 #497-#499 #502-#504 #506 #508 #509 #512
 > #517 #518 #538 #539 #543 #544 #546 #550. Dan-gated: #528/#529 sittings.
 >
-> **⚠️ PRE-EXISTING FAILURE ON MAIN, NOT FROM #555, NOT YET TICKETED:**
-> `e2e/document-peek.spec.ts:471` ("quitting with a viewer in its OWN window
-> leaves no empty window behind") fails on a CLEAN tree at main — verified by
-> stashing every change and rebuilding, and it fails on every run rather than
-> intermittently (so not the #538/#550 flake class). Full-suite result on the
-> #555 branch was 313 passed / 3 skipped / 1 failed, that one. **Ask Dan
-> whether to file it.**
+> **`document-peek.spec.ts:471` — LOCAL TO THIS MACHINE, corrected, not
+> ticketed.** It failed on every local run during #555 (313 passed / 3 skipped
+> / 1 failed) including on a CLEAN stashed tree at main, so it was first called
+> pre-existing — but **CI ran it green on both platforms**, which rules that
+> out. Likeliest cause: leftover Electron window state from the #555 probe
+> runs, which launched and killed a lot of popout windows. If it reappears in
+> a session that ran no popout probes, THEN it is real and wants a ticket.
 >
 > # (the #555 investigation record follows)
 > # 🔧 #555 — DIAGNOSIS (kept: the measurements cost the most)
