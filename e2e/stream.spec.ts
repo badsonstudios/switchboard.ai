@@ -7,7 +7,7 @@
 // Uses the stream-json fake (`SWITCHBOARD_FAKE_PROVIDER=stream`), so it needs
 // no `claude` login and no network — the same property the PTY fake gives the
 // other 98 specs.
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -26,6 +26,27 @@ function tempProjectFolder(): string {
   const d = registerTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'sb-stream-e2e-')));
   fs.writeFileSync(path.join(d, 'README.md'), '# stream\n');
   return d;
+}
+
+/**
+ * "No permission request ever reached the attention queue."
+ *
+ * Read off the events TAB rather than the drawer's rows (P2-E14-01): the drawer
+ * is collapsed by default now, so counting rows in it would pass for the wrong
+ * reason — there would be nothing in the DOM to count whatever the feed thinks.
+ * Opening it is worse here than elsewhere, because it overlays the right edge
+ * of the workspace and these tests go on to click buttons underneath it.
+ *
+ * The tab is always visible and always current, and `data-hottest` answers this
+ * exact question: `needs-permission` is the TOP of the queue's priority ladder
+ * (lib/queue.ts), so if one had arrived it would be the hottest thing there —
+ * no other kind can outrank it and hide it.
+ */
+async function noPermissionInQueue(w: Page): Promise<void> {
+  await expect(w.getByTestId('events-tab')).not.toHaveAttribute(
+    'data-hottest',
+    'needs-permission'
+  );
 }
 
 /**
@@ -1147,7 +1168,7 @@ test.describe('allow-all in Direct mode answers at the server (#319)', () => {
     }).toPass({ timeout: 20_000 });
     // and the baseline is clean again before anything is counted
     await expect(w.locator(permissionRow)).toHaveCount(0, { timeout: 20_000 });
-    await expect(w.locator('aside [data-event-kind="needs-permission"]')).toHaveCount(0);
+    await noPermissionInQueue(w);
 
     // 2. count every commit in which the rail claims this session needs
     //    permission. `attributes` matters and `characterData` does not: the
@@ -1184,7 +1205,7 @@ test.describe('allow-all in Direct mode answers at the server (#319)', () => {
     );
     expect(frames, 'the rail reported needs-permission during an auto-allowed call').toBe(0);
     // …and the same fact read off the other surface it would have reached.
-    await expect(w.locator('aside [data-event-kind="needs-permission"]')).toHaveCount(0);
+    await noPermissionInQueue(w);
     // no review bar was raised either: the request never left main
     await expect(w.getByText(/sensitive file/)).toHaveCount(0);
   });
@@ -1256,7 +1277,7 @@ test.describe('a hook Notification cannot fake a permission on Direct (#313)', (
     await w.waitForTimeout(3_000); // nothing else will ever arrive on this turn
     await expect(w.locator(row('needs-permission'))).toHaveCount(0);
     // and nothing rang the bell on the way past, either
-    await expect(w.locator('aside [data-event-kind="needs-permission"]')).toHaveCount(0);
+    await noPermissionInQueue(w);
 
     // 2. THE CONTROL, and the reason the absence above means anything. The same
     //    command, the same forwarder, the same listener — one word of payload
@@ -1277,7 +1298,7 @@ test.describe('a hook Notification cannot fake a permission on Direct (#313)', (
     await expect(w.locator(row('working'))).toHaveCount(1, { timeout: 20_000 });
     await w.waitForTimeout(3_000);
     await expect(w.locator(row('needs-permission'))).toHaveCount(0);
-    await expect(w.locator('aside [data-event-kind="needs-permission"]')).toHaveCount(0);
+    await noPermissionInQueue(w);
   });
 });
 

@@ -22,6 +22,7 @@ import {
   persistedUi,
   readWorkspaceFile,
   writeWorkspaceFile,
+  openEventsDrawer,
 } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -214,7 +215,11 @@ test.describe('focus-stealing policy (E9-10)', () => {
       hook_event_name: 'Notification',
       message: 'Claude needs your permission to use Bash',
     });
-    // the event lands — the log still has it, and so does the rail
+    // the event lands — the log still has it, and so does the rail. The drawer
+    // is collapsed by default (P2-E14-01), and this test reads BOTH a presence
+    // and an absence off its rows, so it has to be open for either to mean
+    // anything.
+    await openEventsDrawer(w);
     await expect(eventRows(w)).toHaveCount(1, { timeout: 20_000 });
     // ...but nothing is next up, so Ctrl+Space has nowhere to go and the count
     // that enables it is zero

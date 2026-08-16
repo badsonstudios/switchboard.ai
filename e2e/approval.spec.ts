@@ -18,7 +18,13 @@
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
-import { hookPoster, launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
+import {
+  hookPoster,
+  launchApp,
+  LaunchedApp,
+  tempProjectFolder,
+  openEventsDrawer,
+} from './fixtures/app';
 
 function findFile(root: string, name: string, depth = 6): string | null {
   if (depth < 0) return null;
@@ -253,7 +259,11 @@ test.describe('[pty] inline approval bar (E10-04)', () => {
     expect(parseVerdict(verdict).hookSpecificOutput, 'the question was HELD').toBeUndefined();
     await expect(w.getByText('Allow AskUserQuestion?')).toHaveCount(0);
 
-    // the shipped machinery does the rest: an Events entry saying it needs you
+    // the shipped machinery does the rest: an Events entry saying it needs you.
+    // The drawer holding that entry is collapsed by default (P2-E14-01), so it
+    // is opened here — the row below is the whole point of the assertion, and
+    // it does not exist in the DOM until it is.
+    await openEventsDrawer(w);
     await expect(w.locator('aside').getByText('needs input')).toBeVisible({ timeout: 15_000 });
 
     // and answering it lets the turn resume

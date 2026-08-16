@@ -24,6 +24,7 @@ import { test, expect } from '@playwright/test';
 import {
   launchApp,
   LaunchedApp,
+  openEventsDrawer,
   readWorkspaceFile,
   tempProjectFolder,
   writeWorkspaceFile,
@@ -76,8 +77,12 @@ test.describe('display reconnect offer (E8-06)', () => {
           .map((x) => x.getBounds().x)
       );
     expect((await popoutX()).every((x) => x < 50_000)).toBe(true); // rescued near main
-    // no offer yet — a rescue alone must not nag
-    await expect(w.getByText('A saved monitor is back — restore its pop-out layout?')).toHaveCount(0);
+    // No offer yet — a rescue alone must not nag. Read off the events TAB
+    // rather than the offer's words: the drawer that holds it is collapsed by
+    // default now (P2-E14-01), so "the text is not on screen" would be true
+    // whether or not the app had decided to nag. The tab's notice marker is
+    // the app's own answer, and it is on screen either way.
+    await expect(w.getByTestId('events-tab')).not.toHaveAttribute('data-notice', 'true');
 
     // the synthetic display-added payload goes to the MAIN window's renderer
     const signalDisplays = () =>
@@ -89,8 +94,16 @@ test.describe('display reconnect offer (E8-06)', () => {
         main?.webContents.send('app:displaysChanged', areas);
       }, FAR);
 
-    // 4. the lost display "returns"
+    // 4. the lost display "returns". The offer reaches a SHUT drawer, so the
+    // marker on the tab is what tells you to go and look — this is the third
+    // of the notice slot's tenants proving that route (update.spec.ts and
+    // service-health.spec.ts prove the other two), which is the #425
+    // coordination note's requirement that they rehomed TOGETHER.
     await signalDisplays();
+    await expect(w.getByTestId('events-tab')).toHaveAttribute('data-notice', 'true', {
+      timeout: 15_000,
+    });
+    await openEventsDrawer(w);
     await expect(w.getByText('A saved monitor is back — restore its pop-out layout?')).toBeVisible();
 
     // 5a. "Not now" changes nothing — the popout stays where it is

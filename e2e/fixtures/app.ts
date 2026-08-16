@@ -1011,6 +1011,26 @@ export async function showTerminal(window: Page): Promise<void> {
 }
 
 /**
+ * Open the events drawer (P2-E14-01, Shape B).
+ *
+ * The Events panel is no longer a permanent column: it is a drawer, collapsed
+ * by default to a tab on the workspace's right edge. So every spec that asserts
+ * anything about the queue's ROWS has to open it first — and, importantly, has
+ * to keep doing so for the assertions that count rows DOWN. `toHaveCount(0)`
+ * against a shut drawer passes for the wrong reason: there is nothing in the
+ * DOM to count, whatever the feed thinks.
+ *
+ * Idempotent, because several specs open it inside a helper that a test may
+ * have already called. Clicking a second time would shut it again.
+ */
+export async function openEventsDrawer(window: Page): Promise<void> {
+  const tab = window.getByTestId('events-tab');
+  await tab.waitFor({ state: 'visible', timeout: 25_000 });
+  if ((await tab.getAttribute('aria-expanded')) !== 'true') await tab.click();
+  await window.getByTestId('events-drawer').waitFor({ state: 'visible', timeout: 15_000 });
+}
+
+/**
  * Set §5.8's global presentation policy from the titlebar chip (P2-E9-06).
  *
  * The chip CYCLES, so this walks it to the label rather than guessing a click

@@ -57,6 +57,38 @@ on the floor, and say so in your PR.
 
 ## 0.6.0 — unreleased
 
+### Changed
+
+- **The Events panel is a drawer now, and your sessions get the space back.**
+  It used to be a permanent column down the right-hand side, about an inch wide,
+  present in every layout whether or not anything was in it. That inch now
+  belongs to your sessions — in every layout, all the time. What is left on the
+  right edge is a **narrow tab with a number on it**: how many sessions are
+  waiting on you. Click it — or press **Ctrl+E**, or find *"Show or hide the
+  events drawer"* in the command palette — and the drawer slides out over the
+  workspace with exactly what the panel always held: one entry per session, in
+  the order you should deal with them. **Esc** closes it and puts your cursor
+  back where it was.
+
+  Nothing inside it changed and nothing moved out of it: the same rows with the
+  same **✕**, the same click-to-jump, and the same three notices — a new version
+  is ready, a monitor came back and your pop-outs can be restored, or Anthropic
+  is having an incident. It opens *over* your sessions rather than shoving them
+  aside, so glancing at the queue never re-lays-out the window you were reading.
+  And it starts closed each time you launch.
+
+  You do not have to open it to know whether it is worth opening. The tab
+  carries the count, tints itself with the most urgent thing waiting, and grows
+  **a small dot when there is a notice inside** — so an update or an incident
+  still catches your eye from behind a closed drawer. If you use a screen
+  reader, the tab reads all three out in words.
+
+- **The status bar now says how many sessions are waiting on you.** Bottom
+  right, next to the session count, permanently: *"3 waiting"*. It never needs
+  opening and never moves, so the question the Events column used to answer just
+  by being there is still answerable with a glance — and it is the same number
+  **Ctrl+Space** walks through.
+
 ### Internal
 
 - Fixed the end-to-end test that kept failing on the Windows CI machine and

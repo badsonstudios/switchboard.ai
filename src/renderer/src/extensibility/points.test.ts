@@ -109,6 +109,9 @@ describe('the built-in renderer points', () => {
     const r = createRendererRegistry();
     expect(listStatusBarItems(r, 'start').map((i) => i.manifest.id)).toEqual([
       'status-session-count',
+      // §5.14's attention-queue count, built with P2-E14-01 — between the two
+      // it was always spec'd between
+      'status-attention-count',
       'status-usage',
     ]);
     expect(listStatusBarItems(r, 'end').map((i) => i.manifest.id)).toEqual([

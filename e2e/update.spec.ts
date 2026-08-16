@@ -23,6 +23,7 @@ import {
   registerTempDir,
   sweepTempDirs,
   workspaceJsonPath,
+  openEventsDrawer,
 } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -477,6 +478,12 @@ test.describe('one-click download + verified install (E19-04)', () => {
 
     a = await launch(home);
     await shellReady(a.window);
+    // the notice rehomed into the events drawer with its two slot-mates, and
+    // the drawer is collapsed by default (P2-E14-01). The collapsed tab has to
+    // say something is behind it first — otherwise the post-update handshake
+    // would land in a surface nobody has been given a reason to open.
+    await expect(a.window.getByTestId('events-tab')).toHaveAttribute('data-notice', 'true');
+    await openEventsDrawer(a.window);
     const notice = a.window.locator('[data-events-notice="installed"]');
     await expect(notice).toBeVisible();
     await expect(notice).toContainText(APP_VERSION);
@@ -526,6 +533,7 @@ test.describe('one-click download + verified install (E19-04)', () => {
     // ...and closing the dialog without answering leaves the affordance standing.
     await w.keyboard.press('Escape');
     await expect(dialog(w)).toHaveCount(0);
+    await openEventsDrawer(w); // collapsed by default (P2-E14-01)
     const notice = w.locator('[data-events-notice="available"]');
     await expect(notice).toBeVisible();
     await expect(notice).toContainText('9.9.9');

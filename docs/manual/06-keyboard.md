@@ -110,6 +110,7 @@ back to the first.
 | `Ctrl+Shift+L` | Switch the whole workspace to the next layout: Grid → Focus → Queue |
 | `Ctrl+Shift+P` | Open the command palette |
 | `Ctrl+Space` | Go to the next session that needs you |
+| `Ctrl+E` | Show or hide the Events drawer |
 
 `Ctrl+W` asks before it closes, because closing a session ends it and removes
 its card — the same confirmation you get from the tab's **✕**.
@@ -224,7 +225,7 @@ anything in it. Rename a session and its conversation is renamed with it.
 ## Working the rest of the window with the keyboard
 
 Everything outside the conversation works from the keyboard too — the Sessions
-list, the lamp strip, the tabs across the top of a card, and the Events panel.
+list, the lamp strip, the tabs across the top of a card, and the Events drawer.
 `Tab` moves forward through them, `Shift+Tab` back, and whatever you're on is
 outlined so you can always see where you are. `Enter` or `Space` does what
 clicking would do.
@@ -304,11 +305,23 @@ is read out when it appears, named after its session, so you learn about it
 without being on that card. See
 [Restarting a dead session](02-sessions.md#restarting-a-dead-session).
 
-### The Events panel
+### The Events drawer
 
-Each row is a button: `Enter` opens that session, exactly as clicking the row
-does, and counts as having visited it so `Ctrl+Space` won't send you straight
-back. One more `Tab` reaches that row's **Dismiss** button.
+The drawer is closed until you open it. **`Ctrl+E`** opens and closes it, and
+it's in the command palette as *"Show or hide the events drawer"* — so you never
+need the mouse to reach what's inside. Opening it puts your cursor in the
+drawer, and closing it puts your cursor back where it was — **`Esc`**,
+`Ctrl+E` again, and the palette entry all do that.
+
+It isn't a dialog, so `Tab` walks out of it into the rest of the window as
+normal — nothing is trapped.
+
+Inside, each row is a button: `Enter` opens that session, exactly as clicking
+the row does, and counts as having visited it so `Ctrl+Space` won't send you
+straight back. One more `Tab` reaches that row's **Dismiss** button.
+
+`Ctrl+Space` doesn't need the drawer open at all — it works whether the drawer
+is showing or not.
 
 ## Hiding the Sessions list
 
@@ -385,9 +398,10 @@ mouse, from anywhere.
 - **You can't remember a shortcut** — you don't have to. Open the command
   palette and read them off the list.
 - **`Ctrl+Space` didn't move** — most likely nothing is waiting on you: check
-  the Events panel, and if it's empty there's nowhere to go. It also stands down
-  while you're typing in the prompt box, so you don't get yanked away
-  mid-sentence — click out of the box first. It *does* work from the Terminal.
+  the count on the status bar (bottom right), and if it says none, there's
+  nowhere to go. It also stands down while you're typing in the prompt box, so
+  you don't get yanked away mid-sentence — click out of the box first. It *does*
+  work from the Terminal.
 - **A shortcut works in the Terminal but you expected it not to (or the other
   way round)** — only `Ctrl+Shift+P` and `Ctrl+Space` work there. Everything
   else belongs to Claude Code.

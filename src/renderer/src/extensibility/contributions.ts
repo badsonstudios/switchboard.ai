@@ -241,6 +241,18 @@ export interface StatusBarContext {
    * care — simply has no dot.
    */
   serviceHealth?: ServiceHealthStatus | null;
+  /**
+   * How many sessions are waiting on a human — §5.14's fourth status-bar
+   * readout, built with P2-E14-01 because that item is what took the always-on
+   * Events column away. `lib/queue.ts` is the authority; this is its depth, the
+   * same number the drawer's tab shows.
+   *
+   * Optional for the same reason `serviceHealth` is: a bar rendered by a test
+   * that does not care simply has no count.
+   */
+  attentionCount?: number;
+  /** the accelerator that walks that queue, already formatted (e.g. 'Ctrl+Space') */
+  attentionBinding?: string;
 }
 
 /** An item in the workspace status bar (§5.10). */

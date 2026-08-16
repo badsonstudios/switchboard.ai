@@ -13,7 +13,8 @@ import { LanguageChoice, loadLanguage, setLanguage } from './i18n';
 import { TitleBar, StatusBar } from './components/chrome';
 import { SessionsRail, RailGroup } from './components/SessionsRail';
 import { SessionGrid, GridController } from './components/SessionGrid';
-import { EventsPanel, EventDto } from './components/EventsPanel';
+import { EventDto } from './components/EventsPanel';
+import { EventsDrawer } from './components/EventsDrawer';
 import { Usage, addUsage, estimateCostUsd, ZERO_USAGE } from './lib/usage';
 import { loadUiState, uiGet, uiSet } from './lib/ui-state';
 import { initPresentation } from './lib/presentation-boot';
@@ -140,6 +141,13 @@ export function App(): React.JSX.Element {
   // rail visibility (E9-01 'toggle rail' command) — persisted like the other
   // renderer prefs, read once the ui blob has loaded
   const [railHidden, setRailHidden] = useState(false);
+  // The events drawer (P2-E14-01, Shape B). Collapsed by default and, unlike
+  // the rail, DELIBERATELY NOT PERSISTED: the rail is a layout preference, this
+  // is a surface you open to read the queue and shut again — the same category
+  // as the find bar and the palette, neither of which comes back on relaunch.
+  // Not persisting is also what makes "default collapsed" true of every launch
+  // rather than only of the first one.
+  const [eventsOpen, setEventsOpen] = useState(false);
   // command palette (E9-02) — deliberately NOT persisted: it opens on demand
   const [paletteOpen, setPaletteOpen] = useState(false);
   // About / build identity (E15-15) — same deal, on demand only
@@ -202,6 +210,15 @@ export function App(): React.JSX.Element {
   // row Ctrl+Space will skip. The panel still LISTS them: the feed is the log.
   const attentionFeed = useSyncExternalStore(subscribeStore, () =>
     sessionStore.getAttentionEvents()
+  );
+  // ...and its DEPTH, for §5.14's status-bar readout (P2-E14-01). The store's
+  // own memoized queue rather than a length counted here, so the bar, the
+  // drawer's tab and `commandContext`'s `attentionCount` are all the same
+  // number from the same authority — the identity is stable between pushes,
+  // which is what useSyncExternalStore requires.
+  const attentionDepth = useSyncExternalStore(
+    subscribeStore,
+    () => sessionStore.getQueue().length
   );
   // The urgency strip (E9-04). It renders from RAIL ORDER, not the raw session
   // list, so the Nth lamp is the Nth Ctrl+1..9 target — the derived value has a
@@ -990,6 +1007,9 @@ export function App(): React.JSX.Element {
           cycleLayoutMode: () => grid.current?.cycleLayoutMode(),
           toggleMaximize: (cardId) => grid.current?.toggleMaximize(cardId),
           toggleRail,
+          // A toggle, not an open: the same chord that shows the queue puts it
+          // away again, which is what every other view toggle in this set does.
+          toggleEventsDrawer: () => setEventsOpen((v) => !v),
           openPalette: () => setPaletteOpen(true),
           // The bar itself is rendered by the CARD (SessionGrid) — this only
           // publishes which card is asking, because a keydown handler has no
@@ -1040,6 +1060,7 @@ export function App(): React.JSX.Element {
   const railBindingLabel = formatBinding(bindingFor(commands, 'view.rail'), platform);
   const paletteBindingLabel = formatBinding(bindingFor(commands, 'palette.open'), platform);
   const queueBindingLabel = formatBinding(bindingFor(commands, 'attention.next'), platform);
+  const eventsBindingLabel = formatBinding(bindingFor(commands, 'view.events'), platform);
   const layoutBindingLabel = formatBinding(bindingFor(commands, 'layout.cycleMode'), platform);
   // the palette reads the SAME context the dispatcher does, at open time
   // ONE builder for both readers (the palette at open time, the dispatcher at
@@ -1432,7 +1453,13 @@ export function App(): React.JSX.Element {
           squeezed), and it is also why every one of those bars has to opt out
           by hand with `flexShrink: 0`. always-visible-notices.test.ts rosters
           them; this is the line that makes the roster necessary. */}
-      <div style={{ flex: 1, display: 'flex', minBlockSize: 0 }}>
+      {/* `position: relative` is load-bearing (P2-E14-01): it is what the
+          events drawer's `position: absolute` is measured against. Without it
+          the drawer would resolve to the nearest positioned ancestor — the
+          viewport — and hang over the status bar and the strips, covering the
+          very readouts that are supposed to stay legible while it is open.
+          `always-visible-notices.test.ts` pins the pair. */}
+      <div style={{ flex: 1, display: 'flex', minBlockSize: 0, position: 'relative' }}>
         {!railHidden && (
           <SessionsRail
             sessions={sessions}
@@ -1508,7 +1535,17 @@ export function App(): React.JSX.Element {
           onActiveCardChanged={(c) => sessionStore.setActiveCard(c)}
           controller={grid}
         />
-        <EventsPanel
+        {/* Shape B: the panel's content, in an overlay drawer that is shut by
+            default. It is the LAST child of the workspace row and out of flow,
+            so the grid above it is laid out as if it were not there — which is
+            the item: the 220px this used to hold goes to the session grid in
+            every layout mode. App still owns the subscription and the walk
+            cursor (E9-03); the drawer is a shape, not a new home for state. */}
+        <EventsDrawer
+          open={eventsOpen}
+          onOpen={() => setEventsOpen(true)}
+          onClose={() => setEventsOpen(false)}
+          drawerBinding={eventsBindingLabel}
           sessions={sessions}
           events={events}
           queueEvents={attentionFeed}
@@ -1538,6 +1575,8 @@ export function App(): React.JSX.Element {
         cliVersion={cliVersion}
         totalOutputTokens={workspaceUsage.output}
         totalCostUsd={workspaceCost}
+        attentionCount={attentionDepth}
+        attentionBinding={queueBindingLabel}
       />
     </div>
   );

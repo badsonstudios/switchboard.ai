@@ -5,11 +5,14 @@
 The point of switchboard is knowing *which* session needs you without being
 nagged about the ones that don't.
 
-## The Events panel
+## The Events drawer
 
-Down the right-hand side: one entry per session, showing its latest state —
-never a scrolling log you have to keep up with. Each entry shows the session's
-name and task label, so you know what it is without decoding an ID.
+On the right-hand edge of the workspace there's a narrow **tab** with a number
+on it. That number is how many sessions are waiting on you. Click it and a
+drawer slides out over the workspace with one entry per session, showing its
+latest state — never a scrolling log you have to keep up with. Each entry shows
+the session's name and task label, so you know what it is without decoding an
+ID.
 
 - **Click an entry** to jump straight to that session.
 - **✕** dismisses it.
@@ -22,7 +25,49 @@ Closing a session clears its entries. So does starting it again: a **crashed**
 entry goes as soon as a fresh session takes its place, whether you restarted it
 yourself or just came back to the card.
 
-## The panel is a to-do list, in order
+### Three ways to open it, and one to close it
+
+| | |
+|---|---|
+| **Click the tab** | on the right edge, vertically centered |
+| **`Ctrl+E`** | from anywhere except inside a terminal or a text box |
+| **The command palette** | `Ctrl+Shift+P` → "Show or hide the events drawer" |
+
+**`Esc`** closes it and puts your cursor back where it was. So does clicking the
+tab again, or pressing `Ctrl+E`.
+
+The drawer **sits on top of** the workspace rather than pushing it aside, so
+opening and closing it never moves your sessions around. It's also not a dialog:
+the sessions behind it keep running and stay clickable, and `Tab` walks out of
+it normally.
+
+It starts closed every time you launch. That's deliberate — it used to be a
+permanent column down the right-hand side, and it was taking up room the session
+grid wanted in every layout.
+
+### Reading the tab without opening it
+
+The tab is doing three jobs while it's shut:
+
+- **The number** is how many sessions are waiting on you — the same number
+  `Ctrl+Space` walks through, and the same one in the status bar.
+- **Its color** is the *most urgent* thing waiting. A session blocked on a
+  permission tints it differently from one that's merely finished.
+- **A small dot** appears when there's a notice inside — an update, an offer to
+  restore a pop-out layout, or a provider incident (see below). Something is in
+  there that isn't a session.
+
+If you use a screen reader, all three are read out in the tab's name — "Events ·
+3 sessions waiting · 1 notice" — so none of it depends on seeing a color.
+
+### The count in the status bar
+
+The bottom-right of the window carries the same count, permanently: **"3
+waiting"**, next to the session count. It never moves and never needs opening,
+so "is anything waiting on me?" is answerable with a glance even when the drawer
+is shut and the tab is off the edge of your attention.
+
+## The drawer is a to-do list, in order
 
 Entries aren't listed newest-first — they're listed **in the order you should
 deal with them**:
@@ -45,7 +90,7 @@ opened. See [Keyboard & commands](06-keyboard.md) for the full walk-through.
 
 If you've set a session's interrupt setting to **Never jump, skip the queue**
 ([Organizing your workspace](07-workspace.md#when-a-session-interrupts-you)),
-its entries still appear in this panel — the panel is the log — but it is never
+its entries still appear in the drawer — the drawer is the log — but it is never
 marked **next** and `Ctrl+Space` walks straight past it. That's the difference
 between the log and the to-do list.
 
@@ -240,7 +285,7 @@ asking, with its approval bar open. Dismissing notifications by reflex is a real
 thing people do, and reflex should not be able to grant a tool call.
 
 **Answer it anywhere and the pop-up goes away.** If you come back to the window
-and use the approval bar, the Events panel's buttons, or the batch bar, the
+and use the approval bar, the Events drawer's buttons, or the batch bar, the
 pop-up is withdrawn straight away — you'll never find a stale **Allow** sitting
 in your notification centre for a question that was settled ten minutes ago. The
 same is true if the session dies while the pop-up is up: pressing a button then
@@ -434,7 +479,7 @@ Consequences worth knowing:
   gone, a laptop with no signal: the session doesn't notice and neither do you.
 - **Nothing is retried and nothing is queued.** A push that doesn't get through
   is gone — you'll find the session waiting when you come back, which is what
-  the Events panel is for.
+  the Events drawer is for.
 - A failure is written to the log **once**, not once per event, so an evening
   with the phone off doesn't bury everything else in there.
 - The 🔔 title-bar switch is still above all of this. With notifications off,

@@ -29,7 +29,7 @@ no page is an unfinished work item.
 | [06 — Keyboard & commands](06-keyboard.md) | Shortcuts, the command list, the palette | draft |
 | [07 — Organizing your workspace](07-workspace.md) | The sidebar, groups, pop-out windows, layout | draft |
 | [08 — Changes & git](08-changes-and-git.md) | The Changes tab, diffs, syntax colouring, branch info | draft |
-| [09 — Notifications & events](09-notifications.md) | Sounds, the Events panel, the lamp strip, when you get told what | draft |
+| [09 — Notifications & events](09-notifications.md) | Sounds, the Events drawer, the lamp strip, when you get told what | draft |
 | [10 — Settings](10-settings.md) | Theme, language, notification preferences, trust | draft |
 | [11 — Troubleshooting](11-troubleshooting.md) | When a session won't start, hangs, or vanishes | draft |
 | [12 — Direct mode (beta)](12-direct-mode.md) | How sessions now talk to Claude by default: fixes the `.claude` double-prompt, costs you the terminal | draft |

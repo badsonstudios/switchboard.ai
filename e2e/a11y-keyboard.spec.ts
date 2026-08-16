@@ -9,7 +9,13 @@
 // driven by real key events.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
-import { launchApp, LaunchedApp, tempProjectFolder, hookPoster } from './fixtures/app';
+import {
+  launchApp,
+  LaunchedApp,
+  tempProjectFolder,
+  hookPoster,
+  openEventsDrawer,
+} from './fixtures/app';
 
 /** what the keyboard is currently on, in the terms these assertions care about */
 async function focused(w: Page): Promise<{
@@ -268,6 +274,10 @@ test.describe('keyboard paths swept by #197', () => {
       hook_event_name: 'Notification',
       message: 'Claude needs your permission to use Bash',
     });
+    // the rows live in the events drawer, collapsed by default (P2-E14-01) —
+    // and this whole block is about their KEYBOARD reachability, which starts
+    // with the drawer being openable at all
+    await openEventsDrawer(w);
     const row = w.locator('[role="listitem"]', { hasText: names[0] }).first();
     await expect(row).toBeVisible({ timeout: 20_000 });
 

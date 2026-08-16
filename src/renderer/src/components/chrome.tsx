@@ -282,6 +282,10 @@ export function StatusBar(props: {
   cliVersion?: string | null;
   totalOutputTokens?: number;
   totalCostUsd?: number;
+  /** §5.14's attention-queue count (P2-E14-01) — the queue's depth */
+  attentionCount?: number;
+  /** and the accelerator that walks it, for the readout's tooltip */
+  attentionBinding?: string;
 }): React.JSX.Element {
   // Contributed items (§5.23): the bar owns the strip and the spacer, the
   // items own what they say. An item returning null renders nothing, which is
