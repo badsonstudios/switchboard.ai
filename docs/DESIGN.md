@@ -240,6 +240,24 @@ contract differs in three ways, each deliberate:
   deliberately NOT independent of `transcripts` for a transcript-backed
   provider; one that resumes on some other authority ignores the root and
   answers from its own knowledge.
+- **A card's native id is a CHAIN, and `resume` gained an optional
+  `findOrphaned`** *(#484, 2026-08-15)*. The host records a conversation id the
+  moment the CLI announces one, and the CLI writes no transcript for it until a
+  real turn happens — so an id can name a conversation that does not exist yet
+  and may never. Overwriting the previous id at that moment, and then clearing
+  the new one when it proved unresumable, destroyed the card's only pointer to a
+  conversation still on disk (owner-reported; two live cards). A card therefore
+  persists `nativeSessionId` plus `nativeSessionLineage`, and `canResume` is
+  asked about the head and then each ancestor in turn — **the stored id is never
+  erased by a start, only pushed down the chain**. `findOrphaned` is the repair
+  for cards orphaned before the chain existed: given the root, the folder, the
+  ids other cards hold and this card's OWN ids, name the conversation it lost or
+  answer null. It is optional (absent = such a card just starts fresh), and it
+  is asked ONLY for a card that once held an id whose whole chain `canResume`
+  declined. That precondition is deliberately weak on the host's side —
+  `canResume` is a boolean and cannot distinguish "not on disk" from "could not
+  look" — so the contract puts the re-verification of `ownIds` on the adapter,
+  which is the only party that can tell those apart.
 - **`transcripts` LOCATES transcripts; it does not abstract reading them.** The
   sketch names a `TranscriptReader`. Our tolerant parser, tailer and block builder
   stay host-side and are shared by every provider writing that shape; the adapter

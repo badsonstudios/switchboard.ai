@@ -2055,3 +2055,83 @@ describe('PersistedSession.transport survives quit -> relaunch (P2-E18-17)', () 
     expect(st.listSessions()[0].transport).toBe('pty');
   });
 });
+
+// #484 — a card's conversation identity is a CHAIN, and the chain is the only
+// thing standing between a resume that never got a turn and an orphaned
+// conversation. It has to survive the round trip the same way the id does.
+describe('PersistedSession.nativeSessionLineage survives quit -> relaunch (#484)', () => {
+  const withChain = (id: string, lineage?: string[]): PersistedSession => ({
+    ...sess(id),
+    nativeSessionId: 'conv-c',
+    nativeSessionLineage: lineage,
+  });
+
+  it('round-trips the ancestors, in order', () => {
+    const a = makeStore(file);
+    a.load();
+    a.upsertSession(withChain('one', ['conv-b', 'conv-a']));
+    a.save();
+
+    const b = makeStore(file); // "relaunch"
+    b.load();
+    expect(b.listSessions()[0].nativeSessionLineage).toEqual(['conv-b', 'conv-a']);
+    expect(b.listSessions()[0].nativeSessionId).toBe('conv-c');
+  });
+
+  it('a card written before the field existed comes back with no chain, not a broken one', () => {
+    // every card in every existing workspace file is in this shape
+    const a = makeStore(file);
+    a.load();
+    a.upsertSession({ ...sess('one'), nativeSessionId: 'conv-a' });
+    a.save();
+
+    const b = makeStore(file);
+    b.load();
+    expect(b.listSessions()[0].nativeSessionLineage).toBeUndefined();
+    expect(b.listSessions()[0].nativeSessionId).toBe('conv-a');
+  });
+
+  it('a hand-edited chain is normalized rather than dropping the card', () => {
+    // the resume walk asks the provider about each of these in turn, so a
+    // number or a blank in the list would become a question about `''`
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        sessions: [
+          {
+            ...sess('one'),
+            nativeSessionId: 'conv-c',
+            nativeSessionLineage: ['conv-b', 7, '', 'conv-b', null, 'conv-a'],
+          },
+        ],
+        groups: [],
+        window: null,
+        layout: null,
+      })
+    );
+
+    const st = makeStore(file);
+    st.load();
+    expect(st.listSessions()).toHaveLength(1); // the card survives
+    expect(st.listSessions()[0].nativeSessionLineage).toEqual(['conv-b', 'conv-a']);
+  });
+
+  it('a chain that is not a list at all degrades to no chain, keeping the head', () => {
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        sessions: [{ ...sess('one'), nativeSessionId: 'conv-c', nativeSessionLineage: 'conv-b' }],
+        groups: [],
+        window: null,
+        layout: null,
+      })
+    );
+
+    const st = makeStore(file);
+    st.load();
+    expect(st.listSessions()[0].nativeSessionLineage).toBeUndefined();
+    expect(st.listSessions()[0].nativeSessionId).toBe('conv-c');
+  });
+});

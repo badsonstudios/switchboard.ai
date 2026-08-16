@@ -14,7 +14,7 @@ import { SlashCommand } from '../../shared/slash-commands';
 // The transcript LOCATION is Claude's, so the check for "is this conversation
 // really there" belongs to this adapter; the tolerant reader it shares with
 // every other provider stays host-side (see ProviderCapabilities.transcripts).
-import { conversationExists } from '../transcripts/paths';
+import { conversationExists, listConversations, locateConversation } from '../transcripts/paths';
 import { ensureFolderTrusted } from '../sessions/trust';
 
 const CLI_NAMES = process.platform === 'win32' ? ['claude.cmd', 'claude.exe'] : ['claude'];
@@ -181,6 +181,19 @@ export function readAiTitle(line: Record<string, unknown>): string | undefined {
   return title || undefined;
 }
 
+/**
+ * How recently a transcript must have been written to be presumed IN USE, and
+ * therefore never offered as a repair target (#484).
+ *
+ * The repair's `claimed` list only knows about switchboard's own cards. A
+ * `claude` session the user is running in a terminal right now is invisible to
+ * it, and is also — by definition — the newest file in the folder, which is
+ * precisely what the repair would otherwise reach for. Five minutes is far
+ * longer than the gap between a session's turns and far shorter than the age of
+ * anything a card actually lost.
+ */
+export const RECENTLY_ACTIVE_MS = 5 * 60 * 1000;
+
 export const claudeAdapter: ProviderAdapter = {
   manifest: {
     id: 'claude-code',
@@ -211,6 +224,51 @@ export const claudeAdapter: ProviderAdapter = {
     resume: {
       canResume: ({ projectsRoot, folder, nativeSessionId }) =>
         conversationExists(projectsRoot, folder, nativeSessionId),
+      // The repair half (#484). Claude's layout puts every conversation for a
+      // folder in one directory, so "the one this card lost" is answerable: the
+      // newest unclaimed transcript there, since the CLI appends to a
+      // conversation right up to the moment it is left.
+      //
+      // It is still a GUESS, and everything below is about the cost of a wrong
+      // one. That cost went up once we measured that plain `--resume` APPENDS to
+      // the file rather than forking it (2026-08-15, claude 2.1.226): adopting
+      // the wrong conversation does not just mislabel the card, it writes into
+      // somebody's transcript. So four refusals, in order:
+      findOrphaned: ({ projectsRoot, folder, claimed, ownIds }) => {
+        // 1. ONLY IF THE CARD'S OWN IDS ARE REALLY GONE. `canResume` is a
+        //    boolean and answers no to both "not there" and "could not look",
+        //    so the host cannot establish this and we must. A lock that cleared
+        //    between that call and this one would otherwise move a card with a
+        //    perfectly good transcript into a different conversation — this
+        //    issue's own defect, committed by its own repair.
+        for (const id of ownIds) {
+          if (locateConversation(projectsRoot, folder, id).status !== 'absent') return null;
+        }
+        const listing = listConversations(projectsRoot, folder);
+        // 2. NEVER FROM A DIRECTORY WE COULD NOT READ, and never from one so
+        //    large the answer would be meaningless — `listConversations` says
+        //    `unknown` for both. A folder with thousands of conversations in it
+        //    is exactly where "the newest one" is least likely to be this
+        //    card's, and declining to guess is the honest answer.
+        if (listing.status !== 'ok') return null;
+        const taken = new Set([...claimed, ...ownIds]);
+        const now = Date.now();
+        return (
+          listing.conversations.find(
+            (c) =>
+              // 3. NOT ONE ANOTHER CARD HOLDS, and not one of ours (which are
+              //    all absent by the check above, but say it rather than rely
+              //    on it).
+              !taken.has(c.nativeId) &&
+              // 4. NOT ONE SOMEBODY IS PROBABLY IN RIGHT NOW. A transcript
+              //    written to seconds ago is far more likely to be a `claude`
+              //    session running in a terminal — which `claimed` cannot see,
+              //    because it only knows about switchboard's cards — than a
+              //    conversation this card walked away from and lost.
+              now - c.mtimeMs > RECENTLY_ACTIVE_MS
+          )?.nativeId ?? null
+        );
+      },
     },
     // §5.9: the CLI refuses to work in a folder the user has not accepted, and
     // it asks with a modal we cannot answer from here. Writing the acceptance

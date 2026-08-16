@@ -1,8 +1,9 @@
-import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import {
+  RECENTLY_ACTIVE_MS,
   claudeAdapter,
   claudeProjectsRoot,
   readAiTitle,
@@ -227,5 +228,95 @@ describe('claudeAdapter.capabilities.resume (#432 — the host declares the root
     const root = path.join(tmp, 'roots');
     seed(root, folder);
     expect(ask(root, folder, '99999999-0000-4000-8000-000000000000')).toBe(false);
+  });
+});
+
+// #484's repair half. It is a GUESS, and the cost of a wrong one is not
+// hypothetical: plain `--resume` APPENDS to the conversation's own file
+// (measured 2026-08-15, claude 2.1.226), so adopting the wrong one writes into
+// somebody's transcript. Each refusal below is one of the four guards.
+describe('claudeAdapter.capabilities.resume.findOrphaned (#484)', () => {
+  const LOST = '11111111-0000-4000-8000-000000000000'; // the card's own, gone
+  const ORPHAN = '22222222-0000-4000-8000-000000000000'; // its history, unclaimed
+
+  let root: string;
+  let folder: string;
+  let dir: string;
+
+  beforeEach(() => {
+    folder = path.join(tmp, 'project');
+    root = path.join(tmp, 'roots');
+    dir = path.join(root, slugForCwd(folder));
+    fs.mkdirSync(dir, { recursive: true });
+  });
+
+  /** a conversation, aged past the in-use window unless told otherwise */
+  function seedConv(id: string, agoMs = RECENTLY_ACTIVE_MS * 2): void {
+    const file = path.join(dir, `${id}.jsonl`);
+    fs.writeFileSync(file, '{}\n');
+    const when = new Date(Date.now() - agoMs);
+    fs.utimesSync(file, when, when);
+  }
+
+  const find = (over: Partial<{ claimed: string[]; ownIds: string[] }> = {}): string | null =>
+    claudeAdapter.capabilities!.resume!.findOrphaned!({
+      projectsRoot: root,
+      folder,
+      claimed: [],
+      ownIds: [LOST],
+      ...over,
+    });
+
+  it('hands back the conversation lying unclaimed in the folder', () => {
+    seedConv(ORPHAN);
+    expect(find()).toBe(ORPHAN);
+  });
+
+  it('refuses when one of the card OWN ids turns out to be on disk after all', () => {
+    // The guard the host cannot supply: `canResume` is a boolean, so a lock that
+    // cleared between that call and this one reaches here as an ordinary "no".
+    // Without this re-check, a card with a perfectly good transcript would be
+    // moved into a different conversation — this issue's own defect, committed
+    // by its own repair.
+    seedConv(ORPHAN);
+    seedConv(LOST);
+    expect(find()).toBeNull();
+  });
+
+  it('refuses a conversation another card is in', () => {
+    seedConv(ORPHAN);
+    expect(find({ claimed: [ORPHAN] })).toBeNull();
+  });
+
+  it('refuses one written to moments ago — that is a terminal session, not a loss', () => {
+    // `claimed` only knows about switchboard's cards. A `claude` run by hand in
+    // a terminal is invisible to it AND is the newest file in the folder, which
+    // is exactly what this would otherwise reach for.
+    seedConv(ORPHAN, 1000);
+    expect(find()).toBeNull();
+  });
+
+  it('takes the newest one that is old enough, not merely the newest', () => {
+    const older = '33333333-0000-4000-8000-000000000000';
+    seedConv(older, RECENTLY_ACTIVE_MS * 10);
+    seedConv(ORPHAN, RECENTLY_ACTIVE_MS * 2);
+    seedConv('44444444-0000-4000-8000-000000000000', 1000); // in use right now
+    expect(find()).toBe(ORPHAN);
+  });
+
+  it('refuses a folder it could not read, rather than reading it as empty', () => {
+    seedConv(ORPHAN);
+    const spy = vi.spyOn(fs, 'readdirSync').mockImplementation(() => {
+      throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+    });
+    try {
+      expect(find()).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('refuses a folder with nothing in it', () => {
+    expect(find()).toBeNull();
   });
 });

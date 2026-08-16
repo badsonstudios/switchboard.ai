@@ -21,6 +21,7 @@ import path from 'path';
 import { Rectangle } from 'electron';
 import { LogFields, Logger } from '../log/logger';
 import { SessionIdentity } from '../sessions/session-manager';
+import { sanitizeLineage } from '../sessions/lineage';
 import { WindowState, mergeState, isOnAnyDisplay } from '../window-state';
 import { UpdatePrefs } from '../../shared/update';
 import { ServiceHealthPrefs } from '../../shared/service-health';
@@ -34,6 +35,17 @@ export interface PersistedSession {
   identity: SessionIdentity;
   layoutSlot: number;
   nativeSessionId?: string;
+  /**
+   * The conversations this card descends from, newest first (#484).
+   *
+   * A card's id is recorded when the CLI announces one, and the CLI writes no
+   * transcript until a real turn happens — so a card whose last session got no
+   * prompt points at a file that does not exist. Keeping the ids it was known
+   * by before is what lets the next launch fall back to the conversation that
+   * IS on disk instead of starting fresh over the top of it. See
+   * `sessions/lineage.ts` — that module is the only thing that writes this.
+   */
+  nativeSessionLineage?: string[];
   suspendedAt: string;
   /** last-known token totals + model, so usage survives a resume/restart */
   usage?: { input: number; output: number; cacheRead: number; cacheCreate: number };
@@ -391,9 +403,18 @@ export class WorkspaceStore {
       // a dangling groupId (group gone, e.g. hand-edited file) degrades to ungrouped
       const orphaned: string[] = [];
       const sessions = keepSane(raw.sessions, isSaneSession, 'session', note).map((s) => {
-        if (!s.groupId || groupIds.has(s.groupId)) return s;
-        orphaned.push(s.id);
-        return { ...s, groupId: undefined };
+        // Normalized on the way IN, once, so nothing downstream has to defend
+        // against a hand-edited chain (#484). Silent rather than `note`d: an
+        // absent or ragged lineage is the NORMAL state of every card written
+        // before the field existed, and warning about it would fire on every
+        // launch for months.
+        const withLineage =
+          s.nativeSessionLineage === undefined
+            ? s
+            : { ...s, nativeSessionLineage: sanitizeLineage(s.nativeSessionLineage) };
+        if (!withLineage.groupId || groupIds.has(withLineage.groupId)) return withLineage;
+        orphaned.push(withLineage.id);
+        return { ...withLineage, groupId: undefined };
       });
       if (orphaned.length > 0)
         note(

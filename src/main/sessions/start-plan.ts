@@ -18,11 +18,13 @@
 // down with it, because a session that will not start is worse than a session
 // with no transcript pane (PHILOSOPHY: our breakage must not block a session).
 import { HookSettingsHost, ProviderCapabilities } from '../extensibility/contributions';
+import { NativeLineage, resumeCandidates } from './lineage';
 
 /** The persisted card this start is for, if it already existed. */
-export interface PriorCard {
+export interface PriorCard extends NativeLineage {
   providerId?: string;
-  nativeSessionId?: string;
+  /** `nativeSessionId` and `nativeSessionLineage` come from `NativeLineage` —
+   *  the chain, not a single id, since #484. */
 }
 
 export interface StartPlanInput {
@@ -36,6 +38,21 @@ export interface StartPlanInput {
   defaultProviderId: () => string;
   folder: string;
   prior?: PriorCard;
+  /**
+   * Every native id any card in the workspace points at, head or ancestor
+   * (#484). Only read when a card's whole chain came up empty and the provider
+   * offers to look for the conversation it lost — the list is what stops that
+   * search handing back a conversation another card is already in. A thunk
+   * because the common start never asks.
+   *
+   * REQUIRED, and the repair is skipped outright when it throws. It is
+   * documented in three places as the guarantee that two cards cannot end up in
+   * one conversation, and a guarantee that quietly degrades to `[]` — because a
+   * caller omitted it, or because reading the workspace threw — is not one. A
+   * repair declined costs the user one relaunch; a repair made without this list
+   * can put a card into a conversation another card is in.
+   */
+  claimedNativeIds: () => string[];
   /**
    * Called when something degraded. A SINK rather than a returned list,
    * because two of the decisions are lazy — `buildSettings` runs later inside
@@ -51,6 +68,17 @@ export interface StartPlan {
   providerId: string;
   /** native conversation to resume, or undefined for a fresh session */
   resumeSessionId?: string;
+  /**
+   * WHERE that id came from (#484) — the card's head id, one of its ancestors,
+   * or a conversation the provider found lying unclaimed in the folder.
+   *
+   * Reported because the last two are recoveries, and a recovery that happens
+   * silently is indistinguishable from the bug it repairs: "my card came back
+   * in the right conversation" and "my card came back in SOME conversation"
+   * need to be different lines in the log. Undefined exactly when
+   * `resumeSessionId` is.
+   */
+  resumedVia?: 'stored' | 'lineage' | 'adopted';
   /** watch transcripts under this root; undefined = do not watch at all */
   transcriptsRoot?: string;
   /**
@@ -167,18 +195,86 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
   // against a directory the host will not read, which is a session that looks
   // wiped. A provider that resumes on some other authority is unaffected — it
   // ignores the root and still gets to say yes.
-  const nativeId = input.prior?.nativeSessionId;
-  const resumable =
-    !!nativeId &&
-    !!safely('resume.canResume', () =>
+  //
+  // And it is asked about the whole CHAIN, not one id (#484). A card's newest
+  // id is recorded the moment the CLI announces one, and the CLI writes no
+  // transcript for it until a real turn happens (S-07) — so a card whose last
+  // session got no prompt points at a file that does not exist while its real
+  // history sits under an earlier id. Walking the ancestors puts that card back
+  // where it was; stopping at the head is what made it start fresh instead.
+  const candidates = resumeCandidates(input.prior);
+  let resumeSessionId: string | undefined;
+  let resumedVia: StartPlan['resumedVia'];
+  // A capability that throws is degraded ONCE and then not asked again, the
+  // same ruling `titles` gets below: `safely` reports on every call, and a
+  // provider whose check throws would otherwise post one warning per ancestor
+  // for a fault the reader already knows about.
+  let resumeBroken = false;
+  // A provider that declares no `resume` at all is asked nothing — walking a
+  // ten-deep chain to call `undefined?.canResume` ten times says the same thing
+  // slower, and leaves a reader wondering which of the two absences the loop is
+  // for.
+  for (const nativeSessionId of caps?.resume ? candidates : []) {
+    if (resumeBroken) break;
+    const before = warnings.length;
+    const yes = safely('resume.canResume', () =>
       caps?.resume?.canResume({
         // exactly what this plan exposes, not a second reading of the
         // capability — "" for a provider that declares no transcripts at all
         projectsRoot: transcriptsRoot ?? '',
         folder: input.folder,
-        nativeSessionId: nativeId,
+        nativeSessionId,
       })
     );
+    if (yes === undefined && warnings.length > before) resumeBroken = true;
+    if (yes) {
+      resumeSessionId = nativeSessionId;
+      resumedVia = nativeSessionId === input.prior?.nativeSessionId ? 'stored' : 'lineage';
+      break;
+    }
+  }
+
+  // Nothing in the chain is on disk — but this card HELD a conversation once,
+  // which is the precondition that makes the next question safe to ask. A card
+  // with no history to lose is never offered one, so a fresh session in a
+  // folder full of old transcripts cannot adopt a stranger's.
+  //
+  // Cards orphaned BEFORE the chain existed are the reason this exists at all:
+  // they carry an id with no transcript, no ancestors, and their real history
+  // under an id nothing now refers to. The lineage prevents the next one; only a
+  // look in the folder recovers the ones already made.
+  if (!resumeSessionId && !resumeBroken && candidates.length > 0 && caps?.resume?.findOrphaned) {
+    // NOT `?? []`. This list is the guarantee that two cards cannot end up in
+    // one conversation, so a workspace read that threw skips the repair rather
+    // than performing it with the guard silently empty.
+    const claimed = safely('claimedNativeIds', input.claimedNativeIds);
+    const found =
+      claimed &&
+      safely('resume.findOrphaned', () =>
+        caps.resume!.findOrphaned!({
+          projectsRoot: transcriptsRoot ?? '',
+          folder: input.folder,
+          // every OTHER card's chain, so two cards cannot end up in one
+          // conversation...
+          claimed: claimed.filter((id) => !candidates.includes(id)),
+          // ...and this card's own, which is both unofferable and the list the
+          // provider must re-verify before it answers at all (see
+          // `findOrphaned`: `canResume` said no, which does not distinguish
+          // "not there" from "could not look")
+          ownIds: candidates,
+        })
+      );
+    if (found) {
+      resumeSessionId = found;
+      resumedVia = 'adopted';
+      // Not a failure — a repair — but it goes through the same sink because
+      // it is the one resume outcome the user might disagree with, and the
+      // caller logs everything that arrives here against the card.
+      degraded(
+        `the conversation this card recorded is not on disk; reattaching it to "${found}", the newest unclaimed conversation in this folder`
+      );
+    }
+  }
 
   // Deliberately NOT gated on `root`: the two are independent declarations and
   // reading a title costs nothing extra, because the host is already tailing.
@@ -209,7 +305,8 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
 
   return {
     providerId,
-    resumeSessionId: resumable ? nativeId : undefined,
+    resumeSessionId,
+    resumedVia,
     transcriptsRoot,
     readTitle,
     buildSettings: caps?.hooks
