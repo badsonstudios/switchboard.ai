@@ -114,6 +114,7 @@ function ctx(): PanelContext {
     cardId: 'card-1',
     title: 'demo',
     visible: true,
+    dockEpoch: 0,
     theme: 'nordic',
     colorScheme: 'dark',
     changed: 0,

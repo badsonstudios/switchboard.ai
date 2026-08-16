@@ -57,6 +57,9 @@ export const sessionPanels: PanelContribution[] = [
         cardId={ctx.cardId}
         title={ctx.title}
         visible={ctx.visible}
+        // the feed keeps a scroll position, so it is the panel that most needs
+        // to hear that dockview moved its DOM out from under it (#555)
+        dockEpoch={ctx.dockEpoch}
         status={ctx.status}
         binding={ctx.binding}
         bindingDiag={ctx.bindingDiag}

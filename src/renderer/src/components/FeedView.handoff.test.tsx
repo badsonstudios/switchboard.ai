@@ -48,6 +48,7 @@ function ctx(over: Partial<PanelContext>): PanelContext {
     cardId: 'card-1',
     title: 'acme-web',
     visible: true,
+    dockEpoch: 0,
     theme: 'nordic',
     colorScheme: 'dark',
     changed: 0,

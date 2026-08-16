@@ -192,6 +192,9 @@ export function FeedView(props: {
    */
   title?: string;
   visible: boolean;
+  /** bumped when dockview reattached this panel's DOM (#555) — see
+   *  `PanelContext.dockEpoch`, and the effect that reads it below */
+  dockEpoch?: number;
   /** current session status — drives the working banner and the handoff bar */
   status?: string;
   /** an approval was answered moments ago and the status has not caught up
@@ -422,6 +425,46 @@ export function FeedView(props: {
     const id = requestAnimationFrame(restore);
     return () => cancelAnimationFrame(id);
   }, [props.visible, restore]);
+  /**
+   * Put the view back where this session belongs, from whatever just happened
+   * to it — the ONE rule, so the resize path and the dock-move path below
+   * cannot drift into two different answers about the same scroller (#555).
+   */
+  const reconcile = React.useCallback((): void => {
+    const s = scroller.current;
+    if (!s) return;
+    // COLLAPSE is the real signal that a position is about to be lost, not
+    // props.visible: dockview hides a background panel by collapsing an
+    // ANCESTOR, so our visible prop never changes and React never learns the
+    // panel went away — but the scroller's own height drops to 0 and comes
+    // back, which the resize observer does see.
+    if (s.clientHeight === 0) {
+      wasCollapsed.current = true;
+      return;
+    }
+    if (wasCollapsed.current) {
+      wasCollapsed.current = false;
+      owesRestore.current = true;
+    }
+    if (pinned.current) pin();
+    // only while a restore is owed: otherwise every markdown reflow would
+    // yank a reading user back to where they started
+    else if (owesRestore.current) restore();
+    // Backstop for the case above that we CAN'T observe: dockview detaches a
+    // background panel outright, and a detached element neither keeps its
+    // scrollTop nor reports a zero-height frame — it simply reappears at full
+    // height, already back at 0. A remembered position with the scroller
+    // sitting at 0 means it was destroyed, not chosen: a user who genuinely
+    // scrolls to the top records lastTop 0 through the scroll handler, so
+    // this can't fight them.
+    else if (lastTop.current > 0 && s.scrollTop === 0 && s.scrollHeight > s.clientHeight) {
+      restore();
+    }
+    // A conversation that GROWS past its pane while the reader is parked is
+    // exactly when the way back has to appear, and no scroll event fires for
+    // it (#442).
+    syncOffTail();
+  }, [pin, restore, syncOffTail]);
   // Self-healing pin (Dan round 5: cards you SWITCH to sat at the top after
   // app start): a one-shot pin can land while the panel has no layout yet —
   // dockview shows background panels a frame later, restore relayouts, and
@@ -433,45 +476,42 @@ export function FeedView(props: {
     const el = scroller.current;
     const inner = content.current;
     if (!el || !inner) return;
-    const ro = new ResizeObserver(() => {
-      const s = scroller.current;
-      if (!s) return;
-      // COLLAPSE is the real signal that a position is about to be lost, not
-      // props.visible: dockview hides a background panel by collapsing an
-      // ANCESTOR, so our visible prop never changes and React never learns the
-      // panel went away — but the scroller's own height drops to 0 and comes
-      // back, which this observer does see.
-      if (s.clientHeight === 0) {
-        wasCollapsed.current = true;
-        return;
-      }
-      if (wasCollapsed.current) {
-        wasCollapsed.current = false;
-        owesRestore.current = true;
-      }
-      if (pinned.current) pin();
-      // only while a restore is owed: otherwise every markdown reflow would
-      // yank a reading user back to where they started
-      else if (owesRestore.current) restore();
-      // Backstop for the case above that we CAN'T observe: dockview detaches a
-      // background panel outright, and a detached element neither keeps its
-      // scrollTop nor reports a zero-height frame — it simply reappears at full
-      // height, already back at 0. A remembered position with the scroller
-      // sitting at 0 means it was destroyed, not chosen: a user who genuinely
-      // scrolls to the top records lastTop 0 through the scroll handler, so
-      // this can't fight them.
-      else if (lastTop.current > 0 && s.scrollTop === 0 && s.scrollHeight > s.clientHeight) {
-        restore();
-      }
-      // A conversation that GROWS past its pane while the reader is parked is
-      // exactly when the way back has to appear, and no scroll event fires for
-      // it (#442).
-      syncOffTail();
-    });
+    const ro = new ResizeObserver(reconcile);
     ro.observe(el);
     ro.observe(inner);
     return () => ro.disconnect();
-  }, [pin, restore, syncOffTail]);
+  }, [reconcile]);
+  /**
+   * The move the observers above are blind to (#555).
+   *
+   * Dockview reattaches a panel's DOM for things that are not renders:
+   * activating a group re-runs `openPanel`, which detaches this subtree and
+   * appends it again, and a move between groups relocates it wholesale. The
+   * browser drops the scrollTop of every scroll container on the way through.
+   * React never re-renders — the same elements come back — and NOTHING here
+   * hears about it: no scroll event fires, and the panel returns at exactly the
+   * size it left, so the resize observer above never delivers and takes its own
+   * detach backstop with it.
+   *
+   * MEASURED, two docked groups and a click on a card's own rail row: scrollTop
+   * 1491 -> 0, a `MutationObserver` on the document saw DETACHED/REATTACHED,
+   * an `IntersectionObserver` on this element fired once at startup and never
+   * again, and the resize observer never fired at all. `pinned` stayed true, so
+   * `offTail` stayed false and #442's way back never appeared either — the
+   * conversation simply sat at its first message with nothing admitting it.
+   *
+   * So the card tells us, because the card is what dockview talks to. Twice, a
+   * frame apart: the event can land on either side of the DOM move, and the
+   * cheap way to be right in both cases is to reconcile now and again after the
+   * browser has finished. A reconcile with nothing to fix writes the scrollTop
+   * the scroller is already at.
+   */
+  React.useEffect(() => {
+    if (props.dockEpoch === undefined) return;
+    reconcile();
+    const id = requestAnimationFrame(reconcile);
+    return () => cancelAnimationFrame(id);
+  }, [props.dockEpoch, reconcile]);
 
   // Keyboard path into the conversation (#174, §5.32 "keyboard-complete").
   //

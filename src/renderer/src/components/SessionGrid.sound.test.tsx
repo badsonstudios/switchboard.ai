@@ -123,6 +123,10 @@ function panelProps(cardId: string): IDockviewPanelProps<CardParams> {
       onDidVisibilityChange: () => disposable,
       onDidLocationChange: () => disposable,
       onDidGroupChange: () => disposable,
+      // the card subscribes to this too, for #555's `dockEpoch` — dockview
+      // reattaches a panel's DOM when its group is activated, and the feed
+      // cannot see that happen to it
+      onDidActiveChange: () => disposable,
     },
     containerApi: { getPanel: () => undefined, removePanel: off },
     params: { cardId, folder: 'C:\\Projects\\acme', title: 'acme' },

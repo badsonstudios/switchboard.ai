@@ -48,6 +48,7 @@ function ctx(over: Partial<PanelContext>): PanelContext {
     sessionId: 's1',
     cardId: 'c1',
     visible: true,
+    dockEpoch: 0,
     theme: 'midnight',
     colorScheme: 'dark',
     changed: 0,
