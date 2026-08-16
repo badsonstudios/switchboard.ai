@@ -2260,6 +2260,8 @@ describe('PersistedSession.nativeSessionLineage survives quit -> relaunch (#484)
     st.load();
     expect(st.listSessions()[0].nativeSessionLineage).toBeUndefined();
     expect(st.listSessions()[0].nativeSessionId).toBe('conv-c');
+  });
+});
 
 // Found in review of P2-E14-05b: the sanitizer's all-or-nothing rule was doing
 // the right thing silently, which #344 says a repair may not do — and it was
