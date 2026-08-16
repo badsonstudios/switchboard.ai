@@ -3,7 +3,29 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — 🔧 #555 IN PROGRESS (started 2026-08-16)
+> # ▶▶ START HERE — ✅ #555 DONE → PR #560 AWAITING DAN (2026-08-16)
+>
+> **PR: https://github.com/badsonstudios/switchboard.ai/pull/560** —
+> `feature/555-feed-tail-after-dock-move` @ e85dacf. Dan reviews and merges.
+>
+> **NEXT UP:** the rest of run 20's wave 1 from the v0.6.0 dogfood — **#557**
+> (find bar-only, no results list) · **#495**-verify (fix with #496 + #557
+> together) · **#558** (popout-born session docks into the wrong slot; Dan
+> asked for e2e by name) · **#556** (drawer close button) · **#559**
+> (drag-reorder within a rail group). Then the tail: #483 digest,
+> #521-layer-1, #488 #490 #491 #494 #497-#499 #502-#504 #506 #508 #509 #512
+> #517 #518 #538 #539 #543 #544 #546 #550. Dan-gated: #528/#529 sittings.
+>
+> **⚠️ PRE-EXISTING FAILURE ON MAIN, NOT FROM #555, NOT YET TICKETED:**
+> `e2e/document-peek.spec.ts:471` ("quitting with a viewer in its OWN window
+> leaves no empty window behind") fails on a CLEAN tree at main — verified by
+> stashing every change and rebuilding, and it fails on every run rather than
+> intermittently (so not the #538/#550 flake class). Full-suite result on the
+> #555 branch was 313 passed / 3 skipped / 1 failed, that one. **Ask Dan
+> whether to file it.**
+>
+> # (the #555 investigation record follows)
+> # 🔧 #555 — DIAGNOSIS (kept: the measurements cost the most)
 >
 > **#555 (feed restores at the top) — DIAGNOSED, mechanism is NOT what the
 > issue guessed.** Measured, not assumed: the hydrate/replay path is
