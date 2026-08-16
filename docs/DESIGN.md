@@ -1765,11 +1765,23 @@ attention queue, or any bulk session operation.
   display-rescue are the §5.8 + E8 machinery already shipped, not new code.
   "Pop it open in its own window" is the same `addPopoutGroup` a session card
   uses; a popped-out viewer is a **viewer window**.
-- **One peek slot, pin to keep** (promoted from §10's IntelliJ preview-tab
-  idea): glancing at a file REPLACES the current viewer's content; pinning
-  promotes it to a permanent tab and sends the next glance to a fresh peek slot.
-  Without this rule the app accumulates thirty stale document tabs and fails the
-  calm check by accretion.
+- **Every file opens its own tab** (owner decision, 2026-08-15 — #530). Opening
+  a file always adds a viewer beside the ones already open; nothing is ever
+  replaced, and a document closes by its ✕ and nothing else. Opening a file
+  that is already open focuses its tab rather than opening a second copy.
+  **This supersedes "one peek slot, pin to keep"** — the IntelliJ preview-tab
+  rule promoted from §10 and shipped in P2-E16-03 (#460), where a second glance
+  re-pointed the panel you were reading and a 📌 was how you kept it. That rule
+  was defended as the calm check applied to accretion: without it "the app
+  accumulates thirty stale document tabs". The owner's answer, having used it:
+  *"when a file opens it should just open a new tab automatically… it doesn't
+  close the previous file window. That's what I want as standard behavior. Let's
+  get rid of that pin altogether."* Recorded rather than smoothed over, because
+  the calm-check argument was real and is being consciously outweighed — thirty
+  stale tabs are a mess the user can see and close, while a document that
+  vanishes because they glanced at something else is a thing taken away that
+  they never asked to lose. The pin affordance is gone entirely; there is no
+  setting behind it.
 - **A viewer never displaces a session.** It opens into the document area or its
   own window — never as a tab inside a session's group. This is the E8-04 "new
   sessions land in whatever popout is active" defect in mirror image, and the
@@ -2280,8 +2292,9 @@ context transfer, and the attention queue work across monitors.
 - Approval surfaces v1: PreToolUse interception spike, approval cards w/ Monaco
   diffs, session-flip mode, review queue pane, deny-with-feedback
 - Document viewer v1 (§5.30, added 2026-07-30): rendered markdown with a source
-  toggle, the peek slot + pin, viewer-in-its-own-window, the shared markdown
-  renderer, and the `fs.read` capability (epic E16)
+  toggle, a tab per file (the peek slot + pin shipped here and were **removed**
+  by owner decision on 2026-08-15, #530), viewer-in-its-own-window, the shared
+  markdown renderer, and the `fs.read` capability (epic E16)
 - Session find (§5.31, added 2026-07-30): Ctrl+F over a session — transcript
   search engine in main, one find bar over per-panel providers, terminal
   scrollback search, grouped results (epic E17)
@@ -2492,11 +2505,17 @@ mode + session archive v1; fleet snapshots + layout DSL.)*
   (resurrectable), NEVER kill; never evicts running or pinned sessions. Open:
   the right eviction ranking (idle-and-reviewed first? least-recently-attended?)
   — IDE policies key on file modification, which has no live-agent analogue.
-- ~~Peek slot~~ (IntelliJ preview-tab) — **PROMOTED** to core for documents
-  (§5.30, 2026-07-30): one reusable transient viewer, pin to keep. The original
-  idea — a peek slot for glancing at archived/background *sessions* without
-  opening N cards — is still unscheduled, and §5.30 is the proof the ergonomic
-  works before it is applied to something as heavy as a session.
+- ~~Peek slot~~ (IntelliJ preview-tab) — promoted to core for documents (§5.30,
+  2026-07-30), shipped in P2-E16-03, and **removed again by owner decision on
+  2026-08-15** (#530, §5.30): every file now opens its own tab. This is the
+  entry's most useful state, because it is the only one with evidence in it:
+  the ergonomic was built, used, and rejected in use — a surface that silently
+  replaces what you were reading costs more than the tabs it saves. The
+  original idea — a peek slot for glancing at archived/background *sessions*
+  without opening N cards — was unscheduled pending exactly this proof, and now
+  has its answer. **Do not revive it for sessions on the strength of the IDE
+  precedent alone**; a session is heavier than a document, and the lighter case
+  already failed.
 - **Mermaid diagram rendering in the document viewer** (§5.30, deferred
   2026-07-30): agents emit ```mermaid constantly and v1 renders it as a labeled
   code fence. Cost that kept it out: a ~megabyte dependency plus an

@@ -173,12 +173,23 @@ function sameName(a: string, b: string): boolean {
 /**
  * Every file some viewer currently has open, and one handle per file.
  *
- * REFCOUNTED PER FILE rather than per viewer: two panels on `PROGRESS.md` —
- * one pinned, one in the peek slot, which §5.30 makes an ordinary thing to
- * have — share one directory watch and one stat timer, and the second one
- * closing releases nothing. "A leaked watcher per opened file is exactly the
- * kind of thing that only shows up at session 12" is the done-when's own
- * wording, and `stats()` exists so a test can say it rather than assume it.
+ * REFCOUNTED PER FILE rather than per viewer: two viewers on `PROGRESS.md` —
+ * a docked tab and one in a popped-out window, say — share one directory watch
+ * and one stat timer, and the second one closing releases nothing. "A leaked
+ * watcher per opened file is exactly the kind of thing that only shows up at
+ * session 12" is the done-when's own wording, and `stats()` exists so a test
+ * can say it rather than assume it.
+ *
+ * #530 REMOVED WHAT USED TO BOUND THE FILE COUNT, recorded here rather than
+ * only in that issue. Under the peek slot there was ONE replaceable viewer, so
+ * the ordinary number of watched files was about one; every file now opens its
+ * own tab and thirty is an ordinary afternoon. Thirty files means thirty
+ * handles and thirty poll timers — and because the refcount keys on the FILE,
+ * ten documents from one repo take ten separate watches on one DIRECTORY.
+ * Nothing here is wrong today and nothing leaks; the ceiling simply moved.
+ * Sharing one handle per directory (a `Map<dirKey, {handle, files}>` under
+ * `WatchedFile`) is the fix when it is worth doing — a follow-up, not a rider
+ * on the change that raised the ceiling.
  */
 export class FileWatchService {
   /** `<callerId>:<token>` -> viewer. The id is a number, so the colon can never
@@ -203,8 +214,11 @@ export class FileWatchService {
    *
    * The scope check is `fs:read`'s, called on the same object — a watch is not
    * a weaker ask than a read and must not be a weaker check. Re-watching a
-   * token REPLACES its previous watch, because a peek slot re-pointed at
-   * another file sends exactly that: the same viewer, a new path.
+   * token REPLACES its previous watch, because a viewer that FOLLOWS A LINK
+   * sends exactly that: the same viewer, a new path. (Until #530 a re-pointed
+   * peek slot sent it too; link navigation is now the only source, and it is
+   * enough on its own — `DESIGN.md` → `00-process.md` inside one panel must
+   * stop watching the file you left.)
    */
   watch(callerId: number, token: unknown, target: unknown): FileWatchResult {
     if (typeof token !== 'string' || token.length === 0) {

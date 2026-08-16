@@ -3,14 +3,16 @@
 // A viewer is a DOCUMENT SURFACE: a panel whose content is a file on disk,
 // rendered read-only. It is session-ATTRIBUTED, not session-owned — it outlives
 // any session, needs none, and never appears in the rail, the attention queue
-// or a bulk close (the attribution chip and the peek/pin machinery are
-// P2-E16-03; this item builds the surface).
+// or a bulk close (the attribution chip is P2-E16-03; this item built the
+// surface).
+//
+// ONE PANEL, ONE DOCUMENT (#530). Every file opens its own tab, so `path` is
+// fixed for the life of this component and nothing re-points it from outside.
+// P2-E16-03's peek slot and its 📌 are gone — the header no longer has a pin,
+// `lib/document-panels` no longer has a pointer to move, and the only thing
+// that changes what is on screen is this component's own back/forward.
 //
 // WHAT IS DELIBERATELY NOT HERE:
-//   * the peek slot and pinning behaviour (P2-E16-03) — the pin CONTROL is
-//     rendered and reports its state through `onPinnedChange`, because a header
-//     that grows a button later moves every other one; what the app does with
-//     that state is the next item's;
 //   * images, JSON/CSV bodies and a file tree (Phase 3, DESIGN §8).
 //
 // P2-E16-04 ADDED THE LIVE HALF, and it is deliberately thin here: main owns the
@@ -86,14 +88,6 @@ export interface DocumentViewerProps {
   colorScheme: 'light' | 'dark';
   /** the panel's tab title follows relative-link navigation */
   onTitleChange?: (title: string) => void;
-  /**
-   * CONTROLLED (P2-E16-03). The peek slot is one pointer held outside this
-   * component (`lib/document-panels`), and pinning MOVES it — so a viewer that
-   * kept its own copy would show "pinned" for a panel the registry had since
-   * handed the slot back to. The control reports; the registry decides.
-   */
-  pinned?: boolean;
-  onPinnedChange?: (pinned: boolean) => void;
   /** is this viewer currently in its own OS window? */
   poppedOut?: boolean;
   /** pop out, or dock back — one control, because it is one toggle */
@@ -142,8 +136,12 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
   const current = history[at] ?? props.path;
   const [pendingHash, setPendingHash] = React.useState<string | undefined>(undefined);
 
-  // The panel can be re-pointed from outside (P2-E16-03's peek slot replaces
-  // the params rather than the panel). Treat that as a fresh document.
+  // DEFENSIVE, and unreachable by design since #530: `path` is fixed for the
+  // life of a panel, and a remount re-runs the `useState` initialiser above
+  // anyway. Kept because the cost is one render on mount and the failure it
+  // guards is silent — a history stack seeded from a stale prop is a back
+  // button that lies about where you have been. Delete it the day something
+  // proves no prop can ever change under this component.
   React.useEffect(() => {
     setHistory([props.path]);
     setAt(0);
@@ -154,7 +152,6 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
   const [result, setResult] = React.useState<FileReadResult | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [mode, setMode] = React.useState<DocumentMode>(meta.defaultMode);
-  const pinned = props.pinned ?? false;
 
   React.useEffect(() => {
     setMode(meta.defaultMode);
@@ -615,17 +612,6 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
           onClick={() => void files()?.reveal?.(current)}
         >
           {t('document.revealInFolder')}
-        </button>
-        <button
-          type="button"
-          className="doc-btn doc-pin"
-          data-testid="doc-pin"
-          aria-pressed={pinned}
-          title={pinned ? t('document.unpin') : t('document.pin')}
-          aria-label={pinned ? t('document.unpin') : t('document.pin')}
-          onClick={() => props.onPinnedChange?.(!pinned)}
-        >
-          {pinned ? t('document.icon.pinned') : t('document.icon.unpinned')}
         </button>
         {props.onPopoutToggle ? (
           // ONE control for both directions, like the card's (E8-04): pop out

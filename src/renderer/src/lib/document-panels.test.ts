@@ -1,78 +1,47 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   documentKey,
   documentPanelPath,
   documentPanels,
-  documentPeekId,
   forgetDocumentPanel,
-  isDocumentPinned,
   planDocumentOpen,
   resetDocumentPanels,
-  setDocumentPinned,
 } from './document-panels';
 
-describe('document-panels — the peek slot and the pin contract (P2-E16-03)', () => {
+describe('document-panels — every file opens its own tab (#530)', () => {
   beforeEach(() => resetDocumentPanels());
 
-  it('the first open creates a viewer, and that viewer is the peek slot', () => {
+  it('the first open creates a viewer', () => {
     const plan = planDocumentOpen('/p/a.md');
     expect(plan.action).toBe('create');
-    expect(documentPeekId()).toBe(plan.id);
-    expect(isDocumentPinned(plan.id)).toBe(false);
     expect(documentPanels()).toHaveLength(1);
+    expect(documentPanelPath(plan.id)).toBe('/p/a.md');
   });
 
-  it('a SECOND file replaces the peek slot rather than opening a panel', () => {
+  it('a SECOND file gets its own panel — nothing is replaced', () => {
     const first = planDocumentOpen('/p/a.md');
     const second = planDocumentOpen('/p/b.md');
-    expect(second).toMatchObject({ action: 'replace', id: first.id, path: '/p/b.md' });
-    expect(documentPanels()).toHaveLength(1);
-    expect(documentPanelPath(first.id)).toBe('/p/b.md');
-  });
-
-  it('PINNING makes the next open a new panel, and leaves the pinned one alone', () => {
-    const kept = planDocumentOpen('/p/a.md');
-    setDocumentPinned(kept.id, true);
-    expect(isDocumentPinned(kept.id)).toBe(true);
-    expect(documentPeekId()).toBeNull();
-
-    const next = planDocumentOpen('/p/b.md');
-    expect(next.action).toBe('create');
-    expect(next.id).not.toBe(kept.id);
+    expect(second.action).toBe('create');
+    expect(second.id).not.toBe(first.id);
     expect(documentPanels()).toHaveLength(2);
-    // the pinned one still shows what it was pinned on
-    expect(documentPanelPath(kept.id)).toBe('/p/a.md');
-    // ...and the new one is the slot the glance after this will reuse
-    expect(documentPeekId()).toBe(next.id);
-    const third = planDocumentOpen('/p/c.md');
-    expect(third).toMatchObject({ action: 'replace', id: next.id });
-    expect(documentPanels()).toHaveLength(2);
+    // the first is untouched: it still shows what it was opened on
+    expect(documentPanelPath(first.id)).toBe('/p/a.md');
   });
 
-  it('there is never more than one unpinned viewer', () => {
-    const a = planDocumentOpen('/p/a.md');
-    setDocumentPinned(a.id, true);
-    const b = planDocumentOpen('/p/b.md');
-    // unpinning the KEPT one hands it the slot; the other becomes pinned by
-    // derivation, with nothing closed and nothing left permanently replaceable
-    setDocumentPinned(a.id, false);
-    expect(documentPeekId()).toBe(a.id);
-    expect(isDocumentPinned(a.id)).toBe(false);
-    expect(isDocumentPinned(b.id)).toBe(true);
-    expect(documentPanels().filter((p) => !isDocumentPinned(p.id))).toHaveLength(1);
-
-    // and the next glance really does land in the re-claimed slot
-    expect(planDocumentOpen('/p/c.md')).toMatchObject({ action: 'replace', id: a.id });
+  it('THREE files, THREE tabs — the done-when, stated as state', () => {
+    // The whole owner decision in one assertion: no gesture, no pin, no
+    // exception. Glancing is not a special case any more.
+    const ids = ['/p/a.md', '/p/b.md', '/p/c.md'].map((p) => planDocumentOpen(p));
+    expect(ids.map((p) => p.action)).toEqual(['create', 'create', 'create']);
+    expect(new Set(ids.map((p) => p.id)).size).toBe(3);
+    expect(documentPanels().map((e) => e.path)).toEqual(['/p/a.md', '/p/b.md', '/p/c.md']);
   });
 
-  it('opening a file that is already open focuses it and spends no peek slot', () => {
-    const kept = planDocumentOpen('/p/a.md');
-    setDocumentPinned(kept.id, true);
-    const peek = planDocumentOpen('/p/b.md');
+  it('opening a file that is already open FOCUSES it rather than opening it twice', () => {
+    const first = planDocumentOpen('/p/a.md');
+    planDocumentOpen('/p/b.md');
 
-    expect(planDocumentOpen('/p/a.md')).toMatchObject({ action: 'focus', id: kept.id });
-    // the peek slot still shows b.md — the focus did not re-point it
-    expect(documentPanelPath(peek.id)).toBe('/p/b.md');
+    expect(planDocumentOpen('/p/a.md')).toMatchObject({ action: 'focus', id: first.id });
     expect(documentPanels()).toHaveLength(2);
   });
 
@@ -82,36 +51,89 @@ describe('document-panels — the peek slot and the pin contract (P2-E16-03)', (
     expect(planDocumentOpen('C:/p/a.md')).toMatchObject({ action: 'focus', id: first.id });
   });
 
-  it('attribution follows the CONTENT of the peek slot, not the panel', () => {
-    const first = planDocumentOpen('/p/a.md', 'card-1');
-    expect(first.sessionId).toBe('card-1');
-    // re-pointed from another session's Changes tab
-    expect(planDocumentOpen('/p/b.md', 'card-2')).toMatchObject({
-      action: 'replace',
-      sessionId: 'card-2',
+  describe('case, on a file system that folds it (#530)', () => {
+    // Only reachable through the bridge, because only main knows the platform.
+    // Stubbed rather than mocked so the DEFAULT case — no bridge at all — is
+    // the one every other test in this file runs under, and is asserted below.
+    const setPlatform = (platform: string | undefined): void => {
+      const g = globalThis as { switchboard?: { platform?: string } };
+      if (platform === undefined) delete g.switchboard;
+      else g.switchboard = { ...g.switchboard, platform };
+    };
+    afterEach(() => setPlatform(undefined));
+
+    it('on Windows, two casings of one path are one document — not two tabs', () => {
+      // Under the peek slot this gap was invisible: the second spelling merely
+      // re-pointed the slot at what was already there. With a tab per file it
+      // is a duplicate tab on one document, which is the one thing the focus
+      // rule promises cannot happen.
+      setPlatform('win32');
+      const first = planDocumentOpen('C:\\Projects\\App\\README.md');
+      expect(planDocumentOpen('c:/projects/app/readme.md')).toMatchObject({
+        action: 'focus',
+        id: first.id,
+      });
+      expect(documentPanels()).toHaveLength(1);
     });
-    // ...and from the palette, which has no session at all
-    expect(planDocumentOpen('/p/c.md')).toMatchObject({
-      action: 'replace',
-      sessionId: undefined,
+
+    it('on macOS too — the same volume default', () => {
+      setPlatform('darwin');
+      const first = planDocumentOpen('/Users/dan/Notes.md');
+      expect(planDocumentOpen('/users/dan/notes.md')).toMatchObject({ action: 'focus', id: first.id });
     });
-    expect(documentPanels()[0]?.sessionId).toBeUndefined();
+
+    it('on Linux they are TWO documents, because there they are two files', () => {
+      setPlatform('linux');
+      planDocumentOpen('/home/dan/Notes.md');
+      expect(planDocumentOpen('/home/dan/notes.md').action).toBe('create');
+      expect(documentPanels()).toHaveLength(2);
+    });
+
+    it('with no bridge, nothing is folded — the conservative answer', () => {
+      // Splitting one document into two tabs is recoverable (close one);
+      // merging two files into one tab shows the wrong file. So an unknown
+      // platform takes the answer that can only ever be too cautious.
+      planDocumentOpen('/p/Notes.md');
+      expect(planDocumentOpen('/p/notes.md').action).toBe('create');
+    });
   });
 
-  it('closing the peek frees the slot; closing a pinned viewer does not take it', () => {
-    const kept = planDocumentOpen('/p/a.md');
-    setDocumentPinned(kept.id, true);
-    const peek = planDocumentOpen('/p/b.md');
+  it('attribution is recorded per panel, and a re-open does not rewrite it', () => {
+    const first = planDocumentOpen('/p/a.md', 'card-1');
+    expect(first.sessionId).toBe('card-1');
+    // a second file from a second card is its OWN viewer, with its own lineage
+    expect(planDocumentOpen('/p/b.md', 'card-2')).toMatchObject({
+      action: 'create',
+      sessionId: 'card-2',
+    });
+    // ...and asking for the first again from the palette (no session) focuses
+    // it WITHOUT stripping the chip: where a document came from is a fact about
+    // the document, not about the last person to ask for it.
+    expect(planDocumentOpen('/p/a.md')).toMatchObject({
+      action: 'focus',
+      id: first.id,
+      sessionId: 'card-1',
+    });
+    expect(documentPanels()[0]?.sessionId).toBe('card-1');
+  });
 
-    forgetDocumentPanel(kept.id);
-    expect(documentPeekId()).toBe(peek.id);
+  it('closing a viewer forgets it, and the file can then be opened afresh', () => {
+    const a = planDocumentOpen('/p/a.md');
+    const b = planDocumentOpen('/p/b.md');
+
+    forgetDocumentPanel(a.id);
     expect(documentPanels()).toHaveLength(1);
+    // the one still open is untouched by its neighbour going
+    expect(documentPanelPath(b.id)).toBe('/p/b.md');
+    // and the closed file is a fresh open, not a focus on a panel that is gone
+    expect(planDocumentOpen('/p/a.md').action).toBe('create');
+  });
 
-    forgetDocumentPanel(peek.id);
-    expect(documentPeekId()).toBeNull();
-    expect(documentPanels()).toHaveLength(0);
-    // the next open starts the cycle over
-    expect(planDocumentOpen('/p/c.md').action).toBe('create');
+  it('forgetting a panel that was never registered is a no-op', () => {
+    const a = planDocumentOpen('/p/a.md');
+    forgetDocumentPanel('doc-999');
+    expect(documentPanels()).toHaveLength(1);
+    expect(documentPanelPath(a.id)).toBe('/p/a.md');
   });
 
   it('panel ids are never reused within a renderer, so dockview cannot collide', () => {
@@ -119,13 +141,5 @@ describe('document-panels — the peek slot and the pin contract (P2-E16-03)', (
     forgetDocumentPanel(a.id);
     const b = planDocumentOpen('/p/b.md');
     expect(b.id).not.toBe(a.id);
-  });
-
-  it('pin calls for a panel that is not open are ignored', () => {
-    const a = planDocumentOpen('/p/a.md');
-    setDocumentPinned('doc-999', false);
-    expect(documentPeekId()).toBe(a.id);
-    setDocumentPinned('doc-999', true);
-    expect(documentPeekId()).toBe(a.id);
   });
 });

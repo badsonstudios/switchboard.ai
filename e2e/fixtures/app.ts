@@ -1086,6 +1086,16 @@ export interface PersistedLayout {
   /** dockview wraps even a single panel, so the ROOT is always a branch */
   grid: { width: number; height?: number; orientation?: string; root: PersistedGridBranch };
   popoutGroups?: PersistedPopoutGroup[];
+  /**
+   * Panel records by id, each with the `params` blob `addPanel` was given.
+   *
+   * Reached for by specs that need to doctor a saved panel's params into a
+   * shape THIS version of the app would never write — `document-peek.spec`
+   * plants a `pinned: true` on a viewer, which is what a layout saved before
+   * #530 looks like. `params` is deliberately open (`unknown` values): the
+   * whole point of these tests is fields the current code does not have.
+   */
+  panels?: Record<string, { id?: string; params?: Record<string, unknown> }>;
 }
 
 export interface PersistedPopoutGroup {

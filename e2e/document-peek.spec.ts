@@ -1,9 +1,14 @@
-// The peek slot, pinning, and the viewer window (P2-E16-03, §5.30 + §5.8).
+// A tab per document, and the viewer window (P2-E16-03 + #530, §5.30 + §5.8).
 //
-// `lib/document-panels.test.ts` owns the RULES — one peek slot, pin promotes,
-// unpin reclaims, ids never collide — as pure state, and it can, because they
-// are pure state. What only a real Electron window can prove is the half that
-// is dockview's:
+// **The peek slot and the pin are GONE** (owner decision, 2026-08-15, #530):
+// every file opens its own tab, docked beside the ones already open, and
+// nothing is ever replaced. The file keeps its name so the issues that cite it
+// by line — #494's two flakes — still point at something.
+//
+// `lib/document-panels.test.ts` owns the RULES — a new tab per file, a re-open
+// focuses, ids never collide — as pure state, and it can, because they are pure
+// state. What only a real Electron window can prove is the half that is
+// dockview's:
 //
 //   * a viewer never lands in a SESSION'S group, and never in a POPOUT. That is
 //     the E8-04 defect in mirror image, and the plan says in as many words to
@@ -24,7 +29,16 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { launchApp, LaunchedApp, onTestDisplay, registerTempDir, skipPopoutOnLinux } from './fixtures/app';
+import {
+  launchApp,
+  LaunchedApp,
+  onTestDisplay,
+  persistedLayout,
+  readWorkspaceFile,
+  registerTempDir,
+  skipPopoutOnLinux,
+  writeWorkspaceFile,
+} from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -123,7 +137,7 @@ async function expectReadable(w: Page): Promise<void> {
   expect(box!.width, 'the viewer opened into a collapsed group').toBeGreaterThan(100);
 }
 
-test.describe('the peek slot and pinning (P2-E16-03)', () => {
+test.describe('a tab per document (#530)', () => {
   let a: LaunchedApp | undefined;
   test.afterEach(async () => {
     const launched = a;
@@ -131,13 +145,16 @@ test.describe('the peek slot and pinning (P2-E16-03)', () => {
     await launched?.cleanup();
   });
 
-  test('a second file REPLACES the peek slot; pinning makes the next open a new panel', async () => {
+  test('three files open three tabs, and no pin control exists anywhere', async () => {
+    // THE DONE-WHEN, end to end. The unit test proves the registry plans three
+    // `create`s; only a real window proves the three panels are all still THERE
+    // afterwards — dockview is the half that could drop one, by docking the new
+    // tab over the old or by landing it somewhere the tab strip cannot show.
     const dir = tempGitProject(['ONE.md', 'TWO.md', 'THREE.md']);
     a = await launchApp({ seedFolder: dir });
     const w = a.window;
     await openChanges(w, dir);
 
-    // ── one glance ────────────────────────────────────────────────────────
     await openInViewer(w, 'ONE.md');
     await expect(viewer(w)).toBeVisible();
     await expect(docName(w)).toHaveText('ONE.md');
@@ -150,32 +167,63 @@ test.describe('the peek slot and pinning (P2-E16-03)', () => {
     await expect(chip).toContainText(path.basename(dir));
     await expect(chip).toHaveAttribute('aria-label', `Opened from the session ${path.basename(dir)}`);
 
-    // ── the next glance takes the SAME panel ──────────────────────────────
+    // ── a second file: its OWN tab, and the first one survives ────────────
     await openInViewer(w, 'TWO.md');
     await expect(docName(w)).toHaveText('TWO.md');
     await expect(w.locator('[data-testid="doc-rendered"] h1')).toHaveText('TWO.md now');
-    // the tab was re-titled, not duplicated: the first file is GONE from the
-    // tab strip, which is the whole point of a peek slot
+    await expect(docTab(w, 'ONE.md')).toHaveCount(1);
     await expect(docTab(w, 'TWO.md')).toHaveCount(1);
-    await expect(docTab(w, 'ONE.md')).toHaveCount(0);
 
-    // ── pin, and the next glance gets its own panel ───────────────────────
-    const pin = viewer(w).getByTestId('doc-pin');
-    await expect(pin).toHaveAttribute('aria-pressed', 'false');
-    await pin.click();
-    await expect(pin).toHaveAttribute('aria-pressed', 'true');
-
+    // ── and a third, with no gesture in between ───────────────────────────
     await openInViewer(w, 'THREE.md');
-    await expect(docTab(w, 'TWO.md')).toHaveCount(1); // kept
-    await expect(docTab(w, 'THREE.md')).toHaveCount(1); // and a fresh peek slot
     await expect(docName(w)).toHaveText('THREE.md');
+    await expect(docTab(w, 'ONE.md')).toHaveCount(1);
+    await expect(docTab(w, 'TWO.md')).toHaveCount(1);
+    await expect(docTab(w, 'THREE.md')).toHaveCount(1);
 
-    // ...and THAT one is transient again: a fourth glance replaces it and
-    // still leaves the pinned one alone
+    // NO PIN. Not on the active viewer, not in the DOM at all — the affordance
+    // was removed rather than hidden, which is what "get rid of that pin
+    // altogether" asks for.
+    await expect(w.getByTestId('doc-pin')).toHaveCount(0);
+    await expect(w.locator('.doc-pin')).toHaveCount(0);
+
+    // ── re-opening one that is already open FOCUSES it ────────────────────
+    // The one rule that survived the peek slot: no fourth tab, and the one it
+    // raises is the one that was already there.
     await openInViewer(w, 'ONE.md');
+    await expect(docName(w)).toHaveText('ONE.md');
+    await expect(docTab(w, 'ONE.md')).toHaveCount(1);
+    await expect(docTab(w, 'TWO.md')).toHaveCount(1);
+    await expect(docTab(w, 'THREE.md')).toHaveCount(1);
+  });
+
+  test('closing a tab takes that document and nothing else', async () => {
+    // The corollary of "nothing closes on its own": the ✕ is now the ONLY thing
+    // that closes a viewer, so it had better close exactly one.
+    const dir = tempGitProject(['ONE.md', 'TWO.md']);
+    a = await launchApp({ seedFolder: dir });
+    const w = a.window;
+    await openChanges(w, dir);
+    await openInViewer(w, 'ONE.md');
+    await openInViewer(w, 'TWO.md');
+    await expect(docTab(w, 'ONE.md')).toHaveCount(1);
+    await expect(docTab(w, 'TWO.md')).toHaveCount(1);
+
+    // The ✕ inside that tab. `IdentityTab` renders exactly one button, and it
+    // is NOT selected by title on purpose: every tab's ✕ carries the session
+    // card's `grid.closeTab` title, "Close (ends the session)", which is simply
+    // wrong on a document tab and closes no session at all. Selecting by role
+    // rather than by that string means this test survives the day the wording
+    // is fixed instead of being the thing that blocks it.
+    await docTab(w, 'TWO.md').locator('button').click();
+    await expect(docTab(w, 'TWO.md')).toHaveCount(0);
+    await expect(docTab(w, 'ONE.md')).toHaveCount(1);
+    await expect(docName(w)).toHaveText('ONE.md');
+
+    // ...and the closed one is a fresh open afterwards, not a focus on a ghost
+    await openInViewer(w, 'TWO.md');
     await expect(docTab(w, 'TWO.md')).toHaveCount(1);
     await expect(docTab(w, 'ONE.md')).toHaveCount(1);
-    await expect(docTab(w, 'THREE.md')).toHaveCount(0);
   });
 
   test('a viewer never opens as a tab inside a session’s group', async () => {
@@ -243,14 +291,18 @@ test.describe('the viewer window (P2-E16-03)', () => {
     await expect(viewer(w)).toHaveCount(0);
 
     // ── THE MIRROR OF E8-04 ───────────────────────────────────────────────
-    // Pin the popped-out viewer (so the next open cannot simply re-point it),
-    // then open another file from the main window. dockview's `addPanel`
-    // defaults to the ACTIVE group — which is now the group in the popout —
-    // so without the rule the second viewer would appear in this window,
-    // silently, on the wrong monitor.
-    await popout.getByTestId('doc-pin').click();
-    await expect(popout.getByTestId('doc-pin')).toHaveAttribute('aria-pressed', 'true');
-
+    // Open another file from the main window. dockview's `addPanel` defaults
+    // to the ACTIVE group — which is now the group in the popout — so without
+    // the rule the second viewer would appear in this window, silently, on the
+    // wrong monitor.
+    //
+    // #530 SIMPLIFIED THE SETUP, and it is worth saying why the pin click that
+    // used to be here is gone rather than merely deleted: under the peek slot,
+    // TWO.md would otherwise have re-pointed the popped-out ONE.md and the test
+    // would have proved nothing about WHERE a new panel lands, so the viewer
+    // had to be pinned first. Every open is now a new panel unconditionally, so
+    // the setup step is not just unnecessary — the case it was protecting
+    // against no longer exists.
     await openInViewer(w, 'TWO.md');
     await expect(docName(w)).toHaveText('TWO.md', { timeout: 15_000 });
     // READABLE, not merely present — and not merely `toBeVisible` either; see
@@ -258,6 +310,18 @@ test.describe('the viewer window (P2-E16-03)', () => {
     // shell the popout above just left behind in the grid.
     await expectReadable(w);
     // ...and the viewer window is untouched: still ONE.md, still one viewer
+    await expect(viewer(popout)).toHaveCount(1);
+    await expect(docName(popout)).toHaveText('ONE.md');
+
+    // ── RE-OPENING A FILE THAT IS OUT IN ITS OWN WINDOW ───────────────────
+    // The focus rule's hardest case, and the one where it can fail SILENTLY:
+    // `panel.focus()` ends in "make this panel active in its group", and a
+    // popped-out viewer is alone in its group and therefore already active —
+    // so without the window raise this click does nothing observable at all.
+    // What must NOT happen is a second ONE.md in the main window.
+    await openInViewer(w, 'ONE.md');
+    await expect(docTab(w, 'ONE.md')).toHaveCount(0);
+    await expect(docTab(w, 'TWO.md')).toHaveCount(1);
     await expect(viewer(popout)).toHaveCount(1);
     await expect(docName(popout)).toHaveText('ONE.md');
 
@@ -354,7 +418,7 @@ test.describe('a viewer is not a session (P2-E16-03, §5.30)', () => {
     await expect(docName(w)).toHaveText('ONE.md');
   });
 
-  test('quitting with viewers open costs no session state', async () => {
+  test('quitting with viewers open costs no session state, and a PRE-#530 pin in the saved layout is inert', async () => {
     const dir = tempGitProject(['ONE.md', 'TWO.md']);
     const first = await launchApp({ seedFolder: dir });
     a = first;
@@ -362,14 +426,30 @@ test.describe('a viewer is not a session (P2-E16-03, §5.30)', () => {
     await openChanges(w, dir);
     await openInViewer(w, 'ONE.md');
     await expect(viewer(w)).toBeVisible();
-    // Pinned, and then a SECOND one — so the quit happens with a kept viewer
-    // AND a live peek slot, which is all of the state this item added.
-    await w.getByTestId('doc-pin').click();
+    // TWO viewers at the moment of the quit — which is now all of the state
+    // there is, the pin click that used to stand between them having gone with
+    // #530. A saved layout with two `doc-` panels in it is what the restore's
+    // prune has to survive.
     await openInViewer(w, 'TWO.md');
     await expect(docTab(w, 'ONE.md')).toHaveCount(1);
     await expect(docTab(w, 'TWO.md')).toHaveCount(1);
 
     await first.close();
+
+    // ── A LAYOUT FROM BEFORE #530 ─────────────────────────────────────────
+    // Nobody upgrading from 0.5.0 has a workspace file this version would ever
+    // write: theirs carries `pinned` on every `doc-` panel, because that is
+    // what `addPanel` was given. Plant it, since the alternative is asserting
+    // "it cannot crash" from an argument. The claim under test is the whole of
+    // the done-when's persistence clause — the stale key neither throws on the
+    // way through `fromJSON` nor brings any of the behaviour back.
+    const ws = readWorkspaceFile(first.home);
+    const panels = persistedLayout(ws).panels ?? {};
+    const docs = Object.keys(panels).filter((id) => id.startsWith('doc-'));
+    expect(docs.length, 'the quit saved no viewers, so there is nothing to doctor').toBe(2);
+    for (const id of docs) panels[id].params = { ...panels[id].params, pinned: true };
+    writeWorkspaceFile(first.home, ws);
+
     a = await launchApp({ home: first.home });
     const w2 = a.window;
 
@@ -379,6 +459,13 @@ test.describe('a viewer is not a session (P2-E16-03, §5.30)', () => {
     // ...and the viewers did not (restoring open viewers is Phase 3) — stated
     // so that the day it changes, this line is the one that says so
     await expect(viewer(w2)).toHaveCount(0);
+    // no pin came back with them, and the app is USABLE rather than merely not
+    // crashed: opening a file still works after a doctored restore
+    await expect(w2.getByTestId('doc-pin')).toHaveCount(0);
+    await openChanges(w2, dir);
+    await openInViewer(w2, 'ONE.md');
+    await expect(docName(w2)).toHaveText('ONE.md');
+    await expect(w2.getByTestId('doc-pin')).toHaveCount(0);
   });
 
   test('quitting with a viewer in its OWN window leaves no empty window behind', async () => {

@@ -57,6 +57,16 @@ on the floor, and say so in your PR.
 
 ## 0.6.0 — unreleased
 
+### Changed
+
+- **Every file you open now gets its own tab, and the 📌 is gone.** Opening a
+  second document used to *replace* the one you were reading, and the pin was
+  how you stopped it. That is over: a new file opens beside the ones already
+  open, nothing closes on its own, and a document goes away only when you close
+  its tab with the **✕**. Opening a file that is already open still just brings
+  its tab to the front. If you liked a tidy tab strip, closing the ones you are
+  done with is now your call rather than the app's.
+
 ### Internal
 
 - Fixed the end-to-end test that kept failing on the Windows CI machine and
