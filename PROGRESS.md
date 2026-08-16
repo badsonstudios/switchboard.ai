@@ -3,7 +3,41 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — 🎛 RUN 19 ACTIVE (started 2026-08-15)
+> # ▶▶ START HERE — ✅ RUN 19 CLOSED 2026-08-15: 12 ITEMS, 12 PRs
+> # AWAITING DAN'S TRAIN
+>
+> **Every wave-1/2 item DONE. Dan's queue (12, all green or greening,
+> all owner-priority):** #535 (update restarts itself) · #536 (reply
+> links open browser) · #537 (resume lineage + repair sweep) · #540
+> (right-click menus) · #542 (pin removed, always-new-tab) · #545
+> (composer draft survives) · #547 (viewer find, on #542) · #548
+> (side-by-side diff) · #549 (find marks the term) · #551 (popout
+> new-session + dock-back blocker fix) · #552 (quiet hours) · #553
+> (the Events drawer, Shape B). Internal merged mid-run: #541 (#524
+> Tab-stop fix). **TRAIN NOTES:** CHANGELOG-0.6.0 unions expected on
+> most members (first-entry collision); #542 BEFORE #547 (chain);
+> App.tsx unions #551∩#553 (regions kept apart deliberately);
+> #542's always-new-tab vs #547's viewer-find same files — chain
+> handles it. **#268 stays open** (#553 kept row styling byte-for-
+> byte). 407-recovery stash retained in wt-2 until #553 merges.
+> **Incidents this run:** Dan's click cancelled 3 workers (all
+> recovered, verify-then-keep vindicated — #531's review found the
+> dock-back-kills-neighbour blocker, #553's found 3 shippable bugs);
+> dead-waiter trap ×2; FIVE issue premises corrected by measurement
+> (#527 surfaces, #484 no-fork, #485 popout-innocent, #524 not-
+> focus-theft, #532 Monaco-default — pattern: file tickets with
+> mechanisms, workers verify before building). **Main @ 616dfab,
+> out/ REBUILT + stamp-verified.** Worktrees: wt-1/wt-3 idle clean;
+> wt-2 holds the 407 stash. Tracker moves to RE-TEST happen at
+> train landing (rule = on merge). **NEXT: Dan's train
+> authorization ("go ahead and merge") → train/2026-08-16; then
+> run 20 tail: #483 (digest — #482's record + #553's drawer both
+> in), #521-layer-1, #495-verify, #488 #490 #491 #497-#499 #502-
+> #504 #506 #508 #509 #512 #517 #518 #539 #543 #544 #546 #550;
+> Dan-gated: #528/#529 design sittings, #521-design.**
+>
+> # (run-19 live board follows)
+> # 🎛 RUN 19 ACTIVE (started 2026-08-15)
 >
 > **Single-writer rule: only the orchestrator (this session) writes this
 > file.** Workers report via `.claude/work_files/orchestrator/<issue#>.md`;
