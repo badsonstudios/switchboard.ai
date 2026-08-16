@@ -214,6 +214,25 @@ test.describe('the feed has a way back to the tail — with a conversation (#442
     await w.keyboard.press('Tab');
     await expect(jump(w)).toBeFocused();
 
+    // ...and it does not BURY the composer, which is #174's standing promise
+    // about this gap. One more Tab and you are typing — the control costs a
+    // keystroke on the way out of an unpinned feed, and nothing more.
+    //
+    // #524 lives here. `stream-feed.spec.ts` and `feed.spec.ts` both walked
+    // "Escape, Tab, composer" — written before this control existed, and true
+    // only while the feed is pinned or fits. On windows-latest it neither fits
+    // nor stays pinned (this file's geometry, the walk's own `Home`), so the
+    // Tab landed HERE and the composer assertion failed with "inactive" five
+    // times in two days. Both orders are correct; the walks now go through
+    // `tabFromFeedToComposer`, and this is the case that pins the two-stop one
+    // down on every machine rather than on whichever one has a small screen.
+    await w.keyboard.press('Tab');
+    await expect(w.getByPlaceholder(/Prompt this session/)).toBeFocused();
+    // Shift+Tab comes back to it — the other half of the placement claim in
+    // `FeedView.tsx`, and how the Enter below gets its target back.
+    await w.keyboard.press('Shift+Tab');
+    await expect(jump(w)).toBeFocused();
+
     // it is a real button, so Enter operates it
     await w.keyboard.press('Enter');
     await expect.poll(() => tailGap(w), { timeout: 5_000 }).toBeLessThan(40);

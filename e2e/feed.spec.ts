@@ -16,7 +16,13 @@
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
-import { launchApp, LaunchedApp, showTerminal, tempProjectFolder } from './fixtures/app';
+import {
+  launchApp,
+  LaunchedApp,
+  showTerminal,
+  tabFromFeedToComposer,
+  tempProjectFolder,
+} from './fixtures/app';
 
 function slugForCwd(cwd: string): string {
   return cwd.replace(/[\\/:. ]/g, '-');
@@ -547,11 +553,14 @@ test.describe('[pty] Feed view (E12-06)', () => {
     await expect(w.getByText('KEYS_OUTPUT', { exact: true }).last()).toBeVisible();
     await expect(w.getByText('▸ IN')).toBeVisible(); // IN stayed shut — no coarse toggle
 
-    // 6. Escape hands focus back to the region, and one more Tab reaches the
-    //    composer: a conversation with hundreds of blocks must never bury it
+    // 6. Escape hands focus back to the region, and tabbing out of it reaches
+    //    the composer: a conversation with hundreds of blocks must never bury
+    //    it. Past #442's conditional stop where the window is small enough for
+    //    it to exist — this walk is #524's twin on the transcript path, written
+    //    the same way and exposed to the same geometry (see the helper).
     await w.keyboard.press('Escape');
     expect((await focused()).region).toBe(true);
-    await w.keyboard.press('Tab');
+    await tabFromFeedToComposer(w);
     await expect(w.getByPlaceholder(/Prompt this session/)).toBeFocused();
   });
 
