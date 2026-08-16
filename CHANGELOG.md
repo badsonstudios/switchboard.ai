@@ -57,6 +57,21 @@ on the floor, and say so in your PR.
 
 ## 0.6.0 — unreleased
 
+### Added
+
+- **Start a new session without leaving a popped-out window.** Tearing a session
+  into its own window used to leave you with no way to start another one from
+  there: every "new session" control lives in the main window's sidebar, so a
+  second monitor meant going back to the first one to ask. A popped-out card's
+  header now has a **＋** next to the pop-out button, and **Ctrl+N** works in
+  that window too. The new session opens as a tab right beside the one you asked
+  from, on the monitor you are already looking at, and the folder picker opens
+  over that window instead of dragging the main window in front of you. It is an
+  ordinary session in every other way — it gets a row in the Sessions list, it
+  can ask for your attention, and **⤡** docks it back into the main window on
+  its own. Sessions started from the main window are unchanged: they still open
+  there, at full size, and never on top of a document you have open.
+
 ### Internal
 
 - Fixed the end-to-end test that kept failing on the Windows CI machine and

@@ -975,6 +975,14 @@ export function App(): React.JSX.Element {
           // arrives here through the popout key bridge below, so this is not a
           // main-window-only path however much it looks like one.
           newSession: () => {
+            // ...and when that window is a popout, say so BEFORE starting, the
+            // same way `focusSession` does. The key bridge pulls this window
+            // forward after any command that ran, which here would bury the
+            // popout the user is working in — underneath the folder dialog we
+            // deliberately parented to it. Asked synchronously because the
+            // bridge reads the flag the moment `run` returns, long before the
+            // dialog resolves.
+            if (grid.current?.newSessionTargetsPopout()) raisedOtherWindowRef.current = true;
             void grid.current?.newSession();
           },
           closeCard: (cardId) => grid.current?.closeCard(cardId),

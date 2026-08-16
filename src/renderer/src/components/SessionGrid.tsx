@@ -3141,6 +3141,15 @@ export interface GridController {
    * would also read "new session".
    */
   newSession: () => Promise<void>;
+  /**
+   * Would `newSession()` land its card in a popped-out window right now?
+   *
+   * Synchronous on purpose, and asked BEFORE the gesture starts: App's popout
+   * key bridge pulls the main window forward after any command that ran, and
+   * it reads that decision the instant `run` returns — long before a folder
+   * dialog could resolve. Answering late would be answering never (#531).
+   */
+  newSessionTargetsPopout: () => boolean;
   /** move an existing card's PANEL next to its persistent-group siblings
    *  after a rail drop set its membership (E12-04) */
   moveCardToGroup: (cardId: string, groupId: string | null) => void;
@@ -3340,6 +3349,13 @@ export function SessionGrid(props: {
     props.controller.current = {
       addSessionCard,
       newSession,
+      // Reads `apiRef` at call time rather than closing over an api, so it
+      // cannot answer from a stale grid; `focusedPopoutGroup` is the same
+      // question `newSession` itself asks a tick later.
+      newSessionTargetsPopout: () => {
+        const api = apiRef.current;
+        return !!api && focusedPopoutGroup(api) !== null;
+      },
       moveCardToGroup: (cardId, groupId) => {
         const api = apiRef.current;
         if (!api || !groupId) return; // ungrouping keeps the panel where it sits
@@ -3564,7 +3580,6 @@ export function SessionGrid(props: {
       }
     }
   }, [props.colorScheme]);
-
 
   const onReady = useCallback(
     async (event: DockviewReadyEvent) => {
