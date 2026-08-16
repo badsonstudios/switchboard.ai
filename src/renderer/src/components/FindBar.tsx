@@ -324,12 +324,27 @@ export function FindBar(props: {
   // EVERY group, not just the focused one (§5.31's first decision). The
   // "never matches another card" guarantee is untouched: a group is reached by
   // naming a card AND a panel, and the only card named here is this one.
+  /**
+   * The current step could be counted but not scrolled to (#557).
+   *
+   * State rather than a derived read of `steps[index].hit.jumpable`, because
+   * the second way to get here is only knowable at reveal time: a provider that
+   * accepted the hit and then reported it did not move.
+   */
+  const [stuck, setStuck] = React.useState(false);
   const revealStep = React.useCallback((v: FindGroupsView, i: number): void => {
     const step = v.steps[i];
     if (!step?.hit.jumpable) {
-      if (step) setFindListOpen(true);
+      // NOT `setFindListOpen(true)` any more (#557). Opening the results list
+      // because one hit could not be jumped to is the app taking the pane over
+      // in response to a keystroke that asked for a step — the owner's words
+      // for it were "this weird window that showed the different points in the
+      // session". The bar says so instead, in one quiet line, and the list
+      // stays behind its own `▸` for whoever wants it.
+      setStuck(!!step);
       return;
     }
+    setStuck(false);
     const group = v.groups[step.groupIndex];
     const entry = entriesRef.current.find(({ p }) => p.manifest.id === group?.id);
     if (!entry?.p.reveal) return;
@@ -356,7 +371,9 @@ export function FindBar(props: {
       () => entry.p.reveal?.(entry.groupCtx, step.hit, findQuery()) ?? false,
       false,
     );
-    if (!moved) setFindListOpen(true);
+    // Same rule for the other way a step can fail to land (#557): the provider
+    // took the hit and reported it did not move. Say it; do not open anything.
+    setStuck(!moved);
   }, []);
 
   const term = bar.term;
@@ -683,6 +700,18 @@ export function FindBar(props: {
               </span>
             </span>
           ))}
+        </div>
+      )}
+
+      {/* The one hit you are ON cannot be scrolled to (#557).
+          A line in the BAR, where the count already is, because that is the
+          honest half of what the results list used to be opened to say — and
+          the list is still one `▸` away for the snippet itself. Rendered above
+          the group notices deliberately: this one is about the keystroke just
+          pressed, and it must not be read as a property of the whole search. */}
+      {stuck && !unavailableKey && term !== '' && (
+        <div data-testid="find-stuck" style={{ fontSize: 10, color: 'var(--muted)', maxInlineSize: 420 }}>
+          {t('find.hitNotJumpable')}
         </div>
       )}
 

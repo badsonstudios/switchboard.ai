@@ -29,8 +29,8 @@ is now IN the installed build once Dan updates. Twelve fixes landed via train #5
 
 | What | Shipped in | Re-test |
 |---|---|---|
-| Find highlight in session view | **v0.6.0** | PARTLY VERIFIED — marks work where jumping works; blocked behind #495/#557 on resumed sessions |
-| Find on ANY resumed session | NOT yet (#495 raised, #496, #557) | Every hit must jump; the bar alone should carry it — no auto-opening results list |
+| Find highlight in session view | **v0.6.0** | PARTLY VERIFIED — marks work where jumping works; retest with the #557 branch |
+| Find on ANY resumed session | PR open (`feature/557-find-bar-first`, closes #557 #496 #495) | Ctrl+F on a session you have restarted AND then prompted again: the bar alone should carry it — count, Enter/Shift+Enter, Esc — and **the results list must never appear unless you press ▸**. Hits from before the restart may say "earlier than the conversation on screen"; hits since it must jump. **Note the premise was measured wrong in the ticket:** an idle resumed session was always fine; it is the new turn on top that broke it |
 | New session from popout | **v0.6.0** | Affordance exists, tab lands beside current card in the popout |
 
 ## Tested and passing (2026-08-16 pass, v0.6.0)

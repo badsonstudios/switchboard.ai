@@ -316,15 +316,18 @@ describe('the greyed bar is still operable from the keyboard', () => {
 });
 
 describe('stepping never becomes a dead affordance', () => {
-  it('opens the results list when it lands on a hit it cannot scroll to', async () => {
-    // Otherwise the count ticks from "1 of 2" to "2 of 2" and the conversation
-    // does not move — the same dead affordance a non-jumpable row refuses to
-    // be, one keystroke later.
+  it('SAYS it cannot scroll to a hit rather than opening the list over the pane', async () => {
+    // The count must not tick from "1 of 2" to "2 of 2" with the conversation
+    // sitting still and nothing saying why — that is the dead affordance. But
+    // the answer is a line in the bar, NOT the results list (#557): the owner's
+    // words for the list arriving unasked were "this weird window that showed
+    // the different points in the session".
     search.mockResolvedValue(searchResult([hit(4, 'reachable'), hit(undefined, 'evicted', true)]));
     const host = await mount(bar());
     await act(async () => setFindTerm('x'));
     await settle();
     expect(q(host, 'find-results')).toBeNull();
+    expect(q(host, 'find-stuck')).toBeNull();
 
     const input = q<HTMLInputElement>(host, 'find-input')!;
     await act(async () => {
@@ -333,13 +336,30 @@ describe('stepping never becomes a dead affordance', () => {
     expect(q(host, 'find-count')!.textContent).toBe(
       en.find.count.replace('{index}', '2').replace('{total}', '2'),
     );
-    expect(q(host, 'find-results')).not.toBeNull();
+    expect(q(host, 'find-stuck')!.textContent).toBe(en.find.hitNotJumpable);
+    // the pane is still the user's — the list is one `▸` away, unopened
+    expect(q(host, 'find-results')).toBeNull();
   });
 
-  it('opens the list straight away when NO hit can be jumped to', async () => {
-    // Every Direct session, today: the list is the only surface the matches
-    // have, so put the user in front of it rather than in front of a
-    // conversation that does not budge.
+  it('stops saying it the moment a step lands somewhere', async () => {
+    // A note that outlived the hit it was about would read as a property of the
+    // search rather than of the keystroke.
+    search.mockResolvedValue(searchResult([hit(undefined, 'evicted', true), hit(4, 'reachable')]));
+    const host = await mount(bar());
+    await act(async () => setFindTerm('x'));
+    await settle();
+    expect(q(host, 'find-stuck')).not.toBeNull();
+
+    const input = q<HTMLInputElement>(host, 'find-input')!;
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    expect(q(host, 'find-stuck')).toBeNull();
+  });
+
+  it('does not open the list even when NO hit can be jumped to', async () => {
+    // This was the case the auto-open existed for, and it is the one the owner
+    // met daily on a resumed session. The bar carries it; the list stays shut.
     search.mockResolvedValue(
       searchResult([hit(undefined, 'a')], {
         groups: [{ sessionId: 's1', hits: 1, blocks: 9, searched: true, aligned: false }],
@@ -348,7 +368,8 @@ describe('stepping never becomes a dead affordance', () => {
     const host = await mount(bar());
     await act(async () => setFindTerm('x'));
     await settle();
-    expect(q(host, 'find-results')).not.toBeNull();
+    expect(q(host, 'find-results')).toBeNull();
+    expect(q(host, 'find-stuck')!.textContent).toBe(en.find.hitNotJumpable);
   });
 
   it('a non-jumpable hit that is NOT known to be earlier says only that much', async () => {
@@ -359,6 +380,14 @@ describe('stepping never becomes a dead affordance', () => {
     const host = await mount(bar());
     await act(async () => setFindTerm('x'));
     await settle();
+    // The list is where a row lives, and since #557 it opens only when asked —
+    // so the ▸ is part of this test now rather than something the bar did for
+    // us. What the row SAYS once it is up has not changed.
+    await act(async () => {
+      q<HTMLElement>(host, 'find-results-toggle')!.dispatchEvent(
+        new MouseEvent('click', { bubbles: true }),
+      );
+    });
     const row = host.querySelector('[data-find-hit-readonly]')!;
     expect(row.getAttribute('title')).toBe(en.find.cannotJumpTitle);
     expect(row.textContent).not.toContain(en.find.earlier);
