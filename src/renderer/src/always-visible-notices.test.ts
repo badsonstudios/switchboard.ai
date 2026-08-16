@@ -188,6 +188,7 @@ const NOT_A_NOTICE: Readonly<Record<string, string>> = {
   UpdateDialog: 'a modal, same as AboutPanel',
   CommandPalette: 'a modal, same as AboutPanel',
   PushSetupDialog: 'a modal, same as AboutPanel (P2-E14-06)',
+  QuietHoursDialog: 'a modal, same as AboutPanel (P2-E14-05b)',
   div: 'the workspace itself — `flex: 1` with a basis of 0. It is the thing that is SUPPOSED to give way; that is the whole mechanism',
 };
 

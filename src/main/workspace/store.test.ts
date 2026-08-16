@@ -17,6 +17,7 @@ import {
 } from './store';
 import { Logger } from '../log/logger';
 import { SOUND_IDS } from '../../shared/sounds';
+import { SUPPRESSED_CAP, SuppressedEvent } from '../../shared/suppressed';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 
 let dir: string;
@@ -345,6 +346,132 @@ describe('notification prefs merge-patch (review P1 #13)', () => {
     });
     st.setNotificationPrefs({ osToasts: false });
     expect(st.getNotificationPrefs()).toMatchObject({ enabled: false, osToasts: false });
+  });
+
+  // P2-E14-05b. The window is the ONE pref where "stored but unreadable" and
+  // "not stored" used to look identical from the outside and behave completely
+  // differently — a `quietStart` of "10pm" made the dialog say quiet hours were
+  // configured while silencing nothing at all.
+  it('refuses a time it cannot parse rather than storing it', () => {
+    const st = makeStore(file);
+    st.load();
+    st.setNotificationPrefs({ quietStart: '10pm', quietEnd: '07:00' });
+    expect(st.getNotificationPrefs().quietStart).toBeUndefined();
+    expect(st.getNotificationPrefs().quietEnd).toBeUndefined();
+  });
+
+  it('takes both ends or neither — half a window is not a window', () => {
+    const st = makeStore(file);
+    st.load();
+    st.setNotificationPrefs({ quietEnd: '07:00' });
+    expect(st.getNotificationPrefs().quietEnd).toBeUndefined();
+    st.setNotificationPrefs({ quietStart: '22:00', quietEnd: '07:00' });
+    expect(st.getNotificationPrefs()).toMatchObject({ quietStart: '22:00', quietEnd: '07:00' });
+    // …and clearing takes both away, which is how the dialog switches it off.
+    // Empty strings are what the renderer actually sends (App.tsx): they mean
+    // the same thing to the sanitizer and survive the IPC hop unambiguously.
+    st.setNotificationPrefs({ quietStart: '', quietEnd: '' });
+    expect(st.getNotificationPrefs().quietStart).toBeUndefined();
+    expect(st.getNotificationPrefs().quietEnd).toBeUndefined();
+    st.setNotificationPrefs({ quietStart: '22:00', quietEnd: '07:00' });
+    st.setNotificationPrefs({ quietStart: undefined, quietEnd: undefined });
+    expect(st.getNotificationPrefs().quietStart).toBeUndefined();
+  });
+});
+
+// ── the missed-events digest's input (P2-E14-05b, feeding #483) ────────────
+describe('suppressed notifications', () => {
+  const held = (id: string, at = 1): SuppressedEvent => ({
+    id,
+    at,
+    kind: 'done',
+    cardId: 'card-a',
+    title: 'TradingApp',
+    body: 'done',
+    actions: ['os-toast'],
+    ruleIds: ['r'],
+    reason: 'quiet-hours',
+  });
+
+  it('survives quit -> relaunch, which is the whole reason it is persisted', () => {
+    // Quiet hours run overnight and the app gets closed; a held list that lived
+    // in memory would be empty exactly when the digest needs it.
+    const st = makeStore(file);
+    st.load();
+    st.recordSuppressed(held('a'));
+    st.save();
+    const again = makeStore(file);
+    again.load();
+    expect(again.listSuppressed().map((e) => e.id)).toEqual(['a']);
+    expect(again.listSuppressed()[0]).toMatchObject({ kind: 'done', reason: 'quiet-hours' });
+  });
+
+  it('is bounded — the oldest go first, and the cap is the stated one', () => {
+    const st = makeStore(file);
+    st.load();
+    for (let i = 0; i < SUPPRESSED_CAP + 25; i++) st.recordSuppressed(held(`e${i}`, i));
+    const list = st.listSuppressed();
+    expect(list).toHaveLength(SUPPRESSED_CAP);
+    expect(list[0].id).toBe('e25'); // FIFO: the first 25 were dropped
+    expect(list[list.length - 1].id).toBe(`e${SUPPRESSED_CAP + 24}`);
+  });
+
+  it('trims an over-long list on the way IN as well as out', () => {
+    // A hand-edited or older-build file must not be able to make the digest
+    // unbounded just by already being unbounded.
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        version: CURRENT_VERSION,
+        suppressed: Array.from({ length: SUPPRESSED_CAP + 10 }, (_, i) => held(`e${i}`, i)),
+      })
+    );
+    const st = makeStore(file);
+    st.load();
+    expect(st.listSuppressed()).toHaveLength(SUPPRESSED_CAP);
+  });
+
+  it('clears everything, or just the ids the digest marked read', () => {
+    const st = makeStore(file);
+    st.load();
+    st.recordSuppressed(held('a'));
+    st.recordSuppressed(held('b'));
+    st.recordSuppressed(held('c'));
+    expect(st.clearSuppressed(['a', 'c'])).toBe(2);
+    expect(st.listSuppressed().map((e) => e.id)).toEqual(['b']);
+    expect(st.clearSuppressed()).toBe(1);
+    expect(st.listSuppressed()).toEqual([]);
+    expect(st.clearSuppressed()).toBe(0); // nothing to clear ≠ it did not work
+  });
+
+  it('drops a record this build cannot read, rather than half-loading it', () => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        version: CURRENT_VERSION,
+        suppressed: [held('good'), { id: 'bad', at: 'yesterday' }, null, 'nope'],
+      })
+    );
+    const st = makeStore(file);
+    st.load();
+    expect(st.listSuppressed().map((e) => e.id)).toEqual(['good']);
+  });
+
+  it('refuses to WRITE an unloadable record — no point storing what will be dropped', () => {
+    const st = makeStore(file);
+    st.load();
+    st.recordSuppressed({ ...held('x'), at: Number.NaN });
+    expect(st.listSuppressed()).toEqual([]);
+  });
+
+  it('hands out copies — the digest renders the list, it does not own it', () => {
+    const st = makeStore(file);
+    st.load();
+    st.recordSuppressed(held('a'));
+    st.listSuppressed()[0].actions.push('sound');
+    expect(st.listSuppressed()[0].actions).toEqual(['os-toast']);
   });
 });
 
@@ -2133,5 +2260,48 @@ describe('PersistedSession.nativeSessionLineage survives quit -> relaunch (#484)
     st.load();
     expect(st.listSessions()[0].nativeSessionLineage).toBeUndefined();
     expect(st.listSessions()[0].nativeSessionId).toBe('conv-c');
+
+// Found in review of P2-E14-05b: the sanitizer's all-or-nothing rule was doing
+// the right thing silently, which #344 says a repair may not do — and it was
+// still letting an EQUAL pair through, which is the exact "looks configured,
+// silences nothing" failure the item set out to close.
+describe('the quiet window is all-or-nothing, and says when it dropped one', () => {
+  const load = (notifications: unknown): { prefs: ReturnType<WorkspaceStore['getNotificationPrefs']>; notes: string[] } => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ version: CURRENT_VERSION, notifications }));
+    const notes: string[] = [];
+    const st = makeStore(file, {
+      warn: (m: string) => void notes.push(m),
+      info: () => {},
+      error: () => {},
+      debug: () => {},
+    } as unknown as Logger);
+    st.load();
+    return { prefs: st.getNotificationPrefs(), notes };
+  };
+
+  it('refuses an equal pair — a zero-length window, not a 24-hour one', () => {
+    const { prefs } = load({ enabled: true, quietStart: '09:00', quietEnd: '09:00' });
+    expect(prefs.quietStart).toBeUndefined();
+    expect(prefs.quietEnd).toBeUndefined();
+  });
+
+  it('drops a lone end, and NAMES the good half it took with it (#344)', () => {
+    const { prefs, notes } = load({ enabled: true, quietStart: '22:00' });
+    expect(prefs.quietStart).toBeUndefined();
+    expect(notes.some((n) => n.includes('notification settings'))).toBe(true);
+  });
+
+  it('names both ends when one is unparseable, because both are lost', () => {
+    const { prefs, notes } = load({ enabled: true, quietStart: '22:00', quietEnd: '10pm' });
+    expect(prefs.quietStart).toBeUndefined();
+    expect(prefs.quietEnd).toBeUndefined();
+    expect(notes.some((n) => n.includes('notification settings'))).toBe(true);
+  });
+
+  it('a good pair is kept and says nothing', () => {
+    const { prefs, notes } = load({ enabled: true, quietStart: '22:00', quietEnd: '07:00' });
+    expect(prefs).toMatchObject({ quietStart: '22:00', quietEnd: '07:00' });
+    expect(notes.filter((n) => n.includes('notification settings'))).toEqual([]);
   });
 });

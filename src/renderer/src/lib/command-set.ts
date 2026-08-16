@@ -71,6 +71,8 @@ export interface CommandDeps {
   openFile: () => void;
   /** set up phone push / webhooks — the credential surface (E14-06, §5.29) */
   openPushSetup: () => void;
+  /** set the quiet-hours window — when nothing person-facing fires (E14-05b) */
+  openQuietHours: () => void;
 }
 
 const CATEGORY_SESSION = 'commands.category.session';
@@ -219,6 +221,17 @@ export function buildCommands(deps: CommandDeps): Command[] {
       categoryKey: CATEGORY_ATTENTION,
       scope: 'app',
       run: () => deps.openPushSetup(),
+    },
+    {
+      // Quiet hours (E14-05b). Under Attention beside push for the same reason
+      // — it answers "how, and when, does a session reach me?" — and
+      // palette-only, unbound: a window you set once does not earn a chord, and
+      // the title bar's eleven chips are not getting a twelfth.
+      id: 'attention.quietHours',
+      titleKey: 'commands.quietHours',
+      categoryKey: CATEGORY_ATTENTION,
+      scope: 'app',
+      run: () => deps.openQuietHours(),
     },
     ...jumps,
     {

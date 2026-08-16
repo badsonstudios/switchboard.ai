@@ -413,6 +413,29 @@
     "setting": "Check provider status",
     "settingHint": "Ask Anthropic's public status page every few minutes whether it is having a day. Nothing is sent; turning it off changes nothing else."
   },
+  "quiet": {
+    "title": "Quiet hours",
+    "open": "Quiet hours…",
+    "intro": "Hours of the day when switchboard will not make a noise at you. Sessions keep running and everything still lands in the Events panel — you just are not told about it until the window is over.",
+    "enable": "Keep quiet between these times",
+    "start": "From",
+    "end": "Until",
+    "overnightHint": "A window that runs past midnight is fine — 22:00 until 07:00 means overnight. Times are your machine's clock, so they follow you if you change timezone.",
+    "problem": {
+      "same": "Those are the same time, which is a window of zero length. Pick two different times.",
+      "missing": "Both a start and an end are needed before quiet hours can be switched on."
+    },
+    "whatHappens": "What quiet hours stop",
+    "personFacing": "Stopped: pop-up notifications, session sounds, spoken announcements, and phone push. Anything aimed at you.",
+    "machineFacing": "Not stopped: webhooks. They go to a program, and a program is not asleep — that is usually the reason you set one up. A rule can be told to obey quiet hours anyway.",
+    "status": {
+      "unknown": "Cannot tell right now.",
+      "off": "Quiet hours are off.",
+      "active": "Quiet hours are on right now · {count, plural, =0 {nothing held yet} one {# notification held so far} other {# notifications held so far}}",
+      "idle": "Not quiet at the moment · {count, plural, =0 {nothing held yet} one {# notification held so far} other {# notifications held so far}}"
+    },
+    "close": "Close"
+  },
   "push": {
     "title": "Phone push & webhooks",
     "open": "Phone push & webhooks…",
@@ -434,7 +457,7 @@
     "enablePush": "Send events to my phone",
     "enablePushHint": "Needs permission, needs input, and crashes — only while you are away from switchboard.",
     "enableWebhook": "POST events to my webhook",
-    "enableWebhookHint": "All four events, whatever the window is doing: a program is not distracted by being looked at. The 🔔 switch and quiet hours still silence it.",
+    "enableWebhookHint": "All four events, whatever the window is doing: a program is not distracted by being looked at. Quiet hours do NOT stop it — a webhook has no ears. The 🔔 switch does.",
     "set": "· saved",
     "notSet": "· not set",
     "save": "Save",
@@ -590,6 +613,7 @@
     "goToSession": "Go to {title}",
     "jumpAttention": "Go to the next session that needs you",
     "pushSetup": "Phone push & webhooks… — reach me when I'm away from the machine",
+    "quietHours": "Quiet hours… — the times of day nothing may make a noise",
     "about": "About this build — version, commit, branch",
     "category": {
       "session": "Sessions",

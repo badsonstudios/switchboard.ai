@@ -45,16 +45,25 @@ describe('shouldNotify', () => {
   });
 });
 
-// The gate sits ABOVE the rules engine (P2-E14-03): a user who turned
-// notifications off, or who is inside quiet hours, must not be reachable by a
-// rule — otherwise the master switch would be a lie the moment a rule existed.
+// The MASTER SWITCH sits above the rules engine (P2-E14-03): a user who turned
+// notifications off must not be reachable by a rule — otherwise the switch
+// would be a lie the moment a rule existed.
+//
+// **Quiet hours no longer do (P2-E14-05b), and that is the item.** They used to
+// return early right here, so between 22:00 and 07:00 the engine was never
+// consulted at all — which silenced the WEBHOOK too, a channel that reaches a
+// program rather than a sleeping human. The engine now sees every event and
+// decides per action (`rules.ts` → `quietHolds`); what stays here is quiet
+// hours' effect on the beep and the taskbar flash. The pair of tests below is
+// the pin on that split: flip either and one of them fails.
 describe('Notifier -> rules engine', () => {
-  function notifier(prefs: NotificationPrefs) {
+  function notifier(prefs: NotificationPrefs, now = at(12)) {
     const handled: FeedEvent[] = [];
     const n = new Notifier({
       getWindow: () => null,
       getPrefs: () => prefs,
       rules: { handle: (e) => void handled.push(e) },
+      now: () => now,
     });
     return { n, handled };
   }
@@ -71,10 +80,19 @@ describe('Notifier -> rules engine', () => {
     expect(handled).toEqual([]);
   });
 
-  it('consults no rule inside quiet hours', () => {
+  it('STILL consults the rules inside quiet hours — the engine decides per action', () => {
     const { n, handled } = notifier({ enabled: true, quietStart: '00:00', quietEnd: '23:59' });
     n.handle(ev('done'));
-    expect(handled).toEqual([]);
+    expect(handled.map((e) => e.kind)).toEqual(['done']);
+  });
+
+  it('does not beep inside quiet hours — the local signal is aimed at a person', () => {
+    beeps.count = 0;
+    const { n, handled } = notifier({ enabled: true, quietStart: '00:00', quietEnd: '23:59' });
+    n.handle(ev('done'));
+    expect(beeps.count).toBe(0);
+    // …and the engine still ran, which is the half that carries the webhook
+    expect(handled).toHaveLength(1);
   });
 
   it('still beeps and still runs the rules — the two are independent channels', () => {

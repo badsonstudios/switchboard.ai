@@ -25,6 +25,7 @@ import type {
   PushSendResult,
   PushWriteResult,
 } from '../shared/push';
+import type { QuietState } from '../shared/quiet-hours';
 import type { AudioChannelName, AudioPlayCue, AudioSpeakCue, CardSound } from '../shared/sounds';
 import { AUDIO_FAILED_CHANNEL, AUDIO_PLAY_CHANNEL, AUDIO_SPEAK_CHANNEL } from '../shared/sounds';
 
@@ -555,6 +556,16 @@ const api = {
     // merge-patch: send only the prefs you're changing (review P1 #13)
     setPrefs: (p: Partial<NotifPrefs>): Promise<NotifPrefs> =>
       ipcRenderer.invoke('notifications:setPrefs', p),
+    /**
+     * Is the quiet window open right now, and how much has it held
+     * (P2-E14-05b)?
+     *
+     * Asked of MAIN rather than worked out in the renderer from `getPrefs`,
+     * even though the arithmetic is four lines: main owns the clock the rules
+     * are actually evaluated against, and a dialog that computed its own answer
+     * would be free to disagree with the engine about whether it is 07:00 yet.
+     */
+    quietState: (): Promise<QuietState> => ipcRenderer.invoke('notifications:quietState'),
   },
   /**
    * Per-session sounds and spoken announcements (P2-E14-05a, §5.9 + §5.11).

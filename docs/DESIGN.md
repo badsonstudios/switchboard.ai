@@ -619,6 +619,30 @@ or sits idle awaiting input, and `Stop` when it finishes. On top:
   channel only when the session/app is backgrounded — no toast for a session
   already on screen. This is the calm default for S3.
 - Quiet hours / do-not-disturb; missed-events digest per session.
+  *(Quiet hours shipped P2-E14-05b. Three decisions worth recording.
+  **Quiet hours are a rule CONDITION, not a gate above the engine.** They used
+  to sit beside the master switch in `notifier.ts`, returning early — so
+  between 22:00 and 07:00 the rules engine was never consulted at all. That was
+  right while every channel was a person's ears and wrong the moment `webhook`
+  shipped. **The applicability decision (delegated here from #424):
+  classification is per ACTION, by AUDIENCE.** `os-toast`, `sound`, `speak` and
+  `push` are `person` and are held; `webhook` is `machine` and is delivered — a
+  webhook goes to a program the user pointed at this app so that something would
+  be watching while they are not, and a log with a hole in it every night is a
+  broken log whose cause nobody diagnoses at 9am. A per-rule `quietHours:
+  'obey' | 'ignore'` override covers both exceptions (a webhook that flashes a
+  lamp; a crash worth waking up for). An unknown action type counts as `person`
+  — the two errors are not symmetric. **The clock enters `RuleTrigger`
+  explicitly**, injected from one place (`RulesEngineDeps.now`), because
+  `rules.ts` is deliberately clock-free and a condition each consumer timed
+  independently is a condition three code paths can disagree about. Windows are
+  local WALL-CLOCK, so DST resolves the way a person reading their own clock
+  would: the autumn hour that repeats is quiet twice, the spring hour that never
+  happens is never inside. **Held events are recorded as data** — a bounded FIFO
+  (200, oldest dropped) in the workspace store, carrying what/when/which
+  card/which channels/why, with the title and body captured at the time rather
+  than re-derived later. That list is P2-E14-05c's input. UI: a palette command
+  and an About-panel button, deliberately not a twelfth title-bar chip.)*
 - **Per-session "notify when done" (owner request 2026-07-22):** a checkbox on
   the session card — done-toasts only for sessions the user opted into (long
   tasks), because a toast for every short turn is noise.

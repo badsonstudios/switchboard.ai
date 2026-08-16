@@ -49,6 +49,12 @@ export function AboutPanel(props: {
    */
   onOpenPushSetup?: () => void;
   /**
+   * Quiet hours (P2-E14-05b). The mouse path to that dialog. Here rather than
+   * as a twelfth title-bar chip: the bar is full, and a window you type once
+   * and forget for a year is not chip-shaped. Optional, like the rest.
+   */
+  onOpenQuietHours?: () => void;
+  /**
    * Another modal is stacked ON TOP of this one (the update dialog, which is
    * reachable from here). Two nested `aria-modal="true"` regions is a case
    * screen readers handle inconsistently, so the panel underneath stops
@@ -311,6 +317,23 @@ export function AboutPanel(props: {
           >
             <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{t('push.sectionPush')}</span>
             <AboutButton onClick={props.onOpenPushSetup}>{t('push.open')}</AboutButton>
+          </div>
+        )}
+        {/* Quiet hours (E14-05b). Beside the push row rather than in a chip:
+            the title bar is full, and this is a set-it-once control. */}
+        {props.onOpenQuietHours && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+              padding: '10px 14px',
+              borderBlockStart: '1px solid var(--border)',
+            }}
+          >
+            <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{t('quiet.title')}</span>
+            <AboutButton onClick={props.onOpenQuietHours}>{t('quiet.open')}</AboutButton>
           </div>
         )}
         <div

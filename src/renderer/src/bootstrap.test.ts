@@ -41,6 +41,7 @@ function noopDeps(): CommandDeps {
     checkForUpdates: () => {},
     openFile: () => {},
     openPushSetup: () => {},
+    openQuietHours: () => {},
   };
 }
 
