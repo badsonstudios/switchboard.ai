@@ -189,6 +189,36 @@ export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
     });
   }, [open]);
 
+  // ── Escape, including after the drawer eats its own focus ────────────────
+  //
+  // On the DOCUMENT, not on the body div, and the target guard below is what
+  // keeps that from being a global grab: an Escape aimed at a dialog, a
+  // terminal or the composer has that thing as its target and is left alone
+  // here, exactly as a handler bound to the body div would leave it alone.
+  //
+  // What the document buys is the ONE case a bound handler cannot see. Every
+  // interesting control in this drawer removes itself when you use it —
+  // dismissing a row, taking or refusing an update, answering the reconnect
+  // offer — and a focused element that unmounts drops the caret on `<body>`
+  // without firing anything we could listen for. From there the body div never
+  // receives another key, so Escape would be dead in precisely the state a
+  // user reaches by doing the drawer's own work. `document.body` as the target
+  // is the signature of that, and nothing else wants Escape while it is true.
+  React.useEffect(() => {
+    const doc = body.current?.ownerDocument;
+    if (!open || !doc) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return;
+      const target = e.target as Node | null;
+      const ours = !target || target === doc.body || !!body.current?.contains(target);
+      if (!ours) return;
+      e.stopPropagation();
+      onClose();
+    };
+    doc.addEventListener('keydown', onKey);
+    return () => doc.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
 
   return (
     <>
@@ -289,16 +319,9 @@ export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
           ref={body}
           data-testid="events-drawer"
           tabIndex={-1}
-          // The one key this surface claims. Not a global binding: it fires
-          // only while focus is actually inside the drawer, so it can never
-          // take Escape away from a dialog or a terminal. It only ASKS to be
-          // shut — the focus hand-back is the effect's job, because three other
-          // routes shut this thing without ever reaching here.
-          onKeyDown={(e) => {
-            if (e.key !== 'Escape') return;
-            e.stopPropagation();
-            onClose();
-          }}
+          // Escape is handled in the effect above rather than here, for the
+          // reason written there: this element stops receiving keys the moment
+          // one of its own controls unmounts under the caret.
           style={{
             position: 'absolute',
             insetInlineEnd: 0,

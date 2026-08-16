@@ -241,6 +241,31 @@ describe('the keyboard way out (§5.32)', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('still answers Escape after a control unmounted under the caret', async () => {
+    // Dismissing the last row — or taking an update, or answering the reconnect
+    // offer — removes the focused button and drops the caret on <body>. A
+    // handler bound to the drawer's own element would never see another key
+    // from there, so Escape would go dead in exactly the state the drawer's own
+    // work leaves you in.
+    await render({ open: true });
+    await act(async () => {
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves Escape alone when it belongs to something else on the page', async () => {
+    // the guard that keeps the document-level listener from being a global
+    // grab: a dialog, a terminal or the composer is the target of its own key
+    const elsewhere = document.createElement('input');
+    document.body.appendChild(elsewhere);
+    await render({ open: true });
+    await act(async () => {
+      elsewhere.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('leaves every other key alone', async () => {
     await render({ open: true });
     await act(async () => {
