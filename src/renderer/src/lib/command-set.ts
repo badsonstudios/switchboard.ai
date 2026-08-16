@@ -55,7 +55,8 @@ export interface CommandDeps {
   /** open the command palette (E9-02) */
   openPalette: () => void;
   /** open the find bar on a card (E17-02, §5.31) */
-  openFind: (cardId: string) => void;
+  /** open the find bar on a card — or, since #533, on a `doc-` viewer panel */
+  openFind: (targetId: string) => void;
   /** wrap the tab strip onto more rows, or keep it to one (#84) */
   toggleTabRows: () => void;
   /** jump to the next session waiting on a human (E9-03 attention queue) */
@@ -150,17 +151,30 @@ export function buildCommands(deps: CommandDeps): Command[] {
       // terminal is Ctrl+Shift+P → "Find in session", and the terminal's
       // scrollback is searched by Ctrl+F pressed anywhere else on the card.
       //
-      // Card-scoped, so it is disabled with no focused card rather than
-      // silently opening a bar over nothing.
+      // SURFACE-scoped, not card-scoped (#533). Every other command in this
+      // file acts on a session, so "the focused card, or nothing" is the whole
+      // of its context; find acts on whatever is being READ, and since §5.30 a
+      // document viewer is one of those — its own dockview panel, with no
+      // session behind it and no card id to answer with. So this takes either,
+      // and is disabled only when neither is focused rather than silently
+      // opening a bar over nothing.
+      //
+      // THE DOCUMENT WINS when both are live, and that is not arbitrary: the
+      // only way both are is that the user is typing in a popped-out VIEWER
+      // window while a card is active back in the grid (`activeDocumentId`
+      // asks the focused window first). The document is the thing in front of
+      // them; opening the bar on the card would put it in a window they are not
+      // looking at — which is the bug in mirror image.
       id: 'find.open',
       titleKey: 'commands.openFind',
       categoryKey: CATEGORY_VIEW,
       binding: 'Mod+F',
       scope: 'typing-ok',
-      enabled: hasActive,
-      disabledReasonKey: 'commands.disabled.noActiveSession',
+      enabled: (ctx: CommandContext) => hasActive(ctx) || !!ctx.activeDocumentId,
+      disabledReasonKey: 'commands.disabled.noFindTarget',
       run: (ctx: CommandContext) => {
-        if (ctx.activeCardId) deps.openFind(ctx.activeCardId);
+        const target = ctx.activeDocumentId ?? ctx.activeCardId;
+        if (target) deps.openFind(target);
       },
     },
     {

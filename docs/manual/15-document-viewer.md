@@ -141,14 +141,26 @@ It works in **Source** view as well, and there too you keep your scroll position
 
 ## Finding text
 
-With a rendered document on screen, press `Ctrl+F` (`Cmd+F` on a Mac). A small
-find bar appears above the document; type, and matches light up. `Enter` goes to
-the next one, `Shift+Enter` the previous, `Esc` closes it.
+Press `Ctrl+F` (`Cmd+F` on a Mac) with a document tab in front of you. This is
+the same find bar the rest of switchboard uses — see
+[Finding things](16-find.md) — so it looks and behaves exactly as it does over a
+session: type, and matches light up; `Enter` goes to the next one,
+`Shift+Enter` the previous; the count reads "3 of 12"; `Esc` closes it and the
+highlights go with it. The ▸ button opens a list of every match, if you'd rather
+pick one than step through them.
 
-The search only ever looks at the document in front of you — never at other
-panels.
+The search only ever looks at the document in front of you — never at another
+document, and never at a session. It searches the whole file, including code
+blocks, and copying a code block while the bar is open still copies the plain
+code, highlights and all left behind.
 
-In **Source** view, use the editor's own find box (also `Ctrl+F`).
+In **Source** view — which is what you get for any file that isn't Markdown —
+`Ctrl+F` hands you to the editor's own find box instead: a fuller one, with
+regular expressions and match marks down the scrollbar. Our bar steps out of the
+way rather than putting a second, worse find on top of a good one.
+
+It works the same in a popped-out document window. Press `Ctrl+F` there and the
+bar opens in *that* window, over the document you're reading.
 
 ## Files it won't show you
 

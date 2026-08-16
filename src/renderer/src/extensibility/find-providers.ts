@@ -8,8 +8,8 @@
 // card the bar ever names is the focused one — so "never matches another card"
 // is a property of the plumbing rather than a filter to remember.
 //
-// THREE OF §5.31'S FOUR NAMED REGISTRANTS SHIP HERE, and the gap is
-// deliberate, not an oversight (see docs/extensibility.md's roster):
+// ALL FOUR OF §5.31'S NAMED REGISTRANTS SHIP HERE since #533 (see
+// docs/extensibility.md's roster):
 //
 //   • `panel-session` → the E17-01 transcript engine. The flagship.
 //   • `panel-changes` → DELEGATES to Monaco's own find. §5.31 names it as a
@@ -18,9 +18,11 @@
 //     over one editor.
 //   • `panel-terminal` → xterm's scrollback through `@xterm/addon-search`
 //     (P2-E17-03). SCROLLBACK ONLY, and its label says so.
-//   • the §5.30 document viewer — still absent, and for structural reasons
-//     rather than effort; the recipe and the two blockers are at the bottom of
-//     this file.
+//   • the §5.30 document viewer → BOTH of the above, chosen per surface: its
+//     rendered markdown is our DOM and our bar marks it, its source body is
+//     Monaco and gets handed over. That is what `modeFor` exists for, and it is
+//     the strongest evidence yet that this point's registrants are genuinely
+//     dissimilar — one of them is two.
 //
 // GROUPS, NOT A WINNER (P2-E17-03, §5.31's first decision). One Ctrl+F covers
 // the whole session and the bar reports each `bar` registrant as its own group:
@@ -35,12 +37,18 @@
 import type {
   FindContext,
   FindHit,
+  FindMode,
   FindProviderContribution,
   FindQuery,
   FindResults,
 } from './contributions';
 import { manifestFor } from './contributions';
-import type { FeedFindSurface, MonacoFindSurface, TerminalFindSurface } from '../lib/find-surfaces';
+import type {
+  DocumentFindSurface,
+  FeedFindSurface,
+  MonacoFindSurface,
+  TerminalFindSurface,
+} from '../lib/find-surfaces';
 import { snippetAround, type TerminalMatch } from '../lib/terminal-find';
 import type { RendererRegistry } from './registry-instance';
 import { safely } from './boundary';
@@ -72,6 +80,19 @@ export function findProviderFor(
 /** `unavailableKey` through the boundary: a throw counts as "unavailable". */
 export function findUnavailableKey(p: FindProviderContribution, ctx: FindContext): string | null {
   return safely(p.manifest.id, 'unavailableKey()', () => p.unavailableKey(ctx), 'find.unavailable.failed');
+}
+
+/**
+ * The mode for one surface — `modeFor` when the registrant defines it, else the
+ * static `mode` (#533).
+ *
+ * One definition of that rule, as with `listPanels`: the bar asks it twice (is
+ * the FOCUSED panel delegated? is this GROUP one of the bar's?) and a second
+ * copy is a second thing to get wrong. A throw falls back to the declared mode
+ * rather than to a guess — the static one is still a real answer.
+ */
+export function findMode(p: FindProviderContribution, ctx: FindContext): FindMode {
+  return safely(p.manifest.id, 'modeFor()', () => p.modeFor?.(ctx) ?? p.mode, p.mode);
 }
 
 // ---------------------------------------------------------------------------
@@ -327,10 +348,121 @@ export const terminalFindProvider: FindProviderContribution = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Document viewer — the §5.30 surface, both of its bodies (#533)
+// ---------------------------------------------------------------------------
+
+function documentSurface(ctx: FindContext): DocumentFindSurface | null {
+  return ctx.surface?.kind === 'document' ? (ctx.surface as DocumentFindSurface) : null;
+}
+
+/**
+ * The fourth registrant, and the one that closes §5.31's roster.
+ *
+ * It is NOT a session-card panel — it is its own dockview panel, and its
+ * `doc-` panel id plays the cardId role in `findSurfaceKey`. That is the whole
+ * of what joining it needed on THIS side; the other half was a §5.8 question
+ * about what "the focused surface" is when it is not a session, answered in
+ * `GridController.activeDocumentId()` and `find.open`.
+ *
+ * BOTH MODES, decided per surface (`modeFor`). The viewer has two bodies and
+ * they want opposite treatment: rendered markdown is our DOM and our bar marks
+ * it, while the source body is a Monaco editor and §5.31 says to hand find over
+ * whole rather than wrap our chrome around a better widget. Splitting it into
+ * two providers would have meant two panel ids for one tab, and the tab is what
+ * the user is looking at.
+ */
+export const documentFindProvider: FindProviderContribution = {
+  manifest: manifest('find-document', 'Document viewer find'),
+  panelId: 'document',
+  labelKey: 'find.group.document',
+  order: 40,
+  // the declared answer, and the one that stands if `modeFor` ever throws:
+  // a viewer opened on a `.md` starts rendered
+  mode: 'bar',
+  modeFor: (ctx): FindMode => (documentSurface(ctx)?.view() === 'source' ? 'delegated' : 'bar'),
+  // A viewer with nothing to search is a real state and a common one: the file
+  // is still loading, main refused it, it is binary (the card), or the source
+  // editor has not built yet. §5.8's greyed-not-hidden rule, one level down.
+  unavailableKey: (ctx) => {
+    const surface = documentSurface(ctx);
+    if (!surface) return 'find.unavailable.noDocument';
+    return surface.view() === 'none' ? 'find.unavailable.documentNotReady' : null;
+  },
+  delegate(ctx: FindContext, query: FindQuery): boolean {
+    return documentSurface(ctx)?.openFind(query.term) ?? false;
+  },
+  search(ctx: FindContext, query: FindQuery): Promise<FindResults> {
+    const surface = documentSurface(ctx);
+    if (!surface) {
+      return Promise.resolve({
+        hits: [],
+        total: 0,
+        truncated: false,
+        notice: { key: 'find.notice.failed', tone: 'error' },
+      });
+    }
+    // Synchronous — the document is DOM in this process. The promise is the
+    // seam's shape, not a round trip. It is also the call that MARKS the
+    // matches: search and highlight are one pass over the tree here, which is
+    // why `clear` matters as much as it does.
+    const out = surface.search(query);
+    const hits: FindHit[] = out.matches.map((m, i) => {
+      // NEWLINES FLATTENED TO SPACES, one character for one, so every offset
+      // below still points where it did. A match inside a code fence sits in a
+      // text node that is the whole fence, and the results list renders with
+      // `pre-wrap` — so without this a single hit is a twelve-line row and the
+      // list stops being scannable. Collapsing RUNS of whitespace would read
+      // better still and would move `matchStart`, which is not worth a lie
+      // about where the match starts.
+      const { snippet, matchStart } = snippetAround(
+        m.text.replace(/[\n\r\t]/g, ' '),
+        m.offset,
+        m.length
+      );
+      return {
+        // POSITIONAL, and safe to be: `reveal` takes the same index back into
+        // the mark list that `search` just built, so the two are one snapshot.
+        // A re-search rebuilds both together.
+        id: `d${i}`,
+        snippet,
+        matchStart,
+        matchLength: m.length,
+        // every match is a `<mark>` in the body, so there is always something
+        // on screen to scroll to — the transcript's evicted-block boundary has
+        // no equivalent here
+        jumpable: true,
+        earlierThanLoaded: false,
+        ref: i,
+      };
+    });
+    return Promise.resolve({
+      hits,
+      total: hits.length,
+      truncated: out.truncated,
+      // `total` is a FLOOR when we stopped marking at the cap: we did not
+      // finish counting, and reporting the cap as a total is the wrong-total-
+      // told-confidently failure §5.31 exists to avoid.
+      totalIsFloor: out.truncated,
+      notice: out.truncated
+        ? { key: 'find.notice.truncated', params: { shown: hits.length }, tone: 'info' }
+        : undefined,
+    });
+  },
+  reveal(ctx: FindContext, hit: FindHit): boolean {
+    if (typeof hit.ref !== 'number') return false;
+    return documentSurface(ctx)?.reveal(hit.ref) ?? false;
+  },
+  clear(ctx: FindContext): void {
+    documentSurface(ctx)?.clear();
+  },
+};
+
 export const findProviders: FindProviderContribution[] = [
   sessionFindProvider,
   changesFindProvider,
   terminalFindProvider,
+  documentFindProvider,
 ];
 
 // ---------------------------------------------------------------------------
@@ -365,35 +497,40 @@ export const findProviders: FindProviderContribution[] = [
 // is a boundary the user is told about, not one they discover.
 //
 // ---------------------------------------------------------------------------
-// REGISTERING THE ONE THAT IS NOT HERE YET
+// HOW THE FOURTH ONE GOT REGISTERED (#533) — kept because the two things in its
+// way were structural, and the next non-card surface will hit both.
 //
-// It is an addition to this file plus a `publishFindSurface` effect in the
-// panel's own component. Nothing in the bar, the point or `bootstrap.ts`
-// changes shape.
+// The recipe that stood here said the viewer was "a seam not yet joined, no
+// user-visible gap": it had a working Ctrl+F of its own, scoped to its own
+// container. That was wrong in a way worth recording — the viewer's find was
+// UNREACHABLE, for two independent reasons, and either one alone was enough:
 //
-// **Document viewer (§5.30).** It IS on main now (#433 / P2-E16-02), and it
-// already has a working Ctrl+F of its own — correctly scoped to its own
-// container, for the same reason this point exists: its `lib/document-find.ts`
-// header cites §5.30's correction that `findInPage` "would cheerfully match
-// text in three other sessions' panes". So there is **no user-visible gap**
-// here, only a seam not yet joined, and that module says out loud that it is
-// meant to become the body of this provider.
+//   1. **`find.open` was a disabled command over a document.** Its `enabled`
+//      was `ctx.activeCardId !== null`, and `activeCardId()` matches
+//      `/^session-(.+)$/` — a `doc-` panel answers null. Ctrl+F over a document
+//      ran nothing at all.
+//   2. **The viewer's own fallback keydown could not fire.** It was a BUBBLING
+//      listener on the panel's root div, and nothing in that subtree was
+//      focusable — so unless you had clicked a button in its header first, the
+//      keydown's target was `document.body` and the handler never saw it.
 //
-// It is NOT wired here, because it is not the ~15-line addition the rest of
-// this recipe describes — two structural things are in the way, and both are
-// bigger than a registrant:
-//   1. **The viewer is not a session-card tab.** It is its own dockview panel
-//      (`SessionGrid`'s `documentViewer` component), so there is no `PanelId`
-//      for `findProviderFor` to match, `GridController.activeCardId()` answers
-//      null while it has focus (its panel id is not `session-*`), and the bar
-//      is rendered by `SessionCardPanel` from a session's context. Dispatching
-//      to a non-card panel means teaching the command what "the focused
-//      surface" is when it is not a session — a §5.8 question, not a find one.
-//   2. Doing it right also **deletes ~90 lines of working UI** from the viewer
-//      (its own bar, four pieces of state and a keydown handler) and re-hangs
-//      them on `FindSurface`. That is a change to the viewer's own component,
-//      which is its owner's call rather than a merge-time drive-by.
-// Both belong on P2-E16's follow-up (#411), with this file's contract as the
-// target. When it lands, `applyMatches` / `focusMatch` / `clearMatches` are
-// the provider's `search` and `reveal` almost verbatim.
+// So "add the missing registrant" would not have closed the issue. What did:
+//
+//   • the surface + this provider (above) — the mechanical half, and the part
+//     the old recipe described correctly. `lib/document-find`'s `applyMatches`
+//     / `focusMatch` / `clearMatches` ARE `search` / `reveal` / `clear`, with
+//     one addition: the shared bar shows a results list, so `applyMatches` had
+//     to start reporting each match rather than only counting them.
+//   • **the dispatch half**, which is the §5.8 question the old note named and
+//     did not answer: `GridController.activeDocumentId()` (the active panel
+//     when its id is a `doc-` one, in EITHER window — see its own note on why
+//     a document differs from a card here), threaded through `CommandContext`,
+//     and `find.open` accepting either target.
+//   • deleting the viewer's private bar, which is what stops there being two
+//     Ctrl+F implementations over one document.
+//
+// THE GENERAL LESSON for the next surface that is not a session card: a
+// contribution registered here is reached by (panel id, published surface), and
+// NEITHER of those is what decides whether the keystroke arrives. That is the
+// command context, and it speaks in cards.
 // ---------------------------------------------------------------------------
