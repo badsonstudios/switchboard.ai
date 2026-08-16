@@ -187,6 +187,8 @@
     "popOutIcon": "⤢",
     "dockIn": "Pop back into the main window",
     "dockInIcon": "⤡",
+    "newSessionHere": "New session in this window",
+    "newSessionHereIcon": "＋",
     "menu": "Session menu",
     "menuIcon": "⋯",
     "menuClear": "Clear conversation",

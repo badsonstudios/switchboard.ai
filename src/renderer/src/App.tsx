@@ -968,10 +968,14 @@ export function App(): React.JSX.Element {
     () =>
       buildContributedCommands(rendererRegistry, {
           focusCard: (cardId) => focusSession(cardId),
+          // The whole gesture belongs to the grid (#531): picking a folder and
+          // placing the card are one decision, because BOTH depend on which
+          // window the ask came from — the dialog is parented to it and the
+          // card lands in it. Mod+N pressed inside a popped-out session
+          // arrives here through the popout key bridge below, so this is not a
+          // main-window-only path however much it looks like one.
           newSession: () => {
-            void bridge.sessions?.pickFolder?.().then((folder) => {
-              if (folder) void grid.current?.addSessionCard(folder);
-            });
+            void grid.current?.newSession();
           },
           closeCard: (cardId) => grid.current?.closeCard(cardId),
           closeAllCards: () => grid.current?.closeAllCards(),

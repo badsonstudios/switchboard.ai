@@ -83,6 +83,14 @@ export interface SessionIpcDeps {
   feed: EventFeed;
   log: Logger;
   getWindow: () => BrowserWindow | null;
+  /**
+   * A live popped-out window, by the dockview GROUP id it hosts (#531).
+   *
+   * Only `sessions:pickFolder` uses it, to parent its dialog to the window the
+   * user clicked in. Optional so a wiring that has no popout registry (the
+   * unit harness) simply always answers the main window.
+   */
+  getPopoutWindow?: (groupId: string) => BrowserWindow | null;
   /** the IPC choke point — every channel, both directions (P2-E15-04) */
   broker: IpcBroker;
   /** auto-trust the folder before spawning (default on; user picks folder) */
@@ -758,9 +766,19 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     }
   });
 
-  broker.handle('sessions:pickFolder', async () => {
-    const win = deps.getWindow();
-    if (!win) return null;
+  broker.handle('sessions:pickFolder', async (_e, popoutGroupId?: unknown) => {
+    // Parent the dialog to the window that ASKED (#531). A renderer-supplied
+    // id is untrusted input (§5.29), but it is only ever a LOOKUP KEY into a
+    // list main built itself from `did-create-window` — it can name a window
+    // we already own or nothing at all, and nothing else.
+    const popout =
+      typeof popoutGroupId === 'string' && popoutGroupId
+        ? deps.getPopoutWindow?.(popoutGroupId) ?? null
+        : null;
+    // ...and fall back to the main window rather than refusing: a popout that
+    // closed between the click and this handler must still get a picker.
+    const win = popout ?? deps.getWindow();
+    if (!win || win.isDestroyed()) return null;
     const r = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
     return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0];
   });
