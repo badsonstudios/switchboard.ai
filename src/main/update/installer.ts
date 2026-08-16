@@ -15,9 +15,23 @@
 //
 // `/S` is NSIS's silent switch and the whole user-facing point: electron-
 // builder's oneClick target (see `electron-builder.js`) installs per-user with
-// no UAC and no wizard, then relaunches the app itself. That relaunch is what
-// makes the post-update handshake possible at all — nobody has to double-click
-// anything for the new version to come back.
+// no UAC and no wizard.
+//
+// `--force-run` is the half that is easy to get wrong, and we did (#525). The
+// oneClick installer relaunches the app after installing — but read the
+// generated script rather than the feature name: in
+// `app-builder-lib/templates/nsis/installSection.nsh` the relaunch is guarded
+// by `${ifNot} ${Silent} ${orIf} ${isForceRun}`. `runAfterFinish` (default
+// true) only defines RUN_AFTER_FINISH, which selects that guard; it does not
+// satisfy it. So under `/S` the FIRST arm is false by construction — a silent
+// install relaunches nothing unless `--force-run` is also passed. Without it
+// the update installs correctly and the app simply never comes back, which is
+// exactly what the user sees: the app quits and stays quit.
+//
+// That relaunch is what makes the post-update handshake possible at all —
+// nobody has to double-click anything for the new version to come back — and
+// it is what the UI has already promised by this point (`update.launching`:
+// "will close and reopen on the new version").
 import { spawn } from 'child_process';
 import path from 'path';
 
@@ -61,7 +75,7 @@ export function launchInstaller(file: string, deps: LaunchDeps): boolean {
   if (!isStagedInstaller(file, deps.updateDir)) return false;
   const spawnFn = deps.spawnImpl ?? spawn;
   try {
-    const child = spawnFn(file, ['/S'], {
+    const child = spawnFn(file, ['/S', '--force-run'], {
       detached: true,
       stdio: 'ignore',
       windowsHide: true,
