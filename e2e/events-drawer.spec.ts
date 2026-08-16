@@ -125,6 +125,10 @@ test.describe('the events drawer (P2-E14-01)', () => {
     // same queue. Two surfaces, one authority (lib/queue.ts).
     await expect(statusCount(w)).toHaveAttribute('data-count', '1', { timeout: 20_000 });
     await expect(statusCount(w)).toContainText('1 waiting');
+    // ...and tinted by the SAME queue head the tab is. Two readouts of one
+    // number sitting inches apart in different colours is how a set of status
+    // inks stops being a vocabulary and becomes decoration.
+    await expect(statusCount(w)).toHaveAttribute('data-hottest', 'needs-permission');
 
     // and it goes back down when the session stops waiting
     await post(title, { hook_event_name: 'UserPromptSubmit' });
