@@ -1326,28 +1326,34 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 It names its OWN group rather than asking which window has
                 focus: a click IS the answer to "where", and inferring it back
                 from focus would be strictly worse information. */}
-            {cardError && (
-              <span
-                role="status"
-                data-testid="card-new-session-error"
-                style={{ color: 'var(--status-crashed-ink)', fontSize: 10 }}
-              >
-                {cardError}
-              </span>
-            )}
             {poppedOut && (
-              <button
-                data-testid="card-new-session"
-                onClick={() => {
-                  setCardError(null); // a retry starts clean
-                  void newSessionIn(props.containerApi, props.api.group, setCardError);
-                }}
-                title={t('grid.newSessionHere')}
-                aria-label={t('grid.newSessionHere')}
-                style={cheadBtn}
-              >
-                {t('grid.newSessionHereIcon')}
-              </button>
+              <>
+                {/* The error rides WITH the ＋, inside the same guard: dock the
+                    card back and this header is in the main window, where the
+                    grid's own banner is the right surface and a leftover line
+                    about a folder you picked in another window is noise. */}
+                {cardError && (
+                  <span
+                    role="status"
+                    data-testid="card-new-session-error"
+                    style={{ color: 'var(--status-crashed-ink)', fontSize: 10 }}
+                  >
+                    {cardError}
+                  </span>
+                )}
+                <button
+                  data-testid="card-new-session"
+                  onClick={() => {
+                    setCardError(null); // a retry starts clean
+                    void newSessionIn(props.containerApi, props.api.group, setCardError);
+                  }}
+                  title={t('grid.newSessionHere')}
+                  aria-label={t('grid.newSessionHere')}
+                  style={cheadBtn}
+                >
+                  {t('grid.newSessionHereIcon')}
+                </button>
+              </>
             )}
             <button onClick={popOutToggle} title={poppedOut ? t('grid.dockIn') : t('grid.popOut')} style={cheadBtn}>
               {poppedOut ? t('grid.dockInIcon') : t('grid.popOutIcon')}

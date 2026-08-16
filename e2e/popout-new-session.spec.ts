@@ -135,9 +135,16 @@ test.describe('new session from a popped-out window (#531)', () => {
 
     // The keyboard route has no card in hand, so the target is inferred from
     // which window the OS says has focus — the popout, because that is where
-    // the keystroke was typed. Focus it explicitly: a test runner's window
-    // manager is under no obligation to have left it focused after the click.
+    // the keystroke was typed. That makes OS focus a PRECONDITION of this test
+    // rather than part of what it measures, so wait for it explicitly: a
+    // window manager is under no obligation to have left the popout focused,
+    // and Playwright's keys arrive over CDP, which does not move focus itself.
+    // Asserted separately so that a machine which simply refuses to raise the
+    // window says so, instead of failing below as if placement were wrong.
     await popout.bringToFront();
+    await expect
+      .poll(() => popout.evaluate(() => document.hasFocus()), { timeout: 10_000 })
+      .toBe(true);
     await answerFolderDialog(a, folderB);
     await popout.keyboard.press(`${MOD}+N`);
 
