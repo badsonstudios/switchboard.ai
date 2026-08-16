@@ -3,8 +3,31 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — ✅ RUN 19 CLOSED 2026-08-15: 12 ITEMS, 12 PRs
-> # AWAITING DAN'S TRAIN
+> # ▶▶ START HERE — 🚢 v0.6.0 SHIPPED 2026-08-16 (run 19 fully closed)
+>
+> **Train #554 MERGED → main @ d4dd81b (all 12 member PRs merged, all 12
+> issues closed, branches deleted); release cut ecf84e2, tag v0.6.0,
+> release.yml SUCCESS — installer + sha256 published.** out/ rebuilt +
+> stamped (ecf84e25). **Dan: update in-app to test.** Orchestration is
+> OFF at Dan's request (weekly limit) — this train, cut, tag and release
+> were done by the session itself, no workers.
+>
+> **Train integration catches worth remembering:** three cross-branch
+> defects the gate caught that no single branch could see — reveal()
+> gained a 3rd arg in #549 while #547's test predated it; the AA drift
+> test named `.doc-md` while the viewer renders `.doc-main`; a union in
+> store.test.ts dropped a brace. Gate on the integrated tree: 5092 unit
+> / 310 e2e / 0 failed; CI 4/4.
+>
+> **NEXT (when Dan has budget):** dogfood v0.6.0 against
+> `docs/plans/dogfood-testing.md` (12 fixes now RE-TESTable + drawer and
+> quiet hours untested) · then #483 digest (both deps in), #521-layer-1,
+> #495-verify, and the tail (#488 #490 #491 #494 #497-#499 #502-#504
+> #506 #508 #509 #512 #517 #518 #538 #539 #543 #544 #546 #550) ·
+> Dan-gated: #528/#529 design sittings.
+>
+> # (run-19 close record follows)
+> # ✅ RUN 19 CLOSED 2026-08-15: 12 ITEMS, 12 PRs AWAITING DAN'S TRAIN
 >
 > **Every wave-1/2 item DONE. Dan's queue (12, all green or greening,
 > all owner-priority):** #535 (update restarts itself) · #536 (reply
