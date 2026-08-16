@@ -8,7 +8,7 @@
 > When Dan asks "what should I test?", answer FROM this file: the UNTESTED
 > and RE-TEST sections, phrased as steps + expected result.
 
-Last updated: 2026-08-16 — **v0.6.0 SHIPPED**; everything in the RE-TEST table below
+Last updated: 2026-08-16 (evening) — Dan's v0.6.0 pass done; results below. **v0.6.0 SHIPPED**; everything in the RE-TEST table below
 is now IN the installed build once Dan updates. Twelve fixes landed via train #554.
 
 ## Untested — never exercised by hand
@@ -29,17 +29,20 @@ is now IN the installed build once Dan updates. Twelve fixes landed via train #5
 
 | What | Shipped in | Re-test |
 |---|---|---|
-| Find highlight in session view | **v0.6.0** | Ctrl+F a word: current match brightly marked, others quietly, marks gone on Esc, Copy on a fence with a match still copies clean text |
-| Update auto-restart | **v0.6.0** | Next release install should close + reopen itself |
-| Right-click menus | **v0.6.0** | Composer paste (text AND image→chip), copy on feed selection |
-| Links in replies | **v0.6.0** | Click https link → default browser; javascript: inert |
-| Composer draft survival | **v0.6.0** | Type, pop out → text still there; also quit/relaunch |
-| Find on a BUSY session | NOT yet (#496 open) | Hits on a streaming session must jump, not go list-only |
-| Resume-link orphans | **v0.6.0** | His two orphaned cards should reattach via the repair sweep |
-| Viewer pin removal | **v0.6.0** | Every file → its own tab; no pin anywhere |
+| Find highlight in session view | **v0.6.0** | PARTLY VERIFIED — marks work where jumping works; blocked behind #495/#557 on resumed sessions |
+| Find on ANY resumed session | NOT yet (#495 raised, #496, #557) | Every hit must jump; the bar alone should carry it — no auto-opening results list |
 | New session from popout | **v0.6.0** | Affordance exists, tab lands beside current card in the popout |
-| Diff side-by-side | **v0.6.0** | Toggle exists, persists, default side-by-side |
-| Ctrl+F in document viewer | **v0.6.0** | Find-in-file works on rendered Markdown, matches marked |
+
+## Tested and passing (2026-08-16 pass, v0.6.0)
+
+- Update installs **and restarts itself** — #525 verified in the wild
+- Right-click menus (composer cut/copy/paste, feed copy) — "seems to be working now"
+- Links in replies open the browser — "working, thank you"
+- Documents: a tab per file, no pin; Ctrl+F in the viewer — both "working well"
+- Side-by-side diff toggle — "working well"
+- Composer draft survives tab-switch / popout / restart — "this is working"
+- New session from a popped-out window (creation half) — "all worked fine"
+- Resume-link repair — "appears to be working now" (orphaned cards reattached)
 
 ## Tested and passing (2026-08-15 pass, v0.5.0)
 
@@ -72,3 +75,9 @@ is now IN the installed build once Dan updates. Twelve fixes landed via train #5
 | 2026-08-15 | Diff stuck inline, no side-by-side option | #532 |
 | 2026-08-15 | Ctrl+F dead in the document viewer | #533 |
 | 2026-08-15 | Find goes all-list-only on a busy session | #496 (repro added) |
+| 2026-08-16 | Every session restores scrolled to the TOP, never the tail | #555 |
+| 2026-08-16 | Events drawer has no visible close button (tab only) | #556 |
+| 2026-08-16 | Find auto-opens the results list; wants bar-only interaction | #557 |
+| 2026-08-16 | Find refuses to jump on an IDLE resumed session (worked after new turns) | #495 (evidence added, priority up) |
+| 2026-08-16 | Popout-born session docks back into the WRONG grid slot | #558 |
+| 2026-08-16 | Wants drag-to-reorder sessions within a rail group | #559 |

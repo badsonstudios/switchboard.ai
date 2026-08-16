@@ -3,7 +3,28 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — 🚢 v0.6.0 SHIPPED 2026-08-16 (run 19 fully closed)
+> # ▶▶ START HERE — 🚢 v0.6.0 SHIPPED + DOGFOODED 2026-08-16
+>
+> **Dan ran the full v0.6.0 pass. PASSING: update auto-restart · right-
+> click menus · reply links · document tabs + viewer find · side-by-side
+> diff · composer drafts · popout new-session (creation) · resume repair
+> (his orphaned cards came back).** Tracker updated
+> (`docs/plans/dogfood-testing.md`).
+>
+> **SIX new tickets from the pass — this is run 20's wave 1:** **#555**
+> every session restores scrolled to the TOP (hydrate vs tail-pin) ·
+> **#557** find auto-opens the results list; he wants bar-only (count +
+> Enter/Shift+Enter) · **#495 RAISED** with decisive evidence: the
+> refusal fires on IDLE resumed sessions and clears once new turns land
+> — resume hydrate, not 'busy', is the cause; fix with #496 (per-hit,
+> never session-wide) and #557 together · **#558** a popout-born session
+> docks back into the ORIGINAL card's slot (he asked for e2e by name) ·
+> **#556** drawer needs a visible close button · **#559** drag-reorder
+> within a rail group. Orchestration OFF (Dan's weekly limit) — these
+> are filed, not started.
+>
+> # (v0.6.0 ship record follows)
+> # 🚢 v0.6.0 SHIPPED 2026-08-16 (run 19 fully closed)
 >
 > **Train #554 MERGED → main @ d4dd81b (all 12 member PRs merged, all 12
 > issues closed, branches deleted); release cut ecf84e2, tag v0.6.0,
