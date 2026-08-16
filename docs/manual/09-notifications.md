@@ -58,7 +58,9 @@ The tab is doing three jobs while it's shut:
   there that isn't a session.
 
 If you use a screen reader, all three are read out in the tab's name — "Events ·
-3 sessions waiting · 1 notice" — so none of it depends on seeing a color.
+3 sessions waiting · 1 notice" — so none of it depends on seeing a color. And a
+notice that turns up while the drawer is closed is announced as it arrives, so
+you don't have to keep opening the drawer to check.
 
 ### The count in the status bar
 

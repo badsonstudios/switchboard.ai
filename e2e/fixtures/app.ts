@@ -4,6 +4,7 @@
 import {
   _electron as electron,
   ElectronApplication,
+  expect,
   Locator,
   Page,
   test,
@@ -1023,6 +1024,36 @@ export async function showTerminal(window: Page): Promise<void> {
  * Idempotent, because several specs open it inside a helper that a test may
  * have already called. Clicking a second time would shut it again.
  */
+/**
+ * "The turn completed" — the state machine reporting a `result` message off the
+ * stream, i.e. the CLI closed the turn rather than the text merely arriving.
+ *
+ * This used to be read as the word **"Done."** on the Events panel's row, in
+ * both the fake-stream specs and the real-CLI lane. The word is still there,
+ * but the panel is a drawer now and shut by default (P2-E14-01), so a page-text
+ * match for it fails in the positive case and passes vacuously in the negative
+ * one. The same fact is on the collapsed tab, which is always on screen: a
+ * `done` event is the only thing a one-session turn queues, so it is both the
+ * whole count and the hottest kind.
+ *
+ * Opening the drawer instead would be worse — these tests go on to type into
+ * the composer, and the drawer overlays the workspace.
+ *
+ * Shared out of `stream.spec.ts` rather than copied because the copy is exactly
+ * what went wrong: `real-claude.spec.ts` is opt-in behind `SWITCHBOARD_REAL_E2E`
+ * and its two assertions were missed by the first sweep, so nothing caught them.
+ */
+export async function expectTurnCompleted(window: Page, timeout = 30_000): Promise<void> {
+  const tab = window.getByTestId('events-tab');
+  await expect(tab).toHaveAttribute('data-count', '1', { timeout });
+  await expect(tab).toHaveAttribute('data-hottest', 'done');
+}
+
+/** ...and its negative: nothing has been queued at all, so no turn has ended */
+export async function expectTurnStillRunning(window: Page): Promise<void> {
+  await expect(window.getByTestId('events-tab')).toHaveAttribute('data-count', '0');
+}
+
 export async function openEventsDrawer(window: Page): Promise<void> {
   const tab = window.getByTestId('events-tab');
   await tab.waitFor({ state: 'visible', timeout: 25_000 });

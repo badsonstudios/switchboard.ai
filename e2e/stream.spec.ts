@@ -12,6 +12,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import {
+  expectTurnCompleted,
+  expectTurnStillRunning,
   hookPoster,
   launchApp,
   LaunchedApp,
@@ -47,33 +49,6 @@ async function noPermissionInQueue(w: Page): Promise<void> {
     'data-hottest',
     'needs-permission'
   );
-}
-
-/**
- * "The turn completed" — the state machine reporting a `result` message off the
- * stream, which is the whole chain: composer → submitPrompt → stdin frame → the
- * fake → stdout NDJSON → decoder → streamStatusEvent → the state machine → the
- * UI.
- *
- * This used to be read as the word **"Done."** on the Events panel's row. The
- * word is still there, but the panel is a drawer now and shut by default
- * (P2-E14-01), so a page-text match for it would fail in the positive case and
- * pass vacuously in the negative one. The same fact is on the collapsed tab,
- * which is always on screen: a `done` event is the only thing these
- * single-session turns queue, so it is both the count and the hottest kind.
- *
- * Opening the drawer instead would be worse here — these tests go on to type
- * into the composer, and the drawer overlays the workspace.
- */
-async function turnCompleted(w: Page): Promise<void> {
-  const tab = w.getByTestId('events-tab');
-  await expect(tab).toHaveAttribute('data-count', '1', { timeout: 30_000 });
-  await expect(tab).toHaveAttribute('data-hottest', 'done');
-}
-
-/** ...and its negative: nothing has been queued at all, so no turn has ended */
-async function turnStillRunning(w: Page): Promise<void> {
-  await expect(w.getByTestId('events-tab')).toHaveAttribute('data-count', '0');
 }
 
 /**
@@ -154,7 +129,7 @@ test.describe('a stream-json session (P2-E18-08a)', () => {
     // a `done` event on the attention queue is the state machine reporting a
     // `result` message off the stream — which proves the whole chain (see
     // `turnCompleted`).
-    await turnCompleted(w);
+    await expectTurnCompleted(w);
   });
 
   test('the .claude permission is asked ONCE and honoured', async () => {
@@ -281,7 +256,7 @@ test.describe('slash commands come from the CLI in Direct mode (P2-E18-09)', () 
     // send a turn, which is what makes the CLI announce itself
     await box.fill('hello stream');
     await box.press('Enter');
-    await turnCompleted(w);
+    await expectTurnCompleted(w);
 
     // AFTER: the CLI's own list. `fake-only` is a command no scan could have
     // found, and `curated-only` is gone — replaced, not merged.
@@ -928,7 +903,7 @@ test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
 
     await expect(w.getByText(/HALF-WRITTEN-SENTENCE/)).toBeVisible({ timeout: 30_000 });
     // and the turn is genuinely still running while we can read it
-    await turnStillRunning(w);
+    await expectTurnStillRunning(w);
   });
 
   // #156, measured in `spike/findings/s-11-local-slash-commands.md`. `/usage`
@@ -978,7 +953,7 @@ test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
     ).toBeVisible({ timeout: 30_000 });
     // …and the turn still completed, as it always did — the done-sound played
     // even when the text did not appear, which is what made the bug confusing
-    await turnCompleted(w);
+    await expectTurnCompleted(w);
   });
 
   test('the user\'s own prompt still renders, off the replayed user message', async () => {

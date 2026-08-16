@@ -23,6 +23,7 @@ import type { CommandDeps } from '../lib/command-set';
 import type { FeedBlockDto } from '../lib/feed';
 import type { ThemeDefinition, ThemeId } from '../theme/theme';
 import type { ServiceHealthStatus } from '../../../shared/service-health';
+import type { EventDto } from '../model/types';
 
 /**
  * A set of commands. Built lazily from deps rather than supplied as a list:
@@ -253,6 +254,13 @@ export interface StatusBarContext {
   attentionCount?: number;
   /** the accelerator that walks that queue, already formatted (e.g. 'Ctrl+Space') */
   attentionBinding?: string;
+  /**
+   * The kind at the HEAD of that queue — the worst thing waiting — so the bar
+   * can be tinted by the same fact the drawer's tab is tinted by. Without it
+   * the two readouts sit inches apart saying the same number in different
+   * colours, which makes the status inks stop being a vocabulary.
+   */
+  attentionHottest?: EventDto['kind'] | null;
 }
 
 /** An item in the workspace status bar (§5.10). */

@@ -220,6 +220,13 @@ export function App(): React.JSX.Element {
     subscribeStore,
     () => sessionStore.getQueue().length
   );
+  // ...and its HEAD's kind, so the bar is tinted by the same fact the drawer's
+  // tab is. Both snapshots are primitives off the one memoized queue, so
+  // neither can hand useSyncExternalStore a fresh identity on every render.
+  const attentionHottest = useSyncExternalStore(
+    subscribeStore,
+    () => sessionStore.getQueue()[0]?.kind ?? null
+  );
   // The urgency strip (E9-04). It renders from RAIL ORDER, not the raw session
   // list, so the Nth lamp is the Nth Ctrl+1..9 target — the derived value has a
   // stable identity (recomputed only when sessions/groups change), which is
@@ -1576,6 +1583,7 @@ export function App(): React.JSX.Element {
         totalOutputTokens={workspaceUsage.output}
         totalCostUsd={workspaceCost}
         attentionCount={attentionDepth}
+        attentionHottest={attentionHottest}
         attentionBinding={queueBindingLabel}
       />
     </div>

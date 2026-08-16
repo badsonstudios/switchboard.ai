@@ -89,7 +89,11 @@ test.describe('a Direct hold raises attention (P2-E18-14)', () => {
     // assertion below could be satisfied by the app simply doing nothing
     await expect(lamp(w, title)).toHaveAttribute('data-needs-you', 'false');
     await expect(w.getByTestId('urgency-count')).toHaveAttribute('data-needing', '0');
-    await expect(eventRows(w)).toHaveCount(0);
+    // read off the TAB, not the rows: the drawer is shut here (it is not opened
+    // until after the hold arrives), and "no rows" in a drawer with no DOM is
+    // true of a full queue too — which would gut the baseline this comment
+    // says is load-bearing
+    await expect(w.getByTestId('events-tab')).toHaveAttribute('data-count', '0');
 
     const box = w.getByPlaceholder(/Prompt this session/);
     await box.click();

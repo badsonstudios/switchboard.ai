@@ -12,6 +12,7 @@ import { RendererRegistry } from './registry-instance';
 import { formatTokens, formatUsd } from '../lib/usage';
 import { healthTone, healthTooltip } from '../lib/service-health';
 import type { ServiceHealthStatus } from '../../../shared/service-health';
+import type { EventDto } from '../model/types';
 
 const MONO: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 10 };
 
@@ -79,19 +80,42 @@ function ServiceHealth({ status }: { status: ServiceHealthStatus }): React.JSX.E
  * you look at without moving your eyes off a terminal.
  *
  * Right beside the session count, and that pairing is the meaning: "9 sessions,
- * 3 waiting" is one sentence about the workspace. Tinted with the queue's own
- * needs-input INK rather than a raw hue, because this is a WORD (the rule #221
- * established) — and left plain at zero, since "nothing is waiting" is not news
- * that deserves a colour.
+ * 3 waiting" is one sentence about the workspace.
+ *
+ * TINTED BY THE HOTTEST THING WAITING — the same fact, from the same queue
+ * head, that tints the events drawer's tab. A fixed `needs-input` ink would
+ * have painted a queue of nothing but `crashed` sessions in the "needs input"
+ * colour, inches away from a tab painted in the crashed one: two readouts of
+ * one number disagreeing, which is how a set of status inks stops being a
+ * vocabulary and becomes decoration. Ink and not hue because this is a WORD
+ * (the rule #221 established), and plain at zero, since "nothing is waiting" is
+ * not news that deserves a colour.
  */
-function AttentionCount({ count, binding }: { count: number; binding?: string }): React.JSX.Element {
+const ATTENTION_INK: Record<EventDto['kind'], string> = {
+  done: 'var(--status-done-ink)',
+  ready: 'var(--faint)',
+  'needs-input': 'var(--status-needs-input-ink)',
+  'needs-permission': 'var(--status-needs-permission-ink)',
+  crashed: 'var(--status-crashed-ink)',
+};
+
+function AttentionCount({
+  count,
+  binding,
+  hottest,
+}: {
+  count: number;
+  binding?: string;
+  hottest?: EventDto['kind'] | null;
+}): React.JSX.Element {
   const { t } = useTranslation();
   return (
     <span
       data-testid="status-attention"
       data-count={count}
+      data-hottest={hottest ?? undefined}
       title={binding ? t('statusbar.attentionTitle', { binding }) : undefined}
-      style={{ ...MONO, color: count > 0 ? 'var(--status-needs-input-ink)' : undefined }}
+      style={{ ...MONO, color: count > 0 && hottest ? ATTENTION_INK[hottest] : undefined }}
     >
       {t('statusbar.attention', { count })}
     </span>
@@ -132,7 +156,11 @@ export const statusBarItems: StatusBarItemContribution[] = [
     order: 15,
     render: (ctx) =>
       ctx.attentionCount === undefined ? null : (
-        <AttentionCount count={ctx.attentionCount} binding={ctx.attentionBinding} />
+        <AttentionCount
+          count={ctx.attentionCount}
+          binding={ctx.attentionBinding}
+          hottest={ctx.attentionHottest}
+        />
       ),
   },
   {

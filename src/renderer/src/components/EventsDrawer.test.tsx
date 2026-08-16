@@ -166,6 +166,33 @@ describe('the tab carries the three signals', () => {
     });
   }
 
+  // The dot is invisible to a screen reader, and the panel's own three
+  // `role="status"` regions are not in the DOM while the drawer is shut — so
+  // without this region, collapsing by default would have silently stopped
+  // announcing updates and reconnect offers altogether. That is capability
+  // removed by hiding chrome, which §5.8 forbids.
+  const announcer = (): HTMLElement | null =>
+    host.querySelector<HTMLElement>('[data-testid="events-announcer"]');
+
+  it('keeps a live region mounted while collapsed, so a notice can be heard', async () => {
+    await render();
+    expect(announcer(), 'the region must exist BEFORE the news does').not.toBeNull();
+    expect(announcer()!.getAttribute('aria-live')).toBe('polite');
+    expect(announcer()!.textContent).toBe(''); // mounted empty — nothing to say yet
+  });
+
+  it('announces a notice that arrives behind a shut drawer', async () => {
+    await render();
+    await render({ reconnectOffer: true });
+    expect(announcer()!.textContent).toContain('1 notice');
+    expect(announcer()!.textContent).toContain('Ctrl+E');
+  });
+
+  it('says nothing while the drawer is OPEN — the panel is announcing there', async () => {
+    await render({ open: true, reconnectOffer: true });
+    expect(announcer()!.textContent).toBe('');
+  });
+
   it('has no marker when no notice is up', async () => {
     await render({ events: [ev(1, 'crashed')] });
     expect(tab().getAttribute('data-notice')).toBeNull();
@@ -220,8 +247,10 @@ describe('opening and closing', () => {
     expect(host.querySelector('[data-events-notice="incident"]')).not.toBeNull();
     expect(host.querySelector('[data-events-notice="available"]')).not.toBeNull();
     // the reconnect offer has no data attribute of its own; its live region is
-    // the witness, and there are three of them only when all three are up
-    expect(host.querySelectorAll('[role="status"]').length).toBe(3);
+    // the witness, and there are three of them only when all three are up.
+    // Scoped to the BODY: the drawer keeps a fourth live region of its own,
+    // always mounted, which is what announces a notice while it is shut.
+    expect(body()!.querySelectorAll('[role="status"]').length).toBe(3);
   });
 
   it('points aria-controls at the body only while there is one', async () => {

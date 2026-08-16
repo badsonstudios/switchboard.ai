@@ -15,6 +15,7 @@ import type { PresentationPolicy } from '../lib/presentation-policy';
 import type { LayoutMode } from '../lib/layout-mode';
 import { TRUST_INERT_REASON_KEY } from '../lib/trust-reach';
 import type { ServiceHealthStatus } from '../../../shared/service-health';
+import type { EventDto } from '../model/types';
 
 const barStyle: React.CSSProperties = {
   background: 'var(--titlebar-bg)',
@@ -286,6 +287,8 @@ export function StatusBar(props: {
   attentionCount?: number;
   /** and the accelerator that walks it, for the readout's tooltip */
   attentionBinding?: string;
+  /** the kind at the queue's head, so the bar tints like the drawer's tab */
+  attentionHottest?: EventDto['kind'] | null;
 }): React.JSX.Element {
   // Contributed items (§5.23): the bar owns the strip and the spacer, the
   // items own what they say. An item returning null renders nothing, which is

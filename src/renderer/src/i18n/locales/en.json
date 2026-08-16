@@ -385,7 +385,9 @@
     "drawer": {
       "label": "Events",
       "waiting": "{count, plural, =0 {nothing waiting} one {# session waiting} other {# sessions waiting}}",
-      "notices": "{count, plural, one {# notice} other {# notices}}"
+      "notices": "{count, plural, one {# notice} other {# notices}}",
+      "announce": "{count, plural, one {# notice} other {# notices}} in the events drawer — press {binding} to open",
+      "announceNoBinding": "{count, plural, one {# notice} other {# notices}} in the events drawer"
     },
     "kind": {
       "done": "Done.",

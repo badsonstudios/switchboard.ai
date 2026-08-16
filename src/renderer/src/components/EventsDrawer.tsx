@@ -44,10 +44,15 @@
 //  • The count and the tint are never the only witness: the accessible name
 //    says both in words, and incidents keep their status-bar dot and the
 //    `ServiceHealthBanner` besides.
+//  • THE NOTICE DOT IS NOT A WITNESS AT ALL for anyone who cannot see it, which
+//    is why this drawer keeps its own always-mounted live region. The panel's
+//    three `role="status"` regions only announce while they are IN THE DOM, and
+//    collapsing by default took them out of it — see `announcement` below.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { EventsPanel, EventsPanelProps } from './EventsPanel';
 import { badgeLabel, badgeState } from '../lib/events-drawer';
+import { srOnly } from './sr-only';
 import type { EventDto } from '../model/types';
 
 /**
@@ -69,6 +74,12 @@ const TAB_WIDTH = 24;
  * the update dialog 60). The drawer must cover a maximized session — it is
  * reachable from there and the whole workspace is that one card — and must
  * never cover a dialog that is waiting for an answer.
+ *
+ * ONE TIE, named so it is not a surprise later: dockview's own overlay sits at
+ * 40 too (`--dv-overlay-z-index`, theme/dockview-tokens.css). The drawer wins
+ * on DOM order today because it is painted after the grid. If a dockview bump
+ * ever puts a drag overlay over this, raise the drawer rather than re-deriving
+ * the whole ladder — everything above 40 here is a modal and must stay above.
  */
 const Z_DRAWER = 40;
 
@@ -95,15 +106,6 @@ const BADGE_INK: Record<EventDto['kind'], string> = {
   crashed: 'var(--status-crashed-ink)',
 };
 
-/** and the HUE, for the edge — an edge is held to 3:1 and the hue clears it */
-const BADGE_HUE: Record<EventDto['kind'], string> = {
-  done: 'var(--status-done)',
-  ready: 'var(--faint)',
-  'needs-input': 'var(--status-needs-input)',
-  'needs-permission': 'var(--status-needs-permission)',
-  crashed: 'var(--status-crashed)',
-};
-
 export interface EventsDrawerProps extends EventsPanelProps {
   open: boolean;
   onOpen: () => void;
@@ -127,7 +129,46 @@ export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
   const name = badgeLabel(badge)
     .map((l) => t(l.key, l.params))
     .join(' · ');
-  const tint = badge.hottest ? BADGE_HUE[badge.hottest] : 'var(--border)';
+  // THE EDGE TAKES THE INK, NOT THE HUE, and that is a correction rather than a
+  // preference. The `--status-*` hues are one set of values for every theme
+  // (`tokens.css`), so on the light themes `--status-done` measures 2.5:1 and
+  // `--status-needs-input` about 1.9:1 against `--panel` — under 1.4.11's 3:1
+  // for a non-text object that carries meaning. The `-ink` variants are the
+  // ones tuned per theme, and `tokens.drift.test.ts` now pins all five of them
+  // against `--panel` so this cannot rot back. The rule this seems to bend
+  // (#221/#246: a word takes the ink, an edge takes the hue) is about a hue
+  // being too loud for text; it never licensed an edge nobody can see.
+  const tint = badge.hottest ? BADGE_INK[badge.hottest] : 'var(--border)';
+
+  // ── the notice announcer, and why collapsing needed one ──────────────────
+  //
+  // All three notice tenants carry `role="status" aria-live="polite"` inside
+  // `EventsPanel`, and #314 put them there for a stated reason: both the update
+  // notice and the reconnect offer arrive AFTER mount — one off a handshake
+  // round-trip, one when a dialog closes — so a screen reader would otherwise
+  // never hear either.
+  //
+  // Collapsing the panel by default silently repealed that. A live region that
+  // is NOT IN THE DOM when its news arrives announces nothing, and the tab's
+  // `aria-label` growing "· 1 notice" is not a substitute: a button's changing
+  // accessible name is not a live region and no assistive tech speaks it unless
+  // that button already holds focus. Incidents keep the status-bar dot and the
+  // ServiceHealthBanner besides; the other two had no second witness anywhere
+  // in the renderer. That is capability removed by collapsing chrome, which is
+  // the one thing §5.8 says this reshape may not do.
+  //
+  // So the drawer keeps a region of its own that is ALWAYS MOUNTED, open or
+  // shut. Mounted empty on the first commit and filled later (the FindBar's
+  // lesson — text that arrives with the region is not news), and silent while
+  // the drawer is OPEN, where the panel's own three regions are on screen doing
+  // this properly and would otherwise be talked over.
+  const announcement =
+    !open && badge.notices > 0
+      ? t(drawerBinding ? 'events.drawer.announce' : 'events.drawer.announceNoBinding', {
+          count: badge.notices,
+          binding: drawerBinding,
+        })
+      : '';
 
   // ── focus, on the way in and on the way out ─────────────────────────────
   //
@@ -171,8 +212,10 @@ export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
     wasOpen.current = false;
     const el = returnFocusTo.current;
     // rAF because the body is still mounted on the frame the close was decided
-    // (the palette's lesson).
-    requestAnimationFrame(() => {
+    // (the palette's lesson). Cancelled on cleanup so a drawer unmounted inside
+    // that frame — a window closing on a shut-and-teardown — cannot come back
+    // to move focus in a document that is on its way out.
+    const frame = requestAnimationFrame(() => {
       const doc = tab.current?.ownerDocument;
       if (!doc) return;
       // ONLY RECLAIM FOCUS OUR UNMOUNT STRANDED. If something else already has
@@ -187,6 +230,7 @@ export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
       if (el?.isConnected) el.focus?.();
       else tab.current?.focus();
     });
+    return () => cancelAnimationFrame(frame);
   }, [open]);
 
   // ── Escape, including after the drawer eats its own focus ────────────────
@@ -210,9 +254,15 @@ export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return;
       const target = e.target as Node | null;
-      const ours = !target || target === doc.body || !!body.current?.contains(target);
-      if (!ours) return;
-      e.stopPropagation();
+      const inside = !!target && !!body.current?.contains(target);
+      const stranded = !target || target === doc.body;
+      if (!inside && !stranded) return;
+      // STOP IT ONLY WHEN IT WAS REALLY OURS. From inside the drawer this is a
+      // handled key and nothing above should see it. In the stranded case the
+      // key came from nowhere in particular, and swallowing it would make this
+      // an invisible tripwire for whoever binds Escape at the app level next —
+      // they would find it dead whenever the drawer happened to be open.
+      if (inside) e.stopPropagation();
       onClose();
     };
     doc.addEventListener('keydown', onKey);
@@ -222,6 +272,16 @@ export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
 
   return (
     <>
+      {/* Always mounted, open or shut — see `announcement` above. */}
+      <div
+        role="status"
+        aria-live="polite"
+        data-testid="events-announcer"
+        style={srOnly}
+      >
+        {announcement}
+      </div>
+
       {/* THE TAB. Always rendered, open or shut — it is the one control, and it
           slides in to sit against the body's edge rather than being replaced by
           a second "close" button, so `aria-expanded` describes one thing the
@@ -246,6 +306,10 @@ export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
           transform: 'translateY(-50%)',
           zIndex: Z_DRAWER,
           inlineSize: TAB_WIDTH,
+          // no global border-box reset in this project (EventsPanel had to add
+          // its own for the same reason) — without this the 1px border makes
+          // the tab 26px while `insetInlineEnd: DRAWER_WIDTH` assumes 300
+          boxSizing: 'border-box',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
@@ -307,7 +371,10 @@ export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
               inlineSize: 5,
               blockSize: 5,
               borderRadius: '50%',
-              background: 'var(--status-working)',
+              // the INK, for the reason the edge gives above — and this one
+              // matters more, because a 5px dot is the only thing on screen
+              // saying a notice is behind a shut drawer
+              background: 'var(--status-working-ink)',
             }}
           />
         )}
@@ -319,6 +386,19 @@ export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
           ref={body}
           data-testid="events-drawer"
           tabIndex={-1}
+          // NAMED, because opening MOVES FOCUS HERE. A bare `<div tabIndex=-1>`
+          // announces essentially nothing, so a keyboard user who pressed
+          // `Mod+E` would get silence and then have to Tab around to find out
+          // what they had opened. The `<aside>` inside is a named landmark, but
+          // that names the CHILD — the focused element needs its own name.
+          //
+          // `group` rather than `region`: `region` is a landmark, and a landmark
+          // wrapped around the panel's `complementary` one would put two
+          // same-named entries in a screen reader's landmark menu for a single
+          // surface. `group` names the thing without claiming to be a second
+          // place in the document.
+          role="group"
+          aria-label={t('events.eyebrow')}
           // Escape is handled in the effect above rather than here, for the
           // reason written there: this element stops receiving keys the moment
           // one of its own controls unmounts under the caret.
@@ -328,6 +408,7 @@ export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
             insetBlockStart: 0,
             insetBlockEnd: 0,
             inlineSize: DRAWER_WIDTH,
+            boxSizing: 'border-box', // see the tab's note
             zIndex: Z_DRAWER,
             display: 'flex',
             background: 'var(--panel)',

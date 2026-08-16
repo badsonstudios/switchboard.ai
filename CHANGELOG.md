@@ -81,7 +81,8 @@ on the floor, and say so in your PR.
   carries the count, tints itself with the most urgent thing waiting, and grows
   **a small dot when there is a notice inside** — so an update or an incident
   still catches your eye from behind a closed drawer. If you use a screen
-  reader, the tab reads all three out in words.
+  reader, the tab reads all three out in words, and a notice arriving behind a
+  closed drawer is announced when it lands rather than waiting to be found.
 
 - **The status bar now says how many sessions are waiting on you.** Bottom
   right, next to the session count, permanently: *"3 waiting"*. It never needs
