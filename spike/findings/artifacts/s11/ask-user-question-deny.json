@@ -1,0 +1,89 @@
+{
+  "mode": "deny",
+  "cli": "claude.cmd",
+  "startedAt": "2026-08-17T15:39:38.290Z",
+  "controlRequests": [
+    {
+      "subtype": "can_use_tool",
+      "tool": "AskUserQuestion"
+    }
+  ],
+  "askRequest": {
+    "requestId": "782d5317-eec1-4b92-ac53-bb3e10bb1719",
+    "request": {
+      "subtype": "can_use_tool",
+      "tool_name": "AskUserQuestion",
+      "display_name": "AskUserQuestion",
+      "input": {
+        "questions": [
+          {
+            "question": "Which colour do you prefer?",
+            "header": "Colour",
+            "options": [
+              {
+                "label": "Red",
+                "description": "Prefer red"
+              },
+              {
+                "label": "Green",
+                "description": "Prefer green"
+              },
+              {
+                "label": "Blue",
+                "description": "Prefer blue"
+              }
+            ],
+            "multiSelect": false
+          },
+          {
+            "question": "Which of these languages do you use?",
+            "header": "Languages",
+            "options": [
+              {
+                "label": "TypeScript",
+                "description": "You use TypeScript"
+              },
+              {
+                "label": "Rust",
+                "description": "You use Rust"
+              },
+              {
+                "label": "Go",
+                "description": "You use Go"
+              },
+              {
+                "label": "Python",
+                "description": "You use Python"
+              }
+            ],
+            "multiSelect": true
+          }
+        ]
+      },
+      "tool_use_id": "toolu_01A9FP6J7L7E3KuFogUzLQ2K",
+      "requires_user_interaction": true
+    }
+  },
+  "ourResponse": {
+    "behavior": "deny",
+    "message": "Probe denied the question."
+  },
+  "toolResults": [
+    {
+      "type": "tool_result",
+      "content": "Probe denied the question.",
+      "is_error": true,
+      "tool_use_id": "toolu_01A9FP6J7L7E3KuFogUzLQ2K"
+    }
+  ],
+  "assistantText": [
+    "Well, that didn't go anywhere — the AskUserQuestion call was denied before you could answer either question, so I've got nothing to report back. No colour, no languages.\n\nIf you actually want to tell me, just type it: your preferred colour (Red/Green/Blue) and whichever of TypeScript, Rust, Go, or Python you use, and I'll take it from there."
+  ],
+  "result": {
+    "subtype": "success",
+    "is_error": false,
+    "duration_ms": 8701
+  },
+  "stderr": [],
+  "endedAt": "2026-08-17T15:39:48.505Z"
+}

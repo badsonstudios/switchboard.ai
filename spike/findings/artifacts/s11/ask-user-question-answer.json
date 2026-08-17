@@ -1,0 +1,137 @@
+{
+  "mode": "answer",
+  "cli": "claude.cmd",
+  "startedAt": "2026-08-17T15:39:00.384Z",
+  "controlRequests": [
+    {
+      "subtype": "can_use_tool",
+      "tool": "AskUserQuestion"
+    }
+  ],
+  "askRequest": {
+    "requestId": "2c7cf99c-807c-4d65-99c1-31050ee7c3bc",
+    "request": {
+      "subtype": "can_use_tool",
+      "tool_name": "AskUserQuestion",
+      "display_name": "AskUserQuestion",
+      "input": {
+        "questions": [
+          {
+            "question": "Which colour do you prefer?",
+            "header": "Colour",
+            "options": [
+              {
+                "label": "Red",
+                "description": "Prefer red"
+              },
+              {
+                "label": "Green",
+                "description": "Prefer green"
+              },
+              {
+                "label": "Blue",
+                "description": "Prefer blue"
+              }
+            ],
+            "multiSelect": false
+          },
+          {
+            "question": "Which of these languages do you use?",
+            "header": "Languages",
+            "options": [
+              {
+                "label": "TypeScript",
+                "description": "You use TypeScript"
+              },
+              {
+                "label": "Rust",
+                "description": "You use Rust"
+              },
+              {
+                "label": "Go",
+                "description": "You use Go"
+              },
+              {
+                "label": "Python",
+                "description": "You use Python"
+              }
+            ],
+            "multiSelect": true
+          }
+        ]
+      },
+      "tool_use_id": "toolu_014hQLEMXYfttiUU2PnxT1qe",
+      "requires_user_interaction": true
+    }
+  },
+  "ourResponse": {
+    "behavior": "allow",
+    "updatedInput": {
+      "questions": [
+        {
+          "question": "Which colour do you prefer?",
+          "header": "Colour",
+          "options": [
+            {
+              "label": "Red",
+              "description": "Prefer red"
+            },
+            {
+              "label": "Green",
+              "description": "Prefer green"
+            },
+            {
+              "label": "Blue",
+              "description": "Prefer blue"
+            }
+          ],
+          "multiSelect": false
+        },
+        {
+          "question": "Which of these languages do you use?",
+          "header": "Languages",
+          "options": [
+            {
+              "label": "TypeScript",
+              "description": "You use TypeScript"
+            },
+            {
+              "label": "Rust",
+              "description": "You use Rust"
+            },
+            {
+              "label": "Go",
+              "description": "You use Go"
+            },
+            {
+              "label": "Python",
+              "description": "You use Python"
+            }
+          ],
+          "multiSelect": true
+        }
+      ],
+      "answers": {
+        "Which colour do you prefer?": "Red",
+        "Which of these languages do you use?": "TypeScript, Rust"
+      }
+    }
+  },
+  "toolResults": [
+    {
+      "type": "tool_result",
+      "content": "Your questions have been answered: \"Which colour do you prefer?\"=\"Red\", \"Which of these languages do you use?\"=\"TypeScript, Rust\". You can now continue with these answers in mind.",
+      "tool_use_id": "toolu_014hQLEMXYfttiUU2PnxT1qe"
+    }
+  ],
+  "assistantText": [
+    "You answered:\n\n- **Colour:** Red\n- **Languages:** TypeScript and Rust"
+  ],
+  "result": {
+    "subtype": "success",
+    "is_error": false,
+    "duration_ms": 7772
+  },
+  "stderr": [],
+  "endedAt": "2026-08-17T15:39:09.888Z"
+}

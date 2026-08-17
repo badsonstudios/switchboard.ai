@@ -46,6 +46,7 @@ import {
 import type { QuietState } from '../shared/quiet-hours';
 import { RuleActionRegistry, RulesEngine } from './events/rules-engine';
 import {
+  answerableFromToast,
   DECIDE_BUTTONS,
   DECIDE_BUTTON_LABELS,
   PermissionToasts,
@@ -1354,7 +1355,12 @@ app
         ctx.event.kind === 'needs-permission' && action.buttons !== false
           ? (sessionIpcRef?.pendingPermissionFor(ctx.event.sessionId) ?? null)
           : null;
-      const decidable = !!req && toastActionsSupported(process.platform);
+      // A QUESTION gets no buttons (#563). `answerableFromToast` carries the
+      // measurement: an allow with no answers is read by the CLI as "the user
+      // did not answer", so Allow here would silently discard the question
+      // rather than grant it. The click path below still raises the card, which
+      // is the only place the question can actually be answered.
+      const decidable = !!req && answerableFromToast(req) && toastActionsSupported(process.platform);
       if (shown) {
         const toast = new Notification({
           title: ctx.title,

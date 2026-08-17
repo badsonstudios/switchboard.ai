@@ -257,6 +257,15 @@
     "deny": "Deny",
     "more": "+{n} more waiting"
   },
+  "question": {
+    "title": "Claude is asking you a question",
+    "submit": "Send answer",
+    "submitHint": "Answer every question first",
+    "dismiss": "Don't answer",
+    "other": "Other",
+    "otherPlaceholder": "Type your own answer…",
+    "otherLabel": "Your own answer to: {question}"
+  },
   "batchApproval": {
     "title": "{count, plural, one {# session wants} other {# sessions want}} to run {tool}",
     "allow": "Allow",

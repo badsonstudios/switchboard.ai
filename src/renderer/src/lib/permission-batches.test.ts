@@ -320,3 +320,43 @@ describe('argumentDetail — what the GROUPED card shows when there is no summar
     expect(argumentDetail({})).toBe('');
   });
 });
+
+// ── #563 — a question never joins a group ───────────────────────────────────
+describe('the CLI own questions are never grouped (#563)', () => {
+  const ask = (sessionId: string, requestId: string): PermissionRequestDto => ({
+    requestId,
+    sessionId,
+    cardId: `card-${sessionId}`,
+    tool: 'AskUserQuestion',
+    input: {
+      questions: [{ question: 'Which colour?', options: [{ label: 'Red' }], multiSelect: false }],
+    },
+  });
+
+  // The key is EXACT, so two sessions running the same prompt really can ask a
+  // byte-identical question — the grouping rule alone would not stop this. It
+  // has to be stopped anyway: this card's Allow sends the input back with no
+  // `answers`, which the CLI reads as "The user did not answer the questions",
+  // so one click would answer N sessions with nothing.
+  it('two identical questions from two sessions do NOT form a group', () => {
+    expect(chooseBatch([ask('live-A', 'q1'), ask('live-B', 'q2')], null)).toBeNull();
+  });
+
+  it('does not stop the ordinary requests around them grouping', () => {
+    const write = (sessionId: string, requestId: string): PermissionRequestDto => ({
+      requestId,
+      sessionId,
+      cardId: `card-${sessionId}`,
+      tool: 'Write',
+      input: { file_path: 'C:/p/x.ts' },
+    });
+
+    const batch = chooseBatch(
+      [ask('live-A', 'q1'), write('live-A', 'w1'), write('live-B', 'w2'), ask('live-B', 'q2')],
+      null
+    );
+
+    expect(batch?.tool).toBe('Write');
+    expect(batch?.members.map((m) => m.requestId)).toEqual(['w1', 'w2']);
+  });
+});

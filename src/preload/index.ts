@@ -339,8 +339,23 @@ const api = {
       ipcRenderer.on('sessions:permissionRequest', h);
       return () => ipcRenderer.removeListener('sessions:permissionRequest', h);
     },
-    decidePermission: (requestId: string, decision: 'allow' | 'deny', reason?: string): Promise<boolean> =>
-      ipcRenderer.invoke('sessions:decidePermission', requestId, decision, reason),
+    /**
+     * Answer one held request.
+     *
+     * `updatedInput` is the `AskUserQuestion` answer (#563) and nothing else:
+     * main accepts it ONLY for that tool, only on an allow, and only as a
+     * bounded plain object (`StreamPermissions.sanitizeUpdatedInput`). It is the
+     * one payload in this bridge that travels renderer -> CLI rather than the
+     * other way, which is exactly why the vetting is on main's side of the wire
+     * and not here.
+     */
+    decidePermission: (
+      requestId: string,
+      decision: 'allow' | 'deny',
+      reason?: string,
+      updatedInput?: unknown
+    ): Promise<boolean> =>
+      ipcRenderer.invoke('sessions:decidePermission', requestId, decision, reason, updatedInput),
     /**
      * Submit a prompt on the session's OWN transport (P2-E18-08a).
      *

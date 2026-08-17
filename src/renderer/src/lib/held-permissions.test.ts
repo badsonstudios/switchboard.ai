@@ -305,3 +305,62 @@ describe('enqueueHeld — building the review queue (issue 310)', () => {
     expect(enqueueHeld(queue, wire({ requestId: 'r1' }))).toBe(queue);
   });
 });
+
+// ── #563 — a question is never auto-allowed ─────────────────────────────────
+describe('a standing allow-all does not answer the CLI own questions (#563)', () => {
+  const ask = (over: Partial<IncomingPermission> = {}): IncomingPermission => ({
+    requestId: 'stream:live-A:req-q',
+    sessionId: 'live-A',
+    cardId: 'card-1',
+    tool: 'AskUserQuestion',
+    input: {
+      questions: [
+        { question: 'Which colour?', options: [{ label: 'Red' }], multiSelect: false },
+      ],
+    },
+    ...over,
+  });
+
+  function ports() {
+    const calls = {
+      decided: [] as Array<{ requestId: string; decision: string }>,
+      queued: [] as IncomingPermission[],
+      surfaced: 0,
+      suppressed: 0,
+    };
+    return {
+      calls,
+      port: {
+        isAllowAll: () => true, // the grant is ON, and must not apply here
+        decide: (requestId: string, decision: 'allow') =>
+          calls.decided.push({ requestId, decision }),
+        queue: (r: IncomingPermission) => calls.queued.push(r),
+        surface: () => calls.surfaced++,
+        suppressHandoff: () => calls.suppressed++,
+      },
+    };
+  }
+
+  // "Allow all tools in this session" is not "answer all questions in this
+  // session". The CLI reads an allow with no `answers` as "The user did not
+  // answer the questions" (measured), so auto-allowing would DISCARD the
+  // question and show the user nothing at all.
+  it('queues it and surfaces the card instead of allowing it', () => {
+    const { calls, port } = ports();
+
+    intakePermission(ask(), 'card-1', port);
+
+    expect(calls.decided).toEqual([]);
+    expect(calls.queued).toHaveLength(1);
+    expect(calls.surfaced).toBe(1);
+  });
+
+  it('still auto-allows an ordinary tool on the same card', () => {
+    const { calls, port } = ports();
+
+    intakePermission(ask({ requestId: 'r-write', tool: 'Write', input: {} }), 'card-1', port);
+
+    expect(calls.decided).toEqual([{ requestId: 'r-write', decision: 'allow' }]);
+    expect(calls.queued).toEqual([]);
+  });
+});

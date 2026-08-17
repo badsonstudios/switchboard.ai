@@ -825,3 +825,117 @@ describe('documents on the inbound envelope (P2-E10-10)', () => {
     expect(JSON.stringify(out)).not.toContain('DOC-SEEN');
   });
 });
+
+// ── #563 — the CLI's own chooser, in the shape the real one sends it ─────────
+describe("the AskUserQuestion round trip (#563)", () => {
+  /**
+   * Every assistant TEXT this turn produced.
+   *
+   * The empty ones are the thinking block's own assistant message, which every
+   * ordinary reply carries (see `emitAssistantText`) and which is not prose.
+   */
+  const said = (): string[] =>
+    out
+      .filter((m) => m.type === 'assistant')
+      .map((m) => (m.message as { content: Array<{ text?: string }> }).content[0]?.text ?? '')
+      .filter(Boolean);
+
+  const request = () =>
+    out.find((m) => m.type === 'control_request') as {
+      request_id: string;
+      request: Record<string, unknown>;
+    };
+
+  const answer = (response: Record<string, unknown>): void => {
+    const req = request();
+    out.length = 0;
+    proto.handle({
+      type: 'control_response',
+      response: { subtype: 'success', request_id: req.request_id, response },
+    });
+  };
+
+  it('!ask raises a can_use_tool for AskUserQuestion and suspends the turn', () => {
+    proto.handle(userMsg('!ask'));
+
+    const r = request();
+    expect(r.request.subtype).toBe('can_use_tool');
+    expect(r.request.tool_name).toBe('AskUserQuestion');
+    expect(types()).not.toContain('result:success');
+  });
+
+  // The real capture carries NONE of the permission furniture, because it is
+  // not asking for permission — there is nothing to justify and nothing to
+  // suggest. A fake that attached "which is a sensitive file" to a question
+  // would have the panel rendering a safety warning nobody sent.
+  it('the request carries no reason, reason type or suggestions', () => {
+    proto.handle(userMsg('!ask'));
+    const r = request().request;
+
+    expect(r.decision_reason).toBeUndefined();
+    expect(r.decision_reason_type).toBeUndefined();
+    expect(r.permission_suggestions).toBeUndefined();
+    expect(r.tool_use_id).toBeTruthy(); // this one IS on the real payload
+  });
+
+  it('offers one of each arity, so both halves of the panel are reachable', () => {
+    proto.handle(userMsg('!ask'));
+    const questions = (request().request.input as { questions: Array<Record<string, unknown>> })
+      .questions;
+
+    expect(questions).toHaveLength(2);
+    expect(questions[0].multiSelect).toBe(false);
+    expect(questions[1].multiSelect).toBe(true);
+    expect(questions[0].header).toBe('Colour');
+  });
+
+  it('!ask1 raises the pick-one alone', () => {
+    proto.handle(userMsg('!ask1'));
+    const questions = (request().request.input as { questions: unknown[] }).questions;
+    expect(questions).toHaveLength(1);
+  });
+
+  // The point of the verb: what comes back is what the HOST actually put on the
+  // wire, so an e2e can assert the answer rather than the panel's own belief
+  // about it.
+  it('echoes the answers it was given, verbatim', () => {
+    proto.handle(userMsg('!ask'));
+    answer({
+      behavior: 'allow',
+      updatedInput: {
+        questions: [],
+        answers: {
+          'Which colour do you prefer?': 'Red',
+          'Which of these languages do you use?': 'TypeScript, Rust',
+        },
+      },
+    });
+
+    expect(said()).toEqual([
+      'ANSWERS: Which colour do you prefer?=Red | Which of these languages do you use?=TypeScript, Rust',
+    ]);
+    expect(types()).toContain('result:success');
+  });
+
+  it('an allow with no answers reports none — the CLI own "did not answer" case', () => {
+    proto.handle(userMsg('!ask1'));
+    answer({ behavior: 'allow', updatedInput: { questions: [] } });
+
+    expect(said()).toEqual(['ANSWERS: none']);
+  });
+
+  it('a deny says so and still finishes the turn', () => {
+    proto.handle(userMsg('!ask1'));
+    answer({ behavior: 'deny', message: 'Not now' });
+
+    expect(said()).toEqual(['QUESTION DENIED']);
+    expect(types()).toContain('result:success');
+  });
+
+  it('writes no files — a question is not a tool that does anything', () => {
+    proto.handle(userMsg('!ask1'));
+    answer({ behavior: 'allow', updatedInput: { answers: { x: 'y' } } });
+
+    expect(writes).toEqual([]);
+  });
+});

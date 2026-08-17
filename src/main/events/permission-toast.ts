@@ -17,6 +17,7 @@
 // press a button on a real OS toast.
 import type { Logger } from '../log/logger';
 import type { PermissionRequest } from '../../shared/ipc/permissions';
+import { ASK_USER_QUESTION_TOOL, parseAskUserQuestion } from '../../shared/ask-user-question';
 
 export type ToastDecision = 'allow' | 'deny';
 
@@ -245,6 +246,23 @@ const DETAIL_KEYS = [
 const MAX_DETAIL = 90;
 
 /**
+ * Can this request be answered by pressing a button on a toast? (#563)
+ *
+ * No, for `AskUserQuestion`, and the measurement is what makes it a rule rather
+ * than a preference: an allow with no `answers` gets **"The user did not answer
+ * the questions."** back from the CLI (probe mode `empty`). So an **Allow**
+ * button on a question would not answer it — it would SKIP it, silently, from a
+ * notification, which is the worst possible place to discover you have thrown
+ * away something the session was waiting on. A question's toast is a click
+ * shortcut to the card and nothing else; the panel is the only surface that can
+ * carry an answer, because the answer is a list of choices and a toast has no
+ * room for one.
+ */
+export function answerableFromToast(req: PermissionRequest): boolean {
+  return req.tool !== ASK_USER_QUESTION_TOOL;
+}
+
+/**
  * What the toast says a press would allow.
  *
  * This is the safety half of the item, not decoration. A toast with an Allow
@@ -254,9 +272,26 @@ const MAX_DETAIL = 90;
  * notification is the same decision they would have made from the bar.
  *
  * Wording tracks the approval bar's own header ("Allow Edit?") so the two
- * surfaces are recognisably the same question.
+ * surfaces are recognisably the same question — except for a QUESTION, which
+ * has no buttons and therefore nothing to be recognisable with.
  */
 export function permissionSummary(req: PermissionRequest): string {
+  // A question says what it is asking, never "Allow AskUserQuestion?" — the
+  // toast has no buttons for it (see `answerableFromToast`), so its whole job
+  // is to make the click worth making.
+  if (req.tool === ASK_USER_QUESTION_TOOL) {
+    const questions = parseAskUserQuestion(req.input ?? {});
+    const first = questions?.[0];
+    if (first) {
+      const text = first.question.trim().replace(/\s+/g, ' ');
+      const shown = text.length > MAX_DETAIL ? `${text.slice(0, MAX_DETAIL - 1)}…` : text;
+      // Plural when there is more to answer than the line can show, so the
+      // click is not a surprise.
+      const more = questions.length > 1 ? ` (+${questions.length - 1} more)` : '';
+      return `A question for you: ${shown}${more}`;
+    }
+    return 'Claude is asking you a question';
+  }
   const tool = req.displayName || req.tool || 'a tool';
   const input = req.input ?? {};
   let detail = '';
