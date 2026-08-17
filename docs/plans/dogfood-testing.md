@@ -8,14 +8,21 @@
 > When Dan asks "what should I test?", answer FROM this file: the UNTESTED
 > and RE-TEST sections, phrased as steps + expected result.
 
-Last updated: 2026-08-16 (evening) — Dan's v0.6.0 pass done; results below. **v0.6.0 SHIPPED**; everything in the RE-TEST table below
-is now IN the installed build once Dan updates. Twelve fixes landed via train #554.
+Last updated: 2026-08-17 — **v0.7.0 SHIPPED**, cut specifically so Dan can hand-test
+#563's question panel in a real installed build. v0.7.0 carries **#563** (Claude's
+questions, answerable in the card), **#555** (feeds restore at the tail), and
+**#557 + #496 + #495** (find is a bar first, and works in a resumed session) —
+all four are UNTESTED below. The earlier v0.6.0 note stands: everything in the
+RE-TEST table is in the installed build once Dan updates.
 
 ## Untested — never exercised by hand
 
 | What | How to test | Note |
 |---|---|---|
-| **Claude's questions, answerable in the card (#563)** | In a **Direct** session ask for something genuinely ambiguous ("I want to add caching — ask me which approach before you start"). A panel appears above the prompt box with the question and clickable answers: round buttons = pick one, boxes = pick several, always an **Other** with a text field. Answer, hit **Send answer**, and Claude should carry on using what you chose — including free text typed into Other. Try the arrow keys/Space instead of the mouse. Note a **Terminal**-mode session keeps its questions in the terminal by design | Shipped #563; the fake-provider path is covered by e2e, but only the real CLI proves the model actually *reaches for* the tool |
+| **Claude's questions, answerable in the card (#563)** | In a **Direct** session ask for something genuinely ambiguous ("I want to add caching — ask me which approach before you start"). A panel appears above the prompt box with the question and clickable answers: round buttons = pick one, boxes = pick several, always an **Other** with a text field. Answer, hit **Send answer**, and Claude should carry on using what you chose — including free text typed into Other. Try the arrow keys/Space instead of the mouse. Half-answer it, go to **Changes**, come back — your ticks should still be there. Unfocused: the pop-up says "A question for you: …" and has **no Allow button**. Note a **Terminal**-mode session keeps its questions in the terminal by design | **v0.7.0.** The fake-provider path is e2e-covered; only the real CLI proves the model actually *reaches for* the tool, and only you can judge whether Other feels like a first-class answer |
+| **Feeds restore at the tail (#555)** | Scroll to the end of a busy session, quit switchboard, relaunch. It should come back showing the END of the conversation, not the top. Then drag the panel to another part of the workspace — it should keep its position rather than jumping | **v0.7.0.** Was: every session restored scrolled to the top |
+| **Find is a bar first (#557)** | Ctrl+F in a session — you should get the bar with a match count, and Enter / Shift+Enter walking the hits. The results list should stay shut behind its **▸** until you click it | **v0.7.0** |
+| **Find in a RESUMED session (#496 + #495)** | Resume a session, send one new turn, then Ctrl+F for something that appears both before and after the resume. Post-resume hits should jump normally; only the older hydrated ones stay unjumpable, and the notice should be about that one hit rather than over the whole session | **v0.7.0.** The ticket's premise was measured wrong first — see PROGRESS |
 | **The Events drawer (0.6.0)** | The 220px column is gone — look for the slim badge tab on the right edge; it shows the attention count, tinted by the hottest event. Click it, or the hotkey, or the palette; the drawer overlays the grid. Check the update/reconnect/incident notices appear inside it, Esc closes and gives focus back, and the status bar now carries a queue count | Shipped in v0.6.0 |
 | **Quiet hours (0.6.0)** | Palette → quiet hours (or the About button); set a window covering now; a session needing you must NOT sound/speak/toast — but a webhook still fires | Shipped in v0.6.0 |
 | Actionable toasts (Allow/Deny on Windows notification) | Unfocus the app, make a session hit a permission ask; buttons on the toast must work without focusing the app; answering in-app withdraws the toast | Dan got NO toast at all 2026-08-15 — possibly OS focus assist / notification settings during dev; INVESTIGATE before re-test (installed build should have AppUserModelId) |

@@ -3,14 +3,25 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — ✅ #563 SHIPPED TO PR #565, 2026-08-17
+> # ▶▶ START HERE — 🚢 v0.7.0 RELEASED, 2026-08-17
 >
-> **PR #565 is open and waiting for Dan** — https://github.com/badsonstudios/switchboard.ai/pull/565
+> **#563 merged (PR #565, CI 4/4) and v0.7.0 is cut and tagged** so Dan can
+> hand-test the question panel in a real installed build. v0.7.0 carries
+> **#555 + #557/#496/#495 + #563**. `## 0.8.0 — unreleased` is open in
+> CHANGELOG.md — file every future entry there.
 >
-> **NEXT after it merges: #562** (other scroll-holding panels probably lose
-> position to the same dockview move #555 fixed for the feed), then #556
-> (drawer close button) and #559 (rail drag-reorder). **#558 stays diagnosed
-> but NOT fixed** — read its block below before attempting a fourth try.
+> **⚠️ THE CHANGELOG WAS EMPTY AT CUT TIME.** #555, #557/#496/#495 and #563 all
+> merged without filing their `— unreleased` entries, so the release commit had
+> to write all four up retroactively. The in-app update dialog shows those notes
+> to the user, so a blank section is a user-visible miss, not a tidiness one.
+> **File the CHANGELOG entry as part of the work item** (`CHANGELOG.md` → "While
+> work is landing"), the same way `docs/manual/` already is — `/next-item`
+> Step 8 does not say so and should.
+>
+> **NEXT: #562** (other scroll-holding panels probably lose position to the same
+> dockview move #555 fixed for the feed), then #556 (drawer close button) and
+> #559 (rail drag-reorder). **#558 stays diagnosed but NOT fixed** — read its
+> block below before attempting a fourth try.
 >
 > **#563 — `AskUserQuestion` in the session window.** Built, reviewed, green:
 > typecheck + lint clean, unit **5178/5178**, e2e 21/21 across the whole

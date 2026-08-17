@@ -102,6 +102,16 @@ not converging, record state in `PROGRESS.md` and report.
   Update the index's status column when a page graduates stub → draft → current.
   Purely internal work (refactor, CI, tests) writes nothing: say "no user-facing
   change".
+- **CHANGELOG entry (required for anything user-facing) — added 2026-08-17.**
+  Add it to the **topmost `— unreleased` section** of `CHANGELOG.md`, under
+  `Added` / `Changed` / `Fixed` / `Internal`, in the user's words rather than
+  the issue's. That file's own "While work is landing" section is the rule; this
+  line exists because it was being missed. **v0.7.0 was cut with an EMPTY
+  section** — three consecutive items had shipped without filing — and the
+  release commit had to write four entries retroactively from git log and
+  PROGRESS. The in-app update dialog shows these notes to the user, so a blank
+  section is a user-visible miss, not a tidiness one. Never open a second
+  unreleased section; if there is none at all, open one and say so in the PR.
 - Spike items: write/update the findings note the item requires.
 - If implementation diverged from DESIGN.md, amend DESIGN.md **before**
   committing (that's the definition of done in `docs/plans/00-process.md`).

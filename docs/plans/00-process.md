@@ -106,6 +106,26 @@ These pages are the **source for the shipped HTML manual** — the compile step
 is a planned work item (`03-later-phases.md` → "User manual build"). Writing
 them as we go is what makes that item small.
 
+## The CHANGELOG entry (added 2026-08-17)
+
+**The manual's twin, and it is missed far more often.** Every user-facing item
+also adds a line to the topmost `— unreleased` section of `CHANGELOG.md`, under
+`Added` / `Changed` / `Fixed` / `Internal`, before the PR opens. The file's own
+"While work is landing" section is the authority; this exists because the rule
+lived only there and three consecutive items sailed past it.
+
+- **Why it is not tidiness:** the in-app update dialog (P2-E19-03) shows these
+  notes to the user verbatim. A blank section is what a user reads after
+  updating.
+- **What went wrong:** **v0.7.0 was cut with an empty section.** #555,
+  #557/#496/#495 and #563 had all merged without filing, so the release commit
+  had to reconstruct four entries from git log and PROGRESS — exactly the
+  "reconstructed from a diff months later" failure the manual rule above exists
+  to prevent, one file over.
+- **One open section, ever.** Never open a second; never add to a dated one. If
+  there is no unreleased section at all (a cut skipped its step 2), open one and
+  say so in the PR.
+
 ## Plan files
 
 - `01-spike-foundations.md` — de-risking spike (current)
