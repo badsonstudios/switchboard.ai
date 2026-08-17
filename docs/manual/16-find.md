@@ -57,6 +57,12 @@ trustworthy.
 
 ## The results list
 
+**The list only ever opens when you ask for it.** The bar is the whole
+interaction — type, read the count, step with `Enter` and `Shift+Enter`, close
+with `Esc` — and nothing appears over your conversation unless you press `▸`.
+If the match you've stepped onto happens to be one switchboard can't scroll to,
+the bar says so in a quiet line underneath the count, and leaves the pane alone.
+
 Click the **`▸`** button on the bar to open the list of matches underneath it.
 Each row shows the text around the match, with the match itself highlighted,
 plus what kind of block it was in and roughly when. Click a row to jump
@@ -202,12 +208,17 @@ match-case searches are exact.
   Either way, the Session count is the one that sees everything.
 - **"Nothing to search yet"** — the session hasn't written anything down. That
   happens before the first prompt; ask it something and try again.
+- **"This match is earlier than the conversation on screen"** — that one match
+  is real and its snippet is accurate, but switchboard can't tell where on
+  screen it belongs, so it won't guess. Press `▸` to read it in the list, or
+  step past it to the next one. It's about the single match you're on, not
+  about the session: the matches either side of it usually jump perfectly well.
+  A resumed session is the common cause, because the conversation replayed into
+  the view is older than the transcript being written now.
 - **"These matches can be read here, but this session can't be scrolled to
-  them"** — the matches are real and the snippets are accurate, but switchboard
-  couldn't line the transcript up with what's on screen for this session, so it
-  won't guess where to jump. Read them in the results list. This is uncommon,
-  and it means what it says: switchboard would rather show you the text than
-  scroll you to a block it isn't sure about. Clearing or resuming a session can
-  cause it. It usually clears itself as the conversation moves on.
+  them"** — the same thing about the session as a whole, which is now rare: it
+  takes a session where switchboard can't identify a single match. Clearing a
+  session can cause it, and it usually clears itself as the conversation moves
+  on.
 - **The search stopped early** — a very large session hit a time limit. What's
   shown is real, just not all of it; a narrower term will finish.

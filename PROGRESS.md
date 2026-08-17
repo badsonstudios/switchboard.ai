@@ -3,11 +3,46 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — ✅ #555 DONE → PR #560 AWAITING DAN (2026-08-16)
+> # ▶▶ START HERE — 🔧 FIND TRIO (#496 + #495 + #557), merging 2026-08-17
 >
-> **PR: https://github.com/badsonstudios/switchboard.ai/pull/560** —
-> `feature/555-feed-tail-after-dock-move` @ dd557c9. **CI GREEN 4/4** (unit +
-> e2e on windows-latest and ubuntu-latest). Dan reviews and merges.
+> Branch `feature/557-find-bar-first`, off **main**. #555 (PR #560) has
+> already landed on main; this is the second of the three branches from that
+> run going in.
+>
+> **THE TICKET'S PREMISE WAS WRONG, AND MEASURING FIRST CAUGHT IT — twice in
+> a row now (see #555 below).** #495 says a resumed Direct session is
+> list-only while IDLE. It is not. Measured before a line was written:
+> fresh session `1 of 1` jumpable · **resumed + IDLE `1 of 1` jumpable** ·
+> **resumed + ONE NEW TURN → `1 of 2`, BOTH rows read-only, results list
+> open unasked, session-wide notice.** The hydrated backlog only breaks
+> alignment once a turn lands on top of it: the view then holds more at the
+> FRONT than the new transcript does, and the single session-wide offset is
+> refused for everything, post-resume hits included.
+>
+> **What shipped.** **#496** — `search.ts` resolves each hit by its own block
+> `srcId` first and the offset second, so alignment degrades block-by-block
+> instead of session-wide. An id that is ambiguous on EITHER side (loaded or
+> file) still refuses; the existing "an id the file used more than once" test
+> caught that hole in the first draft, which is the test suite earning its
+> keep. **#495** — falls out of it: post-resume hits jump, pre-resume
+> hydrated ones stay honestly unjumpable, and `aligned` now means "anything
+> resolved" so the bar stops putting a session-wide notice over a find that
+> works. **#557** — both `revealStep` auto-opens deleted; a new `find-stuck`
+> line in the bar says it about the ONE hit instead, and the list stays
+> behind its `▸`.
+>
+> **Gates:** unit **5093/5093** (one load-flake in `eslint-hex-rule.test.js`
+> — passes isolated 21/21, same class as #538/#550) · typecheck · lint ·
+> new `e2e/find-resumed.spec.ts` 2/2, and its resumed test **fails against
+> the unfixed build** (verified by stashing the fix and rebuilding) ·
+> `find.spec.ts` + `document-find.spec.ts` 8/8. **Full e2e not yet run on
+> this branch.**
+>
+> # (#555 and v0.6.0 records follow)
+> # ✅ #555 MERGED to main — PR #560, 2026-08-17
+>
+> **PR #560 squash-merged, CI green 4/4** (unit + e2e on windows-latest and
+> ubuntu-latest).
 >
 > **NEXT UP:** the rest of run 20's wave 1 from the v0.6.0 dogfood — **#557**
 > (find bar-only, no results list) · **#495**-verify (fix with #496 + #557

@@ -355,10 +355,19 @@ export interface BlockAnchor {
   srcId?: string;
 }
 
-/** A hit, plus the ordinal that resolves its `seq` once the file is aligned. */
+/**
+ * A hit, plus the two things that can resolve its `seq` (#496).
+ *
+ * `mainIndex` is the file ordinal, which needs the session-wide offset to mean
+ * anything. `srcId` is the block's OWN identity and needs nothing: if the
+ * renderer is holding a block with the same id, that block IS this hit's block,
+ * whatever the offset does or does not say. Keeping both is what lets alignment
+ * degrade a block at a time instead of a session at a time.
+ */
 interface PendingHit {
   hit: TranscriptHit;
   mainIndex?: number;
+  srcId?: string;
 }
 
 /** One session's scan state. */
@@ -663,6 +672,8 @@ async function scanOne(
         // Carried beside the hit rather than on it: this is the ordinal
         // alignment works in, and it has no meaning to the renderer.
         ...(anchor.mainIndex !== undefined ? { mainIndex: anchor.mainIndex } : {}),
+        // ...and the block's own id, for the resolution that needs no offset
+        ...(anchor.srcId ? { srcId: anchor.srcId } : {}),
         hit: {
           sessionId: target.sessionId,
           blockIndex: anchor.index,
@@ -854,16 +865,67 @@ export async function searchTranscripts(
     );
     total += state.total;
     const alignment = alignToLoaded(state.trail, target.loaded ?? []);
+    // The per-hit join (#496): every loaded block that carries an id, by id.
+    //
+    // Built once per session rather than per hit, and only from NON-SIDECHAIN
+    // blocks so it cannot answer with a subagent's block for a main-transcript
+    // hit — the same distinction the ordinal arithmetic keeps.
+    //
+    // An id that is on more than one loaded block does not resolve at all: a
+    // message can produce several blocks, "it matched" then does not say which
+    // one, and a jump to the wrong block is the lie this module exists to
+    // avoid. `alignBySrcId` refuses the same case for the same reason.
+    const seqBySrcId = new Map<string, number | null>();
+    for (const b of target.loaded ?? []) {
+      if (b.sidechain || !b.srcId) continue;
+      seqBySrcId.set(b.srcId, seqBySrcId.has(b.srcId) ? null : b.seq);
+    }
+    // ...and the FILE's side of the same question, which is not the same
+    // question. An id the loaded blocks use once but the FILE uses twice is
+    // ambiguous in the direction that matters here: the hit came from one of
+    // the file's two occurrences, the other has been evicted, and jumping to
+    // the single block still on screen would be a jump to the wrong one. Caught
+    // by `search.test.ts`'s "does not anchor on an id the file used more than
+    // once" — `alignBySrcId` refuses it for the offset, and this must refuse it
+    // for the per-hit path or #496 would have opened a hole the old code did
+    // not have.
+    const ambiguousInFile = new Set<string>();
+    const seenInFile = new Set<string>();
+    for (const a of state.trail) {
+      if (!a.srcId) continue;
+      if (seenInFile.has(a.srcId)) ambiguousInFile.add(a.srcId);
+      else seenInFile.add(a.srcId);
+    }
+    let resolvedAny = false;
     for (const pending of state.hits) {
       const hit = pending.hit;
+      // ID FIRST, because it needs no offset to be right (#496). The shipped
+      // design resolved every hit through ONE session-wide offset, so a single
+      // block the file never got — an interrupted turn's orphaned placeholder,
+      // or the hydrated backlog a resumed Direct session carries in front of
+      // its new transcript — took jump-to-hit down for the WHOLE session until
+      // that block was evicted, up to 1,000 blocks later. MEASURED: a resumed
+      // Direct session with one new turn on top of it answered "1 of 2" with
+      // both rows read-only and no paint in the feed.
+      const byId =
+        pending.srcId && !ambiguousInFile.has(pending.srcId)
+          ? seqBySrcId.get(pending.srcId)
+          : undefined;
+      if (byId !== undefined && byId !== null) {
+        hit.seq = byId;
+        resolvedAny = true;
+      }
       // A sidechain block has no `mainIndex`, so it never resolves to a seq: it
       // IS in the Feed, but which of the loaded sidechain blocks it is depends
       // on subagent files this scan never read.
-      if (alignment && pending.mainIndex !== undefined) {
+      else if (alignment && pending.mainIndex !== undefined) {
         const offset = pending.mainIndex - alignment.firstLoadedIndex;
         hit.earlierThanLoaded = offset < 0;
         const block = offset >= 0 ? alignment.loadedMain[offset] : undefined;
-        if (block) hit.seq = block.seq;
+        if (block) {
+          hit.seq = block.seq;
+          resolvedAny = true;
+        }
       }
       hits.push(hit);
     }
@@ -872,7 +934,11 @@ export async function searchTranscripts(
       hits: state.total,
       blocks: state.blocks,
       searched,
-      aligned: alignment !== null,
+      // "could this session be lined up at all" — and since #496 that is no
+      // longer only the offset's answer: a session whose offset is refused but
+      // whose hits resolved by id IS navigable, and a bar told otherwise would
+      // put a notice over a find that works.
+      aligned: alignment !== null || resolvedAny,
     });
   }
 

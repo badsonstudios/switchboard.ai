@@ -722,6 +722,7 @@
       "document": "Document"
     },
     "noResults": "No results",
+    "hitNotJumpable": "This match is earlier than the conversation on screen — open the list (▸) to read it.",
     "searching": "Searching…",
     "next": "Next match",
     "previous": "Previous match",
