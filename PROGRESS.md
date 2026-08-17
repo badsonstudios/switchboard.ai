@@ -18,10 +18,19 @@
 > work is landing"), the same way `docs/manual/` already is — `/next-item`
 > Step 8 does not say so and should.
 >
-> **NEXT: #562** (other scroll-holding panels probably lose position to the same
-> dockview move #555 fixed for the feed), then #556 (drawer close button) and
-> #559 (rail drag-reorder). **#558 stays diagnosed but NOT fixed** — read its
-> block below before attempting a fourth try.
+> **NEXT: #562, chosen by Dan 2026-08-17** — other scroll-holding panels
+> probably lose position to the same dockview move #555 fixed for the feed.
+> Then #556 (drawer close button) and #559 (rail drag-reorder). **#558 stays
+> diagnosed but NOT fixed** — read its block below before attempting a fourth
+> try.
+>
+> **Two new tickets, and they were answered THROUGH the panel they change** —
+> #563's first real use was Dan choosing his own next item in it:
+> **#566** tabs for a multi-question call (reverses #563's stacked layout; the
+> ticket carries the hazard that made it stacked, because tabs must solve it
+> rather than inherit it) and **#567** partial answers — **probe first**, the
+> CLI's reading of a partial `answers` map is the one thing #563 deliberately
+> left unmeasured.
 >
 > **#563 — `AskUserQuestion` in the session window.** Built, reviewed, green:
 > typecheck + lint clean, unit **5178/5178**, e2e 21/21 across the whole
