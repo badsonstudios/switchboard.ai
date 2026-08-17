@@ -3,13 +3,29 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — ⛔ #558 BLOCKED (diagnosed, NOT fixed) · NEXT #563, 2026-08-17
+> # ▶▶ START HERE — ✅ MAIN IS CLEAN · NEXT TASK IS #563, 2026-08-17
 >
-> **NO PR. The code change was REVERTED; the branch carries the repro and the
-> diagnosis only.** Branch `feature/558-dock-back-slot` holds
-> `e2e/popout-dock-back.spec.ts` (3 tests, the headline one `test.fixme` — it
-> is red against main and correctly so) plus this note. Two tests in it pass
-> and are real regression cover.
+> **Everything from run 20's first wave is merged. Nothing is in flight.**
+>
+> | Landed on main | |
+> |---|---|
+> | **#555** (PR #560) | the feed keeps its tail when dockview moves the panel |
+> | **#557 + #496 + #495** (PR #561) | Ctrl+F is the bar, and it survives a resume |
+> | **#558** | the repro + diagnosis only — NO fix (see below) |
+>
+> **NEXT: #563** — render the CLI's `AskUserQuestion` in the session window.
+> Owner priority, moved up by Dan 2026-08-17. Details in the block below.
+>
+> **STILL OPEN from this run:** #556 (drawer close button), #559 (rail
+> drag-reorder), #562 (other scroll-holding panels probably lose position to
+> the same dockview move #555 fixed for the feed), and #558 below.
+>
+> # ⛔ #558 — DIAGNOSED, NOT FIXED (read before attempting it)
+>
+> **The code change was REVERTED. What is on main is the repro and this
+> note.** `e2e/popout-dock-back.spec.ts` holds 3 tests: the headline one is
+> `test.fixme` (red against main, and correctly so); the other two pass and
+> are real regression cover for whoever writes the fix.
 >
 > **THE MECHANISM IS FULLY MEASURED.** Popping a card out leaves its grid group
 > as an invisible 1px HUSK (dockview `_doAddPopoutGroup` →
@@ -88,7 +104,107 @@
 > is minified and `Read` will blow up context); do not guess the payload or
 > the response shape.
 >
-> # (v0.6.0 record follows)
+> # ✅ FIND TRIO MERGED (#496 + #495 + #557) — PR #561, 2026-08-17
+>
+> Merged into main after an integration pass with #555 already in: typecheck,
+> unit 5093/5093, both features' e2e together (17/17), then CI green 4/4 on
+> the integrated tree.
+>
+> **THE TICKET'S PREMISE WAS WRONG, AND MEASURING FIRST CAUGHT IT — twice in
+> a row now (see #555 below).** #495 says a resumed Direct session is
+> list-only while IDLE. It is not. Measured before a line was written:
+> fresh session `1 of 1` jumpable · **resumed + IDLE `1 of 1` jumpable** ·
+> **resumed + ONE NEW TURN → `1 of 2`, BOTH rows read-only, results list
+> open unasked, session-wide notice.** The hydrated backlog only breaks
+> alignment once a turn lands on top of it: the view then holds more at the
+> FRONT than the new transcript does, and the single session-wide offset is
+> refused for everything, post-resume hits included.
+>
+> **What shipped.** **#496** — `search.ts` resolves each hit by its own block
+> `srcId` first and the offset second, so alignment degrades block-by-block
+> instead of session-wide. An id that is ambiguous on EITHER side (loaded or
+> file) still refuses; the existing "an id the file used more than once" test
+> caught that hole in the first draft, which is the test suite earning its
+> keep. **#495** — falls out of it: post-resume hits jump, pre-resume
+> hydrated ones stay honestly unjumpable, and `aligned` now means "anything
+> resolved" so the bar stops putting a session-wide notice over a find that
+> works. **#557** — both `revealStep` auto-opens deleted; a new `find-stuck`
+> line in the bar says it about the ONE hit instead, and the list stays
+> behind its `▸`.
+>
+> **Gates:** unit **5093/5093** (one load-flake in `eslint-hex-rule.test.js`
+> — passes isolated 21/21, same class as #538/#550) · typecheck · lint ·
+> new `e2e/find-resumed.spec.ts` 2/2, and its resumed test **fails against
+> the unfixed build** (verified by stashing the fix and rebuilding) ·
+> `find.spec.ts` + `document-find.spec.ts` 8/8. **Full e2e not yet run on
+> this branch.**
+>
+> # (#555 and v0.6.0 records follow)
+> # ✅ #555 MERGED to main — PR #560, 2026-08-17
+>
+> **PR #560 squash-merged, CI green 4/4** (unit + e2e on windows-latest and
+> ubuntu-latest).
+>
+> **NEXT UP:** the rest of run 20's wave 1 from the v0.6.0 dogfood — **#557**
+> (find bar-only, no results list) · **#495**-verify (fix with #496 + #557
+> together) · **#558** (popout-born session docks into the wrong slot; Dan
+> asked for e2e by name) · **#556** (drawer close button) · **#559**
+> (drag-reorder within a rail group). Then the tail: #483 digest,
+> #521-layer-1, #488 #490 #491 #494 #497-#499 #502-#504 #506 #508 #509 #512
+> #517 #518 #538 #539 #543 #544 #546 #550. Dan-gated: #528/#529 sittings.
+>
+> **`document-peek.spec.ts:471` — LOCAL TO THIS MACHINE, corrected, not
+> ticketed.** It failed on every local run during #555 (313 passed / 3 skipped
+> / 1 failed) including on a CLEAN stashed tree at main, so it was first called
+> pre-existing — but **CI ran it green on both platforms**, which rules that
+> out. Likeliest cause: leftover Electron window state from the #555 probe
+> runs, which launched and killed a lot of popout windows. If it reappears in
+> a session that ran no popout probes, THEN it is real and wants a ticket.
+>
+> # (the #555 investigation record follows)
+> # 🔧 #555 — DIAGNOSIS (kept: the measurements cost the most)
+>
+> **#555 (feed restores at the top) — DIAGNOSED, mechanism is NOT what the
+> issue guessed.** Measured, not assumed: the hydrate/replay path is
+> innocent. A restored Direct session lands dead on the tail with Dan's OWN
+> 533-block transcript (gap 0-1), and so does the PTY watcher path with a
+> 628-block backlog, on one card, three cards, and a two-group split.
+>
+> **The real defect: a dockview panel MOVE strands the feed at scrollTop 0.**
+> Reproduced deterministically by booting on a copy of Dan's real
+> `workspace.json` + his transcripts, and then minimally in-repo: two docked
+> groups (the `split.spec.ts` persisted-layout recipe) + click a card's own
+> rail row → the scroller element is DETACHED and REATTACHED (same element,
+> React never remounts) → the browser zeroes `scrollTop`, and **none of the
+> three recovery triggers fire**: no scroll event, no size change (so the
+> ResizeObserver — which holds the backstop written for exactly this case —
+> never runs), and `props.visible` never changes. `pinned` stays true, so
+> `offTail` is false and the "Jump to latest" chip never appears either. The
+> view is silently stuck at the top with no way back, which is exactly Dan's
+> "clicking into a card does not bring it down".
+>
+> Dan reads it as a restart symptom because the restart is when he clicks
+> through all eight cards.
+>
+> **FIXED on `feature/555-feed-tail-after-dock-move`.** The host tells the
+> panel: new `PanelContext.dockEpoch`, bumped by the card from dockview's
+> `onDidActiveChange` / `onDidGroupChange` / `onDidLocationChange`, and the
+> feed reconciles on it. The feed's three scroll rules (resize, visible,
+> dock-move) now go through ONE extracted `reconcile()` so they cannot drift.
+> **An `IntersectionObserver` was tried first and does NOT work** — measured:
+> it delivers once at startup and never sees the same-frame move; only a
+> `MutationObserver` on the whole document saw it, which is why the signal
+> comes from the host instead.
+>
+> New e2e `e2e/feed-restore-position.spec.ts`, 4 tests: Direct restart · [pty]
+> restart · suspended card resuming · **the dock move (fails 1490-of-1491
+> against the unfixed build, verified by stashing the fix and rebuilding)**.
+> The first three pass either way — they are regression cover for the
+> done-when the issue actually states, which measurement showed was already
+> true. Unit 5092/5092. Manual + dogfood tracker updated. **Awaiting Gate 2
+> (commit approval).**
+>
+> # (v0.6.0 ship + dogfood record follows)
 > # 🚢 v0.6.0 SHIPPED + DOGFOODED 2026-08-16
 >
 > **Dan ran the full v0.6.0 pass. PASSING: update auto-restart · right-

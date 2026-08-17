@@ -959,7 +959,14 @@ describe('lining a Direct session up (#458)', () => {
   // A Feed holding a block the file does not — a turn whose tokens were never
   // written down — shifts every hit past it by one, and one wrong jump costs
   // more trust than a hundred honest refusals earn.
-  it('refuses when the Feed holds a block the file does not', async () => {
+  //
+  // SINCE #496 THAT REFUSAL IS PER HIT, not per session: the OFFSET is still
+  // declined (a hit with no id of its own stays unjumpable, which is what the
+  // second half asserts), while a hit whose own `srcId` is on a loaded block
+  // resolves — that block IS this hit's block whatever the offset says. Both
+  // halves are asserted so the test says WHICH mechanism answered, the lesson
+  // #492's review left behind.
+  it('degrades per hit — not per session — when the Feed holds a block the file does not', async () => {
     // ARRANGED SO THAT ONLY `shapeAgrees` CAN REFUSE IT, which took two goes to
     // get right and is worth writing down:
     //
@@ -997,8 +1004,17 @@ describe('lining a Direct session up (#458)', () => {
       query: { term: 'NEEDLE' },
     });
 
-    expect(r.groups[0].aligned).toBe(false);
-    expect(r.hits.every((h) => h.seq === undefined)).toBe(true);
+    // The id-bearing hits land, on the blocks their own ids name...
+    const byId = r.hits.find((h) => h.blockIndex === 4);
+    expect(loaded.find((b) => b.seq === byId?.seq)?.text).toBe('two NEEDLE');
+    expect(r.groups[0].aligned).toBe(true);
+    // ...and the OFFSET is still refused, which is the half that keeps the
+    // ghost honest: the user's prompt carries no id, so the only thing that
+    // could resolve it is the arithmetic — and it must not. (Contrast the
+    // ghost-free sibling below, where the same prompt IS reachable.)
+    const noId = r.hits.find((h) => h.kind === 'user');
+    expect(noId).toBeDefined();
+    expect(noId?.seq).toBeUndefined();
   });
 
   // ...and the SAME window without the ghost aligns. Without this, the test
@@ -1031,12 +1047,18 @@ describe('lining a Direct session up (#458)', () => {
     expect(evicted?.earlierThanLoaded).toBe(true);
   });
 
-  it('refuses when two ids disagree about where the window starts', async () => {
-    // EVERY BLOCK THE SAME KIND, so the shape check cannot be what refuses this
-    // — otherwise the test passes with the disagreement check deleted, which is
-    // how it was written the first time. All four are prose, so all four carry
-    // a `msg:` id, and the ghost in the middle shifts the two after it.
+  it('refuses the OFFSET when two ids disagree about where the window starts', async () => {
+    // EVERY PROSE BLOCK THE SAME KIND, so the shape check cannot be what refuses
+    // this — otherwise the test passes with the disagreement check deleted,
+    // which is how it was written the first time. They carry `msg:` ids, and the
+    // ghost in the middle shifts the two after it.
+    //
+    // The PROMPT is here for #496: it is the one block with no id of its own, so
+    // it is the only hit whose fate still depends on the arithmetic. The prose
+    // hits resolving by id is the new behaviour; the prompt staying unjumpable
+    // is the proof that the disagreement check still fired.
     const entries = [
+      ask('a NEEDLE question', 'f0'),
       said('msg_1', 'one NEEDLE', 'f1'),
       said('msg_2', 'two', 'f2'),
       said('msg_3', 'three NEEDLE', 'f3'),
@@ -1047,44 +1069,69 @@ describe('lining a Direct session up (#458)', () => {
       [
         entries[0],
         entries[1],
-        said('msg_ghost', 'never written down'),
         entries[2],
+        said('msg_ghost', 'never written down'),
         entries[3],
+        entries[4],
       ].map((e) => JSON.stringify(e))
     );
     // ids before the ghost say the window starts at 1; ids after it say 0.
-    expect(loaded).toHaveLength(5);
+    expect(loaded).toHaveLength(6);
 
     const r = await search([{ sessionId: 's', file, loaded }], {
       sessionIds: ['s'],
       query: { term: 'NEEDLE' },
     });
 
-    expect(r.groups[0].aligned).toBe(false);
-    expect(r.hits.every((h) => h.seq === undefined)).toBe(true);
+    // the id-bearing prose hits land on their own blocks...
+    const one = r.hits.find((h) => h.blockIndex === 2);
+    expect(loaded.find((b) => b.seq === one?.seq)?.text).toBe('one NEEDLE');
+    const three = r.hits.find((h) => h.blockIndex === 4);
+    expect(loaded.find((b) => b.seq === three?.seq)?.text).toBe('three NEEDLE');
+    // ...and the prompt, which has no id, does not — the offset is still
+    // refused, which is the whole claim of this test.
+    const prompt = r.hits.find((h) => h.kind === 'user');
+    expect(prompt).toBeDefined();
+    expect(prompt?.seq).toBeUndefined();
   });
 
-  // The conservative guard, pinned so that relaxing it is a deliberate act with
-  // a failing test in front of it rather than a quiet behaviour change. A view
-  // holding MORE conversation at the front than the file does is a resumed
-  // Direct session (#395 hydrates the previous conversation into the Feed); see
-  // the note at the check in `search.ts`.
-  it('refuses a window that starts before the file’s first block', async () => {
-    const entries = [said('msg_2', 'two NEEDLE', 'f2'), said('msg_3', 'three', 'f3')];
+  // THE RESUMED DIRECT SESSION (#495), which is what a window starting before
+  // the file's first block really is: #395 hydrates the previous conversation
+  // into the Feed, so the view holds MORE at the front than the new transcript
+  // does. The old code refused the whole session for it — every hit read-only,
+  // including the ones sitting in the file — and that is what the owner hit on
+  // the v0.6.0 dogfood.
+  //
+  // The offset is STILL refused (it is genuinely unknown), and #496's per-hit
+  // join is what makes the session usable anyway. Both halves asserted.
+  it('jumps to the hits it can identify in a resumed session, offset or no offset', async () => {
+    const entries = [
+      ask('a NEEDLE question', 'f1'),
+      said('msg_2', 'two NEEDLE', 'f2'),
+      said('msg_3', 'three', 'f3'),
+    ];
     const file = transcript('resumed.jsonl', entries);
-    // `msg_1` is in the view and in no file this scan can see.
+    // `msg_1` is in the view and in no file this scan can see — the replayed
+    // conversation, sitting in front of everything the new transcript has.
     const loaded = streamFeedOf(
       [said('msg_1', 'one, from the replayed conversation'), ...entries].map((e) => JSON.stringify(e))
     );
-    expect(loaded).toHaveLength(3);
+    expect(loaded).toHaveLength(4);
 
     const r = await search([{ sessionId: 's', file, loaded }], {
       sessionIds: ['s'],
       query: { term: 'NEEDLE' },
     });
 
-    expect(r.groups[0].aligned).toBe(false);
-    expect(r.hits[0].seq).toBeUndefined();
+    // the post-resume block is reachable by its own id — the fix
+    const byId = r.hits.find((h) => h.blockIndex === 2);
+    expect(loaded.find((b) => b.seq === byId?.seq)?.text).toBe('two NEEDLE');
+    expect(r.groups[0].aligned).toBe(true);
+    // ...and the prompt, which has no id, is still not: the arithmetic that
+    // would have placed it is exactly what a hydrated front makes unknowable.
+    const prompt = r.hits.find((h) => h.kind === 'user');
+    expect(prompt).toBeDefined();
+    expect(prompt?.seq).toBeUndefined();
   });
 
   // A message that produced several blocks stamps the same id on all of them.

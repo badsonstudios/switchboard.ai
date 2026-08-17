@@ -28,6 +28,13 @@ This is the conversation, rendered to be read rather than scrolled past:
 The view stays pinned to the newest message, including when you switch back to
 a session you'd left. Scroll up freely; it won't yank you back.
 
+That holds across the things that move a card around, too: quitting and
+reopening switchboard, clicking a session in the sidebar, and dragging cards
+into a different arrangement all leave each conversation showing its latest
+message rather than its first. The one thing that doesn't put you at the
+bottom is scrolling up yourself — which is the point, and which the button
+below undoes.
+
 **When you've scrolled away, a `↓ Jump to latest` button appears** just above
 the prompt box. Scrolling up — with the wheel, or by walking the conversation
 with the arrow keys — deliberately unsticks the view so that new output can't

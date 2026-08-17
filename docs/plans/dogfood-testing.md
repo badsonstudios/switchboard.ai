@@ -29,10 +29,11 @@ is now IN the installed build once Dan updates. Twelve fixes landed via train #5
 
 | What | Shipped in | Re-test |
 |---|---|---|
-| Find highlight in session view | **v0.6.0** | PARTLY VERIFIED — marks work where jumping works; blocked behind #495/#557 on resumed sessions |
-| Find on ANY resumed session | NOT yet (#495 raised, #496, #557) | Every hit must jump; the bar alone should carry it — no auto-opening results list |
+| Find highlight in session view | **v0.6.0** | PARTLY VERIFIED — marks work where jumping works; retest with the #557 branch |
+| Find on ANY resumed session | **MERGED to main** (PR #561 — #557 #496 #495) | Ctrl+F on a session you have restarted AND then prompted again: the bar alone should carry it — count, Enter/Shift+Enter, Esc — and **the results list must never appear unless you press ▸**. Hits from before the restart may say "earlier than the conversation on screen"; hits since it must jump. **Note the premise was measured wrong in the ticket:** an idle resumed session was always fine; it is the new turn on top that broke it |
 | New session from popout | **v0.6.0** | Affordance exists, tab lands beside current card in the popout |
-| Dock-back slot (#558) | **NOT FIXED** — diagnosed only, no PR | Still broken; nothing to re-test yet. Branch `feature/558-dock-back-slot` carries the repro and the reason the obvious fix cannot ship (it makes the card come home suspended). See PROGRESS.md |
+| Conversations sitting at the TOP instead of the tail (#555) | **MERGED to main** (PR #560) | Click every session in the sidebar in turn, especially with two cards side by side: each must show its NEWEST message, and stay there when you click its own row again. Also: scroll up, switch away, come back — you should be where you were reading, not at the bottom. The restart was never the cause — clicking a card was |
+| Dock-back slot (#558) | **NOT FIXED** — diagnosed only | Still broken; nothing to re-test yet. `e2e/popout-dock-back.spec.ts` carries the repro (headline case `test.fixme`) and PROGRESS.md carries the reason the obvious fix cannot ship: it makes the card come home suspended |
 
 ## Tested and passing (2026-08-16 pass, v0.6.0)
 

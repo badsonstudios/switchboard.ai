@@ -68,6 +68,7 @@ async function mount(transport: 'pty' | 'stream' = 'stream'): Promise<HTMLElemen
     cardId: 'card-1',
     title: 'acme-web',
     visible: true,
+    dockEpoch: 0,
     theme: 'nordic',
     colorScheme: 'dark',
     changed: 0,
