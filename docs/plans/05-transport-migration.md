@@ -439,6 +439,21 @@ TUI interaction: does it arrive as `can_use_tool`, or does it need a control
 request we have not seen? `AskUserQuestion` is the same question in the shape
 that most looks like *"interaction the CLI owns"* under P7.
 
+**The `AskUserQuestion` half SHIPPED 2026-08-17 (#563, owner priority).** It is
+**not** CLI-kept: it is delegated over the very `can_use_tool` channel the
+approval bar already consumes, and the answer rides back as `answers` written
+onto `updatedInput`. Measured across five probe modes against the CLI on PATH —
+`spike/findings/s-11-ask-user-question.md`, probe
+`spike/s11/probe-2-ask-user-question.cjs`. Two findings changed the design
+rather than merely confirming it: a bare allow (what allow-all would send) is
+read as *"The user did not answer the questions"*, so questions are exempt from
+both allow-all paths and from the OS toast's buttons; and an unanswered question
+parks **for ever** — 180s with no TUI fallback and no CLI-side timeout — which
+makes the existing 300s fail-open the only thing between it and a wedged session.
+
+**Still open here: plan mode and `ExitPlanMode`,** which remain unmeasured. The
+gate stands for that half.
+
 ~~**If either is CLI-kept, the terminal stays**~~ — **no longer true as of the
 owner's 2026-08-02 decision.** A CLI-kept chooser is now a **gap to build for or
 to accept and document**, not a reason to keep a terminal. This probe still

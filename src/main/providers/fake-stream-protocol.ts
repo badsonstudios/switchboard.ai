@@ -11,7 +11,40 @@
 // Every message shape is copied from what the REAL CLI emitted during S-10
 // (`spike/s10/probe-*.cjs` + the findings note), not invented.
 
+import { ASK_USER_QUESTION_TOOL } from '../../shared/ask-user-question';
+
 export type OutMessage = Record<string, unknown>;
+
+/**
+ * The two questions `!ask` raises, copied from a REAL capture (#563) —
+ * `spike/findings/artifacts/s11/ask-user-question-answer.json`.
+ *
+ * One of each arity on purpose. A fake that only ever produced `multiSelect:
+ * false` would leave the panel's checkbox half — and the comma-joined answer
+ * string that only multi-select can produce — with no end-to-end proof at all.
+ */
+export const FAKE_QUESTION_ONE = {
+  question: 'Which colour do you prefer?',
+  header: 'Colour',
+  options: [
+    { label: 'Red', description: 'Prefer red' },
+    { label: 'Green', description: 'Prefer green' },
+    { label: 'Blue', description: 'Prefer blue' },
+  ],
+  multiSelect: false,
+};
+
+export const FAKE_QUESTION_MANY = {
+  question: 'Which of these languages do you use?',
+  header: 'Languages',
+  options: [
+    { label: 'TypeScript', description: 'You use TypeScript' },
+    { label: 'Rust', description: 'You use Rust' },
+    { label: 'Go', description: 'You use Go' },
+    { label: 'Python', description: 'You use Python' },
+  ],
+  multiSelect: true,
+};
 
 /** The side effects the protocol needs, injected so tests can observe them. */
 export interface FakeStreamHost {
@@ -377,6 +410,31 @@ export class FakeStreamProtocol {
       return; // the turn continues when the answers arrive
     }
 
+    // The CLI's own CHOOSER (#563) — an `AskUserQuestion` request, in the shape
+    // the real CLI sends it.
+    //
+    // The payload is copied from a REAL capture
+    // (`spike/findings/artifacts/s11/ask-user-question-answer.json`), two
+    // questions in one call: one pick-one and one multi-select, because a fake
+    // that only ever produced one arity would let the panel's radio/checkbox
+    // split rot untested. `!ask1` raises the pick-one alone, for the tests that
+    // want the simplest possible submit.
+    //
+    // What comes BACK is the point of the verb. The answer arrives as
+    // `updatedInput.answers`, so the fake echoes that map into its reply — that
+    // is how an e2e asserts what actually reached "the CLI" rather than what
+    // the panel believes it sent, which is the one claim a renderer test cannot
+    // make about itself.
+    if (text === '!ask' || text === '!ask1') {
+      this.askPermission(ASK_USER_QUESTION_TOOL, {
+        questions:
+          text === '!ask1'
+            ? [FAKE_QUESTION_ONE]
+            : [FAKE_QUESTION_ONE, FAKE_QUESTION_MANY],
+      });
+      return; // the turn continues when the answer arrives
+    }
+
     // A turn made of TOOL CALLS (P2-E18-14).
     //
     // Every rich Feed block — the Bash box with its IN/OUT sections, the Edit
@@ -565,6 +623,24 @@ export class FakeStreamProtocol {
     this.pending.delete(id);
 
     const inner = (r?.response ?? {}) as Record<string, unknown>;
+    // A QUESTION reports what it was ANSWERED, not what it wrote (#563). The
+    // real CLI's tool_result does the same thing in prose ("Your questions have
+    // been answered: …"), and the wording of the three cases below tracks the
+    // three the probe measured: answered, answered with nothing, refused.
+    if (req.toolName === ASK_USER_QUESTION_TOOL) {
+      if (inner.behavior !== 'allow') {
+        this.emitAssistantText('QUESTION DENIED');
+        this.emitResult();
+        return;
+      }
+      const updated = (inner.updatedInput ?? {}) as Record<string, unknown>;
+      const answers = (updated.answers ?? {}) as Record<string, unknown>;
+      const pairs = Object.entries(answers).map(([q, a]) => `${q}=${String(a)}`);
+      this.emitAssistantText(pairs.length ? `ANSWERS: ${pairs.join(' | ')}` : 'ANSWERS: none');
+      this.emitResult();
+      return;
+    }
+
     const filePath = String(req.input.file_path ?? '');
     let said = '';
     if (inner.behavior === 'allow') {
@@ -592,6 +668,14 @@ export class FakeStreamProtocol {
   private askPermission(toolName: string, input: Record<string, unknown>, hang = false): void {
     const request_id = `fake-req-${++this.requestSeq}`;
     this.pending.set(request_id, { toolName, input, hang });
+    // A QUESTION carries none of the permission furniture (#563), and the real
+    // capture is why: the CLI's `AskUserQuestion` request has no
+    // `decision_reason`, no `decision_reason_type` and no
+    // `permission_suggestions` — there is nothing to justify and nothing to
+    // suggest, because it is not asking for permission. A fake that attached
+    // "which is a sensitive file" to a question would have the panel rendering
+    // a safety warning nobody sent.
+    const question = toolName === ASK_USER_QUESTION_TOOL;
     // Shape copied verbatim from S-10 probe B's captured control_request,
     // including `decision_reason_type: 'safetyCheck'` and the suggestion —
     // those are exactly what P2-E18-07 has to render.
@@ -603,11 +687,15 @@ export class FakeStreamProtocol {
         tool_name: toolName,
         display_name: toolName,
         input,
-        description: String(input.file_path ?? ''),
-        decision_reason: `Claude requested permissions to edit ${String(input.file_path ?? '')}, which is a sensitive file.`,
-        decision_reason_type: 'safetyCheck',
-        permission_suggestions: [{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }],
-        classifier_approvable: true,
+        ...(question
+          ? {}
+          : {
+              description: String(input.file_path ?? ''),
+              decision_reason: `Claude requested permissions to edit ${String(input.file_path ?? '')}, which is a sensitive file.`,
+              decision_reason_type: 'safetyCheck',
+              permission_suggestions: [{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }],
+              classifier_approvable: true,
+            }),
         tool_use_id: `toolu_fake_${this.requestSeq}`,
       },
     });

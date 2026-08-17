@@ -3,9 +3,51 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — ✅ MAIN IS CLEAN · NEXT TASK IS #563, 2026-08-17
+> # ▶▶ START HERE — ✅ #563 DONE, AWAITING PR, 2026-08-17
 >
-> **Everything from run 20's first wave is merged. Nothing is in flight.**
+> **#563 — `AskUserQuestion` in the session window.** Built, reviewed, green:
+> typecheck + lint clean, unit **5178/5178**, e2e 21/21 across the whole
+> permission family (the 5 new ones plus approval / stream-approval /
+> batch-approval / permission-toast). The headline e2e was **falsified** — break
+> the answer wire in `SessionGrid` and 3 of the 5 go red.
+>
+> **Where it renders:** the approval bar's dock above the composer, INSTEAD of
+> the bar (never both). Stacked questions, radios/checkboxes by arity, always an
+> Other with a text field, Submit gated on every question being answered.
+>
+> Contract research was MEASURED against the CLI on PATH (2.1.233), not guessed
+> — probe `spike/s11/probe-2-ask-user-question.cjs`, **five** modes, artifacts in
+> `spike/findings/artifacts/s11/ask-user-question-*.json`, prose in
+> `spike/findings/s-11-ask-user-question.md`. Verdicts:
+>
+> | Question | Measured answer |
+> |---|---|
+> | How does it arrive? | `control_request` → `can_use_tool`, `tool_name: "AskUserQuestion"` — the SAME channel the approval bar already consumes |
+> | Input shape | `{questions:[{question, header, options:[{label, description}], multiSelect}]}` |
+> | Response shape | `{behavior:'allow', updatedInput:{...input, answers:{"<question text>": "Label, Label"}}}` — multi-select joined `", "` |
+> | Free text ("Other") | **Works, first-class.** Text in no option list is accepted; the CLI's own tool_result even switches wording to "Read the answers carefully — they may request clarification…" |
+> | Deny | `{behavior:'deny', message}` → `is_error` tool_result, model recovers and asks in prose |
+> | No answer at all | **Parks for ever.** 180s, no TUI fallback, no CLI-side timeout. Our fail-open deny is the only thing between a question and a wedged session |
+> | **Bare allow (no `answers`)** | **"The user did not answer the questions."** — this is what an allow-all session would have sent |
+>
+> **THE FINDING THAT CHANGED THE DESIGN is the last row.** A bare allow does not
+> grant a question, it SKIPS it. So `AskUserQuestion` is now exempt from every
+> path that can answer without a human: main's server-side allow-all (which
+> never pushes to a renderer at all), the renderer's `intakePermission`, the
+> batch card's grouping, and the OS toast's Allow/Deny buttons. Review found the
+> validator could reopen the same hole from inside — a rejected `updatedInput`
+> used to fall back to a bare allow — so an undeliverable answer is now a DENY
+> that says so.
+>
+> Also from review: a question holds for **30 minutes**, not the permission
+> path's 5 (a question is read-and-think, and the "nobody can answer" case is
+> already handled by the liveness gate); and a half-answered panel survives an
+> unmount via a module-level draft map, because the Session panel is not
+> keepMounted and looking at the diff first would otherwise bin it.
+>
+> **Still open from run 20:** #556 (drawer close button), #559 (rail
+> drag-reorder), #562 (other scroll-holding panels), #558 (diagnosed, NOT fixed
+> — read the block below before attempting it).
 >
 > | Landed on main | |
 > |---|---|

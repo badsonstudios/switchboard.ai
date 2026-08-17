@@ -602,7 +602,12 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
    * the main process, with no window in the loop at all. A toast that reached
    * the routers itself would be a second opinion about what "allow" means.
    */
-  const decidePermission = (requestId: string, decision: string, reason?: string): boolean => {
+  const decidePermission = (
+    requestId: string,
+    decision: string,
+    reason?: string,
+    updatedInput?: unknown
+  ): boolean => {
     if (typeof requestId !== 'string' || (decision !== 'allow' && decision !== 'deny')) return false;
     const clean = typeof reason === 'string' ? reason.slice(0, 500) : undefined;
     // Ids are namespaced (`stream:<sessionId>:<native>`), so exactly one of
@@ -610,14 +615,21 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // Falls through rather than branching on the prefix: the prefix is an
     // implementation detail of the stream router, and asking the routers who
     // owns it cannot go stale the way a string test would.
+    //
+    // `updatedInput` reaches the STREAM router only, and only it knows what to
+    // do with one (#563): it is how an `AskUserQuestion` answer travels, and
+    // there is no hook equivalent because the hook path never holds that tool
+    // (`shouldHoldPermission`'s GATED table does not list it). The hook router's
+    // signature is deliberately left alone rather than grown a parameter it
+    // would ignore.
     return (
       hooks.decide(requestId, decision, clean) ||
-      (streamPermissions?.decide(requestId, decision, clean) ?? false)
+      (streamPermissions?.decide(requestId, decision, clean, updatedInput) ?? false)
     );
   };
   broker.handle('sessions:decidePermission',
-    (_e, requestId: string, decision: string, reason?: string) =>
-      decidePermission(requestId, decision, reason)
+    (_e, requestId: string, decision: string, reason?: string, updatedInput?: unknown) =>
+      decidePermission(requestId, decision, reason, updatedInput)
   );
   /**
    * The oldest request this LIVE session is still holding, or null (E14-04).

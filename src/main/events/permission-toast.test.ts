@@ -10,6 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import type { PermissionRequest } from '../../shared/ipc/permissions';
 import {
+  answerableFromToast,
   DECIDE_BUTTONS,
   DECIDE_BUTTON_LABELS,
   PermissionToasts,
@@ -296,5 +297,60 @@ describe('the click path is wired end to end (P2-E14-04)', () => {
   it('App subscribes and lands on the card, rather than merely raising a window', () => {
     const app = read('renderer', 'src', 'App.tsx');
     expect(app).toMatch(/onRevealCard\?\.\(\(r\) => \{[\s\S]{0,120}focusCard\(r\.cardId\)/);
+  });
+});
+
+// ── #563 — a question is not a permission ───────────────────────────────────
+describe("the CLI's own question on a toast (#563)", () => {
+  const question = (questions: unknown): PermissionRequest => ({
+    requestId: 'r-q',
+    sessionId: 's1',
+    tool: 'AskUserQuestion',
+    input: { questions },
+  });
+
+  it('carries NO buttons — an Allow here would discard the question, not grant it', () => {
+    // Measured: an allow with no `answers` comes back as "The user did not
+    // answer the questions." (probe mode `empty`). A notification is the worst
+    // possible place to discover you threw one away.
+    expect(
+      answerableFromToast(question([{ question: 'q', options: [{ label: 'a' }] }]))
+    ).toBe(false);
+  });
+
+  it('leaves every other tool answerable', () => {
+    expect(
+      answerableFromToast({
+        requestId: 'r',
+        sessionId: 's1',
+        tool: 'Write',
+        input: { file_path: '/p/x.ts' },
+      })
+    ).toBe(true);
+  });
+
+  it('says what is being asked instead of "Allow AskUserQuestion?"', () => {
+    const summary = permissionSummary(
+      question([
+        { question: 'Which colour do you prefer?', options: [{ label: 'Red' }], multiSelect: false },
+      ])
+    );
+    expect(summary).toBe('A question for you: Which colour do you prefer?');
+    expect(summary).not.toContain('Allow');
+  });
+
+  it('counts the ones the line has no room for', () => {
+    const summary = permissionSummary(
+      question([
+        { question: 'First?', options: [{ label: 'a' }] },
+        { question: 'Second?', options: [{ label: 'b' }] },
+        { question: 'Third?', options: [{ label: 'c' }] },
+      ])
+    );
+    expect(summary).toBe('A question for you: First? (+2 more)');
+  });
+
+  it('falls back to plain prose when the payload will not parse', () => {
+    expect(permissionSummary(question('not an array'))).toBe('Claude is asking you a question');
   });
 });

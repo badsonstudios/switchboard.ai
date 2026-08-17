@@ -24,7 +24,7 @@ no page is an unfinished work item.
 | [01 — Getting started](01-getting-started.md) | Installing, first launch, opening your first session | draft |
 | [02 — Sessions](02-sessions.md) | Creating, resuming, suspending, closing sessions | draft |
 | [03 — The session view](03-session-view.md) | Reading the conversation, the prompt box, detail levels | draft |
-| [04 — Approvals & autonomy](04-approvals-and-autonomy.md) | Allowing/denying tool use, the four autonomy modes | draft |
+| [04 — Approvals & autonomy](04-approvals-and-autonomy.md) | Allowing/denying tool use, answering Claude's questions, the four autonomy modes | draft |
 | [05 — Slash commands](05-slash-commands.md) | `/clear`, `/compact`, autocomplete, the ⋯ menu | draft |
 | [06 — Keyboard & commands](06-keyboard.md) | Shortcuts, the command list, the palette | draft |
 | [07 — Organizing your workspace](07-workspace.md) | The sidebar, groups, pop-out windows, layout | draft |

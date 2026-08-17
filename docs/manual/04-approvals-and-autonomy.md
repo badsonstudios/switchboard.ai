@@ -37,6 +37,56 @@ there is the same decision — whichever you use, the other goes away. See
 itself](09-notifications.md#answering-a-permission-from-the-pop-up-itself),
 which also covers what each operating system can actually put on a pop-up.
 
+## When Claude asks you a question
+
+Sometimes Claude doesn't want permission — it wants an answer. "Which of these
+three approaches should I take?", "which of these files did you mean?" When that
+happens you get a panel in the same place as the review bar, just above the
+prompt box, with the question written out and its answers as a list you can
+click.
+
+- **Round buttons mean pick one.** Clicking a different answer replaces your
+  first choice.
+- **Square boxes mean pick as many as you like.** Click each one you want;
+  click again to un-pick.
+- **There is always an "Other".** Tick it and a text box opens where you can
+  type your own answer in your own words. Use it whenever none of the offered
+  answers is right — Claude reads what you typed exactly as if it had offered it
+  as an option, and it's the honest way to say "none of these, here's what I
+  actually want".
+
+Claude can ask more than one question at once. They're all shown stacked, each
+with its own tick in the corner once it's answered, and **Send answer** stays
+greyed out until every one of them has an answer. Hovering it tells you why.
+
+**Don't answer** sends your refusal back. That's a real answer and a safe one:
+Claude is told you declined, and it will usually just ask again in ordinary
+conversation rather than getting stuck.
+
+Take your time over it. Questions get **half an hour** before switchboard
+declines on your behalf — much longer than the five minutes a permission
+request gets, because a question is something to read and think about rather
+than glance at. Your half-finished answer also survives leaving the panel:
+switch to **Changes** to look at the diff first, come back, and your ticks and
+anything you typed are still there.
+
+### Everything works from the keyboard
+
+Tab into the list, **Up** and **Down** move between the answers of one question,
+**Space** or **Enter** picks the one you're on. Tab moves on to the next
+question, and to the buttons. If you're typing in an "Other" box, **Enter**
+sends the whole thing once everything is answered.
+
+### Two things worth knowing
+
+- **"Allow all (this session)" does not answer questions.** It's a standing yes
+  to *tool use*, not a standing yes to *you*. Questions always wait for a real
+  person, even in a session where you've turned everything else off.
+- **Terminal-mode sessions keep their questions in the terminal.** Claude Code
+  draws the question there itself, and switchboard can't reach into it — so
+  you'll find it on the **Terminal** tab rather than as a panel. Switch the
+  session to [Direct mode](12-direct-mode.md) to get the clickable panel.
+
 ## When several sessions ask the same thing
 
 Run a few sessions on the same job and they tend to hit the same wall at the
@@ -114,8 +164,10 @@ mode that *new* sessions start at; each session keeps its own after that.
   background. On any platform, switchboard's display can crash while the
   sessions underneath it keep running. (On **Windows and Linux** closing the
   window quits switchboard, so only the crash case applies.) There is also a
-  **five-minute limit** on any single question: one left unanswered that long
-  counts as unreachable too.
+  **five-minute limit** on any single request: one left unanswered that long
+  counts as unreachable too. (A *question* — the kind with clickable answers —
+  gets half an hour instead; see [When Claude asks you a
+  question](#when-claude-asks-you-a-question).)
 
   What happens next depends on which mode the session is in:
 

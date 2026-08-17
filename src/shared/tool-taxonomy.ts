@@ -3,6 +3,7 @@
 // a `PowerShell` tool on Windows — probe 2026-07-22; a Bash-only gate missed
 // it), so both the main-process hold policy and the renderer's block
 // presentation dispatch on these, never on raw names at the point of use.
+import { ASK_USER_QUESTION_TOOL } from './ask-user-question';
 
 /** Shell executors — platform-dependent (PowerShell on Windows). */
 export const SHELLISH = ['Bash', 'PowerShell'];
@@ -29,11 +30,20 @@ export const READ_TOOLS = ['Read', 'Glob', 'Grep', 'LS'];
  * put a card in needs-permission with no approval bar to act on. The PreToolUse
  * above is immediate and says exactly which tool it is, so that is what we use.
  *
- * NEVER hold one of these: the answer lives in the CLI's own TUI, so parking it
- * behind our approval bar would leave the user with nothing to click and the
- * CLI waiting on a verdict that can never come.
+ * NEVER hold one of these ON THE HOOK PATH: in Terminal mode the answer lives in
+ * the CLI's own TUI, so parking it behind our approval bar would leave the user
+ * with nothing to click and the CLI waiting on a verdict that can never come.
+ * That is why `AskUserQuestion` appears in this list and in no `GATED` bucket.
+ *
+ * **The stream path is the opposite case, and it is not a contradiction (#563).**
+ * In Direct mode the CLI hands the question over as a `can_use_tool` control
+ * request — measured, `spike/findings/s-11-ask-user-question.md` — so there IS
+ * something to click and the verdict CAN come: `QuestionPanel` renders the
+ * options and the answer goes back as `answers` on `updatedInput`. Same tool,
+ * two transports, two different owners of the interaction. The rule above is
+ * about the hook path, which is the only path this constant feeds.
  */
-export const INTERACTIVE_TOOLS = ['AskUserQuestion'];
+export const INTERACTIVE_TOOLS = [ASK_USER_QUESTION_TOOL];
 
 /** Presentation category a Feed tool block is stamped with (review P1 #9). */
 export type ToolCategory = 'shell' | 'edit' | 'read' | 'other';

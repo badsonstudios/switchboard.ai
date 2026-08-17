@@ -856,7 +856,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       setPermQueue((prev) => dropRetired(prev, liveId));
     });
   }, []);
-  const decide = (decision: 'allow' | 'deny', allowAll = false): void => {
+  const decide = (decision: 'allow' | 'deny', allowAll = false, updatedInput?: unknown): void => {
     // the head of the bar's OWN list, not of the raw queue: a grouped request
     // is answered on the grouped card, and this button must never decide one
     // the user cannot see (P2-E9-11)
@@ -868,7 +868,9 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       sessionStore.setAllowAll(head.sessionId);
       void window.switchboard.sessions.allowAllSession(head.sessionId);
     }
-    void window.switchboard.sessions.decidePermission(head.requestId, decision);
+    // `updatedInput` is the answered `AskUserQuestion` input (#563) — undefined
+    // for every other surface, and main ignores it for any tool but that one.
+    void window.switchboard.sessions.decidePermission(head.requestId, decision, undefined, updatedInput);
     // BY ID, not `slice(1)` (P2-E9-11). The head the user answered is the head
     // of the FILTERED list, and a grouped sibling ahead of it in the raw queue
     // makes those two different entries — `slice(1)` would answer this one and

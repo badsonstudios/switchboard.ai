@@ -3,7 +3,7 @@
 // The `.claude/` write that prompts the owner TWICE today is the acceptance
 // case, and it appears here twice over: once as the routing test, and once end
 // to end through the #134 fake, where the FILE actually gets written.
-import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { StreamPermissions } from './stream-permissions';
 import { SessionEvent, transition } from './state-machine';
@@ -729,5 +729,268 @@ describe('allow-all is answered at the server (#319)', () => {
 
     const msg = sent[0].msg as { response?: { response?: Record<string, unknown> } };
     expect(msg.response?.response).toMatchObject({ behavior: 'allow' });
+  });
+});
+
+// ── #563 — the CLI's own chooser rides this channel too ──────────────────────
+//
+// Measured, not assumed: `spike/s11/probe-2-ask-user-question.cjs` against the
+// CLI on PATH (2.1.233). `AskUserQuestion` arrives as an ordinary
+// `can_use_tool`, and the answer goes back as `answers` written onto
+// `updatedInput`. Everything below pins the two places that makes this router
+// behave differently from an ordinary permission.
+
+/** The captured `AskUserQuestion` request, trimmed to what the router reads. */
+function askUserQuestion(requestId = 'req-q') {
+  return {
+    type: 'control_request',
+    request_id: requestId,
+    request: {
+      subtype: 'can_use_tool',
+      tool_name: 'AskUserQuestion',
+      display_name: 'AskUserQuestion',
+      input: {
+        questions: [
+          {
+            question: 'Which colour do you prefer?',
+            header: 'Colour',
+            options: [{ label: 'Red' }, { label: 'Blue' }],
+            multiSelect: false,
+          },
+        ],
+      },
+      tool_use_id: 'toolu_01question',
+    },
+  };
+}
+
+/** the inner `response` object of the Nth thing we sent */
+function responseAt(n: number): Record<string, unknown> {
+  const msg = sent[n].msg as { response?: { response?: Record<string, unknown> } };
+  return msg.response?.response ?? {};
+}
+
+describe('answering a question (#563)', () => {
+  it('sends the answers on updatedInput instead of echoing the input back', () => {
+    perms.offer('s1', askUserQuestion());
+    const id = requests[0].requestId;
+
+    const answered = {
+      ...(askUserQuestion().request.input as Record<string, unknown>),
+      answers: { 'Which colour do you prefer?': 'Red' },
+    };
+    expect(perms.decide(id, 'allow', undefined, answered)).toBe(true);
+
+    expect(responseAt(0)).toMatchObject({ behavior: 'allow', updatedInput: answered });
+  });
+
+  it('falls back to the CLI own input when no answer is supplied', () => {
+    // Not a hypothetical: the OS toast and any future surface answer with three
+    // arguments. The CLI reads this as "the user did not answer the questions"
+    // (probe mode `empty`) — honest, and never a malformed response.
+    perms.offer('s1', askUserQuestion());
+    perms.decide(requests[0].requestId, 'allow');
+
+    expect(responseAt(0)).toMatchObject({
+      behavior: 'allow',
+      updatedInput: askUserQuestion().request.input,
+    });
+    expect((responseAt(0).updatedInput as Record<string, unknown>).answers).toBeUndefined();
+  });
+
+  it('ignores an updatedInput aimed at a tool that does not answer questions', () => {
+    // The trust direction is backwards for this one field — it travels renderer
+    // -> CLI. A renderer rewriting a Write on the way to allow would make the
+    // command the user READ and the command that RUNS two different strings.
+    perms.offer('s1', canUseTool());
+    perms.decide(requests[0].requestId, 'allow', undefined, {
+      file_path: 'C:/p/evil.sh',
+      content: 'rm -rf /',
+    });
+
+    expect(responseAt(0)).toMatchObject({
+      updatedInput: { file_path: 'C:/p/.claude/scripts/coverage.sh', content: 'echo hi\n' },
+    });
+  });
+
+  // Every rejection ends as a DENY rather than as a bare allow — see the
+  // `#563 review` block below for the argument. What is pinned here is that the
+  // rejections HAPPEN at all, one per check.
+  it.each([
+    ['an array', [1, 2, 3]],
+    ['a string', 'answers'],
+    ['null', null],
+  ])('refuses an updatedInput that is %s', (_why, bad) => {
+    perms.offer('s1', askUserQuestion());
+    perms.decide(requests[0].requestId, 'allow', undefined, bad);
+
+    expect(responseAt(0).behavior).toBe('deny');
+  });
+
+  it('refuses an updatedInput that will not serialise', () => {
+    // A cycle must fail HERE, where the failure has an answer, and not inside
+    // the writer's JSON.stringify, where it does not.
+    const cyclic: Record<string, unknown> = { questions: [], answers: { q: 'a' } };
+    cyclic.self = cyclic;
+    perms.offer('s1', askUserQuestion());
+    perms.decide(requests[0].requestId, 'allow', undefined, cyclic);
+
+    expect(responseAt(0).behavior).toBe('deny');
+  });
+
+  it('refuses an updatedInput over the size cap', () => {
+    perms.offer('s1', askUserQuestion());
+    perms.decide(requests[0].requestId, 'allow', undefined, {
+      answers: { q: 'x'.repeat(200_000) },
+    });
+
+    expect(responseAt(0).behavior).toBe('deny');
+  });
+
+  it('a denied question is a plain deny, and the CLI recovers from one', () => {
+    // Probe mode `deny`: the tool_result comes back `is_error` and the model
+    // asks the same thing in prose. Refusing is safe; not answering is not.
+    perms.offer('s1', askUserQuestion());
+    perms.decide(requests[0].requestId, 'deny', 'Not now');
+
+    expect(responseAt(0)).toMatchObject({ behavior: 'deny', message: 'Not now' });
+  });
+});
+
+describe('allow-all never answers a question (#563)', () => {
+  // THE SHARPEST EDGE IN THE ITEM. A bare allow — which is all an allow-all
+  // session could send — is read by the CLI as "The user did not answer the
+  // questions." (probe mode `empty`). So auto-allowing here would not be a
+  // generous default; it would silently discard every question the session ever
+  // asked, from the one path that never pushes anything to a renderer.
+  it('holds the question and asks the user, grant or no grant', () => {
+    perms.setAllowAll('s1');
+
+    perms.offer('s1', askUserQuestion());
+
+    expect(requests).toHaveLength(1);
+    expect(perms.pendingRequests()).toHaveLength(1);
+    expect(sent).toEqual([]); // nothing answered at the server
+  });
+
+  it('still auto-allows the ordinary tools around it', () => {
+    perms.setAllowAll('s1');
+
+    perms.offer('s1', askUserQuestion('q1'));
+    perms.offer('s1', canUseTool('w1'));
+
+    expect(requests.map((r) => r.tool)).toEqual(['AskUserQuestion']);
+    expect(sent).toHaveLength(1);
+    expect(responseAt(0)).toMatchObject({ behavior: 'allow' });
+  });
+});
+
+// ── review follow-ups (#563): the validator must not become the skip ─────────
+describe('a rejected answer is denied, never silently allowed (#563 review)', () => {
+  // THE HOLE THE VALIDATOR WOULD HAVE REOPENED. Falling back to the request's
+  // own input is right for every other tool and is the measured "The user did
+  // not answer the questions" for this one — so a user who clicked Send and
+  // watched the panel close would be told nothing while the model was told they
+  // declined to answer. Allow-all, the toast and the batch card were all closed
+  // off for exactly this; failing open here would undo all three from inside.
+  it.each([
+    ['an array of answers', { questions: [], answers: { q: ['a', 'b'] } }],
+    ['an empty answers map', { questions: [], answers: {} }],
+    ['no answers key at all', { questions: [] }],
+    ['a blank answer', { questions: [], answers: { q: '   ' } }],
+    ['a non-object', 'answers'],
+  ])('denies rather than allows when the answer is %s', (_why, bad) => {
+    perms.offer('s1', askUserQuestion());
+    perms.decide(requests[0].requestId, 'allow', undefined, bad);
+
+    const r = responseAt(0);
+    expect(r.behavior).toBe('deny');
+    expect(String(r.message)).toContain('could not be delivered');
+    // and never an allow that would read as "the user did not answer"
+    expect(r.updatedInput).toBeUndefined();
+  });
+
+  // The distinction that makes the rule safe: NOT supplying an answer at all is
+  // a different act from supplying one that could not be carried. The first is
+  // the toast, or any surface that answers with three arguments; it keeps the
+  // old behaviour.
+  it('an allow with NO updatedInput at all is still a plain allow', () => {
+    perms.offer('s1', askUserQuestion());
+    perms.decide(requests[0].requestId, 'allow');
+
+    expect(responseAt(0)).toMatchObject({ behavior: 'allow' });
+  });
+
+  it('an ordinary tool is unaffected — a bad updatedInput is just ignored', () => {
+    perms.offer('s1', canUseTool());
+    perms.decide(requests[0].requestId, 'allow', undefined, { file_path: 'C:/p/evil.sh' });
+
+    expect(responseAt(0)).toMatchObject({
+      behavior: 'allow',
+      updatedInput: { file_path: 'C:/p/.claude/scripts/coverage.sh', content: 'echo hi\n' },
+    });
+  });
+
+  it('accepts the measured shape', () => {
+    perms.offer('s1', askUserQuestion());
+    perms.decide(requests[0].requestId, 'allow', undefined, {
+      questions: [],
+      answers: { 'Which colour do you prefer?': 'Red, Blue' },
+    });
+
+    expect(responseAt(0)).toMatchObject({
+      behavior: 'allow',
+      updatedInput: { answers: { 'Which colour do you prefer?': 'Red, Blue' } },
+    });
+  });
+});
+
+describe('a question gets longer than five minutes to answer (#563 review)', () => {
+  // The 300s deadline exists to stop a session wedging when nobody CAN answer,
+  // and that case is handled by the liveness gate instead. What is left is a
+  // person reading options and possibly typing a paragraph, and a deadline that
+  // fires mid-sentence would delete the panel and tell the model nobody
+  // answered in time.
+  it('holds a question far longer than a permission', () => {
+    vi.useFakeTimers();
+    try {
+      const p = new StreamPermissions(
+        (sessionId, msg) => {
+          sent.push({ sessionId, msg: msg as Record<string, unknown> });
+          return true;
+        },
+        (sessionId, ev) => applied.push({ sessionId, ev }),
+        createLogger(new LogSink({ dir }), 'perm')
+      );
+      p.offer('s1', canUseTool('w1'));
+      p.offer('s1', askUserQuestion('q1'));
+
+      vi.advanceTimersByTime(301_000);
+      // the permission failed open; the question is still waiting for a person
+      expect(p.pendingRequests().map((r) => r.tool)).toEqual(['AskUserQuestion']);
+
+      vi.advanceTimersByTime(30 * 60_000);
+      expect(p.pendingRequests()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('an explicit holdTimeoutMs still wins, so tests stay in control', () => {
+    vi.useFakeTimers();
+    try {
+      const p = new StreamPermissions(
+        () => true,
+        () => {},
+        createLogger(new LogSink({ dir }), 'perm'),
+        { holdTimeoutMs: 1_000 }
+      );
+      p.offer('s1', askUserQuestion('q1'));
+
+      vi.advanceTimersByTime(1_500);
+      expect(p.pendingRequests()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

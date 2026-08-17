@@ -21,7 +21,62 @@
 import { PermissionRequest } from '../hooks/hook-listener';
 import { Logger } from '../log/logger';
 import { controlResponse } from '../../shared/stream-protocol';
+import { ASK_USER_QUESTION_TOOL } from '../../shared/ask-user-question';
 import { SessionEvent } from './state-machine';
+
+/**
+ * How big a renderer-supplied `updatedInput` may be (#563).
+ *
+ * This is the first payload that travels RENDERER -> main -> the CLI's stdin
+ * rather than the other way, so it is the first one where "it came from our own
+ * window" is the only thing vouching for it. The cap is not about malice — it is
+ * that a paste into the Other field is unbounded, stdin is a shared pipe, and a
+ * megabyte of text wedged into a control_response would take the session's
+ * transport down with it. 128 KB is ~40x the largest question payload the probe
+ * produced and still small enough to be irrelevant to the pipe.
+ */
+const MAX_UPDATED_INPUT_BYTES = 128 * 1024;
+
+/**
+ * How long a QUESTION may go unanswered before we fail it open (#563).
+ *
+ * Thirty minutes against the permission path's five. The argument is in `offer`
+ * step 3; the short version is that the "nobody can answer" case is handled by
+ * the liveness gate rather than by this timer, so all this deadline governs is
+ * how long a person is allowed to take over something they were asked to read
+ * and think about.
+ */
+const QUESTION_HOLD_MS = 30 * 60_000;
+
+/**
+ * Is this the CLI asking a QUESTION rather than asking for permission?
+ *
+ * The difference decides one thing here and it is not cosmetic: an allow-all
+ * session must not answer it (see `offer`). Everything else about the request —
+ * the hold, the deadline, the fail-open deny — is identical, because the CLI is
+ * blocked on us in exactly the same way.
+ */
+function isQuestion(tool: string): boolean {
+  return tool === ASK_USER_QUESTION_TOOL;
+}
+
+/**
+ * Is this the `answers` map the CLI actually accepts? (#563)
+ *
+ * The measured shape and only that: a non-empty plain object whose every value
+ * is a non-empty string. Not a stylistic check — an array value, an empty map,
+ * or a missing key are the three shapes the probe never sent, so what the CLI
+ * would do with them is unknown, and "unknown" is not something to find out on
+ * a live session. The UI cannot produce any of them (`allAnswered` +
+ * `buildAnswers`); this is the same rule enforced on the side that is allowed to
+ * enforce it.
+ */
+function answersLookRight(answers: unknown): boolean {
+  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) return false;
+  const entries = Object.entries(answers as Record<string, unknown>);
+  if (entries.length === 0) return false;
+  return entries.every(([q, a]) => q.length > 0 && typeof a === 'string' && a.trim().length > 0);
+}
 
 /** How we answer: the manager knows which transport a session is on. */
 export type SendToSession = (sessionId: string, msg: unknown) => boolean;
@@ -176,7 +231,16 @@ export class StreamPermissions {
     //    therefore no `sessions:permissionRequest`, no review bar, and no
     //    Events entry (the last one comes from the STATUS, suppressed at
     //    `SessionManager.onMessage`; see `setPermissionHoldSuppressor`).
-    if (this.allowAllSessions.has(sessionId)) {
+    //    A QUESTION IS EXEMPT, and this is #563's sharpest edge. "Allow all
+    //    tools in this session" is not "answer all questions in this session",
+    //    and the CLI is unambiguous about what a bare allow means: probe mode
+    //    `empty` sent `updatedInput` with no `answers` and got back **"The user
+    //    did not answer the questions."** So auto-allowing here would not be a
+    //    generous default — it would silently skip every question the session
+    //    ever asks, from the ONE path that never pushes anything to the
+    //    renderer, so the user would not even see what they missed. A question
+    //    holds like any other request and waits for a person.
+    if (this.allowAllSessions.has(sessionId) && !isQuestion(request.tool)) {
       const sent = this.send(sessionId, controlResponse(nativeRequestId, { behavior: 'allow', updatedInput: request.input }));
       // NO `applyStatus`, deliberately, and this is the exact mirror of the
       // hook path: `maybeHold` returns 'answered' for an allow-all session and
@@ -235,9 +299,25 @@ export class StreamPermissions {
     this.noWindowWarned.delete(sessionId);
 
     // 3. Held, on a deadline.
+    //
+    // A QUESTION GETS A LONGER ONE (#563), and the asymmetry is the point. The
+    // 300s deadline exists to stop a session wedging when nobody CAN answer —
+    // and that case is already handled two blocks up, where a dead window is
+    // denied outright. What is left is a live window with a person in front of
+    // it, and the two request classes ask very different things of that person:
+    // a permission is a glance and a click, a question is "which of these three
+    // approaches should I take?" — read the options, think, quite possibly type
+    // a paragraph into Other. Five minutes is a plausible amount of time to
+    // spend answering one properly, and a deadline that fires mid-sentence
+    // deletes the panel, throws away what was typed, and tells the model nobody
+    // answered in time. The cost of the longer deadline is a session that waits
+    // — which is what it was doing anyway, since the CLI itself waits for ever
+    // (measured: 180s with no fallback and no timeout of its own).
+    const timeout =
+      this.opts.holdTimeoutMs ?? (isQuestion(request.tool) ? QUESTION_HOLD_MS : 300_000);
     const timer = setTimeout(() => {
       this.failOpen(requestId, 'permission hold timed out');
-    }, this.opts.holdTimeoutMs ?? 300_000);
+    }, timeout);
     timer.unref?.();
     this.pending.set(requestId, { sessionId, nativeRequestId, request, timer });
     this.log.info('stream permission requested', {
@@ -272,17 +352,57 @@ export class StreamPermissions {
    * watched a Direct session sit on `needs-permission` for ~5s per gated call
    * with nothing held, which is precisely the render condition the terminal
    * handoff bar exists for (#125/#153).
+   *
+   * `updatedInput` is the ONE exception to "we neither invent nor edit it"
+   * (#563), and it is the exception the CLI itself designed: `AskUserQuestion`
+   * asks a question and reads the answer back off its own tool input, so
+   * answering it IS writing to the input. It is still not us editing a decision
+   * — it is us carrying one. `answeredInput` in `shared/ask-user-question` is
+   * the only thing that builds one, and `sanitizeUpdatedInput` below is what
+   * stops a renderer sending anything else.
    */
-  decide(requestId: string, decision: 'allow' | 'deny', reason?: string): boolean {
+  decide(
+    requestId: string,
+    decision: 'allow' | 'deny',
+    reason?: string,
+    updatedInput?: unknown
+  ): boolean {
     const p = this.pending.get(requestId);
     if (!p) return false;
     this.pending.delete(requestId);
     clearTimeout(p.timer);
 
-    const payload =
-      decision === 'allow'
-        ? { behavior: 'allow', updatedInput: p.request.input }
+    const answered = decision === 'allow' ? this.sanitizeUpdatedInput(p, updatedInput) : undefined;
+    // A REJECTED ANSWER IS NOT A BARE ALLOW.
+    //
+    // For every other tool, falling back to the request's own input is exactly
+    // what this function did before `updatedInput` existed, and it is right. For
+    // a question it is the one outcome this whole item exists to prevent: the
+    // CLI reads an allow with no `answers` as "The user did not answer the
+    // questions" (measured), so a user who clicked Send, watched the panel
+    // close and saw the queue drain would have been told nothing while the model
+    // was told they declined. Allow-all, the toast and the batch card were all
+    // closed off for precisely this reason; a validator that failed open here
+    // would reopen the hole from the inside.
+    //
+    // So: an answer was OFFERED and could not be carried => say so, honestly, in
+    // the words `unavailable` uses for every other undeliverable verdict.
+    const undeliverable =
+      decision === 'allow' && isQuestion(p.request.tool) && updatedInput !== undefined && !answered;
+    const payload = undeliverable
+      ? {
+          behavior: 'deny',
+          message: this.unavailable('Your answer to this question could not be delivered'),
+        }
+      : decision === 'allow'
+        ? { behavior: 'allow', updatedInput: answered ?? p.request.input }
         : { behavior: 'deny', message: reason || 'Denied in switchboard' };
+    if (undeliverable) {
+      this.log.error('an answered question could not be delivered — denied instead of skipped', {
+        requestId,
+        sessionId: p.sessionId,
+      });
+    }
 
     const sent = this.send(p.sessionId, controlResponse(p.nativeRequestId, payload));
     // Before `notifyResolved`, and unguarded, so this half stays a mirror image
@@ -298,6 +418,71 @@ export class StreamPermissions {
     });
     this.notifyResolved(requestId);
     return sent;
+  }
+
+  /**
+   * Vet a renderer-supplied `updatedInput`, or return undefined (#563).
+   *
+   * THE TRUST DIRECTION IS BACKWARDS HERE and that is the whole reason this
+   * function exists. Every other payload in this file came FROM the CLI and is
+   * echoed back to it; this one comes from a window and is written to the CLI's
+   * stdin. Rejecting rather than repairing: anything that fails a check falls
+   * back to the request's own input, which is exactly what `decide` did before
+   * this parameter existed — so the worst case is the CLI being told the
+   * questions were not answered, never a malformed control_response.
+   *
+   * Four checks, each earning its place:
+   *
+   * 1. **Only for the tool that asked.** `AskUserQuestion` is the one tool whose
+   *    input is the answer channel. Letting a renderer rewrite a `Bash` input on
+   *    the way to allow would turn our approval bar into a place where the
+   *    command the user READ and the command that RUNS are different strings.
+   * 2. **A plain JSON object**, so `controlResponse` cannot be handed a class
+   *    instance, an array or a prototype-polluted shape.
+   * 3. **Round-trips through JSON**, which is what the transport will do to it
+   *    anyway — a value that cannot survive that (a cycle, a BigInt) must fail
+   *    here, where there is a fallback, and not at `JSON.stringify` time in the
+   *    writer, where there is not.
+   * 4. **Bounded** — see `MAX_UPDATED_INPUT_BYTES`.
+   * 5. **Carries the MEASURED answer shape** — see `answersLookRight`. The first
+   *    four vet the envelope; without the fifth, main would forward
+   *    `answers: {q: ['a','b']}` or `answers: {}` verbatim to the CLI's stdin,
+   *    which are exactly the shapes `allAnswered` refuses to produce in the UI.
+   *    The trusted side enforces the rule rather than trusting the untrusted
+   *    side to have followed it.
+   */
+  private sanitizeUpdatedInput(p: Pending, updatedInput: unknown): Record<string, unknown> | undefined {
+    if (updatedInput === undefined) return undefined;
+    const where = { requestId: p.request.requestId, sessionId: p.sessionId, tool: p.request.tool };
+    if (!isQuestion(p.request.tool)) {
+      this.log.warn('ignoring updatedInput for a tool that does not answer questions', where);
+      return undefined;
+    }
+    if (!updatedInput || typeof updatedInput !== 'object' || Array.isArray(updatedInput)) {
+      this.log.warn('ignoring updatedInput that is not a plain object', where);
+      return undefined;
+    }
+    let json: string;
+    try {
+      json = JSON.stringify(updatedInput);
+    } catch (err) {
+      this.log.warn('ignoring updatedInput that will not serialise', { ...where, error: String(err) });
+      return undefined;
+    }
+    if (typeof json !== 'string') return undefined;
+    const bytes = Buffer.byteLength(json, 'utf8');
+    if (bytes > MAX_UPDATED_INPUT_BYTES) {
+      // the value we TESTED, not `json.length` — that counts UTF-16 code units
+      // and would understate a rejection caused by non-ASCII text
+      this.log.warn('ignoring updatedInput over the size cap', { ...where, bytes });
+      return undefined;
+    }
+    const parsed = JSON.parse(json) as Record<string, unknown>;
+    if (!answersLookRight(parsed.answers)) {
+      this.log.warn('ignoring updatedInput whose answers are not the measured shape', where);
+      return undefined;
+    }
+    return parsed;
   }
 
   /**

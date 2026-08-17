@@ -35,6 +35,7 @@
 // are that card's own queue (E10-04's `+N more waiting`) and grouping them
 // would move a question off the card that raised it for no gain.
 import type { PermissionRequestDto } from '../../../shared/ipc/permissions';
+import { ASK_USER_QUESTION_TOOL } from '../../../shared/ask-user-question';
 import type { RailSession } from '../model/types';
 
 /** One request inside a group. */
@@ -155,6 +156,15 @@ export function chooseBatch(
 ): PermissionBatch | null {
   const byKey = new Map<string, PermissionRequestDto[]>();
   for (const r of pending) {
+    // A QUESTION NEVER GROUPS (#563). Two sessions asking a byte-identical
+    // `AskUserQuestion` would satisfy the key — the key is exact, and a fleet
+    // running the same prompt could genuinely produce one — but this card's
+    // Allow sends the input back with NO answers, and the CLI reads that as
+    // "The user did not answer the questions." So grouping a question would
+    // offer one click that answers N sessions with nothing, which is the exact
+    // failure the exact-key rule exists to prevent, arriving through the door
+    // the key cannot see. It stays on its own card, where the panel is.
+    if (r.tool === ASK_USER_QUESTION_TOOL) continue;
     const k = batchKey(r);
     const list = byKey.get(k);
     if (list) list.push(r);

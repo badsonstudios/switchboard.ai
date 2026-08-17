@@ -19,6 +19,8 @@ import { clearFeedMarks, markFeedMatches, moveCurrentMark, sameFindQuery } from 
 import type { FindQuery } from '../extensibility/contributions';
 import { emptyStateCopy } from '../lib/binding-copy';
 import { terminalHandoff, TerminalHandoff, toneToken } from '../lib/terminal-handoff';
+import { ASK_USER_QUESTION_TOOL, parseAskUserQuestion } from '../../../shared/ask-user-question';
+import { QuestionPanel } from './QuestionPanel';
 import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
 import { rendererRegistry } from '../extensibility/registry-instance';
 import { renderFeedBlock } from '../extensibility/feed-render';
@@ -226,7 +228,13 @@ export function FeedView(props: {
   /** which transport hosts this session — the handoff bar must not point at a
    *  terminal that does not exist (P2 #153 follow-up) */
   transport?: 'pty' | 'stream';
-  onDecide?: (decision: 'allow' | 'deny', allowAll?: boolean) => void;
+  /**
+   * `updatedInput` is the `AskUserQuestion` answer (#563) and rides the same
+   * decision path everything else uses — a question is answered by allowing the
+   * tool call with the answers written into its input, which is the CLI's own
+   * design and not a side channel we invented.
+   */
+  onDecide?: (decision: 'allow' | 'deny', allowAll?: boolean, updatedInput?: unknown) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [blocks, setBlocks] = React.useState<FeedBlockDto[]>([]);
@@ -259,6 +267,27 @@ export function FeedView(props: {
     const id = setTimeout(() => setStartingLong(true), 8_000);
     return () => clearTimeout(id);
   }, [props.status]);
+  // Is the held request the CLI's own CHOOSER rather than a permission (#563)?
+  //
+  // Memoised on the request ID, not on the input object, and the memo is
+  // load-bearing rather than an optimisation: `parseAskUserQuestion` returns a
+  // FRESH ARRAY every call, and the panel re-seeds its selections whenever that
+  // array's identity changes — so parsing inline would wipe a half-answered
+  // panel on every unrelated re-render of this component.
+  //
+  // Keying on the id is sound because a held request is immutable: the id is
+  // `stream:<sessionId>:<native>`, unique per request, and its input never
+  // changes between arriving and being answered. (`approvalInput` is
+  // deliberately not in the deps; eslint's exhaustive-deps plugin isn't
+  // installed in this repo, so there is nothing to silence — see App.tsx:473.)
+  const approvalId = props.approval?.requestId;
+  const approvalTool = props.approval?.tool;
+  const approvalInput = props.approval?.input;
+  const askQuestions = React.useMemo(
+    () =>
+      approvalTool === ASK_USER_QUESTION_TOOL ? parseAskUserQuestion(approvalInput ?? {}) : null,
+    [approvalId, approvalTool]
+  );
   // The CLI is waiting on something we are not allowed to answer for it — a
   // decision it kept (P7), or one our hook path never saw. Rendered as a BAR
   // above the composer (#125), not the 10px header chip it used to be.
@@ -911,7 +940,26 @@ export function FeedView(props: {
           ))}
         </div>
       )}
-      {props.approval && props.onDecide && (
+      {/* A QUESTION takes the dock instead of the approval bar (#563). Same
+          place, same weight, different controls — because it is the same user
+          question ("what does this session want from me?") answered with a list
+          instead of a verdict. `askQuestions` is null for every other tool AND
+          for an AskUserQuestion payload we could not parse, and then this falls
+          through to the ordinary bar, which can still Allow and Deny it. */}
+      {props.approval && props.onDecide && askQuestions && (
+        <QuestionPanel
+          // Remount per REQUEST: consecutive questions in one session reuse this
+          // component, and a half-typed Other from the last one appearing under
+          // the next one's options would be an answer the user did not give.
+          key={props.approval.requestId}
+          requestId={props.approval.requestId}
+          questions={askQuestions}
+          input={props.approval.input}
+          queued={props.approvalQueued ?? 0}
+          onDecide={props.onDecide}
+        />
+      )}
+      {props.approval && props.onDecide && !askQuestions && (
         <ApprovalBar approval={props.approval} queued={props.approvalQueued ?? 0} onDecide={props.onDecide} />
       )}
       {/* Docked in the SAME place as the approval bar, deliberately: this is
@@ -1136,9 +1184,18 @@ function ApprovalBar({
         <button onClick={() => onDecide('allow')} style={btn(true)}>
           {t('approval.allow')}
         </button>
-        <button onClick={() => onDecide('allow', true)} style={btn(false)}>
-          {t('approval.allowAll')}
-        </button>
+        {/* NOT for a question (#563). This bar only ever sees an
+            `AskUserQuestion` when its payload failed to parse and the panel
+            stood down — a rare fallback, but one where "Allow all (this
+            session)" reads as "answer all its questions for me", which is not
+            what it does and not something anything can do. It is already inert
+            for questions on both allow-all paths; hiding it means the button
+            never makes a promise the app has deliberately refused to keep. */}
+        {approval.tool !== ASK_USER_QUESTION_TOOL && (
+          <button onClick={() => onDecide('allow', true)} style={btn(false)}>
+            {t('approval.allowAll')}
+          </button>
+        )}
         <button onClick={() => onDecide('deny')} style={btn(false)}>
           {t('approval.deny')}
         </button>

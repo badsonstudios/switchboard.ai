@@ -16,6 +16,7 @@
 // teardown) and the session's own exit — and they must not be able to disagree
 // about what "belongs to that session" means.
 import type { PermissionRequestDto } from '../../../shared/ipc/permissions';
+import { ASK_USER_QUESTION_TOOL } from '../../../shared/ask-user-question';
 
 /**
  * Drop everything the retired session raised, and nothing else.
@@ -179,7 +180,18 @@ export function intakePermission(
   ports: PermissionIntake
 ): void {
   if (r.cardId !== cardId) return;
-  if (ports.isAllowAll(r.sessionId)) {
+  // A QUESTION is never auto-allowed (#563), whatever the session's standing
+  // grant says. "Allow all tools in this session" is not "answer all questions
+  // in this session", and the CLI is explicit about what a bare allow means: an
+  // allow carrying no `answers` comes back as **"The user did not answer the
+  // questions."** (measured — probe mode `empty`). So the allow-all branch here
+  // would not grant the question, it would DISCARD it, and the user would never
+  // see the thing their session was waiting on.
+  //
+  // Main's own allow-all short-circuit makes the same exemption, and both are
+  // needed: that one answers at the server and never pushes, this one fires for
+  // a request already in flight when the grant was written.
+  if (r.tool !== ASK_USER_QUESTION_TOOL && ports.isAllowAll(r.sessionId)) {
     ports.decide(r.requestId, 'allow');
     ports.suppressHandoff();
     return;
