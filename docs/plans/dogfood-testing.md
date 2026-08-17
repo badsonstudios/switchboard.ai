@@ -32,6 +32,7 @@ is now IN the installed build once Dan updates. Twelve fixes landed via train #5
 | Find highlight in session view | **v0.6.0** | PARTLY VERIFIED — marks work where jumping works; blocked behind #495/#557 on resumed sessions |
 | Find on ANY resumed session | NOT yet (#495 raised, #496, #557) | Every hit must jump; the bar alone should carry it — no auto-opening results list |
 | New session from popout | **v0.6.0** | Affordance exists, tab lands beside current card in the popout |
+| Dock-back slot (#558) | **NOT FIXED** — diagnosed only, no PR | Still broken; nothing to re-test yet. Branch `feature/558-dock-back-slot` carries the repro and the reason the obvious fix cannot ship (it makes the card come home suspended). See PROGRESS.md |
 
 ## Tested and passing (2026-08-16 pass, v0.6.0)
 

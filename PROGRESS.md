@@ -3,7 +3,93 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — 🚢 v0.6.0 SHIPPED + DOGFOODED 2026-08-16
+> # ▶▶ START HERE — ⛔ #558 BLOCKED (diagnosed, NOT fixed) · NEXT #563, 2026-08-17
+>
+> **NO PR. The code change was REVERTED; the branch carries the repro and the
+> diagnosis only.** Branch `feature/558-dock-back-slot` holds
+> `e2e/popout-dock-back.spec.ts` (3 tests, the headline one `test.fixme` — it
+> is red against main and correctly so) plus this note. Two tests in it pass
+> and are real regression cover.
+>
+> **THE MECHANISM IS FULLY MEASURED.** Popping a card out leaves its grid group
+> as an invisible 1px HUSK (dockview `_doAddPopoutGroup` →
+> `referenceGroup.api.setVisible(false)`). The husk is treated as ANONYMOUS:
+> dockview's window-close path hands a closing popout's panels back to the
+> group the window was created FROM, so a card born in the popout (#531),
+> owning no slot at all, is given the opener's husk and takes the whole half.
+>
+> **WHY THREE ATTEMPTS AT THE FIX ALL FAILED — read this before trying a
+> fourth.** The obvious fix is to stop letting dockview choose: have the LAST
+> card out `moveTo` its proper home (a new `dockBackTarget()` that prefers the
+> card's own live grid slot, else `sessionCardHome`) instead of closing the
+> window and hoping. That makes the owner's bug go away — the headline test
+> goes green — and it BREAKS the ordinary dock-back: the card comes home
+> **suspended**, killing `session.spec.ts:356` ("the pop-out button toggles a
+> card back in, alive", E8-04) and `composer-draft.spec.ts:70` (the dock-back
+> draft, which needs a live composer to read). Tried, all red:
+>   1. `markDockingBack` + `moveTo` + explicit `w.close()`
+>   2. the same without the explicit close (dockview closes the empty window
+>      itself — confirmed, the window count still reaches 1)
+>   3. `setMoving(true)` around the `moveTo` instead of `markDockingBack` —
+>      the guard the ladder uses for exactly "our move, not a user close"
+> So the suspension is NOT (or not only) the `onDidLocationChange` handler at
+> SessionGrid ~893, whose guards #3 should have satisfied. **The next attempt
+> should start by finding what actually suspends the card** — instrument
+> `dropLive` / `setPresentation({suspended})` / `rescueStrandedPopouts` /
+> `lib/popout-windows` and watch which one fires on a lone-card dock-back —
+> rather than by trying a fourth placement variant.
+>
+> **The ticket's OTHER half is a separate problem again:** "a card that WAS in
+> the grid keeps returning to its own slot" does not hold either (A joins B's
+> group), because `captureSlots()` (~2668) OVERWRITES a card's grid slot with
+> a `location: 'popout'` one the moment it is popped out. That needs a
+> slot-MODEL change (remember the pre-popout grid slot alongside the popout
+> one, in persisted state). Dan called that step "fine" in his own repro, so
+> it is the ticket's wish rather than his observation — worth its own ticket.
+>
+> # (superseded plan block follows)
+> # 🔧 #558 — the attempt, for the record
+>
+> Branch `feature/558-dock-back-slot`, off **main**. Three branches are now in
+> flight and all independent: **PR #560** (#555, CI green), **PR #561**
+> (#557/#496/#495, CI green), and this one.
+>
+> **#558 — the reported bug is FIXED and the mechanism was measured, not
+> guessed.** Popping a card out leaves its grid group behind as an invisible
+> 1px HUSK (dockview's `_doAddPopoutGroup` calls
+> `referenceGroup.api.setVisible(false)`), which exists so the card can come
+> home. The husk was being treated as ANONYMOUS: dockview's window-close path
+> hands a closing popout's panels back to the group the window was created
+> from, so **C — born in the popout (#531), owning no slot at all — was given
+> A's husk and took the whole left half.** Fix: new `dockBackTarget()`, and
+> the last-card-out path now MOVES the panel and then closes the empty window
+> instead of letting dockview choose. New `e2e/popout-dock-back.spec.ts`, 3
+> tests (the owner asked for this coverage by name); the headline one fails
+> against the unfixed build, verified by stashing + rebuilding.
+>
+> **SECOND HALF NOT DONE, DELIBERATELY, and Dan needs to decide it.** The
+> ticket also wants "a card that WAS in the grid keeps returning to its own
+> slot". It does not: A joins B's group instead. Measured cause —
+> `captureSlots()` (SessionGrid ~2668) OVERWRITES a card's grid slot with a
+> `location: 'popout'` one the moment it is popped out, so by dock-back time
+> the grid home is gone. Restoring it needs a slot-MODEL change (remember the
+> pre-popout grid slot alongside the popout one, in persisted state), which is
+> a bigger and more sensitive change than this fix. Recommend it as its own
+> ticket. Note Dan called step 3 "fine" in his own repro, so this half is the
+> ticket's wish rather than his observation.
+>
+> **NEXT TASK AFTER #558 — #563, moved up by Dan (2026-08-17):** render the
+> CLI's `AskUserQuestion` in the session window — question + clickable
+> answers, checkboxes for multi-select, radio for pick-one, always an "Other"
+> to type into. Reference: the Claude Code VS Code extension, unpacked on this
+> machine. This is the `AskUserQuestion` half of plan item **E18-11**
+> (`docs/plans/05-transport-migration.md`), gate now called in. READ THE
+> CONTRACT (`docs/reference-implementations.md`, `grep -o` only — the bundle
+> is minified and `Read` will blow up context); do not guess the payload or
+> the response shape.
+>
+> # (v0.6.0 record follows)
+> # 🚢 v0.6.0 SHIPPED + DOGFOODED 2026-08-16
 >
 > **Dan ran the full v0.6.0 pass. PASSING: update auto-restart · right-
 > click menus · reply links · document tabs + viewer find · side-by-side
