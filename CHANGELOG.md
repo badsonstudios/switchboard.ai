@@ -55,7 +55,64 @@ on the floor, and say so in your PR.
 
 ---
 
-## 0.7.0 — unreleased
+## 0.8.0 — unreleased
+
+## 0.7.0 — 2026-08-17
+
+### Added
+
+- **Claude can ask you a question, and you can click the answer.** Sometimes
+  Claude doesn't want permission — it wants a decision: *"which of these three
+  approaches should I take?"*, *"which file did you mean?"* Until now those
+  questions had nowhere to go in a Direct-mode session. They now appear as a
+  panel just above the prompt box, in the same place permission requests appear,
+  with the question written out and its answers as a list you can click. Round
+  buttons mean pick one; square boxes mean pick as many as you like. **There is
+  always an "Other"** — tick it and a text box opens where you type your own
+  answer in your own words, and Claude reads it exactly as if it had offered it
+  as an option, which is what keeps a question with the wrong four choices
+  answerable instead of answerable-wrongly. Claude can ask several questions in
+  one go: they are shown stacked, each with a tick once it is answered, and
+  **Send answer** stays greyed out until every one of them has one. It all works
+  from the keyboard — arrow keys move between answers, Space picks, Enter sends.
+  **Don't answer** is a real answer too, and a safe one: Claude is told you
+  declined and asks again in ordinary conversation rather than getting stuck.
+  Take your time — a question waits half an hour rather than a permission
+  request's five minutes, and a half-finished answer survives leaving the panel,
+  so you can go and read the diff on the **Changes** tab and come back to your
+  ticks and your typed text still there.
+- Two things it deliberately does not do, both for the same reason — a question
+  can only be answered by a person. **"Allow all (this session)" does not answer
+  questions**: it is a standing yes to *tool use*, not to *you*, so questions
+  still wait even in a session where everything else is automatic. And the
+  desktop pop-up for a question carries **no Allow button** — it says what is
+  being asked and clicking it brings you to the panel, because a button on a
+  pop-up could only ever skip the question, never answer it.
+- **Terminal-mode sessions keep their questions in the terminal.** Claude Code
+  draws them there itself and switchboard cannot reach in, so you will find
+  them on the **Terminal** tab rather than as a panel. Switch a session to
+  Direct mode for the clickable version.
+
+### Changed
+
+- **Find is a bar first, not a list.** Ctrl+F used to swing the results list
+  open before you had typed anything useful. Now the bar does the ordinary job
+  on its own — the match count, Enter and Shift+Enter to walk them — and the
+  list stays behind its **▸** until you ask for it.
+
+### Fixed
+
+- **Sessions come back where you left them.** Restarting switchboard used to
+  drop every session's conversation at the very top, so the first thing you saw
+  was the beginning of a conversation you had been reading the end of. Feeds now
+  land at the tail where they belong, and stay put when a panel is dragged to a
+  different part of the workspace.
+- **Find works in a resumed session.** Resuming a session used to leave its
+  search able to list matches but not jump to them, with a notice over the whole
+  session saying so. Now each match is resolved on its own: everything from
+  after the resume jumps normally, only the older hydrated part of the
+  conversation stays unjumpable, and it says so about that one match instead of
+  over the whole session.
 
 ## 0.6.0 — 2026-08-16
 
