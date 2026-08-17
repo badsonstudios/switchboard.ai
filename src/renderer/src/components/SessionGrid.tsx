@@ -560,6 +560,38 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     return () => d.dispose();
   }, [props.api]);
 
+  // "dockview just moved your DOM" (#555) — see `PanelContext.dockEpoch`.
+  //
+  // Activating a group re-runs dockview's `openPanel`, which DETACHES this
+  // panel's content element and appends it again; a move between groups
+  // relocates the whole subtree. Neither is a render — the same elements come
+  // back, so React is not involved — but the browser resets the `scrollTop` of
+  // every scroll container inside them on the way through, and fires nothing.
+  //
+  // MEASURED (#555, two docked groups, click a card's own rail row): the feed
+  // went from scrollTop 1491 to 0, and the only observer that saw anything at
+  // all was a `MutationObserver` on the whole document. An `IntersectionObserver`
+  // on the scroller delivered its initial reading and never fired again, and a
+  // `ResizeObserver` never fired because the panel comes back at exactly the
+  // size it left — which also takes out the detach backstop living inside the
+  // feed's own resize handler.
+  //
+  // So the card, which is the thing dockview actually talks to, passes the fact
+  // down. All three events are subscribed rather than the one that happens to
+  // fire today: they are rare, the handler is a counter, and a panel that
+  // reconciles a scroll position it is already sitting at has done nothing.
+  const [dockEpoch, setDockEpoch] = React.useState(0);
+  React.useEffect(() => {
+    const bump = (): void => setDockEpoch((n) => n + 1);
+    const ds = [
+      props.api.onDidActiveChange(bump),
+      props.api.onDidGroupChange(bump),
+      props.api.onDidLocationChange(bump),
+    ];
+    return () => ds.forEach((d) => d.dispose());
+    // props.api is stable for the panel's lifetime
+  }, [props.api]);
+
   // dockview is the authority on WHERE the panel is; the store mirrors it so
   // that layout modes and the palette can ask without mounting the card. Sync
   // on mount, because a revealed panel is created directly into its slot.
@@ -1025,6 +1057,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     // generic instead.
     title: cardTitle ?? props.api.title,
     visible,
+    dockEpoch,
     folder,
     ...docTheme(),
     status,

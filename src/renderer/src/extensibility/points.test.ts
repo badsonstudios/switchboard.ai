@@ -22,6 +22,7 @@ function ctx(over: Partial<PanelContext> = {}): PanelContext {
     sessionId: 's1',
     cardId: 'c1',
     visible: true,
+    dockEpoch: 0,
     folder: 'C:/proj',
     theme: 'nordic',
     colorScheme: 'dark',

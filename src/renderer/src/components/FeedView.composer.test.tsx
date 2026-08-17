@@ -67,6 +67,7 @@ async function mountComposer(): Promise<HTMLTextAreaElement> {
     cardId: 'card-1',
     title: 'acme-web',
     visible: true,
+    dockEpoch: 0,
     theme: 'nordic',
     colorScheme: 'dark',
     changed: 0,
