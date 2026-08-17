@@ -3,7 +3,73 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — 🚢 v0.6.0 SHIPPED + DOGFOODED 2026-08-16
+> # ▶▶ START HERE — ✅ #555 DONE → PR #560 AWAITING DAN (2026-08-16)
+>
+> **PR: https://github.com/badsonstudios/switchboard.ai/pull/560** —
+> `feature/555-feed-tail-after-dock-move` @ dd557c9. **CI GREEN 4/4** (unit +
+> e2e on windows-latest and ubuntu-latest). Dan reviews and merges.
+>
+> **NEXT UP:** the rest of run 20's wave 1 from the v0.6.0 dogfood — **#557**
+> (find bar-only, no results list) · **#495**-verify (fix with #496 + #557
+> together) · **#558** (popout-born session docks into the wrong slot; Dan
+> asked for e2e by name) · **#556** (drawer close button) · **#559**
+> (drag-reorder within a rail group). Then the tail: #483 digest,
+> #521-layer-1, #488 #490 #491 #494 #497-#499 #502-#504 #506 #508 #509 #512
+> #517 #518 #538 #539 #543 #544 #546 #550. Dan-gated: #528/#529 sittings.
+>
+> **`document-peek.spec.ts:471` — LOCAL TO THIS MACHINE, corrected, not
+> ticketed.** It failed on every local run during #555 (313 passed / 3 skipped
+> / 1 failed) including on a CLEAN stashed tree at main, so it was first called
+> pre-existing — but **CI ran it green on both platforms**, which rules that
+> out. Likeliest cause: leftover Electron window state from the #555 probe
+> runs, which launched and killed a lot of popout windows. If it reappears in
+> a session that ran no popout probes, THEN it is real and wants a ticket.
+>
+> # (the #555 investigation record follows)
+> # 🔧 #555 — DIAGNOSIS (kept: the measurements cost the most)
+>
+> **#555 (feed restores at the top) — DIAGNOSED, mechanism is NOT what the
+> issue guessed.** Measured, not assumed: the hydrate/replay path is
+> innocent. A restored Direct session lands dead on the tail with Dan's OWN
+> 533-block transcript (gap 0-1), and so does the PTY watcher path with a
+> 628-block backlog, on one card, three cards, and a two-group split.
+>
+> **The real defect: a dockview panel MOVE strands the feed at scrollTop 0.**
+> Reproduced deterministically by booting on a copy of Dan's real
+> `workspace.json` + his transcripts, and then minimally in-repo: two docked
+> groups (the `split.spec.ts` persisted-layout recipe) + click a card's own
+> rail row → the scroller element is DETACHED and REATTACHED (same element,
+> React never remounts) → the browser zeroes `scrollTop`, and **none of the
+> three recovery triggers fire**: no scroll event, no size change (so the
+> ResizeObserver — which holds the backstop written for exactly this case —
+> never runs), and `props.visible` never changes. `pinned` stays true, so
+> `offTail` is false and the "Jump to latest" chip never appears either. The
+> view is silently stuck at the top with no way back, which is exactly Dan's
+> "clicking into a card does not bring it down".
+>
+> Dan reads it as a restart symptom because the restart is when he clicks
+> through all eight cards.
+>
+> **FIXED on `feature/555-feed-tail-after-dock-move`.** The host tells the
+> panel: new `PanelContext.dockEpoch`, bumped by the card from dockview's
+> `onDidActiveChange` / `onDidGroupChange` / `onDidLocationChange`, and the
+> feed reconciles on it. The feed's three scroll rules (resize, visible,
+> dock-move) now go through ONE extracted `reconcile()` so they cannot drift.
+> **An `IntersectionObserver` was tried first and does NOT work** — measured:
+> it delivers once at startup and never sees the same-frame move; only a
+> `MutationObserver` on the whole document saw it, which is why the signal
+> comes from the host instead.
+>
+> New e2e `e2e/feed-restore-position.spec.ts`, 4 tests: Direct restart · [pty]
+> restart · suspended card resuming · **the dock move (fails 1490-of-1491
+> against the unfixed build, verified by stashing the fix and rebuilding)**.
+> The first three pass either way — they are regression cover for the
+> done-when the issue actually states, which measurement showed was already
+> true. Unit 5092/5092. Manual + dogfood tracker updated. **Awaiting Gate 2
+> (commit approval).**
+>
+> # (v0.6.0 ship + dogfood record follows)
+> # 🚢 v0.6.0 SHIPPED + DOGFOODED 2026-08-16
 >
 > **Dan ran the full v0.6.0 pass. PASSING: update auto-restart · right-
 > click menus · reply links · document tabs + viewer find · side-by-side

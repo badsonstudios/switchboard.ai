@@ -32,6 +32,7 @@ is now IN the installed build once Dan updates. Twelve fixes landed via train #5
 | Find highlight in session view | **v0.6.0** | PARTLY VERIFIED — marks work where jumping works; blocked behind #495/#557 on resumed sessions |
 | Find on ANY resumed session | NOT yet (#495 raised, #496, #557) | Every hit must jump; the bar alone should carry it — no auto-opening results list |
 | New session from popout | **v0.6.0** | Affordance exists, tab lands beside current card in the popout |
+| Conversations sitting at the TOP instead of the tail (#555) | PR #560 (unmerged) | Click every session in the sidebar in turn, especially with two cards side by side: each must show its NEWEST message, and stay there when you click its own row again. Also: scroll up, switch away, come back — you should be where you were reading, not at the bottom. The restart was never the cause — clicking a card was |
 
 ## Tested and passing (2026-08-16 pass, v0.6.0)
 

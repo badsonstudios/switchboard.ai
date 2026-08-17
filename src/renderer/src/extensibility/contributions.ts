@@ -117,6 +117,27 @@ export interface PanelContext {
   title?: string;
   /** is this panel the active tab in a visible card? */
   visible: boolean;
+  /**
+   * Bumped whenever dockview has TOUCHED this panel's placement (#555).
+   *
+   * The host owns the dockview relationship, and dockview reattaches a panel's
+   * DOM subtree for things that are not renders: activating a group re-runs
+   * `openPanel`, and a move between groups relocates the whole tree. React sees
+   * none of it — the same elements come back, so nothing re-renders — but the
+   * browser drops the `scrollTop` of every scroll container inside them on the
+   * way through, and no scroll, resize or visibility event fires to say so.
+   *
+   * A panel that holds a scroll position therefore cannot discover this by
+   * itself: measured (#555), an `IntersectionObserver` never fires for the
+   * round trip and a `ResizeObserver` never fires because the panel comes back
+   * at exactly the size it left. So the host, which DOES get the event, says
+   * "your placement moved" and the panel restores whatever it was keeping.
+   *
+   * A counter rather than a boolean or a timestamp: consecutive moves must each
+   * be distinguishable, and the value only ever has to be compared with the
+   * previous one.
+   */
+  dockEpoch: number;
   /** the session's working folder; absent for a session with none */
   folder?: string;
   /** the ACTIVE theme's id — an open set, so never switch on it */
