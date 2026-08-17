@@ -3,7 +3,14 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — ✅ #563 DONE, AWAITING PR, 2026-08-17
+> # ▶▶ START HERE — ✅ #563 SHIPPED TO PR #565, 2026-08-17
+>
+> **PR #565 is open and waiting for Dan** — https://github.com/badsonstudios/switchboard.ai/pull/565
+>
+> **NEXT after it merges: #562** (other scroll-holding panels probably lose
+> position to the same dockview move #555 fixed for the feed), then #556
+> (drawer close button) and #559 (rail drag-reorder). **#558 stays diagnosed
+> but NOT fixed** — read its block below before attempting a fourth try.
 >
 > **#563 — `AskUserQuestion` in the session window.** Built, reviewed, green:
 > typecheck + lint clean, unit **5178/5178**, e2e 21/21 across the whole
@@ -45,9 +52,8 @@
 > unmount via a module-level draft map, because the Session panel is not
 > keepMounted and looking at the diff first would otherwise bin it.
 >
-> **Still open from run 20:** #556 (drawer close button), #559 (rail
-> drag-reorder), #562 (other scroll-holding panels), #558 (diagnosed, NOT fixed
-> — read the block below before attempting it).
+> Everything from run 20's first wave stays merged; #556, #559, #562 and #558
+> are still open (see the top of this block for the order).
 >
 > | Landed on main | |
 > |---|---|
