@@ -26,6 +26,12 @@ import { defineDiffThemes, DIFF_THEME } from '../lib/monaco-theme';
 import { findSurfaceKey, publishFindSurface, type MonacoFindSurface } from '../lib/find-surfaces';
 import { openMonacoFind } from '../lib/monaco-find';
 import { openDocument } from '../lib/document-open';
+import {
+  forgetDiffPlace,
+  placeIsStillThere,
+  readDiffPlace,
+  rememberDiffPlace,
+} from '../lib/diff-places';
 
 /**
  * `folder` + git's forward-slash relative path, in the folder's own spelling.
@@ -85,9 +91,30 @@ export function DiffPane(props: {
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [status, setStatus] = useState<GitStatusDto | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  // Seeded from the place this card was last left (#562) — see lib/diff-places.
+  const [selected, setSelected] = useState<string | null>(
+    () => readDiffPlace(props.cardId)?.selected ?? null
+  );
   const hostRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
+  /**
+   * The LINE to put back once the model is in (#562).
+   *
+   * A ref, and consumed once: the restore has to happen AFTER `setModel` — which
+   * is inside an async `then` — and it must not fire again on every later
+   * selection, or picking a fresh file would drop the reader somewhere in the
+   * middle of it instead of at the top.
+   */
+  const pendingLine = useRef<number | null>(readDiffPlace(props.cardId)?.line ?? null);
+  /** pending restore frames, cancelled on unmount so nothing touches a disposed
+   *  editor (the sibling effect in `DocumentViewer` does the same) */
+  const rafs = useRef<number[]>([]);
+  useEffect(() => {
+    return () => {
+      rafs.current.forEach((id) => cancelAnimationFrame(id));
+      rafs.current = [];
+    };
+  }, []);
   // Workspace-wide, not per-card (#532): "how I read a diff" is a habit, not a
   // property of one session, and the palette command has no card in hand.
   const layoutPref = useSyncExternalStore(subscribeDiffLayout, getDiffLayout);
@@ -101,8 +128,25 @@ export function DiffPane(props: {
   const narrowed = layoutPref === 'side-by-side' && layout === 'inline';
 
   useEffect(() => {
-    void window.switchboard.git.status(props.folder).then((s) => setStatus(s as GitStatusDto));
-  }, [props.folder]);
+    void window.switchboard.git.status(props.folder).then((s) => {
+      const next = s as GitStatusDto;
+      setStatus(next);
+      // A REMEMBERED FILE IS ONLY AS GOOD AS THE CHANGE UNDER IT (#562 review).
+      // Between leaving the tab and coming back, the change can have been
+      // committed, discarded or the file deleted — and `git.fileVersions` does
+      // not fail for any of those, it returns EMPTY STRINGS. Restoring it would
+      // paint a blank two-pane diff with no row highlighted and nothing on
+      // screen saying why, which reads as breakage. Drop it and start clean.
+      setSelected((cur) => {
+        if (!cur) return cur;
+        const paths = next.files.map((f) => f.path);
+        if (placeIsStillThere({ selected: cur, line: 1 }, paths)) return cur;
+        pendingLine.current = null;
+        forgetDiffPlace(props.cardId);
+        return null;
+      });
+    });
+  }, [props.folder, props.cardId]);
 
   // Built ONCE per pane. `colorScheme` used to be in these deps, which meant a
   // theme switch disposed the editor AND both models and built an empty one —
@@ -225,11 +269,61 @@ export function DiffPane(props: {
       });
       old?.original.dispose();
       old?.modified.dispose();
+      // Put the reader back where they were (#562). AFTER the model, because an
+      // editor with no content clamps any offset to 0, and ONCE — the ref is
+      // consumed, so a later re-selection of the same file opens at the top like
+      // the fresh choice it is.
+      //
+      // By LINE, not by pixels: side-by-side inserts alignment view zones for
+      // deleted lines after the async diff computation, and the layout mode is
+      // workspace-wide (#532), so the same pixel offset is a different place in
+      // either case. `getTopForLineNumber` asks the editor where that line is
+      // NOW.
+      const line = pendingLine.current;
+      pendingLine.current = null;
+      // one frame later: the editor has the model but has not laid it out yet
+      const id = requestAnimationFrame(() => {
+        const me = ed.getModifiedEditor();
+        if (line && line > 1) me.setScrollTop(me.getTopForLineNumber(line));
+        // ...and NOW stamp, with a model in and a real viewport to read. A file
+        // picked and never scrolled is still a place — the common one — and this
+        // is the first moment the answer is trustworthy.
+        const top = me.getVisibleRanges()[0]?.startLineNumber;
+        if (top) rememberDiffPlace(props.cardId, { selected, line: top });
+      });
+      rafs.current.push(id);
     });
     return () => {
       cancelled = true;
     };
   }, [selected, props.folder]);
+
+  /**
+   * Record where the reader is, for the next mount (#562).
+   *
+   * On the MODIFIED editor: it is the side a reader follows, and in side-by-side
+   * the two are scroll-synchronised anyway. Re-subscribed per selection because
+   * the handler CLOSES OVER `selected` — the emitter itself survives a
+   * `setModel` (it lives on the widget, not the view model), so this is about
+   * the closure and not about the editor's lifetime.
+   *
+   * NOTHING IS STAMPED HERE ON ARRIVAL, and that is the review's finding: this
+   * effect runs the moment `selected` changes, which is BEFORE the async
+   * `fileVersions` round trip swaps the model. At that instant the editor is
+   * still showing the PREVIOUS file — so stamping would file the old file's line
+   * under the new file's name, and on a fresh mount it would stamp Monaco's
+   * "no model" answer over the very place the mount is about to restore. The
+   * load effect above stamps instead, once the model is in.
+   */
+  useEffect(() => {
+    const ed = editorRef.current;
+    if (!ed || !selected || !props.cardId) return;
+    const d = ed.getModifiedEditor().onDidScrollChange(() => {
+      const top = ed.getModifiedEditor().getVisibleRanges()[0]?.startLineNumber;
+      if (top) rememberDiffPlace(props.cardId, { selected, line: top });
+    });
+    return () => d.dispose();
+  }, [selected, props.cardId]);
 
   const badge = (f: GitFileDto): string =>
     f.untracked ? t('diff.badge.new') : f.staged && f.unstaged ? t('diff.badge.both') : f.staged ? t('diff.badge.staged') : t('diff.badge.modified');

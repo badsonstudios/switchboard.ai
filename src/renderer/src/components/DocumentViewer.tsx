@@ -107,6 +107,22 @@ export interface DocumentViewerProps {
   onPopoutToggle?: () => void;
   /** the session this viewer was opened from, if any (§5.24) */
   session?: DocumentAttribution;
+  /**
+   * Bumped whenever dockview moved this panel's DOM (#562) — the same signal
+   * `PanelContext.dockEpoch` carries for a session card's panels (#555).
+   *
+   * MEASURED, two documents sharing a dockview group: read halfway down one,
+   * click the other tab, click back — **722 -> 0**. And the component is NEVER
+   * UNMOUNTED while that happens, which is the part that misleads: only one
+   * `[data-testid="doc-scroll"]` is findable at a time, so the obvious reading
+   * is that the inactive panel was destroyed. It was not. Dockview DETACHES the
+   * panel's element from the document and keeps the React tree alive, so
+   * `querySelector` cannot see it while every ref in here still holds its value
+   * — `scrollMemo` included. Nothing was lost; there was simply nothing to
+   * re-apply it, because the effect that does so only runs when the rendered
+   * HTML changes and the document had not changed at all.
+   */
+  dockEpoch?: number;
 }
 
 /** Bytes as a human says them. Two significant places is enough for a header. */
@@ -387,6 +403,79 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
       applyMatches(mainRef.current, q.term, q);
     }
   }, [showRendered, renderedHtml, labels, current, props.panelId]);
+
+  /**
+   * Put the reader back after dockview moved this panel's DOM (#562).
+   *
+   * `scrollMemo` already holds the right number — the component was never
+   * unmounted (see the `dockEpoch` prop) — so this is purely "apply it again".
+   * The browser dropped the element's `scrollTop` during the detach and fired
+   * nothing: no scroll event, no resize (the panel comes back at exactly the
+   * size it left), no visibility change. The card's own panels learned this in
+   * #555; a document panel is not a card panel and had no such signal at all.
+   *
+   * Twice, a frame apart, for `FeedView`'s reason: the dockview event can land
+   * on either side of the DOM move, and re-applying a scrollTop the element is
+   * already sitting at costs nothing.
+   *
+   * The SOURCE body is INFERRED to need no equivalent, and the word is chosen:
+   * Monaco scrolls a virtual viewport rather than a native `scrollTop`, and the
+   * Changes tab — a Monaco editor under the identical move — came back on the
+   * same line, measured. But that is a diff editor and this is a plain one, and
+   * nothing has moved a viewer while it was in Source mode. Inference, not
+   * measurement; `e2e/panel-restore-position.spec.ts`'s header lists it as such
+   * beside the Terminal.
+   *
+   * SKIPS THE FIRST RUN. `dockEpoch` starts at 0, so this effect fires on mount,
+   * where there is nothing to restore and the write races the `#fragment` jump
+   * declared just below — a relative link's anchor would be undone a frame after
+   * it landed.
+   */
+  const restoredEpoch = React.useRef<number | undefined>(props.dockEpoch);
+  React.useEffect(() => {
+    if (props.dockEpoch === undefined || props.dockEpoch === restoredEpoch.current) return;
+    restoredEpoch.current = props.dockEpoch;
+    const apply = (): void => {
+      const el = scrollRef.current;
+      if (el) el.scrollTop = scrollMemo.current.rendered;
+    };
+    apply();
+    const id = requestAnimationFrame(apply);
+    return () => cancelAnimationFrame(id);
+  }, [props.dockEpoch]);
+
+  /**
+   * The backstop `FeedView` has and this did not (#562 review).
+   *
+   * The two shots above are timed to the dockview event, and both are silent
+   * no-ops if the element has no layout box at that instant — `scrollTop =` on a
+   * zero-height element does nothing. The measured gesture is fine; a document
+   * tab DRAGGED into another group, where the event can land on the far side of
+   * the move, has no third chance. `FeedView` solves this by calling the same
+   * reconcile from a ResizeObserver on the scroller, so the dockview signal is
+   * one route among several rather than the only one.
+   *
+   * Re-applying costs nothing when nothing is wrong: `scrollMemo` is updated by
+   * the scroll handler, so the remembered position IS the current one, and the
+   * guard makes the ordinary case a comparison rather than a write. It must not
+   * fight a user who resizes the pane — and it cannot, for the same reason.
+   */
+  React.useEffect(() => {
+    const el = scrollRef.current;
+    // `ResizeObserver` is a browser affordance and jsdom has none. Guarded rather
+    // than stubbed in every test that merely mounts this component: a backstop
+    // that cannot run in a unit test is still a backstop in the app, and making
+    // twenty tests declare a global to get past it would be the tail wagging.
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      const want = scrollMemo.current.rendered;
+      if (want > 0 && el.scrollTop === 0 && el.scrollHeight > el.clientHeight) {
+        el.scrollTop = want;
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [showRendered]);
 
   // The `#fragment` a relative link carried, applied once the body exists.
   React.useEffect(() => {

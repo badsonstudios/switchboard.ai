@@ -57,6 +57,20 @@ on the floor, and say so in your PR.
 
 ## 0.8.0 — unreleased
 
+### Fixed
+
+- **The Changes tab comes back to the file you were reading.** Switching a
+  session to another tab and back used to return the Changes tab with nothing
+  selected at all — you picked your file again and found your place again, every
+  time. It now reopens on the same file, at the same line. If that file has
+  stopped being a change in the meantime — you committed it, or discarded it —
+  the tab opens clean rather than showing you a blank comparison. It remembers
+  until you quit, not across a restart.
+- **A document keeps your place when you glance at another one.** With two
+  documents open side by side as tabs, reading halfway down one and clicking the
+  other took you back to the top of the first when you came back. Both now stay
+  where you left them.
+
 ## 0.7.0 — 2026-08-17
 
 ### Added
