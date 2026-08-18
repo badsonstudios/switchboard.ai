@@ -161,6 +161,20 @@ const api = {
     from: { x: number; y: number },
     to: { left: number; top: number; width: number; height: number }
   ): Promise<boolean> => ipcRenderer.invoke('app:movePopout', from, to),
+  /**
+   * Bring a popped-out window to the front (#571).
+   *
+   * ONLY MAIN CAN DO THIS. The renderer holds a `Window` for its popout and
+   * `window.focus()` on it does not raise an OS window on Windows — which is
+   * why clicking a popped-out session in the rail appeared to do nothing even
+   * though the code had asked for exactly that since E9-01.
+   *
+   * `groupId` selects among windows MAIN ITSELF made: its registry is keyed by
+   * the dockview group in the frame name, so a renderer-supplied id can only
+   * ever name a window we already opened, or nothing (#531's rule, reused).
+   */
+  raisePopout: (groupId: string): Promise<boolean> =>
+    ipcRenderer.invoke('app:raisePopout', groupId),
   /** a display was (re)connected — new work areas (E8-06 reconnect offer) */
   onDisplaysChanged: (
     cb: (areas: Array<{ x: number; y: number; width: number; height: number }>) => void
