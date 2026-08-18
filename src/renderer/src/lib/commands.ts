@@ -198,8 +198,13 @@ function runCommand<Ctx extends CommandContext>(
  * same enabled-check and the same fail-open guard as `dispatch`. What it does
  * differently is the one thing the mechanism exists for — a TERMINAL target
  * does not veto it. That is not a hole in the hard rule: the key was taken
- * before the terminal ever had a claim on it, and only the two chords on the
- * allowlist can arrive here at all.
+ * before the terminal ever had a claim on it.
+ *
+ * TWO SOURCES REACH HERE, not one (#569). The allowlisted chords, as above —
+ * and the File menu's `Open File…` CLICK, which is not a keystroke at all and
+ * never took a key from anybody. A menu click carries no terminal target and no
+ * typing target worth honouring, which is why `view.openFile` is `typing-ok`:
+ * gated on focus, the menu item did nothing at all with the composer focused.
  *
  * Everything else still applies. `target` is the element that had focus when
  * the chord was pressed, and outside a terminal the ordinary scope rule holds —

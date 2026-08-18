@@ -1976,7 +1976,61 @@ function documentHomeGroup(api: DockviewApi): DockviewGroupPanel {
       // never turns that group into the permanent document area.
       !g.panels.some((p) => /^(session|diff)-/.test(p.id))
   );
-  return eligible.find(isDocumentArea) ?? eligible[0] ?? api.addGroup();
+  const existing = eligible.find(isDocumentArea) ?? eligible[0];
+  if (existing) return existing;
+  // NOTHING TO OPEN INTO, so one is made — and WHERE is the whole of #569.
+  //
+  // `api.addGroup()` with no argument puts the new group wherever dockview
+  // pleases, which is how a file opened from a session on the left could arrive
+  // somewhere the user was not looking. The owner's ask: "it opens into the same
+  // doc area as the active session, just the doc section it's in… like you would
+  // if you opened another new session in that dock section."
+  //
+  // So: BESIDE the active session's group, splitting that region — not inside
+  // it. §5.30's rule survives intact and is the reason for the `direction`
+  // rather than a `referenceGroup` tab: "a viewer never displaces a session. It
+  // opens into the document area or its own window — never as a tab inside a
+  // session's group." Next to it on screen, and never in its tab strip.
+  const beside = activeSessionGroup(api);
+  return beside ? api.addGroup({ referenceGroup: beside, direction: 'right' }) : api.addGroup();
+}
+
+/**
+ * The grid group holding the session the user is actually looking at (#569).
+ *
+ * `api.activeGroup` is the authority on focus, but it answers for popouts too —
+ * and a group in another OS window is not a place to split a document into, so
+ * the grid check stays. A group with no session panels is not a session either;
+ * the caller has already preferred those, so reaching here with one means the
+ * user's focus is somewhere that tells us nothing about where a document
+ * belongs, and `null` lets dockview choose as it always did.
+ */
+function activeSessionGroup(api: DockviewApi): DockviewGroupPanel | null {
+  const active = api.activeGroup;
+  if (
+    active &&
+    active.api.location.type === 'grid' &&
+    active.api.isVisible &&
+    active.panels.some((p) => /^session-/.test(p.id))
+  ) {
+    return active;
+  }
+  // No active session — the owner's words were "its own little dock section…
+  // or just the first dock section, it doesn't matter to me". The first VISIBLE
+  // session's group is the nearest thing to "where the work is", and falling
+  // through to null (dockview's own choice) is the honest answer when there is
+  // no session at all. NOTE "first" is dockview's INSERTION order, not
+  // left-to-right: after a drag it can be the rightmost group on screen. Fine
+  // for a fallback nobody asked to be precise about — but it is not a spatial
+  // claim, and reading it as one would be wrong.
+  return (
+    api.groups.find(
+      (g) =>
+        g.api.location.type === 'grid' &&
+        g.api.isVisible &&
+        g.panels.some((p) => /^session-/.test(p.id))
+    ) ?? null
+  );
 }
 
 /**
@@ -3289,6 +3343,18 @@ export interface GridController {
   /** card id of the active session panel, or null (E9-01 command context) */
   activeCardId: () => string | null;
   /**
+   * The project folder of the session the user is looking at, or null (#569).
+   *
+   * Read off the PANEL, not the rail store: the store's session list is filled
+   * by a poll, so it is empty for the first seconds of a window's life — which
+   * is exactly when someone opens the app and reaches for File > Open File. The
+   * panel's own params are populated the moment it mounts and cannot lag.
+   *
+   * Falls back to the first visible session panel, matching the placement rule
+   * (`activeSessionGroup`): with nothing focused, "where the work is".
+   */
+  activeSessionFolder: () => string | null;
+  /**
    * Panel id of the active DOCUMENT viewer, or null (#533 command context).
    *
    * The §5.8 question `find-providers.ts` used to record as a blocker: what is
@@ -3572,6 +3638,32 @@ export function SessionGrid(props: {
         if (!panel || panel.group.api.location.type !== 'grid') return null;
         const m = /^session-(.+)$/.exec(panel.id);
         return m ? m[1] : null;
+      },
+      activeSessionFolder: () => {
+        const api = apiRef.current;
+        if (!api) return null;
+        const folderOf = (p: { id: string; params?: Record<string, unknown> } | undefined): string | null => {
+          if (!p || !/^session-/.test(p.id)) return null;
+          const f = p.params?.folder;
+          return typeof f === 'string' && f ? f : null;
+        };
+        const active = api.activePanel;
+        // A POPPED-OUT session answers nothing here and falls through to the
+        // first grid session below — deliberately, and unlike `activeCardId`
+        // just above, which returns null in the same situation. That one names
+        // the card a COMMAND will act on, where being wrong destroys something;
+        // this is a hint about where a file browser should open, where being
+        // vague is free and "nowhere" is worse than "the folder of the work in
+        // the main window".
+        const fromActive =
+          active && active.group.api.location.type === 'grid' ? folderOf(active) : null;
+        if (fromActive) return fromActive;
+        for (const p of api.panels) {
+          if (p.group.api.location.type !== 'grid' || !p.group.api.isVisible) continue;
+          const f = folderOf(p);
+          if (f) return f;
+        }
+        return null;
       },
       // A DOCUMENT, unlike a card, is reachable in EITHER window (#533).
       //

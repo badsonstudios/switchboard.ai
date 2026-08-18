@@ -57,6 +57,24 @@ on the floor, and say so in your PR.
 
 ## 0.8.0 — unreleased
 
+### Added
+
+- **A File menu, with Open File and Exit.** Opening a file used to be possible
+  only from the command palette, which meant knowing it was there at all. There
+  is now a **File** menu at the top left, where every desktop app has put one:
+  **Open File…** browses for any file and shows it in a document tab, and
+  **Exit** quits. The browser starts in the folder of the session you are
+  looking at, and after that wherever you last browsed to — so opening a second
+  file from the same place is one click, not a journey. **Ctrl+O** does the same
+  thing from anywhere in the app, including while you are typing a prompt. Inside
+  a session's **Terminal** the key still belongs to Claude Code, which uses it
+  for its own transcript view.
+- **A file opens next to the session you are in.** Documents used to appear
+  wherever the workspace happened to have room. The first one now opens beside
+  the session you were looking at, splitting that part of the workspace, and the
+  ones after it join it as tabs. It is still never a tab inside the session
+  itself — your session tabs stay sessions.
+
 ### Fixed
 
 - **The Changes tab comes back to the file you were reading.** Switching a

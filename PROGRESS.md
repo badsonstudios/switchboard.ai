@@ -3,7 +3,40 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — ✅ MAIN IS CLEAN · NEXT IS #556, 2026-08-17
+> # ▶▶ START HERE — 🔨 #569 DONE, AWAITING GATE 2, 2026-08-18
+>
+> **#569 — a File menu (Open File / Exit), and documents that land beside the
+> session you are in.** Owner request, moved up. Built and reviewed; not yet
+> committed.
+>
+> **§5.30 SURVIVED, and that was the owner’s call.** The ticket first read as
+> "open it as a tab in the session’s group", which §5.30 forbids ("a viewer
+> never displaces a session"). He clarified: the same DOCK SECTION as the
+> active session, in its OWN group beside it. So the design rule is intact,
+> `document-peek.spec.ts` was not touched, and the real defect turned out to be
+> narrower — a document group that had to be CREATED was placed arbitrarily
+> rather than next to the session in view.
+>
+> **THE REVIEW CAUGHT A P7 VIOLATION I SHIPPED INTO THE PLAN.** I gave the menu
+> item `Ctrl+O` on the grounds that the key was free. **It is not: the hosted
+> CLI binds `ctrl+o` itself** (`app:toggleTranscript` — read off the shipped
+> binary; Claude Code prints "ctrl+o to see" in its own notices). An
+> application-menu accelerator is claimed by the browser process ahead of the
+> page, so switchboard would have answered the CLI’s own instruction with a
+> file dialog. Now: the menu SHOWS the chord and registers nothing
+> (`registerAccelerator: false`), the renderer’s registry owns `Mod+O`, and
+> `dispatch` refuses terminal targets — so the CLI keeps its key.
+>
+> Second blocker, also from review and PROVEN: the menu click rides the
+> accelerator channel, which is typing-gated for chords — so File > Open File
+> did NOTHING with the composer focused. `view.openFile` is now `typing-ok`
+> (the roster test in `command-set.test.ts` records why).
+>
+> Gates: typecheck · lint · unit **5224/5224** · e2e 5/5 new + 36/36 neighbours
+> · **both fixes falsified**. Review: 2 blockers + 6 should-fix + 8 nits, all
+> addressed.
+>
+> # ✅ #562 DONE (PR #568) · NEXT AFTER #569 IS #556, 2026-08-17
 >
 > **#562 merged (PR #568, CI 4/4). Nothing is in flight.**
 >

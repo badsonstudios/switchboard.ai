@@ -516,7 +516,16 @@ const api = {
      * null if the user cancelled. Choosing a file also GRANTS it: main adds it
      * to the read scope before answering, so the `read` that follows succeeds.
      */
-    pickFile: (): Promise<string | null> => ipcRenderer.invoke('fs:pickFile'),
+    /**
+     * Browse for a file to open (§5.30, #569).
+     *
+     * `startIn` is a HINT ONLY — where the dialog opens. Picking the file is
+     * what grants read access to it, exactly as before; a hint grants nothing,
+     * is not checked against the read scope, and is dropped by main unless it is
+     * an absolute, non-UNC path.
+     */
+    pickFile: (startIn?: string): Promise<string | null> =>
+      ipcRenderer.invoke('fs:pickFile', startIn),
     /**
      * A link out of a rendered document, into the user's browser. Resolves
      * FALSE for any scheme but `http`, `https` and `mailto` — a `javascript:`

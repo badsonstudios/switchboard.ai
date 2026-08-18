@@ -74,6 +74,7 @@ import { toggleDiffLayout } from './lib/diff-layout';
 import { openPopoutWindows, subscribePopoutWindows } from './lib/popout-windows';
 import { openFindBar } from './lib/find-bar-state';
 import { setDocumentOpener } from './lib/document-open';
+import { openFileStartFolder, rememberOpenedFile } from './lib/open-file-start';
 import { isDocumentPanelId } from './lib/document-panels';
 
 // One stable subscribe identity for every useSyncExternalStore call below.
@@ -1133,9 +1134,27 @@ export function App(): React.JSX.Element {
           // path before answering, which is the one sanctioned way that scope
           // grows (P2-E16-02).
           openFile: () => {
-            void bridge.files?.pickFile?.().then((file) => {
-              if (file) grid.current?.openDocument(file);
-            });
+            // WHERE THE DIALOG OPENS (#569): the folder last browsed to, else
+            // the focused session's own folder — its "working folder", which is
+            // what the owner asked for. A hint only; picking the file is still
+            // what grants read access to it.
+            // The folder of the session being looked at — asked of the GRID and
+            // not of the rail store, because the store's list arrives on a poll
+            // and is empty for the first seconds of a window's life, which is
+            // exactly when someone opens the app and reaches for File > Open
+            // File. See `activeSessionFolder`.
+            const folder = grid.current?.activeSessionFolder() ?? null;
+            void bridge.files
+              ?.pickFile?.(openFileStartFolder(folder))
+              .then((file) => {
+                if (!file) return;
+                rememberOpenedFile(file);
+                grid.current?.openDocument(file);
+              })
+              // the one call in the app that ends in a native modal: an IPC
+              // refusal resolves rather than rejects, so this is defensive — but
+              // an unhandled rejection behind a dialog is a bad place to learn
+              .catch(() => {});
           },
       }),
     [

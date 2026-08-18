@@ -16,7 +16,7 @@
 // macOS needs a real menu for basic editing keys (Cmd+C/V/Z come FROM the menu
 // there, unlike Windows/Linux where Chromium handles them natively), so the
 // darwin template keeps the standard app + edit roles.
-import type { MenuItemConstructorOptions } from 'electron';
+import type { BaseWindow, MenuItemConstructorOptions } from 'electron';
 
 /** accelerators the renderer's command registry owns — never claim these */
 export const RESERVED_ACCELERATORS = ['CommandOrControl+W', 'CommandOrControl+R'];
@@ -31,6 +31,23 @@ export const RESERVED_ACCELERATORS = ['CommandOrControl+W', 'CommandOrControl+R'
 export interface MenuActions {
   /** manual "Check for updates…" (P2-E19-03) */
   checkForUpdates?: () => void;
+  /**
+   * File > Open File… (#569).
+   *
+   * Deliberately NOT "show a dialog here". The renderer already owns this
+   * action end to end — `view.openFile` in the command registry picks a file
+   * (which is also what GRANTS read scope for it) and opens the viewer where
+   * the placement rule says. A menu item that re-implemented that sequence in
+   * the browser process would be a second path to one action, and two paths to
+   * one action is how they drift. So this fires the command the palette fires.
+   *
+   * `from` is the window the click came from — Electron hands it to every menu
+   * click, and the app menu is SHARED with popped-out session windows, so a
+   * click there must run in that window rather than in a main window nobody was
+   * looking at (#569 review). Typed `BaseWindow` because that is what Electron
+   * passes; the caller narrows.
+   */
+  openFile?: (from?: BaseWindow) => void;
 }
 
 export function buildMenuTemplate(
@@ -43,8 +60,48 @@ export function buildMenuTemplate(
   if (isMac) {
     // Cmd+Q / Hide / Services live here; without it macOS shows no app menu
     template.push({ role: 'appMenu' });
-    // Cmd+C / Cmd+V / Cmd+Z come from this menu on macOS — dropping it would
-    // break copy-paste in the composer
+  }
+
+  // FILE IS FIRST, to the left of View — where the owner asked for it and
+  // where thirty years of desktop apps have put it (#569). §5.8 promises
+  // capability is never out of reach: `Open file…` was in the palette all
+  // along and nobody could find it, which is half of what #521 reports.
+  if (actions.openFile) {
+    template.push({
+      label: 'File',
+      submenu: [
+        {
+          label: 'Open File…',
+          // SHOWN, NOT CLAIMED. `registerAccelerator: false` draws "Ctrl+O"
+          // beside the item without the browser process taking the chord — the
+          // renderer's command registry owns it instead (`view.openFile`).
+          //
+          // This is not a style choice. An application-menu accelerator is
+          // consumed ahead of the page, and the hosted CLI binds `ctrl+o`
+          // itself (`app:toggleTranscript`; it prints "ctrl+o to see" in its own
+          // notices). Claiming it here would have switchboard answer the CLI's
+          // own instruction with a file dialog — P7 broken in one keystroke, on
+          // the one platform where it reaches the PTY.
+          accelerator: 'CommandOrControl+O',
+          registerAccelerator: false,
+          click: (_item, from) => actions.openFile?.(from ?? undefined),
+        },
+        // NO Exit on macOS: Quit lives in the app menu there, on Cmd+Q, and a
+        // second one in File is a duplicate the platform does not have.
+        ...(isMac
+          ? []
+          : ([
+              { type: 'separator' },
+              { role: 'quit', label: 'Exit' },
+            ] as MenuItemConstructorOptions[])),
+      ],
+    });
+  }
+
+  if (isMac) {
+    // Cmd+C / Cmd+V / Cmd+Z come FROM this menu on macOS — dropping it would
+    // break copy-paste in the composer. After File, which is where macOS puts
+    // it: App · File · Edit · View · Window · Help.
     template.push({ role: 'editMenu' });
   }
 
