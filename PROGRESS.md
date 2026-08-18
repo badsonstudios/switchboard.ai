@@ -3,7 +3,19 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — ✅ #562 DONE, AWAITING PR, 2026-08-17
+> # ▶▶ START HERE — ✅ MAIN IS CLEAN · NEXT IS #556, 2026-08-17
+>
+> **#562 merged (PR #568, CI 4/4). Nothing is in flight.**
+>
+> **NEXT: #556** (Events drawer has no visible close affordance), then **#559**
+> (drag to reorder the rail). Also open from the question panel’s own first
+> use: **#566** (tabs for a multi-question call) and **#567** (partial answers —
+> PROBE FIRST). **#558 stays diagnosed but NOT fixed.**
+>
+> **NOT IN A RELEASE YET.** v0.7.0 was cut before #562; its two fixes and the
+> `0.8.0 — unreleased` changelog entries are on main only.
+>
+> # ✅ #562 DONE (PR #568), 2026-08-17
 >
 > **#562 — the OTHER scroll-holding panels. THE ISSUE’S PREMISE WAS WRONG, and
 > measuring is what caught it.** There are TWO mechanisms, no panel is exposed
