@@ -3,7 +3,41 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — 🚢 v0.7.0 RELEASED, 2026-08-17
+> # ▶▶ START HERE — ✅ #562 DONE, AWAITING PR, 2026-08-17
+>
+> **#562 — the OTHER scroll-holding panels. THE ISSUE’S PREMISE WAS WRONG, and
+> measuring is what caught it.** There are TWO mechanisms, no panel is exposed
+> to both, and the fix for one cannot help the other:
+>
+> | Panel | A: dockview move (#555’s) | B: real unmount |
+> |---|---|---|
+> | **Changes tab** | **IMMUNE** — line 66 → 66 | **LOST** — no file selected at all |
+> | **Document viewer** | **LOST** — 722 → 0 | n/a, it never unmounts |
+> | **Terminal** | **UNRESOLVED** (see below) | keepMounted, n/a |
+>
+> Wiring `dockEpoch` into `DiffPane` — what the issue proposed — would have been
+> a mechanism that could never fire: Monaco scrolls a VIRTUAL viewport, so a
+> detach costs it nothing. What bites the Changes tab is an ordinary React
+> unmount (`panels.tsx` renders only the active panel), which no signal can
+> reach. So: doc viewer got `dockEpoch`; Changes tab got `lib/diff-places.ts`,
+> memory that outlives the component, anchored on a LINE not a pixel offset.
+>
+> **TWO THINGS THAT MISLEAD, and cost real time — read before touching this:**
+> only one `doc-scroll` element is findable at a time, which reads as “the
+> inactive viewer was unmounted” (it is DETACHED, refs intact — an earlier
+> version of this change was built on that wrong inference); and Monaco reports
+> `scrollTop` 0 at every scroll position, so a test reading one reports
+> “nothing moved” whether or not anything did.
+>
+> **TERMINAL IS UNRESOLVED, deliberately.** The xterm viewport IS a native
+> scroller and the move DOES detach it (measured) — but the fake CLI never fills
+> one screen, so there was no position to lose. In the dogfood tracker as a hand
+> check rather than claimed either way.
+>
+> Gates: typecheck · lint · unit **5196/5196** · e2e 3/3 new + 31/31 neighbours ·
+> **both fixes falsified**. Review: 9 findings, all addressed.
+>
+> # 🚢 v0.7.0 RELEASED, 2026-08-17
 >
 > **#563 merged (PR #565, CI 4/4) and v0.7.0 is cut and tagged** so Dan can
 > hand-test the question panel in a real installed build. v0.7.0 carries

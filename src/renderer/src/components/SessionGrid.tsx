@@ -2315,6 +2315,26 @@ function DocumentViewerPanel(
     return () => d.dispose();
   }, [api]);
 
+  // "dockview just moved your DOM" (#562) — the document panel's own copy of
+  // the signal `SessionCardPanel` raises for a card's panels (#555).
+  //
+  // A DOCUMENT PANEL IS NOT A CARD PANEL, and that is the whole reason this is
+  // here rather than threaded through a prop: `PanelContext.dockEpoch` is built
+  // by `SessionCardPanel` and handed to the panel CONTRIBUTIONS. A viewer is a
+  // top-level dockview panel with no card and no context, so it had no route to
+  // this fact at all — measured, two documents in one group: read halfway down
+  // one, glance at the other, come back, 722 -> 0.
+  //
+  // All three events, like the card's, rather than the one that happens to fire
+  // today: they are rare, the handler is a counter, and re-applying a scroll
+  // position the pane is already at is a no-op.
+  const [dockEpoch, setDockEpoch] = React.useState(0);
+  React.useEffect(() => {
+    const bump = (): void => setDockEpoch((n) => n + 1);
+    const ds = [api.onDidActiveChange(bump), api.onDidGroupChange(bump), api.onDidLocationChange(bump)];
+    return () => ds.forEach((d) => d.dispose());
+  }, [api]);
+
   // §5.24 attribution, resolved from the STORE and not from params — the same
   // argument `IdentityTab` records: a rename or a re-assigned accent has to
   // reach a viewer that has been on screen for an hour, and a copy frozen into
@@ -2382,6 +2402,8 @@ function DocumentViewerPanel(
           poppedOut={poppedOut}
           onPopoutToggle={onPopoutToggle}
           session={session}
+          // the reader's place, across a dockview move (#562)
+          dockEpoch={dockEpoch}
         />
       </ContributionBoundary>
       {/* Document find (#533, §5.31). NO `sessionId`: a viewer is

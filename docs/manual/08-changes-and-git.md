@@ -24,6 +24,13 @@ to your files: a list of changed files with a badge for each —
 
 Click a file to see it before and after.
 
+**It remembers where you were.** Leave the Changes tab for the conversation or
+the terminal and come back, and it reopens on the same file, at the same line —
+you do not have to find your place again. If that file has stopped being a
+change while you were away, because you committed or discarded it, the tab
+opens clean instead of showing you a blank comparison. This lasts for as long
+as the app is running; a restart starts fresh.
+
 When there's nothing to show you'll see **Working tree clean**, or **Not a git
 repository** if that's the situation.
 

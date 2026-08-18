@@ -46,7 +46,9 @@ have six tabs, all still there.
   exception: if you have followed a *link* inside a document, that panel is
   still filed under the file you originally opened, so asking for the linked
   file by name opens it in a tab of its own.)
-- **Nothing is remembered.** A viewer is a way of looking at a file, not a thing
+- **Each tab keeps your place.** Read halfway down one document, click another
+  tab, come back — you are still halfway down, not back at the title.
+- **Nothing is remembered between runs.** A viewer is a way of looking at a file, not a thing
   you own — close it and there is nothing left behind.
 
 Earlier versions worked the other way round: there was one "replaceable" viewer
