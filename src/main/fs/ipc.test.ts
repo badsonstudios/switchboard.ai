@@ -164,9 +164,12 @@ describe('fs:read', () => {
 /** A fake `FsShell` that records every call instead of touching the OS. */
 function fakeShell() {
   const calls: Array<{ what: string; arg: string }> = [];
+  /** every `defaultPath` the dialog was asked to open at (#569) */
+  const hints: Array<string | undefined> = [];
   let picked: string | null = null;
   return {
     calls,
+    hints,
     setPick: (p: string | null) => {
       picked = p;
     },
@@ -181,7 +184,10 @@ function fakeShell() {
       showItemInFolder: (p: string) => {
         calls.push({ what: 'reveal', arg: p });
       },
-      pickFile: async () => picked,
+      pickFile: async (_win: unknown, defaultPath?: string) => {
+        hints.push(defaultPath);
+        return picked;
+      },
     },
   };
 }
@@ -292,6 +298,40 @@ describe('the document viewer’s shell channels (P2-E16-02)', () => {
       sh.setPick(null);
       expect(await bus.call('fs:pickFile')).toBe(null);
       expect(scope.pickedPaths()).toEqual([]);
+    });
+
+    // #569 — where the dialog OPENS. A hint grants nothing (the assertions
+    // above own that); what these pin is that a renderer string reaching an OS
+    // dialog is vetted before it gets there.
+    const BACKSLASH = String.fromCharCode(92);
+
+    describe('the starting-folder hint', () => {
+      it('passes an absolute folder through', async () => {
+        sh.setPick(path.join(OUTSIDE, 'a.txt'));
+        await bus.call('fs:pickFile', OUTSIDE);
+        expect(sh.hints.at(-1)).toBe(OUTSIDE);
+      });
+
+      it('grants nothing by itself — only the PICK does', async () => {
+        const target = path.join(OUTSIDE, 'secret.txt');
+        sh.setPick(null);
+        await bus.call('fs:pickFile', OUTSIDE);
+        expect(scope.pickedPaths()).toEqual([]);
+        expect(await bus.call('fs:read', target)).toEqual({ ok: false, reason: 'out-of-scope' });
+      });
+
+      it.each([
+        ['a relative path', 'somewhere/else'],
+        ['an empty string', ''],
+        ['a number', 42],
+        ['an object', { defaultPath: '/tmp' }],
+        ['a UNC share', BACKSLASH + BACKSLASH + 'host' + BACKSLASH + 'share'],
+        ['a posix double-slash share', '//host/share'],
+      ])('drops %s and lets the OS choose', async (_why, hint) => {
+        sh.setPick(path.join(OUTSIDE, 'a.txt'));
+        await bus.call('fs:pickFile', hint);
+        expect(sh.hints.at(-1)).toBeUndefined();
+      });
     });
   });
 });

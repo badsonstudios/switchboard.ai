@@ -98,3 +98,80 @@ describe('Help ▸ Check for Updates… (P2-E19-03)', () => {
     }
   });
 });
+
+// ── #569 — the File menu ────────────────────────────────────────────────────
+describe('the File menu (#569)', () => {
+  const withFile = (platform: NodeJS.Platform) =>
+    buildMenuTemplate(platform, { openFile: () => {}, checkForUpdates: () => {} });
+  const labels = (t: MenuItemConstructorOptions[]) => t.map((i) => i.label ?? String(i.role ?? ''));
+  const fileMenu = (t: MenuItemConstructorOptions[]) =>
+    (t.find((i) => i.label === 'File')?.submenu ?? []) as MenuItemConstructorOptions[];
+
+  it('is FIRST on Windows — left of View, where the owner asked for it', () => {
+    expect(labels(withFile('win32'))[0]).toBe('File');
+    expect(labels(withFile('win32'))).toEqual(['File', 'View', 'Window', 'Help']);
+  });
+
+  it('carries Open File… and Exit, in that order', () => {
+    const items = fileMenu(withFile('win32'));
+    expect(items[0].label).toBe('Open File…');
+    expect(items[items.length - 1]).toMatchObject({ role: 'quit', label: 'Exit' });
+  });
+
+  it('Open File… fires the action rather than doing the work itself', () => {
+    const calls: string[] = [];
+    const t = buildMenuTemplate('win32', { openFile: () => calls.push('open') });
+    const item = fileMenu(t)[0] as { click: () => void };
+    item.click();
+    // one path: the renderer's own `view.openFile` command, which is also what
+    // grants read scope for the file — not a second dialog in the browser process
+    expect(calls).toEqual(['open']);
+  });
+
+  it('has NO Exit on macOS, where Quit belongs to the app menu', () => {
+    const items = fileMenu(withFile('darwin'));
+    expect(items.map((i) => i.role)).not.toContain('quit');
+    expect(items.map((i) => i.label)).toEqual(['Open File…']);
+  });
+
+  it('follows the macOS order: App, File, Edit, View…', () => {
+    // the platform convention, and File comes BEFORE Edit there
+    expect(labels(withFile('darwin')).slice(0, 4)).toEqual([
+      'appMenu',
+      'File',
+      'editMenu',
+      'View',
+    ]);
+  });
+
+  it('is absent entirely when nothing wired it — no dead entry', () => {
+    expect(labels(buildMenuTemplate('win32', {}))).not.toContain('File');
+  });
+
+  // THE ONE THAT MATTERS. An application-menu accelerator is consumed by the
+  // browser process ahead of the page, and the hosted CLI binds `ctrl+o` itself
+  // (`app:toggleTranscript` — it prints "ctrl+o to see" in its own notices). So
+  // the item SHOWS the chord and registers nothing; the renderer's registry owns
+  // it, where `dispatch` refuses terminal targets and the CLI keeps its key.
+  it('SHOWS Ctrl+O without claiming it — the CLI binds that key', () => {
+    const item = fileMenu(withFile('win32'))[0];
+    expect(item.accelerator).toBe('CommandOrControl+O');
+    expect(item.registerAccelerator).toBe(false);
+  });
+
+  it('still claims none of the accelerators the renderer owns', () => {
+    const accels = acceleratorsIn(withFile('win32'));
+    for (const reserved of RESERVED_ACCELERATORS) expect(accels).not.toContain(reserved);
+  });
+
+  it('hands the click the window it came from, for the shared popout menu', () => {
+    const seen: unknown[] = [];
+    const t = buildMenuTemplate('win32', { openFile: (from) => seen.push(from) });
+    const item = fileMenu(t)[0] as unknown as {
+      click: (i: unknown, w: unknown, e: unknown) => void;
+    };
+    const win = { id: 7 };
+    item.click({}, win, {});
+    expect(seen).toEqual([win]);
+  });
+});

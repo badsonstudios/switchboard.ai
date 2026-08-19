@@ -1,42 +1,64 @@
-> # ▶▶ START HERE — 🔨 #570 DONE, AWAITING GATE 2, 2026-08-18
+# PROGRESS — switchboard.ai
+
+> Live state. Updated the moment an item starts, finishes, or hits a blocker.
+> A fresh session reads this file and knows exactly where things stand.
+
+> # ▶▶ START HERE — ✅ MAIN IS CLEAN, 2026-08-18
 >
-> **#570 — the answered question that came back "denied".** Owner report, and
-> the log settled it: the question was raised 12:46:41, NEVER decided, and
-> failed open at 13:16:41 — exactly the 30-minute deadline #563 gave it. He
-> stepped away, came back, answered; the answer went nowhere because the CLI
-> had already been told nobody replied.
+> **Nothing is in flight. Four items merged today and NONE of them are in a
+> release** — v0.7.0 predates all four, so the only way to hand-test any of it
+> is to cut **0.8.0**. `CHANGELOG.md` already holds its `— unreleased` section,
+> written as the work landed.
 >
-> **THE DEADLINE IS GONE for questions.** Not lengthened — removed. Every way a
-> parked question could wedge a session is already answered by something that
-> fires on an EVENT rather than a clock: no window at offer time (`offer`
-> denies), the renderer dies or the window closes (`releaseHeld` from
-> `onRendererLost`), the card closes or the session exits (`forgetSession`).
-> Subtract those and the timer governed only "how long may a person take" —
-> and the CLI itself waits for ever. Permissions keep their 300s.
+> | Merged today | |
+> |---|---|
+> | **#562** (PR #568) | panels keep their place: Changes tab and the document viewer |
+> | **#571** (PR #573) | a popped-out window comes to the front when you click its row |
+> | **#569** (PR #572) | a File menu — Open File / Exit — and files that open beside the session you are in |
+> | **#570** (PR #574) | a question waits for a person; a lost decision is no longer silent |
 >
-> **AND THE DIAGNOSTIC THAT MADE THIS UNRESOLVABLE IS FIXED:** both routers
-> answered `false` for a request they were not holding and said NOTHING, so an
-> answer the user watched themselves give could vanish without a trace.
-> `decidePermission` now warns, with the request id.
+> ## What to do next, in the order I would take it
 >
-> No e2e: questions no longer time out, so the "panel must clear on timeout"
-> test the ticket asked for has nothing to test, and the remaining behaviour is
-> a timer — fake timers at unit level are the right altitude. 5201/5201.
+> 1. **Cut 0.8.0.** Four user-facing fixes plus the whole v0.7.0 backlog are
+>    untestable by hand until there is an installer. `CHANGELOG.md` explains the
+>    cut procedure at the top; `/next-item` Step 8 now carries the changelog
+>    rule that was being missed.
+> 2. **#556** Events drawer close affordance · **#559** rail drag-reorder —
+>    small, self-contained, both owner-visible.
+> 3. **#566** question-panel tabs · **#567** partial answers — **#567 PROBES
+>    FIRST**: what the CLI does with a partial `answers` map is the one thing
+>    #563 deliberately left unmeasured, and the probe already takes a mode arg.
+> 4. Older: #543, #544, #546, #539.
 >
-> **⚠️ CI FLAKE WORTH KNOWING:** `e2e ubuntu-latest` on PR #572 HUNG for 6h0m53s
-> and hit the job ceiling. A re-run passed in 9m38s. Infrastructure, not the
-> spec — but if it recurs it is a merge blocker and wants its own ticket.
+> ## Landmines — read before touching these
 >
+> * **#558 is DIAGNOSED, NOT FIXED.** Three fix attempts all failed the same
+>   way; the block further down says why and what a fourth attempt must start
+>   by instrumenting. Do not try a fourth placement variant.
+> * **Dockview DETACHES a panel, it does not unmount it** (#562). Only one
+>   `doc-scroll` is findable at a time, which reads as "unmounted" and is not —
+>   an entire fix was built on that wrong inference and thrown away.
+> * **Monaco reports `scrollTop` 0 at every scroll position** (#562). A test
+>   reading one says "nothing moved" whether or not anything did. Read the first
+>   visible line number instead.
+> * **`Ctrl+O` belongs to the CLI** (#569). It is `app:toggleTranscript`. The
+>   File menu SHOWS the chord and registers nothing; the renderer registry owns
+>   it and `dispatch` refuses terminal targets. Do not "fix" this by claiming
+>   the accelerator.
 >
-> **#562 merged (PR #568, CI 4/4). Nothing is in flight.**
+> ## Two things only a human can check
 >
-> **NEXT: #556** (Events drawer has no visible close affordance), then **#559**
-> (drag to reorder the rail). Also open from the question panel’s own first
-> use: **#566** (tabs for a multi-question call) and **#567** (partial answers —
-> PROBE FIRST). **#558 stays diagnosed but NOT fixed.**
+> * In a session **Terminal**, `Ctrl+O` must reach Claude Code, not our file
+>   dialog. No automated test in this repo can make that check.
+> * **Terminal scrollback across a dockview move** (#562) is UNRESOLVED: the
+>   move provably detaches the xterm viewport, but the fake never fills a screen
+>   so there was no position to lose. Needs a real session.
 >
-> **NOT IN A RELEASE YET.** v0.7.0 was cut before #562; its two fixes and the
-> `0.8.0 — unreleased` changelog entries are on main only.
+> ## CI
+>
+> `e2e ubuntu-latest` **hung for 6h0m53s once** on PR #572 and hit the job
+> ceiling; a re-run passed in 9m38s. Infrastructure, not the spec — but it is a
+> merge blocker when it happens, and wants its own ticket if it recurs.
 >
 > # ✅ #562 DONE (PR #568), 2026-08-17
 >

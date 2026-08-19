@@ -1309,6 +1309,36 @@ app
           // — and swallows its own failure: `push` reaches `webContents.send`,
           // which throws if the window died between the click and the answer,
           // and an unhandled rejection in main is an error modal.
+          // File > Open File… (#569) rides the ACCELERATOR CHANNEL, which
+          // already exists to do exactly this: carry a command id from the
+          // browser process to the renderer, which runs it from the registry
+          // (#90). So the menu item and the palette entry are the same command
+          // — one dialog, one read-scope grant, one placement rule — rather
+          // than a second copy of the sequence living up here.
+          //
+          // `fromPopout: false`: the click came from the application menu,
+          // which belongs to the main window, so running it must not raise a
+          // popout the user was not looking at.
+          openFile: (from) => {
+            // THROUGH THE SAME GATE THE CHORDS USE, not around it (#569 review).
+            // `deliver` refuses until the renderer has actually subscribed
+            // (`acceleratorReadyFor`), which is a real window: one exists before
+            // its renderer mounts, and `did-start-loading` resets the flag on
+            // every reload. Pushing directly skipped that check, so a click
+            // during startup landed nowhere and said nothing.
+            //
+            // `fromPopout` is computed from the window Electron reports, not
+            // assumed: the application menu is SHARED with popped-out session
+            // windows, so File > Open File… exists in them too, and a click
+            // there must not open a viewer in a main window nobody is looking
+            // at.
+            const fromPopout = !!from && from !== currentWindow;
+            if (!acceleratorDeps(fromPopout).deliver('view.openFile')) {
+              // Not a crash and not silence: a menu item that did nothing is
+              // exactly what someone greps for afterwards.
+              log.app.warn('menu open-file could not reach the renderer', { fromPopout });
+            }
+          },
           checkForUpdates: () =>
             void updates
               .check(true, { push: true })

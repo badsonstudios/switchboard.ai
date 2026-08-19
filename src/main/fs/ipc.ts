@@ -12,6 +12,7 @@
 // in the app. That matters more here than for a mutation: a refused read is
 // either a link pointing somewhere it should not, or a scope that is wrong —
 // and both are things you only find out about if they are written down.
+import path from 'path';
 import { BrowserWindow, dialog, shell, IpcMainInvokeEvent } from 'electron';
 import { IpcBroker } from '../ipc/broker';
 import type { Logger } from '../log/logger';
@@ -45,7 +46,7 @@ export interface FsShell {
   openExternal(url: string): Promise<void>;
   openPath(p: string): Promise<string>;
   showItemInFolder(p: string): void;
-  pickFile(win: BrowserWindow | null): Promise<string | null>;
+  pickFile(win: BrowserWindow | null, defaultPath?: string): Promise<string | null>;
 }
 
 /** The real one. */
@@ -53,12 +54,33 @@ export const electronFsShell: FsShell = {
   openExternal: (url) => shell.openExternal(url),
   openPath: (p) => shell.openPath(p),
   showItemInFolder: (p) => shell.showItemInFolder(p),
-  pickFile: async (win) => {
-    const opts = { properties: ['openFile' as const] };
+  pickFile: async (win, defaultPath) => {
+    // `defaultPath` is WHERE THE DIALOG OPENS and nothing else (#569): it grants
+    // no access, it is not validated against the read scope, and the scope is
+    // still widened only by what the user actually picks (`addPicked`, below).
+    // An unreadable or deleted hint costs nothing — every OS falls back to its
+    // own last-used folder rather than failing the dialog.
+    const opts = {
+      properties: ['openFile' as const],
+      ...(defaultPath ? { defaultPath } : {}),
+    };
     const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
     return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0];
   },
 };
+
+/**
+ * Does this path start with two separators — `\hostshare` or `//host/share`?
+ *
+ * Written with character codes rather than a regex or an escaped literal: the
+ * pattern is two characters long and every escaped form of it is harder to read
+ * than the thing it matches.
+ */
+function isUncPath(candidate: string): boolean {
+  const BACKSLASH = String.fromCharCode(92);
+  const isSep = (c: string): boolean => c === '/' || c === BACKSLASH;
+  return candidate.length > 1 && isSep(candidate[0]) && isSep(candidate[1]);
+}
 
 export interface FsIpcDeps {
   broker: IpcBroker;
@@ -131,8 +153,22 @@ export function registerFsIpc(deps: FsIpcDeps): FsIpcHandle {
    * granted, and the read that follows answers `out-of-scope` — which is the
    * honest answer, because by then it is.
    */
-  deps.broker.handle('fs:pickFile', async (): Promise<string | null> => {
-    const picked = await sh.pickFile(deps.getWindow?.() ?? null);
+  deps.broker.handle('fs:pickFile', async (_e, defaultPath?: unknown): Promise<string | null> => {
+    // ABSOLUTE, AND NOT A UNC SHARE (#569 review). The hint grants nothing —
+    // scope still only grows through `addPicked` below — but it is a renderer
+    // string the OS dialog ACTS on when it opens, and a UNC hint makes Windows
+    // reach out to SMB before the user has chosen anything. A relative hint is
+    // meaningless here for the same reason (main's cwd is not the user's).
+    // Falling through to undefined costs nothing: every OS then picks its own
+    // last-used folder, which is what happened before this parameter existed.
+    const hint =
+      typeof defaultPath === 'string' &&
+      defaultPath &&
+      path.isAbsolute(defaultPath) &&
+      !isUncPath(defaultPath)
+        ? defaultPath
+        : undefined;
+    const picked = await sh.pickFile(deps.getWindow?.() ?? null, hint);
     if (!picked) return null;
     deps.scope.addPicked(picked);
     return picked;
