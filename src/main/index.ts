@@ -25,6 +25,7 @@ import { StreamFeed } from './feed/stream-feed';
 import { SessionManager } from './sessions/session-manager';
 import { HookListener } from './hooks/hook-listener';
 import { TranscriptWatcher } from './transcripts/watcher';
+import { HistoryRepairLog } from './sessions/history-repair-log';
 import { registerSessionIpc, SessionIpcHandle } from './sessions/ipc';
 import { registerGroupIpc } from './workspace/group-ipc';
 import { registerFsIpc } from './fs/ipc';
@@ -801,6 +802,27 @@ app
       (state) => pushToRenderer?.(currentWindow, 'workspace:saveStateChanged', state)
     );
     workspace.load();
+    // WHAT WE REPAIRED ABOUT A CARD'S HISTORY, ON SCREEN (#539). Created after
+    // the load so the untangle's verdicts can be poured straight in, and given
+    // the push so an adoption that happens minutes later reaches the same slot.
+    // `currentWindow` is read at call time, so a repair with no window yet
+    // simply waits in the list for `sessions:historyRepairs`.
+    const historyRepairs = new HistoryRepairLog(workspace, (notice) =>
+      pushToRenderer?.(currentWindow, 'sessions:historyRepair', notice)
+    );
+    for (const c of workspace.listUntangled()) {
+      historyRepairs.add({
+        kind: 'ceded',
+        cardId: c.cardId,
+        cardTitle: c.cardTitle,
+        nativeSessionId: c.nativeSessionId,
+        keptByTitle: c.keptByTitle,
+      });
+    }
+    broker.handle('sessions:historyRepairs', () => historyRepairs.list());
+    broker.on('sessions:dismissHistoryRepair', (_e, id: unknown) => {
+      if (typeof id === 'string' && id) historyRepairs.dismiss(id);
+    });
     // renderer <-> workspace layout persistence (E3-01)
     broker.handle('workspace:getLayout', () => workspace.getLayout());
     broker.on('workspace:setLayout', (_e, layout: unknown) => {
@@ -1768,6 +1790,8 @@ app
       // the reason a typo has to warn, live in `transport/preferred-transport.ts`.
       preferredTransport: () =>
         parsePreferredTransport(process.env[TRANSPORT_ENV_VAR], log.app.warn),
+      // the sweep reattached a card to a conversation nobody asked it to (#539)
+      onHistoryRepair: (repair) => historyRepairs.add(repair),
     });
     // the live -> card join the rules engine scopes by (P2-E14-03)
     cardIdForLive = sessionIpc.cardIdFor;

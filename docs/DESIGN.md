@@ -258,6 +258,32 @@ contract differs in three ways, each deliberate:
   `canResume` is a boolean and cannot distinguish "not on disk" from "could not
   look" — so the contract puts the re-verification of `ownIds` on the adapter,
   which is the only party that can tell those apart.
+- **One conversation has exactly one card, and the host — not the adapter —
+  decides which** *(#539, 2026-08-19)*. `findOrphaned`'s `claimed` set stops the
+  repair CREATING a two-cards-one-conversation state; it cannot undo the pairs
+  that already exist, because neither card is orphaned and the capability is
+  never asked about them. So the workspace LOAD unties them, in the host, from
+  persisted data alone. "The same conversation" means the same id **in the same
+  folder**, because a transcript is `<root>/<slug of the folder>/<id>.jsonl` and
+  every lookup on this path is already folder-scoped — one id under two folders
+  is two files and no conflict. Given a real collision: a card holding the id as
+  its head beats one holding it as an ancestor, and failing that the elder card
+  (workspace order is creation order) keeps it. The loser does not lose the pointer — it moves to
+  `cededNativeIds`, which is deliberately NOT a resume candidate.
+  **And deliberately not a ticket to a repair either.** Widening the sweep's
+  precondition to "has this card ever held a conversation" is the tempting move
+  and it is wrong: the adoption rests on *my conversation is missing from disk*,
+  a ceded card's is present and demonstrably someone else's, and its `ownIds`
+  would be empty — so the adapter's own "are they really absent?" re-verification
+  goes vacuous at the same moment. It would take the newest unrelated transcript
+  in a busy folder. A fully-ceded card therefore starts fresh; the notice and a
+  documented hand-edit are the way back. A ceded id is also `claimed` by the card
+  that gave it up as well as by the keeper, so no third card can adopt it either.
+  Both repairs — adopted and ceded — reach a **dismissible notice persisted in
+  the workspace file** rather than only the log: a repair the user cannot see is
+  indistinguishable from the bug it repairs, and both are one-time by
+  construction, so a notice held only in memory behind a collapsed drawer is lost
+  the first time the user quits without opening it.
 - **`transcripts` LOCATES transcripts; it does not abstract reading them.** The
   sketch names a `TranscriptReader`. Our tolerant parser, tailer and block builder
   stay host-side and are shared by every provider writing that shape; the adapter

@@ -57,6 +57,22 @@ on the floor, and say so in your PR.
 
 ## 0.9.0 — unreleased
 
+### Fixed
+
+- **switchboard now tells you when it has moved a card's conversation, and two
+  cards can no longer share one.** A card whose conversation had gone missing was
+  already being reconnected to the right one automatically, but it said so only
+  in the log — so a session that came back somewhere unexpected looked exactly
+  like a bug. It now says so in the Events drawer, in a notice you can dismiss.
+  A separate old fault could leave two cards pointing at the **same**
+  conversation, with both resuming into one transcript; that pair is now
+  untangled on the next launch — the card actually in the conversation keeps it
+  (or, if both are, the older card does), and the other one starts a new
+  conversation. Nothing is deleted doing it: the given-up conversation is still
+  recorded on the card that gave it up, no other card can take it, and the manual
+  explains how to swap the two back by hand. Both notices stay put until you
+  dismiss them, so quitting without opening the drawer can't lose them.
+
 ## 0.8.0 — 2026-08-19
 
 ### Added

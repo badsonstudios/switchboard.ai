@@ -61,6 +61,19 @@ export const MAX_LINEAGE = 10;
 export interface NativeLineage {
   nativeSessionId?: string;
   nativeSessionLineage?: string[];
+  /**
+   * Conversations this card GAVE UP because another card holds them (#539).
+   *
+   * Deliberately not part of the chain: `resumeCandidates` never offers these,
+   * because the whole point of ceding one is that two cards must not resume
+   * into one transcript. And deliberately NOT a licence to go looking for a
+   * substitute either — `start-plan.ts` says at length why a ceded card starts
+   * fresh instead. Kept rather than deleted so the conversation stays findable
+   * by hand (the manual documents the edit) and so the card that is owed it
+   * still has it written down. Written by `sessions/untangle.ts`, which is
+   * where the policy lives.
+   */
+  cededNativeIds?: string[];
 }
 
 /**
@@ -105,8 +118,17 @@ export function recordNativeId(
   const ancestors = resumeCandidates(card)
     .filter((id) => id !== next)
     .slice(0, MAX_LINEAGE);
+  // A card can only be handed back an id it ceded when the card that kept it is
+  // gone (#539) — rare, but then the id is live again, and leaving it on the
+  // ceded list would make one conversation two contradictory facts about this
+  // card.
+  const ceded = (card?.cededNativeIds ?? []).filter((id) => id !== next);
   return {
     nativeSessionId: next,
+    // Written even when EMPTY, like the lineage below: callers spread this over
+    // the record they already hold, so an omitted field would leave the card's
+    // stale ceded list in place — the id would be both the head and given away.
+    cededNativeIds: ceded.length > 0 ? ceded : undefined,
     // `undefined` and not `[]` for a card with no ancestors, so that what is
     // held in memory and what comes back off disk are the same shape — the
     // store's load maps an empty array to absence, and a card whose first

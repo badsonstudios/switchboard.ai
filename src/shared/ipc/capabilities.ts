@@ -205,6 +205,13 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:interrupt': 'sessions.write',
   'sessions:dropLive': 'sessions.spawn',
   'sessions:isDirectory': 'fs.probe',
+  // What the app repaired about a card's conversation history this run (#539) —
+  // adopted or ceded. `sessions.read`: it says which card is in which
+  // conversation, which `sessions:cards` already tells this caller.
+  'sessions:historyRepairs': 'sessions.read',
+  // "I have read that" — the only way a history notice leaves. `sessions.write`
+  // and not `.read`: it edits persisted workspace state.
+  'sessions:dismissHistoryRepair': 'sessions.write',
   'sessions:knownCards': 'sessions.read',
   'sessions:list': 'sessions.read',
   'sessions:pendingPermissions': 'sessions.read',
@@ -276,6 +283,9 @@ export const CHANNEL_CAPABILITIES = {
   // a card gained or lost its live session — re-read `sessions:cards` (#170)
   'sessions:cardsChanged': 'sessions.read',
   'sessions:exited': 'sessions.read',
+  // the same fact as `sessions:historyRepairs`, for the ones that happen after a
+  // window has already asked
+  'sessions:historyRepair': 'sessions.read',
   'sessions:feedBlock': 'transcripts.read',
   'sessions:feedReset': 'transcripts.read',
   'sessions:permissionRequest': 'sessions.read',

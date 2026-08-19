@@ -59,6 +59,7 @@ import type { TranscriptQuery, TranscriptSearchRequest } from '../../shared/tran
 import { LogFields, Logger } from '../log/logger';
 import { assignAccent, detectProjectType } from './identity';
 import { EventFeed } from '../events/feed';
+import { HistoryRepair } from './history-repair-log';
 import { planSessionStart } from './start-plan';
 import { recordNativeId, resumeCandidates } from './lineage';
 import { nextAutoLabel, typedLabel, visibleTaskLabel } from './auto-label';
@@ -128,6 +129,19 @@ export interface SessionIpcDeps {
    *  which is how the e2e suite starts a session on the Terminal now that
    *  Direct is the default (#381). */
   preferredTransport?: () => 'pty' | 'stream' | undefined;
+  /**
+   * A repair the user should SEE, not just find in the log (#539).
+   *
+   * Today's one producer here is an adopted resume — the repair sweep found this
+   * card's stored conversation missing and reattached it to another one in the
+   * folder. `start-plan.ts` calls that "the one resume outcome the user might
+   * disagree with"; until this existed, disagreeing meant reading
+   * `session start degraded` in a log file.
+   *
+   * Optional, and every failure is the caller's to swallow: a notice that cannot
+   * be delivered must never cost a session its start (P6).
+   */
+  onHistoryRepair?: (repair: HistoryRepair) => void;
 }
 
 /**
@@ -982,6 +996,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
             // the ancestors this card forked from, so a resume that never got a
             // turn can fall back to the conversation that is really there (#484)
             nativeSessionLineage: prior?.nativeSessionLineage,
+            // NOT `cededNativeIds` (#539), and its absence here is the decision
+            // rather than an oversight: a conversation this card gave up to a
+            // duplicate is neither a resume candidate nor a licence to go
+            // looking for a replacement. The long version is at the adoption
+            // branch in `start-plan.ts`.
           },
           // Only read when the chain came up empty and the provider offers to
           // look — every id every card points at, heads and ancestors alike, so
@@ -991,7 +1010,16 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           // Safe to read as one synchronous snapshot: nothing yields between the
           // plan and the `persist.upsert` below, so two orphaned cards in the
           // same folder cannot both be told about the same conversation.
-          claimedNativeIds: () => deps.persist.list().flatMap((s) => resumeCandidates(s)),
+          //
+          // CEDED IDS COUNT AS CLAIMED (#539). A card that gave a conversation
+          // up still holds the pointer, and the id is normally in the KEEPER's
+          // chain too — but close the keeper and it would become unclaimed to
+          // everyone, so an unrelated orphan in the same folder could adopt the
+          // conversation the ceding card is waiting to be given back.
+          claimedNativeIds: () =>
+            deps.persist
+              .list()
+              .flatMap((s) => [...resumeCandidates(s), ...(s.cededNativeIds ?? [])]),
           // a degraded capability is never silent — the card still starts. A
           // callback rather than reading plan.warnings: two of the decisions
           // are lazy and fire long after this line.
@@ -1221,6 +1249,27 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         // in the right conversation" and "came back in a plausible one" (#484)
         resumedVia: plan.resumedVia,
       });
+      // ADOPTION IS SAID ON SCREEN, not only here (#539). It is the one resume
+      // outcome the code itself expects the user to want to check, and a card
+      // that silently came back in a different conversation is indistinguishable
+      // from the bug the sweep repairs. Fail-open like everything else on this
+      // path: the session has already started, and a notice must not be able to
+      // take it back down.
+      if (plan.resumedVia === 'adopted' && plan.resumeSessionId) {
+        try {
+          deps.onHistoryRepair?.({
+            kind: 'adopted',
+            cardId: opts.cardId,
+            cardTitle: identity.title,
+            nativeSessionId: plan.resumeSessionId,
+          });
+        } catch (err) {
+          log.warn('could not announce an adopted conversation', {
+            cardId: opts.cardId,
+            error: String(err),
+          });
+        }
+      }
       // seed the card's display from the persisted record so nothing reads
       // empty while resuming
       return {

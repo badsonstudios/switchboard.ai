@@ -19,6 +19,7 @@ import { initI18nForTests } from '../i18n/test-i18n';
 import { EventsDrawer } from './EventsDrawer';
 import type { EventDto } from '../model/types';
 import type { RailSession } from './SessionsRail';
+import type { HistoryRepairNotice } from '../../../shared/history-repair';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -44,6 +45,7 @@ interface Options {
   reconnectOffer?: boolean;
   updateNotice?: { kind: 'installed' | 'available'; version: string } | null;
   incidents?: readonly { id: string; name: string; status: string }[];
+  historyRepairs?: readonly HistoryRepairNotice[];
 }
 
 const onOpen = vi.fn();
@@ -72,6 +74,8 @@ async function render(o: Options = {}): Promise<void> {
         onUpdateNow={() => {}}
         onDismissUpdateNotice={() => {}}
         incidents={o.incidents}
+        historyRepairs={o.historyRepairs}
+        onDismissHistoryRepair={() => {}}
       />
     );
   });
@@ -151,13 +155,27 @@ describe('the tab carries the three signals', () => {
     expect(tab().getAttribute('data-hottest')).toBeNull();
   });
 
-  // The #425 coordination note, at the one moment it matters: all three notice
-  // tenants moved into a surface that is shut by default, so all three have to
-  // be able to say so from behind it.
+  // The #425 coordination note, at the one moment it matters: every notice
+  // tenant lives in a surface that is shut by default, so each has to be able to
+  // say so from behind it.
   for (const [what, opts] of [
     ['the update notice', { updateNotice: { kind: 'available' as const, version: '0.6.0' } }],
     ['the reconnect offer', { reconnectOffer: true }],
     ['an open incident', { incidents: [{ id: 'i', name: 'API', status: 'degraded' }] }],
+    [
+      'a history repair',
+      {
+        historyRepairs: [
+          {
+            id: 'r1',
+            kind: 'adopted' as const,
+            cardId: 'c',
+            cardTitle: 'Switchboard.ai',
+            nativeSessionId: 'conv',
+          },
+        ],
+      },
+    ],
   ] as const) {
     it(`raises the secondary marker for ${what}`, async () => {
       await render(opts);
@@ -237,20 +255,30 @@ describe('opening and closing', () => {
     expect(host.querySelectorAll('[data-event-kind]')).toHaveLength(1);
   });
 
-  it('all three notices render in the open drawer, together', async () => {
+  it('all four notices render in the open drawer, together', async () => {
     await render({
       open: true,
       updateNotice: { kind: 'available', version: '0.6.0' },
       reconnectOffer: true,
       incidents: [{ id: 'i', name: 'API', status: 'degraded' }],
+      historyRepairs: [
+        {
+          id: 'r1',
+          kind: 'adopted',
+          cardId: 'c',
+          cardTitle: 'Switchboard.ai',
+          nativeSessionId: 'conv',
+        },
+      ],
     });
     expect(host.querySelector('[data-events-notice="incident"]')).not.toBeNull();
     expect(host.querySelector('[data-events-notice="available"]')).not.toBeNull();
+    expect(host.querySelector('[data-events-notice="history-repair"]')).not.toBeNull();
     // the reconnect offer has no data attribute of its own; its live region is
     // the witness, and there are three of them only when all three are up.
-    // Scoped to the BODY: the drawer keeps a fourth live region of its own,
-    // always mounted, which is what announces a notice while it is shut.
-    expect(body()!.querySelectorAll('[role="status"]').length).toBe(3);
+    // Scoped to the BODY: the drawer keeps one live region of its own, always
+    // mounted, which is what announces a notice while it is shut.
+    expect(body()!.querySelectorAll('[role="status"]').length).toBe(4);
   });
 
   it('points aria-controls at the body only while there is one', async () => {
