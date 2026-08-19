@@ -544,7 +544,9 @@ describe('main', () => {
     expect(ok.status).toBe(0);
     expect(ok.stdout).toContain('removed 1 orphaned dir(s)');
     expect(names()).toEqual([]);
-  });
+    // 30 s rather than vitest's 5 s default — the only case in this file that
+    // spawns, and #512 is what two node starts can cost on a loaded runner.
+  }, 30_000);
 });
 
 describe('the automatic sweep both globalSetups call', () => {

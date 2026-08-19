@@ -418,4 +418,7 @@ describe('the CLI release.yml calls', () => {
     expect(r.status, r.err).toBe(0);
     expect(r.err).toMatch(/::warning::CHANGELOG\.md still marks 0\.3\.0 as unreleased/);
   });
-});
+  // 30 s rather than vitest's 5 s default: every case here spawns a real
+  // process, and #512 is what that costs on a loaded Windows runner —
+  // a test that runs in well under a second locally took 7123 ms there.
+}, 30_000);
