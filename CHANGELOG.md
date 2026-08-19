@@ -57,6 +57,21 @@ on the floor, and say so in your PR.
 
 ## 0.9.0 — unreleased
 
+### Fixed
+
+- **The `ask` autonomy mode asks again.** `ask` never told Claude Code which
+  permission mode to use — it let the CLI pick its own, and for years the CLI
+  picked "stop and ask a person". Recent versions changed that pick: on a Pro,
+  Max or Team plan the CLI now starts sessions in **auto** mode, where a second
+  model reviews each action instead of you. So a session you had set to `ask`
+  was quietly being reviewed by a classifier. switchboard's own approval bar
+  hid most of it — that still held every shell command and every edit — but
+  anything it does not cover went through without you. `ask` now names the mode
+  outright, and a session started at `ask` is back to stopping for you. You may
+  see a few more prompts than you did last week; that is the mode doing what its
+  name says. Auto mode is still one **Shift+Tab** away inside a session's
+  terminal if you want it. (#587)
+
 ### Internal
 
 - Gave every test that starts a real child process — `git`, or node running one
