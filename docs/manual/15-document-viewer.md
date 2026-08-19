@@ -211,13 +211,15 @@ into your own tools is always one click away.
   labels for its links, tables and Copy buttons. The same applies to replies in
   the session view.
 - **A document can't hide text from you, or take over your Tab key.** Raw HTML
-  has a way to mark something as hidden while leaving it in the file, and the
-  viewer removes that too. It mattered most for code blocks: every code block
-  gets a **Copy** button, so a hidden one would have shown you an ordinary code
-  header with a Copy button and no code — and copied something you never saw.
+  has several ways to mark something as hidden — or as present but unreadable to
+  a screen reader — while leaving it in the file, and the viewer removes all of
+  them. It mattered most for code blocks: every code block gets a **Copy**
+  button, so a hidden one would have shown you an ordinary code header with a
+  Copy button and no code — and copied something you never saw.
   The same removal covers markup that inserts itself into the keyboard Tab
-  order, so pressing Tab moves through switchboard.ai's own controls and nothing
-  a document invented. This applies to replies in the session view as well.
+  order: every stop your Tab key lands on is one switchboard.ai put there —
+  including a document's own links and the scroll box around a wide table, which
+  the viewer makes reachable on purpose. This applies to replies in the session view as well.
 - **Very large files are cut short.** Above about 2 MB you get the beginning of
   the file and a note saying how much is missing. Open it externally to read the
   rest.
