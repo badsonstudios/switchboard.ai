@@ -136,8 +136,17 @@ describe('the build job gates before it builds', () => {
       expect(wf).toContain(line);
       expect(ci).toContain(line);
     }
-    expect(wf).toContain('actions/checkout@v4');
-    expect(wf).toContain('actions/setup-node@v4');
+    // The action majors are read OUT of ci.yml rather than written down here.
+    // Pinned literals (`@v4`) made this test the thing that goes red when the
+    // majors are bumped — a third file to remember, which is how the workflows
+    // sat on Node-20 actions until the runner started warning about it (#575).
+    // The invariant that matters is parity: whatever CI checks out and sets up
+    // Node with, the release build does too.
+    for (const action of ['actions/checkout', 'actions/setup-node']) {
+      const major = ci.match(new RegExp(`${action}@(v\\d+)`))?.[1];
+      expect(major, `${action} is not used by ci.yml`).toBeDefined();
+      expect(wf).toContain(`${action}@${major}`);
+    }
   });
 
   it('checks the tag and the changelog BEFORE spending two minutes packaging', () => {
