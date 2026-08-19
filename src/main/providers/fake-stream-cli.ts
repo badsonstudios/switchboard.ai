@@ -14,7 +14,8 @@
 import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
-import { FakeStreamProtocol, FAKE_SESSION_ID } from './fake-stream-protocol';
+import { FakeStreamProtocol } from './fake-stream-protocol';
+import { claimFakeSessionId } from './fake-stream-ids';
 import { slugForCwd } from '../transcripts/paths';
 import { claudeProjectsRoot } from './claude';
 
@@ -70,6 +71,30 @@ function fireHook(payload: Record<string, unknown>): void {
 // `--resume <id>` arrives exactly as the real adapter sends it (#404); the
 // protocol turns it into the observable RESUMED-FROM marker
 const resumeIdx = process.argv.indexOf('--resume');
+const resumedFrom = resumeIdx >= 0 ? process.argv[resumeIdx + 1] : undefined;
+
+/**
+ * THIS spawn's conversation id (#603) — needed HERE for the transcript's name.
+ *
+ * The protocol is HANDED this value rather than deriving one of its own, so
+ * there is exactly one answer and the transcript's name cannot disagree with
+ * the `session_id` on the wire. A resumed session keeps the id it was resumed
+ * with (`FakeStreamProtocol.sessionId` states that rule and this line obeys it);
+ * a fresh session claims the next counter, so two cards in one run — or in one
+ * folder — are two conversations, the way the real CLI would have it. Before
+ * #603 there was one constant for all of them.
+ *
+ * `||` rather than `??` so an EMPTY `--resume` argument falls through to the
+ * counter instead of naming the transcript `.jsonl`. `fake-stream.ts` will not
+ * emit one, which is exactly why it is cheap to not depend on that.
+ *
+ * The counter lives beside the transcripts it names, in the same `.claude`
+ * directory under the same (isolated, in e2e) home, so it is scoped and
+ * discarded exactly as they are. Not inside `projects/`: that directory is
+ * enumerated as a set of folder slugs and a counter file has no business there.
+ */
+const idsDir = path.join(path.dirname(claudeProjectsRoot()), '.fake-stream-ids');
+const sessionId = resumedFrom || claimFakeSessionId(idsDir);
 
 const proto = new FakeStreamProtocol(
   {
@@ -89,7 +114,7 @@ const proto = new FakeStreamProtocol(
       try {
         const dir = path.join(claudeProjectsRoot(), slugForCwd(process.cwd()));
         fs.mkdirSync(dir, { recursive: true });
-        fs.appendFileSync(path.join(dir, `${FAKE_SESSION_ID}.jsonl`), JSON.stringify(line) + '\n');
+        fs.appendFileSync(path.join(dir, `${sessionId}.jsonl`), JSON.stringify(line) + '\n');
       } catch {
         // fail open: a fake that cannot write its transcript is still a usable
         // fake for everything else
@@ -98,7 +123,7 @@ const proto = new FakeStreamProtocol(
     fireHook,
   },
   (m) => process.stdout.write(JSON.stringify(m) + '\n'),
-  { resumedFrom: resumeIdx >= 0 ? process.argv[resumeIdx + 1] : undefined }
+  { resumedFrom, sessionId }
 );
 
 // Same framing as the real CLI, and the same reason for a decoder rather than a

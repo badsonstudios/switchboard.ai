@@ -21,6 +21,13 @@ import {
   registerTempDir,
   sweepTempDirs,
 } from './fixtures/app';
+// The FIRST fake conversation's id. Since #603 the fake mints one per SPAWN —
+// it was a single constant every fake session announced, which made every
+// Direct card in a run claim one native conversation and fed the main process's
+// id-keyed logic (#484's sweep, #539's untangle) a state the real CLI cannot
+// produce. Every assertion below is on a single-card test, so the first id is
+// the card's id and these read exactly as they did.
+import { FAKE_SESSION_ID } from '../src/main/providers/fake-stream-ids';
 
 function tempProjectFolder(): string {
   // Registered with the fixture's registry (#213) rather than a list of this
@@ -845,7 +852,7 @@ test.describe('a Direct conversation survives an app relaunch (#404)', () => {
     // save is debounced, so poll rather than race it.
     await expect(() => {
       const card = readWorkspaceFile(first.home).sessions?.[0];
-      expect(card?.nativeSessionId).toBe('00000000-fake-4000-8000-000000000000');
+      expect(card?.nativeSessionId).toBe(FAKE_SESSION_ID);
     }).toPass({ timeout: 15_000 });
     await first.close();
 
@@ -863,7 +870,7 @@ test.describe('a Direct conversation survives an app relaunch (#404)', () => {
     await box2.fill('same conversation?');
     await box2.press('Enter');
 
-    await expect(w2.getByText(/RESUMED-FROM:00000000-fake-4000-8000-000000000000/)).toBeVisible({
+    await expect(w2.getByText(`RESUMED-FROM:${FAKE_SESSION_ID}`)).toBeVisible({
       timeout: 30_000,
     });
   });
@@ -1342,7 +1349,7 @@ test.describe('a resumed Direct session replays its history (#395)', () => {
     // the id has to be durable before the relaunch can resume on it (#404)
     await expect(() => {
       const card = readWorkspaceFile(first.home).sessions?.[0];
-      expect(card?.nativeSessionId).toBe('00000000-fake-4000-8000-000000000000');
+      expect(card?.nativeSessionId).toBe(FAKE_SESSION_ID);
     }).toPass({ timeout: 15_000 });
     await first.close();
 
@@ -1366,7 +1373,7 @@ test.describe('a resumed Direct session replays its history (#395)', () => {
     await box2.fill('and one more turn');
     await box2.press('Enter');
     await expect(w2.getByText('FAKE-REPLY: and one more turn')).toBeVisible({ timeout: 30_000 });
-    await expect(w2.getByText(/RESUMED-FROM:00000000-fake-4000-8000-000000000000/)).toHaveCount(1);
+    await expect(w2.getByText(`RESUMED-FROM:${FAKE_SESSION_ID}`)).toHaveCount(1);
 
     // one copy of each prompt, in the order they were asked
     expect(
@@ -1391,7 +1398,7 @@ test.describe('a resumed Direct session replays its history (#395)', () => {
     });
     await expect(() => {
       const card = readWorkspaceFile(first.home).sessions?.[0];
-      expect(card?.nativeSessionId).toBe('00000000-fake-4000-8000-000000000000');
+      expect(card?.nativeSessionId).toBe(FAKE_SESSION_ID);
     }).toPass({ timeout: 15_000 });
     await first.close();
 

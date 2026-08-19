@@ -29,6 +29,7 @@ import {
   streamPrompter,
   tempProjectFolder,
 } from './fixtures/app';
+import { FAKE_SESSION_ID } from '../src/main/providers/fake-stream-ids';
 
 /** the dual-capable fake, asked for nothing — i.e. the app's own default */
 const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
@@ -51,11 +52,17 @@ function heldIds(w: Page): Promise<string[]> {
  * because real Windows paths disagree about the drive letter's case
  * (`transcripts/paths.ts`). A fourth hand-copy of the slug rule here would
  * turn any such disagreement into a 30-second poll that fails with a message
- * blaming `StreamPermissions` for a fixture bug. The file name is unique
- * (`FAKE_SESSION_ID`), so searching the isolated home is exact and cannot
- * drift.
+ * blaming `StreamPermissions` for a fixture bug. The file name is unique within
+ * the isolated home, so searching it is exact and cannot drift.
+ *
+ * `FAKE_SESSION_ID` is the FIRST fake conversation started under that home, not
+ * a constant every fake session shares — since #603 the fake mints one id per
+ * spawn. Its one consumer below is a single-card test, so the first id names
+ * that card's transcript. The TWO-session test above must not reach for this:
+ * its second card is the second id, and there is no constant for "whichever of
+ * the two you meant".
  */
-const FAKE_TRANSCRIPT = '00000000-fake-4000-8000-000000000000.jsonl';
+const FAKE_TRANSCRIPT = `${FAKE_SESSION_ID}.jsonl`;
 
 test.describe('Direct-mode permissions (P2-E18-14)', () => {
   let a: LaunchedApp;

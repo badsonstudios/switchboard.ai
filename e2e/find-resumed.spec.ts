@@ -30,6 +30,7 @@
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
 import { launchApp, LaunchedApp, tempProjectFolder, readWorkspaceFile } from './fixtures/app';
+import { FAKE_SESSION_ID } from '../src/main/providers/fake-stream-ids';
 
 const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -115,9 +116,12 @@ test.describe('Ctrl+F is the bar (#557), and it survives a resume (#495/#496)', 
     });
     await sized(first);
     await toolTurn(first.window, 0);
+    // The FIRST fake conversation under this home is this card's — since #603
+    // the fake mints one id per spawn rather than handing every session the
+    // same constant, and this test has exactly one card.
     await expect(() => {
       const card = readWorkspaceFile(first.home).sessions?.[0];
-      expect(card?.nativeSessionId).toBe('00000000-fake-4000-8000-000000000000');
+      expect(card?.nativeSessionId).toBe(FAKE_SESSION_ID);
     }).toPass({ timeout: 20_000 });
     await first.close();
 
