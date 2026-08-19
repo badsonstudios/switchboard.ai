@@ -34,6 +34,7 @@ import type { BindingDiagnostics, BindingState } from '../../../shared/transcrip
 import { Box, boxOnAnyDisplay, RescuedPopout, sanitizePopoutLayout, WorkArea } from '../lib/layout';
 import { captureSlot, openerRelative, placeAt } from '../lib/dock-slot';
 import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
+import { autonomyTooltip, DEFAULT_AUTONOMY, isAutonomy, nextAutonomy } from '../lib/autonomy';
 import { submitTarget } from '../lib/presentation-policy';
 import { bulkClose } from '../lib/pinning';
 import { newSessionHostGroup } from '../lib/new-session-target';
@@ -328,8 +329,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const [cardAutonomy, setCardAutonomy] = React.useState<string | undefined>(undefined);
   const cycleCardAutonomy = (): void => {
     if (!cardId) return;
-    const order = ['ask', 'plan', 'auto-edit', 'full-auto'];
-    const next = order[(order.indexOf(cardAutonomy ?? 'ask') + 1) % order.length];
+    const next = nextAutonomy(cardAutonomy);
     setCardAutonomy(next);
     void window.switchboard.sessions.setAutonomy(cardId, next);
   };
@@ -620,9 +620,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     spawning.current = true;
     // titlebar autonomy chip applies to NEW cards; main keeps a card's own
     // autonomy across resumes
-    const stored = uiGet<string>('autonomy', 'ask');
-    const autonomy =
-      stored === 'plan' || stored === 'auto-edit' || stored === 'full-auto' ? stored : 'ask';
+    const stored = uiGet<string>('autonomy', DEFAULT_AUTONOMY);
+    const autonomy = isAutonomy(stored) ? stored : DEFAULT_AUTONOMY;
     // A start that did not happen, from either of the two ways to learn that
     // (#347). `sessions:create` used to REJECT for everything — bad input, a
     // folder that is gone, a spawn that failed — and this effect's `.catch` was
@@ -1317,7 +1316,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             <span style={{ flex: 1, minInlineSize: 8 }} />
             {live.autonomy && live.autonomy !== 'ask' && (
               <span
-                title={t('autonomy.title')}
+                title={autonomyTooltip(t, live.autonomy, 'badge')}
                 style={{
                   fontSize: 9.5,
                   fontFamily: 'var(--font-mono)',

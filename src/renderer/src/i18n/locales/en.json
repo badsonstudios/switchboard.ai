@@ -291,7 +291,17 @@
     "ask": "🛡 ask",
     "auto-edit": "🛡 auto-edit",
     "full-auto": "🛡 full-auto",
-    "title": "Autonomy mode this session runs at"
+    "desc": {
+      "ask": "ask — every file change, shell command and web fetch comes to you first, and so does reading anything outside the session's folder. Full gatekeeping, and the safe default.",
+      "plan": "plan — Claude reads, explores and writes you a plan, but changes nothing until you approve it. The block is Claude Code's own; switchboard adds nothing to it and asks you nothing.",
+      "auto-edit": "auto-edit — Claude edits files inside the session's folder without asking you. Shell commands, web fetches, and reading anything outside the folder still come to you. Let it write code, and keep gatekeeping what it runs.",
+      "full-auto": "full-auto — nothing comes to you. Every tool call runs the moment Claude asks for it, including writes outside the session's folder. This is Claude Code's bypassPermissions, the mode --dangerously-skip-permissions turns on: deny rules in your settings still block, a few things always need a person (a question for you, rm on a critical path), and nothing else stops anything. It is not a sandbox."
+    },
+    "scope": {
+      "workspace": "Click to cycle. This sets the mode NEW sessions start at — each session keeps its own from then on.",
+      "session": "Click to cycle. The change applies the next time this session starts or resumes; Claude Code cannot switch mode mid-flight.",
+      "badge": "The mode this session is running at. Change it with the shield button under the prompt box."
+    }
   },
   "workspace": {
     "readOnlyTitle": "Nothing in this workspace will be saved.",
@@ -547,7 +557,6 @@
       "terminalMode": "Files can only be sent by a session in Direct mode. This one runs in Terminal mode — use the Terminal tab instead.",
       "notSent": "That prompt wasn't sent, so nothing has been cleared. The session may have stopped, or it may not be in Direct mode."
     },
-    "autonomyHint": "Autonomy for this session (applies on next resume)",
     "modelHint": "Model last seen in this session's transcript",
     "send": "Send to the session",
     "sendIcon": "↑",

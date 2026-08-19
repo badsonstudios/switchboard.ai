@@ -277,7 +277,9 @@ test.describe('[pty] Feed view (E12-06)', () => {
     const w = first.window;
     await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
 
-    const chip = w.getByTitle('Autonomy for this session (applies on next resume)');
+    // by test id, not by title: the hover copy is the product of #534 and is
+    // meant to be edited freely, which a locator pinned to it would punish
+    const chip = w.getByTestId('composer-autonomy');
     await expect(chip).toContainText('ask');
     await chip.click(); // -> plan
     await expect(chip).toContainText('plan');
@@ -286,9 +288,9 @@ test.describe('[pty] Feed view (E12-06)', () => {
     await first.close();
     a = await launchApp({ home: first.home });
     await expect(a.window.getByText(title).first()).toBeVisible({ timeout: 25_000 });
-    await expect(
-      a.window.getByTitle('Autonomy for this session (applies on next resume)')
-    ).toContainText('plan', { timeout: 20_000 });
+    await expect(a.window.getByTestId('composer-autonomy')).toContainText('plan', {
+      timeout: 20_000,
+    });
   });
 
   // #156, and the case that shipped with a UNIT test and no e2e — which is
@@ -840,7 +842,7 @@ test.describe('[pty] Feed view (E12-06)', () => {
     const MIN_FEED = 60;
 
     const box = w.getByPlaceholder(/Prompt this session/);
-    const chip = w.getByTitle('Autonomy for this session (applies on next resume)');
+    const chip = w.getByTestId('composer-autonomy');
     const feed = w.locator('[data-feed-region]').first();
     /** height, inner overflow and one rendered line — as the engine has them */
     const measure = (): Promise<{ height: number; scrollHeight: number; line: number; width: number }> =>

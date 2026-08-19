@@ -17,6 +17,7 @@ import { EventDto } from './components/EventsPanel';
 import { EventsDrawer } from './components/EventsDrawer';
 import { Usage, addUsage, estimateCostUsd, ZERO_USAGE } from './lib/usage';
 import { loadUiState, uiGet, uiSet } from './lib/ui-state';
+import { DEFAULT_AUTONOMY, nextAutonomy } from './lib/autonomy';
 import { initPresentation } from './lib/presentation-boot';
 import { boxOnAnyDisplay, RescuedPopout } from './lib/layout';
 import { rendererRegistry } from './extensibility/registry-instance';
@@ -142,7 +143,7 @@ export function App(): React.JSX.Element {
   const [speakOn, setSpeakOn] = useState(false);
   // gate the shell on the persisted UI state (E12-08): reads are sync after
   const [uiReady, setUiReady] = useState(false);
-  const [autonomy, setAutonomy] = useState<string>('ask');
+  const [autonomy, setAutonomy] = useState<string>(DEFAULT_AUTONOMY);
   // rail visibility (E9-01 'toggle rail' command) — persisted like the other
   // renderer prefs, read once the ui blob has loaded
   const [railHidden, setRailHidden] = useState(false);
@@ -418,7 +419,7 @@ export function App(): React.JSX.Element {
       // mounts (uiReady gates it): an early write would persist an empty map
       // over the saved one (P2-E15-08)
       initPresentation();
-      setAutonomy(uiGet('autonomy', 'ask'));
+      setAutonomy(uiGet('autonomy', DEFAULT_AUTONOMY));
       setRailHidden(uiGet('railHidden', false));
       applyTabRows(loadTabRows()); // multi-row tab strip, default on (#84)
       setUiReady(true);
@@ -737,8 +738,7 @@ export function App(): React.JSX.Element {
   }, [updateStatus, installStatus]);
 
   const cycleAutonomy = (): void => {
-    const order = ['ask', 'plan', 'auto-edit', 'full-auto'];
-    const next = order[(order.indexOf(autonomy) + 1) % order.length];
+    const next = nextAutonomy(autonomy);
     uiSet('autonomy', next);
     setAutonomy(next);
   };

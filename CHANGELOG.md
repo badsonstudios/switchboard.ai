@@ -57,6 +57,17 @@ on the floor, and say so in your PR.
 
 ## 0.9.0 — unreleased
 
+### Added
+
+- **The autonomy chips now say what a mode does.** Hover the shield chip — in
+  the title bar, under the prompt box, or the little marker in a card's header —
+  and you get a plain description of what will still stop for you in that mode
+  and what won't. The one worth reading is **full-auto**: it is Claude Code's
+  `bypassPermissions`, the same thing `--dangerously-skip-permissions` turns on,
+  and the hover now says so rather than leaving you to find out. The manual's
+  [Approvals & autonomy](docs/manual/04-approvals-and-autonomy.md) page carries
+  the full version.
+
 ## 0.8.0 — 2026-08-19
 
 ### Added
