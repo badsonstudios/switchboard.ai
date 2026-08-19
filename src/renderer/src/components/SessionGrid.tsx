@@ -102,8 +102,10 @@ interface Live {
    *  (reveal, P2-E15-08) must not claim 'starting': no further push is coming
    *  for an idle session, and the card would sit there lying about it */
   status?: string;
-  /** which transport hosts it (P2-E18-08b) — the Terminal tab needs to know */
-  transport?: 'pty' | 'stream';
+  /** which transport hosts it (P2-E18-08b) — the Terminal tab needs to know.
+   *  Not optional: a live session always has one (#445), and an optional field
+   *  here is an invitation to invent a default for it. */
+  transport: TransportKind;
 }
 
 /**
@@ -669,8 +671,14 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         setUsage({ usage: record.priorUsage ?? ZERO_USAGE, model: record.priorModel });
         if (record.taskLabel) setTaskLabel(record.taskLabel);
         setCardAutonomy(record.autonomy ?? 'ask');
-        // the card's stored choice, so the menu shows what will happen NEXT spawn
-        setCardTransport(record.transport === 'stream' ? 'stream' : 'pty');
+        // The card's stored choice, so the menu shows what will happen NEXT
+        // spawn. Main's answer, verbatim — this line used to read
+        // `record.transport === 'stream' ? 'stream' : 'pty'`, which is a
+        // SECOND default for the same contract and disagreed with the one the
+        // `cardTransport` state is seeded from, `DEFAULT_SESSION_TRANSPORT`
+        // (#445). A live record always carries a transport — that is what
+        // `SessionRecordDto` promises — so there is nothing here to default.
+        setCardTransport(record.transport);
       })
       .catch(startFailed)
       .finally(() => {
@@ -2429,7 +2437,7 @@ function DocumentViewerPanel(
     // blanks every session pane in the window. The panel is not a contribution,
     // but the containment argument is the same one, and so is the component.
     // NOT KEYED ANY MORE (#530). P2-E16-03 keyed this on the path because
-    // `ContributionBoundary` latches `failed` with no reset, and under a
+    // `ContributionBoundary` latched `failed` with no reset, and under a
     // REUSABLE peek slot one document that threw would poison the slot for
     // every glance after it. Nothing re-points a panel now — `path` is fixed
     // for the panel's life, the only later `updateParameters` on a `doc-` panel
@@ -2438,12 +2446,14 @@ function DocumentViewerPanel(
     //
     // WHAT THAT COSTS, said plainly rather than left to be discovered: the
     // boundary renders NOTHING on failure (see `boundary.tsx`), so a viewer
-    // that throws is a BLANK panel with a live tab title, and it stays blank
-    // for the life of the panel. The recovery is the same gesture as before —
-    // close the tab and open the file again, which is now a fresh panel and a
-    // fresh boundary — it just is not automatic any more. A reset affordance on
-    // `ContributionBoundary` would fix this for every consumer at once (#411
-    // noted the same gap); it is not this issue's to add.
+    // that throws is a BLANK panel with a live tab title. It no longer stays
+    // blank for the life of the panel, though — #463 gave the boundary a reset,
+    // and this component re-renders often enough (the find bar opening, the
+    // session store answering, a dock move, a pop-out) that a viewer which
+    // threw once is retried by the next one of those. A viewer that throws
+    // three times in a row is out of retries and blank for good; the recovery
+    // then is the gesture it always was — close the tab and open the file
+    // again, which is a fresh panel and a fresh boundary.
     // POSITIONED, because the bar is absolute and must move nothing underneath
     // it (§5.31 litmus 5) — the same box `SessionCardPanel` puts it in.
     <div style={{ position: 'relative', blockSize: '100%' }}>

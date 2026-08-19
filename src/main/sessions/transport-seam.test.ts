@@ -6,7 +6,11 @@
 // transport implementation, and proving that is most of the point.
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
-import { SessionManager } from './session-manager';
+import { SessionManager, type SessionRecord } from './session-manager';
+// TYPE-ONLY, and it must stay that way: `preload/index.ts` calls
+// `contextBridge.exposeInMainWorld` at import time and there is no
+// contextBridge in a vitest process. `import type` is erased entirely.
+import type { SessionRecordDto } from '../../preload/index';
 import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { MainContributions, SpawnRecipe } from '../extensibility/contributions';
 import {
@@ -301,6 +305,37 @@ describe('DEFAULT_TRANSPORT vs DEFAULT_SESSION_TRANSPORT (P2-E18-17)', () => {
   it("...which is NOT what a user's silence means", () => {
     expect(DEFAULT_SESSION_TRANSPORT).toBe('stream'); // named, so the diff explains itself if it moves
     expect(DEFAULT_TRANSPORT).not.toBe(DEFAULT_SESSION_TRANSPORT);
+  });
+});
+
+// #445 — one contract, one default.
+//
+// The preload DTO is a HAND-WRITTEN mirror of `SessionRecord`: nothing compiles
+// the two against each other, because they live on opposite sides of an IPC
+// boundary that carries JSON. So the mirror drifts silently, and the drift has
+// a cost the day a field goes optional on one side only — `transport?` in the
+// DTO made every renderer that read it answer "and if it is missing?", and
+// SessionGrid's answer was `'pty'`: a second default for the same contract,
+// contradicting `DEFAULT_SESSION_TRANSPORT` above, and one that would have
+// rendered Terminal-mode UI for a session spawned on Direct.
+//
+// This is the compiler doing the comparison instead. It is a TYPECHECK gate,
+// not a runtime one — the assignment below fails `tsc` if either side loosens,
+// and the `expect` exists only so `noUnusedLocals` keeps the local alive.
+type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+
+describe('the live record and its DTO agree about transport (#445)', () => {
+  it('is required on the record — a spawned session is always ON something', () => {
+    const required: Exact<SessionRecord['transport'], TransportKind> = true;
+    expect(required).toBe(true);
+  });
+
+  it('...and the DTO says exactly the same thing, so no reader can default it', () => {
+    // If this stops compiling, do NOT re-add `?? DEFAULT_SESSION_TRANSPORT` in
+    // the renderer — fix whichever side went optional. A live record with no
+    // transport is a main-process bug, not a UI default.
+    const mirrored: Exact<SessionRecordDto['transport'], SessionRecord['transport']> = true;
+    expect(mirrored).toBe(true);
   });
 });
 

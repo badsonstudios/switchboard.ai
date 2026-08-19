@@ -54,7 +54,7 @@ export const MARKED_OPTIONS = { async: false, gfm: true, breaks: false } as cons
  * TAG is already outside the profile, and that is the bigger of the two CSS
  * holes: a stylesheet is not scoped to the block that carried it.
  *
- * `FORBID_ATTR: ['style']` closes the other one (#436). The viewer used to strip
+ * `style` in `FORBID_ATTR` closes the other one (#436). The viewer used to strip
  * `style` on its own, in `document-render.ts`, which made TWO effective profiles
  * out of one constant — the exact drift §5.30 names as the reason the single
  * renderer is a requirement. It is settled HERE, for every surface, because:
@@ -115,6 +115,74 @@ export const MARKED_OPTIONS = { async: false, gfm: true, breaks: false } as cons
  * `document-render.test.ts` therefore call the guard DIRECTLY, so removing it
  * still reds.
  *
+ * `ALLOW_ARIA_ATTR: false` plus `role` in `FORBID_ATTR` closes the FOURTH, and
+ * it is the accessibility half of the same argument (#509). DOMPurify keeps
+ * every `aria-*` attribute by default — `ALLOW_ARIA_ATTR` defaults to `true` —
+ * and `role` is not covered by that flag at all: it is an ordinary member of the
+ * html profile's attribute allow-list, so turning the flag off and stopping
+ * there would drop `aria-label` and keep `role="alert"`. Both go, and they go
+ * together, because they are ONE decision: WAI-ARIA is what a screen reader
+ * reads, and `role` is the half of it with teeth.
+ *
+ * ANNOUNCED, BUT NEVER OBEYED. Nothing in this app acts on ARIA that arrived in
+ * content. There is no live region wired to authored markup, no focus manager
+ * reading an authored `aria-controls`, and — since `ALLOW_DATA_ATTR: false` —
+ * no interactive semantics that survive at all. So an authored `aria-*` reached
+ * exactly one audience: the screen reader, which announced it as though the app
+ * meant it. That is a channel that exists FOR AT USERS ONLY, and every payload
+ * on it is a lie the sighted reader cannot see:
+ *
+ *  - `aria-live="assertive"` on a reply is a region that interrupts whatever the
+ *    user was being told, on content's own schedule — including the app's own
+ *    `role="status"` announcements (§5.10's feed, the approval bar), which it
+ *    can talk over.
+ *  - `aria-label` on visible text REPLACES that text in the accessible name. A
+ *    `<span aria-label="Cancel">Approve</span>` reads as the opposite of what is
+ *    on screen, which is the approvals surface's whole trust model inverted for
+ *    one class of user.
+ *  - `aria-hidden="true"` removes real content from the accessibility tree
+ *    entirely — the sighted reader sees `rm -rf /`, the screen-reader user is
+ *    told nothing is there. `role="presentation"` does the same to a table.
+ *  - `role="link"` is not merely announced: `DocumentViewer.tsx` reads it back
+ *    off the live DOM in its keydown handler (`getAttribute('role') === 'link'`
+ *    gates Enter/Space activation), because `decorateLinks` writes it to put the
+ *    affordance back on links whose `href` it removed. That is the #410 shape
+ *    exactly — a surface's own protocol, speakable by its input — and it is the
+ *    reason `role` could not be left as "harmless noise".
+ *
+ * MARKDOWN EMITS NEITHER. Not one construct in GFM produces an `aria-*` or a
+ * `role`; the accessible structure of rendered markdown comes from the TAGS
+ * (`<table>`, `<h1>`, `<ul>`), which is exactly where it belongs. So every one
+ * that reaches a surface is raw embedded markup. Measured the same way #436
+ * measured `style`, on the same machine's corpus (2026-08-19): 7,475 captured
+ * transcripts, 17,908 assistant text blocks, 10 MB of prose — 39 occurrences of
+ * `aria-*=` and 92 of `role=`, and NOT ONE of them was an attribute on a tag.
+ * All 39 aria hits and 91 of the role hits were inside a code fence or code
+ * span, where `marked` escapes them to text and the sanitizer never sees an
+ * attribute; the 92nd was prose ABOUT a dialog ("`AboutPanel` (role=dialog,
+ * Escape/click-away…)"), which is likewise text. Bare on a tag: zero.
+ *
+ * WHAT STILL CARRIES ARIA, and this is the part worth knowing before reading a
+ * screen reader's output: everything the surfaces write themselves. The
+ * decoration passes run AFTER this function — `decorateLinks`' `role="link"`,
+ * `decorateTables`' `role="group"`, `decorateImages`' `aria-hidden` icon,
+ * `decorateFeedCodeFences`' `aria-label` on the Copy button — and React writes
+ * the chrome's own. The rule this line establishes is therefore not "rendered
+ * content has no ARIA"; it is that EVERY piece of ARIA in a rendered surface is
+ * ours. `decoration-guard.ts` does NOT take these back (they are not in any
+ * surface's `data-`/class namespace), so unlike `data-*` this has no second
+ * layer: the profile is the whole policy, which is why its test block is
+ * profile-level and why a surface that renders markdown some other way is
+ * caught by the surface table in the `style` block rather than by a guard.
+ *
+ * NOT closed here, so this is not read as more than it is: `hidden` and the rest
+ * of the legacy presentational set are #466's, and `hidden` has an accessibility
+ * edge of its own. `tabindex` also survives the html profile — authored content
+ * can still put itself in the keyboard tab order, which is a focus-order
+ * nuisance rather than a forgery now that `role` is gone, and it is not this
+ * item's scope. Neither was widened here; both are named so the next reader
+ * knows they were seen and left.
+ *
  * Everything else is DOMPurify's default and deliberately so: its allow-list,
  * its `javascript:`-scheme refusal and its `on*`-attribute stripping are the
  * parts that get security review upstream, and re-deriving them here would mean
@@ -123,8 +191,15 @@ export const MARKED_OPTIONS = { async: false, gfm: true, breaks: false } as cons
  */
 export const SANITIZE_CONFIG: SanitizeConfig = {
   USE_PROFILES: { html: true },
-  FORBID_ATTR: ['style'],
+  // `role` rides in `FORBID_ATTR` rather than in a flag because no flag covers
+  // it: it is in the html profile's allow-list, and `ALLOW_ARIA_ATTR` governs
+  // only the `aria-*` pattern. `FORBID_ATTR` is checked FIRST in DOMPurify
+  // 3.4.12 (`_isValidAttribute`), ahead of both the allow-list and the aria
+  // branch, so this wins wherever the two could disagree — verified against the
+  // shipped source, not assumed.
+  FORBID_ATTR: ['style', 'role'],
   ALLOW_DATA_ATTR: false,
+  ALLOW_ARIA_ATTR: false,
 };
 
 // FROZEN, because "one configuration" is this module's entire thesis and an
