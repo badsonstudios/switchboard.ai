@@ -15,7 +15,7 @@
 >
 > | Issue | Worktree | Branch | Status |
 > |---|---|---|---|
-> | #556 events drawer close button | sb-wt-1 | feature/556-events-drawer-close | running |
+> | #556 events drawer close button | sb-wt-1 | feature/556-events-drawer-close | **DONE** — PR #576 (draft); rebasing CHANGELOG entry onto post-release main |
 > | #559 rail drag-reorder | sb-wt-2 | feature/559-rail-drag-reorder | running |
 > | #566 question-panel tabs | sb-wt-3 | feature/566-question-panel-tabs | running |
 > | ~~release v0.8.0 cut~~ | — | main | **DONE** — released 2026-08-19 |
@@ -30,8 +30,20 @@
 > modes (real tokens) + the conditional UI half; dispatches after #566 lands
 > (same QuestionPanel subsystem).
 >
-> **Queued next:** #567 (behind #566, approved). Then re-run queue analysis —
-> candidates by Dan's order: #543, #544, #546, #539.
+> **Queued next:** #567 (behind #566, approved); #543 into sb-wt-1 once
+> #556's rebase lands. Then #544/#546/#539 (note: #543 and #544 both touch the
+> document-tab area — never concurrent with each other).
+>
+> **⚠️ Standing hazard this run:** any branch cut before the v0.8.0 release
+> (all of wave 1) filed its CHANGELOG entry under `0.8.0 — unreleased`, which
+> main has since dated and closed. Every wave-1 PR must move its entry to
+> `## 0.9.0 — unreleased` on rebase before merge. #556's move is in flight;
+> #559/#566 get the same instruction on completion.
+>
+> **#556 done (PR #576, draft until rebase lands):** ✕ close button in the
+> drawer header, sticky header, same close/focus path as Esc. Gates: unit
+> 5235/5235, e2e events-drawer 12/12 + 32/32 neighbours. Out-of-scope
+> discovery filed as **#577** (edge tab missing from the focus-ring list).
 >
 > **🚢 v0.8.0 RELEASED 2026-08-19** — commit `774779a`, tag `v0.8.0`,
 > release workflow green, `switchboard-Setup-0.8.0.exe` (101.8 MB) + sha256
