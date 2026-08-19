@@ -101,7 +101,7 @@ export const FEED_DECORATION = ns({
  * `style` is the attribute that makes a forgery INVISIBLE (`display:none` on
  * the `<pre>` whose Copy button then puts something else on the clipboard) and
  * makes it a click-jack (`position:fixed;inset:0` over the app's own chrome).
- * The policy lives in `markdown.tsx`'s `FORBID_ATTR: ['style']` (#436); this is
+ * The policy lives in `markdown.tsx`'s `FORBID_ATTR` (#436); this is
  * the belt to that pair of braces, and dropping it here would make `style` the
  * one attribute in this list whose safety is somebody else's file.
  *
