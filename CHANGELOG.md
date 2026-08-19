@@ -59,6 +59,13 @@ on the floor, and say so in your PR.
 
 ### Internal
 
+- **When a session's CLI dies badly, the log now says what it said on the way
+  out.** The stream transport kept the last few KB of the CLI's error output and
+  its framing counters, and showed them to nobody. A session whose stderr or
+  framing had anything to report now writes one summary line as it ends — exit
+  code, the counters, and the tail of what the CLI printed, which is the part
+  that a flood of error output used to push out of the log. A healthy session
+  still says nothing at all. (#593)
 - **A part of the window that breaks can come back on its own.** The crash
   barrier around each contributed surface (status-bar items, session panels,
   document viewers) used to latch: one error and that piece of the window was
