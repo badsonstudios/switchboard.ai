@@ -18,7 +18,7 @@
 > | #556 events drawer close button | sb-wt-1 | feature/556-events-drawer-close | running |
 > | #559 rail drag-reorder | sb-wt-2 | feature/559-rail-drag-reorder | running |
 > | #566 question-panel tabs | sb-wt-3 | feature/566-question-panel-tabs | running |
-> | release v0.8.0 cut | main checkout (release files only) | main | running |
+> | ~~release v0.8.0 cut~~ | — | main | **DONE** — released 2026-08-19 |
 >
 > **Merge queue (Dan):** empty so far. All three wave-1 items are user-facing —
 > their PRs queue here for Dan; the orchestrator merges nothing user-facing.
@@ -32,6 +32,17 @@
 >
 > **Queued next:** #567 (behind #566, approved). Then re-run queue analysis —
 > candidates by Dan's order: #543, #544, #546, #539.
+>
+> **🚢 v0.8.0 RELEASED 2026-08-19** — commit `774779a`, tag `v0.8.0`,
+> release workflow green, `switchboard-Setup-0.8.0.exe` (101.8 MB) + sha256
+> published: <https://github.com/badsonstudios/switchboard.ai/releases/tag/v0.8.0>.
+> Carries #562/#569/#570/#571 — all four changelog entries were already filed
+> (the v0.7.0 empty-changelog miss did NOT recur). `## 0.9.0 — unreleased` is
+> open; file every new entry there. Main checkout `out/` rebuilt, stamp matches
+> HEAD. Gates: typecheck · lint · unit 5229/5229. Out-of-scope discovery filed
+> as **#575** (CI actions warn Node-20-on-Node-24 in ci.yml/release.yml).
+> The four v0.8.0 items are now hand-testable — dogfood tracker already lists
+> them as UNTESTED.
 
 > # ▶▶ START HERE — ✅ MAIN IS CLEAN, 2026-08-18
 >
