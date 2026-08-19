@@ -18,8 +18,9 @@
 > | #556 events drawer close button | sb-wt-1 (released) | feature/556-events-drawer-close | **DONE** — **PR #576 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
 > | #543 tab-model follow-ups | sb-wt-1 (released) | feature/543-tab-model-followups | **DONE** — **PR #578 ready-for-review, in Dan's queue** |
 > | #546 composer attachment drafts | sb-wt-1 | feature/546-composer-attachment-drafts | running |
-> | #559 rail drag-reorder | sb-wt-2 | feature/559-rail-drag-reorder | running |
-> | #566 question-panel tabs | sb-wt-3 | feature/566-question-panel-tabs | **DONE** — PR #579 (draft); rebasing CHANGELOG entry onto post-release main |
+> | #559 rail drag-reorder | sb-wt-2 | feature/559-rail-drag-reorder | **DONE** — PR #580 (draft); rebasing CHANGELOG entry onto post-release main |
+> | #566 question-panel tabs | sb-wt-3 (released) | feature/566-question-panel-tabs | **DONE** — **PR #579 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
+> | #567 probe half | sb-wt-3 | feature/567-partial-answers-probe | running — INTERNAL, orchestrator merges on green |
 > | ~~release v0.8.0 cut~~ | — | main | **DONE** — released 2026-08-19 |
 >
 > **Merge queue (Dan):** empty so far. All three wave-1 items are user-facing —
@@ -32,10 +33,20 @@
 > modes (real tokens) + the conditional UI half; dispatches after #566 lands
 > (same QuestionPanel subsystem).
 >
-> **Queued next:** #567 **probe half** into sb-wt-3 once #566's rebase lands
-> (probe touches only spike/ + findings — no QuestionPanel collision; the UI
-> half waits for PR #579 to MERGE); #544 waits for PR #578 to MERGE (same
-> document-tab subsystem as #543); then #539.
+> **Queued next:** #539 into sb-wt-2 once #559's rebase lands; #567 UI half
+> waits for PR #579 to MERGE + the probe's verdict; #544 waits for PR #578 to
+> MERGE (same document-tab subsystem as #543).
+>
+> **#559 done (PR #580, draft until rebase lands):** drag-reorder within a
+> group (groups, auto-groups, Ungrouped), persisted in the workspace store;
+> keyboard path = menu Move up/down + Ctrl+Alt+↑/↓ with live-region
+> announcements. **Delegated decision: §5.8's pin wins** — bucket order →
+> manual order → sortPinnedFirst last; pinned block leads, reorder is free
+> within each block (differs from the issue's guess, which would have
+> falsified the shipped pinning e2e). Gates: unit 5292/209 files, e2e 122/122.
+> Out-of-scope findings filed: **#581** (chords silent to screen readers —
+> global live region, fix all three families at once), **#582** (cross-group
+> drop lands arrival-order not bottom + missing from===to guard).
 >
 > **#566 done (PR #579, draft until rebase lands):** multi-question calls are
 > tabs labelled by `header`; single question unchanged; ✓/○ per tab + "Still
