@@ -17,6 +17,7 @@ import {
   StreamSpawnOptions,
   StreamDiagnostic,
 } from './stream-service';
+import type { SessionTransport } from './transport';
 
 let dir: string;
 let svc: StreamService;
@@ -330,6 +331,73 @@ describe('StreamService — a real child over real pipes (P2-E18-03)', () => {
     expect(snap).toHaveLength(10);
     expect(snap[snap.length - 1]).toEqual({ i: 49 }); // newest retained
     expect(s.messages.droppedCount).toBe(40);
+  });
+});
+
+// #449: `onDiagnostic` was produced and wired to nothing for four items,
+// because the only real caller reaches this class through `SessionTransport`
+// and that seam cannot carry a stream-only spawn field. The sink therefore
+// lives on the SERVICE, and these pin that it survives the trip.
+describe('service-level diagnostics (#449)', () => {
+  it('reaches sessions spawned through the transport seam, which cannot pass one', async () => {
+    const seen: StreamDiagnostic[] = [];
+    svc = new StreamService({ onDiagnostic: (d) => seen.push(d) });
+    // Typed as the seam on purpose: `TransportSpawnOptions` has no
+    // `onDiagnostic`, so this is exactly the call `SessionManager` makes, and
+    // it would not compile if the sink had to travel per spawn.
+    const seam: SessionTransport = svc;
+    const s = seam.spawn({
+      id: 'seam',
+      command: process.execPath,
+      args: [script(`process.stdout.write('not json at all\\n');`)],
+      cwd: dir,
+    }) as StreamSession;
+    sessions.push(s);
+
+    await until(() => seen.length > 0);
+    expect(seen[0]).toMatchObject({ sessionId: 'seam', kind: 'parse-failure' });
+  });
+
+  it('a per-spawn sink still wins over the service one', async () => {
+    const service: StreamDiagnostic[] = [];
+    svc = new StreamService({ onDiagnostic: (d) => service.push(d) });
+    run(`process.stdout.write('still not json\\n');`, 'override'); // `run` passes its own sink
+
+    await until(() => diagnostics.length > 0);
+    await new Promise((r) => setTimeout(r, 50)); // the service sink had its chance
+    expect(diagnostics[0]).toMatchObject({ sessionId: 'override', kind: 'parse-failure' });
+    expect(service).toEqual([]);
+  });
+
+  // Three of the four emit sites are inside stream event handlers, where an
+  // escaping exception is an uncaught exception on the MAIN process — a broken
+  // log sink must not be how a session dies (P6, fail-open).
+  it('a throwing sink neither crashes the pump nor costs the next message', async () => {
+    let threw = 0;
+    svc = new StreamService({
+      onDiagnostic: () => {
+        threw++;
+        throw new Error('sink is broken');
+      },
+    });
+    const got: unknown[] = [];
+    const s = spawnTracked({
+      id: 'throwing-sink',
+      command: process.execPath,
+      args: [
+        // ONE write, so both lines land in one chunk and the decoder loop that
+        // raises the diagnostic is the same loop that must still deliver the
+        // good message. Two writes would usually arrive as two chunks and the
+        // second would survive by accident, which is not what this is pinning.
+        script(`process.stdout.write('{ this is not json\\n{"type":"result","ok":true}\\n');`),
+      ],
+      cwd: dir,
+    });
+    s.onMessage((m) => got.push(m));
+
+    await until(() => got.length === 1);
+    expect(threw).toBeGreaterThan(0);
+    expect(got[0]).toEqual({ type: 'result', ok: true });
   });
 });
 

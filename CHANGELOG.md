@@ -57,6 +57,14 @@ on the floor, and say so in your PR.
 
 ## 0.9.0 — unreleased
 
+### Internal
+
+- **Stream-transport diagnostics now reach the log.** Parse failures, overlong
+  lines, CLI stderr and dead-pipe writes were produced by the stream-json
+  transport and dropped on the floor — nothing subscribed. They are written to
+  `switchboard.log` under the `transport` subsystem, throttled so a wedged
+  session cannot rotate the rest of the log away. Nothing changes on screen.
+
 ## 0.8.0 — 2026-08-19
 
 ### Added
