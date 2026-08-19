@@ -100,4 +100,7 @@ describe('the CLI release.yml calls', () => {
     expect(r.status).toBe(2);
     expect(r.stderr).toMatch(/usage: node scripts\/sha256-sidecar\.js/);
   });
-});
+  // 30 s rather than vitest's 5 s default: every case here spawns a real
+  // process, and #512 is what that costs on a loaded Windows runner —
+  // a test that runs in well under a second locally took 7123 ms there.
+}, 30_000);

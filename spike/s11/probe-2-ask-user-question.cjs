@@ -19,15 +19,23 @@
 //      at all? This is not hypothetical: it is exactly what an allow-all
 //      session's server-side auto-allow would send, on both of our allow-all
 //      paths, if `AskUserQuestion` were treated as an ordinary gated tool.
+//   G. What does a PARTIAL answers map do (#567)? #563 refused to send one, so
+//      its reading was unknown. Three plausible readings, and they differ enough
+//      to matter: the missing question was SKIPPED, or it was ANSWERED WITH
+//      SILENCE (an empty string the model reads as a real answer), or the call
+//      is REJECTED outright. Two shapes are needed to tell them apart — the key
+//      absent, and the key present with `""`.
 //
 // Usage:
-//   node probe-2-ask-user-question.cjs [answer|other|deny|ignore|empty]
+//   node probe-2-ask-user-question.cjs [answer|other|deny|ignore|empty|partial|blank]
 //
 //   answer  (default) allow with answers taken from the offered labels
 //   other             allow with free text that is in NO option list  (D)
 //   deny              behavior:'deny'                                 (E)
 //   ignore            never respond to the can_use_tool               (E)
 //   empty             allow with the input echoed back, no `answers`  (F)
+//   partial           answer Q1, OMIT Q2's key from the map entirely  (G)
+//   blank             answer Q1, send Q2's key as an empty string ""  (G)
 //
 // Artifacts: ../findings/artifacts/s11/ask-user-question-<mode>.json
 const { spawn } = require('child_process');
@@ -36,7 +44,7 @@ const os = require('os');
 const path = require('path');
 
 const mode = (process.argv[2] || 'answer').toLowerCase();
-if (!['answer', 'other', 'deny', 'ignore', 'empty'].includes(mode)) {
+if (!['answer', 'other', 'deny', 'ignore', 'empty', 'partial', 'blank'].includes(mode)) {
   console.error(`unknown mode: ${mode}`);
   process.exit(2);
 }
@@ -83,8 +91,17 @@ function send(o) { proc.stdin.write(JSON.stringify(o) + '\n'); }
  */
 function answersFor(questions) {
   const answers = {};
-  for (const q of questions) {
+  for (const [idx, q] of questions.entries()) {
     const labels = (q.options || []).map((o) => o.label);
+    // Question G: everything after the FIRST question is either dropped from
+    // the map (`partial`) or present-but-empty (`blank`). One question answered
+    // normally in both, so the tool_result can be read against the `answer`
+    // baseline rather than against nothing.
+    if (mode === 'partial' && idx > 0) continue;
+    if (mode === 'blank' && idx > 0) {
+      answers[q.question] = '';
+      continue;
+    }
     if (mode === 'other') {
       answers[q.question] = `zzz-probe-free-text-${q.header || 'x'}`.replace(/\s+/g, '-');
     } else if (q.multiSelect) {

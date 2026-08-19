@@ -33,6 +33,24 @@ import { tempDir } from '../src/test-temp-dirs';
 
 const ROOT = path.join(import.meta.dirname, '..');
 
+/**
+ * The ceiling for every suite below that SPAWNS something — git, or node for
+ * the CLI case. Vitest's default is five seconds, which is a budget for a pure
+ * function and not for a test that shells out a dozen times.
+ *
+ * #512, from #510's CI: `lists an unmerged path once` (twelve git processes —
+ * three commits, two checkouts, a merge and two listings) took 7123 ms on the
+ * windows-latest runner and was KILLED by that default. The diff had touched
+ * nothing near it, it passed locally, and the `--failed` re-run was green: the
+ * signature of a test whose runtime is the runner's mood, not the code's.
+ *
+ * This is NOT a performance budget. The scope-regression smoke test in `run`
+ * below carries its own and ASSERTS it; keeping the ceiling above that is what
+ * lets the assertion be the thing that fails on a slow machine, instead of an
+ * opaque "test timed out" that names nothing.
+ */
+const SUBPROCESS_TIMEOUT_MS = 30_000;
+
 /** A buffer from text, with `@` standing in for the byte no source may contain. */
 const buf = (text) => Buffer.from(text.replace(/@/g, '\0'), 'utf8');
 
@@ -198,7 +216,7 @@ describe('filesToScan', () => {
     // cannot, and git fails the same way.
     expect(filesToScan(path.join(ROOT, 'no-such-directory-for-check-nul'))).toBeNull();
   });
-});
+}, SUBPROCESS_TIMEOUT_MS);
 
 /**
  * git inside a scratch repo, deaf to whatever the machine's global and system
@@ -245,7 +263,9 @@ describe('a scratch repo (#459 — the untracked hole)', () => {
     gitIn(repo, 'commit', '-m', 'init');
     write('untracked.md', 'oops@here\n'); // the file #414 lost a cycle to
     write('ignored.md', 'also@bad\n');
-  });
+    // Hooks have their own budget (`hookTimeout`, 10 s), and five git
+    // processes is not comfortably under it on the runner #512 came from.
+  }, SUBPROCESS_TIMEOUT_MS);
 
   it('lists the untracked file alongside the tracked one', () => {
     const files = filesToScan(repo);
@@ -294,7 +314,8 @@ describe('a scratch repo (#459 — the untracked hole)', () => {
   it('does not fail on the ignored one', () => {
     expect(run(repo).lines.join('\n')).not.toContain('ignored.md');
   });
-});
+  // Every case here spawns git; the merge one above is #512's casualty.
+}, SUBPROCESS_TIMEOUT_MS);
 
 describe('run', () => {
   it('finds no NUL byte anywhere in this repo', () => {
@@ -318,11 +339,15 @@ describe('run', () => {
     // scan at node_modules or `out/`, which is seconds), not a benchmark. A
     // tight bound here would flake on a loaded CI runner and teach nobody
     // anything.
+    //
+    // Its 5000 used to BE the enclosing test timeout as well, so a run that
+    // blew the budget died as a timeout instead of naming the budget it blew.
+    // The suite ceiling (#512) now sits above it, and this line is the verdict.
     const started = Date.now();
     run(ROOT);
     expect(Date.now() - started).toBeLessThan(5000);
   });
-});
+}, SUBPROCESS_TIMEOUT_MS);
 
 describe('the CLI', () => {
   it('exits 0 on this repo and prints the summary to stderr', () => {
@@ -332,4 +357,4 @@ describe('the CLI', () => {
     expect(result.status, result.stderr).toBe(0);
     expect(result.stderr).toContain('no NUL bytes');
   });
-});
+}, SUBPROCESS_TIMEOUT_MS);
