@@ -16,7 +16,8 @@
 > | Issue | Worktree | Branch | Status |
 > |---|---|---|---|
 > | #556 events drawer close button | sb-wt-1 (released) | feature/556-events-drawer-close | **DONE** — **PR #576 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
-> | #543 tab-model follow-ups | sb-wt-1 | feature/543-tab-model-followups | running |
+> | #543 tab-model follow-ups | sb-wt-1 (released) | feature/543-tab-model-followups | **DONE** — **PR #578 ready-for-review, in Dan's queue** |
+> | #546 composer attachment drafts | sb-wt-1 | feature/546-composer-attachment-drafts | running |
 > | #559 rail drag-reorder | sb-wt-2 | feature/559-rail-drag-reorder | running |
 > | #566 question-panel tabs | sb-wt-3 | feature/566-question-panel-tabs | running |
 > | ~~release v0.8.0 cut~~ | — | main | **DONE** — released 2026-08-19 |
@@ -31,8 +32,18 @@
 > modes (real tokens) + the conditional UI half; dispatches after #566 lands
 > (same QuestionPanel subsystem).
 >
-> **Queued next:** #567 (behind #566, approved). Then #544/#546/#539 (note:
-> #544 waits for #543 to land — both touch the document-tab area).
+> **Queued next:** #567 (behind #566, approved); #544 waits for PR #578 to
+> MERGE (same document-tab subsystem as #543); then #539.
+>
+> **#543 done (PR #578, ready):** honest ✕ tooltips per tab kind ("Close
+> document" / "Close" / card unchanged), "Close all documents (keeps
+> popped-out ones)" palette command — popped-out docs deliberately SPARED,
+> rule in `lib/document-panels` `closableDocuments`. DESIGN §5.30 amended
+> (its "closes by its ✕ and nothing else" clause was untrue after this).
+> Gates: unit 5237, e2e 55/55. Out-of-scope reported (not filed as issues —
+> both hang on the unanswered §5.8 window-scoping question): "Close other
+> documents" needs a tab context menu that doesn't exist; the close-all
+> command isn't window-scoped, same as session.closeAll.
 >
 > **Merge-order note:** PR #576 and #543's branch both add i18n locale
 > strings — whichever lands second takes a trivial locale rebase (keep both).
