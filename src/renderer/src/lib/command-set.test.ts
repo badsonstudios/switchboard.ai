@@ -247,17 +247,31 @@ describe('seed command set (E9-01)', () => {
     expect(d.openFind).toHaveBeenCalledWith('doc-3');
   });
 
-  it('exactly TWO commands may fire while the user is typing, and they are named', () => {
+  it('exactly THREE commands may fire while the user is typing, and they are named', () => {
     // The rule is *never steal a keystroke a text surface should get*, and the
     // list of chords that qualify is short and closed. `palette.open` (E9-02)
     // is the fail-open route to everything else; `find.open` (P2-E17-02,
     // §5.31) joined it because Mod+F is not a text-editing key on any platform
     // we ship, and Ctrl+F that does nothing from the composer would be the
-    // headline gesture dead where the caret usually is. Anything else in this
-    // list is a bug — and NO scope whatsoever fires inside a terminal (proven
-    // in commands.test.ts).
+    // headline gesture dead where the caret usually is.
+    //
+    // `view.openFile` joined them in #569, and for BOTH halves of the rule:
+    // Mod+O is not a text-editing key either, and — the half that actually
+    // forced it — the File menu's click runs this same command down the
+    // accelerator channel. A menu click is not typing, and gating it on focus
+    // made File > Open File… do nothing at all with the composer focused, which
+    // is the most likely moment anyone reaches for it. Proven by
+    // `e2e/file-menu.spec.ts`'s composer test, which fails without the scope.
+    //
+    // Anything else in this list is a bug — and NO scope whatsoever fires inside
+    // a terminal (proven in commands.test.ts), which is what leaves the hosted
+    // CLI's own `ctrl+o` alone.
     const typingOk = buildCommands(deps()).filter((c) => c.scope === 'typing-ok');
-    expect(typingOk.map((c) => c.id).sort()).toEqual(['find.open', 'palette.open']);
+    expect(typingOk.map((c) => c.id).sort()).toEqual([
+      'find.open',
+      'palette.open',
+      'view.openFile',
+    ]);
   });
 
   it('every i18n key a command carries resolves in en.json (the palette shows these)', () => {

@@ -14,11 +14,19 @@ purpose. switchboard.ai is not an editor and is not becoming one.
 
 ## Opening a file
 
-Two ways today:
+The quickest way in is the **File** menu at the top left — **File › Open File…**
+— or **Ctrl+O** from anywhere in the app. The browser starts in the folder of
+the session you're looking at, and after that wherever you last browsed to, so
+opening a second file from the same place is one click rather than a journey.
+
+The file appears in a document tab **beside** the session you were in: in that
+part of the workspace, but never inside the session's own tab strip. Open
+another and it joins the first as a second tab.
+
+Two more ways in:
 
 1. **The command list** — press `Ctrl+Shift+P` (`Cmd+Shift+P` on a Mac), type
-   "open file", and pick **Open file…**. Choose a file in the dialog that
-   appears.
+   "open file", and pick **Open file…**. The same dialog as the File menu.
 2. **The Changes tab** — each row in the file list on the left has a small **↗**
    at its right-hand end. Click it to open that file in the viewer. (Clicking
    the row itself still shows the diff, which is a different question: the diff

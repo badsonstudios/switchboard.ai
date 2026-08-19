@@ -600,14 +600,32 @@ export function buildCommands(deps: CommandDeps): Command[] {
     {
       // §5.30's `Open file…`. In the VIEW category and not SESSION, because a
       // document viewer belongs to no session — it is a surface the workspace
-      // holds, like the rail. Palette-only and unbound: opening a file is a
-      // once-in-a-while action that starts with a native dialog anyway, and
-      // Mod+O is not free of meaning to anyone who has used an editor (they
-      // will expect a file tree, which is Phase 3).
+      // holds, like the rail.
+      //
+      // BOUND HERE, AND DELIBERATELY NOT IN THE MENU (#569). The File menu shows
+      // Ctrl+O beside this item but registers nothing: an application-menu
+      // accelerator is claimed by the BROWSER process and never reaches the
+      // page, and **the hosted CLI binds `ctrl+o` itself** — it is
+      // `app:toggleTranscript`, and Claude Code prints "ctrl+o to see" in its
+      // own compaction and stop-hook notices (read off the shipped binary, per
+      // the standing rule). Claiming it up there would answer the CLI's own
+      // instruction with a file dialog, which is P7 broken in one keystroke.
+      //
+      // Held by the registry instead, the chord goes through `dispatch`, which
+      // refuses a TERMINAL target before it looks at anything else — so typing
+      // Ctrl+O into a session's terminal still reaches the CLI, and every other
+      // surface gets the file browser.
+      //
+      // `typing-ok` because this is not a chord you press by accident: an
+      // editor's Ctrl+O works while the caret is in a text field, and the File
+      // menu's click rides this same command — a menu click is not typing, and
+      // gating it on focus made File > Open File do NOTHING with the composer
+      // focused, which is the single most likely moment to reach for it.
       id: 'view.openFile',
       titleKey: 'commands.openFile',
       categoryKey: CATEGORY_VIEW,
-      scope: 'app',
+      binding: 'Mod+O',
+      scope: 'typing-ok',
       run: () => deps.openFile(),
     },
     {

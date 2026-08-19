@@ -111,6 +111,7 @@ back to the first.
 | `Ctrl+Shift+P` | Open the command palette |
 | `Ctrl+Space` | Go to the next session that needs you |
 | `Ctrl+E` | Show or hide the Events drawer |
+| `Ctrl+O` | Open a file in a document tab (also **File › Open File…**). Works while you're typing a prompt — but inside the **Terminal** the key belongs to Claude Code, which uses it for its own transcript view |
 
 `Ctrl+W` asks before it closes, because closing a session ends it and removes
 its card — the same confirmation you get from the tab's **✕**.
