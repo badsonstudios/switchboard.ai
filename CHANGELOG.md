@@ -65,6 +65,13 @@ on the floor, and say so in your PR.
   an empty gap until switchboard was restarted. It now retries the surface on
   its next update, and only gives up — quietly, as before — after three
   failures in a row, so a piece that is genuinely broken cannot spin.
+- Accessibility markup written by a document or a reply is now removed along
+  with everything else the renderer refuses. Nothing in switchboard.ai ever
+  acted on it, but a screen reader did — so a file could label a button
+  "Cancel" while it said Approve, hide a line of text from the accessibility
+  tree while leaving it on screen, or interrupt an announcement the app was
+  making. Every accessible name, role and announcement in a rendered document
+  or reply is now one switchboard.ai wrote. (#509)
 - Gave every test that starts a real child process — `git`, or node running one
   of the build scripts — an explicit time limit. They had been running under the
   test runner's five-second default, which is a budget for a pure function and
