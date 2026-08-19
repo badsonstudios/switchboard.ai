@@ -79,8 +79,9 @@ interface Calls {
 let calls: Calls;
 /** what `sessions.setTransport` answers next */
 let setTransportReply: { ok: boolean; reason?: string; pending?: boolean };
-/** what `sessions.create` reports as the session's transport */
-let spawnTransport: TransportKind | undefined;
+/** what `sessions.create` reports as the session's transport — never absent,
+ *  because a live record always carries one (#445) */
+let spawnTransport: TransportKind;
 
 const off = (): void => {};
 const disposable = { dispose: off };
@@ -193,7 +194,7 @@ async function click(el: HTMLElement): Promise<void> {
 }
 
 /** Mount a card whose session comes up on `transport`. */
-async function mountCard(transport: TransportKind | undefined = 'pty'): Promise<void> {
+async function mountCard(transport: TransportKind = 'pty'): Promise<void> {
   spawnTransport = transport;
   await act(async () => {
     root!.render(React.createElement(components.sessionCard, panelProps('c1')));
@@ -350,6 +351,29 @@ describe('the seeded transport (#381)', () => {
       /import \{[^}]*DEFAULT_SESSION_TRANSPORT[^}]*\} from '\.\.\/\.\.\/\.\.\/shared\/transport'/
     );
     expect(source).not.toMatch(/(const|let) DEFAULT_SESSION_TRANSPORT/);
+  });
+
+  // #445 — the OTHER end of the same state. The seed above is what this
+  // component holds before main answers; this is what it does WITH the answer,
+  // and it used to be `record.transport === 'stream' ? 'stream' : 'pty'`. That
+  // ternary reads as a type narrowing, which is why it survived review, but a
+  // narrowing with an `else` branch is a default — a second one, disagreeing
+  // with the seed four lines above it and with main. Unreachable while every
+  // live record carries a transport (the DTO now requires it, pinned in
+  // `main/sessions/transport-seam.test.ts`), and that is exactly the kind of
+  // stray a rendered assertion cannot reach: the source text is the witness.
+  it('takes main’s answer verbatim, with no default of its own (#445)', () => {
+    const assign = source.match(/setCardTransport\(record\.transport[^;]*\);/);
+    expect(assign, 'the create-reply assignment moved or changed shape').not.toBeNull();
+    expect(assign![0]).toBe('setCardTransport(record.transport);');
+  });
+
+  it('holds no second opinion about the default anywhere in the file', () => {
+    // Belt to the braces above, and the shape the stray is most likely to come
+    // back in: `?? 'pty'` is a default by definition, wherever it is written.
+    // The plain literals stay legal — the toggle's other side is one.
+    expect(source).not.toMatch(/\?\?\s*'pty'/);
+    expect(source).not.toMatch(/\?\?\s*'stream'/);
   });
 });
 

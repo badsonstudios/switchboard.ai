@@ -67,6 +67,10 @@ on the floor, and say so in your PR.
   touched it red. Nothing about the tests themselves changed — only the ceiling
   that decides whether a slow machine reports the test's own verdict or an
   opaque timeout. (#512)
+- One default for a session's transport, not two. A live session record always
+  carries the transport it was spawned on, so the type now says so and the card
+  reads main's answer verbatim — the stray `'pty'` fallback that contradicted
+  the shared default is gone, with typecheck-level pins on both ends (#445).
 
 ## 0.8.0 — 2026-08-19
 

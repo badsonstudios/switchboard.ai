@@ -102,8 +102,10 @@ interface Live {
    *  (reveal, P2-E15-08) must not claim 'starting': no further push is coming
    *  for an idle session, and the card would sit there lying about it */
   status?: string;
-  /** which transport hosts it (P2-E18-08b) — the Terminal tab needs to know */
-  transport?: 'pty' | 'stream';
+  /** which transport hosts it (P2-E18-08b) — the Terminal tab needs to know.
+   *  Not optional: a live session always has one (#445), and an optional field
+   *  here is an invitation to invent a default for it. */
+  transport: TransportKind;
 }
 
 /**
@@ -669,8 +671,14 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         setUsage({ usage: record.priorUsage ?? ZERO_USAGE, model: record.priorModel });
         if (record.taskLabel) setTaskLabel(record.taskLabel);
         setCardAutonomy(record.autonomy ?? 'ask');
-        // the card's stored choice, so the menu shows what will happen NEXT spawn
-        setCardTransport(record.transport === 'stream' ? 'stream' : 'pty');
+        // The card's stored choice, so the menu shows what will happen NEXT
+        // spawn. Main's answer, verbatim — this line used to read
+        // `record.transport === 'stream' ? 'stream' : 'pty'`, which is a
+        // SECOND default for the same contract and disagreed with the one the
+        // `cardTransport` state is seeded from, `DEFAULT_SESSION_TRANSPORT`
+        // (#445). A live record always carries a transport — that is what
+        // `SessionRecordDto` promises — so there is nothing here to default.
+        setCardTransport(record.transport);
       })
       .catch(startFailed)
       .finally(() => {

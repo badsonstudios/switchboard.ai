@@ -16,6 +16,7 @@ import type {
   UpdatePrefs,
   UpdateStatus,
 } from '../shared/update';
+import type { TransportKind } from '../shared/transport';
 import type { WorkspaceSaveState } from '../shared/workspace';
 import type { ServiceHealthPrefs, ServiceHealthStatus } from '../shared/service-health';
 import type {
@@ -86,8 +87,25 @@ export interface SessionRecordDto {
   nativeSessionId?: string;
   pid?: number;
   exitCode: number | null;
-  /** which transport hosts this session (P2-E18-08b) */
-  transport?: 'pty' | 'stream';
+  /**
+   * Which transport hosts this session (P2-E18-08b).
+   *
+   * REQUIRED, and it mirrors `SessionRecord.transport` in
+   * `main/sessions/session-manager.ts` exactly (#445). Every producer of this
+   * DTO — `sessions:create`, `sessions:list`, `sessions:rename` — answers with
+   * a manager record, and the manager sets `transport` at spawn from the
+   * resolved recipe. There is no live session without one.
+   *
+   * It said `transport?` until #445, and that optional question mark was not
+   * free: it made every reader answer "and if it is missing?", and the answer
+   * SessionGrid gave was `'pty'` — a second, contradictory default sitting
+   * beside the shared `DEFAULT_SESSION_TRANSPORT` (`'stream'`). Not the same
+   * field as `PersistedSession.transport` in `main/workspace/store.ts`, which
+   * is genuinely optional because absence there means "this CARD has never
+   * chosen"; main resolves that absence through `DEFAULT_SESSION_TRANSPORT`
+   * before a live record ever exists. `transport-seam.test.ts` pins the mirror.
+   */
+  transport: TransportKind;
 }
 
 // The bridge grows with each subsystem. Every surface is promise/event based.
