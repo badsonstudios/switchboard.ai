@@ -873,6 +873,36 @@ app
     // the DOM's window.moveTo clamps to currently-known screens mid-hotplug,
     // BrowserWindow.setBounds does not. The popout is identified by its
     // current position, which the renderer reads off the DOM window it owns.
+    // Bring a popped-out window to the front (#571).
+    //
+    // THE RENDERER CANNOT DO THIS, and that is the whole bug. `focusSession`
+    // has asked for it since E9-01 — it calls `location.getWindow()?.focus()`
+    // on the popout's DOM window — but `window.focus()` does not raise an OS
+    // window on Windows, so clicking a popped-out session in the rail focused
+    // the panel inside a window that stayed buried. The intent was right and
+    // the mechanism was never able to carry it.
+    //
+    // `groupId` names a window MAIN ITSELF made: `popoutWindows` is filled from
+    // `did-create-window` and keyed by the dockview group in the frame name, so
+    // a renderer-supplied id can only ever select a window we already opened, or
+    // nothing (#531's rule, reused rather than re-argued).
+    //
+    // NOTHING HERE TOUCHES THE OTHER DIRECTION, deliberately: focusing the main
+    // window still leaves popouts where they are. The owner asked for that to
+    // stay, and it stays because raising is only ever done on an explicit
+    // request for a particular session — never on window focus.
+    broker.handle('app:raisePopout', (_e, groupId: unknown) => {
+      if (typeof groupId !== 'string' || !groupId) return false;
+      const hit = popoutWindows.find((p) => p.groupId === groupId);
+      const win = hit && !hit.win.isDestroyed() ? hit.win : null;
+      if (!win) return false;
+      // minimized counts as "behind": restore before raising, or focus() on a
+      // minimized window is a taskbar flash and nothing else
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+      return true;
+    });
     broker.handle('app:movePopout',
       (_e, from: { x: number; y: number }, to: { left: number; top: number; width: number; height: number }) => {
         if (

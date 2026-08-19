@@ -2278,7 +2278,7 @@ function openDocumentPanel(
       // rule this registry still exists for, failing in the one case where the
       // document the user asked for is somewhere they may not be looking.
       const loc = panel.api.location;
-      if (loc.type === 'popout') loc.getWindow()?.focus();
+      if (loc.type === 'popout') raisePopoutWindow(panel, loc.getWindow());
       return;
     }
     // The registry believes in a panel dockview does not have — only reachable
@@ -2679,6 +2679,36 @@ function rescueStrandedCard(api: DockviewApi, cardId: string): void {
   // session go, the same suspend a bare window close performs. Everything the
   // user can see is already right if this never comes back.
   void window.switchboard.sessions.dropLive(cardId);
+}
+
+/**
+ * Bring the OS window a popped-out panel lives in to the FRONT (#571).
+ *
+ * THE RENDERER CANNOT DO THIS ON ITS OWN, which is why clicking a popped-out
+ * session in the rail appeared to do nothing: `window.focus()` on another
+ * window does not raise it on Windows. The intent has been in `focusSession`
+ * since E9-01 and the mechanism was never able to carry it — so main does the
+ * raising, keyed by the dockview group id it already tracks per popout window
+ * (#531's registry).
+ *
+ * Both are attempted, in this order and deliberately: `window.focus()` is
+ * synchronous, costs nothing and is enough on some platforms; the IPC is the one
+ * that actually works on the owner's. Neither is load-bearing on the other.
+ *
+ * ONE DIRECTION ONLY. This raises a popout when the user asked for THAT session
+ * — a rail click, the attention jump, a document opened by name. Focusing the
+ * main window still leaves popouts exactly where they are, which the owner asked
+ * for explicitly and which nothing here touches.
+ */
+function raisePopoutWindow(panel: IDockviewPanel, domWindow: Window | undefined): void {
+  domWindow?.focus();
+  const groupId = panel.group?.id;
+  if (!groupId) return;
+  void window.switchboard.raisePopout?.(groupId)?.catch?.(() => {
+    // a window that closed between the click and the answer: the click has
+    // already done everything it can, and a rejection here would be an
+    // unhandled one in a click handler
+  });
 }
 
 /** The popout window's rect on screen, when this panel is in one. */
@@ -3626,7 +3656,7 @@ export function SessionGrid(props: {
         // leaves it buried behind this one, so raise its window too (E9-01)
         const loc = panel.group.api.location;
         if (loc.type !== 'popout') return false;
-        loc.getWindow()?.focus();
+        raisePopoutWindow(panel, loc.getWindow());
         // tells the caller we raised a DIFFERENT window: the popout keyboard
         // bridge must not then pull the main window in front of it
         return true;

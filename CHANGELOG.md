@@ -77,6 +77,12 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **A popped-out session comes to the front when you click it.** With a session
+  torn off into its own window and that window behind another one, clicking its
+  row in the sidebar focused it invisibly — the window stayed buried. It now
+  comes forward. Clicking the main switchboard.ai window still leaves your
+  popped-out windows exactly where they are: they only come forward when you ask
+  for that particular session.
 - **The Changes tab comes back to the file you were reading.** Switching a
   session to another tab and back used to return the Changes tab with nothing
   selected at all — you picked your file again and found your place again, every

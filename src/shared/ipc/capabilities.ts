@@ -120,6 +120,7 @@ export const CHANNEL_CAPABILITIES = {
   // action in through a label.
   'app:contextMenuLabels': 'app.window',
   'app:movePopout': 'app.window',
+  'app:raisePopout': 'app.window',
   'app:workAreas': 'app.window',
   'events:ack': 'events.write',
   'events:dismiss': 'events.write',
