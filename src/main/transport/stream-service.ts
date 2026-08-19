@@ -4,10 +4,12 @@
 // Deliberately electron-free and logger-free, exactly like PtyService: loadable
 // under any Node-ABI-compatible runtime so `lifecycle-check` can drive it.
 // Diagnostics leave through an optional callback rather than an imported
-// Logger, so the wiring decides where they go.
+// Logger, so the wiring decides where they go. Where they go is
+// `transport/diagnostics.ts` (the main log) - see that file for the #449
+// ruling and why it is not the Events panel.
 //
-// Not wired into the app by this item. It is driven by unit tests and the
-// lifecycle check; P2-E18-05 gives it a session.
+// Wired into the app since P2-E18-08a (`main/index.ts` constructs it beside
+// PtyService); it is also driven directly by unit tests and `fake-stream-check`.
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import { buildEnv } from './env';
 import { MessageRing } from './message-ring';
@@ -20,7 +22,15 @@ export type StreamMessage = Record<string, unknown>;
 export interface StreamSpawnOptions extends TransportSpawnOptions {
   /** How many parsed messages to retain (default 2000). */
   ringCapacity?: number;
-  /** Non-fatal problems: parse failures, overlong lines, stderr output. */
+  /**
+   * Non-fatal problems: parse failures, overlong lines, stderr output.
+   *
+   * Rarely set per spawn in the app: `SessionManager` reaches this class
+   * through `SessionTransport.spawn`, whose options are the transport-agnostic
+   * `TransportSpawnOptions` and cannot carry a stream-only field. The app wires
+   * `StreamServiceOptions.onDiagnostic` on the SERVICE instead, and this is the
+   * per-session override the tests and `fake-stream-check` use.
+   */
   onDiagnostic?: (d: StreamDiagnostic) => void;
 }
 
@@ -107,14 +117,14 @@ export class StreamSession {
     this.proc.stderr.setEncoding('utf8');
     this.proc.stderr.on('data', (chunk: string) => {
       this.stderrTail = (this.stderrTail + chunk).slice(-8192);
-      this.onDiagnostic?.({ sessionId: this.id, kind: 'stderr', detail: chunk.trim().slice(0, 500) });
+      this.diag('stderr', chunk.trim().slice(0, 500));
     });
 
     // stdin errors arrive asynchronously once the child is gone (the S-01
     // lesson PtyService records for PTY writes). An unhandled 'error' on a
     // stream is a process-level crash, so it is absorbed here.
     this.proc.stdin.on('error', (err) => {
-      this.onDiagnostic?.({ sessionId: this.id, kind: 'stdin-write-failed', detail: String(err) });
+      this.diag('stdin-write-failed', String(err));
     });
 
     const settle = (code: number): void => {
@@ -134,11 +144,28 @@ export class StreamSession {
     this.proc.on('error', () => settle(1)); // spawn failed (ENOENT etc.)
   }
 
+  /**
+   * Emit one diagnostic, absorbing anything the subscriber throws.
+   *
+   * The same P6 guarantee the message and exit fan-outs already give, and it
+   * stopped being theoretical the day #449 gave this callback a real consumer:
+   * three of the four emit sites are inside `stream.on('data'|'error')`
+   * handlers, where an escaping exception is not a lost diagnostic but an
+   * uncaught exception on the main process. Our breakage must never be why a
+   * session dies.
+   */
+  private diag(kind: StreamDiagnostic['kind'], detail: string): void {
+    try {
+      this.onDiagnostic?.({ sessionId: this.id, kind, detail });
+    } catch {
+      /* a broken diagnostic sink must never take the pump down (P6) */
+    }
+  }
+
   private ingest(chunk: string): void {
     for (const r of this.decoder.push(chunk)) {
       if (!r.ok) {
-        const kind = r.raw === '' ? 'overlong-line' : 'parse-failure';
-        this.onDiagnostic?.({ sessionId: this.id, kind, detail: r.error });
+        this.diag(r.raw === '' ? 'overlong-line' : 'parse-failure', r.error);
         continue; // one bad message costs one message
       }
       this.messages.push(r.value);
@@ -185,7 +212,7 @@ export class StreamSession {
     try {
       this.proc.stdin.write(encodeFrame(msg));
     } catch (err) {
-      this.onDiagnostic?.({ sessionId: this.id, kind: 'stdin-write-failed', detail: String(err) });
+      this.diag('stdin-write-failed', String(err));
     }
   }
 
@@ -198,14 +225,37 @@ export class StreamSession {
   }
 }
 
+export interface StreamServiceOptions {
+  /**
+   * Where diagnostics from EVERY session this service spawns go (#449).
+   *
+   * It lives on the service, not the spawn, because the only caller that
+   * matters - `SessionManager` - spawns through `SessionTransport.spawn` and
+   * can only pass `TransportSpawnOptions`. Widening that seam with a
+   * stream-only field would make the PTY implement something meaningless, so
+   * the wiring is attached once, where the concrete service is constructed
+   * (`main/index.ts`). A per-spawn `onDiagnostic` still wins, so a test or
+   * `fake-stream-check` can watch one session without a logger.
+   */
+  onDiagnostic?: (d: StreamDiagnostic) => void;
+}
+
 export class StreamService implements SessionTransport {
   private readonly sessions = new Map<string, StreamSession>();
+  private readonly onDiagnostic?: (d: StreamDiagnostic) => void;
+
+  constructor(opts: StreamServiceOptions = {}) {
+    this.onDiagnostic = opts.onDiagnostic;
+  }
 
   spawn(opts: StreamSpawnOptions): StreamSession {
     if (this.sessions.has(opts.id)) {
       throw new Error(`stream session "${opts.id}" already exists`);
     }
-    const s = new StreamSession(opts);
+    // `??`, so an explicit `onDiagnostic: undefined` reads as "didn't say" and
+    // still reaches the service's sink. Silence is the bug #449 fixed; a caller
+    // that genuinely wants none can pass `() => {}` and say so.
+    const s = new StreamSession({ ...opts, onDiagnostic: opts.onDiagnostic ?? this.onDiagnostic });
     this.sessions.set(opts.id, s);
     return s;
   }

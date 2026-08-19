@@ -71,6 +71,11 @@ on the floor, and say so in your PR.
   carries the transport it was spawned on, so the type now says so and the card
   reads main's answer verbatim — the stray `'pty'` fallback that contradicted
   the shared default is gone, with typecheck-level pins on both ends (#445).
+- **Stream-transport diagnostics now reach the log.** Parse failures, overlong
+  lines, CLI stderr and dead-pipe writes were produced by the stream-json
+  transport and dropped on the floor — nothing subscribed. They are written to
+  `switchboard.log` under the `transport` subsystem, throttled so a wedged
+  session cannot rotate the rest of the log away. Nothing changes on screen.
 
 ## 0.8.0 — 2026-08-19
 
