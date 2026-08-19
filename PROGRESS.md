@@ -30,7 +30,8 @@
 > | #534 permission-mode tooltips | sb-wt-3 (released) | feature/534-permission-mode-tooltips | **DONE** — **PR #586 ready-for-review, in Dan's queue** |
 > | #449 diagnostics wiring | sb-wt-3 (released) | feature/449-diagnostics-wiring | **DONE** — PR #591 (internal), merging on green; stayed internal (main log, not Events); #593 filed |
 > | #509 sanitizer authored-ARIA | sb-wt-3 (released) | feature/509-sanitizer-aria | **DONE** — PR #596 (internal): authored aria-* AND role stripped, measured over 7,475 transcripts (zero honest uses); #598 filed (tabindex), #466 annotated |
-> | #587 pin ask's permission mode | sb-wt-3 | feature/587-ask-mode-pin | running — internal-leaning |
+> | #587 pin ask's permission mode | sb-wt-3 (released) | feature/587-ask-mode-pin | **DONE** — worker called it USER-FACING (`ask` genuinely changes behavior): **PR #599 ready-for-review, in Dan's queue** |
+> | #216 suspended-card header parity | sb-wt-3 | feature/216-suspended-card-header | running — user-facing; verify-still-real first |
 > | ~~release v0.8.0 cut~~ | — | main | **DONE** — released 2026-08-19 |
 >
 > **#534 done (PR #586):** hover descriptions on all three mode surfaces from
@@ -44,12 +45,23 @@
 > Direct sessions may surface a permission bar — stream path never consults
 > autonomy; unverified, e2e-checkable with the fake provider).
 >
-> **Merge queue (Dan) — 6 PRs ready-for-review:** #576 (#556 drawer close),
+> **⚙️ INTERNAL TRAIN — PR #601** (`train/2026-08-19-internal`): carries the
+> four green internal PRs #589/#591/#592/#596 (issues #445/#449/#463/#509).
+> Serial merging was burning CI on BEHIND-bumps plus the #597 hang (3
+> sightings today; two more runs cancelled). Train tree verified: lint,
+> typecheck, unit 5259/5259; CHANGELOG conflicts resolved (all entries kept).
+> Local e2e deliberately skipped — two live workers share the machine lock
+> and CI runs the full e2e as the required check. Merges via MERGE COMMIT on
+> green. #539 sweep at ~70 min silent: alive (committed work in wt-2, no PR
+> yet) — left alone.
+>
+> **Merge queue (Dan) — 7 PRs ready-for-review:** #576 (#556 drawer close),
 > #578 (#543 tab tooltips + close-all), #579 (#566 question tabs), #580
 > (#559 rail reorder), #584 (#546 composer chips), #586 (#534 permission
-> tooltips). All green-gated locally; the orchestrator merges nothing
-> user-facing. Suggested review order: #576 → #578 → #584 → #586 → #580 →
-> #579 (smallest first; #579 last since #567's UI half stacks on it). Expect trivial CHANGELOG-0.9.0 conflicts between
+> tooltips), #599 (#587 ask-mode pin). All green-gated locally; the
+> orchestrator merges nothing user-facing. Suggested review order: #576 →
+> #578 → #584 → #586 → #599 → #580 → #579 (smallest first; #579 last since
+> #567's UI half stacks on it). Expect trivial CHANGELOG-0.9.0 conflicts between
 > them at merge — each entry is one line, keep both sides.
 >
 > **#546 done (PR #584):** chips survive remount via a renderer-run stash
