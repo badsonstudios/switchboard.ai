@@ -27,7 +27,8 @@
 > | #559 rail drag-reorder | sb-wt-2 (released) | feature/559-rail-drag-reorder | **DONE** — **PR #580 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
 > | #539 repair-sweep follow-ups | sb-wt-2 (released) | feature/539-repair-sweep-followups | **DONE** — **PR #602 ready-for-review, in Dan's queue**; #603 filed (shared FAKE_SESSION_ID) |
 > | #497 Direct-e2e fixture extraction | sb-wt-2 (released) | feature/497-direct-e2e-fixture | **DONE** — PR #604 (internal), merging on green; ambient flakes logged on #494; worker breached the background-waiter rule once and repaired it in-turn |
-> | #466+#598 sanitizer presentational+tabindex | sb-wt-2 | feature/466-598-sanitizer-presentational | running — INTERNAL (combined siblings) |
+> | #466+#598 sanitizer presentational+tabindex | sb-wt-2 (released) | feature/466-598-sanitizer-presentational | **DONE** — PR #608 (internal), merging on green; review widened it (popover/inert/background — same hide-the-code attack one attribute over); #612 filed (FORBID_TAGS half) |
+> | #593 StreamSession dead fields | sb-wt-2 | feature/593-streamsession-deadfields | running — INTERNAL |
 > | #566 question-panel tabs | sb-wt-3 (released) | feature/566-question-panel-tabs | **DONE** — **PR #579 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
 > | #567 probe half | sb-wt-3 (released) | feature/567-partial-answers-probe | **✅ MERGED** — PR #583 (after cancelling its hung ubuntu e2e, #597; re-run passed 9m) |
 > | #534 permission-mode tooltips | sb-wt-3 (released) | feature/534-permission-mode-tooltips | **DONE** — **PR #586 ready-for-review, in Dan's queue** |
@@ -35,7 +36,8 @@
 > | #509 sanitizer authored-ARIA | sb-wt-3 (released) | feature/509-sanitizer-aria | **DONE** — PR #596 (internal): authored aria-* AND role stripped, measured over 7,475 transcripts (zero honest uses); #598 filed (tabindex), #466 annotated |
 > | #587 pin ask's permission mode | sb-wt-3 (released) | feature/587-ask-mode-pin | **DONE** — worker called it USER-FACING (`ask` genuinely changes behavior): **PR #599 ready-for-review, in Dan's queue** |
 > | #216 suspended-card header parity | sb-wt-3 (released) | feature/216-suspended-card-header | **DONE** — gap was real; **PR #605 ready-for-review, in Dan's queue**; #606 (ended-card same gap) + #607 (stale "(default)" label) filed |
-> | #594 feed blocks in ContributionBoundary | sb-wt-3 | feature/594-feed-boundary | running — INTERNAL |
+> | #594 feed blocks in ContributionBoundary | sb-wt-3 (released) | feature/594-feed-boundary | **✅ MERGED** — PR #609 squashed (white-screen reproduced then closed; retry-keying verified live) |
+> | #603 unique fake-session ids | sb-wt-3 | feature/603-unique-fake-session-ids | running — INTERNAL |
 > | ~~release v0.8.0 cut~~ | — | main | **DONE** — released 2026-08-19 |
 >
 > **#534 done (PR #586):** hover descriptions on all three mode surfaces from
