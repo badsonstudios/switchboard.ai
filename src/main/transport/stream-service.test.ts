@@ -331,7 +331,11 @@ describe('StreamService — a real child over real pipes (P2-E18-03)', () => {
     expect(snap[snap.length - 1]).toEqual({ i: 49 }); // newest retained
     expect(s.messages.droppedCount).toBe(40);
   });
-});
+  // Suite ceiling, 30 s rather than vitest's 5 s default: every case here
+  // spawns a real node over real pipes. Two cases already said so one at a
+  // time; #512 (a sub-second local test that took 7123 ms on a loaded windows
+  // runner and died of the default) is the reason it now covers the suite.
+}, 30_000);
 
 // P1's `pty/lifecycle-check.ts` is a separate Electron entry point because
 // node-pty is a NATIVE module and cannot load under vitest — it needs
@@ -393,4 +397,5 @@ describe('StreamService bookkeeping (P2-E18-03)', () => {
     await until(() => s.exitCode !== null);
     expect(svc.get('gone')).toBeUndefined();
   });
-});
+  // Both cases spawn; same ceiling and same reason as above (#512).
+}, 30_000);

@@ -98,5 +98,11 @@ describe('runFiltered — the contract five check:* scripts exit through (#176)'
       '.unref(); process.exit(0)';
     const r = await run(source, { drainMs: 300 });
     expect(r.code).toBe(0);
+    // This one stays BELOW the suite ceiling on purpose: the grandchild it
+    // strands lives 30 s, so a 30 s test would let a regressed `runFiltered`
+    // resolve on the grandchild's death and pass. 10 s is the assertion.
   }, 10000);
-});
+  // Suite ceiling, 30 s rather than vitest's 5 s default: every case spawns
+  // a real node, and #512 is what that costs on a loaded Windows runner —
+  // a test that runs in well under a second locally took 7123 ms there.
+}, 30_000);

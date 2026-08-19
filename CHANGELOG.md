@@ -57,6 +57,17 @@ on the floor, and say so in your PR.
 
 ## 0.9.0 — unreleased
 
+### Internal
+
+- Gave every test that starts a real child process — `git`, or node running one
+  of the build scripts — an explicit time limit. They had been running under the
+  test runner's five-second default, which is a budget for a pure function and
+  not for a test that shells out a dozen times: one of them took 7.1 seconds on
+  a busy Windows CI machine and was killed, turning a pull request that had not
+  touched it red. Nothing about the tests themselves changed — only the ceiling
+  that decides whether a slow machine reports the test's own verdict or an
+  opaque timeout. (#512)
+
 ## 0.8.0 — 2026-08-19
 
 ### Added

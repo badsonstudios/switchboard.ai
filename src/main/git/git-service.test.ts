@@ -25,7 +25,10 @@ beforeAll(() => {
   fs.writeFileSync(path.join(repo, 'a.txt'), 'one\ntwo\n');
   sh(repo, ['add', '.']);
   sh(repo, ['commit', '-m', 'init']);
-});
+  // 30 s rather than vitest's 10 s hook default: six git processes, and #512
+  // is what git under a runner's load costs: 7123 ms for a test that runs
+  // in well under a second locally.
+}, 30_000);
 
 describe('GitService.status', () => {
   it('is graceful for non-repos (the done-when)', async () => {
@@ -47,7 +50,9 @@ describe('GitService.status', () => {
     expect(by['b.txt']).toMatchObject({ untracked: true });
     expect(by['c.txt']).toMatchObject({ staged: true, unstaged: false });
   });
-});
+  // Same ceiling as the hook, for the same reason (#512): every case in this
+  // suite runs git in a child process.
+}, 30_000);
 
 describe('GitService.fileVersions', () => {
   it('yields HEAD vs working contents for a modified file', async () => {
@@ -63,4 +68,6 @@ describe('GitService.fileVersions', () => {
     const dv = await svc.fileVersions(repo, 'nope.txt');
     expect(dv.modified).toBe('');
   });
-});
+  // Same ceiling as the hook, for the same reason (#512): every case in this
+  // suite runs git in a child process.
+}, 30_000);
