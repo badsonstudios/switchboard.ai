@@ -15,7 +15,8 @@
 >
 > | Issue | Worktree | Branch | Status |
 > |---|---|---|---|
-> | #556 events drawer close button | sb-wt-1 | feature/556-events-drawer-close | **DONE** — PR #576 (draft); rebasing CHANGELOG entry onto post-release main |
+> | #556 events drawer close button | sb-wt-1 (released) | feature/556-events-drawer-close | **DONE** — **PR #576 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
+> | #543 tab-model follow-ups | sb-wt-1 | feature/543-tab-model-followups | running |
 > | #559 rail drag-reorder | sb-wt-2 | feature/559-rail-drag-reorder | running |
 > | #566 question-panel tabs | sb-wt-3 | feature/566-question-panel-tabs | running |
 > | ~~release v0.8.0 cut~~ | — | main | **DONE** — released 2026-08-19 |
@@ -30,9 +31,11 @@
 > modes (real tokens) + the conditional UI half; dispatches after #566 lands
 > (same QuestionPanel subsystem).
 >
-> **Queued next:** #567 (behind #566, approved); #543 into sb-wt-1 once
-> #556's rebase lands. Then #544/#546/#539 (note: #543 and #544 both touch the
-> document-tab area — never concurrent with each other).
+> **Queued next:** #567 (behind #566, approved). Then #544/#546/#539 (note:
+> #544 waits for #543 to land — both touch the document-tab area).
+>
+> **Merge-order note:** PR #576 and #543's branch both add i18n locale
+> strings — whichever lands second takes a trivial locale rebase (keep both).
 >
 > **⚠️ Standing hazard this run:** any branch cut before the v0.8.0 release
 > (all of wave 1) filed its CHANGELOG entry under `0.8.0 — unreleased`, which
