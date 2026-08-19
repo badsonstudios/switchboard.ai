@@ -111,6 +111,14 @@ on the floor, and say so in your PR.
   carries the transport it was spawned on, so the type now says so and the card
   reads main's answer verbatim — the stray `'pty'` fallback that contradicted
   the shared default is gone, with typecheck-level pins on both ends (#445).
+- The renderer's picture of a running session is no longer a hand-copied one.
+  What the main process sends about a live session and what the window expects
+  to receive were two separate declarations that nothing compared, so they had
+  quietly stopped matching — the shared description of a session's status said
+  "any text at all" rather than the seven states it can actually be in. Both
+  sides now read
+  one declaration, and a new field has to say whether it is for the window or
+  for main before it will compile (#590).
 - **Stream-transport diagnostics now reach the log.** Parse failures, overlong
   lines, CLI stderr and dead-pipe writes were produced by the stream-json
   transport and dropped on the floor — nothing subscribed. They are written to

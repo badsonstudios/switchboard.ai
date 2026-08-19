@@ -6,19 +6,14 @@
 //   - no event fires on prompt acceptance: any working-ish event clears
 //     needs-* states
 //   - unknown events: log, don't transition (§5.26 posture)
-// 'idle' is currently only reachable via future idle-detection (E4 wiring —
-// Notification "waiting" classifies to needs-input today); kept in the union
-// because the spec names it and the UI ships a badge for it.
 import { INTERACTIVE_TOOLS } from '../../shared/tool-taxonomy';
+import type { SessionStatus } from '../../shared/sessions';
 
-export type SessionStatus =
-  | 'starting'
-  | 'working'
-  | 'needs-input'
-  | 'needs-permission'
-  | 'idle'
-  | 'done'
-  | 'crashed';
+// The status VOCABULARY moved to `shared/sessions.ts` in #590 — the renderer
+// paints these values, so they cross IPC and belong with the rest of the wire
+// shape. This module still owns the TRANSITIONS, which is the part that is
+// main's alone. Re-exported so every main-side importer is unchanged.
+export type { SessionStatus };
 
 export type SessionEvent =
   | {
