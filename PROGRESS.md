@@ -21,7 +21,8 @@
 > | #559 rail drag-reorder | sb-wt-2 (released) | feature/559-rail-drag-reorder | **DONE** — **PR #580 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
 > | #539 repair-sweep follow-ups | sb-wt-2 | feature/539-repair-sweep-followups | running |
 > | #566 question-panel tabs | sb-wt-3 (released) | feature/566-question-panel-tabs | **DONE** — **PR #579 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
-> | #567 probe half | sb-wt-3 | feature/567-partial-answers-probe | running — INTERNAL, orchestrator merges on green |
+> | #567 probe half | sb-wt-3 (released) | feature/567-partial-answers-probe | **DONE** — PR #583 (internal), merging on green CI |
+> | #534 permission-mode tooltips | sb-wt-3 | feature/534-permission-mode-tooltips | running |
 > | ~~release v0.8.0 cut~~ | — | main | **DONE** — released 2026-08-19 |
 >
 > **Merge queue (Dan):** empty so far. All three wave-1 items are user-facing —
@@ -34,9 +35,11 @@
 > modes (real tokens) + the conditional UI half; dispatches after #566 lands
 > (same QuestionPanel subsystem).
 >
-> **Queued next:** #567 UI half
-> waits for PR #579 to MERGE + the probe's verdict; #544 waits for PR #578 to
-> MERGE (same document-tab subsystem as #543).
+> **Queued next:** #567 UI half — **probe verdict is in: a partial map reads
+> as SKIPPED** (CLI accepts it, filters `""` values itself, tool_result names
+> only the answered questions; findings §3a has the verbatim quotes) — so the
+> UI half proceeds as the issue sketches, once PR #579 MERGES. #544 waits for
+> PR #578 to MERGE (same document-tab subsystem as #543).
 >
 > **#559 done (PR #580, draft until rebase lands):** drag-reorder within a
 > group (groups, auto-groups, Ungrouped), persisted in the workspace store;
