@@ -107,6 +107,8 @@ back to the first.
 | `Ctrl+Shift+↑` | Show more of the focused session — one rung up |
 | `Ctrl+Shift+M` | Maximize the focused session, or put the layout back |
 | `Ctrl+Alt+P` | Pin or unpin the focused session |
+| `Ctrl+Alt+↑` | Move the focused session up in its group |
+| `Ctrl+Alt+↓` | Move the focused session down in its group |
 | `Ctrl+Shift+L` | Switch the whole workspace to the next layout: Grid → Focus → Queue |
 | `Ctrl+Shift+P` | Open the command palette |
 | `Ctrl+Space` | Go to the next session that needs you |
@@ -122,6 +124,16 @@ minimized behind your back, and is skipped by **Close all sessions** — see
 [Pinning a session](02-sessions.md#pinning-a-session-you-always-want-to-find).
 It does not force the session to stay expanded; you can still collapse, tab or
 hide it yourself.
+
+`Ctrl+Alt+↑` and `Ctrl+Alt+↓` move the session you're in up and down the
+Sessions list, inside its own group — the keyboard version of dragging the row.
+The order is saved with your workspace, and since the list is what `Ctrl+1`…
+`Ctrl+9` counts against, arranging it is how you choose which session is
+`Ctrl+1`. A pinned session still sits above the rest of its group, so the
+shortcut stops at the one above it rather than pushing past — see
+[Putting sessions in the order you want](02-sessions.md#putting-sessions-in-the-order-you-want).
+Note the modifier: `Ctrl+Shift+↑`/`↓` above resize the *card*, `Ctrl+Alt+↑`/`↓`
+move the *row*.
 
 ``Ctrl+` `` is a toggle: press it once to look at the Terminal, press it again
 to go straight back to the Session view. On a session in

@@ -19,6 +19,7 @@ import { DEFAULT_BOOK } from '../lib/presentation-policy';
 import { DEFAULT_FOCUS_BOOK } from '../lib/focus-policy';
 import { uiDelete } from '../lib/ui-state';
 import { RailGroup, RailSession } from '../model/types';
+import { NO_ORDER } from '../lib/rail-order';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -76,6 +77,8 @@ async function mountRail(
         onSetSessionPolicy={noop}
         onSetSessionFocusPolicy={noop}
         onCycleGroupPolicy={noop}
+        manualOrder={NO_ORDER}
+        onReorder={noop}
       />
     );
   });

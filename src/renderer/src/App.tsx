@@ -262,6 +262,18 @@ export function App(): React.JSX.Element {
   // commit.
   const pinned = useSyncExternalStore(subscribeStore, () => sessionStore.getPins());
   const togglePin = React.useCallback((cardId: string) => sessionStore.togglePin(cardId), []);
+  // #559's manual rail order. From the store for the reasons the pin set is:
+  // the rail RENDERS from it, rail order is DERIVED from it, and the reorder
+  // commands read it synchronously from a keydown handler.
+  const manualOrder = useSyncExternalStore(subscribeStore, () => sessionStore.getManualOrder());
+  const reorderBucket = React.useCallback(
+    (bucket: string, ids: string[]) => sessionStore.setBucketOrder(bucket, ids),
+    []
+  );
+  const reorderSession = React.useCallback(
+    (cardId: string, dir: 'up' | 'down') => sessionStore.reorderSession(cardId, dir === 'up' ? -1 : 1),
+    []
+  );
   const collapsed = React.useMemo(
     () =>
       collapsedRows(
@@ -1063,6 +1075,7 @@ export function App(): React.JSX.Element {
           closeCard: (cardId) => grid.current?.closeCard(cardId),
           closeAllCards: () => grid.current?.closeAllCards(),
           togglePin,
+          reorderSession,
           toggleCardView: (cardId, view) => grid.current?.toggleCardView(cardId, view),
           popOutCard: (cardId) => grid.current?.popOutCard(cardId),
           hideCard: (cardId) => grid.current?.hideCard(cardId),
@@ -1166,6 +1179,7 @@ export function App(): React.JSX.Element {
       setGlobalFocusPolicy,
       setSessionFocusPolicy,
       togglePin,
+      reorderSession,
       checkForUpdates,
       openPushSetup,
       openQuietHours,
@@ -1648,6 +1662,8 @@ export function App(): React.JSX.Element {
             policies={policies}
             pinned={pinned}
             onTogglePin={togglePin}
+            manualOrder={manualOrder}
+            onReorder={reorderBucket}
             onSetSessionPolicy={setSessionPolicy}
             onCycleGroupPolicy={cycleGroupPolicy}
             focusPolicies={focusPolicies}

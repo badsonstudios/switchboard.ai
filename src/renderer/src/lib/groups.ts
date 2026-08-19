@@ -1,4 +1,12 @@
 import { NO_PINS, PinSet, sortPinnedFirst } from './pinning';
+import {
+  applyManualOrder,
+  autoBucket,
+  groupBucket,
+  LOOSE_BUCKET,
+  ManualOrder,
+  NO_ORDER,
+} from './rail-order';
 
 // Membership adoption rule for grid drags (P2-E12-04): when a session panel
 // lands in a dockview group, it adopts the persistent group of the panels
@@ -54,13 +62,26 @@ export interface RailOrderResult<T> {
   loose: T[];
   /** every session, flattened in the order the rail paints it */
   flat: T[];
+  /**
+   * bucket key -> its members' card ids, in the order the rail paints them
+   * (#559). The reorder handlers need "the list this row is being dragged
+   * inside", and deriving it at the call site means re-implementing the
+   * bucketing above — which is how the thing you drag and the thing you
+   * persist end up being two different lists.
+   */
+  buckets: ReadonlyMap<string, string[]>;
+  /** card id -> the bucket key its row renders in (#559) */
+  bucketOf: ReadonlyMap<string, string>;
 }
 
 export function railOrder<T extends AutoGroupable>(
   sessions: readonly T[],
   groups: ReadonlyArray<{ id: string }>,
   /** §5.8's "a pinned session sorts first in the rail" (P2-E9-09) */
-  pins: PinSet = NO_PINS
+  pins: PinSet = NO_PINS,
+  /** the order the user arranged by hand (#559) — see lib/rail-order for how
+   *  it layers with the pin sort, which still wins */
+  manual: ManualOrder = NO_ORDER
 ): RailOrderResult<T> {
   // §5.8's "a pinned session sorts first" is applied PER BUCKET, and applied
   // LAST — after membership and after bucket order are both settled.
@@ -93,20 +114,34 @@ export function railOrder<T extends AutoGroupable>(
   const auto = computeAutoGroups(ungrouped);
   const autoMemberIds = new Set(auto.flatMap((g) => g.memberIds));
   const byId = new Map(ungrouped.map((s) => [s.id, s]));
+  // #559's manual order goes on BETWEEN membership and the pin sort, per
+  // bucket, and the pin sort still runs last — see lib/rail-order's header for
+  // the decision and why it went that way rather than the other.
+  const buckets = new Map<string, string[]>();
+  const bucketOf = new Map<string, string>();
+  const settle = (key: string, members: T[]): T[] => {
+    const out = sortPinnedFirst(applyManualOrder(members, manual.get(key)), pins);
+    buckets.set(
+      key,
+      out.map((s) => s.id)
+    );
+    for (const s of out) bucketOf.set(s.id, key);
+    return out;
+  };
   const orderedGroups = groups.map((g) => ({
     id: g.id,
-    members: sortPinnedFirst(grouped.get(g.id) ?? [], pins),
+    members: settle(groupBucket(g.id), grouped.get(g.id) ?? []),
   }));
   const orderedAuto = auto.map((ag) => ({
     key: ag.key,
-    members: sortPinnedFirst(
-      ag.memberIds.map((id) => byId.get(id)).filter((s): s is T => !!s),
-      pins
+    members: settle(
+      autoBucket(ag.key),
+      ag.memberIds.map((id) => byId.get(id)).filter((s): s is T => !!s)
     ),
   }));
-  const loose = sortPinnedFirst(
-    ungrouped.filter((s) => !autoMemberIds.has(s.id)),
-    pins
+  const loose = settle(
+    LOOSE_BUCKET,
+    ungrouped.filter((s) => !autoMemberIds.has(s.id))
   );
   return {
     groups: orderedGroups,
@@ -117,6 +152,8 @@ export function railOrder<T extends AutoGroupable>(
       ...orderedAuto.flatMap((g) => g.members),
       ...loose,
     ],
+    buckets,
+    bucketOf,
   };
 }
 

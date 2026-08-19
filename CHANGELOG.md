@@ -57,6 +57,20 @@ on the floor, and say so in your PR.
 
 ## 0.9.0 — unreleased
 
+### Added
+
+- **Put your sessions in the order you want.** The Sessions list was stuck in
+  the order you happened to open things in. Drag a session up or down inside its
+  group and it stays where you put it — a line shows where it will land — and
+  the arrangement comes back next time you open switchboard. Without a mouse:
+  **Move up** / **Move down** in the row's right-click menu, or **`Ctrl+Alt+↑`**
+  / **`Ctrl+Alt+↓`** while you are in the session. Dragging onto a *different*
+  group still means what it always did — it joins that group, and you arrange it
+  from there.
+  Pinned sessions still come first in their group; that is the one rule your own
+  order does not beat. Since the list is what `Ctrl+1`…`Ctrl+9` counts against,
+  arranging it is also how you choose which session is `Ctrl+1`.
+
 ## 0.8.0 — 2026-08-19
 
 ### Added

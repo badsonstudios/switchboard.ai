@@ -160,6 +160,102 @@ describe('railOrder — §5.8 sorts a pinned session first (E9-09)', () => {
   });
 });
 
+describe('railOrder — #559 the order the user arranged by hand', () => {
+  const order = (entries: Record<string, string[]>): Map<string, string[]> =>
+    new Map(Object.entries(entries));
+
+  it('arranges a persistent group, and leaves the other buckets alone', () => {
+    const r = railOrder(
+      [
+        { id: 'a', groupId: 'g1' },
+        { id: 'b', groupId: 'g1' },
+        { id: 'c', groupId: 'g1' },
+        { id: 'loose1' },
+        { id: 'loose2' },
+      ],
+      [{ id: 'g1' }],
+      undefined,
+      order({ g1: ['c', 'a', 'b'] })
+    );
+    expect(r.groups[0].members.map((s) => s.id)).toEqual(['c', 'a', 'b']);
+    expect(r.loose.map((s) => s.id)).toEqual(['loose1', 'loose2']);
+  });
+
+  it('arranges the loose list, which on a workspace with no groups IS the rail', () => {
+    const r = railOrder(
+      [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+      [],
+      undefined,
+      order({ ungrouped: ['c', 'b', 'a'] })
+    );
+    // ...and Ctrl+1..9 counts against it, because `flat` is the same list
+    expect(r.flat.map((s) => s.id)).toEqual(['c', 'b', 'a']);
+  });
+
+  it('arranges an auto-group under the key the rail paints it with', () => {
+    const r = railOrder(
+      [
+        { id: 'a', autoKey: 'c:/one' },
+        { id: 'b', autoKey: 'c:/one' },
+      ],
+      [],
+      undefined,
+      order({ 'auto:c:/one': ['b', 'a'] })
+    );
+    expect(r.autoGroups[0].members.map((s) => s.id)).toEqual(['b', 'a']);
+  });
+
+  it('never moves a session between buckets — an arrangement is per group', () => {
+    // an order naming a card that is not in this bucket is simply not about it
+    const r = railOrder(
+      [{ id: 'a', groupId: 'g1' }, { id: 'loose' }],
+      [{ id: 'g1' }],
+      undefined,
+      order({ g1: ['loose', 'a'] })
+    );
+    expect(r.groups[0].members.map((s) => s.id)).toEqual(['a']);
+    expect(r.loose.map((s) => s.id)).toEqual(['loose']);
+  });
+
+  it('§5.8 STILL WINS: the pin sort runs after the arrangement', () => {
+    // the decision #559 delegated, at the one seam where it is observable —
+    // arranged c, a, b, then pinning b promotes it out of the middle
+    const r = railOrder(
+      [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+      [],
+      new Set(['b']),
+      order({ ungrouped: ['c', 'a', 'b'] })
+    );
+    expect(r.flat.map((s) => s.id)).toEqual(['b', 'c', 'a']);
+  });
+
+  it('publishes the bucket each session renders in, and each bucket’s order', () => {
+    // what the rail’s drop handlers read. Derived HERE so the list the user
+    // drags in and the list that gets persisted are one list.
+    const r = railOrder(
+      [
+        { id: 'a', groupId: 'g1' },
+        { id: 'b', groupId: 'g1' },
+        { id: 'x', autoKey: 'c:/one' },
+        { id: 'y', autoKey: 'c:/one' },
+        { id: 'loose' },
+      ],
+      [{ id: 'g1' }]
+    );
+    expect(r.bucketOf.get('a')).toBe('g1');
+    expect(r.bucketOf.get('x')).toBe('auto:c:/one');
+    expect(r.bucketOf.get('loose')).toBe('ungrouped');
+    expect(r.buckets.get('g1')).toEqual(['a', 'b']);
+    expect(r.buckets.get('auto:c:/one')).toEqual(['x', 'y']);
+    expect(r.buckets.get('ungrouped')).toEqual(['loose']);
+  });
+
+  it('lists an EMPTY group as an empty bucket rather than not at all', () => {
+    const r = railOrder([], [{ id: 'g1' }]);
+    expect(r.buckets.get('g1')).toEqual([]);
+  });
+});
+
 describe('groupChangeLanded — reading a refusal instead of catching one (issue 326)', () => {
   let warned: string[];
   let restore: () => void;
