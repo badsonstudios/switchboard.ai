@@ -309,9 +309,12 @@ just asked for a whole arrangement, so that's the one you get. And a maximize
 isn't a trap — clicking another session while one is maximized brings that one
 back as usual; the rest stay folded until you undo it.
 
-`Ctrl+Shift+M` is the one to use on a **suspended** session (one that came back
-with the app and hasn't been resumed yet): it has no header to double-click
-until it starts.
+This works on a **suspended** session too (one that came back with the app and
+hasn't been resumed yet). Its card keeps a header — the session's name, its
+colour and badge, and the word *suspended* — so there's something to
+double-click, and `Ctrl+Shift+M` does the same thing from the keyboard.
+Maximizing a suspended session doesn't wake it up: it stays suspended, with its
+**Resume** button, until you press that.
 
 ## Getting out of the way by itself
 

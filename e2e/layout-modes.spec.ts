@@ -21,6 +21,7 @@ import {
   hookPoster,
   persistedUi,
   readWorkspaceFile,
+  skipPopoutOnLinux,
 } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -41,6 +42,10 @@ const modeChip = (w: Page) => w.getByTestId('layout-mode');
  * group (addSessionCard reuses the first grid group) and dockview mounts only
  * the visible panel. A future change that splits new cards across groups would
  * turn this into a strict-mode failure rather than a silent wrong answer.
+ *
+ * A card handed back by a CLOSED POPOUT does not always land in the group it
+ * left, which is why the suspended-header test below locates its header by
+ * name instead of through this helper.
  */
 const cardHeader = (w: Page) => w.getByTestId('card-header').filter({ visible: true });
 
@@ -241,5 +246,64 @@ test.describe('layout modes (E9-07)', () => {
     await w.keyboard.press(`${MOD}+Shift+M`);
     await expect(tabs(w)).toHaveCount(2, { timeout: 25_000 });
     await expect(strip(w)).toHaveCount(0);
+  });
+
+  // #216 — the gesture on the one card that used to have nowhere to receive it.
+  // A suspended card (restored with the app, or handed back by a popout window
+  // closing) drew its overlay and no header at all, so `Ctrl+Shift+M` worked on
+  // it and the double-click had no target: the manual had to write that
+  // exception down. This is the exception being gone.
+  test('a SUSPENDED card takes the same double-click (#216)', async () => {
+    // the only route to a suspended card a user can drive: pop out, close the
+    // OS window (E8-04). That is a second window, hence the Linux skip the
+    // popout tests all take.
+    skipPopoutOnLinux();
+    test.slow(); // two sessions, a popout round trip, then the maximize pair
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    const first = path.basename(folder);
+    await expect(tabs(w)).toHaveCount(1, { timeout: 25_000 });
+    const second = await addSession(a);
+    await expect(tabs(w)).toHaveCount(2);
+
+    await row(w, first).click();
+    await expect(w.locator('.dv-active-tab')).toContainText(first);
+    await w.getByTitle('Pop out into its own window').click();
+    // BY URL, not by "the other one": devtools or a rescued window would both
+    // satisfy `!== w` and neither hosts a session (session.spec.ts's rule).
+    await expect
+      .poll(() => a.app.windows().filter((p) => p.url().includes('popout.html')).length, {
+        timeout: 15_000,
+      })
+      .toBe(1);
+    const popout = a.app.windows().find((p) => p.url().includes('popout.html'))!;
+    // and let it finish arriving before closing it — closing the shell
+    // mid-adoption is a CI-only flake nobody enjoys diagnosing
+    await popout.waitForLoadState('domcontentloaded');
+    await popout.evaluate(() => window.close());
+    await expect.poll(() => a.app.windows().length, { timeout: 15_000 }).toBe(1);
+    await expect(w.getByTestId('card-overlay').getByText('Session suspended')).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // BY NAME rather than by `cardHeader`: a card handed back by a closed
+    // popout does not always land in the group it left, so "the visible header"
+    // can legitimately be two of them here.
+    const suspendedHeader = w.getByTestId('card-header').filter({ hasText: first });
+    await expect(suspendedHeader).toBeVisible({ timeout: 15_000 });
+    await suspendedHeader.dblclick({ position: { x: 4, y: 4 } });
+
+    await expect(tabs(w)).toHaveCount(1, { timeout: 15_000 });
+    await expect(tabs(w).first()).toContainText(first);
+    await expect(stripRow(w, second)).toBeVisible();
+    // ...and it is still SUSPENDED. Maximizing a card is a request about the
+    // workspace, not about the session — nothing here may quietly resume it.
+    await expect(w.getByTestId('card-overlay').getByText('Session suspended')).toBeVisible();
+
+    await suspendedHeader.dblclick({ position: { x: 4, y: 4 } });
+    await expect(tabs(w)).toHaveCount(2, { timeout: 25_000 });
+    await expect(strip(w)).toHaveCount(0);
+    await expect(w.getByTestId('card-overlay').getByText('Session suspended')).toBeVisible();
   });
 });
