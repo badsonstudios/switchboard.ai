@@ -28,7 +28,7 @@
 > | #539 repair-sweep follow-ups | sb-wt-2 (released) | feature/539-repair-sweep-followups | **DONE** — **PR #602 ready-for-review, in Dan's queue**; #603 filed (shared FAKE_SESSION_ID) |
 > | #497 Direct-e2e fixture extraction | sb-wt-2 (released) | feature/497-direct-e2e-fixture | **DONE** — PR #604 (internal), merging on green; ambient flakes logged on #494; worker breached the background-waiter rule once and repaired it in-turn |
 > | #466+#598 sanitizer presentational+tabindex | sb-wt-2 (released) | feature/466-598-sanitizer-presentational | **DONE** — PR #608 (internal), merging on green; review widened it (popover/inert/background — same hide-the-code attack one attribute over); #612 filed (FORBID_TAGS half) |
-> | #593 StreamSession dead fields | sb-wt-2 | feature/593-streamsession-deadfields | running — INTERNAL |
+> | #593 StreamSession dead fields | sb-wt-2 (released) | feature/593-streamsession-deadfields | **DONE** — PR #613 (internal): both fields wired via one 'exit' diagnostic; corrected #449's report (`health` had a consumer in fake-stream-check.ts); merging on green |
 > | #566 question-panel tabs | sb-wt-3 (released) | feature/566-question-panel-tabs | **DONE** — **PR #579 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
 > | #567 probe half | sb-wt-3 (released) | feature/567-partial-answers-probe | **✅ MERGED** — PR #583 (after cancelling its hung ubuntu e2e, #597; re-run passed 9m) |
 > | #534 permission-mode tooltips | sb-wt-3 (released) | feature/534-permission-mode-tooltips | **DONE** — **PR #586 ready-for-review, in Dan's queue** |
@@ -67,9 +67,15 @@
 > Worker note for everyone: **never run `npx prettier --write` here** (#323
 > is real; 28 files reformatted and hand-restored mid-item).
 >
-> **Internal queue note:** PR #604 (#497) went green then DIRTY against the
-> train's CHANGELOG entries — orchestrator resolved (entries accumulated),
-> re-CI running, merges on green.
+> **✅ #604 (#497 fixture extraction) MERGED** after one CHANGELOG-conflict
+> resolution. Internal pending: #608 (one leg), #613 (fresh). Workers still
+> out: #590 (wt-1), #603 (wt-3).
+>
+> **Run wind-down note:** after the current workers land, the unblocked
+> frontier is nearly empty — most remaining issues sit behind Dan's 10-PR
+> review queue (their subsystems have open user-facing PRs) or are
+> Dan-only ([user] design sittings, #529/#528). Plan: land what's out,
+> merge internal greens, final report.
 >
 > **Merge queue (Dan) — 10 PRs ready-for-review:** #576 (#556 drawer close),
 > #578 (#543 tab tooltips + close-all), #579 (#566 question tabs), #580
