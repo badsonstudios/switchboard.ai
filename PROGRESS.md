@@ -33,7 +33,8 @@
 > | #449 diagnostics wiring | sb-wt-3 (released) | feature/449-diagnostics-wiring | **DONE** — PR #591 (internal), merging on green; stayed internal (main log, not Events); #593 filed |
 > | #509 sanitizer authored-ARIA | sb-wt-3 (released) | feature/509-sanitizer-aria | **DONE** — PR #596 (internal): authored aria-* AND role stripped, measured over 7,475 transcripts (zero honest uses); #598 filed (tabindex), #466 annotated |
 > | #587 pin ask's permission mode | sb-wt-3 (released) | feature/587-ask-mode-pin | **DONE** — worker called it USER-FACING (`ask` genuinely changes behavior): **PR #599 ready-for-review, in Dan's queue** |
-> | #216 suspended-card header parity | sb-wt-3 | feature/216-suspended-card-header | running — user-facing; verify-still-real first |
+> | #216 suspended-card header parity | sb-wt-3 (released) | feature/216-suspended-card-header | **DONE** — gap was real; **PR #605 ready-for-review, in Dan's queue**; #606 (ended-card same gap) + #607 (stale "(default)" label) filed |
+> | #594 feed blocks in ContributionBoundary | sb-wt-3 | feature/594-feed-boundary | running — INTERNAL |
 > | ~~release v0.8.0 cut~~ | — | main | **DONE** — released 2026-08-19 |
 >
 > **#534 done (PR #586):** hover descriptions on all three mode surfaces from
@@ -63,14 +64,14 @@
 > Worker note for everyone: **never run `npx prettier --write` here** (#323
 > is real; 28 files reformatted and hand-restored mid-item).
 >
-> **Merge queue (Dan) — 8 PRs ready-for-review:** #576 (#556 drawer close),
+> **Merge queue (Dan) — 9 PRs ready-for-review:** #576 (#556 drawer close),
 > #578 (#543 tab tooltips + close-all), #579 (#566 question tabs), #580
 > (#559 rail reorder), #584 (#546 composer chips), #586 (#534 permission
 > tooltips), #599 (#587 ask-mode pin), #602 (#539 adoption notice +
-> duplicate untangle). All green-gated locally; the orchestrator merges
-> nothing user-facing. Suggested review order: #576 → #578 → #584 → #586 →
-> #599 → #602 → #580 → #579 (smallest first; #579 last since #567's UI half
-> stacks on it). Expect trivial CHANGELOG-0.9.0 conflicts between
+> duplicate untangle), #605 (#216 suspended-card header). All green-gated
+> locally; the orchestrator merges nothing user-facing. Suggested review
+> order: #576 → #578 → #584 → #586 → #599 → #605 → #602 → #580 → #579
+> (smallest first; #579 last since #567's UI half stacks on it). Expect trivial CHANGELOG-0.9.0 conflicts between
 > them at merge — each entry is one line, keep both sides.
 >
 > **#546 done (PR #584):** chips survive remount via a renderer-run stash
