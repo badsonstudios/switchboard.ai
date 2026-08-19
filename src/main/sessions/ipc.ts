@@ -622,10 +622,23 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // (`shouldHoldPermission`'s GATED table does not list it). The hook router's
     // signature is deliberately left alone rather than grown a parameter it
     // would ignore.
-    return (
+    const delivered =
       hooks.decide(requestId, decision, clean) ||
-      (streamPermissions?.decide(requestId, decision, clean, updatedInput) ?? false)
-    );
+      (streamPermissions?.decide(requestId, decision, clean, updatedInput) ?? false);
+    // A DECISION THAT LANDED ON NOTHING (#570). Both routers answer false for a
+    // request they are not holding, and until now that was SILENT — so an answer
+    // the user watched themselves give could vanish leaving no trace anywhere,
+    // which is exactly what happened: the owner reported an answered question
+    // coming back "denied", and a log that had recorded every other thing about
+    // that request could not say whether his click failed to arrive or arrived
+    // after something else had already resolved it.
+    //
+    // It is not necessarily a bug — a toast pressed after the bar was answered
+    // lands here too, and that is ordinary. It is always worth a line.
+    if (!delivered) {
+      log.warn('a decision arrived for a request nobody is holding', { requestId, decision });
+    }
+    return delivered;
   };
   broker.handle('sessions:decidePermission',
     (_e, requestId: string, decision: string, reason?: string, updatedInput?: unknown) =>

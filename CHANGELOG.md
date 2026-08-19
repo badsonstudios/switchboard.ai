@@ -77,6 +77,12 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **A question now waits as long as you need.** Questions used to be declined on
+  your behalf after half an hour — so stepping away mid-question and coming back
+  to answer it meant your answer went nowhere, and Claude had already been told
+  nobody replied. There is no time limit now: a question waits until you answer
+  it, for as long as switchboard is open. (Permission requests keep their
+  five-minute limit — those are a glance and a click.)
 - **A popped-out session comes to the front when you click it.** With a session
   torn off into its own window and that window behind another one, clicking its
   row in the sidebar focused it invisibly — the window stayed buried. It now

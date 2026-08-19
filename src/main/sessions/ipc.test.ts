@@ -3758,3 +3758,42 @@ describe('auto task labels (P2-E7-06, §5.11)', () => {
     expect(rec.taskLabel).toBe(SETTLED);
   });
 });
+
+// ── #570 — a decision that lands on nothing is no longer silent ─────────────
+describe('a decision for a request nobody is holding (#570)', () => {
+  // THE REASON THIS EXISTS. The owner reported an answered question coming back
+  // "denied". The log had recorded everything else about that request — when it
+  // was raised, when it failed open — and could not say whether his click never
+  // arrived or arrived after something had already resolved it, because both
+  // routers answer `false` for an id they are not holding and said nothing.
+  let folder: string;
+  tempDirEach('sb-ipc-', (d) => (folder = d));
+
+  it('answers false and WRITES IT DOWN', () => {
+    const h = harness(undefined, folder);
+
+    expect(h.decidePermission('stream:s1:nobody', 'allow')).toBe(false);
+
+    expect(h.warn).toHaveBeenCalledWith(
+      'a decision arrived for a request nobody is holding',
+      expect.objectContaining({ requestId: 'stream:s1:nobody', decision: 'allow' })
+    );
+  });
+
+  it('names the id that went nowhere, not just that something did', () => {
+    const h = harness(undefined, folder);
+    h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
+    h.hookDecisions.length = 0;
+    h.warn.mockClear();
+
+    h.decidePermission('hook-req-1', 'allow');
+    const noisy = h.warn.mock.calls.filter(
+      (c: unknown[]) => String(c[0]).includes('nobody is holding')
+    );
+    // one line, naming THAT request — which is the whole point: the report this
+    // came from could not be resolved because nothing said WHICH decision was
+    // lost
+    expect(noisy).toHaveLength(1);
+    expect(noisy[0][1]).toMatchObject({ requestId: 'hook-req-1' });
+  });
+});

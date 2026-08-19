@@ -3,50 +3,62 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶▶ START HERE — 🔨 #569 DONE, AWAITING GATE 2, 2026-08-18
+> # ▶▶ START HERE — ✅ MAIN IS CLEAN, 2026-08-18
 >
-> **#569 — a File menu (Open File / Exit), and documents that land beside the
-> session you are in.** Owner request, moved up. Built and reviewed; not yet
-> committed.
+> **Nothing is in flight. Four items merged today and NONE of them are in a
+> release** — v0.7.0 predates all four, so the only way to hand-test any of it
+> is to cut **0.8.0**. `CHANGELOG.md` already holds its `— unreleased` section,
+> written as the work landed.
 >
-> **§5.30 SURVIVED, and that was the owner’s call.** The ticket first read as
-> "open it as a tab in the session’s group", which §5.30 forbids ("a viewer
-> never displaces a session"). He clarified: the same DOCK SECTION as the
-> active session, in its OWN group beside it. So the design rule is intact,
-> `document-peek.spec.ts` was not touched, and the real defect turned out to be
-> narrower — a document group that had to be CREATED was placed arbitrarily
-> rather than next to the session in view.
+> | Merged today | |
+> |---|---|
+> | **#562** (PR #568) | panels keep their place: Changes tab and the document viewer |
+> | **#571** (PR #573) | a popped-out window comes to the front when you click its row |
+> | **#569** (PR #572) | a File menu — Open File / Exit — and files that open beside the session you are in |
+> | **#570** (PR #574) | a question waits for a person; a lost decision is no longer silent |
 >
-> **THE REVIEW CAUGHT A P7 VIOLATION I SHIPPED INTO THE PLAN.** I gave the menu
-> item `Ctrl+O` on the grounds that the key was free. **It is not: the hosted
-> CLI binds `ctrl+o` itself** (`app:toggleTranscript` — read off the shipped
-> binary; Claude Code prints "ctrl+o to see" in its own notices). An
-> application-menu accelerator is claimed by the browser process ahead of the
-> page, so switchboard would have answered the CLI’s own instruction with a
-> file dialog. Now: the menu SHOWS the chord and registers nothing
-> (`registerAccelerator: false`), the renderer’s registry owns `Mod+O`, and
-> `dispatch` refuses terminal targets — so the CLI keeps its key.
+> ## What to do next, in the order I would take it
 >
-> Second blocker, also from review and PROVEN: the menu click rides the
-> accelerator channel, which is typing-gated for chords — so File > Open File
-> did NOTHING with the composer focused. `view.openFile` is now `typing-ok`
-> (the roster test in `command-set.test.ts` records why).
+> 1. **Cut 0.8.0.** Four user-facing fixes plus the whole v0.7.0 backlog are
+>    untestable by hand until there is an installer. `CHANGELOG.md` explains the
+>    cut procedure at the top; `/next-item` Step 8 now carries the changelog
+>    rule that was being missed.
+> 2. **#556** Events drawer close affordance · **#559** rail drag-reorder —
+>    small, self-contained, both owner-visible.
+> 3. **#566** question-panel tabs · **#567** partial answers — **#567 PROBES
+>    FIRST**: what the CLI does with a partial `answers` map is the one thing
+>    #563 deliberately left unmeasured, and the probe already takes a mode arg.
+> 4. Older: #543, #544, #546, #539.
 >
-> Gates: typecheck · lint · unit **5224/5224** · e2e 5/5 new + 36/36 neighbours
-> · **both fixes falsified**. Review: 2 blockers + 6 should-fix + 8 nits, all
-> addressed.
+> ## Landmines — read before touching these
 >
-> # ✅ #562 DONE (PR #568) · NEXT AFTER #569 IS #556, 2026-08-17
+> * **#558 is DIAGNOSED, NOT FIXED.** Three fix attempts all failed the same
+>   way; the block further down says why and what a fourth attempt must start
+>   by instrumenting. Do not try a fourth placement variant.
+> * **Dockview DETACHES a panel, it does not unmount it** (#562). Only one
+>   `doc-scroll` is findable at a time, which reads as "unmounted" and is not —
+>   an entire fix was built on that wrong inference and thrown away.
+> * **Monaco reports `scrollTop` 0 at every scroll position** (#562). A test
+>   reading one says "nothing moved" whether or not anything did. Read the first
+>   visible line number instead.
+> * **`Ctrl+O` belongs to the CLI** (#569). It is `app:toggleTranscript`. The
+>   File menu SHOWS the chord and registers nothing; the renderer registry owns
+>   it and `dispatch` refuses terminal targets. Do not "fix" this by claiming
+>   the accelerator.
 >
-> **#562 merged (PR #568, CI 4/4). Nothing is in flight.**
+> ## Two things only a human can check
 >
-> **NEXT: #556** (Events drawer has no visible close affordance), then **#559**
-> (drag to reorder the rail). Also open from the question panel’s own first
-> use: **#566** (tabs for a multi-question call) and **#567** (partial answers —
-> PROBE FIRST). **#558 stays diagnosed but NOT fixed.**
+> * In a session **Terminal**, `Ctrl+O` must reach Claude Code, not our file
+>   dialog. No automated test in this repo can make that check.
+> * **Terminal scrollback across a dockview move** (#562) is UNRESOLVED: the
+>   move provably detaches the xterm viewport, but the fake never fills a screen
+>   so there was no position to lose. Needs a real session.
 >
-> **NOT IN A RELEASE YET.** v0.7.0 was cut before #562; its two fixes and the
-> `0.8.0 — unreleased` changelog entries are on main only.
+> ## CI
+>
+> `e2e ubuntu-latest` **hung for 6h0m53s once** on PR #572 and hit the job
+> ceiling; a re-run passed in 9m38s. Infrastructure, not the spec — but it is a
+> merge blocker when it happens, and wants its own ticket if it recurs.
 >
 > # ✅ #562 DONE (PR #568), 2026-08-17
 >

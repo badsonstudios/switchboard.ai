@@ -63,10 +63,11 @@ greyed out until every one of them has an answer. Hovering it tells you why.
 Claude is told you declined, and it will usually just ask again in ordinary
 conversation rather than getting stuck.
 
-Take your time over it. Questions get **half an hour** before switchboard
-declines on your behalf — much longer than the five minutes a permission
-request gets, because a question is something to read and think about rather
-than glance at. Your half-finished answer also survives leaving the panel:
+Take your time over it — **a question waits as long as you need.** Unlike a
+permission request, which switchboard declines for you after five minutes, a
+question has no time limit at all while switchboard is open: walk away, come
+back tomorrow, and it is still there waiting. Your half-finished answer also
+survives leaving the panel:
 switch to **Changes** to look at the diff first, come back, and your ticks and
 anything you typed are still there.
 
@@ -166,7 +167,7 @@ mode that *new* sessions start at; each session keeps its own after that.
   window quits switchboard, so only the crash case applies.) There is also a
   **five-minute limit** on any single request: one left unanswered that long
   counts as unreachable too. (A *question* — the kind with clickable answers —
-  gets half an hour instead; see [When Claude asks you a
+  has no time limit at all; it waits for you. See [When Claude asks you a
   question](#when-claude-asks-you-a-question).)
 
   What happens next depends on which mode the session is in:
