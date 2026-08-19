@@ -333,7 +333,9 @@ type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 
 /**
  * The keys `SessionRecord` adds to the wire shape — main's own bookkeeping,
- * deliberately NOT sent to the renderer.
+ * deliberately left undeclared to the renderer (undeclared, not withheld: the
+ * handlers clone the record whole, so the values do travel; see
+ * `shared/sessions.ts`).
  *
  * Named here so the key-set assertion below reads as a claim rather than a
  * literal soup: everything on the record is either published or on this list.
@@ -354,10 +356,12 @@ describe('the live record and its DTO cannot drift (#445, #590)', () => {
     expect(mirrored).toBe(true);
   });
 
-  it('the DTO IS the shared wire shape — not a copy of it', () => {
-    // Fails the moment someone re-inlines the fields into `preload/index.ts`,
-    // which is exactly how #445 happened. The fix is an alias, not a copy that
-    // happens to agree today.
+  it('the DTO agrees with the shared wire shape field for field', () => {
+    // `Exact<>` is mutual ASSIGNABILITY, which is structural: a re-inlined copy
+    // in `preload/index.ts` that matches field for field would still pass. What
+    // this catches is the copy DIFFERING — which is the whole of #445, and the
+    // only part a type system can see. The alias is what makes differing
+    // impossible; this is the net under it.
     const derived: Exact<SessionRecordDto, SessionRecordWire> = true;
     expect(derived).toBe(true);
   });
@@ -365,7 +369,9 @@ describe('the live record and its DTO cannot drift (#445, #590)', () => {
   it("status carries main's union, not `string`", () => {
     // It said `string` in the preload until #590 — looser than the record and
     // silently so, which let the renderer compare against statuses that no
-    // state machine can produce.
+    // state machine can produce. Tautological while the DTO is an alias (as is
+    // the transport pin above); it earns its keep only if someone re-inlines,
+    // which is precisely when `status: string` came back last time.
     const union: Exact<SessionRecordDto['status'], SessionStatus> = true;
     expect(union).toBe(true);
   });

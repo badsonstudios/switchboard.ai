@@ -17,8 +17,17 @@
 // too, quietly: the DTO said `string` where the record says `SessionStatus`.
 //
 // So: one declaration, imported by both sides. `SessionRecord` in the manager
-// extends it with the fields that stay in main (see there); the preload's
+// extends it with its own bookkeeping (see there); the preload's
 // `SessionRecordDto` IS it.
+//
+// WHAT THIS IS NOT: a runtime filter. `sessions:list` returns `manager.list()`
+// verbatim (`main/sessions/ipc.ts`) and structured clone carries every own
+// property, so a field on `SessionRecord` and not on this shape still ARRIVES
+// in the renderer — it is simply not declared, so nothing can read it without
+// saying so. `sessions:create` in fact re-publishes one (`autonomy`) in its own
+// return type. Treat this as the DECLARED contract, not an exposure boundary:
+// nothing secret should ride on a live record on the strength of being left
+// out here.
 //
 // NOT the persisted CARD, which is a different contract with a different name
 // (`PersistedSession` in `main/workspace/store.ts`, surfaced by
@@ -62,13 +71,15 @@ export interface SessionIdentity {
 }
 
 /**
- * Exactly the fields of a live session record that cross IPC.
+ * The fields of a live session record the renderer is TYPED to see.
  *
- * Adding a field here publishes it to the renderer. A field main keeps to
+ * Adding a field here declares it to the renderer. A field main keeps to
  * itself goes on `SessionRecord` instead, and `transport-seam.test.ts` makes
  * that a deliberate choice rather than an accident: it pins the record's key
  * set against this shape plus a named main-only list, so a new field fails
  * `tsc` until someone says which side it belongs on.
+ *
+ * "Keeps to itself" means undeclared, not withheld — see the header.
  */
 export interface SessionRecordWire {
   id: string;

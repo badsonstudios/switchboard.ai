@@ -40,10 +40,16 @@ export type { SessionIdentity };
 /**
  * A live session, as the manager holds it.
  *
- * The fields that LEAVE main are `SessionRecordWire` (`shared/sessions.ts`),
- * which the preload's `SessionRecordDto` also is — so there is no second
- * hand-written copy to drift (#590; #445 is what drift cost). What is added
- * below is main's own bookkeeping, deliberately NOT on the wire.
+ * The fields the renderer is TYPED to see are `SessionRecordWire`
+ * (`shared/sessions.ts`), which the preload's `SessionRecordDto` also is — so
+ * there is no second hand-written copy to drift (#590; #445 is what drift
+ * cost). What is added below is main's own bookkeeping, deliberately left
+ * undeclared to the renderer.
+ *
+ * Undeclared, not withheld: the handlers return this record verbatim and
+ * structured clone carries the extra fields anyway (`sessions:create` even
+ * re-publishes `autonomy` in its own return type). This is a contract, not a
+ * privacy boundary.
  *
  * Adding a field: if the renderer needs it, it goes on `SessionRecordWire`, not
  * here. `transport-seam.test.ts` pins this record's key set against the wire

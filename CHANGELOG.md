@@ -87,8 +87,9 @@ on the floor, and say so in your PR.
 - The renderer's picture of a running session is no longer a hand-copied one.
   What the main process sends about a live session and what the window expects
   to receive were two separate declarations that nothing compared, so they had
-  quietly stopped matching — a session's status was described as any text at
-  all, rather than the seven states it can actually be in. Both sides now read
+  quietly stopped matching — the shared description of a session's status said
+  "any text at all" rather than the seven states it can actually be in. Both
+  sides now read
   one declaration, and a new field has to say whether it is for the window or
   for main before it will compile (#590).
 - **Stream-transport diagnostics now reach the log.** Parse failures, overlong

@@ -85,8 +85,12 @@ ipcRenderer.on('fs:changed', (_e, notice: FileWatchNotice) => {
  * the record says `SessionStatus`. Both copies are now one declaration in
  * `shared/sessions.ts`, which main's record extends and this alias IS.
  *
- * Main-only bookkeeping (`killRequested`, `autonomy`) is deliberately absent —
- * it lives on `SessionRecord` and stops at the boundary.
+ * Main's own bookkeeping (`killRequested`) is deliberately not declared here —
+ * it lives on `SessionRecord`. Undeclared, NOT withheld: main returns the
+ * record verbatim and structured clone carries every property, so the value
+ * still arrives; nothing can read it without adding it here first. `create()`
+ * below shows the same thing from the other side, re-declaring `autonomy` for
+ * the one caller that needs it.
  *
  * NOT the persisted CARD returned by `cards()` below. That one describes what
  * the user set up and survives a restart; this describes a process running
