@@ -16,6 +16,10 @@ import { initI18nForTests } from '../i18n/test-i18n';
 import { sessionPanels } from '../extensibility/panels';
 import { PanelContext } from '../extensibility/contributions';
 import { loadUiState } from '../lib/ui-state';
+import {
+  attachmentDraftKey,
+  resetAttachmentDrafts,
+} from '../lib/composer-attachment-draft';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -28,7 +32,7 @@ let mainTakes = true;
 
 const roots: Root[] = [];
 
-function stubBridge(): void {
+function stubBridge(initialUi: Record<string, unknown> = {}): void {
   (window as unknown as { switchboard: unknown }).switchboard = {
     transcripts: {
       blocks: () => Promise.resolve([]),
@@ -41,7 +45,7 @@ function stubBridge(): void {
     // an empty blob per test, the "keeps the draft AND the image when main
     // refuses" case (which ends on purpose with the draft UNCLEARED) leaves its
     // text in every composer mounted after it.
-    workspace: { getUi: () => Promise.resolve({}), setUi: () => {} },
+    workspace: { getUi: () => Promise.resolve(initialUi), setUi: () => {} },
     sessions: {
       slashCommands: () => Promise.resolve([]),
       submitPrompt: (
@@ -228,6 +232,10 @@ beforeEach(async () => {
   await initI18nForTests();
   stubBridge();
   await loadUiState(); // see stubBridge: an empty draft blob per test
+  // ...and the same for #546's attachment stash, which is a module-level Map
+  // that OUTLIVES a React root by design — exactly what makes it survive a
+  // remount, and exactly what would carry one test's screenshot into the next.
+  resetAttachmentDrafts();
 });
 
 afterEach(async () => {
@@ -642,5 +650,110 @@ describe('paste and drop differ ONLY where they must', () => {
     await drop(host, [], ['src']);
 
     expect(notice(host)).toContain('Folders cannot be attached');
+  });
+});
+
+describe('the chips outlive the composer (#546)', () => {
+  /** tear the whole tree down, the way a view-tab switch does */
+  async function unmountAll(): Promise<void> {
+    while (roots.length) {
+      const r = roots.pop()!;
+      await act(async () => r.unmount());
+    }
+    document.body.innerHTML = '';
+  }
+
+  it('an IMAGE-ONLY prompt survives a remount — the exact case #546 names', async () => {
+    let host = await mount();
+    await paste(host, { files: [png(4, 'image.png')] });
+    expect(chips(host)).toHaveLength(1);
+    // nothing typed: the whole prompt IS the picture, which is why losing it
+    // loses everything
+    expect(boxOf(host).value).toBe('');
+
+    await unmountAll();
+    host = await mount();
+
+    expect(chips(host)).toHaveLength(1);
+    expect(notice(host)).toBe(''); // nothing was lost, so nothing is announced
+    // and it is still a real attachment, not a husk of one
+    await send(host);
+    expect(submitted).toHaveLength(1);
+    expect(submitted[0].attachments).toEqual([
+      { kind: 'image', mediaType: 'image/png', data: 'AAAAAA==' },
+    ]);
+  });
+
+  it('text and chips come back together', async () => {
+    let host = await mount();
+    await paste(host, { files: [png(4, 'shot.png')] });
+    await type(host, 'what is this?');
+
+    await unmountAll();
+    host = await mount();
+
+    expect(chips(host)).toEqual(['shot.png']);
+    expect(boxOf(host).value).toBe('what is this?');
+  });
+
+  it('sending forgets them, so a remount does not resurrect a sent prompt', async () => {
+    let host = await mount();
+    await paste(host, { files: [png()] });
+    await send(host);
+    expect(submitted).toHaveLength(1);
+
+    await unmountAll();
+    host = await mount();
+
+    expect(chips(host)).toEqual([]);
+    expect(notice(host)).toBe('');
+  });
+
+  it('a REFUSED send keeps them across a remount too', async () => {
+    mainTakes = false;
+    let host = await mount();
+    await paste(host, { files: [png(4, 'shot.png')] });
+    await send(host);
+
+    await unmountAll();
+    host = await mount();
+
+    expect(chips(host)).toEqual(['shot.png']);
+  });
+
+  it('removing the last chip leaves nothing to come back', async () => {
+    let host = await mount();
+    await paste(host, { files: [png()] });
+    const remove = host.querySelector<HTMLButtonElement>(
+      '[data-composer-attachment] button'
+    )!;
+    await act(async () => remove.click());
+    expect(chips(host)).toEqual([]);
+
+    await unmountAll();
+    host = await mount();
+    expect(chips(host)).toEqual([]);
+    expect(notice(host)).toBe('');
+  });
+
+  it('a RELAUNCH announces the loss by name instead of dropping it silently', async () => {
+    // what the next launch actually sees: the names are in the workspace blob,
+    // the bytes are not anywhere — no process holds them, by design
+    stubBridge({ [attachmentDraftKey('card-1')]: ['diagram.png', 'server.log'] });
+    await loadUiState();
+    resetAttachmentDrafts();
+
+    let host = await mount();
+
+    expect(chips(host)).toEqual([]);
+    expect(notice(host)).toContain('diagram.png');
+    expect(notice(host)).toContain('server.log');
+    expect(notice(host)).toContain('Not restored');
+
+    // ...ONCE. The record is consumed on mount, so the next remount is a clean
+    // composer rather than a card that nags about a restart for ever.
+    await unmountAll();
+    host = await mount();
+    expect(notice(host)).toBe('');
   });
 });

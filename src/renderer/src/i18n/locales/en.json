@@ -545,7 +545,8 @@
       "directory": "Folders cannot be attached to a prompt. Drop it outside the prompt box to open it as a session, or drop the files inside it.",
       "unsupported": "That file type cannot be attached. Images (PNG, JPEG, GIF, WebP), text and source files, and PDFs work. For anything else, put its full file path in the prompt instead.",
       "terminalMode": "Files can only be sent by a session in Direct mode. This one runs in Terminal mode — use the Terminal tab instead.",
-      "notSent": "That prompt wasn't sent, so nothing has been cleared. The session may have stopped, or it may not be in Direct mode."
+      "notSent": "That prompt wasn't sent, so nothing has been cleared. The session may have stopped, or it may not be in Direct mode.",
+      "notRestored": "Not restored: {names}. Your typed prompt is kept when switchboard.ai restarts; attached files are not, because no copy of them is ever left on disk. Attach them again."
     },
     "autonomyHint": "Autonomy for this session (applies on next resume)",
     "modelHint": "Model last seen in this session's transcript",

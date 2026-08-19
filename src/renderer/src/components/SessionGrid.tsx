@@ -62,6 +62,7 @@ import { addPopoutWindow, removePopoutWindow, subscribePopoutWindows } from '../
 import { strandedByGroup } from '../lib/popout-rescue';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { pruneDrafts } from '../lib/composer-draft';
+import { pruneAttachmentDrafts } from '../lib/composer-attachment-draft';
 import { setDraggedCard } from '../lib/drag-context';
 import { findBarState, subscribeFindBar } from '../lib/find-bar-state';
 import { FindBar } from './FindBar';
@@ -4106,6 +4107,11 @@ export function SessionGrid(props: {
             // ...and #485's unsent prompts. The same rule, and the one with the
             // biggest payload: a draft is whatever the user pasted.
             pruneDrafts(known);
+            // and #546's half of the same draft — the NAMES of the files that
+            // were attached to it, plus the retained bytes those names refer
+            // to. Same key shape, same rule, so the two halves of one draft
+            // cannot end up with different lifetimes.
+            pruneAttachmentDrafts(known);
             for (const p of [...api.panels]) {
               const s = /^session-(.+)$/.exec(p.id);
               // Diff panes and document viewers are both DERIVED — drop them
