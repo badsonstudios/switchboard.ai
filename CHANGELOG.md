@@ -65,6 +65,13 @@ on the floor, and say so in your PR.
   an empty gap until switchboard was restarted. It now retries the surface on
   its next update, and only gives up — quietly, as before — after three
   failures in a row, so a piece that is genuinely broken cannot spin.
+- **A broken conversation block can no longer blank the window.** The crash
+  barrier the rest of the window already had now wraps each block in the
+  conversation feed too. Before this, a block that failed while being drawn —
+  from one malformed line in a transcript — took down the whole switchboard.ai
+  window, every session's terminal included; now it leaves a gap where that one
+  block would have been, comes back on the next update, and everything else in
+  the conversation keeps working. (#594)
 - Accessibility markup written by a document or a reply is now removed along
   with everything else the renderer refuses. Nothing in switchboard.ai ever
   acted on it, but a screen reader did — so a file could label a button
