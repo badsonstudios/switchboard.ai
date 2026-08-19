@@ -59,6 +59,12 @@ on the floor, and say so in your PR.
 
 ### Internal
 
+- **A part of the window that breaks can come back on its own.** The crash
+  barrier around each contributed surface (status-bar items, session panels,
+  document viewers) used to latch: one error and that piece of the window was
+  an empty gap until switchboard was restarted. It now retries the surface on
+  its next update, and only gives up — quietly, as before — after three
+  failures in a row, so a piece that is genuinely broken cannot spin.
 - Gave every test that starts a real child process — `git`, or node running one
   of the build scripts — an explicit time limit. They had been running under the
   test runner's five-second default, which is a budget for a pure function and
