@@ -18,15 +18,17 @@
 > | #556 events drawer close button | sb-wt-1 (released) | feature/556-events-drawer-close | **DONE** — **PR #576 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
 > | #543 tab-model follow-ups | sb-wt-1 (released) | feature/543-tab-model-followups | **DONE** — **PR #578 ready-for-review, in Dan's queue** |
 > | #546 composer attachment drafts | sb-wt-1 (released) | feature/546-composer-attachment-drafts | **DONE** — **PR #584 ready-for-review, in Dan's queue** |
-> | #512 check-nul CI flake | sb-wt-1 (released) | feature/512-check-nul-flake | **DONE** — PR #585 (internal), merging on green CI |
+> | #512 check-nul CI flake | sb-wt-1 (released) | feature/512-check-nul-flake | **✅ MERGED** — PR #585 squash-merged, issue closed; subprocess tests now carry explicit 30s ceilings |
 > | #445 transport default stray | sb-wt-1 (released) | feature/445-transport-default | **DONE** — PR #589 (internal), merging on green CI; #590 filed from its report |
-> | #463 ContributionBoundary reset | sb-wt-1 | feature/463-contribution-boundary-reset | running — internal unless it grows UI |
+> | #463 ContributionBoundary reset | sb-wt-1 (released) | feature/463-contribution-boundary-reset | **DONE** — PR #592 (internal, bounded retry ×3, no UI), merging on green; #594 filed (feed blocks unwrapped — white-screen hole) |
+> | #575 CI action bumps | sb-wt-1 | feature/575-ci-action-bumps | running — INTERNAL (workflows only) |
 > | #559 rail drag-reorder | sb-wt-2 (released) | feature/559-rail-drag-reorder | **DONE** — **PR #580 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
 > | #539 repair-sweep follow-ups | sb-wt-2 | feature/539-repair-sweep-followups | running |
 > | #566 question-panel tabs | sb-wt-3 (released) | feature/566-question-panel-tabs | **DONE** — **PR #579 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
 > | #567 probe half | sb-wt-3 (released) | feature/567-partial-answers-probe | **DONE** — PR #583 (internal), merging on green CI |
 > | #534 permission-mode tooltips | sb-wt-3 (released) | feature/534-permission-mode-tooltips | **DONE** — **PR #586 ready-for-review, in Dan's queue** |
-> | #449 diagnostics wiring | sb-wt-3 | feature/449-diagnostics-wiring | running — internal unless it grows UI |
+> | #449 diagnostics wiring | sb-wt-3 (released) | feature/449-diagnostics-wiring | **DONE** — PR #591 (internal), merging on green; stayed internal (main log, not Events); #593 filed |
+> | #509 sanitizer authored-ARIA | sb-wt-3 | feature/509-sanitizer-aria | running — internal-leaning |
 > | ~~release v0.8.0 cut~~ | — | main | **DONE** — released 2026-08-19 |
 >
 > **#534 done (PR #586):** hover descriptions on all three mode surfaces from
