@@ -19,9 +19,15 @@
 // the default since #381.
 import { test, expect, Page } from '@playwright/test';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
-import { launchApp, LaunchedApp, registerTempDir, showTerminal, tempProjectFolder } from './fixtures/app';
+import {
+  launchApp,
+  launchDirectToolTurn,
+  LaunchedApp,
+  registerTempDir,
+  showTerminal,
+  tempProjectFolder,
+} from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -247,36 +253,18 @@ test.describe('Session find on a Direct session (#458)', () => {
   let folder: string;
 
   test.beforeAll(async () => {
-    test.setTimeout(120_000);
-    // NOT `tempProjectFolder()` — that registers the folder with the sweep and
-    // the first `cleanup()` would delete it out from under the second test.
-    // Registered in `afterAll` instead (stream-feed.spec.ts's rule).
-    folder = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-find-direct-'));
-    fs.writeFileSync(path.join(folder, 'README.md'), '# e2e\n');
-    // no SWITCHBOARD_TRANSPORT: Direct is the default, and a test about the
-    // default must not name it. `stream` picks the dual-capable fake.
-    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
-    const w = a.window;
-    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-
-    // It really IS Direct — without this the whole group could quietly become a
-    // second transcript test that happens to pass.
-    await w.getByRole('tab', { name: 'Terminal' }).first().click();
-    await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 30_000 });
-    await w.getByRole('tab', { name: 'Session', exact: true }).first().click();
-
-    // A turn of real tool calls, in the shape the CLI emits them — and the fake
-    // writes the same turn to a JSONL transcript, as the real CLI does in
-    // stream mode (S-10). Those are the two sides find has to line up.
-    const box = w.getByPlaceholder(/Prompt this session/);
-    await box.click();
-    await box.fill('!tools');
-    await box.press('Enter');
-    await expect(w.locator('[data-feed-box="bash"]')).toBeVisible({ timeout: 30_000 });
+    // The whole Direct setup dance — mkdtemp (not `tempProjectFolder()`), the
+    // default transport, the it-really-is-Direct probe, and a `!tools` turn
+    // whose tool calls reach both the stream and the transcript, which are the
+    // two sides find has to line up. See `launchDirectToolTurn` (#497).
+    ({ app: a, folder } = await launchDirectToolTurn('sb-find-direct-'));
   });
 
   test.afterAll(async () => {
-    registerTempDir(folder);
+    // registered HERE, not at mkdtemp: a registered folder is swept by the
+    // first `cleanup()`, which would delete it out from under the second test.
+    // Unset only when the setup threw — which cleaned up after itself.
+    if (folder) registerTempDir(folder);
     await a?.cleanup();
   });
 
