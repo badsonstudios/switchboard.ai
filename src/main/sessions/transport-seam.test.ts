@@ -11,6 +11,7 @@ import { SessionManager, type SessionRecord } from './session-manager';
 // `contextBridge.exposeInMainWorld` at import time and there is no
 // contextBridge in a vitest process. `import type` is erased entirely.
 import type { SessionRecordDto } from '../../preload/index';
+import type { SessionRecordWire, SessionStatus } from '../../shared/sessions';
 import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { MainContributions, SpawnRecipe } from '../extensibility/contributions';
 import {
@@ -308,23 +309,38 @@ describe('DEFAULT_TRANSPORT vs DEFAULT_SESSION_TRANSPORT (P2-E18-17)', () => {
   });
 });
 
-// #445 — one contract, one default.
+// #445 / #590 — one contract, one declaration.
 //
-// The preload DTO is a HAND-WRITTEN mirror of `SessionRecord`: nothing compiles
-// the two against each other, because they live on opposite sides of an IPC
-// boundary that carries JSON. So the mirror drifts silently, and the drift has
-// a cost the day a field goes optional on one side only — `transport?` in the
-// DTO made every renderer that read it answer "and if it is missing?", and
-// SessionGrid's answer was `'pty'`: a second default for the same contract,
-// contradicting `DEFAULT_SESSION_TRANSPORT` above, and one that would have
-// rendered Terminal-mode UI for a session spawned on Direct.
+// The preload DTO USED to be a hand-written mirror of `SessionRecord`: nothing
+// compiled the two against each other, because they live on opposite sides of
+// an IPC boundary that carries JSON. So the mirror drifted silently, and the
+// drift had a cost the day a field went optional on one side only —
+// `transport?` in the DTO made every renderer that read it answer "and if it
+// is missing?", and SessionGrid's answer was `'pty'`: a second default for the
+// same contract, contradicting `DEFAULT_SESSION_TRANSPORT` above, and one that
+// would have rendered Terminal-mode UI for a session spawned on Direct.
 //
-// This is the compiler doing the comparison instead. It is a TYPECHECK gate,
-// not a runtime one — the assignment below fails `tsc` if either side loosens,
-// and the `expect` exists only so `noUnusedLocals` keeps the local alive.
+// #445 pinned that one field. #590 deleted the mirror: `SessionRecordWire` in
+// `shared/sessions.ts` is the single declaration of what crosses IPC, main's
+// `SessionRecord` EXTENDS it, and the preload's `SessionRecordDto` IS it. The
+// assertions below are what is left to check once there is only one copy —
+// that nobody puts the copy back, and that a new field on the record is a
+// decision instead of an accident.
+//
+// These are TYPECHECK gates, not runtime ones — the assignments fail `tsc`,
+// and the `expect`s exist only so `noUnusedLocals` keeps the locals alive.
 type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 
-describe('the live record and its DTO agree about transport (#445)', () => {
+/**
+ * The keys `SessionRecord` adds to the wire shape — main's own bookkeeping,
+ * deliberately NOT sent to the renderer.
+ *
+ * Named here so the key-set assertion below reads as a claim rather than a
+ * literal soup: everything on the record is either published or on this list.
+ */
+type MainOnlyRecordKeys = 'autonomy' | 'killRequested';
+
+describe('the live record and its DTO cannot drift (#445, #590)', () => {
   it('is required on the record — a spawned session is always ON something', () => {
     const required: Exact<SessionRecord['transport'], TransportKind> = true;
     expect(required).toBe(true);
@@ -336,6 +352,34 @@ describe('the live record and its DTO agree about transport (#445)', () => {
     // transport is a main-process bug, not a UI default.
     const mirrored: Exact<SessionRecordDto['transport'], SessionRecord['transport']> = true;
     expect(mirrored).toBe(true);
+  });
+
+  it('the DTO IS the shared wire shape — not a copy of it', () => {
+    // Fails the moment someone re-inlines the fields into `preload/index.ts`,
+    // which is exactly how #445 happened. The fix is an alias, not a copy that
+    // happens to agree today.
+    const derived: Exact<SessionRecordDto, SessionRecordWire> = true;
+    expect(derived).toBe(true);
+  });
+
+  it("status carries main's union, not `string`", () => {
+    // It said `string` in the preload until #590 — looser than the record and
+    // silently so, which let the renderer compare against statuses that no
+    // state machine can produce.
+    const union: Exact<SessionRecordDto['status'], SessionStatus> = true;
+    expect(union).toBe(true);
+  });
+
+  it('every field of the record is either published or deliberately main-only', () => {
+    // The drift-pin proper. Add a field to `SessionRecord` and this stops
+    // compiling until you say which side it belongs on: on the wire (move it
+    // to `SessionRecordWire` and the renderer can see it) or main's alone (add
+    // it to `MainOnlyRecordKeys` above). Optional fields count — an optional
+    // one that slipped through is how a shape drifts without ever failing a
+    // runtime test.
+    const accountedFor: Exact<keyof SessionRecord, keyof SessionRecordWire | MainOnlyRecordKeys> =
+      true;
+    expect(accountedFor).toBe(true);
   });
 });
 

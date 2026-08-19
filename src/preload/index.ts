@@ -16,7 +16,7 @@ import type {
   UpdatePrefs,
   UpdateStatus,
 } from '../shared/update';
-import type { TransportKind } from '../shared/transport';
+import type { SessionRecordWire } from '../shared/sessions';
 import type { WorkspaceSaveState } from '../shared/workspace';
 import type { ServiceHealthPrefs, ServiceHealthStatus } from '../shared/service-health';
 import type {
@@ -73,40 +73,28 @@ ipcRenderer.on('fs:changed', (_e, notice: FileWatchNotice) => {
   fileWatchers.get(notice?.token)?.(notice);
 });
 
-export interface SessionRecordDto {
-  id: string;
-  identity: {
-    title: string;
-    folder: string;
-    accentColor?: string;
-    langBadge?: string;
-    providerId: string;
-  };
-  status: string;
-  createdAt: string;
-  nativeSessionId?: string;
-  pid?: number;
-  exitCode: number | null;
-  /**
-   * Which transport hosts this session (P2-E18-08b).
-   *
-   * REQUIRED, and it mirrors `SessionRecord.transport` in
-   * `main/sessions/session-manager.ts` exactly (#445). Every producer of this
-   * DTO — `sessions:create`, `sessions:list`, `sessions:rename` — answers with
-   * a manager record, and the manager sets `transport` at spawn from the
-   * resolved recipe. There is no live session without one.
-   *
-   * It said `transport?` until #445, and that optional question mark was not
-   * free: it made every reader answer "and if it is missing?", and the answer
-   * SessionGrid gave was `'pty'` — a second, contradictory default sitting
-   * beside the shared `DEFAULT_SESSION_TRANSPORT` (`'stream'`). Not the same
-   * field as `PersistedSession.transport` in `main/workspace/store.ts`, which
-   * is genuinely optional because absence there means "this CARD has never
-   * chosen"; main resolves that absence through `DEFAULT_SESSION_TRANSPORT`
-   * before a live record ever exists. `transport-seam.test.ts` pins the mirror.
-   */
-  transport: TransportKind;
-}
+/**
+ * A LIVE session record, exactly as main puts it on the wire.
+ *
+ * DERIVED, not mirrored (#590). This used to be a hand-written copy of
+ * `SessionRecord` in `main/sessions/session-manager.ts`, and nothing compiled
+ * the two against each other — an IPC boundary carries JSON, not types, so the
+ * compiler had no reason to look. It drifted twice: `transport` was optional
+ * here while required there (#445, which made SessionGrid invent a second
+ * default for a field that is never missing), and `status` said `string` where
+ * the record says `SessionStatus`. Both copies are now one declaration in
+ * `shared/sessions.ts`, which main's record extends and this alias IS.
+ *
+ * Main-only bookkeeping (`killRequested`, `autonomy`) is deliberately absent —
+ * it lives on `SessionRecord` and stops at the boundary.
+ *
+ * NOT the persisted CARD returned by `cards()` below. That one describes what
+ * the user set up and survives a restart; this describes a process running
+ * right now. Their `transport` fields differ ON PURPOSE — the card's is
+ * optional because absence means "never chose", this one is required because a
+ * live session is always hosted on something. Don't merge them.
+ */
+export type SessionRecordDto = SessionRecordWire;
 
 // The bridge grows with each subsystem. Every surface is promise/event based.
 //
@@ -296,7 +284,15 @@ const api = {
         /** the transport this card's NEXT session will run on (#397) — the
          *  card's own choice, then the env override, then the default. NOT
          *  what a running session is currently hosted on; the two differ while
-         *  a transport change waits for a restart. */
+         *  a transport change waits for a restart.
+         *
+         *  Optional ON PURPOSE, and left that way by #590: absence means this
+         *  card has never chosen, which is what `lib/trust-reach.ts` resolves
+         *  through `DEFAULT_SESSION_TRANSPORT`. The live record's `transport`
+         *  (`SessionRecordDto`) is required for the opposite reason. Same word,
+         *  two contracts — this shape is a persisted CARD, not a running
+         *  session, so it stays hand-written here rather than joining
+         *  `shared/sessions.ts`. */
         transport?: 'pty' | 'stream';
       }>
     > => ipcRenderer.invoke('sessions:cards'),

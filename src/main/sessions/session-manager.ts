@@ -16,6 +16,7 @@ import {
   UnknownTransportError,
 } from '../transport/transport';
 import { SessionEvent, SessionStatus, transition } from './state-machine';
+import type { SessionIdentity, SessionRecordWire } from '../../shared/sessions';
 import {
   removeSessionStateDir,
   sweepOrphanSessionStateDirs,
@@ -31,31 +32,27 @@ import { interruptRequest, userMessage, type PromptAttachment } from '../../shar
  */
 export type NativeIdCause = 'clear';
 
-export interface SessionIdentity {
-  title: string;
-  folder: string;
-  accentColor?: string;
-  /** project-type lang badge (§5.11), e.g. "TS", "Rs" */
-  langBadge?: string;
-  providerId: string;
-}
+// Defined in `shared/sessions.ts` since #590 (the rail shows it, so it crosses
+// IPC); re-exported here because every main-side importer already says
+// `from './session-manager'` and renaming those is churn.
+export type { SessionIdentity };
 
-export interface SessionRecord {
-  id: string;
-  identity: SessionIdentity;
-  status: SessionStatus;
-  createdAt: string;
-  nativeSessionId?: string;
-  pid?: number;
-  exitCode: number | null;
+/**
+ * A live session, as the manager holds it.
+ *
+ * The fields that LEAVE main are `SessionRecordWire` (`shared/sessions.ts`),
+ * which the preload's `SessionRecordDto` also is — so there is no second
+ * hand-written copy to drift (#590; #445 is what drift cost). What is added
+ * below is main's own bookkeeping, deliberately NOT on the wire.
+ *
+ * Adding a field: if the renderer needs it, it goes on `SessionRecordWire`, not
+ * here. `transport-seam.test.ts` pins this record's key set against the wire
+ * shape plus the named main-only keys, so either choice is explicit and a
+ * forgotten one fails `tsc`.
+ */
+export interface SessionRecord extends SessionRecordWire {
   /** autonomy mode this session was spawned at (drives the E10-03 hold policy) */
   autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
-  /**
-   * Which transport is hosting this session (P2-E18-02). Recorded at spawn and
-   * never changed: a live session cannot move between transports, and kill()
-   * must reach the same service that spawned it.
-   */
-  transport: TransportKind;
   /** set by kill()/restart(): the coming exit is intentional, not a crash */
   killRequested?: boolean;
 }
