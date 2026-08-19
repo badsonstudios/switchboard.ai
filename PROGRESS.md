@@ -28,6 +28,7 @@
 > | #539 repair-sweep follow-ups | sb-wt-2 (released) | feature/539-repair-sweep-followups | **DONE** — **PR #602 ready-for-review, in Dan's queue**; #603 filed (shared FAKE_SESSION_ID) |
 > | #497 Direct-e2e fixture extraction | sb-wt-2 (released) | feature/497-direct-e2e-fixture | **DONE** — PR #604 (internal), merging on green; ambient flakes logged on #494; worker breached the background-waiter rule once and repaired it in-turn |
 > | #466+#598 sanitizer presentational+tabindex | sb-wt-2 (released) | feature/466-598-sanitizer-presentational | **DONE** — PR #608 (internal), merging on green; review widened it (popover/inert/background — same hide-the-code attack one attribute over); #612 filed (FORBID_TAGS half) |
+> | #597 CI timeout bounds | sb-wt-2 | feature/597-e2e-timeout-bounds | running — INTERNAL (workflows only); mechanism found by #587's worker: hangs wedge at the pre-test apt step |
 > | #593 StreamSession dead fields | sb-wt-2 (released) | feature/593-streamsession-deadfields | **DONE** — PR #613 (internal): both fields wired via one 'exit' diagnostic; corrected #449's report (`health` had a consumer in fake-stream-check.ts); merging on green |
 > | #566 question-panel tabs | sb-wt-3 (released) | feature/566-question-panel-tabs | **DONE** — **PR #579 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
 > | #567 probe half | sb-wt-3 (released) | feature/567-partial-answers-probe | **✅ MERGED** — PR #583 (after cancelling its hung ubuntu e2e, #597; re-run passed 9m) |
