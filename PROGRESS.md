@@ -17,7 +17,8 @@
 > |---|---|---|---|
 > | #556 events drawer close button | sb-wt-1 (released) | feature/556-events-drawer-close | **DONE** — **PR #576 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
 > | #543 tab-model follow-ups | sb-wt-1 (released) | feature/543-tab-model-followups | **DONE** — **PR #578 ready-for-review, in Dan's queue** |
-> | #546 composer attachment drafts | sb-wt-1 | feature/546-composer-attachment-drafts | running |
+> | #546 composer attachment drafts | sb-wt-1 (released) | feature/546-composer-attachment-drafts | **DONE** — **PR #584 ready-for-review, in Dan's queue** |
+> | #512 check-nul CI flake | sb-wt-1 | feature/512-check-nul-flake | running — INTERNAL, orchestrator merges on green |
 > | #559 rail drag-reorder | sb-wt-2 (released) | feature/559-rail-drag-reorder | **DONE** — **PR #580 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
 > | #539 repair-sweep follow-ups | sb-wt-2 | feature/539-repair-sweep-followups | running |
 > | #566 question-panel tabs | sb-wt-3 (released) | feature/566-question-panel-tabs | **DONE** — **PR #579 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
@@ -25,8 +26,19 @@
 > | #534 permission-mode tooltips | sb-wt-3 | feature/534-permission-mode-tooltips | running |
 > | ~~release v0.8.0 cut~~ | — | main | **DONE** — released 2026-08-19 |
 >
-> **Merge queue (Dan):** empty so far. All three wave-1 items are user-facing —
-> their PRs queue here for Dan; the orchestrator merges nothing user-facing.
+> **Merge queue (Dan) — 5 PRs ready-for-review:** #576 (#556 drawer close),
+> #578 (#543 tab tooltips + close-all), #579 (#566 question tabs), #580
+> (#559 rail reorder), #584 (#546 composer chips). All green-gated locally;
+> the orchestrator merges nothing user-facing. Suggested review order:
+> #576 → #578 → #584 → #580 → #579 (smallest first; #579 last since #567's
+> UI half stacks on it). Expect trivial CHANGELOG-0.9.0 conflicts between
+> them at merge — each entry is one line, keep both sides.
+>
+> **#546 done (PR #584):** chips survive remount via a renderer-run stash
+> (bytes never hit disk — the stateDir route was rejected: session-keyed +
+> swept-at-death vs card-keyed drafts, and it would break the manual's
+> no-copy-on-disk promise); relaunch drops chips and SAYS SO by name.
+> Gates: unit 5254/208 files, e2e 18/18; new image-only e2e falsified first.
 >
 > **Dan's decisions (2026-08-19, run start):** (1) cut **0.8.0 now** via a
 > release worker — authorized explicitly (releases are otherwise outside the
