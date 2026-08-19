@@ -18,6 +18,7 @@ import { registerBuiltinContributions } from './bootstrap';
 import { registry } from './extensibility';
 import { PtyService } from './pty/pty-service';
 import { StreamService } from './transport/stream-service';
+import { createDiagnosticLogger } from './transport/diagnostics';
 import { parsePreferredTransport, TRANSPORT_ENV_VAR } from './transport/preferred-transport';
 import { StreamPermissions } from './sessions/stream-permissions';
 import { StreamCommands } from './sessions/stream-commands';
@@ -956,7 +957,15 @@ app
     // The stream transport, finally constructed (P2-E18-08a). Every item before
     // this one drove StreamService from tests; nothing in the app had ever made
     // one. It sits BESIDE PtyService, which is the whole shape of the migration.
-    const streams = new StreamService();
+    // ...with its diagnostics pointed at the log (#449). Every parse failure,
+    // overlong line, stderr byte and dead-pipe write this transport noticed
+    // between E18-03 and now was produced and dropped, because nothing ever
+    // passed the callback. `transport/diagnostics.ts` records the reasoning for
+    // the log rather than the Events panel, and why deleting the emitter would
+    // have been the wrong half of the choice.
+    const streams = new StreamService({
+      onDiagnostic: createDiagnosticLogger(createLogger(sink, 'transport')),
+    });
     const manager = new SessionManager(registry, ptys, createLogger(sink, 'sessions'), stateDir, {
       stream: streams,
     });

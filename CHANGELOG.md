@@ -59,6 +59,19 @@ on the floor, and say so in your PR.
 
 ### Internal
 
+- **A part of the window that breaks can come back on its own.** The crash
+  barrier around each contributed surface (status-bar items, session panels,
+  document viewers) used to latch: one error and that piece of the window was
+  an empty gap until switchboard was restarted. It now retries the surface on
+  its next update, and only gives up — quietly, as before — after three
+  failures in a row, so a piece that is genuinely broken cannot spin.
+- Accessibility markup written by a document or a reply is now removed along
+  with everything else the renderer refuses. Nothing in switchboard.ai ever
+  acted on it, but a screen reader did — so a file could label a button
+  "Cancel" while it said Approve, hide a line of text from the accessibility
+  tree while leaving it on screen, or interrupt an announcement the app was
+  making. Every accessible name, role and announcement in a rendered document
+  or reply is now one switchboard.ai wrote. (#509)
 - Gave every test that starts a real child process — `git`, or node running one
   of the build scripts — an explicit time limit. They had been running under the
   test runner's five-second default, which is a budget for a pure function and
@@ -74,6 +87,15 @@ on the floor, and say so in your PR.
   helper instead, so the next test that needs a Direct session starts from a
   single line rather than a copy that can quietly drift. No test's behaviour
   changed. (#497)
+- One default for a session's transport, not two. A live session record always
+  carries the transport it was spawned on, so the type now says so and the card
+  reads main's answer verbatim — the stray `'pty'` fallback that contradicted
+  the shared default is gone, with typecheck-level pins on both ends (#445).
+- **Stream-transport diagnostics now reach the log.** Parse failures, overlong
+  lines, CLI stderr and dead-pipe writes were produced by the stream-json
+  transport and dropped on the floor — nothing subscribed. They are written to
+  `switchboard.log` under the `transport` subsystem, throttled so a wedged
+  session cannot rotate the rest of the log away. Nothing changes on screen.
 
 ## 0.8.0 — 2026-08-19
 

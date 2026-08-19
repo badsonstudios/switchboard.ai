@@ -197,6 +197,16 @@ into your own tools is always one click away.
   a document can't place something over the app's controls, hide text under it,
   or paint itself a colour you didn't pick. The document's own formatting —
   headings, tables, task lists, code blocks — is untouched.
+- **A document can't talk to your screen reader either.** The same raw HTML can
+  carry accessibility markup — labels, roles, "announce this now" regions — and
+  the viewer removes all of it. That markup is invisible on screen, so a
+  document could otherwise label something "Cancel" where the page says
+  *Approve*, hide a line of text from a screen reader while you can still see
+  it, or interrupt whatever switchboard.ai was announcing. Everything a screen
+  reader reads in a document is written by switchboard.ai: the headings, tables,
+  lists and code blocks the document really contains, plus the viewer's own
+  labels for its links, tables and Copy buttons. The same applies to replies in
+  the session view.
 - **Very large files are cut short.** Above about 2 MB you get the beginning of
   the file and a note saying how much is missing. Open it externally to read the
   rest.
