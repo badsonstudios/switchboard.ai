@@ -27,25 +27,33 @@ let root: Root | null = null;
 let host: HTMLElement;
 const close = vi.fn();
 
-/** A panel's props, with only the two things this tab touches: the birth-time
- *  title dockview keeps, and `close()`. */
+/** A panel's props, with only the three things this tab touches: the birth-time
+ *  title dockview keeps, the panel ID (which is what says whether the ✕ closes a
+ *  document — #543), and `close()`. */
 function panelProps(
   birthTitle: string | undefined,
-  params: Partial<CardParams> | undefined
+  params: Partial<CardParams> | undefined,
+  panelId = 'session-c1'
 ): IDockviewPanelProps<CardParams> {
   return {
-    api: { title: birthTitle, close },
+    api: { id: panelId, title: birthTitle, close },
     params,
   } as unknown as IDockviewPanelProps<CardParams>;
 }
 
 async function mount(
   birthTitle: string | undefined,
-  params: Partial<CardParams> | undefined
+  params: Partial<CardParams> | undefined,
+  panelId?: string
 ): Promise<void> {
   await act(async () => {
-    root!.render(<IdentityTab {...panelProps(birthTitle, params)} />);
+    root!.render(<IdentityTab {...panelProps(birthTitle, params, panelId)} />);
   });
+}
+
+/** what the ✕ promises it will do */
+function closeTitle(): string {
+  return host.querySelector('button')?.getAttribute('title') ?? '';
 }
 
 /** the name on the tab: everything in it that is not the ✕ */
@@ -146,6 +154,41 @@ describe('the session tab follows a rename (issue 264)', () => {
       'Close "renamed-live"? This ends the session and removes the card.'
     );
     expect(close).not.toHaveBeenCalled(); // it said no
+  });
+
+  it("the ✕ says what it will actually do, per kind of tab (#543)", async () => {
+    // Every tab in the app used to be titled "Close (ends the session)". On a
+    // card that is true and is why the click confirms. On a DOCUMENT tab it is
+    // simply false — no session ends — and #530 made it load-bearing by making
+    // the ✕ the only way to close a document at all. The Changes tab was
+    // wrong in the same way and for longer.
+    //
+    // The rule is the one the click handler already branches on: a `cardId` is
+    // exactly "closing this ends a session". Without a card, the panel id says
+    // which of the other two it is.
+    await rename('c1', 'acme');
+    await mount('acme', { cardId: 'c1', title: 'acme', folder: 'C:\\Projects\\acme' }, 'session-c1');
+    expect(closeTitle()).toBe('Close (ends the session)');
+
+    await mount('README.md', { folder: 'C:\\Projects\\acme' }, 'doc-4');
+    expect(closeTitle()).toBe('Close document');
+
+    await mount('Changes — acme', { folder: 'C:\\Projects\\acme' }, 'diff-c1');
+    expect(closeTitle()).toBe('Close');
+  });
+
+  it('a document tab closes WITHOUT a confirm — it ends nothing (#543)', async () => {
+    // the string and the behaviour have to agree: "Close document" must not
+    // then put up "this ends the session and removes the card".
+    const confirm = vi.fn().mockReturnValue(true);
+    vi.stubGlobal('confirm', confirm);
+    await mount('README.md', { folder: 'C:\\Projects\\acme' }, 'doc-7');
+
+    await act(async () => {
+      host.querySelector('button')!.click();
+    });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
   });
 
   it('closes a derived tab without asking — nothing ends with it', async () => {

@@ -71,6 +71,8 @@ export interface CommandDeps {
   checkForUpdates: () => void;
   /** pick a file and open it in a §5.30 document viewer (E16-02) */
   openFile: () => void;
+  /** close every docked §5.30 viewer at once, sparing popped-out ones (#543) */
+  closeAllDocuments: () => void;
   /** set up phone push / webhooks — the credential surface (E14-06, §5.29) */
   openPushSetup: () => void;
   /** set the quiet-hours window — when nothing person-facing fires (E14-05b) */
@@ -627,6 +629,33 @@ export function buildCommands(deps: CommandDeps): Command[] {
       binding: 'Mod+O',
       scope: 'typing-ok',
       run: () => deps.openFile(),
+    },
+    {
+      // The answer to accretion #530 left open (#543). Removing the peek slot
+      // made every file its own tab, which is what the owner asked for and
+      // which has no ceiling: thirty files read over a morning are thirty tabs,
+      // closed one ✕ at a time. This is the bulk gesture, and it is the
+      // cheapest possible one on purpose — anything smarter (LRU, tab groups)
+      // waits for evidence that this is not enough.
+      //
+      // PALETTE-ONLY AND UNBOUND, exactly like `session.closeAll`: a command
+      // that shuts thirty panels is not one to reach by mistyping a chord, and
+      // the title is what makes it findable.
+      //
+      // The title NAMES ITS OWN EXEMPTION, which is the pattern
+      // `commands.closeAllSessions` already set with "(keeps pinned ones)".
+      // Here the spared ones are the popped-out viewers — see
+      // `lib/document-panels`' `closableDocuments` for the reasoning — and the
+      // count below is of the closable ones only, so with a single document
+      // open in its own window this greys out and says why rather than running
+      // and appearing broken.
+      id: 'view.closeAllDocuments',
+      titleKey: 'commands.closeAllDocuments',
+      categoryKey: CATEGORY_VIEW,
+      scope: 'app',
+      enabled: (ctx) => (ctx.closableDocumentCount ?? 0) > 0,
+      disabledReasonKey: 'commands.disabled.noDocuments',
+      run: () => deps.closeAllDocuments(),
     },
     {
       id: 'view.rail',

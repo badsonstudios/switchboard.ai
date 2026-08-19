@@ -113,6 +113,13 @@ async function openChanges(w: Page, folder: string): Promise<void> {
   await expect(w.locator('.dv-active-tab')).toContainText('· diff', { timeout: 15_000 });
 }
 
+/** run a palette command by its visible title */
+async function palette(w: Page, title: string): Promise<void> {
+  await w.keyboard.press(`${MOD}+Shift+P`);
+  await w.getByPlaceholder('Type a command or a session name…').fill(title);
+  await w.keyboard.press('Enter');
+}
+
 /** The ↗ at the end of a Changes row: "never mind the diff, show me the file". */
 async function openInViewer(w: Page, file: string): Promise<void> {
   await w.getByRole('button', { name: `Open ${file} in the document viewer` }).click();
@@ -210,11 +217,14 @@ test.describe('a tab per document (#530)', () => {
     await expect(docTab(w, 'TWO.md')).toHaveCount(1);
 
     // The ✕ inside that tab. `IdentityTab` renders exactly one button, and it
-    // is NOT selected by title on purpose: every tab's ✕ carries the session
-    // card's `grid.closeTab` title, "Close (ends the session)", which is simply
-    // wrong on a document tab and closes no session at all. Selecting by role
-    // rather than by that string means this test survives the day the wording
-    // is fixed instead of being the thing that blocks it.
+    // now says what it will do: "Close document" (#543). It used to carry the
+    // session card's `grid.closeTab` title, "Close (ends the session)", which
+    // was simply wrong on a viewer — asserted here because #530 made this ✕ the
+    // ONLY way to close a document, which is what made the wording matter.
+    await expect(docTab(w, 'TWO.md').locator('button')).toHaveAttribute(
+      'title',
+      'Close document'
+    );
     await docTab(w, 'TWO.md').locator('button').click();
     await expect(docTab(w, 'TWO.md')).toHaveCount(0);
     await expect(docTab(w, 'ONE.md')).toHaveCount(1);
@@ -224,6 +234,41 @@ test.describe('a tab per document (#530)', () => {
     await openInViewer(w, 'TWO.md');
     await expect(docTab(w, 'TWO.md')).toHaveCount(1);
     await expect(docTab(w, 'ONE.md')).toHaveCount(1);
+  });
+
+  test('“Close all documents” clears the tab strip and leaves the session alone', async () => {
+    // #543: the answer to the accretion #530 opened. Thirty files read over a
+    // morning are thirty tabs, and until this there was no gesture but thirty
+    // ✕s. `lib/document-panels.test.ts` owns the RULE (which panels it takes,
+    // and that a popped-out viewer is spared) as pure state; what only a real
+    // window proves is that the palette entry reaches dockview at all and that
+    // it stops at the documents — the session card and its Changes tab are
+    // beside them in the same tab strip.
+    const dir = tempGitProject(['ONE.md', 'TWO.md', 'THREE.md']);
+    a = await launchApp({ seedFolder: dir });
+    const w = a.window;
+    await openChanges(w, dir);
+    await openInViewer(w, 'ONE.md');
+    await openInViewer(w, 'TWO.md');
+    await openInViewer(w, 'THREE.md');
+    await expect(tabs(w).filter({ hasText: '.md' })).toHaveCount(3);
+
+    await palette(w, 'Close all documents');
+
+    await expect(viewer(w)).toHaveCount(0);
+    await expect(docTab(w, 'ONE.md')).toHaveCount(0);
+    await expect(docTab(w, 'TWO.md')).toHaveCount(0);
+    await expect(docTab(w, 'THREE.md')).toHaveCount(0);
+    // the session is untouched — this is a DOCUMENT command, and the rail is
+    // where a lost session would show up first
+    await expect(railRows(w)).toHaveCount(1);
+    await expect(tabs(w).filter({ hasText: '· diff' })).toHaveCount(1);
+
+    // ...and the registry went with them: re-opening is a fresh tab, not a
+    // focus on a panel dockview no longer has
+    await openInViewer(w, 'ONE.md');
+    await expect(docTab(w, 'ONE.md')).toHaveCount(1);
+    await expect(viewer(w)).toBeVisible();
   });
 
   test('a viewer never opens as a tab inside a session’s group', async () => {

@@ -26,7 +26,12 @@ import { IdentityChip, identityBadgeStyle } from './IdentityChip';
 import { DiffPane } from './DiffPane';
 import { DocumentViewer } from './DocumentViewer';
 import { baseName } from '../lib/document-kind';
-import { forgetDocumentPanel, isDocumentPanelId, planDocumentOpen } from '../lib/document-panels';
+import {
+  closableDocuments,
+  forgetDocumentPanel,
+  isDocumentPanelId,
+  planDocumentOpen,
+} from '../lib/document-panels';
 import { UsageStrip } from './UsageStrip';
 import { GitContext, GitStatusDto } from './GitContext';
 import { Usage, ZERO_USAGE } from '../lib/usage';
@@ -233,6 +238,28 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
   const badge = React.useSyncExternalStore(subscribeStore, () =>
     sessionStore.getCardBadge(cardId)
   );
+  // WHAT THE ✕ ACTUALLY DOES, said in three strings rather than one (#543).
+  //
+  // Every tab in the app used to be titled "Close (ends the session)", which is
+  // true of a session card and false of everything else this same component
+  // draws a tab for: a `doc-` viewer closes no session, and neither does a
+  // `diff-` Changes tab. #530 made the first one load-bearing — the ✕ is now
+  // the ONLY way to close a document — but the second was always wrong, and the
+  // rule below fixes the sentence rather than one instance of it.
+  //
+  // The condition is the one the click handler already branches on: `cardId` is
+  // exactly "closing this ends a session", which is why it is also what decides
+  // whether we confirm. A tab with no card is then a document or a derived
+  // panel, told apart by the id prefix — `isDocumentPanelId`, the same
+  // authority commands use.
+  //
+  // `?? ''` because a unit fake may hand this component a panel api with no id;
+  // dockview always sets one.
+  const closeLabelKey = cardId
+    ? 'grid.closeTab'
+    : isDocumentPanelId(props.api.id ?? '')
+      ? 'grid.closeDocumentTab'
+      : 'grid.closeDerivedTab';
   return (
     <div style={{ paddingInline: 8, display: 'flex', alignItems: 'center', gap: 4, blockSize: '100%' }}>
       {/* undefined accent/badge are passed through as undefined on purpose: the
@@ -251,7 +278,7 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
           props.api.close();
         }}
         onMouseDown={(e) => e.stopPropagation()} // don't start a tab drag
-        title={t('grid.closeTab')}
+        title={t(closeLabelKey)}
         style={{
           background: 'transparent',
           border: 'none',
@@ -2339,6 +2366,23 @@ export function popOutDocumentPanel(api: DockviewApi | null, panelId: string): v
   void api.addPopoutGroup(panel, { popoutUrl });
 }
 
+/**
+ * The viewers "Close all documents" may take, in dockview's terms (#543).
+ *
+ * The RULE — which ones, and why a popped-out one is spared — is
+ * `lib/document-panels`' `closableDocuments`, unit-pinned there. This is only
+ * the dockview half: asking each panel where it currently lives. Written as one
+ * function because both the command's ENABLED state and its RUN need the same
+ * answer, and two reads of it are how a palette entry ends up offered and then
+ * doing nothing.
+ */
+function closableDocumentIds(api: DockviewApi | null): string[] {
+  if (!api) return [];
+  return closableDocuments(
+    api.panels.map((p) => ({ id: p.id, poppedOut: p.api.location.type === 'popout' }))
+  );
+}
+
 function DocumentViewerPanel(
   props: IDockviewPanelProps<{
     path?: string;
@@ -3403,6 +3447,13 @@ export interface GridController {
   /** close EVERY session at once, sparing the pinned ones (§5.8's pinning
    *  contract, E9-09). One confirm for the lot, not one per card. */
   closeAllCards: () => void;
+  /** close every DOCKED §5.30 viewer at once — the answer to tab accretion that
+   *  #530 left open (#543). Popped-out documents are spared; see
+   *  `lib/document-panels`' `closableDocuments` for why. */
+  closeAllDocuments: () => void;
+  /** how many documents `closeAllDocuments` would actually take, so the
+   *  palette's enabled state and the command's effect are one read (#543) */
+  closableDocumentCount: () => number;
   /** switch a card's active view tab; 'terminal' toggles back to the Session
    *  view when the Terminal is already showing (E9-01) */
   toggleCardView: (cardId: string, view: PanelId) => void;
@@ -3784,6 +3835,29 @@ export function SessionGrid(props: {
         }
         if (!window.confirm(t('grid.closeAllConfirm', { count: doomed.length, spared }))) return;
         for (const cardId of doomed) retireCard(cardId);
+      },
+      closableDocumentCount: () => closableDocumentIds(apiRef.current).length,
+      closeAllDocuments: () => {
+        const api = apiRef.current;
+        if (!api) return;
+        // NO CONFIRM, and unlike `closeAllCards` above that is deliberate
+        // (#543). A card's confirm is not about the count — it is there because
+        // closing one ENDS A CHILD PROCESS and forgets its record, which no
+        // amount of clicking undoes. A viewer is a read-only lens on a file:
+        // closing thirty of them costs re-opening the ones you still wanted,
+        // and #530's own argument for accretion is that a visible mess you can
+        // undo beats a document that vanishes. A modal on the command whose
+        // entire purpose is to remove friction would be ceremony.
+        //
+        // IDS SNAPSHOTTED FIRST: `api.panels` is live and `removePanel` mutates
+        // it, so iterating it directly skips every other panel. The registry
+        // half is `onDidRemovePanel`'s `forgetDocumentPanel`, which fires for
+        // each of these — nothing to forget by hand, and deliberately not a
+        // second copy of that list (the lesson `retireCard` records).
+        for (const id of closableDocumentIds(api)) {
+          const panel = api.getPanel(id);
+          if (panel) api.removePanel(panel);
+        }
       },
       toggleCardView: (cardId, view) => {
         // straight at the store: this used to go through a handle the card

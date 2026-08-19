@@ -177,3 +177,56 @@ export function resetDocumentPanels(): void {
   entries.clear();
   seq = 0;
 }
+
+/**
+ * One open viewer, as a BULK operation sees it — dockview's answer, not the
+ * registry's, for the reason `isDocumentPanelId` gives above.
+ */
+export interface DocumentPanelShape {
+  id: string;
+  /**
+   * Is it in ANOTHER OS window right now?
+   *
+   * "A popout group", not "a window of its own": a user can drag a viewer into
+   * a popped-out session's window, and it is spared there too. The reasoning
+   * below rests on the window, not on being alone in it.
+   */
+  poppedOut: boolean;
+}
+
+/**
+ * Which documents "Close all documents" may take (#543).
+ *
+ * THE ANSWER TO ACCRETION, and the one thing #530 left unanswered: with the
+ * peek slot gone, thirty opened files are thirty tabs and the ✕ closes them one
+ * at a time. This is the bulk gesture, and it is the same shape as §5.8's
+ * `closableCards` in `lib/pinning` — the DECISION lives in a function of its
+ * own so the exemption is a rule with a test rather than a `filter` inside a
+ * component.
+ *
+ * **POPPED-OUT DOCUMENTS ARE SPARED** (decided at #543, stated in the command's
+ * own title and in the manual). Three reasons, in order of weight:
+ *
+ *  1. **Popping out IS the surviving "keep this one".** The pin is gone, and
+ *     the nearest thing a user has left to "this document is not part of the
+ *     tab strip" is having dragged it to another monitor. Taking that window
+ *     away is the vanished-document failure #530 removed the peek slot to
+ *     avoid, arriving by a different door.
+ *  2. **The gesture is about a TAB STRIP.** A document in its own window is not
+ *     a tab and contributes nothing to the accretion this command exists for.
+ *  3. **The costs are asymmetric.** Sparing costs one extra click on a window's
+ *     own ✕. Closing loses a window the user placed deliberately, with its
+ *     geometry, from a command typed in a different window — the class of
+ *     cross-window surprise §5.8 and #434 keep re-litigating.
+ *
+ * It is not silent about it: the palette entry reads "Close all documents
+ * (keeps popped-out ones)", exactly as the sessions one names its own
+ * exemption, and the command is DISABLED when every open document is popped out
+ * rather than running and appearing to do nothing.
+ *
+ * Takes every panel dockview has and filters here, so no caller has to know
+ * that `doc-` is what makes a panel a document.
+ */
+export function closableDocuments(panels: readonly DocumentPanelShape[]): string[] {
+  return panels.filter((p) => isDocumentPanelId(p.id) && !p.poppedOut).map((p) => p.id);
+}

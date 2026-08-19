@@ -1809,8 +1809,8 @@ attention queue, or any bulk session operation.
   uses; a popped-out viewer is a **viewer window**.
 - **Every file opens its own tab** (owner decision, 2026-08-15 — #530). Opening
   a file always adds a viewer beside the ones already open; nothing is ever
-  replaced, and a document closes by its ✕ and nothing else. Opening a file
-  that is already open focuses its tab rather than opening a second copy.
+  replaced, and a document closes only when the **user** closes it. Opening a
+  file that is already open focuses its tab rather than opening a second copy.
   **This supersedes "one peek slot, pin to keep"** — the IntelliJ preview-tab
   rule promoted from §10 and shipped in P2-E16-03 (#460), where a second glance
   re-pointed the panel you were reading and a 📌 was how you kept it. That rule
@@ -1824,6 +1824,25 @@ attention queue, or any bulk session operation.
   vanishes because they glanced at something else is a thing taken away that
   they never asked to lose. The pin affordance is gone entirely; there is no
   setting behind it.
+- **Closing is a gesture, and there are two of them** (#543, following #530).
+  The tab's **✕** takes one document; **`Close all documents`** in the palette
+  takes the lot. The second exists because removing the peek slot removed the
+  only ceiling on tab count and put nothing in its place — "a mess the user can
+  see and close" is only an answer if closing is not thirty clicks. Deliberately
+  the cheapest possible answer: no LRU, no tab groups, no eviction policy, until
+  real use says this is not enough.
+  - **Popped-out viewers are exempt from the bulk close**, and the palette entry
+    names its own exemption the way `Close all sessions (keeps pinned ones)`
+    does. Having moved a document to another monitor is the nearest thing left
+    to the pin #530 deleted; taking that window away from a command typed in a
+    different window is the vanished-document failure arriving by another door,
+    and it is the cross-window surprise E8-04/#434 keep re-litigating. The
+    command is **disabled**, with a reason, when every open document is popped
+    out — never offered and inert.
+  - **No confirmation**, unlike the session bulk close. That confirm is not
+    about the count: closing a card ends a child process and forgets its record.
+    A viewer is a read-only lens on a file, and re-opening one is the same two
+    clicks that opened it.
 - **A viewer never displaces a session.** It opens into the document area or its
   own window — never as a tab inside a session's group. This is the E8-04 "new
   sessions land in whatever popout is active" defect in mirror image, and the

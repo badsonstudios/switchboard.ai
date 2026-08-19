@@ -57,6 +57,23 @@ on the floor, and say so in your PR.
 
 ## 0.9.0 — unreleased
 
+### Added
+
+- **Close all documents, in one go.** Every file you open gets its own tab, so a
+  morning's reading can leave a dozen of them in the strip and no way out but a
+  dozen clicks. The command palette (`Ctrl+Shift+P`) now has **Close all
+  documents (keeps popped-out ones)**: it clears every document tab at once and
+  asks nothing first, because a viewer never edits anything. Your sessions and
+  their Changes tabs are untouched, and a document you have moved to its own
+  window on another monitor is left exactly where you put it.
+
+### Fixed
+
+- **A document tab's ✕ no longer claims it ends your session.** Every tab in
+  the app was labelled "Close (ends the session)" — true of a session card, and
+  simply wrong on a document or a Changes tab, neither of which ends anything. A
+  document's ✕ now says **Close document** and a Changes tab's says **Close**.
+
 ## 0.8.0 — 2026-08-19
 
 ### Added
