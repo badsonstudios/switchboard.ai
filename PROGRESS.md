@@ -25,7 +25,8 @@
 > | #517 terminal search via ring buffer | sb-wt-1 | feature/517-search-ring-buffer | running — user-facing |
 > | #559 rail drag-reorder | sb-wt-2 (released) | feature/559-rail-drag-reorder | **DONE** — **PR #580 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
 > | #539 repair-sweep follow-ups | sb-wt-2 (released) | feature/539-repair-sweep-followups | **DONE** — **PR #602 ready-for-review, in Dan's queue**; #603 filed (shared FAKE_SESSION_ID) |
-> | #497 Direct-e2e fixture extraction | sb-wt-2 | feature/497-direct-e2e-fixture | running — INTERNAL |
+> | #497 Direct-e2e fixture extraction | sb-wt-2 (released) | feature/497-direct-e2e-fixture | **DONE** — PR #604 (internal), merging on green; ambient flakes logged on #494; worker breached the background-waiter rule once and repaired it in-turn |
+> | #466+#598 sanitizer presentational+tabindex | sb-wt-2 | feature/466-598-sanitizer-presentational | running — INTERNAL (combined siblings) |
 > | #566 question-panel tabs | sb-wt-3 (released) | feature/566-question-panel-tabs | **DONE** — **PR #579 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
 > | #567 probe half | sb-wt-3 (released) | feature/567-partial-answers-probe | **✅ MERGED** — PR #583 (after cancelling its hung ubuntu e2e, #597; re-run passed 9m) |
 > | #534 permission-mode tooltips | sb-wt-3 (released) | feature/534-permission-mode-tooltips | **DONE** — **PR #586 ready-for-review, in Dan's queue** |
@@ -46,15 +47,10 @@
 > Direct sessions may surface a permission bar — stream path never consults
 > autonomy; unverified, e2e-checkable with the fake provider).
 >
-> **⚙️ INTERNAL TRAIN — PR #601** (`train/2026-08-19-internal`): carries the
-> four green internal PRs #589/#591/#592/#596 (issues #445/#449/#463/#509).
-> Serial merging was burning CI on BEHIND-bumps plus the #597 hang (3
-> sightings today; two more runs cancelled). Train tree verified: lint,
-> typecheck, unit 5259/5259; CHANGELOG conflicts resolved (all entries kept).
-> Local e2e deliberately skipped — two live workers share the machine lock
-> and CI runs the full e2e as the required check. Merges via MERGE COMMIT on
-> green. #539 sweep at ~70 min silent: alive (committed work in wt-2, no PR
-> yet) — left alone.
+> **✅ INTERNAL TRAIN #601 MERGED** (merge commit): #589/#591/#592/#596 all
+> flipped to merged, issues #445/#449/#463/#509 closed, member branches
+> deleted. One CI run instead of four BEHIND-bumps. (Why a train: serial
+> merging was burning CI on bumps plus the #597 hang — 3 sightings today.)
 >
 > **#539 done (PR #602):** sweep adoption now raises a persisted, dismissible
 > notice in the events drawer; duplicate-pointer policy = same-folder id is
