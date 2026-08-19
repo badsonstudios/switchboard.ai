@@ -51,6 +51,7 @@ import {
   gridLeafViews,
   skipPopoutOnLinux,
 } from './fixtures/app';
+import { FAKE_SESSION_ID, fakeSessionId } from '../src/main/providers/fake-stream-ids';
 
 /** the dual-capable fake asked for nothing — i.e. Direct, the app's default */
 const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
@@ -114,11 +115,18 @@ async function sized(a: LaunchedApp): Promise<void> {
   await a.window.waitForTimeout(400);
 }
 
-/** the fake's durable `--resume` identity, once it has reached disk (#404) */
+/**
+ * the fake's durable `--resume` identity, once it has reached disk (#404)
+ *
+ * `FAKE_SESSION_ID` is the FIRST fake conversation started under this home, not
+ * a constant every fake session shares — it stopped being that in #603, which
+ * is what makes the two-card test below two conversations rather than one. This
+ * caller has a single card, so the first id is its id.
+ */
 async function nativeIdPersisted(home: string): Promise<void> {
   await expect(() => {
     const card = readWorkspaceFile(home).sessions?.[0];
-    expect(card?.nativeSessionId).toBe('00000000-fake-4000-8000-000000000000');
+    expect(card?.nativeSessionId).toBe(FAKE_SESSION_ID);
   }).toPass({ timeout: 20_000 });
 }
 
@@ -284,6 +292,23 @@ test.describe('a conversation you come back to is at its newest message (#555)',
     // state is not producible from a synthetic `dragstart`, and a real user's
     // workspace restores from exactly this blob anyway.
     const ws = readWorkspaceFile(first.home);
+
+    // #603, and the reason this test broke twice under #539: two cards must be
+    // TWO conversations. The fake used to hand every session one constant id,
+    // so both of these read `FAKE_SESSION_ID` — a state the real CLI cannot
+    // produce, and one the main process's id-keyed logic (the #484 repair
+    // sweep, #539's duplicate untangle) then has to arbitrate on a workspace it
+    // should never have been shown. Asserted HERE rather than in a test of its
+    // own because this is the only e2e that already pays for two Direct cards.
+    // The EXACT pair, not merely two distinct values: the ids are deterministic
+    // (a counter, not a uuid) and these two cards were created in order, so
+    // anything else — a card that learned no id at all, a third spawn nobody
+    // asked for — is a different bug wearing this one's clothes.
+    const nativeIds = (ws.sessions ?? []).map((c) => c.nativeSessionId);
+    expect(new Set(nativeIds), `two cards, two conversations — got ${nativeIds.join(', ')}`).toEqual(
+      new Set([fakeSessionId(0), fakeSessionId(1)])
+    );
+
     const layout = persistedLayout(ws);
     const views = gridLeafViews(layout.grid.root.data[0]);
     expect(views.length, 'need two panels to split').toBeGreaterThan(1);

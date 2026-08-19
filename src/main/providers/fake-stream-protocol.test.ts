@@ -10,8 +10,8 @@ import {
   extractText,
   extractDocuments,
   extractImages,
-  FAKE_SESSION_ID,
 } from './fake-stream-protocol';
+import { FAKE_SESSION_ID, fakeSessionId } from './fake-stream-ids';
 
 let out: Record<string, unknown>[];
 let writes: Array<{ path: string; content: string }>;
@@ -586,6 +586,45 @@ describe('a resumed session announces it, once (#404)', () => {
     expect(types()).toContain('result:success');
   });
 
+  // #603. The marker and the id have to agree: a session that ANNOUNCES it
+  // continued `native-7` while stamping some other id on init, on every message
+  // and on the name of the transcript it appends to would be a state the real
+  // CLI cannot reach — and the app resumes by looking for `<id>.jsonl`, so it
+  // is the file name that decides whether the next turn joins the conversation
+  // or starts a parallel one.
+  it('IS the conversation it says it resumed — on the wire and in the transcript', () => {
+    const lines: Record<string, unknown>[] = [];
+    const p = new FakeStreamProtocol(
+      { ...host, appendTranscript: (l) => lines.push(l) },
+      (m) => out.push(m),
+      { resumedFrom: 'native-7' }
+    );
+
+    p.handle(userMsg('hello'));
+
+    expect(assistantText()).toBe('RESUMED-FROM:native-7');
+    expect(new Set(out.filter((m) => 'session_id' in m).map((m) => m.session_id))).toEqual(
+      new Set(['native-7'])
+    );
+    expect((out[0] as { uuid: string }).uuid).toBe('native-7'); // system:init
+    expect(lines.length).toBeGreaterThan(0);
+    expect(new Set(lines.map((l) => l.sessionId))).toEqual(new Set(['native-7']));
+  });
+
+  // An explicit id WINS, because the plumbing is the one that knows: it is what
+  // `fake-stream-cli.ts` names the transcript, and the two must not disagree.
+  it('an explicit sessionId beats the resumed one', () => {
+    const p = new FakeStreamProtocol(host, (m) => out.push(m), {
+      resumedFrom: 'native-7',
+      sessionId: fakeSessionId(3),
+    });
+
+    p.handle(userMsg('hello'));
+
+    expect(assistantText()).toBe('RESUMED-FROM:native-7');
+    expect(out[0].session_id).toBe(fakeSessionId(3));
+  });
+
   it('the second turn is an ordinary turn — the marker is once per PROCESS', () => {
     const p = resumed();
     p.handle(userMsg('first'));
@@ -937,5 +976,66 @@ describe("the AskUserQuestion round trip (#563)", () => {
     answer({ behavior: 'allow', updatedInput: { answers: { x: 'y' } } });
 
     expect(writes).toEqual([]);
+  });
+});
+
+// #603 — the id used to be a module constant, so EVERY fake Direct session in
+// an e2e run announced it and every one of them wrote the same `<id>.jsonl`.
+// Nothing inside the fake noticed; everything in the main process keyed on the
+// native id did (the #484 repair sweep, #539's duplicate untangle, adoption),
+// because to all of them a run's cards were one conversation. It broke
+// `feed-restore-position.spec.ts` twice during #539.
+//
+// The stamping is asserted on EVERY surface the id reaches rather than on
+// `system:init` alone: a session whose init said one thing and whose transcript
+// line said another would be a worse fake than the shared constant was.
+describe('the conversation id is per-session (#603)', () => {
+  const ID = fakeSessionId(7);
+  const idsOn = (key: 'session_id' | 'uuid'): unknown[] =>
+    out.filter((m) => key in m).map((m) => m[key]);
+
+  it('defaults to the first id, which is what the constant always was', () => {
+    proto.handle(userMsg('hello'));
+
+    expect(FAKE_SESSION_ID).toBe('00000000-fake-4000-8000-000000000000');
+    expect(new Set(idsOn('session_id'))).toEqual(new Set([FAKE_SESSION_ID]));
+  });
+
+  it('stamps the id it was given on every message of a turn', () => {
+    const p = new FakeStreamProtocol(host, (m) => out.push(m), { sessionId: ID });
+    p.handle(userMsg('hello'));
+
+    expect(out.length).toBeGreaterThan(0);
+    expect(new Set(idsOn('session_id'))).toEqual(new Set([ID]));
+    expect(new Set(idsOn('uuid'))).toEqual(new Set([ID])); // system:init
+    expect(idsOn('session_id')).not.toContain(FAKE_SESSION_ID);
+  });
+
+  it('stamps it on the transcript too — the file the app then looks for', () => {
+    const lines: Record<string, unknown>[] = [];
+    const p = new FakeStreamProtocol(
+      { ...host, appendTranscript: (l) => lines.push(l) },
+      (m) => out.push(m),
+      { sessionId: ID }
+    );
+    p.handle(userMsg('hello'));
+
+    expect(lines.length).toBeGreaterThan(0);
+    expect(new Set(lines.map((l) => l.sessionId))).toEqual(new Set([ID]));
+  });
+
+  it('two instances are two conversations — the whole point', () => {
+    const a: Record<string, unknown>[] = [];
+    const b: Record<string, unknown>[] = [];
+    new FakeStreamProtocol(host, (m) => a.push(m), { sessionId: fakeSessionId(1) }).handle(
+      userMsg('hi')
+    );
+    new FakeStreamProtocol(host, (m) => b.push(m), { sessionId: fakeSessionId(2) }).handle(
+      userMsg('hi')
+    );
+
+    expect(a[0].session_id).toBe(fakeSessionId(1));
+    expect(b[0].session_id).toBe(fakeSessionId(2));
+    expect(a[0].session_id).not.toBe(b[0].session_id);
   });
 });

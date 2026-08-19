@@ -111,7 +111,20 @@ async function main(): Promise<number> {
     command: recipe.command,
     args: recipe.args,
     cwd: work,
-    env: recipe.env,
+    env: {
+      ...recipe.env,
+      // A HOME OF ITS OWN, so this check leaves nothing in the developer's real
+      // `~/.claude`. The child resolves two paths from `os.homedir()` — the
+      // JSONL transcript it writes per turn, and (since #603) the counter
+      // directory it claims its conversation id from — and until this line both
+      // landed in the real one, which is why `~/.claude/projects` on this
+      // machine holds a `…sb-fake-stream-check-XXXX` folder for every run this
+      // check has ever done. The e2e suite has always launched the app under a
+      // temp home for the same reason; this is the same isolation for the
+      // one place that drives the fake without Playwright.
+      HOME: work,
+      USERPROFILE: work,
+    },
     onDiagnostic: (d) => console.log(`[fake-stream-check] diag ${d.kind}: ${d.detail}`),
   });
   s.onMessage((m) => seen.push(m));

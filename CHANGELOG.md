@@ -59,6 +59,11 @@ on the floor, and say so in your PR.
 
 ### Internal
 
+- The fake CLI the automated tests run against now gives every session its own
+  conversation id instead of one shared constant, so a test with two sessions is
+  two conversations, the way two real sessions are. Nothing changes for anyone using
+  switchboard.ai; it removes a state the real CLI cannot produce, which the code
+  that repairs and de-duplicates conversation pointers was being handed. (#603)
 - **A part of the window that breaks can come back on its own.** The crash
   barrier around each contributed surface (status-bar items, session panels,
   document viewers) used to latch: one error and that piece of the window was

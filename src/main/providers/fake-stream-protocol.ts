@@ -12,6 +12,7 @@
 // (`spike/s10/probe-*.cjs` + the findings note), not invented.
 
 import { ASK_USER_QUESTION_TOOL } from '../../shared/ask-user-question';
+import { FAKE_SESSION_ID } from './fake-stream-ids';
 
 export type OutMessage = Record<string, unknown>;
 
@@ -82,8 +83,6 @@ export interface FakeStreamHost {
   fireHook?(payload: Record<string, unknown>): void;
 }
 
-export const FAKE_SESSION_ID = '00000000-fake-4000-8000-000000000000';
-
 export class FakeStreamProtocol {
   private readonly pending = new Map<
     string,
@@ -103,8 +102,30 @@ export class FakeStreamProtocol {
      * and a fake that swallowed the flag would let the resume path rot the way
      * the ignored transport did in #153.
      */
-    private readonly opts: { resumedFrom?: string } = {}
-  ) {}
+    private readonly opts: { resumedFrom?: string; sessionId?: string } = {}
+  ) {
+    this.sessionId = opts.sessionId ?? opts.resumedFrom ?? FAKE_SESSION_ID;
+  }
+
+  /**
+   * THIS session's conversation id — one per instance, not one per world (#603).
+   *
+   * It was a module constant, which meant every fake Direct card in an e2e run
+   * announced the same `session_id` and wrote the same `<id>.jsonl`. Nothing in
+   * the fake cared; everything in the MAIN process that keys on the native id
+   * did — the #484 repair sweep, #539's duplicate untangle, adoption — because
+   * to all of them the run's cards were one conversation. `fake-stream-cli.ts`
+   * hands each spawn its own (`claimFakeSessionId`); the default keeps the id
+   * every unit test and single-card spec already names.
+   *
+   * A RESUMED session keeps the id it was resumed with, and that rule lives
+   * here rather than in the plumbing because the alternative is an instance
+   * that can be constructed into a state the real CLI cannot reach: announcing
+   * `RESUMED-FROM:<id>` while stamping a different id on init, on every message
+   * and on the transcript. The flag names a conversation that already exists on
+   * disk; the next turn belongs in that file.
+   */
+  private readonly sessionId: string;
 
   /** the resume marker goes out once, on the first turn, not per turn */
   private resumeNoted = false;
@@ -186,7 +207,7 @@ export class FakeStreamProtocol {
     // the transcript (P2-E18-10) that omission means a stream session shows no
     // user prompt at all — a fake missing something the real thing does is a
     // fake that hides a bug.
-    this.emit({ type: 'user', message, session_id: FAKE_SESSION_ID, parent_tool_use_id: null });
+    this.emit({ type: 'user', message, session_id: this.sessionId, parent_tool_use_id: null });
 
     // WHAT THE MODEL SAW (P2-E10-09). The real CLI answers an image by talking
     // about it, which is not a thing a fake can do — so it answers by SAYING
@@ -265,7 +286,7 @@ export class FakeStreamProtocol {
       const [type, message] = sp < 0 ? [rest, ''] : [rest.slice(0, sp), rest.slice(sp + 1)];
       this.host.fireHook?.({
         hook_event_name: 'Notification',
-        session_id: FAKE_SESSION_ID,
+        session_id: this.sessionId,
         cwd,
         notification_type: type,
         message,
@@ -285,20 +306,20 @@ export class FakeStreamProtocol {
       this.emit({
         type: 'stream_event',
         event: { type: 'message_start', message: { role: 'assistant', content: [] } },
-        session_id: FAKE_SESSION_ID,
+        session_id: this.sessionId,
         parent_tool_use_id: null,
       });
       this.emit({
         type: 'stream_event',
         event: { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
-        session_id: FAKE_SESSION_ID,
+        session_id: this.sessionId,
         parent_tool_use_id: null,
       });
       for (const piece of ['HALF-', 'WRITTEN-', 'SENTENCE']) {
         this.emit({
           type: 'stream_event',
           event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: piece } },
-          session_id: FAKE_SESSION_ID,
+          session_id: this.sessionId,
           parent_tool_use_id: null,
         });
       }
@@ -348,7 +369,7 @@ export class FakeStreamProtocol {
       this.emit({
         type: 'assistant',
         message: { role: 'assistant', content: [{ type: 'text', text: out }] },
-        session_id: FAKE_SESSION_ID,
+        session_id: this.sessionId,
         parent_tool_use_id: null,
       });
       this.host.appendTranscript?.({
@@ -357,7 +378,7 @@ export class FakeStreamProtocol {
         level: 'info',
         isMeta: false,
         isSidechain: false,
-        sessionId: FAKE_SESSION_ID,
+        sessionId: this.sessionId,
         cwd,
         timestamp: new Date().toISOString(),
         content: `<local-command-stdout>${out}</local-command-stdout>`,
@@ -553,7 +574,7 @@ export class FakeStreamProtocol {
       });
       const content = [{ type: 'tool_use', id: call.id, name: call.name, input: call.input }];
       const message = { role: 'assistant', id, content };
-      this.emit({ type: 'assistant', message, session_id: FAKE_SESSION_ID, parent_tool_use_id: null });
+      this.emit({ type: 'assistant', message, session_id: this.sessionId, parent_tool_use_id: null });
       this.transcribe('assistant', message);
       this.ev({ type: 'content_block_stop', index });
       index += 1;
@@ -567,7 +588,7 @@ export class FakeStreamProtocol {
       this.ev({ type: 'content_block_delta', index, delta: { type: 'text_delta', text: piece } });
     }
     const proseMessage = { role: 'assistant', id, content: [{ type: 'text', text: prose }] };
-    this.emit({ type: 'assistant', message: proseMessage, session_id: FAKE_SESSION_ID, parent_tool_use_id: null });
+    this.emit({ type: 'assistant', message: proseMessage, session_id: this.sessionId, parent_tool_use_id: null });
     this.transcribe('assistant', proseMessage);
     this.ev({ type: 'content_block_stop', index });
     this.ev({ type: 'message_delta', delta: { stop_reason: 'tool_use' } });
@@ -584,7 +605,7 @@ export class FakeStreamProtocol {
         },
       ],
     };
-    this.emit({ type: 'user', message: resultMessage, session_id: FAKE_SESSION_ID, parent_tool_use_id: null });
+    this.emit({ type: 'user', message: resultMessage, session_id: this.sessionId, parent_tool_use_id: null });
     this.transcribe('user', resultMessage);
     this.emitResult();
   }
@@ -706,7 +727,7 @@ export class FakeStreamProtocol {
       type: 'system',
       subtype: 'init',
       cwd,
-      session_id: FAKE_SESSION_ID,
+      session_id: this.sessionId,
       tools: ['Read', 'Write', 'Edit', 'Bash'],
       mcp_servers: [],
       model: 'claude-fake-1',
@@ -718,7 +739,7 @@ export class FakeStreamProtocol {
       agents: [],
       skills: [],
       plugins: [],
-      uuid: FAKE_SESSION_ID,
+      uuid: this.sessionId,
     });
   }
 
@@ -726,7 +747,7 @@ export class FakeStreamProtocol {
   private transcribe(type: 'user' | 'assistant', message: unknown, cwd?: string): void {
     this.host.appendTranscript?.({
       type,
-      sessionId: FAKE_SESSION_ID,
+      sessionId: this.sessionId,
       cwd: cwd ?? this.host.cwd(),
       timestamp: new Date().toISOString(),
       isSidechain: false,
@@ -739,7 +760,7 @@ export class FakeStreamProtocol {
     this.emit({
       type: 'stream_event',
       event,
-      session_id: FAKE_SESSION_ID,
+      session_id: this.sessionId,
       parent_tool_use_id: null,
     });
   }
@@ -793,7 +814,7 @@ export class FakeStreamProtocol {
           id,
           content: [{ type: 'thinking', thinking: '', signature: 'FAKE-SIGNATURE' }],
         },
-        session_id: FAKE_SESSION_ID,
+        session_id: this.sessionId,
         parent_tool_use_id: null,
       });
       this.ev({ type: 'content_block_stop', index });
@@ -807,7 +828,7 @@ export class FakeStreamProtocol {
     this.emit({
       type: 'assistant',
       message,
-      session_id: FAKE_SESSION_ID,
+      session_id: this.sessionId,
       parent_tool_use_id: null,
     });
     this.ev({ type: 'content_block_stop', index });
@@ -821,7 +842,7 @@ export class FakeStreamProtocol {
       type: 'result',
       subtype: isError ? 'error_during_execution' : 'success',
       is_error: isError,
-      session_id: FAKE_SESSION_ID,
+      session_id: this.sessionId,
       usage: { input_tokens: 2, output_tokens: 6, cache_read_input_tokens: 0 },
     });
   }
