@@ -57,6 +57,15 @@ on the floor, and say so in your PR.
 
 ## 0.9.0 — unreleased
 
+### Internal
+
+- **A part of the window that breaks can come back on its own.** The crash
+  barrier around each contributed surface (status-bar items, session panels,
+  document viewers) used to latch: one error and that piece of the window was
+  an empty gap until switchboard was restarted. It now retries the surface on
+  its next update, and only gives up — quietly, as before — after three
+  failures in a row, so a piece that is genuinely broken cannot spin.
+
 ## 0.8.0 — 2026-08-19
 
 ### Added

@@ -134,12 +134,23 @@ exactly that reason.
 
 Four rules those points established, worth knowing before you add another:
 
-- **A contribution never takes the window down.** Predicates (`enabled`,
-  `badge`, `matches`) are called through `safely()` and a throw counts as the
-  conservative answer; rendered output is wrapped in `ContributionBoundary`,
-  which logs and renders nothing. The renderer has no other error boundary, so
-  without this one bad contribution white-screens every session's terminal —
-  the exact "our breakage blocks a session" outcome the constitution forbids.
+- **A contribution never takes the window down — and is not dead forever
+  either.** Predicates (`enabled`, `badge`, `matches`) are called through
+  `safely()` and a throw counts as the conservative answer; rendered output is
+  wrapped in `ContributionBoundary`, which logs and renders nothing. The
+  renderer has no other error boundary, so without this one bad contribution
+  white-screens every session's terminal — the exact "our breakage blocks a
+  session" outcome the constitution forbids. The boundary used to LATCH, which
+  was the mild version of the same thing: one transient throw and that surface
+  was a gap until the app restarted. Since #463 the policy is **bounded
+  automatic retry** — the contribution is offered the next render that brings
+  new children, and after `CONTRIBUTION_RETRY_LIMIT` failures *in a row* the
+  boundary gives up for good and says so once. Both halves matter: no retry is
+  the latch, and unbounded retry is a contribution that always throws throwing
+  once per parent render forever, on a feed that re-renders per streamed chunk.
+  There is deliberately **no "try again" button** — a broken contribution
+  leaves a gap and does not shout at the user about an internal fault they
+  cannot act on.
 - **A feed block that can expand ships a `FeedExpander`** (#174). The `ToolBox`
   container is a mouse convenience — its whole body toggles — and it is
   deliberately not a control: a box that CONTAINS other buttons may not be one.
