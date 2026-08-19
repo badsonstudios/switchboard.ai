@@ -2,9 +2,12 @@
 
 **Date:** 2026-08-17 · **CLI on PATH:** `claude` 2.1.233 · **Extension read:**
 `anthropic.claude-code-2.1.226-win32-x64` · **Probe:**
-`spike/s11/probe-2-ask-user-question.cjs` (5 modes) · **Artifacts:**
-`spike/findings/artifacts/s11/ask-user-question-{answer,other,deny,ignore,empty}.json`
+`spike/s11/probe-2-ask-user-question.cjs` (7 modes) · **Artifacts:**
+`spike/findings/artifacts/s11/ask-user-question-{answer,other,deny,ignore,empty,partial,blank}.json`
 · **Issue:** #563 (the `AskUserQuestion` half of plan item E18-11)
+
+**Extended 2026-08-19 (#567):** the `partial` and `blank` modes were added and
+run, closing the "deliberately not measured" hole in §5. See **§3a**.
 
 ---
 
@@ -121,6 +124,64 @@ The existing 300s deadline in `StreamPermissions` is not belt-and-braces here �
 it is the only thing between an unanswered question and a session that waits for
 ever. P6 is doing real work on this message class.
 
+## 3a. The partial answers map, measured (#567, 2026-08-19)
+
+Two questions asked in one call; **question 1 answered `"Red"` in both runs**,
+question 2 varied:
+
+| Mode | The `answers` map we sent |
+|---|---|
+| `partial` | `{"Which colour do you prefer?": "Red"}` — Q2's key **absent entirely** |
+| `blank` | `{"Which colour do you prefer?": "Red", "Which of these languages do you use?": ""}` — Q2's key present, **empty string** |
+
+**Both runs produced the byte-identical `tool_result`**, no `is_error`,
+`result.subtype: "success"`:
+
+> `Your questions have been answered: "Which colour do you prefer?"="Red". You
+> can now continue with these answers in mind.`
+
+Compare the complete answer from §2, which lists both:
+
+> `Your questions have been answered: "Which colour do you prefer?"="Red",
+> "Which of these languages do you use?"="TypeScript, Rust". You can now
+> continue with these answers in mind.`
+
+### Which of the three readings the CLI takes
+
+Of *skipped* / *answered-with-silence* / *rejected*, it is unambiguously
+**skipped**:
+
+1. **Not rejected.** No error, no retry, no complaint about a missing key. The
+   partial map is accepted exactly like a complete one — the same success
+   sentence, just shorter.
+2. **Not answered-with-silence.** This is the finding that matters. The CLI
+   **filters empty-string values out of the map before writing the
+   `tool_result`** — `blank` and `partial` are indistinguishable downstream, so
+   `""` is *not* handed to the model as "the user said nothing". Nobody can
+   accidentally tell the model a question was answered with silence.
+3. **The omission is visible to the model, and it noticed unprompted.** The
+   unanswered question simply does not appear in the sentence, and the model
+   read that correctly both times, without being told a question had been
+   skipped:
+   - `partial`: *"For the languages question, no selection came back in the
+     response — only the colour answer was recorded, so I don't have an answer
+     for which of TypeScript, Rust, Go, or Python you use. Want me to ask that
+     one again?"*
+   - `blank`: *"**Languages:** no selection was recorded for that one — the
+     response only included your colour answer, so it looks like the language
+     question was skipped or dismissed."*
+
+### What this permits
+
+A UI **may** send a partial map. It is a well-formed answer, not a degraded one,
+and it does not need a sentinel value or an "I'd rather not say" option to be
+safe — an omitted key and `""` mean the same thing to the CLI. What is NOT
+measured is the floor: `empty` sent **no `answers` key at all** and got *"The
+user did not answer the questions."*; an `answers` key present but holding
+**zero entries** was not run, so a UI that lets the user skip *every* question
+should assume it lands on the `empty` sentence and treat it as such. Allow-all
+must still stay exempt either way (§3).
+
 ## 4. What the VS Code extension contributed
 
 Read first, per the standing rule, and it pointed the probe at the right channel
@@ -150,10 +211,10 @@ Two UI choices we did **not** copy, and why:
 
 ## 5. Open, and deliberately not measured
 
-- **A partial `answers` map** (some questions answered, some absent) was never
-  sent, so its reading is unknown. The UI refuses to produce one — Submit
-  requires every question — which is why it stayed unmeasured. If a future
-  surface wants partial answers, probe it first.
+- ~~**A partial `answers` map** — never sent, reading unknown.~~ **Measured
+  2026-08-19 (#567). The CLI treats an unanswered question as SKIPPED.** See
+  §3a — a partial map is safe to send, and an empty string is not read as an
+  answer.
 - **Two questions with identical text in one call.** The CLI's own consumer
   collapses them (one key), so we do too. Not observed in the wild.
 - **Plan mode / `ExitPlanMode`** — the other chooser. Still unmeasured; still
@@ -168,6 +229,8 @@ node probe-2-ask-user-question.cjs other      # free text
 node probe-2-ask-user-question.cjs deny
 node probe-2-ask-user-question.cjs empty      # the allow-all shape
 node probe-2-ask-user-question.cjs ignore     # 3 minutes, on purpose
+node probe-2-ask-user-question.cjs partial    # Q2's key omitted  (#567)
+node probe-2-ask-user-question.cjs blank      # Q2 sent as ""     (#567)
 ```
 
 Each run writes its full transcript to
