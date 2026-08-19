@@ -467,3 +467,84 @@ describe('StreamService bookkeeping (P2-E18-03)', () => {
   });
   // Both cases spawn; same ceiling and same reason as above (#512).
 }, 30_000);
+
+// #593: `stderrSnapshot` and `health` were the other two produced-and-dropped
+// shapes — maintained on every chunk, read by nothing in the app. They are
+// wired (not deleted) into ONE end-of-life summary on the diagnostics channel
+// #449 already pointed at the log, because each carries something no other
+// vantage point has: the tail survives the live stderr throttle (which keeps
+// the FIRST chunks, never the fatal last one), and `pendingBytes` at exit is
+// the only record that a message was cut off mid-line.
+describe('the exit summary (#593)', () => {
+  const summary = (): StreamDiagnostic | undefined => diagnostics.find((d) => d.kind === 'exit');
+
+  it('carries the stderr tail — including what the live throttle dropped', async () => {
+    const s = run(`
+      // 40 chunks: the live 'stderr' diagnostic logs occurrences 1, 2, 4, 8,
+      // 16 and 32 — so the LAST line, the one that explains the death, is
+      // exactly what the throttle discards and what the tail must hold.
+      let i = 0;
+      const t = setInterval(() => {
+        if (++i < 40) return process.stderr.write('noise ' + i + '\\n');
+        clearInterval(t);
+        process.stderr.write('FATAL: the reason it died\\n');
+        process.exit(2);
+      }, 1);
+    `);
+
+    await until(() => s.exitCode !== null, 10_000);
+    await until(() => summary() !== undefined);
+    expect(summary()!.detail).toContain('FATAL: the reason it died');
+    expect(summary()!.detail).toContain('exit 2');
+  }, 20_000);
+
+  it('carries the framing counters, including a line the child never finished', async () => {
+    const s = run(`
+      process.stdout.write('this is not json\\n');
+      process.stdout.write('{"type":"assistant","half":'); // no newline, ever
+      process.exit(1);
+    `);
+
+    await until(() => s.exitCode !== null);
+    await until(() => summary() !== undefined);
+    expect(summary()!.detail).toContain('parseFailures=1');
+    // The truncated line is still sitting in the decoder: a message we will
+    // never see, which raised no parse failure (it was never a complete line)
+    // and produced no `result`.
+    expect(summary()!.detail).toMatch(/pendingBytes=[1-9]/);
+  });
+
+  it('says nothing about a clean session — silence is the normal case', async () => {
+    const s = run(`process.stdout.write('{"n":1}\\n');`);
+
+    await until(() => s.exitCode !== null);
+    await new Promise((r) => setTimeout(r, 50)); // the summary had its chance
+    expect(summary()).toBeUndefined();
+    expect(diagnostics).toEqual([]);
+  });
+
+  // `kill()` settles as code 1 (a signalled child reports no exit code), so
+  // without the gate above EVERY card the user closes would log a warning.
+  it('says nothing when a healthy session is killed', async () => {
+    const s = run(`setInterval(() => {}, 1000);`, 'killed-clean');
+    await until(() => s.pid > 0);
+
+    s.kill();
+
+    await until(() => s.exitCode !== null);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(s.exitCode).toBe(1); // the code that would have made this noisy
+    expect(summary()).toBeUndefined();
+  });
+
+  it('is emitted once, even when exit and error both land', async () => {
+    const s = run(`process.stderr.write('something\\n'); process.exit(1);`);
+
+    await until(() => s.exitCode !== null);
+    await until(() => summary() !== undefined);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(diagnostics.filter((d) => d.kind === 'exit')).toHaveLength(1);
+  });
+  // Every case spawns a real child; same ceiling and same reason as the suites
+  // above (#512).
+}, 30_000);

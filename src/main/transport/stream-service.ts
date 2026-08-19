@@ -36,7 +36,12 @@ export interface StreamSpawnOptions extends TransportSpawnOptions {
 
 export interface StreamDiagnostic {
   sessionId: string;
-  kind: 'parse-failure' | 'overlong-line' | 'stderr' | 'stdin-write-failed';
+  /**
+   * `exit` is the end-of-life summary (#593) and is emitted at most once per
+   * session, only when there was something to summarise — see
+   * `StreamSession.summarize`.
+   */
+  kind: 'parse-failure' | 'overlong-line' | 'stderr' | 'stdin-write-failed' | 'exit';
   detail: string;
 }
 
@@ -132,6 +137,10 @@ export class StreamSession {
       // whichever lands first wins and the other is ignored.
       if (this.exitCode !== null) return;
       this.exitCode = code;
+      // Before the fan-out: a listener is free to tear the session down, and
+      // the last thing this session ever noticed should not depend on what a
+      // subscriber does with the news.
+      this.summarize(code);
       for (const l of this.exitListeners) {
         try {
           l(code);
@@ -162,6 +171,62 @@ export class StreamSession {
     }
   }
 
+  /**
+   * The end-of-life summary — and the consumer `stderrSnapshot` and `health`
+   * never had (#593).
+   *
+   * Both were produced and dropped, the same shape #449 fixed for the
+   * diagnostic channel itself: the tail was maintained on every stderr chunk
+   * and the counters on every line, and nothing in the app ever read either.
+   * They are WIRED rather than deleted because each carries exactly one thing
+   * no other vantage point in the app can see:
+   *
+   *  - **The stderr tail.** Live stderr diagnostics are throttled on a
+   *    power-of-two schedule, so a CLI that floods stderr gets occurrences
+   *    1, 2, 4, ... logged — the FIRST chunks. The message that explains a
+   *    death is the LAST one, which is precisely what the throttle drops and
+   *    precisely what the tail holds. Each live line is also clipped to 500
+   *    characters; the tail is not.
+   *  - **`pendingBytes` at exit.** A nonzero value means the child died
+   *    part-way through writing a line: a message we will never see, that
+   *    raised no parse failure (it was never a complete line) and produced no
+   *    `result`. Nothing else in the app records that it happened.
+   *
+   * The exit CODE is not the news here — `SessionManager.onExit` already logs
+   * and classifies that — so it rides along as context only.
+   *
+   * **Silence when there is nothing to say.** No stderr, clean framing, no
+   * partial line ⇒ no line at all. Without that gate every ordinary session
+   * close would log a warning: `kill()` settles as code 1 (no exit code from a
+   * signalled child), so "nonzero exit" is the normal way a user-closed
+   * session ends and would be a warning on every card the user shuts.
+   *
+   * **Snapshot, not a guarantee of completeness.** stdio `data` can arrive
+   * after `exit`, so a byte written in the child's last breath may miss this
+   * line — it still reaches the live `stderr` diagnostic, so nothing is lost.
+   * Waiting for `close` instead would be worse: on Windows the cmd.exe →
+   * claude.cmd → node chain lets a grandchild hold the pipes open, so `close`
+   * can be arbitrarily late or never, and a spawn that fails outright emits
+   * `error` with no `exit` at all. `settle` fires exactly once in every one of
+   * those cases, which is the property this needs.
+   */
+  private summarize(code: number): void {
+    const h = this.health;
+    const tail = this.stderrSnapshot.trim();
+    if (!tail && h.parseFailures === 0 && h.overlongLines === 0 && h.pendingBytes === 0) return;
+    const parts = [
+      `exit ${code}`,
+      `parseFailures=${h.parseFailures} overlongLines=${h.overlongLines} ` +
+        `pendingBytes=${h.pendingBytes}`,
+    ];
+    // Last 2 KB of the 8 KB tail: the end is the informative end, and the
+    // whole tail in one log field would push the rest of the log out of a
+    // rotation. Untrusted child output, so it travels as `detail` — a log
+    // FIELD, which `LogSink` redacts — never interpolated into the message.
+    if (tail) parts.push(`stderr tail: ${tail.slice(-2048)}`);
+    this.diag('exit', parts.join('; '));
+  }
+
   private ingest(chunk: string): void {
     for (const r of this.decoder.push(chunk)) {
       if (!r.ok) {
@@ -183,7 +248,10 @@ export class StreamSession {
     return this.proc.pid ?? -1;
   }
 
-  /** Framing-integrity counters — the thing to look at when output goes weird. */
+  /**
+   * Framing-integrity counters — the thing to look at when output goes weird.
+   * Read by `summarize()` at exit (#593), by `fake-stream-check`, and by tests.
+   */
   get health(): { parseFailures: number; overlongLines: number; pendingBytes: number } {
     return {
       parseFailures: this.decoder.parseFailures,
@@ -192,6 +260,10 @@ export class StreamSession {
     };
   }
 
+  /**
+   * The last few KB of stderr. Read by `summarize()` at exit (#593) — the
+   * crash report it was always for — and by tests.
+   */
   get stderrSnapshot(): string {
     return this.stderrTail;
   }

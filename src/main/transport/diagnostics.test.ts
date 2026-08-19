@@ -60,10 +60,18 @@ describe('stream diagnostics reach the log (#449)', () => {
   it('every kind is a warning, and none is an error', () => {
     const { lines, log } = recorder();
     const note = createDiagnosticLogger(log);
-    for (const kind of ['parse-failure', 'overlong-line', 'stderr', 'stdin-write-failed'] as const) {
+    for (const kind of [
+      'parse-failure',
+      'overlong-line',
+      'stderr',
+      'stdin-write-failed',
+      // #593: only emitted when the session's stderr or framing had something
+      // to report, so it is as unexpected as the other four — not a heartbeat.
+      'exit',
+    ] as const) {
       note(diag({ kind, sessionId: kind })); // distinct session, so none throttles another
     }
-    expect(lines.map((l) => l.level)).toEqual(['warn', 'warn', 'warn', 'warn']);
+    expect(lines.map((l) => l.level)).toEqual(['warn', 'warn', 'warn', 'warn', 'warn']);
   });
 });
 
