@@ -87,6 +87,13 @@ on the floor, and say so in your PR.
   touched it red. Nothing about the tests themselves changed — only the ceiling
   that decides whether a slow machine reports the test's own verdict or an
   opaque timeout. (#512)
+- Extracted the Direct-session setup the end-to-end tests open with — make a
+  project folder, launch on the default transport, prove it really is Direct,
+  drive a turn of tool calls — into one shared helper. Two specs had grown their
+  own copy of the same twenty lines and a third was about to; they now call the
+  helper instead, so the next test that needs a Direct session starts from a
+  single line rather than a copy that can quietly drift. No test's behaviour
+  changed. (#497)
 - One default for a session's transport, not two. A live session record always
   carries the transport it was spawned on, so the type now says so and the card
   reads main's answer verbatim — the stray `'pty'` fallback that contradicted

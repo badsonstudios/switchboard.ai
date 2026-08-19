@@ -1250,6 +1250,92 @@ export function tempProjectFolder(): string {
  * the prompt is the shipped article.
  */
 
+/** What `launchDirectToolTurn` hands back. The caller owns all three. */
+export interface DirectToolTurn {
+  /** the launched app, with one seeded Direct session that has run `!tools` */
+  app: LaunchedApp;
+  /** the project folder — deliberately NOT registered with the sweep yet */
+  folder: string;
+  /** `path.basename(folder)`, which is the seeded card's title */
+  title: string;
+}
+
+/**
+ * Launch a Direct session and drive a turn of tool calls through it.
+ *
+ * The setup dance a Direct-lane spec opens with, extracted from the two copies
+ * that had it (`stream-feed.spec.ts`, `find.spec.ts`) before a third arrived
+ * (#497). Four parts, each of which is load-bearing:
+ *
+ * 1. **`mkdtemp`, NOT `tempProjectFolder()`** — that one REGISTERS the folder
+ *    with the sweep, and a registered folder is deleted by the first
+ *    `cleanup()`. For the `serial` groups that share one app across several
+ *    tests, that pulls the ground out from under every test after the first.
+ *    The caller registers it in `afterAll` instead, the moment it is safe to
+ *    sweep — see the closing move below.
+ * 2. **No `SWITCHBOARD_TRANSPORT` anywhere** — Direct is the default since
+ *    #381, and a spec about the default must not name it.
+ *    `SWITCHBOARD_FAKE_PROVIDER: 'stream'` asks for the dual-capable fake and
+ *    nothing else.
+ * 3. **The Terminal-tab probe** — it really IS Direct. Without it a group could
+ *    quietly become a second transcript test that happens to pass.
+ * 4. **The `!tools` turn** — real tool calls in the shape the CLI emits them
+ *    (`providers/fake-stream-protocol.ts`), and the fake writes the same turn
+ *    to a JSONL transcript as the real CLI does in stream mode (S-10). Those
+ *    are the two sides anything joining stream to file has to line up.
+ *
+ * `prefix` is the `mkdtemp` prefix, so name it after the spec: it is what
+ * identifies a temp folder that outlived a crashed run.
+ *
+ * Raises the CALLING hook's timeout to 120s — launching an app and driving a
+ * tool turn is most of the runtime of any spec that starts here, and every
+ * caller wanted it. Call it first in the hook; a caller that wants a different
+ * budget can set its own afterwards.
+ *
+ * The closing move belongs to the caller, and is exactly:
+ *
+ * ```ts
+ * test.afterAll(async () => {
+ *   if (folder) registerTempDir(folder);  // safe to sweep only now
+ *   await a?.cleanup();                   // closes the app first, then sweeps
+ * });
+ * ```
+ *
+ * …with one exception this function handles itself: if the launch or any probe
+ * THROWS, nothing is assigned, so there is no app handle for that `afterAll` to
+ * close — and a leaked one wedges `liveApps` above zero, which makes every
+ * later sweep in the worker silently no-op. So the failure path does the same
+ * two calls here and rethrows. The guards in the caller are for that path: the
+ * `afterAll` still runs, with both bindings unset.
+ */
+export async function launchDirectToolTurn(prefix: string): Promise<DirectToolTurn> {
+  test.setTimeout(120_000);
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  fs.writeFileSync(path.join(folder, 'README.md'), '# e2e\n');
+  const title = path.basename(folder);
+  const app = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+  try {
+    const w = app.window;
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+
+    // it really is Direct — see (3) above
+    await w.getByRole('tab', { name: 'Terminal' }).first().click();
+    await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 30_000 });
+    await w.getByRole('tab', { name: 'Session', exact: true }).first().click();
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('!tools');
+    await box.press('Enter');
+    await expect(w.locator('[data-feed-box="bash"]')).toBeVisible({ timeout: 30_000 });
+  } catch (err) {
+    registerTempDir(folder);
+    await app.cleanup();
+    throw err;
+  }
+  return { app, folder, title };
+}
+
 /**
  * Submit a prompt to a card BY TITLE, on that card's own transport (P2-E18-14).
  *

@@ -22,13 +22,12 @@
 // NO `SWITCHBOARD_TRANSPORT` ANYWHERE, deliberately: Direct is the default
 // since #381, and a spec about the default must not name it.
 import { test, expect, Page } from '@playwright/test';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
-import { launchApp, LaunchedApp, registerTempDir, tabFromFeedToComposer } from './fixtures/app';
-
-/** the dual-capable fake, asked for nothing — i.e. the app's own default */
-const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
+import {
+  launchDirectToolTurn,
+  LaunchedApp,
+  registerTempDir,
+  tabFromFeedToComposer,
+} from './fixtures/app';
 
 /** the feed scroller, found the way feed.spec.ts finds it */
 const scrollTop = (w: Page): Promise<number> =>
@@ -60,37 +59,21 @@ test.describe('the Feed renders a Direct turn (P2-E18-14)', () => {
   let folder: string;
 
   test.beforeAll(async () => {
-    test.setTimeout(120_000);
-    // NOT `tempProjectFolder()`, and its docblock says why: it REGISTERS the
-    // folder with the sweep, and a registered folder is deleted by the first
-    // `cleanup()` — which for a file this shape would be the first one anybody
-    // adds in an `afterEach`, pulling the ground out from under tests 2-4. This
-    // one is registered in `afterAll` instead, the moment it is safe to sweep,
-    // so nothing leaks and nothing is swept early.
-    folder = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-stream-feed-'));
-    fs.writeFileSync(path.join(folder, 'README.md'), '# e2e\n');
-    title = path.basename(folder);
-    a = await launchApp({ seedFolder: folder, env: DIRECT });
-    const w = a.window;
-    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
-    // it really is Direct — otherwise every assertion in this file is a
-    // transcript test that happens to pass
-    await w.getByRole('tab', { name: 'Terminal' }).first().click();
-    await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 30_000 });
-    await w.getByRole('tab', { name: 'Session', exact: true }).first().click();
-
-    const box = w.getByPlaceholder(/Prompt this session/);
-    await box.click();
-    await box.fill('!tools');
-    await box.press('Enter');
-    await expect(w.locator('[data-feed-box="bash"]')).toBeVisible({ timeout: 30_000 });
+    // The Direct setup dance, shared with the other Direct-lane specs (#497):
+    // mkdtemp rather than `tempProjectFolder()` — which REGISTERS the folder
+    // with the sweep, and a registered folder is deleted by the first
+    // `cleanup()`, pulling the ground out from under tests 2-4 — no
+    // `SWITCHBOARD_TRANSPORT` anywhere, the it-really-is-Direct probe, and the
+    // `!tools` turn this whole file reads. See `launchDirectToolTurn`.
+    ({ app: a, folder, title } = await launchDirectToolTurn('sb-stream-feed-'));
   });
 
   test.afterAll(async () => {
     // registered HERE — see `beforeAll`. `cleanup()` closes the app first and
     // then sweeps, which is the order Windows needs: the session's child holds
     // this folder as its cwd until it is reaped.
-    registerTempDir(folder);
+    // Unset only when the setup threw — which cleaned up after itself.
+    if (folder) registerTempDir(folder);
     await a?.cleanup();
   });
 
