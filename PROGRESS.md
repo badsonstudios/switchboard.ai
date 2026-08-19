@@ -22,7 +22,8 @@
 > | #445 transport default stray | sb-wt-1 (released) | feature/445-transport-default | **DONE** — PR #589 (internal), merging on green CI; #590 filed from its report |
 > | #463 ContributionBoundary reset | sb-wt-1 (released) | feature/463-contribution-boundary-reset | **DONE** — PR #592 green but CHANGELOG-conflicted with merged #585; orchestrator resolved (both entries kept), re-CI running, merges on green; #594 filed |
 > | #575 CI action bumps | sb-wt-1 (released) | feature/575-ci-action-bumps | **✅ MERGED** — PR #595 squash-merged (checkout/setup-node/upload v7, download v8; zero warnings); #600 filed (search.test.ts perf-budget flake) |
-> | #517 terminal search via ring buffer | sb-wt-1 | feature/517-search-ring-buffer | running — user-facing |
+> | #517 terminal search via ring buffer | sb-wt-1 (released) | feature/517-search-ring-buffer | **DONE** — **PR #610 ready-for-review, in Dan's queue** (never-opened terminals get real counts via read-only pty:snapshot; #518 inherited, not regressed) |
+> | #590 preload DTO drift-pin | sb-wt-1 | feature/590-preload-dto-typing | running — INTERNAL |
 > | #559 rail drag-reorder | sb-wt-2 (released) | feature/559-rail-drag-reorder | **DONE** — **PR #580 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
 > | #539 repair-sweep follow-ups | sb-wt-2 (released) | feature/539-repair-sweep-followups | **DONE** — **PR #602 ready-for-review, in Dan's queue**; #603 filed (shared FAKE_SESSION_ID) |
 > | #497 Direct-e2e fixture extraction | sb-wt-2 (released) | feature/497-direct-e2e-fixture | **DONE** — PR #604 (internal), merging on green; ambient flakes logged on #494; worker breached the background-waiter rule once and repaired it in-turn |
@@ -64,14 +65,19 @@
 > Worker note for everyone: **never run `npx prettier --write` here** (#323
 > is real; 28 files reformatted and hand-restored mid-item).
 >
-> **Merge queue (Dan) — 9 PRs ready-for-review:** #576 (#556 drawer close),
+> **Internal queue note:** PR #604 (#497) went green then DIRTY against the
+> train's CHANGELOG entries — orchestrator resolved (entries accumulated),
+> re-CI running, merges on green.
+>
+> **Merge queue (Dan) — 10 PRs ready-for-review:** #576 (#556 drawer close),
 > #578 (#543 tab tooltips + close-all), #579 (#566 question tabs), #580
 > (#559 rail reorder), #584 (#546 composer chips), #586 (#534 permission
 > tooltips), #599 (#587 ask-mode pin), #602 (#539 adoption notice +
 > duplicate untangle), #605 (#216 suspended-card header). All green-gated
 > locally; the orchestrator merges nothing user-facing. Suggested review
-> order: #576 → #578 → #584 → #586 → #599 → #605 → #602 → #580 → #579
-> (smallest first; #579 last since #567's UI half stacks on it). Expect trivial CHANGELOG-0.9.0 conflicts between
+> order: #576 → #578 → #584 → #586 → #599 → #605 → #602 → #580 → #610 →
+> #579 (smallest first; #579 last since #567's UI half stacks on it).
+> #610 (#517 terminal search) added 2026-08-19 evening. Expect trivial CHANGELOG-0.9.0 conflicts between
 > them at merge — each entry is one line, keep both sides.
 >
 > **#546 done (PR #584):** chips survive remount via a renderer-run stash
