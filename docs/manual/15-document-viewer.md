@@ -195,8 +195,11 @@ into your own tools is always one click away.
 - **A document is shown in your theme, not its own.** Markdown files can contain
   raw HTML, and that HTML can carry styling of its own. The viewer ignores it, so
   a document can't place something over the app's controls, hide text under it,
-  or paint itself a colour you didn't pick. The document's own formatting —
-  headings, tables, task lists, code blocks — is untouched.
+  or paint itself a colour you didn't pick. That covers the older HTML ways of
+  doing it as well — `<font color>`, `<hr color>` and their relatives — so
+  nothing in a document chooses its own colours, sizes or typefaces. The
+  document's own formatting — headings, tables, task lists, code blocks — is
+  untouched, column alignment in tables included.
 - **A document can't talk to your screen reader either.** The same raw HTML can
   carry accessibility markup — labels, roles, "announce this now" regions — and
   the viewer removes all of it. That markup is invisible on screen, so a
@@ -207,6 +210,16 @@ into your own tools is always one click away.
   lists and code blocks the document really contains, plus the viewer's own
   labels for its links, tables and Copy buttons. The same applies to replies in
   the session view.
+- **A document can't hide text from you, or take over your Tab key.** Raw HTML
+  has several ways to mark something as hidden — or as present but unreadable to
+  a screen reader — while leaving it in the file, and the viewer removes all of
+  them. It mattered most for code blocks: every code block gets a **Copy**
+  button, so a hidden one would have shown you an ordinary code header with a
+  Copy button and no code — and copied something you never saw.
+  The same removal covers markup that inserts itself into the keyboard Tab
+  order: every stop your Tab key lands on is one switchboard.ai put there —
+  including a document's own links and the scroll box around a wide table, which
+  the viewer makes reachable on purpose. This applies to replies in the session view as well.
 - **Very large files are cut short.** Above about 2 MB you get the beginning of
   the file and a note saying how much is missing. Open it externally to read the
   rest.

@@ -79,6 +79,19 @@ on the floor, and say so in your PR.
   tree while leaving it on screen, or interrupt an announcement the app was
   making. Every accessible name, role and announcement in a rendered document
   or reply is now one switchboard.ai wrote. (#509)
+- Finished the job 0.4.0 started: the older HTML ways of styling text — `<font
+  color size face>`, `<hr color size>`, `bgcolor`, `background` — are now
+  removed everywhere the app renders Markdown (the conversation feed, the
+  document viewer, release notes), so "a reply can't repaint itself in colours
+  your theme didn't choose" is true without the footnote that used to follow it.
+  Four more go with them, and they are not about looks at all: `hidden` and
+  `popover`, either of which left text in the document — and in a code block's
+  **Copy** button — while taking it off the screen; `inert`, which left it on
+  screen while taking it away from a screen reader and the keyboard; and
+  `tabindex`, which let content add itself to, or jump the queue in, your Tab
+  order. Nothing Markdown itself writes is affected; table alignment is the one
+  legacy attribute that stays, because that is how Markdown aligns a column.
+  (#466, #598)
 - Gave every test that starts a real child process — `git`, or node running one
   of the build scripts — an explicit time limit. They had been running under the
   test runner's five-second default, which is a budget for a pure function and

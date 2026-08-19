@@ -78,14 +78,14 @@ export const MARKED_OPTIONS = { async: false, gfm: true, breaks: false } as cons
  *    an inline `color:` outranks every one of their rules and survives a theme
  *    switch, so light-on-light is a thing a reply could do to itself.
  *
- * WHAT THIS DOES NOT CLOSE, so nobody reads the above as more than it is: the
- * html profile still allows the LEGACY PRESENTATIONAL attributes and tags —
- * `<font color size face>`, `<hr color size>`, `bgcolor`, `align`, `hidden`,
- * `<center>`, `<marquee>` — verified against DOMPurify 3.4.12, not assumed. So
- * "markdown can no longer colour itself" is FALSE; what is true is that it can
- * no longer do so through `style`, and can no longer POSITION itself (there is
- * no `position: fixed` rule anywhere in the renderer's CSS for a `class` to
- * borrow, and `class` does survive). The legacy set is #466.
+ * WHAT `style` DID NOT CLOSE ON ITS OWN, so nobody reads the above as more than
+ * it is: colouring text never needed `style`. The html profile also allows the
+ * LEGACY PRESENTATIONAL attributes — `<font color size face>`, `<hr color
+ * size>`, `bgcolor` — so between #436 and #466 "markdown can no longer colour
+ * itself" was FALSE; what was true is that it could not do so through `style`,
+ * and could not POSITION itself (there is no `position: fixed` rule anywhere in
+ * the renderer's CSS for a `class` to borrow, and `class` does survive). That
+ * set is #466, and it is the FIFTH block below.
  *
  * `decoration-guard.ts` still removes `style` in every surface's take-back pass,
  * and that is deliberate belt-and-braces for HTML that reaches a decoration pass
@@ -175,13 +175,115 @@ export const MARKED_OPTIONS = { async: false, gfm: true, breaks: false } as cons
  * profile-level and why a surface that renders markdown some other way is
  * caught by the surface table in the `style` block rather than by a guard.
  *
- * NOT closed here, so this is not read as more than it is: `hidden` and the rest
- * of the legacy presentational set are #466's, and `hidden` has an accessibility
- * edge of its own. `tabindex` also survives the html profile — authored content
- * can still put itself in the keyboard tab order, which is a focus-order
- * nuisance rather than a forgery now that `role` is gone, and it is not this
- * item's scope. Neither was widened here; both are named so the next reader
- * knows they were seen and left.
+ * `hidden` and `tabindex` were named here as still open when this block was
+ * written, and both are closed by the next one — for reasons that belong to this
+ * one as much as to #466's, because `hidden` is an accessibility attribute
+ * wearing presentational clothes and `tabindex` is a channel aimed at exactly
+ * the same user.
+ *
+ * `color`, `bgcolor`, `face`, `size`, `hidden` and `tabindex` in `FORBID_ATTR`
+ * close the FIFTH (#466 + #598): the pre-CSS half of the `style` argument, plus
+ * the one attribute in the set that is not about looks at all. DOMPurify's html
+ * profile allows all six — they are ordinary members of its attribute
+ * allow-list, so no flag reaches them and each has to be named, the way `role`
+ * did. Verified against DOMPurify 3.4.12, not assumed.
+ *
+ * THE FOUR PRESENTATIONAL ONES ARE `style` WITH THE CSS TAKEN OUT. `<font
+ * color="#fff" size="7" face="…">`, `<hr color size>` and `bgcolor` on a cell
+ * repaint content the theme owns, exactly as an inline `color:` did, and they
+ * outrank `.feed-md` and `.doc-md` and survive a theme switch the same way.
+ * Nothing they can do is as bad as what `style` could — none of them positions —
+ * but leaving them was the difference between the release note and the truth:
+ * 0.4.0 told users a reply could no longer "repaint itself in colours your theme
+ * didn't choose" and then had to add that `<font color>` and its relatives still
+ * could, "shutting those down is still to come" (#436, shipped as PR #464). This
+ * is that.
+ *
+ * `hidden` IS THE ONE WITH TEETH, and it is not presentational at all: it
+ * removes content from the rendering AND from the accessibility tree, which
+ * makes it `aria-hidden`'s more thorough sibling — #509's argument, arriving on
+ * a legacy attribute. The Copy button is what makes it concrete.
+ * `decorateCodeFences` (viewer) and `decorateFeedCodeFences` (feed) wrap EVERY
+ * `<pre>` in a header with a language label and a Copy button, deliberately: the
+ * forged-wrapper variant is closed by the guard pass running first, so a `<pre>`
+ * is wrapped whatever it claimed to be. A `<pre hidden>` therefore renders as a
+ * code header with a working Copy button and NO VISIBLE CODE, and the handler
+ * reads `pre.textContent` at click time — a clipboard the reader cannot inspect
+ * before pasting it into a shell. `<p hidden>` beside a visible one is the same
+ * trick without the button: text that is in the document, in the DOM and in a
+ * find (neither find walker skips `[hidden]`), and not on the screen.
+ *
+ * `popover` IS THE SAME ATTACK IN THIS DECADE'S SPELLING, and it is on this list
+ * because review found it still open after `hidden` was closed — one attribute
+ * over, in the same allow-list. Chromium's UA sheet is
+ * `[popover]:not(:popover-open) { display: none }`, nothing in `tokens.css`
+ * overrides `display` on a `<pre>`, and DOMPurify keeps the attribute: so
+ * `<pre popover>` reproduced the invisible-Copy-button case verbatim. Verified
+ * against the shipped 3.4.12 with this exact config, not reasoned about.
+ * `popovertarget` / `popovertargetaction` go with it — they are the invoker half
+ * of the same feature, and no rendered surface has a popover for content to aim
+ * at. `inert` is the third of the family: it does not hide the pixels, it takes
+ * the subtree out of the accessibility tree AND out of focus, so it is
+ * `aria-hidden` (#509) with the keyboard taken too. `background` comes along as
+ * the last of the painting set — `<table background="x.png">` is `bgcolor` with
+ * an image, and CSP (`default-src 'self'`) is what stops it fetching, which is a
+ * different layer's job.
+ *
+ * `tabindex` IS A FOCUS-ORDER CHANNEL (#598). Authored content can put itself in
+ * the tab order (`<span tabindex="0">`) or reorder the page's (`tabindex="1"`
+ * beats every natural stop in the document). With `role` and `data-*` gone
+ * nothing ACTIVATES on it — this is a nuisance, not a forgery — but it is a
+ * nuisance aimed squarely at the keyboard and screen-reader user: a reply can
+ * add forty tab stops to a conversation the app deliberately made ONE tab stop
+ * (#174 — the feed is one stop and the arrows move inside it). Every `tabindex`
+ * a surface needs is written AFTER this function: `decorateTables`' scroll
+ * container (`0`, because a scroll box only a mouse can reach is unreachable),
+ * the links `decorateLinks` did not BLOCK (it strips `href` from every link and
+ * then returns early on a blocked one, which is deliberately left without a tab
+ * stop), the feed Copy button's `-1`. So #509's rule extends as far as this
+ * attribute reaches: every tab stop content can MAKE FOR ITSELF with `tabindex`
+ * is gone.
+ *
+ * NOT "every tab stop in a rendered surface is ours", and the difference is
+ * worth the sentence: `<button>`, `<input>`, `<select>` and `<textarea>` are in
+ * DOMPurify's TAG allow-list, and a native control is focusable without any
+ * `tabindex` at all, so a forged `<button>` in a reply is still a tab stop. That
+ * is known and bounded rather than new — `FeedView.forgery.test.tsx` says so in
+ * its header and pins the behaviour — and closing it is a `FORBID_TAGS`
+ * decision, the same one `<center>`/`<marquee>` need. This item did not take
+ * it.
+ *
+ * MARKDOWN EMITS NONE OF THEM, and the one attribute that looks adjacent is
+ * why `align` is deliberately NOT on this list: GFM table alignment renders as
+ * `<th align="right">`, so forbidding `align` would silently un-align every
+ * table in the app. That divergence from "strip the legacy set" is pinned by a
+ * test rather than by this sentence — and `align` survives on ANY element, not
+ * only a cell, so `<p align="center">` is still something content can do. That
+ * is the price of not un-aligning every table in the app, and it is paid
+ * knowingly.
+ *
+ * Measured the way #436 measured `style` and #509 measured ARIA, on the same
+ * machine's corpus (2026-08-19): 7,486 captured transcripts, 18,086 assistant
+ * text blocks, 10 MB of prose — `color=` 5, `bgcolor=` 0, `background=` 1,
+ * `face=` 1, `size=` 20, `popover` 27, `inert` 61, `tabindex` 43, and `hidden`
+ * 266 counting the bare English word. NOT ONE of them was an attribute on a tag.
+ * Every hit was inside a code fence or code span, where `marked` escapes it to
+ * text and the sanitizer never sees an attribute, or was prose using the word
+ * ("**Color = tumor type**", "a hidden sleep breathing problem", "roving
+ * tabindex", a review discussing a "no-JS popover approach"). Bare on a tag:
+ * zero, for every one of them.
+ *
+ * THE TAGS ARE LEFT, deliberately, and this is the honest edge of the change:
+ * `<center>` and `<marquee>` are still allowed, `<font>` still renders (as a
+ * bare inline box now that its attributes are gone), and the native focusables
+ * above are still focusable. Alignment, motion and "content owns a widget" are a
+ * different question from identity, theme and the clipboard; they need a
+ * `FORBID_TAGS` decision with a measurement of its own, and this item did not
+ * take one. The pure LAYOUT attributes are left for the same reason and are
+ * weaker still: `border`, `cellpadding`, `cellspacing`, `valign`, `nowrap`,
+ * `noshade`, `clear`, `width` and `height` all survive. They size and space a
+ * box; none of them hides content, repaints it, or speaks to a screen reader,
+ * which is where this file draws the line.
  *
  * Everything else is DOMPurify's default and deliberately so: its allow-list,
  * its `javascript:`-scheme refusal and its `on*`-attribute stripping are the
@@ -191,13 +293,32 @@ export const MARKED_OPTIONS = { async: false, gfm: true, breaks: false } as cons
  */
 export const SANITIZE_CONFIG: SanitizeConfig = {
   USE_PROFILES: { html: true },
-  // `role` rides in `FORBID_ATTR` rather than in a flag because no flag covers
-  // it: it is in the html profile's allow-list, and `ALLOW_ARIA_ATTR` governs
-  // only the `aria-*` pattern. `FORBID_ATTR` is checked FIRST in DOMPurify
-  // 3.4.12 (`_isValidAttribute`), ahead of both the allow-list and the aria
-  // branch, so this wins wherever the two could disagree — verified against the
-  // shipped source, not assumed.
-  FORBID_ATTR: ['style', 'role'],
+  // Everything after `style` rides here rather than in a flag because no flag
+  // covers any of it: `role` and the legacy presentational set and `tabindex`
+  // are all ordinary members of the html profile's allow-list, and
+  // `ALLOW_ARIA_ATTR` governs only the `aria-*` pattern. `FORBID_ATTR` is
+  // checked FIRST in DOMPurify 3.4.12 (`_isValidAttribute`), ahead of both the
+  // allow-list and the aria branch, so this wins wherever the two could
+  // disagree — verified against the shipped source, not assumed.
+  //
+  // `align` is the deliberate omission: `marked` writes it for GFM table
+  // alignment, so it is the one member of the legacy set that markdown itself
+  // emits. See the comment above, and the test that pins it.
+  FORBID_ATTR: [
+    'style',
+    'role',
+    'color',
+    'bgcolor',
+    'background',
+    'face',
+    'size',
+    'hidden',
+    'popover',
+    'popovertarget',
+    'popovertargetaction',
+    'inert',
+    'tabindex',
+  ],
   ALLOW_DATA_ATTR: false,
   ALLOW_ARIA_ATTR: false,
 };
