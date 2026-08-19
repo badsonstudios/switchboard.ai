@@ -38,15 +38,34 @@ import { SessionEvent } from './state-machine';
 const MAX_UPDATED_INPUT_BYTES = 128 * 1024;
 
 /**
- * How long a QUESTION may go unanswered before we fail it open (#563).
+ * A QUESTION HAS NO DEADLINE while a window is open (#570).
  *
- * Thirty minutes against the permission path's five. The argument is in `offer`
- * step 3; the short version is that the "nobody can answer" case is handled by
- * the liveness gate rather than by this timer, so all this deadline governs is
- * how long a person is allowed to take over something they were asked to read
- * and think about.
+ * It had thirty minutes (#563), and the owner lost an answer to it: he was
+ * asked something, stepped away for longer than that, came back and answered —
+ * and the answer went nowhere, because switchboard had already told the CLI
+ * "nobody answered this in time" and moved on. Stepping away mid-question is
+ * ordinary behaviour, not misuse, and a deadline that punishes it is a deadline
+ * measuring the wrong thing.
+ *
+ * NOTHING IS AT RISK WITHOUT IT, and that is why the number is gone rather than
+ * merely bigger. Every way this could wedge a session is already answered
+ * elsewhere, by paths that fire on an EVENT instead of on a clock:
+ *
+ *   * no window to ask at all      -> `offer` denies before it ever holds;
+ *   * the renderer dies or the window closes with a question parked
+ *                                  -> `releaseHeld`, from `onRendererLost`;
+ *   * the card is closed or the session exits
+ *                                  -> `forgetSession`, from the teardowns.
+ *
+ * What the timer governed, once those are subtracted, is only "how long may a
+ * person take to answer" — and the CLI itself waits for ever (measured: 180s
+ * with no TUI fallback and no timeout of its own). So the honest answer is: as
+ * long as they like, until something real says they cannot.
+ *
+ * A PERMISSION still has its deadline. It is a glance and a click, the CLI is
+ * blocked on it, and five minutes of no answer there is a different signal.
  */
-const QUESTION_HOLD_MS = 30 * 60_000;
+const NO_DEADLINE = null;
 
 /**
  * Is this the CLI asking a QUESTION rather than asking for permission?
@@ -123,8 +142,9 @@ interface Pending {
   /** the CLI's own request id — what the control_response must echo back */
   nativeRequestId: string;
   request: PermissionRequest;
-  /** the fail-open deadline (#319) — cleared by every exit from `pending` */
-  timer: NodeJS.Timeout;
+  /** the fail-open deadline (#319), or null for a question (#570) — cleared by
+   *  every exit from `pending` */
+  timer: NodeJS.Timeout | null;
 }
 
 export class StreamPermissions {
@@ -313,12 +333,18 @@ export class StreamPermissions {
     // answered in time. The cost of the longer deadline is a session that waits
     // — which is what it was doing anyway, since the CLI itself waits for ever
     // (measured: 180s with no fallback and no timeout of its own).
+    // A QUESTION waits for a person (#570) — see `NO_DEADLINE`. An explicit
+    // `holdTimeoutMs` still applies to everything, because that is how tests
+    // drive this path in seconds rather than minutes.
     const timeout =
-      this.opts.holdTimeoutMs ?? (isQuestion(request.tool) ? QUESTION_HOLD_MS : 300_000);
-    const timer = setTimeout(() => {
-      this.failOpen(requestId, 'permission hold timed out');
-    }, timeout);
-    timer.unref?.();
+      this.opts.holdTimeoutMs ?? (isQuestion(request.tool) ? NO_DEADLINE : 300_000);
+    const timer =
+      timeout === null
+        ? null
+        : setTimeout(() => {
+            this.failOpen(requestId, 'permission hold timed out');
+          }, timeout);
+    timer?.unref?.();
     this.pending.set(requestId, { sessionId, nativeRequestId, request, timer });
     this.log.info('stream permission requested', {
       sessionId,
@@ -370,7 +396,7 @@ export class StreamPermissions {
     const p = this.pending.get(requestId);
     if (!p) return false;
     this.pending.delete(requestId);
-    clearTimeout(p.timer);
+    if (p.timer) clearTimeout(p.timer);
 
     const answered = decision === 'allow' ? this.sanitizeUpdatedInput(p, updatedInput) : undefined;
     // A REJECTED ANSWER IS NOT A BARE ALLOW.
@@ -510,7 +536,7 @@ export class StreamPermissions {
     for (const [id, p] of [...this.pending]) {
       if (p.sessionId !== sessionId) continue;
       this.pending.delete(id);
-      clearTimeout(p.timer);
+      if (p.timer) clearTimeout(p.timer);
       this.send(p.sessionId, controlResponse(p.nativeRequestId, { behavior: 'deny', message: why }));
       this.log.info('stream permission auto-denied', { requestId: id, sessionId, why });
       this.notifyResolved(id);
@@ -584,7 +610,7 @@ export class StreamPermissions {
     const p = this.pending.get(requestId);
     if (!p) return;
     this.pending.delete(requestId);
-    clearTimeout(p.timer);
+    if (p.timer) clearTimeout(p.timer);
     const message = this.unavailable('Nobody in switchboard answered this request in time');
     this.send(p.sessionId, controlResponse(p.nativeRequestId, { behavior: 'deny', message }));
     this.applyStatus(p.sessionId, { kind: 'permission-resolved' });

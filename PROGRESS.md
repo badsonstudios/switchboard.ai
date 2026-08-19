@@ -1,9 +1,32 @@
-# PROGRESS — switchboard.ai
-
-> Live state. Updated the moment an item starts, finishes, or hits a blocker.
-> A fresh session reads this file and knows exactly where things stand.
-
-> # ▶▶ START HERE — ✅ MAIN IS CLEAN · NEXT IS #556, 2026-08-17
+> # ▶▶ START HERE — 🔨 #570 DONE, AWAITING GATE 2, 2026-08-18
+>
+> **#570 — the answered question that came back "denied".** Owner report, and
+> the log settled it: the question was raised 12:46:41, NEVER decided, and
+> failed open at 13:16:41 — exactly the 30-minute deadline #563 gave it. He
+> stepped away, came back, answered; the answer went nowhere because the CLI
+> had already been told nobody replied.
+>
+> **THE DEADLINE IS GONE for questions.** Not lengthened — removed. Every way a
+> parked question could wedge a session is already answered by something that
+> fires on an EVENT rather than a clock: no window at offer time (`offer`
+> denies), the renderer dies or the window closes (`releaseHeld` from
+> `onRendererLost`), the card closes or the session exits (`forgetSession`).
+> Subtract those and the timer governed only "how long may a person take" —
+> and the CLI itself waits for ever. Permissions keep their 300s.
+>
+> **AND THE DIAGNOSTIC THAT MADE THIS UNRESOLVABLE IS FIXED:** both routers
+> answered `false` for a request they were not holding and said NOTHING, so an
+> answer the user watched themselves give could vanish without a trace.
+> `decidePermission` now warns, with the request id.
+>
+> No e2e: questions no longer time out, so the "panel must clear on timeout"
+> test the ticket asked for has nothing to test, and the remaining behaviour is
+> a timer — fake timers at unit level are the right altitude. 5201/5201.
+>
+> **⚠️ CI FLAKE WORTH KNOWING:** `e2e ubuntu-latest` on PR #572 HUNG for 6h0m53s
+> and hit the job ceiling. A re-run passed in 9m38s. Infrastructure, not the
+> spec — but if it recurs it is a merge blocker and wants its own ticket.
+>
 >
 > **#562 merged (PR #568, CI 4/4). Nothing is in flight.**
 >

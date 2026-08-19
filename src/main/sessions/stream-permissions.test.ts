@@ -945,38 +945,101 @@ describe('a rejected answer is denied, never silently allowed (#563 review)', ()
   });
 });
 
-describe('a question gets longer than five minutes to answer (#563 review)', () => {
-  // The 300s deadline exists to stop a session wedging when nobody CAN answer,
-  // and that case is handled by the liveness gate instead. What is left is a
-  // person reading options and possibly typing a paragraph, and a deadline that
-  // fires mid-sentence would delete the panel and tell the model nobody
-  // answered in time.
-  it('holds a question far longer than a permission', () => {
+// The #563-review block that lived here asserted a question expires after 30
+// minutes. #570 removed that deadline outright — the owner lost an answer to
+// it — so the tests below replace it rather than adjust it.
+
+// ── #570 — a question waits for a person ────────────────────────────────────
+describe('a question has no deadline while a window is open (#570)', () => {
+  // THE REPORT: the owner was asked a question, stepped away for longer than
+  // the 30-minute deadline #563 gave it, came back and answered — and the
+  // answer went nowhere, because switchboard had already told the CLI "nobody
+  // answered this in time". Stepping away mid-question is ordinary, and the
+  // deadline was measuring the wrong thing.
+  it('is still held long after a permission would have failed open', () => {
     vi.useFakeTimers();
     try {
       const p = new StreamPermissions(
-        (sessionId, msg) => {
-          sent.push({ sessionId, msg: msg as Record<string, unknown> });
-          return true;
-        },
-        (sessionId, ev) => applied.push({ sessionId, ev }),
+        () => true,
+        () => {},
         createLogger(new LogSink({ dir }), 'perm')
       );
       p.offer('s1', canUseTool('w1'));
       p.offer('s1', askUserQuestion('q1'));
 
+      // five minutes: the permission is gone
       vi.advanceTimersByTime(301_000);
-      // the permission failed open; the question is still waiting for a person
       expect(p.pendingRequests().map((r) => r.tool)).toEqual(['AskUserQuestion']);
 
-      vi.advanceTimersByTime(30 * 60_000);
-      expect(p.pendingRequests()).toEqual([]);
+      // …and an hour, and a day
+      vi.advanceTimersByTime(24 * 60 * 60_000);
+      expect(p.pendingRequests().map((r) => r.tool)).toEqual(['AskUserQuestion']);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('an explicit holdTimeoutMs still wins, so tests stay in control', () => {
+  it('answers it whenever the person gets there', () => {
+    vi.useFakeTimers();
+    try {
+      const sent2: Array<Record<string, unknown>> = [];
+      const p = new StreamPermissions(
+        (_s, msg) => {
+          sent2.push(msg as Record<string, unknown>);
+          return true;
+        },
+        () => {},
+        createLogger(new LogSink({ dir }), 'perm')
+      );
+      const seen: PermissionRequest[] = [];
+      p.onPermissionRequest((r) => seen.push(r));
+      p.offer('s1', askUserQuestion('q1'));
+
+      vi.advanceTimersByTime(2 * 60 * 60_000); // two hours away from the desk
+
+      expect(
+        p.decide(seen[0].requestId, 'allow', undefined, {
+          questions: [],
+          answers: { 'Which colour do you prefer?': 'Red' },
+        })
+      ).toBe(true);
+      const inner = (sent2[0] as { response?: { response?: Record<string, unknown> } }).response
+        ?.response;
+      expect(inner).toMatchObject({ behavior: 'allow' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // The deadline is gone; the EVENT-driven answers are not, and they are what
+  // makes removing it safe rather than reckless.
+  it('a lost renderer still denies it, so nothing parks for ever', () => {
+    const p = new StreamPermissions(
+      (sessionId, msg) => {
+        sent.push({ sessionId, msg: msg as Record<string, unknown> });
+        return true;
+      },
+      (sessionId, ev) => applied.push({ sessionId, ev }),
+      createLogger(new LogSink({ dir }), 'perm')
+    );
+    p.offer('s1', askUserQuestion('q1'));
+
+    p.releaseHeld('the window went away');
+
+    expect(p.pendingRequests()).toEqual([]);
+    const inner = (sent.at(-1)!.msg as { response?: { response?: Record<string, unknown> } })
+      .response?.response;
+    expect(inner).toMatchObject({ behavior: 'deny' });
+  });
+
+  it('a closed card still denies it', () => {
+    perms.offer('s1', askUserQuestion('q1'));
+    perms.forgetSession('s1', 'card closed');
+    expect(perms.pendingRequests()).toEqual([]);
+    expect(responseAt(0)).toMatchObject({ behavior: 'deny' });
+  });
+
+  it('an explicit holdTimeoutMs still applies — that is how tests drive it', () => {
     vi.useFakeTimers();
     try {
       const p = new StreamPermissions(
@@ -986,7 +1049,6 @@ describe('a question gets longer than five minutes to answer (#563 review)', () 
         { holdTimeoutMs: 1_000 }
       );
       p.offer('s1', askUserQuestion('q1'));
-
       vi.advanceTimersByTime(1_500);
       expect(p.pendingRequests()).toEqual([]);
     } finally {
