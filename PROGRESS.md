@@ -18,7 +18,8 @@
 > | #556 events drawer close button | sb-wt-1 (released) | feature/556-events-drawer-close | **DONE** — **PR #576 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
 > | #543 tab-model follow-ups | sb-wt-1 (released) | feature/543-tab-model-followups | **DONE** — **PR #578 ready-for-review, in Dan's queue** |
 > | #546 composer attachment drafts | sb-wt-1 | feature/546-composer-attachment-drafts | running |
-> | #559 rail drag-reorder | sb-wt-2 | feature/559-rail-drag-reorder | **DONE** — PR #580 (draft); rebasing CHANGELOG entry onto post-release main |
+> | #559 rail drag-reorder | sb-wt-2 (released) | feature/559-rail-drag-reorder | **DONE** — **PR #580 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
+> | #539 repair-sweep follow-ups | sb-wt-2 | feature/539-repair-sweep-followups | running |
 > | #566 question-panel tabs | sb-wt-3 (released) | feature/566-question-panel-tabs | **DONE** — **PR #579 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
 > | #567 probe half | sb-wt-3 | feature/567-partial-answers-probe | running — INTERNAL, orchestrator merges on green |
 > | ~~release v0.8.0 cut~~ | — | main | **DONE** — released 2026-08-19 |
@@ -33,7 +34,7 @@
 > modes (real tokens) + the conditional UI half; dispatches after #566 lands
 > (same QuestionPanel subsystem).
 >
-> **Queued next:** #539 into sb-wt-2 once #559's rebase lands; #567 UI half
+> **Queued next:** #567 UI half
 > waits for PR #579 to MERGE + the probe's verdict; #544 waits for PR #578 to
 > MERGE (same document-tab subsystem as #543).
 >
