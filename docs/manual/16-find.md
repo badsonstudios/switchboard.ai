@@ -105,18 +105,16 @@ The results list is grouped the same way, with a heading over each run of
 matches, so a snippet is never attributed to the wrong place.
 
 **A group that can't be searched isn't listed at all**, rather than listed with
-a zero. Two cases:
+a zero. A session in **Direct mode** has no terminal, so it has no Terminal
+group — there is nothing there to count.
 
-- a session in **Direct mode** has no terminal, so it has no Terminal group;
-- a session whose **Terminal tab you have never opened** has no Terminal group
-  either. switchboard only keeps the terminal's picture while you are looking
-  at it — behind the scenes the output is still being recorded, but this
-  window's copy is empty until you open the tab. Showing "0" there would be
-  answering a question we hadn't asked. Open the Terminal tab once and the
-  group appears.
-
-Same rule after a long time away: what the terminal group searches is what the
-terminal held when you last looked at it.
+**You do not have to open the Terminal tab first.** switchboard records
+everything the program prints whether or not you are looking at the tab, and the
+search reads that recording, so a session whose Terminal you have never opened
+still gets a real count. The one thing those matches can't do is take you to
+themselves: there is nothing drawn on screen to scroll, so the bar shows them in
+the list, says *open the Terminal tab if you want to scroll to them*, and leaves
+it at that. Open the tab and search again and they become steppable.
 
 ## Other tabs
 
@@ -156,6 +154,11 @@ where the document is.
 A match in the terminal is **highlighted in place** and selected; `Enter` and
 `Shift+Enter` scroll the terminal to the next and previous one, reaching back
 through the whole scrollback, not just the visible screen.
+
+That's when the Terminal tab is the one on screen. When it isn't — you're on
+Session, or you never opened Terminal at all — the count is still right, and
+still comes from the last 5,000 lines the program actually printed. The matches
+are read-only until you open the tab, and the bar tells you so.
 
 One catch worth knowing: **`Ctrl+F` pressed while your cursor is inside the
 terminal goes to the program running there, not to switchboard.** That's
@@ -200,12 +203,15 @@ match-case searches are exact.
   (click it), and that your cursor isn't inside the terminal. The terminal gets
   every key it can see, by design, so `Ctrl+F` there goes to the program
   running in it. `Ctrl+Shift+P` → **Find in session** always works.
-- **There's no Terminal group** — open the Terminal tab once (see above), and
-  it will be there next time.
-- **The terminal group says 0 and you're sure it printed that** — either it was
-  more than 5,000 lines ago (that's all the terminal keeps), or it was printed
-  since you last looked at the Terminal tab. Open the tab and search again.
-  Either way, the Session count is the one that sees everything.
+- **There's no Terminal group** — the session is in **Direct mode**, which has
+  no terminal at all. Every session that does have one is searchable, opened or
+  not.
+- **The terminal group says 0 and you're sure it printed that** — it was more
+  than 5,000 lines ago. That's all the terminal keeps, and the Session count is
+  the one that sees everything.
+- **The terminal matches won't step** — the Terminal tab isn't the one on
+  screen, so there's nothing rendered to scroll to. Read them in the list (`▸`),
+  or open the tab and search again.
 - **"Nothing to search yet"** — the session hasn't written anything down. That
   happens before the first prompt; ask it something and try again.
 - **"This match is earlier than the conversation on screen"** — that one match

@@ -8,8 +8,14 @@ import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import '@xterm/xterm/css/xterm.css';
 import { attachTerminalFeed } from '../lib/terminal-attach';
-import { findSurfaceKey, publishFindSurface, type TerminalFindSurface } from '../lib/find-surfaces';
+import {
+  findSurfaceKey,
+  publishFindSurface,
+  type TerminalFindOutcome,
+  type TerminalFindSurface,
+} from '../lib/find-surfaces';
 import { clearTerminalSearch, revealTerminalMatch, searchTerminal } from '../lib/terminal-find';
+import { TerminalShadow } from '../lib/terminal-shadow';
 
 export function TerminalPane(props: {
   sessionId: string;
@@ -25,6 +31,10 @@ export function TerminalPane(props: {
   // effect below — this is the difference between "0 matches in the terminal"
   // and "a confident 0 about a buffer we never filled".
   const liveRef = useRef(false);
+  // The off-screen replay of MAIN's ring buffer, built on demand when find asks
+  // a pane that is not on screen (#517). Null until that happens, and disposed
+  // the moment find is done with it — see the find effect.
+  const shadowRef = useRef<TerminalShadow | null>(null);
   const visibleRef = useRef(props.visible);
   visibleRef.current = props.visible;
 
@@ -92,7 +102,7 @@ export function TerminalPane(props: {
     };
   }, [props.sessionId]);
 
-  // ── find (P2-E17-03, §5.31) ────────────────────────────────────────────────
+  // ── find (P2-E17-03, §5.31; widened to main's ring buffer by #517) ─────────
   //
   // A SEPARATE effect from the terminal's lifecycle, keyed on the card: the
   // registry key is (cardId, panelId) and the surface has to come and go with
@@ -100,47 +110,76 @@ export function TerminalPane(props: {
   // the scrollback away. Nothing is published without a cardId — a terminal
   // nobody can name is a terminal find must not reach.
   //
-  // THE SURFACE PUBLISHES ALWAYS; `ready()` IS WHAT GATES THE GROUP, and the
-  // distinction is the difference between an honest answer and the exact lie
-  // §5.31 wrote this item's done-when about.
+  // TWO BUFFERS, ONE SURFACE, AND THE ANSWER SAYS WHICH IT CAME FROM.
   //
   // S-07's verdict is that a hidden pane is ingest-only: main keeps the ring
-  // buffer, the renderer's xterm is attached (and fed) ONLY while the tab is
-  // showing, and re-attach replays the snapshot. The Session view is the
-  // DEFAULT tab, so on a card whose Terminal tab has never been opened this
-  // xterm holds nothing at all — and a grouped count that read
-  // "12 in Session · 0 in Terminal (scrollback only)" there would be stating
-  // "not in the last 5,000 lines" about a buffer that has no lines, for output
-  // that may have been printed thirty seconds ago. The same goes, more weakly,
-  // for a terminal that was shown an hour ago and has been frozen since.
+  // buffer, and the renderer's xterm is attached (and fed) ONLY while the tab
+  // is showing. The Session view is the DEFAULT tab, so on a card whose
+  // Terminal has never been opened THIS xterm holds nothing at all.
   //
-  // So the group participates only while this pane is LIVE. Everywhere else it
-  // is absent with a reason ("open the Terminal tab") rather than present with
-  // a number. An absent group asks a question; a false zero answers one.
+  // #516 answered that by withholding the group with a reason ("open the
+  // Terminal tab") rather than printing "0 in Terminal (scrollback only)" about
+  // a buffer with no lines. Honest, and narrower than it needed to be — the
+  // complete scrollback was in main the whole time. So:
+  //
+  //   • pane LIVE   → the xterm on screen. Exact, highlighted, jumpable.
+  //   • otherwise   → an off-screen replay of main's ring buffer
+  //                   (`lib/terminal-shadow.ts`). Real counts for a tab that
+  //                   was never opened; nothing rendered to scroll, so the hits
+  //                   come back `live: false` and the bar does not offer a jump.
+  //   • no PTY      → `null`. "We could not look" is not "we looked and found
+  //                   none", and the provider renders the two differently.
+  //
+  // The group is therefore always AVAILABLE for a session that has a terminal,
+  // and there is no `ready()` left to gate it: what used to be an availability
+  // question is now a fact about where the answer came from.
   useEffect(() => {
     const cardId = props.cardId;
     if (!cardId) return;
+    /** the off-screen replay, built the first time a hidden pane is searched */
+    const shadow = (): TerminalShadow => {
+      shadowRef.current ??= new TerminalShadow({
+        read: () => window.switchboard.pty.snapshot(props.sessionId),
+      });
+      return shadowRef.current;
+    };
+    const dropShadow = (): void => {
+      shadowRef.current?.dispose();
+      shadowRef.current = null;
+    };
     const surface: TerminalFindSurface = {
       kind: 'terminal',
-      ready: () => !!termRef.current && !!searchRef.current && liveRef.current,
-      search: (query) => {
+      search: async (query): Promise<TerminalFindOutcome | null> => {
         const term = termRef.current;
         const addon = searchRef.current;
-        if (!term || !addon) return { matches: [], total: 0, truncated: false, totalIsFloor: false };
-        return searchTerminal(term, addon, query);
+        if (term && addon && liveRef.current) {
+          return { ...searchTerminal(term, addon, query), live: true };
+        }
+        const out = await shadow().search(query);
+        return out && { ...out, live: false };
       },
       reveal: (match) => {
+        // only a LIVE pane can be scrolled: the off-screen replay has no
+        // viewport, and its hits are published `live: false` so the bar never
+        // offers this for one
         const term = termRef.current;
-        return term ? revealTerminalMatch(term, match) : false;
+        return term && liveRef.current ? revealTerminalMatch(term, match) : false;
       },
       clear: () => {
         const term = termRef.current;
         const addon = searchRef.current;
         if (term && addon) clearTerminalSearch(term, addon);
+        // find is done with us: let a whole second xterm go rather than keep
+        // one per card alive for the rest of the session
+        dropShadow();
       },
     };
-    return publishFindSurface(findSurfaceKey(cardId, 'terminal'), surface);
-  }, [props.cardId]);
+    const unpublish = publishFindSurface(findSurfaceKey(cardId, 'terminal'), surface);
+    return () => {
+      unpublish();
+      dropShadow();
+    };
+  }, [props.cardId, props.sessionId]);
 
   // visibility drives attach/detach (hidden panes are ingest-only in main)
   useEffect(() => {

@@ -240,6 +240,18 @@ export function searchTerminal(
   limit: number = TERMINAL_MATCH_LIMIT,
   /** exposed for the test that drives the ceiling; production never passes it */
   ceiling: number = WALK_CEILING,
+  /**
+   * Paint the match decorations? (#517)
+   *
+   * True for the terminal the user is LOOKING at — highlighting every match is
+   * most of what find is for. False for the OFF-SCREEN replay of main's ring
+   * buffer (`lib/terminal-shadow.ts`), where up to 1,000 `registerDecoration`
+   * calls would draw a highlight on a terminal that has no viewport and is
+   * about to be thrown away. The matches and the count are identical either
+   * way — `walk(false)` is the same walk, and it is already the path this
+   * function falls back to when the proposed API is unavailable.
+   */
+  decorate: boolean = true,
 ): TerminalSearchOutcome {
   const empty: TerminalSearchOutcome = { matches: [], total: 0, truncated: false, totalIsFloor: false };
   if (!q.term) return empty;
@@ -310,6 +322,15 @@ export function searchTerminal(
     const total = wrapped ? seen.size : Math.max(counted, seen.size);
     return { matches, total, truncated: total > matches.length, totalIsFloor: !wrapped };
   };
+
+  if (!decorate) {
+    try {
+      return walk(false);
+    } catch (err) {
+      console.warn('[find] terminal search failed', err);
+      return empty;
+    }
+  }
 
   try {
     return walk(true);

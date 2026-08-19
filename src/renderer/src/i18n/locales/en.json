@@ -758,7 +758,6 @@
       "noSession": "There is no session here to search.",
       "diffNotReady": "The diff hasn't loaded yet — open a changed file and try again.",
       "noTerminal": "This session has no terminal, so there's no scrollback to search.",
-      "terminalNotShown": "Open the Terminal tab to search its scrollback — switchboard only keeps the terminal's view while you're looking at it.",
       "noDocument": "There is no document here to search.",
       "documentNotReady": "This document hasn't finished opening, so there's nothing to search yet.",
       "failed": "Find isn't available on this tab right now."
@@ -768,6 +767,7 @@
       "timedOut": "The search stopped early, so this is only part of what's there.",
       "noTranscript": "Nothing to search yet — this session hasn't written anything down.",
       "cannotJump": "These matches can be read here, but this session can't be scrolled to them.",
+      "terminalNotShown": "These matches are really in the terminal's scrollback — open the Terminal tab if you want to scroll to them.",
       "truncated": "Showing the first {shown} matches.",
       "failed": "The search couldn't run. The session is untouched."
     }

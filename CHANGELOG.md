@@ -57,6 +57,18 @@ on the floor, and say so in your PR.
 
 ## 0.9.0 — unreleased
 
+### Changed
+
+- **`Ctrl+F` now finds things in a terminal you have never opened.** The Terminal
+  group used to be missing entirely until you had visited the tab at least once —
+  switchboard only kept the terminal's picture while you were looking at it, so
+  there was nothing in this window to search. It now searches the recording
+  behind the tab instead, which is complete and current whether or not you have
+  ever opened it: a fresh session gets a real Terminal count from the first
+  search. Those matches are readable rather than steppable until you open the
+  tab, and the bar says so; the count still covers the last 5,000 lines only, and
+  still says *scrollback only*. (#517)
+
 ### Internal
 
 - Gave every test that starts a real child process — `git`, or node running one

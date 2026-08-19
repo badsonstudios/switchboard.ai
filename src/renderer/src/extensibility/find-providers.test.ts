@@ -16,6 +16,7 @@ import {
   hitsFromTranscript,
   listFindProviders,
   sessionFindProvider,
+  terminalFindProvider,
 } from './find-providers';
 import type { TranscriptSearchResult } from '../../../shared/transcripts';
 
@@ -297,6 +298,90 @@ describe('the Changes provider delegates to Monaco (§5.31: do not reimplement i
       'find.unavailable.diffNotReady',
     );
     expect(changesFindProvider.unavailableKey({ sessionId: 's1', surface: ready })).toBeNull();
+  });
+});
+
+describe('find-terminal reads MAIN’s ring buffer, not just the pane on screen (#517)', () => {
+  const match = (row: number) => ({ row, col: 4, length: 6, line: `row ${row} NEEDLE`, offset: 6 });
+
+  /** A stand-in `TerminalPane` surface. `live` is #517's whole seam. */
+  const surfaceFor = (
+    out: Record<string, unknown> | null,
+    reveal = vi.fn().mockReturnValue(true)
+  ): FindSurface =>
+    ({
+      kind: 'terminal',
+      search: () => Promise.resolve(out),
+      reveal,
+      clear: () => {},
+    }) as unknown as FindSurface;
+
+  const ctxFor = (surface: FindSurface | null): FindContext => ({
+    sessionId: 's1',
+    cardId: 'card-1',
+    surface,
+  });
+
+  it('no longer greys the bar for a Terminal tab that was never opened', () => {
+    // The reason that used to live here (`find.unavailable.terminalNotShown`)
+    // was true only while the RENDERER's xterm was the only buffer find could
+    // reach. Main's ring buffer is complete whether or not the tab was ever
+    // shown, so a session with a terminal is always searchable — and a session
+    // WITHOUT one still says so.
+    expect(findUnavailableKey(terminalFindProvider, ctxFor(null))).toBe(
+      'find.unavailable.noTerminal'
+    );
+    expect(
+      findUnavailableKey(terminalFindProvider, ctxFor(surfaceFor({ matches: [], total: 0, live: false })))
+    ).toBeNull();
+  });
+
+  it('marks hits from the LIVE pane jumpable, and says nothing extra about them', async () => {
+    const res = await terminalFindProvider.search!(
+      ctxFor(surfaceFor({ matches: [match(3)], total: 1, truncated: false, live: true })),
+      { term: 'NEEDLE' }
+    );
+    expect(res.total).toBe(1);
+    expect(res.hits[0].jumpable).toBe(true);
+    expect(res.notice).toBeUndefined();
+  });
+
+  it('counts a hidden pane’s scrollback for real, but will not offer a jump to it', async () => {
+    // The done-when: a never-opened Terminal tab gets a real count. What it
+    // cannot get is a scroll — the row lives in main's ring buffer and this
+    // window has never drawn it — so the hits are readable and the bar says so
+    // rather than growing an affordance that does nothing.
+    const res = await terminalFindProvider.search!(
+      ctxFor(surfaceFor({ matches: [match(3), match(9)], total: 2, truncated: false, live: false })),
+      { term: 'NEEDLE' }
+    );
+    expect(res.total).toBe(2);
+    expect(res.hits.map((h) => h.jumpable)).toEqual([false, false]);
+    expect(res.notice).toEqual({ key: 'find.notice.terminalNotShown', tone: 'info' });
+  });
+
+  it('says "could not search" — never 0 — when the scrollback cannot be READ', async () => {
+    // `null` from the surface: no PTY behind this card any more, or the read
+    // failed. Flattening that into `total: 0` would state "not in the last
+    // 5,000 lines" without having looked at them, which is the one answer
+    // §5.31 says find must never give.
+    for (const surface of [null, surfaceFor(null)]) {
+      const res = await terminalFindProvider.search!(ctxFor(surface), { term: 'NEEDLE' });
+      expect(res.total).toBe(0);
+      expect(res.hits).toEqual([]);
+      expect(res.notice).toEqual({ key: 'find.notice.failed', tone: 'error' });
+    }
+  });
+
+  it('reveal goes through the surface, and a hit with no ref is refused', () => {
+    const reveal = vi.fn().mockReturnValue(true);
+    const ctx = ctxFor(surfaceFor({ matches: [], total: 0, live: true }, reveal));
+    const hitWith = (ref: unknown) =>
+      ({ id: 't1', snippet: '', matchStart: 0, matchLength: 1, jumpable: true, earlierThanLoaded: false, ref });
+    const query = { term: 'NEEDLE' };
+    expect(terminalFindProvider.reveal!(ctx, hitWith(match(3)), query)).toBe(true);
+    expect(reveal).toHaveBeenCalledWith(match(3));
+    expect(terminalFindProvider.reveal!(ctx, hitWith(undefined), query)).toBe(false);
   });
 });
 

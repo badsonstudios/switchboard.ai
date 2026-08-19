@@ -16,8 +16,9 @@
 //     thing not to reimplement, and half-reimplementing it would be worse than
 //     either whole: our chrome over its search means two sets of keybindings
 //     over one editor.
-//   • `panel-terminal` → xterm's scrollback through `@xterm/addon-search`
-//     (P2-E17-03). SCROLLBACK ONLY, and its label says so.
+//   • `panel-terminal` → the session's scrollback through
+//     `@xterm/addon-search` (P2-E17-03), read from MAIN's ring buffer whenever
+//     the tab is not on screen (#517). SCROLLBACK ONLY, and its label says so.
 //   • the §5.30 document viewer → BOTH of the above, chosen per surface: its
 //     rendered markdown is our DOM and our bar marks it, its source body is
 //     Monaco and gets handed over. That is what `modeFor` exists for, and it is
@@ -272,41 +273,44 @@ export const terminalFindProvider: FindProviderContribution = {
   labelKey: 'find.group.terminal',
   order: 30,
   mode: 'bar',
-  // TWO reasons, because they are two different truths and one of them is the
-  // whole point of this provider being careful:
+  // ONE reason left, and losing the second one is what #517 was for.
   //
-  //  • no surface at all — a STREAM session has no PTY and renders a notice
-  //    instead of an xterm (`panels.tsx`). There is no terminal.
-  //  • a surface that is not LIVE — the pane is mounted (it is `keepMounted`)
-  //    but its tab has not been shown, so the xterm holds nothing. Counting it
-  //    would print "0 in Terminal (scrollback only)" about a buffer that was
-  //    never filled, which says "not in the last 5,000 lines" when the truth
-  //    is "we have not looked". See `TerminalPane`'s find effect.
+  // It used to be two: no surface at all (a STREAM session has no PTY and
+  // renders a notice instead of an xterm — `panels.tsx`), and a surface whose
+  // pane had never been SHOWN, where the renderer's xterm held nothing because
+  // a hidden pane is ingest-only (S-07). The second was a real reason only
+  // while the renderer's buffer was the only one find could reach. It now
+  // searches MAIN's ring buffer instead, which is complete and current whether
+  // or not the tab was ever opened — so a session with a terminal always has a
+  // scrollback to search, and the group is available.
   //
-  // Either way the group is ABSENT with a reason rather than present with a
-  // number. §5.8's greyed-not-hidden rule reaches this far down.
-  unavailableKey: (ctx) => {
+  // What remains — "there is a terminal but we could not read it" — is a
+  // search-time answer rather than an availability gate: it is a fact about one
+  // call, it can only be learned by making it, and `unavailableKey` is
+  // synchronous. §5.8's greyed-not-hidden rule still reaches the case it names.
+  unavailableKey: (ctx) => (terminalSurface(ctx) ? null : 'find.unavailable.noTerminal'),
+  async search(ctx: FindContext, query: FindQuery): Promise<FindResults> {
+    const failed: FindResults = {
+      hits: [],
+      total: 0,
+      truncated: false,
+      notice: { key: 'find.notice.failed', tone: 'error' },
+    };
     const surface = terminalSurface(ctx);
-    if (!surface) return 'find.unavailable.noTerminal';
-    return surface.ready() ? null : 'find.unavailable.terminalNotShown';
-  },
-  search(ctx: FindContext, query: FindQuery): Promise<FindResults> {
-    const surface = terminalSurface(ctx);
-    if (!surface) {
-      return Promise.resolve({
-        hits: [],
-        total: 0,
-        truncated: false,
-        notice: { key: 'find.notice.failed', tone: 'error' },
-      });
-    }
-    // Synchronous — the buffer is in this process. The promise is the seam's
-    // shape, not a round trip.
-    const out = surface.search({
+    if (!surface) return failed;
+    // ASYNC as of #517, and sometimes genuinely so: a pane that is not on
+    // screen is answered from main's ring buffer over `pty:snapshot`. A live
+    // one still walks its own xterm and resolves in the same tick.
+    const out = await surface.search({
       term: query.term,
       caseSensitive: query.caseSensitive,
       wholeWord: query.wholeWord,
     });
+    // `null` is "we could not look" — no PTY behind this card any more, or the
+    // read failed. It must NOT collapse into `total: 0`: "0 in Terminal
+    // (scrollback only)" is a statement about the last 5,000 lines, and making
+    // it without having read them is the confident zero §5.31 exists to prevent.
+    if (!out) return failed;
     const hits: FindHit[] = out.matches.map((m) => {
       const { snippet, matchStart } = snippetAround(m.line, m.offset, m.length);
       return {
@@ -317,28 +321,40 @@ export const terminalFindProvider: FindProviderContribution = {
         snippet,
         matchStart,
         matchLength: m.length,
-        // every terminal hit starts out reachable: xterm keeps the whole
-        // scrollback and `scrollToLine` reaches all of it, so there is no
-        // evicted-block boundary here the way there is in the transcript. It
-        // can still go stale — the buffer is a ring, and a busy session can
-        // evict the row under a recorded match — which `revealTerminalMatch`
-        // detects and refuses, and the bar then treats like any unreachable hit.
-        jumpable: true,
+        // A hit is reachable only if it came from the pane ON SCREEN. On that
+        // path xterm keeps the whole scrollback and `scrollToLine` reaches all
+        // of it, so there is no evicted-block boundary here the way there is in
+        // the transcript — it can still go stale (the buffer is a ring, and a
+        // busy session can evict the row under a recorded match), which
+        // `revealTerminalMatch` detects and refuses, and the bar then treats
+        // like any unreachable hit. OFF the live path the match is just as
+        // real and there is simply nothing rendered to scroll: the row lives in
+        // main's ring buffer and this window has never drawn it. An affordance
+        // that did nothing would be the same lie one interaction later, so the
+        // hit is readable and not jumpable.
+        jumpable: out.live,
         earlierThanLoaded: false,
         metaKey: 'find.hitMetaTerminal',
         metaParams: { line: m.row + 1 },
         ref: m,
       };
     });
-    return Promise.resolve({
+    // Order matters: the loudest true thing wins the one line the bar has, and
+    // "you cannot get to these" outranks "there are more of them" — the same
+    // ordering, for the same reason, as the session engine above.
+    let notice: FindResults['notice'];
+    if (!out.live && hits.length > 0) {
+      notice = { key: 'find.notice.terminalNotShown', tone: 'info' };
+    } else if (out.truncated) {
+      notice = { key: 'find.notice.truncated', params: { shown: hits.length }, tone: 'info' };
+    }
+    return {
       hits,
       total: out.total,
       truncated: out.truncated,
       totalIsFloor: out.totalIsFloor,
-      notice: out.truncated
-        ? { key: 'find.notice.truncated', params: { shown: hits.length }, tone: 'info' }
-        : undefined,
-    });
+      notice,
+    };
   },
   reveal(ctx: FindContext, hit: FindHit): boolean {
     const m = hit.ref as TerminalMatch | undefined;

@@ -36,6 +36,9 @@ export class PtySession {
   readonly id: string;
   readonly scrollback: RingBuffer;
   private readonly proc: pty.IPty;
+  /** the geometry we spawned at, as the fallback `cols`/`rows` below need */
+  private readonly spawnCols: number;
+  private readonly spawnRows: number;
   private dataListeners = new Set<(d: string) => void>();
   private exitListeners = new Set<(code: number) => void>();
   exitCode: number | null = null;
@@ -43,10 +46,12 @@ export class PtySession {
   constructor(opts: PtySpawnOptions) {
     this.id = opts.id;
     this.scrollback = new RingBuffer(opts.scrollbackBytes ?? 2 * 1024 * 1024);
+    this.spawnCols = opts.cols ?? 120;
+    this.spawnRows = opts.rows ?? 30;
     this.proc = pty.spawn(opts.command, opts.args, {
       name: 'xterm-256color',
-      cols: opts.cols ?? 120,
-      rows: opts.rows ?? 30,
+      cols: this.spawnCols,
+      rows: this.spawnRows,
       cwd: opts.cwd,
       env: buildEnv(process.env, opts.env) as { [k: string]: string },
       useConpty: process.platform === 'win32',
@@ -83,6 +88,28 @@ export class PtySession {
 
   get pid(): number {
     return this.proc.pid;
+  }
+
+  /**
+   * The PTY's CURRENT geometry — what the CLI is writing for right now (#517).
+   *
+   * Read off node-pty rather than mirrored from `resize()`, so a resize that
+   * the process refused (or that arrived before this object existed) cannot
+   * leave us reporting a width the stream was never wrapped at. The spawn
+   * values are the fallback for the one case the typings do not cover: a
+   * process that has EXITED, where a backend may drop the property rather than
+   * keep the last value. A stale-but-real width beats `NaN` — the only reader
+   * is a scrollback replay, and replaying at the wrong width costs wrapping,
+   * while replaying at `NaN` costs the whole answer.
+   */
+  get cols(): number {
+    const c = this.proc.cols;
+    return Number.isInteger(c) && c > 0 ? c : this.spawnCols;
+  }
+
+  get rows(): number {
+    const r = this.proc.rows;
+    return Number.isInteger(r) && r > 0 ? r : this.spawnRows;
   }
 
   onData(listener: (d: string) => void): () => void {

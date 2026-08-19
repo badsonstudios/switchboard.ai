@@ -93,6 +93,10 @@ function harness(
     /** exit codes per session id — a session listed here is DEAD but still has
      *  a record, which is exactly what a crash leaves behind (#187) */
     exitCodes?: Record<string, number>;
+    /** live PTYs, by id, for the channels that READ one (#517's `pty:snapshot`).
+     *  Empty unless a test seeds it — every other test in this file runs with
+     *  no PTY at all, which is what `pty:snapshot` answering `null` means. */
+    ptys?: Record<string, { scrollback: { snapshot: () => Buffer }; cols: number; rows: number }>;
     /** the ids successive `manager.create` calls mint, in order. Defaults to
      *  'live-1' for ever, which is what every pre-#187 test assumes. */
     spawnIds?: string[];
@@ -299,7 +303,7 @@ function harness(
         return { ...asRecord(id), identity };
       },
     },
-    ptys: {},
+    ptys: { get: (id: string) => opts.ptys?.[id] },
     hooks: {
       onPermissionRequest: () => {},
       onPermissionResolved: () => {},
@@ -3795,5 +3799,61 @@ describe('a decision for a request nobody is holding (#570)', () => {
     // lost
     expect(noisy).toHaveLength(1);
     expect(noisy[0][1]).toMatchObject({ requestId: 'hook-req-1' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #517 — `pty:snapshot`: the ring buffer, READ
+// ---------------------------------------------------------------------------
+
+describe('pty:snapshot hands find the buffer that actually has the answer (#517)', () => {
+  let folder: string;
+  beforeEach(() => {
+    folder = tempDir('sb-snap');
+  });
+
+  const fakePty = (text: string, cols = 132, rows = 44) => ({
+    scrollback: { snapshot: () => Buffer.from(text, 'utf8') },
+    cols,
+    rows,
+  });
+
+  it('answers the scrollback AND the geometry it was written for', () => {
+    // The geometry is not decoration: the caller replays these bytes into a
+    // terminal, and a scrollback re-rendered at the wrong width wraps in
+    // different places — which moves every match position and can split a
+    // match across the fold.
+    const h = harness(undefined, folder, { ptys: { 'live-1': fakePty('hello NEEDLE\r\n') } });
+    expect(h.call('pty:snapshot', 'live-1')).toEqual({
+      snapshot: 'hello NEEDLE\r\n',
+      cols: 132,
+      rows: 44,
+    });
+  });
+
+  it('answers null for an id with no PTY — "could not look", not "found none"', () => {
+    const h = harness(undefined, folder);
+    expect(h.call('pty:snapshot', 'nobody')).toBeNull();
+  });
+
+  it('refuses a non-string id rather than reaching into the map with it', () => {
+    const h = harness(undefined, folder);
+    expect(h.call('pty:snapshot', 42 as unknown as string)).toBeNull();
+    expect(h.warn).toHaveBeenCalledWith(
+      expect.stringContaining('pty:snapshot refused'),
+      expect.anything()
+    );
+  });
+
+  it('takes NOTHING away from the pane on screen — no feed, no epoch', () => {
+    // The reason this is its own channel. `pty:attach` mints an epoch and
+    // replaces the session's single data feed, so answering find through it
+    // would silently cut the terminal the user is looking at. Reading twice
+    // here must be indistinguishable from reading once.
+    const h = harness(undefined, folder, { ptys: { 'live-1': fakePty('output') } });
+    const before = h.pushed.length;
+    h.call('pty:snapshot', 'live-1');
+    h.call('pty:snapshot', 'live-1');
+    expect(h.pushed.length).toBe(before);
   });
 });

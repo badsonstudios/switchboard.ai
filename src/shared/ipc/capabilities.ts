@@ -193,6 +193,12 @@ export const CHANNEL_CAPABILITIES = {
   'audio:failed': 'settings.read',
   'pty:attach': 'pty.read',
   'pty:detach': 'pty.read',
+  // A READ of the scrollback with no stream attached to it (#517). Same
+  // capability as `pty:attach` and deliberately not a narrower one: it hands
+  // back the same bytes, so a caller holding it can read everything the CLI
+  // printed. What it cannot do is take the live feed away from the pane on
+  // screen, which is the reason it exists as its own channel.
+  'pty:snapshot': 'pty.read',
   'pty:input': 'pty.write',
   'pty:resize': 'pty.write',
   'sessions:allowAllSession': 'sessions.write',
