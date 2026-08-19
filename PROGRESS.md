@@ -19,7 +19,7 @@
 > | #543 tab-model follow-ups | sb-wt-1 (released) | feature/543-tab-model-followups | **DONE** — **PR #578 ready-for-review, in Dan's queue** |
 > | #546 composer attachment drafts | sb-wt-1 | feature/546-composer-attachment-drafts | running |
 > | #559 rail drag-reorder | sb-wt-2 | feature/559-rail-drag-reorder | running |
-> | #566 question-panel tabs | sb-wt-3 | feature/566-question-panel-tabs | running |
+> | #566 question-panel tabs | sb-wt-3 | feature/566-question-panel-tabs | **DONE** — PR #579 (draft); rebasing CHANGELOG entry onto post-release main |
 > | ~~release v0.8.0 cut~~ | — | main | **DONE** — released 2026-08-19 |
 >
 > **Merge queue (Dan):** empty so far. All three wave-1 items are user-facing —
@@ -32,8 +32,20 @@
 > modes (real tokens) + the conditional UI half; dispatches after #566 lands
 > (same QuestionPanel subsystem).
 >
-> **Queued next:** #567 (behind #566, approved); #544 waits for PR #578 to
-> MERGE (same document-tab subsystem as #543); then #539.
+> **Queued next:** #567 **probe half** into sb-wt-3 once #566's rebase lands
+> (probe touches only spike/ + findings — no QuestionPanel collision; the UI
+> half waits for PR #579 to MERGE); #544 waits for PR #578 to MERGE (same
+> document-tab subsystem as #543); then #539.
+>
+> **#566 done (PR #579, draft until rebase lands):** multi-question calls are
+> tabs labelled by `header`; single question unchanged; ✓/○ per tab + "Still
+> to answer: …" beside a dead Submit; opens on first unanswered incl. after
+> remount; real tablist keyboard (Left/Right wrap, Home/End, roving stop).
+> Submit's all-answered rule untouched (#567 not pre-empted); no auto-advance.
+> Gates: unit 5240/5240, full e2e 332/332 (+5/5 re-run). Fixed in passing:
+> QuestionBlock read global `document.activeElement` (the #573 popout class)
+> — now ownerDocument. **For Dan's eye:** Left/Right live in the tab strip
+> only, not inside option lists (APG contract) — additive to change.
 >
 > **#543 done (PR #578, ready):** honest ✕ tooltips per tab kind ("Close
 > document" / "Close" / card unchanged), "Close all documents (keeps
