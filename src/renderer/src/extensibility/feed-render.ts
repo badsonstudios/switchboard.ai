@@ -37,6 +37,40 @@ export function renderFeedBlock(
   block: FeedBlockDto,
   onError: (id: string, err: unknown) => void = defaultReport
 ): React.ReactNode {
+  return resolveFeedBlock(registry, block, onError).node;
+}
+
+/** Which contribution claimed a block, and what it produced. */
+export interface ResolvedFeedBlock {
+  /**
+   * Null ONLY when nothing claimed the block (then `node` is null too). A
+   * renderer that claimed it and threw while building still reports its id, so
+   * the id a given block resolves to is stable across renders even while that
+   * renderer is failing — `ContributionBoundary` reads a changed id as a
+   * different contribution and clears its failure streak, which a flip-flopping
+   * id would turn into an unbounded retry loop.
+   */
+  id: string | null;
+  node: React.ReactNode;
+}
+
+/**
+ * `renderFeedBlock`, plus the name of whoever produced the output.
+ *
+ * The try/catch below only covers BUILDING the node — the renderer function
+ * returning. A returned ELEMENT that throws when React renders it escapes
+ * every try/catch in this file, because React is the caller and none of this
+ * is on the stack; with no error boundary above the feed that white-screens
+ * the window — every session's terminal, over one malformed block. That is the
+ * fail-open violation `ContributionBoundary` exists to stop, and the boundary
+ * names the contribution in its log line, which is the id `renderFeedBlock`
+ * throws away. `FeedView`'s `Block` is the caller that needs both (#594).
+ */
+export function resolveFeedBlock(
+  registry: RendererRegistry,
+  block: FeedBlockDto,
+  onError: (id: string, err: unknown) => void = defaultReport
+): ResolvedFeedBlock {
   const ordered = orderedRenderers(registry);
   for (const r of ordered) {
     let claimed = false;
@@ -48,13 +82,14 @@ export function renderFeedBlock(
     }
     if (!claimed) continue;
     try {
-      return r.render(block);
+      return { id: r.manifest.id, node: r.render(block) };
     } catch (err) {
       onError(r.manifest.id, err);
-      return null; // it claimed the block and failed — don't hand it to another
+      // it claimed the block and failed — don't hand it to another
+      return { id: r.manifest.id, node: null };
     }
   }
-  return null;
+  return { id: null, node: null };
 }
 
 function defaultReport(id: string, err: unknown): void {

@@ -23,7 +23,8 @@ import { ASK_USER_QUESTION_TOOL, parseAskUserQuestion } from '../../../shared/as
 import { QuestionPanel } from './QuestionPanel';
 import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
 import { rendererRegistry } from '../extensibility/registry-instance';
-import { renderFeedBlock } from '../extensibility/feed-render';
+import { resolveFeedBlock } from '../extensibility/feed-render';
+import { ContributionBoundary } from '../extensibility/boundary';
 import { uiFlush, uiGet, uiSet } from '../lib/ui-state';
 import { clearDraft, loadDraft, saveDraft } from '../lib/composer-draft';
 import { interruptSession, submitPrompt } from '../lib/composer';
@@ -62,7 +63,10 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
   // Resolved, not switched (§5.23): this used to be a seven-branch ternary
   // naming every renderer. A new block shape is now a contribution plus a
   // bootstrap line, and this file is not touched.
-  const inner = renderFeedBlock(rendererRegistry, b);
+  //
+  // The id comes back with the node because the node is rendered inside a
+  // `ContributionBoundary`, and that boundary names the contribution (#594).
+  const { id, node: inner } = resolveFeedBlock(rendererRegistry, b);
   const dot = showsTimelineDot(b.kind);
   // The block find is sitting on (P2-E17-02). An OUTLINE rather than a
   // background: the block already paints its own surfaces (tool boxes, diff
@@ -115,7 +119,31 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
             : {}),
         }}
       />
-      <div style={{ flex: 1, minInlineSize: 0 }}>{inner}</div>
+      {/* THE CRASH BARRIER (#594). `resolveFeedBlock` catches a renderer that
+          throws while BUILDING its node; it cannot catch the node THROWING
+          WHEN REACT RENDERS IT, because React is the caller. Nothing else sits
+          between a feed block and the renderer root, so without this a single
+          malformed transcript block — untrusted input from another process —
+          blanks the whole window and takes every session's terminal with it
+          (P6, fail-open). The boundary renders a gap instead, says which
+          contribution failed, and retries it on the next update until it has
+          failed `CONTRIBUTION_RETRY_LIMIT` times in a row (#463).
+
+          RETRY REACHES THE FEED: every built-in renderer's `render(b)` returns
+          a fresh element, `resolveFeedBlock` runs in this component's render
+          body, and `Block` is not memoised — so a new `children` identity
+          arrives on every feed re-render, which is what the boundary keys its
+          retry on. The bound is what keeps that from spinning: a block that
+          always throws costs three attempts, not one per streamed chunk.
+
+          INSIDE the row, not around it: the gutter, the dot and the find
+          anchors (`data-feed-block`, FEED_SEQ_ATTR) are the FEED's markup and
+          cannot throw, and keeping them lets a jump still land on the block. It
+          also leaves the boundary's identity tied to this row, whose key
+          (`b.seq`, in the list below) is unchanged by any of this. */}
+      <div style={{ flex: 1, minInlineSize: 0 }}>
+        {id === null ? inner : <ContributionBoundary id={id}>{inner}</ContributionBoundary>}
+      </div>
     </div>
   );
 }
