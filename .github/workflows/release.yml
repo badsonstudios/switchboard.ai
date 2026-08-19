@@ -63,8 +63,8 @@ jobs:
           echo "Push the tag (the workflow runs itself), or dispatch with --ref v<version>."
           exit 1
 
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -97,7 +97,7 @@ jobs:
       # paths — with the notes at the repo root, that is the workspace, so the
       # installer arrives in the release job still under `dist/`. The download
       # side spells those paths out; do not "tidy" one without the other.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-${{ steps.notes.outputs.tag }}
           path: |
@@ -121,7 +121,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release-${{ needs.build.outputs.tag }}
           path: artifacts
