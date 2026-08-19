@@ -24,7 +24,8 @@
 > | #575 CI action bumps | sb-wt-1 (released) | feature/575-ci-action-bumps | **✅ MERGED** — PR #595 squash-merged (checkout/setup-node/upload v7, download v8; zero warnings); #600 filed (search.test.ts perf-budget flake) |
 > | #517 terminal search via ring buffer | sb-wt-1 | feature/517-search-ring-buffer | running — user-facing |
 > | #559 rail drag-reorder | sb-wt-2 (released) | feature/559-rail-drag-reorder | **DONE** — **PR #580 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
-> | #539 repair-sweep follow-ups | sb-wt-2 | feature/539-repair-sweep-followups | running |
+> | #539 repair-sweep follow-ups | sb-wt-2 (released) | feature/539-repair-sweep-followups | **DONE** — **PR #602 ready-for-review, in Dan's queue**; #603 filed (shared FAKE_SESSION_ID) |
+> | #497 Direct-e2e fixture extraction | sb-wt-2 | feature/497-direct-e2e-fixture | running — INTERNAL |
 > | #566 question-panel tabs | sb-wt-3 (released) | feature/566-question-panel-tabs | **DONE** — **PR #579 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
 > | #567 probe half | sb-wt-3 (released) | feature/567-partial-answers-probe | **✅ MERGED** — PR #583 (after cancelling its hung ubuntu e2e, #597; re-run passed 9m) |
 > | #534 permission-mode tooltips | sb-wt-3 (released) | feature/534-permission-mode-tooltips | **DONE** — **PR #586 ready-for-review, in Dan's queue** |
@@ -55,13 +56,25 @@
 > green. #539 sweep at ~70 min silent: alive (committed work in wt-2, no PR
 > yet) — left alone.
 >
-> **Merge queue (Dan) — 7 PRs ready-for-review:** #576 (#556 drawer close),
+> **#539 done (PR #602):** sweep adoption now raises a persisted, dismissible
+> notice in the events drawer; duplicate-pointer policy = same-folder id is
+> the same conversation, head beats ancestor, elder card wins; loser's
+> pointer moves to `cededNativeIds` (never deleted, claimed against a third
+> taker). Review caught the sharp edge: a fully-ceded card is deliberately
+> NOT re-swept (its inverted inference would have resumed Dan's
+> `Switchboard.ai-2` into an unrelated transcript) — it starts fresh, with a
+> documented hand-edit as the way back. Gates: unit 5295, e2e 332/332.
+> Worker note for everyone: **never run `npx prettier --write` here** (#323
+> is real; 28 files reformatted and hand-restored mid-item).
+>
+> **Merge queue (Dan) — 8 PRs ready-for-review:** #576 (#556 drawer close),
 > #578 (#543 tab tooltips + close-all), #579 (#566 question tabs), #580
 > (#559 rail reorder), #584 (#546 composer chips), #586 (#534 permission
-> tooltips), #599 (#587 ask-mode pin). All green-gated locally; the
-> orchestrator merges nothing user-facing. Suggested review order: #576 →
-> #578 → #584 → #586 → #599 → #580 → #579 (smallest first; #579 last since
-> #567's UI half stacks on it). Expect trivial CHANGELOG-0.9.0 conflicts between
+> tooltips), #599 (#587 ask-mode pin), #602 (#539 adoption notice +
+> duplicate untangle). All green-gated locally; the orchestrator merges
+> nothing user-facing. Suggested review order: #576 → #578 → #584 → #586 →
+> #599 → #602 → #580 → #579 (smallest first; #579 last since #567's UI half
+> stacks on it). Expect trivial CHANGELOG-0.9.0 conflicts between
 > them at merge — each entry is one line, keep both sides.
 >
 > **#546 done (PR #584):** chips survive remount via a renderer-run stash
