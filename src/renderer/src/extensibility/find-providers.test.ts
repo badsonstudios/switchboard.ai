@@ -356,8 +356,24 @@ describe('find-terminal reads MAIN’s ring buffer, not just the pane on screen 
       { term: 'NEEDLE' }
     );
     expect(res.total).toBe(2);
+    expect(res.totalUnknown).toBeFalsy(); // this one IS a count
     expect(res.hits.map((h) => h.jumpable)).toEqual([false, false]);
     expect(res.notice).toEqual({ key: 'find.notice.terminalNotShown', tone: 'info' });
+  });
+
+  it('keeps BOTH true things when a hidden pane’s list is also capped', async () => {
+    // One group gets one notice line, and on this path the user can least
+    // verify by looking — so "you cannot step to these" must not silently eat
+    // "there are more of them than you can see".
+    const res = await terminalFindProvider.search!(
+      ctxFor(surfaceFor({ matches: [match(3)], total: 400, truncated: true, live: false })),
+      { term: 'NEEDLE' }
+    );
+    expect(res.notice).toEqual({
+      key: 'find.notice.terminalNotShownTruncated',
+      params: { shown: 1 },
+      tone: 'info',
+    });
   });
 
   it('says "could not search" — never 0 — when the scrollback cannot be READ', async () => {
@@ -367,8 +383,11 @@ describe('find-terminal reads MAIN’s ring buffer, not just the pane on screen 
     // §5.31 says find must never give.
     for (const surface of [null, surfaceFor(null)]) {
       const res = await terminalFindProvider.search!(ctxFor(surface), { term: 'NEEDLE' });
-      expect(res.total).toBe(0);
       expect(res.hits).toEqual([]);
+      // the number is NOT a number: `totalUnknown` is what stops the bar
+      // printing "0 in Terminal (scrollback only)" — a statement about the last
+      // 5,000 lines, made without having read them
+      expect(res.totalUnknown).toBe(true);
       expect(res.notice).toEqual({ key: 'find.notice.failed', tone: 'error' });
     }
   });

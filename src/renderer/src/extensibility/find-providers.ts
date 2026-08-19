@@ -290,9 +290,14 @@ export const terminalFindProvider: FindProviderContribution = {
   // synchronous. §5.8's greyed-not-hidden rule still reaches the case it names.
   unavailableKey: (ctx) => (terminalSurface(ctx) ? null : 'find.unavailable.noTerminal'),
   async search(ctx: FindContext, query: FindQuery): Promise<FindResults> {
+    // `total: 0` with `totalUnknown` set: the number is a placeholder the bar
+    // never prints. It renders "— in Terminal (scrollback only)" and the error
+    // notice beside it, because "0 in Terminal (scrollback only)" is a
+    // statement about the last 5,000 lines and we did not read them.
     const failed: FindResults = {
       hits: [],
       total: 0,
+      totalUnknown: true,
       truncated: false,
       notice: { key: 'find.notice.failed', tone: 'error' },
     };
@@ -339,12 +344,17 @@ export const terminalFindProvider: FindProviderContribution = {
         ref: m,
       };
     });
-    // Order matters: the loudest true thing wins the one line the bar has, and
-    // "you cannot get to these" outranks "there are more of them" — the same
-    // ordering, for the same reason, as the session engine above.
+    // Order matters: the loudest true thing wins the ONE line the bar gives a
+    // group. "You cannot get to these" outranks "there are more of them" — the
+    // same ordering, for the same reason, as the session engine above — but
+    // when both are true neither may be dropped, because a capped list on the
+    // path where nothing is on screen is the case the user can least verify by
+    // looking. So there is a string that says both.
     let notice: FindResults['notice'];
     if (!out.live && hits.length > 0) {
-      notice = { key: 'find.notice.terminalNotShown', tone: 'info' };
+      notice = out.truncated
+        ? { key: 'find.notice.terminalNotShownTruncated', params: { shown: hits.length }, tone: 'info' }
+        : { key: 'find.notice.terminalNotShown', tone: 'info' };
     } else if (out.truncated) {
       notice = { key: 'find.notice.truncated', params: { shown: hits.length }, tone: 'info' };
     }

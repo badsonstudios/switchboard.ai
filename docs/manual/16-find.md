@@ -156,9 +156,12 @@ A match in the terminal is **highlighted in place** and selected; `Enter` and
 through the whole scrollback, not just the visible screen.
 
 That's when the Terminal tab is the one on screen. When it isn't — you're on
-Session, or you never opened Terminal at all — the count is still right, and
-still comes from the last 5,000 lines the program actually printed. The matches
-are read-only until you open the tab, and the bar tells you so.
+Session, or you never opened Terminal at all — the count comes from the
+recording switchboard keeps behind the tab, which is capped by **size** rather
+than by line count. On a very noisy session that recording can hold slightly
+less than an open terminal does, so a count can grow a little when you open the
+tab; either way it's the last few thousand lines and never the whole session.
+The matches are read-only until you open the tab, and the bar tells you so.
 
 One catch worth knowing: **`Ctrl+F` pressed while your cursor is inside the
 terminal goes to the program running there, not to switchboard.** That's

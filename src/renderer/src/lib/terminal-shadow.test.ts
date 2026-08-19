@@ -174,10 +174,57 @@ describe('TerminalShadow replays main’s ring buffer and searches it', () => {
     shadow.dispose(); // idempotent
   });
 
+  it('disposed while WAITING on the read: nothing is ever built', async () => {
+    // The pane can unmount, or find can close, between asking main for the
+    // scrollback and getting it. Building a terminal for an answer nobody wants
+    // would leave an orphan host in the document.
+    let release: (v: PtySnapshot) => void = () => {};
+    const gate = new Promise<PtySnapshot>((r) => {
+      release = r;
+    });
+    shadow = new TerminalShadow({ read: () => gate });
+    const pending = shadow.search({ term: 'NEEDLE' });
+    shadow.dispose();
+    release(snap('NEEDLE\r\n'));
+    expect(await pending).toBeNull();
+    expect(shadow.built).toBe(false);
+    expect(document.body.querySelector('[aria-hidden="true"]')).toBeNull();
+  });
+
+  it('disposed while WRITING: the teardown waits for the parser, then happens', async () => {
+    // xterm slices a write into ~12ms macrotasks and its WriteBuffer has no
+    // post-dispose guard, so disposing under one leaves timers parsing into a
+    // disposed terminal — a throw our try/catch could never reach. Teardown
+    // therefore waits, and this is what says it still HAPPENS.
+    // Big enough that xterm cannot finish inside one macrotask, so the dispose
+    // below genuinely lands mid-parse rather than after it.
+    const big = 'NEEDLE and some filler to make the row realistic\r\n'.repeat(20_000);
+    shadow = new TerminalShadow({ read: () => Promise.resolve(snap(big)) });
+    const pending = shadow.search({ term: 'NEEDLE' });
+    // let the read resolve and the write start, then pull the rug
+    await Promise.resolve();
+    await Promise.resolve();
+    shadow.dispose();
+    // DEFERRED, not done: the host is still there because the parser is still
+    // running in it. This is the assertion that proves the branch was taken.
+    expect(document.body.querySelector('[aria-hidden="true"]')).not.toBeNull();
+
+    expect(await pending).toBeNull();
+    expect(shadow.built).toBe(false);
+    expect(document.body.querySelector('[aria-hidden="true"]')).toBeNull();
+  });
+
   it('gives the SAME answer as the visible pane would (no second search engine)', async () => {
     // The claim that makes this honest rather than clever: the matcher is the
     // addon, on both paths. Drive a terminal the way `TerminalPane` does and
     // compare it with the shadow over the same bytes.
+    //
+    // WEAKER THAN ITS NAME IN JSDOM, and worth knowing rather than believing:
+    // `--chip` does not resolve here, so `decorations()` returns undefined and
+    // the visible pane's decorated walk is byte-for-byte the undecorated one
+    // the shadow runs. What this pins is the WRAPPING and the buffer, which is
+    // where the two paths could really diverge; the decorated/undecorated
+    // equivalence is pinned by `terminal-find.test.ts`'s allowProposedApi case.
     const text = 'alpha NEEDLE\r\nbeta\r\nneedle lower\r\ngamma NEEDLE tail\r\n';
     const host = document.createElement('div');
     document.body.appendChild(host);

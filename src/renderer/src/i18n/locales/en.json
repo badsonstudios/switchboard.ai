@@ -724,6 +724,7 @@
     "countTruncatedAtLeast": "{index} of {shown} shown ({total}+ found)",
     "groupCount": "{total} in {group}",
     "groupCountAtLeast": "{total}+ in {group}",
+    "groupCountUnknown": "— in {group}",
     "groupSeparator": " · ",
     "noticeInGroup": "{group}: {message}",
     "group": {
@@ -768,6 +769,7 @@
       "noTranscript": "Nothing to search yet — this session hasn't written anything down.",
       "cannotJump": "These matches can be read here, but this session can't be scrolled to them.",
       "terminalNotShown": "These matches are really in the terminal's scrollback — open the Terminal tab if you want to scroll to them.",
+      "terminalNotShownTruncated": "Showing the first {shown}. They are really in the terminal's scrollback — open the Terminal tab if you want to scroll to them.",
       "truncated": "Showing the first {shown} matches.",
       "failed": "The search couldn't run. The session is untouched."
     }

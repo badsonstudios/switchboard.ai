@@ -3812,11 +3812,22 @@ describe('pty:snapshot hands find the buffer that actually has the answer (#517)
     folder = tempDir('sb-snap');
   });
 
-  const fakePty = (text: string, cols = 132, rows = 44) => ({
-    scrollback: { snapshot: () => Buffer.from(text, 'utf8') },
-    cols,
-    rows,
-  });
+  /** A stand-in PtySession with a real listener set, so ATTACH can be driven. */
+  const fakePty = (text: string, cols = 132, rows = 44) => {
+    const listeners = new Set<(d: string) => void>();
+    return {
+      scrollback: { snapshot: () => Buffer.from(text, 'utf8') },
+      cols,
+      rows,
+      onData: (l: (d: string) => void) => {
+        listeners.add(l);
+        return () => listeners.delete(l);
+      },
+      /** the PTY printing something, for the test to observe downstream */
+      emit: (d: string) => listeners.forEach((l) => l(d)),
+      listenerCount: () => listeners.size,
+    };
+  };
 
   it('answers the scrollback AND the geometry it was written for', () => {
     // The geometry is not decoration: the caller replays these bytes into a
@@ -3845,15 +3856,30 @@ describe('pty:snapshot hands find the buffer that actually has the answer (#517)
     );
   });
 
-  it('takes NOTHING away from the pane on screen — no feed, no epoch', () => {
-    // The reason this is its own channel. `pty:attach` mints an epoch and
-    // replaces the session's single data feed, so answering find through it
-    // would silently cut the terminal the user is looking at. Reading twice
-    // here must be indistinguishable from reading once.
-    const h = harness(undefined, folder, { ptys: { 'live-1': fakePty('output') } });
+  it('takes NOTHING away from the pane on screen — the live feed keeps streaming', () => {
+    // The reason this is its own channel, asserted against the thing that
+    // would actually break. `pty:attach` mints an epoch and REPLACES the
+    // session's single data feed (`feeds.get(id)?.()`), so answering find
+    // through it — or through anything that reuses that teardown — would
+    // silently cut the terminal the user is looking at.
+    //
+    // So: attach a pane, read the scrollback twice underneath it, then let the
+    // PTY print. The chunk must still arrive, on the SAME epoch, and no second
+    // subscription may have appeared.
+    const p = fakePty('output');
+    const h = harness(undefined, folder, { ptys: { 'live-1': p } });
+    const attachment = h.call('pty:attach', 'live-1') as { epoch: number };
+    expect(p.listenerCount()).toBe(1);
+
+    h.call('pty:snapshot', 'live-1');
+    h.call('pty:snapshot', 'live-1');
+    expect(p.listenerCount()).toBe(1); // nothing subscribed, nothing unsubscribed
+
     const before = h.pushed.length;
-    h.call('pty:snapshot', 'live-1');
-    h.call('pty:snapshot', 'live-1');
-    expect(h.pushed.length).toBe(before);
+    p.emit('a line the user is watching');
+    const sent = h.pushed.slice(before);
+    expect(sent).toHaveLength(1);
+    expect(sent[0].channel).toBe('pty:data:live-1');
+    expect(sent[0].payload).toEqual({ epoch: attachment.epoch, d: 'a line the user is watching' });
   });
 });

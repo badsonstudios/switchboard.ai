@@ -639,6 +639,11 @@ describe('grouped results (P2-E17-03)', () => {
     await act(async () => setFindTerm('NEEDLE'));
     await settle();
     expect(q(host, 'find-notice')!.textContent).toContain(en.find.notice.failed);
+    // and the group shows an em dash where the digit goes, NOT a zero: this is
+    // the line the whole item is about, and a `0` here would say "not in the
+    // last 5,000 lines" about lines nobody managed to read
+    expect(q(host, 'find-groups')!.textContent).not.toContain(`0 in ${en.find.group.terminal}`);
+    expect(q(host, 'find-groups')!.textContent).toContain(`— in ${en.find.group.terminal}`);
   });
 
   it('the bar is NOT greyed on a Terminal tab that was never opened (#517)', async () => {

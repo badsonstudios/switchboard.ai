@@ -14,7 +14,12 @@ import {
   type TerminalFindOutcome,
   type TerminalFindSurface,
 } from '../lib/find-surfaces';
-import { clearTerminalSearch, revealTerminalMatch, searchTerminal } from '../lib/terminal-find';
+import {
+  clearTerminalSearch,
+  revealTerminalMatch,
+  searchTerminal,
+  TERMINAL_SCROLLBACK,
+} from '../lib/terminal-find';
 import { TerminalShadow } from '../lib/terminal-shadow';
 
 export function TerminalPane(props: {
@@ -60,7 +65,7 @@ export function TerminalPane(props: {
   // terminal lifecycle: created once per mounted pane
   useEffect(() => {
     const term = new Terminal({
-      scrollback: 5000, // S-07 verdict
+      scrollback: TERMINAL_SCROLLBACK, // S-07 verdict, shared with the off-screen replay
       // concrete stack: xterm can't resolve CSS custom properties
       fontFamily: "'IBM Plex Mono', Consolas, 'Cascadia Mono', monospace",
       fontSize: 13,
@@ -135,11 +140,22 @@ export function TerminalPane(props: {
   // question is now a fact about where the answer came from.
   useEffect(() => {
     const cardId = props.cardId;
-    if (!cardId) return;
+    // NO cardId — a terminal nobody can name — and NO live session id are both
+    // "there is nothing here to search". The second is not hypothetical: this
+    // panel is `keepMounted` and renders for a card whose session has ended or
+    // has never been resumed, where `SessionGrid` passes `''`. Publishing there
+    // would make the group AVAILABLE on a card with no PTY, and every search on
+    // it would end in "the search couldn't run". Absent with a reason
+    // ("this session has no terminal") is the honest answer, and it is the same
+    // one a Direct session already gets.
+    if (!cardId || !props.sessionId) return;
     /** the off-screen replay, built the first time a hidden pane is searched */
     const shadow = (): TerminalShadow => {
       shadowRef.current ??= new TerminalShadow({
         read: () => window.switchboard.pty.snapshot(props.sessionId),
+        // a popped-out card lives in a SECOND OS window; the scratch element
+        // belongs in the same one as the terminal it stands in for
+        doc: () => hostRef.current?.ownerDocument ?? document,
       });
       return shadowRef.current;
     };

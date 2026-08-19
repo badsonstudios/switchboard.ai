@@ -66,8 +66,8 @@ on the floor, and say so in your PR.
   behind the tab instead, which is complete and current whether or not you have
   ever opened it: a fresh session gets a real Terminal count from the first
   search. Those matches are readable rather than steppable until you open the
-  tab, and the bar says so; the count still covers the last 5,000 lines only, and
-  still says *scrollback only*. (#517)
+  tab, and the bar says so; the count still covers only the last few thousand
+  lines, and still says *scrollback only*. (#517)
 
 ### Internal
 

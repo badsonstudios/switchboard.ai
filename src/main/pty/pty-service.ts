@@ -93,14 +93,20 @@ export class PtySession {
   /**
    * The PTY's CURRENT geometry — what the CLI is writing for right now (#517).
    *
-   * Read off node-pty rather than mirrored from `resize()`, so a resize that
-   * the process refused (or that arrived before this object existed) cannot
-   * leave us reporting a width the stream was never wrapped at. The spawn
-   * values are the fallback for the one case the typings do not cover: a
-   * process that has EXITED, where a backend may drop the property rather than
-   * keep the last value. A stale-but-real width beats `NaN` — the only reader
-   * is a scrollback replay, and replaying at the wrong width costs wrapping,
-   * while replaying at `NaN` costs the whole answer.
+   * Read off node-pty rather than mirrored here, because node-pty is where the
+   * value is settled. Checked against the shipped source rather than assumed
+   * (`node_modules/node-pty/lib/{unix,windows}Terminal.js`, 2026-08-19):
+   * both backends assign `_cols` in their constructor and reassign it only in
+   * `resize`, AFTER the resize has been handed down — and on Windows that
+   * assignment is deferred (`_deferNoArgs`), so `cols` can lag a resize by a
+   * tick there. Never cleared on exit, so a dead PTY still reports the width it
+   * died at, which is the width its scrollback was written for.
+   *
+   * The spawn-value fallback is therefore DEFENSIVE, not a case we have found:
+   * nothing in either backend produces a non-positive `cols` after
+   * construction. It costs a comparison and it means the only reader — a
+   * scrollback replay — can never be handed `NaN`, where a stale-but-real width
+   * costs wrapping and `NaN` costs the whole answer.
    */
   get cols(): number {
     const c = this.proc.cols;

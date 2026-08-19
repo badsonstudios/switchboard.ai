@@ -100,6 +100,17 @@ export interface TerminalSearchQuery {
  */
 export const TERMINAL_MATCH_LIMIT = 200;
 
+/**
+ * How many lines of scrollback a terminal keeps — the S-07 verdict.
+ *
+ * Lives here rather than in either terminal that uses it, because the two MUST
+ * agree: `TerminalPane`'s visible xterm and `lib/terminal-shadow`'s off-screen
+ * replay of main's ring buffer answer the same question for the same session,
+ * and the group's label ("scrollback only") promises one depth, not two. Two
+ * copies of a number that has to match is a number that eventually will not.
+ */
+export const TERMINAL_SCROLLBACK = 5000;
+
 /** Longest snippet we hand the results list, in characters. */
 const SNIPPET_MAX = 240;
 
