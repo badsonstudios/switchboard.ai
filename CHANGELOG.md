@@ -57,6 +57,13 @@ on the floor, and say so in your PR.
 
 ## 0.9.0 — unreleased
 
+### Internal
+
+- One default for a session's transport, not two. A live session record always
+  carries the transport it was spawned on, so the type now says so and the card
+  reads main's answer verbatim — the stray `'pty'` fallback that contradicted
+  the shared default is gone, with typecheck-level pins on both ends (#445).
+
 ## 0.8.0 — 2026-08-19
 
 ### Added
