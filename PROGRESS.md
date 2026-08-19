@@ -23,7 +23,9 @@
 > | #463 ContributionBoundary reset | sb-wt-1 (released) | feature/463-contribution-boundary-reset | **DONE** — PR #592 green but CHANGELOG-conflicted with merged #585; orchestrator resolved (both entries kept), re-CI running, merges on green; #594 filed |
 > | #575 CI action bumps | sb-wt-1 (released) | feature/575-ci-action-bumps | **✅ MERGED** — PR #595 squash-merged (checkout/setup-node/upload v7, download v8; zero warnings); #600 filed (search.test.ts perf-budget flake) |
 > | #517 terminal search via ring buffer | sb-wt-1 (released) | feature/517-search-ring-buffer | **DONE** — **PR #610 ready-for-review, in Dan's queue** (never-opened terminals get real counts via read-only pty:snapshot; #518 inherited, not regressed) |
-> | #590 preload DTO drift-pin | sb-wt-1 | feature/590-preload-dto-typing | running — INTERNAL |
+> | #590 preload DTO drift-pin | sb-wt-1 (released) | feature/590-preload-dto-typing | **DONE** — PR #611 (shared wire type, bite-proven pins, byte-identical preload build); #618 filed (sessions:status + strays) |
+> | #603 unique fake-session ids | — | feature/603-unique-fake-session-ids | **DONE** — PR #615; #616 filed (fake --resume fidelity + littered ~/.claude/projects) |
+> | **TRAIN #617** | sb-wt-1 | train/2026-08-19-internal-2 | carries #608/#611/#613/#615 — unit 5308/5308 on the train tree; merges on green (merge commit) |
 > | #559 rail drag-reorder | sb-wt-2 (released) | feature/559-rail-drag-reorder | **DONE** — **PR #580 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
 > | #539 repair-sweep follow-ups | sb-wt-2 (released) | feature/539-repair-sweep-followups | **DONE** — **PR #602 ready-for-review, in Dan's queue**; #603 filed (shared FAKE_SESSION_ID) |
 > | #497 Direct-e2e fixture extraction | sb-wt-2 (released) | feature/497-direct-e2e-fixture | **DONE** — PR #604 (internal), merging on green; ambient flakes logged on #494; worker breached the background-waiter rule once and repaired it in-turn |
@@ -38,7 +40,6 @@
 > | #587 pin ask's permission mode | sb-wt-3 (released) | feature/587-ask-mode-pin | **DONE** — worker called it USER-FACING (`ask` genuinely changes behavior): **PR #599 ready-for-review, in Dan's queue** |
 > | #216 suspended-card header parity | sb-wt-3 (released) | feature/216-suspended-card-header | **DONE** — gap was real; **PR #605 ready-for-review, in Dan's queue**; #606 (ended-card same gap) + #607 (stale "(default)" label) filed |
 > | #594 feed blocks in ContributionBoundary | sb-wt-3 (released) | feature/594-feed-boundary | **✅ MERGED** — PR #609 squashed (white-screen reproduced then closed; retry-keying verified live) |
-> | #603 unique fake-session ids | sb-wt-3 | feature/603-unique-fake-session-ids | running — INTERNAL |
 > | ~~release v0.8.0 cut~~ | — | main | **DONE** — released 2026-08-19 |
 >
 > **#534 done (PR #586):** hover descriptions on all three mode surfaces from
