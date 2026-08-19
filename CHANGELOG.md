@@ -57,6 +57,15 @@ on the floor, and say so in your PR.
 
 ## 0.9.0 — unreleased
 
+### Added
+
+- **A visible way to close the Events drawer.** The drawer's only close control
+  was the narrow tab on the right edge — which reads as a way *in* — so opening
+  it and then hunting for the way back out was easy to do. There is now a **✕**
+  in the drawer's own header, next to the word EVENTS. It does exactly what
+  `Esc`, `Ctrl+E` and the tab already did, including putting your cursor back
+  where it was, and it is the first thing `Tab` reaches inside the drawer.
+
 ## 0.8.0 — 2026-08-19
 
 ### Added

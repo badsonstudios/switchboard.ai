@@ -124,6 +124,21 @@ export interface EventsPanelProps {
    * own when the incident does.
    */
   incidents?: readonly { id: string; name: string; status: string }[];
+  /**
+   * How to dismiss the surface this content is mounted in — rendered as a ✕ in
+   * the header row beside the eyebrow (#556).
+   *
+   * IT LIVES HERE RATHER THAN IN THE DRAWER because the eyebrow IS the header:
+   * a close button in a strip of its own above this would be a second row of
+   * chrome saying nothing, and one absolutely positioned over this row would
+   * fight the panel's own scrollbar. The panel still knows nothing about
+   * drawers — it is handed a callback and a place to put it.
+   *
+   * OPTIONAL, so the content stays mountable in something that has no way out
+   * to offer. `EventsDrawer` always passes its own `onClose`, which is why the
+   * drawer's version of this prop is required.
+   */
+  onClose?: () => void;
 }
 
 export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
@@ -161,25 +176,114 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
         blockSize: '100%',
         background: 'var(--panel)',
         paddingInline: 7,
-        paddingBlock: 8,
+        // the TOP 8px lives on the sticky header instead (#556) — a negative
+        // margin would have pulled the rest of the panel up under it, because
+        // in normal flow a negative block-start margin moves the following
+        // siblings too. The header carries the padding it wants to keep when
+        // it is pinned; nothing else changes.
+        paddingBlockStart: 0,
+        paddingBlockEnd: 8,
         overflowY: 'auto',
         display: 'flex',
         flexDirection: 'column',
         boxSizing: 'border-box',
       }}
     >
+      {/* THE HEADER ROW. Role-less on purpose (§5.32 rule 2): it holds a
+          control, and a container role would make that control presentational.
+          The eyebrow keeps `eyebrowId` — the id labels the LIST below, and a
+          label that swept in the ✕ would name the list "Events ✕".
+
+          STICKY, because this row now holds the WAY OUT (#556). The `<aside>`
+          around it is the scroll container, so before this the header simply
+          scrolled away — which is fine for an eyebrow and not fine for a close
+          button whose entire reason for existing is being findable. A control
+          that vanishes once there are enough events to scroll is the same bug
+          the item was filed about, one screenful later.
+
+          It OWNS the padding on all four sides rather than sitting inside the
+          aside's: `marginInline: -7` widens it back out over the aside's inline
+          padding so its background spans edge to edge and rows cannot show
+          through beside it when it is pinned, and the aside gives up its
+          `paddingBlockStart` to the `paddingBlock` here. A negative
+          `marginBlockStart` was the obvious way to do the block half and is
+          wrong — it moves every following sibling up by the same 8px, which
+          measured as an 8px overlap of this row over the hotkey hint.
+
+          `zIndex` because the rows below are `position: relative` (each one
+          hangs a Dismiss off itself), and a positioned sibling at the same
+          level would otherwise paint over this. */}
       <div
-        id={eyebrowId}
         style={{
-          fontSize: 9,
-          letterSpacing: 1.3,
-          fontWeight: 600,
-          color: 'var(--faint)',
-          textTransform: 'uppercase',
-          marginBlockEnd: 8,
+          position: 'sticky',
+          insetBlockStart: 0,
+          zIndex: 1,
+          background: 'var(--panel)',
+          marginInline: -7,
+          paddingBlock: 8,
+          paddingInline: 7,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
         }}
       >
-        {t('events.eyebrow')}
+        <div
+          id={eyebrowId}
+          style={{
+            flex: 1,
+            minInlineSize: 0,
+            fontSize: 9,
+            letterSpacing: 1.3,
+            fontWeight: 600,
+            color: 'var(--faint)',
+            textTransform: 'uppercase',
+          }}
+        >
+          {t('events.eyebrow')}
+        </div>
+        {/* THE WAY OUT, VISIBLE (#556). Every route out already existed — the
+            edge tab, Escape, the accelerator, the palette — and the owner still
+            hunted for one, because an edge tab reads as a way IN and nothing
+            on the open drawer said it was also the way back. So this is
+            discoverability rather than mechanism: it calls the very `onClose`
+            the tab and Escape call, which App answers by flipping the same
+            `open` flag `Mod+E` and the palette flip. That is what makes "closed
+            by button" and "closed by Escape" the same state by construction,
+            rather than by a second code path kept in step by hand.
+
+            FIRST FOCUSABLE THING IN THE DRAWER, which is deliberate: opening
+            moves focus to the body, so the very first Tab lands here and the
+            keyboard user meets the way out before the list — the same order
+            the eye reads it in.
+
+            A real `<button>` with a worded name, not a bare glyph: `✕` is
+            decoration, and a screen reader that reads it announces nothing
+            useful (§5.32 rule 1). */}
+        {props.onClose && (
+          <button
+            type="button"
+            className="events-close"
+            data-testid="events-close"
+            onClick={props.onClose}
+            aria-label={t('events.drawer.close')}
+            // the tooltip teaches the keyboard route the way the tab's does
+            title={t('events.drawer.closeHint')}
+            style={{
+              flex: '0 0 auto',
+              background: 'var(--chip)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-chip)',
+              color: 'var(--muted)',
+              cursor: 'pointer',
+              fontSize: 10,
+              lineHeight: 1.2,
+              padding: '1px 6px',
+              fontFamily: 'var(--font-ui)',
+            }}
+          >
+            {t('events.drawer.closeIcon')}
+          </button>
+        )}
       </div>
       {head !== null && props.queueBinding && (
         <div
