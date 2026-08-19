@@ -19,7 +19,8 @@
 > | #543 tab-model follow-ups | sb-wt-1 (released) | feature/543-tab-model-followups | **DONE** — **PR #578 ready-for-review, in Dan's queue** |
 > | #546 composer attachment drafts | sb-wt-1 (released) | feature/546-composer-attachment-drafts | **DONE** — **PR #584 ready-for-review, in Dan's queue** |
 > | #512 check-nul CI flake | sb-wt-1 (released) | feature/512-check-nul-flake | **DONE** — PR #585 (internal), merging on green CI |
-> | #445 transport default stray | sb-wt-1 | feature/445-transport-default | running — INTERNAL, orchestrator merges on green |
+> | #445 transport default stray | sb-wt-1 (released) | feature/445-transport-default | **DONE** — PR #589 (internal), merging on green CI; #590 filed from its report |
+> | #463 ContributionBoundary reset | sb-wt-1 | feature/463-contribution-boundary-reset | running — internal unless it grows UI |
 > | #559 rail drag-reorder | sb-wt-2 (released) | feature/559-rail-drag-reorder | **DONE** — **PR #580 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
 > | #539 repair-sweep follow-ups | sb-wt-2 | feature/539-repair-sweep-followups | running |
 > | #566 question-panel tabs | sb-wt-3 (released) | feature/566-question-panel-tabs | **DONE** — **PR #579 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
