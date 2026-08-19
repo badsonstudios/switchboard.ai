@@ -24,15 +24,27 @@
 > | #539 repair-sweep follow-ups | sb-wt-2 | feature/539-repair-sweep-followups | running |
 > | #566 question-panel tabs | sb-wt-3 (released) | feature/566-question-panel-tabs | **DONE** — **PR #579 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
 > | #567 probe half | sb-wt-3 (released) | feature/567-partial-answers-probe | **DONE** — PR #583 (internal), merging on green CI |
-> | #534 permission-mode tooltips | sb-wt-3 | feature/534-permission-mode-tooltips | running |
+> | #534 permission-mode tooltips | sb-wt-3 (released) | feature/534-permission-mode-tooltips | **DONE** — **PR #586 ready-for-review, in Dan's queue** |
+> | #449 diagnostics wiring | sb-wt-3 | feature/449-diagnostics-wiring | running — internal unless it grows UI |
 > | ~~release v0.8.0 cut~~ | — | main | **DONE** — released 2026-08-19 |
 >
-> **Merge queue (Dan) — 5 PRs ready-for-review:** #576 (#556 drawer close),
+> **#534 done (PR #586):** hover descriptions on all three mode surfaces from
+> one copy source. **The issue's suggested full-auto copy was WRONG** — our
+> `full-auto` is `bypassPermissions`, which Anthropic documents as equivalent
+> to `--dangerously-skip-permissions`; honest copy shipped, pinned by contract
+> assertions. Manual records we're stricter than a bare terminal at auto-edit
+> (our hook holds housekeeping commands `acceptEdits` would wave through).
+> Findings filed: **#587** (`ask` no longer pins a mode — CLI ≥2.1.233
+> defaults to the auto classifier; + stale GATED comment), **#588** (plan-mode
+> Direct sessions may surface a permission bar — stream path never consults
+> autonomy; unverified, e2e-checkable with the fake provider).
+>
+> **Merge queue (Dan) — 6 PRs ready-for-review:** #576 (#556 drawer close),
 > #578 (#543 tab tooltips + close-all), #579 (#566 question tabs), #580
-> (#559 rail reorder), #584 (#546 composer chips). All green-gated locally;
-> the orchestrator merges nothing user-facing. Suggested review order:
-> #576 → #578 → #584 → #580 → #579 (smallest first; #579 last since #567's
-> UI half stacks on it). Expect trivial CHANGELOG-0.9.0 conflicts between
+> (#559 rail reorder), #584 (#546 composer chips), #586 (#534 permission
+> tooltips). All green-gated locally; the orchestrator merges nothing
+> user-facing. Suggested review order: #576 → #578 → #584 → #586 → #580 →
+> #579 (smallest first; #579 last since #567's UI half stacks on it). Expect trivial CHANGELOG-0.9.0 conflicts between
 > them at merge — each entry is one line, keep both sides.
 >
 > **#546 done (PR #584):** chips survive remount via a renderer-run stash
