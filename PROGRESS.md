@@ -3,6 +3,30 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🎛️ ORCHESTRATION RUN ACTIVE — started 2026-08-19
+>
+> **Single-writer rule:** this session (Fable orchestrator) is the ONLY writer
+> of PROGRESS.md. Workers report via handoff files in
+> `.claude/work_files/orchestrator/<issue#>.md`; this block is the output.
+> If this session dies, a fresh orchestrator resumes from this block + the
+> handoff files.
+>
+> **Active workers:**
+>
+> | Issue | Worktree | Branch | Status |
+> |---|---|---|---|
+> | #556 events drawer close button | sb-wt-1 | feature/556-events-drawer-close | dispatching |
+> | #559 rail drag-reorder | sb-wt-2 | feature/559-rail-drag-reorder | dispatching |
+> | #566 question-panel tabs | sb-wt-3 | feature/566-question-panel-tabs | dispatching |
+>
+> **Merge queue (Dan):** empty so far. All three wave-1 items are user-facing —
+> their PRs queue here for Dan; the orchestrator merges nothing user-facing.
+>
+> **Waiting on Dan:** (1) cutting **0.8.0** is a release — outside the
+> orchestrator's boundary, needs his go/no-go; (2) **#567**'s prerequisite is
+> S-11 probe-2 modes (real subscription tokens) — needs his sign-off before
+> dispatch. #567 also queues behind #566 (same QuestionPanel subsystem).
+
 > # ▶▶ START HERE — ✅ MAIN IS CLEAN, 2026-08-18
 >
 > **Nothing is in flight. Four items merged today and NONE of them are in a
