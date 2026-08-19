@@ -15,17 +15,23 @@
 >
 > | Issue | Worktree | Branch | Status |
 > |---|---|---|---|
-> | #556 events drawer close button | sb-wt-1 | feature/556-events-drawer-close | dispatching |
-> | #559 rail drag-reorder | sb-wt-2 | feature/559-rail-drag-reorder | dispatching |
-> | #566 question-panel tabs | sb-wt-3 | feature/566-question-panel-tabs | dispatching |
+> | #556 events drawer close button | sb-wt-1 | feature/556-events-drawer-close | running |
+> | #559 rail drag-reorder | sb-wt-2 | feature/559-rail-drag-reorder | running |
+> | #566 question-panel tabs | sb-wt-3 | feature/566-question-panel-tabs | running |
+> | release v0.8.0 cut | main checkout (release files only) | main | running |
 >
 > **Merge queue (Dan):** empty so far. All three wave-1 items are user-facing —
 > their PRs queue here for Dan; the orchestrator merges nothing user-facing.
 >
-> **Waiting on Dan:** (1) cutting **0.8.0** is a release — outside the
-> orchestrator's boundary, needs his go/no-go; (2) **#567**'s prerequisite is
-> S-11 probe-2 modes (real subscription tokens) — needs his sign-off before
-> dispatch. #567 also queues behind #566 (same QuestionPanel subsystem).
+> **Dan's decisions (2026-08-19, run start):** (1) cut **0.8.0 now** via a
+> release worker — authorized explicitly (releases are otherwise outside the
+> orchestrator's boundary); carries the four items merged 2026-08-18, wave 1
+> lands in a later release. (2) **#567 APPROVED** — S-11 probe-2 partial/blank
+> modes (real tokens) + the conditional UI half; dispatches after #566 lands
+> (same QuestionPanel subsystem).
+>
+> **Queued next:** #567 (behind #566, approved). Then re-run queue analysis —
+> candidates by Dan's order: #543, #544, #546, #539.
 
 > # ▶▶ START HERE — ✅ MAIN IS CLEAN, 2026-08-18
 >
