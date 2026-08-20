@@ -121,6 +121,14 @@ on the floor, and say so in your PR.
   characters now rather than a real checkbox, which is why they take your
   theme's colour; they were never clickable in the first place. (#612)
 
+- **Quitting with a document open in its own window no longer leaves an empty
+  window behind the next time you start up.** switchboard.ai does not reopen
+  document viewers across a restart (that is still to come), but it was
+  reopening the *window* one had been in and then emptying it — so you could
+  come back to a blank second window that belonged to nothing. Now that window
+  is simply not reopened. A window that also holds a session is unaffected: it
+  comes back with its session, minus the document tab. (#494)
+
 ### Internal
 
 - **When a session's CLI dies badly, the log now says what it said on the way

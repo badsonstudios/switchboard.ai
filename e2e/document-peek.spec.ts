@@ -514,11 +514,19 @@ test.describe('a viewer is not a session (P2-E16-03, §5.30)', () => {
   });
 
   test('quitting with a viewer in its OWN window leaves no empty window behind', async () => {
-    // A popped-out viewer IS a popout group in the saved layout, and popout
-    // groups are restored before the `doc-` prune runs. Removing a popout
-    // group's last panel is what makes dockview forget the window — so the
-    // shell goes with the viewer — but "so it should" is the kind of claim the
-    // E8 specs exist because nobody checked.
+    // A popped-out viewer IS a popout group in the saved layout, so a restore
+    // that is not careful reopens its WINDOW and then throws the viewer away —
+    // leaving a real user an empty window belonging to nothing.
+    //
+    // #494 is why this reads the way it does. The restore used to reopen the
+    // window and rely on "removing a popout group's last panel makes dockview
+    // forget the window", which is true only once the child window has finished
+    // loading and the group's location has actually become `popout` — and the
+    // prune got there first often enough that this test failed 2 in 8 under
+    // machine load. The layout now drops that window before `fromJSON` ever
+    // sees it (`prunePopoutGroups`), so the count below starts at 0 rather than
+    // falling to it. The assertion is deliberately unchanged: it says what the
+    // user must not see, not how we arrange for them not to see it.
     skipPopoutOnLinux();
     const dir = tempGitProject(['ONE.md']);
     const first = await launchApp({ seedFolder: dir });
