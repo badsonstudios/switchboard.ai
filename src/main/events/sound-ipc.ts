@@ -63,7 +63,7 @@ export function registerSoundIpc(deps: SoundIpcDeps): void {
     if (sound !== null && !isSoundId(sound))
       return refuse('sounds:set', 'not a sound this build can play', { cardId });
     if (!deps.knownCard(cardId)) return refuse('sounds:set', 'unknown card', { cardId });
-    store.setCardSound(cardId, sound as string | null);
+    store.setCardSound(cardId, sound);
     const now = store.cardSound(cardId);
     log.info('session sound changed', { cardId, sound: now.id, pinned: now.pinned });
     return now;

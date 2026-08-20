@@ -61,7 +61,7 @@ function harness(
     fallback: () => {
       beeps.count++;
     },
-    log: log as never,
+    log: log,
   });
   const line = (msg: string) => logged.filter((l) => l.msg === msg);
   return { actions, played, said, logged, beeps, line };
@@ -162,7 +162,7 @@ describe('fail-open (§5.9: an audio failure never costs the event)', () => {
       fallback: () => {
         throw new Error('shell.beep exploded');
       },
-      log: log as never,
+      log: log,
     });
     expect(() => actions.soundHandler({ type: 'sound' }, ctx())).not.toThrow();
   });
@@ -289,7 +289,7 @@ describe('the window took it and could not play it', () => {
       fallback: () => {
         throw new Error('shell.beep exploded');
       },
-      log: log as never,
+      log: log,
     });
     expect(() => actions.unplayable('sound')).not.toThrow();
   });

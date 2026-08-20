@@ -212,7 +212,7 @@ describe('UpdateService — the timer', () => {
     const fake = vi
       .spyOn(globalThis, 'setInterval')
       .mockImplementation(((fn: () => void, ms: number) => {
-        const handle = real(fn, ms) as NodeJS.Timeout;
+        const handle = real(fn, ms);
         clearInterval(handle); // nothing must actually fire in this test
         return { unref, ref: () => {} } as unknown as NodeJS.Timeout;
       }) as unknown as typeof setInterval);

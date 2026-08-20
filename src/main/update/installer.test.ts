@@ -91,7 +91,7 @@ describe('the launch', () => {
       throw new Error('EACCES');
     });
     expect(
-      launchInstaller(GOOD, { updateDir: DIR, spawnImpl: spawnImpl as never, platform: 'win32' })
+      launchInstaller(GOOD, { updateDir: DIR, spawnImpl, platform: 'win32' })
     ).toBe(false);
   });
 });

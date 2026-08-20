@@ -272,7 +272,7 @@ describe('a refused call answers, it does not throw (issue 346)', () => {
   const invoke = (channel: StaticChannel, sender: unknown, ...args: unknown[]): unknown => {
     const wrapper = registered.handles.get(channel);
     if (!wrapper) throw new Error(`nothing registered for ${channel}`);
-    return wrapper({ sender } as unknown, ...args);
+    return wrapper({ sender }, ...args);
   };
 
   it('an UNGRANTED caller gets a refusal value — the handler never runs', () => {
@@ -362,7 +362,7 @@ describe('an ALLOWED call is untouched — the no-behaviour-change half (issue 3
   });
 
   const invoke = (channel: StaticChannel, ...args: unknown[]): unknown =>
-    registered.handles.get(channel)!({ sender: wc } as unknown, ...args);
+    registered.handles.get(channel)!({ sender: wc }, ...args);
 
   it('passes the handler its arguments and hands back its value unchanged', () => {
     const seen: unknown[][] = [];
@@ -423,7 +423,7 @@ describe('one-way channels drop a refusal, because they have nowhere to put it (
   });
 
   const fire = (channel: StaticChannel, sender: unknown): unknown =>
-    registered.ons.get(channel)!({ sender } as unknown);
+    registered.ons.get(channel)!({ sender });
 
   it('a refused send() call runs no handler and throws nothing', () => {
     let ran = 0;

@@ -157,7 +157,7 @@ describe('checkForUpdate — fail-open, always a record', () => {
     const log = vi.fn();
     const r = await checkForUpdate({
       currentVersion: '0.1.0',
-      fetchImpl: f as unknown as typeof fetch,
+      fetchImpl: f,
       tokenSources: noToken,
       log,
     });
@@ -170,7 +170,7 @@ describe('checkForUpdate — fail-open, always a record', () => {
   it('a throwing fetch (offline, DNS, TLS) becomes a network failure', async () => {
     const r = await checkForUpdate({
       currentVersion: '0.1.0',
-      fetchImpl: (() => Promise.reject(new Error('getaddrinfo ENOTFOUND'))) as typeof fetch,
+      fetchImpl: () => Promise.reject(new Error('getaddrinfo ENOTFOUND')),
       tokenSources: token,
     });
     expect(r.state).toBe('failed');

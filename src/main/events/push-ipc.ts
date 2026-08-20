@@ -31,7 +31,7 @@ import {
   PUSH_SECRET_KEYS,
   isPushSecretKey,
 } from '../../shared/push';
-import { PushActions, PushChannel } from './push-actions';
+import { PushActions } from './push-actions';
 import { SecretStore } from '../secrets/store';
 import { isPostableUrl } from './push';
 
@@ -178,6 +178,6 @@ export function registerPushIpc(deps: PushIpcDeps): void {
       log.warn('push:test refused: unknown channel');
       return { ok: false, reason: 'not-configured' };
     }
-    return actions.test(channel as PushChannel);
+    return actions.test(channel);
   });
 }

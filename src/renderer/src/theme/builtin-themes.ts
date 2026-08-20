@@ -61,7 +61,7 @@ export const builtinThemes: readonly ThemeDefinition[] = [
     // deliberately NOT a systemDefault: `prefers-contrast` is the OS signal for
     // this one, and honouring it is its own decision (§5.20 OS sync), not a
     // side effect of shipping the theme
-    tokens: tokensFromJson(highContrast as Record<string, unknown>),
+    tokens: tokensFromJson(highContrast),
   },
   {
     // Added 2026-07-31, and it is the proof this design works: one entry here
@@ -71,6 +71,6 @@ export const builtinThemes: readonly ThemeDefinition[] = [
     nameKey: 'theme.soft-contrast',
     base: 'nordic',
     colorScheme: 'dark',
-    tokens: tokensFromJson(softContrast as Record<string, unknown>),
+    tokens: tokensFromJson(softContrast),
   },
 ];

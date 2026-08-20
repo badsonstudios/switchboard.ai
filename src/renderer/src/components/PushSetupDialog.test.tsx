@@ -66,7 +66,7 @@ const statusOf = (key: string): string =>
 function button(label: string): HTMLButtonElement {
   const found = [...host.querySelectorAll('button')].find((b) => b.textContent === label);
   if (!found) throw new Error(`no button labelled "${label}"`);
-  return found as HTMLButtonElement;
+  return found;
 }
 async function type(el: HTMLInputElement, value: string): Promise<void> {
   await act(async () => {

@@ -119,7 +119,7 @@ export function decodeText(bytes: Uint8Array, encoding: FileTextEncoding): strin
 /** Thrown-shaped errors from `fs` carry a string `code`. */
 function errorCode(err: unknown): string | undefined {
   return typeof err === 'object' && err !== null && 'code' in err
-    ? String((err as { code: unknown }).code)
+    ? String(err.code)
     : undefined;
 }
 

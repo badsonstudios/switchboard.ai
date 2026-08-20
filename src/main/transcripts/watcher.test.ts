@@ -1708,10 +1708,10 @@ describe('descriptor hygiene on the read error path (#179)', () => {
       closed.add(fd);
       realClose(fd);
     });
-    vi.spyOn(fs, 'readSync').mockImplementation(((fd: number, ...rest: unknown[]) => {
+    vi.spyOn(fs, 'readSync').mockImplementation((fd: number, ...rest: unknown[]) => {
       if (opened.has(fd)) throw Object.assign(new Error('EIO: simulated read failure'), { code: 'EIO' });
       return realRead(fd, ...rest);
-    }) as unknown as typeof fs.readSync);
+    });
     return {
       /** how many transcript descriptors were taken — 0 means the test proved
        *  nothing, because the code path under test never ran */
@@ -1782,7 +1782,7 @@ describe('multi-byte characters split across drain chunks (#194)', () => {
    *  the old decode could not survive. Deterministic: the test never depends on
    *  where a poll tick happens to fall. */
   function insideChar(bytes: Buffer): number[] {
-    return [...bytes.keys()].filter((i) => (bytes[i]! & 0xc0) === 0x80);
+    return [...bytes.keys()].filter((i) => (bytes[i] & 0xc0) === 0x80);
   }
 
   /** A transcript line that carries a path through to `filesTouched`, which is

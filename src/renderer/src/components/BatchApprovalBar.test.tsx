@@ -139,7 +139,7 @@ describe('the grouped prompt renders one question for several sessions', () => {
       req('r1', 'live-A', { tool: 'WebSearch', input }),
       req('r2', 'live-B', { tool: 'WebSearch', input }),
     ]);
-    const text = host.querySelector<HTMLElement>('[data-testid="batch-approval"]')!.textContent!;
+    const text = host.querySelector<HTMLElement>('[data-testid="batch-approval"]')!.textContent;
     expect(text).toContain('query="switchboard release notes"');
   });
 
@@ -158,7 +158,7 @@ describe('the grouped prompt renders one question for several sessions', () => {
       req('r1', 'live-A', { reason: 'writes outside the project folder' }),
       req('r2', 'live-B', { reason: 'writes outside the project folder' }),
     ]);
-    const text = host.querySelector<HTMLElement>('[data-testid="batch-approval"]')!.textContent!;
+    const text = host.querySelector<HTMLElement>('[data-testid="batch-approval"]')!.textContent;
     expect(text.split('writes outside the project folder')).toHaveLength(2);
   });
 });

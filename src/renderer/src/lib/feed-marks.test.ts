@@ -55,8 +55,8 @@ describe('marking the term the bar is looking for', () => {
     // the current mark is in the block the jump LANDED in, not the first on
     // screen — the whole point is that the eye goes where the scroll went
     expect(got).toBe(marks()[1]);
-    expect(b2.contains(current()!)).toBe(true);
-    expect(b1.contains(current()!)).toBe(false);
+    expect(b2.contains(current())).toBe(true);
+    expect(b1.contains(current())).toBe(false);
     expect(host.querySelectorAll(`[${FEED_MATCH_CURRENT_ATTR}]`)).toHaveLength(1);
   });
 
@@ -159,7 +159,7 @@ describe('stepping does not re-walk the buffer', () => {
     // the SAME elements — a re-wrap would have built new ones
     expect(marks()).toEqual(before);
     expect(host.querySelectorAll(`[${FEED_MATCH_CURRENT_ATTR}]`)).toHaveLength(1);
-    expect(b2.contains(moved!)).toBe(true);
+    expect(b2.contains(moved)).toBe(true);
   });
 
   it('says so when the block it stepped to has no marks yet', () => {

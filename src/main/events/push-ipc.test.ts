@@ -10,7 +10,7 @@ import { SecretStore } from '../secrets/store';
 import { IpcBroker } from '../ipc/broker';
 import { LogFields, Logger } from '../log/logger';
 import { WorkspaceStore } from '../workspace/store';
-import { PushConfig, PushPrefs, PushSecretKey, PushWriteResult } from '../../shared/push';
+import { PushConfig, PushPrefs, PushWriteResult } from '../../shared/push';
 import { CHANNEL_CAPABILITIES } from '../../shared/ipc/capabilities';
 
 type Handler = (e: unknown, ...args: unknown[]) => unknown;
@@ -146,7 +146,7 @@ describe('push:setPrefs', () => {
     const after = h.call('push:setPrefs', ...(args as unknown[])) as PushWriteResult;
     expect(after.ok).toBe(false);
     expect(after.config.prefs.push).toBe(false);
-    expect(h.logs.some((l) => l.level === 'warn' && l.msg.includes(reason as string))).toBe(true);
+    expect(h.logs.some((l) => l.level === 'warn' && l.msg.includes(reason))).toBe(true);
   });
 
   // Review finding: a server address that can never work used to be stored,
@@ -198,7 +198,7 @@ describe('push:setSecret', () => {
   });
 
   it('refuses a slot it does not know, rather than storing an arbitrary key', () => {
-    h.call('push:setSecret', 'anthropic.apiKey' as PushSecretKey, 'sk-nope');
+    h.call('push:setSecret', 'anthropic.apiKey', 'sk-nope');
     expect(h.values.size).toBe(0);
     expect(h.logs.some((l) => l.msg.includes('unknown credential slot'))).toBe(true);
   });

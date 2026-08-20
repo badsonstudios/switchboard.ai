@@ -100,7 +100,7 @@ describe('picking a speaker', () => {
         throw new Error('Object has been destroyed');
       },
     };
-    const h = harness([angry as FakeWindow, win('second')]);
+    const h = harness([angry, win('second')]);
     expect(h.sink.play('chime')).toBe(true);
     expect(h.sent[0].win).toBe('second');
   });

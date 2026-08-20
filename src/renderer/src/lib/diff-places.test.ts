@@ -55,7 +55,7 @@ describe('a nonsense line is refused, not stored', () => {
     ['Infinity', Number.POSITIVE_INFINITY],
   ])('refuses %s and leaves the previous place standing', (_why, line) => {
     rememberDiffPlace('card-1', { selected: 'a.ts', line: 120 });
-    rememberDiffPlace('card-1', { selected: 'a.ts', line: line as number });
+    rememberDiffPlace('card-1', { selected: 'a.ts', line });
     expect(readDiffPlace('card-1')).toEqual({ selected: 'a.ts', line: 120 });
   });
 

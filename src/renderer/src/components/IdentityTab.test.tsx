@@ -75,7 +75,10 @@ function publishIdentity(
 
 /** The chip's accent dot: the only `aria-hidden` span it renders. */
 function dotColor(): string {
-  const dot = host.querySelector('span[aria-hidden]') as HTMLElement | null;
+  // The TYPE ARGUMENT, not an `as HTMLElement` on the result: `querySelector`
+  // is `<E extends Element = Element>`, so an assertion here is an inference
+  // site rather than the no-op it looks like (#255 T0).
+  const dot = host.querySelector<HTMLElement>('span[aria-hidden]');
   return dot?.style.background ?? '';
 }
 

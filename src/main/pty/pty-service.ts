@@ -48,7 +48,7 @@ export class PtySession {
       cols: opts.cols ?? 120,
       rows: opts.rows ?? 30,
       cwd: opts.cwd,
-      env: buildEnv(process.env, opts.env) as { [k: string]: string },
+      env: buildEnv(process.env, opts.env),
       useConpty: process.platform === 'win32',
     });
     // listener exceptions are swallowed: a broken subscriber must never take

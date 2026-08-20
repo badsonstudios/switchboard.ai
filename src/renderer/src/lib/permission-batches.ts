@@ -98,7 +98,7 @@ function canonical(v: unknown, seen: Set<object>): string {
   if (v === undefined) return NUL + 'undefined';
   if (typeof v === 'number' && !Number.isFinite(v)) return NUL + 'num:' + String(v);
   if (v === null || typeof v !== 'object') return JSON.stringify(v) ?? NUL + 'undefined';
-  const o = v as object;
+  const o = v;
   if (seen.has(o)) throw new Error('cyclic permission input');
   seen.add(o);
   try {

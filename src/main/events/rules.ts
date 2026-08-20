@@ -544,12 +544,12 @@ export function isSaneRule(r: unknown): r is Rule {
   if (x.session !== undefined && typeof x.session !== 'string') return false;
   if (x.visibility !== undefined) {
     if (!Array.isArray(x.visibility)) return false;
-    if (!x.visibility.every((v) => ALL_VISIBILITIES.includes(v as WindowVisibility))) return false;
+    if (!x.visibility.every((v) => ALL_VISIBILITIES.includes(v))) return false;
   }
   // An override this build cannot read is the difference between "held all
   // night" and "rang at 3am", so a rule carrying a bad one is dropped rather
   // than silently defaulted (P2-E14-05b).
-  if (x.quietHours !== undefined && !QUIET_HOURS_MODES.includes(x.quietHours as QuietHoursMode))
+  if (x.quietHours !== undefined && !QUIET_HOURS_MODES.includes(x.quietHours))
     return false;
   if (!Array.isArray(x.actions)) return false;
   // An action with no `type` can never be dispatched, so a rule carrying one is
@@ -557,6 +557,6 @@ export function isSaneRule(r: unknown): r is Rule {
   // allowed through — it is storable and simply never matches (`ruleMatches`),
   // which is what a rules editor needs while a half-written rule is on screen.
   return x.actions.every(
-    (a) => !!a && typeof a === 'object' && typeof (a as RuleAction).type === 'string'
+    (a) => !!a && typeof a === 'object' && typeof a.type === 'string'
   );
 }

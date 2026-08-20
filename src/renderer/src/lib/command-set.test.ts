@@ -38,10 +38,6 @@ function deps(): CommandDeps & { focusCard: ReturnType<typeof vi.fn> } {
     openFile: vi.fn(),
     openPushSetup: vi.fn(),
     openQuietHours: vi.fn(),
-  } as CommandDeps & {
-    focusCard: ReturnType<typeof vi.fn>;
-    jumpToNextAttention: ReturnType<typeof vi.fn>;
-    openAbout: ReturnType<typeof vi.fn>;
   };
 }
 

@@ -28,7 +28,7 @@ let root: Root | null = null;
 let host: HTMLElement;
 
 const sessions: RailSession[] = [
-  { id: 'c1', title: 'alpha', accent: 'var(--accent-blue)', liveId: 'live-1' } as RailSession,
+  { id: 'c1', title: 'alpha', accent: 'var(--accent-blue)', liveId: 'live-1' },
 ];
 
 const ev = (id: number, kind: EventDto['kind']): EventDto => ({

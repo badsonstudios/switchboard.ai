@@ -396,7 +396,7 @@ describe('find-document — the §5.30 viewer (#533)', () => {
   it('never reaches a surface belonging to another panel', () => {
     // the guarantee the whole point rests on, stated for the newest registrant:
     // a feed surface handed to this provider is not a document
-    expect(findUnavailableKey(documentFindProvider, ctxFor({ kind: 'feed' } as FindSurface))).toBe(
+    expect(findUnavailableKey(documentFindProvider, ctxFor({ kind: 'feed' }))).toBe(
       'find.unavailable.noDocument'
     );
   });

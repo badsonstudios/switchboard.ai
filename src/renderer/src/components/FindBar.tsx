@@ -727,7 +727,7 @@ export function FindBar(props: {
             >
               {view.groups.length > 1
                 ? t('find.noticeInGroup', {
-                    group: t(view.groups[groupIndex]!.labelKey),
+                    group: t(view.groups[groupIndex].labelKey),
                     message: t(notice.key, notice.params),
                   })
                 : t(notice.key, notice.params)}
@@ -756,7 +756,7 @@ export function FindBar(props: {
               {/* a heading before each group's run, so a snippet is never
                   attributed to the wrong surface. Only when there IS more than
                   one — a lone heading over the only list is noise. */}
-              {view.groups.length > 1 && (i === 0 || steps[i - 1]!.groupIndex !== s.groupIndex) && (
+              {view.groups.length > 1 && (i === 0 || steps[i - 1].groupIndex !== s.groupIndex) && (
                 <div
                   data-testid="find-group-header"
                   style={{
@@ -767,7 +767,7 @@ export function FindBar(props: {
                     padding: '4px 5px 2px',
                   }}
                 >
-                  {t(view.groups[s.groupIndex]!.labelKey)}
+                  {t(view.groups[s.groupIndex].labelKey)}
                 </div>
               )}
               <HitRow hit={s.hit} current={i === index} onGo={() => goTo(i)} />

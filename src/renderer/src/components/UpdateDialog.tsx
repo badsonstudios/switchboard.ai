@@ -223,7 +223,7 @@ export function UpdateDialog(props: {
         </div>
 
         {busy ? (
-          <InstallProgress status={install as UpdateInstallStatus} />
+          <InstallProgress status={install} />
         ) : failed ? (
           <p
             data-update-field="message"
