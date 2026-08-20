@@ -52,12 +52,18 @@ import type { StreamDiagnostic } from './stream-service';
  * unexpected. None is `error`: fail-open means none of these stops a session,
  * and reserving `error` for what actually broke is what keeps it worth
  * grepping for.
+ *
+ * `exit` (#593) keeps that rule rather than breaking it: the transport only
+ * summarises a session whose stderr or framing had something to report, so the
+ * line exists exactly when something unexpected happened. A clean exit emits
+ * nothing at all, which is why this is not an `info`-level heartbeat.
  */
 const LEVEL: Record<StreamDiagnostic['kind'], LogLevel> = {
   'parse-failure': 'warn',
   'overlong-line': 'warn',
   stderr: 'warn',
   'stdin-write-failed': 'warn',
+  exit: 'warn',
 };
 
 /**

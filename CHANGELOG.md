@@ -59,6 +59,18 @@ on the floor, and say so in your PR.
 
 ### Internal
 
+- **When a session's CLI dies badly, the log now says what it said on the way
+  out.** The stream transport kept the last few KB of the CLI's error output and
+  its framing counters, and showed them to nobody. A session whose stderr or
+  framing had anything to report now writes one summary line as it ends — exit
+  code, the counters, and the tail of what the CLI printed, which is the part
+  that a flood of error output used to push out of the log. A healthy session
+  still says nothing at all. (#593)
+- The fake CLI the automated tests run against now gives every session its own
+  conversation id instead of one shared constant, so a test with two sessions is
+  two conversations, the way two real sessions are. Nothing changes for anyone using
+  switchboard.ai; it removes a state the real CLI cannot produce, which the code
+  that repairs and de-duplicates conversation pointers was being handed. (#603)
 - **A part of the window that breaks can come back on its own.** The crash
   barrier around each contributed surface (status-bar items, session panels,
   document viewers) used to latch: one error and that piece of the window was
@@ -79,6 +91,19 @@ on the floor, and say so in your PR.
   tree while leaving it on screen, or interrupt an announcement the app was
   making. Every accessible name, role and announcement in a rendered document
   or reply is now one switchboard.ai wrote. (#509)
+- Finished the job 0.4.0 started: the older HTML ways of styling text — `<font
+  color size face>`, `<hr color size>`, `bgcolor`, `background` — are now
+  removed everywhere the app renders Markdown (the conversation feed, the
+  document viewer, release notes), so "a reply can't repaint itself in colours
+  your theme didn't choose" is true without the footnote that used to follow it.
+  Four more go with them, and they are not about looks at all: `hidden` and
+  `popover`, either of which left text in the document — and in a code block's
+  **Copy** button — while taking it off the screen; `inert`, which left it on
+  screen while taking it away from a screen reader and the keyboard; and
+  `tabindex`, which let content add itself to, or jump the queue in, your Tab
+  order. Nothing Markdown itself writes is affected; table alignment is the one
+  legacy attribute that stays, because that is how Markdown aligns a column.
+  (#466, #598)
 - Gave every test that starts a real child process — `git`, or node running one
   of the build scripts — an explicit time limit. They had been running under the
   test runner's five-second default, which is a budget for a pure function and
@@ -98,6 +123,14 @@ on the floor, and say so in your PR.
   carries the transport it was spawned on, so the type now says so and the card
   reads main's answer verbatim — the stray `'pty'` fallback that contradicted
   the shared default is gone, with typecheck-level pins on both ends (#445).
+- The renderer's picture of a running session is no longer a hand-copied one.
+  What the main process sends about a live session and what the window expects
+  to receive were two separate declarations that nothing compared, so they had
+  quietly stopped matching — the shared description of a session's status said
+  "any text at all" rather than the seven states it can actually be in. Both
+  sides now read
+  one declaration, and a new field has to say whether it is for the window or
+  for main before it will compile (#590).
 - **Stream-transport diagnostics now reach the log.** Parse failures, overlong
   lines, CLI stderr and dead-pipe writes were produced by the stream-json
   transport and dropped on the floor — nothing subscribed. They are written to
