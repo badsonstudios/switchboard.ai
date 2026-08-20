@@ -122,6 +122,46 @@ async function main(): Promise<number> {
       // check has ever done. The e2e suite has always launched the app under a
       // temp home for the same reason; this is the same isolation for the
       // one place that drives the fake without Playwright.
+      //
+      // THE BACKLOG IS CLEANED UP BY HAND, DELIBERATELY (#616). The line above
+      // stops the leak, and that was re-confirmed by measurement for #616: a
+      // full build plus the whole e2e suite added not one new folder, and the
+      // newest of the 19 already there dates from just before this isolation
+      // landed. Those 19 remain, one 1.6 KB `00000000-fake-…jsonl` apiece and
+      // about 30 KB in total. No automated sweep will remove them, and that is
+      // a decision rather than an omission: this repo already
+      // sweeps its own litter (`scripts/sweep-temp-orphans.js`, #354) and that
+      // sweeper is confined to `os.tmpdir()` on purpose, because a directory
+      // the OS hands out for disposable data is the only place a delete loop
+      // can be wrong and cost nothing. `~/.claude/projects` is the opposite of
+      // that: it is the user's real conversation history, the exact tree #484
+      // and #539 were filed over after two of the owner's cards were found
+      // pointing at transcripts they had lost. Automation there buys a few
+      // reclaimed kilobytes and risks a real transcript on any glob that ever
+      // widens by a character.
+      //
+      // So, when the clutter is worth a minute — LOOK FIRST, then delete:
+      //
+      //   ls -la ~/.claude/projects/*sb-fake-stream-check-*/
+      //   rm -rf  ~/.claude/projects/*sb-fake-stream-check-*/
+      //
+      // The listing IS the safety check, which is why it is a separate command:
+      // run it and every line should be a `00000000-fake-4000-8000-…jsonl`.
+      // That id is unmistakable by construction — `fake-stream-ids.ts` put the
+      // word `fake` where a uuid's version nibble goes precisely so an id that
+      // reached a real projects directory is obvious to a human — and a folder
+      // matching the glob could only be a real project if someone kept one
+      // inside `%TEMP%\sb-fake-stream-check-XXXXXX`.
+      //
+      // The neighbouring `…sb-adapter-check-XXXX` folders are NOT this litter
+      // and are not covered by the glob above. They come from `adapter-check.ts`
+      // and hold REAL transcripts with real uuids from real, token-spending CLI
+      // turns. Judge those two folders separately, by hand — and note that the
+      // isolation on this line is probably NOT transferable to them: that check
+      // drives the real `claude`, which resolves its credentials from the real
+      // home too, so redirecting `HOME` would likely log it out rather than
+      // tidy up after it. That last point is reasoning, not measurement — it is
+      // written as the caveat on a fix nobody has tried, not as a finding.
       HOME: work,
       USERPROFILE: work,
     },
