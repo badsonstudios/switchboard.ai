@@ -118,7 +118,9 @@ test.describe('live re-render (P2-E16-04)', () => {
     await w
       .locator('.dv-tab')
       .filter({ hasText: 'PROGRESS.md' })
-      .getByTitle('Close (ends the session)')
+      // "Close document" since #543 — every tab used to claim it ended a
+      // session, which on a viewer closes no session at all
+      .getByTitle('Close document')
       .click();
     await expect(viewer(w)).toHaveCount(0);
 

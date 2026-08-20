@@ -47,8 +47,11 @@ Open a second file and it opens **in its own tab**, next to the first. The
 document you were reading stays exactly where it was. Open six files and you
 have six tabs, all still there.
 
-- **Nothing closes on its own.** A document panel goes away when *you* close it,
-  with the normal tab **✕**. That is the only thing that closes one.
+- **Nothing closes on its own.** A document panel goes away when *you* close it
+  — nothing in the app ever decides that for you.
+- **The tab's ✕ closes the one you point at.** Its tooltip says **Close
+  document**, because that is all it does — no session ends, nothing is asked,
+  the tab simply goes. (To clear them all out at once, see below.)
 - **Opening a file that is already open just brings it to the front** — and if
   it is out in its own window, that window comes forward instead. (One
   exception: if you have followed a *link* inside a document, that panel is
@@ -64,6 +67,28 @@ that the next file you opened took over, and a **📌** to keep a document out o
 its way. That is gone, pin and all. If you like a tidy tab strip, close the ones
 you're done with — the app will not make that decision for you.
 
+## Clearing them all out
+
+Read your way through a morning and you can easily have a dozen documents open.
+Rather than clicking a dozen **✕**s, press `Ctrl+Shift+P` (`Cmd+Shift+P` on a
+Mac) and pick **Close all documents (keeps popped-out ones)**.
+
+- It closes **every document tab at once**, and asks nothing first. There is
+  nothing to lose: the viewer never edits a file, so closing one costs you only
+  the two clicks it takes to open it again.
+- It **only** touches documents. Your sessions, their **Changes** tabs and
+  everything else in the workspace are left exactly as they were.
+- **A document you have popped out into its own window is left alone.** Putting
+  a file on your second monitor is you saying "keep this one where I can see
+  it", and a command you ran in the main window has no business closing a window
+  over there. Close that one with its own window **✕** when you're done with it.
+- If there is nothing for it to close — no documents at all, or only ones you
+  have popped out — the command greys out and says so, rather than pretending
+  to do something and then not doing it.
+
+There is no keyboard shortcut for it on purpose: closing everything at once
+isn't something you should be able to do by mistyping a chord.
+
 ## Reading on a second monitor
 
 The **⤢** in the document's header moves it into **its own window**, which you
@@ -73,7 +98,8 @@ session card does.
 - The same **⤢** in that window puts the document back into the main window.
 - So does simply closing the window — nothing is lost either way.
 - A document out on its own monitor stays on what it is showing. Opening more
-  files in the main window never touches it.
+  files in the main window never touches it — and neither does **Close all
+  documents**, which leaves popped-out windows alone.
 - Opening a file while a *session* is popped out — or while a *document* window
   is the one you last clicked — still puts the new document in the main window's
   document area. Files do not land in windows by accident.

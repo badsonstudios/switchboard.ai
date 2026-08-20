@@ -1156,6 +1156,7 @@ export function App(): React.JSX.Element {
               // an unhandled rejection behind a dialog is a bad place to learn
               .catch(() => {});
           },
+          closeAllDocuments: () => grid.current?.closeAllDocuments(),
       }),
     [
       toggleRail,
@@ -1199,6 +1200,14 @@ export function App(): React.JSX.Element {
       // window has to say where it came from. Absent (this window, and the
       // palette) means "the active panel", which is the answer it always was.
       activeDocumentId: grid.current?.activeDocumentId(sourceWindow) ?? null,
+      // How many documents `Close all documents` would take (#543) — asked of
+      // the grid for the same reason `activeGroupId` is resolved here: the
+      // palette's enabled state and the keyboard's come from ONE read, so an
+      // entry can never be offered and then do nothing. Deliberately NOT
+      // window-scoped by `sourceWindow`: the command closes docked viewers in
+      // the main window's document area wherever it was invoked from, and the
+      // popped-out ones it spares are the same set from every window.
+      closableDocumentCount: grid.current?.closableDocumentCount() ?? 0,
       // resolved HERE, once, so the palette's enabled state and the keyboard's
       // both come from the same read (E9-06's group-level commands)
       activeGroupId: activeCardId

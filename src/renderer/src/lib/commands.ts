@@ -54,6 +54,21 @@ export interface CommandContext {
    */
   activeDocumentId?: string | null;
   /**
+   * How many §5.30 documents a bulk close would actually take right now (#543).
+   *
+   * "Closable", not "open", and the difference is the whole point: a popped-out
+   * viewer is deliberately spared (`lib/document-panels`' `closableDocuments`),
+   * so counting it would leave `Close all documents` offered in the palette and
+   * silently inert — the exact failure mode `activeGroupId` above is resolved
+   * here to avoid.
+   *
+   * OPTIONAL, like `activeDocumentId` and for the same reason: every command
+   * that has nothing to do with documents, and every test that builds a
+   * context, would otherwise have to declare a count it does not have. Absent
+   * means zero, which is what a harness with no dockview honestly has.
+   */
+  closableDocumentCount?: number;
+  /**
    * The persistent group the focused card belongs to, or null.
    *
    * Here rather than looked up inside a command because the palette and the

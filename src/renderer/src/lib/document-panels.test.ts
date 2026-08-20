@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  closableDocuments,
   documentKey,
   documentPanelPath,
   documentPanels,
@@ -141,5 +142,48 @@ describe('document-panels — every file opens its own tab (#530)', () => {
     forgetDocumentPanel(a.id);
     const b = planDocumentOpen('/p/b.md');
     expect(b.id).not.toBe(a.id);
+  });
+});
+
+describe('closableDocuments — the answer to accretion (#543)', () => {
+  // dockview's panel list, as `closableDocumentIds` in SessionGrid hands it over
+  const panels = (...spec: Array<[string, boolean]>): Array<{ id: string; poppedOut: boolean }> =>
+    spec.map(([id, poppedOut]) => ({ id, poppedOut }));
+
+  it('takes every docked viewer', () => {
+    expect(
+      closableDocuments(panels(['doc-1', false], ['doc-2', false], ['doc-3', false]))
+    ).toEqual(['doc-1', 'doc-2', 'doc-3']);
+  });
+
+  it('never takes a session card or a Changes tab — only `doc-` panels', () => {
+    // the bulk gesture is DOCUMENTS. `session.closeAll` is the one that ends
+    // sessions, it confirms, and it honours pinning; nothing about this command
+    // may reach a card by accident.
+    expect(
+      closableDocuments(
+        panels(['session-abc', false], ['diff-abc', false], ['doc-1', false])
+      )
+    ).toEqual(['doc-1']);
+  });
+
+  it('SPARES a popped-out viewer — the decision this command had to make', () => {
+    // #543 delegated "closes or leaves them" and the answer is leaves them:
+    // popping a document out is the nearest thing left to the pin #530 removed,
+    // and closing an OS window on another monitor from a palette entry typed in
+    // this one is the vanished-document failure by a different door. The
+    // command's own title says so: "(keeps popped-out ones)".
+    expect(closableDocuments(panels(['doc-1', false], ['doc-2', true]))).toEqual(['doc-1']);
+  });
+
+  it('answers EMPTY when every document is out in its own window', () => {
+    // ...which is what greys the palette entry out (`closableDocumentCount`),
+    // rather than offering a command that would run and do nothing.
+    expect(closableDocuments(panels(['doc-1', true], ['doc-2', true]))).toEqual([]);
+  });
+
+  it('answers empty for a workspace with no documents at all', () => {
+    expect(closableDocuments(panels(['session-abc', false]))).toEqual([]);
+    expect(closableDocuments([])).toEqual([]);
   });
 });

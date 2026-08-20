@@ -1112,7 +1112,9 @@ Work items:
   **The peek/pin half of this item was REMOVED again by #530 (owner decision,
   2026-08-15): every file opens its own tab. The window, attribution and
   never-in-a-session's-group halves stand. Left here as shipped so the reversal
-  has something to point at — do not rebuild from this paragraph.**
+  has something to point at — do not rebuild from this paragraph. The accretion
+  the pin used to answer is answered instead by the palette's `Close all
+  documents` (#543), which spares popped-out viewers.**
   *(depends: 02)* One reusable viewer whose content is replaced by the next
   glance; pin promotes it to a permanent tab and sends the next open to a fresh
   peek slot. The pop-out control opens it as its own OS window through E8's
