@@ -25,7 +25,7 @@
 > | #517 terminal search via ring buffer | sb-wt-1 (released) | feature/517-search-ring-buffer | **DONE** — **PR #610 ready-for-review, in Dan's queue** (never-opened terminals get real counts via read-only pty:snapshot; #518 inherited, not regressed) |
 > | #590 preload DTO drift-pin | sb-wt-1 (released) | feature/590-preload-dto-typing | **DONE** — PR #611 (shared wire type, bite-proven pins, byte-identical preload build); #618 filed (sessions:status + strays) |
 > | #603 unique fake-session ids | — | feature/603-unique-fake-session-ids | **DONE** — PR #615; #616 filed (fake --resume fidelity + littered ~/.claude/projects) |
-> | **TRAIN #617** | sb-wt-1 | train/2026-08-19-internal-2 | carries #608/#611/#613/#615 — unit 5308/5308 on the train tree; merges on green (merge commit) |
+> | **TRAIN #617** | — | — | **✅ MERGED** — #608/#611/#613/#615 all merged, issues #466/#598/#590/#593/#603 closed, branches deleted. #614 (#597 CI bounds) bumped, merges on green — the run's last internal PR |
 > | #559 rail drag-reorder | sb-wt-2 (released) | feature/559-rail-drag-reorder | **DONE** — **PR #580 ready-for-review, in Dan's queue** (changelog moved to 0.9.0) |
 > | #539 repair-sweep follow-ups | sb-wt-2 (released) | feature/539-repair-sweep-followups | **DONE** — **PR #602 ready-for-review, in Dan's queue**; #603 filed (shared FAKE_SESSION_ID) |
 > | #497 Direct-e2e fixture extraction | sb-wt-2 (released) | feature/497-direct-e2e-fixture | **DONE** — PR #604 (internal), merging on green; ambient flakes logged on #494; worker breached the background-waiter rule once and repaired it in-turn |
