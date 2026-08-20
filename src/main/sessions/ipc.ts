@@ -50,7 +50,7 @@ import { replayResumedHistory } from '../feed/history';
 import { HookListener } from '../hooks/hook-listener';
 import { IpcBroker } from '../ipc/broker';
 import { Channel } from '../../shared/ipc/capabilities';
-import type { PtyAttachment, PtyChunk } from '../../shared/ipc/pty';
+import type { PtyAttachment, PtyChunk, PtySnapshot } from '../../shared/ipc/pty';
 import type { PermissionRequest } from '../../shared/ipc/permissions';
 import type { ProviderCapabilities } from '../extensibility/contributions';
 import { TranscriptWatcher } from '../transcripts/watcher';
@@ -1608,6 +1608,35 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // residue like `38;5;10m`. One documented gap: a snapshot holding no ESC
     // and no newline at all is left as it was.
     return { epoch, snapshot: s.scrollback.snapshot().toString('utf8') };
+  });
+
+  // A READ of the same ring buffer, for find (#517, §5.31).
+  //
+  // §5.31's Terminal group used to be answered by the RENDERER's xterm, and
+  // S-07 makes a hidden pane ingest-only: main keeps the buffer, the pane is
+  // fed only while its tab is showing. So on a card whose Terminal was never
+  // opened the only searchable copy in the window was EMPTY, and the group had
+  // to be withheld to avoid a confident zero about output printed a minute ago.
+  // This is the source of truth it withholds itself in favour of.
+  //
+  // IT IS NOT `pty:attach`, and must never become it: attach mints an epoch
+  // and REPLACES the session's single feed, so answering find through it would
+  // cut the stream to the pane the user is looking at. Read-only, no
+  // subscription, no epoch, no mutation of anything.
+  //
+  // It hands back RAW BYTES — escape sequences, carriage returns and all —
+  // because that is what we have. Deciding what those bytes MEAN is a terminal
+  // emulator's job, and the caller replays them into one (the CLI is a
+  // transport; interpreting its output here would be reimplementing it).
+  broker.handle('pty:snapshot', (_e, id: string): PtySnapshot | null => {
+    if (typeof id !== 'string') return refuse('pty:snapshot', 'session id must be a string');
+    const s = ptys.get(id);
+    // `null` for an unknown id, exactly as `pty:attach` answers it: "there is
+    // no terminal here to look at" is a different fact from "we looked and it
+    // was empty", and find renders the two differently.
+    if (!s) return null;
+    // the same bare decode `pty:attach` makes, for the same reason (#205/#211)
+    return { snapshot: s.scrollback.snapshot().toString('utf8'), cols: s.cols, rows: s.rows };
   });
 
   broker.on('pty:detach', (_e, id: string) => {

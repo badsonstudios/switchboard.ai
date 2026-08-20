@@ -104,6 +104,19 @@ see two different depths of the same session and one number over both would be
 true of neither. That is also what made `labelKey` **required**: a group with no
 name is a number the user cannot attribute.
 
+`find-terminal` then taught the point one more thing (#517): **a surface is not
+the same as the buffer behind it.** Its first version drove the renderer's
+xterm, and a hidden pane is ingest-only (S-07) — so on a Terminal tab you had
+never opened, the only searchable copy in the window was empty and the group had
+to be withheld with a reason. The fix was not in the seam: the surface now reads
+MAIN's ring buffer over `pty:snapshot` and replays it into an off-screen
+terminal, and the only contract change is that `TerminalFindSurface.search` is
+now genuinely asynchronous and reports `live` — whether the answer came from the
+pane on screen (so a hit can be scrolled to) or from the buffer behind it (so it
+can only be read). A registrant answering from somewhere the user is not looking
+is a normal thing for this point to have to express; the lesson is that it must
+say so per RESULT, not per availability.
+
 The **document viewer** (§5.30) is the fourth, and it arrived carrying two
 lessons rather than one registrant:
 
@@ -437,7 +450,7 @@ refusal can arrive, not everywhere it cannot.
 | `sessions.read` | list cards, statuses, pending permissions |
 | `sessions.spawn` | create / resume / close — **starts processes** |
 | `sessions.write` | rename, task label, autonomy, permission decisions |
-| `pty.read` | attach to a terminal's output stream |
+| `pty.read` | attach to a terminal's output stream, or read its scrollback (§5.31's Terminal group) |
 | `pty.write` | send keystrokes to a running CLI |
 | `transcripts.read` | conversation blocks, and **searching the transcript file** (§5.31) |
 | `git.read` | status and file versions |

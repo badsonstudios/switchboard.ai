@@ -421,6 +421,18 @@ export interface FindResults {
    * failure §5.31 exists to avoid, one layer down from a partial scan.
    */
   totalIsFloor?: boolean;
+  /**
+   * `total` is not a number at all — the search COULD NOT RUN (#517).
+   *
+   * The sibling of `totalIsFloor`, one step further along the same argument.
+   * A floor is a real count with an unknown remainder; this is no count: the
+   * surface could not be read, so `total: 0` would state "it is not there"
+   * about something nobody looked at. The bar renders an em dash instead of a
+   * digit, and a provider that sets this must also raise an `error` notice
+   * saying why. §5.31's whole reason for existing is that a wrong number told
+   * confidently is worse than no number.
+   */
+  totalUnknown?: boolean;
   notice?: FindNotice;
 }
 

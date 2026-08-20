@@ -36,6 +36,9 @@ export class PtySession {
   readonly id: string;
   readonly scrollback: RingBuffer;
   private readonly proc: pty.IPty;
+  /** the geometry we spawned at, as the fallback `cols`/`rows` below need */
+  private readonly spawnCols: number;
+  private readonly spawnRows: number;
   private dataListeners = new Set<(d: string) => void>();
   private exitListeners = new Set<(code: number) => void>();
   exitCode: number | null = null;
@@ -43,10 +46,12 @@ export class PtySession {
   constructor(opts: PtySpawnOptions) {
     this.id = opts.id;
     this.scrollback = new RingBuffer(opts.scrollbackBytes ?? 2 * 1024 * 1024);
+    this.spawnCols = opts.cols ?? 120;
+    this.spawnRows = opts.rows ?? 30;
     this.proc = pty.spawn(opts.command, opts.args, {
       name: 'xterm-256color',
-      cols: opts.cols ?? 120,
-      rows: opts.rows ?? 30,
+      cols: this.spawnCols,
+      rows: this.spawnRows,
       cwd: opts.cwd,
       env: buildEnv(process.env, opts.env) as { [k: string]: string },
       useConpty: process.platform === 'win32',
@@ -83,6 +88,34 @@ export class PtySession {
 
   get pid(): number {
     return this.proc.pid;
+  }
+
+  /**
+   * The PTY's CURRENT geometry — what the CLI is writing for right now (#517).
+   *
+   * Read off node-pty rather than mirrored here, because node-pty is where the
+   * value is settled. Checked against the shipped source rather than assumed
+   * (`node_modules/node-pty/lib/{unix,windows}Terminal.js`, 2026-08-19):
+   * both backends assign `_cols` in their constructor and reassign it only in
+   * `resize`, AFTER the resize has been handed down — and on Windows that
+   * assignment is deferred (`_deferNoArgs`), so `cols` can lag a resize by a
+   * tick there. Never cleared on exit, so a dead PTY still reports the width it
+   * died at, which is the width its scrollback was written for.
+   *
+   * The spawn-value fallback is therefore DEFENSIVE, not a case we have found:
+   * nothing in either backend produces a non-positive `cols` after
+   * construction. It costs a comparison and it means the only reader — a
+   * scrollback replay — can never be handed `NaN`, where a stale-but-real width
+   * costs wrapping and `NaN` costs the whole answer.
+   */
+  get cols(): number {
+    const c = this.proc.cols;
+    return Number.isInteger(c) && c > 0 ? c : this.spawnCols;
+  }
+
+  get rows(): number {
+    const r = this.proc.rows;
+    return Number.isInteger(r) && r > 0 ? r : this.spawnRows;
   }
 
   onData(listener: (d: string) => void): () => void {

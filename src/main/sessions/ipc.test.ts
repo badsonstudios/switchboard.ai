@@ -93,6 +93,10 @@ function harness(
     /** exit codes per session id — a session listed here is DEAD but still has
      *  a record, which is exactly what a crash leaves behind (#187) */
     exitCodes?: Record<string, number>;
+    /** live PTYs, by id, for the channels that READ one (#517's `pty:snapshot`).
+     *  Empty unless a test seeds it — every other test in this file runs with
+     *  no PTY at all, which is what `pty:snapshot` answering `null` means. */
+    ptys?: Record<string, { scrollback: { snapshot: () => Buffer }; cols: number; rows: number }>;
     /** the ids successive `manager.create` calls mint, in order. Defaults to
      *  'live-1' for ever, which is what every pre-#187 test assumes. */
     spawnIds?: string[];
@@ -301,7 +305,7 @@ function harness(
         return { ...asRecord(id), identity };
       },
     },
-    ptys: {},
+    ptys: { get: (id: string) => opts.ptys?.[id] },
     hooks: {
       onPermissionRequest: () => {},
       onPermissionResolved: () => {},
@@ -3862,5 +3866,87 @@ describe('a decision for a request nobody is holding (#570)', () => {
     // lost
     expect(noisy).toHaveLength(1);
     expect(noisy[0][1]).toMatchObject({ requestId: 'hook-req-1' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #517 — `pty:snapshot`: the ring buffer, READ
+// ---------------------------------------------------------------------------
+
+describe('pty:snapshot hands find the buffer that actually has the answer (#517)', () => {
+  let folder: string;
+  beforeEach(() => {
+    folder = tempDir('sb-snap');
+  });
+
+  /** A stand-in PtySession with a real listener set, so ATTACH can be driven. */
+  const fakePty = (text: string, cols = 132, rows = 44) => {
+    const listeners = new Set<(d: string) => void>();
+    return {
+      scrollback: { snapshot: () => Buffer.from(text, 'utf8') },
+      cols,
+      rows,
+      onData: (l: (d: string) => void) => {
+        listeners.add(l);
+        return () => listeners.delete(l);
+      },
+      /** the PTY printing something, for the test to observe downstream */
+      emit: (d: string) => listeners.forEach((l) => l(d)),
+      listenerCount: () => listeners.size,
+    };
+  };
+
+  it('answers the scrollback AND the geometry it was written for', () => {
+    // The geometry is not decoration: the caller replays these bytes into a
+    // terminal, and a scrollback re-rendered at the wrong width wraps in
+    // different places — which moves every match position and can split a
+    // match across the fold.
+    const h = harness(undefined, folder, { ptys: { 'live-1': fakePty('hello NEEDLE\r\n') } });
+    expect(h.call('pty:snapshot', 'live-1')).toEqual({
+      snapshot: 'hello NEEDLE\r\n',
+      cols: 132,
+      rows: 44,
+    });
+  });
+
+  it('answers null for an id with no PTY — "could not look", not "found none"', () => {
+    const h = harness(undefined, folder);
+    expect(h.call('pty:snapshot', 'nobody')).toBeNull();
+  });
+
+  it('refuses a non-string id rather than reaching into the map with it', () => {
+    const h = harness(undefined, folder);
+    expect(h.call('pty:snapshot', 42 as unknown as string)).toBeNull();
+    expect(h.warn).toHaveBeenCalledWith(
+      expect.stringContaining('pty:snapshot refused'),
+      expect.anything()
+    );
+  });
+
+  it('takes NOTHING away from the pane on screen — the live feed keeps streaming', () => {
+    // The reason this is its own channel, asserted against the thing that
+    // would actually break. `pty:attach` mints an epoch and REPLACES the
+    // session's single data feed (`feeds.get(id)?.()`), so answering find
+    // through it — or through anything that reuses that teardown — would
+    // silently cut the terminal the user is looking at.
+    //
+    // So: attach a pane, read the scrollback twice underneath it, then let the
+    // PTY print. The chunk must still arrive, on the SAME epoch, and no second
+    // subscription may have appeared.
+    const p = fakePty('output');
+    const h = harness(undefined, folder, { ptys: { 'live-1': p } });
+    const attachment = h.call('pty:attach', 'live-1') as { epoch: number };
+    expect(p.listenerCount()).toBe(1);
+
+    h.call('pty:snapshot', 'live-1');
+    h.call('pty:snapshot', 'live-1');
+    expect(p.listenerCount()).toBe(1); // nothing subscribed, nothing unsubscribed
+
+    const before = h.pushed.length;
+    p.emit('a line the user is watching');
+    const sent = h.pushed.slice(before);
+    expect(sent).toHaveLength(1);
+    expect(sent[0].channel).toBe('pty:data:live-1');
+    expect(sent[0].payload).toEqual({ epoch: attachment.epoch, d: 'a line the user is watching' });
   });
 });

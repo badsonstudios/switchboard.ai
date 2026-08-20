@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { ContextMenuLabels } from '../shared/context-menu';
 import type { SlashCommand } from '../shared/slash-commands';
 import type { PromptAttachment } from '../shared/prompt-attachments';
-import type { PtyAttachment, PtyChunk } from '../shared/ipc/pty';
+import type { PtyAttachment, PtyChunk, PtySnapshot } from '../shared/ipc/pty';
 import type {
   BindingSnapshot,
   TranscriptSearchRequest,
@@ -776,6 +776,10 @@ const api = {
     // resolves with { epoch, snapshot } — the epoch tells the renderer which
     // buffered chunks are newer than the snapshot (#117, shared/ipc/pty.ts)
     attach: (id: string): Promise<PtyAttachment | null> => ipcRenderer.invoke('pty:attach', id),
+    // the ring buffer, READ — no epoch, no feed, nothing taken away from the
+    // pane on screen (#517). This is what §5.31's Terminal group searches when
+    // the tab it belongs to has never been opened.
+    snapshot: (id: string): Promise<PtySnapshot | null> => ipcRenderer.invoke('pty:snapshot', id),
     detach: (id: string): void => ipcRenderer.send('pty:detach', id),
     input: (id: string, data: string): void => ipcRenderer.send('pty:input', id, data),
     resize: (id: string, cols: number, rows: number): void =>

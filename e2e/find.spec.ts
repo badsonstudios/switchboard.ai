@@ -190,14 +190,18 @@ test.describe('[pty] Session find (E17-02)', () => {
     seedTranscript(a.home, folder, 'TRANSCRIPT_ONLY', 3, 'GROUPED');
     await expect(w.getByText(/GROUPED/).first()).toBeVisible({ timeout: 25_000 });
 
-    // BEFORE the Terminal has ever been shown there is no Terminal group at
-    // all — the xterm is fed only while its tab is visible (S-07), so a
-    // "0 in Terminal (scrollback only)" here would be a confident statement
-    // about a buffer that was never filled
+    // BEFORE the Terminal has ever been shown the group is STILL THERE, with a
+    // real count (#517). This assertion is the inversion of #516's: back then
+    // the renderer's xterm was the only buffer find could reach, a hidden pane
+    // is ingest-only (S-07), and so the group had to be withheld rather than
+    // print a zero about a buffer with no lines. Find now reads MAIN's ring
+    // buffer, which is complete whether or not this tab was ever opened — so
+    // the zero is a real statement about the last 5,000 lines.
     await w.keyboard.press(`${MOD}+f`);
     await w.locator('[data-testid="find-input"]').fill('TRANSCRIPT_ONLY');
     await expect(count(w)).toHaveText('1 of 3', { timeout: 15_000 });
-    await expect(groups(w)).toHaveCount(0);
+    await expect(groups(w)).toContainText('3 in Session', { timeout: 15_000 });
+    await expect(groups(w)).toContainText('0 in Terminal (scrollback only)');
     await w.keyboard.press('Escape');
 
     // put something in the scrollback that is NOT in the transcript. The fake
@@ -222,6 +226,9 @@ test.describe('[pty] Session find (E17-02)', () => {
     await expect(groups(w)).toContainText('scrollback only', { timeout: 15_000 });
     await expect(groups(w)).toContainText('0 in Session');
     await expect(groups(w)).not.toContainText('0 in Terminal');
+    // this pane IS on screen, so the matches are highlighted where they sit and
+    // the bar does not say they are out of reach
+    await expect(bar(w)).not.toContainText('open the Terminal tab');
 
     // …and the reverse, which is the item's third done-when: a term present
     // only in the TRANSCRIPT still shows its Session count from this tab, with
@@ -231,6 +238,21 @@ test.describe('[pty] Session find (E17-02)', () => {
     await expect(groups(w)).toContainText('0 in Terminal (scrollback only)');
     // the count is a position inside ONE group, never a total across two
     await expect(count(w)).toHaveText('1 of 3');
+    await w.keyboard.press('Escape');
+
+    // #517's other half: LEAVE the Terminal tab, so the pane stops being fed,
+    // and search again. The renderer's xterm is frozen from this moment on;
+    // main's ring buffer is not, and it is what answers.
+    await w.getByRole('tab', { name: 'Session' }).first().click();
+    await w.keyboard.press(`${MOD}+f`);
+    await w.locator('[data-testid="find-input"]').fill('SCROLLBACK_ONLY_MARKER');
+    await expect(groups(w)).toContainText('scrollback only', { timeout: 15_000 });
+    await expect(groups(w)).not.toContainText('0 in Terminal');
+    // …and it says why they cannot be stepped to, rather than offering a jump
+    // that would scroll a terminal nobody is looking at
+    await expect(w.locator('[data-testid="find-notice"]')).toContainText('open the Terminal tab', {
+      timeout: 15_000,
+    });
   });
 });
 
