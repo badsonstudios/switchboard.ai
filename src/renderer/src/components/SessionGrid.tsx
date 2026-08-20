@@ -34,8 +34,8 @@ import type { BindingDiagnostics, BindingState } from '../../../shared/transcrip
 import {
   Box,
   boxOnAnyDisplay,
-  dropDerivedPopoutGroups,
   isDerivedPanelId,
+  prunePopoutGroups,
   RescuedPopout,
   sanitizePopoutLayout,
   WorkArea,
@@ -4072,18 +4072,39 @@ export function SessionGrid(props: {
             .then((gs) => gs.map((g) => g.id))
             .catch(() => null);
           try {
+            // WHICH PANELS ARE NOT COMING BACK, decided once and used twice
+            // (#494): the popout groups are filtered by it before `fromJSON`
+            // opens their windows, and the grid is swept by it afterwards.
+            // Read BEFORE the restore for that reason — a second spelling of
+            // this rule, or a second moment for it, is the bug.
+            //
+            //  * session cards that still have a persisted record stay (they
+            //    resume-on-focus); one with no record behind it goes.
+            //  * diff panes and document viewers are DERIVED — always dropped,
+            //    the user reopens them. "Restoring open viewers across
+            //    relaunch" is named in E16's *Not in scope*, and a viewer
+            //    restored blind would also re-read a file whose folder may no
+            //    longer be in the read scope.
+            const known = new Set(
+              (await window.switchboard.sessions.knownCards()).map((c) => c.cardId)
+            );
+            const willBePruned = (panelId: string): boolean => {
+              const s = /^session-(.+)$/.exec(panelId);
+              return isDerivedPanelId(panelId) || (!!s && !known.has(s[1]));
+            };
             // popouts persist in the layout, but their stored url has last
             // launch's (random) loopback port and their position may be on a
             // now-missing monitor — fix both before restoring (E8-02)
             const workAreas = await window.switchboard.workAreas();
             const rescuedNow: RescuedPopout[] = [];
-            // ...and a popout window holding nothing but panels the prune below
-            // is about to delete is not opened AT ALL (#494) — opening one and
-            // emptying it races dockview's deferred popout restoration and
-            // strands the window. FIRST, so a window we are not reopening is
-            // never offered to the reconnect prompt either.
+            // ...and no popout window is restored holding a panel that verdict
+            // condemns (#494): a window left with nothing is not opened at all,
+            // and one that survives comes back without those tabs. Opening a
+            // window only to empty it races dockview's deferred popout
+            // restoration and strands it on screen. FIRST, so a window we are
+            // not reopening is never offered to the reconnect prompt either.
             const sane = sanitizePopoutLayout(
-              dropDerivedPopoutGroups(saved),
+              prunePopoutGroups(saved, willBePruned),
               window.location.origin,
               workAreas,
               rescuedNow
@@ -4104,12 +4125,6 @@ export function SessionGrid(props: {
             if (rescuedNow.length > 0) {
               uiSet('rescuedPopouts', [...uiGet<RescuedPopout[]>('rescuedPopouts', []), ...rescuedNow]);
             }
-            // keep restored session cards that still have a persisted record
-            // (they resume-on-focus); drop any panel with no record behind it.
-            // Diff panes are derived — always drop and let the user reopen.
-            const known = new Set(
-              (await window.switchboard.sessions.knownCards()).map((c) => c.cardId)
-            );
             // presentation records outlive their panels by design (that is the
             // point of hiding), so the only thing that can retire one is the card
             // itself being gone — otherwise the blob grows for ever
@@ -4134,22 +4149,14 @@ export function SessionGrid(props: {
             // ...and #485's unsent prompts. The same rule, and the one with the
             // biggest payload: a draft is whatever the user pasted.
             pruneDrafts(known);
-            for (const p of [...api.panels]) {
-              const s = /^session-(.+)$/.exec(p.id);
-              // Diff panes and document viewers are both DERIVED — drop them
-              // and let the user reopen. "Restoring open viewers across
-              // relaunch" is named in E16's *Not in scope*, and a viewer
-              // restored blind would also re-read a file whose folder may no
-              // longer be in the read scope.
-              //
-              // Only GRID panels reach here now: `fromJSON` builds those
-              // synchronously, so removing them cannot race anything. A popout
-              // whose whole content was derived never got opened
-              // (`dropDerivedPopoutGroups`, #494); one that also holds a session
-              // card is still open and still loses its derived tabs here, which
-              // is safe because that removal never empties the group.
-              if (isDerivedPanelId(p.id) || (s && !known.has(s[1]))) api.removePanel(p);
-            }
+            // The same verdict, on the grid this time. Only GRID panels reach
+            // here, and that is now guaranteed rather than usual:
+            // `prunePopoutGroups` (#494) already took every condemned id out of
+            // the layout's popout groups. It matters because `fromJSON` builds
+            // grid groups SYNCHRONOUSLY while it opens popout windows on a
+            // timer — removing a panel from a popout that has not finished
+            // opening strands that window on screen, empty, for ever.
+            for (const p of [...api.panels]) if (willBePruned(p.id)) api.removePanel(p);
             // land the user exactly where they were (§5.25): refocus the saved
             // card — resume-on-focus then brings that session back first
             const focused = uiGet<string | null>('focusedCardId', null);
