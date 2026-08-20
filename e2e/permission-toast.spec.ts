@@ -28,7 +28,14 @@
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
-import { findFile, launchApp, LaunchedApp, poll, tempProjectFolder } from './fixtures/app';
+import {
+  blurApp,
+  findFile,
+  launchApp,
+  LaunchedApp,
+  poll,
+  tempProjectFolder,
+} from './fixtures/app';
 
 interface ToastLine {
   kind: string;
@@ -90,16 +97,11 @@ test.describe('[pty] actionable permission toasts (P2-E14-04)', () => {
     const token = fs.readFileSync(tokenFile, 'utf8').trim();
 
     // The user looks away — the toast's own condition (§5.9: no popup over the
-    // window you are already reading). Asserted rather than assumed: a blur
-    // that did nothing would leave this test proving the rule fired for a
-    // reason it did not have.
-    await a.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].blur());
-    await expect
-      .poll(
-        () => a.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFocused()),
-        { timeout: 15_000 }
-      )
-      .toBe(false);
+    // window you are already reading). Asserted rather than assumed by
+    // `blurApp`, which re-issues the blur until it takes and throws if it never
+    // does (#538): a blur that did nothing would leave this test proving the
+    // rule fired for a reason it did not have.
+    await blurApp(a);
 
     // …and the CLI asks for something. Left unawaited: the hook response is
     // PARKED until the permission is decided, which is the whole point.

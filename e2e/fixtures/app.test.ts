@@ -42,6 +42,7 @@ vi.mock('child_process', async (importOriginal) => {
 });
 
 import {
+  blurApp,
   E2E_MONITOR_ENV,
   killTree,
   launchApp,
@@ -49,6 +50,7 @@ import {
   pickTestDisplay,
   translateToDisplay,
   type DisplayInfo,
+  type LaunchedApp,
 } from './app';
 
 /**
@@ -613,5 +615,90 @@ describe('launchApp — the success path', () => {
     await launched.close();
 
     expect(killedPids()).toEqual([999_234]);
+  });
+});
+
+/**
+ * `blurApp` — the #538 flake, reproduced deterministically.
+ *
+ * The real failure is a `blur()` the window manager drops: the command returns,
+ * nothing happens, and the old idiom (blur ONCE, then passively poll
+ * `isFocused()`) had no way back from it — it spent its whole 15 s waiting for
+ * a state change that had already been lost. That is a one-in-sixteen event on
+ * a loaded machine and unforceable in Playwright, so it is forced HERE instead:
+ * a fake window that ignores the first N blurs is exactly the observed
+ * behaviour, and it runs in milliseconds.
+ *
+ * `evaluate` really RUNS the callback against a fake `BrowserWindow`, so these
+ * cover the body — every window blurred, destroyed ones skipped — and not just
+ * the retry loop wrapped around it.
+ */
+describe('blurApp — a dropped blur is retried, not waited out (#538)', () => {
+  /** a window that swallows `ignoreBlurs` blur() calls before honouring one */
+  const fakeWin = (opts: { focused?: boolean; ignoreBlurs?: number; destroyed?: boolean } = {}) => {
+    let focused = opts.focused ?? true;
+    let left = opts.ignoreBlurs ?? 0;
+    return {
+      blurs: 0,
+      isDestroyed: () => opts.destroyed === true,
+      isFocused: () => focused,
+      blur(): void {
+        this.blurs++;
+        if (left > 0) {
+          left--;
+          return; // the window manager dropped it
+        }
+        focused = false;
+      },
+    };
+  };
+
+  const appWith = (wins: ReturnType<typeof fakeWin>[]): LaunchedApp =>
+    ({
+      app: {
+        evaluate: (fn: (m: { BrowserWindow: unknown }) => unknown) =>
+          Promise.resolve(fn({ BrowserWindow: { getAllWindows: () => wins } })),
+      },
+    }) as unknown as LaunchedApp;
+
+  it('settles on the first attempt when the blur lands', async () => {
+    const win = fakeWin();
+    await blurApp(appWith([win]));
+    expect(win.isFocused()).toBe(false);
+    expect(win.blurs).toBe(1);
+  });
+
+  it('recovers from a dropped blur by re-issuing it', async () => {
+    const win = fakeWin({ ignoreBlurs: 2 });
+    await blurApp(appWith([win]));
+    expect(win.isFocused()).toBe(false);
+    // three asks: two swallowed, the third honoured. The old idiom asked once.
+    expect(win.blurs).toBe(3);
+  });
+
+  it('blurs EVERY window, because one focused popout holds the whole app', async () => {
+    // visibilityAcross() answers "focused" if ANY window is, so blurring
+    // getAllWindows()[0] alone would leave every away-rule held back.
+    const first = fakeWin({ focused: false });
+    const popout = fakeWin({ focused: true });
+    await blurApp(appWith([first, popout]));
+    expect(popout.isFocused()).toBe(false);
+    expect(first.blurs).toBeGreaterThan(0);
+  });
+
+  it('skips destroyed windows rather than throwing on them', async () => {
+    const dead = fakeWin({ destroyed: true });
+    const live = fakeWin();
+    await blurApp(appWith([dead, live]));
+    expect(dead.blurs).toBe(0);
+    expect(live.isFocused()).toBe(false);
+  });
+
+  it('throws when the blur never takes, instead of letting the spec carry on', async () => {
+    // A spec that continued from here would go on to prove its away-rule fired
+    // for a reason it did not have.
+    const stuck = fakeWin({ ignoreBlurs: Number.MAX_SAFE_INTEGER });
+    await expect(blurApp(appWith([stuck]), 300)).rejects.toThrow(/never went away/);
+    expect(stuck.blurs).toBeGreaterThan(1);
   });
 });
