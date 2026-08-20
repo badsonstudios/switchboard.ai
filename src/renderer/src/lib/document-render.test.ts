@@ -161,13 +161,54 @@ describe('the markdown v1 scope', () => {
     expect(host.querySelector('.doc-table-wrap')?.getAttribute('tabindex')).toBe('0');
   });
 
-  it('task-list checkboxes render as disabled checkboxes', () => {
+  it('task-list markers render as glyphs, and still lose the bullet', () => {
+    // This row used to assert `input[type="checkbox"]` with `disabled` forced
+    // on. #612 put `input` in `FORBID_TAGS` and moved the marker into
+    // `marked`'s renderer as a `☐`/`☑` character, so there is no element left
+    // to disable — and the property that survives the change is the one that
+    // was ever visible: the marker is there, and `.doc-task-list` takes the
+    // bullet off so a checklist does not read "• ☐ not done".
     const host = render('- [ ] not done\n- [x] done\n');
-    const boxes = host.querySelectorAll('input[type="checkbox"]');
-    expect(boxes).toHaveLength(2);
-    for (const b of boxes) expect(b.hasAttribute('disabled')).toBe(true);
+    expect(host.querySelector('input')).toBeNull();
+    expect(host.textContent).toContain('☐ not done');
+    expect(host.textContent).toContain('☑ done');
     expect(host.querySelectorAll('li.doc-task')).toHaveLength(2);
     expect(host.querySelector('.doc-task-list')).not.toBeNull();
+  });
+
+  it('a LOOSE checklist is decorated too — a blank line does not undo it', () => {
+    // `marked` wraps every item of a list with a blank line anywhere in it in a
+    // `<p>`, so the marker stops being a direct child of the `<li>`. The first
+    // cut of the glyph pass read only direct text children and left exactly
+    // this shape with its bullet AND a glyph. Found in review.
+    const host = render('- [ ] not done\n\n- [x] done\n');
+    expect(host.querySelector('li > p')).not.toBeNull();
+    expect(host.querySelectorAll('li.doc-task')).toHaveLength(2);
+    expect(host.querySelector('.doc-task-list')).not.toBeNull();
+  });
+
+  it('a plain item holding a nested checklist keeps its own bullet', () => {
+    // Why the pass reads the item's OWN first text node instead of its
+    // `textContent`: the outer `<li>` here contains the inner marker, so a
+    // `textContent` test would class the outer item too and strip the bullet
+    // from a list that is not a checklist. `box.closest('li')` could never get
+    // this wrong, so the rewrite had to earn it back.
+    const host = render('- outer\n  - [ ] inner\n');
+    const items = [...host.querySelectorAll('li')];
+    expect(items.length).toBeGreaterThanOrEqual(2);
+    const outer = items.find((li) => li.firstChild?.nodeValue?.startsWith('outer'));
+    const inner = items.find((li) => li.firstChild?.nodeValue?.trimStart().startsWith('☐'));
+    expect(outer?.classList.contains('doc-task')).toBe(false);
+    expect(inner?.classList.contains('doc-task')).toBe(true);
+  });
+
+  it('an ordinary list is NOT treated as a checklist', () => {
+    // The other half of "matched at the start of the item's text": if this
+    // stopped discriminating, every bullet in every document would lose its
+    // bullet, which is the failure mode a green task-list row would not catch.
+    const host = render('- plain\n- also plain\n');
+    expect(host.querySelectorAll('li.doc-task')).toHaveLength(0);
+    expect(host.querySelector('.doc-task-list')).toBeNull();
   });
 
   it('strikethrough survives', () => {

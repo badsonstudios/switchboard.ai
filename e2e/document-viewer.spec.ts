@@ -45,6 +45,12 @@ Some prose with a [real link](https://example.invalid/docs) in it, and a
 - [ ] not done
 - [x] done
 
+## A looser plan
+
+- [ ] first, with a blank line after it
+
+- [x] second
+
 ## Some code
 
 \`\`\`ts
@@ -112,7 +118,16 @@ test.describe('document viewer (P2-E16-02)', () => {
     await expect(rendered(w).locator('h1')).toHaveText('The document viewer');
     await expect(rendered(w).locator('table')).toBeVisible();
     await expect(rendered(w).locator('.doc-table-wrap')).toBeVisible();
-    await expect(rendered(w).locator('input[type="checkbox"]')).toHaveCount(2);
+    // The task lists, which since #612 are a `☐`/`☑` glyph rather than a
+    // disabled `<input>` — `input` is in the sanitizer's `FORBID_TAGS`, so the
+    // marker is written by `marked`'s renderer before the sanitizer ever runs.
+    // `.doc-task` is what takes the bullet off, and it is the class the pass now
+    // sets. FOUR, because the fixture carries both a TIGHT list and a LOOSE one
+    // (blank line between the items): `marked` wraps a loose item's content in a
+    // `<p>`, which the first cut of the glyph pass did not look through.
+    await expect(rendered(w).locator('li.doc-task')).toHaveCount(4);
+    await expect(rendered(w).locator('.doc-task-list')).toHaveCount(2);
+    await expect(rendered(w).locator('input')).toHaveCount(0);
     await expect(rendered(w).locator('.doc-code-lang')).toHaveText('ts');
 
     // THE SECURITY ASSERTIONS.

@@ -1250,9 +1250,11 @@ mark[data-feed-match-current] {
   list-style: none;
   padding-inline-start: 2px;
 }
-.doc-md .doc-task-box {
-  margin-inline-end: 6px;
-}
+/* `.doc-task-box` used to sit here, on the `<input>` the task-list pass
+   decorated. #612 forbids `input` in the sanitizer and draws the marker as a
+   `☐`/`☑` character instead, so there is no element to space: the gap is now
+   `marked`'s own single space after the marker. `.doc-task-list` below is what
+   still matters — it takes the bullet off a checklist. */
 .doc-code {
   border: 1px solid var(--border);
   border-radius: 4px;

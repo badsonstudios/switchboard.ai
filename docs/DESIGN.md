@@ -1888,8 +1888,14 @@ external editor does badly: reading `PROGRESS.md` as it is being written should
 not need a reload, and a silently stale render is worse than no render at all.
 
 **Markdown rendering, aimed at what AIs actually emit.** GFM — tables, task-list
-checkboxes rendered as disabled checkboxes (agents write plans as `- [ ]`),
-strikethrough, autolinks. Fenced code with a language label and a copy button
+checkboxes (agents write plans as `- [ ]`), strikethrough, autolinks.
+*(Amended by #612, 2026-08-20: this said "rendered as disabled checkboxes", and
+they are now rendered as `☐`/`☑` GLYPHS. `<input>` is in the sanitizer's
+`FORBID_TAGS` — a native control is focusable with no `tabindex`, so an
+`<input>` in content was a tab stop and a text box content could draw — and
+`marked`'s task-list checkbox was the one thing markdown itself emitted on that
+list. It was always `disabled`, i.e. decoration drawn with a control, so it is
+now drawn with decoration. The marker survives; the tag does not.)* Fenced code with a language label and a copy button
 (you copy the command it just gave you). YAML front matter as a collapsed
 metadata chip, not an `<hr>` and a line of garbage. Heading anchors plus a
 **document outline** — our own docs run past 1,700 lines. Relative links
@@ -2090,6 +2096,20 @@ a pointer where they left.)*
   > hundreds of expanders; the rail, the lamps and the Events panel each spend
   > one or two stops per session, which is bounded by how many sessions a human
   > runs and buys back the simplicity of ordinary buttons.
+  >
+  > **A correction to that budget, from #612 (2026-08-20):** "the feed is a
+  > single tab stop" is a statement about the app's own CHROME, and it is not
+  > true of RENDERED CONTENT. GFM emits `<a href>` for every link an agent
+  > writes and a link is focusable with no `tabindex`, so any reply containing
+  > links adds stops the app did not budget for — and no sanitizer setting can
+  > change that without ceasing to render links. #598 stripped every `tabindex`
+  > content can write and #612 removed the tags that are focusable WITHOUT one
+  > (`button`, `input`, `select`, `textarea`), so the property that actually
+  > holds, and the one to state, is narrower: **content cannot plant a
+  > control.** Every stop inside rendered content is a link or a disclosure the
+  > content genuinely contains, or one a decoration pass wrote. The document
+  > viewer is the exception that can promise more, because `decorateLinks`
+  > takes `href` off every link and writes the affordance back itself.
   >
   > **A fifth rule, added by #253 (2026-08-05):** *a drag is never the only way
   > to do something.* The sweep above made every CONTROL reachable and left one
