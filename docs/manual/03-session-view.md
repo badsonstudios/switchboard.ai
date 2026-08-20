@@ -173,6 +173,15 @@ it. Each session keeps its own; sending clears it. If you empty the box, nothing
 is kept, and a draft is forgotten when you close the session for good. A session
 you left suspended gets its draft back when it resumes.
 
+**Files you attached are kept too, with one limit.** Any chips above the box
+come back with the words for as long as switchboard.ai is running — moving
+between tabs, popping the card out, docking it back. They do **not** survive
+quitting the app, because their contents are never written to disk (see
+[Attaching files](#attaching-files-paste-a-picture-or-drag-anything-in) below).
+If you quit with files attached, the next launch gives you your words back and a
+line under the box naming the files it could not restore, so you can attach them
+again. It never empties itself quietly.
+
 ### Right-click menus
 
 **Right-click in the prompt box** for **Cut**, **Copy**, **Paste** and **Select
@@ -220,7 +229,18 @@ The full list of file types is the same one the official Claude Code extension
 for VS Code uses, so anything that works there works here.
 
 Nothing is uploaded anywhere and no copy is left on disk — the file's contents
-travel with your prompt and nowhere else.
+travel with your prompt and nowhere else. That is a deliberate choice and it has
+one visible consequence: **attached files do not survive quitting the app.** An
+unsent prompt's words are saved (they are small, and retyping them is the
+expensive part); a screenshot's pixels are not, because saving them would mean
+leaving a copy of whatever you pasted sitting in switchboard.ai's own folder
+until something got round to deleting it. Within a single run the chips are kept
+through everything — tab switches, pop-outs, docking back. Across a restart they
+are not, and the composer tells you which ones it lost:
+
+> Not restored: diagram.png, server.log. Your typed prompt is kept when
+> switchboard.ai restarts; attached files are not, because no copy of them is
+> ever left on disk. Attach them again.
 
 #### The rules
 
@@ -253,6 +273,7 @@ It tells you, under the box, rather than failing quietly:
 | Dropped a **folder** on the prompt box | "Folders cannot be attached to a prompt." Drop it outside the prompt box to open it as a session, or drop the files inside it |
 | Attached an empty file | It says there is nothing to send |
 | Attached to a **Terminal mode** session | Files can only be sent by a session in **Direct mode** (see [Direct mode](12-direct-mode.md)). In Terminal mode, use the Terminal tab instead |
+| Quit with files attached | "Not restored: …", naming them. Your typed words are still there; attach the files again |
 
 If a prompt with an attachment can't be sent — the session stopped, say —
 **nothing is cleared**. Your words and your files stay right where they are, and

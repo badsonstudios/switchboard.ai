@@ -27,6 +27,11 @@ import { resolveFeedBlock } from '../extensibility/feed-render';
 import { ContributionBoundary } from '../extensibility/boundary';
 import { uiFlush, uiGet, uiSet } from '../lib/ui-state';
 import { clearDraft, loadDraft, saveDraft } from '../lib/composer-draft';
+import {
+  loadStashedAttachments,
+  lostAttachmentNames,
+  stashAttachments,
+} from '../lib/composer-attachment-draft';
 import { interruptSession, submitPrompt } from '../lib/composer';
 import { ComposerAttachments } from './ComposerAttachments';
 import {
@@ -1334,9 +1339,49 @@ function Composer({
   // Pasted images (P2-E10-09, §5.10). The clipboard RULES are in
   // `lib/composer-attachments.ts`; this end only reacts to a paste event and
   // holds what came out of it.
-  const [attachments, setAttachments] = React.useState<Attachment[]>([]);
+  //
+  // The chips OUTLIVE this component too (#546), by the same argument the text
+  // above rests on — an image-only prompt is a whole prompt, and losing it to a
+  // view-tab switch is losing the lot. They are seeded from a module-level
+  // stash rather than from the workspace blob, because their payload must not
+  // reach disk; `composer-attachment-draft.ts` has the decision and its why.
+  const [attachments, setAttachments] = React.useState<Attachment[]>(() =>
+    loadStashedAttachments(cardId)
+  );
   /** one line of explanation for a paste that produced nothing, or null */
   const [attachNotice, setAttachNotice] = React.useState<string | null>(null);
+
+  // The one case where the composer has something to say before the user has
+  // done anything: a previous run's chips are recorded but their bytes are not
+  // here, because they were never written to disk. Saying so is the whole point
+  // — the failure #546 names is that an image-only prompt vanished SILENTLY.
+  //
+  // IN AN EFFECT, NOT IN THE `useState` INITIALIZER, and that is an
+  // accessibility requirement rather than a preference: the notice lives in an
+  // `aria-live` region that `ComposerAttachments` deliberately mounts EMPTY,
+  // because a live region that arrives already holding its text is announced by
+  // almost nothing (#222's rule, for `FindBar`'s match count). Seeding the
+  // state would put the text in on the first frame and silence it.
+  //
+  // Guarded by a ref rather than by its deps: this must run once per composer,
+  // and StrictMode runs every effect twice on the same instance.
+  const announcedLoss = React.useRef(false);
+  React.useEffect(() => {
+    if (announcedLoss.current) return;
+    announcedLoss.current = true;
+    const lost = lostAttachmentNames(cardId);
+    if (lost.length > 0)
+      setAttachNotice(t('feedView.attach.notRestored', { names: lost.join(', ') }));
+  }, [cardId, t]);
+
+  // The strip, written back on every change. DECLARED AFTER the effect above
+  // and therefore run after it, which matters: this is also what CLEARS the
+  // recorded names when the strip is empty, so reading them has to happen
+  // first. That clear is what stops the notice being repeated on every later
+  // remount.
+  React.useEffect(() => {
+    stashAttachments(cardId, attachments);
+  }, [cardId, attachments]);
   // A stream session takes typed messages and so can carry an image block; a
   // PTY session takes KEYSTROKES, and there is no keystroke for a bitmap. The
   // composer is otherwise deliberately transport-ignorant (`lib/composer.ts`),

@@ -167,6 +167,17 @@ on the floor, and say so in your PR.
   simply wrong on a document or a Changes tab, neither of which ends anything. A
   document's ✕ now says **Close document** and a Changes tab's says **Close**.
 
+### Fixed
+
+- **A prompt that is just a picture is no longer lost.** An unsent prompt has
+  been kept since 0.7.0, but only the words: the files you had attached
+  vanished the moment the card was rebuilt — switching it to Terminal and back
+  was enough — so a card holding nothing but a pasted screenshot lost the whole
+  prompt. The chips now come back with the words. Their contents are still
+  never written to disk, so a full restart does drop them; when it does, the
+  composer now says which files it lost and asks you to attach them again
+  rather than emptying itself in silence.
+
 ## 0.8.0 — 2026-08-19
 
 ### Added
