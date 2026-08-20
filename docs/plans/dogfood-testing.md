@@ -103,3 +103,4 @@ they enter this tracker when their train merges.
 | 2026-08-16 | Wants drag-to-reorder sessions within a rail group | #559 |
 | 2026-08-16 | "N need you" counters stay stale after dismissing events (Events header + group headers) | #621 |
 | 2026-08-16 | Streaming reply shows raw markdown until the turn ends; wants progressive rendering | #635 |
+| 2026-08-16 | Turn boundary above each user prompt too subtle; wants it unmissable | #640 |
