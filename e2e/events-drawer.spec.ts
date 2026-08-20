@@ -31,6 +31,7 @@ import {
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 const tab = (w: Page) => w.getByTestId('events-tab');
+const closeBtn = (w: Page) => w.getByTestId('events-close');
 const drawer = (w: Page) => w.getByTestId('events-drawer');
 const statusCount = (w: Page) => w.getByTestId('status-attention');
 const groupview = (w: Page) => w.locator('.dv-groupview').first();
@@ -205,6 +206,94 @@ test.describe('the events drawer (P2-E14-01)', () => {
     await w.keyboard.press('Escape');
     await expect(drawer(w)).toHaveCount(0);
     await expect(tab(w)).toBeFocused();
+  });
+
+  // #556: every route out above already worked, and the owner still hunted for
+  // one — the tab is on the edge and turned on its side, so it reads as a way
+  // IN. The ✕ in the header is discoverability, and the thing worth measuring
+  // is that it is a ROUTE and not a second mechanism.
+  test('closes from the visible ✕, and lands exactly where Escape does', async () => {
+    const { w } = await oneSession();
+
+    // ── the Escape baseline, from a named anchor ──
+    await tab(w).focus();
+    await tab(w).press('Enter');
+    await expect(drawer(w)).toBeVisible();
+    await expect(closeBtn(w)).toBeVisible();
+    await w.keyboard.press('Escape');
+    await expect(drawer(w)).toHaveCount(0);
+    await expect(tab(w)).toBeFocused();
+    const shutByEscape = await tab(w).getAttribute('aria-expanded');
+
+    // ── the same errand, by the button ──
+    await tab(w).focus();
+    await tab(w).press('Enter');
+    await expect(drawer(w)).toBeVisible();
+    await closeBtn(w).click();
+    await expect(drawer(w)).toHaveCount(0);
+    // the hand-back is the half that is easy to lose: a close button that
+    // unmounts a focused body without restoring drops the caret on <body>,
+    // where the only way back in is Tabbing from the top of the document
+    await expect(tab(w)).toBeFocused();
+    expect(await tab(w).getAttribute('aria-expanded')).toBe(shutByEscape);
+  });
+
+  test('the ✕ is keyboard-reachable and says what it does', async () => {
+    const { w } = await oneSession();
+    await w.keyboard.press(`${MOD}+E`);
+    await expect(drawer(w)).toBeFocused();
+    // opening lands on the body; the FIRST Tab from there is the way out, which
+    // is the order the header is read in by eye as well
+    await w.keyboard.press('Tab');
+    await expect(closeBtn(w)).toBeFocused();
+    // a worded name, not the glyph — `✕` announces nothing (§5.32)
+    await expect(closeBtn(w)).toHaveAttribute('aria-label', /close/i);
+    await w.keyboard.press('Enter');
+    await expect(drawer(w)).toHaveCount(0);
+    await expect(tab(w)).toBeFocused();
+  });
+
+  // The header used to be an eyebrow, and an eyebrow that scrolls out of a
+  // long list costs nothing. Now it carries the WAY OUT, so it is pinned — and
+  // pinning it is exactly the kind of change that quietly lands 8px of panel
+  // background on top of the line below (it did, first try: a negative
+  // block-start margin moves the following siblings up by the same amount).
+  test('the header is pinned, full width, and sits on nothing', async () => {
+    const { w, title } = await oneSession();
+    const post = await hookPoster(a, 1);
+    // an event, so the hotkey hint below the header is really there to be sat on
+    await post(title, { hook_event_name: 'Notification', message: 'needs your permission' });
+    await expect(tab(w)).toHaveAttribute('data-count', '1', { timeout: 20_000 });
+    await openEventsDrawer(w);
+    await expect(closeBtn(w)).toBeVisible();
+
+    const g = await w.evaluate(() => {
+      const aside = document.querySelector('[data-testid="events-drawer"] aside')!;
+      const header = aside.children[0] as HTMLElement;
+      const next = aside.children[1] as HTMLElement | undefined;
+      return {
+        position: getComputedStyle(header).position,
+        headerBottom: header.getBoundingClientRect().bottom,
+        nextTop: next ? next.getBoundingClientRect().top : Number.MAX_SAFE_INTEGER,
+        headerWidth: header.getBoundingClientRect().width,
+        asideWidth: aside.getBoundingClientRect().width,
+        scrolls: getComputedStyle(aside).overflowY,
+      };
+    });
+
+    // the aside is the scroll container, which is the whole reason the header
+    // has to be sticky rather than merely first
+    expect(g.scrolls).toBe('auto');
+    expect(g.position, 'the close button scrolls away once there are enough events').toBe('sticky');
+    // half a pixel of slack: these are fractional layout units and the two
+    // edges are meant to TOUCH, so an exact `<=` fails on 112.0000057 vs 112.
+    // The bug this guards was 8px, not a rounding tick.
+    expect(
+      g.headerBottom - g.nextTop,
+      'the pinned header is painting over the line below it'
+    ).toBeLessThan(0.5);
+    // full width, or rows show through beside it as they slide under
+    expect(g.headerWidth).toBeCloseTo(g.asideWidth, 0);
   });
 
   test('open, act on a row, close — the whole errand without a layout shift', async () => {

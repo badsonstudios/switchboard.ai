@@ -312,14 +312,17 @@ The drawer is closed until you open it. **`Ctrl+E`** opens and closes it, and
 it's in the command palette as *"Show or hide the events drawer"* — so you never
 need the mouse to reach what's inside. Opening it puts your cursor in the
 drawer, and closing it puts your cursor back where it was — **`Esc`**,
-`Ctrl+E` again, and the palette entry all do that.
+`Ctrl+E` again, the palette entry, and the **✕** in the drawer's header all do
+that.
 
 It isn't a dialog, so `Tab` walks out of it into the rest of the window as
 normal — nothing is trapped.
 
-Inside, each row is a button: `Enter` opens that session, exactly as clicking
-the row does, and counts as having visited it so `Ctrl+Space` won't send you
-straight back. One more `Tab` reaches that row's **Dismiss** button.
+The **first `Tab`** from a freshly opened drawer lands on the **✕** that closes
+it, so the way out is the first thing you meet. After that, each row is a
+button: `Enter` opens that session, exactly as clicking the row does, and counts
+as having visited it so `Ctrl+Space` won't send you straight back. One more
+`Tab` reaches that row's **Dismiss** button.
 
 `Ctrl+Space` doesn't need the drawer open at all — it works whether the drawer
 is showing or not.
