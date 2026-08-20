@@ -270,7 +270,12 @@
     "dismiss": "Don't answer",
     "other": "Other",
     "otherPlaceholder": "Type your own answer…",
-    "otherLabel": "Your own answer to: {question}"
+    "otherLabel": "Your own answer to: {question}",
+    "tabs": "Questions in this request",
+    "tabFallback": "Question {n}",
+    "tabAnswered": "{label} — answered",
+    "tabUnanswered": "{label} — not answered yet",
+    "stillToAnswer": "Still to answer: {headers}"
   },
   "batchApproval": {
     "title": "{count, plural, one {# session wants} other {# sessions want}} to run {tool}",

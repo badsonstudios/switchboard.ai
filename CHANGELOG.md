@@ -257,6 +257,18 @@ on the floor, and say so in your PR.
   order does not beat. Since the list is what `Ctrl+1`…`Ctrl+9` counts against,
   arranging it is also how you choose which session is `Ctrl+1`.
 
+### Added
+
+- **Several questions at once now arrive as tabs.** When Claude asks more than
+  one question in a single go, they used to be stacked down one long panel. They
+  are now a tab per question, labelled with Claude's own short name for it, so
+  you read one question at a time. Every tab shows whether it has been answered —
+  a tick or an empty ring, so it is the shape and not only the colour — and while
+  **Send answer** is greyed out the panel names the questions still waiting
+  ("Still to answer: Languages"). **Left** and **Right** move between the tabs.
+  A single question, which is the usual case, has no tabs and looks exactly as
+  it did.
+
 ## 0.8.0 — 2026-08-19
 
 ### Added

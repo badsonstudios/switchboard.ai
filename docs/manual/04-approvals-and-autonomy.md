@@ -55,9 +55,27 @@ click.
   as an option, and it's the honest way to say "none of these, here's what I
   actually want".
 
-Claude can ask more than one question at once. They're all shown stacked, each
-with its own tick in the corner once it's answered, and **Send answer** stays
-greyed out until every one of them has an answer. Hovering it tells you why.
+### More than one question at a time
+
+Claude can ask several questions in one go. When it does, they arrive as **tabs
+across the top of the panel** — one question on screen at a time, with a tab for
+each. The tab's name is Claude's own short label for that question ("Colour",
+"Approach"), so you can see everything it asked without answering anything yet.
+
+**Send answer** stays greyed out until every question has an answer, and the
+panel makes sure you can always tell which one is holding it up:
+
+- **Each tab shows its own state.** A tick (✓) means that question is answered;
+  an empty ring (○) means it isn't. It's the shape that tells you, not just the
+  colour.
+- **The panel says it in words too.** While **Send answer** is greyed out you'll
+  see *"Still to answer: Languages"* next to it, naming the questions that are
+  still empty. No hunting through tabs to find the one you missed.
+- **It opens where the work is.** The panel starts on the first unanswered
+  question — including when you come back to it after looking at something else.
+
+A single question — which is what you'll usually get — has no tabs at all. It
+looks exactly as it always did.
 
 **Don't answer** sends your refusal back. That's a real answer and a safe one:
 Claude is told you declined, and it will usually just ask again in ordinary
@@ -74,9 +92,15 @@ anything you typed are still there.
 ### Everything works from the keyboard
 
 Tab into the list, **Up** and **Down** move between the answers of one question,
-**Space** or **Enter** picks the one you're on. Tab moves on to the next
-question, and to the buttons. If you're typing in an "Other" box, **Enter**
-sends the whole thing once everything is answered.
+**Space** or **Enter** picks the one you're on. Tab moves on to the buttons. If
+you're typing in an "Other" box, **Enter** sends the whole thing once everything
+is answered.
+
+When there's more than one question, Tab also reaches the **tab strip**, and
+there **Left** and **Right** move between the questions (**Home** and **End**
+jump to the first and last). Moving to a tab opens it straight away — you can't
+end up looking at a question you haven't actually selected. Up and Down stay
+inside the question you're on and never wander into another one.
 
 ### Two things worth knowing
 
