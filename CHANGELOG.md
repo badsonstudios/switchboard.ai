@@ -76,6 +76,17 @@ on the floor, and say so in your PR.
   name says. Auto mode is still one **Shift+Tab** away inside a session's
   terminal if you want it. (#587)
 
+### Fixed
+
+- **A suspended session can now be maximized by double-clicking it.** A session
+  that came back with the app and hasn't been resumed yet drew
+  no card header at all, so the double-click that fills the workspace with one
+  session had nothing to land on — the keyboard shortcut worked, the mouse did
+  not, and the manual had to write the exception down. Its card now keeps a
+  header with the session's name, colour, badge and the word *suspended*.
+  Maximizing it doesn't wake it up: it stays suspended, with its **Resume**
+  button, until you press that. (#216)
+
 ### Internal
 
 - **When a session's CLI dies badly, the log now says what it said on the way

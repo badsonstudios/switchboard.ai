@@ -347,6 +347,17 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const cardTitle = React.useSyncExternalStore(subscribeStore, () =>
     sessionStore.getCardTitle(cardId)
   );
+  // The rest of the identity, for the header a card draws while it has NO live
+  // session (#216, the suspended state). `live.accent` / `live.badge` below are
+  // the same two fields off the session record; these are the card record's
+  // copy, which is the one that still exists when the session does not — the
+  // same pair, from the same `sessions:cards` push, that the card TAB reads.
+  const cardAccent = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getCardAccent(cardId)
+  );
+  const cardBadge = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getCardBadge(cardId)
+  );
   const view = presentation.view;
   const poppedOut = presentation.poppedOut;
   const suspended = presentation.suspended;
@@ -1080,6 +1091,38 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // (#358). Computed from the same three values the branch below switches on,
   // through the one function that knows their order.
   const said = overlaySaid({ live: !!live, suspended, ended });
+  /**
+   * §5.8's maximize, verbatim: "double-click a session header (or one command)
+   * toggles maximize and restores the prior layout on repeat". The command is
+   * the keyboard path — hiding chrome never removes capability, and a
+   * double-click has none.
+   *
+   * Anything in the header that owns its own clicks keeps them: the task label
+   * is click-to-edit and the buttons act on one press, so a second press there
+   * is not a request to rearrange the workspace. Controls opt out by BEING one
+   * (a button, a field) or by marking themselves — the marker is what covers
+   * the click-to-edit task label, which is a plain span and would otherwise
+   * depend on React having swapped its input in between the two clicks.
+   *
+   * One handler for both headers this card can draw (#216): the suspended one
+   * has no controls to exempt today, and the exemptions are the part that must
+   * not be re-derived if it ever grows one.
+   */
+  const maximizeOnDoubleClick = (e: React.MouseEvent): void => {
+    const el = e.target as HTMLElement;
+    if (el.closest('button, input, textarea, select, [data-no-maximize]')) return;
+    if (cardId) toggleMaximizeCard(props.containerApi, cardId);
+  };
+  // ONE identity for whichever header is drawn (§5.11). The live session's copy
+  // first — it is the record this card is bound to right now — and the card
+  // record's copy under it, which is the one that still exists when the session
+  // does not. They cannot disagree for long (main reuses `prior?.identity` on
+  // every resume), but they DO differ for a frame or two: a card restored at
+  // boot renders before the first `sessions:cards` push lands, and reading only
+  // one of them there is a grey border that pops to the real accent in front of
+  // the user.
+  const headerAccent = live?.accent ?? cardAccent;
+  const headerBadge = live?.badge ?? cardBadge;
   const changed = git?.files.length ?? 0;
   // Contributed view tabs (§5.23). The strip and the panel bodies below both
   // render from this list, so a new tab is a contribution plus a bootstrap
@@ -1237,69 +1280,23 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         ) : null}
       </div>
       {live ? (
-        <div style={{ flex: 1, minInlineSize: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+        <div style={cardColumn}>
           {/* card header (.chead) — accent border, identity, status, window controls */}
           <div
             data-testid="card-header"
             title={t('layout.maximizeHint')}
-            /* §5.8's maximize, verbatim: "double-click a session header (or one
-               command) toggles maximize and restores the prior layout on
-               repeat". The command is the keyboard path — hiding chrome never
-               removes capability, and a double-click has none.
-               Anything in the header that owns its own clicks keeps them: the
-               task label is click-to-edit and the buttons act on one press, so
-               a second press there is not a request to rearrange the
-               workspace. Controls opt out by BEING one (a button, a field) or by
-               marking themselves — the marker is what covers the click-to-edit
-               task label, which is a plain span and would otherwise depend on
-               React having swapped its input in between the two clicks. */
-            onDoubleClick={(e) => {
-              const el = e.target as HTMLElement;
-              if (el.closest('button, input, textarea, select, [data-no-maximize]')) return;
-              if (cardId) toggleMaximizeCard(props.containerApi, cardId);
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 9,
-              paddingInline: 10,
-              paddingBlock: 7,
-              borderBlockEnd: '1px solid var(--border)',
-              borderInlineStart: `3px solid ${live.accent ?? 'var(--faint)'}`,
-              background: 'var(--panel2)',
-            }}
+            onDoubleClick={maximizeOnDoubleClick}
+            style={cheadStyle(headerAccent)}
           >
             {/* the SAME badge the tab above draws (#269) — §5.11's "renders
                 identically everywhere", and the accent is the field, never the
                 ink: as 9px text it measured 1.80-3.11:1 on daylight */}
-            {live.badge && (
-              <span data-testid="identity-badge" style={identityBadgeStyle(live.accent)}>
-                {live.badge}
+            {headerBadge && (
+              <span data-testid="identity-badge" style={identityBadgeStyle(headerAccent)}>
+                {headerBadge}
               </span>
             )}
-            <span
-              data-testid="card-header-name"
-              style={{
-                fontWeight: 650,
-                fontSize: 13,
-                color: 'var(--text)',
-                fontFamily: 'var(--font-ui)',
-                whiteSpace: 'nowrap',
-                // #294. `nowrap` alone made the row a promise it could not keep:
-                // a flex item's automatic minimum size is its own content until
-                // its inline-axis `overflow` stops being `visible` (CSS Sizing 3
-                // §5.2), so a 120-character title — main's cap — grew the header
-                // past its card and carried the status pill and the window
-                // buttons off the end with it. The controls, not the name, were
-                // what got lost. Measured, not assumed: with these two the
-                // header overflows its card by 0px; without them, by 1170px at
-                // a 1280-wide window. This is the pair IdentityChip and the rail
-                // rows already truncate with — no `min-inline-size` needed, and
-                // none used there either.
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
+            <span data-testid="card-header-name" style={cheadName}>
               {headerTitle}
             </span>
             {editingLabel ? (
@@ -1789,7 +1786,49 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
           </div>
         </div>
       ) : suspended ? (
-        <div style={{ ...overlayBackdrop, position: 'relative', flex: 1 }}>{suspendedOverlay}</div>
+        <div style={cardColumn}>
+          {/* THE SUSPENDED CARD'S HEADER (#216). A restored-not-yet-resumed
+              session drew no header at all, so §5.8's "double-click a session
+              header toggles maximize" had nothing to land on — the one gesture
+              in the ladder that a suspended card could not be given, while the
+              binding and the palette command worked on it the whole time. The
+              manual had to write that exception down; this is the exception
+              going away.
+
+              The SUSPENDED-APPROPRIATE SUBSET of the live header, and nothing
+              else: identity (accent, badge, name — §5.11's one identity), the
+              state in a word, and the maximize gesture. Deliberately NOT the
+              controls: the collapse/pop-out/⋯ buttons act on a running session,
+              and the two things this card genuinely offers — Resume and Close —
+              are already the overlay's own buttons, two centimetres below.
+              Repeating them in the header would be a second way to do the same
+              thing on the smallest surface the card has.
+
+              The pill says `suspended` from the branch rather than from the
+              status state, which is still whatever the session last reported
+              (or `starting`, for a card restored this launch). Same token the
+              rail row and the urgency lamp use for this card right now —
+              presentStatus is the one vocabulary, so the card cannot look like
+              two different states in two places. */}
+          <div
+            data-testid="card-header"
+            title={t('layout.maximizeHint')}
+            onDoubleClick={maximizeOnDoubleClick}
+            style={cheadStyle(headerAccent)}
+          >
+            {headerBadge && (
+              <span data-testid="identity-badge" style={identityBadgeStyle(headerAccent)}>
+                {headerBadge}
+              </span>
+            )}
+            <span data-testid="card-header-name" style={cheadName}>
+              {headerTitle}
+            </span>
+            <span style={{ flex: 1, minInlineSize: 8 }} />
+            <StatusPill status="suspended" label={t('status.suspended')} />
+          </div>
+          <div style={{ ...overlayBackdrop, position: 'relative', flex: 1 }}>{suspendedOverlay}</div>
+        </div>
       ) : ended ? (
         // spawn/resume failed before a terminal existed — still recoverable, and
         // this is the branch a never-started card lands on (#355)
@@ -1823,6 +1862,63 @@ function docTheme(): { theme: string; colorScheme: 'light' | 'dark' } {
     colorScheme: d.colorScheme === 'light' ? 'light' : 'dark',
   };
 }
+
+/**
+ * The card header row (.chead) — accent border, identity, status.
+ *
+ * A function at module scope rather than two object literals inside the render
+ * because a card has TWO headers to draw (#216): the live one, with its window
+ * controls, and the suspended one, which is the same row minus every control
+ * that would act on a session that is not running. §5.11's "one identity,
+ * rendered identically everywhere" is a promise about pixels, and the way that
+ * promise rots is a second copy of the row drifting from the first.
+ *
+ * The accent is a parameter because it comes from two places: the live session
+ * record while there is one, and the card record in the store while there is
+ * not. Same field (`identity.accentColor`), two routes to it.
+ */
+function cheadStyle(accent?: string): React.CSSProperties {
+  return {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 9,
+    paddingInline: 10,
+    paddingBlock: 7,
+    borderBlockEnd: '1px solid var(--border)',
+    borderInlineStart: `3px solid ${accent ?? 'var(--faint)'}`,
+    background: 'var(--panel2)',
+  };
+}
+
+/** The column a card's header and body share — both branches that draw a
+ *  header (live, and #216's suspended one) are this box. */
+const cardColumn: React.CSSProperties = {
+  flex: 1,
+  minInlineSize: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  position: 'relative',
+};
+
+/** The session name in a card header. */
+const cheadName: React.CSSProperties = {
+  fontWeight: 650,
+  fontSize: 13,
+  color: 'var(--text)',
+  fontFamily: 'var(--font-ui)',
+  whiteSpace: 'nowrap',
+  // #294. `nowrap` alone made the row a promise it could not keep: a flex
+  // item's automatic minimum size is its own content until its inline-axis
+  // `overflow` stops being `visible` (CSS Sizing 3 §5.2), so a 120-character
+  // title — main's cap — grew the header past its card and carried the status
+  // pill and the window buttons off the end with it. The controls, not the
+  // name, were what got lost. Measured, not assumed: with these two the header
+  // overflows its card by 0px; without them, by 1170px at a 1280-wide window.
+  // This is the pair IdentityChip and the rail rows already truncate with — no
+  // `min-inline-size` needed, and none used there either.
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+};
 
 const cheadBtn: React.CSSProperties = {
   background: 'transparent',
