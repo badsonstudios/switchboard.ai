@@ -176,6 +176,21 @@ describe('the markdown v1 scope', () => {
     expect(host.querySelector('.doc-task-list')).not.toBeNull();
   });
 
+  it('a plain item holding a nested checklist keeps its own bullet', () => {
+    // Why the pass reads the item's OWN first text node instead of its
+    // `textContent`: the outer `<li>` here contains the inner marker, so a
+    // `textContent` test would class the outer item too and strip the bullet
+    // from a list that is not a checklist. `box.closest('li')` could never get
+    // this wrong, so the rewrite had to earn it back.
+    const host = render('- outer\n  - [ ] inner\n');
+    const items = [...host.querySelectorAll('li')];
+    expect(items.length).toBeGreaterThanOrEqual(2);
+    const outer = items.find((li) => li.firstChild?.nodeValue?.startsWith('outer'));
+    const inner = items.find((li) => li.firstChild?.nodeValue?.trimStart().startsWith('☐'));
+    expect(outer?.classList.contains('doc-task')).toBe(false);
+    expect(inner?.classList.contains('doc-task')).toBe(true);
+  });
+
   it('an ordinary list is NOT treated as a checklist', () => {
     // The other half of "matched at the start of the item's text": if this
     // stopped discriminating, every bullet in every document would lose its

@@ -189,17 +189,26 @@ export function decorateTables(root: ParentNode): void {
  * anything, which left the list with its bullet AND a glyph. `list-style: none`
  * on `.doc-task-list` is what removes the bullet, so this has to keep working.
  *
- * The marker is matched at the START of the item's text, which is where
- * `marked` puts it and nowhere else. Content typing a `☐` as the first
- * character of a list item gets the same class, and that is fine: the whole
- * effect is a missing bullet. There is no protocol here for content to speak —
- * unlike `doc-` DATA attributes, which handlers read back off the DOM and
- * `stripDecorationNamespace` therefore takes away first.
+ * The marker is matched on the item's OWN first child text node, not on
+ * `textContent`, and the difference is a nested list: `textContent` reaches
+ * into descendants, so an outer `<li>` whose first sub-item is a task would
+ * match on its child's marker and lose the bullet it should have kept. The old
+ * pass had this right for free — `box.closest('li')` could only ever be the
+ * innermost one — and this keeps it. `marked` puts the marker first in the
+ * item, so a first child that is not text is not a task item.
+ *
+ * Content typing a `☐` as the first character of a list item gets the same
+ * class, and that is fine: the whole effect is a missing bullet. There is no
+ * protocol here for content to speak — unlike `doc-` DATA attributes, which
+ * handlers read back off the DOM and `stripDecorationNamespace` therefore takes
+ * away first.
  */
 export function decorateTaskLists(root: ParentNode): void {
   for (const li of [...root.querySelectorAll('li')]) {
-    const first = li.textContent?.trimStart()[0];
-    if (first !== TASK_GLYPH.checked && first !== TASK_GLYPH.unchecked) continue;
+    const first = li.firstChild;
+    if (!first || first.nodeType !== Node.TEXT_NODE) continue;
+    const glyph = first.nodeValue?.trimStart()[0];
+    if (glyph !== TASK_GLYPH.checked && glyph !== TASK_GLYPH.unchecked) continue;
     li.classList.add('doc-task');
     li.parentElement?.classList.add('doc-task-list');
   }
