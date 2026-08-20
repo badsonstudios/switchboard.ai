@@ -26,6 +26,14 @@
  * describe itself.
  */
 
+/**
+ * **Moving or renaming this file has a build consequence (#630).** It is the
+ * only module the `__SWITCHBOARD_BUILD__` define is substituted into, so the
+ * renderer build pins it by path and emits it as its own unhashed chunk to keep
+ * the timestamp out of every other chunk's content hash. See
+ * `src/build/stamp-chunk.ts`; its test fails if this path stops existing.
+ */
+
 /** What the build knew about itself. Every field is nullable on purpose. */
 export interface BuildIdentity {
   /** git short SHA at build time, or null when git could not be asked */
