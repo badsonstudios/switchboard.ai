@@ -153,6 +153,13 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **Right-click menus now stay on the screen.** A session row's menu drew at
+  the pointer and simply ran off the bottom of a short window — on a small
+  laptop screen or a half-height window, the lower menu items (including the
+  whole focus-stealing section) were unreachable, with no scrollbar and no
+  hint anything was missing. The menu now flips above the pointer when there
+  is no room below, sits against the edge when neither side fits, and scrolls
+  itself if it is taller than the window.
 - **The `ask` autonomy mode asks again.** `ask` never told Claude Code which
   permission mode to use — it let the CLI pick its own, and for years the CLI
   picked "stop and ask a person". Recent versions changed that pick: on a Pro,
