@@ -991,6 +991,49 @@ export async function sessionStatuses(a: LaunchedApp): Promise<Map<string, strin
 }
 
 /**
+ * Put the app AWAY — no window of ours focused — and PROVE it stuck (#538).
+ *
+ * Every `WHEN_AWAY` rule (the toast, the voice, push) is gated on the user not
+ * looking at us, so five specs opened with a bare
+ * `BrowserWindow.getAllWindows()[0].blur()` and then waited for `isFocused()`
+ * to go false. That is a fire-and-forget command with a passive wait behind it,
+ * and on Windows the command can simply not take: deactivating a window means
+ * handing the foreground to the next window in the Z-order, and when that
+ * neighbour is itself mid-destruction — routine on a machine running several
+ * Electron suites at once — the request is dropped. Nothing re-sent it, so the
+ * spec then sat out its whole timeout waiting for a state change that had
+ * already been lost.
+ *
+ * MEASURED (#538, under ~4x load): the blur normally lands in **1-5 ms**, and
+ * in the one repeat that failed it never landed at all — `isFocused()` was
+ * still true 15 s later. So the failure is a DROPPED command, not a slow one,
+ * which is exactly why this re-issues the blur on every attempt instead of
+ * waiting longer. A longer timeout cannot deliver a message nobody re-sent.
+ *
+ * EVERY window, not `[0]`: the rules ask `visibilityAcross(...)`, so a single
+ * focused popout is enough to keep the whole app "in front of the user" and
+ * hold every away-rule back.
+ *
+ * Throws — with the state it could not reach — rather than returning a boolean:
+ * a spec that carried on from here would go on to prove its rule fired for a
+ * reason it did not have.
+ */
+export async function blurApp(a: LaunchedApp, timeoutMs = 15_000): Promise<void> {
+  await pollAsync(
+    async () => {
+      const stillFocused = await a.app.evaluate(({ BrowserWindow }) => {
+        const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
+        for (const w of wins) w.blur();
+        return wins.filter((w) => w.isFocused()).length;
+      });
+      return stillFocused === 0 ? true : null;
+    },
+    `the app never went away: a window still reports isFocused() after repeatedly asking every window to blur (${timeoutMs}ms)`,
+    timeoutMs
+  );
+}
+
+/**
  * Skip a test that needs a REAL second OS window (#462, hoisted).
  *
  * dockview's pop-out is `window.open` -> a second BrowserWindow, which is

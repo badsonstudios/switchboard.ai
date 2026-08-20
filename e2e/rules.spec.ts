@@ -17,6 +17,7 @@ import { test, expect, Page, Locator } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import {
+  blurApp,
   launchApp,
   LaunchedApp,
   findFile,
@@ -93,17 +94,12 @@ test.describe('notification rules (P2-E14-03)', () => {
     await w.keyboard.press('Escape');
 
     // The user looks away — the rule's visibility condition needs it. Asserted
-    // rather than assumed: a `blur()` that did nothing would leave this test
-    // proving the rule fired for a reason it did not have. (The FOCUSED half of
-    // the condition is unit-tested; a headless runner is no place to insist on
-    // owning OS focus.)
-    await a.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].blur());
-    await expect
-      .poll(
-        () => a.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFocused()),
-        { timeout: 15_000 }
-      )
-      .toBe(false);
+    // rather than assumed by `blurApp`, which re-issues the blur until it takes
+    // and throws if it never does (#538): a `blur()` that did nothing would
+    // leave this test proving the rule fired for a reason it did not have. (The
+    // FOCUSED half of the condition is unit-tested; a headless runner is no
+    // place to insist on owning OS focus.)
+    await blurApp(a);
 
     const post = await hookPoster(a, 2);
     // The UNTICKED session finishes FIRST: if `done` still toasted globally,

@@ -125,6 +125,19 @@ numbers (latency, CPU, memory) where the item asks for them.
      activating a window grabs the keyboard however far away it is, and the
      focus-anchored specs preclude launching without activation. Your screen
      goes quiet; your typing can still be interrupted.
+   - **Going AWAY in a spec: `blurApp(a)`, never a bare `blur()` (#538).**
+     Every `WHEN_AWAY` rule (toast, voice, push) is gated on no window of ours
+     being focused, and `BrowserWindow.blur()` is a fire-and-forget command the
+     window manager can DROP — deactivating means handing the foreground to the
+     next window in the Z-order, and on a loaded machine that neighbour is often
+     one mid-destruction. Measured: the blur normally lands in **1-5 ms**, and
+     the one repeat that failed never landed at all, so the spec sat out its
+     whole 15 s waiting for a state change already lost (this was #538, and four
+     more specs carried the same idiom). `blurApp` **re-issues** the blur every
+     attempt, covers **every** window (`visibilityAcross` means one focused
+     popout holds the whole app), and **throws** rather than letting a spec go
+     on to prove its rule fired for a reason it did not have. A longer timeout
+     is never the answer here — it cannot deliver a message nobody re-sent.
    - **Add an e2e test for every new user-facing surface.** If a feature can
      only be checked by looking at the window, it needs an e2e test — not a
      PROGRESS "[Dan eyeball]" note.
