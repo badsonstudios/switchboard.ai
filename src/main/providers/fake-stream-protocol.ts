@@ -124,6 +124,37 @@ export class FakeStreamProtocol {
    * `RESUMED-FROM:<id>` while stamping a different id on init, on every message
    * and on the transcript. The flag names a conversation that already exists on
    * disk; the next turn belongs in that file.
+   *
+   * THAT IS FIDELITY, NOT A SHORTCUT. "The real CLI mints a new id on resume,
+   * so the fake should too" has now been filed as a defect twice (#616, and the
+   * theory #484 was originally filed under), so the evidence lives here rather
+   * than being re-derived a third time. Plain `--resume <A>` RE-ADOPTS A's id
+   * and APPENDS to `A.jsonl`:
+   *
+   *   - MEASURED 2026-08-15 against claude 2.1.226 for #484 — the note at the
+   *     top of `sessions/lineage.ts`, over a 6,747-transcript corpus: 22 carry
+   *     a mid-file `SessionStart:resume` line and not one BEGINS with a resume.
+   *     A fresh id per resume would have started a new file every single time.
+   *   - LEFT ON DISK BY OUR OWN REAL-CLI CHECK: `adapter-check.ts` plants a
+   *     marker in one session and asks for it back under `--resume`, so each of
+   *     its runs is exactly this question asked of the real thing. Both folders
+   *     it has left in `~/.claude/projects` on this machine hold exactly ONE
+   *     transcript carrying exactly ONE `sessionId` — two spawns, one
+   *     conversation. Two files would have meant two ids.
+   *   - THE FLAG THAT DOES FORK IS A DIFFERENT FLAG: the Agent SDK's argument
+   *     builder emits `--fork-session` only for its own `forkSession` option,
+   *     independently of `--resume=<id>`. We never pass it — DESIGN's context
+   *     transfer Level 3 is the experimental, unbuilt feature that would.
+   *
+   * So a fake that minted a fresh id here would be the one inventing a state
+   * the real CLI does not reach, and it would break the thing resume exists
+   * FOR: the app finds a conversation by `<id>.jsonl`, so a new id means a new
+   * file, the history stays behind in the old one, and every resumed session
+   * turns into precisely the orphan #484 was written to prevent.
+   *
+   * What DOES rotate the id is a `/clear`, a fresh spawn, and a resume the app
+   * declined — all three of which reach the main process as an ordinary
+   * `system:init` announcing a new id, which is what `recordNativeId` handles.
    */
   private readonly sessionId: string;
 
