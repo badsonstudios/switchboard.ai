@@ -73,6 +73,12 @@ on the floor, and say so in your PR.
   read everything that was said. Three obsolete tags go with them, for the same
   reason this release removes the older HTML ways of colouring text: `<center>`,
   `<marquee>` and `<font>`.
+  It also finishes the **"a document can't hide text from you"** promise
+  elsewhere in this release. That entry closed the ways markup could hide text
+  using an *attribute*; a `<datalist>` did the same thing as a *tag* — anything
+  inside one is in the document, in a find, and invisible, including a code
+  block whose **Copy** button would still have worked. It is removed too, and
+  what was inside it is now simply on screen.
   Two things this deliberately does **not** change: links in a reply are still
   links — Markdown writes those, and they stay reachable by keyboard — and
   Markdown's own **checklists** keep their box. They are drawn with ☐ and ☑

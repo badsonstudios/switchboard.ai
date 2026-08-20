@@ -1843,8 +1843,14 @@ external editor does badly: reading `PROGRESS.md` as it is being written should
 not need a reload, and a silently stale render is worse than no render at all.
 
 **Markdown rendering, aimed at what AIs actually emit.** GFM — tables, task-list
-checkboxes rendered as disabled checkboxes (agents write plans as `- [ ]`),
-strikethrough, autolinks. Fenced code with a language label and a copy button
+checkboxes (agents write plans as `- [ ]`), strikethrough, autolinks.
+*(Amended by #612, 2026-08-20: this said "rendered as disabled checkboxes", and
+they are now rendered as `☐`/`☑` GLYPHS. `<input>` is in the sanitizer's
+`FORBID_TAGS` — a native control is focusable with no `tabindex`, so an
+`<input>` in content was a tab stop and a text box content could draw — and
+`marked`'s task-list checkbox was the one thing markdown itself emitted on that
+list. It was always `disabled`, i.e. decoration drawn with a control, so it is
+now drawn with decoration. The marker survives; the tag does not.)* Fenced code with a language label and a copy button
 (you copy the command it just gave you). YAML front matter as a collapsed
 metadata chip, not an `<hr>` and a line of garbage. Heading anchors plus a
 **document outline** — our own docs run past 1,700 lines. Relative links

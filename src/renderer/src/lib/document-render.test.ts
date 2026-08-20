@@ -176,6 +176,17 @@ describe('the markdown v1 scope', () => {
     expect(host.querySelector('.doc-task-list')).not.toBeNull();
   });
 
+  it('a LOOSE checklist is decorated too — a blank line does not undo it', () => {
+    // `marked` wraps every item of a list with a blank line anywhere in it in a
+    // `<p>`, so the marker stops being a direct child of the `<li>`. The first
+    // cut of the glyph pass read only direct text children and left exactly
+    // this shape with its bullet AND a glyph. Found in review.
+    const host = render('- [ ] not done\n\n- [x] done\n');
+    expect(host.querySelector('li > p')).not.toBeNull();
+    expect(host.querySelectorAll('li.doc-task')).toHaveLength(2);
+    expect(host.querySelector('.doc-task-list')).not.toBeNull();
+  });
+
   it('a plain item holding a nested checklist keeps its own bullet', () => {
     // Why the pass reads the item's OWN first text node instead of its
     // `textContent`: the outer `<li>` here contains the inner marker, so a

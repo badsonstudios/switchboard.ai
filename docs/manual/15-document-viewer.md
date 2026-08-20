@@ -110,7 +110,9 @@ What you get in the rendered view:
 
 - **Tables**, which scroll sideways on their own if they're wide, instead of
   making the whole page scroll.
-- **Task lists** — `- [ ]` and `- [x]` become real (non-clickable) checkboxes.
+- **Task lists** — `- [ ]` and `- [x]` become ☐ and ☑ marks. They are not
+  clickable, and never were; see the note further down about why they are
+  characters rather than real checkboxes.
 - **Code blocks** with the language named and a **Copy** button, for when the
   agent has just handed you a command.
 - **An outline** down the left of long documents. Click a heading to jump.
@@ -217,7 +219,8 @@ into your own tools is always one click away.
   button, so a hidden one would have shown you an ordinary code header with a
   Copy button and no code — and copied something you never saw.
   The same removal covers markup that inserts itself into the keyboard Tab
-  order. This applies to replies in the session view as well.
+  order, and one tag — `<datalist>` — that hid whatever was put inside it. This
+  applies to replies in the session view as well.
 - **A document can't put a button or a text box in front of you.** Raw HTML can
   contain real controls — a button, a text box, a dropdown — and rendered in a
   document or a reply they would look exactly like switchboard.ai's own, land
@@ -227,11 +230,11 @@ into your own tools is always one click away.
   reply said. A few obsolete tags go with them — `<center>`, `<marquee>` and
   `<font>` — for the same reason as the colours above.
   What is still reachable with Tab inside the text is what the text genuinely
-  contains: **links**, and the scroll box around a wide table, which the viewer
-  makes reachable on purpose. In the document viewer, links are switchboard.ai's
-  own — it takes the address off every link and decides itself what opening one
-  does — so there every stop is one it put there. In a session reply, a link is
-  the reply's own.
+  contains: **links**, any `<details>` sections it uses to fold parts of itself
+  away, and the scroll box around a wide table, which the viewer makes reachable
+  on purpose. In the document viewer, links are switchboard.ai's own — it takes
+  the address off every link and decides itself what opening one does. In a
+  session reply, a link is the reply's own.
 - **Checklists show a box, not a checkbox.** A markdown task list
   (`- [ ] not done`, `- [x] done`) is drawn with ☐ and ☑ characters rather than
   a real checkbox control. They were never clickable — markdown checkboxes are

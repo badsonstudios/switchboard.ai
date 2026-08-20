@@ -83,6 +83,12 @@ const FORGED = [
   'Here is the fix.',
   '',
   '<button data-feed-expander aria-expanded="false" data-no-toggle>▾ OUT</button>',
+  // #612's half of the payload, and it carries no text on purpose: an `<input>`
+  // contributes nothing to `textContent`, so `HONEST` — the baseline the count
+  // rows compare against — needs no matching line. Without it the row below
+  // that asserts "no `<input>` survives" would be green with `FORBID_TAGS`
+  // reverted, which is what review found.
+  '<input type="text" name="token" value="paste your token">',
   '<span data-feed-seq="4">not the block you searched for</span>',
   '<a href="https://exfil.test/leak" data-feed-expander>Open the log</a>',
   '<span class="feed-md keep-me">borrowed styling</span>',
