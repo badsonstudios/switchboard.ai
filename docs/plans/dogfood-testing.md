@@ -8,12 +8,16 @@
 > When Dan asks "what should I test?", answer FROM this file: the UNTESTED
 > and RE-TEST sections, phrased as steps + expected result.
 
-Last updated: 2026-08-17 — **v0.7.0 SHIPPED**, cut specifically so Dan can hand-test
-#563's question panel in a real installed build. v0.7.0 carries **#563** (Claude's
-questions, answerable in the card), **#555** (feeds restore at the tail), and
-**#557 + #496 + #495** (find is a bar first, and works in a resumed session) —
-all four are UNTESTED below. The earlier v0.6.0 note stands: everything in the
-RE-TEST table is in the installed build once Dan updates.
+Last updated: 2026-08-20 — **v0.8.0 SHIPPED AND IN DAN'S HANDS** (carries
+#562, #569, #570, #571 on top of the v0.7.0 set). Dan is dogfooding it and
+reports a **blanket "everything seems good" (2026-08-20)** — recorded here as a
+general pass, but only the rows explicitly marked TESTED below were exercised
+as specific checks; the rest of the v0.7.0/v0.8.0 rows stay UNTESTED until
+individually confirmed. **Owner statement, same day: "we're not using
+terminals anymore within the app"** — every Terminal-pane check is marked MOOT
+below rather than deleted; they revive if PTY-transport sessions come back
+into use. Ten more user-facing changes are green in PR queue (see PROGRESS) —
+they enter this tracker when their train merges.
 
 ## Untested — never exercised by hand
 
@@ -23,12 +27,12 @@ RE-TEST table is in the installed build once Dan updates.
 | **Feeds restore at the tail (#555)** | Scroll to the end of a busy session, quit switchboard, relaunch. It should come back showing the END of the conversation, not the top. Then drag the panel to another part of the workspace — it should keep its position rather than jumping | **v0.7.0.** Was: every session restored scrolled to the top |
 | **Find is a bar first (#557)** | Ctrl+F in a session — you should get the bar with a match count, and Enter / Shift+Enter walking the hits. The results list should stay shut behind its **▸** until you click it | **v0.7.0** |
 | **Find in a RESUMED session (#496 + #495)** | Resume a session, send one new turn, then Ctrl+F for something that appears both before and after the resume. Post-resume hits should jump normally; only the older hydrated ones stay unjumpable, and the notice should be about that one hit rather than over the whole session | **v0.7.0.** The ticket's premise was measured wrong first — see PROGRESS |
-| **File menu: Open File / Exit (#569)** | A **File** menu at the top left. **Open File…** browses — it should start in the folder of the session you are looking at, and after that wherever you last browsed. The file opens in a document tab BESIDE that session, in its dock section, never inside the session’s own tab strip. Try it with two sessions docked side by side and the SECOND one focused: the document must appear next to that one. Also try it right after typing a prompt (composer focused) — it must still open | Not yet released — on main after #569 |
-| **Ctrl+O, and the CLI’s own ctrl+o (#569)** | **Ctrl+O** anywhere in the app opens the file browser — including while typing a prompt. **But click into a session’s Terminal tab and press Ctrl+O there: it must reach Claude Code** (its transcript view), NOT open our dialog. That is the P7 line, and it is the one check no automated test in this repo can make | Not yet released — on main after #569 |
-| **Popped-out window comes forward (#571)** | Pop a session out, put another window in front of it, then click that session's row in the sidebar — its window should come to the front. Then click the main switchboard window: your popped-out windows must NOT come forward with it | Not yet released — on main after #571 |
-| **Changes tab remembers your file (#562)** | Open **Changes** on a session, pick a file, scroll into the diff. Switch to **Session**, switch back — same file, same line. Then commit or discard that file and come back: the tab should open CLEAN, not on a blank comparison | Not yet released — on main after #562 |
-| **Documents keep their place (#562)** | Open two files in the viewer (the ↗ beside a changed file). Read halfway down one, click the other tab, click back — you should still be halfway down | Not yet released — on main after #562 |
-| **[UNRESOLVED] Terminal scrollback across a panel move (#562)** | Needs a session with real scrollback: run something long in the **Terminal**, scroll UP into the output, then click that card’s row in the sidebar (with two sessions docked side by side) and see whether the terminal keeps its position. The automated harness could not fill one screen, so this is the one panel measured only halfway | If it jumps to the bottom, say so — it needs the same fix the document viewer got |
+| **File menu: Open File / Exit (#569)** | A **File** menu at the top left. **Open File…** browses — it should start in the folder of the session you are looking at, and after that wherever you last browsed. The file opens in a document tab BESIDE that session, in its dock section, never inside the session’s own tab strip. Try it with two sessions docked side by side and the SECOND one focused: the document must appear next to that one. Also try it right after typing a prompt (composer focused) — it must still open | **v0.8.0.** |
+| **Ctrl+O, and the CLI’s own ctrl+o (#569)** | **Ctrl+O** anywhere in the app opens the file browser — including while typing a prompt. **But click into a session’s Terminal tab and press Ctrl+O there: it must reach Claude Code** (its transcript view), NOT open our dialog. That is the P7 line, and it is the one check no automated test in this repo can make | **TESTED (app half) 2026-08-20:** Dan pressed Ctrl+O in a (Direct) session — dialog opened to that session's folder, as designed. **Terminal-pane half MOOT** while terminals are unused (owner, 2026-08-20); revive with PTY use |
+| **Popped-out window comes forward (#571)** | Pop a session out, put another window in front of it, then click that session's row in the sidebar — its window should come to the front. Then click the main switchboard window: your popped-out windows must NOT come forward with it | **v0.8.0** |
+| **Changes tab remembers your file (#562)** | Open **Changes** on a session, pick a file, scroll into the diff. Switch to **Session**, switch back — same file, same line. Then commit or discard that file and come back: the tab should open CLEAN, not on a blank comparison | **v0.8.0** |
+| **Documents keep their place (#562)** | Open two files in the viewer (the ↗ beside a changed file). Read halfway down one, click the other tab, click back — you should still be halfway down | **v0.8.0** |
+| **[UNRESOLVED] Terminal scrollback across a panel move (#562)** | Needs a session with real scrollback: run something long in the **Terminal**, scroll UP into the output, then click that card’s row in the sidebar (with two sessions docked side by side) and see whether the terminal keeps its position. The automated harness could not fill one screen, so this is the one panel measured only halfway | **MOOT** while terminals are unused (owner, 2026-08-20). If PTY sessions return: if it jumps to the bottom it needs the same fix the document viewer got |
 | **The Events drawer (0.6.0)** | The 220px column is gone — look for the slim badge tab on the right edge; it shows the attention count, tinted by the hottest event. Click it, or the hotkey, or the palette; the drawer overlays the grid. Check the update/reconnect/incident notices appear inside it, Esc closes and gives focus back, and the status bar now carries a queue count | Shipped in v0.6.0 |
 | **Quiet hours (0.6.0)** | Palette → quiet hours (or the About button); set a window covering now; a session needing you must NOT sound/speak/toast — but a webhook still fires | Shipped in v0.6.0 |
 | Actionable toasts (Allow/Deny on Windows notification) | Unfocus the app, make a session hit a permission ask; buttons on the toast must work without focusing the app; answering in-app withdraws the toast | Dan got NO toast at all 2026-08-15 — possibly OS focus assist / notification settings during dev; INVESTIGATE before re-test (installed build should have AppUserModelId) |

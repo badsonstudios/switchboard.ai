@@ -3,6 +3,44 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ▶▶ START HERE — READY FOR THE NEXT ORCHESTRATION (prepped 2026-08-20)
+>
+> Dan is dogfooding v0.8.0 (blanket pass so far; tracker updated). Decisions
+> he made 2026-08-20, all already applied:
+>
+> 1. **Versioning slowed (owner decision):** pre-1.0 releases are PATCH bumps
+>    by default; minors only for named milestone batches; **1.0 = the feature
+>    set is (mostly) complete.** Policy text rewritten in CHANGELOG.md; the
+>    open unreleased section is renamed **`## 0.8.1 — unreleased`**.
+>    ⚠️ TRAIN NOTE: all 10 queued PRs file their changelog entries under the
+>    OLD `0.9.0 — unreleased` heading — every one will conflict there at the
+>    train; resolve by landing entries under `0.8.1 — unreleased` (rename
+>    survives, entries accumulate). Same one-sitting resolution as trains
+>    #601/#617.
+> 2. **No release now** — nothing user-visible has merged since v0.8.0. **Cut
+>    0.8.1 immediately after the 10-PR train lands**, per the cut procedure
+>    at the top of CHANGELOG.md.
+> 3. **Terminals are out of daily use** ("we're not using terminals anymore
+>    within the app"). Both human-only Terminal checks are MOOT in the
+>    tracker. Ctrl+O in a Direct session opening the dialog at the session's
+>    folder is #569 working as designed — NOT a bug. Planning implication:
+>    terminal-pane items (#518 upstream defect, future PTY polish) drop in
+>    priority; #517's ring-buffer search (PR #610) still queues — it was
+>    built and gated — but don't spend further terminal effort without
+>    asking Dan.
+>
+> **The next orchestration run's queue, in order:**
+> 1. Dan reviews the 10 PRs → orchestrator TRAINS them (procedure in this
+>    skill; two trains ran green 2026-08-19) → cut **0.8.1** on green.
+> 2. #567 UI half (approved; probe verdict: partial map = SKIPPED — proceed
+>    as the issue sketches) — after #579 merges.
+> 3. #440 renderer-wide refusal sweep — the zero-open-PRs window right after
+>    the train is the cheap moment for it.
+> 4. Unblocked follow-ups: #544, #504, #506, #508 (→#578), #268 (→#576),
+>    #295, #337 (→#580), #606 (→#605), plus filed-this-run: #577, #581,
+>    #582, #588, #600, #607, #612, #616, #618.
+> 5. Dan-only: #528/#529 design sittings; /pm should reconcile stale #256.
+>
 > # 🏁 ORCHESTRATION RUN COMPLETE — 2026-08-19 (started ~15:30, ended ~21:20)
 >
 > **Every dispatched item landed.** 16 issues closed by merge, v0.8.0 released,

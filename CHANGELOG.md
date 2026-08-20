@@ -34,8 +34,12 @@ on the floor, and say so in your PR.
 
 **To cut a release:**
 
-1. Bump `version` in `package.json` — patch for fixes, minor for features,
-   major for a break. Pre-1.0, a minor is what a "release" normally is. If the
+1. Bump `version` in `package.json`. **Pre-1.0 policy (owner, 2026-08-20):
+   a release is a PATCH bump by default** (0.8.1, 0.8.2, …) — the numbering
+   moves slowly on purpose. A MINOR bump is reserved for a deliberate
+   milestone batch the owner names as one, and **1.0 is the release where
+   all (or the substantial majority) of the planned feature set is in** —
+   nothing before it earns a major. If the
    open unreleased section's placeholder version is not the number you landed
    on, rename its heading to match. Then refresh the lock —
    `npm install --package-lock-only` — so `package-lock.json`'s root and
@@ -55,7 +59,7 @@ on the floor, and say so in your PR.
 
 ---
 
-## 0.9.0 — unreleased
+## 0.8.1 — unreleased
 
 ### Internal
 
