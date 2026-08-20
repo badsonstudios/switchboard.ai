@@ -6,7 +6,12 @@ import en from '../i18n/locales/en.json';
 import { POLICY_ORDER } from './presentation-policy';
 import { LAYOUT_MODES } from './layout-mode';
 
-function deps(): CommandDeps & { focusCard: ReturnType<typeof vi.fn> } {
+// The three the tests reach for by name have to be MOCKS, not just members of
+// `CommandDeps` — `expect(d.openAbout).toHaveBeenCalledOnce()` is only a real
+// assertion if the type says so.
+type DepMocks = Record<'focusCard' | 'jumpToNextAttention' | 'openAbout', ReturnType<typeof vi.fn>>;
+
+function deps(): CommandDeps & DepMocks {
   return {
     focusCard: vi.fn(),
     newSession: vi.fn(),

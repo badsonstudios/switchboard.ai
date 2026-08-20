@@ -213,7 +213,12 @@ export default tseslint.config(
     // missing. The rule takes no options in typescript-eslint 8.64, so it is
     // per-glob all-or-nothing — and a test file is the one place in this tree
     // where an `async` with no `await` is routinely load-bearing rather than a
-    // mistake. Product code keeps the rule.
+    // mistake.
+    //
+    // Product code keeps the rule — but only in `src/{preload,shared,build}`
+    // and the root `src/*.ts` until #255 T1 and T2 land: those tranches own the
+    // three product hits, so their blocks below (which are LATER, and therefore
+    // win) hold the rule off `src/main` and `src/renderer` product code too.
     files: ['src/**/*.test.{ts,tsx}'],
     rules: { '@typescript-eslint/require-await': 'off' },
   },

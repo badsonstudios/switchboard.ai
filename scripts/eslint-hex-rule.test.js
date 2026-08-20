@@ -20,6 +20,13 @@ import { ESLint } from 'eslint';
 // The colour rule is scoped to `src/renderer/**` — main and shared are not
 // drawing anything. The file never has to exist; the path is what picks the
 // config block.
+//
+// That is only true because `eslint.config.mjs` ignores `**/__eslint-probe__*`
+// on its two type-checked blocks (#255). `src/` is on `recommendedTypeChecked`,
+// and under `parserOptions.project` a path in no tsconfig is a FATAL parse
+// error — one of those makes ESLint drop every other message, so every
+// assertion below would go red at once. Rename this constant and you must
+// rename the ignore with it.
 const RENDERER_FILE = path.join(process.cwd(), 'src', 'renderer', 'src', '__eslint-probe__.ts');
 
 /** @type {ESLint} */

@@ -3017,7 +3017,7 @@ describe('allow-all is granted on both channels (#319)', () => {
     const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
     start(h);
 
-    h.call('sessions:allowAllSession', 42);
+    h.call('sessions:allowAllSession', 42); // a number where a card id belongs
 
     expect(h.allowedAll).toEqual([]);
     expect(perms.isAllowAll('live-1')).toBe(false);

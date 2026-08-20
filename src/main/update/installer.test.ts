@@ -90,8 +90,6 @@ describe('the launch', () => {
     const spawnImpl = vi.fn(() => {
       throw new Error('EACCES');
     });
-    expect(
-      launchInstaller(GOOD, { updateDir: DIR, spawnImpl, platform: 'win32' })
-    ).toBe(false);
+    expect(launchInstaller(GOOD, { updateDir: DIR, spawnImpl, platform: 'win32' })).toBe(false);
   });
 });

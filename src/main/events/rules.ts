@@ -556,7 +556,5 @@ export function isSaneRule(r: unknown): r is Rule {
   // dropped rather than kept as a half-working rule. An EMPTY action list is
   // allowed through — it is storable and simply never matches (`ruleMatches`),
   // which is what a rules editor needs while a half-written rule is on screen.
-  return x.actions.every(
-    (a) => !!a && typeof a === 'object' && typeof a.type === 'string'
-  );
+  return x.actions.every((a) => !!a && typeof a === 'object' && typeof a.type === 'string');
 }

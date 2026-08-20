@@ -198,6 +198,7 @@ describe('push:setSecret', () => {
   });
 
   it('refuses a slot it does not know, rather than storing an arbitrary key', () => {
+    // deliberately NOT one of PUSH_SECRET_KEYS — that is the whole test
     h.call('push:setSecret', 'anthropic.apiKey', 'sk-nope');
     expect(h.values.size).toBe(0);
     expect(h.logs.some((l) => l.msg.includes('unknown credential slot'))).toBe(true);
