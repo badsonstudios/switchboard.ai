@@ -13,7 +13,15 @@
 import { test, expect, Page, Locator } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
-import { launchApp, LaunchedApp, findFile, hookPoster, poll, tempProjectFolder } from './fixtures/app';
+import {
+  blurApp,
+  launchApp,
+  LaunchedApp,
+  findFile,
+  hookPoster,
+  poll,
+  tempProjectFolder,
+} from './fixtures/app';
 
 interface CueLine {
   sound: string;
@@ -129,14 +137,9 @@ test.describe('per-session sounds and announcements (P2-E14-05a)', () => {
     // WHEN_AWAY condition the toast carries, for a different reason (reading
     // out what someone is looking at is slow noise). Asserted, not assumed: a
     // `blur()` that did nothing would leave this test passing for the wrong
-    // reason.
-    await a.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].blur());
-    await expect
-      .poll(
-        () => a.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFocused()),
-        { timeout: 15_000 }
-      )
-      .toBe(false);
+    // reason. `blurApp` re-issues it until it takes and throws if it never
+    // does — a dropped blur is what #538 was.
+    await blurApp(a);
 
     const post = await hookPoster(a);
     await post(name, { hook_event_name: 'Stop' });

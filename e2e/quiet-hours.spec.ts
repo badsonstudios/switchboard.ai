@@ -24,6 +24,7 @@ import http from 'http';
 import path from 'path';
 import { AddressInfo } from 'net';
 import {
+  blurApp,
   findFile,
   hookPoster,
   launchApp,
@@ -188,14 +189,9 @@ test.describe('quiet hours (P2-E14-05b)', () => {
     await expect(quietDialog(w)).toHaveCount(0);
 
     // The user looks away, so the toast rule's visibility condition is met and
-    // the ONLY thing left that could hold it is quiet hours.
-    await a.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].blur());
-    await expect
-      .poll(
-        () => a.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFocused()),
-        { timeout: 15_000 }
-      )
-      .toBe(false);
+    // the ONLY thing left that could hold it is quiet hours. `blurApp` proves
+    // the blur took rather than hoping it did (#538).
+    await blurApp(a);
 
     const toastsBefore = toastLines(a.home);
     const post = await hookPoster(a);
@@ -281,13 +277,7 @@ test.describe('quiet hours (P2-E14-05b)', () => {
     });
     await w.keyboard.press('Escape');
 
-    await a.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].blur());
-    await expect
-      .poll(
-        () => a.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFocused()),
-        { timeout: 15_000 }
-      )
-      .toBe(false);
+    await blurApp(a);
 
     const post = await hookPoster(a);
     await post(name, {
