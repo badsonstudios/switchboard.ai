@@ -194,6 +194,16 @@ else the keyboard for the length of the task.
   *allow* without showing you the question is **Allow all (this session)**, and
   that is you having answered it in advance. Everything else, if it can't reach
   you, is handled by one of the two rules below — and neither of them says yes.
+- **switchboard names the mode; it never leaves it to chance.** Each of the four
+  modes maps to one of Claude Code's own permission modes, and switchboard says
+  which one every time it starts a session. That matters most for **ask**: it
+  used to say nothing and let Claude Code choose, and recent versions changed
+  what Claude Code chooses — on a Pro, Max or Team plan a session that specifies
+  nothing now starts in **auto** mode, where a second model reviews each action
+  instead of you. An **ask** session is now told to stop for *you*, which is
+  what the name always promised. If you *want* the reviewing model, press
+  **Shift+Tab** inside the session's **Terminal** tab — that is Claude Code's
+  own control, and switchboard doesn't take it away.
 - **If switchboard can't reach you, it stops asking.** When does that happen?
   On **macOS**, closing the window leaves your sessions running in the
   background. On any platform, switchboard's display can crash while the
