@@ -61,6 +61,24 @@ on the floor, and say so in your PR.
 
 ## 0.8.1 — unreleased
 
+### Changed
+
+- **A reply or a document can no longer put a button or a text box in front of
+  you.** Raw HTML in Markdown can contain real controls — a button, a text box,
+  a dropdown, a multi-line entry box — and rendered in the conversation feed,
+  the document viewer or release notes they looked exactly like switchboard.ai's
+  own controls, landed under your Tab key, and could ask for things a real part
+  of the app never would ("paste your token to continue"). They are now removed
+  everywhere the app renders Markdown. The words inside them stay, so you still
+  read everything that was said. Three obsolete tags go with them, for the same
+  reason this release removes the older HTML ways of colouring text: `<center>`,
+  `<marquee>` and `<font>`.
+  Two things this deliberately does **not** change: links in a reply are still
+  links — Markdown writes those, and they stay reachable by keyboard — and
+  Markdown's own **checklists** keep their box. They are drawn with ☐ and ☑
+  characters now rather than a real checkbox, which is why they take your
+  theme's colour; they were never clickable in the first place. (#612)
+
 ### Internal
 
 - **When a session's CLI dies badly, the log now says what it said on the way

@@ -18,6 +18,7 @@
 // we work — by the time the nodes reach the page the `<img>` elements are
 // gone.
 import { DOC_DECORATION, stripDecorationNamespace } from './decoration-guard';
+import { TASK_GLYPH } from './markdown';
 
 export interface OutlineEntry {
   readonly id: string;
@@ -175,18 +176,32 @@ export function decorateTables(root: ParentNode): void {
   }
 }
 
-/** GFM task lists — agents write plans as `- [ ]`, so this is most of them. */
+/**
+ * GFM task lists — agents write plans as `- [ ]`, so this is most of them.
+ *
+ * IT LOOKS FOR A GLYPH, NOT AN `<input>` (#612). It used to find
+ * `input[type="checkbox"]`, force `disabled` on it and class the `<li>` — but
+ * `input` is now in `SANITIZE_CONFIG.FORBID_TAGS`, and `marked`'s own
+ * task-list checkbox is drawn as a `☐`/`☑` character before the sanitizer runs
+ * (`TaskListGlyphRenderer`). That deleted the belt-and-braces `disabled` line
+ * along with the element it braced — no bad thing, since there is no longer an
+ * element that could be interactive — but it ALSO stopped this pass finding
+ * anything, which left the list with its bullet AND a glyph. `list-style: none`
+ * on `.doc-task-list` is what removes the bullet, so this has to keep working.
+ *
+ * The marker is matched at the START of the item's text, which is where
+ * `marked` puts it and nowhere else. Content typing a `☐` as the first
+ * character of a list item gets the same class, and that is fine: the whole
+ * effect is a missing bullet. There is no protocol here for content to speak —
+ * unlike `doc-` DATA attributes, which handlers read back off the DOM and
+ * `stripDecorationNamespace` therefore takes away first.
+ */
 export function decorateTaskLists(root: ParentNode): void {
-  for (const box of root.querySelectorAll('input[type="checkbox"]')) {
-    // Belt to DOMPurify's braces: a checkbox in a rendered document is never
-    // interactive, whatever the markup said.
-    box.setAttribute('disabled', '');
-    box.classList.add('doc-task-box');
-    const li = box.closest('li');
-    if (li) {
-      li.classList.add('doc-task');
-      li.parentElement?.classList.add('doc-task-list');
-    }
+  for (const li of [...root.querySelectorAll('li')]) {
+    const first = li.textContent?.trimStart()[0];
+    if (first !== TASK_GLYPH.checked && first !== TASK_GLYPH.unchecked) continue;
+    li.classList.add('doc-task');
+    li.parentElement?.classList.add('doc-task-list');
   }
 }
 

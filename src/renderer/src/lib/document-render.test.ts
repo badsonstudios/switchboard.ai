@@ -161,13 +161,28 @@ describe('the markdown v1 scope', () => {
     expect(host.querySelector('.doc-table-wrap')?.getAttribute('tabindex')).toBe('0');
   });
 
-  it('task-list checkboxes render as disabled checkboxes', () => {
+  it('task-list markers render as glyphs, and still lose the bullet', () => {
+    // This row used to assert `input[type="checkbox"]` with `disabled` forced
+    // on. #612 put `input` in `FORBID_TAGS` and moved the marker into
+    // `marked`'s renderer as a `☐`/`☑` character, so there is no element left
+    // to disable — and the property that survives the change is the one that
+    // was ever visible: the marker is there, and `.doc-task-list` takes the
+    // bullet off so a checklist does not read "• ☐ not done".
     const host = render('- [ ] not done\n- [x] done\n');
-    const boxes = host.querySelectorAll('input[type="checkbox"]');
-    expect(boxes).toHaveLength(2);
-    for (const b of boxes) expect(b.hasAttribute('disabled')).toBe(true);
+    expect(host.querySelector('input')).toBeNull();
+    expect(host.textContent).toContain('☐ not done');
+    expect(host.textContent).toContain('☑ done');
     expect(host.querySelectorAll('li.doc-task')).toHaveLength(2);
     expect(host.querySelector('.doc-task-list')).not.toBeNull();
+  });
+
+  it('an ordinary list is NOT treated as a checklist', () => {
+    // The other half of "matched at the start of the item's text": if this
+    // stopped discriminating, every bullet in every document would lose its
+    // bullet, which is the failure mode a green task-list row would not catch.
+    const host = render('- plain\n- also plain\n');
+    expect(host.querySelectorAll('li.doc-task')).toHaveLength(0);
+    expect(host.querySelector('.doc-task-list')).toBeNull();
   });
 
   it('strikethrough survives', () => {

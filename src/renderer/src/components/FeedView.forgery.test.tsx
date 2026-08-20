@@ -15,12 +15,28 @@
 //     advances past it, and every subsequent ArrowDown recomputes the same
 //     index: the conversation's keyboard navigation is dead from that message
 //     down, for the rest of the session.
-//  2. …OR IS CAPTURED. A forged `<button>` or `<a href>` survives the sanitizer
+//  2. …OR IS CAPTURED. A forged `<button>` or `<a href>` survived the sanitizer
 //     intact and IS focusable, so instead the walk stops on a control the reply
 //     planted, wearing a label it chose ("▾ OUT"). On an `<a href>` the Enter a
 //     keyboard user then presses is a navigation. DOMPurify still refuses
 //     `javascript:` and `on*`, so this is UI redress on the keyboard path, not
 //     script execution — bounded, not benign.
+//
+//     THE `<button>` HALF IS CLOSED (#612, 2026-08-20): `button`, `input`,
+//     `select` and `textarea` are in `SANITIZE_CONFIG.FORBID_TAGS`, so the
+//     forged control below now renders as the plain text "▾ OUT" and there is
+//     nothing to focus. `KEEP_CONTENT` is why the label is still readable. This
+//     file's own row for it is `a forged control is not a control any more`.
+//
+//     THE `<a href>` HALF IS NOT, and it is not a bug to be fixed here: GFM
+//     emits `<a href>` for every link an agent writes, so a link is content's
+//     own and a link is focusable. That is why "#174 — the conversation is one
+//     tab stop" is a statement about the app's CHROME and not about rendered
+//     content, and why `markdown.tsx` states the narrower claim (#612: content
+//     cannot plant a CONTROL) instead of the one #598 reached for. The document
+//     viewer answers the link half differently — `decorateLinks` takes `href`
+//     off every link and writes the affordance back itself — and the feed has
+//     no equivalent pass.
 //  3. FIND JUMPS TO THE WRONG PLACE. The jump resolves its target with
 //     `querySelector('[data-feed-seq="N"]')`, which answers with the FIRST match
 //     in document order. A reply carrying `data-feed-seq="4"` above block 4
@@ -216,6 +232,27 @@ describe('a reply cannot forge the feed’s expander protocol (#465)', () => {
     // and the walk REACHED the end rather than wedging on a phantom: the last
     // stop is the feed's last real expander
     expect(document.activeElement).toBe(expanders(region).at(-1));
+  });
+
+  it('a forged control is not a control any more (#612)', async () => {
+    // The tag half, pinned end-to-end through the same real pipeline as every
+    // row above — `markdown.test.tsx` pins the profile, this pins the FEED.
+    //
+    // Before #612 the reply's `<button>` reached the page intact and was a tab
+    // stop wearing a label it chose. The arrow-key row above could not detect
+    // that: it walks `[data-feed-expander]`, and `ALLOW_DATA_ATTR: false` had
+    // already taken the attribute off, so the forged button was invisible to
+    // the walk while remaining perfectly visible to the Tab key.
+    const body = prose(await mountFeed(FORGED));
+    expect(body.querySelector('button')).toBeNull();
+    expect(body.querySelector('input')).toBeNull();
+    // …and the reader still reads what the reply said — `KEEP_CONTENT`
+    expect(body.textContent).toContain('▾ OUT');
+    // NOT a claim that nothing in the reply is focusable: the `<a href>` in the
+    // same payload still is, deliberately, because markdown emits links. If a
+    // future change strips it, that is a decision to make on purpose and this
+    // line is where it gets noticed.
+    expect(body.querySelector('a')?.getAttribute('href')).toBe('https://exfil.test/leak');
   });
 
   it('cannot capture a find jump by claiming another block’s seq', async () => {

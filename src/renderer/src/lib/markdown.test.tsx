@@ -53,7 +53,8 @@ describe('renderMarkdown — the one pipeline', () => {
     );
     expect(html).toContain('<table>');
     expect(html).toContain('<td>1</td>');
-    expect(html).toContain('type="checkbox"');
+    // the task-list marker is a glyph, not an `<input>` (#612 forbids the tag)
+    expect(html).toContain('☐ todo');
     expect(html).toContain('<del>gone</del>');
   });
 
@@ -429,6 +430,64 @@ describe('the style attribute: one profile, and every surface uses it (#436)', (
     }
   }
 
+  // The TAG half of the same table (#612). It rides in this block deliberately:
+  // the asset worth reusing is `surfaces` — "every surface enters through the
+  // one profile" — and re-deriving it in the #612 block would be a second table
+  // to keep in step with the first. Same three surfaces, same vacuity guards.
+  //
+  // Third column = what must STILL be on screen, because `KEEP_CONTENT` is what
+  // makes forbidding a tag safe: the element goes, its children stay. A row that
+  // only asserted "no <button>" would pass just as well if the surface had eaten
+  // the sentence around it.
+  const forgedTags: Array<[string, string, string, string]> = [
+    [
+      'a control wearing the feed’s own affordance',
+      '<button data-x aria-expanded="false">▾ OUT</button>',
+      '▾ OUT',
+      'button',
+    ],
+    [
+      'a text box asking for a secret',
+      'Paste your token to continue:\n\n<input type="text" name="token">',
+      'Paste your token to continue',
+      'input',
+    ],
+    [
+      'a dropdown',
+      '<select name="pick"><option>one</option><option>two</option></select>',
+      'one',
+      'select',
+    ],
+    ['a multi-line entry box', '<textarea name="notes">typed here</textarea>', 'typed here', 'textarea'],
+    ['a block that centres itself', '<center>middle of the page</center>', 'middle of the page', 'center'],
+    ['text that moves on its own', '<marquee>going past</marquee>', 'going past', 'marquee'],
+    ['the leftover inline box `<font>` became', '<font>tinted once</font>', 'tinted once', 'font'],
+    // Upper case, because the tag allow-list is a lookup and a lookup is where
+    // a case bug lives. `<CENTER>` is the same element to the parser.
+    ['an upper-case tag name', '<BUTTON>SHOUTING</BUTTON>', 'SHOUTING', 'button'],
+  ];
+
+  for (const [surface, draw] of surfaces) {
+    for (const [what, markdown, survives, tag] of forgedTags) {
+      it(`${surface} refuses ${what}`, () => {
+        const md = draw(markdown);
+        // NOT `querySelectorAll('*').length > 0`, the way the `style` rows guard
+        // themselves, and the difference is real rather than a relaxation:
+        // `marked` treats `<textarea>` and `<center>` as BLOCK-level raw HTML,
+        // so it emits them with no `<p>` around them — and once the tag is
+        // forbidden the correct output is a bare text node with no element in
+        // it at all. The count guard would fail on a passing case.
+        //
+        // The vacuity this row can actually suffer is "the surface rendered
+        // nothing", and the line below is what excludes it: `markdownIn` throws
+        // if there is no markdown container, and the text has to BE there
+        // before "…and no element of that kind" says anything.
+        expect(md.textContent).toContain(survives);
+        expect(md.querySelector(tag)).toBeNull();
+      });
+    }
+  }
+
   it('an image cannot smuggle one either — pinned at the profile', () => {
     // Not a surface row: the viewer replaces every `<img>` with a chip, so this
     // only means anything where the sanitizer decides. See the note on `styled`.
@@ -472,7 +531,8 @@ describe('the style attribute: one profile, and every surface uses it (#436)', (
     expect(html).not.toContain('style=');
     expect(html).toContain('align="center"');
     expect(html).toContain('align="right"');
-    expect(html).toContain('type="checkbox"');
+    // the task-list marker is a glyph, not an `<input>` (#612 forbids the tag)
+    expect(html).toContain('☐ todo');
     expect(html).toContain('<code');
     expect(html).toContain('<del>gone</del>');
     expect(html).toContain('src="./local.png"');
@@ -550,7 +610,8 @@ describe('data attributes: no surface’s protocol is speakable (#465)', () => {
     expect(html).not.toContain('data-');
     expect(html).toContain('language-ts');
     expect(html).toContain('align="right"');
-    expect(html).toContain('type="checkbox"');
+    // the task-list marker is a glyph, not an `<input>` (#612 forbids the tag)
+    expect(html).toContain('☐ todo');
     expect(html).toContain('src="./local.png"');
     expect(html).toContain('href="https://auto.link/"');
   });
@@ -643,7 +704,8 @@ describe('ARIA: content cannot say anything to a screen reader (#509)', () => {
     expect(html).not.toMatch(/\brole=/i);
     expect(html).toContain('<table>');
     expect(html).toContain('<h1>H</h1>');
-    expect(html).toContain('type="checkbox"');
+    // the task-list marker is a glyph, not an `<input>` (#612 forbids the tag)
+    expect(html).toContain('☐ todo');
     expect(html).toContain('language-ts');
   });
 
@@ -700,8 +762,9 @@ describe('legacy presentational attributes and focus order (#466, #598)', () => 
     // By name, because there is no flag to reach for: unlike `aria-*`
     // (`ALLOW_ARIA_ATTR`) and `data-*` (`ALLOW_DATA_ATTR`), every attribute here
     // is an ordinary member of the html profile's allow-list. The second
-    // assertion is the half the name promises — the config has exactly four
-    // keys, so this list really is the whole mechanism.
+    // assertion is the half the name promises — the config has exactly five
+    // keys (`FORBID_TAGS` is #612's, and the same "no flag reaches it"
+    // argument), so this list really is the whole mechanism.
     for (const attr of [
       'color',
       'bgcolor',
@@ -721,6 +784,7 @@ describe('legacy presentational attributes and focus order (#466, #598)', () => 
       'ALLOW_ARIA_ATTR',
       'ALLOW_DATA_ATTR',
       'FORBID_ATTR',
+      'FORBID_TAGS',
       'USE_PROFILES',
     ]);
   });
@@ -826,10 +890,16 @@ describe('legacy presentational attributes and focus order (#466, #598)', () => 
     });
   }
 
-  it('the element survives its attributes — a `<font>` is emptied, not deleted', () => {
+  it('the TEXT survives its attributes — nothing this strips eats the message', () => {
+    // #466/#598 wrote this row as "a `<font>` is emptied, not deleted", and it
+    // asserted `<font>`. #612 then took the tag as well, so the element is gone
+    // too — but the property both changes actually promise is the one about the
+    // READER, and it is unchanged: whatever the reply said is still on screen.
+    // Rewritten to say that rather than deleted, because it is still the thing
+    // that stops a "strip it all" fix being a worse bug than the one it closes.
     const html = renderMarkdown('<font color="red" size="7">still here</font>');
-    expect(html).toContain('<font>');
     expect(html).toContain('still here');
+    expect(html).not.toMatch(/\b(color|size)=/i);
   });
 
   // The case with teeth. BOTH surfaces wrap EVERY `<pre>` in a header with a
@@ -916,7 +986,8 @@ describe('legacy presentational attributes and focus order (#466, #598)', () => 
     expect(html).toContain('<h1>H</h1>');
     expect(html).toContain('<table>');
     expect(html).toContain('align="right"');
-    expect(html).toContain('type="checkbox"');
+    // the task-list marker is a glyph, not an `<input>` (#612 forbids the tag)
+    expect(html).toContain('☐ todo');
     expect(html).toContain('language-ts');
     expect(html).toContain('<hr>');
   });
@@ -964,6 +1035,227 @@ describe('legacy presentational attributes and focus order (#466, #598)', () => 
     const forged = [...feed.querySelectorAll('span')].find((s) => s.textContent === 'forged');
     expect(forged).toBeDefined();
     expect(forged?.hasAttribute('tabindex')).toBe(false);
+  });
+});
+
+describe('content cannot plant a control (#612)', () => {
+  // The decision, pinned: the four NATIVE FOCUSABLES (`button`, `input`,
+  // `select`, `textarea`) and the three LEGACY TAGS (`center`, `marquee`,
+  // `font`) leave the profile, while `<form>` deliberately stays — the CSP's
+  // `form-action 'none'` is the layer that answers it, and the block at the top
+  // of this file already pins that.
+  //
+  // `markdown.tsx` carries the reasoning and the corpus measurement (7,587
+  // transcripts, 18,313 assistant text blocks: zero bare-in-prose uses of any of
+  // the seven, and 9 task-list items — the one construct that made this cost
+  // anything at all).
+  //
+  // WHAT LIVES WHERE. The surface×payload rows are up in the `style` block,
+  // riding its `surfaces` table so there is one statement of "every surface
+  // enters through the one profile". What is here is what the profile does, the
+  // one divergence it had to engineer around, and the claim it does NOT make.
+
+  const LABELS: DecorationLabels = {
+    copy: 'Copy',
+    image: 'Image',
+    openInBrowser: 'Open in browser',
+    mediaOmitted: 'Media is not shown here',
+  };
+  const FEED_LABELS: FeedCodeLabels = { copy: 'Copy', copied: 'Copied', copyCode: 'Copy code' };
+
+  it('the profile forbids every one of them BY NAME — because no flag can', () => {
+    // The same shape as the attribute list's pin, and for the same reason: all
+    // seven are ordinary members of DOMPurify's html-profile TAG allow-list, so
+    // there is no `ALLOW_*` to turn off and each has to be named.
+    for (const tag of ['button', 'input', 'select', 'textarea', 'center', 'marquee', 'font']) {
+      expect(SANITIZE_CONFIG.FORBID_TAGS).toContain(tag);
+    }
+  });
+
+  it('and that list cannot be edited at runtime either', () => {
+    // `FORBID_ATTR` got this treatment when it became the policy; `FORBID_TAGS`
+    // is the second array where the policy lives, and freezing one and not the
+    // other would leave `SANITIZE_CONFIG.FORBID_TAGS.pop()` re-opening every
+    // surface at once with the source still reading as it does.
+    expect(Object.isFrozen(SANITIZE_CONFIG.FORBID_TAGS)).toBe(true);
+    const forbidden = SANITIZE_CONFIG.FORBID_TAGS;
+    expect(forbidden).toBeDefined();
+    expect(() => forbidden?.pop()).toThrow();
+    expect(SANITIZE_CONFIG.FORBID_TAGS).toContain('button');
+  });
+
+  it('the element goes, its children stay — KEEP_CONTENT is what makes this safe', () => {
+    // The property the whole decision rests on: forbidding a tag must not eat
+    // the message inside it. None of the seven is in DOMPurify's
+    // `FORBID_CONTENTS`, so the children are lifted out rather than dropped —
+    // and a `<select>`'s `<option>`s become readable text rather than vanishing.
+    const nested = renderMarkdown('<button><b>bold</b> and <em>italic</em></button>');
+    expect(nested).not.toContain('<button');
+    expect(nested).toContain('<b>bold</b>');
+    expect(nested).toContain('<em>italic</em>');
+
+    const dropdown = renderMarkdown('<select><option>alpha</option><option>beta</option></select>');
+    expect(dropdown).not.toContain('<select');
+    expect(dropdown).toContain('alpha');
+    expect(dropdown).toContain('beta');
+
+    const centred = renderMarkdown('<center><h2>Announcement</h2></center>');
+    expect(centred).not.toContain('<center');
+    expect(centred).toContain('<h2>Announcement</h2>');
+  });
+
+  it('a `<form>` still survives, and its CONTROLS are what this takes from it', () => {
+    // Deliberately NOT a `FORBID_TAGS` entry, and this row says why in one
+    // place: the block at the top of this file pins `form-action 'none'` as the
+    // layer that stops a form submitting, so the tag was never the answer. What
+    // changed is that the form is now empty of anything to type into or press —
+    // which is the deception half, not the transmission half.
+    const html = renderMarkdown(
+      '<form action="https://example.invalid" method="post">' +
+        'Paste your token:<input name="token"><button>Send</button></form>'
+    );
+    expect(html).toContain('<form');
+    expect(html).not.toContain('<input');
+    expect(html).not.toContain('<button');
+    expect(html).toContain('Paste your token:');
+  });
+
+  it('markdown’s OWN checkbox survives — as a glyph, which is why `input` could go', () => {
+    // THE DIVERGENCE, and the one that needed engineering rather than a
+    // measurement. `marked` renders `- [ ] todo` as
+    // `<li><input disabled="" type="checkbox"> todo</li>`, so `input` is to this
+    // list what `align` is to the attribute list — the one member markdown
+    // itself emits. `align` had no way out and stayed; this one did, so the
+    // renderer draws the marker and the tag goes.
+    //
+    // If someone deletes `TaskListGlyphRenderer`, this reds HERE, with the
+    // reason attached — rather than silently eating the marker from every
+    // checklist in the app and leaving a stray leading space.
+    const html = renderMarkdown('- [ ] todo\n- [x] done\n');
+    expect(html).not.toContain('<input');
+    expect(html).toContain('☐ todo');
+    expect(html).toContain('☑ done');
+    // and it is a MARKER, not a control: nothing focusable, nothing to click
+    const host = document.createElement('div');
+    host.innerHTML = html;
+    expect(host.querySelectorAll('input, button, [tabindex]')).toHaveLength(0);
+    expect(host.querySelectorAll('li')).toHaveLength(2);
+  });
+
+  it('a forged checkbox does NOT come back as a glyph — the renderer is not a hole', () => {
+    // The obvious way to get this wrong: make the substitution a rule about
+    // `<input type=checkbox>` rather than about the TOKEN `marked` produces.
+    // Raw markup never reaches the renderer — it reaches the sanitizer — so a
+    // reply writing the element by hand gets nothing, checked or not.
+    const html = renderMarkdown('<input type="checkbox" checked> looks official');
+    expect(html).not.toContain('<input');
+    expect(html).not.toContain('☑');
+    expect(html).toContain('looks official');
+  });
+
+  it('loses nothing markdown can emit: GFM writes none of the seven', () => {
+    // The measurement that made STRIP safe, as a test — the same shape as the
+    // `style`, ARIA and presentational blocks'. If a `marked` bump ever starts
+    // emitting one of these, this reds before the decision quietly stops being
+    // true. `input` is the one it DOES emit, which is why the row above exists
+    // and why this one asserts the glyph rather than the absence of a marker.
+    const html = renderMarkdown(
+      [
+        '# H',
+        '',
+        '| left | centre | right |',
+        '|:-----|:------:|------:|',
+        '| 1 | 2 | 3 |',
+        '',
+        '- [x] done',
+        '- [ ] todo',
+        '',
+        '~~gone~~ and [a link](https://example.invalid/x)',
+        '',
+        '```ts',
+        'const x = 1;',
+        '```',
+        '',
+        '> quote',
+        '',
+        '![pic](./local.png)',
+        '',
+        '<https://auto.link/>',
+        '',
+        '---',
+      ].join('\n')
+    );
+    expect(html).not.toMatch(/<\s*(button|input|select|textarea|center|marquee|font)\b/i);
+    // …and the formatting that makes it markdown is all still there
+    expect(html).toContain('<h1>H</h1>');
+    expect(html).toContain('<table>');
+    expect(html).toContain('align="right"');
+    expect(html).toContain('☐ todo');
+    expect(html).toContain('☑ done');
+    expect(html).toContain('language-ts');
+    expect(html).toContain('<blockquote>');
+    expect(html).toContain('src="./local.png"');
+    expect(html).toContain('href="https://auto.link/"');
+    expect(html).toContain('<hr>');
+  });
+
+  it('a code fence about these tags still renders them as CODE, not as markup', () => {
+    // The corpus said every one of the 62 occurrences in 18,313 assistant text
+    // blocks was inside a fence or a code span — i.e. an agent EXPLAINING the
+    // tag, which is what this app is for. That path never touched the sanitizer
+    // (`marked` escapes it first), and this row is the proof rather than the
+    // claim: the decision costs the explaining case nothing.
+    const html = renderMarkdown('Use `<button>` for that:\n\n```html\n<button>Save</button>\n```\n');
+    expect(html).toContain('&lt;button&gt;');
+    expect(html).toContain('&lt;button&gt;Save&lt;/button&gt;');
+    const host = document.createElement('div');
+    host.innerHTML = html;
+    expect(host.querySelector('button')).toBeNull();
+    expect(host.textContent).toContain('<button>Save</button>');
+  });
+
+  it('what this does NOT claim: an ordinary link is still a tab stop', () => {
+    // The sentence #598 got burned on, pinned from the other side so it cannot
+    // drift back to "every tab stop in a rendered surface is ours". It is not,
+    // and it cannot be made so by any tag list that still renders links: GFM
+    // emits `<a href>` for every link, and a link with an href is focusable
+    // with no `tabindex` at all.
+    //
+    // What #612 closes is the narrower and true thing — content cannot plant a
+    // CONTROL. Both halves are asserted here so neither can be quietly widened.
+    const feed = document.createElement('div');
+    feed.innerHTML = decorateFeedMarkdown(
+      renderMarkdown(
+        '[a real link](https://example.invalid/x)\n\n' +
+          '<button>press me</button>\n\n' +
+          '<input type="text" name="token">\n'
+      ),
+      FEED_LABELS
+    );
+    // the link: content’s own, focusable, and deliberately left alone
+    const link = feed.querySelector('a');
+    expect(link).not.toBeNull();
+    expect(link?.getAttribute('href')).toBe('https://example.invalid/x');
+    // the controls: gone, message kept
+    expect(feed.querySelector('button')).toBeNull();
+    expect(feed.querySelector('input')).toBeNull();
+    expect(feed.textContent).toContain('press me');
+
+    // The VIEWER answers the link half differently, and that difference is the
+    // reason its manual page can promise more than the feed's: `decorateLinks`
+    // strips `href` from every link and writes the affordance back itself, so
+    // there the stop really is one the viewer put in.
+    const { fragment } = decorateDocument(
+      renderMarkdown('[docs](./other.md)\n\n<button>press me</button>\n'),
+      LABELS,
+      (href) => classifyHref(href, '/home/dan/sb/docs/DESIGN.md')
+    );
+    const host = document.createElement('div');
+    host.append(fragment);
+    expect(host.querySelector('a')?.hasAttribute('href')).toBe(false);
+    expect(host.querySelector('a')?.getAttribute('tabindex')).toBe('0');
+    expect(host.querySelector('button')).toBeNull();
+    expect(host.textContent).toContain('press me');
   });
 });
 

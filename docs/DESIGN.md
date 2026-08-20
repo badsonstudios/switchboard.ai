@@ -2046,6 +2046,20 @@ a pointer where they left.)*
   > one or two stops per session, which is bounded by how many sessions a human
   > runs and buys back the simplicity of ordinary buttons.
   >
+  > **A correction to that budget, from #612 (2026-08-20):** "the feed is a
+  > single tab stop" is a statement about the app's own CHROME, and it is not
+  > true of RENDERED CONTENT. GFM emits `<a href>` for every link an agent
+  > writes and a link is focusable with no `tabindex`, so any reply containing
+  > links adds stops the app did not budget for — and no sanitizer setting can
+  > change that without ceasing to render links. #598 stripped every `tabindex`
+  > content can write and #612 removed the tags that are focusable WITHOUT one
+  > (`button`, `input`, `select`, `textarea`), so the property that actually
+  > holds, and the one to state, is narrower: **content cannot plant a
+  > control.** Every stop inside rendered content is a link or a disclosure the
+  > content genuinely contains, or one a decoration pass wrote. The document
+  > viewer is the exception that can promise more, because `decorateLinks`
+  > takes `href` off every link and writes the affordance back itself.
+  >
   > **A fifth rule, added by #253 (2026-08-05):** *a drag is never the only way
   > to do something.* The sweep above made every CONTROL reachable and left one
   > INTERACTION that wasn't — a session's group could only be changed by

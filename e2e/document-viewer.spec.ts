@@ -112,7 +112,12 @@ test.describe('document viewer (P2-E16-02)', () => {
     await expect(rendered(w).locator('h1')).toHaveText('The document viewer');
     await expect(rendered(w).locator('table')).toBeVisible();
     await expect(rendered(w).locator('.doc-table-wrap')).toBeVisible();
-    await expect(rendered(w).locator('input[type="checkbox"]')).toHaveCount(2);
+    // The task list, which since #612 is a `☐`/`☑` glyph rather than a disabled
+    // `<input>` — `input` is in the sanitizer's `FORBID_TAGS`, so the marker is
+    // written by `marked`'s renderer before the sanitizer ever runs. `.doc-task`
+    // is what takes the bullet off, and it is the class the pass now sets.
+    await expect(rendered(w).locator('li.doc-task')).toHaveCount(2);
+    await expect(rendered(w).locator('input')).toHaveCount(0);
     await expect(rendered(w).locator('.doc-code-lang')).toHaveText('ts');
 
     // THE SECURITY ASSERTIONS.
