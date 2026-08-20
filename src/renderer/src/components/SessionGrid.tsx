@@ -31,7 +31,15 @@ import { UsageStrip } from './UsageStrip';
 import { GitContext, GitStatusDto } from './GitContext';
 import { Usage, ZERO_USAGE } from '../lib/usage';
 import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
-import { Box, boxOnAnyDisplay, RescuedPopout, sanitizePopoutLayout, WorkArea } from '../lib/layout';
+import {
+  Box,
+  boxOnAnyDisplay,
+  dropDerivedPopoutGroups,
+  isDerivedPanelId,
+  RescuedPopout,
+  sanitizePopoutLayout,
+  WorkArea,
+} from '../lib/layout';
 import { captureSlot, openerRelative, placeAt } from '../lib/dock-slot';
 import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
 import { submitTarget } from '../lib/presentation-policy';
@@ -4069,7 +4077,17 @@ export function SessionGrid(props: {
             // now-missing monitor — fix both before restoring (E8-02)
             const workAreas = await window.switchboard.workAreas();
             const rescuedNow: RescuedPopout[] = [];
-            const sane = sanitizePopoutLayout(saved, window.location.origin, workAreas, rescuedNow);
+            // ...and a popout window holding nothing but panels the prune below
+            // is about to delete is not opened AT ALL (#494) — opening one and
+            // emptying it races dockview's deferred popout restoration and
+            // strands the window. FIRST, so a window we are not reopening is
+            // never offered to the reconnect prompt either.
+            const sane = sanitizePopoutLayout(
+              dropDerivedPopoutGroups(saved),
+              window.location.origin,
+              workAreas,
+              rescuedNow
+            );
             // How many popouts the saved layout asked for, before dockview tries
             // to reopen them. Pairs with the main process's "popout geometry
             // flushed" line to say which side of the quit lost one (#165).
@@ -4123,8 +4141,14 @@ export function SessionGrid(props: {
               // relaunch" is named in E16's *Not in scope*, and a viewer
               // restored blind would also re-read a file whose folder may no
               // longer be in the read scope.
-              const d = /^(diff|doc)-/.exec(p.id);
-              if (d || (s && !known.has(s[1]))) api.removePanel(p);
+              //
+              // Only GRID panels reach here now: `fromJSON` builds those
+              // synchronously, so removing them cannot race anything. A popout
+              // whose whole content was derived never got opened
+              // (`dropDerivedPopoutGroups`, #494); one that also holds a session
+              // card is still open and still loses its derived tabs here, which
+              // is safe because that removal never empties the group.
+              if (isDerivedPanelId(p.id) || (s && !known.has(s[1]))) api.removePanel(p);
             }
             // land the user exactly where they were (§5.25): refocus the saved
             // card — resume-on-focus then brings that session back first
