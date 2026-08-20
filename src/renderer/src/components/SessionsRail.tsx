@@ -63,6 +63,7 @@ import { canStep, LOOSE_BUCKET, ManualOrder, planReorder } from '../lib/rail-ord
 import { presentStatus, needCount, clampRailWidth, RAIL_WIDTH_DEFAULT } from '../lib/rail-view';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { getDraggedCard, setDraggedCard } from '../lib/drag-context';
+import { MenuPlacement, placeMenu } from '../lib/menu-placement';
 import {
   cardOverride,
   groupOverride,
@@ -285,6 +286,10 @@ export function SessionsRail(props: {
     null
   );
   const menuRef = React.useRef<HTMLDivElement | null>(null);
+  // Where the menu ENDED UP, once it has been measured against the window
+  // (#641). `menu.x/y` stays the request; this is the answer, and it is null
+  // for exactly one un-painted commit while the natural size is measured.
+  const [menuPlace, setMenuPlace] = React.useState<MenuPlacement | null>(null);
   // where focus goes when the menu closes: the control that opened it. A ref
   // rather than menu state, so closing can restore focus WITHOUT doing it from
   // inside a setState updater — StrictMode invokes updaters twice, and an
@@ -391,6 +396,7 @@ export function SessionsRail(props: {
   /** close the menu, and hand focus back to whatever opened it (#197) */
   const closeMenu = React.useCallback((restoreFocus: boolean): void => {
     setMenu(null);
+    setMenuPlace(null);
     if (restoreFocus) menuAnchor.current?.focus();
   }, []);
 
@@ -412,13 +418,41 @@ export function SessionsRail(props: {
     };
   }, [menu, closeMenu]);
 
+  // Fit the menu to the WINDOW before anyone sees it (#641). `contextmenu`
+  // hands over a point, not a placement: it cannot know how tall the menu is,
+  // and a `position: fixed` box that runs past the bottom edge has nothing to
+  // scroll — its last items are unreachable to a mouse and to a test alike.
+  // #559's `Order in this group` section is what made that real here (the menu
+  // grew ~72px and the bottom radio landed off the windows-latest runner's
+  // 655px viewport), but the menu was one taller section away from this at any
+  // window size, so the fix belongs to the placement and not to that section.
+  //
+  // A layout effect and not a render-time guess because the height is a fact
+  // about laid-out text: measured here, the resulting setState re-renders
+  // synchronously, and the browser paints once — at the corrected position.
+  React.useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!menu || !el) return;
+    setMenuPlace(
+      placeMenu(
+        { x: menu.x, y: menu.y },
+        // the NATURAL size: this pass runs before `maxBlockSize` is applied,
+        // so the box has not been clamped by a previous answer
+        { width: el.offsetWidth, height: el.offsetHeight },
+        { width: window.innerWidth, height: window.innerHeight }
+      )
+    );
+  }, [menu]);
+
   // A menu you can open with Shift+F10 and not walk is worse than no menu, so
   // the first item takes focus as it opens. Layout effect, not an effect: the
   // menu is `position: fixed` and focusing it after a paint would scroll-jump.
+  // Gated on the placement for the same reason: focusing an item that is still
+  // hanging off the window edge is exactly the scroll-jump this is avoiding.
   React.useLayoutEffect(() => {
-    if (!menu) return;
+    if (!menu || !menuPlace) return;
     menuRef.current?.querySelector<HTMLElement>('[role^="menuitem"]')?.focus();
-  }, [menu]);
+  }, [menu, menuPlace]);
 
   /**
    * Finish a keyboard move once the store says it happened (#253) — announce
@@ -651,6 +685,8 @@ export function SessionsRail(props: {
           const kb = e.clientX === 0 && e.clientY === 0;
           const box = e.currentTarget.getBoundingClientRect();
           menuAnchor.current = (e.target as HTMLElement).closest<HTMLElement>('button');
+          // the previous answer describes a menu that is about to be replaced
+          setMenuPlace(null);
           setMenu({
             session: s,
             x: kb ? box.left + 12 : e.clientX,
@@ -1522,8 +1558,13 @@ export function SessionsRail(props: {
           }}
           style={{
             position: 'fixed',
-            insetInlineStart: menu.x,
-            insetBlockStart: menu.y,
+            insetInlineStart: menuPlace ? menuPlace.left : menu.x,
+            insetBlockStart: menuPlace ? menuPlace.top : menu.y,
+            // only ever reached by a menu taller than the whole window; with a
+            // scroll container of its own, `scrollIntoView` can finally do
+            // something for the items past the fold
+            maxBlockSize: menuPlace?.maxBlockSize,
+            overflowY: 'auto',
             zIndex: 50,
             minInlineSize: 150,
             background: 'var(--rail-card)',
