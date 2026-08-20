@@ -61,31 +61,53 @@ on the floor, and say so in your PR.
 
 ## 0.8.1 — unreleased
 
-### Fixed
+### Added
 
-- **The `ask` autonomy mode asks again.** `ask` never told Claude Code which
-  permission mode to use — it let the CLI pick its own, and for years the CLI
-  picked "stop and ask a person". Recent versions changed that pick: on a Pro,
-  Max or Team plan the CLI now starts sessions in **auto** mode, where a second
-  model reviews each action instead of you. So a session you had set to `ask`
-  was quietly being reviewed by a classifier. switchboard's own approval bar
-  hid most of it — that still held every shell command and every edit — but
-  anything it does not cover went through without you. `ask` now names the mode
-  outright, and a session started at `ask` is back to stopping for you. You may
-  see a few more prompts than you did last week; that is the mode doing what its
-  name says. Auto mode is still one **Shift+Tab** away inside a session's
-  terminal if you want it. (#587)
+- **A visible way to close the Events drawer.** The drawer's only close control
+  was the narrow tab on the right edge — which reads as a way *in* — so opening
+  it and then hunting for the way back out was easy to do. There is now a **✕**
+  in the drawer's own header, next to the word EVENTS. It does exactly what
+  `Esc`, `Ctrl+E` and the tab already did, including putting your cursor back
+  where it was, and it is the first thing `Tab` reaches inside the drawer.
 
-### Fixed
+- **Close all documents, in one go.** Every file you open gets its own tab, so a
+  morning's reading can leave a dozen of them in the strip and no way out but a
+  dozen clicks. The command palette (`Ctrl+Shift+P`) now has **Close all
+  documents (keeps popped-out ones)**: it clears every document tab at once and
+  asks nothing first, because a viewer never edits anything. Your sessions and
+  their Changes tabs are untouched, and a document you have moved to its own
+  window on another monitor is left exactly where you put it.
 
-- **A suspended session can now be maximized by double-clicking it.** A session
-  that came back with the app and hasn't been resumed yet drew
-  no card header at all, so the double-click that fills the workspace with one
-  session had nothing to land on — the keyboard shortcut worked, the mouse did
-  not, and the manual had to write the exception down. Its card now keeps a
-  header with the session's name, colour, badge and the word *suspended*.
-  Maximizing it doesn't wake it up: it stays suspended, with its **Resume**
-  button, until you press that. (#216)
+- **The autonomy chips now say what a mode does.** Hover the shield chip — in
+  the title bar, under the prompt box, or the little marker in a card's header —
+  and you get a plain description of what will still stop for you in that mode
+  and what won't. The one worth reading is **full-auto**: it is Claude Code's
+  `bypassPermissions`, the same thing `--dangerously-skip-permissions` turns on,
+  and the hover now says so rather than leaving you to find out. The manual's
+  [Approvals & autonomy](docs/manual/04-approvals-and-autonomy.md) page carries
+  the full version.
+
+- **Put your sessions in the order you want.** The Sessions list was stuck in
+  the order you happened to open things in. Drag a session up or down inside its
+  group and it stays where you put it — a line shows where it will land — and
+  the arrangement comes back next time you open switchboard. Without a mouse:
+  **Move up** / **Move down** in the row's right-click menu, or **`Ctrl+Alt+↑`**
+  / **`Ctrl+Alt+↓`** while you are in the session. Dragging onto a *different*
+  group still means what it always did — it joins that group, and you arrange it
+  from there.
+  Pinned sessions still come first in their group; that is the one rule your own
+  order does not beat. Since the list is what `Ctrl+1`…`Ctrl+9` counts against,
+  arranging it is also how you choose which session is `Ctrl+1`.
+
+- **Several questions at once now arrive as tabs.** When Claude asks more than
+  one question in a single go, they used to be stacked down one long panel. They
+  are now a tab per question, labelled with Claude's own short name for it, so
+  you read one question at a time. Every tab shows whether it has been answered —
+  a tick or an empty ring, so it is the shape and not only the colour — and while
+  **Send answer** is greyed out the panel names the questions still waiting
+  ("Still to answer: Languages"). **Left** and **Right** move between the tabs.
+  A single question, which is the usual case, has no tabs and looks exactly as
+  it did.
 
 ### Changed
 
@@ -128,6 +150,58 @@ on the floor, and say so in your PR.
   come back to a blank second window that belonged to nothing. Now that window
   is simply not reopened. A window that also holds a session is unaffected: it
   comes back with its session, minus the document tab. (#494)
+
+### Fixed
+
+- **The `ask` autonomy mode asks again.** `ask` never told Claude Code which
+  permission mode to use — it let the CLI pick its own, and for years the CLI
+  picked "stop and ask a person". Recent versions changed that pick: on a Pro,
+  Max or Team plan the CLI now starts sessions in **auto** mode, where a second
+  model reviews each action instead of you. So a session you had set to `ask`
+  was quietly being reviewed by a classifier. switchboard's own approval bar
+  hid most of it — that still held every shell command and every edit — but
+  anything it does not cover went through without you. `ask` now names the mode
+  outright, and a session started at `ask` is back to stopping for you. You may
+  see a few more prompts than you did last week; that is the mode doing what its
+  name says. Auto mode is still one **Shift+Tab** away inside a session's
+  terminal if you want it. (#587)
+
+- **A suspended session can now be maximized by double-clicking it.** A session
+  that came back with the app and hasn't been resumed yet drew
+  no card header at all, so the double-click that fills the workspace with one
+  session had nothing to land on — the keyboard shortcut worked, the mouse did
+  not, and the manual had to write the exception down. Its card now keeps a
+  header with the session's name, colour, badge and the word *suspended*.
+  Maximizing it doesn't wake it up: it stays suspended, with its **Resume**
+  button, until you press that. (#216)
+
+- **A document tab's ✕ no longer claims it ends your session.** Every tab in
+  the app was labelled "Close (ends the session)" — true of a session card, and
+  simply wrong on a document or a Changes tab, neither of which ends anything. A
+  document's ✕ now says **Close document** and a Changes tab's says **Close**.
+
+- **A prompt that is just a picture is no longer lost.** An unsent prompt has
+  been kept since 0.7.0, but only the words: the files you had attached
+  vanished the moment the card was rebuilt — switching it to Terminal and back
+  was enough — so a card holding nothing but a pasted screenshot lost the whole
+  prompt. The chips now come back with the words. Their contents are still
+  never written to disk, so a full restart does drop them; when it does, the
+  composer now says which files it lost and asks you to attach them again
+  rather than emptying itself in silence.
+
+- **switchboard now tells you when it has moved a card's conversation, and two
+  cards can no longer share one.** A card whose conversation had gone missing was
+  already being reconnected to the right one automatically, but it said so only
+  in the log — so a session that came back somewhere unexpected looked exactly
+  like a bug. It now says so in the Events drawer, in a notice you can dismiss.
+  A separate old fault could leave two cards pointing at the **same**
+  conversation, with both resuming into one transcript; that pair is now
+  untangled on the next launch — the card actually in the conversation keeps it
+  (or, if both are, the older card does), and the other one starts a new
+  conversation. Nothing is deleted doing it: the given-up conversation is still
+  recorded on the card that gave it up, no other card can take it, and the manual
+  explains how to swap the two back by hand. Both notices stay put until you
+  dismiss them, so quitting without opening the drawer can't lose them.
 
 ### Internal
 
@@ -208,96 +282,6 @@ on the floor, and say so in your PR.
   transport and dropped on the floor — nothing subscribed. They are written to
   `switchboard.log` under the `transport` subsystem, throttled so a wedged
   session cannot rotate the rest of the log away. Nothing changes on screen.
-
-### Added
-
-- **A visible way to close the Events drawer.** The drawer's only close control
-  was the narrow tab on the right edge — which reads as a way *in* — so opening
-  it and then hunting for the way back out was easy to do. There is now a **✕**
-  in the drawer's own header, next to the word EVENTS. It does exactly what
-  `Esc`, `Ctrl+E` and the tab already did, including putting your cursor back
-  where it was, and it is the first thing `Tab` reaches inside the drawer.
-
-### Added
-
-- **Close all documents, in one go.** Every file you open gets its own tab, so a
-  morning's reading can leave a dozen of them in the strip and no way out but a
-  dozen clicks. The command palette (`Ctrl+Shift+P`) now has **Close all
-  documents (keeps popped-out ones)**: it clears every document tab at once and
-  asks nothing first, because a viewer never edits anything. Your sessions and
-  their Changes tabs are untouched, and a document you have moved to its own
-  window on another monitor is left exactly where you put it.
-
-### Fixed
-
-- **A document tab's ✕ no longer claims it ends your session.** Every tab in
-  the app was labelled "Close (ends the session)" — true of a session card, and
-  simply wrong on a document or a Changes tab, neither of which ends anything. A
-  document's ✕ now says **Close document** and a Changes tab's says **Close**.
-
-### Fixed
-
-- **A prompt that is just a picture is no longer lost.** An unsent prompt has
-  been kept since 0.7.0, but only the words: the files you had attached
-  vanished the moment the card was rebuilt — switching it to Terminal and back
-  was enough — so a card holding nothing but a pasted screenshot lost the whole
-  prompt. The chips now come back with the words. Their contents are still
-  never written to disk, so a full restart does drop them; when it does, the
-  composer now says which files it lost and asks you to attach them again
-  rather than emptying itself in silence.
-
-### Added
-
-- **The autonomy chips now say what a mode does.** Hover the shield chip — in
-  the title bar, under the prompt box, or the little marker in a card's header —
-  and you get a plain description of what will still stop for you in that mode
-  and what won't. The one worth reading is **full-auto**: it is Claude Code's
-  `bypassPermissions`, the same thing `--dangerously-skip-permissions` turns on,
-  and the hover now says so rather than leaving you to find out. The manual's
-  [Approvals & autonomy](docs/manual/04-approvals-and-autonomy.md) page carries
-  the full version.
-
-### Fixed
-
-- **switchboard now tells you when it has moved a card's conversation, and two
-  cards can no longer share one.** A card whose conversation had gone missing was
-  already being reconnected to the right one automatically, but it said so only
-  in the log — so a session that came back somewhere unexpected looked exactly
-  like a bug. It now says so in the Events drawer, in a notice you can dismiss.
-  A separate old fault could leave two cards pointing at the **same**
-  conversation, with both resuming into one transcript; that pair is now
-  untangled on the next launch — the card actually in the conversation keeps it
-  (or, if both are, the older card does), and the other one starts a new
-  conversation. Nothing is deleted doing it: the given-up conversation is still
-  recorded on the card that gave it up, no other card can take it, and the manual
-  explains how to swap the two back by hand. Both notices stay put until you
-  dismiss them, so quitting without opening the drawer can't lose them.
-
-### Added
-
-- **Put your sessions in the order you want.** The Sessions list was stuck in
-  the order you happened to open things in. Drag a session up or down inside its
-  group and it stays where you put it — a line shows where it will land — and
-  the arrangement comes back next time you open switchboard. Without a mouse:
-  **Move up** / **Move down** in the row's right-click menu, or **`Ctrl+Alt+↑`**
-  / **`Ctrl+Alt+↓`** while you are in the session. Dragging onto a *different*
-  group still means what it always did — it joins that group, and you arrange it
-  from there.
-  Pinned sessions still come first in their group; that is the one rule your own
-  order does not beat. Since the list is what `Ctrl+1`…`Ctrl+9` counts against,
-  arranging it is also how you choose which session is `Ctrl+1`.
-
-### Added
-
-- **Several questions at once now arrive as tabs.** When Claude asks more than
-  one question in a single go, they used to be stacked down one long panel. They
-  are now a tab per question, labelled with Claude's own short name for it, so
-  you read one question at a time. Every tab shows whether it has been answered —
-  a tick or an empty ring, so it is the shape and not only the colour — and while
-  **Send answer** is greyed out the panel names the questions still waiting
-  ("Still to answer: Languages"). **Left** and **Right** move between the tabs.
-  A single question, which is the usual case, has no tabs and looks exactly as
-  it did.
 
 ## 0.8.0 — 2026-08-19
 
