@@ -22,6 +22,15 @@ jobs:
         # protection's required checks list matches the PR-event matrix (4).
         os: ${{ github.event_name == 'push' && fromJSON('["windows-latest", "ubuntu-latest", "macos-latest"]') || fromJSON('["windows-latest", "ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
+    # Bounded on purpose - #597 (2026-08-19): CI jobs wedged in_progress for
+    # HOURS with no output, one riding a PR's merge lane to the 6h job ceiling.
+    # An unbounded job turns any runner-side stall into a silent merge blocker,
+    # so every job in this file carries a bound. DO NOT remove these as
+    # "cleanup" - the number IS the mitigation. Sized ~3-4x the slowest green
+    # run observed across 26 runs on 2026-08-19 (windows 6.9 min, ubuntu 3.3,
+    # macos 3.5); generous, because a bound that fires on a merely slow run is
+    # a new flake.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 20 || 15 }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -68,6 +77,14 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
+    # Bounded on purpose - #597; see the note on the build job above. This is
+    # the job that actually hung: four sightings on 2026-08-19 alone (PRs #572,
+    # #583, #589, #591, #599), all on `e2e ubuntu-latest`, one ~2h and one to
+    # the 6h ceiling. Sized ~2.2-2.6x the slowest green run of the same 26-run
+    # sample (windows 26.8 min, ubuntu 11.5). Windows e2e is genuinely slow,
+    # hence the split - one bound wide enough for Windows would give the leg
+    # that actually hangs nothing worth having.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 60 || 30 }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -78,6 +95,14 @@ jobs:
       # Electron needs these system libs + a virtual display on headless Linux
       - name: Linux Electron deps
         if: runner.os == 'Linux'
+        # THE step that wedged in #597 - every hang traced here, to an apt step
+        # that runs before any test, which is why the hang never correlated
+        # with spec content. A step bound turns a wedged apt mirror into a
+        # 6-minute retryable failure instead of a multi-hour merge blocker.
+        # Observed across the same sample: 6-117 seconds (bimodal - ~10s with a
+        # warm mirror, ~1-2 min without). 6 min is ~3x the slowest. DO NOT
+        # remove.
+        timeout-minutes: 6
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 \
