@@ -134,22 +134,56 @@ runs on the card next.
 ## Autonomy modes
 
 Each session runs at one of four levels. Click the shield chip under the prompt
-box to cycle it.
+box to cycle it — **and hover it to read what the mode you are about to pick
+actually does.** The same hover works on the shield chip in the title bar and on
+the little mode marker in a card's header.
 
-| Mode | What it stops for |
-|---|---|
-| **ask** | Commands and file changes both need your OK. The safe default. |
-| **plan** | Claude researches and proposes, but writes nothing. |
-| **auto-edit** | File edits happen freely; commands and web fetches still ask. |
-| **full-auto** | Nothing asks. Use deliberately. |
-
-Under **ask** and **auto-edit**, switchboard also asks before Claude reads
-files *outside* the session's folder — mirroring what Claude Code does on its
-own.
+| Mode | What runs without asking you | What still stops for you |
+|---|---|---|
+| **ask** | Reading files inside the session's folder. | Everything else: file changes, shell commands, web fetches, and reading anything outside the folder. The safe default. |
+| **plan** | Reading and exploring. | Claude writes you a plan and changes nothing until you approve it. Claude Code enforces that block itself. |
+| **auto-edit** | File edits inside the session's folder. | Shell commands, web fetches, and reading anything outside the folder. |
+| **full-auto** | Everything. | Almost nothing — see below. |
 
 Changing the mode applies **the next time the session starts or resumes** —
 Claude Code can't switch modes mid-flight. The chip in the title bar sets the
 mode that *new* sessions start at; each session keeps its own after that.
+
+### What full-auto really is
+
+**full-auto is not a gentler version of "skip the prompts" — it is that.** It
+starts Claude Code in its `bypassPermissions` mode, which is the same mode the
+`--dangerously-skip-permissions` flag turns on. Every tool call runs the moment
+Claude asks for it, including writes *outside* the session's folder and into
+files a normal mode would never touch unasked. It is not a sandbox: nothing is
+containing what a command can reach, only whether you were asked first.
+
+A short list of things still hold, and they are all Claude Code's, not
+switchboard's:
+
+- **`deny` rules in your `settings.json`** block in every mode, this one
+  included. (`allow` rules stop meaning anything, because nothing is being
+  asked.)
+- **Explicit `ask` rules** you have written still prompt.
+- **Things that need an actual person** — a question Claude asks you, and an
+  MCP tool marked as needing a human — still wait for you.
+- **`rm` aimed at a critical path** still prompts.
+
+That is the whole list. Use full-auto where you would be happy to hand someone
+else the keyboard for the length of the task.
+
+### The two smaller print items
+
+- Under **ask** and **auto-edit**, switchboard also asks before Claude reads
+  files *outside* the session's folder — mirroring what Claude Code does on its
+  own.
+- Under **auto-edit**, switchboard is slightly *stricter* than Claude Code
+  would be on its own. Left alone, Claude Code's accept-edits mode also waves
+  through a handful of in-folder housekeeping commands — `mkdir`, `touch`,
+  `mv`, `cp`, `rm`, `sed` — and switchboard brings every shell command to you
+  instead. You will occasionally be asked about a `mkdir` you would not have
+  been asked about in a bare terminal. That is deliberate: being asked when you
+  expected not to be is a small surprise, and the other way round is not.
 
 ## Good to know
 
@@ -188,3 +222,6 @@ mode that *new* sessions start at; each session keeps its own after that.
   waiting on an answer that can no longer go anywhere. Starting the card again
   clears the bar and begins fresh.
 - **full-auto** is shown in red as a reminder.
+- **The hover is the short version of this page.** Every mode control carries a
+  description of what the mode does; if you only ever read one thing about
+  autonomy, read the one on **full-auto**.

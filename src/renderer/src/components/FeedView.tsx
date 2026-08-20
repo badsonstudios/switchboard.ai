@@ -6,6 +6,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { blockVisible, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
+import { autonomyTooltip } from '../lib/autonomy';
 import { feedKeyAction, FEED_STOP_SELECTOR } from '../lib/feed-keys';
 import {
   FeedReveal,
@@ -2042,9 +2043,15 @@ function Composer({
       </div>
       {/* options row (E10-05): the extension-style affordances under the box */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {/* This session's autonomy (E10-05). The tooltip is the shared one
+            (#534) — it says what the MODE does, then what THIS control does
+            with it, which is the question a chip that applies on next resume
+            has to answer. `data-testid` so the e2e that cycles it is not
+            pinned to the copy. */}
         <button
           onClick={onCycleAutonomy}
-          title={t('feedView.autonomyHint')}
+          data-testid="composer-autonomy"
+          title={autonomyTooltip(t, autonomy, 'session')}
           style={{
             background: 'transparent',
             border: '1px solid var(--border)',
