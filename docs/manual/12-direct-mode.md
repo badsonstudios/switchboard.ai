@@ -207,6 +207,63 @@ on the card whenever you like.
 > the session had been wiped. If you saw that on the 0.3.0 update, nothing was
 > lost then either — the history was on disk the whole time.
 
+### When switchboard tells you it moved a card
+
+Two of the repairs above happen without asking you, so switchboard **says so on
+screen** rather than only writing it to the log. The notice appears in the
+**Events drawer** — the tab on the right-hand edge, which shows a small dot when
+something is waiting behind it. Open it (`Ctrl+E`), read the notice, and press
+**Got it** to clear it. **It waits for you** — quit without opening the drawer
+and it will still be there next time. Once you dismiss it, it's gone for good:
+both repairs happen once, so there is nothing left to say.
+
+You'll see one of two sentences:
+
+- **"… had lost track of its conversation — it's been reconnected to the most
+  recent one in its folder."** That's the repair described above. Open the card
+  and check it looks like the right conversation. If it doesn't, nothing is
+  lost — the old pointer is still underneath.
+- **"… and … were both pointing at one conversation."** See below.
+
+### Two cards, one conversation
+
+An older version could leave **two cards in the same project folder pointing at
+the same conversation**. That's not harmless: both cards would resume into the
+same transcript, so two sessions would be writing into one history. (Two cards in
+*different* folders are never affected, even in the unlikely event they share a
+name — a conversation belongs to a folder, so those are two separate files.)
+
+switchboard untangles it once, the next time it starts, and it does it without
+throwing anything away:
+
+- **One card keeps the conversation.** If only one of them is actually *in* it
+  right now, that card keeps it. If they both are, the **older card** keeps it —
+  the one created first, which is the one the newer copy was made alongside.
+  (When switchboard makes a second card for a folder you already have open, it
+  names it `-2`. The `-2` is the copy.)
+- **The other card gives it up, but doesn't lose it.** The conversation's name is
+  moved onto a "given up" list on that card. It is not deleted.
+- **That card starts a new conversation, and is not given someone else's.** This
+  is deliberate, and it's the opposite of the repair above. That repair works
+  because the card's conversation is genuinely *missing*, which makes "the newest
+  one in this folder" a good guess. Here the conversation isn't missing — it's
+  sitting right there on the other card — so the same guess would hand you an
+  unrelated session's history and start writing into it. switchboard would rather
+  give you an empty card you can see than a wrong one you can't.
+
+**If you'd rather have it the other way round**, you can swap the two by hand.
+Quit switchboard first (it writes this file on the way out) and take a copy of
+it, then open `%APPDATA%\switchboard\workspace.json` (macOS:
+`~/Library/Application Support/switchboard/workspace.json`; Linux:
+`~/.config/switchboard/workspace.json`) and find the two cards by their titles.
+**Swap it on both**: give the card you want the conversation id as its
+`nativeSessionId`, and put it in the other card's `cededNativeIds` instead. Start
+switchboard again and the card you chose resumes there.
+
+The one thing not to do is leave the id as `nativeSessionId` on **both** cards —
+that's the state this whole section exists to fix, so the next launch will simply
+decide it again.
+
 ## Replies arrive as they're written
 
 In Direct mode Claude's reply appears **a word at a time**, with a small block

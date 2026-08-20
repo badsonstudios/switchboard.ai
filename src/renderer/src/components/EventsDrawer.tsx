@@ -146,7 +146,7 @@ export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
 
   // ── the notice announcer, and why collapsing needed one ──────────────────
   //
-  // All three notice tenants carry `role="status" aria-live="polite"` inside
+  // Every notice tenant carries `role="status" aria-live="polite"` inside
   // `EventsPanel`, and #314 put them there for a stated reason: both the update
   // notice and the reconnect offer arrive AFTER mount — one off a handshake
   // round-trip, one when a dialog closes — so a screen reader would otherwise

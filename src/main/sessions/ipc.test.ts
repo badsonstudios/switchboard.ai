@@ -131,6 +131,8 @@ function harness(
     transport?: string;
   }> = [];
   const upserted: PersistedSession[] = [];
+  /** what the module asked the app to SAY about a card's history (#539) */
+  const historyRepairs: unknown[] = [];
   /** every transcript-snapshot listener the module registered (P2-E7-06) */
   const snapshots: Array<(snap: Record<string, unknown>) => void> = [];
   /** the persisted store as it stands NOW, as opposed to every write ever made */
@@ -443,6 +445,8 @@ function harness(
     streamPermissions: opts.streamPermissions,
     streamFeed: opts.streamFeed,
     preferredTransport: opts.preferredTransport,
+    /** #539 — the repairs the app announces on screen rather than only logging */
+    onHistoryRepair: (r: unknown) => historyRepairs.push(r),
   } as unknown as SessionIpcDeps;
 
   const ipc = registerSessionIpc(deps);
@@ -456,6 +460,7 @@ function harness(
     call,
     created,
     upserted,
+    historyRepairs,
     nativeIdsSet,
     fireNativeId: (liveId: string, nativeId: string, cause?: 'clear') => {
       for (const l of nativeIdListeners) l(liveId, nativeId, cause);
@@ -1818,6 +1823,24 @@ describe('the resume link degrades but is never destroyed (#484)', () => {
       expect(card.nativeSessionLineage).toEqual([B]);
     });
 
+    it('says so on screen, not only in the log (#539)', () => {
+      // the one resume outcome the code itself calls "the user might disagree
+      // with" — a card that silently came back in a DIFFERENT conversation is
+      // indistinguishable from the bug the sweep repairs
+      seedTranscript(A, 'sixty-seven kilobytes of real work');
+      const h = start(priorCard({ folder: dir, id: 'card-1', nativeSessionId: B }));
+      expect(h.historyRepairs).toEqual([
+        { kind: 'adopted', cardId: 'card-1', cardTitle: expect.any(String), nativeSessionId: A },
+      ]);
+    });
+
+    it('says NOTHING for an ordinary resume', () => {
+      seedTranscript(A);
+      const h = start(priorCard({ folder: dir, id: 'card-1', nativeSessionId: A }));
+      expect(h.created[0].resumeSessionId).toBe(A);
+      expect(h.historyRepairs).toEqual([]);
+    });
+
     it('and the history really comes back into the Feed', () => {
       seedTranscript(A, 'sixty-seven kilobytes of real work');
       const streamFeed = new StreamFeed();
@@ -1854,6 +1877,50 @@ describe('the resume link degrades but is never destroyed (#484)', () => {
 
       expect(h.created[0].resumeSessionId).toBeUndefined();
       expect(h.cards.find((c) => c.id === 'card-1')!.nativeSessionId).toBe(B);
+    });
+
+    // #539 — the pair the untangle leaves behind, driven through the REAL start
+    // path. The comments claim the ceding card cannot be handed the keeper's
+    // conversation and is not offered a stranger's either; this is what proves
+    // it rather than arguing it.
+    it('a card that CEDED its conversation is offered nothing at all', () => {
+      seedTranscript(A, 'the conversation the keeper kept');
+      const keeper = priorCard({ folder: dir, id: 'card-2', nativeSessionId: A });
+      // what `untangleDuplicateConversations` leaves on the loser: no chain, the
+      // id parked on the ceded list
+      const loser = { ...priorCard({ folder: dir, id: 'card-1' }), cededNativeIds: [A] };
+      const h = harness(claudeShaped(), dir, {
+        transport: 'stream',
+        liveIds: ['live-1'],
+        prior: loser,
+        otherCards: [keeper],
+      });
+
+      h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
+
+      expect(h.created[0].resumeSessionId).toBeUndefined();
+      // and it still holds the pointer, so the hand-edit back is possible
+      expect(h.cards.find((c) => c.id === 'card-1')!.cededNativeIds).toEqual([A]);
+      expect(h.historyRepairs).toEqual([]);
+    });
+
+    it('nor is a ceded conversation offered to a THIRD card once the keeper is gone', () => {
+      // the keeper has been closed, so the id is in nobody's chain — only on the
+      // ceded list of the card that is owed it. `claimedNativeIds` has to see
+      // that, or an unrelated orphan in the same folder adopts it.
+      seedTranscript(A, 'card-1 is owed this');
+      const owed = { ...priorCard({ folder: dir, id: 'card-1' }), cededNativeIds: [A] };
+      const stranger = priorCard({ folder: dir, id: 'card-3', nativeSessionId: B });
+      const h = harness(claudeShaped(), dir, {
+        transport: 'stream',
+        liveIds: ['live-1'],
+        prior: stranger,
+        otherCards: [owed],
+      });
+
+      h.call('sessions:create', { cardId: 'card-3', folder: dir, title: 'x' });
+
+      expect(h.created[0].resumeSessionId).toBeUndefined();
     });
 
     it('a BRAND NEW card in a folder full of history adopts nothing', () => {

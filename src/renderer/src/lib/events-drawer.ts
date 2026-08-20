@@ -24,10 +24,10 @@
 import { AttentionEvent, attentionQueue } from './queue';
 
 /**
- * The notice slot's THREE tenants (the #425 coordination note), as the badge
+ * The notice slot's FOUR tenants (the #425 coordination note), as the badge
  * sees them — which is only whether each is up.
  *
- * Spelled out as three named fields rather than a count the caller adds up:
+ * Spelled out as named fields rather than a count the caller adds up:
  * they rehomed into this drawer together and a fourth tenant has to be a
  * visible edit here, not an invisible one at a call site. Deliberately widened
  * to `unknown` where the badge does not care about the payload — this module
@@ -40,6 +40,8 @@ export interface DrawerNotices {
   reconnectOffer?: boolean;
   /** P2-E14-07 / §5.14's open provider incidents */
   incidents?: readonly unknown[];
+  /** #539's "we changed which conversation this card is in" notices */
+  historyRepairs?: readonly unknown[];
 }
 
 export interface DrawerBadge {
@@ -51,7 +53,7 @@ export interface DrawerBadge {
    * on the list — which is what the tab is tinted with.
    */
   hottest: AttentionEvent['kind'] | null;
-  /** how many of the three notice tenants are up right now */
+  /** how many of the four notice tenants are up right now */
   notices: number;
 }
 
@@ -62,7 +64,12 @@ export interface DrawerBadge {
  */
 export function liveNotices(n: DrawerNotices): number {
   return (
-    (n.updateNotice ? 1 : 0) + (n.reconnectOffer ? 1 : 0) + (n.incidents?.length ? 1 : 0)
+    (n.updateNotice ? 1 : 0) +
+    (n.reconnectOffer ? 1 : 0) +
+    (n.incidents?.length ? 1 : 0) +
+    // ONE, however many cards were repaired: the tenant is the slot's occupant,
+    // not its rows — the same reading `incidents` already gets.
+    (n.historyRepairs?.length ? 1 : 0)
   );
 }
 

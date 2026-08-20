@@ -11,11 +11,12 @@
 // P2-E14-01 (Shape B): this is no longer a 220px column in the workspace row —
 // it is the BODY of `EventsDrawer`, which overlays the grid and is collapsed by
 // default. Nothing about the content changed: the same queue-ordered rows, the
-// same three notice tenants, the same dismiss and open gestures. What changed
-// is that it now fills its container instead of claiming a fixed width from the
+// same notice tenants, the same dismiss and open gestures. What changed is
+// that it now fills its container instead of claiming a fixed width from the
 // session grid, and the drawer above it owns the edge, the shadow and the
 // open/close. App still owns the subscription and the cursor — the drawer is a
 // shape, not a new home for state.
+import type { HistoryRepairNotice } from '../../../shared/history-repair';
 import { EventDto } from '../model/types';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -139,6 +140,21 @@ export interface EventsPanelProps {
    * drawer's version of this prop is required.
    */
   onClose?: () => void;
+  /**
+   * What the app changed about a card's conversation history without being
+   * asked (#539) — a conversation the repair sweep ADOPTED for an orphaned
+   * card, or one a card CEDED because two cards pointed at it.
+   *
+   * The fourth tenant of this slot (the #425 coordination note), and it belongs
+   * here for the same reason the incidents do: `events/feed.ts` is one item per
+   * SESSION and this is not the session's state — it is a thing the app did to
+   * the card while nobody was watching. Dismissible, unlike an incident,
+   * because it is finished news rather than a live condition; there is nothing
+   * left for it to stop being true about.
+   */
+  historyRepairs?: readonly HistoryRepairNotice[];
+  /** the notice's one control: I have read this. */
+  onDismissHistoryRepair?: (id: string) => void;
 }
 
 export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
@@ -398,6 +414,64 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
           </div>
         </div>
       )}
+      {!!props.historyRepairs?.length && (
+        <div
+          data-events-notice="history-repair"
+          style={{
+            background: 'var(--panel2)',
+            // `--border`-weight like the update notice rather than a status hue:
+            // this is news about something already finished, not attention.
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-chip)',
+            padding: '7px 9px',
+            marginBlockEnd: 6,
+            fontSize: 11,
+          }}
+        >
+          <div
+            // The panel's one announcement idiom (#314), and this notice needs
+            // it more than most: the ceded half is decided during the workspace
+            // load, so it is ALREADY TRUE when the window mounts and there is no
+            // later event to notice it by.
+            role="status"
+            aria-live="polite"
+            style={{ color: 'var(--text)' }}
+          >
+            {props.historyRepairs.map((r) => (
+              <div
+                key={r.id}
+                data-history-repair={r.kind}
+                style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBlockEnd: 4 }}
+              >
+                <span style={{ flex: 1, minInlineSize: 0 }}>
+                  {r.kind === 'adopted'
+                    ? t('events.historyAdopted', { card: r.cardTitle })
+                    : t('events.historyCeded', { card: r.cardTitle, kept: r.keptByTitle ?? '' })}
+                </span>
+                <button
+                  onClick={() => props.onDismissHistoryRepair?.(r.id)}
+                  // Named per ROW, because a slot with three of these would
+                  // otherwise be three buttons all called "Got it" (§5.32).
+                  aria-label={t('events.historyDismiss', { card: r.cardTitle })}
+                  style={{
+                    background: 'transparent',
+                    color: 'var(--muted)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-chip)',
+                    padding: '2px 10px',
+                    cursor: 'pointer',
+                    fontSize: 11,
+                    fontFamily: 'var(--font-ui)',
+                    flexShrink: 0,
+                  }}
+                >
+                  {t('events.gotIt')}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {props.reconnectOffer && (
         <div
           style={{
@@ -455,7 +529,11 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
           </div>
         </div>
       )}
-      {events.length === 0 && !props.reconnectOffer && !props.updateNotice && !props.incidents?.length && (
+      {events.length === 0 &&
+        !props.reconnectOffer &&
+        !props.updateNotice &&
+        !props.incidents?.length &&
+        !props.historyRepairs?.length && (
         <div style={{ color: 'var(--muted)', fontSize: 11 }}>{t('events.empty')}</div>
       )}
       {/* A real list, so the rows read as a set and their count is announced

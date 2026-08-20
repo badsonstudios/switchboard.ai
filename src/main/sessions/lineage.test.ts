@@ -115,3 +115,33 @@ describe('sanitizeLineage', () => {
     expect(sanitizeLineage([])).toBeUndefined();
   });
 });
+
+describe('recordNativeId and ceded ids (#539)', () => {
+  it('never offers a ceded id as a resume candidate', () => {
+    expect(resumeCandidates({ nativeSessionId: 'a', cededNativeIds: ['x'] })).toEqual(['a']);
+  });
+
+  it('carries the ceded list through an ordinary id change', () => {
+    expect(recordNativeId({ nativeSessionId: 'a', cededNativeIds: ['x'] }, 'b')).toEqual({
+      nativeSessionId: 'b',
+      nativeSessionLineage: ['a'],
+      cededNativeIds: ['x'],
+    });
+  });
+
+  it('takes an id back OFF the ceded list when the card holds it again', () => {
+    // only reachable when the card that kept it was closed and the sweep handed
+    // it back — one conversation must not be two contradictory facts
+    expect(recordNativeId({ nativeSessionId: 'a', cededNativeIds: ['x', 'y'] }, 'x')).toEqual({
+      nativeSessionId: 'x',
+      nativeSessionLineage: ['a'],
+      cededNativeIds: ['y'],
+    });
+  });
+
+  it('writes the field even when it empties, so a spread cannot leave a stale one', () => {
+    const out = recordNativeId({ nativeSessionId: 'a', cededNativeIds: ['x'] }, 'x');
+    expect(out).toHaveProperty('cededNativeIds');
+    expect(out.cededNativeIds).toBeUndefined();
+  });
+});

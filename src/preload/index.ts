@@ -18,6 +18,7 @@ import type {
 } from '../shared/update';
 import type { SessionRecordWire } from '../shared/sessions';
 import type { WorkspaceSaveState } from '../shared/workspace';
+import type { HistoryRepairNotice } from '../shared/history-repair';
 import type { ServiceHealthPrefs, ServiceHealthStatus } from '../shared/service-health';
 import type {
   PushConfig,
@@ -345,6 +346,28 @@ const api = {
       const h = (): void => cb();
       ipcRenderer.on('sessions:cardsChanged', h);
       return () => ipcRenderer.removeListener('sessions:cardsChanged', h);
+    },
+    /**
+     * What the app repaired about a card's conversation history this run (#539):
+     * a conversation ADOPTED by the repair sweep, or one CEDED because two cards
+     * pointed at it.
+     *
+     * Both halves, because the two producers straddle the window's lifetime —
+     * the cede happens at workspace load, before this window existed, so a
+     * mounting window asks `historyRepairs()` for what it missed and subscribes
+     * for what comes next. Main holds the list in the workspace file, so a
+     * notice survives a quit the user never noticed it and `dismissHistoryRepair`
+     * is the only thing that takes one away.
+     */
+    historyRepairs: (): Promise<HistoryRepairNotice[]> =>
+      ipcRenderer.invoke('sessions:historyRepairs'),
+    /** acknowledge one — it is gone for good, including across a restart */
+    dismissHistoryRepair: (id: string): void =>
+      ipcRenderer.send('sessions:dismissHistoryRepair', id),
+    onHistoryRepair: (cb: (notice: HistoryRepairNotice) => void): (() => void) => {
+      const h = (_e: unknown, n: HistoryRepairNotice): void => cb(n);
+      ipcRenderer.on('sessions:historyRepair', h);
+      return () => ipcRenderer.removeListener('sessions:historyRepair', h);
     },
     /**
      * A card's task label changed (P2-E7-06) — usually because the CLI wrote a

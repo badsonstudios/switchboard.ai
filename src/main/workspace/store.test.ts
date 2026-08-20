@@ -18,6 +18,7 @@ import {
 import { Logger } from '../log/logger';
 import { SOUND_IDS } from '../../shared/sounds';
 import { SUPPRESSED_CAP, SuppressedEvent } from '../../shared/suppressed';
+import { MAX_HISTORY_REPAIR_NOTICES } from '../../shared/history-repair';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 
 let dir: string;
@@ -2260,6 +2261,239 @@ describe('PersistedSession.nativeSessionLineage survives quit -> relaunch (#484)
     st.load();
     expect(st.listSessions()[0].nativeSessionLineage).toBeUndefined();
     expect(st.listSessions()[0].nativeSessionId).toBe('conv-c');
+  });
+});
+
+// #539 — two cards pointing at ONE conversation is a state #484's repair sweep
+// was fenced against creating but could not undo. The load unties it, once, and
+// nothing is destroyed doing so: the loser keeps the pointer in `cededNativeIds`.
+describe('duplicate conversation pointers are untied at load (#539)', () => {
+  const write = (sessions: unknown[], version = CURRENT_VERSION): void => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ version, sessions, groups: [], window: null, layout: null })
+    );
+  };
+  /**
+   * A card in THE SAME FOLDER as its neighbours — which is what makes two cards
+   * duplicates at all. `sess()` gives every card a folder of its own, and a
+   * conversation is `<root>/<slug of the folder>/<id>.jsonl`, so two cards in
+   * different folders holding one id name two different files and are correctly
+   * left alone.
+   */
+  const inFolder = (id: string) => ({
+    ...sess(id),
+    identity: { ...sess(id).identity, folder: 'C:/Projects/shared' },
+  });
+
+  it('leaves one owner and hands the other card its pointer back on the ceded list', () => {
+    // the owner-reported pair: `Switchboard.ai` and `Switchboard.ai-2`, one id
+    write([
+      { ...inFolder('one'), nativeSessionId: 'conv-x' },
+      { ...inFolder('two'), nativeSessionId: 'conv-x' },
+    ]);
+    const st = makeStore(file);
+    st.load();
+
+    const [a, b] = st.listSessions();
+    expect(a.nativeSessionId).toBe('conv-x');
+    expect(b.nativeSessionId).toBeUndefined();
+    expect(b.cededNativeIds).toEqual(['conv-x']); // NOT deleted
+    expect(st.listUntangled()).toEqual([
+      {
+        cardId: 'two',
+        cardTitle: 'two',
+        nativeSessionId: 'conv-x',
+        keptByCardId: 'one',
+        keptByTitle: 'one',
+      },
+    ]);
+  });
+
+  it('says so in the log — a repair the user cannot see is the bug it repairs', () => {
+    write([
+      { ...inFolder('one'), nativeSessionId: 'conv-x' },
+      { ...inFolder('two'), nativeSessionId: 'conv-x' },
+    ]);
+    const notes: string[] = [];
+    const st = makeStore(file, { warn: (m: string) => notes.push(m) } as never);
+    st.load();
+    expect(notes.some((n) => n.includes('same conversation'))).toBe(true);
+  });
+
+  it('persists the cede, so the next launch does not undo it', () => {
+    write([
+      { ...inFolder('one'), nativeSessionId: 'conv-x' },
+      { ...inFolder('two'), nativeSessionId: 'conv-x' },
+    ]);
+    const a = makeStore(file);
+    a.load();
+    a.save();
+
+    const b = makeStore(file); // "relaunch"
+    b.load();
+    expect(b.listSessions()[1].cededNativeIds).toEqual(['conv-x']);
+    expect(b.listUntangled()).toEqual([]); // nothing left to untie
+  });
+
+
+  it('leaves alone two cards holding one id in DIFFERENT folders', () => {
+    // a conversation is `<root>/<slug of the folder>/<id>.jsonl`, so this is two
+    // files, not one — and `sess()` gives every card its own folder, which is
+    // why the fixtures above have to opt into sharing one
+    write([
+      { ...sess('one'), nativeSessionId: 'conv-x' },
+      { ...sess('two'), nativeSessionId: 'conv-x' },
+    ]);
+    const st = makeStore(file);
+    st.load();
+    expect(st.listSessions().map((x) => x.nativeSessionId)).toEqual(['conv-x', 'conv-x']);
+    expect(st.listUntangled()).toEqual([]);
+  });
+
+  it('changes nothing, and says nothing, on an ordinary workspace', () => {
+    write([
+      { ...sess('one'), nativeSessionId: 'conv-a' },
+      { ...sess('two'), nativeSessionId: 'conv-b' },
+    ]);
+    const st = makeStore(file);
+    st.load();
+    expect(st.listSessions().map((x) => x.nativeSessionId)).toEqual(['conv-a', 'conv-b']);
+    expect(st.listUntangled()).toEqual([]);
+  });
+
+  it('does NOT untie a file from the future — nothing on that path is written', () => {
+    // read-only: this build cannot see all of the file, so it must not act on a
+    // reading it already knows is partial
+    write(
+      [
+        { ...inFolder('one'), nativeSessionId: 'conv-x' },
+        { ...inFolder('two'), nativeSessionId: 'conv-x' },
+      ],
+      CURRENT_VERSION + 1
+    );
+    const st = makeStore(file);
+    st.load();
+    expect(st.isReadOnly()).toBe(true);
+    expect(st.listSessions().map((x) => x.nativeSessionId)).toEqual(['conv-x', 'conv-x']);
+    expect(st.listUntangled()).toEqual([]);
+  });
+
+  it('round-trips a ceded list and normalizes a hand-edited one', () => {
+    write([{ ...sess('one'), nativeSessionId: 'conv-a', cededNativeIds: ['x', 7, '', 'x', 'y'] }]);
+    const st = makeStore(file);
+    st.load();
+    expect(st.listSessions()[0].cededNativeIds).toEqual(['x', 'y']);
+  });
+
+  it('leaves a card written before the field existed with no ceded list', () => {
+    write([{ ...sess('one'), nativeSessionId: 'conv-a' }]);
+    const st = makeStore(file);
+    st.load();
+    expect(st.listSessions()[0].cededNativeIds).toBeUndefined();
+  });
+
+  it('schedules the save itself — a cede that only lived in memory is a lie', () => {
+    // NOTHING else here writes: no `save()` call, no upsert. If `load()` does
+    // not arm the debounce, the next launch undoes the untangle and re-shows the
+    // notice the user already read.
+    write([
+      { ...inFolder('one'), nativeSessionId: 'conv-x' },
+      { ...inFolder('two'), nativeSessionId: 'conv-x' },
+    ]);
+    vi.useFakeTimers();
+    try {
+      makeStore(file).load();
+      vi.advanceTimersByTime(1000);
+    } finally {
+      vi.useRealTimers();
+    }
+    const onDisk = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+      sessions: { cededNativeIds?: string[] }[];
+    };
+    expect(onDisk.sessions[1].cededNativeIds).toEqual(['conv-x']);
+  });
+
+  it('arms nothing on an ordinary workspace', () => {
+    write([{ ...sess('one'), nativeSessionId: 'conv-a' }]);
+    const before = fs.readFileSync(file, 'utf8');
+    vi.useFakeTimers();
+    try {
+      makeStore(file).load();
+      vi.advanceTimersByTime(1000);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(fs.readFileSync(file, 'utf8')).toBe(before);
+  });
+});
+
+// #539 — the notice outlives the run, because both repairs happen once and then
+// the state that produced them is gone. Held in memory it would be lost the
+// first time the user quit without opening the drawer.
+describe('unacknowledged history repairs survive a quit (#539)', () => {
+  const notice = (id: string) => ({
+    id,
+    kind: 'ceded' as const,
+    cardId: 'two',
+    cardTitle: 'Switchboard.ai-2',
+    nativeSessionId: 'conv-x',
+    keptByTitle: 'Switchboard.ai',
+  });
+
+  it('round-trips', () => {
+    const a = makeStore(file);
+    a.load();
+    a.setHistoryRepairs([notice('ceded:two:conv-x')]);
+    a.save();
+
+    const b = makeStore(file); // "relaunch"
+    b.load();
+    expect(b.listHistoryRepairs()).toEqual([notice('ceded:two:conv-x')]);
+  });
+
+  it('a fresh workspace has none, rather than undefined', () => {
+    const st = makeStore(file);
+    st.load();
+    expect(st.listHistoryRepairs()).toEqual([]);
+  });
+
+  it('drops a record this build cannot render rather than half-saying it', () => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        version: CURRENT_VERSION,
+        historyRepairs: [notice('ok'), { id: 'bad', kind: 'invented' }, 7],
+      })
+    );
+    const st = makeStore(file);
+    st.load();
+    expect(st.listHistoryRepairs().map((n) => n.id)).toEqual(['ok']);
+  });
+
+  it('caps what it takes off disk as well as what it writes', () => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        version: CURRENT_VERSION,
+        historyRepairs: Array.from({ length: 40 }, (_, i) => notice(`n-${i}`)),
+      })
+    );
+    const st = makeStore(file);
+    st.load();
+    expect(st.listHistoryRepairs()).toHaveLength(MAX_HISTORY_REPAIR_NOTICES);
+  });
+
+  it('the caller cannot mutate the list through its own array', () => {
+    const st = makeStore(file);
+    st.load();
+    const mine = [notice('ceded:two:conv-x')];
+    st.setHistoryRepairs(mine);
+    mine[0].cardTitle = 'tampered';
+    expect(st.listHistoryRepairs()[0].cardTitle).toBe('Switchboard.ai-2');
   });
 });
 
