@@ -18,6 +18,7 @@ function noopDeps(): CommandDeps {
     closeCard: () => {},
     closeAllCards: () => {},
     togglePin: () => {},
+    reorderSession: () => false,
     toggleCardView: () => {},
     popOutCard: () => {},
     hideCard: () => {},

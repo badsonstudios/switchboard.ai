@@ -71,6 +71,14 @@ import {
   togglePin,
   withPin,
 } from '../lib/pinning';
+import {
+  ManualOrder,
+  NO_ORDER,
+  persistableManualOrder,
+  pruneManualOrder,
+  stepReorder,
+  withBucketOrder,
+} from '../lib/rail-order';
 
 /**
  * A snapshot. Every field is `readonly` deliberately: identity IS the change
@@ -132,6 +140,15 @@ export interface SessionState {
    */
   readonly pinned: PinSet;
   /**
+   * The order the user arranged the rail into by hand (#559), per bucket.
+   *
+   * In `state` for the same reason `pinned` is, and it is the same sentence:
+   * rail order is DERIVED from it, and derived values here are recomputed on
+   * mutation. It is read synchronously by the reorder commands too, which run
+   * from a keydown handler outside React's commit.
+   */
+  readonly manualOrder: ManualOrder;
+  /**
    * Every permission request main is currently holding, ACROSS every session
    * (P2-E9-11, §5.8's batch bullet).
    *
@@ -166,6 +183,7 @@ const EMPTY: SessionState = {
   focusPolicies: DEFAULT_FOCUS_BOOK,
   layout: DEFAULT_LAYOUT,
   pinned: NO_PINS,
+  manualOrder: NO_ORDER,
   pendingPermissions: [],
 };
 
@@ -260,8 +278,21 @@ export class SessionStore {
     // `pinned` is in the condition because a pinned session sorts first (E9-09):
     // rail order is a function of all three, and a pin that did not re-derive it
     // would leave the rail, Ctrl+1..9 and both strips reading last order.
-    if ('sessions' in patch || 'groups' in patch || 'pinned' in patch) {
-      this.derivedRail = railOrder(this.state.sessions, this.state.groups, this.state.pinned);
+    // `manualOrder` joins the condition for the reason `pinned` did: rail order
+    // is a function of all four now, and an arrangement that did not re-derive
+    // it would be an order the user made and the rail never painted (#559).
+    if (
+      'sessions' in patch ||
+      'groups' in patch ||
+      'pinned' in patch ||
+      'manualOrder' in patch
+    ) {
+      this.derivedRail = railOrder(
+        this.state.sessions,
+        this.state.groups,
+        this.state.pinned,
+        this.state.manualOrder
+      );
     }
     // The queue is derived from the SILENCED-FILTERED feed (P2-E9-10), so it
     // has to be recomputed when the focus book changes as well as when events
@@ -768,6 +799,69 @@ export class SessionStore {
     if (next === this.state.pinned) return;
     this.set({ pinned: next });
     this.persistPins(persistablePins(next));
+  }
+
+  // ── manual rail order (#559) ────────────────────────────────────────────
+  // Persistence is INJECTED, exactly as it is for pins above and for the same
+  // reason (P2-E15-07). The RULES are lib/rail-order's — including the one that
+  // decides what happens when an arrangement meets a pin.
+  private persistManualOrder: (blob: Record<string, string[]> | null) => void = () => {};
+
+  setManualOrderPersister(fn: (blob: Record<string, string[]> | null) => void): void {
+    this.persistManualOrder = fn;
+  }
+
+  getManualOrder(): ManualOrder {
+    return this.state.manualOrder;
+  }
+
+  /** Seed from the ui blob at boot. Does not persist — it just read it. */
+  initManualOrder(order: ManualOrder): void {
+    this.set({ manualOrder: order });
+  }
+
+  /**
+   * Record one bucket's arrangement — what a drop lands in.
+   *
+   * The caller hands the WHOLE resulting bucket, not a delta, because the whole
+   * bucket is what a rank list has to be: a delta would leave the store
+   * re-deriving a position from a list it cannot see, which is the same trap
+   * `railOrder` returning `buckets` exists to close.
+   */
+  setBucketOrder(bucket: string, ids: readonly string[]): void {
+    this.writeManualOrder(withBucketOrder(this.state.manualOrder, bucket, ids));
+  }
+
+  /**
+   * Move one session a step up or down INSIDE its own group — the keyboard's
+   * whole vocabulary (§5.32: a drag is never the only way to do something).
+   *
+   * Answers whether it moved, so the caller can announce a real change and stay
+   * silent about a no-op. The rail's derived order is the list it steps in, so
+   * the keyboard and the eye cannot disagree about what "up" meant — and the
+   * pin rule is enforced by `stepReorder` rather than re-guessed here.
+   */
+  reorderSession(cardId: string, delta: -1 | 1): boolean {
+    const bucket = this.derivedRail.bucketOf.get(cardId);
+    if (!bucket) return false;
+    const ids = this.derivedRail.buckets.get(bucket) ?? [];
+    const next = stepReorder(ids, cardId, delta, this.state.pinned);
+    if (!next) return false;
+    this.setBucketOrder(bucket, next);
+    return true;
+  }
+
+  /** Forget arrangements naming cards that no longer exist. Called from the
+   *  same boot sweep `prunePins` is, and for the same reason. */
+  pruneManualOrder(knownCardIds: Iterable<string>): void {
+    const next = pruneManualOrder(this.state.manualOrder, knownCardIds);
+    if (next) this.writeManualOrder(next);
+  }
+
+  private writeManualOrder(next: ManualOrder): void {
+    if (next === this.state.manualOrder) return;
+    this.set({ manualOrder: next });
+    this.persistManualOrder(persistableManualOrder(next));
   }
 
   // ── urgency strip (P2-E9-04) ────────────────────────────────────────────

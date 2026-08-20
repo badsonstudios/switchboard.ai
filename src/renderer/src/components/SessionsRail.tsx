@@ -39,6 +39,15 @@
 // Escape, focus restored to the row) rather than a wall of divs a keyboard
 // could open and then be stuck inside.
 //
+// #559 adds the second interaction of that shape, and answers it the same way:
+// a session can now be dragged UP AND DOWN inside its own group, so the same
+// menu grew `Move up` / `Move down`. They are COMMANDS and not radios because
+// the choice is a step, not a destination out of a known set — and they are
+// `aria-disabled` rather than absent at the ends of a group, so the arrow walk
+// never finds a hole where an item used to be. The order they write lives in
+// the workspace store (lib/rail-order), which also holds the decision about
+// what happens when an arrangement meets a pin: the pin wins.
+//
 // It is also where the sweep's ONE remaining gap was closed (#253). Moving a
 // session between groups was drag-only — an interaction with no keyboard
 // equivalent at all, which is WCAG 2.1.1 for the whole feature and not a
@@ -50,6 +59,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailGroup, RailSession } from '../model/types';
 import { railOrder } from '../lib/groups';
+import { canStep, LOOSE_BUCKET, ManualOrder, planReorder } from '../lib/rail-order';
 import { presentStatus, needCount, clampRailWidth, RAIL_WIDTH_DEFAULT } from '../lib/rail-view';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { getDraggedCard, setDraggedCard } from '../lib/drag-context';
@@ -251,6 +261,17 @@ export function SessionsRail(props: {
   pinned: ReadonlySet<string>;
   /** pin or unpin one session — one gesture, both ways (§5.8) */
   onTogglePin: (cardId: string) => void;
+  /**
+   * The order the user arranged each group into by hand (#559).
+   *
+   * A prop and not a store read for the reason `pinned` is one: the rail is a
+   * pure function of what it is handed, so a test can arrange a workspace
+   * without a store and the popped-out copies of this component cannot drift
+   * from the main window's.
+   */
+  manualOrder: ManualOrder;
+  /** the whole of one group's new order, after a drag or a Move up/down */
+  onReorder: (bucketKey: string, orderedIds: string[]) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [editing, setEditing] = React.useState<string | null>(null);
@@ -282,6 +303,21 @@ export function SessionsRail(props: {
   // the group card a drag is currently hovering — highlighted so "this is
   // where it lands" is answerable before you let go
   const [dropTarget, setDropTarget] = React.useState<string | null>(null);
+  // #559: which row a rail drag started on. A REF and not state — nothing
+  // re-renders because of it, and a dragover handler has to read what is true
+  // now. `getDraggedCard()` is the dockview half of the same question and is
+  // consulted beside it, exactly as the group card's handlers do.
+  const dragCard = React.useRef<string | null>(null);
+  // #559: where the insertion line is drawn — the row it is against and which
+  // side. Anchored to a ROW rather than to an index so the line survives the
+  // list changing under a slow drag; the index is recomputed from the live
+  // bucket at both dragover and drop, from one function, so the line and the
+  // landing can never disagree.
+  const [dropAt, setDropAt] = React.useState<{
+    bucket: string;
+    rowId: string;
+    edge: 'before' | 'after';
+  } | null>(null);
   // the live width, so pointerup can persist what is actually on screen. A ref
   // rather than a read inside a setState updater: StrictMode invokes updaters
   // twice, and an updater that writes to disk is not a pure function.
@@ -339,7 +375,11 @@ export function SessionsRail(props: {
   // an abandoned drag (Escape, or a drop outside any window) fires dragend but
   // no dragleave on the card, which would otherwise leave it lit up forever
   React.useEffect(() => {
-    const clear = (): void => setDropTarget(null);
+    const clear = (): void => {
+      setDropTarget(null);
+      setDropAt(null);
+      dragCard.current = null;
+    };
     window.addEventListener('dragend', clear);
     window.addEventListener('drop', clear);
     return () => {
@@ -430,7 +470,105 @@ export function SessionsRail(props: {
     target?.focus();
   }, [props.sessions]);
 
-  const sessionRow = (s: RailSession): React.JSX.Element => {
+  // one ordering function for the rail AND for Ctrl+1..9 (E9-01): persistent
+  // groups and their members, then emergent auto-groups (E12-05), then loose
+  // `props.pinned` and not a second sort here: §5.8's "sorts first" is one rule,
+  // and the store derives the SAME call for Ctrl+1..9 and both strips (E9-09).
+  // `props.manualOrder` joins it for #559 and lands BETWEEN membership and the
+  // pin sort — lib/rail-order says why that is the layering.
+  const order = railOrder(props.sessions, props.groups, props.pinned, props.manualOrder);
+  const grouped = new Map(order.groups.map((g) => [g.id, g.members]));
+
+  /**
+   * Where a drop against `rowId` would put the dragged session — an insertion
+   * index into the bucket WITHOUT it, which is what `planReorder` takes.
+   *
+   * One function for the dragover hit test and for the drop, so an insertion
+   * line can never point somewhere the release does not land.
+   */
+  const insertIndex = (
+    bucketIds: readonly string[],
+    draggedId: string,
+    rowId: string,
+    edge: 'before' | 'after'
+  ): number => {
+    const rest = bucketIds.filter((id) => id !== draggedId);
+    const j = rest.indexOf(rowId);
+    if (j < 0) return rest.length;
+    return edge === 'before' ? j : j + 1;
+  };
+
+  /**
+   * The order this drag would leave `bucket` in, or `null` for a drop that
+   * would change nothing. `planReorder` re-applies §5.8's pin sort, so a drop
+   * aimed past a pinned session settles against it rather than displacing it —
+   * and answers `null` when that leaves the row where it started. `null` is
+   * what stops the insertion line being drawn, so the rail never offers a
+   * gesture it is about to ignore.
+   *
+   * A REORDER IS WITHIN ONE BUCKET, full stop. A row belonging to another
+   * group answers `null` here and the dragover bubbles to the group card, whose
+   * membership drop is unchanged from E12-04 — so dragging across groups still
+   * means exactly what it meant yesterday (join, at the end), and the two
+   * gestures never have to arbitrate.
+   */
+  const planRowDrop = (
+    bucket: string,
+    rowId: string,
+    edge: 'before' | 'after'
+  ): string[] | null => {
+    const dragged = dragCard.current ?? getDraggedCard();
+    if (!dragged) return null;
+    // a row dropped on ITSELF has no position to be relative to. Guarded here
+    // and not left to the arithmetic: with the row removed from the list there
+    // is no index to find, and "not found" reads as "the end" — so the one
+    // gesture that means nothing would have sent the session to the bottom.
+    if (dragged === rowId) return null;
+    if (order.bucketOf.get(dragged) !== bucket) return null;
+    const ids = order.buckets.get(bucket) ?? [];
+    return planReorder(ids, dragged, insertIndex(ids, dragged, rowId, edge), props.pinned);
+  };
+
+  /** which half of the row the pointer is in — above the middle means "land
+   *  before this one", below it means "after" */
+  const edgeAt = (el: HTMLElement, clientY: number): 'before' | 'after' => {
+    const box = el.getBoundingClientRect();
+    return clientY < box.top + box.height / 2 ? 'before' : 'after';
+  };
+
+  /** what to call this bucket in a sentence a screen reader will read */
+  const bucketName = (bucket: string): string => {
+    const g = props.groups.find((x) => x.id === bucket);
+    if (g) return g.name;
+    if (bucket.startsWith('auto:'))
+      // the same trim the auto-group's own header does, so the words in the
+      // announcement are the words on the card
+      return bucket.slice(5).replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? bucket;
+    return t('rail.ungrouped');
+  };
+
+  /** Move one row a step, from the keyboard (§5.32) — the SAME write the drop
+   *  makes, and the same rule deciding whether it may happen at all. */
+  const stepRow = (s: RailSession, delta: -1 | 1): boolean => {
+    const bucket = order.bucketOf.get(s.id);
+    if (!bucket) return false;
+    const ids = order.buckets.get(bucket) ?? [];
+    const at = ids.indexOf(s.id);
+    const next = planReorder(ids, s.id, at + delta, props.pinned);
+    if (!next) return false;
+    props.onReorder(bucket, next);
+    setMoveSaid(
+      t('rail.reordered', {
+        title: s.title,
+        position: next.indexOf(s.id) + 1,
+        count: next.length,
+        group: bucketName(bucket),
+      })
+    );
+    return true;
+  };
+
+  const sessionRow = (s: RailSession, bucket: string): React.JSX.Element => {
     const p = presentStatus(s.status);
     const hue = `var(--status-${p.token})`;
     const ink = `var(--status-${p.token}-ink)`;
@@ -457,10 +595,39 @@ export function SessionsRail(props: {
         // glyph: the protection is a fact about the row that the e2e suite has
         // to be able to read, and styling may want it later.
         data-pinned={isPinned}
+        // #559: the row a drop would land against, and which side of it. Read
+        // by the e2e — an insertion line is a 2px bar and nothing else on the
+        // page can be asked whether it is in the right place.
+        data-drop-edge={dropAt?.rowId === s.id ? dropAt.edge : undefined}
         draggable
         onDragStart={(e) => {
           e.dataTransfer.setData(DND_TYPE, s.id);
           e.dataTransfer.effectAllowed = 'move';
+          // #559: `dataTransfer.getData` answers '' during dragover in
+          // Chromium's protected mode, so a hit test that needs to know WHICH
+          // card is in flight has to have been told. The group card's
+          // membership drop reads the payload at drop time and is unaffected.
+          dragCard.current = s.id;
+        }}
+        onDragOver={(e) => {
+          const edge = edgeAt(e.currentTarget, e.clientY);
+          // no reorder to offer — let it bubble to the group card, whose
+          // membership drop is what a cross-group drag has always meant
+          if (!planRowDrop(bucket, s.id, edge)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          setDropAt({ bucket, rowId: s.id, edge });
+        }}
+        onDrop={(e) => {
+          const edge = edgeAt(e.currentTarget, e.clientY);
+          const next = planRowDrop(bucket, s.id, edge);
+          setDropAt(null);
+          dragCard.current = null;
+          if (!next) return; // never claimed it; the card below is welcome to it
+          e.preventDefault();
+          e.stopPropagation();
+          setDropTarget(null);
+          props.onReorder(bucket, next);
         }}
         onClick={() => props.onFocus(s.id)}
         onDoubleClick={() => {
@@ -501,6 +668,24 @@ export function SessionsRail(props: {
           background: rowTint,
         }}
       >
+        {dropAt?.rowId === s.id && (
+          // The insertion line. `--status-working-ink` is the app's one
+          // per-theme-tuned accent (tokens.css) — the same one the focus ring
+          // uses, because this is the same kind of statement: here is where the
+          // thing you are doing will land.
+          <span
+            aria-hidden
+            data-drop-line={dropAt.edge}
+            style={{
+              position: 'absolute',
+              insetInline: 0,
+              [dropAt.edge === 'before' ? 'insetBlockStart' : 'insetBlockEnd']: -2,
+              blockSize: 2,
+              borderRadius: 1,
+              background: 'var(--status-working-ink)',
+            }}
+          />
+        )}
         <span
           aria-hidden
           style={{
@@ -772,6 +957,11 @@ export function SessionsRail(props: {
           // accept rail-row drags (our type) AND dockview tab drags
           // (published via drag-context — Dan's E12-04 eyeball find)
           if (!e.dataTransfer.types.includes(DND_TYPE) && !getDraggedCard()) return;
+          // Reaching the CARD means no row claimed this position, so #559's
+          // insertion line is stale — the pointer has left the rows for the
+          // header or the padding, where a release means "join this group" and
+          // not "land here". Two promises on screen at once is one too many.
+          setDropAt(null);
           if (!droppable) {
             // Swallow it WITHOUT preventDefault: the browser only fires `drop`
             // where dragover was prevented, so this gives a real no-drop
@@ -1109,19 +1299,13 @@ export function SessionsRail(props: {
               {t('rail.groupEmpty')}
             </div>
           ) : (
-            opts.members.map(sessionRow)
+            opts.members.map((m) => sessionRow(m, opts.key))
           )}
         </div>
       </div>
     );
   };
 
-  // one ordering function for the rail AND for Ctrl+1..9 (E9-01): persistent
-  // groups and their members, then emergent auto-groups (E12-05), then loose
-  // `props.pinned` and not a second sort here: §5.8's "sorts first" is one rule,
-  // and the store derives the SAME call for Ctrl+1..9 and both strips (E9-09).
-  const order = railOrder(props.sessions, props.groups, props.pinned);
-  const grouped = new Map(order.groups.map((g) => [g.id, g.members]));
   const totalNeed = needCount(props.sessions);
   // The Ungrouped bucket only earns a header when there is something to
   // distinguish it FROM — on a fresh workspace it would be pure chrome.
@@ -1131,7 +1315,12 @@ export function SessionsRail(props: {
     <nav
       ref={navRef}
       onDragOver={(e) => {
-        if (e.dataTransfer.types.includes(DND_TYPE) || getDraggedCard()) e.preventDefault();
+        if (!e.dataTransfer.types.includes(DND_TYPE) && !getDraggedCard()) return;
+        e.preventDefault();
+        // the same staleness the group card clears, for the headerless case:
+        // with no groups at all the loose rows sit straight in the rail, so
+        // this is the only handler between a row and the background
+        setDropAt(null);
       }}
       onDrop={(e) => {
         // a drop on the rail background (not a group header) ungroups
@@ -1240,7 +1429,7 @@ export function SessionsRail(props: {
                     padding: 5,
                   }}
                 >
-                  {order.loose.map(sessionRow)}
+                  {order.loose.map((m) => sessionRow(m, LOOSE_BUCKET))}
                 </div>
               ))}
         {props.groups.length === 0 && props.sessions.length === 0 && (
@@ -1393,6 +1582,68 @@ export function SessionsRail(props: {
               {t(key)}
             </button>
           ))}
+          {/* #559 — the OTHER drag-only interaction, answered the same way.
+              Dragging a row up or down inside its group had no keyboard path at
+              all, which is 2.1.1 for the whole gesture (§5.32's fifth rule).
+
+              COMMANDS, not radios: a step is not a destination out of a known
+              set, so there is nothing for a tick to point at. They call the
+              same `onReorder` the drop calls and reach the same rule for
+              whether the move is allowed, so the two paths cannot drift.
+
+              `aria-disabled` and not `disabled` at the ends of a group: this
+              menu's arrow walk collects `[role^="menuitem"]` and focuses them,
+              and `focus()` on a disabled button does nothing at all — the walk
+              would stop dead on the row nobody can leave. Present, focusable,
+              announced as unavailable, is what APG asks for and what keeps the
+              ring whole.
+
+              Absent entirely for a group of one, which is the same rule that
+              hides the Move-to-group set when there are no groups: an offer
+              that cannot do anything wastes more time than a missing one. */}
+          {(order.buckets.get(order.bucketOf.get(menu.session.id) ?? '')?.length ?? 0) > 1 && (
+            <div role="group" aria-label={t('rail.menuOrder')}>
+              <div aria-hidden style={menuSectionStyle}>
+                {t('rail.menuOrder')}
+              </div>
+              {([
+                ['rail.menuMoveUp', -1],
+                ['rail.menuMoveDown', 1],
+              ] as const).map(([key, delta]) => {
+                const bucket = order.bucketOf.get(menu.session.id);
+                const ids = bucket ? (order.buckets.get(bucket) ?? []) : [];
+                // the SAME question the move itself asks, through the same
+                // function — an item can never be offered and then decline
+                const can = !!bucket && canStep(ids, menu.session.id, delta, props.pinned);
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    role="menuitem"
+                    aria-disabled={!can}
+                    data-order-item={delta < 0 ? 'up' : 'down'}
+                    className="rail-menu-item"
+                    onClick={() => {
+                      if (!can) return; // aria-disabled is a claim; this is the fact
+                      // Focus is restored NOW and not after the change lands,
+                      // which is the one place this differs from #253's move:
+                      // a reorder keeps the same keyed row, so React MOVES the
+                      // node rather than re-parenting it into another card, and
+                      // the button the menu was opened from is still mounted.
+                      closeMenu(true);
+                      stepRow(menu.session, delta);
+                    }}
+                    style={{ ...menuItemStyle, opacity: can ? 1 : 0.45 }}
+                  >
+                    {/* the same 12px gutter the ticked sets keep, so the labels
+                        in this menu all start at one margin */}
+                    <span aria-hidden style={{ display: 'inline-block', inlineSize: 12 }} />
+                    {t(key)}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {/* #253 — the keyboard's way to do what only a drag could do.
               A session's group was reachable by dragging its row onto a group
               card and no other way, so the whole interaction failed WCAG 2.1.1

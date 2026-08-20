@@ -11,6 +11,7 @@ import { loadPolicyBook, POLICY_KEY } from './presentation-policy';
 import { FOCUS_POLICY_KEY, loadFocusBook } from './focus-policy';
 import { LAYOUT_KEY, loadLayout } from './layout-mode';
 import { loadPins, PIN_KEY } from './pinning';
+import { loadManualOrder, ORDER_KEY } from './rail-order';
 import { uiAll, uiDelete, uiGet, uiSet } from './ui-state';
 
 export function initPresentation(): void {
@@ -64,6 +65,18 @@ export function initPresentation(): void {
   sessionStore.setPinPersister((blob) => {
     if (blob) uiSet(PIN_KEY, blob);
     else uiDelete([PIN_KEY]);
+  });
+  // #559's MANUAL RAIL ORDER rides the same edge, and is seeded here for the
+  // pin's reason exactly: rail order is derived from it, so an arrangement that
+  // arrived after the first session list would paint the rail — and number
+  // Ctrl+1..9 — in arrival order and reshuffle it in front of the user. The
+  // same honesty applies too: nothing ORDERS this against the first session
+  // refresh, and the real guarantee is the store's derive, which recomputes
+  // rail order on a `manualOrder` write as well as on a `sessions` one.
+  sessionStore.initManualOrder(loadManualOrder(uiGet<unknown>(ORDER_KEY, null)));
+  sessionStore.setManualOrderPersister((blob) => {
+    if (blob) uiSet(ORDER_KEY, blob);
+    else uiDelete([ORDER_KEY]);
   });
   if (legacyKeys.length > 0) {
     // WRITE THE NEW HOME FIRST. initPresentation deliberately doesn't persist

@@ -13,6 +13,7 @@ function deps(): CommandDeps & { focusCard: ReturnType<typeof vi.fn> } {
     closeCard: vi.fn(),
     closeAllCards: vi.fn(),
     togglePin: vi.fn(),
+    reorderSession: vi.fn(),
     toggleCardView: vi.fn(),
     popOutCard: vi.fn(),
     hideCard: vi.fn(),
@@ -123,6 +124,21 @@ describe('seed command set (E9-01)', () => {
     expect(byId(cmds, 'session.pin').binding).toBe('Mod+Alt+P');
     byId(cmds, 'session.pin').run(ctxWith(['a', 'b'], 'b'));
     expect(d.togglePin).toHaveBeenCalledWith('b');
+  });
+
+  it('the reorder PAIR steps the active card inside its own group (#559)', () => {
+    // A pair where pinning is a single toggle, because this is a STEP and not
+    // a state — there is no one gesture that could carry both directions. The
+    // chords sit one modifier away from the ladder's, which move the CARD
+    // rather than the row.
+    const d = deps();
+    const cmds = buildCommands(d);
+    expect(byId(cmds, 'session.reorder.up').binding).toBe('Mod+Alt+ArrowUp');
+    expect(byId(cmds, 'session.reorder.down').binding).toBe('Mod+Alt+ArrowDown');
+    byId(cmds, 'session.reorder.up').run(ctxWith(['a', 'b'], 'b'));
+    expect(d.reorderSession).toHaveBeenCalledWith('b', 'up');
+    byId(cmds, 'session.reorder.down').run(ctxWith(['a', 'b'], 'b'));
+    expect(d.reorderSession).toHaveBeenCalledWith('b', 'down');
   });
 
   it('close-all routes to the bulk closer and has NO binding', () => {

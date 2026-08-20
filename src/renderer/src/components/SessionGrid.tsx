@@ -4283,6 +4283,9 @@ export function SessionGrid(props: {
             // and E9-09's pins, keyed the same way and outliving their cards
             // the same way.
             sessionStore.prunePins(known);
+            // ...and #559's manual rail order, which names cards the same way
+            // and would otherwise keep ranking sessions that no longer exist.
+            sessionStore.pruneManualOrder(known);
             // ...and #485's unsent prompts. The same rule, and the one with the
             // biggest payload: a draft is whatever the user pasted.
             pruneDrafts(known);

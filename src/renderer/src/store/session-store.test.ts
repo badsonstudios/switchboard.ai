@@ -962,6 +962,85 @@ describe('SessionStore — pinning (P2-E9-09)', () => {
   });
 });
 
+describe('SessionStore — the manual rail order (#559)', () => {
+  let store: SessionStore;
+  let persisted: Array<Record<string, string[]> | null>;
+  beforeEach(() => {
+    store = new SessionStore();
+    persisted = [];
+    store.setManualOrderPersister((blob) => persisted.push(blob));
+  });
+
+  it('starts with nothing arranged and nothing written', () => {
+    expect(store.getManualOrder().size).toBe(0);
+    expect(persisted).toEqual([]);
+  });
+
+  it('init seeds the arrangement without writing it back', () => {
+    store.initManualOrder(new Map([['ungrouped', ['b', 'a']]]));
+    store.setSessions([session('a'), session('b')]);
+    expect(store.getRailOrder().flat.map((s) => s.id)).toEqual(['b', 'a']);
+    expect(persisted).toEqual([]); // it just READ the blob
+  });
+
+  it('re-derives rail order the moment an arrangement is written', () => {
+    // the whole reason `manualOrder` is in `state` and not a registry
+    store.setSessions([session('a'), session('b'), session('c')]);
+    expect(store.getRailOrder().flat.map((s) => s.id)).toEqual(['a', 'b', 'c']);
+    store.setBucketOrder('ungrouped', ['c', 'b', 'a']);
+    expect(store.getRailOrder().flat.map((s) => s.id)).toEqual(['c', 'b', 'a']);
+    expect(persisted.at(-1)).toEqual({ ungrouped: ['c', 'b', 'a'] });
+  });
+
+  it('steps one session and answers whether it moved', () => {
+    store.setSessions([session('a'), session('b'), session('c')]);
+    expect(store.reorderSession('c', -1)).toBe(true);
+    expect(store.getRailOrder().flat.map((s) => s.id)).toEqual(['a', 'c', 'b']);
+    expect(store.reorderSession('a', -1)).toBe(false); // already the top
+    expect(store.reorderSession('nobody', 1)).toBe(false);
+  });
+
+  it('steps within the session’s OWN group and no further', () => {
+    store.setGroups([{ id: 'g1', name: 'Backend', color: 'var(--status-working)' }]);
+    store.setSessions([
+      { ...session('a'), groupId: 'g1' },
+      { ...session('b'), groupId: 'g1' },
+      session('loose'),
+    ]);
+    expect(store.reorderSession('b', -1)).toBe(true);
+    expect(persisted.at(-1)).toEqual({ g1: ['b', 'a'] });
+    // the loose session is alone in its bucket, so there is nowhere to step
+    expect(store.reorderSession('loose', -1)).toBe(false);
+  });
+
+  it('§5.8 wins: a pin blocks the step that would displace it', () => {
+    store.setSessions([session('a'), session('b'), session('c')]);
+    store.togglePin('a');
+    expect(store.reorderSession('b', -1)).toBe(false); // `a` is pinned to the top
+    expect(store.reorderSession('b', 1)).toBe(true);
+    expect(store.getRailOrder().flat.map((s) => s.id)).toEqual(['a', 'c', 'b']);
+  });
+
+  it('a no-op arrangement is not a write and not a re-render', () => {
+    store.setSessions([session('a'), session('b')]);
+    store.setBucketOrder('ungrouped', ['b', 'a']);
+    let notifications = 0;
+    store.subscribe(() => notifications++);
+    store.setBucketOrder('ungrouped', ['b', 'a']);
+    expect(notifications).toBe(0);
+    expect(persisted.length).toBe(1);
+  });
+
+  it('prunes cards that no longer exist, and writes null once nothing is left', () => {
+    store.setBucketOrder('g1', ['a', 'b']);
+    store.pruneManualOrder(['a', 'b']); // nothing stale: no second write
+    expect(persisted.length).toBe(1);
+    store.pruneManualOrder([]);
+    expect(store.getManualOrder().size).toBe(0);
+    expect(persisted.at(-1)).toBeNull();
+  });
+});
+
 // #239 — the residual #224 named. The grid's held-permission queue is React
 // state keyed by LIVE session id, and Restart / the popout-close suspend end
 // the session with that component still mounted. The store is the only place

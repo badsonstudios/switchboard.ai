@@ -24,6 +24,9 @@ export interface CommandDeps {
   closeAllCards: () => void;
   /** pin or unpin a session — §5.8's protection contract (E9-09) */
   togglePin: (cardId: string) => void;
+  /** move a session a step up or down INSIDE its own group (#559). Answers
+   *  whether it actually moved, so a no-op at the end of a group stays silent */
+  reorderSession: (cardId: string, dir: 'up' | 'down') => boolean;
   /** switch a card's view tab; the same view twice returns to the Session view */
   toggleCardView: (cardId: string, view: PanelId) => void;
   /** pop a card out to its own window, or dock it back in */
@@ -298,6 +301,43 @@ export function buildCommands(deps: CommandDeps): Command[] {
         if (ctx.activeCardId) deps.togglePin(ctx.activeCardId);
       },
     },
+    // ── #559's MANUAL RAIL ORDER ──────────────────────────────────────────
+    //
+    // A PAIR here where pinning is a single toggle, and for the same reason the
+    // ladder is a pair: this is a STEP, not a state, so there is no one gesture
+    // that could carry both directions. The chords sit beside the ladder's
+    // (Mod+Shift+Arrow moves the card through §5.8's presentation rungs;
+    // Mod+Alt+Arrow moves the ROW through its group) — near neighbours because
+    // they are the two things an arrow key could plausibly mean here, and
+    // distinct modifiers because confusing them would collapse a card the user
+    // was trying to file.
+    //
+    // The rail's context menu carries the same two commands (§5.32's fifth
+    // rule: the keyboard equivalent belongs in the surface's existing menu).
+    // These exist ON TOP of that, exactly as Mod+Alt+P exists on top of the
+    // menu's Pin item — one keystroke instead of a menu walk, for the gesture
+    // you repeat while arranging a workspace.
+    //
+    // NOTE ON THE LIVE REGION. §5.32's rule (b) — say what happened, because a
+    // drop is confirmed by the eye and nothing else — is discharged by the MENU
+    // path, which is the equivalent the rule is about; the rail owns that region
+    // and announces the new position from it. These CHORDS are silent, like
+    // `session.pin`'s and the ladder's beside them: a chord is not the
+    // accessible path, it is the fast one, and giving it a voice would mean a
+    // second announcer outside the surface that knows what the list looks
+    // like. If that ever changes, it should change for all three at once.
+    ...(['up', 'down'] as const).map((dir) => ({
+      id: `session.reorder.${dir}`,
+      titleKey: dir === 'up' ? 'commands.reorderUp' : 'commands.reorderDown',
+      categoryKey: CATEGORY_SESSION,
+      binding: dir === 'up' ? 'Mod+Alt+ArrowUp' : 'Mod+Alt+ArrowDown',
+      scope: 'app' as const,
+      enabled: hasActive,
+      disabledReasonKey: 'commands.disabled.noActiveSession',
+      run: (ctx: CommandContext) => {
+        if (ctx.activeCardId) deps.reorderSession(ctx.activeCardId, dir);
+      },
+    })),
     {
       // The bulk operation pinning exists to be exempt from (§5.8). Palette-only
       // and deliberately WITHOUT a binding: closing every session at once is not
