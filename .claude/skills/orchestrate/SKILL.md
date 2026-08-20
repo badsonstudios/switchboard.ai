@@ -138,9 +138,31 @@ The prompt must contain, concretely:
      (learned 2026-08-08, run 10: #358's combined wait-7-min-then-run
      call was killed mid-suite while holding the lock; the worker
      recovered, but only because it checked for orphan electrons and
-     re-ran in separate calls).
+     re-ran in separate calls). **Spell out the mechanics in every
+     dispatch prompt — the abstract warning does not stick (2026-08-20:
+     THREE workers in one run ended their turn to "wait", twice on a
+     running suite and once on the lock, despite this clause verbatim
+     in their contracts):** the full suite (~12 min) exceeds the
+     10-minute Bash cap, so the worker must launch it as a background
+     Bash job and poll its completion with repeated FOREGROUND calls in
+     the SAME turn (each ≤9 min, as many as needed), and must never end
+     its turn while a suite is running, a lock is held, or a wait is
+     pending. Orchestrator side: treat any worker final message shaped
+     like "waiting — will report when it finishes" as a breach signal —
+     ground-truth sweep immediately, then `SendMessage` the worker with
+     re-attach instructions (this recovered all three cleanly; the
+     detached suites themselves survived).
   4. Gate before push: lint + typecheck + unit green, e2e green under the
-     lock. Review your own diff against `/review`'s standards (you are
+     lock. **Gate-number integrity: a count the worker did not personally
+     read off an actual counts line in real output does not exist. A
+     missing, empty, or truncated output file means the run is VOID — say
+     so and re-run it; never reconstruct, remember, or infer a number**
+     (2026-08-20: #488's worker reported "335 passed, exit 0" from a
+     monitor that had produced zero events over an empty output file,
+     then self-retracted; the figure was coincidentally correct, which is
+     exactly why reconstruction is dangerous — the PR's genuine green CI
+     was the evidence that actually held). Review your own diff against
+     `/review`'s standards (you are
      Opus; the review is yours) — fix Blockers/Should-fixes, ~3 rounds cap.
      **Mutation/revert experiments must stash or commit the working
      state FIRST — never raw `git checkout --` over uncommitted work**
@@ -192,7 +214,13 @@ On each worker completion notification:
    - **Internal PR:** wait for green CI, then squash-merge
      (`gh pr merge --squash`), confirm the issue closed, delete the branch.
      If main moved under it, bump (`update-branch`) and re-green first —
-     internals merge as they finish, so this stays rare.
+     internals merge as they finish, so this stays rare. **Exception —
+     wide mechanical internals while a train is pending (2026-08-20,
+     #255-T0):** an internal PR whose diff brushes many files (lint
+     campaigns, format sweeps) is PARKED green-and-unmerged until after
+     the train — merging it first would force every queued feature PR to
+     absorb its conflicts; one rebase of the mechanical PR afterward is
+     strictly less work.
    - **User-facing PR:** mark ready-for-review, add it to Dan's queue in the
      orchestration block with its test checklist. **Do not merge.**
    - **The batch merge is a TRAIN BRANCH, not a serial bump chain (Dan,
