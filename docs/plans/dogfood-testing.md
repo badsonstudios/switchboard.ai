@@ -101,3 +101,4 @@ they enter this tracker when their train merges.
 | 2026-08-16 | Find refuses to jump on an IDLE resumed session (worked after new turns) | #495 (evidence added, priority up) |
 | 2026-08-16 | Popout-born session docks back into the WRONG grid slot | #558 |
 | 2026-08-16 | Wants drag-to-reorder sessions within a rail group | #559 |
+| 2026-08-16 | "N need you" counters stay stale after dismissing events (Events header + group headers) | #621 |
