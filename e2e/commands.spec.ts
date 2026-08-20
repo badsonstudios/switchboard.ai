@@ -8,8 +8,8 @@
 // swallowing bindings (there is no surface to swallow them on Direct) and the
 // Ctrl+` toggle, which proves "the Terminal view" by looking for a terminal.
 // A Direct card's Terminal tab holds the P2-E18-08b notice instead — that
-// landing pane IS covered, by `stream.spec.ts` → "says there is no terminal
-// instead of showing an empty black pane"; what has no spec is the Ctrl+`
+// landing pane IS covered, by `stream-transport.spec.ts` → "says there is no
+// terminal instead of showing an empty black pane"; what has no spec is the Ctrl+`
 // toggle reaching it. See `launchApp` in `fixtures/app.ts` for the tag.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';

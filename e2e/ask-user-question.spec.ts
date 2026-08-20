@@ -231,7 +231,7 @@ test.describe('Terminal mode keeps its questions in the terminal (#563)', () => 
     // out to be Direct-with-a-broken-fake would read exactly the same. A
     // Terminal tab with a real terminal behind it — rather than the
     // "No terminal for this session" notice a Direct card shows — is the
-    // witness, and it is the same one `stream.spec.ts` uses pointed the other
+    // witness, and it is the same one `stream-transport.spec.ts` uses pointed the other
     // way.
     await w.getByRole('tab', { name: 'Terminal' }).first().click();
     await expect(w.getByText('No terminal for this session')).toHaveCount(0);

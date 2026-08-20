@@ -326,8 +326,9 @@ test.describe('[pty] inline approval bar (E10-04)', () => {
   // same `Notification` is deliberately DROPPED for a stream session (#313,
   // `hook-listener.ts`) — with permissions riding `can_use_tool`, a debounced
   // nudge with nothing held is a false alarm, and there is no terminal to send
-  // anyone to. That inverse is pinned by `stream.spec.ts` → "a hook
-  // Notification cannot fake a permission on Direct (#313)". Read the two
+  // anyone to. That inverse is pinned by
+  // `stream-permissions.spec.ts` → "a hook Notification cannot fake a permission
+  // on Direct (#313)". Read the two
   // together or each looks like a bug in the other.
   test('a permission the CLI KEPT gets a full bar in the Session tab, not a chip (#125)', async () => {
     const folder = tempProjectFolder();
