@@ -3,7 +3,35 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🎛️ ORCHESTRATION RUN ACTIVE — started 2026-08-19
+> # 🏁 ORCHESTRATION RUN COMPLETE — 2026-08-19 (started ~15:30, ended ~21:20)
+>
+> **Every dispatched item landed.** 16 issues closed by merge, v0.8.0 released,
+> 10 user-facing PRs green-gated and waiting in Dan's queue (below). All three
+> worktrees are free and clean; the e2e lock is clear; main builds and the
+> baked stamp matches HEAD (`ccc0c7a8`).
+>
+> **DAN'S QUEUE — 10 PRs, suggested order:**
+> #576 (#556 drawer ✕) → #578 (#543 tab tooltips + close-all) → #584 (#546
+> composer chips) → #586 (#534 permission tooltips) → #599 (#587 ask-mode
+> pin) → #605 (#216 suspended-card header) → #602 (#539 adoption notice +
+> untangle) → #580 (#559 rail reorder) → #610 (#517 terminal search) → #579
+> (#566 question tabs; last — #567's UI half stacks on it).
+> **Merge them as a TRAIN** (they are all BEHIND-prone and their CHANGELOG
+> 0.9.0 entries conflict pairwise; two internal trains ran today, #601/#617,
+> and the procedure held).
+>
+> **Approved-and-waiting:** #567 UI half (probe verdict: partial = SKIPPED,
+> proceed as sketched) — dispatch after #579 merges. Behind Dan's queue:
+> #544/#504/#506/#508 (→#578), #268 (→#576), #295/#337 (→#580), #606 (→#605).
+> Dan-only: #529/#528 design sittings; #588 wants a fake-provider probe of
+> plan-mode Direct. **#256 looks stale** (release+auto-update shipped in
+> v0.5–0.7 era items; v0.8.0 cut through release.yml today) — /pm should
+> reconcile it.
+>
+> ---
+>
+> ### Run ledger (was: ORCHESTRATION RUN ACTIVE)
+> #### 🎛️ ORCHESTRATION RUN ACTIVE — started 2026-08-19
 >
 > **Single-writer rule:** this session (Fable orchestrator) is the ONLY writer
 > of PROGRESS.md. Workers report via handoff files in
