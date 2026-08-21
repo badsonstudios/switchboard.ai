@@ -76,6 +76,62 @@ function tokenFor(sessionId: string): string {
   return fs.readFileSync(tokenPath, 'utf8');
 }
 
+/** The file-level log, or '' before anything has been written to it. */
+function logText(): string {
+  try {
+    return fs.readFileSync(path.join(dir, 'switchboard.log'), 'utf8');
+  } catch {
+    return ''; // nothing logged yet
+  }
+}
+
+/**
+ * Wait until `what` is true, or fail at a real deadline (#627).
+ *
+ * Replaces `await new Promise((r) => setTimeout(r, 100))` — a fixed sleep
+ * betting that an HTTP round-trip into the listener finishes inside 100ms.
+ * It usually does; under machine load (a parallel e2e run pinning the box) it
+ * does not, and the assertion after it goes red for reasons that have nothing
+ * to do with the code under test. This waits for the signal the test actually
+ * needs, for as long as the machine needs — and fails LOUDLY, naming the
+ * signal, if the signal never comes.
+ *
+ * Waiting on ONE signal is enough to assert on the rest of the handler's work,
+ * because `handle`'s `end` callback — maybeHold, the listener fan-out, ingest,
+ * the `permission-held` apply — contains no `await` at all. Test code cannot
+ * run part-way through it, in any tick, so observing any signal at all means
+ * the whole callback finished. Prefer a MONOTONIC signal (`requests.length`,
+ * `applied.length`) over one that clears itself: `pendingRequests()` empties
+ * again when the hold times out, so polling for it in a short-`holdTimeoutMs`
+ * suite could miss its window and report "never parked" for something that
+ * parked and then expired.
+ *
+ * Hand-rolled rather than `vi.waitFor` (used across `health/service.test.ts`)
+ * on purpose: `waitFor` only retries when its callback THROWS, so a boolean
+ * predicate returning `false` would satisfy it immediately and every call site
+ * would have to be written as an `expect` — losing the plain-English signal
+ * name that makes the failure message worth reading.
+ *
+ * The deadline is a failure detector, not a timing assertion — deliberately
+ * generous, and under vitest's own 5s test timeout so the failure carries this
+ * message rather than an anonymous timeout.
+ */
+async function until(signal: string, what: () => boolean, timeoutMs = 3_000): Promise<void> {
+  const started = Date.now();
+  const deadline = started + timeoutMs;
+  for (;;) {
+    if (what()) return;
+    if (Date.now() >= deadline) {
+      // the elapsed time as well as the budget: on a box loaded enough for this
+      // to fire, "waited 3012ms" and "waited 9400ms" mean different things
+      throw new Error(
+        `timed out waiting for ${signal} (budget ${timeoutMs}ms, waited ${Date.now() - started}ms)`
+      );
+    }
+    await new Promise((r) => setTimeout(r, 2));
+  }
+}
+
 describe('§5.29 floor (done-when: invalid requests rejected and logged)', () => {
   it('401 without a valid token; nothing reaches the manager', async () => {
     expect(await post('{}', {})).toBe(401);
@@ -105,7 +161,8 @@ describe('event routing', () => {
       { 'x-switchboard-token': t }
     );
     expect(status).toBe(200);
-    await new Promise((r) => setTimeout(r, 50)); // ingest happens post-ack
+    // ingest happens post-ack, so the 200 is not proof it ran — wait for it
+    await until('the Notification to reach the manager', () => applied.length === 1);
     expect(nativeIds).toEqual([{ sessionId: 's1', nativeId: 'native-abc' }]);
     expect(applied).toHaveLength(1);
     expect(applied[0].ev).toMatchObject({
@@ -125,7 +182,7 @@ describe('event routing', () => {
       JSON.stringify({ hook_event_name: 'SessionStart', source: 'clear', session_id: 'native-2' }),
       { 'x-switchboard-token': t }
     );
-    await new Promise((r) => setTimeout(r, 50));
+    await until('both SessionStarts to reach the manager', () => nativeIds.length === 2);
     expect(nativeIds).toEqual([
       { sessionId: 's1', nativeId: 'native-1', cause: undefined },
       { sessionId: 's1', nativeId: 'native-2', cause: 'clear' },
@@ -141,7 +198,10 @@ describe('event routing', () => {
   it('unparseable bodies are logged, not fatal', async () => {
     const t = tokenFor('s1');
     expect(await post('{{{nope', { 'x-switchboard-token': t })).toBe(200);
-    await new Promise((r) => setTimeout(r, 50));
+    // "nothing arrived" needs a positive anchor, or it passes vacuously by
+    // asserting too early: ingest writes this warning at exactly the point a
+    // parseable body would have reached the manager.
+    await until('the unparseable-body warning', () => logText().includes('hook event unparseable'));
     expect(applied).toHaveLength(0);
   });
 });
@@ -208,7 +268,7 @@ describe('PreToolUse hold + decision round-trip (P2-E10-03, §5.16)', () => {
   it('holds a gated call until allow; verdict JSON returns to the hook', async () => {
     const t = heldToken('s1');
     const pending = postHeld(preToolUse('Edit'), t);
-    await new Promise((r) => setTimeout(r, 100));
+    await until('the call to park', () => requests.length === 1);
     // parked: the request surfaced, the session flipped to needs-permission
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({ tool: 'Edit', sessionId: 's1' });
@@ -225,7 +285,7 @@ describe('PreToolUse hold + decision round-trip (P2-E10-03, §5.16)', () => {
   it('deny returns a deny verdict with the reason', async () => {
     const t = heldToken('s1');
     const pending = postHeld(preToolUse('Bash'), t);
-    await new Promise((r) => setTimeout(r, 100));
+    await until('the call to park', () => requests.length === 1);
     held.decide(requests[0].requestId, 'deny', 'not on my watch');
     const verdict = JSON.parse((await pending).body).hookSpecificOutput;
     expect(verdict).toMatchObject({ permissionDecision: 'deny', permissionDecisionReason: 'not on my watch' });
@@ -239,7 +299,7 @@ describe('PreToolUse hold + decision round-trip (P2-E10-03, §5.16)', () => {
     // close that door explicitly.
     const t = heldToken('s1');
     const pending = postHeld(preToolUse('Bash'), t);
-    await new Promise((r) => setTimeout(r, 100));
+    await until('the call to park', () => requests.length === 1);
     held.decide(requests[0].requestId, 'deny'); // no reason -> the default
     const verdict = JSON.parse((await pending).body).hookSpecificOutput;
     const why = verdict.permissionDecisionReason as string;
@@ -270,7 +330,7 @@ describe('PreToolUse hold + decision round-trip (P2-E10-03, §5.16)', () => {
   it('pendingRequests() replays in-flight holds; empties after decide (P0#3)', async () => {
     const t = heldToken('s1');
     const pending = postHeld(preToolUse('Edit'), t);
-    await new Promise((r) => setTimeout(r, 100));
+    await until('the call to park', () => requests.length === 1);
     const replay = held.pendingRequests();
     expect(replay).toHaveLength(1);
     expect(replay[0]).toMatchObject({ tool: 'Edit', sessionId: 's1' });
@@ -282,7 +342,7 @@ describe('PreToolUse hold + decision round-trip (P2-E10-03, §5.16)', () => {
   it('unregisterSession releases in-flight holds (fail-open)', async () => {
     const t = heldToken('s1');
     const pending = postHeld(preToolUse('Edit'), t);
-    await new Promise((r) => setTimeout(r, 100));
+    await until('the call to park', () => requests.length === 1);
     held.unregisterSession('s1');
     expect((await pending).body).toBe('{}');
   });
@@ -306,7 +366,7 @@ describe('PreToolUse hold + decision round-trip (P2-E10-03, §5.16)', () => {
     const t2 = heldToken('s1'); // "respawn" under the same id
     void t1;
     const pending = postHeld(preToolUse('Edit'), t2);
-    await new Promise((r) => setTimeout(r, 100));
+    await until('the respawned session to prompt again', () => requests.length === 1);
     expect(requests).toHaveLength(1); // prompts again
     held.decide(requests[0].requestId, 'deny');
     await pending;
@@ -430,7 +490,7 @@ describe('a hold needs somebody to ask: window liveness (P2-E15-09, AR-P1-7)', (
   it('live window: the same call still holds (the control — else the test above is vacuous)', async () => {
     const t = heldToken('s1');
     const pending = postHeld(edit, t);
-    await new Promise((r) => setTimeout(r, 100));
+    await until('the call to park', () => requests.length === 1);
     expect(requests).toHaveLength(1);
     expect(heldApplied.some((a) => a.ev.kind === 'permission-held')).toBe(true);
     held.decide(requests[0].requestId, 'allow');
@@ -440,7 +500,7 @@ describe('a hold needs somebody to ask: window liveness (P2-E15-09, AR-P1-7)', (
   it('the pendingPermissions replay path still works with a live window (must not regress)', async () => {
     const t = heldToken('s1');
     const pending = postHeld(edit, t);
-    await new Promise((r) => setTimeout(r, 100));
+    await until('the call to park', () => requests.length === 1);
     // this is what a reloading renderer re-reads on mount — a reload leaves the
     // window neither destroyed nor crashed, so it must still find its hold here
     const replay = held.pendingRequests();
@@ -467,7 +527,7 @@ describe('a hold needs somebody to ask: window liveness (P2-E15-09, AR-P1-7)', (
     // the request that was already waiting when the user hit ✕
     const t = heldToken('s1');
     const pending = postHeld(edit, t);
-    await new Promise((r) => setTimeout(r, 100));
+    await until('the call to park', () => requests.length === 1);
     expect(held.pendingRequests()).toHaveLength(1);
 
     // deliberately NOT flipping windowLive: releaseHeld is the teardown path
@@ -519,7 +579,7 @@ describe('a hold needs somebody to ask: window liveness (P2-E15-09, AR-P1-7)', (
     // way past the gate. A live window logs nothing at all here.
     windowLive = true;
     const pending = postHeld(edit, t);
-    await new Promise((r) => setTimeout(r, 100));
+    await until('the call to hold again', () => requests.length === 1);
     expect(requests).toHaveLength(1);
     held.decide(requests[0].requestId, 'allow');
     await pending;
@@ -885,7 +945,7 @@ describe('hook-token files follow their session (#282)', () => {
       }),
       token
     );
-    await new Promise((r) => setTimeout(r, 100));
+    await until('the hold to park', () => own!.pendingRequests().length === 1);
     expect(own.pendingRequests()).toHaveLength(1);
 
     fs.rmSync(tokenPath);
