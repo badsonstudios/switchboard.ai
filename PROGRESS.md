@@ -31,7 +31,16 @@
 > hole closed. Mutation: RTL e2e fails 726px off against direction-blind
 > placement. Gates: 5861 unit, 350+3sk e2e. Filed #695 (card ⋯ menu clips on
 > 3-4 splits — needs rect-anchored variant). Handoff: orchestrator/642.md.
-> | #682+#683 watcher follow-ups (internal) | sb-wt-2 | feature/682-watcher-followups | dispatched ~15:45 |
+> | #682+#683 watcher follow-ups | sb-wt-2 | DONE — PR #696 readied+bumped, merge on green |
+>
+> **#682-bundle outcome (PR #696):** wheel sliced K=4 via round-robin slot
+> FIELD (not cursor) — every file still checked exactly once per pollMs, zero
+> #412-test edits (the predicted phase-shift break never existed); PathStyle
+> injected folding all three keys, deliberately NOT exposed through FsIpcDeps.
+> All 14 new tests falsified against 8 broken builds — one vacuous test of its
+> own caught and rewritten. Gates: 5860 unit, 349+3sk e2e. Filed #697 (tuning
+> residues: K unmeasured/SMB, ReadScope fold convention, per-file stat cost).
+> Handoff: orchestrator/682-bundle.md.
 >
 > **#618 DONE — PR #689 (internal), readied + bumped, merge on green.** Shared-
 > typed: StatusChange, SessionCardWire+CardStatus, AutonomyMode (9 copies + 2
