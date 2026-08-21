@@ -1397,7 +1397,7 @@ describe('content cannot plant a media player, a hot spot or a hidden box (#625)
   // pass (`markdown.tsx`'s seventh block carries it in full). Two corpora, both
   // 2026-08-20: 7,602 transcripts / 18,639 assistant text blocks / 10.2 MB, and
   // 1,182 real `.md` files / 15.4 MB on this machine's project roots. Every one
-  // of the 15 + 21 occurrences was inside a code fence or a code span. Bare in
+  // of the 15 + 23 occurrences was inside a code fence or a code span. Bare in
   // prose: ZERO, in both — which is also what prices the viewer's "media not
   // shown" chip at nothing, since it fired on none of the 1,182 documents.
   //
@@ -1600,7 +1600,7 @@ describe('content cannot plant a media player, a hot spot or a hidden box (#625)
   });
 
   it('a code fence about a media tag still renders it as CODE, not as markup', () => {
-    // The premise every number in the measurement rests on: all 36 occurrences
+    // The premise every number in the measurement rests on: all 38 occurrences
     // across both corpora were an agent or a README EXPLAINING the tag inside a
     // fence or a span, where `marked` escapes it and the sanitizer never sees an
     // element. Green with or without the change — a GUARD, not evidence — so a
