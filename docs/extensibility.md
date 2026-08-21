@@ -465,10 +465,13 @@ render is `l.map is not a function`, inside a `.then` nobody catches — an
 unhandled rejection, or a dead component tree. Where the site reads a field
 instead of calling a method it is quieter and no better: `status.files` off the
 brand is `undefined`, and the pane renders as if git had answered. #650 found
-**forty** across eight files, including five reached through injected closures
-that no static pass can see. Two of them wore an `as` cast over a channel
-declared `Promise<unknown[]>`, which puts the brand into a typed store under a
-promise it cannot keep.
+**forty-one** across eight files. Two wore an `as` cast over a channel declared
+`Promise<unknown[]>`, which puts the brand into a typed store under a promise it
+cannot keep; four more parked the promise in a local and called `.then` on
+*that*, which the first draft of the scanner could not see at all — one of them
+handed the brand to a dialog that rendered `t('push.reason.' + r.reason)`, and
+the brand's own `reason` is `'capability-not-held'`, so a missing i18n key would
+have gone on screen verbatim.
 
 Loud beats silent. Neither is **fail-open** — a hard constraint (PHILOSOPHY §3):
 our breakage never blocks a session, and an unhandled rejection on the
@@ -498,8 +501,10 @@ answered(gs)?.map((g) => g.id) ?? null       // `null` = "we do not know";
 
 That third line is why the fallback has to be chosen rather than reached for:
 `SessionGrid`'s layout restore *prunes* persisted records against that list, so
-degrading a refusal to `[]` would delete every pin, policy, override and draft
-in the app. Cast **outside** the launderer, never inside —
+degrading a refusal to `[]` would delete every pin, policy, override, saved
+layout and rail position in the app. (The two *draft* prunes would survive —
+they already return early on an empty set. Same hazard, spotted once for the
+biggest payloads and not generalised, which is what the `null` here fixes.) Cast **outside** the launderer, never inside —
 `answered(s) as GitStatusDto | undefined`, because the cast is the thing that
 hides the brand.
 
@@ -526,9 +531,13 @@ objects, `strict-boolean-expressions`, is in no preset and, once switched on,
 fires on every `if (folder)` in the tree whether or not a refusal is possible.
 The scanner's blind spots are listed at the bottom of the script; the one worth
 knowing here is the **injected closure** (`read: () => pty.snapshot(id)`), which
-nothing static can tie back to the bridge. There are five, each launders
-centrally in the one place that can see the value, and each is pinned by unit
-tests rather than by the scanner.
+nothing static can tie back to the bridge. There are five —
+`lib/markdown-links.ts`, `lib/latest-wins.ts`, `lib/terminal-shadow.ts`,
+`lib/terminal-attach.ts` and `components/DocumentViewer.tsx` — and each launders
+centrally, in the one place that can see the value, with a unit test in place of
+the scanner. Reporting the *escape* instead (a bridge promise returned or passed
+on) was tried in #650 and backed out: it found eleven sites and no defect,
+because every hit was one of these deliberate seams.
 
 ### The vocabulary
 

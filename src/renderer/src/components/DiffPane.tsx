@@ -132,11 +132,16 @@ export function DiffPane(props: {
     void window.switchboard.git.status(props.folder).then((s) => {
       // `answered` BEFORE the cast (#650). `git:status` is declared
       // `Promise<unknown>`, so this cast is the only thing between the wire and
-      // a typed record - and a refusal cast into `GitStatusDto` reaches
-      // `next.files.map` three lines down and throws `files is undefined`
-      // inside a `.then` driven with `void`. Fail-open is to learn nothing:
-      // the pane keeps the status it had (`null` on first mount, which renders
-      // as "no changes" rather than as a crash).
+      // a typed record — and the brand cast into `GitStatusDto` becomes the
+      // pane's `status`. The file list then reads `status.files.map` on the
+      // next render; the `setSelected` block below reaches `next.files.map`
+      // too, though only when a file was already selected. Either way it is a
+      // throw inside a `.then` driven with `void`.
+      //
+      // Fail-open is to learn nothing: the pane keeps the status it had, which
+      // on first mount is `null` — an EMPTY pane (the "no changes" copy is
+      // gated behind `isRepo`, so it does not appear), not a crash and not a
+      // lie about the working tree.
       const next = answered(s) as GitStatusDto | undefined;
       if (!next) return;
       setStatus(next);

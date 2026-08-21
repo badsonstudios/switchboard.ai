@@ -729,7 +729,15 @@ export function App(): React.JSX.Element {
     // an empty working one. A Save button that silently does nothing is worse
     // than a disabled one that says why (review finding).
     if (!answer) return setPushConfig(unavailablePushConfig());
-    void answer.then((c) => setPushConfig(c)).catch(() => setPushConfig(unavailablePushConfig()));
+    // #650: a refusal is the same thing as no `push` namespace — we could not
+    // ask — so it takes the branch two lines up rather than becoming the config.
+    // `PushConfig`'s own contract says why: the dialog computes
+    // `available = cfg?.storeAvailable !== false`, and the brand has no
+    // `storeAvailable`, so an unlaundered refusal renders a WORKING, empty
+    // setup form with Save enabled — the one state that comment forbids.
+    void answer
+      .then((c) => setPushConfig(answered(c) ?? unavailablePushConfig()))
+      .catch(() => setPushConfig(unavailablePushConfig()));
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, []);
   // ── quiet hours (E14-05b, §5.9) ──────────────────────────────────────────
@@ -741,7 +749,10 @@ export function App(): React.JSX.Element {
   const refreshQuiet = React.useCallback(() => {
     const answer = bridge.notifications?.quietState?.();
     if (!answer) return setQuietState(null);
-    void answer.then((s) => setQuietState(s)).catch(() => setQuietState(null));
+    // #650: `null` is this state's designed "cannot tell", and it is already
+    // what the `.catch` and the line above answer. A refusal is a third way of
+    // not being told, not a quiet state with an undefined `heldCount`.
+    void answer.then((s) => setQuietState(answered(s) ?? null)).catch(() => setQuietState(null));
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, []);
   const openQuietHours = React.useCallback(() => {
@@ -777,7 +788,20 @@ export function App(): React.JSX.Element {
     (key: string, p: Promise<PushWriteResult> | undefined) => {
       if (!p) return setPushConfig(unavailablePushConfig());
       void p
-        .then((r) => {
+        .then((answer) => {
+          // #650: the brand has no `config` and no `ok`, so an unlaundered
+          // refusal would put `undefined` into a `PushConfig | null` state (the
+          // empty-working-form again) AND report `problem: 'refused'` — a
+          // failed WRITE — for a call that never reached the store. Refused is
+          // the honest word for both halves, and it is what the `.catch` below
+          // already says; `unavailablePushConfig()` is what the caller above
+          // shows when it could not ask at all.
+          const r = answered(answer);
+          if (!r) {
+            setPushConfig(unavailablePushConfig());
+            setPushWrite({ key, problem: 'refused' });
+            return;
+          }
           setPushConfig(r.config);
           // What the dialog renders beside the field: main is the authority on
           // whether the write happened, and a credential cannot be read back to
@@ -790,7 +814,16 @@ export function App(): React.JSX.Element {
   );
   const testPush = React.useCallback(
     (channel: 'push' | 'webhook'): Promise<PushSendResult> =>
-      bridge.push?.test?.(channel) ?? Promise.resolve({ ok: false, reason: 'not-configured' }),
+      // #650, and this one is the worst of the family because the brand carries
+      // a field the reader USES: the dialog renders
+      // `t('push.reason.' + (r.reason ?? 'network'))`, and a refusal's `reason`
+      // is `'capability-not-held'` — no such key exists, so the literal string
+      // `push.reason.capability-not-held` goes on screen. `refused` is the key
+      // this list already has for "main would not do it".
+      bridge.push
+        ?.test?.(channel)
+        .then((r) => answered(r) ?? { ok: false, reason: 'refused' }) ??
+      Promise.resolve({ ok: false, reason: 'not-configured' }),
     []
   );
 

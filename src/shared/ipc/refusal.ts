@@ -144,11 +144,12 @@ export function isIpcRefusal(value: unknown): value is IpcRefusal {
 //
 // THE OTHER HALF, AND THE RULE THAT COVERS BOTH (#650). #440 swept the sites
 // that read a refusal as a YES. It left, and named, the sites that use one as
-// the ANSWER — forty of them, mostly `.then((l) => setState(l))` — where a
-// refusal does not lie, it THROWS: `l.map is not a function`, inside a `.then`
-// nobody catches. Two wore an `as` cast over a channel declared
-// `Promise<unknown[]>` (`as EventDto[]`, `as FeedBlockDto[]`), which is the
-// brand put into a typed store under a promise it cannot keep.
+// the ANSWER — forty-one of them across eight files, mostly
+// `.then((l) => setState(l))` — where a refusal does not lie, it THROWS:
+// `l.map is not a function`, inside a `.then` nobody catches. Two wore an `as`
+// cast over a channel declared `Promise<unknown[]>` (`as EventDto[]`,
+// `as FeedBlockDto[]`), which is the brand put into a typed store under a
+// promise it cannot keep.
 //
 // Loud beats silent, and neither is FAIL-OPEN — a hard constraint (PHILOSOPHY
 // §3, litmus #3): our breakage never blocks a session, and an unhandled
@@ -171,8 +172,9 @@ export function isIpcRefusal(value: unknown): value is IpcRefusal {
 //                                                   none", and `SessionGrid`'s
 //                                                   layout restore PRUNES
 //                                                   against that list — every
-//                                                   pin, policy and draft in
-//                                                   the app.
+//                                                   pin, policy, override,
+//                                                   layout and rail position
+//                                                   in the app.
 //
 // `scripts/refusal-truthiness.js` is what keeps it swept: it parses the
 // renderer, follows every brokered bridge result one hop, and fails the unit

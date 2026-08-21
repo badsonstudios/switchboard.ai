@@ -1625,8 +1625,10 @@ function Composer({
     let cancelled = false;
     void window.switchboard.sessions.slashCommands(sessionId).then((list) => {
       // #650: the brand in `commands` is `.filter`ed by the popup on the next
-      // keystroke. No commands is the honest answer to a refused read, and the
-      // popup already renders that (it is what `null` means one branch up).
+      // keystroke. `[]` and not `null`: both draw an empty popup, but they are
+      // different facts — `null` is "not fetched yet" (what the branch above
+      // sets when the popup closes) and `[]` is "asked, and there are none".
+      // A refused read did finish asking, so `[]` is the honest one.
       if (!cancelled) setCommands(answered(list) ?? []);
     });
     return () => {

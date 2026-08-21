@@ -280,6 +280,8 @@ function valuePositionOf(node) {
     return 'stored';
   }
   if (ts.isConditionalExpression(p) && (p.whenTrue === node || p.whenFalse === node)) return 'stored';
+  if (ts.isSwitchStatement(p) && p.expression === node) return 'switched';
+  if (ts.isElementAccessExpression(p) && p.argumentExpression === node) return 'index-key';
   // `const {hits} = await bridge.search()` — the blind spot named in WHAT THIS
   // DOES NOT SEE. A plain `const b = a` rename is followed instead (null here),
   // but a destructuring pattern reads properties off the brand and cannot be.
@@ -372,6 +374,33 @@ function scanSource(fileName, source, invokeMethods) {
     return n;
   };
 
+  // ── pass 1b: names bound to the PROMISE, not to the answer ──────────────
+  //
+  // `const answer = bridge.push?.getConfig?.(); … answer.then(cb)` — the shape
+  // the first draft of #650 missed, in the file it was editing. `.then` chained
+  // straight onto the call was followed; `.then` on a local holding the call's
+  // promise was not a bridge call at all, so four `App.tsx` sites were invisible
+  // — including the one that renders `t('push.reason.' + r.reason)` and would
+  // have printed the refusal's own `'capability-not-held'` on screen.
+  //
+  // Tracked separately from the ANSWER aliases above because they are different
+  // things: this is a Promise, so a boolean test of it is meaningless rather
+  // than wrong, and only `.then` and `await` reach what is inside.
+  const promiseAliases = new Set();
+  (function pass1b(node) {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer &&
+        !ts.isAwaitExpression(strip(node.initializer)) && isBridgeCall(node.initializer)) {
+      promiseAliases.add(node.name.text);
+    }
+    ts.forEachChild(node, pass1b);
+  })(sf);
+  /** the promise for a brokered answer, however it is spelled here */
+  const isBridgePromise = (node) => {
+    const e = strip(node);
+    if (isBridgeCall(e)) return true;
+    return ts.isIdentifier(e) && promiseAliases.has(e.text);
+  };
+
   // ── pass 2: bridge results, followed one hop ────────────────────────────
   //
   // NOT scope-aware: an inner binding that reuses the name is followed as if it
@@ -432,15 +461,15 @@ function scanSource(fileName, source, invokeMethods) {
   };
 
   (function pass2(node) {
-    // `await bridge.x()` used directly as a boolean
-    if (ts.isAwaitExpression(node) && isBridgeCall(node.expression) && !isLaundered(node)) {
+    // `await bridge.x()` used directly as a boolean or as a value
+    if (ts.isAwaitExpression(node) && isBridgePromise(node.expression) && !isLaundered(node)) {
       const pos = booleanPositionOf(node) ?? valuePositionOf(node);
       if (pos) report(node, pos, guardOf(node));
     }
-    // `const r = await bridge.x()` — then every boolean read of `r`
+    // `const r = await bridge.x()` — then every read of `r`
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer &&
         ts.isAwaitExpression(strip(node.initializer)) &&
-        isBridgeCall(strip(node.initializer).expression)) {
+        isBridgePromise(strip(node.initializer).expression)) {
       trackBinding(node.name.text, enclosingBody(node));
     }
     // `took(bridge.x())` — a laundered result with the `await` FORGOTTEN. Both
@@ -456,7 +485,7 @@ function scanSource(fileName, source, invokeMethods) {
     }
     // `bridge.x().then(cb)` — every boolean read of the value `cb` receives
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
-        node.expression.name.text === 'then' && isBridgeCall(node.expression.expression)) {
+        node.expression.name.text === 'then' && isBridgePromise(node.expression.expression)) {
       const cb = node.arguments[0];
       const inline = cb && (ts.isArrowFunction(cb) || ts.isFunctionExpression(cb));
       const p0 = inline ? cb.parameters[0] : undefined;
@@ -565,6 +594,26 @@ if (require.main === module) {
 //     checker and a symbol table; this is a net for the shape the defect
 //     actually wears, which in every real site so far was the value's FIRST
 //     read.
+//   * A PROMISE handed to something else before anyone awaits it — a function
+//     PARAMETER (`applyPushAnswer(key, bridge.push.setSecret(…))`), a field, a
+//     ref. Whoever receives it does the `.then`, and nothing static follows it
+//     there. A promise parked in a LOCAL first (`const a = bridge.x();
+//     a.then(cb)`) IS followed — that is `promiseAliases`, and it is where the
+//     first draft of #650 lost four `App.tsx` sites, one of which printed the
+//     refusal's own reason code on screen as a missing i18n key.
+//
+//     REPORTING THE ESCAPE WAS TRIED (#650) AND BACKED OUT, which is worth
+//     writing down so nobody re-adds it. Flagging a bridge call whose promise
+//     is returned or passed on found **eleven** sites and not one defect: every
+//     hit was a deliberate central-laundering seam — `latestWins`'s fetch
+//     closures, `mainTook`'s thunk in `composer.ts`, `TerminalPane`'s `read` /
+//     `attach` closures, `applyPushAnswer`'s promise argument,
+//     `Promise.resolve(bridge.x?.())`. That is the approved pattern, so the
+//     rule would have marked the right answer wrong eleven times and the wrong
+//     answer wrong never. `unfollowable-then` earns its keep on the opposite
+//     evidence (four real sites, no false ones); "report what you cannot see"
+//     is a rule about a shape with a track record, not a licence to report
+//     everything invisible.
 //   * A bridge method reached through an INJECTED DEPENDENCY rather than the
 //     global. Nothing static can tell that an injected closure calls the
 //     bridge, so each of these launders CENTRALLY — in the one place that can

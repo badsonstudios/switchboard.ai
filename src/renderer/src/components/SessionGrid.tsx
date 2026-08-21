@@ -4463,6 +4463,17 @@ export function SessionGrid(props: {
             // rescue entirely (it guards on `workAreas.length > 0`), so a
             // refusal moves no window rather than moving all of them on the
             // strength of a display list we never received.
+            //
+            // NOTE THE ASYMMETRY with `revealNow`, which degrades the same
+            // refusal to `[]` and thereby DOES rescue (an empty list makes
+            // `boxOnAnyDisplay` false, so the remembered rect is dropped and
+            // the window opens over the opener). Neither is a copy of the
+            // other's mistake: both fall onto the behaviour their own callee
+            // already had for an empty display list, and that behaviour differs
+            // because `sanitizePopoutLayout` guards on length and
+            // `boxOnAnyDisplay` does not. Restoring a whole saved layout is
+            // also the wrong moment to relocate every popout on a non-answer,
+            // where reopening one card's window is cheap to get wrong.
             const workAreas = answered(await window.switchboard.workAreas()) ?? [];
             const rescuedNow: RescuedPopout[] = [];
             // ...and no popout window is restored holding a panel that verdict
@@ -4497,9 +4508,18 @@ export function SessionGrid(props: {
             // `known`, so a refused `knownCards` read must prune nothing at
             // all — the identical argument the group-override comment inside
             // makes for a failed group list, and the reason `known` is `null`
-            // rather than an empty set. Running these against "we could not
-            // ask" would delete the user's pins, policies, drafts and
-            // attachments for every session in the app.
+            // rather than an empty set.
+            //
+            // Named precisely, because the size of the claim is the argument:
+            // presentation, policies, layout, focus policies, pins and manual
+            // order all delete unconditionally, so an empty set wipes every one
+            // of them for every session. The two DRAFT prunes would survive —
+            // `staleDraftKeys` and `staleAttachmentDraftKeys` already return
+            // early on an empty set (`composer-draft.ts`,
+            // `composer-attachment-draft.ts`). That is the same hazard, spotted
+            // once for the two biggest payloads and never generalised; the
+            // guard here is the generalisation, and it is the only thing
+            // standing between a refused read and the other six.
             if (known !== null) {
               // presentation records outlive their panels by design (that is the
               // point of hiding), so the only thing that can retire one is the card
