@@ -21,16 +21,14 @@
 > **Active workers (wave 2, dispatched ~10:15):**
 > | Issue | Worktree | Branch | Status |
 > |---|---|---|---|
-> | #650 value-channel refusals | sb-wt-1 | DONE — PR #676 (internal), CI running, needs base-bump after #672 |
-> | #544 shared directory watches | sb-wt-2 | DONE — PR #681 (internal) |
-> | #666+#667+#668 fake-fidelity bundle | sb-wt-3 | DONE — PR #679 (internal) |
+> | EVENTS track #268+#577+#648 | sb-wt-1 | DONE — PR #684 ready, in DAN'S QUEUE |
+> | #618 sessions DTO (internal) | sb-wt-2 | feature/618-sessions-status-dto | dispatched ~12:35 |
+> | RAIL/CARDS track #337+#295+#606 (USER-FACING) | sb-wt-3 | feature/337-rail-cards-track | dispatched ~12:35 |
 >
-> **Merge chain:** #672 MERGED 12:03 (103d697, #654 closed). #676 conflicted
-> on bump (both PRs opened the missing 0.8.3 unreleased CHANGELOG section);
-> orchestrator resolved in wt-1 (Changed + Internal consolidated, aed561b),
-> CI re-running — merge on green, then bump #679, then #681, serially.
-> After #676 merges: dispatch events track (wt-1), rail/cards track (wt-3),
-> #618 (wt-2). Next dispatches
+> **Merge chain:** MERGED so far: #669, #665, #672 (12:03), #676 (12:34,
+> b2a7201, #650 closed — CHANGELOG conflict resolved by orchestrator, 0.8.3
+> section consolidated). Remaining: #679 bumped clean, merge on green → then
+> bump #681, merge on green. Wave-4 dispatched on post-#676 main. Next dispatches
 > AFTER #676 merges (renderer collision clears): events track (wt-1),
 > rail/cards track (wt-3), #618 (wt-2).
 > **#544 outcome:** WatchedDir owns one fs.watch per folder + one floor wheel

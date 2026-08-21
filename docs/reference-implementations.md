@@ -7,6 +7,17 @@ contract is unclear, **there is a working implementation of it sitting on disk.*
 
 This file says where, and how to read it without wasting a session.
 
+There are **three** sources, and they answer different questions. §1 the VS Code
+extension — a known-correct *client*, so it shows what a caller **sends**. §2.1
+the `claude` binary on PATH — the other end of the same contract, so it shows
+what the CLI **does with what it received**. §2.2 `--help` — what the CLI
+**accepts**.
+
+Reading any of those three costs nothing. **Running a probe is a different
+thing**: a flag-validation probe (`--permission-mode <v> --version`, §2.3) is
+free, but the probes in §3 send real turns to the real CLI and spend Dan's
+subscription quota. Exhaust the readable sources before you spend one.
+
 ---
 
 ## 1. The Claude Code VS Code extension
@@ -32,7 +43,7 @@ ls -d ~/.vscode/extensions/anthropic.claude-code-* | sort -V | tail -1
 | `webview/index.css` | ~379 KB | Their styling, if a visual question ever comes up |
 | `claude-code-settings.schema.json` | ~133 KB | **The complete JSON Schema for `settings.json`** — see §1.3, this is the most immediately useful file in the bundle |
 | `package.json` | ~15 KB | Every setting and command the extension contributes, in readable JSON. **Start here** — it is the only unminified overview |
-| `resources/native-binary/claude.exe` | 265 MB | Their bundled CLI. We do not use it, but its existence is why a probe must be run against **our PATH CLI**, never assumed from their behavior |
+| `resources/native-binary/claude.exe` | ~287 MB | Their bundled CLI. We do not use it, but its existence is why a probe must be run against **our PATH CLI**, never assumed from their behavior |
 
 ### 1.1 How to read the minified files
 
@@ -132,6 +143,102 @@ is an early warning for the drift class DESIGN §5.2 describes.
 
 ## 2. The CLI itself
 
+The CLI is two references, not one. **The binary can be read** (§2.1) — it
+embeds its own source, and that is where a question about *behaviour* gets
+answered. **`--help`** (§2.2) tells you what it accepts, and a probe (§2.3 for
+the free kind, §3 for the kind that spends tokens) settles what it does.
+
+### 2.1 The binary is greppable — read what the CLI actually does
+
+```
+~/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/bin/claude.exe
+```
+
+~320 MB, Bun-compiled to a single executable — which means it **carries its own
+JavaScript inside it as plain text**, including the zod schemas for every
+message it accepts and emits, the stdin message loop, and its log strings. All
+of it greps like a minified bundle, because that is what it is.
+
+**Reach for this when the question is "what does the CLI DO with X?".** The
+extension (§1) cannot answer that class of question at all — it is a client, so
+it shows what gets *sent*. #490 is the worked example: both sources agree that
+the user envelope carries a `uuid`, but only the binary says that the CLI's
+entire de-duplication pass is **guarded on the field being present**, so
+omitting it means every frame executes, always. That is the difference between
+"they send it, so we probably should" and a reason.
+
+| Question | Source |
+|---|---|
+| What fields does a client put on the wire? | §1, the extension |
+| Which flags pair with which, and when? | §1, the SDK's arg builder |
+| Is this field required, optional, or a literal? | §2.1, the zod schemas |
+| What does the CLI do when it's present / absent? | §2.1, the message loop |
+| Does the CLI accept this flag value at all? | §2.2, `--help` + a probe |
+
+#### The recipe
+
+Same shape as §1.1, with `-a` added — **without `-a`, grep sees a binary and
+prints `Binary file … matches` instead of your window**, which reads exactly
+like a hit with no content.
+
+```bash
+cd ~/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/bin
+
+# 1. COUNT FIRST. Cheap, and a zero is itself a finding — after §1.1's rule.
+grep -a -o -F 'cli_user_message_dedup_skipped' claude.exe | wc -l
+
+# 2. Then pull a readable window. 250-700 either side is proven; go wider and
+#    grep can return NOTHING silently (§1.1's trap applies here too).
+grep -a -o -E '.{700}cli_user_message_dedup_skipped.{700}' claude.exe
+
+# 3. A name you read in step 2 is a handle on everything that uses it — this
+#    is how you get from a function to its call sites.
+grep -a -o -E '.{250}RCg\(.{150}' claude.exe
+```
+
+**A short alias is only unambiguous inside its own module.** The bundle keeps
+per-module scopes, so `Mr` is `z.enum` in the schema module and a highlight.js
+language definition somewhere else entirely (`grep -a -o -E 'var Mr=.{80}'
+claude.exe` returns the latter). Long names like `RCg` are effectively unique
+and safe to chase; two- and three-character ones are not. Before you follow an
+alias, confirm its definition appears in the same window as the use.
+
+Three habits that make this fast:
+
+- **Enter through a log string, not through a name.** Minified identifiers
+  (`RCg`, `yt`, `Vr`) are unguessable, but the messages beside them are
+  English and survive minification verbatim: `Skipping duplicate user message`,
+  `Sending acknowledgment for duplicate user message`. Grep the sentence, read
+  the code around it, *then* pick up the identifiers.
+- **Schemas cluster.** Find one (`isReplay:kt(!0)`) and the whole family of
+  message shapes is inside the same window, because they are defined together.
+  Inside that module `kt` is `z.literal`, `F()` is `z.string()` and `Mr` is
+  `z.enum` — re-derive the aliases once per session from a schema you already
+  understand, and re-derive them again if you move to a different window.
+- **A `.describe()` string is documentation Anthropic wrote and never
+  published.** Several fields carry a paragraph explaining intent, and some say
+  outright that a client must not set them (`"@internal … Injected
+  server-side"`).
+
+#### Rules
+
+- **NEVER `Read` or `cat` this file.** It is 320 MB. §1.1's context warning
+  about a 2.6 MB bundle applies here roughly a hundred-fold; `grep -a -o` with
+  a fixed window is the only safe access. The node-slurp fallback in §1.1 is
+  also **not** available at this size — it would read the whole file into a
+  string.
+- **This binary is the one that counts.** The extension bundles CLI **2.1.226**
+  (`resources/native-binary/`); the PATH CLI is **2.1.233**. Where they differ,
+  PATH wins, because PATH is what the app spawns and what Dan runs. Check with
+  `claude --version` and write the version into whatever you record — a finding
+  without one rots silently.
+- **Read contracts, don't copy code** — §1.4's rule, unchanged. The same
+  copyright applies, and minified source is not ours to lift.
+- **It costs nothing.** No model call, no tokens, no session state. There is
+  never a reason to guess a message shape when this is on disk.
+
+### 2.2 `--help`
+
 `claude --help` is the other reference, with one caveat proven in S-10:
 **it can be stale.** It states that `--input-format` / `--output-format` "only
 works with `--print`". They do not — the SDK omits `--print` entirely and the
@@ -141,7 +248,7 @@ builder as the tiebreaker, then verify with a probe.
 Flags that are real but hidden from `--help` exist (`--permission-prompt-tool`
 is one). Absence from help is not absence from the CLI.
 
-### 2.1 Contract note — `--permission-mode` (verified 2026-08-19, CLI 2.1.233)
+### 2.3 Contract note — `--permission-mode` (verified 2026-08-19, CLI 2.1.233)
 
 The mode we pass per autonomy profile lives in `AUTONOMY_PERMISSION_MODE`
 (`src/main/providers/claude.ts`), with the full reasoning. The facts behind it,
