@@ -117,7 +117,7 @@ describe('images become chips and issue no request', () => {
     expect(host.querySelector('.doc-image-chip')?.getAttribute('title')).toBe('./diagram.png');
   });
 
-  it('media that would fetch on its own is removed outright', () => {
+  it('stripMedia removes media handed to it DIRECTLY — belt-and-braces (#625)', () => {
     // CALLED DIRECTLY, and that is a change of layer rather than of style
     // (#625). This row used to go through `render()` like every other one in
     // this file, and it went red when `audio`, `video`, `source`, `track` and

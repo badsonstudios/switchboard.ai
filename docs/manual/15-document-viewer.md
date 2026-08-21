@@ -263,11 +263,16 @@ into your own tools is always one click away.
   switched off. Clickable regions drawn on top of a picture (an "image map") go
   with them, and so does one tag — `<dialog>` — that hid whatever was put inside
   it. Ordinary pictures are untouched.
-  What is still reachable with Tab inside the text is what the text genuinely
-  contains: **links**, any `<details>` sections it uses to fold parts of itself
-  away, and the scroll box around a wide table, which the viewer makes reachable
-  on purpose. That list is now complete rather than approximate: nothing else in
-  a document or a reply can put itself under your Tab key. In the document
+  What is still reachable with Tab inside the text is either something the text
+  genuinely contains — **links**, and any `<details>` sections it uses to fold
+  parts of itself away — or something switchboard.ai put there: the **Copy**
+  button on a code block, the **Open in browser** button on a picture hosted on
+  the web, and the scroll box around anything too wide for the pane (a wide
+  table, or a code block with a very long line). Those scroll boxes are
+  reachable on purpose — a box you can only scroll with a mouse is a box a
+  keyboard can't read — so a document with long lines in it does add stops, and
+  that is the app working as intended rather than the document getting its way.
+  What a document *cannot* do is add a stop of its own design. In the document
   viewer, links are switchboard.ai's own — it takes the address off every link
   and decides itself what opening one does. In a session reply, a link is the
   reply's own.

