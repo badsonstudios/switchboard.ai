@@ -82,6 +82,7 @@
 import { Terminal } from '@xterm/xterm';
 import { SearchAddon } from '@xterm/addon-search';
 import type { PtySnapshot } from '../../../shared/ipc/pty';
+import { answered } from '../../../shared/ipc/refusal';
 import {
   searchTerminal,
   TERMINAL_SCROLLBACK,
@@ -228,7 +229,15 @@ export class TerminalShadow {
   private async load(): Promise<boolean> {
     let snap: PtySnapshot | null = null;
     try {
-      snap = await this.opts.read();
+      // `answered` HERE and not at the injection site (#650), for the reason
+      // `latest-wins.ts` launders centrally: `read` is a closure, so this is
+      // the only place that can see what it resolved. A refused `pty:snapshot`
+      // is a truthy object with no `cols`, `rows` or `data`, and it would be
+      // replayed into the shadow terminal as a zero-by-zero screen — "found
+      // nothing" for a scrollback nobody was allowed to read. `null` is this
+      // class's own word for "there is nothing to search", and the line below
+      // already turns it into the honest "could not search" (#516).
+      snap = answered(await this.opts.read()) ?? null;
     } catch (err) {
       // fail-open, and fail HONESTLY: `false` becomes "could not search", never
       // a zero (#516's blocker, one layer down)

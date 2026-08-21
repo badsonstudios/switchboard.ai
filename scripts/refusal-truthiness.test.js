@@ -1,9 +1,9 @@
-// #440 — the refusal-truthiness scanner, pinned in both directions.
+// #440 + #650 — the refusal-truthiness scanner, pinned in both directions.
 //
 // The load-bearing half is the LAST describe block: it runs the analyzer over
 // the real renderer and demands zero. That is what makes a new
-// `if (await bridge.x())` a red unit run rather than a defect that waits for
-// Phase 4 to become reachable.
+// `if (await bridge.x())` — or a new `setEvents(await bridge.list())` — a red
+// unit run rather than a defect that waits for Phase 4 to become reachable.
 //
 // The other halves are the lesson `eslint-hex-rule.test.js` wrote down: a guard
 // that has been quietly narrowed to nothing goes green for ever and nobody
@@ -37,6 +37,9 @@ beforeAll(() => {
 /** kinds reported for a snippet, as if it were a renderer file */
 const kinds = (source) =>
   scanSource('src/renderer/src/probe.ts', source, methods).map((f) => f.kind);
+/** the same, judged as TSX — for the JSX positions (#650) */
+const kindsTsx = (source) =>
+  scanSource('src/renderer/src/probe.tsx', source, methods).map((f) => f.kind);
 const wrap = (body) => `async function probe(): Promise<void> {\n${body}\n}\n`;
 
 describe('the bridge surface it derives from the preload', () => {
@@ -176,8 +179,13 @@ describe('shapes it MUST NOT flag', () => {
       wrap(`const r = answered(await window.switchboard.sessions.pickFolder());\nif (r) return;`),
     ],
     [
+      // The laundered value is what gets USED, not just what gets tested. The
+      // snippet this replaced was `if (answered(f)) console.log(f)`, which
+      // tests the clean value and then uses the dirty one — legal under #440
+      // (the read is not a boolean) and a #650 defect, so the scanner is right
+      // to have started reporting it.
       'a laundered .then parameter',
-      `void window.switchboard.sessions.pickFolder().then((f) => { if (answered(f)) console.log(f); });`,
+      `void window.switchboard.sessions.pickFolder().then((f) => { const p = answered(f); if (p) console.log(p); });`,
     ],
     [
       'an explicit === true',
@@ -223,23 +231,135 @@ describe('shapes it MUST NOT flag', () => {
         wrap(`const out = await shadow().search('q');\nreturn out && { ...out };`),
     ],
     [
-      // In scope for the ISSUE and out of scope for this NET, on purpose: a
-      // refusal here throws (`cards.length` is undefined, `cards.map` is a
-      // TypeError) rather than being silently misread, and loud is the failure
-      // mode #440 is not trying to prevent.
-      'a bridge result used as a VALUE rather than a boolean',
-      wrap(`const cards = await window.switchboard.sessions.cards();\nconsole.log(cards.length);`),
+      // #650's degraded-value shapes, one per fallback style. These are the
+      // fixes the sweep applied; if the scanner started objecting to one of
+      // them the story would have no legal spelling left.
+      'a laundered list with an empty fallback',
+      `void window.switchboard.events.list().then((l) => setEvents(answered(l) ?? []));`,
+    ],
+    [
+      'a laundered record with an early return',
+      `void window.switchboard.notifications.getPrefs().then((raw) => { const p = answered(raw); if (!p) return; setOn(p.sounds === true); });`,
+    ],
+    [
+      // the two `as` casts #650 was filed for, fixed: laundered BEFORE the cast
+      'a laundered value cast after laundering',
+      `void window.switchboard.git.status('/f').then((s) => { const next = answered(s) as GitStatusDto | undefined; if (next) use(next.files); });`,
+    ],
+    [
+      'a laundered optional-chained map with a null fallback',
+      `void window.switchboard.groups.list().then((gs) => answered(gs)?.map((g) => g.id) ?? null);`,
+    ],
+    [
+      // A comparison cannot misbehave on the brand, and whatever the code does
+      // with the value afterwards is caught on its own. Reporting these too
+      // would outlaw the explicit `=== true` / `=== false` form the contract
+      // recommends, and fire twice on one defect.
+      'a === null comparison',
+      wrap(`const r = await window.switchboard.sessions.cards();\nif (r === null) return;`),
+    ],
+    [
+      'a typeof test',
+      wrap(`const r = await window.switchboard.workspace.getUi();\nif (typeof r === 'object') return;`),
     ],
   ])('leaves %s alone', (_label, source) => {
     expect(kinds(source)).toEqual([]);
   });
 });
 
+// #650. The sibling of "shapes it MUST catch" above, for the OTHER half of the
+// defect: not a refusal read as a yes, but a refusal used as the ANSWER. Each
+// case pins the KIND as well as the count, because the kind is what tells a
+// reader which of `valuePositionOf`'s branches is load-bearing — a rewrite that
+// collapsed them all into one label would still pass a count-only assertion.
+describe('the VALUE class it MUST catch (#650)', () => {
+  it.each([
+    [
+      'property-read',
+      wrap(`const cards = await window.switchboard.sessions.cards();\nconsole.log(cards.length);`),
+    ],
+    [
+      'property-read',
+      `void window.switchboard.sessions.setTransport('c', 'pty').then((r) => { if (!r?.ok) return; use(r); });`,
+    ],
+    [
+      'passed-on',
+      `void window.switchboard.events.list().then((l) => setEvents(l));`,
+    ],
+    [
+      // THE SHAPE THIS ITEM WAS FILED FOR: `events:list` is declared
+      // `Promise<unknown[]>`, so the cast is the only thing between the wire
+      // and a typed store, and it happily launders the brand INTO it.
+      'passed-on',
+      `void window.switchboard.events.list().then((l) => setEvents(l as EventDto[]));`,
+    ],
+    [
+      // the same cast worn as a RENAME rather than as an argument — the shape
+      // that made DiffPane's `git.status` answer invisible to the first draft
+      'property-read',
+      `void window.switchboard.git.status('/f').then((s) => { const next = s as GitStatusDto; use(next.files); });`,
+    ],
+    [
+      'iterated',
+      wrap(`for (const c of await window.switchboard.sessions.cards()) use(c);`),
+    ],
+    [
+      'destructured',
+      wrap(`const { hits } = await window.switchboard.transcripts.search({});\nuse(hits);`),
+    ],
+    [
+      'returned',
+      wrap(`const r = await window.switchboard.sessions.cards();\nreturn r;`),
+    ],
+    [
+      // the RIGHT of `??` — the opposite side from #440's `nullish`, and just
+      // as much a way for the brand to become the state
+      'stored',
+      `void window.switchboard.health.get().then((s) => setHealth((prev) => prev ?? s));`,
+    ],
+    [
+      'spread',
+      `void window.switchboard.sessions.cards().then((l) => use([...l]));`,
+    ],
+    [
+      'assigned',
+      wrap(`const r = await window.switchboard.sessions.cards();\nref.current = r;`),
+    ],
+    [
+      // `Promise.resolve(bridge.x?.())` — WorkspaceNoticeBanner's wrapper for an
+      // optional-chained call. Without seeing through it the whole file read as
+      // bridge-free, which is a clean scan of nothing.
+      'passed-on',
+      `void Promise.resolve(window.switchboard?.workspace?.saveState?.()).then((s) => apply(s));`,
+    ],
+  ])('catches it as %s', (kind, source) => {
+    expect(kinds(source)).toContain(kind);
+  });
+
+  it('catches a refusal rendered into JSX', () => {
+    expect(
+      kindsTsx(`void window.switchboard.sessions.cards().then((l) => render(<div>{l}</div>));`)
+    ).toContain('rendered');
+  });
+
+  it('reports one finding per READ, not one per mention', () => {
+    // `answered` is deliberately NOT applied here, so the two reads of `r` are
+    // two real defects — but the declaration itself is not a third. A rule that
+    // counted the binding would make every fixed site look half-fixed.
+    const found = scanSource(
+      'src/renderer/src/probe.ts',
+      wrap(`const r = await window.switchboard.sessions.cards();\nuse(r.length);\nuse(r[0]);`),
+      methods
+    );
+    expect(found.map((f) => f.kind)).toEqual(['property-read', 'property-read']);
+  });
+});
+
 describe('the renderer itself', () => {
-  // THE POINT OF THE FILE. Every site this found is listed in the #440 handoff;
-  // if it goes red, a new bridge answer is being read as a boolean somewhere,
-  // and the report says which line.
-  it('reads no brokered bridge answer as a bare boolean', () => {
+  // THE POINT OF THE FILE. Every site this found is listed in the #440 and
+  // #650 handoffs; if it goes red, a new bridge answer is being used somewhere
+  // without being laundered first, and the report says which line and how.
+  it('uses no brokered bridge answer without laundering it first', () => {
     const result = scanTree(ROOT);
     expect(formatReport(result).join('\n')).toContain('clean');
     expect(result.offenders).toEqual([]);

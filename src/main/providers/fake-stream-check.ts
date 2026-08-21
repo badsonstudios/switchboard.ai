@@ -8,12 +8,31 @@
 // the S-01 scrub, NDJSON over an actual pipe, and the control-channel round
 // trip end to end.
 //
+// IT SENDS WHAT THE APP SENDS (#667). The prompts below are built by the real
+// `userMessage()` from `shared/stream-protocol`, not by a local helper. This
+// file used to hand-roll its own envelope, which made it a SECOND, silent
+// definition of a contract that lives in one place — and one that had already
+// drifted: it never carried the `uuid` or `origin` #490 added, so the only
+// check that drives the fake over real pipes was exercising a frame the app no
+// longer produces. Raw-frame independence was the argument for keeping it, and
+// it was weighed rather than waved off: this file's OWN scope list is the four
+// items three paragraphs up, and frame construction is not one of them. The
+// envelope is pinned independently and thoroughly elsewhere —
+// `submit-prompt.test.ts` asserts the whole shape including the uuid and the
+// origin, and `fake-stream-protocol.test.ts` keeps a hand-written `userMsg` so
+// "a frame without those fields echoes without them" still has a witness that
+// owes nothing to the builder. What THIS file is for is proving the real
+// envelope survives real pipes, which a stand-in cannot do by construction.
+// (The one property the local helper gave away for free — that the id is
+// really there — is bought back by an explicit check at the first send.)
+//
 // Run with: npm run check:fake-stream   (after npm run build)
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { asDisplayString } from '../../shared/display-string';
 import { StreamService, StreamMessage } from '../transport/stream-service';
+import { userMessage } from '../../shared/stream-protocol';
 import { fakeStreamAdapter } from './fake-stream';
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-fake-stream-check-'));
@@ -71,13 +90,12 @@ function assistantText(): string | undefined {
   return undefined;
 }
 
-function userMsg(text: string): Record<string, unknown> {
-  return {
-    type: 'user',
-    message: { role: 'user', content: [{ type: 'text', text }] },
-    parent_tool_use_id: null,
-    session_id: '',
-  };
+/**
+ * The prompt echo, if one arrived. `--replay-user-messages` hands our own turn
+ * back; #666 made the fake mark it, and the assertions below read it from here.
+ */
+function userEcho(): Record<string, unknown> | undefined {
+  return seen.find((m) => m.type === 'user');
 }
 
 async function main(): Promise<number> {
@@ -177,7 +195,8 @@ async function main(): Promise<number> {
   s.onMessage((m) => seen.push(m));
 
   // ---- turn 1: a plain prompt ------------------------------------------------
-  s.send(userMsg('hello'));
+  const sent = userMessage('hello');
+  s.send(sent);
   await waitFor(() => seen.some((m) => m.type === 'result'), 15_000, 'the first result');
 
   check('system:init arrived', seen.some((m) => tag(m) === 'system:init'));
@@ -186,10 +205,31 @@ async function main(): Promise<number> {
   check('result:success arrived', seen.some((m) => tag(m) === 'result:success'));
   check('framing is intact', s.health.parseFailures === 0);
 
+  // THE ENVELOPE SURVIVES THE PIPE (#490 + #666). The unit tests prove the fake
+  // builds the echo correctly in-process; only this check proves the fields
+  // survive `JSON.stringify` -> a real pipe -> the NDJSON decoder in both
+  // directions. `uuid` is the CLI's at-most-once key, so a wire that silently
+  // dropped it would cost us the only replay protection on offer without
+  // failing anything else.
+  const echo = userEcho();
+  check('the prompt is echoed back (--replay-user-messages)', echo !== undefined);
+  // BOTH HALVES, IN THIS ORDER. `echo.uuid === sent.uuid` alone is the one new
+  // assertion that can pass vacuously — a builder that stopped minting an id
+  // makes it `undefined === undefined` — and that is exactly the hole importing
+  // the builder opened. S-09's lesson, in one extra line: assert the input
+  // arrived before reading a verdict out of the output.
+  check('we sent a uuid at all', typeof sent.uuid === 'string' && sent.uuid.length > 0);
+  check('the echo carries the uuid we sent', echo?.uuid === sent.uuid);
+  const echoOrigin = echo?.origin as { kind?: unknown } | undefined;
+  check('the echo carries our origin', echoOrigin?.kind === 'human');
+  // The flag a host keys duplicate-suppression on. Unconditional in the real
+  // replay builder, so unconditional here.
+  check('the echo is marked isReplay', echo?.isReplay === true);
+
   // ---- turn 2: the permission round trip -------------------------------------
   seen.length = 0;
   const target = path.join(work, '.claude', 'scripts', 'coverage.sh');
-  s.send(userMsg('!perm .claude/scripts/coverage.sh'));
+  s.send(userMessage('!perm .claude/scripts/coverage.sh'));
   await waitFor(() => seen.some((m) => m.type === 'control_request'), 15_000, 'a control_request');
 
   const req = seen.find((m) => m.type === 'control_request') as {
@@ -224,7 +264,7 @@ async function main(): Promise<number> {
   // ---- exit ------------------------------------------------------------------
   let exited = false;
   s.onExit(() => (exited = true));
-  s.send(userMsg('!exit 0'));
+  s.send(userMessage('!exit 0'));
   await waitFor(() => exited, 10_000, 'the child to exit');
   check('the child exits on command', exited);
 
