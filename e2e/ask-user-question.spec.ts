@@ -16,6 +16,14 @@
 // NO `SWITCHBOARD_TRANSPORT` in the Direct tests, deliberately — Direct is the
 // default since #381 and a spec about the default must not name it, or it would
 // keep passing on the day the default moved.
+//
+// TRANSPORT SCOPE (P2-E18-18, #404; tag added by #639): SPLIT BY GROUP. The
+// first `describe` is Direct — the panel only exists on that transport, and it
+// is the default, so its green is the coverage that counts. The second is
+// `[pty]` by construction: it asks for the terminal by env and asserts the
+// panel is NOT drawn, having first proved it really is on a PTY. That group
+// went untagged until #639; the rule it now follows lives with `launchApp` in
+// `fixtures/app.ts`.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
 import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
@@ -255,7 +263,9 @@ test.describe("the CLI's own questions (#563)", () => {
 // nothing reaches a card. What must NOT happen is a panel appearing that cannot
 // answer anything: an inert list of radio buttons over a question the CLI is
 // waiting on somewhere else is worse than no panel at all.
-test.describe('Terminal mode keeps its questions in the terminal (#563)', () => {
+// Tagged at the `describe` (#639): the one test under it is wholly PTY-scoped,
+// so the group is the highest level that is — see `launchApp` for the rule.
+test.describe('[pty] Terminal mode keeps its questions in the terminal (#563)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 

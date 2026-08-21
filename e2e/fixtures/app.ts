@@ -592,7 +592,14 @@ export async function launchSecondInstance(
 /**
  * Launch the app on an isolated home, with the PTY-only fake CLI.
  *
- * THE `[pty]` TAG (P2-E18-18, #404) — the one place it is defined.
+ * THE `[pty]` TAG (P2-E18-18, #404; the rule sharpened by #639) — the one place
+ * it is defined.
+ *
+ * WHAT IT MEANS, in one sentence: **a `[pty]` test's green says nothing about
+ * the transport a real user is on.** Direct has been the shipped default since
+ * #381, so a test that could only ever have run on a terminal is not evidence
+ * about the default — and because the tag is what a reader (and `--grep`) sees
+ * before anything else, the title is where that has to be said.
  *
  * Unless `env.SWITCHBOARD_FAKE_PROVIDER` says otherwise, this sets it to `'1'`:
  * the terminal-only fake. Since #381 the host ASKS every session for `stream`
@@ -600,9 +607,9 @@ export async function launchSecondInstance(
  * an adapter that cannot speak stream-json is honoured, so `session-manager.ts`
  * falls back. **Every session launched through here therefore runs on the PTY,
  * which is no longer the configuration most users are in.** The refusal itself
- * is pinned by `stream-transport.spec.ts` → "a PTY session still gets a real
- * terminal"
- * and by `providers/fake.test.ts`, so it cannot change meaning silently.
+ * is pinned by `stream-transport.spec.ts` → "[pty] a PTY session still gets a
+ * real terminal" and by `providers/fake.test.ts`, so it cannot change meaning
+ * silently.
  *
  * Most specs do not care: a rail reorder or a palette row behaves the same on
  * either transport, and running them on the PTY is an implementation detail.
@@ -620,12 +627,40 @@ export async function launchSecondInstance(
  * `stream-transport.spec.ts`, `stream-resume.spec.ts`,
  * `stream-permissions.spec.ts`, `stream-trust.spec.ts`,
  * `stream-approval.spec.ts`, `stream-attention.spec.ts`, `stream-feed.spec.ts`.
+ * Two files hold BOTH halves themselves, one `describe` each, and their headers
+ * say so: `ask-user-question.spec.ts` and `real-claude.spec.ts`.
+ *
+ * IS THIS TEST PTY-BY-CONSTRUCTION? (#639 — four titles were wrong because the
+ * question had never been written down.) Two things must hold TOGETHER:
+ *
+ *   1. it reaches the terminal ON PURPOSE — it passes
+ *      `SWITCHBOARD_TRANSPORT: 'pty'`, or it takes this fixture's PTY-only fake
+ *      in a file whose other tests ask for `SWITCHBOARD_FAKE_PROVIDER:
+ *      'stream'`; and
+ *   2. what it ASSERTS is the terminal's own answer — a live `.xterm`, the
+ *      ABSENCE of the "No terminal for this session" notice, the curated
+ *      command list, a trust acceptance on disk, a panel the Direct path draws
+ *      and the PTY path deliberately does not.
+ *
+ * (1) without (2) is NOT tagged, and that distinction is the whole reason the
+ * rule needs writing down: every transport-switch test in
+ * `stream-transport.spec.ts` starts on the PTY — a switch needs somewhere to
+ * come from — and then asserts DIRECT behaviour. Their green IS default-
+ * transport evidence, so tagging them would be a lie in the opposite
+ * direction. Each says as much at its own `launchApp` call.
  *
  * Tag at the HIGHEST level that is wholly PTY-scoped, and only there — a
  * `describe` when every test under it is, individual tests when the group is
  * mixed, never both. So an UNtagged test in a tagged `describe` does not exist;
  * an untagged test in a file whose OTHER tests are tagged is
- * transport-independent and merely happens to run on the PTY.
+ * transport-independent and merely happens to run on the PTY — the switch tests
+ * above are the one exception, and each of them says so on the spot.
+ *
+ * HOW TO CHECK THE CONVENTION STILL HOLDS, in one command:
+ * `grep -rn "SWITCHBOARD_TRANSPORT: 'pty'" e2e/`. Since #639 every hit is
+ * either inside a `[pty]`-titled `describe`/`test`, or sits under a comment
+ * saying why it starts on the terminal and then asserts something else. A new
+ * hit that is neither is the bug this tag exists to prevent.
  *
  * The tag is plain text in the title, not a Playwright `tag:` option, so it
  * shows up in every reporter and in failure output; `playwright test --grep
