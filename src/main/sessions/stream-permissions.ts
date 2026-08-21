@@ -84,12 +84,19 @@ function isQuestion(tool: string): boolean {
  * Is this the `answers` map the CLI actually accepts? (#563)
  *
  * The measured shape and only that: a non-empty plain object whose every value
- * is a non-empty string. Not a stylistic check — an array value, an empty map,
- * or a missing key are the three shapes the probe never sent, so what the CLI
- * would do with them is unknown, and "unknown" is not something to find out on
- * a live session. The UI cannot produce any of them (`allAnswered` +
- * `buildAnswers`); this is the same rule enforced on the side that is allowed to
- * enforce it.
+ * is a non-empty string. Not a stylistic check — an array value and an empty map
+ * are shapes the probe never sent, so what the CLI would do with them is
+ * unknown, and "unknown" is not something to find out on a live session.
+ *
+ * UNCHANGED BY #567, deliberately, and this is the distinction that matters: a
+ * SHORT map is now a first-class answer — the probe measured a partial one and
+ * the CLI reads the omitted question as skipped (findings §3a) — and this
+ * function has always allowed one, because what it counts is entries, not
+ * questions. What it refuses is the EMPTY map, which is the one shape still
+ * unmeasured, and an empty-string VALUE, which is the shape the UI has a
+ * measured alternative to (omit the key). The renderer holds the same line one
+ * step earlier (`anyAnswered` + `buildAnswers`); this is that rule enforced on
+ * the side that is allowed to enforce it.
  */
 function answersLookRight(answers: unknown): boolean {
   if (!answers || typeof answers !== 'object' || Array.isArray(answers)) return false;
@@ -474,7 +481,8 @@ export class StreamPermissions {
    * 5. **Carries the MEASURED answer shape** — see `answersLookRight`. The first
    *    four vet the envelope; without the fifth, main would forward
    *    `answers: {q: ['a','b']}` or `answers: {}` verbatim to the CLI's stdin,
-   *    which are exactly the shapes `allAnswered` refuses to produce in the UI.
+   *    which are exactly the shapes the UI refuses to produce (`anyAnswered` +
+   *    `buildAnswers`).
    *    The trusted side enforces the rule rather than trusting the untrusted
    *    side to have followed it.
    */

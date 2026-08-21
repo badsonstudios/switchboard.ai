@@ -149,17 +149,46 @@ export function questionAnswered(sel: AskSelection): boolean {
 }
 
 /**
- * Every question answered? What the Submit button is enabled by.
+ * Every question answered? — what a COMPLETE answer is.
  *
- * ALL of them, and this is a deliberate refusal to guess. A partial `answers`
- * map is a shape the probe did not measure, and the two plausible CLI readings —
- * "the rest were skipped" and "the rest are empty strings" — are different
- * enough to matter. Requiring a complete answer means we only ever send the
- * shape that was measured. The user who wants to answer only one question has a
- * measured route: Other, in their own words.
+ * Until #567 this was also what Submit was enabled by, and the reason was
+ * honest: a partial `answers` map was a shape the probe had never sent, and the
+ * two plausible CLI readings — "the rest were skipped" and "the rest are empty
+ * strings" — are different enough to matter.
+ *
+ * The probe has since sent one (2026-08-19, findings §3a), so the refusal to
+ * guess has nothing left to refuse. This predicate stays, unchanged, because
+ * "complete" is still a real state worth naming — it is what the panel's tick,
+ * its "still to answer" sentence and its skip warnings are all keyed off. What
+ * it no longer is, is the gate. See `anyAnswered`.
  */
 export function allAnswered(selections: readonly AskSelection[]): boolean {
   return selections.length > 0 && selections.every(questionAnswered);
+}
+
+/**
+ * Is there anything worth SENDING? — what the Submit button is enabled by (#567).
+ *
+ * MEASURED, and this is the whole of the change (findings §3a): a partial
+ * `answers` map is accepted exactly like a complete one — same success
+ * `tool_result`, no error, no retry — and the CLI reads the omitted question as
+ * **skipped**. Not as answered-with-silence: it strips empty-string values out
+ * of the map before writing the result, so `{q: ''}` and a missing `q` are
+ * literally indistinguishable downstream. Two independent runs showed the model
+ * noticing the gap unprompted and offering to ask again.
+ *
+ * So the floor is ONE, not all. A user who wants to answer the question they
+ * have an opinion about and leave the other alone can now do that, and see
+ * exactly what they are choosing not to say.
+ *
+ * Why not zero. `empty` — an allow with **no `answers` key at all** — was
+ * measured too, and it is the allow-all skip: *"The user did not answer the
+ * questions."* An `answers` key present but holding **zero entries** was never
+ * sent, so nobody knows what it does. One answer is the smallest map the probe
+ * has evidence for, and it is also the only kind of send that means anything.
+ */
+export function anyAnswered(selections: readonly AskSelection[]): boolean {
+  return selections.some(questionAnswered);
 }
 
 /**
@@ -174,9 +203,18 @@ export function allAnswered(selections: readonly AskSelection[]): boolean {
  * re-ticks must not send a different answer from the one they read back. Other
  * goes last, where the row is.
  *
- * An unanswered question is OMITTED rather than sent empty; `allAnswered` is
- * what stops that happening from the UI, and this stays honest if some later
- * caller forgets.
+ * An unanswered question is OMITTED rather than sent as `""`, and since #567
+ * that is a shape the UI deliberately produces rather than one that only shows
+ * up when a caller forgets. It is the RIGHT one of the two: the CLI filters
+ * empty-string values out of the map before it writes its `tool_result`, so
+ * `""` cannot reach the model as "the user said nothing" — but it also cannot
+ * be trusted to keep doing that for a value we have no reason to send. Omitting
+ * says the same thing and says it in a shape the probe actually measured
+ * (findings §3a).
+ *
+ * The map can therefore be SHORT. It must never be EMPTY — see `anyAnswered`
+ * for why zero entries is a different, unmeasured thing — and `answersLookRight`
+ * in main refuses one either way.
  */
 export function buildAnswers(
   questions: readonly AskQuestion[],
