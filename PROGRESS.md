@@ -3,6 +3,56 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🟢 ORCHESTRATION RUN ACTIVE — started 2026-08-21 (~morning), Fable orchestrating
+>
+> **Single-writer rule: this file is written ONLY by the orchestrator.** Workers
+> report through `.claude/work_files/orchestrator/<issue#>.md` handoffs; those are
+> the inputs, this block is the output. A fresh session resuming this run reads
+> this block, the handoff files, and `gh pr list` — then continues the loop.
+>
+> **Run plan (from the staged queue below):** T2/T4 + main-side items fill the
+> empty window first; #650 serializes into wt-1 the moment T2/T4 merges (same
+> files); the three renderer tracks (events / rail-cards / store-popout) dispatch
+> only after #650 is in. #588 probe SKIPPED (spends live tokens — needs Dan's
+> explicit ok); #490 dispatched directly, the stream seam is otherwise free.
+> NOTE: `.claude/work_files/loud-class.txt` (referenced by #650) is GONE — #650's
+> worker must regenerate the site list via the #649 scanner / 440.md.
+>
+> **Active workers:**
+> | Issue | Worktree | Branch | Status |
+> |---|---|---|---|
+> | #255 T2+T4 (+#663 rider) | sb-wt-1 | feature/255-t2t4-renderer-tranches | DONE — PR #669 awaiting CI |
+> | #490 user envelope | sb-wt-2 | feature/490-user-envelope | DONE — PR #665 green, held for base-bump |
+> | #654 sanitizer label-for | sb-wt-3 | feature/654-label-for | dispatched |
+>
+> **Merge queue (ordered — strict up-to-date base protection):** 1) PR #669
+> (#255 T2/T4 + #663, internal) — up to date, merge on green. 2) PR #665
+> (#490, internal) — green but base moved (orchestrator doc commits);
+> update-branch AFTER #669 merges, then auto-squash-merge. Lesson folded into
+> the skill: batch PROGRESS pushes, land them right after merges.
+> **#255 T2/T4 outcome:** all five tranches done, src/ whole on
+> recommendedTypeChecked, ZERO inline disables campaign-wide, config collapsed.
+> #663 landed + its renderer twin (FindProviderContribution.search). Real
+> runtime delta: moveHome async→void (microtask only, chased). Assertions
+> strengthened (vacuity closed in terminal-handoff.test.ts; reader-side cast in
+> find-providers.test.ts was silently disabling two shape assertions). Gates:
+> lint 0/0, typecheck 3/3, 5777 unit, 349+3sk e2e (one VOID unit run declared
+> and re-run — starvation timeouts). Umbrella #255 stays OPEN pending #670.
+> Handoff: orchestrator/255-t2t4.md.
+> **Filed this run:** #666 (fake isReplay echo fidelity), #667 (fake-stream-check
+> envelope drift), #668 (ref-impls doc: PATH binary as greppable third source),
+> #670 (String(err) catch-block class — #255 umbrella blocker), #671 (post-#255
+> type-hygiene stragglers).
+> **#490 outcome:** ADD both fields — uuid gates the CLI's entire duplicate-replay
+> guard (without it every frame always executes); origin stops a presumed-human
+> guess. Fresh randomUUID per delivery, pinned by 10 new unit tests. Gates: 5785
+> unit / 349+3sk e2e / check:fake-stream PASS. Handoff: orchestrator/490.md.
+> NOTE for Dan's hand-test list: real-CLI round trip (prompt runs, identical
+> prompt twice both answer, image prompt) — no repo test spends tokens.
+> **Dan's queue (user-facing PRs):** empty so far.
+> **Next up:** #650 (after T2/T4) → #618 (after #490) → #642/#491 → events /
+> rail-cards / store-popout tracks (after #650). Dan-only: #528 #529 #521, #588 probe ok?
+
 > # ▶▶ START HERE — READY FOR THE NEXT ORCHESTRATION (prepped 2026-08-21)
 >
 > **v0.8.2 RELEASED 2026-08-21** — train #664 (5 PRs: #643 #644 #646 #653

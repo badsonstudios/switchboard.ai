@@ -22,9 +22,16 @@ function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: 
 /** Let every already-resolved microtask run. */
 const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
+// Every `apply` below is typed to the value it is supposed to receive, not
+// left as a bare `vi.fn()`. An untyped mock records `any[]`, which makes
+// `toHaveBeenCalledExactlyOnceWith('a')` compile against whatever actually
+// arrived and `.mock.calls.map((c) => c[0])` hand `toEqual` an `any` — the
+// assertion still runs, but nothing checks that it is asking about the right
+// shape. (#255 T4; two of these were lint errors, the rest are the same
+// mistake one line short of being one.)
 describe('latestWins', () => {
   it('applies a snapshot when nothing else is in flight', async () => {
-    const apply = vi.fn();
+    const apply = vi.fn<(value: string) => void>();
     const refresh = latestWins(async () => 'a', apply);
 
     await refresh();
@@ -40,7 +47,7 @@ describe('latestWins', () => {
     const first = deferred<string>();
     const second = deferred<string>();
     const responses = [first.promise, second.promise];
-    const apply = vi.fn();
+    const apply = vi.fn<(value: string) => void>();
     const refresh = latestWins(() => responses.shift(), apply);
 
     void refresh(); // stale, issued first
@@ -61,7 +68,7 @@ describe('latestWins', () => {
     const first = deferred<string>();
     const second = deferred<string>();
     const responses = [first.promise, second.promise];
-    const apply = vi.fn();
+    const apply = vi.fn<(value: string) => void>();
     const refresh = latestWins(() => responses.shift(), apply);
 
     void refresh();
@@ -80,7 +87,7 @@ describe('latestWins', () => {
   it('keeps the newest of three responses that all resolve out of order', async () => {
     const d = [deferred<number>(), deferred<number>(), deferred<number>()];
     const responses = d.map((x) => x.promise);
-    const apply = vi.fn();
+    const apply = vi.fn<(value: number) => void>();
     const refresh = latestWins(() => responses.shift(), apply);
 
     void refresh();
@@ -105,7 +112,7 @@ describe('latestWins', () => {
     const first = deferred<string>();
     const second = deferred<string>();
     const responses = [first.promise, second.promise];
-    const apply = vi.fn();
+    const apply = vi.fn<(value: string) => void>();
     const refresh = latestWins(() => responses.shift(), apply);
 
     void refresh();
@@ -120,7 +127,7 @@ describe('latestWins', () => {
   it('lets a fresh response land after a stale one was dropped', async () => {
     const d = [deferred<number>(), deferred<number>(), deferred<number>()];
     const responses = d.map((x) => x.promise);
-    const apply = vi.fn();
+    const apply = vi.fn<(value: number) => void>();
     const refresh = latestWins(() => responses.shift(), apply);
 
     void refresh();
@@ -143,7 +150,7 @@ describe('latestWins', () => {
   it('never applies undefined and never lets it retire a real snapshot', async () => {
     const real = deferred<string>();
     const responses: (Promise<string> | undefined)[] = [real.promise, undefined];
-    const apply = vi.fn();
+    const apply = vi.fn<(value: string) => void>();
     const refresh = latestWins(() => responses.shift(), apply);
 
     void refresh(); // the real one, still in flight
@@ -159,7 +166,7 @@ describe('latestWins', () => {
   // `null` is what an empty answer over IPC looks like. The pre-guard code
   // skipped it with a falsy check; nothing may have started applying it.
   it('treats null the same as undefined', async () => {
-    const apply = vi.fn();
+    const apply = vi.fn<(value: string[]) => void>();
     const refresh = latestWins<string[]>(async () => null, apply);
 
     await refresh();
@@ -179,7 +186,7 @@ describe('latestWins', () => {
   // receives a FETCH closure, so nothing static can tell its result came from
   // the bridge. This test is the guard instead.
   it('treats a broker REFUSAL as a non-answer too, though it is truthy', async () => {
-    const apply = vi.fn();
+    const apply = vi.fn<(value: unknown) => void>();
     const refusal = ipcRefusal('sessions:cards', 'capability-not-held');
     const refresh = latestWins<unknown>(async () => refusal, apply);
 
@@ -193,7 +200,7 @@ describe('latestWins', () => {
     // count as a snapshot, or the good one behind it can never land.
     const real = deferred<string>();
     const responses: unknown[] = [real.promise, ipcRefusal('sessions:cards', 'not-granted')];
-    const apply = vi.fn();
+    const apply = vi.fn<(value: unknown) => void>();
     const refresh = latestWins<unknown>(() => responses.shift(), apply);
 
     void refresh();
@@ -234,7 +241,7 @@ describe('latestWins', () => {
     const bad = deferred<string>();
     const good = deferred<string>();
     const responses = [bad.promise, good.promise];
-    const apply = vi.fn();
+    const apply = vi.fn<(value: string) => void>();
     const refresh = latestWins(() => responses.shift(), apply);
 
     const failing = refresh();
@@ -251,8 +258,8 @@ describe('latestWins', () => {
 
   // Two lists guarded this way (sessions and groups) must not share counters.
   it('gives each guarded refresh its own ordering', async () => {
-    const applyA = vi.fn();
-    const applyB = vi.fn();
+    const applyA = vi.fn<(value: string) => void>();
+    const applyB = vi.fn<(value: string) => void>();
     const a = latestWins(async () => 'a', applyA);
     const b = latestWins(async () => 'b', applyB);
 
@@ -266,7 +273,7 @@ describe('latestWins', () => {
 
   it('calls fetch once per invocation', async () => {
     const fetch = vi.fn(async () => 1);
-    const refresh = latestWins(fetch, vi.fn());
+    const refresh = latestWins(fetch, vi.fn<(value: number) => void>());
 
     await refresh();
     await refresh();

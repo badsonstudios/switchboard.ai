@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import type { Mock } from 'vitest';
 import { buildCommands, CommandDeps } from './command-set';
 import { Command, CommandContext } from './commands';
 import { TERMINAL_ACCELERATORS } from '../../../shared/terminal-accelerators';
@@ -9,7 +10,16 @@ import { LAYOUT_MODES } from './layout-mode';
 // The three the tests reach for by name have to be MOCKS, not just members of
 // `CommandDeps` — `expect(d.openAbout).toHaveBeenCalledOnce()` is only a real
 // assertion if the type says so.
-type DepMocks = Record<'focusCard' | 'jumpToNextAttention' | 'openAbout', ReturnType<typeof vi.fn>>;
+//
+// `setLayoutMode` goes one step further and carries its SIGNATURE, because the
+// layout-mode test reads the arguments it recorded. `ReturnType<typeof vi.fn>`
+// records `any[]`, so `.mock.calls.map((c) => c[0])` compared against
+// `LAYOUT_MODES` would compile no matter what the commands actually passed
+// (#255 T4).
+type DepMocks = Record<
+  'focusCard' | 'jumpToNextAttention' | 'openAbout',
+  ReturnType<typeof vi.fn>
+> & { setLayoutMode: Mock<CommandDeps['setLayoutMode']> };
 
 function deps(): CommandDeps & DepMocks {
   return {
@@ -29,7 +39,7 @@ function deps(): CommandDeps & DepMocks {
     setGroupPolicy: vi.fn(),
     setGlobalFocusPolicy: vi.fn(),
     setSessionFocusPolicy: vi.fn(),
-    setLayoutMode: vi.fn(),
+    setLayoutMode: vi.fn<CommandDeps['setLayoutMode']>(),
     cycleLayoutMode: vi.fn(),
     toggleMaximize: vi.fn(),
     toggleRail: vi.fn(),
@@ -485,9 +495,7 @@ describe('seed command set (E9-01)', () => {
       for (const mode of LAYOUT_MODES) {
         byId(cmds, `layout.mode.${mode}`).run(ctxWith(['a'], 'a'));
       }
-      expect((d.setLayoutMode as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).toEqual([
-        ...LAYOUT_MODES,
-      ]);
+      expect(d.setLayoutMode.mock.calls.map((c) => c[0])).toEqual([...LAYOUT_MODES]);
       expect(d.cycleLayoutMode).not.toHaveBeenCalled();
     });
 
