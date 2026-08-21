@@ -27,6 +27,14 @@ import {
 
 type Handler = (e: unknown, ...args: unknown[]) => unknown;
 
+/**
+ * vitest's asymmetric matchers are declared `any`. Same matcher, typed
+ * `unknown`, so that `any` does not spread into the object literal around it —
+ * identical object, identical matching, only the static type differs.
+ */
+const anyString = (): unknown => expect.any(String);
+const stringContaining = (str: string): unknown => expect.stringContaining(str);
+
 /** Capture what `registerSessionIpc` registers, so a channel can be called. */
 function fakeBroker(): {
   broker: SessionIpcDeps['broker'];
@@ -1834,7 +1842,7 @@ describe('the resume link degrades but is never destroyed (#484)', () => {
       seedTranscript(A, 'sixty-seven kilobytes of real work');
       const h = start(priorCard({ folder: dir, id: 'card-1', nativeSessionId: B }));
       expect(h.historyRepairs).toEqual([
-        { kind: 'adopted', cardId: 'card-1', cardTitle: expect.any(String), nativeSessionId: A },
+        { kind: 'adopted', cardId: 'card-1', cardTitle: anyString(), nativeSessionId: A },
       ]);
     });
 
@@ -2547,7 +2555,7 @@ describe('a teardown step that throws releases the rest anyway (#219)', () => {
       expect.objectContaining({
         sessionId: 'live-1',
         step: 'feed.forget',
-        error: expect.stringContaining('forgetting the event exploded'),
+        error: stringContaining('forgetting the event exploded'),
       })
     );
   });
@@ -3920,7 +3928,7 @@ describe('pty:snapshot hands find the buffer that actually has the answer (#517)
     // to string would be a no-op the type-checked preset rejects (#255 T0).
     expect(h.call('pty:snapshot', 42)).toBeNull();
     expect(h.warn).toHaveBeenCalledWith(
-      expect.stringContaining('pty:snapshot refused'),
+      stringContaining('pty:snapshot refused'),
       expect.anything()
     );
   });

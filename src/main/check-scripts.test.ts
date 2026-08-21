@@ -44,7 +44,9 @@ function hasCiStep(workflow: string, script: string): boolean {
 }
 
 describe('check:* scripts are all accounted for (#182)', () => {
-  const scripts = JSON.parse(read('package.json')).scripts as Record<string, string>;
+  // `JSON.parse` hands back `any`; the assertion goes on the PARSE, not on the
+  // property, so reading `.scripts` is a checked read rather than an `any` walk.
+  const { scripts } = JSON.parse(read('package.json')) as { scripts: Record<string, string> };
   const checks = Object.keys(scripts).filter((s) => s.startsWith('check:'));
   const workflow = read(CI_WORKFLOW);
 

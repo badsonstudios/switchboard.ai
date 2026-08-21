@@ -152,7 +152,14 @@ describe('claudeAdapter.buildSpawn', () => {
 // that knows the key is called `ai-title`, so this is where the real captured
 // lines get parsed.
 describe('readAiTitle — the conversation title Claude writes into its transcript', () => {
-  const read = claudeAdapter.capabilities!.titles!.titleFrom;
+  // `contributions.ts` declares `titleFrom` with METHOD shorthand, so pulling
+  // the bare reference out of the capability trips `unbound-method` — even
+  // though `readAiTitle` is a free function that never touches `this`. Calling
+  // it through the capability keeps the reference bound AND keeps this suite
+  // reading the capability rather than the import, which is the whole point of
+  // the identity test below.
+  const titles = claudeAdapter.capabilities!.titles!;
+  const read = (line: Record<string, unknown>): string | undefined => titles.titleFrom(line);
 
   it('reads every real captured line, in either key order', () => {
     // `aiTitle` comes before `sessionId` on some lines and after it on others,
@@ -174,7 +181,13 @@ describe('readAiTitle — the conversation title Claude writes into its transcri
 
   it('the exported function and the declared capability are the same reader', () => {
     // Two spellings of the key is how the adapter and its capability drift.
-    expect(claudeAdapter.capabilities!.titles!.titleFrom).toBe(readAiTitle);
+    // an identity COMPARISON, not an extracted reference: `unbound-method`
+    // cannot lose a `this` that is never called, and this has to compare the
+    // capability slot itself rather than the wrapper above it.
+    expect(
+      titles.titleFrom === readAiTitle,
+      'capabilities.titles.titleFrom must BE readAiTitle, not a copy of it'
+    ).toBe(true);
   });
 
   it('says nothing about every other kind of line', () => {

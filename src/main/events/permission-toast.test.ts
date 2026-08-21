@@ -8,6 +8,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import type { Logger } from '../log/logger';
 import type { PermissionRequest } from '../../shared/ipc/permissions';
 import {
   answerableFromToast,
@@ -18,14 +19,41 @@ import {
   toastActionsSupported,
 } from './permission-toast';
 
-function log(): {
+/**
+ * A real `Logger` whose four levels are spies, so the assertions below can read
+ * `l.warn.mock.calls` while `PermissionToasts` receives the type it actually
+ * declares — which is the point: the `as any` this replaced was suppressing the
+ * argument check on every `toHaveBeenCalledWith` below, and those are now
+ * checked against `Parameters<Logger['warn']>`.
+ *
+ * `child` is required by `Logger` and nothing in `permission-toast.ts` calls
+ * it; returning the same object means a future chained logger would still
+ * record into these spies rather than into a second, unwatched one.
+ */
+type MockLogger = Logger & {
   info: ReturnType<typeof vi.fn>;
   warn: ReturnType<typeof vi.fn>;
   error: ReturnType<typeof vi.fn>;
   debug: ReturnType<typeof vi.fn>;
-} {
-  return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+};
+
+function log(): MockLogger {
+  const l: MockLogger = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    child: () => l,
+  };
+  return l;
 }
+
+/**
+ * vitest's asymmetric matchers are declared `any`. Same matcher, typed
+ * `unknown`, so that `any` does not spread into the matcher around it —
+ * identical object, identical matching, only the static type differs.
+ */
+const stringContaining = (str: string): unknown => expect.stringContaining(str);
 
 /** a toast that records whether it was closed, standing in for `Notification` */
 function fakeToast(): { close: ReturnType<typeof vi.fn> } {
@@ -35,8 +63,7 @@ function fakeToast(): { close: ReturnType<typeof vi.fn> } {
 function harness(decide = vi.fn().mockReturnValue(true)) {
   const l = log();
   const reveal = vi.fn();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const toasts = new PermissionToasts({ decide, reveal, log: l as any });
+  const toasts = new PermissionToasts({ decide, reveal, log: l });
   return { toasts, decide, reveal, l };
 }
 
@@ -119,7 +146,7 @@ describe('PermissionToasts — the button routing (P2-E14-04)', () => {
     expect(() => toasts.press('req', 1)).not.toThrow();
     expect(l.warn).toHaveBeenCalledWith(
       'a permission toast decision threw',
-      expect.objectContaining({ error: expect.stringContaining('router exploded') })
+      expect.objectContaining({ error: stringContaining('router exploded') })
     );
   });
 
@@ -155,8 +182,7 @@ describe('PermissionToasts — the click path', () => {
       reveal: () => {
         throw new Error('window died');
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      log: l as any,
+      log: l,
     });
     expect(() => toasts.activate('req', null)).not.toThrow();
     expect(l.warn).toHaveBeenCalledWith(

@@ -76,6 +76,36 @@ function tokenFor(sessionId: string): string {
   return fs.readFileSync(tokenPath, 'utf8');
 }
 
+/**
+ * The hook listener's answer to a PreToolUse POST, as `hook-listener.ts`'s
+ * `verdict()` writes it. `hookSpecificOutput` is absent when the request was
+ * NOT held (the fail-open `{}` body), which is itself asserted below, so it is
+ * optional here. Same shape as `e2e/approval.spec.ts`'s `HookResponse` — the
+ * two read the same wire contract, deliberately declared in both places rather
+ * than shared, because each is a test's own statement of what the CLI reads.
+ */
+interface HookResponse {
+  hookSpecificOutput?: {
+    hookEventName: string;
+    permissionDecision: 'allow' | 'deny';
+    permissionDecisionReason: string;
+  };
+}
+
+/**
+ * `JSON.parse` hands back `any`; this is where that stops for this file.
+ *
+ * Returning the INNER object — and throwing when it is absent — is about the
+ * FAILURE, not about catching one that used to escape: a response that stopped
+ * carrying a verdict already failed, three lines later, as `received
+ * undefined`. Now it fails here, naming the body it actually got.
+ */
+function verdictOf(body: string): NonNullable<HookResponse['hookSpecificOutput']> {
+  const verdict = (JSON.parse(body) as HookResponse).hookSpecificOutput;
+  if (!verdict) throw new Error(`hook response carried no verdict: ${body}`);
+  return verdict;
+}
+
 /** The file-level log, or '' before anything has been written to it. */
 function logText(): string {
   try {
@@ -277,7 +307,7 @@ describe('PreToolUse hold + decision round-trip (P2-E10-03, §5.16)', () => {
 
     expect(held.decide(requests[0].requestId, 'allow')).toBe(true);
     const res = await pending;
-    const verdict = JSON.parse(res.body).hookSpecificOutput;
+    const verdict = verdictOf(res.body);
     expect(verdict).toMatchObject({ hookEventName: 'PreToolUse', permissionDecision: 'allow' });
     expect(heldApplied.some((a) => a.ev.kind === 'permission-resolved')).toBe(true);
   });
@@ -287,7 +317,7 @@ describe('PreToolUse hold + decision round-trip (P2-E10-03, §5.16)', () => {
     const pending = postHeld(preToolUse('Bash'), t);
     await until('the call to park', () => requests.length === 1);
     held.decide(requests[0].requestId, 'deny', 'not on my watch');
-    const verdict = JSON.parse((await pending).body).hookSpecificOutput;
+    const verdict = verdictOf((await pending).body);
     expect(verdict).toMatchObject({ permissionDecision: 'deny', permissionDecisionReason: 'not on my watch' });
   });
 
@@ -301,8 +331,8 @@ describe('PreToolUse hold + decision round-trip (P2-E10-03, §5.16)', () => {
     const pending = postHeld(preToolUse('Bash'), t);
     await until('the call to park', () => requests.length === 1);
     held.decide(requests[0].requestId, 'deny'); // no reason -> the default
-    const verdict = JSON.parse((await pending).body).hookSpecificOutput;
-    const why = verdict.permissionDecisionReason as string;
+    const verdict = verdictOf((await pending).body);
+    const why = verdict.permissionDecisionReason;
     expect(verdict.permissionDecision).toBe('deny');
     expect(why).toMatch(/user/i); // a human decided
     expect(why).toMatch(/denied/i);
@@ -351,7 +381,7 @@ describe('PreToolUse hold + decision round-trip (P2-E10-03, §5.16)', () => {
     const t = heldToken('s1');
     held.setAllowAll('s1');
     const res = await postHeld(preToolUse('Edit'), t); // resolves immediately
-    const verdict = JSON.parse(res.body).hookSpecificOutput;
+    const verdict = verdictOf(res.body);
     expect(verdict).toMatchObject({ permissionDecision: 'allow' });
     expect(requests).toHaveLength(0); // renderer never bothered
     expect(held.pendingRequests()).toHaveLength(0); // nothing parked
@@ -518,7 +548,7 @@ describe('a hold needs somebody to ask: window liveness (P2-E15-09, AR-P1-7)', (
     const res = await postHeld(edit, t);
     // the liveness gate sits AFTER allow-all on purpose: a granted session gets
     // its verdict, not a shrug
-    expect(JSON.parse(res.body).hookSpecificOutput).toMatchObject({ permissionDecision: 'allow' });
+    expect(verdictOf(res.body)).toMatchObject({ permissionDecision: 'allow' });
     expect(requests).toHaveLength(0);
   });
 

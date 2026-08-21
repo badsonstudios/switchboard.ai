@@ -196,7 +196,10 @@ describe('SessionManager (done-when: observable transitions through the cycle)',
       .readFileSync(path.join(dir, 'switchboard.log'), 'utf8')
       .trim()
       .split('\n')
-      .map((l) => JSON.parse(l))
+      // `JSON.parse` hands back `any`; this is where that stops. Reading the
+      // log line as `Record<string, unknown>` keeps the filter and the
+      // assertion below checked instead of letting an `any` walk through them.
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
       .filter((r) => r.sessionId === s.id && r.msg === 'session status');
     expect(lines.map((r) => r.to)).toEqual(['idle', 'working', 'needs-permission', 'done']);
   });

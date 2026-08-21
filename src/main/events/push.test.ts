@@ -23,11 +23,27 @@ import {
 import { NTFY_DEFAULT_SERVER, WEBHOOK_PAYLOAD_VERSION } from '../../shared/push';
 import type { RuleActionContext } from './rules-engine';
 
+/**
+ * One recorded request. `body` is narrowed to `string` deliberately:
+ * `RequestInit['body']` is the whole `BodyInit` union — Blob, ArrayBuffer,
+ * FormData, a stream — and `String()` on any of those yields '[object Object]',
+ * which a `JSON.parse` assertion would then blame on the wrong thing. Every
+ * transport in this file sends a string — `post()`'s own `body` parameter is
+ * typed `string`, so a streaming transport is a compile error before it is a
+ * runtime one. The fake records the violation rather than throwing, because
+ * `post()` catches (turning a throw into an ordinary `{ ok: false }` and an
+ * empty `calls`); a marker string puts it in the assertion diff instead.
+ */
+type RecordedCall = { url: string; init: Omit<RequestInit, 'body'> & { body: string } };
+
 /** A `fetch` that records what it was asked and answers what the test says. */
 function fakeFetch(res: Partial<{ ok: boolean; status: number; body: string }> = {}) {
-  const calls: Array<{ url: string; init: RequestInit }> = [];
+  const calls: RecordedCall[] = [];
   const impl = vi.fn(async (url: unknown, init: unknown) => {
-    calls.push({ url: String(url), init: init as RequestInit });
+    const req = (init ?? {}) as RequestInit;
+    const body =
+      typeof req.body === 'string' ? req.body : `<non-string body: ${typeof req.body}>`;
+    calls.push({ url: String(url), init: { ...req, body } });
     return {
       ok: res.ok ?? true,
       status: res.status ?? 200,
@@ -95,7 +111,7 @@ describe('sendNtfy', () => {
     const [call] = f.calls;
     expect(call.url).toBe(`${NTFY_DEFAULT_SERVER}/`);
     expect(call.url).not.toContain('my-secret-topic'); // the whole reason for JSON publish
-    expect(JSON.parse(String(call.init.body))).toEqual({
+    expect(JSON.parse(call.init.body)).toEqual({
       topic: 'my-secret-topic',
       title: 'TradingApp',
       message: 'needs permission',
@@ -163,7 +179,7 @@ describe('sendPushover', () => {
     );
     expect(r).toEqual({ ok: true });
     expect(f.calls[0].url).toBe(PUSHOVER_ENDPOINT);
-    const form = new URLSearchParams(String(f.calls[0].init.body));
+    const form = new URLSearchParams(f.calls[0].init.body);
     expect(form.get('token')).toBe('app-token');
     expect(form.get('user')).toBe('user-key');
     expect(form.get('message')).toBe('needs permission');
@@ -214,7 +230,7 @@ describe('postWebhook', () => {
       ok: true,
     });
     expect(f.calls[0].init.headers).toMatchObject({ 'content-type': 'application/json' });
-    expect(JSON.parse(String(f.calls[0].init.body))).toEqual(payload);
+    expect(JSON.parse(f.calls[0].init.body)).toEqual(payload);
   });
 
   it.each([

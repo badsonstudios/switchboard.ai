@@ -18,7 +18,9 @@ function lines(sink: LogSink): Array<Record<string, unknown>> {
     .readFileSync(sink.file, 'utf8')
     .trim()
     .split('\n')
-    .map((l) => JSON.parse(l));
+    // `JSON.parse` hands back `any`; this is where that stops for this file —
+    // every assertion below reads a log line through this one shape.
+    .map((l) => JSON.parse(l) as Record<string, unknown>);
 }
 
 describe('redaction (the done-when)', () => {

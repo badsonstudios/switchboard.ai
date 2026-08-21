@@ -227,10 +227,11 @@ export default tseslint.config(
   // #255 is landing in tranches, because the switch above surfaced 552 real
   // errors and one 552-error PR is not reviewable. T0 (this config, plus every
   // `no-unnecessary-type-assertion`) went first, then T1 (`src/main` product
-  // code); the three blocks below hold the REST of the preset off one directory
-  // each so `main` is never red in between. Each block is a whole tranche: T<n> deletes its own block in the
-  // same PR as its fixes, and when the last one goes, `src/` is on the preset
-  // with no disables — the state e2e/ has had since #245.
+  // code) and T3 (`src/main` tests); the two blocks below hold the REST of the
+  // preset off one directory each so `main` is never red in between. Each block
+  // is a whole tranche: T<n> deletes its own block in the same PR as its fixes,
+  // and when the last one goes, `src/` is on the preset with no disables — the
+  // state e2e/ has had since #245.
   //
   // Nothing here is a judgement that the rule is wrong. The counts are the
   // measured work remaining, not a budget.
@@ -250,26 +251,12 @@ export default tseslint.config(
     },
   },
   {
-    // TODO(#255 T3): src/main tests — 57 errors. 16 are `no-floating-promises`
-    // in events/sound-actions.test.ts alone, because `RuleActionHandler` is
-    // `void | Promise<void>` while `soundHandler` is concretely synchronous
-    // (`void h.actions.soundHandler(…)` closes all 16 — nothing is racing). The
-    // other 41 are led by the `no-unsafe-*` family (33): one typed reader per
-    // boundary, the #245 pattern.
-    files: ['src/main/**/*.test.ts'],
-    rules: {
-      '@typescript-eslint/no-floating-promises': 'off',
-      '@typescript-eslint/no-unsafe-assignment': 'off',
-      '@typescript-eslint/no-unsafe-member-access': 'off',
-      '@typescript-eslint/no-unsafe-return': 'off',
-      '@typescript-eslint/no-base-to-string': 'off',
-      '@typescript-eslint/unbound-method': 'off',
-      '@typescript-eslint/restrict-template-expressions': 'off',
-    },
-  },
-  {
     // TODO(#255 T4): src/renderer tests — 24 errors across 13 files. Last, so
-    // T3's typed boundary readers already exist to copy.
+    // T3's typed boundary readers already exist to copy: `verdictOf` in
+    // `hooks/hook-listener.test.ts`, the `unknown`-typed aliases for vitest's
+    // `any`-declared asymmetric matchers in `workspace/store.test.ts` and
+    // `sessions/ipc.test.ts`, and the real `Logger` mock in
+    // `events/permission-toast.test.ts`.
     files: ['src/renderer/**/*.test.{ts,tsx}'],
     rules: {
       '@typescript-eslint/unbound-method': 'off',
