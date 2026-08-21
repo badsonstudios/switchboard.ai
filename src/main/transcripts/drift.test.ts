@@ -161,7 +161,7 @@ const ROOT = 'C:/Users/x/.claude/projects';
 
 describe('DriftDetector (warn-once)', () => {
   it('warns EXACTLY once for a field, however many lines carry it', () => {
-    const warn = vi.fn();
+    const warn = vi.fn<(key: string, sample: string) => void>();
     const d = new DriftDetector(warn);
     for (let i = 0; i < 25; i++) {
       d.inspect(ROOT, { ...assistantLine(), thinkingBudget: i }, 'assistant');
@@ -172,7 +172,7 @@ describe('DriftDetector (warn-once)', () => {
   });
 
   it('warns once PER key, not once in total', () => {
-    const warn = vi.fn();
+    const warn = vi.fn<(key: string, sample: string) => void>();
     const d = new DriftDetector(warn);
     d.inspect(ROOT, { type: 'assistant', alpha: 1 }, 'assistant');
     d.inspect(ROOT, { type: 'assistant', beta: 2 }, 'assistant');
@@ -184,7 +184,7 @@ describe('DriftDetector (warn-once)', () => {
     // `JSON.parse` is happy with a bare string or array, and walking one would
     // report its INDICES as drifted keys — burning warn-once slots on junk and
     // putting '0','1','2' in the diagnostics.
-    const warn = vi.fn();
+    const warn = vi.fn<(key: string, sample: string) => void>();
     const d = new DriftDetector(warn);
     d.inspect(ROOT, 'a bare string', 'user');
     d.inspect(ROOT, [1, 2, 3], 'user');
@@ -200,7 +200,7 @@ describe('DriftDetector (warn-once)', () => {
     // different JSONL dialect would exhaust the budget and switch drift
     // detection off for the Claude sessions too — the detector disabling
     // itself is exactly the silence it exists to break.
-    const warn = vi.fn();
+    const warn = vi.fn<(key: string, sample: string) => void>();
     const d = new DriftDetector(warn);
     const OTHER = 'C:/Users/x/.some-other-cli/sessions';
     for (let i = 0; i < 400; i++) d.inspect(OTHER, { type: 'assistant', [`k${i}`]: 1 }, 'assistant');

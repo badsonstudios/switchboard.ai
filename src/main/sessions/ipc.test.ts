@@ -27,6 +27,16 @@ import {
 
 type Handler = (e: unknown, ...args: unknown[]) => unknown;
 
+/**
+ * vitest's asymmetric matchers are declared `any`, so dropping one into an
+ * object literal launders that `any` through the whole assertion — the other
+ * fields of the surrounding `toEqual` then compile whatever they say. These
+ * name the same matcher `unknown`: identical object, identical matching, but
+ * the `any` stops here.
+ */
+const anyString = (): unknown => expect.any(String);
+const stringContaining = (str: string): unknown => expect.stringContaining(str);
+
 /** Capture what `registerSessionIpc` registers, so a channel can be called. */
 function fakeBroker(): {
   broker: SessionIpcDeps['broker'];
@@ -1834,7 +1844,7 @@ describe('the resume link degrades but is never destroyed (#484)', () => {
       seedTranscript(A, 'sixty-seven kilobytes of real work');
       const h = start(priorCard({ folder: dir, id: 'card-1', nativeSessionId: B }));
       expect(h.historyRepairs).toEqual([
-        { kind: 'adopted', cardId: 'card-1', cardTitle: expect.any(String), nativeSessionId: A },
+        { kind: 'adopted', cardId: 'card-1', cardTitle: anyString(), nativeSessionId: A },
       ]);
     });
 
@@ -2547,7 +2557,7 @@ describe('a teardown step that throws releases the rest anyway (#219)', () => {
       expect.objectContaining({
         sessionId: 'live-1',
         step: 'feed.forget',
-        error: expect.stringContaining('forgetting the event exploded'),
+        error: stringContaining('forgetting the event exploded'),
       })
     );
   });

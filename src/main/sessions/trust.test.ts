@@ -14,8 +14,10 @@ afterEach(() => cleanupTempDirs()); // one fake home per test, gone at the end o
 function writeCfg(obj: unknown): void {
   fs.writeFileSync(cfgPath, JSON.stringify(obj));
 }
-function readCfg(): { projects: Record<string, Record<string, unknown>> } & Record<string, unknown> {
-  return JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+type Cfg = { projects: Record<string, Record<string, unknown>> } & Record<string, unknown>;
+/** `JSON.parse` hands back `any`; this is where that stops for this file. */
+function readCfg(): Cfg {
+  return JSON.parse(fs.readFileSync(cfgPath, 'utf8')) as Cfg;
 }
 
 describe('projectKey', () => {

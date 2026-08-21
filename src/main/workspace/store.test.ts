@@ -21,6 +21,16 @@ import { SUPPRESSED_CAP, SuppressedEvent } from '../../shared/suppressed';
 import { MAX_HISTORY_REPAIR_NOTICES } from '../../shared/history-repair';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 
+/**
+ * vitest's asymmetric matchers are declared `any`, so dropping one straight
+ * into an object literal launders that `any` through the whole assertion — the
+ * surrounding `toMatchObject` then compiles no matter what the other fields
+ * are. These name the same matcher `unknown` instead: identical object,
+ * identical matching behaviour, but the `any` stops here.
+ */
+const stringContaining = (s: string): unknown => expect.stringContaining(s);
+const stringMatching = (re: RegExp): unknown => expect.stringMatching(re);
+
 let dir: string;
 let file: string;
 beforeEach(() => {
@@ -794,7 +804,7 @@ describe('a failed save is audible (#165)', () => {
 
     expect(warns).toHaveLength(1);
     expect(warns[0].msg).toMatch(/workspace save failed/);
-    expect(warns[0].fields).toMatchObject({ file, error: expect.stringContaining('EPERM') });
+    expect(warns[0].fields).toMatchObject({ file, error: stringContaining('EPERM') });
   });
 
   it('a save that works stays silent', () => {
@@ -1162,9 +1172,9 @@ describe('load-time repairs are audible (#344)', () => {
       // the WHY: whatever JSON.parse objected to, verbatim
       expect(warns[0].fields).toMatchObject({
         file,
-        error: expect.stringContaining('JSON'),
+        error: stringContaining('JSON'),
         // a timestamped name since #349, and the line names the exact one
-        setAside: expect.stringMatching(/\.corrupt-\d{4}-\d\d-\d\dT[\d.-]+Z$/),
+        setAside: stringMatching(/\.corrupt-\d{4}-\d\d-\d\dT[\d.-]+Z$/),
       });
       // followable: the path in the log is a file that is really there
       expect(fs.existsSync(String(warns[0].fields?.setAside))).toBe(true);
@@ -1196,7 +1206,7 @@ describe('load-time repairs are audible (#344)', () => {
       }
 
       expect(warns).toHaveLength(1);
-      expect(warns[0].fields).toMatchObject({ setAsideError: expect.stringContaining('EPERM') });
+      expect(warns[0].fields).toMatchObject({ setAsideError: stringContaining('EPERM') });
       expect(warns[0].fields?.setAside).toBeUndefined(); // nothing was set aside to point at
     });
   });
@@ -1218,8 +1228,8 @@ describe('load-time repairs are audible (#344)', () => {
       });
       const warns = loadWarns();
       expect(warns.map((w) => w.msg)).toEqual([
-        expect.stringMatching(/group entries .* were unusable/),
-        expect.stringMatching(/named a group that is not in it/),
+        stringMatching(/group entries .* were unusable/),
+        stringMatching(/named a group that is not in it/),
       ]);
       expect(warns[0].fields).toMatchObject({ dropped: 1, kept: 1 });
       expect(warns[1].fields).toMatchObject({ file, sessionIds: ['a'] });
@@ -1228,8 +1238,8 @@ describe('load-time repairs are audible (#344)', () => {
     it('a list that is not a list loses everything in it — and says which list', () => {
       write({ version: 1, sessions: { a: 1 }, groups: 'nope' });
       expect(loadWarns().map((w) => w.msg)).toEqual([
-        expect.stringMatching(/^the group list .* was not a list/),
-        expect.stringMatching(/^the session list .* was not a list/),
+        stringMatching(/^the group list .* was not a list/),
+        stringMatching(/^the session list .* was not a list/),
       ]);
     });
 
@@ -1642,7 +1652,7 @@ describe('a failed set-aside is retried before the file is overwritten (#352)', 
       // nothing on disk yet — and the log says the attempt is still pending
       expect(setAsides()).toEqual([]);
       expect(warns[0].fields).toMatchObject({
-        setAsideError: expect.stringContaining('EPERM'),
+        setAsideError: stringContaining('EPERM'),
         setAsideRetry: true,
       });
       st.upsertSession(sess('a'));
@@ -1888,7 +1898,7 @@ describe('a failed set-aside is retried before the file is overwritten (#352)', 
     const warns: Line[] = [];
     const st = makeStore(file, fakeLogger(warns));
     const realParse = JSON.parse;
-    const parse = vi.spyOn(JSON, 'parse').mockImplementation(((text: string) =>
+    const parse = vi.spyOn(JSON, 'parse').mockImplementation(((text: string): unknown =>
       text === onDisk
         ? {
             version: 99,
@@ -1907,7 +1917,7 @@ describe('a failed set-aside is retried before the file is overwritten (#352)', 
 
     expect(st.isReadOnly()).toBe(true);
     const failed = warns.find((w) => /could not be read/.test(w.msg));
-    expect(failed?.fields).toMatchObject({ setAsideError: expect.stringContaining('EPERM') });
+    expect(failed?.fields).toMatchObject({ setAsideError: stringContaining('EPERM') });
     expect(failed?.fields?.setAsideRetry).toBeUndefined(); // no promise that cannot be kept
     // and no save ever comes for it, so the file is exactly as it was
     st.upsertSession(sess('a'));

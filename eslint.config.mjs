@@ -250,24 +250,6 @@ export default tseslint.config(
     },
   },
   {
-    // TODO(#255 T3): src/main tests — 57 errors. 16 are `no-floating-promises`
-    // in events/sound-actions.test.ts alone, because `RuleActionHandler` is
-    // `void | Promise<void>` while `soundHandler` is concretely synchronous
-    // (`void h.actions.soundHandler(…)` closes all 16 — nothing is racing). The
-    // other 41 are led by the `no-unsafe-*` family (33): one typed reader per
-    // boundary, the #245 pattern.
-    files: ['src/main/**/*.test.ts'],
-    rules: {
-      '@typescript-eslint/no-floating-promises': 'off',
-      '@typescript-eslint/no-unsafe-assignment': 'off',
-      '@typescript-eslint/no-unsafe-member-access': 'off',
-      '@typescript-eslint/no-unsafe-return': 'off',
-      '@typescript-eslint/no-base-to-string': 'off',
-      '@typescript-eslint/unbound-method': 'off',
-      '@typescript-eslint/restrict-template-expressions': 'off',
-    },
-  },
-  {
     // TODO(#255 T4): src/renderer tests — 24 errors across 13 files. Last, so
     // T3's typed boundary readers already exist to copy.
     files: ['src/renderer/**/*.test.{ts,tsx}'],

@@ -322,7 +322,14 @@ describe('Send test', () => {
   it('a webhook test POSTs the documented shape', async () => {
     const bodies: string[] = [];
     const fetchImpl = (async (_u: unknown, init: unknown) => {
-      bodies.push(String((init as RequestInit).body));
+      // `RequestInit['body']` is the whole `BodyInit` union, which `String()`
+      // renders as '[object Object]'. The webhook sends JSON text, so read it
+      // as text and fail loudly if that ever changes.
+      const { body } = (init ?? {}) as RequestInit;
+      if (typeof body !== 'string') {
+        throw new Error(`webhook test expected a string body, got ${typeof body}`);
+      }
+      bodies.push(body);
       return { ok: true, status: 200, text: async () => '' } as unknown as Response;
     }) as unknown as typeof fetch;
     const actions = new PushActions({
