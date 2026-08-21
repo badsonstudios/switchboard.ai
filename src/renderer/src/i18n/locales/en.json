@@ -591,6 +591,7 @@
     "normalHint": "Prose + tool activity",
     "firehoseHint": "Everything, including thinking and subagent chatter",
     "clearedMarker": "Conversation cleared — context starts fresh",
+    "turnMarker": "New prompt",
     "workingStrip": "Claude is working",
     "expandHint": "click to expand",
     "collapsedIcon": "▸",
