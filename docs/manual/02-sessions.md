@@ -136,10 +136,10 @@ with two buttons: **Restart** starts it again in the same folder, **Close**
 removes the card. Nothing vanishes on its own.
 
 Either way the card keeps its **header** — the session's name, its colour and
-badge. A card that never started shows the words *not started* there. That's not
-decoration: the header is what you double-click to
-[maximize](07-workspace.md#maximize) a session, so a card with nothing running in
-it can still be enlarged and put back exactly like a live one.
+badge, the same strip every other card wears. A card that never started shows the
+words *not started* there. Until recently that one card had no header at all,
+which made it the only thing on screen you could not tell apart from another one
+like it.
 
 A session that never got going gets its **own** panel, not this one: it reads
 **Session didn't start**, and the button says **Try again** rather than

@@ -325,11 +325,6 @@ double-click, and `Ctrl+Shift+M` does the same thing from the keyboard.
 Maximizing a suspended session doesn't wake it up: it stays suspended, with its
 **Resume** button, until you press that.
 
-It works on a card that says **Session didn't start** too, for the same reason:
-that card now keeps a header — name, colour and badge, and the words *not
-started* — so every card in the workspace answers the same double-click. (A
-session that ran and then ended keeps the header it already had.) Maximizing one
-doesn't try to start it; the **Try again** button stays where it was.
 
 ## Getting out of the way by itself
 

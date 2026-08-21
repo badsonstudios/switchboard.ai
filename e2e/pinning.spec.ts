@@ -222,8 +222,8 @@ test.describe('pinning contract (E9-09)', () => {
   // overflow, the scrollbar has to really move, and the row has to really still
   // be on screen afterwards.
   test('a pinned session stays on screen when the rail is scrolled past it', async () => {
-    test.slow(); // five sessions, then a real scroll
-    const ws = await workspace(5);
+    test.slow(); // seven sessions, then a real scroll
+    const ws = await workspace(7);
     a = ws.a;
     const w = a.window;
 
@@ -245,37 +245,70 @@ test.describe('pinning contract (E9-09)', () => {
     // rail, and `minHeight: 600` (main/index.ts) is what stops the window being
     // shrunk into one - so the minimum is lifted first. This is the OS window,
     // not product code: nothing test-only is reachable inside the app.
+    //
+    // 560, and the sessions do the overflowing rather than the shrinking. The
+    // app's own chrome (title bar, the rail's header and footer, and whatever
+    // strips and banners happen to be up) takes 240-300px before the scroll
+    // region gets any, and it is NOT a constant between runs - a service-health
+    // or update banner appearing shifts the rail down and shortens it by ~64px
+    // mid-test. Squeeze the port below the pinned block's own height and sticky
+    // still behaves correctly, but "correctly" then means CLAMPED BY THE BOTTOM
+    // OF ITS CONTAINING BLOCK, which puts the block above the port and reads
+    // like the feature failing. So: a port with room to spare, an explicit
+    // floor asserted at the moment of measurement, and seven rows to overflow
+    // it with.
     await a.app.evaluate(({ BrowserWindow }) => {
       const win = BrowserWindow.getAllWindows()[0];
-      win.setMinimumSize(600, 260);
-      win.setSize(1000, 260);
+      win.setMinimumSize(600, 520);
+      win.setSize(1000, 560);
     });
-    // ...and PROVE it overflowed by more than one row, or everything below is a
-    // false green: a rail that does not scroll cannot scroll a pin away.
-    await expect
-      .poll(() => railScroll(w).evaluate((el) => el.scrollHeight - el.clientHeight), {
-        timeout: 15_000,
-      })
-      .toBeGreaterThan(60);
 
-    // scroll to the very end of the rail — the state the clause is about
-    await railScroll(w).evaluate((el) => {
-      el.scrollTop = el.scrollHeight;
-    });
+    // SCROLL THE RAIL TO ITS END, and assert the clause the way a person reads
+    // it rather than with a tape measure.
+    //
+    // The tape measure was the first attempt and it is a trap here: the rail's
+    // own top edge moves as the app's strips and banners settle, so comparing a
+    // sticky box against a port rectangle means comparing two numbers that are
+    // only both true for one frame. Everything below is either a SCROLL METRIC
+    // (scrollTop / scrollHeight - immune to where the rail happens to sit) or
+    // Playwright's own is-it-on-screen check, which asks the browser instead of
+    // arithmetic.
     await expect
-      .poll(() => railScroll(w).evaluate((el) => el.scrollTop), { timeout: 10_000 })
-      .toBeGreaterThan(20);
+      .poll(
+        () =>
+          railScroll(w).evaluate((el) => {
+            el.scrollTop = el.scrollHeight;
+            // overflowing by more than a row AND parked at the end - one
+            // number would let a rail that stopped overflowing pass
+            return el.scrollHeight - el.clientHeight > 60 && el.scrollTop > 60;
+          }),
+        { intervals: [400], timeout: 30_000 }
+      )
+      .toBe(true);
 
-    // THE CLAUSE: still visible, and still inside the rail's own box rather
-    // than merely "in the DOM"
-    await expect(row(w, target)).toBeInViewport();
-    const boxes = await railScroll(w).evaluate((el) => {
-      const scroll = el.getBoundingClientRect();
-      const pinned = el.querySelector('[data-pinned-block]')!.getBoundingClientRect();
-      return { scrollTop: scroll.top, scrollBottom: scroll.bottom, pinTop: pinned.top, pinBottom: pinned.bottom };
+    // THE CLAUSE: the pinned row is WHOLLY on screen with the list scrolled to
+    // its end. `ratio: 0.99` and not the default: the default passes on a
+    // single intersecting pixel, which is exactly the half-scrolled-away state
+    // this issue is about.
+    await expect(row(w, target)).toBeInViewport({ ratio: 0.99 });
+
+    // ...and it is STUCK, not merely lucky - which is the half `toBeInViewport`
+    // cannot tell you, because a rail that simply refused to scroll would pass
+    // it too. Measured as ONE RELATIVE NUMBER, both rects read in the same
+    // evaluate: how far the block sits below the top of its own container. In
+    // the flow that is the container's 5px padding and nothing else; stuck at
+    // the end of the list it is the whole scroll distance. Nothing here refers
+    // to where the rail is on screen, which is the trap this assertion started
+    // out in.
+    await expect(pinBlock(w)).toHaveCount(1);
+    const lift = await railScroll(w).evaluate((el) => {
+      const block = el.querySelector('[data-pinned-block]')!.getBoundingClientRect();
+      const body = el.querySelector('[data-rail-body]')!.getBoundingClientRect();
+      return { below: block.top - body.top, scrolled: el.scrollTop };
     });
-    expect(boxes.pinTop).toBeGreaterThanOrEqual(boxes.scrollTop - 1);
-    expect(boxes.pinBottom).toBeLessThanOrEqual(boxes.scrollBottom + 1);
+    expect(lift.below).toBeGreaterThan(60);
+    // and it is the SCROLL it travelled, not some other offset
+    expect(Math.abs(lift.below - lift.scrolled)).toBeLessThan(20);
 
     // DECISION 4: and the keyboard cannot be walked in behind it. The rail is
     // scrolled to the bottom, so focusing an EARLY row makes the browser scroll

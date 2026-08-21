@@ -1927,6 +1927,17 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               four, is exactly the kind of exception the manual ends up writing
               down.
 
+              WHAT THE GESTURE CAN AND CANNOT DO HERE, so nobody reads more
+              into this than it gives: the double-click reaches
+              `toggleMaximizeCard` and the maximize is recorded, but the SWEEP
+              declines it, because `lib/layout-mode`'s `heldMaximize` honours a
+              maximize only for a card the session list still holds — and a card
+              whose `sessions:create` was refused was never registered as one.
+              It has no rail row either. That is older than this header and true
+              of `Ctrl+Shift+M` on the same card today; it is reported on #606's
+              PR rather than fixed here, because widening it is a lifecycle
+              change (does a refused card exist?) and not a header.
+
               Deliberately the SAME subset as the suspended header, through the
               same three module-scope pieces (`cheadStyle`, `cheadName`,
               `maximizeOnDoubleClick`): identity, the state in a word, and the

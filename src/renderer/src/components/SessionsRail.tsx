@@ -392,8 +392,15 @@ export function SessionsRail(props: {
       .closest('[data-rail-body]')
       ?.querySelector<HTMLElement>('[data-pinned-block]');
     if (block?.contains(target)) return;
+    // The block's OVERHANG below the top of the scrollport, not the block's own
+    // height: `.rail-scroll` has 10px of padding and Chromium insets a sticky
+    // box by its scroll container's padding, so a stuck block's bottom edge is
+    // `port.top + padding + height`. Passing the bare height left every focused
+    // row exactly one padding behind the block - close enough to look right and
+    // wrong enough to fail, which is how the e2e found it. Measuring the gap
+    // that actually exists needs no arithmetic about padding at all.
     scroll.style.scrollPaddingBlockStart = block
-      ? `${Math.ceil(block.getBoundingClientRect().height)}px`
+      ? `${Math.max(0, Math.ceil(block.getBoundingClientRect().bottom - scroll.getBoundingClientRect().top))}px`
       : '0px';
     if (!block) return;
     (target.closest<HTMLElement>('.rail-row') ?? target).scrollIntoView({ block: 'nearest' });

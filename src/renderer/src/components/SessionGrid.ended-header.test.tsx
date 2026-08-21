@@ -225,6 +225,13 @@ describe('an ended card still has a header (#606)', () => {
   });
 });
 
+// The gesture the header exists for, at the level this component owns it: the
+// double-click reaches `toggleMaximizeCard` and the STORE records it. Whether
+// the workspace then rearranges is `lib/layout-mode`'s call, and for THIS card
+// it declines - `heldMaximize` honours a maximize only for a card the session
+// list holds, and a card whose start was refused was never registered as one.
+// That is older than this header (`Ctrl+Shift+M` has the same limit on the same
+// card) and is reported on #606's PR rather than papered over here.
 describe('the maximize gesture (§5.8), which is why the header is here', () => {
   it('double-clicking the header maximizes this card', async () => {
     await mountCard();
