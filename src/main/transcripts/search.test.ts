@@ -72,6 +72,24 @@ function feedOf(lines: string[]): FeedBlock[] {
 
 const search = searchTranscripts;
 
+/**
+ * What a TYPICAL chunk of the scan may cost the main thread.
+ *
+ * Sized against the thing it protects, not against a runner: the transcript
+ * watcher polls on a 100 ms interval on this same loop, and a terminal reads
+ * whenever the loop turns. Chunks that mostly sit under half that poll cannot
+ * be the reason a PTY stalled.
+ */
+const MAIN_THREAD_BUDGET_MS = 50;
+
+/**
+ * What the WORST chunk may cost — the "never" in the test's name, kept as a
+ * ceiling rather than a budget. Five missed watcher polls is a stall a user
+ * would feel; a runner that steals the core for 40 ms is not. Nothing between
+ * `MAIN_THREAD_BUDGET_MS` and this is a verdict either way, deliberately (#600).
+ */
+const WORST_CHUNK_CEILING_MS = 500;
+
 describe('the captured real transcript', () => {
   it('is the shape the fixture claims — and bigger than the view buffer', () => {
     const lines = transcriptLines();
@@ -153,22 +171,146 @@ describe('the captured real transcript', () => {
 
   // The reason the scan is chunked: this thread pumps every terminal in the
   // window. The numbers this run measures go in the item's hand-off.
+  //
+  // #600 — WHY THIS IS FOUR ASSERTIONS AND NOT `longestBlockMs < 50`.
+  // It used to be that one line, and windows-latest failed it with "expected 53
+  // to be less than 50" on a diff that touched workflow files only, green on a
+  // re-run. `longestBlockMs` is a MAX over the ~30 chunks of this file, so on a
+  // shared runner it reports the worst thing the OS SCHEDULER did to this
+  // process — a deschedule or a GC pause the engine neither caused nor can
+  // design away — and one such sample condemns the run.
+  //
+  // Measured here (8 runs, idle dev machine): 30 chunks, median 1.3 ms, p90
+  // 1.4-1.9 ms, max 2.0-3.4 ms. So the 53 ms sighting is ~35x the median: a
+  // stall, not slow code. Worse, the old budget could not tell the two apart in
+  // the other direction either: with the chunking DELETED outright — the biggest
+  // regression this test can suffer — the whole 7.7 MB reads as one block in
+  // 41-52 ms here, so the old assertion passed it three times in five.
+  //
+  // CPU time instead of wall time was measured and rejected: `process.cpuUsage()`
+  // on Windows quantizes to the ~15.6 ms scheduler tick, so an idle run of this
+  // scan reports a "longest block" of 16-47 ms out of pure rounding.
+  //
+  // What replaces it: the same wall-clock promises, made about THREE independent
+  // scans and asserted on the median of the three. A shared runner's scheduler
+  // can ruin one scan of 7.7 MB; it does not ruin two of three, and a regression
+  // in the engine ruins all three. Every number below was picked against
+  // measured load, not guessed — see the hand-off for the tables.
   it('never holds the main thread for long enough to stall a PTY', async () => {
-    const r = await search([{ sessionId: 's1', file: SESSION_TRANSCRIPT }], {
-      sessionIds: ['s1'],
-      query: { term: 'switchboard' },
-      limit: 5000,
+    /** One scan of the fixture, timed per chunk around the engine's yield. */
+    const scan = async (): Promise<{ chunkMs: number[]; longestBlockMs: number }> => {
+      const chunkMs: number[] = [];
+      let resumed = performance.now();
+      const r = await search(
+        [{ sessionId: 's1', file: SESSION_TRANSCRIPT }],
+        { sessionIds: ['s1'], query: { term: 'switchboard' }, limit: 5000 },
+        {
+          onChunk: async () => {
+            chunkMs.push(performance.now() - resumed);
+            // the same `setImmediate` the shipped `defaultYield` uses, so what is
+            // measured is the engine as it ships. The DEFAULT itself is still
+            // exercised — by "lets the event loop run while it scans", below.
+            await new Promise<void>((res) => setImmediate(res));
+            resumed = performance.now();
+          },
+        }
+      );
+      expect(r.groups[0].blocks).toBe(SESSION_TRANSCRIPT_FACTS.blocks);
+      return { chunkMs, longestBlockMs: r.longestBlockMs };
+    };
+
+    const median = (xs: number[]): number =>
+      [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+    const scans = [await scan(), await scan(), await scan()];
+    /** The median across the three scans of a per-scan statistic. */
+    const perScan = (f: (chunkMs: number[]) => number): number =>
+      median(scans.map((s) => f(s.chunkMs)));
+
+    // 1. IT WAS CHUNKED AT ALL — 7.7 MB at the 256 KB default is 30 reads. Not
+    //    redundant with the yields test below: that one passes a 64 KB
+    //    `chunkBytes`, so only this case can see the DEFAULT stop dividing the
+    //    file, and (see the header) no wall-clock ceiling would have caught it.
+    //    Asserted on every scan, because this one owes nothing to the clock.
+    for (const s of scans) expect(s.chunkMs.length).toBeGreaterThan(20);
+
+    // 2. THE TYPICAL CHUNK — the promise the 100 ms watcher poll needs. Asserted
+    //    on the median chunk of the median scan, not on the worst sample. Every
+    //    percentile short of that was tried against 13x synthetic load (32 CPU
+    //    burners + a vitest loop on a 32-core box) and found wanting: the old
+    //    `max < 50` read 43-63 ms across eight runs at that load — it would have
+    //    failed three of the eight — and a 90th percentile failed one of eight
+    //    at 74.6 ms. This statistic measured **11-26 ms over the same eight**,
+    //    and 1.2 ms idle.
+    const typical = perScan(median);
+    expect(typical, `${typical.toFixed(2)}ms typical chunk`).toBeLessThan(MAIN_THREAD_BUDGET_MS);
+
+    // 3. AND NO CHUNK IS CATASTROPHIC — the "never" in the name, which assertion
+    //    2 alone would have quietly dropped. A budget on the max flakes; a
+    //    CEILING an order of magnitude above it does not, and it still fails a
+    //    data-dependent chunk (one pathological tool_result, one block kind on a
+    //    slow path) that a median averages away. The worst chunk measured 2.6 ms
+    //    idle and 42-56 ms under that same 13x load, against a 500 ms ceiling.
+    const worst = perScan((c) => Math.max(...c));
+    expect(worst, `${worst.toFixed(2)}ms worst chunk`).toBeLessThan(WORST_CHUNK_CEILING_MS);
+
+    // 4. THE SHAPE, and the one assertion here that does not care how fast the
+    //    machine is: a chunk's cost must be bounded by the CHUNK, not by how far
+    //    into the file it sits. The regression is the classic streaming-scanner
+    //    one — a `pending` buffer that stops being truncated (or a cursor
+    //    hoisted out of the loop), so every chunk pays for everything before it
+    //    — and this catches it at ANY clock speed, including on a machine fast
+    //    enough to keep a quadratic scan under assertion 2.
+    //
+    //    Stated as a rank, not a ratio, because a rank can see a MILD slope:
+    //    over every (late-third chunk, early-third chunk) pair, how often did the
+    //    late one cost more? Independent of position that is 50%; growing with
+    //    position it is 100%. Measured: **0-18% as it ships, 84-99% with the
+    //    cursor hoisted** — where the same mutation moves the median RATIO only
+    //    from ~0.85 to ~1.7, too close to the noise to threshold safely.
+    //
+    //    The median of three matters most here. One scan of 10-vs-10 chunks has
+    //    a standard deviation of 0.13 under the null, so a lone 0.75 would be a
+    //    1.9-sigma test — a ~3% false-positive rate, which is the flake this
+    //    item exists to remove. Needing two scans of three to agree puts that
+    //    under 0.3% while leaving the mutation red in all of them.
+    //
+    //    Load pushes this statistic toward the null's 50%, never past it, which
+    //    is the safe direction: 10% idle, 33-49% across eight runs at 13x load.
+    const grew = perScan((c) => {
+      const third = Math.floor(c.length / 3);
+      const early = c.slice(0, third);
+      const late = c.slice(-third);
+      let costlier = 0;
+      for (const l of late) for (const e of early) if (l > e) costlier++;
+      return costlier / (late.length * early.length);
     });
-    expect(r.groups[0].blocks).toBe(SESSION_TRANSCRIPT_FACTS.blocks);
-    // Generous against a loaded CI runner; the observed value on the dev
-    // machine is ~3ms, against a 100ms watcher poll and a terminal that reads
-    // whenever the loop turns.
-    expect(r.longestBlockMs).toBeLessThan(50);
+    expect(
+      grew,
+      `${(grew * 100).toFixed(0)}% of late/early chunk pairs got dearer — the scan's ` +
+        `per-chunk cost is growing with file position`
+    ).toBeLessThan(0.75);
+
+    // The engine's own `longestBlockMs` is the number a future reader will quote,
+    // so it still has to be measuring something. Its window sits INSIDE the one
+    // timed above (its `chunkStart` is a microtask after `resumed`), so it cannot
+    // legitimately exceed that scan's own worst chunk; the slack is deliberately
+    // far wider than `Date.now` rounding, because this line is here to catch the
+    // field being computed over the whole scan instead of per chunk, not to
+    // referee two clocks.
+    expect(scans[0].longestBlockMs).toBeLessThanOrEqual(Math.max(...scans[0].chunkMs) + 20);
+
     console.log(
-      `[E17-01] 7.7MB / ${SESSION_TRANSCRIPT_FACTS.lines} lines: elapsed=${r.elapsedMs}ms ` +
-        `longest uninterrupted=${r.longestBlockMs}ms hits=${r.total}`
+      `[E17-01] 7.7MB / ${SESSION_TRANSCRIPT_FACTS.lines} lines x3 scans: ` +
+        `chunks=${scans[0].chunkMs.length} typical=${typical.toFixed(2)}ms ` +
+        `worst=${worst.toFixed(2)}ms grew=${(grew * 100).toFixed(0)}% ` +
+        `longest uninterrupted=${scans[0].longestBlockMs}ms`
     );
-  });
+    // An explicit ceiling, for #512's reason (PR #585): three scans of 7.7 MB is
+    // ~150 ms idle but ~2.1 s under the 13x synthetic load these numbers were
+    // sized against, and vitest's 5 s default is close enough to that to turn a
+    // loaded runner into an opaque timeout. The ceiling sits far above every
+    // assertion so the ASSERTION is always the verdict.
+  }, 30_000);
 
   // The claim above is only worth anything if the DEFAULT yield really hands
   // the loop back — a timer firing during the scan is the closest a unit test
