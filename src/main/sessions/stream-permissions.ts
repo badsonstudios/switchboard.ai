@@ -143,19 +143,36 @@ export type ApplyStatus = (sessionId: string, ev: SessionEvent) => void;
  * it, it was five minutes of silence followed by a decline the user never saw
  * offered. Neither is an answer.
  *
- * An unbound live session is a main-side INVARIANT VIOLATION, not a user
- * situation: `sessions:create` binds the card in the same synchronous stretch
- * that spawns the session, and `tearDownLive` unbinds only after
- * `manager.remove` has already killed the process. So there is no card, no rail
- * row, no name (§5.11 identity is keyed by card) and no way to reveal it — which
- * is exactly why the answer is a fast, distinct decline rather than a new
- * surface. `permission-toast.ts` makes the same argument about the same hazard:
- * "a toast with an Allow button that says only 'needs permission' asks the user
- * to grant a tool call they cannot see — which is worse than no toast at all".
+ * There are exactly two ways to be unbound, and neither is a user asking a
+ * question that deserves a home. `sessions:create` binds the card in the same
+ * synchronous stretch that spawns the session — no `await` between them, which
+ * is why nothing can arrive in the gap (see `bindLive`) — and `tearDownLive`
+ * unbinds only AFTER `manager.remove` has retired the session. So it is either
+ * a straggler from a teardown, or a binding this process lost. Both get
+ * declined; `offer` tells them apart by whether the deny could still be
+ * delivered.
+ *
+ * WHY DECLINE RATHER THAN SURFACE IT SOMEWHERE GLOBAL. Not because nothing
+ * could carry it — the shell's ledger is not card-filtered, so an unbound
+ * request already reaches it (`App.tsx`), and `chooseBatch` drops it only for
+ * want of a second session with an identical key. That is an accident of
+ * arity, not a design, and it argues the other way: a global **Allow** on a row
+ * the user cannot NAME, LOCATE or REVEAL is the hazard `permission-toast.ts`
+ * refuses in so many words — "a toast with an Allow button that says only
+ * 'needs permission' asks the user to grant a tool call they cannot see — which
+ * is worse than no toast at all". §5.12 says the same of attention surfaces in
+ * general: "Each item shows the **session name** with the **task label**
+ * beneath it (never raw session ids)". An unbound session has no card, so it
+ * has no name (§5.11's identity kit is keyed by card), no rail row and nothing
+ * `reveal` could focus. The honest answer is a fast, distinctly-worded decline.
  *
  * Wired by `registerSessionIpc` (see `setAnswerSurfaceProbe`), which owns the
- * binding this reads. Absent, this router behaves exactly as it did before
- * #333.
+ * binding this reads — as `cardOfLive.has(id)`, which answers "is there a card
+ * id to stamp", not the broader "will anyone actually look". A card that is
+ * merely hidden or popped out is not mounted either, and those still HOLD. That
+ * is the conservative direction on purpose: a hold is recoverable by the user
+ * coming back, a deny is not. Absent, this router behaves exactly as it did
+ * before #333.
  */
 export type AnswerSurfaceProbe = (sessionId: string) => boolean;
 
@@ -281,9 +298,18 @@ export class StreamPermissions {
    * in what each mistake costs. Holding when no window exists parks the CLI with
    * nothing that can ever answer, so "I can't tell" must resolve to deny.
    * Holding when we cannot tell whether a card owns the session costs at most
-   * the pre-#333 behaviour — the push still goes out, a card that does own it
-   * still shows it, and the 300s deadline is still underneath — whereas denying
-   * on a hunch takes a question the user COULD have answered off their screen.
+   * a bounded park: the request is pushed, a card that owns it shows it, and
+   * the 300s deadline is underneath either way. Denying instead takes a
+   * question the user COULD have answered off their screen, permanently. A
+   * bounded wrong wait beats an unbounded wrong verdict.
+   *
+   * The reviewer's correction, kept because it is the honest version: if the
+   * probe throws then `cardOfLive` is broken, and the push listener's very next
+   * act is `cardOfLive.get(...)` — which throws too, and `offer`'s per-listener
+   * catch swallows it, so in THAT world nothing is shown and the park runs its
+   * full course. The choice is still right; the claim that "a card that does own
+   * it still shows it" was not. The probe as wired is `Map.has`, which cannot
+   * throw, so this branch is a guard against a future one that can.
    */
   private answerable(sessionId: string): boolean {
     if (!this.answerSurface) return true;
@@ -443,22 +469,56 @@ export class StreamPermissions {
     //    Allow for it would be asking the user to grant a tool call they cannot
     //    see or locate.
     if (!this.answerable(sessionId)) {
-      // Loud the first time per session, quiet after — `noWindowWarned`'s rule,
-      // because a busy unbound session produces one of these per gated call.
-      // `error` rather than `warn` on that first one: a live session with no
-      // card is a binding this process lost, not a state the user put it in.
-      const first = !this.unroutableWarned.has(sessionId);
-      this.unroutableWarned.add(sessionId);
       const where = { sessionId, requestId, tool: request.tool };
       const message = this.unavailable(
-        'This session is not attached to any window in switchboard and had nowhere to show ' +
-          'this request'
+        'Switchboard lost track of which of its cards this session belongs to and had nowhere ' +
+          'on screen to show this request'
       );
-      this.send(sessionId, controlResponse(nativeRequestId, { behavior: 'deny', message }));
-      // Same reason as the no-window branch: this session is ALIVE and carries
-      // on, so the `permission-held` applied one message ago has to end.
+      const delivered = this.send(
+        sessionId,
+        controlResponse(nativeRequestId, { behavior: 'deny', message })
+      );
+      // Same reason as the no-window branch: an unbound session that is still
+      // ALIVE carries on, so the `permission-held` applied one message ago has
+      // to end. A no-op for the straggler below — `SessionManager.apply` drops
+      // events for sessions it no longer knows — which is exactly why this is
+      // safe to call unconditionally.
+      //
+      // NOT suppressed at the pump the way allow-all is, and that was weighed
+      // (#333 review). `setPermissionHoldSuppressor` could be widened to cover
+      // this case, which would stop the `needs-permission` -> `working` flap and
+      // the beep it rings. Two reasons not to. The flap cannot happen for the
+      // straggler at all — `apply` has already dropped both halves — so the only
+      // session it could reach is the alive-and-unbound one, which is the bug;
+      // and there the beep is the ONE thing in the app that says out loud that
+      // something is wrong, in a case whose whole history is that it was silent
+      // for five minutes. Suppressing it would make the invariant violation
+      // quieter, not the app calmer.
       this.applyStatus(sessionId, { kind: 'permission-resolved' });
+      // HOW LOUD depends on whether anybody was still listening, and `send` is
+      // the only thing that knows (#333 review).
+      //
+      // `sendToTransport` returns false when the manager has no handle for this
+      // session — which happens exactly once: `manager.remove` deletes the
+      // handle, and `tearDownLive` calls it a step BEFORE `unbindLive`. So a
+      // request arriving here undelivered is a STRAGGLER: bytes that were
+      // already in the CLI's stdout buffer when the user hit Restart or closed
+      // the card, ingested a tick later against a session that has been retired
+      // (`StreamService.remove` drops the session from its map without
+      // detaching the listener). Nothing is wrong, nobody is blocked, and the
+      // deny went to a closed pipe. That is a `debug` line, not a fault.
+      //
+      // A DELIVERED one is the real thing this gate is for: a session that is
+      // alive, is being spoken to, and has no card. That is a binding this
+      // process lost — `error`, once per unbinding and quiet after, because a
+      // busy unbound session produces one per gated call.
       const line = 'no card owns this session — denying at once rather than parking it';
+      if (!delivered) {
+        this.log.debug(`${line} (session already torn down)`, where);
+        return;
+      }
+      const first = !this.unroutableWarned.has(sessionId);
+      this.unroutableWarned.add(sessionId);
       if (first) this.log.error(line, where);
       else this.log.debug(line, where);
       return;
@@ -744,13 +804,15 @@ export class StreamPermissions {
    * is the entire problem being reported.
    *
    * `what` is the DISTINCT half, and it is a requirement rather than a flourish
-   * (#333). Three different things can reach here — no window was open (#319),
-   * nobody answered in time (#319), and no card owned the session (#333) — and
-   * they are three different faults with three different fixes. A shared
-   * sentence would leave the model, the log and anyone reading a transcript
-   * unable to tell "you had the app closed" from "switchboard lost track of
-   * this session", which is the difference between something the user did and a
-   * bug worth reporting. Every caller passes a clause nothing else passes.
+   * (#333). FOUR different things reach here — no window was open (#319),
+   * nobody answered in time (#319), an answer could not be delivered (#563),
+   * and no card owned the session (#333) — and they are four different faults
+   * with four different fixes. A shared sentence would leave the model, the log
+   * and anyone reading a transcript unable to tell "you had the app closed"
+   * from "switchboard lost track of this session", which is the difference
+   * between something the user did and a bug worth reporting. Every caller
+   * passes a clause nothing else passes, and none of them blames the same thing
+   * twice: only the #319 window case says "window".
    */
   private unavailable(what: string): string {
     return (

@@ -275,6 +275,15 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // has returned, so the rule above is what keeps the extra push harmless
   // rather than a torn read.
   const cardsChanged = (): void => send('sessions:cardsChanged', undefined);
+  //
+  // Since #333 this binding is also LOAD-BEARING FOR PERMISSIONS, which raises
+  // the stakes of the `await` warning three paragraphs up from a frame of
+  // flicker to a wrong verdict. `StreamPermissions` asks whether a session has a
+  // card before it holds a `can_use_tool`, and answers no by DECLINING the
+  // request outright — so an `await` introduced between `manager.create` and the
+  // `bindLive` call in `sessions:create` would not merely let the renderer read
+  // a card without its live half: it would open a window in which every gated
+  // tool call that session makes is refused. Keep that stretch synchronous.
   const bindLive = (liveId: string, cardId: string): void => {
     cardOfLive.set(liveId, cardId);
     cardsChanged();

@@ -2435,7 +2435,7 @@ describe('a stream request for an unbound session is declined, not parked (#333)
       response?: { response?: { behavior?: string; message?: string } };
     };
     expect(answer.response?.response?.behavior).toBe('deny');
-    expect(String(answer.response?.response?.message)).toMatch(/not attached to any window/i);
+    expect(String(answer.response?.response?.message)).toMatch(/lost track of which of its cards/i);
   });
 
   // The binding is what the probe reads, so a torn-down session must stop being
@@ -2452,6 +2452,10 @@ describe('a stream request for an unbound session is declined, not parked (#333)
     expect(perms.pendingRequests()).toEqual([]);
     expect(asked(h)).toEqual([]);
     expect(sent).toHaveLength(1);
+    // …and denied by THIS gate, not by the no-window one. Without the message
+    // check the assertions above pass for any deny from any branch.
+    const answer = sent[0].msg as { response?: { response?: { message?: string } } };
+    expect(String(answer.response?.response?.message)).toMatch(/lost track of which of its cards/i);
   });
 });
 

@@ -421,6 +421,15 @@ export class SessionStore {
    * Main stamps the card id from `cardOfLive` at send time, so a push that beat
    * the binding carries none, and keeping the older copy would leave that
    * member reading "unnamed session" for the rest of the run.
+   *
+   * That last sentence is now DEFENSIVE rather than descriptive (#333). Main
+   * binds the card in the same synchronous stretch that spawns the session, and
+   * as of #333 a stream request for an unbound session is declined outright
+   * rather than pushed — so a push with no `cardId` should no longer be
+   * reachable at all. The rule stays because it costs one comparison and is the
+   * right answer if that ever changes; do not read it as evidence that the race
+   * exists. `permission-batches.sameBatch` carries the same wording and the same
+   * caveat.
    */
   addPendingPermissions(incoming: readonly PermissionRequestDto[]): void {
     let next = this.state.pendingPermissions;

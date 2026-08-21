@@ -716,8 +716,14 @@ describe('a session with no card to show it is declined at once (#333)', () => {
     noWindow.offer('s1', canUseTool());
     const noWindowMessage = String(behaviourOf(0).message);
 
-    expect(noCardMessage).toMatch(/not attached to any window/i);
+    expect(noCardMessage).toMatch(/lost track of which of its cards/i);
     expect(noCardMessage).not.toBe(noWindowMessage);
+    // …and DISTINCT means it names a different fault, not merely a different
+    // string. `not.toBe` passes for any two spellings of the same excuse, which
+    // is what the first version of this message was: it also blamed the window.
+    // Only the #319 case may say "window" — see `unavailable`.
+    expect(noWindowMessage).toMatch(/window/i);
+    expect(noCardMessage).not.toMatch(/window/i);
     // …while still carrying the three things every unavailable-denial owes the
     // model, or it gets routed around with a second tool (`unavailable`).
     expect(noCardMessage).toMatch(/not a sandbox restriction/i);
@@ -821,6 +827,62 @@ describe('a session with no card to show it is declined at once (#333)', () => {
     expect(lines).toEqual({ error: 2, debug: 1 });
 
     p.forgetSession('s1', 'test over'); // clears the held req-3 timer
+  });
+
+  // A teardown STRAGGLER is not a fault, and must not be reported as one.
+  //
+  // `tearDownLive` runs `manager.remove` — which deletes the transport handle,
+  // so `send` starts returning false — a step BEFORE `unbindLive`. Bytes already
+  // in the CLI's stdout buffer when the user hit Restart are ingested a tick
+  // later, against a session that is retired AND unbound, and land in exactly
+  // this gate. Nobody is blocked and nothing is lost; logging `error` there
+  // would put a "report this" line in the log on an ordinary Restart.
+  it('a straggler arriving after the teardown is quiet, not an error', () => {
+    const lines = { error: 0, debug: 0 };
+    const realLog = createLogger(new LogSink({ dir }), 'perm');
+    const count =
+      (level: 'error' | 'debug') =>
+      (msg: string, fields?: LogFields): void => {
+        if (msg.startsWith('no card owns this session')) lines[level]++;
+        realLog[level](msg, fields);
+      };
+    const log = { ...realLog, error: count('error'), debug: count('debug') } satisfies Logger;
+    const p = new StreamPermissions(
+      // what `SessionManager.sendToTransport` returns once the handle is gone
+      () => false,
+      () => {},
+      log
+    );
+    p.setAnswerSurfaceProbe(() => false);
+
+    p.offer('retired', canUseTool('req-1'));
+
+    expect(lines).toEqual({ error: 0, debug: 1 });
+    expect(p.pendingRequests()).toEqual([]); // still declined, still not parked
+  });
+
+  // …and an undelivered one leaves nothing behind, so a long run of Restarts
+  // cannot grow the set. The live case is what the set is for.
+  it('a straggler does not consume the once-per-session report', () => {
+    const lines = { error: 0 };
+    const realLog = createLogger(new LogSink({ dir }), 'perm');
+    let alive = false;
+    const log = {
+      ...realLog,
+      error: (msg: string, fields?: LogFields): void => {
+        if (msg.startsWith('no card owns this session')) lines.error++;
+        realLog.error(msg, fields);
+      },
+    } satisfies Logger;
+    const p = new StreamPermissions(() => alive, () => {}, log);
+    p.setAnswerSurfaceProbe(() => false);
+
+    p.offer('s1', canUseTool('req-1')); // straggler: not delivered, not counted
+    expect(lines.error).toBe(0);
+
+    alive = true;
+    p.offer('s1', canUseTool('req-2')); // the real thing, and still the first
+    expect(lines.error).toBe(1);
   });
 });
 

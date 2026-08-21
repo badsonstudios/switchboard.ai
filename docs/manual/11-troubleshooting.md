@@ -153,10 +153,10 @@ went five minutes unanswered.
 There is a fourth cause, and it is a bug in switchboard rather than anything you
 did: the running session had lost track of the card it belongs to, so its
 question had no card to appear on. That one is declined immediately instead of
-after five minutes, and Claude is told the session "is not attached to any
-window in switchboard" — different wording from the other three on purpose, so
-you can tell them apart. If you see it, the app log has a matching line and it
-is worth reporting.
+after five minutes, and Claude is told that "switchboard lost track of which of
+its cards this session belongs to" — deliberately different wording from the
+other three, so you can tell them apart. You should not see it; if you do, the
+app log has a matching line and it is worth reporting.
 
 The message Claude gets says it was nobody being available, not a restriction,
 so it stops and asks again rather than looking for another route. Just tell it
