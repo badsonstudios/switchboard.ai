@@ -49,6 +49,7 @@ import { applyMatches, clearMatches, focusMatch } from '../lib/document-find';
 import { findBarState, findQuery } from '../lib/find-bar-state';
 import { findSurfaceKey, publishFindSurface, type DocumentFindSurface } from '../lib/find-surfaces';
 import { openMonacoFind, type FindableEditor } from '../lib/monaco-find';
+import { answered } from '../../../shared/ipc/refusal';
 
 const DocumentSource = React.lazy(() => import('./DocumentSource'));
 
@@ -148,6 +149,13 @@ interface FilesBridge {
   /** follow the file; returns the unsubscribe (P2-E16-04) */
   watch?(path: string, onChange: (notice: FileWatchNotice) => void): () => void;
 }
+
+/**
+ * What the viewer shows when it could not read the file — no bridge at all, a
+ * rejected read, or (since #650) a broker refusal. One value, so the three
+ * ways of not getting content cannot drift into three different screens.
+ */
+const UNREADABLE: FileReadResult = { ok: false, reason: 'unreadable' };
 
 function files(): FilesBridge | undefined {
   return (window as unknown as { switchboard?: { files?: FilesBridge } }).switchboard?.files;
@@ -284,7 +292,13 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
       const mine = ++readSeq.current;
       void bridge
         .read(current)
-        .then((r) => applyRead(mine, r, true))
+        // `answered` (#650). On THIS path (`keep`) a refusal was already
+        // harmless — `applyRead` reads `.ok`, the brand has none, and a failed
+        // reload keeps what is on screen. Laundered anyway, because the OPEN
+        // path below is the same call with the opposite `keep` and there a
+        // refusal was NOT harmless; two spellings of one rule is how the next
+        // person picks the wrong one.
+        .then((r) => applyRead(mine, answered(r) ?? UNREADABLE, true))
         .catch(() => {
           /* keep showing what we have */
         });
@@ -300,14 +314,20 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
     if (!bridge) {
       // Fail-open (litmus #3): no bridge is a viewer that says so, not a throw
       // that takes the window's React tree with it.
-      setResult({ ok: false, reason: 'unreadable' });
+      setResult(UNREADABLE);
       setLoading(false);
       return;
     }
     void bridge
       .read(current)
-      .then((r) => applyRead(mine, r, false))
-      .catch(() => applyRead(mine, { ok: false, reason: 'unreadable' }, false));
+      // #650, and this is the path where it MATTERED: with `keep` false,
+      // `applyRead` puts a not-ok result straight into state, so the brand
+      // became `result` — and the strip renders `t('document.refusal.' +
+      // result.reason)`, i.e. the literal string `document.refusal.undefined`
+      // on screen. `UNREADABLE` is the same value the no-bridge branch above
+      // uses, so a refused read looks exactly like a file we cannot open.
+      .then((r) => applyRead(mine, answered(r) ?? UNREADABLE, false))
+      .catch(() => applyRead(mine, UNREADABLE, false));
     // Retiring the stamp is what the old `live` flag did, said once for both
     // readers: a read still in flight when the path changes — or when the panel
     // closes — has nothing left to apply to.

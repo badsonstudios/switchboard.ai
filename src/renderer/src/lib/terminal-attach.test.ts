@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { attachTerminalFeed, TerminalFeedPorts } from './terminal-attach';
 import type { PtyChunk } from '../../../shared/ipc/pty';
+import { ipcRefusal } from '../../../shared/ipc/refusal';
 
 /** A controllable stand-in for the preload bridge + xterm. Records everything
  *  in one ordered log, because the ORDER is what #117 is about. */
@@ -20,6 +21,7 @@ function harness(
   emit: (d: string, epoch?: number) => void;
   /** resolve the in-flight `pty:attach` invoke */
   resolveAttach: (snapshot: string | null, epoch?: number) => void;
+  resolveAttachRaw: (value: unknown) => void;
   rejectAttach: (err: unknown) => void;
   subscribed: () => boolean;
   errors: unknown[];
@@ -86,6 +88,11 @@ function harness(
     errors,
     emit: (d, epoch = 1) => chunkCb?.({ epoch, d }),
     resolveAttach: (snapshot, epoch = 1) => resolve(snapshot === null ? null : { epoch, snapshot }),
+    /** resolve `pty:attach` with something the declared type says cannot happen
+     *  — #346 declined to widen the preload by `| IpcRefusal`, so a refusal is
+     *  exactly that (see the #650 case below) */
+    resolveAttachRaw: (value: unknown) =>
+      resolve(value as { epoch: number; snapshot: string } | null),
     rejectAttach: (e) => reject(e),
     subscribed: () => attached,
     readyCount: () => ready,
@@ -201,6 +208,31 @@ describe('attachTerminalFeed', () => {
 
     // no "write:null" — a missing snapshot is not content
     expect(h.log).toEqual(['subscribe', 'attach', 'reset', 'ready']);
+  });
+
+  it('a BROKER refusal is treated exactly as "no live PTY" (#650)', async () => {
+    // `attach` is an injected closure, so `scripts/refusal-truthiness.js` cannot
+    // see that it calls `pty:attach` — this is the whole net for that site.
+    //
+    // The fix here is BEHAVIOUR-IDENTICAL today (a refusal has neither `epoch`
+    // nor `snapshot`, so `?.` already lands it on this path), and that is the
+    // reason to pin it rather than a reason not to: the day someone reads
+    // `attachment.epoch` without the `?.`, or adds a field to `IpcRefusal` that
+    // collides, this is what says which path a refusal is supposed to take.
+    // The failure it guards is the one the module's own comment names — an
+    // `epoch` left null while the feed goes live drops every later chunk,
+    // silently and for good, which is #117 through the path written to avoid it.
+    const h = harness();
+    const feed = attachTerminalFeed(h.ports);
+
+    h.emit('orphan', 3); // buffered while the (refused) invoke is in flight
+    h.resolveAttachRaw(ipcRefusal('pty:attach', 'capability-not-held'));
+    await feed.ready;
+
+    // no snapshot written, nothing replayed, and live — the null-attachment path
+    expect(h.log).toEqual(['subscribe', 'attach', 'reset', 'ready']);
+    // …and the brand never reached the terminal as content
+    expect(writes(h.log)).toEqual([]);
   });
 
   // ---- teardown ----
