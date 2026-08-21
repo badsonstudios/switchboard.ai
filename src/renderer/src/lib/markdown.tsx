@@ -664,28 +664,41 @@ Object.freeze(MARKED_OPTIONS);
  *    element") with the forgery pointing the OTHER WAY: not content drawing
  *    something of ours, but content operating something of ours.
  *  - IT RENAMES THE CONTROL, and this half needs no click at all. Labels
- *    contribute the accessible name, ALL of them, concatenated in TREE ORDER —
- *    and rendered content sits above the app's dialogs in the document, so
- *    content's words come FIRST. Measured: a real field named "ntfy topic" was
- *    announced as "Paste your API key here to continue — ntfy topic", and a
- *    button named "Delete session" was announced as "Save preferences" outright,
- *    with `role` forbidden and `ALLOW_ARIA_ATTR: false` already in force. That
- *    is #509's `aria-label` case exactly — "a lie the sighted reader cannot
- *    see" — arriving on a TAG after the attribute half was closed. It also
- *    passes straight through a modal: it survived both a `position:fixed`
- *    scrim and `aria-modal="true"`.
+ *    contribute the accessible name — ALL of them, concatenated in TREE ORDER.
+ *    Measured on a fixture where the planted label came first: a field named
+ *    "ntfy topic" was announced as "Paste your API key here to continue — ntfy
+ *    topic", and a button named "Delete session" was renamed to "Save
+ *    preferences" outright, with `role` forbidden and `ALLOW_ARIA_ATTR: false`
+ *    already in force. That is #509's `aria-label` case exactly — "a lie the
+ *    sighted reader cannot see" — arriving on a TAG after the attribute half
+ *    was closed. It also passes straight through a modal: it survived both a
+ *    `position:fixed` scrim and `aria-modal="true"`.
  *
- * WHAT BOUNDED IT TODAY, said plainly because #612 and #625 both got burned
- * calling something unreachable: the CLICK half is currently blocked by
- * geometry, not by policy. The only labelable elements with ids were inside
- * `PushSetupDialog` and `QuietHoursDialog`, both of which render a
- * `position:fixed;inset:0` scrim over everything — `elementFromPoint` over a
- * planted label returns the scrim, and a real click at those coordinates
- * reaches nothing. That is one line of JSX away from being false (the composer,
- * the find bar and the rail's rename box are all labelable and all outside a
- * scrim; they simply have no `id` today), and the NAMING half was never bounded
- * at all. A tag list is the layer that does not depend on that staying true —
- * the same argument the `style` and media blocks make.
+ *    WHICH WORDS COME FIRST IS TREE ORDER, NOT "CONTENT WINS", and the first
+ *    draft of this block had it backwards. `App.tsx` renders `PushSetupDialog`,
+ *    `QuietHoursDialog`, `UpdateDialog` and `CommandPalette` BEFORE
+ *    `SessionGrid`, and nothing here is portalled (the renderer's only
+ *    `createPortal` is `WorkspaceNoticeBanner`). So against the FEED and the
+ *    VIEWER the app's own label is earlier and content's words are appended,
+ *    not prepended. Appended is still a rename — "ntfy topic Paste your API key
+ *    here to continue" is the same lie in the other order — but the sentence
+ *    that says content comes first is false in this app, and this family has
+ *    struck three of those already.
+ *
+ * WHAT BOUNDS THE CLICK HALF, said carefully because #612 and #625 both got
+ * burned calling something unreachable — and the first draft of THIS paragraph
+ * made the same mistake a third time. It claimed the only labelable elements
+ * with ids were the two dialogs' fields, both behind a `position:fixed;inset:0`
+ * scrim (true of those two: `elementFromPoint` over a planted label returns the
+ * scrim, and a real click at those coordinates reaches nothing). IT IS NOT TRUE
+ * OF THE APP. `SessionGrid`'s view tabs and `QuestionPanel`'s question tabs are
+ * `<button role="tab" id={…}>` — labelable, id-bearing, and nowhere near a
+ * scrim; the second set renders INSIDE THE FEED. So what actually bounds the
+ * click half is not geometry: it is that those ids are `useId`-derived rather
+ * than published, and the next paragraph but two says exactly how weak a bound
+ * that is. The NAMING half was never bounded at all. A TAG LIST IS THE LAYER
+ * THAT DEPENDS ON NEITHER — the same argument the `style` and media blocks
+ * make, and the reason this is settled here rather than by auditing ids.
  *
  * `for` NEEDS NO ENTRY IN `FORBID_ATTR`, checked rather than assumed, because
  * the obvious next line is to add it. DOMPurify 3.4.12 keeps `for` on exactly
@@ -694,8 +707,12 @@ Object.freeze(MARKED_OPTIONS);
  * those two is now forbidden, and `<output for>` was measured to do NOTHING:
  * no click forwarding, no entry in `.labels`, no change to the target's
  * accessible name. Adding it would be a line that reads as protection and does
- * nothing — `iframe`/`embed`/`object`'s situation two blocks up — so it is
- * pinned by a test instead of named here.
+ * nothing — `iframe`/`embed`/`object`'s situation one block up — so it is
+ * pinned by a test instead of named here. (`<output>` ITSELF is a separate
+ * question this block does not answer: it maps to `role="status"`, an implicit
+ * live region that survives `ALLOW_ARIA_ATTR: false` and `role` in
+ * `FORBID_ATTR`. That is #509's harm on a tag, it is filed rather than fixed
+ * here, and `for` is inert on it either way.)
  *
  * NOTHING LEGITIMATE IS LOST, and here the claim is easier than anywhere else on
  * this list: markdown has no construct that emits a `<label>`, and `<label>` has
@@ -715,18 +732,38 @@ Object.freeze(MARKED_OPTIONS);
  *
  * THE OTHER HALF IS NOT IN THIS FILE, and saying so here is the point of this
  * paragraph: forbidding the tag does not close `id`. `id` is an ordinary member
- * of the html profile (`ALLOW_DATA_ATTR: false` does not reach it, and there is
- * no reason to take it — heading anchors are the viewer's own), so content can
- * still PLANT one of the app's names. Every IDREF in the DOM resolves to the
- * FIRST element in tree order carrying that id, and rendered content is above
- * the app's dialogs, so a planted id CAPTURES the reference: the app's own
- * `<label for>` silently binds to nothing (a `<span>` is not labelable, so the
- * field loses its accessible name), and `aria-activedescendant` resolves to the
- * planted node — verified in Chromium 149, with no `role` on the forgery,
- * because content cannot write one. That is why #654 ALSO took the literal ids
- * out of `PushSetupDialog`, `QuietHoursDialog` and `CommandPalette` in favour of
- * `React.useId()`: the tag list closes the half that is about ELEMENTS, and an
- * unguessable name closes the half that is about NAMES. Both are pinned.
+ * of the html profile and it stays — the viewer mints heading anchors through
+ * it, and those slugs come from the DOCUMENT's own headings, so a document
+ * already writes ids by an allowed route. Content can therefore still PLANT one
+ * of the app's names.
+ *
+ * WHAT PLANTING ONE BUYS, and it is bounded by DIRECTION: every IDREF resolves
+ * to the FIRST element in tree order carrying that id, so a forgery only
+ * captures if it is EARLIER than the real element. Verified in Chromium 149
+ * with the forgery placed first — the app's own `<label for>` then binds to
+ * nothing (a `<span>` is not labelable, so the field loses its accessible name)
+ * and `aria-activedescendant` resolves to the planted node, with no `role` on
+ * it, because content cannot write one.
+ *
+ * IN THIS APP'S DOM there is exactly ONE such pairing today, and naming it is
+ * the honest version of what the id work bought: `UpdateDialog` renders
+ * GitHub's release notes and `App.tsx` renders it BEFORE `CommandPalette`, so
+ * release-notes content really could capture the palette's `aria-controls` and
+ * `aria-activedescendant`. Both dialogs, by contrast, render BEFORE the feed
+ * and the viewer, so their fields were never capturable from those two surfaces
+ * — their `useId` conversion is prophylaxis against a reorder, not a live fix,
+ * and calling it more than that is how this family loses an absolute.
+ *
+ * AND `useId` IS NOT A SECRET. React 19 builds a client id as
+ * `"_" + prefix + "r_" + n.toString(32) + "_"` from a MODULE-GLOBAL counter that
+ * starts at zero (`react-dom` 19.2.7, and `main.tsx` passes no
+ * `identifierPrefix`), so the space a reply would have to cover is a few
+ * hundred strings, not a secret. What `React.useId()` removes is a STABLE,
+ * PUBLISHED name — `push-field-ntfy.topic` was the same string in every build
+ * and every workspace, and it is written down in an issue — and replaces it
+ * with one that moves whenever anything else in the tree calls `useId` first.
+ * That is defence in depth. THE CLOSURE IS THE TAG, which needs no name at all.
+ * Both halves are pinned by tests.
  *
  * THE PURE LAYOUT ATTRIBUTES ARE STILL LEFT, and are weaker than any of the
  * above: `border`, `cellpadding`, `cellspacing`, `valign`, `nowrap`, `noshade`,
@@ -769,8 +806,7 @@ export const SANITIZE_CONFIG: SanitizeConfig = {
     'tabindex',
   ],
   // The tag half (#612, extended by #625 and #654). Same shape as `FORBID_ATTR`
-  // and for
-  // the same reason: every one of these is an ordinary member of the html
+  // and for the same reason: every one of these is an ordinary member of the html
   // profile's TAG allow-list, so no flag reaches them and each has to be named.
   // `KEEP_CONTENT` is left at its default `true`, which is the half that makes
   // this safe to do at all — the element goes, its children stay. TWO

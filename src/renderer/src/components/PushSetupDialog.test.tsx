@@ -344,14 +344,18 @@ describe('the modal contract it shares with About', () => {
     // These fields were `id="push-field-ntfy.topic"` and friends: LITERAL,
     // stable, and therefore a NAME a document or a reply could address. `id`
     // survives the markdown sanitizer profile, and every IDREF in the DOM
-    // resolves to the FIRST element in tree order carrying that id — with the
-    // feed above this dialog in the document. Verified in Chromium 149: a
-    // planted `<span id="push-field-ntfy.topic">` took THIS label away from THIS
-    // field (`label.control` → `null`, `input.labels` → empty), so the
-    // credential box lost its accessible name; and a `<label for>` in a reply
-    // both forwarded a click to the field and prepended its own words to the
-    // field's announced name. `markdown.tsx` forbids the `<label>` TAG for the
-    // second half; this is the first.
+    // resolves to the FIRST element in tree order carrying that id. Verified in
+    // Chromium 149 with the forgery placed first: a planted
+    // `<span id="push-field-ntfy.topic">` took THIS label away from THIS field
+    // (`label.control` → `null`, `input.labels` → empty), so the credential box
+    // lost its accessible name; and a `<label for>` in a reply both forwarded a
+    // click to the field and joined the field's announced name. `markdown.tsx`
+    // forbids the `<label>` TAG for the second half; this is the first.
+    //
+    // "PLACED FIRST" IS A CONDITION THIS DIALOG ALREADY MET: `App.tsx` renders
+    // it BEFORE `SessionGrid`, so feed and viewer content is always later and
+    // never captured these ids. This is prophylaxis against a reorder, not the
+    // fix for a live capture — `CommandPalette` is the one that was live.
     //
     // WHAT THIS BUYS, AND WHAT IT DOES NOT, stated exactly because the first
     // draft of this test asserted more than `useId` delivers and went red

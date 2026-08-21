@@ -224,9 +224,11 @@ describe('the quiet-hours dialog', () => {
   it('its fields carry no id rendered content could name (#654)', async () => {
     // `PushSetupDialog.test.tsx` carries the argument in full; the mechanism is
     // identical and so is the fix. A literal `id` is a NAME rendered content
-    // can plant, IDREFs resolve to the first element in tree order, and the
-    // feed sits above this dialog — so `quiet-field-start` in a reply took this
-    // label away from this field. `React.useId()` is not random — it is
+    // can plant, and IDREFs resolve to the first element in tree order — so a
+    // `quiet-field-start` planted EARLIER than this dialog takes this label
+    // away from this field. `App.tsx` renders this dialog before `SessionGrid`,
+    // so the feed and the viewer never were earlier: prophylaxis against a
+    // reorder, not a live fix. `React.useId()` is not random either — it is
     // deterministic for a given render tree — so what it removes is a STABLE,
     // PUBLISHED name, not the possibility of a collision. The closure is the
     // `<label>` tag in `markdown.tsx`; this is defence-in-depth.

@@ -62,8 +62,14 @@ export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Elemen
    * `PushSetupDialog.tsx`, which carries it in full: a LITERAL `id` is a name
    * rendered content can address, `id` survives the sanitizer profile, and
    * `<label for>` binds to the FIRST element in tree order with that id — so a
-   * `quiet-field-start` planted above this dialog took this label away from this
-   * field. `React.useId()` is per-mount, so there is no string to plant.
+   * `quiet-field-start` planted EARLIER than this dialog would take this label
+   * away from this field.
+   *
+   * "EARLIER" IS A REAL CONDITION: `App.tsx` renders this dialog before
+   * `SessionGrid`, so feed and viewer content is always later and never
+   * captured these ids. Prophylaxis against a reorder, not a live fix — and
+   * `React.useId()` is not a secret either (React numbers client ids from a
+   * global counter); what it removes is a STABLE, PUBLISHED name.
    * `data-quiet-field` stays: it is the test hook, not an `id`.
    */
   const fieldId = React.useId();
@@ -136,11 +142,11 @@ export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Elemen
     set: (v: string) => void
   ): React.JSX.Element => (
     <div style={{ display: 'grid', gap: 4 }}>
-      <label htmlFor={`${fieldId}${id}`} style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+      <label htmlFor={`${fieldId}f-${id}`} style={{ fontSize: 11.5, color: 'var(--muted)' }}>
         {t(`quiet.${id}`)}
       </label>
       <input
-        id={`${fieldId}${id}`}
+        id={`${fieldId}f-${id}`}
         data-quiet-field={id}
         type="time"
         value={value}

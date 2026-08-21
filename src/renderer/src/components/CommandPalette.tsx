@@ -30,19 +30,24 @@ export function CommandPalette(props: {
    * The prefix for every `id` in this palette (#654).
    *
    * `<label for>` was the reason that item existed, and this component has no
-   * label — but it has the OTHER id consumer, and it is the one with an
-   * audience: `aria-activedescendant` and `aria-controls` are IDREFs, and an
-   * IDREF resolves to the FIRST element in tree order carrying that id. `id`
-   * survives the sanitizer profile (see `markdown.tsx`), so a reply containing
-   * `<div id="palette-row-quit">Open a file</div>` sat ABOVE this palette in
-   * the document and CAPTURED the reference: verified in Chromium 149, where
-   * the combobox's `activedescendant` relation resolved to the planted `<div>`
-   * — with no `role` on it, because content cannot write one. The screen-reader
-   * user is then told the highlighted command is whatever the reply said, while
-   * Enter still runs the real one. That is #509's harm exactly (a lie the
-   * sighted reader cannot see) reached through a NAME rather than an attribute.
+   * label — but it has the OTHER id consumer, and OF THE THREE COMPONENTS #654
+   * TOUCHED THIS IS THE ONE THAT WAS LIVE. `aria-activedescendant` and
+   * `aria-controls` are IDREFs; an IDREF resolves to the FIRST element in tree
+   * order carrying that id, so a forgery only captures if it is EARLIER. `id`
+   * survives the sanitizer profile (see `markdown.tsx`), and `App.tsx` renders
+   * `UpdateDialog` — which puts GitHub's RELEASE NOTES through `<Markdown>` —
+   * IMMEDIATELY BEFORE this palette. So release-notes content containing
+   * `<div id="palette-row-quit">Open a file</div>` really did sit above these
+   * refs and capture them: verified in Chromium 149, where the combobox's
+   * `activedescendant` relation resolved to the planted `<div>` — with no
+   * `role` on it, because content cannot write one. The screen-reader user is
+   * then told the highlighted command is whatever the notes said, while Enter
+   * still runs the real one. That is #509's harm exactly (a lie the sighted
+   * reader cannot see) reached through a NAME rather than an attribute. (The
+   * feed and the viewer render AFTER this component and never could.)
    *
-   * `React.useId()` is per-mount, so there is no string to plant.
+   * `React.useId()` is not a secret — React 19 numbers client ids from a
+   * module-global counter — so what this removes is a STABLE, PUBLISHED name.
    */
   const paletteId = React.useId();
 
@@ -191,7 +196,13 @@ export function CommandPalette(props: {
             and they are safe to select on for the reason those are: content
             cannot emit a `data-*` attribute at all (`ALLOW_DATA_ATTR: false`),
             so a hook is not a second guessable name. */}
-        <div data-palette-rows id={`${paletteId}rows`} role="listbox" aria-label={t('palette.label')} style={{ overflowY: 'auto' }}>
+        <div
+          data-palette-rows
+          id={`${paletteId}rows`}
+          role="listbox"
+          aria-label={t('palette.label')}
+          style={{ overflowY: 'auto' }}
+        >
           {visible.length === 0 && (
             <div style={{ padding: '14px', color: 'var(--muted)', fontSize: 12 }}>
               {t('palette.empty')}

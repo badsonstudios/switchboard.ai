@@ -68,22 +68,31 @@ export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element 
    * of the document can address:
    *
    *  - `<label for="push-field-ntfy.topic">` in a reply is a SECOND label on
-   *    this input — it forwards a click to it, and it prepends its own words to
-   *    the field's accessible name. `markdown.tsx` forbids `<label>` at the
-   *    profile, which is where that half is settled, for every surface at once.
-   *  - THE HALF A TAG LIST CANNOT SETTLE, and the reason this line exists:
-   *    content planting the SAME id EARLIER in tree order takes this dialog's
-   *    own label away from its own field. `<label for>` binds to the FIRST
-   *    element in tree order with that id, and a `<span id="push-field-…">` is
-   *    not labelable — so the association silently becomes NOTHING and the
-   *    credential field loses its accessible name. Verified in Chromium 149
-   *    (`label.control` → `null`, `input.labels` → empty), not reasoned about.
+   *    this input — it forwards a click to it, and its words join the field's
+   *    accessible name. `markdown.tsx` forbids `<label>` at the profile, which
+   *    is where that half is settled, for every surface at once.
+   *  - THE HALF A TAG LIST CANNOT SETTLE: content planting the SAME id EARLIER
+   *    IN TREE ORDER takes this dialog's own label away from its own field.
+   *    `<label for>` binds to the FIRST element with that id, and a
+   *    `<span id="push-field-…">` is not labelable — so the association
+   *    silently becomes NOTHING and the credential field loses its accessible
+   *    name. Verified in Chromium 149 (`label.control` → `null`,
+   *    `input.labels` → empty), not reasoned about.
+   *
+   * WHAT THAT SECOND BULLET IS WORTH HERE, stated rather than implied because
+   * "earlier in tree order" is a real condition and not a formality: `App.tsx`
+   * renders THIS DIALOG BEFORE `SessionGrid`, so feed and viewer content is
+   * always LATER and never captured these ids. This change is prophylaxis
+   * against a reorder, not the fix for a live capture — the one live pairing in
+   * the app is `UpdateDialog` ahead of `CommandPalette`, and it is `markdown.tsx`
+   * that carries the full argument.
    *
    * `React.useId()` is what the rest of the renderer already uses (QuestionPanel,
-   * EventsPanel, FindBar) and it is per-MOUNT, so there is no string for content
-   * to name. `data-push-field` stays as it is: it is the test hook, it is not an
-   * `id`, and content cannot emit a `data-*` attribute at all
-   * (`ALLOW_DATA_ATTR: false`).
+   * EventsPanel, FindBar). It is NOT a secret — React 19 numbers client ids from
+   * a module-global counter — so what it removes is a STABLE, PUBLISHED name,
+   * not the possibility of a collision. `data-push-field` stays as it is: it is
+   * the test hook, it is not an `id`, and content cannot emit a `data-*`
+   * attribute at all (`ALLOW_DATA_ATTR: false`).
    */
   const fieldId = React.useId();
 
@@ -150,7 +159,7 @@ export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element 
   const secretRow = (key: PushSecretKey, label: string, hint?: string): React.JSX.Element => (
     <div style={{ display: 'grid', gap: 4 }}>
       <label
-        htmlFor={`${fieldId}${key}`}
+        htmlFor={`${fieldId}f-${key}`}
         style={{ fontSize: 11.5, color: 'var(--muted)', display: 'flex', gap: 8 }}
       >
         {label}
@@ -160,7 +169,7 @@ export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element 
       </label>
       <div style={{ display: 'flex', gap: 6 }}>
         <input
-          id={`${fieldId}${key}`}
+          id={`${fieldId}f-${key}`}
           data-push-field={key}
           // A password field: this is a credential, and the person setting it up
           // may well be sharing their screen while they do it.
@@ -334,13 +343,13 @@ export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element 
                       the one field here that belongs in the workspace file. */}
                   <div style={{ display: 'grid', gap: 4 }}>
                     <label
-                      htmlFor={`${fieldId}ntfy-server`}
+                      htmlFor={`${fieldId}f-ntfy-server`}
                       style={{ fontSize: 11.5, color: 'var(--muted)' }}
                     >
                       {t('push.ntfyServer')}
                     </label>
                     <input
-                      id={`${fieldId}ntfy-server`}
+                      id={`${fieldId}f-ntfy-server`}
                       data-push-field="ntfy-server"
                       type="text"
                       autoComplete="off"

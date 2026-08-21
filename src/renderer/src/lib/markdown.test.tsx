@@ -563,9 +563,12 @@ describe('the style attribute: one profile, and every surface uses it (#436)', (
     // renders GitHub's release notes with no pass of its own, so a `<label>`
     // pass written into `feed-markdown.ts` would have left it open.
     //
-    // The third column is prose OUTSIDE the label, because `KEEP_CONTENT` keeps
-    // a label's children — the words survive, the element does not, so the
-    // guard has to be text the payload could not have eaten either way.
+    // The third column of the three `for=` rows is prose OUTSIDE the label,
+    // because `KEEP_CONTENT` keeps a label's children — the words survive, the
+    // element does not, so the guard is text the payload could not have eaten
+    // either way. The upper-case row keeps that shape too rather than guarding
+    // on the label's own text, which would still pass but would not be the same
+    // statement as the rows around it.
     [
       'a label that operates one of the app’s own controls',
       'See the docs:\n\n<label for="push-field-ntfy.topic">Read the setup guide</label>',
@@ -588,7 +591,12 @@ describe('the style attribute: one profile, and every surface uses it (#436)', (
       'Sign in:',
       'label',
     ],
-    ['an upper-case label', '<LABEL FOR="x">SHOUTING</LABEL>', 'SHOUTING', 'label'],
+    [
+      'an upper-case label',
+      'Shouty:\n\n<LABEL FOR="x">SHOUTING</LABEL>',
+      'Shouty:',
+      'label',
+    ],
   ];
 
   for (const [surface, draw] of surfaces) {
@@ -1793,8 +1801,12 @@ describe('content cannot NAME one of the app’s own controls (#654)', () => {
     expect(renderMarkdown('<p for="x">prose</p>')).not.toContain('for=');
     expect(renderMarkdown('<div for="x">block</div>')).not.toContain('for=');
     expect(renderMarkdown('<span for="x">inline</span>')).not.toContain('for=');
-    // `<output for>` is what is left, and jsdom can at least say it names
-    // nothing: `.labels` is the list a `<label>` would have joined.
+    // The three lines above are the real pin: if a DOMPurify bump ever widens
+    // `for` past `<label>`/`<output>`, one of them reds. The two below are a
+    // map rather than a detector — `.labels` is populated only by `<label>` per
+    // spec, so jsdom cannot fail them whatever a browser does. They are here
+    // because "`<output for>` names nothing" is the sentence `markdown.tsx`
+    // makes, and it should be somewhere executable even weakly.
     const host = document.createElement('div');
     document.body.appendChild(host);
     host.innerHTML =
@@ -1848,25 +1860,63 @@ describe('content cannot NAME one of the app’s own controls (#654)', () => {
     expect(host.textContent).toContain('<label for="x">y</label>');
   });
 
-  it('the app writes no control id content could name — pinned against reintroduction', () => {
+  it('no INLINE LITERAL id survives in the renderer, and the removed namespaces stay gone', () => {
     // THE OTHER HALF, and it is not in `markdown.tsx` because a tag list cannot
     // reach it: `id` survives the profile, so content can PLANT one of the
-    // app's names even with `<label>` gone. Every IDREF resolves to the FIRST
-    // element in tree order carrying that id, and rendered content sits above
-    // the app's dialogs — so a planted id CAPTURES the reference. Verified in
-    // Chromium 149: the app's own `<label for>` bound to nothing (a `<span>` is
-    // not labelable, so the field lost its accessible name), and a combobox's
-    // `aria-activedescendant` resolved to the planted `<div>` — with no `role`
-    // on it, because content cannot write one.
+    // app's names even with `<label>` gone. An IDREF resolves to the FIRST
+    // element in tree order carrying that id, so a forgery captures only if it
+    // is EARLIER — verified in Chromium 149 with the forgery placed first: the
+    // app's own `<label for>` bound to nothing (a `<span>` is not labelable, so
+    // the field lost its accessible name), and a combobox's
+    // `aria-activedescendant` resolved to the planted `<div>`, with no `role`
+    // on it because content cannot write one.
     //
-    // The fix was to stop having a name to plant: `React.useId()`, which is
-    // per-MOUNT. The RUNTIME proof lives in each dialog's own test (the id is
-    // unguessable AND the label still binds); what is here is the RULE, read off
-    // the source tree the way the one-pipeline test below does — because the
-    // failure this guards against is a new literal written next year, in a
-    // component that does not exist yet.
+    // WHAT THIS TEST IS AND IS NOT, named in the title because the first draft
+    // was called "the app writes no control id content could name" and did not
+    // do that. `React.useId()` is not a secret (React 19 numbers client ids
+    // from a global counter), and this scan sees INLINE LITERALS only: a future
+    // `const FIELD = 'sb-topic'` used as `id={FIELD}` would pass it. What it
+    // genuinely pins is (a) nobody types a literal id straight into JSX again,
+    // (b) no `htmlFor` takes a literal at all, and (c) the three namespaces
+    // #654 removed do not come back in any spelling. That is the reintroduction
+    // this item can actually guard, read off the source tree the way the
+    // one-pipeline test below does — and the RUNTIME proof (the label still
+    // binds) lives in each dialog's own test.
     const root = path.join(process.cwd(), 'src', 'renderer', 'src');
     const offenders: string[] = [];
+    // COMMENTS ARE STRIPPED, and not as a convenience: this file, the two
+    // dialogs and `CommandPalette` all QUOTE the removed ids in the note
+    // explaining why they went, and a scan that could not tell an explanation
+    // from a declaration would force the explanation out. Stripped as SPANS
+    // with block state carried across lines, not by dropping whole lines —
+    // dropping the line takes any code after a `*/` with it, and a wrapped
+    // `{/* … */}` block's continuation lines do not start with a marker at all.
+    const stripComments = (src: string): string => {
+      let out = '';
+      let inBlock = false;
+      for (let i = 0; i < src.length; i++) {
+        if (inBlock) {
+          if (src.startsWith('*/', i)) {
+            inBlock = false;
+            i++;
+          } else if (src[i] === '\n') {
+            // newlines kept, so a reported offender's line still lines up
+            out += '\n';
+          }
+          continue;
+        }
+        if (src.startsWith('/*', i)) {
+          inBlock = true;
+          i++;
+        } else if (src.startsWith('//', i)) {
+          while (i < src.length && src[i] !== '\n') i++;
+          out += '\n';
+        } else {
+          out += src[i] ?? '';
+        }
+      }
+      return out;
+    };
     const walk = (dir: string): void => {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name);
@@ -1876,48 +1926,40 @@ describe('content cannot NAME one of the app’s own controls (#654)', () => {
         }
         if (!/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name)) continue;
         const rel = path.relative(root, full).replace(/\\/g, '/');
-        // COMMENTS ARE SKIPPED, and not as a convenience: this file, the two
-        // dialogs and `CommandPalette` all QUOTE the removed ids in the note
-        // explaining why they went, and a scan that could not tell an
-        // explanation from a declaration would force the explanation out. This
-        // repo puts comments on their own lines, so the line test is exact.
-        const lines = fs
-          .readFileSync(full, 'utf8')
-          .split('\n')
-          .filter((l) => !/^\s*(?:\/\/|\/\*|\*|\{\/\*)/.test(l));
-        for (const line of lines) {
-          // (a) a LITERAL id, in either quote, plus the template-literal form
-          //     with no interpolation in it. `id={`${base}row`}` and `id={expr}`
-          //     are fine — what this refuses is a STABLE STRING.
-          //     `(?<!\[)` and the `$`-free value classes keep this off a QUERY:
-          //     `root.querySelector(`[id="${id}"]`)` in `DocumentViewer` reads
-          //     an id, it does not declare one.
-          for (const m of line.matchAll(
-            /(?<!\[)\bid=(?:"([^"$]*)"|'([^'$]*)'|\{`([^`$]*)`\})/g
-          )) {
-            offenders.push(`${rel}: id="${m[1] ?? m[2] ?? m[3] ?? ''}"`);
-          }
-          // (b) a label whose target is a literal. Every `htmlFor` in the
-          //     renderer must derive from `useId` — the whole rule in one line.
-          for (const m of line.matchAll(/\bhtmlFor=(?:"([^"]*)"|'([^']*)')/g)) {
-            offenders.push(`${rel}: htmlFor="${m[1] ?? m[2] ?? ''}"`);
-          }
-          // (c) the namespaces this item removed, in ANY spelling — including
-          //     one rebuilt out of a template literal, which (a) cannot see.
-          //     The `data-` hooks are removed first: they are attribute NAMES,
-          //     not ids, and content cannot emit a `data-*` at all.
-          const withoutHooks = line.replace(/data-(?:push|quiet)-field|data-palette-rows?/g, '');
-          if (/(?:push|quiet)-field-|palette-rows?\b/.test(withoutHooks)) {
-            offenders.push(`${rel}: a removed literal id namespace is back`);
-          }
+        const src = stripComments(fs.readFileSync(full, 'utf8'));
+        // (a) a LITERAL id, in either quote, plus the template-literal form
+        //     with no interpolation in it. `id={`${base}row`}` and `id={expr}`
+        //     are fine — what this refuses is a STABLE STRING typed in place.
+        //     The lookbehind keeps it off `data-id=` and off a QUERY:
+        //     `root.querySelector(`[id="${id}"]`)` in `DocumentViewer` READS an
+        //     id, it does not declare one (the `$`-free classes catch that too).
+        for (const m of src.matchAll(
+          /(?<![-\w[])\bid=(?:"([^"$]*)"|'([^'$]*)'|\{`([^`$]*)`\})/g
+        )) {
+          offenders.push(`${rel}: id="${m[1] ?? m[2] ?? m[3] ?? ''}"`);
+        }
+        // (b) a label whose target is a literal, in EITHER quote or a
+        //     non-interpolated template. Every `htmlFor` in the renderer
+        //     derives from `useId`; a literal one is the bug this item fixed.
+        for (const m of src.matchAll(
+          /\bhtmlFor=(?:"([^"$]*)"|'([^'$]*)'|\{`([^`$]*)`\})/g
+        )) {
+          offenders.push(`${rel}: htmlFor="${m[1] ?? m[2] ?? m[3] ?? ''}"`);
+        }
+        // (c) the namespaces this item removed, in ANY spelling — including one
+        //     rebuilt out of a template literal, which (a) cannot see. The
+        //     `data-` hooks are removed first: they are attribute NAMES, not
+        //     ids, and content cannot emit a `data-*` at all.
+        const withoutHooks = src.replace(/data-(?:push|quiet)-field|data-palette-rows?/g, '');
+        if (/(?:push|quiet)-field-|palette-rows?\b/.test(withoutHooks)) {
+          offenders.push(`${rel}: a removed literal id namespace is back`);
         }
       }
     };
     walk(root);
     // The allow-list is the whole point of the assertion, in the one-pipeline
     // test's shape: NOT `toEqual([])`, because a bare zero would have to be
-    // maintained by deleting the rule, and these two are genuinely not names
-    // content can shadow.
+    // maintained by deleting the rule.
     expect(offenders.sort()).toEqual([
       // A React PROP called `id`, not a DOM attribute — `ContributionBoundary`
       // uses it to name a contribution point in error messages.
